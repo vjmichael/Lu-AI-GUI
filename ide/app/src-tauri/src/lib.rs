@@ -1135,17 +1135,26 @@ async fn ide_draft_load(
 }
 #[tauri::command]
 async fn ide_draft_discard(
+    app: AppHandle,
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
     vault: State<'_, Arc<lu_ide_workspace::draft_vault::DraftVault>>,
     project_id: String,
     relative_path: String,
     expected_head: String,
 ) -> Result<(),String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
     let registry=Arc::clone(registry.inner());
     let vault=Arc::clone(vault.inner());
     tauri::async_runtime::spawn_blocking(move||{
         registry.preview_source_file(&project_id,&relative_path)
             .map_err(|e|e.code().to_owned())?;
+        let allowed=app.dialog().message(format!(
+            "Delete the local, privately preserved draft history for this file?\n{}\nCheckpoint: {}\nThis does NOT delete the project file.",
+            relative_path,expected_head
+        )).title("Lu IDE · Confirm private draft history deletion")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+              "Delete private drafts".into(),"Keep recovery".into())).blocking_show();
+        if !allowed {return Err("DRAFT_DISCARD_NOT_APPROVED".into());}
         vault.discard(&project_id,&relative_path,&expected_head)
             .map_err(str::to_owned)
     }).await.map_err(|_|"DRAFT_DISCARD_TASK_UNAVAILABLE".to_owned())?
