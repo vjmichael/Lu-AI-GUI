@@ -1,0 +1,247 @@
+//! AGENT-01E: bounded, read-only per-conversation human plan timeline.
+ //!
+ //! Only host-selected profile file; NO WebView-supplied SQLite paths, plan
+ //! IDs or approval tokens. No writes, auto-retries or worker launches.
+ //! Persisted approval, a broker receipt link, and completed OS execution are
+ //! different facts. Never claim present-day output/source/process custody.
+ use std::{fs,path::{Path,PathBuf}};
+ use rusqlite::{params,Connection,OpenFlags,OptionalExtension};
+ use serde::Serialize;
+ use crate::chat_store::ChatStore;
+ const MAX_FILE:u64=64*1024*1024;
+ const MAX_PLANS:usize=16;
+ const MAX_STEPS:usize=32;
+ #[derive(Clone,Debug,Serialize)]
+ #[serde(rename_all="camelCase")]
+ pub struct AgentStepProgress{
+     pub step_index:u8,
+     pub purpose:String,
+     pub expected_deliverable:String,
+     pub depends_on:Option<u8>,
+     pub schedule_state:String,
+     pub historical_witness_linked:bool,
+ }
+ #[derive(Clone,Debug,Serialize)]
+ #[serde(rename_all="camelCase")]
+ pub struct AgentPlanProgress{
+     pub plan_id:String,
+     pub original_human_turn_id:String,
+     pub plan_state:String,
+     pub latest_revision:u8,
+     pub revision_review:String,
+     pub supervisor_state:String,
+     pub step_count:u8,
+     pub steps:Vec<AgentStepProgress>,
+     pub next_safe_action:&'static str,
+     pub execution_authority:&'static str,
+ }
+ fn valid(id:&str,prefix:&str)->bool{
+     id.len()==prefix.len()+32&&id.starts_with(prefix)
+         &&id[prefix.len()..].bytes().all(|b|
+             b.is_ascii_hexdigit()&&!b.is_ascii_uppercase())
+ }
+ fn safe(path:&Path)->Result<Option<fs::Metadata>,String>{
+     let meta=match fs::symlink_metadata(path){
+         Ok(m)=>m,
+         Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(None),
+         Err(_)=>return Err("Plan progress file inaccessible".into())
+     };
+     if !meta.is_file()||meta.file_type().is_symlink()||meta.len()>MAX_FILE{
+         return Err("Plan history must be a bounded regular file".into())
+     }
+     #[cfg(windows)]
+     {
+         use std::os::windows::fs::MetadataExt;
+         if meta.file_attributes()&0x400!=0{
+             return Err("Linked Windows plan history refused".into())
+         }
+     }
+     Ok(Some(meta))
+ }
+ fn exists(db:&Connection,table:&str)->Result<bool,String>{
+     let count:i64=db.query_row(
+         "SELECT COUNT(*) FROM sqlite_master
+          WHERE type='table' AND name=?1",
+         params![table],|r|r.get(0)
+     ).map_err(|_|"Plan-history schema cannot be inspected")?;
+     Ok(count==1)
+ }
+ fn open_readonly(root:&Path)->Result<Option<Connection>,String>{
+     let file=root.join("lu-agent-plans.sqlite");
+     if safe(&file)?.is_none(){return Ok(None)}
+     for suffix in ["-wal","-shm"]{
+         let mut sidecar=file.as_os_str().to_os_string();
+         sidecar.push(suffix);
+         safe(&PathBuf::from(sidecar))?;
+     }
+     Connection::open_with_flags(
+         file,OpenFlags::SQLITE_OPEN_READ_ONLY|OpenFlags::SQLITE_OPEN_NO_MUTEX
+     ).map(Some).map_err(|_|"Plan-history SQLite is unreadable".into())
+ }
+ /// Authenticate the chosen chat before querying its original human turns.
+ /// Skips an entry whose saved USER turn cannot be independently verified;
+ /// never relies on model-generated role labels.
+ pub fn read_chat_progress(
+     root:&Path,chat:&str,chats:&ChatStore
+ )->Result<Vec<AgentPlanProgress>,String>{
+     if !valid(chat,"c-"){return Err("Invalid chat identity".into())}
+     chats.history_window(chat,None,"older",1)?;
+     let Some(db)=open_readonly(root)? else{return Ok(Vec::new())};
+     for table in [
+         "lu_agent_plans","lu_agent_plan_revisions",
+         "lu_agent_plan_revision_steps","lu_agent_plan_revision_reviews",
+         "lu_agent_schedule_owners","lu_agent_schedule_proposals",
+         "lu_agent_deliverable_receipts",
+     ]{
+         if !exists(&db,table)?{
+             // This might be a partially migrated journal. Do not invent
+             // plans from an incomplete schema or infer readiness.
+             return Err("Agent progress journal is incomplete".into())
+         }
+     }
+     let mut stmt=db.prepare(
+         "SELECT plan_id,human_turn_id,state FROM lu_agent_plans
+          WHERE conversation_id=?1 ORDER BY created_at DESC,plan_id
+          LIMIT 17"
+     ).map_err(|_|"Cannot read plan list")?;
+     let rows=stmt.query_map(params![chat],|r|Ok((
+         r.get::<_,String>(0)?,
+         r.get::<_,String>(1)?,
+         r.get::<_,String>(2)?
+     ))).map_err(|_|"Cannot query plan rows")?;
+     let mut plans=Vec::new();
+     for row in rows{
+         if plans.len()>=MAX_PLANS{
+             return Err("Too many plans in this history view".into())
+         }
+         let (plan,turn,state)=row.map_err(|_|"Invalid plan entry")?;
+         if !valid(&plan,"p-")||!valid(&turn,"g-")
+             ||!matches!(state.as_str(),
+                 "DRAFT"|"OBSERVATIONS_ONLY"|"NEEDS_REVIEW"|"CANCEL_REQUESTED"){
+             return Err("Damaged plan identity or state".into())
+         }
+         if chats.trusted_user_turn_text(chat,&turn).is_none(){continue}
+         let revision:Option<(i64,String)>=db.query_row(
+             "SELECT revision_index,revision_sha256
+              FROM lu_agent_plan_revisions
+              WHERE plan_id=?1 ORDER BY revision_index DESC LIMIT 1",
+             params![plan],|r|Ok((r.get(0)?,r.get(1)?))
+         ).optional().map_err(|_|"Plan revision lookup failed")?;
+         let Some((revision_number,revision_sha))=revision else{
+             // This plan was only registered, not yet reviewed.
+             plans.push(AgentPlanProgress{
+                 plan_id:plan,original_human_turn_id:turn,plan_state:state,
+                 latest_revision:0,revision_review:"NO_PROPOSAL".into(),
+                 supervisor_state:"NOT_CLAIMED".into(),step_count:0,
+                 steps:Vec::new(),
+                 next_safe_action:"Prepare a plan proposal for human review. Do not execute.",
+                 execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION",
+             });continue
+         };
+         if !(1..=64).contains(&revision_number)
+             ||revision_sha.len()!=64||
+             !revision_sha.bytes().all(|b|b.is_ascii_hexdigit()
+                 &&!b.is_ascii_uppercase()){
+             return Err("Damaged plan revision".into())
+         }
+         let review:Option<String>=db.query_row(
+             "SELECT decision FROM lu_agent_plan_revision_reviews
+              WHERE plan_id=?1 AND revision_index=?2",
+             params![plan,revision_number],|r|r.get(0)
+         ).optional().map_err(|_|"Human review history unavailable")?;
+         let review=match review.as_deref(){
+             Some("APPROVE_PLAN_ONLY")=>"APPROVED_PLAN_ONLY",
+             Some("REJECT_PLAN")=>"REJECTED_PLAN",
+             None=>"PENDING_HUMAN_REVIEW",
+             _=>return Err("Damaged human review decision".into())
+         };
+         let owner:Option<(String,String)>=db.query_row(
+             "SELECT revision_sha256,state FROM lu_agent_schedule_owners
+              WHERE plan_id=?1",
+             params![plan],|r|Ok((r.get(0)?,r.get(1)?))
+         ).optional().map_err(|_|"Scheduler owner history unreadable")?;
+         let owner_state=match owner.as_ref(){
+             None=>"NOT_CLAIMED",
+             Some((rev,_)) if rev!=&revision_sha=>"STALE_PLAN_REVISION",
+             Some((_,s)) if matches!(s.as_str(),
+                "OWNED"|"CANCEL_REQUESTED"|"RECOVERY_REQUIRED"|"RELEASED")=>s,
+             _=>return Err("Unknown scheduler history state".into())
+         };
+         let mut step_stmt=db.prepare(
+             "SELECT step_index,kind,depends_on,expected
+              FROM lu_agent_plan_revision_steps
+              WHERE plan_id=?1 AND revision_index=?2
+              ORDER BY step_index LIMIT 33"
+         ).map_err(|_|"Expected deliverable list inaccessible")?;
+         let step_rows=step_stmt.query_map(params![plan,revision_number],|r|Ok((
+             r.get::<_,i64>(0)?,r.get::<_,String>(1)?,
+             r.get::<_,Option<i64>>(2)?,r.get::<_,String>(3)?
+         ))).map_err(|_|"Cannot read steps")?;
+         let mut steps=Vec::new();
+         for row in step_rows{
+             if steps.len()>=MAX_STEPS{return Err("Too many plan steps".into())}
+             let (index,kind,dep,expected)=row.map_err(|_|"Damaged step entry")?;
+             if index!=steps.len() as i64||!matches!(kind.as_str(),
+                 "COLLECT_SOURCE"|"INSPECT"|"ANALYZE"|"INDEPENDENT_CHECK"|
+                 "HUMAN_REVIEW"|"PRESENT") ||!matches!(expected.as_str(),
+                 "SOURCE_REFERENCES"|"STRUCTURED_FINDINGS"|
+                 "INDEPENDENT_WITNESS"|"HUMAN_DECISION"|
+                 "ARTIFACT_REFERENCE"|"EXPLANATION"){
+                 return Err("Unexpected step or deliverable type".into())
+             }
+             let depends_on=dep.map(|p|u8::try_from(p)
+                 .map_err(|_|"Invalid plan step dependency")).transpose()?;
+             if depends_on.is_some_and(|p|p as usize>=steps.len()){
+                 return Err("Invalid step ordering".into())
+             }
+             let record:Option<String>=db.query_row(
+                 "SELECT state FROM lu_agent_schedule_proposals
+                  WHERE plan_id=?1 AND revision_sha256=?2 AND step_index=?3",
+                 params![plan,revision_sha,index],|r|r.get(0)
+             ).optional().map_err(|_|"Cannot read scheduled step state")?;
+             let step_state=match record.as_deref(){
+                 Some("PROPOSED_NO_EXECUTION")=>"WAITING_FOR_BROKER_ACCEPTANCE",
+                 Some("OBSERVED_VERIFIED_HISTORICAL")=>"HISTORICAL_WITNESS_RECORDED",
+                 Some("ABANDONED_UNCERTAIN")=>"INTERRUPTED_NEEDS_RECONCILIATION",
+                 Some("CANCEL_INTENT_UNCERTAIN")=>"CANCELLED_NEEDS_RECONCILIATION",
+                 None=>"NOT_SCHEDULED",
+                 _=>return Err("Damaged scheduler state".into())
+             };
+             let witness:i64=db.query_row(
+                 "SELECT COUNT(*) FROM lu_agent_deliverable_receipts
+                  WHERE plan_id=?1 AND revision_sha256=?2 AND step_index=?3",
+                 params![plan,revision_sha,index],|r|r.get(0)
+             ).map_err(|_|"Cannot inspect historical witness reference")?;
+             if !(0..=1).contains(&witness){
+                 return Err("Duplicate conflicting witness".into())
+             }
+             steps.push(AgentStepProgress{
+                 step_index:index as u8,purpose:kind,depends_on,
+                 expected_deliverable:expected,
+                 schedule_state:step_state.into(),
+                 historical_witness_linked:witness==1,
+             });
+         }
+         let next=if matches!(owner_state,
+             "RECOVERY_REQUIRED"|"CANCEL_REQUESTED")
+             ||state=="NEEDS_REVIEW"||state=="CANCEL_REQUESTED"{
+             "Inspect uncertainty and request an independent recovery review; no automatic replay."
+         }else if owner_state=="STALE_PLAN_REVISION"{
+             "The goal/plan changed. Review a fresh plan revision before new work."
+         }else if review!="APPROVED_PLAN_ONLY"{
+             "Review the current plan proposal. Approval alone never authorizes tools."
+         }else{
+             "A fresh human request, source validation, reviewed broker grant and verified OS custody are still required."
+         };
+         plans.push(AgentPlanProgress{
+             plan_id:plan,original_human_turn_id:turn,plan_state:state,
+             latest_revision:revision_number as u8,
+             revision_review:review.into(),
+             supervisor_state:owner_state.into(),
+             step_count:steps.len() as u8,steps,
+             next_safe_action:next,
+             execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION",
+         });
+     }
+     Ok(plans)
+ }
