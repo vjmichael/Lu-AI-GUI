@@ -41,7 +41,8 @@ export function planTaskSourceLink(tasks, chosenTaskId, tab, liveText, activePro
 /** Never mistake an open editor's saved BASE SHA for a live disk recheck. */
 export function sourceLinkDisplay(link,task,tab,project) {
   if (!projectId(project) || task?.taskId==null ||
-      !link || !revision(link.savedRevision) ||
+      !link || link.source!=='native_registered_source_read' ||
+      !revision(link.savedRevision) ||
       verifiedRelativeSourcePath(link.relativePath)!==link.relativePath ||
       !eventId(link.boundUpdateEventId))
     return 'invalid_observation';
@@ -58,6 +59,7 @@ export function sourceLinkDisplay(link,task,tab,project) {
 export function checkedSourceReobservation(link,task,project,preview) {
   if (!link || !task || !projectId(project) ||
       !revision(link.savedRevision) ||
+      link.source!=='native_registered_source_read' ||
       !eventId(link.boundUpdateEventId) ||
       preview?.projectId!==project ||
       preview?.relativePath!==link.relativePath ||
