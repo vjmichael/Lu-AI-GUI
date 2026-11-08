@@ -144,6 +144,15 @@ fn metadata() -> Vec<CapabilityMeta> {
             "new ledger event and task revision; source commit captured by native host, no claim of passing tests"
         ),
         capability!(
+            "task.sourceLink",
+            "ide_link_task_source",
+            "Associate observed saved source with task",
+            "Append a host-read saved-source SHA/relative-path observation to the original C6 development journal; not editor draft, CI verdict or task acceptance.",
+            "catalog_write",
+            "active registered project, exact existing task-update event, validated relative text file, expected saved SHA and explicit human request",
+            "native registered source bytes revalidated and associated with task history; no source mutation or completion proof"
+        ),
+        capability!(
             "task.ciObserve",
             "ide_observe_task_ci",
             "Check and link exact-commit CI for a task",
@@ -552,7 +561,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 46);
+        assert_eq!(catalog.capabilities.len(), 47);
         assert!(catalog.capabilities.len() <= 48);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -588,7 +597,7 @@ mod tests {
                 "read" | "network_read" | "session_write" | "catalog_write" | "file_write"
             ));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 42);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 43);
     }
 
     #[test]
