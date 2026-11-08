@@ -499,12 +499,13 @@ async fn ide_link_task_source(
     task_id: String,
     relative_path: String,
     expected_saved_revision: String,
+    expected_task_update_event_id: String,
 ) -> Result<lu_ide_workspace::task_evidence::TaskSummary, String> {
     let registry = Arc::clone(registry.inner());
     let ledger = Arc::clone(ledger.inner());
     tauri::async_runtime::spawn_blocking(move || {
         ledger.record_task_source(&registry, &project_id, &task_id,
-            &relative_path, &expected_saved_revision)
+            &relative_path, &expected_saved_revision, &expected_task_update_event_id)
             .map_err(|error| error.code().to_owned())
     })
     .await.map_err(|_| "TASK_SOURCE_UNAVAILABLE".to_owned())?
