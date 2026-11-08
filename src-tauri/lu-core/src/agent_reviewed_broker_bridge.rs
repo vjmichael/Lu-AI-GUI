@@ -1,0 +1,270 @@
+//! AGENT-01D→native reviewed broker: non-dispatching exact-claim admission.
+ //!
+ //! The *existing* ReviewedApplicationTurnSession owns real model/native-tool
+ //! registry and original-turn authorization. This bridge checks that an
+ //! individual proposed step is still linked to an active (in-process) host
+ //! owner and to the fresh user turn whose independent authority grants the
+ //! exact reviewed Git/FFprobe read+execute pair. It never opens authority,
+ //! selects files, invokes workers, or changes a scheduler state.
+ //! All E1 OS/custody gates are still OPEN: this returns only preflight.
+ use crate::{
+    agent_host_scheduler::AgentHostScheduler,
+    agent_plan_ledger::AgentPlanLedger,
+    agent_plan_revisions::{AgentPlanRevisionStore,HostPlanReferenceVerifier},
+    conversation_authority::{BoundCallOrigin,ConversationAuthority},
+ };
+ #[derive(Clone,Copy,Debug,PartialEq,Eq)]
+ pub enum ReviewedBrokerOperation{
+    GitHead,GitStatus,GitBranch,GitHistory,MediaFacts,
+ }
+ impl ReviewedBrokerOperation{
+    pub fn native_ids(self)->(&'static str,&'static str){
+        match self{
+            Self::GitHead=>("lu.reviewed.git.head","lu.reviewed.git.repo-read"),
+            Self::GitStatus=>("lu.reviewed.git.status","lu.reviewed.git.repo-read"),
+            Self::GitBranch=>("lu.reviewed.git.branch","lu.reviewed.git.repo-read"),
+            Self::GitHistory=>("lu.reviewed.git.history","lu.reviewed.git.repo-read"),
+            Self::MediaFacts=>("lu.reviewed.media.facts","lu.reviewed.media.file-read"),
+        }
+    }
+ }
+ #[derive(Clone,Debug,PartialEq,Eq)]
+ pub struct ScheduledBrokerBinding{
+    pub claim_id:String,
+    pub revision_sha256:String,
+    pub step_index:u8,
+    pub reviewed_execute_id:&'static str,
+    pub reviewed_read_id:&'static str,
+    /// A name or preflight is not proof that binaries, resources, OS custody
+    /// or independently checked source facts are available on this host.
+    pub dispatch_status:&'static str,
+ }
+ #[derive(Clone,Debug,PartialEq,Eq)]
+ pub enum BridgeError{
+    NotHostOwned,WrongHumanTurn,StaleRevision,NotProposed,
+    NoOriginalAuthority,WrongCapability,UnverifiedSource,
+    BrokerNotRegistered,
+ }
+ #[allow(clippy::too_many_arguments)]
+ pub fn preflight_reviewed_broker(
+    scheduler:&AgentHostScheduler,
+    ledger:&AgentPlanLedger,
+    revisions:&AgentPlanRevisionStore,
+    sources:&dyn HostPlanReferenceVerifier,
+    authority:&ConversationAuthority,
+    original_plan:&str,chat:&str,origin_turn:&str,
+    revision_sha:&str,claim_id:&str,step:u8,
+    broker_origin:&BoundCallOrigin,operation:ReviewedBrokerOperation,
+ )->Result<ScheduledBrokerBinding,BridgeError>{
+    let saved=ledger.snapshot(original_plan,chat,origin_turn)
+        .map_err(|_|BridgeError::NotHostOwned)?
+        .ok_or(BridgeError::NotHostOwned)?;
+    if matches!(saved.state.as_str(),"CANCEL_REQUESTED"|"NEEDS_REVIEW"){
+        return Err(BridgeError::NotHostOwned)
+    }
+    let now=revisions.latest(original_plan,chat)
+        .map_err(|_|BridgeError::StaleRevision)?
+        .ok_or(BridgeError::StaleRevision)?;
+    if now.revision_sha256!=revision_sha||now.review_state!="APPROVED_PLAN_ONLY"{
+        return Err(BridgeError::StaleRevision)
+    }
+    if !sources.goal_event_is_current(chat,&now.goal_id,&now.goal_event_id)
+        ||now.assumption_sources.iter().any(|x|
+            !sources.assumption_source_is_readable(chat,x)){
+        return Err(BridgeError::UnverifiedSource)
+    }
+    if broker_origin.conversation_id!=chat
+        ||broker_origin.user_turn_id!=broker_origin.task_id
+        ||broker_origin.user_turn_id==origin_turn
+        ||Some(broker_origin.user_turn_id.as_str())==now.review_turn_id.as_deref(){
+        return Err(BridgeError::WrongHumanTurn)
+    }
+    let view=scheduler.view(original_plan,chat,origin_turn,ledger)
+        .map_err(|_|BridgeError::NotHostOwned)?
+        .ok_or(BridgeError::NotHostOwned)?;
+    if view.state!="OWNED"||view.revision_sha!=revision_sha
+        ||view.epoch!=1{
+        return Err(BridgeError::NotHostOwned)
+    }
+    let found=view.claims.iter().filter(|row|
+        row.step_index==step&&row.revision_sha==revision_sha
+        &&row.claim_id==claim_id).collect::<Vec<_>>();
+    if found.len()!=1 || found[0].claim_state!="PROPOSED_NO_EXECUTION"{
+        return Err(BridgeError::NotProposed)
+    }
+    if found[0].original_request_turn!=broker_origin.user_turn_id{
+        return Err(BridgeError::WrongHumanTurn)
+    }
+    let (execute_id,read_id)=operation.native_ids();
+    let allowed=authority.permitted_tool_ids(broker_origin)
+        .map_err(|_|BridgeError::NoOriginalAuthority)?;
+    if !allowed.contains(execute_id)||!allowed.contains(read_id){
+        return Err(BridgeError::WrongCapability)
+    }
+    Ok(ScheduledBrokerBinding{
+        claim_id:claim_id.into(),revision_sha256:revision_sha.into(),
+        step_index:step,reviewed_execute_id:execute_id,reviewed_read_id:read_id,
+        dispatch_status:"WAITING_FOR_INDEPENDENT_NATIVE_OS_ACCEPTANCE",
+    })
+ }
+ /// Prove an independently registered, per-turn *actual* broker session
+ /// offers exactly the reviewed tool behind the host's non-dispatching claim.
+ /// This method does not call run_journaled_observed.
+ pub fn verify_actual_broker_session(
+    session:&crate::native_reviewed_app_tool::ReviewedApplicationTurnSession,
+    binding:&ScheduledBrokerBinding,
+ )->Result<(),BridgeError>{
+    let capabilities=session.capabilities()
+        .map_err(|_|BridgeError::BrokerNotRegistered)?;
+    if !capabilities.iter().any(|row|
+        row.native_tool_id==binding.reviewed_execute_id
+        &&row.effect=="execute_code"
+        &&row.availability_claim=="native_contract_registered_and_turn_granted_only"){
+        return Err(BridgeError::BrokerNotRegistered)
+    }
+    // The read capability is intentionally not model-visible in this
+    // registry: the reviewed broker itself checks its host-only read grant
+    // at every native worker launch; preflight_reviewed_broker checks it too.
+    Ok(())
+ }
+ #[cfg(test)]
+ mod tests{
+    use super::*;
+    use crate::{
+        agent_host_scheduler::{ScheduleBudget,HostFreshStepConsent},
+        agent_plan_ledger::{PlanStepKind,PlanStepSpec},
+        agent_plan_revisions::{
+            RevisionProposal,RevisionReason,RevisionStep,ExpectedDeliverable,
+            HostPlanReviewVerifier,HumanDecision,
+        },
+        conversation_authority::{TaskAuthority,AuthorizedCapability,TrustedUserTurnVerifier},
+        contracts::ToolEffect,
+    };
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    fn ident(prefix:&str,n:u64)->String{format!("{prefix}{n:032x}")}
+    struct Human;
+    impl TrustedUserTurnVerifier for Human{
+        fn verify_user_turn(&self,_chat:&str,_turn:&str)->bool{true}
+    }
+    struct Source(bool);
+    impl HostPlanReferenceVerifier for Source{
+        fn goal_event_belongs_to_chat(&self,_c:&str,_g:&str,_e:&str)->bool{true}
+        fn goal_event_is_current(&self,_c:&str,_g:&str,_e:&str)->bool{self.0}
+        fn assumption_source_is_readable(&self,_c:&str,_s:&str)->bool{self.0}
+    }
+    struct Review;
+    impl HostPlanReviewVerifier for Review{
+        fn has_exact_human_decision(
+            &self,_c:&str,_t:&str,_p:&str,_s:&str,_decision:HumanDecision
+        )->bool{true}
+    }
+    struct Consent;
+    impl HostFreshStepConsent for Consent{
+        fn explicitly_requested_step(
+            &self,_c:&str,_t:&str,_p:&str,_s:&str,
+            _i:u8,_b:&ScheduleBudget,
+        )->bool{true}
+    }
+    fn budget()->ScheduleBudget{
+        ScheduleBudget{
+            max_claims:1,model_token_ceiling:1000,tool_call_ceiling:1,
+            wall_clock_ceiling_ms:1000,output_ceiling_bytes:1024
+        }
+    }
+    #[test]
+    fn actual_conversation_authority_not_planner_approval_controls_broker_capabilities(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-agent-broker-{}-{}",
+            std::process::id(),SystemTime::now()
+                .duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let file=root.join("plans.sqlite");
+        let (plan,chat,original,owner,fresh)=(
+            ident("p-",1),ident("c-",2),ident("g-",3),
+            ident("h-",4),ident("g-",5)
+        );
+        let ledger=AgentPlanLedger::open(&file).unwrap();
+        ledger.register(&plan,&chat,&original,&[
+            PlanStepSpec{kind:PlanStepKind::IndependentlyCheck,depends_on:None}
+        ],&Human).unwrap();
+        let revisions=AgentPlanRevisionStore::open(&file).unwrap();
+        let p=RevisionProposal{
+            goal_id:ident("goal-",6),goal_event_id:ident("m-",7),
+            assumption_sources:vec![],reason:RevisionReason::Initial,
+            steps:vec![RevisionStep{
+                kind:PlanStepKind::IndependentlyCheck,depends_on:None,
+                deliverable_id:ident("d-",8),
+                expected:ExpectedDeliverable::IndependentWitness
+            }]
+        };
+        let rev=revisions.append_proposal(
+            &plan,&chat,&original,&ident("v-",9),None,&p,&Human,&Source(true)
+        ).unwrap();
+        revisions.record_review(
+            &plan,&chat,&ident("g-",10),&rev.revision_sha256,
+            HumanDecision::Approve,&Human,&Review,&Source(true)
+        ).unwrap();
+        let scheduler=AgentHostScheduler::open(&file).unwrap();
+        scheduler.claim_host(
+            &plan,&chat,&original,&owner,&rev.revision_sha256,
+            budget(),&ledger,&revisions,&Source(true)
+        ).unwrap();
+        let claim=ident("q-",11);
+        let receipts=crate::agent_deliverable_receipts::
+            AgentDeliverableReceipts::open(&file).unwrap();
+        scheduler.propose_step(
+            &plan,&chat,&original,&owner,1,&rev.revision_sha256,
+            0,&claim,&fresh,budget(),&ledger,&revisions,&Source(true),
+            &Human,&Consent,&root,&receipts
+        ).unwrap();
+        let authority=ConversationAuthority::new();
+        let origin=BoundCallOrigin{
+            conversation_id:chat.clone(),user_turn_id:fresh.clone(),task_id:fresh.clone()
+        };
+        let pre=||preflight_reviewed_broker(
+            &scheduler,&ledger,&revisions,&Source(true),&authority,
+            &plan,&chat,&original,&rev.revision_sha256,&claim,0,
+            &origin,ReviewedBrokerOperation::GitHead
+        );
+        assert_eq!(pre(),Err(BridgeError::NoOriginalAuthority));
+        authority.open_user_task(TaskAuthority{
+            conversation_id:chat.clone(),user_turn_id:fresh.clone(),
+            task_id:fresh.clone(),execution_scope_id:fresh.clone(),
+            capabilities:vec![
+                AuthorizedCapability{
+                    tool_id:"lu.reviewed.git.head".into(),
+                    effect:ToolEffect::ExecuteCode
+                },
+                AuthorizedCapability{
+                    tool_id:"lu.reviewed.git.repo-read".into(),
+                    effect:ToolEffect::ReadWorkspace
+                }
+            ],expires_at:None,
+        },&Human).unwrap();
+        assert_eq!(pre().unwrap().dispatch_status,
+            "WAITING_FOR_INDEPENDENT_NATIVE_OS_ACCEPTANCE");
+        assert_eq!(preflight_reviewed_broker(
+            &scheduler,&ledger,&revisions,&Source(true),&authority,
+            &plan,&chat,&original,&rev.revision_sha256,&claim,0,
+            &origin,ReviewedBrokerOperation::MediaFacts
+        ),Err(BridgeError::WrongCapability));
+        assert_eq!(preflight_reviewed_broker(
+            &scheduler,&ledger,&revisions,&Source(false),&authority,
+            &plan,&chat,&original,&rev.revision_sha256,&claim,0,
+            &origin,ReviewedBrokerOperation::GitHead
+        ),Err(BridgeError::UnverifiedSource));
+        assert_eq!(preflight_reviewed_broker(
+            &scheduler,&ledger,&revisions,&Source(true),&authority,
+            &plan,&chat,&original,&rev.revision_sha256,&claim,0,
+            &BoundCallOrigin{
+                conversation_id:chat.clone(),
+                user_turn_id:ident("g-",99),task_id:ident("g-",99)
+            },ReviewedBrokerOperation::GitHead
+        ),Err(BridgeError::WrongHumanTurn));
+        authority.revoke_task(&fresh).unwrap();
+        assert_eq!(pre(),Err(BridgeError::WrongCapability));
+        drop(receipts);drop(scheduler);drop(revisions);drop(ledger);
+        fs::remove_dir_all(root).unwrap();
+    }
+ }
