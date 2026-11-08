@@ -33,7 +33,15 @@
          let sidecar=PathBuf::from(sidecar);
          match fs::symlink_metadata(&sidecar){
              Ok(m) if m.is_file()&&!m.file_type().is_symlink()
-                 &&m.len()<=64*1024*1024=>{},
+                 &&m.len()<=64*1024*1024=>{
+                 #[cfg(windows)]
+                 {
+                     use std::os::windows::fs::MetadataExt;
+                     if m.file_attributes()&0x400!=0{
+                         return Err("Linked Windows plan journal sidecar".into())
+                     }
+                 }
+             },
              Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},
              _=>return Err("Linked or oversized plan journal sidecar".into()),
          }
