@@ -485,6 +485,29 @@ impl AnsfStore{
         for row in rows{result.push(decode(row?)?)}
         Ok(result)
     }
+    /// Indexed, bounded terminal/notice lookup for one exact reviewed turn.
+    /// Avoid reconstructing the entire potentially infinite ANSF chat stream.
+    pub fn reviewed_turn_recovery_state(
+        &self,session_id:&str,turn_id:&str,exact_notice:&str
+    )->Result<(bool,bool),AnsfError>{
+        if !valid_session(session_id)||!opaque(turn_id,"g-")
+            ||exact_notice.is_empty()||exact_notice.len()>512{
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let (terminal,notified):(i64,i64)=conn.query_row(
+            "SELECT
+              EXISTS(SELECT 1 FROM ansf_live_chat_events
+                WHERE session_id=?1 AND generation_id=?2
+                  AND kind IN ('assistant_completed','assistant_cancelled')),
+              EXISTS(SELECT 1 FROM ansf_live_chat_events
+                WHERE session_id=?1 AND generation_id=?2
+                  AND kind='assistant_progress' AND text=?3)",
+            params![session_id,turn_id,exact_notice],
+            |row|Ok((row.get(0)?,row.get(1)?))
+        )?;
+        Ok((terminal!=0,notified!=0))
+    }
     /// Host restart: locate *only* the active queued reviewed-app display
     /// placeholders without loading the whole conversation into memory.
     /// This is a read-only navigation index, never a new authority grant.
