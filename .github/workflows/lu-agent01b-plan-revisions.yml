@@ -1,0 +1,92 @@
+name: Lu AGENT-01B Immutable Plan Revision Native Acceptance
+on:
+  push:
+    branches: ['lu/agent01b-immutable-goal-plan-revisions-20261108']
+    paths:
+      - 'src-tauri/lu-core/src/agent_plan_ledger.rs'
+      - 'src-tauri/lu-core/src/agent_plan_revisions.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'lu-desktop/tests/native-chat/src/lib.rs'
+      - '.github/workflows/lu-agent01b-plan-revisions.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/agent_plan_ledger.rs'
+      - 'src-tauri/lu-core/src/agent_plan_revisions.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'lu-desktop/tests/native-chat/src/lib.rs'
+      - '.github/workflows/lu-agent01b-plan-revisions.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-agent01b-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-source-checked-revision-ledger:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prove exact frozen source and native runner provenance
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p agent01b-evidence
+          printf 'SOURCE_SHA=%s\nRUNNER_OS=%s\n' "$EXPECTED_HEAD" "$RUNNER_OS" \
+            > agent01b-evidence/exact-source.txt
+      - name: Test production immutable plan revision ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_plan_revisions::tests -- --nocapture \
+            2>&1 | tee agent01b-evidence/revisions-native-rust.log
+          for name in \
+            initial_revision_survives_restart_and_hash_chain_rejects_stale_parent \
+            human_turn_and_reference_checks_are_not_model_authority \
+            exact_human_review_does_not_grant_execution_or_rewrite_revision \
+            sources_and_revision_payload_validate_immutable_dependencies; do
+            grep -Fq "test agent_plan_revisions::tests::$name ... ok" \
+              agent01b-evidence/revisions-native-rust.log
+          done
+          grep -Fq 'test result: ok. 4 passed; 0 failed;' \
+            agent01b-evidence/revisions-native-rust.log
+      - name: Test actual ChatStore plus ANSF goal and separately reviewed plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib agent01b_real_chat_goal_revision_acceptance::real_saved_human_goal_and_exact_review_survive_restart_without_tool_grant \
+            -- --nocapture 2>&1 | tee agent01b-evidence/real-human-ansf-goal.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            agent01b-evidence/real-human-ansf-goal.log
+      - name: Disclose independent execution acceptance boundary
+        shell: bash
+        run: |
+          echo 'AGENT-01B native SQLite plan revisions do NOT grant OS execution, prove downloaded source truth, validate a live GGUF decision, or authorize interrupted-worker replay. Real Windows app acceptance remains OPEN.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01b-revisions-${{ matrix.os }}
+          path: agent01b-evidence/
+          retention-days: 14
+          if-no-files-found: warn
