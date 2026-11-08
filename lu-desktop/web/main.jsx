@@ -814,6 +814,7 @@ function App() {
   const [toolActivityOpen,setToolActivityOpen]=useState(false);
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
   const [agentProgressByChat,setAgentProgressByChat]=useState({});
+  const [agentReviewBusy,setAgentReviewBusy]=useState(false);
   const [toolProgressByChat,setToolProgressByChat]=useState({});
   const [turnCapabilitiesByChat,setTurnCapabilitiesByChat]=useState({});
   const [toolHistoryBusy,setToolHistoryBusy]=useState(false);
@@ -2525,6 +2526,31 @@ function App() {
       }
     }finally{setToolHistoryBusy(false)}
   }
+  async function reviewAgentPlan(plan,decision){
+    if(!chatId||!plan?.revisionSha256)return;
+    setAgentReviewBusy(true);
+    try{
+      const acted=await invoke('lu_agent_review_plan',{
+        chatId,planId:plan.planId,revisionSha:plan.revisionSha256,
+        decision
+      });
+      if(acted)await refreshToolActivity(chatId);
+    }catch(error){
+      setError('Plan review not recorded: '+String(error));
+    }finally{setAgentReviewBusy(false)}
+  }
+  async function cancelAgentPlan(plan){
+    if(!chatId||!plan?.planId)return;
+    setAgentReviewBusy(true);
+    try{
+      const acted=await invoke('lu_agent_cancel_plan',{
+        chatId,planId:plan.planId
+      });
+      if(acted)await refreshToolActivity(chatId);
+    }catch(error){
+      setError('Plan interruption not recorded: '+String(error));
+    }finally{setAgentReviewBusy(false)}
+  }
   async function refreshWriteRecovery(targetChat = chatId) {
     if (!targetChat) { setWriteRecovery([]); return; }
     const records = await invoke('lu_write_recovery', {chatId: targetChat});
@@ -4059,6 +4085,32 @@ function App() {
                   {' '+plan.revisionReview.replaceAll('_',' ')} · Supervisor:
                   {' '+plan.supervisorState.replaceAll('_',' ')}</small>
                 <small>Original saved human turn: {plan.originalHumanTurnId}</small>
+                {plan.pendingSourceChecks>0 &&
+                  <small>Assumptions requiring independent authorized source review:
+                    {' '+plan.pendingSourceChecks}. Approval remains unavailable.</small>}
+                <div className="settingsActions">
+                  {plan.revisionReview==='PENDING_HUMAN_REVIEW'&&plan.revisionSha256&&
+                    <>
+                      <button type="button" className="subtleButton"
+                        disabled={agentReviewBusy||plan.pendingSourceChecks>0}
+                        onClick={()=>void reviewAgentPlan(plan,'approve')}>
+                        Approve plan only
+                      </button>
+                      <button type="button" className="subtleButton"
+                        disabled={agentReviewBusy}
+                        onClick={()=>void reviewAgentPlan(plan,'reject')}>
+                        Reject plan
+                      </button>
+                    </>}
+                  {plan.planState!=='CANCEL_REQUESTED' &&
+                    <button type="button" className="subtleButton"
+                      disabled={agentReviewBusy}
+                      onClick={()=>void cancelAgentPlan(plan)}>
+                      Record cancellation intent
+                    </button>}
+                </div>
+                <small>Approval, rejection and cancellation require a native
+                  confirmation. None launches, resumes or terminates an OS worker.</small>
                 {plan.steps.map(step=>
                   <div className="readProposalCard"
                     key={step.stepIndex} role="group"
