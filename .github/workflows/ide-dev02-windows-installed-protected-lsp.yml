@@ -125,7 +125,7 @@ jobs:
           $project=Join-Path $env:RUNNER_TEMP ('lu-ide-dev02-lsp-project-'+$env:GITHUB_RUN_ID)
           if ((Test-Path $install) -or (Test-Path $project)) { throw 'DENIED: disposable runner not clean' }
           New-Item -ItemType Directory -Path $project | Out-Null
-          [IO.File]::WriteAllText((Join-Path $project 'Cargo.toml'), '[package]'+"\n"+'name = "lu-ide-e2-acceptance"'+"\n"+'version = "0.1.0"'+"\n"+'edition = "2021"'+"\n"+'[lib]'+"\n"+'path = "main.rs"'+"\n")
+          [IO.File]::WriteAllText((Join-Path $project 'Cargo.toml'), '[package]'+"`n"+'name = "lu-ide-e2-acceptance"'+"`n"+'version = "0.1.0"'+"`n"+'edition = "2021"'+"`n"+'[lib]'+"`n"+'path = "main.rs"'+"`n")
           [IO.File]::WriteAllText((Join-Path $project 'main.rs'),"fn compute_value() -> i32 { 7 }`nfn main() {`n    let _v = compute_value();`n    let _bad = unknown_symbol;`n}`n")
           [IO.File]::WriteAllText((Join-Path $project 'main.cpp'),"int compute_value() { return 7; }`nint main() {`n    int v = compute_value();`n    return v + unknown_symbol;`n}`n")
           [IO.File]::WriteAllText((Join-Path $project 'hello.py'),"import os`ndef greet():`n    print('hello')`ngreet()`n")
