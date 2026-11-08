@@ -307,7 +307,7 @@ function App() {
     // An external source hit, diagnostic or programmatic tab selection must
     // make that tab reachable. Manual paging itself never changes selection.
     setTabWindowStart(previous=>centerSelectedTab(projectTabs,activeTabKey,previous));
-  },[projectTabs,activeTabKey]);
+  },[activeTabKey,projectTabs.length,activeProject?.projectId]);
   useEffect(()=>{
     setVisibleTreeCount(INITIAL_VISIBLE_TREE_ENTRIES);
   },[directory,listing?.projectId,listing?.relativeDir]);
