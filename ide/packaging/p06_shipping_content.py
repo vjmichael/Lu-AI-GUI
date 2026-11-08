@@ -224,7 +224,12 @@ def main():
     ap.add_argument("--verify", action="store_true")
     args = ap.parse_args()
     try:
-        base = args.root.absolute().resolve(strict=True)
+        # Check the user-supplied root *before* canonical resolution. Resolving
+        # it first would erase a symlink-root violation.
+        supplied = args.root.absolute()
+        if not stat.S_ISDIR(_lstat(supplied).st_mode):
+            raise Denied("payload_root_not_directory")
+        base = supplied.resolve(strict=True)
         out = args.output.absolute().resolve(strict=False)
         if out == base or base in out.parents:
             raise Denied("receipt_cannot_be_inside_observed_payload")
