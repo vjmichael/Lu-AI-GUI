@@ -333,6 +333,15 @@ fn metadata() -> Vec<CapabilityMeta> {
             "catalog without project"
         ),
         capability!(
+            "source.findProject",
+            "ide_find_in_project",
+            "Find saved source in project",
+            "Read-only bounded literal search of registered project's saved UTF-8 files; generated folders excluded.",
+            "read",
+            "registered open project and nonempty literal query",
+            "revision-tagged source matches, exact byte ranges, skipped counts and truncation"
+        ),
+        capability!(
             "source.list",
             "ide_list_source_directory",
             "List source directory",
@@ -507,7 +516,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 41);
+        assert_eq!(catalog.capabilities.len(), 42);
         assert!(catalog.capabilities.len() <= 48);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -543,7 +552,7 @@ mod tests {
                 "read" | "network_read" | "session_write" | "catalog_write" | "file_write"
             ));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 38);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 40);
     }
 
     #[test]
