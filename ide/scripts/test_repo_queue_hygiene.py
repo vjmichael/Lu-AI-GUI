@@ -40,7 +40,11 @@ class FakeGithub:
     def request(self, method, route):
         if method == "GET":
             rid = int(route.rsplit("/", 1)[-1])
-            return 200, next(r for r in self.old_runs if r["id"] == rid)
+            item = dict(next(r for r in self.old_runs if r["id"] == rid))
+            if rid in self.cancelled:
+                item["status"] = "completed"
+                item["conclusion"] = "cancelled"
+            return 200, item
         assert method == "POST" and route.endswith("/cancel")
         self.cancelled.append(int(route.rsplit("/")[-2]))
         return 202, {}
@@ -83,9 +87,24 @@ class Tests(unittest.TestCase):
         api=FakeGithub([run(1)],[run(2,sha=HEAD)])
         receipt=audit(api,apply=True,now=NOW)
         self.assertEqual(receipt["acceptedRequests"],[1])
+        self.assertEqual(receipt["terminalCancelledRuns"],[1])
+        self.assertEqual(receipt["notTerminalAtAuditEnd"],[])
         self.assertEqual(api.cancelled,[1])
         self.assertEqual(receipt["outcomes"][0]["outcome"],
                          "github_202_cancel_requested_not_terminal")
+
+    def test_202_without_terminal_cancel_is_not_a_verified_cancellation(self):
+        api=FakeGithub([run(1)],[run(2,sha=HEAD)])
+        original=api.request
+        def delayed(method, route):
+            if method == "GET" and route.endswith("/1"):
+                return 200, run(1)
+            return original(method, route)
+        api.request=delayed
+        receipt=audit(api,apply=True,now=NOW)
+        self.assertEqual(receipt["acceptedRequests"],[1])
+        self.assertEqual(receipt["terminalCancelledRuns"],[])
+        self.assertEqual(receipt["notTerminalAtAuditEnd"],[1])
 
     def test_drift_to_new_head_preserves_stale_candidate(self):
         api=FakeGithub([run(1)],[run(2,sha=HEAD)])
