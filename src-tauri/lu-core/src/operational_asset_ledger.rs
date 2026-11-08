@@ -40,6 +40,14 @@ pub struct AssetRecord{
 }
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum AssetPresence{PresentVerified,Missing,ChangedOrUnsafe}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum AssetReuseState{VerifiedPresent,RecordedMissing,RecordedChanged,NotRecorded}
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct AssetReuseDecision{
+    pub state:AssetReuseState,
+    pub record:Option<AssetRecord>,
+}
+
 pub struct OperationalAssetLedger{conn:Mutex<Connection>}
 fn identifier(s:&str)->bool{
     !s.is_empty()&&s.len()<=128&&
@@ -185,6 +193,58 @@ impl OperationalAssetLedger{
         ids.into_iter().map(|id|Self::get_by_id(&conn,&id)?
             .ok_or(AssetError::IdentityConflict)).collect()
     }
+    /// Re-find an already registered asset by original project/name/version,
+    /// without requesting a new OS file picker or rediscovering a package.
+    /// Select only currently SHA-256-verified source-authorized records; if
+    /// multiple historical locations exist, fall back to a verified older one.
+    /// Returns metadata only; caller still needs a fresh effect grant, and
+    /// MUST revalidate or pin an opened handle at the actual use boundary.
+    pub fn resolve_for_reuse(
+        &self,project_id:&str,logical_name:&str,version:&str,
+        mut source_allowed:impl FnMut(&str)->bool
+    )->Result<AssetReuseDecision,AssetError>{
+        if !identifier(project_id)||!label(logical_name)||!label(version){
+            return Err(AssetError::InvalidInput)
+        }
+        let records={
+            let conn=self.conn.lock().map_err(|_|AssetError::Locked)?;
+            let mut stmt=conn.prepare(
+                "SELECT record_id FROM lu_operational_asset_receipts
+                 WHERE project_id=?1 AND logical_name=?2 AND version=?3
+                 ORDER BY rowid DESC LIMIT 24"
+            )?;
+            let ids=stmt.query_map(
+                params![project_id,logical_name,version],
+                |r|r.get::<_,String>(0)
+            )?.collect::<Result<Vec<_>,_>>()?;
+            ids.into_iter().map(|id|Self::get_by_id(&conn,&id)?
+                .ok_or(AssetError::IdentityConflict)).collect::<Result<Vec<_>,_>>()?
+        };
+        let mut stale:Option<AssetReuseDecision>=None;
+        for record in records{
+            if !source_allowed(&record.source_id){continue}
+            let presence=self.revalidate(&record);
+            match presence{
+                AssetPresence::PresentVerified=>return Ok(AssetReuseDecision{
+                    state:AssetReuseState::VerifiedPresent,record:Some(record)
+                }),
+                AssetPresence::Missing|AssetPresence::ChangedOrUnsafe=>{
+                    if stale.is_none(){
+                        stale=Some(AssetReuseDecision{
+                            state:if presence==AssetPresence::Missing{
+                                AssetReuseState::RecordedMissing
+                            }else{AssetReuseState::RecordedChanged},
+                            record:Some(record)
+                        });
+                    }
+                }
+            }
+        }
+        Ok(stale.unwrap_or(AssetReuseDecision{
+            state:AssetReuseState::NotRecorded,record:None
+        }))
+    }
+
     /// A historical record is *not* a live file guarantee. Never return a
     /// usable path as an execution grant; the real tool still needs its
     /// current user task grant and pinned file handle.
@@ -231,6 +291,39 @@ mod tests{
         fs::remove_file(&package).unwrap();
         assert_eq!(reopened.revalidate(&saved),AssetPresence::Missing);
         drop(reopened);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn automatic_reuse_checks_source_and_hash_then_falls_back_to_valid_cached_location(){
+        let root=fixture();fs::create_dir_all(&root).unwrap();
+        let one=root.join("sdk-existing.zip");
+        let two=root.join("sdk-newer.zip");
+        fs::write(&one,b"safe previously verified package").unwrap();
+        fs::write(&two,b"safe newly verified package").unwrap();
+        let ledger=OperationalAssetLedger::open(&root.join("assets.sqlite")).unwrap();
+        let a=proposal(one.clone());
+        let mut b=proposal(two.clone());b.record_id="asset-002".into();
+        ledger.record_verified(&a,|_|true).unwrap();
+        ledger.record_verified(&b,|_|true).unwrap();
+        let latest=ledger.resolve_for_reuse(
+            "lu","Windows SDK package","10.0-test",|_|true).unwrap();
+        assert_eq!(latest.state,AssetReuseState::VerifiedPresent);
+        assert_eq!(latest.record.unwrap().record_id,"asset-002");
+        fs::write(&two,b"changed newer file").unwrap();
+        let fallback=ledger.resolve_for_reuse(
+            "lu","Windows SDK package","10.0-test",|_|true).unwrap();
+        assert_eq!(fallback.state,AssetReuseState::VerifiedPresent);
+        assert_eq!(fallback.record.unwrap().record_id,"asset-001");
+        assert_eq!(ledger.resolve_for_reuse(
+            "lu","Windows SDK package","10.0-test",|_|false).unwrap().state,
+            AssetReuseState::NotRecorded);
+        fs::remove_file(&one).unwrap();
+        let status=ledger.resolve_for_reuse(
+            "lu","Windows SDK package","10.0-test",|_|true).unwrap();
+        assert_eq!(status.state,AssetReuseState::RecordedChanged);
+        assert!(status.record.is_some());
+        assert_eq!(ledger.resolve_for_reuse("lu","NSIS","v1",|_|true)
+            .unwrap().state,AssetReuseState::NotRecorded);
+        drop(ledger);fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn refuses_unverified_source_wrong_digest_conflicting_identity_and_symlink(){

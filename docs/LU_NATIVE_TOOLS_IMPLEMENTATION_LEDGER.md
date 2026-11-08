@@ -1,3 +1,7 @@
+## M3 P1 auto asset reuse + verified applied effect proof — 2026-11-07 (SOURCE; CI PENDING)
+
+New source-authorized project/name/version asset reuse resolver checks prior local SHA-256 and falls back to valid historical copy; independent history UI automatically loads availability during task resumption. Core ContinuityStore links existing APPLIED-only EffectJournal receipts immutably to confirmed task checkpoints; restart and UNCERTAIN rejection tests. No automatic downloads, re-execution or new authorizations. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
 ## M3 P0 hot scroll improvement — 2026-11-07 (SOURCE COMMITTED; NATIVE/INSTALLED PENDING)
 
 Stable-sequence viewport anchoring across page eviction, resume exact source cursor after chat switch, bounded independent History Library forward/back pagination, 192 displayed row cap, synthetic height/10k-row tests plus 520 original-entry native restart tests. CI and real installed Windows scroll acceptance pending. See [M3](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).

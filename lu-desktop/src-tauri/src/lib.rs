@@ -3535,6 +3535,39 @@ fn lu_m3_source_text_page(
     state.chats.original_source_text_page(&chat_id,&source_id,offset_chars,limit_chars)
 }
 
+#[derive(Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+struct M3EffectProofView{
+    checkpoint_id:String,
+    call_id:String,
+    tool_id:String,
+    receipt_sha256:String,
+    receipt_bytes:u64,
+}
+fn m3_effect_view(e:lu_core::continuity::VerifiedEffectEvidence)->M3EffectProofView{
+    M3EffectProofView{
+        checkpoint_id:e.checkpoint_id,call_id:e.call_id,tool_id:e.tool_id,
+        receipt_sha256:e.receipt_sha256,receipt_bytes:e.receipt_bytes
+    }
+}
+fn m3_reuse_view(
+    decision:lu_core::operational_asset_ledger::AssetReuseDecision
+)->Option<M3AssetView>{
+    use lu_core::operational_asset_ledger::AssetReuseState;
+    let status=match decision.state{
+        AssetReuseState::VerifiedPresent=>"verified_present",
+        AssetReuseState::RecordedMissing=>"missing",
+        AssetReuseState::RecordedChanged=>"changed_or_unsafe",
+        AssetReuseState::NotRecorded=>return None
+    };
+    decision.record.map(|record|M3AssetView{
+        record_id:record.record_id,project_id:record.project_id,
+        logical_name:record.logical_name,version:record.version,
+        source_id:record.source_id,
+        location:record.local_path.to_string_lossy().into_owned(),
+        sha256:record.sha256,bytes:record.bytes,presence:status.to_string()
+    })
+}
 /// Host-only, local profile asset registry. No tool or model receives an
 /// execution grant by discovering a package; every current file is rehashed.
 #[derive(Clone,Serialize)]
@@ -3567,6 +3600,96 @@ fn m3_asset_view(
         location:record.local_path.to_string_lossy().into_owned(),
         sha256:record.sha256,bytes:record.bytes,presence
     }
+}
+/// Determine which existing, previously verified build packages are truly
+/// reusable NOW, without repicking/downloading/unpacking them. Read-only.
+#[tauri::command]
+async fn lu_m3_resume_resources(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,project_id:String
+)->Result<Vec<M3AssetView>,String>{
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        state.chats.original_history_page(&chat_id,&chat_id,None,1)?;
+        let prior=state.operational_assets.recent_for_project(&project_id,48)
+            .map_err(|e|format!("Asset history unavailable: {e:?}"))?;
+        let mut seen=std::collections::HashSet::new();
+        let mut result=Vec::new();
+        for record in prior{
+            if !seen.insert((record.logical_name.clone(),record.version.clone())){
+                continue
+            }
+            if result.len()==24{break}
+            let answer=state.operational_assets.resolve_for_reuse(
+                &project_id,&record.logical_name,&record.version,|source|
+                    state.chats.original_source_text_page(&chat_id,source,0,1).is_ok()
+            ).map_err(|e|format!("Prior asset lookup failed: {e:?}"))?;
+            if let Some(view)=m3_reuse_view(answer){result.push(view)}
+        }
+        Ok(result)
+    }).await.map_err(|_|"Asset reuse worker unavailable")?
+}
+#[tauri::command]
+async fn lu_m3_resolve_asset(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,project_id:String,logical_name:String,version:String
+)->Result<Option<M3AssetView>,String>{
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        state.chats.original_history_page(&chat_id,&chat_id,None,1)?;
+        let answer=state.operational_assets.resolve_for_reuse(
+            &project_id,&logical_name,&version,|source|
+                state.chats.original_source_text_page(&chat_id,source,0,1).is_ok()
+        ).map_err(|e|format!("Asset resolution failed: {e:?}"))?;
+        Ok(m3_reuse_view(answer))
+    }).await.map_err(|_|"Asset resolver unavailable")?
+}
+#[tauri::command]
+fn lu_m3_task_effects(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,project_id:String,task_id:String
+)->Result<Vec<M3EffectProofView>,String>{
+    let latest=state.chats.recall_project_continuity(
+        &chat_id,&project_id,&task_id,&state.continuity
+    )?;
+    let Some(latest)=latest else{return Ok(Vec::new())};
+    let links=state.continuity.verified_effects_for_checkpoint(
+        &latest.checkpoint_id,&state.effects
+    ).map_err(|e|format!("Effect evidence unavailable: {e:?}"))?;
+    Ok(links.into_iter().map(m3_effect_view).collect())
+}
+#[tauri::command]
+async fn lu_m3_link_applied_effect(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,project_id:String,task_id:String,call_id:String
+)->Result<Option<M3EffectProofView>,String>{
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let latest=state.chats.recall_project_continuity(
+            &chat_id,&project_id,&task_id,&state.continuity
+        )?.ok_or("No source-backed task checkpoint for this project")?;
+        let effect=state.effects.get(&call_id)
+            .map_err(|e|format!("Effect journal read failed: {e:?}"))?
+            .ok_or("No verified native effect receipt for this call ID")?;
+        if effect.state!=lu_core::journal::EffectState::Applied ||
+           effect.receipt.as_deref().is_none_or(|v|v.is_empty()){
+            return Err("Native effect is not confirmed APPLIED; it cannot be marked complete".into())
+        }
+        let accepted=app.dialog().message(format!(
+            "Attach the confirmed APPLIED native effect to task '{} / {}'?\n\
+             Tool: {}\nCall ID: {}\n\n\
+             This records a verified receipt hash only. It DOES NOT rerun \
+             the operation or grant any new permission.",
+            project_id,task_id,effect.tool_id,call_id
+        )).title("Lu — Link applied tool receipt")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Attach receipt".into(),"Cancel".into()
+          )).blocking_show();
+        if !accepted{return Ok(None)}
+        let verified=state.continuity.link_verified_effect(
+            &latest.checkpoint_id,&call_id,&state.effects
+        ).map_err(|e|format!("Effect evidence not linked: {e:?}"))?;
+        Ok(Some(m3_effect_view(verified)))
+    }).await.map_err(|_|"Effect evidence worker unavailable")?
 }
 #[tauri::command]
 fn lu_m3_resume_continuity(
@@ -6972,6 +7095,10 @@ pub fn run() {
             lu_m3_remember_asset,
             lu_m3_resume_continuity,
             lu_m3_record_continuity,
+            lu_m3_resolve_asset,
+            lu_m3_resume_resources,
+            lu_m3_task_effects,
+            lu_m3_link_applied_effect,
             lu_background_tasks,
             lu_background_guardian_status,
             lu_background_queue_control,

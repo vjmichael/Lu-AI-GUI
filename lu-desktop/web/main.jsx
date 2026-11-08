@@ -53,6 +53,8 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
   const [resumeBlockers,setResumeBlockers]=useState('');
   const [resumeRecord,setResumeRecord]=useState(null);
   const [resumeBusy,setResumeBusy]=useState(false);
+  const [effectCallId,setEffectCallId]=useState('');
+  const [verifiedEffects,setVerifiedEffects]=useState([]);
 
   const requests=useRef(0);
   const scrollRef=useRef(null);
@@ -229,6 +231,23 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
         taskId:resumeTask.trim()
       });
       setResumeRecord(value);
+      setVerifiedEffects([]);
+      // Read-only automatic reconciliation: re-hash registered packages and
+      // recheck APPLIED journal receipts before presenting a next-step plan.
+      if(value){
+        const [assets,effects]=await Promise.all([
+          invoke('lu_m3_resume_resources',{
+            chatId:activeChatId,projectId:resumeProject.trim()
+          }),
+          invoke('lu_m3_task_effects',{
+            chatId:activeChatId,projectId:resumeProject.trim(),
+            taskId:resumeTask.trim()
+          })
+        ]);
+        setAssetProject(resumeProject.trim());
+        setAssetRows(assets);
+        setVerifiedEffects(effects);
+      }
     }catch(e){setError('Task continuity lookup unavailable: '+String(e))}
     finally{setResumeBusy(false)}
   }
@@ -248,6 +267,22 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
       });
       if(saved)setResumeRecord(saved);
     }catch(e){setError('Checkpoint not saved: '+String(e))}
+    finally{setResumeBusy(false)}
+  }
+  async function linkAppliedEffect(e){
+    e.preventDefault();
+    if(!activeChatId||!resumeRecord||!effectCallId.trim()||resumeBusy)return;
+    setResumeBusy(true);setError('');
+    try{
+      const proof=await invoke('lu_m3_link_applied_effect',{
+        chatId:activeChatId,projectId:resumeRecord.projectId,
+        taskId:resumeRecord.taskId,callId:effectCallId.trim()
+      });
+      if(proof){
+        setVerifiedEffects(old=>[...old.filter(x=>x.callId!==proof.callId),proof]);
+        setEffectCallId('');
+      }
+    }catch(e){setError('Effect receipt was not verified: '+String(e))}
     finally{setResumeBusy(false)}
   }
   return <aside className="ansfHistoryPane" aria-label="Independent ANSF history browser">
@@ -316,6 +351,26 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
         <p>Next: {resumeRecord.nextAction}</p>
         {resumeRecord.blockers.map((b,i)=><p key={i}>Blocker: {b}</p>)}
         <small>This is context, not current permission to run any tool.</small>
+        <strong>Previously completed native effects (verified receipts)</strong>
+        {verifiedEffects.length===0&&<small>No linked applied tool receipts.</small>}
+        {verifiedEffects.map(e=><small key={e.callId}>
+          {e.toolId} · {e.callId} · SHA-256 {e.receiptSha256}
+        </small>)}
+        <form className="ansfAssetForm" onSubmit={linkAppliedEffect}>
+          <label>Previously completed tool call ID
+            <input value={effectCallId} maxLength={128}
+              onChange={e=>setEffectCallId(e.target.value)}
+              placeholder="Native effect journal call ID"/>
+          </label>
+          <button type="submit" disabled={resumeBusy||!effectCallId.trim()}>
+            Confirm and link existing APPLIED receipt…</button>
+        </form>
+        <strong>Automatically revalidated project resources</strong>
+        <small>Only verified_present files may be considered for reuse. 
+          A file identity never grants execution.</small>
+        {assetRows.filter(a=>a.projectId===resumeRecord.projectId).map(asset=><small key={asset.recordId}>
+          {asset.logicalName} {asset.version} · {asset.presence}
+        </small>)}
       </section>}
     </details>
     <details className="ansfAssetsMemory">

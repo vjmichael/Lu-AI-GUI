@@ -14,6 +14,9 @@ on:
       - 'src-tauri/lu-core/src/ansf*.rs'
       - 'lu-desktop/tests/m3-*.test.mjs'
       - 'lu-desktop/web/history_window_geometry.mjs'
+      - 'src-tauri/lu-core/src/continuity.rs'
+      - 'src-tauri/lu-core/src/operational_asset_ledger.rs'
+      - 'src-tauri/lu-core/tests/continuity_effect_receipts.rs'
       - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
@@ -46,6 +49,8 @@ jobs:
         run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml m3_independent_history_acceptance -- --nocapture
       - name: Test M2 restart/migration compatibility
         run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml -- --nocapture
+      - name: Test checkpoint links only independently verified APPLIED effect receipts
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test continuity_effect_receipts -- --nocapture
       - name: Test verified operational asset reuse across restart and mutation
         run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib operational_asset_ledger::tests -- --nocapture
       - name: Test canonical ANSF direct source IDs

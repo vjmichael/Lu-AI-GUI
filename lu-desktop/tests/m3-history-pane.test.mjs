@@ -29,7 +29,9 @@ test('History browser is a genuinely independent overlay, not active transcript 
 });
 test('Human can load old pages and continue full original source in bounded slices',()=>{
   assert.match(jsx,/nextBeforeId/);
-  assert.match(jsx,/prependHeight\.current/);
+  assert.match(jsx,/pendingPaneAnchor\.current/);
+  assert.match(jsx,/lu_m3_history_page_after/);
+  assert.match(jsx,/PANE_VISIBLE_ROWS=192/);
   assert.match(jsx,/offsetChars:previous\.nextOffsetChars/);
   assert.match(jsx,/Read next source page/);
 });
