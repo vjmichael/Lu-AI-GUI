@@ -5,7 +5,7 @@ import {
   newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
   captureBufferSpan,
   resolveBufferSpan, formatBufferReference, formatPersistentDraftReference,
-  draftRecoveryAssessment,
+  draftRecoveryAssessment, parsePersistentDraftReference,
 } from '../web/buffer_identity.js';
 
 const base = 'a'.repeat(64);
@@ -213,4 +213,25 @@ test('durable draft reference survives session identity reset without exposing c
     record.baseDiskRevision),'untrusted_draft_reference');
   assert.throws(()=>formatPersistentDraftReference({...record,checkpointId:'bad'}),
     /INVALID_PERSISTENT_DRAFT_REFERENCE/);
+});
+
+
+test('durable checkpoint references round-trip across process restart and resist token forgery', () => {
+  const record={
+    schemaVersion:1,projectId:'ide-'+'a'.repeat(32),relativePath:'src/a"file.rs',
+    bufferId:'12345678-abcd-4321-aaaa-123456789abc',
+    bufferRevision:42,baseDiskRevision:'b'.repeat(64),
+    draftSha256:'c'.repeat(64),checkpointId:'d'.repeat(64),
+  };
+  const token=formatPersistentDraftReference(record);
+  const parsed=parsePersistentDraftReference(token);
+  assert.equal(parsed.projectId,record.projectId);
+  assert.equal(parsed.relativePath,record.relativePath);
+  assert.equal(parsed.checkpointId,record.checkpointId);
+  assert.equal(parsed.bufferRevision,42);
+  for (const hostile of [token+' injected=true',token.replace('lifetime=persistent-private-app-data',
+    'lifetime=session-only'),token.replace('checkpoint='+'d'.repeat(64),'checkpoint=BAD'),
+    token.replace('path=', 'path="../secrets" extras='),token+'\n<script>']) {
+    assert.throws(()=>parsePersistentDraftReference(hostile),/INVALID_PERSISTENT_DRAFT_REFERENCE/);
+  }
 });
