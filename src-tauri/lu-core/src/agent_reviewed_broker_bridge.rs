@@ -53,7 +53,7 @@
     sources:&dyn HostPlanReferenceVerifier,
     authority:&ConversationAuthority,
     original_plan:&str,chat:&str,origin_turn:&str,
-    revision_sha:&str,claim_id:&str,step:u8,
+    owner_id:&str,epoch:u64,revision_sha:&str,claim_id:&str,step:u8,
     broker_origin:&BoundCallOrigin,operation:ReviewedBrokerOperation,
  )->Result<ScheduledBrokerBinding,BridgeError>{
     let saved=ledger.snapshot(original_plan,chat,origin_turn)
@@ -79,6 +79,10 @@
         ||Some(broker_origin.user_turn_id.as_str())==now.review_turn_id.as_deref(){
         return Err(BridgeError::WrongHumanTurn)
     }
+    scheduler.check_live_claim(
+        original_plan,chat,origin_turn,owner_id,epoch,
+        revision_sha,claim_id,step,&broker_origin.user_turn_id
+    ).map_err(|_|BridgeError::NotHostOwned)?;
     let view=scheduler.view(original_plan,chat,origin_turn,ledger)
         .map_err(|_|BridgeError::NotHostOwned)?
         .ok_or(BridgeError::NotHostOwned)?;
@@ -224,7 +228,7 @@
         };
         let pre=||preflight_reviewed_broker(
             &scheduler,&ledger,&revisions,&Source(true),&authority,
-            &plan,&chat,&original,&rev.revision_sha256,&claim,0,
+            &plan,&chat,&original,&owner,1,&rev.revision_sha256,&claim,0,
             &origin,ReviewedBrokerOperation::GitHead
         );
         assert_eq!(pre(),Err(BridgeError::NoOriginalAuthority));
@@ -262,6 +266,15 @@
                 user_turn_id:ident("g-",99),task_id:ident("g-",99)
             },ReviewedBrokerOperation::GitHead
         ),Err(BridgeError::WrongHumanTurn));
+        // A fresh scheduler object has the same SQLite row but no live
+        // original-owner fence. It cannot bind a broker after restart.
+        let reopened=AgentHostScheduler::open(&file).unwrap();
+        assert_eq!(preflight_reviewed_broker(
+            &reopened,&ledger,&revisions,&Source(true),&authority,
+            &plan,&chat,&original,&owner,1,&rev.revision_sha256,&claim,0,
+            &origin,ReviewedBrokerOperation::GitHead
+        ),Err(BridgeError::NotHostOwned));
+        drop(reopened);
         authority.revoke_task(&fresh).unwrap();
         assert_eq!(pre(),Err(BridgeError::WrongCapability));
         drop(receipts);drop(scheduler);drop(revisions);drop(ledger);
