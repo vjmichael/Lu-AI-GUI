@@ -152,3 +152,14 @@ The latest real [Ubuntu 26.04 diagnostic 42435128047](https://github.com/vjmicha
 
 ### GTK native chooser visible-geometry repair
 Actual [Ubuntu26 run 42436702598](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42436702598) failed because `xdotool getactivewindow` was unavailable and AT-SPI exposed no confirmation buttons, despite a showing visible native file chooser. Added an alternative X11 pointer click strictly bounded to that native chooser's AT-SPI rectangle and physical display, never arbitrary screen or app coordinates, with exact real desktop project registration still required. No native success assumed without rerun.
+
+
+### IDE 11 continuation — repair Linux second Xvfb session without a window manager
+
+Native Ubuntu 26.04 installed run [42438169044](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42438169044) did build and install the genuine .deb, verify upstream bundled notice receipts, exercise a failed dpkg upgrade and user-state recovery, launch the real GUI, and reach the GTK chooser. The editor subsequently logged `getactivewindow` absent and `getwindowfocus=1` / BadWindow; four AT-SPI-derived physical pointer actions did not close the chooser. This is a FAIL, not installed editor acceptance.
+
+Root-cause inspection found `Test-Wo8InstalledDeb.sh` starts Openbox only in the *first* graphical smoke's Xvfb session through `wo8_linux_window_acceptance.sh`. The editor begins in a separate Xvfb/DBus session with **no window manager**. Previous focus-keyboard heuristics could not cure missing WM process ownership.
+
+Source repair on isolated P04 GTK diagnostic branch: new `wo8_linux_wm_session.sh` starts `openbox --sm-disable` in the SAME Xvfb/DBus session as the actual installed editor, bounds startup to 10 seconds, and requires the real EWMH `_NET_SUPPORTING_WM_CHECK` root property while its WM process is alive. The fixture denies missing X11/DBus, xprop/xdotool/Openbox, startup timeout, or a WM dying before successful editor return. Shell exit status of the installed AT-SPI test remains authoritative. The WO9 Linux installed ZIP native test now reuses this same verified-session wrapper instead of backgrounding Openbox and immediately exec'ing Python.
+
+This corrects a native test environment bug **without** bypassing OS folder-picking, reading the app catalog directly, injecting Tauri IPC or JavaScript, loosening debugger/service confinement, or auto-approving legal/signing. Newly triggered exact-head Ubuntu 26.04, Ubuntu 24.04 and Windows CI is pending. GTK actual project registration, Save/restart/conflict, ZIP, protected debugger and independent release-target parity remain OPEN.
