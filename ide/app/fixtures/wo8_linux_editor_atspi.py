@@ -183,7 +183,11 @@ def _x11_dialog_activation(attempt):
     try:
         subprocess.run(["xdotool", "windowactivate", "--sync", active],
                        check=True, timeout=5)
-        key("Return" if attempt % 2 == 0 else "alt+o")
+        # An actual Select Folder dialog often uses Alt+S, not Alt+O.
+        # Try the focused default action first, then a native GTK selection
+        # mnemonic. No success is inferred unless the OS dialog closes and
+        # the exact project appears in installed UI.
+        key(("Return", "alt+s", "alt+o", "Return")[attempt % 4])
         print("P04_GTK_X11_CHOOSER=visible_real_os_dialog_keyboard;"
               "attempt=" + str(attempt), flush=True)
         return True
@@ -290,7 +294,7 @@ def _x11_focused_chooser_keyboard(attempt):
             # This physical key is sent only when the OS keyboard-focus window
             # is contained in the real chooser rectangle. A keypress isn't
             # evidence that native project registration completed.
-            key("alt+o" if attempt % 2 == 0 else "Return")
+            key(("alt+o", "alt+s", "Return", "alt+s")[attempt % 4])
             print("P04_GTK_NATIVE_FOCUS=real_x11_focus_within_visible_chooser;"
                   "attempt=" + str(attempt), flush=True)
             return True
@@ -482,6 +486,38 @@ def _native_exact_fixture_typeahead():
     return False
 
 
+def _native_exact_fixture_location():
+    # A real Ubuntu26 run saw zero selectable AT-SPI child rows even after
+    # presenting ROOT.parent, and typeahead did not select a folder. GTK's
+    # Ctrl+L location entry can select the exact existing folder directly.
+    # This remains a physical X11 keyboard action *inside* an independently
+    # observed visible native chooser, not a registry, WebView or IPC action.
+    if not ROOT.is_dir() or not SOURCE.is_file() or not _native_chooser_still_open():
+        return False
+    try:
+        active = subprocess.check_output(
+            ["xdotool", "getactivewindow"], text=True, timeout=5).strip()
+        if not active.isdigit() or int(active) <= 0:
+            return False
+        title = subprocess.check_output(
+            ["xdotool", "getwindowname", active], text=True, timeout=5
+        ).strip().casefold()
+        if title not in ("open", "open folder", "select folder", "choose folder",
+                         "choose a folder", "select a folder", "select"):
+            print("P04_GTK_EXACT_LOCATION=nonchooser_x11_window", flush=True)
+            return False
+        key("ctrl+l")
+        key("ctrl+a")
+        type_text(str(ROOT))
+        key("Return")
+        print("P04_GTK_EXACT_LOCATION=physical_os_entry_of_verified_fixture", flush=True)
+        return True
+    except (OSError, ValueError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired):
+        print("P04_GTK_EXACT_LOCATION=os_keyboard_unavailable", flush=True)
+        return False
+
+
 def select_native_folder():
     # The former parent-path chooser test saw zero AT-SPI rows for the child.
     # GTK's native Ctrl+L location entry accepts an absolute path to the
@@ -504,6 +540,11 @@ def select_native_folder():
     print("P04_GTK_FOLDER_NAVIGATION=entered_exact_fixture_parent",flush=True)
     if not _select_real_fixture_directory():
         _native_exact_fixture_typeahead()
+        # The last real Ubuntu26 run still saw no selected row, despite a
+        # typeahead acknowledgement. Target the *actual* fixture directory
+        # in GTK's own location entry; never infer selection from typing.
+        _native_exact_fixture_location()
+        time.sleep(0.45)
     # GTK SELECT_FOLDER may interpret the first accept as "navigate into
     # selected directory" instead of closing. Native CI proved the real
     # dialog remained open afterward. Confirm only while the authentic OS
@@ -522,6 +563,7 @@ def select_native_folder():
             time.sleep(0.7)
             if not _select_real_fixture_directory():
                 _native_exact_fixture_typeahead()
+                _native_exact_fixture_location()
                 print("P04_GTK_EXACT_PARENT_RESELECTION=attempted",flush=True)
         if not _native_chooser_still_open():
             break
