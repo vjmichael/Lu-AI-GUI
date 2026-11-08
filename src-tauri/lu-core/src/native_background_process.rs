@@ -351,10 +351,16 @@ impl BackgroundProcessSupervisor {
         let is_status=plan.args[5].to_str()==Some("status")
             &&plan.args[6].to_str()==Some("--porcelain=v1")
             &&plan.args[7].to_str()==Some("--untracked-files=no");
-        if !is_head&&!is_status{
+        let is_branch=plan.args[5].to_str()==Some("branch")
+            &&plan.args[6].to_str()==Some("--show-current")
+            &&plan.args[7].to_str()==Some("--no-color");
+        let is_count=plan.args[5].to_str()==Some("rev-list")
+            &&plan.args[6].to_str()==Some("--count")
+            &&plan.args[7].to_str()==Some("HEAD");
+        if !is_head&&!is_status&&!is_branch&&!is_count{
             return Err(BackgroundProcessError::InvalidPlan)
         }
-        self.start_host_approved_internal(plan,Some((output_limit,is_status)))
+        self.start_host_approved_internal(plan,Some((output_limit,is_status||is_branch)))
     }
     fn start_host_approved_internal(
         &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>

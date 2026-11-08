@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "45545e4336fbca2cc0b772d28286196859355878",
-  "trackedFileCount": 645,
+  "sourceCommitBeforeLock": "1a244c2a63aa9cc479270969448d0a511c2b2ad8",
+  "trackedFileCount": 647,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -50,6 +50,10 @@
     {
       "path": ".github/workflows/lu-e1-p06c-typed-git.yml",
       "blob": "0cb61b043baf6ba12eeb76bf46e49d74f599cb9c"
+    },
+    {
+      "path": ".github/workflows/lu-e1-p06d-git-context.yml",
+      "blob": "db91dd69968913f0e5dc9975398a60ba8b5a0829"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -300,6 +304,10 @@
       "blob": "6bf3b28a60a328d3ea24c8b326c85d4cfbf37946"
     },
     {
+      "path": "docs/LU_E1_P06D_GIT_CONTEXT_20261107.md",
+      "blob": "124648d48a0624d1e7e97a8f354841212cdbd4f0"
+    },
+    {
       "path": "docs/LU_E1_P06_THIRDPARTY_ADAPTERS_20261107.md",
       "blob": "01fdcc42396a313382eba362acc09af060e797d5"
     },
@@ -437,7 +445,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "4e61c5d54e18fd7d881bbddc014304d2dc6d66c7"
+      "blob": "f3c6a332922790c654079bee16b317f02d39595b"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1633,7 +1641,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_app_typed_git.rs",
-      "blob": "4a47997f25ebe2213e4cd0e63929d67652cb0ed6"
+      "blob": "745b2fd28231e350964d64b39e1ac07347dc3c0a"
     },
     {
       "path": "src-tauri/lu-core/src/native_app_version_execution.rs",
@@ -1689,7 +1697,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "12bb77f659205f60a8f41ecab6c4a5f673ae6878"
+      "blob": "e080b8de5a1f855c9b4c21e3cc8b6528366012c1"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
