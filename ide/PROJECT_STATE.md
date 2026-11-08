@@ -2,6 +2,9 @@
 
 ## IDE B2: revisioned editor buffers and private durable draft references — November 8, 2026
 
+**Installed acceptance workflow implementation:** Both real unsigned installed test-only Windows NSIS/UIA and Ubuntu Debian/GTK/AT-SPI workflows are committed to the B2 branch, using native OS chooser/editor/system clipboard and process restart, verifying original disk SHA unchanged until explicit Save. These are source/workflow implementations **not accepted installed OS results**. The recovery vault now denies preexisting group/world-readable Unix private directories and pauses opt-in backups on the 24-checkpoint immutable history cap, preserving copied older references. Exact-head native build/UI results remain OPEN.
+
+
 Current-stack B2 branch ide/b2-persistent-draft-recovery-20261108, stacked on B3 #143, ports original standalone PR #43 session-only CodeMirror buffer identity and tests (UUID, revision including Undo, exact Unicode/CRLF selection and bytes, Save-rebase rules). It adds an IDE-private fsynced immutable SHA-256-addressed draft recovery vault with CAS latest head, bounded source and 24-checkpoint history, exact restart load, explicit delete and read-only saved-source root prechecks. Four typed Tauri operations + frontend buttons preserve/copy durable reference, detect recovery on reopen, explicitly recover an old checkpoint (including by pasted reference), and never silently overwrite project files. Private snapshots are plaintext local app-data, not a secure encrypted store or network sync; opt-in continuous checkpointing starts only after human Preserve. New native Win/Linux tests and source CI are committed, but native exact-head and actual unsigned installed NSIS/.deb UI/clipboard/restart acceptance remain OPEN until real results. Original B2 #43 and installed PR #45 preserved. See docs/IDE_B2_DURABLE_DRAFTS_20261108.md.
 
 
