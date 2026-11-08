@@ -292,6 +292,9 @@ pub fn publish_input(
     let manifest_relative_path = match recipe_id {
         "rust_check" | "rust_build" | "rust_tests" => "Cargo.toml",
         "lu_ide_host_tests" => "ide/host/Cargo.toml",
+        "python_pytest" if cfg!(feature = "multilang-worker") => "pyproject.toml",
+        "js_tests" if cfg!(feature = "multilang-worker") => "package.json",
+        "cpp_cmake_build" if cfg!(feature = "multilang-worker") => "CMakeLists.txt",
         _ => return Err(SnapshotError::InvalidName),
     };
     publish_with_manifest(source_root, private_stage_parent, manifest_relative_path)
