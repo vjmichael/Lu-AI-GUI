@@ -50,3 +50,14 @@ The B2 draft reference is independently ported with a new module path to the evo
 `app/tests/draft_ref_port.test.mjs` covers CRLF, Unicode/emoji offsets, byte/UTF-16 differences, undo staleness, identity reset, Save rebase, malformed/out-of-range spans and non-disclosing clipboard formatting. `standalone.test.mjs` checks UI integration and the absence of new host IPC permissions.
 
 **Open gates:** PR #43 frontend tests/build, Linux host tests, Windows Tauri check; installed Windows GUI check for Copy draft reference and clipboard; tab-switch/undo/redo/save/reload behavior on a physical machine. No installer produced or acceptance claimed for this feature.
+
+
+## P05 B2 installed Windows lifecycle closeout candidate (November 7 Phoenix / November 8 UTC)
+
+Extended the existing real unsigned NSIS/UIA fixture, **not** a simulated WebView:
+- A genuine CodeMirror edit creates a volatile draft reference. The OS clipboard must contain a fixed-format non-disclosing UUID, monotone revision, prior disk SHA and SHA-256 of draft contents; disk SHA remains unchanged by Copy.
+- A real editor Undo returns the previous content without restoring the previous reference revision. The fixture verifies the same session UUID, strictly increasing revision and no implicit disk mutation.
+- A subsequent distinct edit is explicitly saved through the **real** Save button. The file must acquire the expected sentinel and changed native SHA. A new clipboard reference must retain the same session UUID, advance revision and rebase `baseDisk` to the exact saved file SHA; the source text may not leak into the reference.
+- A separate installed application process restarts the project through native UIA Reopen/Edit. It must copy a reference with a **different** buffer UUID and the persisted saved SHA. The source's SHA may not change during Copy/restart. The one previous random UUID is transferred between disposable test processes, never across the production IDE or into user persistent memory.
+
+Updated `ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1`, `ide/app/tests/p05_b2_installed_contract.test.mjs` and the dedicated `.github/workflows/ide-p05-b2-installed-native.yml`, which requires an actual unsigned installed NSIS, separately verified source-bound upstream legal notices, the real native picker/editor/Save/clipboard, and uninstall. This is **not** a Linux installed pass, signed-release approval, protected native debugger success, or authorization to retire the original B2 #43 / related historical workflows. Exact-head Windows CI is mandatory before accepting this implementation.
