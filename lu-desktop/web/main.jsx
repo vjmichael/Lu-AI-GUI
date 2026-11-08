@@ -5749,7 +5749,46 @@ function App() {
     </div>}
     {settingsOpen && <div className="settingsBackdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
       <div className="settingsPane" role="dialog" aria-label="Lu settings" aria-modal="true" onClick={e => e.stopPropagation()}>
-        <header><div><h2>Settings</h2><small>Local model management</small></div><button className="quietIcon" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></header>
+        <header><div><h2>Settings</h2><small>Local model management and chat appearance</small></div><button className="quietIcon" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></header>
+        <section className="chatAppearanceSettings" aria-label="Conversation appearance">
+          <h3>Conversation appearance</h3>
+          <small>Colors belong only to this chat. They never alter model input or
+            the original saved messages.</small>
+          {!chatId?<p>Select a conversation to customize it.</p>:<>
+            <div className="appearancePresetRow" role="group" aria-label="Color presets">
+              {CHAT_APPEARANCE_PRESETS.map(preset=>
+                <button type="button" key={preset.name}
+                  disabled={messageDecorationBusy}
+                  onClick={()=>void saveChatAppearance(preset)}
+                  title={'Apply '+preset.name+' colors'}>
+                  {preset.name}
+                </button>)}
+            </div>
+            <div className="chatColorInputs">
+              <label>Chat background
+                <input type="color" value={chatAppearance.background}
+                  disabled={messageDecorationBusy}
+                  onChange={event=>void saveChatAppearance({
+                    ...chatAppearance,background:event.target.value
+                  })}/>
+              </label>
+              <label>Your message bubbles
+                <input type="color" value={chatAppearance.userBubble}
+                  disabled={messageDecorationBusy}
+                  onChange={event=>void saveChatAppearance({
+                    ...chatAppearance,userBubble:event.target.value
+                  })}/>
+              </label>
+              <label>Lu's message bubbles
+                <input type="color" value={chatAppearance.assistantBubble}
+                  disabled={messageDecorationBusy}
+                  onChange={event=>void saveChatAppearance({
+                    ...chatAppearance,assistantBubble:event.target.value
+                  })}/>
+              </label>
+            </div>
+          </>}
+        </section>
         <button type="button" className="subtleButton full"
           aria-expanded={advancedSettingsOpen} onClick={() => setAdvancedSettingsOpen(v => !v)}>
           {advancedSettingsOpen ? 'Hide advanced settings' : 'Advanced settings'}
