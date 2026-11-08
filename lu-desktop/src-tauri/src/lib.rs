@@ -34,6 +34,7 @@ mod workspace_desktop;
 mod reviewed_app_desktop;
 mod reviewed_app_recovery;
 mod reviewed_app_audit;
+mod reviewed_task_continuity;
 mod archive_desktop;
 mod archive_batch_desktop;
 mod archive_split_desktop;
@@ -5131,6 +5132,8 @@ struct NativeToolActivityView{
     repaired_responses:u32,
     #[serde(skip_serializing_if="Option::is_none")]
     reviewed_effects:Option<reviewed_app_audit::ReviewedEffectCounts>,
+    #[serde(skip_serializing_if="Option::is_none")]
+    reviewed_continuity:Option<reviewed_task_continuity::ReviewedTurnContinuity>,
 }
 #[tauri::command]
 fn lu_tool_turn_history(
@@ -5173,6 +5176,19 @@ fn lu_tool_turn_history(
                     profile,&evidence.task_id
                 )?
             }else{None};
+            // E1-P15: derive the original conversation's recovery view only
+            // after the host verifies its already-persisted human turn.
+            // This read-only projection grants no execution or resumption.
+            let reviewed_continuity=if source=="Reviewed app" &&
+                state.chats.trusted_user_turn_text(
+                    &chat_id,&evidence.task_id
+                ).is_some(){
+                let profile=state.catalog_path.parent()
+                    .ok_or("Reviewed task profile missing")?;
+                reviewed_task_continuity::reviewed_turn_continuity(
+                    profile,&chat_id,&evidence.task_id
+                )?
+            }else{None};
             // Model audit success and an APPLIED effect are two different
             // observations. Never label a model final answer as actual OS
             // cleanup, especially for prior UNCERTAIN worker effects.
@@ -5195,7 +5211,7 @@ fn lu_tool_turn_history(
                 tool_feedback:evidence.tool_feedback,
                 rejected_events:evidence.rejections,
                 repaired_responses:evidence.repaired_replies,
-                reviewed_effects,
+                reviewed_effects,reviewed_continuity,
             });
         }
     }
