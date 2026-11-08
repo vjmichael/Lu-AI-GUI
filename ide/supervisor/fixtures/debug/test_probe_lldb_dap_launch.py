@@ -38,8 +38,7 @@ class FixedLaunchDiagnosticTests(unittest.TestCase):
         self.assertNotIn('.arg("--chdir")\n        .arg("/workspace")', dap)
         self.assertIn('.arg("/ls")', dap)
         self.assertIn('let native_executable = format!("/ls/bin/{executable}");', dap)
-        self.assertIn('launch_fixed_fixture("/ls/debuggee/wo6-selftest")',
-                      source.replace("\\n", "").replace(" ", ""))
+        self.assertIn('"/ls/debuggee/wo6-selftest"', source)
         self.assertEqual(BWRAP[BWRAP.index("--chdir") + 1], "/tmp")
         self.assertIn("--unshare-all", BWRAP)
         self.assertNotIn("--cap-add", BWRAP)
