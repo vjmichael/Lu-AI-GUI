@@ -234,7 +234,7 @@ impl AnsfStore{
             "INSERT OR IGNORE INTO ansf_procedure_invalidations
              (procedure_id,correction_entry_id,reason)
              SELECT procedure_id,?3,?4 FROM ansf_verified_procedures
-             WHERE procedure_id=?1 AND session_id=?2",
+             WHERE procedure_id=?1 AND session_id=?2 AND source_entry_id<?3",
             params![procedure_id,session_id,correction_entry_id,reason]
         )?;
         let saved:Option<(i64,String)>=conn.query_row(
@@ -449,6 +449,10 @@ mod tests{
             "lu.build","9.0","0.1",4,&continuity,&journal,|_|true).unwrap().is_empty());
         assert!(book.reusable_verified_procedures("chat-one","lu","build",
             "lu.build","2.1","0.1",4,&continuity,&journal,|_|false).unwrap().is_empty());
+        // A prior user original is not chronologically eligible to invalidate
+        // a later result merely because it is an authentic human message.
+        assert!(book.invalidate_verified_procedure(
+            "procedure-one","chat-one",src,"Older source is not a correction").is_err());
         book.invalidate_verified_procedure("procedure-one","chat-one",correction,
             "New user correction requires review").unwrap();
         assert!(book.reusable_verified_procedures("chat-one","lu","build",

@@ -245,7 +245,7 @@ impl AnsfStore{
         conn.execute(
             "INSERT OR IGNORE INTO ansf_claim_retractions(claim_id,correction_entry_id,reason)
              SELECT claim_id,?3,?4 FROM ansf_verified_claims
-             WHERE claim_id=?1 AND session_id=?2",
+             WHERE claim_id=?1 AND session_id=?2 AND source_entry_id<?3",
             params![claim_id,session_id,correction_entry,reason]
         )?;
         let saved:Option<(i64,String)>=conn.query_row(
@@ -358,6 +358,9 @@ mod tests{
         assert!(book.record_verified_claim(&c2,ClaimReceipt{
             checkpoint_id:"cp".into(),call_id:"call".into(),tool_id:"lu.verify".into()
         },&continuity,&journal,|_|true).is_err());
+        // Earlier original is genuine human data, but NOT a later correction.
+        assert!(book.retract_reported_or_verified_claim(
+            "second","chat-one",first,"Earlier source is not a correction").is_err());
         book.retract_reported_or_verified_claim("second","chat-one",correction,"Wrong").unwrap();
         book.retract_reported_or_verified_claim("second","chat-one",correction,"Wrong").unwrap();
         assert!(book.retract_reported_or_verified_claim("second","chat-one",correction,"Different").is_err());
