@@ -159,6 +159,35 @@ test('native disk cannot be silently rebased in stale review',()=>{
   assert.equal(mergeCanApply(review,tab,editorState,A,null),false);
 });
 
+test('81 distinct overlapping conflicts exceed the fail-closed review cap',()=>{
+  const base=Array.from({length:162},(_,i)=>
+    (i%2===0?'line':'separator')+i+'\n');
+  const draft=base.map((line,i)=>i%2===0?'LOCAL '+i+'\n':line);
+  const disk=base.map((line,i)=>i%2===0?'DISK '+i+'\n':line);
+  assert.equal(MAX_MERGE_CONFLICTS,80);
+  assert.throws(()=>planThreeWayMerge(base.join(''),draft.join(''),
+    disk.join('')),/B11_CONFLICT_BUDGET/);
+});
+
+test('combining individually bounded edits cannot produce an oversized result',()=>{
+  const base=Array.from({length:400},(_,i)=>'base'+i+'\n');
+  const draft=base.map((line,i)=>i<200?'L'.repeat(500)+'\n':line);
+  const disk=base.map((line,i)=>i>=200?'D'.repeat(500)+'\n':line);
+  const plan=planThreeWayMerge(base.join(''),draft.join(''),disk.join(''));
+  assert.equal(plan.conflicts.length,0);
+  assert.throws(()=>renderReviewedMerge(plan,{}),/B11_MERGED_RESULT_TOO_LARGE/);
+});
+
+test('CodeMirror refuses incompatible LF/CRLF before any editor transaction',()=>{
+  const cm=readFileSync(new URL('../web/code_editor.jsx',import.meta.url),'utf8');
+  const before=cm.slice(cm.indexOf('if (!view || !mergeApplyRequest'),
+    cm.indexOf('view.dispatch({changes:{from:0,to:view.state.doc.length,'));
+  assert.match(before,/view\.state\.facet\(EditorState\.lineSeparator\)/);
+  assert.match(before,/breaksMatch\(req\.mergedText\)/);
+  assert.match(before,/breaksMatch\(req\.diskText\)/);
+  assert.match(before,/B11_LINE_ENDING_RELOAD_REQUIRED/);
+});
+
 test('UI is explicit, requires a fresh native read and never dispatches Save',()=>{
   const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
   const cm=readFileSync(new URL('../web/code_editor.jsx',import.meta.url),'utf8');
