@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e2066c16ba67ad62ac8062327fdf75de334649f7",
+  "sourceCommitBeforeLock": "3bf173ae56c02db33e5f7d289991423380b57c5d",
   "trackedFileCount": 636,
   "files": [
     {
@@ -161,7 +161,7 @@
     },
     {
       "path": "benchmarks/e1/e1_p05_real_three_arm.py",
-      "blob": "21a26be3da102d30d467f815a99e06f07f8c026f"
+      "blob": "5cf268430782de9fcbe3e527a4e8db00a20bbebc"
     },
     {
       "path": "benchmarks/e1/e1_p05_xml_oracle.py",
@@ -169,7 +169,7 @@
     },
     {
       "path": "benchmarks/e1/test_e1_p05_real_contract.py",
-      "blob": "fea86bfa2483ff4a01170d9ca8e9a8518c772991"
+      "blob": "5193194ec0dc1b15f27b445b68406d55f0666ab4"
     },
     {
       "path": "benchmarks/e1/test_e1_p05_xml_oracle.py",
@@ -281,7 +281,7 @@
     },
     {
       "path": "docs/LU_E1_P05_COMPARATIVE_20261107.md",
-      "blob": "89af8b9f6c558bbf74d43c9aec5bd1b1d324f2cb"
+      "blob": "c8ca60bf18fcd82080518fef5a2d91aad528182e"
     },
     {
       "path": "docs/LU_E1_REVIEWED_APP_ADMISSION_20261107.md",
@@ -413,7 +413,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "f8c9b92c338f81e85ad282fa49fd27ec4bdc5a05"
+      "blob": "39a3bea0c483981a182dd18b533f97826fe3e0cd"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1221,7 +1221,7 @@
     },
     {
       "path": "src-tauri/lu-core/examples/e1_p05_native_task.rs",
-      "blob": "a1be135ea7f46935e337327874a0217463f1ebd9"
+      "blob": "f39cc4acb5dabe3eb53ed8c279edb25c8aae752d"
     },
     {
       "path": "src-tauri/lu-core/examples/e1_reviewed_artifact_worker.rs",
