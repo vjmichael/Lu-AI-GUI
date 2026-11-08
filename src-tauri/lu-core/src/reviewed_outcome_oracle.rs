@@ -105,7 +105,11 @@ fn resolve_git_ref(git_dir:&Path,reference:&str)->Option<String>{
         let content=small_string(&loose,MAX_HEAD)?;
         return is_hex_hash(&content).then_some(content)
     }
-    let packed=small_string(&git_dir.join("packed-refs"),MAX_PACKED)?;
+    // Git packed-refs is multiline; preserve its lines under the same bounded,
+    // symlink-refusing reader used for loose refs.
+    let packed=String::from_utf8(
+        read_nosymlink(&git_dir.join("packed-refs"),MAX_PACKED)?
+    ).ok()?;
     let mut matched=None;
     for line in packed.lines(){
         if line.starts_with('#')||line.starts_with('^')||line.trim().is_empty(){
