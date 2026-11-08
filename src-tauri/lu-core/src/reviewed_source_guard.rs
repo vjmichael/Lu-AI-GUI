@@ -168,7 +168,7 @@ impl MediaRevisionGuard{
         })
     }
     fn recheck(&mut self)->RevisionObservation{
-        let check=||->Option<()>{
+        let mut check=||->Option<()>{
             let meta=no_links(&self.path)?;
             if !meta.is_file()||!equal_identity(
                 &self.before,&identity(&meta),true){return None}
@@ -252,6 +252,7 @@ mod tests{
         fs::create_dir_all(&dir).unwrap();dir
     }
     #[test]
+    #[cfg(unix)]
     fn pinned_media_detects_in_place_mutation_without_changing_length(){
         let root=root();let path=root.join("approved.wav");
         fs::write(&path,b"first-content").unwrap();
@@ -261,6 +262,16 @@ mod tests{
         fs::write(&path,b"other-content").unwrap();
         assert_eq!(guard.recheck(),RevisionObservation::Changed);
         drop(guard);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn pinned_approved_file_is_stable_when_unchanged(){
+        let root=root();let path=root.join("approved.mp4");
+        fs::write(&path,b"approved-sample").unwrap();
+        let digest=format!("{:x}",Sha256::digest(b"approved-sample"));
+        let mut pinned=SourceRevisionGuard::media(&path,&digest);
+        assert!(!matches!(pinned,SourceRevisionGuard::Unsupported));
+        assert_eq!(pinned.recheck(),RevisionObservation::Stable);
+        drop(pinned);fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn refusal_when_approved_media_digest_does_not_match(){
