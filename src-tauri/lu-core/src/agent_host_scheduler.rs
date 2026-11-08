@@ -377,6 +377,45 @@ impl AgentHostScheduler{
         Ok(SessionReceipt{epoch:1,write:WriteStatus::New,
             execution:"NOT_AUTHORIZED_FOR_EXECUTION"})
     }
+    /// ADMISSION-01: exact process-local owner proof. Unlike a persisted
+    /// owner's name, this host runtime's in-memory fence disappears on
+    /// restart. Do not expose a proof token or executables to the model.
+    #[allow(clippy::too_many_arguments)]
+    pub fn check_live_claim(
+        &self,plan:&str,chat:&str,original_turn:&str,
+        owner:&str,epoch:u64,revision:&str,claim_id:&str,
+        step:u8,new_user_turn:&str,
+    )->Result<(),ScheduleError>{
+        if !scope(plan,chat,original_turn)||!exact(owner,"h-")
+            ||!exact(claim_id,"q-")||!exact(new_user_turn,"g-")
+            ||!sha(revision)||epoch!=1{
+            return Err(ScheduleError::InvalidId)
+        }
+        self.require_live_owner(plan,owner)?;
+        let mut db=self.db.lock().map_err(|_|ScheduleError::Poisoned)?;
+        let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        origin_in_tx(&tx,plan,chat,original_turn)?;
+        revision_in_tx(&tx,plan,revision)?;
+        let active=owned(&tx,plan,owner,epoch)?;
+        if active.state!="OWNED"||active.revision!=revision{
+            return Err(ScheduleError::StaleOwner)
+        }
+        let claim:Option<(String,String,String,String,i64)>=tx.query_row(
+            "SELECT owner_id,fresh_human_turn_id,state,revision_sha256,epoch
+             FROM lu_agent_schedule_proposals
+             WHERE plan_id=?1 AND step_index=?2 AND claim_id=?3",
+            params![plan,step,claim_id],
+            |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))
+        ).optional()?;
+        let Some((claim_owner,fresh,state,sha,claim_epoch))=claim else{
+            return Err(ScheduleError::AlreadyClaimed)
+        };
+        if claim_owner!=owner||fresh!=new_user_turn||sha!=revision
+            ||claim_epoch!=epoch as i64||state!="PROPOSED_NO_EXECUTION"{
+            return Err(ScheduleError::AlreadyClaimed)
+        }
+        Ok(())
+    }
     /// Only proposes an additional step in durable SQLite. Requires a new
     /// saved human turn plus a host-only exact step/budget consent witness.
     /// Neither this proposal nor its owner may dispatch a native application.
