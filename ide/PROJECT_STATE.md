@@ -1,5 +1,10 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## IDE B4: split editor with independent, project-scoped source buffers — November 8, 2026
+
+B4 branch ide/b4-split-editor-current-stack-20261108 is stacked on B2 draft PR #145. The visible current IDE editor now supports two different open files in side-by-side CodeMirror panes (or stacked at smaller display widths), with independent source tab state/undo, no duplicated buffer identities, a secondary-file selector, Make primary and explicit Save second file. The global Ctrl+S chooses the focused pane rather than saving the wrong source. Source/project closure and project switching invalidate a stale secondary pane. Pure B4 JavaScript tests and actual Windows/Linux native host+frontend+locked Tauri compile CI are committed, but exact-head CI and genuinely installed Windows NSIS/Linux Debian two-pane editing acceptance remain OPEN. No new native tool permission, LSP release, Lu Core integration or disk auto-save. Details: docs/IDE_B4_SPLIT_EDITOR_20261108.md.
+
+
 ## IDE B2: revisioned editor buffers and private durable draft references — November 8, 2026
 
 **Installed acceptance workflow implementation:** Both real unsigned installed test-only Windows NSIS/UIA and Ubuntu Debian/GTK/AT-SPI workflows are committed to the B2 branch, using native OS chooser/editor/system clipboard and process restart, verifying original disk SHA unchanged until explicit Save. These are source/workflow implementations **not accepted installed OS results**. The recovery vault now denies preexisting group/world-readable Unix private directories and pauses opt-in backups on the 24-checkpoint immutable history cap, preserving copied older references. Exact-head native build/UI results remain OPEN.
