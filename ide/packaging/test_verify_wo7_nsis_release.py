@@ -97,6 +97,22 @@ class SignedReleaseGateTests(unittest.TestCase):
         self.save()
         self.denied("native_and_installed_acceptance_missing")
 
+    def test_release_signer_must_have_real_private_key_code_signing_eku_and_chain(self):
+        from pathlib import Path
+        s=(Path(gate.__file__).with_name("Sign-Wo7ReviewedArtifact.ps1")
+           .read_text(encoding="utf-8"))
+        for required in (
+            "$SignerThumbprint", "$_.HasPrivateKey",
+            "signing_identity_not_currently_valid",
+            "1.3.6.1.5.5.7.3.3", "certificate_not_valid_for_code_signing",
+            "X509Chain", "X509RevocationMode", "Online",
+            "trusted_public_code_signing_chain_not_verified",
+            "Get-AuthenticodeSignature", "$post.Status -ne 'Valid'"
+        ):
+            self.assertIn(required,s)
+        self.assertNotIn("New-SelfSignedCertificate",s)
+        self.assertNotIn("SkipCertificateCheck",s)
+
     def test_source_sha_drift_denied(self):
         self.data["sourceSha"] = "f" * 40
         self.save()
