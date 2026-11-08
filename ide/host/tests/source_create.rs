@@ -43,7 +43,7 @@ fn create_new_empty_file_and_folder_with_verifiable_native_receipt() {
     let listing = registry.list_source_directory(&id, "docs").unwrap();
     assert!(listing.entries.iter().any(|e| e.name == "readme.md"));
     assert_eq!(fs::read(root.join("project/src/hello.rs")).unwrap(),
-        b"source must survive");
+        b"source must survive".to_vec());
     assert!(!root.join("project/marker").exists());
     fs::remove_dir_all(root).unwrap();
 }
@@ -63,9 +63,9 @@ fn refuses_existing_targets_case_only_aliases_and_never_truncates_source() {
             "{dir}/{name}");
     }
     assert_eq!(fs::read(root.join("project/src/hello.rs")).unwrap(),
-        b"source must survive");
+        b"source must survive".to_vec());
     assert_eq!(fs::read(root.join("project/build.rs")).unwrap(),
-        b"must never execute");
+        b"must never execute".to_vec());
     fs::remove_dir_all(root).unwrap();
 }
 
