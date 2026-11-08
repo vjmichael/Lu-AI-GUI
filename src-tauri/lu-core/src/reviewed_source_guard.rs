@@ -269,7 +269,7 @@ mod tests{
         fs::write(&path,b"approved-sample").unwrap();
         let digest=format!("{:x}",Sha256::digest(b"approved-sample"));
         let mut pinned=SourceRevisionGuard::media(&path,&digest);
-        assert!(!matches!(pinned,SourceRevisionGuard::Unsupported));
+        assert!(!matches!(&pinned,SourceRevisionGuard::Unsupported));
         assert_eq!(pinned.recheck(),RevisionObservation::Stable);
         drop(pinned);fs::remove_dir_all(root).unwrap();
     }
@@ -292,6 +292,32 @@ mod tests{
         fs::write(root.join(".git/HEAD"),"ref: refs/heads/dev\n").unwrap();
         assert_eq!(guard.recheck(),RevisionObservation::Changed);
         drop(guard);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    #[cfg(windows)]
+    fn pinned_windows_media_handle_denies_new_writers_while_allowing_readers(){
+        let root=root();let path=root.join("approved.mp4");
+        fs::write(&path,b"unchanged-source").unwrap();
+        let sha=format!("{:x}",Sha256::digest(b"unchanged-source"));
+        let mut guard=SourceRevisionGuard::media(&path,&sha);
+        assert!(!matches!(&guard,SourceRevisionGuard::Unsupported));
+        assert!(OpenOptions::new().write(true).open(&path).is_err(),
+            "Windows pinned reader must deny competing write opens");
+        assert_eq!(guard.recheck(),RevisionObservation::Stable);
+        drop(guard);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    #[cfg(unix)]
+    fn linked_media_path_is_not_captured_as_approved_file(){
+        use std::os::unix::fs::symlink;
+        let root=root();let original=root.join("original.mp4");
+        let alias=root.join("alias.mp4");
+        fs::write(&original,b"same").unwrap();
+        symlink(&original,&alias).unwrap();
+        let sha=format!("{:x}",Sha256::digest(b"same"));
+        assert!(matches!(SourceRevisionGuard::media(&alias,&sha),
+            SourceRevisionGuard::Unsupported));
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     #[cfg(unix)]
