@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f333a26df263a6fc7562aefcf417dfc66b8bd9c7",
-  "trackedFileCount": 601,
+  "sourceCommitBeforeLock": "dcf43f23b357bcd7da16f2313745af0848825895",
+  "trackedFileCount": 605,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -42,6 +42,10 @@
     {
       "path": ".github/workflows/lu-m4-verified-memory.yml",
       "blob": "d48826f14830a358111b6f569cee8b54c3ce0528"
+    },
+    {
+      "path": ".github/workflows/lu-m5-memory-replay.yml",
+      "blob": "6e110ff3900a5236f8b32b3e5b56dc3ebda4d753"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -144,8 +148,16 @@
       "blob": "57a6487559b2ceb9a63e7c0d8d276f217b15d708"
     },
     {
+      "path": "benchmarks/memory/m5_repeated_task_real_model.py",
+      "blob": "a32b88f9b94f6f8ecbfc4be0ddfef567d14567d7"
+    },
+    {
       "path": "benchmarks/memory/test_cognitum_three_arm.py",
       "blob": "5383faefad94c048b4f87f92bc5f6d5781d7f588"
+    },
+    {
+      "path": "benchmarks/memory/test_m5_repeated_task_contract.py",
+      "blob": "c611bc3e747a00849f224d24a64aba5af9deb185"
     },
     {
       "path": "benchmarks/memory/test_three_arm_real_model.py",
@@ -266,6 +278,10 @@
     {
       "path": "docs/LU_M4_VERIFIED_PROCEDURAL_MEMORY_20261107.md",
       "blob": "9f5e6a1242768c4d496f5f1a3a5bf9e71a216c7b"
+    },
+    {
+      "path": "docs/LU_M5_LOCAL_MEMORY_END_TO_END_20261107.md",
+      "blob": "2c428a8848b6be9514bc0dac7f3baa1a0a4ab22f"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
@@ -857,7 +873,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "299459667b75819010092197d4c5281bbd6b432b"
+      "blob": "47360a6f9af24af27167de388201d3b8c81fd40e"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
