@@ -511,3 +511,6 @@ Owner defers Windows publisher certificate, Linux signing key and external legal
 
 ### Native test-failure diagnostics and bounded GUI recovery
 Nov 7/8 exact-head Ubuntu26 installed app: real rollback, notice bytes and GUI window PASS; GTK folder picker remained open after three legitimate AT-SPI actions, so editor remained open. New exact candidate ranking, bottom/right dialog control selection and native Alt+Up exact folder selection fallback await repeat. Win WO9: native installed app's renderer existed but UIA subtree was empty at startup; added exact foreground OS Tab-based accessibility warmup with hard failure if actual UIA missing. P03 protected debugger remains open; signing/independent legal review deferred.
+
+## Exact native UI diagnostic follow-up
+Windows WO9 real consent x2 and project review PASS, but Git HEAD did not change at instantaneous readback; native test now polls actual commit SHA for 24s (no synthetic success). Ubuntu26 real Debian rollback PASS, but only one generic GTK Open control appeared and project chooser never satisfied OS registration; active visible chooser and exact non-dialog GUI project required, otherwise denied. Source tests added; signing/independent legal review remain explicitly deferred and release false.

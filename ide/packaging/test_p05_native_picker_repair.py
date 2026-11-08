@@ -63,6 +63,24 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn("real_native_consent_dialog_not_observed",section)
         self.assertNotIn("window.__TAURI_INTERNALS__",section)
 
+    def test_linux_gtk_active_chooser_not_hidden_role_and_exact_project_ui(self):
+        source=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
+        checker=source.split("def _native_chooser_still_open():",1)[1].split(
+            "def _registered_native_project_is_exposed():",1)[0]
+        self.assertIn("pyatspi.STATE_SHOWING", checker)
+        self.assertIn("pyatspi.STATE_VISIBLE", checker)
+        self.assertIn('if "file chooser" not in role:', checker)
+        self.assertIn("within_dialog = True", source)
+        self.assertIn("if not _registered_native_project_is_exposed():",source)
+        self.assertIn('deny("native_folder_chooser_did_not_register_project")',source)
+    def test_windows_git_committed_head_must_really_change(self):
+        source=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
+        self.assertIn("$gitDeadline=(Get-Date).AddSeconds(24)",source)
+        self.assertIn("git -C $fixed rev-parse HEAD",source)
+        self.assertIn("WO9_NATIVE_COMMIT_OBSERVATION=unchanged_head",source)
+        self.assertIn("Deny 'wo9_native_commit_not_observed'",source)
+        self.assertIn("git -C $fixed diff-tree --no-commit-id",source)
+
     def test_linux_real_dialog_prefers_exact_select_and_spatial_acceptance(self):
         native=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
         chooser=native.split("def _native_picker_confirm(",1)[1].split(

@@ -776,8 +776,22 @@ try {
       Click 'Confirm separate local commit'
       Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file'
       Require 'Local commit'
-      $after=(git -C $fixed rev-parse HEAD).Trim()
-      if ($LASTEXITCODE -ne 0 -or $gitHeadBefore -eq $after) { Deny 'wo9_native_commit_not_observed' }
+      # Real Win UIA consent invokes asynchronously: the exact native Git
+      # operation is the witness, not the OS dialog click or a UI label.
+      # Wait a bounded interval for a genuinely changed, resolvable commit.
+      $after=$gitHeadBefore
+      $gitDeadline=(Get-Date).AddSeconds(24)
+      while ((Get-Date) -lt $gitDeadline) {
+        $after=(git -C $fixed rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0) { Deny 'wo9_native_git_head_readback_failed' }
+        if ($gitHeadBefore -ne $after) { break }
+        Start-Sleep -Milliseconds 400
+      }
+      if ($gitHeadBefore -eq $after) {
+        $staged=@(git -C $fixed diff --cached --name-only)
+        Write-Host ('WO9_NATIVE_COMMIT_OBSERVATION=unchanged_head;staged_files_'+$staged.Count)
+        Deny 'wo9_native_commit_not_observed'
+      }
       $files=@(git -C $fixed diff-tree --no-commit-id --name-only -r HEAD)
       if ($files.Count -ne 1 -or $files[0] -ne 'main.rs') {
         Deny 'wo9_git_commit_changed_unreviewed_files'

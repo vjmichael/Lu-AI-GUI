@@ -204,11 +204,40 @@ def _native_picker_confirm(attempt=0):
     deny("native_dialog_confirmation_not_found")
 
 def _native_chooser_still_open():
-    # Only a *real* GTK file chooser under this disposable X11 session;
-    # missing OS acceptance never becomes a success.
+    # GTK AT-SPI providers may retain a hidden chooser node *after* an OS
+    # action closes its visible window. A role name alone was previously used
+    # as the open check, producing false "still open" observations.
     for node in elements():
         try:
-            if "file chooser" in (node.getRoleName() or "").casefold():
+            role = (node.getRoleName() or "").casefold()
+            if "file chooser" not in role:
+                continue
+            states = node.getState()
+            if states.contains(pyatspi.STATE_SHOWING) and states.contains(pyatspi.STATE_VISIBLE):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _registered_native_project_is_exposed():
+    # Distinguish the exact project row in the desktop WebView from its name
+    # echoed inside a GTK folder chooser. No direct catalog reads or IPC.
+    for node in elements():
+        try:
+            if (node.name or "").strip() != ROOT.name:
+                continue
+            current = node
+            within_dialog = False
+            for _ in range(14):
+                current = current.parent
+                if current is None:
+                    break
+                role = (current.getRoleName() or "").casefold()
+                if "file chooser" in role or "dialog" in role:
+                    within_dialog = True
+                    break
+            if not within_dialog:
                 return True
         except Exception:
             continue
@@ -290,9 +319,12 @@ def select_native_folder():
         attempts += 1
         time.sleep(0.7)
     if _native_chooser_still_open():
-        print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_still_open_after_bounded_real_actions;"
+        print("P04_NATIVE_GTK_FOLDER_ACCEPT=visible_dialog_still_open_after_bounded_real_actions;"
               "attempts=" + str(attempts),flush=True)
         deny("native_folder_chooser_not_accepted")
+    if not _registered_native_project_is_exposed():
+        print("P04_NATIVE_GTK_FOLDER_ACCEPT=closed_without_exact_project_registration",flush=True)
+        deny("native_folder_chooser_did_not_register_project")
     print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_closed_after_native_action;"
           "confirmations=" + str(attempts),flush=True)
     accessible("Registered projects", seconds=15)
