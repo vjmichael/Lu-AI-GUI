@@ -250,17 +250,17 @@
             "WAITING_FOR_INDEPENDENT_NATIVE_OS_ACCEPTANCE");
         assert_eq!(preflight_reviewed_broker(
             &scheduler,&ledger,&revisions,&Source(true),&authority,
-            &plan,&chat,&original,&rev.revision_sha256,&claim,0,
+            &plan,&chat,&original,&owner,1,&rev.revision_sha256,&claim,0,
             &origin,ReviewedBrokerOperation::MediaFacts
         ),Err(BridgeError::WrongCapability));
         assert_eq!(preflight_reviewed_broker(
             &scheduler,&ledger,&revisions,&Source(false),&authority,
-            &plan,&chat,&original,&rev.revision_sha256,&claim,0,
+            &plan,&chat,&original,&owner,1,&rev.revision_sha256,&claim,0,
             &origin,ReviewedBrokerOperation::GitHead
         ),Err(BridgeError::UnverifiedSource));
         assert_eq!(preflight_reviewed_broker(
             &scheduler,&ledger,&revisions,&Source(true),&authority,
-            &plan,&chat,&original,&rev.revision_sha256,&claim,0,
+            &plan,&chat,&original,&owner,1,&rev.revision_sha256,&claim,0,
             &BoundCallOrigin{
                 conversation_id:chat.clone(),
                 user_turn_id:ident("g-",99),task_id:ident("g-",99)
