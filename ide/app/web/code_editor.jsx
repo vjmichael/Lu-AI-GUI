@@ -207,7 +207,7 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     // Apply only after a direct human choice and exact unchanged draft.
     const insert = completionApplyRequest.insertText;
     if (typeof insert !== 'string' || insert.length > 512 ||
-        view.state.doc.toString() !== completionApplyRequest.expectedDraft) {
+        view.state.sliceDoc() !== completionApplyRequest.expectedDraft) {
       fail();
       return;
     }
