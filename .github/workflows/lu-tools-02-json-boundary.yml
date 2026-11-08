@@ -5,8 +5,21 @@ on:
     branches:
       - lu/tools-02-json-validation-20261103
   pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/model_json_boundary.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'src-tauri/lu-core/src/external_engine*.rs'
+      - 'src-tauri/lu-core/tests/model_json_boundary.rs'
+      - 'src-tauri/lu-core/tests/model_native_files.rs'
+      - 'src-tauri/lu-core/tests/native_agent_tool_turn.rs'
+      - 'src-tauri/lu-core/tests/supervised_native_turn.rs'
+      - 'src-tauri/lu-core/Cargo.*'
+      - '.github/workflows/lu-tools-02-json-boundary.yml'
   workflow_dispatch:
 
+concurrency:
+  group: lu-tools-02-json-boundary-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 

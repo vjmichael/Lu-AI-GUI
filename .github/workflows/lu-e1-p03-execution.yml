@@ -22,7 +22,6 @@ on:
       - 'src-tauri/lu-core/examples/e1_reviewed_*.rs'
       - 'src-tauri/lu-core/tests/e1_reviewed_execution.rs'
       - '.github/workflows/lu-e1-p03-execution.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

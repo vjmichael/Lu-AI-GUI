@@ -12,7 +12,6 @@ on:
       - 'src-tauri/lu-core/tests/native_artifact_inspect.rs'
       - 'src-tauri/lu-core/tests/native_workspace_read_turn.rs'
       - '.github/workflows/lu-kiaf-execution.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

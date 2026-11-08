@@ -9,7 +9,6 @@ on:
   pull_request:
     paths:
       - 'src-tauri/lu-core/**'
-      - 'source-tree.lock.json'
       - '.github/workflows/lu-m4-verified-memory.yml'
   workflow_dispatch:
 permissions:

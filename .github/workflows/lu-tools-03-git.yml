@@ -5,8 +5,17 @@ on:
     branches:
       - lu/tools-03-git-inspection-20261104
   pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/native_git_inspect.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'src-tauri/lu-core/tests/native_git_inspect.rs'
+      - 'src-tauri/lu-core/Cargo.*'
+      - '.github/workflows/lu-tools-03-git.yml'
   workflow_dispatch:
 
+concurrency:
+  group: lu-tools-03-git-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 

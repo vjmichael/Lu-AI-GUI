@@ -18,7 +18,6 @@ on:
       - 'src-tauri/lu-core/tests/e1_artifact_custody.rs'
       - 'src-tauri/lu-core/src/lib.rs'
       - '.github/workflows/lu-e1-p04-artifact-custody.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

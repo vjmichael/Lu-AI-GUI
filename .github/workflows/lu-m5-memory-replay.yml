@@ -18,7 +18,6 @@ on:
       - 'scripts/m5-*.ps1'
       - 'benchmarks/memory/m5_**'
       - '.github/workflows/lu-m5-memory-replay.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

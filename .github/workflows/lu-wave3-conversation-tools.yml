@@ -6,7 +6,6 @@ on:
       - 'lu-desktop/**'
       - 'docs/TOOLS_WAVE3_NORMAL_CONVERSATION.md'
       - '.github/workflows/lu-wave3-conversation-tools.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

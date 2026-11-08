@@ -32,7 +32,6 @@ on:
       - 'src-tauri/lu-core/src/native_web_research.rs'
       - 'src-tauri/lu-core/src/web_*'
       - '.github/workflows/lu-browser-research-acceptance.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

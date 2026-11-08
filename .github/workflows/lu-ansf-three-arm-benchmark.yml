@@ -10,7 +10,6 @@ on:
       - 'src-tauri/lu-core/examples/ansf_memory_baseline.rs'
       - 'src-tauri/lu-core/src/ansf*.rs'
       - '.github/workflows/lu-ansf-three-arm-benchmark.yml'
-      - 'source-tree.lock.json'
 permissions:
   contents: read
 concurrency:
