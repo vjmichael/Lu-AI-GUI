@@ -376,3 +376,6 @@ See the engineering handoff and linked acceptance documents for exact evidence. 
 
 
 - **IDE P06-R1 live OS evidence reader:** Pinned read-only public GitHub Actions snapshot on a single exact commit with independently observed Windows/Linux native jobs. New hostile tests deny stale/foreign/partial/canceled evidence and source-only release promotion; no permission or signing changes. Source CI pending. Standalone P07 interface deferred.
+
+
+- **IDE P06-R2 candidate shipment inventory:** read-only deterministic per-file hash manifest of bounded Windows/Linux supplied installed/unpacked file trees, binary/notice candidates, anti-traversal/reparse checks and change-detection verifier. Tests run independently of protected executors and signed releases. Final legal redistribution review deferred until finished shipping set is known; notices and risk records retained now.

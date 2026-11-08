@@ -139,3 +139,7 @@ The isolated filesystem transaction engine now records an fsync-backed `rolling_
 
 ### P06-R1 technical governance follow-up — exact-head live Actions observation
 Implementation has started on a separate draft stacked on P06 #95. It reads live GitHub Actions run/job results for the same literal SHA and pinned repo/workflow/job identities, preserves latest-failure priority, and writes a read-only 14-day evidence snapshot. Source tests intentionally do not grant P02/P03/P04 native equivalence. The static release matrix remains default denied for protected execution, publisher/legal approval and signed OS release; P05 B2/B3 are still separate pending installed native gates and P07/WO10 deferred. See `IDE_P06_LIVE_NATIVE_EVIDENCE_20261107.md`.
+
+
+### P06-R2 content-based final-shipment groundwork
+The owner defers final legal redistribution review until the completed Lu IDE installer/package contents are known, without waiving obligations or stopping third-party notice collection. A standalone read-only candidate-tree SHA-256 inventory and hostile Windows/Linux source tests are implemented on separate P06-R2 draft. Actual installed binary/package origin binding and publisher review remain independent acceptance gates; no P03/P04/P05 release approval or P07/WO10 implementation follows from source success. See `IDE_P06_R2_SHIPPING_CONTENT_20261108.md`.
