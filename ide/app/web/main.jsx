@@ -9,6 +9,8 @@ import { rememberedWorkspaceFromTabs, checkedRememberedWorkspace,
   revalidatedResumeDecision } from './workspace_layout.js';
 import { diskAuditTargets, classifyDiskAudit,
   summarizeExternalDifference } from './editor_disk_drift.js';
+import { planThreeWayMerge, renderReviewedMerge,
+  conflictExcerpt, mergeCanApply } from './editor_conflict_merge.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
   TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
@@ -103,6 +105,13 @@ function App() {
   const [diskComparison, setDiskComparison] = useState(null);
   const [diskAuditBusy, setDiskAuditBusy] = useState(false);
   const diskAuditSerial = useRef(0);
+  // B11: transient user-reviewed merge only. Never durable, never a Save.
+  const [mergeReview,setMergeReview] = useState(null);
+  const [mergeChoices,setMergeChoices] = useState({});
+  const [mergeApplyRequest,setMergeApplyRequest] = useState(null);
+  const [mergeBusy,setMergeBusy] = useState(false);
+  const mergeSerial = useRef(0);
+  const mergeNonce = useRef(0);
   const workspaceLayoutOp = useRef(null);
   const workspaceLayoutReadVersion = useRef(0);
   const [directory, setDirectory] = useState('');
@@ -242,6 +251,8 @@ function App() {
 
   const activeProjectIdRef = useRef(null);
   activeProjectIdRef.current = activeProject?.projectId ?? null;
+  const selectedMergeTabRef = useRef(null);
+  selectedMergeTabRef.current = activeTabKey;
 
   useEffect(() => {
     // Load only a navigation hint for the active registered project. No
@@ -273,6 +284,11 @@ function App() {
     setDiskAuditReport(null);
     setDiskComparison(null);
     setDiskAuditBusy(false);
+    mergeSerial.current += 1;
+    setMergeReview(null);
+    setMergeChoices({});
+    setMergeApplyRequest(null);
+    setMergeBusy(false);
     gitEvidenceRequest.current += 1;
     setGitEvidenceBusy(false);
     setGitDiff(null);
@@ -1931,6 +1947,9 @@ function App() {
 
   function onEditorChange(key, state, draft) {
     editorStates.current.set(key, state);
+    // Editing invalidates any prior merge agreement immediately. Applying
+    // an approved merge itself also clears the old review, not its callback.
+    setMergeReview(previous=>previous?.tabKey===key ? null : previous);
     // Any earlier external comparison described a different editor revision.
     setDiskComparison(previous=>previous?.tabKey===key ? null : previous);
     setDiskAuditReport(previous=>previous ? {
@@ -2425,6 +2444,167 @@ function App() {
       if (serial===diskAuditSerial.current) setDiskAuditBusy(false);
       finishExplorerIo(ticket);
     }
+  }
+
+  async function prepareExternalMerge(tab) {
+    const projectId=activeProjectIdRef.current;
+    if (!tab || tab.projectId!==projectId ||
+        selectedMergeTabRef.current!==tab.key ||
+        mergeBusy || workspaceLayoutOp.current || explorerIoTicket.current ||
+        savingKey || reviewPending || draftRecoveryBusy || inboxBusy) return;
+    const state=editorStates.current.get(tab.key);
+    if (!state) {
+      setProblem('Open the source editor before reviewing external changes.');
+      return;
+    }
+    const serial=++mergeSerial.current;
+    const ticket=beginExplorerIo();
+    if (!ticket) return;
+    setMergeBusy(true);
+    setMergeReview(null);
+    setMergeChoices({});
+    setProblem('');
+    try {
+      const preview=await invoke('ide_preview_source_file',{
+        projectId,relativePath:tab.relativePath,
+      });
+      const current=tabsRef.current.find(row=>row.key===tab.key);
+      const stillCurrent=serial===mergeSerial.current &&
+        explorerIoTicket.current===ticket &&
+        selectedMergeTabRef.current===tab.key &&
+        activeProjectIdRef.current===projectId &&
+        !!current && current.savedText===tab.savedText &&
+        current.draft===tab.draft && current.revision===tab.revision &&
+        current.bufferRevision===tab.bufferRevision &&
+        current.generation===tab.generation &&
+        editorStates.current.get(tab.key)===state &&
+        state.sliceDoc()===current.draft &&
+        preview?.projectId===projectId &&
+        preview?.relativePath===tab.relativePath &&
+        typeof preview?.text==='string' &&
+        /^[a-f0-9]{64}$/.test(preview?.revision);
+      if (!stillCurrent)
+        throw Error('B11_REVIEW_CONTEXT_CHANGED');
+      if (preview.revision===current.revision) {
+        setHint('The saved disk revision has not changed. No external merge is needed.');
+        return;
+      }
+      const plan=planThreeWayMerge(current.savedText,state.sliceDoc(),preview.text);
+      const review={
+        projectId,tabKey:tab.key,relativePath:tab.relativePath,
+        savedRevision:current.revision,diskRevision:preview.revision,
+        generation:current.generation,bufferRevision:current.bufferRevision,
+        savedText:current.savedText,draftText:state.sliceDoc(),
+        diskText:preview.text,editorState:state,plan,
+      };
+      setMergeReview(review);
+      setHint('Review '+plan.conflicts.length+' overlapping conflict(s). '+
+        'Unrelated line edits are combined. Nothing has been applied or saved.');
+    } catch(error) {
+      if (serial===mergeSerial.current)
+        setProblem('Cannot prepare a verified external merge: '+String(error));
+    } finally {
+      if (serial===mergeSerial.current) setMergeBusy(false);
+      finishExplorerIo(ticket);
+    }
+  }
+
+  async function applyReviewedExternalMerge() {
+    const review=mergeReview;
+    const projectId=activeProjectIdRef.current;
+    if (!review || mergeBusy || mergeApplyRequest ||
+        selectedMergeTabRef.current!==review.tabKey ||
+        projectId!==review.projectId ||
+        workspaceLayoutOp.current || explorerIoTicket.current ||
+        savingKey || reviewPending || draftRecoveryBusy) return;
+    let result;
+    try { result=renderReviewedMerge(review.plan,mergeChoices); }
+    catch(error) {setProblem('Invalid reviewed merge: '+String(error));return;}
+    if (!result.ready) {
+      setProblem('Choose which version to keep for '+result.missing+' before applying.');
+      return;
+    }
+    if (!window.confirm(
+      'Apply the reviewed result ONLY to this unsaved editor buffer? '+
+      'Disk files remain unchanged. Undo can restore the earlier draft; '+
+      'Save will still require a separate explicit action.')) return;
+    const serial=++mergeSerial.current;
+    const ticket=beginExplorerIo();
+    if (!ticket) return;
+    setMergeBusy(true);
+    setProblem('');
+    try {
+      // Revalidate the disk snapshot when the user approves, NOT just when
+      // the preview was prepared. A subsequent external write will still be
+      // fenced by the original native Save expected-revision CAS.
+      const latest=await invoke('ide_preview_source_file',{
+        projectId,relativePath:review.relativePath,
+      });
+      const tab=tabsRef.current.find(item=>item.key===review.tabKey);
+      const state=editorStates.current.get(review.tabKey);
+      if (serial!==mergeSerial.current ||
+          explorerIoTicket.current!==ticket ||
+          selectedMergeTabRef.current!==review.tabKey ||
+          !mergeCanApply(review,tab,state,activeProjectIdRef.current,latest))
+        throw Error('B11_RECHECK_FAILED: source or draft changed; review again');
+      const nonce=++mergeNonce.current;
+      setMergeApplyRequest({
+        nonce,tabIdentity:tab.key+':'+tab.generation,
+        projectId,tabKey:tab.key,relativePath:tab.relativePath,
+        generation:tab.generation,savedRevision:tab.revision,
+        expectedDraft:review.draftText,expectedEditorState:state,
+        mergedText:result.text,
+        diskText:latest.text,diskRevision:latest.revision,
+      });
+    } catch(error) {
+      if (serial===mergeSerial.current) {
+        setMergeBusy(false);
+        setProblem('Merge not applied: '+String(error));
+      }
+    } finally { finishExplorerIo(ticket); }
+  }
+
+  function finishReviewedExternalMerge(nonce,applied) {
+    const req=mergeApplyRequest;
+    if (!req || req.nonce!==nonce) return;
+    setMergeApplyRequest(null);
+    setMergeBusy(false);
+    if (!applied) {
+      setProblem('The editor changed before the merge transaction. No rebase was made.');
+      return;
+    }
+    const tab=tabsRef.current.find(item=>item.key===req.tabKey);
+    const state=editorStates.current.get(req.tabKey);
+    if (!tab || !state ||
+        activeProjectIdRef.current!==req.projectId ||
+        selectedMergeTabRef.current!==req.tabKey ||
+        tab.projectId!==req.projectId ||
+        tab.relativePath!==req.relativePath ||
+        tab.generation!==req.generation ||
+        tab.revision!==req.savedRevision ||
+        state.sliceDoc()!==req.mergedText) {
+      setProblem('Editor identity changed while applying merge. Recheck the source before Save.');
+      return;
+    }
+    // Old private checkpoints stay on disk, but their session buffer
+    // identity must not silently become the new disk revision's authority.
+    clearPrivateDraftSession(req.tabKey);
+    resetBufferIdentity(req.tabKey,req.projectId,req.relativePath,req.diskRevision);
+    setTabs(previous=>previous.map(item=>
+      item.key===req.tabKey && item.generation===req.generation &&
+      item.revision===req.savedRevision
+        ? {...item,savedText:req.diskText,revision:req.diskRevision,
+            dirty:item.draft!==req.diskText}
+        : item));
+    setMergeReview(null);
+    setMergeChoices({});
+    setDiskComparison(null);
+    setDiskAuditReport(null);
+    setReview(null);
+    if (lspSession?.projectId===req.projectId &&
+        lspSession.relativePath===req.relativePath) void stopLspSession();
+    setHint('Applied reviewed merge to the editor only. '+
+      'Original draft remains in CodeMirror Undo. Source Save is still explicit.');
   }
 
   function closeCleanBackgroundTabs() {
