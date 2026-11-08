@@ -348,7 +348,7 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
             ToolTurnOutcome::ToolResult{call_id,ref data,..}=>{
                 assert_eq!(data["ok"],true,"{name} failed");
                 assert_eq!(data["result"][key],expected,"{name} result mismatch");
-                let verification=if matches!(suffix,"gh"|"gb"|"gc"|"fm"){
+                let verification=if matches!(suffix,"gh"|"gs"|"gb"|"gc"|"fm"){
                     "VERIFIED"
                 }else{"UNSUPPORTED"};
                 assert_eq!(
@@ -377,9 +377,9 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
     assert_eq!(durable_ids.len(),10,"five tools each need an outer and OS effect");
     assert_eq!(durable_ids.iter().collect::<BTreeSet<_>>().len(),10,
         "all durable effect identities must be distinct");
-    // This is a genuinely independent second SQLite witness. Git HEAD,
-    // branch, loose commit history and PCM WAV must be verified, while
-    // Git tracked status remains expressly unsupported.
+    // E1-P12: the approved Git index and committed HEAD tree, packed
+    // commit DAG, and PCM WAV are separately observed. No Git/FFprobe
+    // command is rerun by the independent source observers.
     let conn=rusqlite::Connection::open(f.dir.join("effects.sqlite")).unwrap();
     let verified:i64=conn.query_row(
         "SELECT COUNT(*) FROM lu_independent_outcomes WHERE verdict='VERIFIED'",
@@ -390,15 +390,15 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
     let conflicts:i64=conn.query_row(
         "SELECT COUNT(*) FROM lu_independent_outcomes WHERE verdict='CONFLICT'",
         [],|row|row.get(0)).unwrap();
-    assert_eq!((verified,unsupported,conflicts),(4,1,0));
+    assert_eq!((verified,unsupported,conflicts),(5,0,0));
     // The actual Git history result must carry the independent graph
     // method rather than a successful git rev-list stdout claim.
     let proof:(String,String)=conn.query_row(
         "SELECT method,verdict FROM lu_independent_outcomes
-         WHERE method='GIT_HISTORY_LOOSE_DAG_V1'",
+         WHERE method='GIT_HISTORY_OBJECT_DAG_V2'",
         [],|row|Ok((row.get(0)?,row.get(1)?))).unwrap();
     assert_eq!(proof,(
-        "GIT_HISTORY_LOOSE_DAG_V1".to_string(),
+        "GIT_HISTORY_OBJECT_DAG_V2".to_string(),
         "VERIFIED".to_string()
     ));
     drop(conn);
@@ -460,12 +460,26 @@ fn real_git_loose_merge_graph_is_verified_without_invoking_git_by_oracle(){
     });
     assert_eq!(verify_git(&repo,GitReadOperation::HistoryCount,&forged).verdict,
         IndependentOutcomeVerdict::Conflict);
-    // A pack-objects migration is *not* covered by the loose-only
-    // verifier; refuse verification instead of trusting Git's stdout.
+    // A real pack migration is now covered by the bounded Git INDEX/PACK
+    // parser. It must still check object identities and every parent.
     checked_git(&git,&repo,&["repack","-adq"]);
     checked_git(&git,&repo,&["prune-packed"]);
     let after_pack=verify_git(&repo,GitReadOperation::HistoryCount,&reported);
-    assert_eq!(after_pack.verdict,IndependentOutcomeVerdict::Unsupported);
+    assert_eq!(after_pack.verdict,IndependentOutcomeVerdict::Verified);
+    // Corrupt a real pack after successful proof. The independent reader
+    // must reject its checksum, rather than trusting Git's old count.
+    let pack_dir=repo.join(".git/objects/pack");
+    let pack=fs::read_dir(&pack_dir).unwrap()
+        .filter_map(Result::ok)
+        .map(|entry|entry.path())
+        .find(|path|path.extension().is_some_and(|x|x=="pack"))
+        .expect("Git repack must make a native .pack");
+    let mut bytes=fs::read(&pack).unwrap();
+    let last=bytes.len()-1;
+    bytes[last]^=0x40;
+    fs::write(&pack,bytes).unwrap();
+    assert_eq!(verify_git(&repo,GitReadOperation::HistoryCount,&reported).verdict,
+        IndependentOutcomeVerdict::Unsupported);
     fs::remove_dir_all(root).unwrap();
 }
 
