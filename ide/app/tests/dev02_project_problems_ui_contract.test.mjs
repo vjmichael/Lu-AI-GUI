@@ -11,7 +11,7 @@ test('real editor integrates read-only Problems with accessible severity/query a
     'const [projectProblemsOpen, setProjectProblemsOpen] = useState(false)',
     "const [projectProblemSeverity, setProjectProblemSeverity] = useState('all')",
     "const [projectProblemSearch, setProjectProblemSearch] = useState('')",
-    'projectProblems(projectTabs, lspNativeDiagnostics',
+    'const problemsForProject = useMemo(() => projectProblems(',
     'stillCurrentProblem(tab, lspNativeDiagnostics[tab.key], item)',
     "setProjectProblemsOpen(false)",
     'aria-label="Open-project verified language-server problems"',
