@@ -69,7 +69,9 @@ jobs:
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund
           npm run check
-      # Host and supervisor are independent Cargo projects without committed\n      # Cargo.lock. Only the Tauri installer graph has a reviewed immutable lock.\n      - name: Host LSP session and cross-platform containment source regression
+      # Host and supervisor are independent Cargo projects without committed
+      # Cargo.lock. Only the Tauri installer graph has a reviewed immutable lock.
+      - name: Host LSP session and cross-platform containment source regression
         shell: bash
         run: |
           set -euo pipefail
