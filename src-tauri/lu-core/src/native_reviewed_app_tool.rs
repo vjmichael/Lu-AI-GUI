@@ -11,6 +11,7 @@
 //! semantic receipt is verified before returning the typed model result.
 use std::{
     collections::BTreeSet,
+    path::PathBuf,
     sync::Arc,
     time::Duration,
 };
@@ -22,7 +23,7 @@ use crate::{
         ToolOutput,CORE_CONTRACT_VERSION,
     },
     conversation_authority::{BoundCallOrigin,ConversationAuthority},
-    journal::{EffectJournal,EffectState},
+    journal::{EffectJournal,EffectState,IndependentOutcomeVerdict},
     model::{expect_fields,ModelToolCatalog,ModelToolCodec,
         ModelToolDefinition,ModelToolError},
     native_app_typed_git::{
@@ -31,12 +32,13 @@ use crate::{
         RESOURCE_TYPE as GIT_READ_INPUT,RESOURCE_REQUEST as GIT_READ_BYTES,
     },
     native_app_typed_ffprobe::{
-        HostMediaProbeCatalog,HostReviewedMediaProbe,TypedMediaProbeBroker,
+        HostMediaProbeCatalog,HostReviewedMediaProbe,ReviewedContainer,TypedMediaProbeBroker,
         INSPECT_INPUT as MEDIA_INPUT,INSPECT_OUTPUT as MEDIA_OUTPUT,
         MEDIA_READ_INPUT,SEALED_INSPECT_BYTES as MEDIA_EXEC_BYTES,
         SEALED_READ_BYTES as MEDIA_READ_BYTES,
     },
     native_background_process::BackgroundProcessSupervisor,
+    reviewed_outcome_oracle::{verify_git,verify_media},
     registry::NativeToolRegistry,
     tasks::TaskStore,
 };
@@ -105,6 +107,37 @@ impl From<GitReadOperation> for Operation{
 /// Each model-visible operation has zero parameters. Files, directories,
 /// executable paths, aliases, review flags and permissions are ALWAYS host
 /// selected; the codec refuses even a single additional JSON property.
+fn append_outcome_to_model(
+    mut normalized:Value,receipt:&Map<String,Value>
+)->Result<Value,ModelToolError>{
+    let Some(proof)=receipt.get("independentOutcome") else{
+        return Ok(normalized)
+    };
+    let obj=proof.as_object().ok_or_else(||
+        ModelToolError::InvalidResult("invalid independent outcome object".into()))?;
+    if obj.len()!=2{
+        return Err(ModelToolError::InvalidResult("unrecognized proof fields".into()))
+    }
+    let status=obj.get("status").and_then(Value::as_str)
+        .ok_or_else(||ModelToolError::InvalidResult("outcome status missing".into()))?;
+    let method=obj.get("method").and_then(Value::as_str)
+        .ok_or_else(||ModelToolError::InvalidResult("outcome method missing".into()))?;
+    if !matches!(status,"VERIFIED"|"UNSUPPORTED")
+        ||!matches!(method,
+            "GIT_HEAD_DIRECT_V1"|"GIT_BRANCH_DIRECT_V1"|
+            "WAV_PCM_DIRECT_V1"|"GIT_STATUS_UNSUPPORTED_V1"|
+            "GIT_HISTORY_UNSUPPORTED_V1"|"MP4_UNSUPPORTED_V1")
+        ||status=="VERIFIED"&&method.ends_with("_UNSUPPORTED_V1"){
+        return Err(ModelToolError::InvalidResult(
+            "unrecognized independent outcome classification".into()))
+    }
+    normalized.as_object_mut().ok_or_else(||
+        ModelToolError::InvalidResult("invalid normalized payload".into()))?
+        .insert("independentOutcome".into(),json!({
+            "status":status,"method":method
+        }));
+    Ok(normalized)
+}
 struct ReviewedCodec(Operation);
 impl ModelToolCodec for ReviewedCodec{
     fn input_type_url(&self)->&'static str{self.0.input()}
@@ -149,7 +182,7 @@ impl ModelToolCodec for ReviewedCodec{
                     !hash.bytes().all(|b|b.is_ascii_hexdigit()&&!b.is_ascii_uppercase()){
                     return Err(ModelToolError::InvalidResult("invalid commit hash".into()))
                 }
-                Ok(json!({"headCommit":hash}))
+                append_outcome_to_model(json!({"headCommit":hash}),object)
             }
             Operation::TrackedStatus=>{
                 if object.get("kind").and_then(Value::as_str)!=Some("tracked_status"){
@@ -158,7 +191,7 @@ impl ModelToolCodec for ReviewedCodec{
                 let count=object.get("trackedChangedEntries").and_then(Value::as_u64)
                     .filter(|n|*n<=16_384)
                     .ok_or_else(||ModelToolError::InvalidResult("invalid count".into()))?;
-                Ok(json!({"trackedChangedEntries":count}))
+                append_outcome_to_model(json!({"trackedChangedEntries":count}),object)
             }
             Operation::Branch=>{
                 if object.get("kind").and_then(Value::as_str)!=Some("current_branch"){
@@ -171,7 +204,7 @@ impl ModelToolCodec for ReviewedCodec{
                         b.is_ascii_alphanumeric()||matches!(b,b'.'|b'_'|b'/'|b'-')))){
                     return Err(ModelToolError::InvalidResult("branch invalid".into()))
                 }
-                Ok(json!({"currentBranch":branch}))
+                append_outcome_to_model(json!({"currentBranch":branch}),object)
             }
             Operation::History=>{
                 if object.get("kind").and_then(Value::as_str)!=Some("history_count"){
@@ -179,7 +212,7 @@ impl ModelToolCodec for ReviewedCodec{
                 }
                 let count=object.get("historyCommitCount").and_then(Value::as_u64)
                     .ok_or_else(||ModelToolError::InvalidResult("history invalid".into()))?;
-                Ok(json!({"historyCommitCount":count}))
+                append_outcome_to_model(json!({"historyCommitCount":count}),object)
             }
             Operation::MediaFacts=>{
                 if object.get("rawMediaPathPersisted")!=Some(&Value::Bool(false))
@@ -193,7 +226,7 @@ impl ModelToolCodec for ReviewedCodec{
                 let streams=object.get("streams").and_then(Value::as_array)
                     .filter(|v|!v.is_empty()&&v.len()<=16)
                     .ok_or_else(||ModelToolError::InvalidResult("streams invalid".into()))?;
-                Ok(json!({"durationMilliseconds":duration,"streams":streams}))
+                append_outcome_to_model(json!({"durationMilliseconds":duration,"streams":streams}),object)
             }
         }
     }
@@ -215,12 +248,16 @@ enum ReviewedBackend{
         broker:Arc<TypedGitReadBroker>,
         resource_id:String,
         read_tool_id:String,
+        repository_root:PathBuf,
     },
     Media{
         catalog:Arc<HostMediaProbeCatalog>,
         broker:Arc<TypedMediaProbeBroker>,
         profile_id:String,
         read_tool_id:String,
+        approved_media_path:PathBuf,
+        media_sha256:String,
+        reviewed_container:ReviewedContainer,
     },
 }
 struct ReviewedTool{
@@ -344,10 +381,58 @@ impl NativeTool for ReviewedTool{
                     type_url:descriptor.output_type_url.clone(),
                     bytes:bytes.clone(),
                 }).map_err(|_|refused("OS effect receipt schema mismatch"))?;
+                // The actual OS effect is APPLIED, but its reported facts are
+                // not independently trusted until a DIFFERENT host-only
+                // observation of the original reviewed resource agrees.
+                let oracle=match backend.as_ref(){
+                    ReviewedBackend::Git{repository_root,..}=>{
+                        let git_op=match operation{
+                            Operation::Head=>GitReadOperation::HeadCommit,
+                            Operation::TrackedStatus=>GitReadOperation::TrackedStatus,
+                            Operation::Branch=>GitReadOperation::CurrentBranch,
+                            Operation::History=>GitReadOperation::HistoryCount,
+                            _=>return Err(refused("wrong Git outcome verifier"))
+                        };
+                        verify_git(repository_root,git_op,&value)
+                    },
+                    ReviewedBackend::Media{
+                        approved_media_path,media_sha256,reviewed_container,..
+                    }=>verify_media(
+                        approved_media_path,media_sha256,*reviewed_container,&value
+                    ),
+                };
+                // Persist the SECOND observation against the EXACT effect
+                // bytes. Journal failure MUST deny model-visible success.
+                journal.record_independent_outcome(
+                    &worker_id,&bytes,oracle.verdict,oracle.method,
+                    oracle.observed_sha256.as_deref()
+                ).map_err(|_|refused("independent outcome journal unavailable"))?;
+                if oracle.verdict==IndependentOutcomeVerdict::Conflict{
+                    return Err(refused(
+                        "host-observed resource contradicts reviewed application result"
+                    ))
+                }
+                // A small status tag is the only new model-visible data.
+                // Never forward source paths, evidence digests or process
+                // output. The original inner effect receipt is immutable.
+                let label=if oracle.verdict==IndependentOutcomeVerdict::Verified{
+                    "VERIFIED"
+                }else{"UNSUPPORTED"};
+                let mut annotated=value;
+                annotated.as_object_mut()
+                    .ok_or_else(||refused("reviewed result not an object"))?
+                    .insert("independentOutcome".into(),json!({
+                        "status":label,"method":oracle.method
+                    }));
+                let result=serde_json::to_vec(&annotated)
+                    .map_err(|_|refused("reviewed outcome could not be encoded"))?;
+                if result.len()>16_384{
+                    return Err(refused("reviewed verified result exceeds bound"))
+                }
                 Ok(ToolOutput{
                     payload:ProtoPayload{
                         type_url:descriptor.output_type_url,
-                        bytes,
+                        bytes:result,
                     },
                 })
             }).await.map_err(|_|refused("reviewed app worker stopped"))?
@@ -408,6 +493,7 @@ pub fn register_reviewed_application_tools(
             ).map_err(|e|format!("Git broker unavailable: {e:?}"))?),
             resource_id:String::new(),
             read_tool_id:String::new(),
+            repository_root:PathBuf::new(),
         }))
     };
     for (operation,record) in git_configs{
@@ -417,6 +503,7 @@ pub fn register_reviewed_application_tools(
                 catalog:Arc::clone(catalog),broker:Arc::clone(broker),
                 resource_id:record.resource_id.clone(),
                 read_tool_id:record.read_tool_id.clone(),
+                repository_root:record.repository_root.clone(),
             }),
             _=>unreachable!(),
         };
@@ -453,6 +540,9 @@ pub fn register_reviewed_application_tools(
             ).map_err(|e|format!("media broker unavailable: {e:?}"))?),
             profile_id:record.profile_id,
             read_tool_id:record.read_tool_id,
+            approved_media_path:record.approved_media_path,
+            media_sha256:record.media_sha256,
+            reviewed_container:record.reviewed_container,
         });
         let descriptor=ToolDescriptor{
             id:record.execute_tool_id,
