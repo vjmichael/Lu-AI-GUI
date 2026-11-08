@@ -2,6 +2,8 @@
 
 ## DEV-02.6B original resource closure and native protected three-provider protocol (November 8, 2026)
 
+**DEV-02.6B production-stager correction:** The approved-release verifier now rejects binary-only clangd packages and requires independent cross-OS native resource-file source/SHA inventories; Windows NSIS and Linux Debian staging both copy the reviewed DLL/Clang resource tree and rehash it into the whole-bundle Rust pin. Existing source tests were extended for exact preservation/tamper/path denials. The actual release manifest remains disabled. Exact-head native source/protocol verification and original archive dynamic closure are still OPEN.
+
 Draft PR #141 stacked on #140 creates a fail-closed candidate assembler for *all original release regular-file bytes*, not only the executable, for clangd, rust-analyzer and Ruff on Windows/Linux; maps the original DLL and Clang lib/clang resource paths into per-server fixed worker layout, validates every file SHA+quota and four original notice bytes. A separate Rust fixture uses the real Windows protected SCM/AppContainer/Job or Linux Bwrap/delegated cgroup worker for live initialize, diagnostics, clangd/Rust semantic queries, cancellation, process reaping, and fsynced restart receipts. Manual independent protected runner workflows are committed, plus hosted full-resource and source-compile CI, **but genuine protected execution is NOT established unless these jobs pass at the exact SHA**. ReleaseApproved, redistribution/legal/signing, full dynamic loader closure, installed NSIS/Debian GUI and real user OS consent remain OPEN. See docs/IDE_DEV02_6B_FULL_NATIVE_RESOURCES_AND_PROTECTED_PROTOCOL_20261108.md.
 
 ## DEV-02.6A actual native LSP dependency audit and version smoke (November 8, 2026)
