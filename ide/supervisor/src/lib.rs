@@ -120,7 +120,10 @@ fn validate_plan(value: &JobPlan) -> bool {
         && (matches!(
             value.recipe_id.as_str(),
             "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
-        ) || (cfg!(feature = "lsp-transport")
+        ) || (cfg!(feature = "multilang-worker")
+            && matches!(value.recipe_id.as_str(),
+                "python_pytest" | "js_tests" | "cpp_cmake_build"))
+            || (cfg!(feature = "lsp-transport")
             && matches!(
                 value.recipe_id.as_str(),
                 "lsp_rust_analyzer" | "lsp_clangd" | "lsp_ruff"
