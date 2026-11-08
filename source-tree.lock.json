@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c935ba05c105ec29bd7bb858e1aaf3ba2fa14fbe",
+  "sourceCommitBeforeLock": "705a37fb6e50705edf9ca35a4c8d9e904325b70d",
   "trackedFileCount": 724,
   "files": [
     {
@@ -1261,7 +1261,7 @@
     },
     {
       "path": "lu-desktop/tests/reviewed-app-desktop.test.mjs",
-      "blob": "c030673f3eeadf869f1349290ffe8621c0d1abb1"
+      "blob": "77aaa9a49f6f6ded61a90003e281eb285733cbec"
     },
     {
       "path": "lu-desktop/tests/reviewed-task-continuity.test.mjs",
@@ -2285,7 +2285,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/reviewed_outcome_oracle.rs",
-      "blob": "2cc4a1ee1efa569d61cc4c70956d9b4592d43c39"
+      "blob": "d362e73e486790d52553d54820688322d281c8fd"
     },
     {
       "path": "src-tauri/lu-core/src/reviewed_source_guard.rs",
