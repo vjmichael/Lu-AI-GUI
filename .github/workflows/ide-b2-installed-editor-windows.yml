@@ -1,0 +1,137 @@
+name: IDE B2 real installed Windows private draft reference and recovery
+on:
+  push:
+    branches: ['ide/b2-persistent-draft-recovery-20261108']
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/docs/IDE_WORK_ORDER_08_INSTALLED_E2E_20261107.md'
+      - '.github/workflows/ide-b2-installed-editor-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  installed-unsigned-native-ui:
+    runs-on: windows-2022
+    timeout-minutes: 85
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Prove exact source checkout before installed build
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ine '${{ github.event.pull_request.head.sha || github.sha }}') {
+            throw 'DENIED: installed Windows source checkout is not exact pull-request head'
+          }
+      - name: Validate frontend and Rust host contract
+        working-directory: ide/app
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Fetch resolved Cargo sources and embed third-party license notices
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: installer resolved lock graph differs from reviewed OS evidence' }
+          npm ci --prefix ide/app --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: npm locked install failed' }
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: Cargo locked resolution failed' }
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: locked reinstall changed OS dependency graph' }
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: cannot resolve native dependency license sources' }
+          python ide/packaging/verify_tauri_minor.py --repo-root .
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: resolved Tauri minor mismatch' }
+          python ide/packaging/upstream_notice_receipt.py --repo-root . --source-sha $env:SOURCE_SHA --output ide/app/src-tauri/upstream-notice-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: upstream licenses not retrieved from exact origins' }
+          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --upstream-receipt ide/app/src-tauri/upstream-notice-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: third-party verification licenses not generated' }
+          Write-Host 'P04_UNSIGNED_INSTALLER_LICENSES=ACTUAL_RESOLVED_NOTICES_BUNDLED_NO_RELEASE_APPROVAL'
+      - name: Build real default-disabled unsigned Windows NSIS
+        working-directory: ide/app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: real installed E2E NSIS build failed' }
+      - name: Verify all collected legal bytes against exact unsigned NSIS hash
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $setup=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
+          if ($setup.Count -ne 1) { throw 'DENIED: exact verified NSIS candidate required' }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --require-upstream --artifact $setup[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: packaged Windows licenses do not match source and installer hash' }
+      - name: Attach unsigned Windows NSIS and matching resolved license bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-p04-windows-unsigned-verification
+          path: |
+            ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
+            ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/verification-package-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Parse real Windows UI acceptance fixture without executing it
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1').Path,[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { throw "DENIED: native acceptance fixture has invalid PowerShell: $($errors[0])" }
+      - name: Parse actual B2 installed OS UIA fixture before starting installer
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'ide/app/fixtures/Test-B2InstalledDraftRecovery.ps1').Path,
+            [ref]$tokens,[ref]$errors)
+          if ($errors.Count) {throw "DENIED: actual B2 Windows installed fixture PowerShell parser error: $($errors[0])"}
+      - name: Install signed-off hash-bound unsigned NSIS and click REAL editor to preserve and recover draft
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $setup=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
+          if ($setup.Count -ne 1) {throw 'DENIED: exact one reviewed unsigned NSIS required'}
+          $evidence=Join-Path $env:RUNNER_TEMP "ide-b2-installed-evidence"
+          $script=(Resolve-Path 'ide/app/fixtures/Test-B2InstalledDraftRecovery.ps1').Path
+          & pwsh -NoProfile -Sta -File $script -InstallerPath $setup[0].FullName -EvidenceDirectory $evidence
+          if ($LASTEXITCODE -ne 0) {throw "DENIED: actual installed editor or OS clipboard/restart failed"}
+          $report=Get-Content (Join-Path $evidence 'installed-acceptance.json') -Raw | ConvertFrom-Json
+          foreach($key in @('installed','launched','uia','projectRegistered','editorOpened','edited',
+                            'clipboardVerified','durableClipboardVerified','recoveredAfterRestart',
+                            'noImplicitSave','completed')){
+            if ($report.$key -ne $true) {throw "DENIED: native B2 installed acceptance missing $key"}
+          }
+          $installRoot=Join-Path $env:RUNNER_TEMP 'LuIdeInstalledAcceptance/Installed'
+          $uninstallers=@(Get-ChildItem -Path $installRoot -Filter '*uninstall*.exe' -File)
+          if ($uninstallers.Count -ne 1) {throw 'DENIED: unsigned installed desktop uninstaller missing'}
+          $uninstall=Start-Process -FilePath $uninstallers[0].FullName -ArgumentList '/S' -PassThru -Wait
+          if ($uninstall.ExitCode -ne 0) {throw 'DENIED: NSIS failed to uninstall'}
+          Write-Host 'B2_NATIVE_INSTALLED_NSIS_DURABLE_REFERENCE_RESTART_RECOVERY=PASS'
+          Write-Host 'B2_INDEPENDENT_SIGNING_LEGAL_RELEASE=NOT_APPROVED'
+      - name: Preserve real installed B2 evidence including failure and source hash
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-b2-windows-real-installed-draft-evidence
+          path: ${{ runner.temp }}/ide-b2-installed-evidence/
+          if-no-files-found: warn
+          retention-days: 7
