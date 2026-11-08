@@ -92,6 +92,9 @@ jobs:
           node --test lu-desktop/tests/reviewed-app-desktop.test.mjs \
             2>&1 | tee e1-p09-evidence/reviewed-ui-contract.log
           grep -Eq '# pass [5-9]' e1-p09-evidence/reviewed-ui-contract.log
+          node --test lu-desktop/tests/reviewed-tool-feedback.test.mjs \
+            2>&1 | tee e1-p09-evidence/reviewed-feedback-contract.log
+          grep -Fq '# pass 5' e1-p09-evidence/reviewed-feedback-contract.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

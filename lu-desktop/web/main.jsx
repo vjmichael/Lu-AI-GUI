@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
+import {explainToolOutcome} from './reviewed_tool_feedback.mjs';
 import { fullEditChangeLines } from './edit_diff.mjs';
 import { MarkdownView } from './markdown_view.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
@@ -4031,7 +4032,9 @@ function App() {
           {(toolHistoryByChat[chatId]||[]).map(item=>
             <div key={item.source+':'+item.taskId} className="readProposalCard"
               role="group" aria-label={'Tool audit '+item.taskId}>
-              <strong>{item.source} — {item.state.replaceAll('_',' ')}</strong>
+              <strong>{item.source} — {explainToolOutcome(item.source,item.state).title}</strong>
+              <small>{explainToolOutcome(item.source,item.state).meaning}</small>
+              <small>Next safe step: {explainToolOutcome(item.source,item.state).nextStep}</small>
               <small>{item.recordedAt} · Task {item.taskId}</small>
               <small>{item.modelResponses} model responses ·
                 {item.toolFeedback} tool results ·
