@@ -1,5 +1,7 @@
 # Lu IDE — Development changelog
 
+- **DEV-03.2A fixed protected Cargo Build (Nov 8):** Existing pinned, native-approved Cargo OS worker now also accepts a fourth exact rust_build recipe on both platforms, without shell/worker-boundary expansion. Seven-profile discovery and Jobs UI updated. 16 development-only JS assertions passed; actual native/installed gates OPEN.
+
 - **DEV-03.1 read-only project run profiles (Nov 8):** Began Group D general Build/Run/Test without expanding execution authority. Six host-verified fixed manifest conventions for Rust/Cargo, Python/pyproject, JS/package.json, C++/CMake and Lu IDE host Cargo; metadata-only bounded tests/ hints. Jobs UI can inspect saved manifest SHA and select only existing protected Cargo recipes, never run Python/npm/CMake scripts or infer test success. Added typed native command and registry (48 capabilities/45 schema types), six native filesystem cases and nine frontend tests (9/9 passed under exact-source V8 emulation). Real Node/Rust/Tauri Windows/Linux and installed OS acceptance OPEN; no modified WO6 worker.
 
 
