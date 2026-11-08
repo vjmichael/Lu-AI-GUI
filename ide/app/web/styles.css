@@ -371,3 +371,13 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .taskLinkedSourceRow>span{color:#edc694}
 .taskLinkedSourceRow>small{color:#b7d2e5}
 .taskLinkedSourceRow>.ghostBtn{margin-left:auto}
+
+/* DEV-03.1: read-only fixed build/test profile discovery, never run authority. */
+.dev03ProfileGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:10px 0}
+.dev03ProfileCard{display:flex;flex-direction:column;gap:7px;min-width:0;padding:11px;background:#0d2538;border:1px solid #35566e;border-radius:7px;color:#dbebf7}
+.dev03ProfileCard>.capabilityHeading{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.dev03ProfileCard>.capabilityHeading small{color:#b8d2e5}
+.dev03ProfileCard p{margin:0;overflow-wrap:anywhere;font-size:12px;line-height:1.5}
+.dev03ProfileCard>small{color:#a5cada;overflow-wrap:anywhere}
+.dev03ProfileCard>.ghostBtn{align-self:start}
+@media(max-width:900px){.dev03ProfileGrid{grid-template-columns:minmax(0,1fr)}}
