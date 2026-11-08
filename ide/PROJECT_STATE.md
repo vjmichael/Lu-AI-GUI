@@ -1,5 +1,17 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## IDE P02–P06 native continuation update (November 7)
+
+P05 source integrity now independently pins all 38 required workflow blobs in both preserved audit files; no original checks or PRs retired. On prior exact PR #97 head the genuine Linux protected clangd native normal/cancellation tests and unsigned installed Windows WO8 passed, but Windows protected clangd/LLDB-DAP, Linux fixed LLDB-DAP, Linux installed GTK and cross-platform P02/P06 queued jobs remain OPEN. Current source adds bounded LLDB-DAP alternate response error classification, GTK native chooser caption coverage and owned Windows consent regression guards without broadening tool authority. Actual signed two-version installer upgrades and legal redistribution approval remain intentionally unaccepted; P07/WO10 is deferred.
+
+
+## IDE 10 — P02 Linux/P06 notice evidence, P03/P04 native repairs (November 7)
+
+The active additional draft development branch `ide/p03-p04-native-closeout-20261107` starts from P06 #95 exact source `55f70b66bdbdfded57ee416011881eb9965904f6`; P01–P06 stacked originals remain draft and none were merged/retired. P02 Windows native source and WO8 installed tests passed at that parent exact SHA, while Ubuntu source, genuine Debian installed GTK, and P06 Ubuntu notice jobs were **queued** at inspection; no Linux acceptance inferred. P06 archived Windows report at that parent SHA records 521 resolved inventory entries and zero missing package-specific notices but the seven special MPL/r-efi and separate embedded-compiler, Apple/native SDK and WebView2 runtime obligations remain unapproved; legal/signing/release approval FALSE.
+
+P03 continuation repaired the malformed Windows clangd native CI inline PowerShell PE-import script (prior native ParserError) and added early exact-script AST parser regression; the PE check is diagnostic only, **not** an AppContainer/SCM/Job/LLDB positive witness. P04 continuation made the real installed native-dialog witness accept owned Window/Pane UIA fragments only with exact button/title and OS InvokePattern (prior Windows WO9 correctly denied missing dialog); and made fsynced disposable upgrade/rollback worker-quiescence admission reject boolean/float/string/null/non-integer counts, with hostile subprocess-based tests. **These new source changes await exact new-head CI and actual Win/Linux installed native results.** Signed two-version installer transitions, production worker reconciliation/rollback, final license clearance and protected native Run/Test/Debug remain OPEN. P05 native-gated PR/workflow retirement deferred; P07/WO10 Lu integration deferred until Lu Core v1.0.
+
+
 ## P06 now has source-committed, OS-reviewed dependency lockfiles (November 7)
 
 Both original CI-approved immutable Cargo.lock and npm package-lock.json bytes have been committed directly as source blobs; reviewed SHA-256 and original Git blob identities are enforced on both OSs. The P06 temporary read-only lockfile exporter is removed; source CI now runs npm ci and Cargo --locked. Native builds/GUI, 48 historic missing license notices (new evidence pending), signed release, independent license review, and protected OS acceptance remain separate release gates.
@@ -488,3 +500,23 @@ Actual failed CI logs, their job IDs, and the corrective commits are recorded in
 - [Chronological changelog](CHANGELOG.md), [continuity protocol](CONTINUITY_PROTOCOL.md), [engineering handoff](ENGINEERING_HANDOFF.md), [capability-first architecture](docs/CAPABILITY_FIRST_ARCHITECTURE.md).
 - Repository branch source was inspected using the GitHub connector. No local checkout or user Windows filesystem was inspected. **No R3.6–A3 Windows installer or local NSIS package has been verified in this session.**
 - Do not infer that a Git commit is a tested build, that a CI success is an installed launch, or that historical resource memory authorizes execution.
+
+
+## IDE native release and external review — November 7/8, 2026
+
+The active draft PR #97 continues P02–P06. Windows WO9 real OS popup caption is UIA Text/Pane rather than Button; added exact app-owned separate HWND physical bounded click and regression, pending installed CI. P03 Windows AppContainer LLDB-DAP still fails permission-denied before handshake, Linux fixed LLDB-DAP and installed GTK remain native pending. Signing tool now requires a private-key certificate with valid Code Signing EKU, dates and chain; no real publisher cert/secret is available, release still denied. A technical P06 review packet records prior unsigned Windows artifact run 42430581152, its installer/inventory digests, 521 resolved notices, 0 unresolved notice sources, 6 upstream originals and outstanding independent legal/target/binary/GPG review. P05 retains all 38 workflows and original historical PRs with nine unported B2/B3 source blobs. Signed two-version installed rollback and P07/WO10 integration are not accepted.
+
+## Native CI and release scope — Nov 7/8 continuation
+Owner defers Windows publisher certificate, Linux signing key and external legal sign-off; no release waiver. Native WO9 Windows both consent dialogs and exact Git stage/commit passed before CI fixture process-baseline variable collision; corrected. Added independent Ubuntu 26.04 unsigned GTK editor/rollback/ZIP diagnostic without replacing still-queued Ubuntu 24.04 required gates. P05 original PRs, nine unported blobs and 38 original workflow gates remain intact; P03 protected LLDB-DAP OS tests still open.
+
+### Native test-failure diagnostics and bounded GUI recovery
+Nov 7/8 exact-head Ubuntu26 installed app: real rollback, notice bytes and GUI window PASS; GTK folder picker remained open after three legitimate AT-SPI actions, so editor remained open. New exact candidate ranking, bottom/right dialog control selection and native Alt+Up exact folder selection fallback await repeat. Win WO9: native installed app's renderer existed but UIA subtree was empty at startup; added exact foreground OS Tab-based accessibility warmup with hard failure if actual UIA missing. P03 protected debugger remains open; signing/independent legal review deferred.
+
+## Exact native UI diagnostic follow-up
+Windows WO9 real consent x2 and project review PASS, but Git HEAD did not change at instantaneous readback; native test now polls actual commit SHA for 24s (no synthetic success). Ubuntu26 real Debian rollback PASS, but only one generic GTK Open control appeared and project chooser never satisfied OS registration; active visible chooser and exact non-dialog GUI project required, otherwise denied. Source tests added; signing/independent legal review remain explicitly deferred and release false.
+
+### Linux GTK chooser active-window fallback
+Latest native Ubuntu 26.04 `.deb` build/failed-upgrade recovery passed, but GTK chooser showed no native action buttons; implemented bounded OS X11 chooser-identified keyboard fallback gated on actual AT-SPI visible chooser and real app registration. Native OS retest is pending. Signing/legal publisher identity remain deferred, release remains default deny.
+
+### P04 GTK CI native spatial witness
+The previous Ubuntu26 exact installed test [42436702598](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42436702598) proved dpkg rollback but found neither an X11 active window nor an AT-SPI action button for the **visible** native GTK chooser. A new bounded physical X11 mouse attempt is strictly derived from the chooser's accessible rectangle and independently checked against display bounds. The test still must observe a changed, registered project in the real installed app and remains FAIL on no registration. It is diagnostic native GUI repair, not a process/security containment downgrade or a signed-release claim. Ubuntu24 actual native acceptance remains required.

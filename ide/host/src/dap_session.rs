@@ -479,17 +479,34 @@ fn classify_native_adapter_error(response: &serde_json::Map<String, Value>) -> &
     // LLDB-DAP often puts a generic "error" in message and the actual
     // reason in body.error.format. Classify the BOUNDED nested reason first.
     // Never expose the message, arbitrary paths, or debugger-provided text.
-    let detail = response
-        .get("body")
-        .and_then(|value| value.get("error"))
-        .and_then(|value| value.get("format"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let headline = response
-        .get("message")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let text = format!("{detail} {headline}").to_ascii_lowercase();
+    // LLDB adapters may report launch failures in body.error.format,
+    // description, message, or as a plain string. Inspect only bounded
+    // in-process diagnostic fragments, never display raw adapter content.
+    let error = response.get("body").and_then(|body| body.get("error"));
+    let fragments = [
+        error
+            .and_then(|value| value.get("format"))
+            .and_then(Value::as_str),
+        error
+            .and_then(|value| value.get("description"))
+            .and_then(Value::as_str),
+        error
+            .and_then(|value| value.get("message"))
+            .and_then(Value::as_str),
+        error.and_then(Value::as_str),
+        response
+            .get("body")
+            .and_then(|body| body.get("message"))
+            .and_then(Value::as_str),
+        response.get("message").and_then(Value::as_str),
+    ];
+    let text = fragments
+        .into_iter()
+        .flatten()
+        .map(|value| value.chars().take(384).collect::<String>())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
     if text.contains("ptrace") || text.contains("trace me") {
         "ptrace_or_trace_denied"
     } else if text.contains("personality") || text.contains("aslr") {
@@ -857,6 +874,38 @@ mod tests {
         assert_eq!(
             classify_native_adapter_error(&response),
             "ptrace_or_trace_denied"
+        );
+        response.insert(
+            "body".into(),
+            serde_json::json!({"error":{"description":"ptrace access denied /private/source.c"}}),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "ptrace_or_trace_denied"
+        );
+        response.insert(
+            "body".into(),
+            serde_json::json!({"error":{"message":"No such file or directory /private/fixture"}}),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "dependency_or_fixed_target_missing"
+        );
+        response.insert(
+            "body".into(),
+            serde_json::json!({"error":"operation not permitted /private/fixture"}),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "kernel_or_file_access_denied"
+        );
+        response.insert(
+            "body".into(),
+            serde_json::json!({"message":"target failed to launch /private/fixture"}),
+        );
+        assert_eq!(
+            classify_native_adapter_error(&response),
+            "target_launch_failed"
         );
         response.clear();
         assert_eq!(

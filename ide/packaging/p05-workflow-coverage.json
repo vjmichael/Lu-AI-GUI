@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/ide-e2-native-lsp.yml",
-      "blobSha": "5178575929edecedfbe3e513b9848465828142d3",
+      "blobSha": "8ca27a7f666460e021b45c2e5469d532d0a82071",
       "disposition": "retain_until_verified_replacement",
       "criticalNativeOrReleaseEvidence": true,
       "replacementAccepted": false,
@@ -105,7 +105,7 @@
     },
     {
       "path": ".github/workflows/ide-p03-native-security-checks.yml",
-      "blobSha": "c81eb77532a54e5e4d0c754d26b927c9f2df7e0d",
+      "blobSha": "aa567ec48ce084f5c698f77cdd07de381fa72221",
       "disposition": "retain_until_verified_replacement",
       "criticalNativeOrReleaseEvidence": true,
       "replacementAccepted": false,

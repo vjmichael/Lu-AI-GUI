@@ -51,6 +51,9 @@ jobs:
         with:
           toolchain: '1.99.1'
           components: rustfmt
+      - name: Parse real native clangd PowerShell before expensive OS compilation
+        shell: pwsh
+        run: ./ide/supervisor/fixtures/Test-P03ClangdCI.ps1
       - name: Compile protected SCM service and real E2 host
         shell: pwsh
         run: |
@@ -84,7 +87,18 @@ jobs:
               $line=([string]$entry).Trim().ToLowerInvariant()
               if (!$line.StartsWith('name: ') -or !$line.EndsWith('.dll')) { continue }
               $dll=$line.Substring(6)
-              if ($dll -notmatch '^[a-z0-9_.-]+\.dll
+              # PE import parsing is diagnostic-only: Windows system DLLs may
+              # resolve outside this pinned private bundle. Never claim a
+              # complete transitive runtime or an AppContainer success here.
+              if ($dll -notmatch '^[a-z0-9_.-]+\.dll$') {
+                throw 'DENIED: malformed clangd direct PE import name'
+              }
+              if (!(Test-Path -LiteralPath (Join-Path $bundle ('bin\' + $dll)) -PathType Leaf)) {
+                [void]$missing.Add($dll)
+              }
+            }
+            Write-Host ('P03_CLANGD_DIRECT_IMPORTS_NOT_IN_PRIVATE_BUNDLE='+$missing.Count+'; diagnostic_only')
+          }
           Write-Host "Test-only clangd SHA $((Get-FileHash (Join-Path $bundle 'bin\clangd.exe') -Algorithm SHA256).Hash)"
           # Diagnostic-only: reject an invalid copied executable or arguments
           # BEFORE the later real restricted-AppContainer acceptance. This

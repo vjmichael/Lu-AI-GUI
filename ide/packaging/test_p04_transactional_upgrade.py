@@ -126,6 +126,36 @@ class NativeUpgradeTests(unittest.TestCase):
         self.assertEqual(read_journal(self.root)["state"],"committed")
         self.preserved(self.new_sha)
 
+    def test_malformed_worker_count_never_authorizes_renames_or_rollback(self):
+        # bool is a subclass of int, and 0.0 == 0 in Python. None of these
+        # are valid signed-off native worker-count observations.
+        malformed=(False, 0.0, "0", None, [], {})
+        def set_workers(count):
+            (self.root/"workers.json").write_text(json.dumps({
+                "activeWorkers":count, "allReconciled":True,
+                "osTreeEmpty":True}), encoding="utf-8")
+        for value in malformed:
+            with self.subTest(phase="before_upgrade", malformed=value):
+                set_workers(value)
+                result=self.invoke("upgrade")
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertIn("workers_not_quiescent_for_upgrade",result.stderr)
+                self.assertFalse((self.root/"journal.json").exists())
+                self.preserved(self.old_sha)
+        set_workers(0)
+        self.assertEqual(self.invoke("upgrade").returncode,0)
+        for value in malformed:
+            with self.subTest(phase="before_rollback", malformed=value):
+                set_workers(value)
+                result=self.invoke("rollback")
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertIn("workers_not_quiescent_for_upgrade",result.stderr)
+                self.assertEqual(read_journal(self.root)["state"],"committed")
+                self.preserved(self.new_sha)
+        set_workers(0)
+        self.assertEqual(self.invoke("rollback").returncode,0)
+        self.preserved(self.old_sha)
+
     def test_normal_recover_denies_injected_rollback_fault(self):
         result=self.invoke("recover","after_restore_previous")
         self.assertEqual(result.returncode,2)

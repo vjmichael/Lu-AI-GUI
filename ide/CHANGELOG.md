@@ -1,5 +1,10 @@
 # Lu IDE — Development changelog
 
+- **IDE closeout native improvements (Nov 7):** Linux real delegated `clangd` PASS on prior exact head; fixed Windows native clangd CI PowerShell and immutable P05 38-workflow dual-ledger pins. Added bounded LLDB-DAP alternate error schema classification, strict GTK chooser button captions and exact installed Windows native consent root/InvokePattern safety tests. Source commit only until new-head native Windows/Linux CI and installed GUI are observed; legal/signed release false.
+
+- **IDE 10 P02/P06 evidence then P03/P04 source repair (Nov 7):** Windows P06 55f70b6 native evidence archived 521 package inventory entries, zero missing package notices; Ubuntu P02 source/installed and P06 inventory were queued at inspection, and seven special MPL/r-efi plus separate native/binary distribution legal reviews remain open. On separate draft continuation branch stacked on P06, repaired a malformed Windows protected-clangd PowerShell PE-import check and added exact inline PowerShell AST parser CI; tightened genuine Windows owned native consent dialog to Window/Pane OS UIA without auto-approval; fixed disposable transactional upgrade worker count type confusion with hostile upgrade/rollback tests. Exact new-head native CI, protected AppContainer/DAP, Linux installed, signed installer and legal release acceptance remain OPEN; P05 cleanup deferred.
+
+
 - **P06 WebView2 runtime obligation (Nov 7):** Kept original MIT wrapper text separate from mandatory three-binding default-deny Microsoft runtime redistribution review, with frozen policy and hostile tests. No legal clearance.
 
 - **P06 selectors MPL full legal text (Nov 7):** Pinned canonical complete MPL-2.0 SPDX v3.28.0 text, checked exact selectors 0.38.0 frozen cargo checksum and preserved mandatory original covered-file source and legal review status. No legal approval inferred.
@@ -373,3 +378,16 @@ This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for wha
 - R1–R2: standalone Windows shell, projects and read-only source browsing.
 
 See the engineering handoff and linked acceptance documents for exact evidence. Do not use these summaries as substitute for exact commit or artifact verification.
+
+
+- **IDE P02–P06 release closeout (Nov 7/8, draft):** Real Windows WO9 TaskDialog accessibility observation led to a guarded OS-only Text/Pane caption pointer witness (pending native acceptance). Strengthened executable signing preflight for valid trusted Code Signing certificate chain and private key. Filed actual 521-package, zero-missing-notice unsigned NSIS artifact technical receipt and independent legal/signature review checklist. This is *not* a signed release or legal clearance.
+
+- **Native IDE OS closeout (Nov 7/8):** Corrected WO9 installed Windows fixture's Git-HEAD versus worker-count baseline shadowing following real native consent and stage/commit success. Added fail-closed regression; restricted Linux ZIP destination acceptance to actual OS chooser. Added an explicitly non-equivalent Ubuntu 26.04 installed GTK editor/rollback/ZIP diagnostic while 24.04 jobs remain queued. Publisher signing and final independent legal sign-off deferred without release bypass.
+
+- **GUI native failure-driven repairs (Nov 7/8):** Real Ubuntu26 dpkg failure/restore and installed window PASS; narrowed GTK chooser to bottom-right real Select Folder and guarded native selection fallback after three non-closing OS actions. Windows WO9 installed WebView2 exposed only one UIA descendant on one run; added bounded real OS keyboard accessibility focus retries. Both require new exact-head OS acceptance; no protection or signing gate weakened.
+
+- **Native GUI diagnostic (Nov 8):** Observed actual Windows WO9 dialogs and WebView native focus recovery, but exact Git commit HEAD was unchanged at immediate check; now waits bounded 24s for real hash change and checks diff-tree. Linux GTK native chooser distinguishes visible active window from stale hidden AT-SPI nodes and requires exact registered project independently of dialogs. No native acceptance yet; default-deny signing unchanged.
+
+- **Linux installed GTK (Nov 8):** Real X11 file chooser exposed no button actions after successful unsigned `.deb` and native dpkg rollback. Added narrowly scoped X11 keyboard confirmation only for an AT-SPI-visible and title-identified chooser; genuine project registration remains mandatory. OS retest pending.
+
+- **Installed GTK follow-up (Nov 8):** After X11 active-window lookup failed on real Ubuntu26 CI, added OS xdotool click limited to the AT-SPI-visible native file chooser geometry, followed by exact Tauri GUI registration proof; installed acceptance still pending.

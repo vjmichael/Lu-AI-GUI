@@ -153,34 +153,185 @@ def _native_dialog_ancestor(node):
     return False
 
 
-def _native_picker_confirm():
-    candidates = ("select", "open", "choose folder")
-    checked = 0
+def _x11_dialog_activation(attempt):
+    # AT-SPI can expose a GTK chooser role while omitting its action buttons.
+    # Only the active visible *OS chooser window*, verified by both AT-SPI
+    # role and X11 title, is eligible for a native keyboard fallback.
+    # Never send keys to the Tauri main window or an unrelated application.
+    if not _native_chooser_still_open():
+        return False
+    try:
+        active = subprocess.check_output(
+            ["xdotool", "getactivewindow"], text=True, timeout=5).strip()
+        if not active.isdigit():
+            return False
+        title = subprocess.check_output(
+            ["xdotool", "getwindowname", active], text=True, timeout=5).strip().casefold()
+    except (OSError, ValueError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired):
+        print("P04_GTK_X11_CHOOSER=active_window_unavailable", flush=True)
+        return False
+    allowed = ("open", "open folder", "select folder", "select a folder",
+               "choose folder", "choose a folder", "select")
+    if title not in allowed and not any(
+            text in title for text in ("select folder", "choose folder", "open folder")):
+        print("P04_GTK_X11_CHOOSER=unrecognized_active_window_title", flush=True)
+        return False
+    # xdotool genuinely delivers OS keyboard events to the focused GTK
+    # dialog. A sent key is never itself accepted as a successful project
+    # registration; the installed WebView must expose the exact project.
+    try:
+        subprocess.run(["xdotool", "windowactivate", "--sync", active],
+                       check=True, timeout=5)
+        key("Return" if attempt % 2 == 0 else "alt+o")
+        print("P04_GTK_X11_CHOOSER=visible_real_os_dialog_keyboard;"
+              "attempt=" + str(attempt), flush=True)
+        return True
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        print("P04_GTK_X11_CHOOSER=native_key_unavailable", flush=True)
+        return False
+
+
+def _atspi_bounded_chooser_mouse(attempt):
+    # Xvfb + GTK can expose a visible file-chooser widget without an X11
+    # active-window property or accessible action button. Use only its actual
+    # OS AT-SPI bounding rectangle, never guessed global screen coordinates.
+    try:
+        size = subprocess.check_output(
+            ["xdotool", "getdisplaygeometry"], text=True, timeout=5).strip().split()
+        if len(size) != 2:
+            return False
+        screen_w, screen_h = (int(v) for v in size)
+    except (OSError, ValueError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired):
+        print("P04_GTK_CHOOSER_SPATIAL=display_geometry_unavailable", flush=True)
+        return False
+    for node in elements():
+        try:
+            if "file chooser" not in (node.getRoleName() or "").casefold():
+                continue
+            flags = node.getState()
+            if not (flags.contains(pyatspi.STATE_SHOWING)
+                    and flags.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            rect = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            if (rect.width < 320 or rect.height < 180 or rect.x < 0 or rect.y < 0
+                    or rect.x + rect.width > screen_w
+                    or rect.y + rect.height > screen_h):
+                continue
+            # GTK action row occupies the bottom-right portion. Both attempts
+            # stay entirely within the actual visible native chooser widget.
+            margin = 95 if attempt % 2 == 0 else 55
+            px = int(rect.x + rect.width - margin)
+            py = int(rect.y + rect.height - 32)
+            if not (rect.x + 8 < px < rect.x + rect.width - 8
+                    and rect.y + 8 < py < rect.y + rect.height - 8):
+                continue
+            subprocess.run(
+                ["xdotool", "mousemove", "--sync", str(px), str(py)],
+                check=True, timeout=5)
+            subprocess.run(["xdotool", "click", "1"], check=True, timeout=5)
+            print("P04_GTK_CHOOSER_SPATIAL=real_os_click_inside_visible_atspi_chooser;"
+                  "attempt=" + str(attempt), flush=True)
+            return True
+        except (ValueError, OSError, subprocess.CalledProcessError,
+                subprocess.TimeoutExpired):
+            continue
+    print("P04_GTK_CHOOSER_SPATIAL=no_valid_visible_native_chooser_geometry",flush=True)
+    return False
+
+
+def _native_picker_confirm(attempt=0):
+    # The previous real Ubuntu 26.04 run clicked an authentic AT-SPI
+    # chooser action THREE times and the dialog never closed. A generic
+    # "Open" can also be GTK's navigation button. Prefer actual Select
+    # Folder and bottom-right action geometry, retaining native ancestry.
+    priority = {"select folder": 0, "choose folder": 1,
+                "select": 2, "open folder": 3, "open": 4}
+    ranked = []
     for obj in elements():
         try:
             name = (obj.name or "").strip().casefold()
             role = (obj.getRoleName() or "").casefold()
-            if name in candidates and ("button" in role) and _native_dialog_ancestor(obj):
-                checked += 1
-                action = obj.queryAction()
-                for i in range(action.nActions):
-                    if action.getName(i).casefold() in ("click", "press", "activate"):
-                        if action.doAction(i):
-                            print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=real_atspi_action", flush=True)
-                            return
+            if name not in priority or "button" not in role or not _native_dialog_ancestor(obj):
+                continue
+            if not obj.getState().contains(pyatspi.STATE_ENABLED):
+                continue
+            try:
+                rect = obj.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+                if rect.width < 8 or rect.height < 8:
+                    continue
+                y, x = int(rect.y), int(rect.x)
+            except Exception:
+                # A genuine OS action may lack component geometry; sort last,
+                # never accept an untrusted non-dialog element as a substitute.
+                y, x = -1, -1
+            ranked.append((priority[name], -y, -x, len(ranked), name, obj))
         except Exception:
             continue
+    ranked.sort(key=lambda record: record[:4])
+    # Consecutive failed OS confirmation attempts must not hit the same
+    # first generic toolbar Open when multiple native candidates exist.
+    start = min(attempt, max(0, len(ranked) - 1))
+    for item in ranked[start:] + ranked[:start]:
+        try:
+            _, _, _, _, name, obj = item
+            action = obj.queryAction()
+            for i in range(action.nActions):
+                if action.getName(i).casefold() in ("click", "press", "activate"):
+                    if action.doAction(i):
+                        print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=real_atspi_action;"
+                              "caption=" + name.replace(" ", "_") +
+                              ";ranked_candidates=" + str(len(ranked)) +
+                              ";attempt=" + str(attempt), flush=True)
+                        return
+        except Exception:
+            continue
+    # A separately witnessed native GTK X11 dialog may have zero exposed
+    # AT-SPI action buttons. Try bounded real OS keyboard acceptance instead.
+    if _x11_dialog_activation(attempt):
+        return
+    if _atspi_bounded_chooser_mouse(attempt):
+        return
     print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=missing_real_chooser_button;"
-          "matching_dialog_buttons=" + str(checked), flush=True)
+          "matching_dialog_buttons=" + str(len(ranked)), flush=True)
     deny("native_dialog_confirmation_not_found")
 
-
 def _native_chooser_still_open():
-    # Only a *real* GTK file chooser under this disposable X11 session;
-    # missing OS acceptance never becomes a success.
+    # GTK AT-SPI providers may retain a hidden chooser node *after* an OS
+    # action closes its visible window. A role name alone was previously used
+    # as the open check, producing false "still open" observations.
     for node in elements():
         try:
-            if "file chooser" in (node.getRoleName() or "").casefold():
+            role = (node.getRoleName() or "").casefold()
+            if "file chooser" not in role:
+                continue
+            states = node.getState()
+            if states.contains(pyatspi.STATE_SHOWING) and states.contains(pyatspi.STATE_VISIBLE):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _registered_native_project_is_exposed():
+    # Distinguish the exact project row in the desktop WebView from its name
+    # echoed inside a GTK folder chooser. No direct catalog reads or IPC.
+    for node in elements():
+        try:
+            if (node.name or "").strip() != ROOT.name:
+                continue
+            current = node
+            within_dialog = False
+            for _ in range(14):
+                current = current.parent
+                if current is None:
+                    break
+                role = (current.getRoleName() or "").casefold()
+                if "file chooser" in role or "dialog" in role:
+                    within_dialog = True
+                    break
+            if not within_dialog:
                 return True
         except Exception:
             continue
@@ -204,7 +355,7 @@ def _select_real_fixture_directory():
                 if node.queryComponent().grabFocus():
                     key("space")
                     print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_native_keyboard",flush=True)
-                    return
+                    return True
             except Exception:
                 pass
             try:
@@ -212,13 +363,13 @@ def _select_real_fixture_directory():
                 index=node.getIndexInParent()
                 if parent is not None and index>=0 and parent.querySelection().selectChild(index):
                     print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_atspi_selection",flush=True)
-                    return
+                    return True
             except Exception:
                 pass
         except Exception:
             continue
     print("P04_GTK_FIXTURE_DIRECTORY_CANDIDATES="+str(exact),flush=True)
-    deny("native_fixture_directory_not_selected")
+    return False
 
 
 def select_native_folder():
@@ -242,13 +393,32 @@ def select_native_folder():
     # dialog remained open afterward. Confirm only while the authentic OS
     # chooser remains; never issue a blind keypress on the main WebView.
     attempts = 0
-    while _native_chooser_still_open() and attempts < 3:
-        _native_picker_confirm()
+    while _native_chooser_still_open() and attempts < 4:
+        if attempts == 1:
+            # GTK SELECT_FOLDER may have navigated INSIDE the target instead
+            # of selecting its directory row. Use only a real native dialog
+            # keyboard to go up and select the exact fixture child. If GTK
+            # does not expose that row, reassert the exact path in its native
+            # location entry without blindly accepting an unrelated window.
+            key("alt+Up")
+            time.sleep(0.7)
+            if not _select_real_fixture_directory():
+                key("ctrl+l")
+                type_text(str(ROOT))
+                print("P04_GTK_EXACT_PATH_ENTRY=reasserted_in_native_chooser",flush=True)
+                time.sleep(0.5)
+        if not _native_chooser_still_open():
+            break
+        _native_picker_confirm(attempts)
         attempts += 1
         time.sleep(0.7)
     if _native_chooser_still_open():
-        print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_still_open_after_three_real_actions",flush=True)
+        print("P04_NATIVE_GTK_FOLDER_ACCEPT=visible_dialog_still_open_after_bounded_real_actions;"
+              "attempts=" + str(attempts),flush=True)
         deny("native_folder_chooser_not_accepted")
+    if not _registered_native_project_is_exposed():
+        print("P04_NATIVE_GTK_FOLDER_ACCEPT=closed_without_exact_project_registration",flush=True)
+        deny("native_folder_chooser_did_not_register_project")
     print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_closed_after_native_action;"
           "confirmations=" + str(attempts),flush=True)
     accessible("Registered projects", seconds=15)

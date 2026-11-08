@@ -26,9 +26,9 @@ if ($ExpectedSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
     (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash -ine $ExpectedSha256) {
   Deny 'installed_binary_digest_mismatch'
 }
-$before=@{}
+$workerBaseline=@{}
 foreach($name in @('lldb-dap','clangd','rust-analyzer','ruff','cargo','windows_recovery_service')) {
-  $before[$name]=BoundedProcess $name
+  $workerBaseline[$name]=BoundedProcess $name
 }
 $root=$null
 $proc=$null
@@ -124,6 +124,32 @@ function NativeAccessibilityRoots {
     } catch {}
   }
 }
+function Warm-InstalledWebViewAccessibility {
+  # A real Windows NSIS run on SHA 05141c9 found a genuine installed shell
+  # and renderer HWND but only ONE UIA descendant before the WebView content
+  # became accessible. Reassert exact app foreground and use harmless native
+  # OS Tab focus changes. Never invoke backend APIs or fake a React result.
+  for($attempt=0; $attempt -lt 3; $attempt++) {
+    try {
+      [void](Find-Control 'Workspace projects' '' 6)
+      if($attempt -gt 0) { Write-Host ('P04_NATIVE_WEBVIEW_FOCUS_RECOVERY=real_uia_after_os_tab_'+$attempt) }
+      return
+    } catch {
+      $main=WindowRoot
+      if(!$main) { Deny 'installed_native_window_unavailable_during_focus_recovery' }
+      $hwnd=$proc.MainWindowHandle
+      [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
+      Start-Sleep -Milliseconds 180
+      if([P04NativeWebViewWindows]::GetForegroundWindow() -ne $hwnd) {
+        Deny 'installed_native_window_could_not_be_focused'
+      }
+      [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+      Start-Sleep -Milliseconds 450
+    }
+  }
+  Deny 'installed_webview_accessibility_not_ready_after_native_focus'
+}
+
 function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
   $end=(Get-Date).AddSeconds($seconds)
   while ((Get-Date) -lt $end) {
@@ -333,36 +359,93 @@ function Ensure-Wo9DependentsBlocked {
   }
 }
 function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCaption) {
+  # Real WO9 Windows TaskDialog: exact caption exposes UIA Text/Pane, not Button.
+  # Only interact with a separate OS popup owned by this installed process.
   $deadline=(Get-Date).AddSeconds(35)
   $desktop=[System.Windows.Automation.AutomationElement]::RootElement
+  $ownedRoots=0; $titleMatches=0; $buttonMatches=0
+  $matchedTextPane=0; $unusableNativePopup=0; $unusableBounds=0
+  $unavailableNativeAction=0
   while ((Get-Date) -lt $deadline) {
-    $windows=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
-      ([System.Windows.Automation.PropertyCondition]::new(
-        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-        [System.Windows.Automation.ControlType]::Window)))
-    foreach($win in $windows) {
+    $roots=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
+      [System.Windows.Automation.Condition]::TrueCondition)
+    foreach($win in $roots) {
       try {
-        if ($win.Current.ProcessId -ne $proc.Id -or
-            $win.Current.Name.IndexOf($titleFragment,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+        if ($win.Current.ProcessId -ne $proc.Id -or !$win.Current.IsEnabled) { continue }
+        $type=$win.Current.ControlType
+        if ($type -ne [System.Windows.Automation.ControlType]::Window -and
+            $type -ne [System.Windows.Automation.ControlType]::Pane) { continue }
+        $ownedRoots++
+        $name=[string]$win.Current.Name
+        if ($name.IndexOf($titleFragment,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+        $titleMatches++
+        $hwnd=[IntPtr]::new([int64]$win.Current.NativeWindowHandle)
+        if ($hwnd -eq [IntPtr]::Zero -or $hwnd -eq $proc.MainWindowHandle) {
+          $unusableNativePopup++; continue
+        }
+        $windowBounds=$win.Current.BoundingRectangle
+        if ($windowBounds.Width -lt 80 -or $windowBounds.Height -lt 45) {
+          $unusableBounds++; continue
+        }
         $desc=$win.FindAll([System.Windows.Automation.TreeScope]::Descendants,
           [System.Windows.Automation.Condition]::TrueCondition)
         foreach($child in $desc) {
-          if ($child.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
-              $child.Current.Name -eq $approvalCaption -and $child.Current.IsEnabled) {
-            $child.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-            return
-          }
+          try {
+            if ([string]$child.Current.Name -cne $approvalCaption -or
+                !$child.Current.IsEnabled -or $child.Current.IsOffscreen) { continue }
+            $kind=$child.Current.ControlType
+            $isButton=$kind -eq [System.Windows.Automation.ControlType]::Button
+            $isTextPane=$kind -eq [System.Windows.Automation.ControlType]::Text -or
+              $kind -eq [System.Windows.Automation.ControlType]::Pane
+            if (!$isButton -and !$isTextPane) { continue }
+            if ($isButton) {
+              $buttonMatches++
+              try {
+                $child.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+                Write-Host 'P04_NATIVE_ONE_USE_DIALOG=real_owned_os_button_invoked'
+                return
+              } catch { $unavailableNativeAction++ }
+            }
+            if ($isTextPane) {
+              $matchedTextPane++
+              $rect=$child.Current.BoundingRectangle
+              if ($rect.Width -lt 5 -or $rect.Height -lt 5) {
+                $unusableBounds++; continue
+              }
+              $px=[int][Math]::Round($rect.Left+$rect.Width/2)
+              $py=[int][Math]::Round($rect.Top+$rect.Height/2)
+              if ($px -le $windowBounds.Left+2 -or $px -ge $windowBounds.Right-2 -or
+                  $py -le $windowBounds.Top+2 -or $py -ge $windowBounds.Bottom-2) {
+                $unusableBounds++; continue
+              }
+              if (![P04NativeWebViewWindows]::SetForegroundWindow($hwnd)) {
+                $unavailableNativeAction++; continue
+              }
+              [System.Windows.Forms.Cursor]::Position=[System.Drawing.Point]::new($px,$py)
+              [P04NativeWebViewWindows]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+              [P04NativeWebViewWindows]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+              Write-Host 'P04_NATIVE_ONE_USE_DIALOG=exact_owned_native_text_pane_mouse_click'
+              return
+            }
+          } catch { $unavailableNativeAction++ }
         }
       } catch {}
     }
     Start-Sleep -Milliseconds 350
   }
+  Write-Host ('P04_NATIVE_CONSENT_OBSERVATION=owned_roots_'+$ownedRoots+
+    ';matched_titles_'+$titleMatches+
+    ';button_candidates_'+$buttonMatches+';text_pane_candidates_'+$matchedTextPane+
+    ';native_popup_unusable_'+$unusableNativePopup+
+    ';unusable_bounds_'+$unusableBounds+
+    ';native_action_unavailable_'+$unavailableNativeAction)
   Deny 'real_native_consent_dialog_not_observed'
 }
 try {
   $proc=Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru
   $root=Find-Control 'Lu IDE' '' 30
   $stage='shell'
+  Warm-InstalledWebViewAccessibility
   Require 'Workspace projects'
   Require 'Not connected'
   Click 'Capabilities'
@@ -674,7 +757,7 @@ try {
       [IO.File]::AppendAllText((Join-Path $fixed 'main.rs'),"`n// WO9_NATIVE_REVIEWED_CHANGE`n")
       Click 'Source control'
       Require 'Reviewed local Git staging and commit'
-      $before=(git -C $fixed rev-parse HEAD).Trim()
+      $gitHeadBefore=(git -C $fixed rev-parse HEAD).Trim()
       if ($LASTEXITCODE -ne 0) { Deny 'wo9_fixture_git_head_unavailable' }
       $pathInput=Find-Control 'Project-relative tracked file' 'Edit' 20
       $pathInput.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('main.rs')
@@ -693,8 +776,22 @@ try {
       Click 'Confirm separate local commit'
       Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file'
       Require 'Local commit'
-      $after=(git -C $fixed rev-parse HEAD).Trim()
-      if ($LASTEXITCODE -ne 0 -or $before -eq $after) { Deny 'wo9_native_commit_not_observed' }
+      # Real Win UIA consent invokes asynchronously: the exact native Git
+      # operation is the witness, not the OS dialog click or a UI label.
+      # Wait a bounded interval for a genuinely changed, resolvable commit.
+      $after=$gitHeadBefore
+      $gitDeadline=(Get-Date).AddSeconds(24)
+      while ((Get-Date) -lt $gitDeadline) {
+        $after=(git -C $fixed rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0) { Deny 'wo9_native_git_head_readback_failed' }
+        if ($gitHeadBefore -ne $after) { break }
+        Start-Sleep -Milliseconds 400
+      }
+      if ($gitHeadBefore -eq $after) {
+        $staged=@(git -C $fixed diff --cached --name-only)
+        Write-Host ('WO9_NATIVE_COMMIT_OBSERVATION=unchanged_head;staged_files_'+$staged.Count)
+        Deny 'wo9_native_commit_not_observed'
+      }
       $files=@(git -C $fixed diff-tree --no-commit-id --name-only -r HEAD)
       if ($files.Count -ne 1 -or $files[0] -ne 'main.rs') {
         Deny 'wo9_git_commit_changed_unreviewed_files'
@@ -893,8 +990,8 @@ try {
       Write-Host 'WO8_INSTALLED_NATIVE_FOLDER_REGISTRATION_AND_SOURCE_OPEN=PASS'
     }
   }
-  foreach($name in $before.Keys) {
-    if ((BoundedProcess $name) -gt $before[$name]) {
+  foreach($name in $workerBaseline.Keys) {
+    if ((BoundedProcess $name) -gt $workerBaseline[$name]) {
       Deny ('unauthorized_worker_autostart_'+$name)
     }
   }

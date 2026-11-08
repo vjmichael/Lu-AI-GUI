@@ -1,0 +1,32 @@
+{
+  "schema": "lu.ide.p06.unsigned-native-distribution-technical-receipt.v1",
+  "artifactClassification": "unsigned_nsis_ci_verification_only",
+  "sourceSha": "ab7fba4097a746230545e33fd0830d646be1acce",
+  "sourcePullRequest": 97,
+  "workflowRunId": 42430581152,
+  "sourceWorkflow": ".github/workflows/ide-wo9-installed-native.yml",
+  "artifactName": "lu-ide-wo9-windows-unsigned-and-licenses",
+  "artifactZipSha256": "d4d095714ac151dd6b121d0202b29a0e6e6cfd5d0efd645cd1f50433d233636b",
+  "inventorySha256": "f08302833ca6520e15e45e1832bf140efcb06b9a4d8b848fd5ec7e4f38729566",
+  "nativeInstallerName": "Lu IDE_0.1.0-alpha.1_x64-setup.exe",
+  "nativeInstallerSha256": "4fbc767efd0734d00d0df76bd786a6724bd82504435ddc65b3f0b15fc9fc7831",
+  "nativeInstallerBytes": 4287732,
+  "packageCount": 521,
+  "unresolvedPackageNotices": 0,
+  "independentlyFetchedUpstreamLicenseCount": 6,
+  "upstreamFetchReceiptSha256": "389c596df3ba58bcc3e0be4a991e243cc5b888ddc1cb6106bc875988e68611ba",
+  "riskCategories": {
+    "mpl2Packages": 5,
+    "rEfiMultiLicenseVersions": 2,
+    "embeddedProtocCrates": 9,
+    "appleSdkDerivatives": 19,
+    "externalNativeSdkPackages": 7,
+    "webviewRustBindings": 3
+  },
+  "riskCategoriesOverlap": true,
+  "compiledBinaryShipmentVerified": false,
+  "windowsCodeSignerPresent": false,
+  "independentLegalReviewApproved": false,
+  "releaseApproved": false,
+  "reviewState": "open_external_legal_and_certified_binary_closure"
+}
