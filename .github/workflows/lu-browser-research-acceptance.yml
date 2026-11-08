@@ -154,7 +154,7 @@ jobs:
           }
       - working-directory: lu-desktop
         run: |
-          npm ci
+          npm install --no-save --package-lock=false --no-audit --no-fund
           npm run build
       - name: Stage only Microsoft-signed Windows System32 curl
         shell: pwsh

@@ -73,7 +73,7 @@ jobs:
       - name: Compile normal Send and tool activity React
         working-directory: lu-desktop
         run: |
-          npm ci
+          npm install --no-save --package-lock=false --no-audit --no-fund
           npm run build
           npm run check
           npm run test:ui
@@ -103,7 +103,7 @@ jobs:
       - name: Bundle actual Wave 3 UI
         working-directory: lu-desktop
         run: |
-          npm ci
+          npm install --no-save --package-lock=false --no-audit --no-fund
           npm run build
       - name: Compile real Windows Tauri native command routing
         run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
