@@ -1,5 +1,9 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## DEV-02.5 disposable native LSP candidate install (November 8, 2026)
+
+Draft PR #138 stacked on DEV-02.4 #134 adds Windows/Linux CI-only original SHA256-pinned archive + four actual original-notice verification for clangd 23.1.0, rust-analyzer 2026-11-02 and Ruff 0.17.4. It creates a seven-file sealed test ZIP and hash-installs the files in disposable RUNNER_TEMP with tamper/foreign path denial; only JSON receipts may be uploaded. **Exact-head native CI is queued, not accepted.** This is not an NSIS/Debian installed application, a dependency-closure proof (especially LLVM DLLs), protected-process execution or Pyright semantic release. The existing production manifest remains releaseApproved=false and final signing/legal review deferred. Details: docs/IDE_DEV02_5_DISPOSABLE_NATIVE_LSP_TEST_PAYLOAD_20261108.md.
+
 ## IDE P02–P06 native continuation update (November 7)
 
 P05 source integrity now independently pins all 38 required workflow blobs in both preserved audit files; no original checks or PRs retired. On prior exact PR #97 head the genuine Linux protected clangd native normal/cancellation tests and unsigned installed Windows WO8 passed, but Windows protected clangd/LLDB-DAP, Linux fixed LLDB-DAP, Linux installed GTK and cross-platform P02/P06 queued jobs remain OPEN. Current source adds bounded LLDB-DAP alternate response error classification, GTK native chooser caption coverage and owned Windows consent regression guards without broadening tool authority. Actual signed two-version installer upgrades and legal redistribution approval remain intentionally unaccepted; P07/WO10 is deferred.
