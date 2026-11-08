@@ -1,10 +1,10 @@
-//! E1-P11: independent, bounded traversal of Git's *loose* commit DAG.
+//! E1-P11/P12: independently verified loose and bounded packed commit DAG.
 //!
 //! No subprocesses, model-provided paths, Git hooks, permissions, or network.
 //! This is a deliberately conservative independent oracle for a reviewed
 //! repository's reachable commit count, not a replacement for git rev-list.
-//! Packed objects, linked object stores, shallow boundaries, replace/graft
-//! semantics, unusual object formats and >4096 commits remain UNSUPPORTED.
+//! Linked object stores, shallow boundaries, replace/graft semantics,
+ //! malformed/oversized packs and >4096 commits remain UNSUPPORTED.
 //! Even when the reviewed Git application returns successfully, this oracle
 //! will never claim VERIFIED without loading, digest-checking and walking each
 //! reachable commit object, including all merge parents exactly once.
@@ -12,10 +12,11 @@ use std::{
     collections::HashSet,
     fs,
     io::Read,
-    path::Path,
+    path::{Path,PathBuf},
 };
 use flate2::read::ZlibDecoder;
 use sha2::{Digest,Sha256};
+use crate::independent_git_pack::PackCollection;
 
 const MAX_COMMITS:usize=4096;
 const MAX_COMPRESSED:u64=512*1024;
@@ -49,11 +50,13 @@ pub fn loose_commit_count(git_dir:&Path,head:&str)->Option<u64>{
         }
     }
     let mut seen=HashSet::new();
+    let mut reader=ObjectReader::new(git_dir);
     let mut pending=vec![head.to_string()];
     while let Some(id)=pending.pop(){
         if !seen.insert(id.clone()){continue}
         if seen.len()>MAX_COMMITS{return None}
-        let raw=read_loose_commit(git_dir,&id)?;
+        let (kind,raw)=reader.read(&id)?;
+        if kind!="commit"{return None}
         for parent in commit_parents(&raw,&id)?{
             if !seen.contains(&parent){pending.push(parent)}
         }
@@ -79,14 +82,39 @@ fn no_links(path:&Path)->Option<()>{
     }
     Some(())
 }
-fn read_loose_commit(root:&Path,oid:&str)->Option<Vec<u8>>{
-    if !object_id(oid){return None}
-    let location=root.join("objects").join(&oid[..2]).join(&oid[2..]);
-    no_links(&location)?;
-    let stat=fs::symlink_metadata(&location).ok()?;
+pub struct ObjectReader{
+    root:PathBuf,
+    packs:Option<PackCollection>,
+}
+impl ObjectReader{
+    pub fn new(root:&Path)->Self{
+        Self{root:root.to_path_buf(),packs:None}
+    }
+    pub fn read(&mut self,oid:&str)->Option<(String,Vec<u8>)>{
+        if !object_id(oid){return None}
+        let location=self.root.join("objects").join(&oid[..2]).join(&oid[2..]);
+        if fs::symlink_metadata(&location).is_ok(){
+            return read_loose_object(&location,oid)
+        }
+        // Only missing loose objects may trigger a packed lookup. Corrupt
+        // existing loose files cannot be silently bypassed with a pack.
+        if self.packs.is_none(){
+            self.packs=Some(PackCollection::open(&self.root,oid.len()/2)?)
+        }
+        self.packs.as_ref()?.object(oid)
+    }
+}
+/// Temporary public single-object access for the direct Git index/tree
+/// observer. Callers traversing many objects should reuse ObjectReader.
+pub fn read_object_raw(root:&Path,oid:&str)->Option<(String,Vec<u8>)>{
+    ObjectReader::new(root).read(oid)
+}
+fn read_loose_object(location:&Path,oid:&str)->Option<(String,Vec<u8>)>{
+    no_links(location)?;
+    let stat=fs::symlink_metadata(location).ok()?;
     if !stat.is_file()||stat.len()==0||stat.len()>MAX_COMPRESSED{return None}
     let mut compressed=Vec::with_capacity(stat.len() as usize);
-    fs::File::open(&location).ok()?
+    fs::File::open(location).ok()?
         .take(MAX_COMPRESSED+1).read_to_end(&mut compressed).ok()?;
     if compressed.len() as u64>MAX_COMPRESSED{return None}
     let mut decoded=Vec::new();
@@ -94,20 +122,20 @@ fn read_loose_commit(root:&Path,oid:&str)->Option<Vec<u8>>{
     decompressor.by_ref().take(MAX_INFLATED as u64+1)
         .read_to_end(&mut decoded).ok()?;
     if decoded.len()>MAX_INFLATED
-        ||decompressor.total_in() as usize!=compressed.len(){
-        return None
-    }
+        ||decompressor.total_in() as usize!=compressed.len(){return None}
     let digest=if oid.len()==64{
         format!("{:x}",Sha256::digest(&decoded))
-    }else{
-        hex(&sha1_digest(&decoded))
-    };
-    if digest!=oid{return None} // reject tampered/replaced loose objects
+    }else{git_hex(&sha1_digest(&decoded))};
+    if digest!=oid{return None}
     let header_end=decoded.iter().position(|b|*b==0)?;
     let header=std::str::from_utf8(&decoded[..header_end]).ok()?;
-    let len=header.strip_prefix("commit ")?.parse::<usize>().ok()?;
-    if len==0||len!=decoded.len().checked_sub(header_end+1)?{return None}
-    Some(decoded[header_end+1..].to_vec())
+    let (kind,length)=header.split_once(' ')?;
+    if !matches!(kind,"commit"|"tree"|"blob"|"tag"){return None}
+    let len=length.parse::<usize>().ok()?;
+    if len==0||len!=decoded.len().checked_sub(header_end+1)?{
+        return None
+    }
+    Some((kind.to_string(),decoded[header_end+1..].to_vec()))
 }
 fn commit_parents(body:&[u8],self_id:&str)->Option<Vec<String>>{
     let text=std::str::from_utf8(body).ok()?;
@@ -137,7 +165,7 @@ fn commit_parents(body:&[u8],self_id:&str)->Option<Vec<String>>{
     if !finished_headers||tree!=1||!author||!committer{return None}
     Some(parents)
 }
-fn hex(bytes:&[u8])->String{
+pub(crate) fn git_hex(bytes:&[u8])->String{
     const HEX:&[u8;16]=b"0123456789abcdef";
     let mut out=String::with_capacity(bytes.len()*2);
     for b in bytes{
@@ -150,7 +178,7 @@ fn hex(bytes:&[u8])->String{
 /// SHA-1 matches Git's 40-hex object-ID encoding. This small independent
 /// implementation is used for validating stored Git objects only, never
 /// passwords, signatures or general-purpose cryptography.
-fn sha1_digest(message:&[u8])->[u8;20]{
+pub(crate) fn sha1_digest(message:&[u8])->[u8;20]{
     let mut state:[u32;5]=[
         0x67452301,0xefcdab89,0x98badcfe,0x10325476,0xc3d2e1f0
     ];
@@ -215,7 +243,7 @@ mod tests{
              committer Lu <lu@example.test> 1 +0000\n\n\
              synthetic native DAG\n");
         let raw=format!("commit {}\0{}",payload.len(),payload).into_bytes();
-        let sha=hex(&sha1_digest(&raw));
+        let sha=git_git_hex(&sha1_digest(&raw));
         let folder=root.join("objects").join(&sha[..2]);
         fs::create_dir_all(&folder).unwrap();
         let mut writer=ZlibEncoder::new(Vec::new(),Compression::default());
@@ -225,8 +253,8 @@ mod tests{
     }
     #[test]
     fn verified_sha1_matches_known_git_object_vectors(){
-        assert_eq!(hex(&sha1_digest(b"")),"da39a3ee5e6b4b0d3255bfef95601890afd80709");
-        assert_eq!(hex(&sha1_digest(b"abc")),
+        assert_eq!(git_git_hex(&sha1_digest(b"")),"da39a3ee5e6b4b0d3255bfef95601890afd80709");
+        assert_eq!(git_git_hex(&sha1_digest(b"abc")),
             "a9993e364706816aba3e25717850c26c9cd0d89d");
     }
     #[test]
