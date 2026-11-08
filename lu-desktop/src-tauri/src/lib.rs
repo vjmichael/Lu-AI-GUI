@@ -3835,6 +3835,17 @@ fn lu_m3_resume_continuity(
         &chat_id,&project_id,&task_id,&state.continuity
     )
 }
+/// Context Change Monitor is read-only. It validates the two immutable ANSF
+/// source snapshots before indicating differences; no automatic tool replay.
+#[tauri::command]
+fn lu_m3_context_change(
+    state:State<'_,Arc<DesktopState>>,
+    chat_id:String,project_id:String,task_id:String
+)->Result<Option<lu_core::continuity::ContextChangeReview>,String>{
+    state.chats.monitor_project_context(
+        &chat_id,&project_id,&task_id,&state.continuity
+    )
+}
 #[tauri::command]
 async fn lu_m3_record_continuity(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
@@ -7260,6 +7271,7 @@ pub fn run() {
             lu_m3_operational_inventory,
             lu_m3_remember_asset,
             lu_m3_resume_continuity,
+            lu_m3_context_change,
             lu_m3_record_continuity,
             lu_m3_resolve_asset,
             lu_m3_resume_resources,

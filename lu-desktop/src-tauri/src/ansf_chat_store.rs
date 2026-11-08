@@ -11,7 +11,7 @@ use lu_core::{
     ansf_live_chat::{LiveEvent,LiveKind,StoredLiveEvent,VisibleChatMessage},
     ansf_source_ids::AnsfSourceId,
     ansf_semantic::fuse_source_ranks,
-    continuity::{ContinuityStore,TaskCheckpoint},
+    continuity::{ContinuityStore,TaskCheckpoint,ContextChangeReview,compare_task_checkpoints},
 };
 use rand::{rngs::OsRng,RngCore};
 use rusqlite::{params,Connection,OptionalExtension};
@@ -965,6 +965,22 @@ impl ChatStore {
         self.require(active_chat)?;
         let checkpoint=continuity.latest(project_id,task_id).map_err(to_err)?;
         checkpoint.map(|c|self.continuity_view(active_chat,c)).transpose()
+    }
+
+    /// CCM is a read-only projection over the two most recent durable source
+    /// checkpoints. Validate BOTH original conversations in this profile; a
+    /// project/task string cannot become cross-profile read authority.
+    pub fn monitor_project_context(
+        &self,active_chat:&str,project_id:&str,task_id:&str,
+        continuity:&ContinuityStore
+    )->Result<Option<ContextChangeReview>,String>{
+        self.require(active_chat)?;
+        let pair=continuity.recent_for_task(project_id,task_id).map_err(to_err)?;
+        for checkpoint in &pair{
+            self.continuity_view(active_chat,checkpoint.clone())?;
+        }
+        if pair.len()<2{return Ok(None)}
+        compare_task_checkpoints(&pair[1],&pair[0]).map(Some).map_err(to_err)
     }
 
     pub fn history(&self,chat_id:&str)->Result<Vec<ChatMessage>,String>{

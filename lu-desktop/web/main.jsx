@@ -55,6 +55,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
   const [resumeNext,setResumeNext]=useState('');
   const [resumeBlockers,setResumeBlockers]=useState('');
   const [resumeRecord,setResumeRecord]=useState(null);
+  const [contextChange,setContextChange]=useState(null);
   const [resumeBusy,setResumeBusy]=useState(false);
   const [effectCallId,setEffectCallId]=useState('');
   const [verifiedEffects,setVerifiedEffects]=useState([]);
@@ -276,19 +277,25 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
         taskId:resumeTask.trim()
       });
       setResumeRecord(value);
+      setContextChange(null);
       setVerifiedEffects([]);
       // Read-only automatic reconciliation: re-hash registered packages and
       // recheck APPLIED journal receipts before presenting a next-step plan.
       if(value){
-        const [assets,effects]=await Promise.all([
+        const [assets,effects,changes]=await Promise.all([
           invoke('lu_m3_resume_resources',{
             chatId:activeChatId,projectId:resumeProject.trim()
           }),
           invoke('lu_m3_task_effects',{
             chatId:activeChatId,projectId:resumeProject.trim(),
             taskId:resumeTask.trim()
+          }),
+          invoke('lu_m3_context_change',{
+            chatId:activeChatId,projectId:resumeProject.trim(),
+            taskId:resumeTask.trim()
           })
         ]);
+        setContextChange(changes);
         setAssetProject(resumeProject.trim());
         setAssetRows(assets);
         setVerifiedEffects(effects);
@@ -413,6 +420,15 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
       {resumeRecord&&<section className="ansfHistoryEntry" aria-label="Verified project continuity">
         <strong>{resumeRecord.projectId} · {resumeRecord.taskId}</strong>
         <small>Origin chat {resumeRecord.sourceChatId} · original evidence {resumeRecord.originalSourceIds.join(', ')}</small>
+        {contextChange?.needsReview&&<section role="status" aria-label="Context Change Monitor review">
+          <strong>Context Change Monitor · review changed task assumptions</strong>
+          <small>Compared checkpoints {contextChange.previousCheckpointId} and {contextChange.currentCheckpointId}. Historical changes never approve a new action.</small>
+          {contextChange.nextActionChanged&&<p>Next action changed. Review before continuing.</p>}
+          {contextChange.completedWorkChanged&&<p>Completed-work description changed; verify the APPLIED receipts.</p>}
+          {contextChange.sourceEvidenceChanged&&<p>Original ANSF source evidence changed; reconcile supersession.</p>}
+          {contextChange.addedBlockers.map(b=><p key={'added-'+b}>New blocker: {b}</p>)}
+          {contextChange.clearedBlockers.map(b=><p key={'cleared-'+b}>Cleared blocker (verify): {b}</p>)}
+        </section>}
         <p>Completed: {resumeRecord.completedWork}</p>
         <p>Next: {resumeRecord.nextAction}</p>
         {resumeRecord.blockers.map((b,i)=><p key={i}>Blocker: {b}</p>)}

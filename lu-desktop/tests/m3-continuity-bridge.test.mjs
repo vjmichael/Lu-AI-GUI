@@ -24,3 +24,12 @@ test('Human-confirmed source-scoped checkpoint can be loaded from another chat',
  assert.match(pane,/This is context, not current permission/);
  assert.doesNotMatch(pane,/setChatId|setHistory|setPrompt|switchChat/);
 });
+
+test('CCM compares source-validated task changes but cannot authorize execution',()=>{
+ assert.match(chat,/pub fn monitor_project_context/);
+ assert.match(chat,/self\.continuity_view\(active_chat,checkpoint\.clone\(\)\)/);
+ assert.match(host,/fn lu_m3_context_change\(/);
+ assert.match(host,/lu_m3_context_change,/);
+ assert.match(pane,/Context Change Monitor · review changed task assumptions/);
+ assert.match(pane,/lu_m3_context_change/);
+});

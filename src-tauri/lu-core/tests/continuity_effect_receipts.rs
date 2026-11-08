@@ -65,3 +65,31 @@ fn only_applied_receipts_can_prove_work_across_restarts(){
     }
     fs::remove_dir_all(folder).unwrap();
 }
+
+#[test]
+fn context_change_monitor_detects_new_task_assumptions_without_replay(){
+    use lu_core::continuity::compare_task_checkpoints;
+    let folder=root();
+    let store=ContinuityStore::open(&folder.join("ccm.sqlite")).unwrap();
+    let before=checkpoint();
+    store.append(&before).unwrap();
+    let mut after=before.clone();
+    after.checkpoint_id="checkpoint-proof-02".into();
+    after.conversation_id="c-new-chat".into();
+    after.source_entry_ids=vec![4];
+    after.next_action="Run new Windows installer acceptance".into();
+    after.blockers=vec!["Windows machine unavailable".into()];
+    store.append(&after).unwrap();
+    let pair=store.recent_for_task("lu","nsis").unwrap();
+    assert_eq!(pair.len(),2);
+    let review=compare_task_checkpoints(&pair[1],&pair[0]).unwrap();
+    assert!(review.needs_review);
+    assert!(review.next_action_changed);
+    assert!(review.source_evidence_changed);
+    assert_eq!(review.added_blockers,vec!["Windows machine unavailable"]);
+    assert!(!review.completed_work_changed);
+    assert!(compare_task_checkpoints(&pair[1],&before).is_err());
+    assert!(store.recent_for_task("../lu","nsis").is_err());
+    drop(store);
+    fs::remove_dir_all(folder).unwrap();
+}

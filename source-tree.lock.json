@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4d25f29759dd4737dd38a45a6365d7e96cc4f7ab",
+  "sourceCommitBeforeLock": "b468f19c0879a0ce741336cd60efb629100123fb",
   "trackedFileCount": 582,
   "files": [
     {
@@ -509,7 +509,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "d821c8fd13d1ff9160339146567bde5cc6cae951"
+      "blob": "a460da077d2b13d15afcf4b7ec9c80ee80cbde80"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -577,7 +577,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "29f06332a6190fa64041c86b452ba6f2e4cdd36c"
+      "blob": "81ff815d2aed4a466eeaf71cc9dd8aad1cd22da8"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -761,7 +761,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-continuity-bridge.test.mjs",
-      "blob": "57d82c8071f0b2770d3fd49bcec866d5b5eeae5f"
+      "blob": "92fa3201fb952ebfd5abf52c6c8c49a15a2c9be8"
     },
     {
       "path": "lu-desktop/tests/m3-effect-receipts.test.mjs",
@@ -969,7 +969,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "dddfbc5ba91401a2ed0ee133b4e020f5fd8a9061"
+      "blob": "a0210f678963c3fe3f5bf9ac11590f215b3219c5"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1245,7 +1245,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/continuity.rs",
-      "blob": "289ed1e827048be5b56475360f27e9bbf003e1f2"
+      "blob": "4f20dd977403e0fa1056d18c27dcbf9bf36303ff"
     },
     {
       "path": "src-tauri/lu-core/src/contracts.rs",
@@ -1949,7 +1949,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/continuity_effect_receipts.rs",
-      "blob": "c4708cfecfd753cfe2270897069959528834e4aa"
+      "blob": "ca8be09d54a363d9a241a626af2f0c5f0d0ae541"
     },
     {
       "path": "src-tauri/lu-core/tests/conversation_authority.rs",

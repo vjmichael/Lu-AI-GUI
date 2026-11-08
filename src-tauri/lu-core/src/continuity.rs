@@ -51,6 +51,50 @@ type StoredCheckpoint = (
     String,
 );
 
+/// Context Change Monitor: a read-only comparison of two immutable, source-
+/// backed checkpoints from the same task. A changed historical fact is NOT
+/// approval to run a tool, and a changed plan needs human review.
+#[derive(Debug,Clone,PartialEq,Eq,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct ContextChangeReview{
+    pub project_id:String,
+    pub task_id:String,
+    pub previous_checkpoint_id:String,
+    pub current_checkpoint_id:String,
+    pub next_action_changed:bool,
+    pub completed_work_changed:bool,
+    pub source_evidence_changed:bool,
+    pub added_blockers:Vec<String>,
+    pub cleared_blockers:Vec<String>,
+    pub needs_review:bool,
+}
+pub fn compare_task_checkpoints(
+    previous:&TaskCheckpoint,current:&TaskCheckpoint
+)->Result<ContextChangeReview,ContinuityError>{
+    if !validate(previous)||!validate(current)||
+       previous.project_id!=current.project_id||
+       previous.task_id!=current.task_id||
+       previous.checkpoint_id==current.checkpoint_id{
+        return Err(ContinuityError::InvalidInput)
+    }
+    let added_blockers=current.blockers.iter()
+        .filter(|b|!previous.blockers.contains(b)).cloned().collect::<Vec<_>>();
+    let cleared_blockers=previous.blockers.iter()
+        .filter(|b|!current.blockers.contains(b)).cloned().collect::<Vec<_>>();
+    let next_action_changed=previous.next_action!=current.next_action;
+    let completed_work_changed=previous.completed_work!=current.completed_work;
+    let source_evidence_changed=previous.conversation_id!=current.conversation_id||
+        previous.source_entry_ids!=current.source_entry_ids;
+    let needs_review=next_action_changed||completed_work_changed||
+        source_evidence_changed||!added_blockers.is_empty()||!cleared_blockers.is_empty();
+    Ok(ContextChangeReview{
+        project_id:current.project_id.clone(),task_id:current.task_id.clone(),
+        previous_checkpoint_id:previous.checkpoint_id.clone(),
+        current_checkpoint_id:current.checkpoint_id.clone(),
+        next_action_changed,completed_work_changed,source_evidence_changed,
+        added_blockers,cleared_blockers,needs_review
+    })
+}
 pub struct ContinuityStore {
     conn: Mutex<Connection>,
 }
@@ -423,6 +467,44 @@ impl ContinuityStore {
             }
             Ok(checkpoint)
         }).transpose()
+    }
+
+    /// Two most recent immutable records, newest first. The caller MUST
+    /// authenticate both cited ANSF books before comparing any source facts.
+    pub fn recent_for_task(
+        &self,project_id:&str,task_id:&str
+    )->Result<Vec<TaskCheckpoint>,ContinuityError>{
+        if !valid_id(project_id)||!valid_id(task_id){
+            return Err(ContinuityError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|ContinuityError::Locked)?;
+        let mut stmt=conn.prepare(
+            "SELECT checkpoint_id,project_id,task_id,conversation_id,
+                    source_entry_ids,completed_work,next_action,blockers
+             FROM continuity_checkpoints
+             WHERE project_id=?1 AND task_id=?2 ORDER BY sequence DESC LIMIT 2"
+        )?;
+        let saved=stmt.query_map(params![project_id,task_id],|r|Ok((
+            r.get::<_,String>(0)?,r.get::<_,String>(1)?,
+            r.get::<_,String>(2)?,r.get::<_,String>(3)?,
+            r.get::<_,String>(4)?,r.get::<_,String>(5)?,
+            r.get::<_,String>(6)?,r.get::<_,String>(7)?
+        )))?.collect::<Result<Vec<_>,_>>()?;
+        let mut out=Vec::with_capacity(saved.len());
+        for (checkpoint_id,project_id,task_id,conversation_id,
+             source_entry_ids,completed_work,next_action,blockers) in saved{
+            let item=TaskCheckpoint{
+                checkpoint_id,project_id,task_id,conversation_id,
+                source_entry_ids:serde_json::from_str(&source_entry_ids)
+                    .map_err(|_|ContinuityError::InvalidInput)?,
+                completed_work,next_action,
+                blockers:serde_json::from_str(&blockers)
+                    .map_err(|_|ContinuityError::InvalidInput)?,
+            };
+            if !validate(&item){return Err(ContinuityError::InvalidInput)}
+            out.push(item);
+        }
+        Ok(out)
     }
 
     pub fn latest(
