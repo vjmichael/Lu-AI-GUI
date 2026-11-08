@@ -243,7 +243,7 @@ mod tests{
              committer Lu <lu@example.test> 1 +0000\n\n\
              synthetic native DAG\n");
         let raw=format!("commit {}\0{}",payload.len(),payload).into_bytes();
-        let sha=git_git_hex(&sha1_digest(&raw));
+        let sha=git_hex(&sha1_digest(&raw));
         let folder=root.join("objects").join(&sha[..2]);
         fs::create_dir_all(&folder).unwrap();
         let mut writer=ZlibEncoder::new(Vec::new(),Compression::default());
@@ -253,8 +253,8 @@ mod tests{
     }
     #[test]
     fn verified_sha1_matches_known_git_object_vectors(){
-        assert_eq!(git_git_hex(&sha1_digest(b"")),"da39a3ee5e6b4b0d3255bfef95601890afd80709");
-        assert_eq!(git_git_hex(&sha1_digest(b"abc")),
+        assert_eq!(git_hex(&sha1_digest(b"")),"da39a3ee5e6b4b0d3255bfef95601890afd80709");
+        assert_eq!(git_hex(&sha1_digest(b"abc")),
             "a9993e364706816aba3e25717850c26c9cd0d89d");
     }
     #[test]
