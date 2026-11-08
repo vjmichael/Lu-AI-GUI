@@ -16,7 +16,7 @@ Practical AI Capability = f(**K**: the selected model's knowledge/reasoning, **I
 
 | ID | Priority | Missing implementation / completion definition |
 |---|---|---|
-| IMP-01 AGENT-01F | P0 | Host-minted draft plan for a real original saved human turn/current ANSF goal; source candidate stage 1 in this branch. Then complete model-proposed normal-chat plan ingress, idempotency, staged recovery, review UX and exact-goal/clarification rechecks. **Never** infer effect authorization from a draft. |
+| IMP-01 AGENT-01F | P0 | Host-derived stable, idempotent draft plan/revision identifiers for a real saved ANSF human turn/current goal; source candidate, including interrupted two-phase staging regression. Still finish model-proposed normal-chat ingress, concurrent admission arbitration, review UX and exact-goal/clarification rechecks. **Never** infer effect authorization from a draft. |
 | IMP-02 MEMORY-LOOP | P0 | Make original source-backed ANSF retrieval, belief revision, operational/procedural memory, human clarification and task continuity work together in actual model/resumed task turns; memory does not confer permission. |
 | IMP-03 EXEC-INTERFACE | P0 | Enable actual loaded GGUF tool selection and real reviewed installed Git/FFprobe/app operations through the already designed host native execution broker. Don't clone specialist apps. |
 | IMP-04 EXEC-AUTH | P0 | Bind active plan steps to fresh explicit human-origin task, resource/effect, credentials/egress scopes and revocation; implement actual broker dispatch separately from currently non-dispatching AGENT-01E preflight. |

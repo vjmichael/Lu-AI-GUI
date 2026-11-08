@@ -3,7 +3,7 @@
 //! Original human goal + user turn are the authoritative input; a proposed
 //! step graph is merely data for later human review, NOT an executable plan.
 use std::{fs,fs::OpenOptions,path::{Path,PathBuf}};
-use rand::{rngs::OsRng,RngCore};
+use sha2::{Digest,Sha256};
 use crate::{chat_store::ChatStore,agent_plan_review::OriginalChatGoalSources};
 use lu_core::{
     ansf_goals::project_goal_events,
@@ -25,15 +25,19 @@ pub struct DraftPlanReceipt{
     pub review_state:&'static str,
     pub execution_authority:&'static str,
 }
-fn host_id(prefix:&str)->String{
-    let mut bytes=[0u8;16];
-    OsRng.fill_bytes(&mut bytes);
-    let mut id=String::from(prefix);
-    for byte in bytes{
-        use std::fmt::Write;
-        let _=write!(id,"{byte:02x}");
+/// A stable host-derived identifier from the already cryptographically
+/// opaque original ANSF chat and user-turn IDs. It carries NO authority;
+/// this makes a crash between plan and revision writes safe to stage again.
+fn host_id(prefix:&str,chat:&str,turn:&str,ordinal:u32)->String{
+    let mut hash=Sha256::new();
+    hash.update(b"Lu AGENT-01F original-turn draft identity v1");
+    for part in [prefix,chat,turn]{
+        hash.update((part.len() as u64).to_le_bytes());
+        hash.update(part.as_bytes());
     }
-    id
+    hash.update(ordinal.to_le_bytes());
+    let full=format!("{:x}",hash.finalize());
+    format!("{prefix}{}", &full[..32])
 }
 fn original_plan_file(root:&Path)->Result<PathBuf,String>{
     let meta=fs::symlink_metadata(root)
@@ -61,7 +65,9 @@ fn original_plan_file(root:&Path)->Result<PathBuf,String>{
 }
 /// Stage a proposal in the host-selected profile only. This is intentionally
 /// NOT exported as a model tool or Tauri command: an actual model-turn ingress
-/// and idempotent admission protocol remain separate implementation tasks.
+/// and full live model admission protocol remain separate implementation tasks.
+/// The SAME saved human turn + graph re-stages identically after restart;
+/// conflicting proposed steps for that turn are refused, not duplicated.
 pub fn stage_initial_draft(
     profile:&Path,chats:&ChatStore,chat:&str,source_turn:&str,
     steps:&[ProposedStep],
@@ -83,8 +89,8 @@ pub fn stage_initial_draft(
     let goal_id=goal.goal_id.ok_or("No saved current goal")?;
     let goal_event_id=goal.revision_event_id.ok_or("No saved current goal event")?;
     let path=original_plan_file(profile)?;
-    let plan_id=host_id("p-");
-    let revision_id=host_id("v-");
+    let plan_id=host_id("p-",chat,source_turn,0);
+    let revision_id=host_id("v-",chat,source_turn,0);
     let baseline=steps.iter().map(|s|PlanStepSpec{
         kind:s.kind,depends_on:s.depends_on
     }).collect::<Vec<_>>();
@@ -95,9 +101,10 @@ pub fn stage_initial_draft(
     let proposal=RevisionProposal{
         goal_id,goal_event_id,assumption_sources:Vec::new(),
         reason:RevisionReason::Initial,
-        steps:steps.iter().map(|s|RevisionStep{
+        steps:steps.iter().enumerate().map(|(index,s)|RevisionStep{
             kind:s.kind,depends_on:s.depends_on,
-            deliverable_id:host_id("d-"),expected:s.expected,
+            deliverable_id:host_id("d-",chat,source_turn,index as u32),
+            expected:s.expected,
         }).collect()
     };
     let source=OriginalChatGoalSources{chats};
@@ -165,6 +172,8 @@ mod tests{
             .snapshot(&receipt.plan_id,&chat,&turn).unwrap().unwrap();
         assert_eq!(plan.state,"DRAFT");
         assert_eq!(plan.continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
+        let again=stage_initial_draft(&root,&chats,&chat,&turn,&steps()).unwrap();
+        assert_eq!(again,receipt);
         drop(chats);
         let reopened=ChatStore::open(&root).unwrap();
         assert!(reopened.trusted_user_turn_text(&chat,&turn).is_some());
@@ -187,6 +196,29 @@ mod tests{
         }).unwrap();
         assert!(stage_initial_draft(&root,&chats,&chat,&turn,&steps()).is_err());
         assert!(!root.join("lu-agent-plans.sqlite").exists());
+        let _=fs::remove_dir_all(root);
+    }
+    #[test]
+    fn interrupted_two_phase_draft_staging_completes_without_duplicate(){
+        let (root,chats,chat,turn,_)=setup();
+        let path=original_plan_file(&root).unwrap();
+        let original=host_id("p-",&chat,&turn,0);
+        let baseline=steps().iter().map(|s|PlanStepSpec{
+            kind:s.kind,depends_on:s.depends_on
+        }).collect::<Vec<_>>();
+        // Simulate a crash after AGENT-01A plan registration but before
+        // AGENT-01B immutable first revision. Reopening never executes.
+        AgentPlanLedger::open(&path).unwrap()
+            .register(&original,&chat,&turn,&baseline,&chats).unwrap();
+        let staged=stage_initial_draft(&root,&chats,&chat,&turn,&steps()).unwrap();
+        assert_eq!(staged.plan_id,original);
+        assert_eq!(AgentPlanRevisionStore::open(&path).unwrap()
+            .history(&original,&chat).unwrap().len(),1);
+        let repeated=stage_initial_draft(&root,&chats,&chat,&turn,&steps()).unwrap();
+        assert_eq!(staged,repeated);
+        let mut different=steps();
+        different[1].kind=PlanStepKind::Analyze;
+        assert!(stage_initial_draft(&root,&chats,&chat,&turn,&different).is_err());
         let _=fs::remove_dir_all(root);
     }
     #[test]

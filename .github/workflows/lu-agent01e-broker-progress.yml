@@ -152,12 +152,13 @@ jobs:
             2>&1 | tee agent01e-evidence/agent01f-plan-admission.log
           for case in \
             real_saved_turn_and_current_goal_stage_only_reviewable_draft \
+            interrupted_two_phase_draft_staging_completes_without_duplicate \
             cross_chat_unverified_turn_and_pending_clarification_are_denied \
             invalid_steps_and_superseded_human_turn_do_not_write; do
             grep -Fq "test agent_plan_admission::tests::$case ... ok" \
               agent01e-evidence/agent01f-plan-admission.log
           done
-          grep -Fq 'test result: ok. 3 passed; 0 failed;' \
+          grep -Fq 'test result: ok. 4 passed; 0 failed;' \
             agent01e-evidence/agent01f-plan-admission.log
       - name: Parent AGENT-01A/B/C/D integration regressions at exact E head
         shell: bash

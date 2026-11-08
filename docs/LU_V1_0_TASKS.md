@@ -14,7 +14,7 @@
 
 | ID | Priority | Implementation outstanding |
 |---|---|---|
-| IMP-01 AGENT-01F | P0 | Host-generated real ANSF original-goal DRAFT admission stage, then model/normal-chat plan ingress, idempotency, UI review and clarified-goal continuity; no model-origin execution permission |
+| IMP-01 AGENT-01F | P0 | Host-derived same-turn idempotent real ANSF original-goal DRAFT admission stage, then live model/normal-chat ingress, concurrent admission, UI review and clarified-goal continuity; no model-origin execution permission |
 | IMP-02 MEMORY-LOOP | P0 | ANSF original-source/procedural memory, belief revision, context-change detection and clarification integration in genuine model and resumed task turns |
 | IMP-03 EXEC-INTERFACE | P0 | Actual GGUF-selected installed Git/FFprobe/application operations through existing reviewed broker, not replacement app features |
 | IMP-04 EXEC-AUTH | P0 | Fresh per-step human/host scope, effect/resource/egress control, broker-to-agent live admission without claiming preflight already dispatches |
