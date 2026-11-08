@@ -94,7 +94,7 @@ reclamation are guarded while a B9 navigation operation holds its ticket.
 
 ## Test evidence (separate from acceptance)
 
-- `ide/app/tests/workspace_layout.test.mjs`: nine Node tests for source
+- `ide/app/tests/workspace_layout.test.mjs`: ten Node tests for source
   exclusion, fresh dirty-state observation, foreign/traversal/duplicate
   path denial, 48-file cap, extra-field stripping, exact response identity,
   stale disk revision and frontend/native wiring.
