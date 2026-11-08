@@ -351,6 +351,15 @@ fn metadata() -> Vec<CapabilityMeta> {
             "text and saved source revision"
         ),
         capability!(
+            "source.findProject",
+            "ide_find_in_project",
+            "Find in saved project",
+            "Bounded literal saved-file search with exact observed SHA-256 and source offsets.",
+            "read",
+            "registered and open project, bounded literal query",
+            "saved source SHA-256, truncation, UTF-8 and UTF-16 match ranges"
+        ),
+        capability!(
             "source.readSpan",
             "ide_read_source_span",
             "Read source lines",
@@ -507,7 +516,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 41);
+        assert_eq!(catalog.capabilities.len(), 42);
         assert!(catalog.capabilities.len() <= 48);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();

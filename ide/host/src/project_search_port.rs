@@ -2,7 +2,6 @@
 //! execution, indexing daemon, Lu bridge, or implicit network access.
 use std::{collections::VecDeque, io::Read};
 
-use regex::RegexBuilder;
 use serde::Serialize;
 
 use crate::{
@@ -85,6 +84,53 @@ fn excerpt(line: &str, start: usize, end: usize) -> String {
     text
 }
 
+/// Bounded literal search; no dependency or lockfile change. For case-insensitive
+/// matching we lower Unicode scalars while preserving a map to the exact
+/// original UTF-8 byte span, never returning offsets into normalized text.
+fn literal_spans(line: &str, query: &str, case_sensitive: bool) -> Vec<(usize, usize)> {
+    if case_sensitive {
+        return line
+            .match_indices(query)
+            .take(MAX_MATCHES)
+            .map(|(at, matched)| (at, at + matched.len()))
+            .collect();
+    }
+    let folded_query = query.to_lowercase();
+    let mut folded = String::with_capacity(line.len());
+    let mut original_start = Vec::with_capacity(line.len());
+    let mut original_end = Vec::with_capacity(line.len());
+    for (at, character) in line.char_indices() {
+        let end = at + character.len_utf8();
+        for lower in character.to_lowercase() {
+            let before = folded.len();
+            folded.push(lower);
+            for _ in before..folded.len() {
+                original_start.push(at);
+                original_end.push(end);
+            }
+        }
+    }
+    let mut spans = Vec::new();
+    let mut previous_end = 0usize;
+    for (at, matched) in folded.match_indices(&folded_query) {
+        let end = at + matched.len();
+        if at >= original_start.len() || end > original_end.len() || end == 0 {
+            continue;
+        }
+        let from = original_start[at];
+        let to = original_end[end - 1];
+        if from < previous_end || to <= from {
+            continue;
+        }
+        spans.push((from, to));
+        previous_end = to;
+        if spans.len() >= MAX_MATCHES {
+            break;
+        }
+    }
+    spans
+}
+
 impl IdeWorkspaceRegistry {
     /// Reads only registered, currently open project roots. The result is a
     /// snapshot of *saved disk bytes*, never unsaved CodeMirror buffers.
@@ -102,12 +148,6 @@ impl IdeWorkspaceRegistry {
         {
             return Err(BrowserError::InvalidSearch);
         }
-        let expression = RegexBuilder::new(&regex::escape(query))
-            .case_insensitive(!case_sensitive)
-            .unicode(true)
-            .size_limit(1 << 20)
-            .build()
-            .map_err(|_| BrowserError::InvalidSearch)?;
         let root = self.source_capability(project_id)?;
         let mut result = ProjectSearchResult {
             schema_version: 1,
@@ -231,18 +271,18 @@ impl IdeWorkspaceRegistry {
                 for (index, raw) in text.split_inclusive('\n').enumerate() {
                     let line = raw.strip_suffix('\n').unwrap_or(raw);
                     let line = line.strip_suffix('\r').unwrap_or(line);
-                    for found in expression.find_iter(line) {
+                    for (match_from, match_to) in literal_spans(line, query, case_sensitive) {
                         result.matches.push(ProjectSearchMatch {
                             relative_path: relative_path.clone(),
                             revision: revision.clone(),
                             line: index + 1,
-                            column_utf16: line[..found.start()].encode_utf16().count() + 1,
-                            match_length_utf16: line[found.start()..found.end()]
+                            column_utf16: line[..match_from].encode_utf16().count() + 1,
+                            match_length_utf16: line[match_from..match_to]
                                 .encode_utf16()
                                 .count(),
-                            from_byte: (line_start_byte + found.start()) as u64,
-                            to_byte: (line_start_byte + found.end()) as u64,
-                            preview: excerpt(line, found.start(), found.end()),
+                            from_byte: (line_start_byte + match_from) as u64,
+                            to_byte: (line_start_byte + match_to) as u64,
+                            preview: excerpt(line, match_from, match_to),
                         });
                         if result.matches.len() >= MAX_MATCHES {
                             result.truncated = true;
@@ -260,6 +300,18 @@ impl IdeWorkspaceRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn literal_unicode_search_preserves_original_utf8_byte_offsets() {
+        let spans = literal_spans("αÉclair 🦊 ÉCLAIR", "éclair", false);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(&"αÉclair 🦊 ÉCLAIR"[spans[0].0..spans[0].1], "Éclair");
+        assert_eq!(&"αÉclair 🦊 ÉCLAIR"[spans[1].0..spans[1].1], "ÉCLAIR");
+        let sensitive = literal_spans("foo Foo", "foo", true);
+        assert_eq!(sensitive, vec![(0, 3)]);
+        assert!(literal_spans("other", "absent", false).is_empty());
+    }
+
+
 
     #[test]
     fn excerpt_keeps_the_matched_text_visible() {

@@ -4140,6 +4140,124 @@
           "automaticExecution"
         ]
       }
+    },
+    "source.findProject": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "caseSensitive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "projectId",
+          "query",
+          "caseSensitive"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "type": "integer"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "caseSensitive": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "filesScanned": {
+            "type": "integer"
+          },
+          "entriesSeen": {
+            "type": "integer"
+          },
+          "bytesScanned": {
+            "type": "integer"
+          },
+          "skippedFiles": {
+            "type": "integer"
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "relativePath": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "line": {
+                  "type": "integer"
+                },
+                "columnUtf16": {
+                  "type": "integer"
+                },
+                "matchLengthUtf16": {
+                  "type": "integer"
+                },
+                "fromByte": {
+                  "type": "integer"
+                },
+                "toByte": {
+                  "type": "integer"
+                },
+                "preview": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "relativePath",
+                "revision",
+                "line",
+                "columnUtf16",
+                "matchLengthUtf16",
+                "fromByte",
+                "toByte",
+                "preview"
+              ]
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "projectId",
+          "query",
+          "caseSensitive",
+          "scope",
+          "filesScanned",
+          "entriesSeen",
+          "bytesScanned",
+          "skippedFiles",
+          "matches",
+          "truncated"
+        ]
+      }
     }
   }
 }
