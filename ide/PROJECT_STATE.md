@@ -520,3 +520,6 @@ Windows E2 [run 42435353978](https://github.com/vjmichael/Lu-AI-GUI/actions/runs
 
 ### P05 B3 independent branch-scoped exact-source native CI
 Added a separate Windows 2022 + Ubuntu 26.04 native source workflow with exact source checkout, P06 Cargo/npm immutable SHA checks, host Cargo tests and rustfmt, actual npm/CodeMirror frontend tests, and native Tauri lib check. It is a branch-scoped diagnostic, **not** Ubuntu 24.04 installed acceptance or an externally signed release. Historical P05 38 workflow pins unchanged. Exact-head results pending.
+
+### P05 B3 installed Windows exact saved-search revision acceptance
+An isolated unsigned Windows 2022 NSIS workflow now installs/launches the actual source project, performs bounded native saved-file search through the desktop WebView, alters the exact file *after the search result* to prove stale SHA denial, searches again and opens a fresh result. It checks saved disk hashes before/after and requires real NSIS uninstall and exact source upstream legal notices. No JS/Tauri IPC test shortcut, no signing, no historical CI mutation. **New exact-head OS run required before claiming acceptance.**

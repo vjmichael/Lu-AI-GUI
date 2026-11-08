@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','SearchProjectSaved')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -934,6 +934,37 @@ try {
       $stillOpen=Find-Control 'Source editor text' ''
       if (!$stillOpen.Current.IsKeyboardFocusable) { Deny 'conflicted_draft_was_discarded' }
       Write-Host 'WO8_NATIVE_EXTERNAL_SOURCE_CONFLICT_DENIED_AND_UNSAVED_DRAFT_PRESERVED=PASS'
+    }
+    if ($Scenario -eq 'SearchProjectSaved') {
+      # A real saved source, read via bounded native project search. Capture
+      # its SHA, then alter disk bytes before navigating to prove the UI
+      # cannot use stale search coordinates to overwrite/open a changed file.
+      $source=Join-Path $fixed 'main.rs'
+      [IO.File]::AppendAllText($source,"`n// P05_B3_FIXED_MATCH`n")
+      $savedHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
+      Click 'Find in project'
+      Require 'Find in saved project files'
+      $query=Find-Control 'Search project text' 'Edit' 25
+      $query.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('P05_B3_FIXED_MATCH')
+      Click 'Search project'
+      [void](Find-Control 'main.rs:' '' 25)
+      [IO.File]::AppendAllText($source,"// P05_B3_CHANGED_AFTER_SEARCH`n")
+      $externalHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
+      if ($externalHash -eq $savedHash) { Deny 'project_search_external_change_not_created' }
+      Click 'main.rs:'
+      [void](Find-Control 'Could not open this exact saved search result' '' 20)
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne $externalHash) {
+        Deny 'stale_saved_search_result_mutated_source'
+      }
+      Click 'Search project'
+      [void](Find-Control 'main.rs:' '' 25)
+      Click 'main.rs:'
+      Require 'Source explorer and editor'
+      Require 'Source editor text'
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne $externalHash) {
+        Deny 'fresh_saved_project_search_mutated_source'
+      }
+      Write-Host 'P05_B3_INSTALLED_SEARCH_STALE_SHA_DENIED_AND_FRESH_RESULT_OPENED=PASS'
     }
     if ($Scenario -eq 'EditorPersistence') {
       $source=Join-Path $fixed 'main.rs'

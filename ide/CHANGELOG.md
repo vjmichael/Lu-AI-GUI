@@ -391,3 +391,5 @@ See the engineering handoff and linked acceptance documents for exact evidence. 
 - **P05 B3 native CI (Nov 8):** Repaired stale D1 typed-schema test count after read-only search registration and formatted native Rust source according to Windows/Linux rustfmt; exact-head native acceptance rerun required.
 
 - **P05 B3 native CI (Nov 8):** Added dedicated Windows/Linux host, frontend and Tauri source matrix on the standalone port branch with immutable P06 lock checks; installed/signed equivalence remains separate and open.
+
+- **IDE P05 B3 installed regression (Nov 8):** Added real unsigned Windows NSIS UIA saved-project search stale SHA denial, fresh result navigation and unchanged source-byte test, retaining upstream notices and uninstall. Native results pending.
