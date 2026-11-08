@@ -309,8 +309,6 @@ mod tests {
         assert!(literal_spans("other", "absent", false).is_empty());
     }
 
-
-
     #[test]
     fn excerpt_keeps_the_matched_text_visible() {
         let line = format!("{}TARGET{}", "a".repeat(160), "b".repeat(160));
