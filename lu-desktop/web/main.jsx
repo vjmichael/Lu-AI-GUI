@@ -3605,7 +3605,7 @@ function App() {
           </section>)}
         </div>}
       </section>}
-      <div className="transcriptWrap"><div className="messages" ref={transcriptRef} onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-relevant="additions">
+      <div className="transcriptWrap"><div className="messages" ref={transcriptRef} onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label="Conversation history, cursor paginated">
         {historyWindow.hasOlder&&<button type="button" className="subtleButton"
           onClick={()=>void loadOlderUiHistory()}>Load older ANSF page</button>}
 
@@ -3617,7 +3617,7 @@ function App() {
           <MessageText text={entry.text} role={entry.role}/></div>)}
         {historyWindow.hasNewer&&<button type="button" className="subtleButton"
           onClick={()=>void loadNewerUiHistory()}>Load newer ANSF page</button>}
-        {visibleJob && <div className="message assistant streaming"><span className="messageRole">
+        {visibleJob && <div className="message assistant streaming"><span className="messageRole" role="status" aria-live="polite" aria-atomic="true">
           {visibleJob.phase === 'queued' ? `Lu · queued${visibleJob.position ? ' (#' + visibleJob.position + ')' : ''}`
            : visibleJob.phase === 'submitting' ? 'Lu · submitting'
            : visibleJob.cancelling ? 'Lu · stopping'

@@ -89,5 +89,19 @@ jobs:
           if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
           npm run build
           npm run check
+      - name: Parse actual Windows M3 acceptance scripts with PowerShell AST
+        shell: pwsh
+        run: |
+          foreach($name in @('scripts/m3-windows-installed-acceptance.ps1','scripts/m3-windows-nsis-cycle.ps1')){
+            $tokens=$null
+            $errors=$null
+            $null=[System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $name).Path,[ref]$tokens,[ref]$errors)
+            if(@($errors).Count -ne 0){
+              foreach($err in $errors){Write-Error "$($err.Message) at $($err.Extent)"}
+              exit 1
+            }
+            Write-Host "PowerShell native acceptance script syntax PASS: $name"
+          }
       - name: Compile Lu desktop host (not installed-app acceptance)
         run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml

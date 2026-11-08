@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ece800217fef71c5aae93a299dc22aa1e19e83ad",
-  "trackedFileCount": 586,
+  "sourceCommitBeforeLock": "7e7cb2936322359f60fc1a8130a4990db098bad8",
+  "trackedFileCount": 590,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -33,11 +33,11 @@
     },
     {
       "path": ".github/workflows/lu-m3-ansf-recall.yml",
-      "blob": "25dc35ae5d95e346bc13f4e0e672ca6b9b86dd75"
+      "blob": "465323f6b3cda095e84b1f7b585a423397a67c17"
     },
     {
       "path": ".github/workflows/lu-m3-cognitum-real-benchmark.yml",
-      "blob": "43d1b3d64f8ed836a8730eead80fc7b80a59038e"
+      "blob": "523f6ee2b1e203bfe2945ad1cec9c75a23607049"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -386,6 +386,10 @@
     {
       "path": "docs/WRITE_01E_EXACT_EDIT_APPROVAL_20261103.md",
       "blob": "059141c168eff1d3296c4477f256c8e4d5d86b5a"
+    },
+    {
+      "path": "docs/acceptance/LU_M3_WINDOWS_NATIVE_ACCEPTANCE_20261107.md",
+      "blob": "ebedc54a3b544ffc3d3c635f09c3ec0426b85c95"
     },
     {
       "path": "docs/acceptance/LU_R20_WINDOWS_GPU_MEMORY_LOAD_UNLOAD_20261101.md",
@@ -797,7 +801,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-scroll-geometry.test.mjs",
-      "blob": "262d6974fbba6f4515fb74341f27743c34697b5d"
+      "blob": "e9a5ab00232bee2f3be023a34013ed60a347b143"
     },
     {
       "path": "lu-desktop/tests/m3-semantic-contract.test.mjs",
@@ -806,6 +810,10 @@
     {
       "path": "lu-desktop/tests/m3-windowed-chat.test.mjs",
       "blob": "83d2863f681dd5d1d6f14b0d248e711be9e65337"
+    },
+    {
+      "path": "lu-desktop/tests/m3-windows-physical-contract.test.mjs",
+      "blob": "e113fc41df95cdcde9416befac9246d4eb653de9"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
@@ -985,7 +993,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "413f961c035fd1674fc29bf47f88d93c7ec87a38"
+      "blob": "b47909a0734a5c960d944e033e0745c439d5509a"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1006,6 +1014,14 @@
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
       "blob": "48bc8661a6f547471ac3c9899eca258e5ad4c5fa"
+    },
+    {
+      "path": "scripts/m3-windows-installed-acceptance.ps1",
+      "blob": "6eaed633e15919b210a8421800a4149216217393"
+    },
+    {
+      "path": "scripts/m3-windows-nsis-cycle.ps1",
+      "blob": "d7da5eb88ac3df849228a45178d48a618ba355e0"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",

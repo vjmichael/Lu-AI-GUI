@@ -61,3 +61,10 @@ test('UI restores source-ID location after chat switching without eagerly fetchi
   assert.match(ui,/MAX_VISIBLE_CHAT_ROWS=MAX_HISTORY_ROWS/);
   assert.doesNotMatch(ui,/invoke\('lu_history'/);
 });
+
+test('paged historical rows are not repeatedly spoken as fresh live model output',()=>{
+  assert.match(ui,/role="log" aria-live="off" aria-label="Conversation history, cursor paginated"/);
+  assert.match(ui,/className="message assistant streaming"><span className="messageRole" role="status" aria-live="polite"/);
+  assert.match(ui,/historyWindow\.hasOlder/);
+  assert.match(ui,/historyWindow\.hasNewer/);
+});
