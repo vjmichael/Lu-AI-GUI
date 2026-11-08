@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
-import {explainToolOutcome} from './reviewed_tool_feedback.mjs';
+import {explainToolOutcome,explainReviewedContinuation} from './reviewed_tool_feedback.mjs';
 import { fullEditChangeLines } from './edit_diff.mjs';
 import { MarkdownView } from './markdown_view.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
@@ -4058,6 +4058,28 @@ function App() {
                 remain unchanged or that processes are still terminated.
                 APPLIED alone means an execution receipt, not semantic truth.
               </small>}
+              {item.source==='Reviewed app' && item.reviewedContinuity && <section
+                role="region" aria-label="Reviewed task recovery timeline"
+                className="readProposalCard">
+                <strong>Original conversation — durable task recovery</strong>
+                <small>{explainReviewedContinuation(item.reviewedContinuity.continuation).title}</small>
+                <small>{explainReviewedContinuation(item.reviewedContinuity.continuation).explanation}</small>
+                <small>{item.reviewedContinuity.explanation}</small>
+                <small>Next safe step: {explainReviewedContinuation(item.reviewedContinuity.continuation).action}</small>
+                <small>Origin bound: {item.reviewedContinuity.originBound?'yes':'not established'}.
+                  Journal: {item.reviewedContinuity.journalState}.
+                  This view never resumes a task or grants execution.</small>
+                {item.reviewedContinuity.operations.map((op,index)=>
+                  <div key={index} className="readProposalCard">
+                    <strong>{op.operation}</strong>
+                    <small>OS effect: {op.processState}. Independent outcome: {op.outcome}.</small>
+                    <small>Original model call: {op.originalModelCallLinked?'linked':'not proven'}.
+                      Worker task: {op.workerTaskLinked?'completed in journal':'not proven complete'}.</small>
+                    <small>Durable checkpoints: {op.checkpointEvents};
+                      last recorded progress: {op.lastCheckpoint==null?'not saved':op.lastCheckpoint+'%'}.</small>
+                  </div>
+                )}
+              </section>}
             </div>)}
         </section>}
         {(wave2RecoveryByChat[chatId] || []).length > 0 && <section
