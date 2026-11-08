@@ -37,8 +37,11 @@ export function rememberedWorkspaceFromTabs(
       wasDirty:tab.dirty===true || tab.draft!==tab.savedText || live!==tab.savedText,
     });
   }
-  const primary=tabs.find(tab=>tab.key===primaryKey && tab.projectId===projectId);
-  const secondary=tabs.find(tab=>tab.key===secondaryKey && tab.projectId===projectId);
+  // React may have an old selected key during a project transition. Store
+  // only an actual open tab from this project, never a foreign or null pane.
+  const primary=relevant.find(tab=>tab.key===primaryKey) ??
+    relevant[relevant.length-1];
+  const secondary=relevant.find(tab=>tab.key===secondaryKey);
   return Object.freeze({
     schemaVersion:LAYOUT_SCHEMA,projectId,files,
     primaryPath:primary?.relativePath??null,
