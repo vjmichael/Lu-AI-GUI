@@ -1,0 +1,100 @@
+name: Lu E1-P03 Contained Reviewed Application Worker
+on:
+  push:
+    branches: ['lu/e1-p03-contained-app-worker-20261107']
+    paths:
+      - 'src-tauri/lu-core/src/native_app_admission.rs'
+      - 'src-tauri/lu-core/src/native_app_catalog.rs'
+      - 'src-tauri/lu-core/src/native_app_execution.rs'
+      - 'src-tauri/lu-core/src/native_background_process.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'src-tauri/lu-core/examples/e1_reviewed_*.rs'
+      - 'src-tauri/lu-core/tests/e1_reviewed_execution.rs'
+      - '.github/workflows/lu-e1-p03-execution.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/native_app_admission.rs'
+      - 'src-tauri/lu-core/src/native_app_catalog.rs'
+      - 'src-tauri/lu-core/src/native_app_execution.rs'
+      - 'src-tauri/lu-core/src/native_background_process.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'src-tauri/lu-core/examples/e1_reviewed_*.rs'
+      - 'src-tauri/lu-core/tests/e1_reviewed_execution.rs'
+      - '.github/workflows/lu-e1-p03-execution.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p03-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  frozen-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify frozen source-tree before native tests
+        run: node scripts/verify-source-tree.mjs
+  real-native-execution:
+    needs: frozen-source
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Execute P01/P02/P03 real authority and OS identity unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e1-p03-native-evidence
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_app_admission::tests -- --nocapture 2>&1 | tee e1-p03-native-evidence/p01.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_app_catalog::tests -- --nocapture 2>&1 | tee e1-p03-native-evidence/p02.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_app_execution::tests -- --nocapture 2>&1 | tee e1-p03-native-evidence/p03-contract.log
+      - name: Build TWO genuine local OS-native reviewed worker executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --example e1_reviewed_version_worker --example e1_reviewed_slow_worker
+      - name: Run installed-runner real process and crash/revocation tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          suffix=""
+          if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
+          export LU_E1_VERSION_WORKER="$GITHUB_WORKSPACE/src-tauri/lu-core/target/debug/examples/e1_reviewed_version_worker${suffix}"
+          export LU_E1_SLOW_WORKER="$GITHUB_WORKSPACE/src-tauri/lu-core/target/debug/examples/e1_reviewed_slow_worker${suffix}"
+          test -s "$LU_E1_VERSION_WORKER"
+          test -s "$LU_E1_SLOW_WORKER"
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_execution -- --nocapture 2>&1 | tee e1-p03-native-evidence/e1-restart-contract.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_execution -- --ignored --nocapture 2>&1 | tee e1-p03-native-evidence/e1-actual-worker.log
+      - name: Retain host native read-only external app registration boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_external_app_action::tests -- --nocapture 2>&1 | tee e1-p03-native-evidence/legacy-boundary.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p03-contained-worker-${{ matrix.os }}
+          path: e1-p03-native-evidence/
+          retention-days: 14
+          if-no-files-found: warn

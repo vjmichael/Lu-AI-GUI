@@ -57,3 +57,33 @@ It does **not** claim that \`--version\`, a PE VERSIONINFO resource, a publisher
 - CI: genuine Linux and Windows native Rust Core tests must pass at the **final exact head**, including P01 fixed Rust test type/structure, positive catalog discovery, expired/revoked/forged/host-veto denial, duplicate and changed-byte identities, stale digest, unsupported format and Windows/Unix OS identity.
 - Source code alone is not passing test evidence. No new OS privilege, shell, browser access, arbitrary app controller, model-selected executable or effectful tool is registered.
 - **Physical installed Windows/AMD Vulkan/NSIS testing remains deferred until the Lu v1.0 release-candidate phase** by owner decision. GitHub-hosted native Windows test results are not a claim that the owner's installed Lu has run.
+
+
+## E1-P03 — contained, reviewed ONE-SHOT worker execution
+
+**Implementation candidate** on separate stacked branch \`lu/e1-p03-contained-app-worker-20261107\`, based on E1-P02 PR #103. E1-P02's standalone Windows/Linux CI should continue without being replaced by this work. Owner’s physical installed-Windows acceptance is still deferred until closer to Lu v1.0; hosted Windows/Linux genuine native process tests remain required immediately.
+
+### First real execution contract (bounded deliberately)
+
+\`src-tauri/lu-core/src/native_app_execution.rs\` is a **host-only execution broker** for a single exact, audited operation: the first-party \`lu-e1-version-worker\` with \`--lu-e1-version-one-shot\`. Host registration provides the exact executable file, expected SHA-256 and reviewed version, as introduced by P01/P02. The model supplies **NO executable name, argv, working directory, environment, PID, network address, filesystem target, or verification result.** A separate current \`ExecuteCode\` capability is required; the read-only availability discovery grant is explicitly insufficient.
+
+Before launch, the broker checks the current trusted user-turn/task/workspace and independent host policy, reopens and hashes the actual PE/ELF executable and its OS identity, then durably writes \`PREPARED\` → \`EXECUTING\` to \`EffectJournal\`. A duplicate or \`UNCERTAIN\` call ID is denied rather than retried. It delegates the actual process to Lu’s existing \`BackgroundProcessSupervisor\`, which owns the child, clears the environment, closes stdin, constrains stdout to the small native progress protocol, discards stderr, uses a fixed executable-parent directory and a 15-second host deadline.
+
+- **Windows:** the existing suspended-launch/Job Object implementation owns the process tree and receives an explicit **256 MiB job memory cap** for this one-shot mode.
+- **Linux:** existing process group and \`PR_SET_PDEATHSIG\` host-death binding are used; this mode receives a **256 MiB RLIMIT_AS**. These protections do NOT independently prove full network namespace isolation or absence of all filesystem effects in arbitrary third-party binaries; arbitrary external application execution remains disabled.
+- **Revocation:** a synchronous user-task-revocation listener fences launch with the same mutex, then cancels the exact owned worker and conservatively marks the effect \`UNCERTAIN\`. A host-originated cancellation also checks the exact original conversation/task identity, not a model-provided PID.
+- **Completion:** supervisor proves process exit and a bounded \`P\`/\`D\` protocol receipt. Lu’s independent task store persists the source receipt, and the broker compares it against the **host-known literal one-shot version-marker digest**. Only then can the *specific process action* reach \`APPLIED\`; receipt JSON explicitly says \`independentApplicationOutputVerified=false\`. A malformed/truncated receipt, timeout, failed worker, aborted launch or cancellation stays \`UNCERTAIN\`, never automatic retry.
+- **Crash/restart:** only the exclusively restarted host may reconcile SQLite \`RUNNING\` to \`INTERRUPTED\` and journal \`EXECUTING\` to \`UNCERTAIN\`. A current worker must never be misclassified as crashed just because a model loses context.
+
+### What E1-P03 actually executes
+
+Two genuine native Rust example binaries are built from source, not fake file descriptors or monkeypatched OS calls:
+
+1. \`e1_reviewed_version_worker\` emits the strict, bounded completion marker without accessing a document, shell, network or credentials.
+2. \`e1_reviewed_slow_worker\` sleeps before the same marker so a real running OS process can be cancelled and reaped by Lu’s process supervisor.
+
+The dedicated \`src-tauri/lu-core/tests/e1_reviewed_execution.rs\` checks a launched real worker and durable post-restart journal, the actual revoked process kill/reap, wrong-origin cancellation, host veto, changed binary digest, duplicate ID denial and interrupted startup reconciliation. Tests depending on external built examples are **explicitly ignored in ordinary Cargo tests** and are **explicitly run using \`--ignored\` in a dedicated real Windows/Linux GitHub matrix**, which builds and supplies the binaries by absolute path. An ordinary core unit-test pass must never be counted as these OS tests.
+
+### Remaining boundaries before general-purpose app operations
+
+E1-P03 is **an initial safe reviewed process execution primitive**, *not* arbitrary CLI/script/general third-party application execution or a user-installed-app result. Full E1-P03 completion still requires a separately audited typed/model-facing host registration, OS resource and network/credential policies appropriate to each external application, argument-level resource broker, and tested cancellation/timeout for each allowed operation. E1-P04 adds independent semantic output validation (e.g. expected worksheet cells rather than a process-exit or digest marker), and E1-P05 compares outcomes against direct-model and existing utility baselines. No new model-facing \`ExecuteCode\` tool has been automatically registered.

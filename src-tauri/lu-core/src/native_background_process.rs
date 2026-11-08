@@ -238,10 +238,11 @@ impl BackgroundProcessSupervisor {
         }
         #[cfg(target_os="linux")]
         {
-            let quota=if plan.args.first().and_then(|s|s.to_str())==
-                Some("--lu-file-scan-worker"){
-                Some(1024*1024*1024u64)
-            }else{None};
+            let quota=match plan.args.first().and_then(|s|s.to_str()){
+                Some("--lu-file-scan-worker")=>Some(1024*1024*1024u64),
+                Some("--lu-e1-version-one-shot")=>Some(256*1024*1024u64),
+                _=>None
+            };
             lu_win_worker_job::unix_owned::bind_owned_worker_pre_exec(
                 &mut command,std::process::id(),quota,
             ).map_err(|_|{
@@ -266,6 +267,16 @@ impl BackgroundProcessSupervisor {
         if plan.args.first().and_then(|s|s.to_str())==
             Some("--lu-file-scan-worker")
             &&job.set_memory_limit(512*1024*1024).is_err(){
+            let _=self.store.fail_pending(&plan.task_id);
+            return Err(BackgroundProcessError::SpawnFailed)
+        }
+        // E1-P03: a strictly one-shot reviewed version worker receives a
+        // hard Windows Job Object memory ceiling. This does not make
+        // unreviewed third-party executables, network or file I/O safe.
+        #[cfg(windows)]
+        if plan.args.first().and_then(|s|s.to_str())==
+            Some("--lu-e1-version-one-shot")
+            &&job.set_memory_limit(256*1024*1024).is_err(){
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed)
         }
