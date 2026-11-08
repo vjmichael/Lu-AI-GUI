@@ -29,3 +29,12 @@ Reads are version-exact, bounded to 16, revalidate current revision and source S
 5. P05 genuine installed Windows and restart/model-replacement acceptance, separated from source compile.
 
 **Current status:** P01 source and CI submitted; native job results have not yet been observed. P02–P05 remain open. M3 remains draft and independently gated.
+
+## P02–P05 source implementation checkpoint (November 7, 2026)
+
+- **P02 semantic claims:** `ansf_belief_revision.rs` appends immutable source-digested, versioned, expiring reported or independently evidenced statements. Only a source-linked current checkpoint, APPLIED receipt and separate trusted validator may create a verified claim. Ordinary source text is a *reported* claim, never a privilege.
+- **P03 belief revision:** bounded full-scope contradiction detection labels all competing live values `Contradicted`, never guesses a winner; newer user original can supersede and explicitly retract. Source edits, expired claims and mismatched application versions are stale. Native tests cover contradiction, retraction/reopen, uncertain crash, rejected direct promotion, and version changes.
+- **P04 local-model path:** the independently navigable ANSF History pane records current-profile human originals as reported claims and allows user-sourced retractions; the real desktop local GGUF Send path recognizes a strict current-human `Recall belief project ...` request and appends at most 4 KiB of provenance-labeled non-authoritative claim data. Genuine Qwen CPU test executes original ANSF SQLite projection and preserves real model answers.
+- **P05 restart/physical:** portable native ChatStore reopening and cross-chat denial tests, uncertain effect restart test, actual Windows/Linux Core CI, and a hash-attested physical installed Windows primary/replacement GGUF plus worker-reaping manual witness harness. These are evidence collection paths, **not** installed acceptance results.
+
+**No gate is declared closed without the exact-head native Windows/Linux jobs, real GGUF outcome, and actual installed Windows acceptance.** Existing M3 dependencies remain independently unaccepted.

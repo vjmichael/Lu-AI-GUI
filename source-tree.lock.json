@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c84544956aca808bcd9e8655d806779bb980891c",
+  "sourceCommitBeforeLock": "c03d5d638aa89e75b19bc6e04a5f4bec924740b7",
   "trackedFileCount": 600,
   "files": [
     {
@@ -265,7 +265,7 @@
     },
     {
       "path": "docs/LU_M4_VERIFIED_PROCEDURAL_MEMORY_20261107.md",
-      "blob": "5f98febfac7a44971356096e52edebfc7ee84e1e"
+      "blob": "9f5e6a1242768c4d496f5f1a3a5bf9e71a216c7b"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
@@ -1173,7 +1173,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_belief_revision.rs",
-      "blob": "dd3d39796c3a66f3044ecfadbfacc25e60a6d523"
+      "blob": "ae46e4d82045126e455a358d43060c091224dcff"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_embedding_worker.rs",

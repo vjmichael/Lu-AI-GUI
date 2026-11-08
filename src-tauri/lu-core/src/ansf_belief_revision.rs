@@ -372,6 +372,57 @@ mod tests{
         drop(restored);drop(continuity);drop(journal);fs::remove_dir_all(path).unwrap();
     }
     #[test]
+    fn crash_recovery_keeps_uncertain_native_effect_out_of_verified_claims(){
+        let path=fixture();fs::create_dir_all(&path).unwrap();
+        let book=AnsfStore::open(&path.join("ansf.sqlite")).unwrap();
+        book.create_session("chat-one","ws-one","Interrupted evidence").unwrap();
+        book.start_chapter("chat-one","Work").unwrap();
+        let source=book.append_entry("chat-one","crash-original",EntryRole::User,
+            "Original","User requested a native model operation").unwrap();
+        let continuity=ContinuityStore::open(&path.join("continuity.sqlite")).unwrap();
+        continuity.append_verified(&TaskCheckpoint{
+            checkpoint_id:"cp-crash".into(),project_id:"lu".into(),
+            task_id:"memory".into(),conversation_id:"chat-one".into(),
+            source_entry_ids:vec![source],completed_work:"Incomplete worker".into(),
+            next_action:"Reconcile before retry".into(),blockers:vec![],
+        },&book).unwrap();
+        let journal_path=path.join("effects.sqlite");
+        {
+            let journal=EffectJournal::open(&journal_path).unwrap();
+            journal.prepare(&ToolInvocation{
+                call_id:"call-crash".into(),tool_id:"lu.model".into(),
+                workspace_id:Some("ws-one".into()),
+                input:ProtoPayload{type_url:"lu.test.Model".into(),bytes:vec![2]}
+            }).unwrap();
+            journal.mark_executing("call-crash").unwrap();
+            // Simulated process termination: no mark_applied receipt.
+        }
+        let restored_journal=EffectJournal::open(&journal_path).unwrap();
+        assert_eq!(restored_journal.reconcile_interrupted().unwrap(),1);
+        assert_eq!(restored_journal.reconcile_interrupted().unwrap(),0);
+        assert!(continuity.link_verified_effect(
+            "cp-crash","call-crash",&restored_journal).is_err());
+        let c=claim(source,"interrupted","completed");
+        let proof=ClaimReceipt{
+            checkpoint_id:"cp-crash".into(),call_id:"call-crash".into(),
+            tool_id:"lu.model".into(),
+        };
+        assert!(book.record_verified_claim(
+            &c,proof,&continuity,&restored_journal,|_|true).is_err());
+        book.record_reported_claim(&c).unwrap();
+        assert_eq!(book.assess_claims("chat-one","lu","memory",
+            "model","backend","1.0",&continuity,&restored_journal,
+            |_|true).unwrap()[0].state,ClaimState::Reported);
+        assert_eq!(book.assess_claims("chat-one","lu","memory",
+            "model","backend","2.0",&continuity,&restored_journal,
+            |_|true).unwrap()[0].state,ClaimState::Stale);
+        let mut expired=claim(source,"expired","done");
+        expired.expires_unix=now().unwrap().saturating_sub(1);
+        assert!(book.record_reported_claim(&expired).is_err());
+        drop(book);drop(continuity);drop(restored_journal);
+        fs::remove_dir_all(path).unwrap();
+    }
+    #[test]
     fn verified_claim_rechecks_receipt_and_user_edit_becomes_stale(){
         let path=fixture();fs::create_dir_all(&path).unwrap();
         let book=AnsfStore::open(&path.join("ansf.sqlite")).unwrap();
