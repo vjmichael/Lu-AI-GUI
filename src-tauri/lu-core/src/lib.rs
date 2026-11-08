@@ -119,6 +119,7 @@ pub mod native_external_app_action;
 pub mod native_app_admission;
 pub mod native_app_catalog;
 pub mod native_app_execution;
+pub mod native_app_output_oracle;
 pub mod native_zip_extract;
 pub mod native_archive_tree;
 pub mod native_archive_batch;

@@ -109,3 +109,32 @@ The broker now:
 **Required:** on the final exact commit, frozen source passes, Linux+Windows core compile succeeds, the two pre-existing OS-native fast and slow tests pass, late-revocation and deadline-expiry native regressions pass, real OS worker/process-tree reaping is witnessed by supervisor APIs, durable SQLite journal remains \`APPLIED\` only for the successful fixed protocol worker and \`UNCERTAIN\` for aborted/missing/ambiguous operations, and historical call IDs do not execute twice. The full dedicated matrix must have real job logs and uploaded evidence. Do not close E1-P03 before that.
 
 Real user's installed Windows/NSIS/Vulkan acceptance is independently deferred until near Lu v1.0; hosted Windows 2025 CI is still required now.
+
+
+## E1-P04 — independent output/semantic verification candidate
+
+**Branch:** \`lu/e1-p04-independent-outcome-oracles-20261107\`, stacked on the still-draft E1-P03 PR #105. Physical owner's Windows installed-app trial remains deferred near Lu v1.0; Linux/Windows native source and actual opened-file tests must run now.
+
+### New production native oracle
+
+\`src-tauri/lu-core/src/native_app_output_oracle.rs\` implements the first **host-only** independently checked outcome contract. It does not run any shell or application, does not register a model-facing tool by default, and never accepts a model-selected file path.
+
+- The trusted host supplies an **already-opened, independently admitted file handle** and the exact user-approved expectation (original user turn, P03 process call ID, workspace, revision, ordered key/value rows and expected SHA-256). Model claims are not approval. A current and separate \`ReadWorkspace\` grant for \`lu.e1.output.verify\`, plus host policy, is verified under the existing bounded \`ConversationAuthority::with_authorized_worker_effect\` so synchronous revocation cannot race the verified SQLite receipt commit.
+- Before touching result content the oracle requires the genuine persisted P03 journal effect in \`APPLIED\` and a strictly decoded 4 KiB-or-less worker receipt with the exact known P03 operation/call ID and **independentApplicationOutputVerified=false**. It also requires the real \`TaskStore\` task \`COMPLETED\` in the same workspace and the genuine scanner proof of the reviewed, host-known P03 version-marker SHA-256 and byte count. Model text cannot promote its own answer to a receipt.
+- Reads up to 128 KiB from the **opened** ordinary file, restores caller's original stream position, obtains OS opened-file identity (Unix dev/inode; Win32 volume/native file ID through Lu's existing safe FFI bridge), compares size, OS identity and modified time across the read, and computes actual full-file SHA-256. The host must separately enforce workspace membership and resource permissions when granting that handle.
+- Parses a strict, schema-named JSON report \`lu.e1.structured.report.v1\` (task ID, revision, and bounded ordered \`{key,value}\` rows). Unknown or duplicate fields, duplicate row keys, wrong values/revision, missing or binary bytes, hash mismatch, or overlong content are **not** successful outcomes. Actual semantics must match the immutable human-approved expected rows exactly. This does not verify arbitrary image, PDF, XLSX spreadsheet formula, audio/video or graphical layout semantics; those will use format-specific independent oracles reusing Lu's existing readers.
+- Writes a small durable receipt to its **separate** \`lu_e1_output_verifications\` SQLite table: process call ID, workspace, original user-turn ID, observed SHA, byte count and opened file ID. No file text, untrusted path, API credential, executable command, transcript or model output is copied into memory SQLite. Same-bytes rechecks are idempotent; a different file/digest for an existing process ID is refused as \`ConflictingReceipt\`. After crash/restart, a saved receipt can be found but cannot mean a re-opened artifact is still valid; each new approval must reverify current bytes.
+- Reports three distinct truths: \`exact_semantics_verified=true\` for the opened file snapshot, \`artifact_producer_independently_attributed=false\`, and \`external_application_output_verified=false\`. A matching JSON file that the host opened is **not proof** that P03's worker produced it. Do not promote these to true until an OS-granted and durable worker-to-artifact handoff is proven.
+
+### Native evidence plan
+
+New E1-P04 native tests open actual local files, verify approved key/value semantics and real OS file identity, persist and reopen SQLite, and reject forged P03 receipt fields, stale model user-turn claims, host-policy veto, revoked authority, wrong workspace, changed row/revision, duplicate/unknown fields, and mutated artifacts after acceptance. The tests **explicitly construct a P03 journal fixture** rather than pretending to have executed the P03 OS worker. The genuine real-worker tests remain in E1-P03's own dedicated workflow. The E1-P04 matrix runs source lock + native oracle and existing artifact parser tests on hosted Linux and Windows. Never claim installed Windows or genuine worker-generated artifact evidence from these fixture-based semantic tests.
+
+### Pending gates
+
+1. E1-P04 final exact-head Windows/Linux native test results, repair any concrete compiler or regression failures.
+2. A real supervised P03 worker producing an artifact into a host-owned, capability-scoped temporary output handle, with independent ownership/producer attribution and no path override or partial-file publication. The current first-party version worker has only a marker, not an artifact.
+3. More independent validators for actual requested formats (CSV/XLSX cell values, DOCX content/structure, PDF rendered outputs, image/video/audio constraints) with host-supplied expected outcomes. Use existing parser modules rather than treating mere file presence or format as task success.
+4. E1-P05 comparative real task benchmark with independent K/I/A/F evidence and measured latency, failures and unauthorized effects. Physical installed Lu/Windows GPU testing remains near v1.0 by owner decision.
+
+**Acceptance status: source candidate only; source inspection is not native CI proof or a general third-party application acceptance.**
