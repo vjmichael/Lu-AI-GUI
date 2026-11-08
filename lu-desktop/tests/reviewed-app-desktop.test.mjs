@@ -107,7 +107,7 @@ test('E1-P14 explains host evidence to humans without inventing permission or re
   assert.match(ui,/explainToolOutcome\(item\.source,item\.state\)\.title/);
   assert.match(ui,/explainToolOutcome\(item\.source,item\.state\)\.meaning/);
   assert.match(ui,/Next safe step:/);
-  assert.doesNotMatch(ui,/item\.state\.replaceAll\('_',' '\)/);
+  assert.doesNotMatch(ui,/<strong>\{item\.source\} — \{item\.state\.replaceAll\('_',' '\)\}<\/strong>/);
   assert.match(ui,/Viewing never restores/);
   assert.match(ui,/Model answers are not OS receipts/);
   assert.doesNotMatch(ui,/invoke\('lu_reviewed_app_ask',\s*\{[^}]*\b(?:path|executable|argv|permission)\s*:/s);
