@@ -32,6 +32,7 @@ struct OwnedWorker {
     workspace_id:String,
     child:Child,
     progress_reader:Option<std::thread::JoinHandle<Option<ScanProof>>>,
+    version_reader:Option<std::thread::JoinHandle<Option<CapturedVersionOutput>>>,
     deadline:Option<Instant>,
     #[cfg(windows)]
     job:Option<lu_win_worker_job::Job>,
@@ -45,6 +46,9 @@ pub struct BackgroundProcessSupervisor {
     // Host-owned stdout pipe custody for reviewed DOCX/XLSX workers. Never
     // exposes worker-chosen paths, raw bytes in SQLite or a model API.
     output_artifacts:Mutex<BTreeMap<String,(String,CapturedArtifact)>>,
+    // E1-P06B: one-use, separately bounded stdout from a fixed, reviewed
+    // external version command. Never model-selected CLI or generic stdio.
+    version_outputs:Mutex<BTreeMap<String,(String,CapturedVersionOutput)>>,
 }
 fn valid_id(s:&str)->bool{
     !s.is_empty()&&s.len()<=128
@@ -100,6 +104,30 @@ pub struct CapturedArtifact{
 }
 impl Drop for CapturedArtifact{
     fn drop(&mut self){self.bytes.fill(0);}
+}
+/// E1-P06B: actual OS pipe output. Untrusted until the host version
+/// parser independently validates the expected application's exact format.
+pub struct CapturedVersionOutput{
+    pub bytes:Vec<u8>,
+    pub sha256:String,
+}
+impl Drop for CapturedVersionOutput{
+    fn drop(&mut self){self.bytes.fill(0);}
+}
+fn read_bounded_version_stdout(
+    mut pipe:impl Read,limit:usize
+)->Option<CapturedVersionOutput>{
+    if !(1..=4096).contains(&limit){return None}
+    let mut bytes=Vec::with_capacity(limit.min(256));
+    // Read at most limit+1 bytes. If the child produces more, reject and
+    // drop its pipe instead of storing arbitrary unbounded process output.
+    if pipe.take(limit as u64+1).read_to_end(&mut bytes).is_err()
+        ||bytes.is_empty()||bytes.len()>limit{
+        bytes.fill(0);
+        return None
+    }
+    let sha256=format!("{:x}",Sha256::digest(&bytes));
+    Some(CapturedVersionOutput{bytes,sha256})
 }
 struct ScanProof{
     sha256:String,bytes:u64,frame:Option<CapturedBgra>,
@@ -233,6 +261,7 @@ impl BackgroundProcessSupervisor {
             store,owned:Mutex::new(BTreeMap::new()),
             observe_frames:Mutex::new(BTreeMap::new()),
             output_artifacts:Mutex::new(BTreeMap::new()),
+            version_outputs:Mutex::new(BTreeMap::new()),
         }
     }
     /// Host-only admission. The caller must obtain the user's task grant
@@ -240,6 +269,38 @@ impl BackgroundProcessSupervisor {
     /// No Tauri command or ModelToolCatalog invokes this API directly.
     pub fn start_host_approved(&self,plan:TrustedWorkerPlan)
         ->Result<(),BackgroundProcessError>{
+        self.start_host_approved_internal(plan,None)
+    }
+    /// Host-only external VERSION-ONLY observation. No generic executable
+    /// stdout transport is available to tools or the WebView.
+    pub(crate) fn start_host_approved_version(
+        &self,plan:TrustedWorkerPlan,output_limit:usize
+    )->Result<(),BackgroundProcessError>{
+        if !(1..=4096).contains(&output_limit)
+            ||plan.progress_protocol
+            ||plan.max_runtime_seconds.is_none_or(|n|!(1..=15).contains(&n)){
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
+        // Production accepts only the host-compiled version flag, with no
+        // model-selected options or script evaluation.
+        let version_only=plan.args.len()==1
+            &&matches!(plan.args[0].to_str(),Some("--version"|"-version"));
+        #[cfg(test)]
+        let version_only=version_only||(
+            plan.args.len()==4
+            &&plan.args[0].to_str()==Some("-I")
+            &&plan.args[1].to_str()==Some("-S")
+            &&plan.args[2].to_str()==Some("-c")
+            &&matches!(plan.args[3].to_str(),
+                Some("import time;time.sleep(20);print('Python 3.13.0')"
+                    |"print('Python '+('9'*8192))"))
+        );
+        if !version_only{return Err(BackgroundProcessError::InvalidPlan)}
+        self.start_host_approved_internal(plan,Some(output_limit))
+    }
+    fn start_host_approved_internal(
+        &self,plan:TrustedWorkerPlan,version_capture:Option<usize>
+    )->Result<(),BackgroundProcessError>{
         if !valid_id(&plan.task_id)||!valid_id(&plan.workspace_id)
           ||plan.max_runtime_seconds.is_some_and(|n|n==0||n>86_400)
           ||plan.args.len()>64||plan.args.iter().any(|arg|
@@ -279,7 +340,9 @@ impl BackgroundProcessSupervisor {
             .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
         let mut command=Command::new(&executable);
         command.args(&plan.args).env_clear().stdin(Stdio::null())
-            .stdout(if plan.progress_protocol{Stdio::piped()}else{Stdio::null()})
+            .stdout(if plan.progress_protocol||version_capture.is_some(){
+                Stdio::piped()
+            }else{Stdio::null()})
             .stderr(Stdio::null())
             .current_dir(executable.parent().ok_or(BackgroundProcessError::InvalidPlan)?);
         #[cfg(windows)]
@@ -298,6 +361,7 @@ impl BackgroundProcessSupervisor {
                 Some("--lu-file-scan-worker")=>Some(1024*1024*1024u64),
                 Some("--lu-e1-version-one-shot")|
                 Some("--lu-e1-artifact-one-shot")=>Some(256*1024*1024u64),
+                _ if version_capture.is_some()=>Some(256*1024*1024u64),
                 _=>None
             };
             lu_win_worker_job::unix_owned::bind_owned_worker_pre_exec(
@@ -331,8 +395,9 @@ impl BackgroundProcessSupervisor {
         // hard Windows Job Object memory ceiling. This does not make
         // unreviewed third-party executables, network or file I/O safe.
         #[cfg(windows)]
-        if matches!(plan.args.first().and_then(|s|s.to_str()),
+        if (matches!(plan.args.first().and_then(|s|s.to_str()),
             Some("--lu-e1-version-one-shot"|"--lu-e1-artifact-one-shot"))
+            ||version_capture.is_some())
             &&job.set_memory_limit(256*1024*1024).is_err(){
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed)
@@ -366,10 +431,12 @@ impl BackgroundProcessSupervisor {
         // Delay progress consumption until the SQLite RUNNING transition.
         // A fast worker must not lose its first checkpoint to a startup race.
         let progress_pipe=if plan.progress_protocol{child.stdout.take()}else{None};
+        let version_pipe=if version_capture.is_some(){child.stdout.take()}else{None};
         let owner=OwnedWorker{
             workspace_id:plan.workspace_id,
             child,
             progress_reader:None,
+            version_reader:None,
             deadline:plan.max_runtime_seconds.map(|n|Instant::now()+Duration::from_secs(n)),
             #[cfg(windows)]
             job:Some(job),
@@ -380,6 +447,14 @@ impl BackgroundProcessSupervisor {
             let _=terminate_owned(&mut owner);
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::StoreUnavailable);
+        }
+        if let (Some(pipe),Some(limit))=(version_pipe,version_capture){
+            let reader=std::thread::spawn(move||
+                read_bounded_version_stdout(pipe,limit)
+            );
+            workers.get_mut(&plan.task_id)
+                .expect("just registered running version child")
+                .version_reader=Some(reader);
         }
         if let Some(pipe)=progress_pipe{
             let store=Arc::clone(&self.store);
@@ -419,10 +494,16 @@ impl BackgroundProcessSupervisor {
             #[cfg(windows)]
             drop(owner.job.take()); // Close Job and any inherited stdout handles.
             let had_reader=owner.progress_reader.is_some();
+            let had_version_reader=owner.version_reader.is_some();
+            let version=owner.version_reader.take()
+                .and_then(|handle|handle.join().ok()).flatten();
             let mut proof=owner.progress_reader.take().and_then(|handle|handle.join().ok()).flatten();
             let workspace=owner.workspace_id.clone();
             drop(owner); // OS process and inherited stdout are now reaped.
             let result=match outcome{
+                Some(true) if had_version_reader&&version.is_some()=>
+                    self.store.complete(&id),
+                Some(true) if had_version_reader=>self.store.fail(&id),
                 Some(true) if !had_reader=>self.store.complete(&id),
                 Some(true) if proof.is_some()=>{
                     let p=proof.as_ref().expect("checked verified proof");
@@ -433,6 +514,13 @@ impl BackgroundProcessSupervisor {
             };
             result.map_err(|_|BackgroundProcessError::StoreUnavailable)?;
             if matches!(outcome,Some(true)){
+                if let Some(version)=version{
+                    let mut owned=self.version_outputs.lock()
+                        .map_err(|_|BackgroundProcessError::Poisoned)?;
+                    if owned.len()<4{
+                        owned.insert(id.clone(),(workspace.clone(),version));
+                    }
+                }
                 if let Some(artifact)=proof.as_mut().and_then(|p|p.artifact.take()){
                     let mut owned=self.output_artifacts.lock()
                         .map_err(|_|BackgroundProcessError::Poisoned)?;
@@ -453,6 +541,18 @@ impl BackgroundProcessSupervisor {
             }
         }
         Ok(count)
+    }
+    /// Exact host-owned one-use version output. The bytes are raw/untrusted;
+    /// the caller MUST validate an independently reviewed version parser.
+    pub(crate) fn take_local_version_stdout(
+        &self,task_id:&str,workspace_id:&str
+    )->Result<Option<CapturedVersionOutput>,BackgroundProcessError>{
+        let mut owned=self.version_outputs.lock()
+            .map_err(|_|BackgroundProcessError::Poisoned)?;
+        if owned.get(task_id).is_some_and(|(owner,_)|owner!=workspace_id){
+            return Err(BackgroundProcessError::WrongWorkspace)
+        }
+        Ok(owned.remove(task_id).map(|(_,version)|version))
     }
     /// Exact owner, one-use artifact custody from this supervisor's actual
     /// OS child stdout pipe. The caller must validate semantic document
@@ -522,6 +622,7 @@ impl BackgroundProcessSupervisor {
         terminate_owned(worker)?;
         let mut owner=workers.remove(task_id).expect("live worker owned");
         if let Some(reader)=owner.progress_reader.take(){let _=reader.join();}
+        if let Some(reader)=owner.version_reader.take(){let _=reader.join();}
         drop(owner); // Release the Windows Job handle (kills descendants).
         self.store.cancelled(task_id)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)
@@ -566,6 +667,7 @@ impl Drop for BackgroundProcessSupervisor{
             for (_,mut worker) in std::mem::take(&mut *workers){
                 let _=terminate_owned(&mut worker);
                 if let Some(reader)=worker.progress_reader.take(){let _=reader.join();}
+                if let Some(reader)=worker.version_reader.take(){let _=reader.join();}
             }
         }
     }
@@ -573,6 +675,17 @@ impl Drop for BackgroundProcessSupervisor{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn thirdparty_stdout_capture_is_bounded_and_one_use(){
+        use std::io::Cursor;
+        let bytes=b"git version 2.47.3\n";
+        let out=read_bounded_version_stdout(Cursor::new(bytes),64).unwrap();
+        assert_eq!(out.bytes,bytes);
+        assert_eq!(out.sha256,format!("{:x}",Sha256::digest(bytes)));
+        assert!(read_bounded_version_stdout(Cursor::new(bytes),4).is_none());
+        assert!(read_bounded_version_stdout(Cursor::new(&b""[..]),64).is_none());
+        assert!(read_bounded_version_stdout(Cursor::new(bytes),4097).is_none());
+    }
     #[test]
     fn genuine_scanner_receipts_update_sqlite_without_model(){
         use std::io::Cursor;

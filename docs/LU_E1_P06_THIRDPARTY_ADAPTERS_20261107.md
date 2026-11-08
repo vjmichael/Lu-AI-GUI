@@ -54,3 +54,7 @@ Prior E1-P03 real process and P04B custody and P05C genuine Qwen three-arm
 runtime gates remain open, and installed physical Windows/NSIS/Vulkan release
 acceptance is deferred near Lu v1.0. **Source implementation is not native
 acceptance.**
+
+## E1-P06B — actual third-party version process (November 7, 2026)
+
+Added the genuine fixed-operation Git version executor using existing OS supervised worker custody, separately bounded stdout, independent Git/Python text validation, journal-backed APPLIED or UNCERTAIN transition, original-turn cancellation/revocation, timeout and exclusive restart reconciliation. Third-party Python interpreter is used for real child kill/reap in test-only compiled fixed sleep/oversize operations; production remains immutable version flags. All real hosted Linux/Windows CI acceptance remains **OPEN** until execution logs are observed; no broad network/filesystem sandbox or general app operation is claimed. See `docs/LU_E1_P06B_NATIVE_ACCEPTANCE_20261107.md`.

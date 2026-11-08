@@ -24,13 +24,59 @@ const MAX_PROBE_SECONDS:u64=15;
 
 /// A compiled enum, not arbitrary model-provided argv.
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum VersionFlag{DoubleDashVersion,SingleDashVersion}
+pub enum VersionFlag{
+    DoubleDashVersion,SingleDashVersion,
+    #[cfg(test)]
+    DelayedPythonVersionForNativeCancellationTest,
+    #[cfg(test)]
+    OverlongPythonVersionForNativeOutputTest,
+}
 impl VersionFlag{
-    fn fixed_arg(self)->OsString{
-        OsString::from(match self{
-            Self::DoubleDashVersion=>"--version",
-            Self::SingleDashVersion=>"-version",
-        })
+    fn fixed_args(self)->Vec<OsString>{
+        match self{
+            Self::DoubleDashVersion=>vec![OsString::from("--version")],
+            Self::SingleDashVersion=>vec![OsString::from("-version")],
+            // Only compiled into unit-test binaries, not the release API.
+            // The actual third-party Python interpreter sleeps with a
+            // host-owned fixed argv, exercising genuine OS kill/reap.
+            #[cfg(test)]
+            Self::DelayedPythonVersionForNativeCancellationTest=>vec![
+                OsString::from("-I"),OsString::from("-S"),
+                OsString::from("-c"),OsString::from(
+                    "import time;time.sleep(20);print('Python 3.13.0')"
+                )
+            ],
+            #[cfg(test)]
+            Self::OverlongPythonVersionForNativeOutputTest=>vec![
+                OsString::from("-I"),OsString::from("-S"),
+                OsString::from("-c"),OsString::from(
+                    "print('Python '+('9'*8192))"
+                )
+            ]
+        }
+    }
+}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum VersionParser{Git,Python}
+impl VersionParser{
+    pub(crate) fn parse(self,bytes:&[u8])->Option<String>{
+        // A version line is NOT general stdout text: reject multiline,
+        // terminal escapes, control characters, invalid UTF-8 and suffixes.
+        if bytes.is_empty()||bytes.len()>4096{return None}
+        let text=std::str::from_utf8(bytes).ok()?;
+        let line=text.strip_suffix("\r\n")
+            .or_else(||text.strip_suffix('\n'))
+            .unwrap_or(text);
+        if line.contains('\n')||line.contains('\r'){return None}
+        let prefix=match self{
+            Self::Git=>"git version ",
+            Self::Python=>"Python ",
+        };
+        let value=line.strip_prefix(prefix)?;
+        if value.is_empty()||value.len()>80||!value.as_bytes().first().is_some_and(|b|b.is_ascii_digit())
+           ||!value.bytes().all(|b|b.is_ascii_alphanumeric()
+                  ||matches!(b,b'.'|b'+'|b'-')){return None}
+        Some(value.into())
     }
 }
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -40,6 +86,7 @@ pub struct HostThirdPartyVersionAdapter{
     /// Separate from the read-only inventory tool ID in app.tool_id.
     pub execute_tool_id:String,
     pub fixed_flag:VersionFlag,
+    pub version_parser:VersionParser,
     pub output_limit:usize,
     pub max_runtime_seconds:u64,
 }
@@ -111,10 +158,17 @@ impl HostThirdPartyAdapterCatalog{
         Ok(())
     }
     pub fn len(&self)->usize{self.records.len()}
+    /// Trusted broker only. This is neither a tool declaration nor a task
+    /// grant. The caller must independently revalidate before spawning.
+    pub(crate) fn reviewed_for_execution(
+        &self,adapter_id:&str
+    )->Option<HostThirdPartyVersionAdapter>{
+        self.records.get(adapter_id).cloned()
+    }
     /// Host-only fixed argument material; deliberately absent from the public
     /// preflight observation and never derived from model-provided input bytes.
     pub(crate) fn fixed_args(&self,adapter_id:&str)->Option<Vec<OsString>>{
-        self.records.get(adapter_id).map(|a|vec![a.fixed_flag.fixed_arg()])
+        self.records.get(adapter_id).map(|a|a.fixed_flag.fixed_args())
     }
     /// This is observation-only. A preflight success is NOT a process,
     /// journal, external output or sandbox acceptance receipt.
@@ -229,6 +283,7 @@ mod tests{
             },
             execute_tool_id:"lu.external.version.execute".into(),
             fixed_flag:VersionFlag::DoubleDashVersion,
+            version_parser:VersionParser::Git,
             output_limit:4096,max_runtime_seconds:10,
         }
     }
@@ -253,6 +308,22 @@ mod tests{
             input:ProtoPayload{
                 type_url:ADAPTER_INPUT.into(),bytes:VERSION_PROBE_BYTES.to_vec(),
             },
+        }
+    }
+    #[test]
+    fn actual_stdout_version_parser_rejects_injected_multiline_and_non_version(){
+        assert_eq!(VersionParser::Git.parse(b"git version 2.47.3.windows.1\n"),
+            Some("2.47.3.windows.1".into()));
+        assert_eq!(VersionParser::Python.parse(b"Python 3.13.5\r\n"),
+            Some("3.13.5".into()));
+        for input in [
+            b"git version 2.47.3\nRUN arbitrary-command".as_slice(),
+            b"git version \x1b[31m".as_slice(),
+            b"git version ../file".as_slice(),
+            b"git version nope".as_slice(),
+            b"git version 2.47.3\n\n".as_slice()
+        ]{
+            assert_eq!(VersionParser::Git.parse(input),None);
         }
     }
     #[test]
