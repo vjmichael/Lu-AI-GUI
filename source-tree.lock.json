@@ -2137,7 +2137,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/reviewed_outcome_oracle.rs",
-      "blob": "c4a06d1336319a07ff6d139bd94fc07f5a9ec645"
+      "blob": "ab8e04c4330ad17e77d906a51b12fda0c6555b9d"
     },
     {
       "path": "src-tauri/lu-core/src/rollback_approval_ledger.rs",
@@ -2725,7 +2725,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "84b9c9044c23f368304e3d6c9e567caba59ace34"
+      "blob": "fad3fffb209fa4960e083a8513d4f834bda0144e"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
