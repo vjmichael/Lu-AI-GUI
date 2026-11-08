@@ -206,7 +206,7 @@ def verify(root, claimed, source_sha, platform, tree_kind):
     return {
         "contentTreeSha256": actual["contentTreeSha256"],
         "fileCount": actual["fileCount"], "bytesRechecked": actual["totalBytes"],
-        "sourceSha": actual["sourceSha"], "sourceTreeMatches": True,
+        "sourceSha": actual["sourceSha"], "payloadTreeRechecked": True,
         "nativeInstalledVerified": False, "releaseApproved": False,
         "licenseLegalReviewApproved": False,
     }
