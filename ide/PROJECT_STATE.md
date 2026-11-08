@@ -492,3 +492,7 @@ Actual failed CI logs, their job IDs, and the corrective commits are recorded in
 
 ### P06-R1 cross-platform native Actions evidence observer (Nov 7 Phoenix / Nov 8 UTC)
 Independent draft P06 continuation `ide/p06-live-native-receipts-20261107` adds an actual GitHub Actions read-only evidence probe for exact 40-hex source SHA and native Windows/Linux job set, with hostile tests for missing, stale, canceled, duplicate, wrong-run, and cross-repository results. Reports are explicitly nonauthoritative and default-deny for release, protected execution, legal approval and signing; separate B2/B3 branches cannot be represented as integrated native acceptance. The existing static P06 acceptance matrix remains unchanged. GitHub-native source CI must pass on exact head; genuine P02–P04 independent OS results still pending. Lu Core P07/WO10 remains deferred; no main merge.
+
+
+### P06-R2 candidate shipped-file evidence (Nov 8)
+Publisher legal review is deferred until the actual Lu IDE release contents are finalized; all applicable license notices and risk records stay tracked. New independent P06-R2 draft adds a bounded read-only cross-platform SHA-256 inventory of a *supplied candidate* file tree with an explicit nonattestation label, binary/notice candidate classification and hostile mutation/symlink/casefold tests. Windows/Linux native CI source acceptance and later genuine package-to-installed-process binding are separate; not a signed binary or legal approval. Main, P03/P04/P05 drafts and P07/WO10 remain unchanged.
