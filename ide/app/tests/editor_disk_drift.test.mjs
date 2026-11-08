@@ -39,7 +39,9 @@ test('path traversal, fake tab identity and duplicate key deny inspection',()=>{
   assert.throws(()=>diskAuditTargets([t,t],A),/B10_INVALID_SOURCE_IDENTITY/);
   assert.throws(()=>diskAuditTargets([{...t,revision:'bad'}],A),
     /B10_INVALID_SOURCE_IDENTITY/);
-  assert.throws(()=>diskAuditTargets([t],B),/B10_INVALID_AUDIT|B10_INVALID_SOURCE_IDENTITY|B10_AUDIT_BUDGET/);
+  // A legitimate different registered project has no matching audit targets.
+  assert.deepEqual(diskAuditTargets([t],B),[]);
+  assert.throws(()=>diskAuditTargets([t],'not-project'),/B10_INVALID_AUDIT/);
 });
 
 test('same saved SHA is current, external revision is changed',()=>{
