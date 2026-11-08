@@ -1,0 +1,188 @@
+name: Lu UX-CHAT02 ANSF Edits Replies and Provenance Native Candidate
+on:
+  push:
+    branches: ['lu/ux-chat02-revisions-replies-provenance-20261108']
+    paths:
+      - 'src-tauri/lu-core/src/ansf_live_chat.rs'
+      - 'lu-desktop/src-tauri/src/ansf_chat_store.rs'
+      - 'lu-desktop/src-tauri/src/chat_message_interactions.rs'
+      - 'lu-desktop/src-tauri/src/chat_message_revisions.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/tests/native-chat/src/lib.rs'
+      - 'lu-desktop/tests/ux-chat02-revision-reply-provenance.test.mjs'
+      - 'lu-desktop/web/message_revisions.mjs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/web/styles.css'
+      - 'docs/LU_CENTRAL_DESIGN.md'
+      - '.github/workflows/lu-ux-chat02-revisions-replies.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/ansf_live_chat.rs'
+      - 'lu-desktop/src-tauri/src/ansf_chat_store.rs'
+      - 'lu-desktop/src-tauri/src/chat_message_interactions.rs'
+      - 'lu-desktop/src-tauri/src/chat_message_revisions.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/tests/native-chat/src/lib.rs'
+      - 'lu-desktop/tests/ux-chat02-revision-reply-provenance.test.mjs'
+      - 'lu-desktop/web/message_revisions.mjs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/web/styles.css'
+      - 'docs/LU_CENTRAL_DESIGN.md'
+      - '.github/workflows/lu-ux-chat02-revisions-replies.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-ux-chat02-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  source-and-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source manifest
+        shell: bash
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          node scripts/verify-source-tree.mjs
+          mkdir -p ux-chat02-evidence
+          printf 'HEAD=%s\nOS=%s\n' "$EXPECTED" "$RUNNER_OS" \
+            > ux-chat02-evidence/provenance.txt
+      - name: Original/revision/reply UI and provenance source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/ux-chat02-revision-reply-provenance.test.mjs \
+            2>&1 | tee ux-chat02-evidence/ui-contracts.log
+          grep -Fq '# pass 6' ux-chat02-evidence/ui-contracts.log
+          grep -Fq '# fail 0' ux-chat02-evidence/ui-contracts.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-ux-chat02-source-ui
+          path: ux-chat02-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+  real-native-chat-revisions:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm source identity
+        shell: bash
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          node scripts/verify-source-tree.mjs
+          mkdir -p ux-chat02-evidence
+          printf 'HEAD=%s\nOS=%s\n' "$EXPECTED" "$RUNNER_OS" \
+            > ux-chat02-evidence/provenance.txt
+      - name: Execute real ANSF original-plus-UI-revision SQLite suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib chat_message_revisions::tests -- --nocapture \
+            2>&1 | tee ux-chat02-evidence/native-revision-reply.log
+          for case in \
+            immutable_original_and_append_only_display_edits_survive_restart \
+            linked_reply_pins_parent_version_and_original_authenticated_turn \
+            crash_between_prepare_and_original_message_reconciles_without_reposting \
+            wrong_chat_unknown_message_stale_parent_and_wrong_turn_are_refused \
+            invalid_version_text_and_missing_db_never_become_a_model_action; do
+            grep -Fq "test chat_message_revisions::tests::$case ... ok" \
+              ux-chat02-evidence/native-revision-reply.log
+          done
+          grep -Fq 'test result: ok. 5 passed; 0 failed;' \
+            ux-chat02-evidence/native-revision-reply.log
+      - name: Recheck original UX-CHAT01 metadata native regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib chat_message_interactions::tests -- --nocapture \
+            2>&1 | tee ux-chat02-evidence/ux-chat01-regression.log
+          grep -Fq 'test result: ok.' ux-chat02-evidence/ux-chat01-regression.log
+          if grep -Fq 'test result: FAILED.' ux-chat02-evidence/ux-chat01-regression.log; then exit 1; fi
+      - name: Native acceptance disclosure
+        shell: bash
+        run: |
+          echo 'This runs REAL Lu ANSF/ChatStore/SQLite code with deterministic local fixtures. It does not prove installed Windows WebView UI behavior, real clipboard permissions, model inference, actual tool execution or OS worker custody. A linked reply creates a new human turn, never replays a prior tool effect.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-ux-chat02-native-${{ matrix.os }}
+          path: ux-chat02-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+  windows-desktop-compile:
+    needs: source-and-ui
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact-head source
+        shell: bash
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          node scripts/verify-source-tree.mjs
+      - name: Nonfunctional CI-only engine placeholders
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build actual web and Tauri desktop sources
+        shell: pwsh
+        run: |
+          Push-Location lu-desktop
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+          npm run check
+          Pop-Location
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: No installed Windows release acceptance claimed
+        shell: bash
+        run: |
+          echo 'Windows cargo check is a compile gate, not NSIS/physical WebView/GGUF/worker recovery evidence. Native source binaries are CI placeholders and are not distributable.' >> "$GITHUB_STEP_SUMMARY"
