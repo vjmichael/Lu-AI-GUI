@@ -194,7 +194,13 @@ class LspClient:
                     outcome["shutdownError"] = type(error).__name__
             if outcome["exitNotificationSent"]:
                 try:
+                    # ty's upstream actual-LSP benchmark closes client stdin
+                    # after shutdown + exit before waiting for terminal status.
+                    # EOF is not a waiver for nonzero exit or failed reaping.
+                    self.proc.stdin.close()
                     self.proc.wait(timeout=5)
+                except (OSError, BrokenPipeError) as error:
+                    outcome["shutdownError"] = type(error).__name__
                 except subprocess.TimeoutExpired:
                     outcome["shutdownError"] = "ExitWaitTimeout"
         if self.proc.poll() is None:
