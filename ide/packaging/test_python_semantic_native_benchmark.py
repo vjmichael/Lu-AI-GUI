@@ -35,11 +35,16 @@ class PythonSemanticBenchmarkSourceTests(unittest.TestCase):
         self.assertFalse(hover_is_real({"contents":""}))
         self.assertTrue(completions([{"label":"calculate_01"}],"calculate_01"))
         self.assertFalse(completions([{"label":"calculate_01"}],"calculate_02"))
-        uri="file:///temp/case_00.py"
-        self.assertTrue(definition_is_inside_source(
-            {"targetUri":uri,"targetRange":{}},uri))
-        self.assertFalse(definition_is_inside_source(
-            [{"uri":"file:///outside.py"}],uri))
+        with tempfile.TemporaryDirectory() as tmp:
+            # A real registered local file is mandatory. Do not weaken the
+            # production source guard to accept arbitrary nonexistent URIs.
+            source=Path(tmp)/"case_00.py"
+            source.write_text("def checked(): pass\n",encoding="utf-8")
+            uri=source.as_uri()
+            self.assertTrue(definition_is_inside_source(
+                {"targetUri":uri,"targetRange":{}},uri))
+            self.assertFalse(definition_is_inside_source(
+                [{"uri":source.with_name("outside.py").as_uri()}],uri))
         self.assertEqual(SCHEMA,"lu.ide.dev02.python-real-lsp-comparison.v1")
 
     def test_same_file_definition_requires_equivalent_local_file_uri(self):
