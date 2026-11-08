@@ -1933,6 +1933,40 @@
         "provenance"
       ]
     },
+    "ProjectRunProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {"type":"string","enum":["rust_check","rust_tests","python_pytest","js_tests","cpp_cmake_build","lu_ide_host_tests"]},
+        "title": {"type":"string"},
+        "language": {"type":"string","enum":["rust","python","javascript","cpp"]},
+        "operation": {"type":"string","enum":["check","test","build"]},
+        "manifestRelativePath": {"type":"string"},
+        "manifestState": {"type":"string","enum":["saved_file_sha_observed_not_validated","identity_mismatch","not_found","not_readable_or_unverifiable"]},
+        "manifestSha256": {"anyOf":[{"type":"string","pattern":"^[a-f0-9]{64}$"},{"type":"null"}]},
+        "executionRoute": {"type":"string","enum":["existing_wo6_protected_cargo_requires_fresh_authorization","not_implemented_requires_reviewed_native_adapter"]},
+        "existingNativeRecipeId": {"anyOf":[{"type":"string","enum":["rust_check","rust_tests","lu_ide_host_tests"]},{"type":"null"}]},
+        "executionAuthorized": {"type":"boolean","const":false},
+        "testCandidates": {"type":"integer","minimum":0,"maximum":400},
+        "testHintPaths": {"type":"array","items":{"type":"string","minLength":1,"maxLength":1024},"maxItems":20},
+        "testScanState": {"type":"string"}
+      },
+      "required": ["profileId","title","language","operation","manifestRelativePath","manifestState","manifestSha256","executionRoute","existingNativeRecipeId","executionAuthorized","testCandidates","testHintPaths","testScanState"]
+    },
+    "ProjectRunProfileDiscovery": {
+      "type":"object","additionalProperties":false,
+      "properties": {
+        "schemaVersion": {"type":"integer","const":1},
+        "projectId": {"type":"string","minLength":1},
+        "source": {"type":"string","const":"fixed_host_manifest_and_conventional_tests_inspection"},
+        "profiles": {"type":"array","items":{"$ref":"#/$defs/ProjectRunProfile"},"maxItems":6},
+        "manifestContentsExported": {"type":"boolean","const":false},
+        "processStarted": {"type":"boolean","const":false},
+        "workerGrantIssued": {"type":"boolean","const":false},
+        "taskAccepted": {"type":"boolean","const":false}
+      },
+      "required": ["schemaVersion","projectId","source","profiles","manifestContentsExported","processStarted","workerGrantIssued","taskAccepted"]
+    },
     "TaskSourceLink": {
       "type": "object",
       "additionalProperties": false,
@@ -3014,6 +3048,14 @@
       "result": {
         "$ref": "#/$defs/TaskSummary"
       }
+    },
+    "job.discoverProfiles": {
+      "request": {
+        "type":"object","additionalProperties":false,
+        "properties":{"projectId":{"type":"string","minLength":1}},
+        "required":["projectId"]
+      },
+      "result":{"$ref":"#/$defs/ProjectRunProfileDiscovery"}
     },
     "job.prepare": {
       "request": {
