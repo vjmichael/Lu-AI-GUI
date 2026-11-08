@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **B9 private restart-safe workspace navigation (Nov 8):** Native app-data store remembers at most 48 registered relative paths, saved SHA revisions, previously dirty flags and primary/secondary pane selections, with atomic private write and source identity validation through the original cap-std browser. Editor has opt-in Remember/Restore/Forget controls; restart alone never reopens files or recovers unsaved drafts. React changes do not overwrite existing dirty tabs; missing files and disk drift are reported. Native unregister purges layout metadata only. Rust native integration tests and ten Node tests staged; nine V8 helper checks passed. Actual exact-head Windows/Linux host, frontend, Tauri and installed UI acceptance remain OPEN.
+
+
 - **B8 safe clean background tab reclamation (Nov 8):** Explicit user command closes only never-edited (buffer revision 0), live-CodeMirror-verified clean background tabs. Current/secondary panes, dirty or newly typed editors, pending Save/private checkpoints and LSP session tabs remain intact. Nine Node regression tests added; eight direct V8 source checks passed. Native installed memory measurements remain OPEN, with no claimed RAM savings or automatic source writes.
 
 - **B7 project workspace continuity (Nov 8):** Source-implemented per-project selection, split-pane state and bounded tab focus across native folder switches, with strict live-tab/project validation. Closing or unregistering a project invalidates view memory; stale cross-project editor state cannot be active. Six Node source tests added and five direct V8 pure-source smoke checks passed. Full Node native/installed OS GUI acceptance OPEN. No auto-open or private draft data copy.
