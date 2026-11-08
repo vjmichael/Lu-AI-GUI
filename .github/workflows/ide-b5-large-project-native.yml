@@ -60,6 +60,27 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Compile real installed Linux measurement fixture and shell wrapper
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ide/app/fixtures/b5_linux_installed_perf_atspi.py
+          bash -n ide/app/fixtures/Test-B4InstalledDeb.sh
+          grep -q 'rssPeakObservedBytes' ide/app/fixtures/b5_linux_installed_perf_atspi.py
+          echo B5_LINUX_OS_MEASUREMENT_FIXTURE_SYNTAX=PASS
+      - name: Parse real Windows UIA/STA measurement fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1').Path,
+            [ref]$tokens,[ref]$errors)
+          if($errors.Count){
+            throw "B5 real installed Windows UIA/metrics fixture parsing denied: $($errors[0])"
+          }
+          Write-Host B5_WINDOWS_OS_MEASUREMENT_FIXTURE_SYNTAX=PASS
       - name: Build actual bundled UI and execute current CodeMirror / B2 / B3 / B4 / B5 tests
         shell: bash
         working-directory: ide/app

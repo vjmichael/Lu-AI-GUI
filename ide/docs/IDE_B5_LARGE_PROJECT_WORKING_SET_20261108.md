@@ -103,3 +103,63 @@ tree offsets. These were repaired on B2 PR #145 exact source
 at B5 start; their real results must be checked and any new failures
 repaired. All original independent B2/B3 and protected LSP PRs are retained
 until equivalent native acceptance. No signing/legal approval is inferred.
+
+
+## B5 physically installed editor measurements — native harness added
+
+The B5 stack now extends the **existing** B4 installed unsigned NSIS/Debian
+workflows; it does not launch additional independent OS build matrices for the
+same changes. On B5 exact-head workflow execution, the existing B4 two-pane
+acceptance must pass first, then the **same installed package** is used for
+a separate B5 OS-level workload before real package removal:
+
+- A disposable native project contains 48 distinct UTF-8 source files,
+  including a >130 KiB (within native 512 KiB) text source, and an additional
+  49th file to confirm fail-closed source-tab capacity. Some files are over
+  the 128 KiB CodeMirror lightweight threshold.
+- Files are opened through **real Windows UI Automation / native GTK AT-SPI**
+  and the visible project-relative Open file control. Each open is verified
+  using genuine OS input and OS clipboard copying the **selected CodeMirror
+  source's unique marker**. The time from input to verified clipboard is
+  recorded as **UI open round-trip**, including keyboard/accessibility/
+  clipboard overhead. It is *not* raw disk I/O time or frame latency.
+- Alternating first/last tab via the native accessible jump selector yields
+  12 independently timed **tab-switch-and-clipboard-verification round trips**.
+  The interaction pass includes genuine typing, Undo, an unchanged original
+  file hash until explicit Save, explicit Save with changed saved file bytes,
+  and verification that other project files were not written.
+- The OS process tree is sampled at initial source load, 12, 24, 36, 48
+  open tabs and after Save. Windows uses installed-parent PID plus descendants
+  from Win32_Process and Get-Process to sum **WorkingSet64/PrivateMemorySize64**.
+  Linux uses the installed-parent PID plus live /proc descendants to sum
+  **VmRSS/VmSize**. These scopes are independently labeled and may exclude
+  OS-reparented renderer processes; the numbers cannot be represented as a
+  total machine RAM bound. A 49th tab must be visibly denied without evicting
+  retained drafts.
+- JSON receipts are written only after completing real installed OS actions:
+  `ide-b5-windows-installed-performance.json` and
+  `ide-b5-linux-installed-performance.json` in the disposable runner temp.
+  B4 installed workflows upload these receipts, including on failure when a
+  partial file exists. Missing controls, wrong source, missing OS clipboard,
+  absent memory observations, wrong Save target or missing receipt fail the
+  acceptance steps. No programmatic WebView JS, in-process mock or Tauri IPC
+  shortcut is accepted.
+- Both OSs report measured open P95, switch P95, kernel-observed RSS peak,
+  real typing/Undo/Save round trips, and exact source head. Measured values
+  and observed action counts must be reviewed before setting user-visible
+  responsiveness thresholds or accepting any performance claim. A successful
+  source compilation or synthetic Node benchmark still cannot close the
+  installed memory/interaction gate. Any gate closure requires the evidence
+  for the exact PR head SHA and an actual native result on **both** OSs.
+
+### GitHub scheduling blocker (observed, not a code failure)
+
+At the latest review, original B4/B5 exact-head jobs
+`42510890637`, `42510890663`, `42512903437`,
+`42512903465`, and `42512903345` were **queued or pending**.
+No failed B4/B5 runtime test logs were available. The active repository has
+a large concurrent workflow backlog; posting another successful-looking
+source artifact would not substitute for the missing OS execution.
+The old completed B3 source run `42504529949` reported two stale frontend
+contract expectations (both OSs), repaired in the later B2 stack but
+not yet proven at B4/B5 exact-head. Neither B4 nor B5 is accepted.

@@ -4,8 +4,9 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','B4SplitEditor')][string]$Scenario='Shell',
-  [string]$FixtureRoot=''
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','B4SplitEditor','B5LargeProject')][string]$Scenario='Shell',
+  [string]$FixtureRoot='',
+  [string]$MetricsFile=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -1027,6 +1028,218 @@ try {
       Require-LspReaped 'ruff' $priorRuff
       Write-Host 'DEV02_INSTALLED_WINDOWS_PYTHON_RUFF_PROTECTED_DIAGNOSTICS=PASS'
       Write-Host 'DEV02_INSTALLED_WINDOWS_ALL_THREE_PROTECTED_PROVIDERS=PASS'
+    }
+    if ($Scenario -eq 'B5LargeProject') {
+      # Each number below is measured against the genuine installed
+      # WebView2 window/OS clipboard and Windows kernel process tree.
+      # A successful source-only test is NOT accepted as installed evidence.
+      if (!$MetricsFile) { Deny 'b5_missing_installed_evidence_destination' }
+      $dest=[IO.Path]::GetFullPath($MetricsFile)
+      $tempPrefix=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')+'\'
+      if (!$dest.StartsWith($tempPrefix,[StringComparison]::OrdinalIgnoreCase)) {
+        Deny 'b5_evidence_outside_disposable_runner'
+      }
+      $sources=@(0..46 | ForEach-Object { 'p{0:D2}.rs' -f $_ })
+      $main=Join-Path $fixed 'main.rs'
+      $extra=Join-Path $fixed 'p47.rs'
+      if (!(Test-Path -LiteralPath $extra -PathType Leaf) -or
+          (Get-Item -LiteralPath $main).Length -lt (130*1024) -or
+          (Get-Item -LiteralPath $main).Length -gt (512*1024)) {
+        Deny 'b5_missing_or_unbounded_large_file_fixture'
+      }
+      $hashes=@{}
+      foreach($leaf in @('main.rs')+$sources+@('p47.rs')) {
+        $file=Join-Path $fixed $leaf
+        if (!(Test-Path -LiteralPath $file -PathType Leaf)) {
+          Deny ('b5_missing_native_source_'+$leaf)
+        }
+        $hashes[$leaf]=(Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash
+      }
+      $data=[ordered]@{
+        schemaVersion=1; os='windows-2022';
+        method='installed-WebView2-UIAutomation-STA-clipboard-and-Win32_Process'
+        sourceCommit=$env:GITHUB_SHA; installedExecutableSha256=$ExpectedSha256
+        sourceBytes=(Get-Item -LiteralPath $main).Length
+        fileCountToOpen=48; openRoundTripMs=@(); switchRoundTripMs=@()
+        memorySamples=@(); keyboardRoundTripMs=$null
+        undoRoundTripMs=$null; saveRoundTripMs=$null
+        explicitSaveVerified=$false; bounded49thDenial=$false
+        noImplicitSaveVerified=$false
+      }
+      function B5-Memory([string]$label) {
+        # Include installed lu-ide-desktop.exe and currently observed child
+        # WebView2 renderer processes only; don't mislabel this global OS RSS.
+        $native=@(Get-CimInstance Win32_Process -ErrorAction Stop)
+        $family=[System.Collections.Generic.HashSet[int]]::new()
+        [void]$family.Add([int]$proc.Id)
+        for($pass=0;$pass -lt 12;$pass++) {
+          $before=$family.Count
+          foreach($node in $native) {
+            if($family.Contains([int]$node.ParentProcessId)) {
+              [void]$family.Add([int]$node.ProcessId)
+            }
+          }
+          if($family.Count -gt 128) {Deny 'b5_unbounded_descendant_process_count'}
+          if($family.Count -eq $before) {break}
+        }
+        [long]$working=0
+        [long]$private=0
+        $count=0
+        foreach($procId in $family) {
+          $observed=Get-Process -Id $procId -ErrorAction SilentlyContinue
+          if ($null -eq $observed) { continue }
+          $working+=[long]$observed.WorkingSet64
+          $private+=[long]$observed.PrivateMemorySize64
+          $count++
+        }
+        if($working -le 0 -or $count -lt 1) {Deny 'b5_process_memory_unavailable'}
+        return [ordered]@{
+          stage=$label; rssBytes=$working; privateBytes=$private
+          observedProcessCount=$count
+          scope='installed-pid-and-live-Win32_Process-descendants'
+        }
+      }
+      function B5-VisibleEditor([string]$marker) {
+        $end=(Get-Date).AddSeconds(18)
+        while((Get-Date) -lt $end) {
+          $editor=$null
+          try {$editor=Find-Control 'Source editor text' '' 2} catch {}
+          if ($null -ne $editor -and $editor.Current.IsKeyboardFocusable) {
+            $editor.SetFocus()
+            [System.Windows.Forms.SendKeys]::SendWait('^a')
+            [System.Windows.Forms.SendKeys]::SendWait('^c')
+            Start-Sleep -Milliseconds 130
+            if([System.Windows.Forms.Clipboard]::ContainsText()) {
+              $value=[System.Windows.Forms.Clipboard]::GetText()
+              if($value.Contains($marker)) { return }
+            }
+          }
+          Start-Sleep -Milliseconds 190
+        }
+        Deny ('b5_native_installed_editor_not_visible_for_'+$marker)
+      }
+      function B5-OpenRelative([string]$leaf,[string]$marker) {
+        $input=Find-Control 'Open project-relative file' '' 12
+        if (!$input.Current.IsKeyboardFocusable) {Deny 'b5_native_relative_file_input_not_focusable'}
+        $input.SetFocus()
+        $timer=[Diagnostics.Stopwatch]::StartNew()
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        [System.Windows.Forms.SendKeys]::SendWait($leaf)
+        [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+        B5-VisibleEditor $marker
+        $timer.Stop()
+        return [Math]::Round($timer.Elapsed.TotalMilliseconds,3)
+      }
+      function B5-Switch([string]$which,[string]$marker) {
+        $picker=Find-Control 'Jump to open file' '' 12
+        if (!$picker.Current.IsKeyboardFocusable) {Deny 'b5_native_tab_picker_not_focusable'}
+        $picker.SetFocus()
+        $timer=[Diagnostics.Stopwatch]::StartNew()
+        if ($which -eq 'first') {
+          [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{ENTER}')
+        } else {
+          [System.Windows.Forms.SendKeys]::SendWait('{END}{ENTER}')
+        }
+        B5-VisibleEditor $marker
+        $timer.Stop()
+        return [Math]::Round($timer.Elapsed.TotalMilliseconds,3)
+      }
+      function B5-P95($numbers) {
+        $sorted=@($numbers | Sort-Object)
+        if ($sorted.Count -eq 0) {Deny 'b5_missing_timing_samples'}
+        return $sorted[[Math]::Floor(($sorted.Count-1)*.95)]
+      }
+      B5-VisibleEditor 'B5_SOURCE_main'
+      $data.memorySamples+=,(B5-Memory 'opened_large_main')
+      for($i=0;$i -lt $sources.Count;$i++) {
+        $leaf=$sources[$i]
+        $marker='B5_SOURCE_'+[IO.Path]::GetFileNameWithoutExtension($leaf)
+        $data.openRoundTripMs+=,(B5-OpenRelative $leaf $marker)
+        if(($i+2) -in @(12,24,36,48)) {
+          $data.memorySamples+=,(B5-Memory ('opened_'+($i+2)+'_files'))
+        }
+      }
+      # Explicitly attempt a 49th tab. No implicit eviction of unsaved history.
+      $input=Find-Control 'Open project-relative file' '' 12
+      $input.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^a')
+      [System.Windows.Forms.SendKeys]::SendWait('p47.rs')
+      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+      Require 'Open-file budget'
+      $data.bounded49thDenial=$true
+      foreach($leaf in $hashes.Keys) {
+        if((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fixed $leaf)).Hash -ne
+           $hashes[$leaf]) {Deny 'b5_unsaved_tab_open_changed_source'}
+      }
+      $data.noImplicitSaveVerified=$true
+      for($n=0;$n -lt 6;$n++) {
+        $data.switchRoundTripMs+=,(B5-Switch 'first' 'B5_SOURCE_main')
+        $data.switchRoundTripMs+=,(B5-Switch 'last' 'B5_SOURCE_p46')
+      }
+      [void](B5-Switch 'first' 'B5_SOURCE_main')
+      $editor=Find-Control 'Source editor text' '' 10
+      $editor.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}{ENTER}')
+      $clock=[Diagnostics.Stopwatch]::StartNew()
+      [System.Windows.Forms.SendKeys]::SendWait('// B5_EXPLICIT_SAVE_PERF_ONLY')
+      B5-VisibleEditor 'B5_EXPLICIT_SAVE_PERF_ONLY'
+      $data.keyboardRoundTripMs=[Math]::Round($clock.Elapsed.TotalMilliseconds,3)
+      if((Get-FileHash -Algorithm SHA256 -LiteralPath $main).Hash -ne $hashes['main.rs']) {
+        Deny 'b5_typing_implicitly_wrote_native_source'
+      }
+      $editor=Find-Control 'Source editor text' '' 10
+      $editor.SetFocus()
+      $clock=[Diagnostics.Stopwatch]::StartNew()
+      [System.Windows.Forms.SendKeys]::SendWait('^z')
+      $until=(Get-Date).AddSeconds(10)
+      $removed=$false
+      while((Get-Date) -lt $until) {
+        $editor.SetFocus()
+        [System.Windows.Forms.SendKeys]::SendWait('^a^c')
+        Start-Sleep -Milliseconds 150
+        if([System.Windows.Forms.Clipboard]::ContainsText() -and
+           !([System.Windows.Forms.Clipboard]::GetText()).Contains('B5_EXPLICIT_SAVE_PERF_ONLY')) {
+          $removed=$true
+          break
+        }
+      }
+      if(!$removed) {Deny 'b5_native_undo_not_verified'}
+      $data.undoRoundTripMs=[Math]::Round($clock.Elapsed.TotalMilliseconds,3)
+      $editor.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}{ENTER}// B5_EXPLICIT_SAVE_PERF_ONLY')
+      $clock=[Diagnostics.Stopwatch]::StartNew()
+      Click 'Save · Ctrl+S'
+      $until=(Get-Date).AddSeconds(20)
+      $saved=$false
+      while((Get-Date) -lt $until) {
+        if([IO.File]::ReadAllText($main).Contains('B5_EXPLICIT_SAVE_PERF_ONLY')){
+          $saved=$true; break
+        }
+        Start-Sleep -Milliseconds 180
+      }
+      if(!$saved) {Deny 'b5_native_explicit_save_never_completed'}
+      $data.saveRoundTripMs=[Math]::Round($clock.Elapsed.TotalMilliseconds,3)
+      foreach($leaf in $sources+@('p47.rs')) {
+        if((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fixed $leaf)).Hash -ne
+           $hashes[$leaf]) {Deny 'b5_native_primary_save_changed_other_source'}
+      }
+      $data.explicitSaveVerified=$true
+      $data.memorySamples+=,(B5-Memory 'after_explicit_save')
+      if($data.openRoundTripMs.Count -ne 47 -or
+         $data.switchRoundTripMs.Count -ne 12 -or
+         $data.memorySamples.Count -lt 6) {Deny 'b5_incomplete_installed_ui_metrics'}
+      $data['openP95Ms']=B5-P95 $data.openRoundTripMs
+      $data['switchP95Ms']=B5-P95 $data.switchRoundTripMs
+      $data['rssPeakObservedBytes']=($data.memorySamples | Measure-Object -Property rssBytes -Maximum).Maximum
+      $data['privatePeakObservedBytes']=($data.memorySamples | Measure-Object -Property privateBytes -Maximum).Maximum
+      $data | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $dest -Encoding UTF8
+      if(!(Test-Path -LiteralPath $dest) -or (Get-Item -LiteralPath $dest).Length -lt 500) {
+        Deny 'b5_actual_os_evidence_not_recorded'
+      }
+      Write-Host ('B5_WINDOWS_INSTALLED_OPEN_P95_ROUNDTRIP_MS='+$data.openP95Ms)
+      Write-Host ('B5_WINDOWS_INSTALLED_SWITCH_P95_ROUNDTRIP_MS='+$data.switchP95Ms)
+      Write-Host ('B5_WINDOWS_INSTALLED_RSS_PEAK_OBSERVED_BYTES='+$data.rssPeakObservedBytes)
+      Write-Host 'B5_WINDOWS_48_REAL_EDITOR_TABS_OS_PROCESS_MEMORY=MEASURED_NOT_APPROVED'
     }
     if ($Scenario -eq 'B4SplitEditor') {
       # Actual installed Windows WebView2 UIA, no JavaScript or Tauri API bypass.

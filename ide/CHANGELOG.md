@@ -1,4 +1,7 @@
 # Lu IDE — Development changelog
+
+- **B5 genuine installed performance evidence harness (Nov 8):** Extended existing real B4 unsigned Windows NSIS/Linux Debian acceptance to use the same actually installed package for a separate 48-source native UI workload, OS process-descendant memory samples, clipboard-verified file-open and tab-switch round trips, typing/Undo/explicit Save and 49th-tab denial. SHA-scoped JSON receipts are uploaded only when real observations exist. Current native OS execution remains queued/pending, so installed acceptance and actual speed/memory findings remain OPEN.
+
 - **IDE B5 large-project editor (Nov 8):** Added 48-tab/project and 96-global bounds without losing unsaved drafts/Undo, 12-button tab window/jump, 120-row directory increment, direct source open beyond truncated native 400-entry listings, lightweight parsing for >128Ki text and memoized split diagnostics. Added 10k mock tab-window benchmark and exact-head Win/Linux source CI. Genuine installed performance evidence remains open.
 
 - **IDE B4 installed test harness (Nov 8):** Added real unsigned Windows NSIS/UI Automation and Linux Debian GTK/AT-SPI two-editor OS acceptance, verifying distinct CodeMirror views, unsaved isolation, targeted secondary Save, focused Ctrl+S and uninstall. Replaced trivial clean-checkout permissions check with exact B2-ancestor source diff. Native/installed CI still required before release or feature acceptance.
