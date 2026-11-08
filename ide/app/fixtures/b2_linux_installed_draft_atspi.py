@@ -19,13 +19,13 @@ SENTINEL="B2_PRIVATE_UNSAVED_DRAFT_ONLY"
 def deny(kind):
     raise RuntimeError("B2_LINUX_INSTALLED_EDITOR_DENIED:"+kind)
 
-def clipboard():
+def clipboard(prefix):
     for _ in range(35):
         try:
             text=subprocess.check_output(
                 ["xclip","-selection","clipboard","-out"],
                 text=True,timeout=4,stderr=subprocess.DEVNULL)
-            if text.startswith(("ide-buffer:v1","ide-draft:v1")):
+            if text.startswith(prefix):
                 return text
         except (OSError,subprocess.CalledProcessError,subprocess.TimeoutExpired):
             pass
@@ -53,12 +53,12 @@ def main():
         if hashlib.sha256(SOURCE.read_bytes()).hexdigest()!=source_before:
             deny("editing_implicitly_modified_source_file")
         activate("Copy draft reference")
-        session=clipboard()
+        session=clipboard("ide-buffer:v1")
         if ("lifetime=session-only" not in session or
             "draftSha256=" not in session or SENTINEL in session):
             deny("session_reference_not_bounded_non_disclosing")
         activate("Preserve draft + copy durable reference")
-        durable=clipboard()
+        durable=clipboard("ide-draft:v1")
         if not durable.startswith("ide-draft:v1") or "checkpoint=" not in durable or (
             "lifetime=persistent-private-app-data" not in durable
             or SENTINEL in durable):
