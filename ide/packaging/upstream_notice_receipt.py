@@ -47,10 +47,10 @@ def verify_sources(root, source_sha, downloader=download):
         remote = downloader(url)
         if not isinstance(remote, bytes) or not 100 <= len(remote) <= MAX_LICENSE:
             raise NoticeDenied("invalid_upstream_notice_bytes:" + name)
-        # Git checkouts can apply CRLF conversion on Windows. Compare meaningful
-        # upstream license text after only that strictly bounded normalization.
-        canonical = lambda b: b.replace(b"\r\n", b"\n")
-        if canonical(remote) != canonical(expected):
+        # P06 native evidence requires original upstream *bytes*, not merely
+        # semantically equal text after Windows checkout CRLF conversion. The
+        # source path has an explicit eol=lf attribute on every OS.
+        if remote != expected:
             raise NoticeDenied("source_notice_differs_from_upstream:" + name)
         records.append({
             "name": name, "sourceRevision": revision, "sourceUrl": url,

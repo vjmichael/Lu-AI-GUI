@@ -19,6 +19,12 @@ on:
       - 'ide/host/LICENSE'
       - 'ide/app/src-tauri/LICENSE'
       - 'ide/packaging/p06-reviewed-lock-graphs.json'
+      - 'ide/packaging/upstream-licenses/**'
+      - 'ide/packaging/upstream_notice_receipt.py'
+      - 'ide/packaging/test_upstream_notice_receipt.py'
+      - 'ide/packaging/test_verify_p04_license_bundle.py'
+      - 'ide/packaging/collect_verification_licenses.py'
+      - 'ide/packaging/verify_p04_license_bundle.py'
       - 'ide/app/package-lock.json'
       - 'ide/app/src-tauri/Cargo.lock'
       - '.gitattributes'
@@ -107,6 +113,18 @@ jobs:
           test "$(git hash-object --no-filters "$original")" = "$(git rev-parse "HEAD:$original")"
           python -m unittest discover -s ide/packaging -p 'test_p06_exact_upstream_notice_fallback.py' -v
           python -m unittest discover -s ide/packaging -p 'test_p06_r_efi_authors.py' -v
+      - name: Check exact core upstream notice bytes after native Git checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          for notice in ide/packaging/upstream-licenses/*.txt; do
+            test -f "$notice"
+            test "$(git hash-object --no-filters "$notice")" = "$(git rev-parse "HEAD:$notice")"
+            test "$(git check-attr eol -- "$notice" | sed 's/.*: eol: //')" = lf
+          done
+          python -m unittest discover -s ide/packaging -p 'test_upstream_notice_receipt.py' -v
+          python -m unittest discover -s ide/packaging -p 'test_verify_p04_license_bundle.py' -v
+          echo 'P06_CORE_UPSTREAM_NOTICES_NATIVE_CHECKOUT_BYTE_EXACT=PASS'
       - name: Fetch original six pinned upstream licenses and resolved npm/Cargo texts
         shell: bash
         env:

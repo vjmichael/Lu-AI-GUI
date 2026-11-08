@@ -2,5 +2,8 @@ ide/app/package-lock.json text eol=lf
 ide/app/src-tauri/Cargo.lock text eol=lf
 
 # Preserve exact original license copyright bytes across Windows and Linux.
+# Core six upstream originals otherwise checkout as CRLF on Windows, causing
+# misleading semantic-match receipts with different bundled SHA-256 bytes.
+ide/packaging/upstream-licenses/*.txt text eol=lf
 ide/packaging/upstream-crate-notices/*.txt text eol=lf
 ide/packaging/upstream-crate-notices/*.md text eol=lf

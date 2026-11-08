@@ -1,0 +1,94 @@
+name: IDE P06 read-only live native OS evidence snapshot (NOT ACCEPTANCE)
+on:
+  push:
+    branches: ['ide/p06-live-native-receipts-20261107']
+    paths:
+      - 'ide/packaging/p06_live_native_jobs.py'
+      - 'ide/packaging/test_p06_live_native_jobs.py'
+      - 'ide/packaging/upstream_notice_receipt.py'
+      - 'ide/packaging/test_upstream_notice_receipt.py'
+      - 'ide/packaging/collect_verification_licenses.py'
+      - 'ide/packaging/verify_p04_license_bundle.py'
+      - 'ide/packaging/upstream-licenses/**'
+      - '.gitattributes'
+      - '.github/workflows/ide-p06-dependency-evidence.yml'
+      - 'ide/docs/IDE_P06_LIVE_NATIVE_EVIDENCE_20261107.md'
+      - 'ide/docs/IDE_P06_GOVERNANCE_REPRODUCIBILITY_20261107.md'
+      - 'ide/docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md'
+      - 'ide/PROJECT_STATE.md'
+      - 'ide/CHANGELOG.md'
+      - '.github/workflows/ide-p06-live-native-evidence.yml'
+  pull_request:
+    paths:
+      - 'ide/packaging/p06_live_native_jobs.py'
+      - 'ide/packaging/test_p06_live_native_jobs.py'
+      - 'ide/packaging/upstream_notice_receipt.py'
+      - 'ide/packaging/test_upstream_notice_receipt.py'
+      - 'ide/packaging/collect_verification_licenses.py'
+      - 'ide/packaging/verify_p04_license_bundle.py'
+      - 'ide/packaging/upstream-licenses/**'
+      - '.gitattributes'
+      - '.github/workflows/ide-p06-dependency-evidence.yml'
+      - '.github/workflows/ide-p06-live-native-evidence.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  p06-readonly-observed-os-jobs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Enforce exact head, Python hostile tests and static deny manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python -m unittest discover -s ide/packaging -p 'test_p06_live_native_jobs.py' -v
+          python ide/packaging/verify_p06_acceptance_matrix.py --matrix ide/packaging/p06-native-acceptance-matrix.json
+          echo 'P06_READONLY_CI_PARSER_AND_MATRIX_SOURCE_TESTS=PASS'
+      - name: Obtain exact-commit live GitHub OS run and job outcomes
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          # Observation only. Missing, queued, stale, failed and interrupted
+          # native workflows are explicitly reported, never treated as green.
+          python ide/packaging/p06_live_native_jobs.py --sha "$EXACT_SHA" \
+            --output ide/p06-observed-native-actions.json
+          python - <<'PY'
+          import json
+          data=json.load(open("ide/p06-observed-native-actions.json",encoding="utf-8"))
+          assert data["sourceSha"] == "${{ github.event.pull_request.head.sha || github.sha }}"
+          assert data["releaseApproved"] is False
+          assert data["protectedExecutionAccepted"] is False
+          assert data["nativeInstalledReleaseAccepted"] is False
+          assert data["gatePromotionAuthority"] == "none_read_only_snapshot"
+          print("P06_SNAPSHOT_SOURCE_BOUND_AND_DEFAULT_DENY=PASS")
+          PY
+      - name: Archive source SHA-bound unapproved observation
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-p06-live-native-evidence-${{ github.event.pull_request.head.sha || github.sha }}-not-release
+          path: ide/p06-observed-native-actions.json
+          retention-days: 14
+          if-no-files-found: error
+      - name: Never infer signed release or protected execution from this snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'P06_LIVE_NATIVE_EVIDENCE=READ_ONLY_DIAGNOSTIC'
+          echo 'P06_NATIVE_OS_PROTECTED_EXECUTION=INDEPENDENT_GATE'
+          echo 'P06_SIGNING_LEGAL_PUBLICATION=NOT_AUTHORIZED'

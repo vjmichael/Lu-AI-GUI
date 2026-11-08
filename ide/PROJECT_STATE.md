@@ -488,3 +488,7 @@ Actual failed CI logs, their job IDs, and the corrective commits are recorded in
 - [Chronological changelog](CHANGELOG.md), [continuity protocol](CONTINUITY_PROTOCOL.md), [engineering handoff](ENGINEERING_HANDOFF.md), [capability-first architecture](docs/CAPABILITY_FIRST_ARCHITECTURE.md).
 - Repository branch source was inspected using the GitHub connector. No local checkout or user Windows filesystem was inspected. **No R3.6–A3 Windows installer or local NSIS package has been verified in this session.**
 - Do not infer that a Git commit is a tested build, that a CI success is an installed launch, or that historical resource memory authorizes execution.
+
+
+### P06-R1 cross-platform native Actions evidence observer (Nov 7 Phoenix / Nov 8 UTC)
+Independent draft P06 continuation `ide/p06-live-native-receipts-20261107` adds an actual GitHub Actions read-only evidence probe for exact 40-hex source SHA and native Windows/Linux job set, with hostile tests for missing, stale, canceled, duplicate, wrong-run, and cross-repository results. Reports are explicitly nonauthoritative and default-deny for release, protected execution, legal approval and signing; separate B2/B3 branches cannot be represented as integrated native acceptance. The existing static P06 acceptance matrix remains unchanged. GitHub-native source CI must pass on exact head; genuine P02–P04 independent OS results still pending. Lu Core P07/WO10 remains deferred; no main merge.

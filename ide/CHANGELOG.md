@@ -373,3 +373,6 @@ This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for wha
 - R1–R2: standalone Windows shell, projects and read-only source browsing.
 
 See the engineering handoff and linked acceptance documents for exact evidence. Do not use these summaries as substitute for exact commit or artifact verification.
+
+
+- **IDE P06-R1 live OS evidence reader:** Pinned read-only public GitHub Actions snapshot on a single exact commit with independently observed Windows/Linux native jobs. New hostile tests deny stale/foreign/partial/canceled evidence and source-only release promotion; no permission or signing changes. Source CI pending. Standalone P07 interface deferred.
