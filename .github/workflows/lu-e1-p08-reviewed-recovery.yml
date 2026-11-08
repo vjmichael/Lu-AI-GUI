@@ -48,6 +48,13 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           node scripts/verify-source-tree.mjs
+      - name: ANSF visible chat restart recovery and original-turn authorization regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib reviewed_restart_notice_is_chat_scoped_visible_and_idempotent \
+            -- --nocapture
       - name: Run genuine TaskStore and EffectJournal restart regressions
         shell: bash
         run: |
@@ -99,3 +106,63 @@ jobs:
         run: |
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib reviewed_app_recovery::tests -- --nocapture
+
+  linux-guardian-crash-recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert source commit, frozen manifest, and Linux OS
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p08-guardian-evidence
+          printf 'SOURCE_HEAD=%s\n' "$EXPECTED_HEAD" > e1-p08-guardian-evidence/source.txt
+      - name: Build actual first-party Linux orphan guardian and crash parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --bin lu-linux-group-guard --bin lu-e1-p08-linux-crash-parent
+          sha256sum src-tauri/lu-win-worker-job/target/debug/lu-linux-group-guard \
+            src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-crash-parent \
+            > e1-p08-guardian-evidence/native-binary-sha256.txt
+      - name: Force real Linux host crash and prove descendant death, not SQLite state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile benchmarks/e1/e1_p08_linux_group_guard.py
+          python3 benchmarks/e1/e1_p08_linux_group_guard.py \
+            --guard "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-group-guard" \
+            --parent "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-crash-parent" \
+            2>&1 | tee e1-p08-guardian-evidence/linux-crash-recovery.log
+          grep -q 'E1_P08_LINUX_ORPHAN_GUARD_PASS=1' \
+            e1-p08-guardian-evidence/linux-crash-recovery.log
+      - name: Do not claim proof when actual Linux evidence is missing
+        if: always()
+        shell: bash
+        run: |
+          if ! test -f e1-p08-guardian-evidence/linux-crash-recovery.log; then
+            echo 'Linux group guardian crash acceptance OPEN: no real OS evidence.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p08-real-linux-crash-grandchild
+          path: e1-p08-guardian-evidence/
+          retention-days: 14
+          if-no-files-found: warn
