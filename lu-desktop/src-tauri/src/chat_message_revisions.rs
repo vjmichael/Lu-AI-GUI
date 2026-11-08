@@ -286,7 +286,7 @@
      ensure_schema(&db)?;
      let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)
          .map_err(|_|"Correction transaction unavailable")?;
-     let chain=versions(Some(&tx),chat,seq,&source)?;
+     let chain=versions(Some(&*tx),chat,seq,&source)?;
      let version=chain.len() as i64;
      let last=chain.last().map(|x|x.sha256.clone())
          .unwrap_or_else(||hash(&source.text));
@@ -325,8 +325,8 @@
      // an edit cannot race between pinned-source validation and PREPARED.
      let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)
          .map_err(|_|"Reply transaction unavailable")?;
-     let pinned=display_at(Some(&tx),chats,chat,parent,version,sha)?;
-     let latest=versions(Some(&tx),chat,parent,&original(chats,chat,parent)?)?;
+     let pinned=display_at(Some(&*tx),chats,chat,parent,version,sha)?;
+     let latest=versions(Some(&*tx),chat,parent,&original(chats,chat,parent)?)?;
      if version!=latest.len() as i64{
          return Err("Parent was edited; review the latest version before replying".into())
      }
@@ -372,7 +372,7 @@
      if seq<=parent||hash(&text)!=reply_sha{
          return Err("Original human reply differs from prepared intent".into())
      }
-     display_at(Some(&tx),chats,chat,parent,version,&sha)?;
+     display_at(Some(&*tx),chats,chat,parent,version,&sha)?;
      if state=="LINKED"{
          if saved_seq!=Some(seq){return Err("Conflicting reply linkage".into())}
      }else if state=="PREPARED"&&saved_seq.is_none(){
