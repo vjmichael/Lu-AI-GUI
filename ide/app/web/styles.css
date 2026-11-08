@@ -322,3 +322,21 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .sourceGoToFile input{flex:1;min-width:0;color:#e4f0fa;background:#07182b;border:1px solid #48667e;padding:7px;border-radius:4px;font:11px Consolas,ui-monospace,monospace}
 .sourceGoToFile button{flex:none;border:1px solid #4d7595;border-radius:4px;background:#18344c;color:#cee8f8;font-size:11px;cursor:pointer}
 .sourceGoToFile button:disabled{opacity:.4;cursor:default}
+
+/* B10: read-only external source drift report and bounded three-way excerpts. */
+.diskAuditPanel,.diskComparisonPanel{flex:none;display:flex;flex-direction:column;gap:8px;padding:10px 12px;background:#102439;border-bottom:1px solid #4c6780;max-height:280px;overflow-y:auto;font-size:12px;color:#d3e7f7}
+.diskAuditHeading{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.diskAuditPanel p,.diskComparisonPanel p{margin:0;color:#b5cfdf;line-height:1.5}
+.diskAuditRows{display:flex;flex-direction:column;gap:4px}
+.diskAuditRow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:5px 8px;background:#183149;border-radius:5px}
+.diskAuditRow code{font:11px ui-monospace,Consolas,monospace;overflow-wrap:anywhere}
+.diskAuditRow strong{color:#f6d28f;font-weight:600}
+.diskAuditRow span{color:#e6c2ad}
+.diskAuditRow button{margin-left:auto}
+.diskComparisonPanel{max-height:370px}
+.diskComparisonBlock{display:flex;flex-direction:column;gap:6px;border-top:1px solid #35506d;padding-top:8px}
+.diskCompareColumns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.diskCompareColumns>div{min-width:0}
+.diskCompareColumns pre{font:11px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow:auto;background:#071729;border:1px solid #35526b;border-radius:5px;margin:4px 0;padding:8px}
+.diskCompareColumns small{color:#f4c589}
+@media(max-width:900px){.diskCompareColumns{grid-template-columns:minmax(0,1fr)}}
