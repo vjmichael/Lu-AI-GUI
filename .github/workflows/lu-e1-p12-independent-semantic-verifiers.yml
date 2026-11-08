@@ -1,0 +1,229 @@
+name: Lu E1-P12 Git Status Pack and MP4 Independent Oracles
+on:
+  push:
+    branches: ['lu/e1-p12-git-status-pack-mp4-20261108']
+    paths:
+      - 'src-tauri/lu-core/src/independent_git_status.rs'
+      - 'src-tauri/lu-core/src/independent_git_pack.rs'
+      - 'src-tauri/lu-core/src/independent_mp4.rs'
+      - 'src-tauri/lu-core/src/independent_git_history.rs'
+      - 'src-tauri/lu-core/src/reviewed_outcome_oracle.rs'
+      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
+      - 'src-tauri/lu-core/src/journal.rs'
+      - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
+      - '.github/workflows/lu-e1-p12-independent-semantic-verifiers.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/independent_git_status.rs'
+      - 'src-tauri/lu-core/src/independent_git_pack.rs'
+      - 'src-tauri/lu-core/src/independent_mp4.rs'
+      - 'src-tauri/lu-core/src/independent_git_history.rs'
+      - 'src-tauri/lu-core/src/reviewed_outcome_oracle.rs'
+      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
+      - 'src-tauri/lu-core/src/journal.rs'
+      - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
+      - '.github/workflows/lu-e1-p12-independent-semantic-verifiers.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: e1p12-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  actual-source-parsers:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify immutable source identity before all work
+        shell: bash
+        env:
+          EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p12-evidence
+          printf 'HEAD_SHA=%s\n' "$EXACT_SHA" > e1-p12-evidence/source.txt
+      - name: Bounded independent Git index and worktree parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib independent_git_status::tests -- --nocapture \
+            2>&1 | tee e1-p12-evidence/git-status-source.log
+          grep -Eq 'test result: ok\. 2 passed; 0 failed;' \
+            e1-p12-evidence/git-status-source.log
+      - name: Bounded verified Git PACK/IDX and delta decoder
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib independent_git_pack::tests -- --nocapture \
+            2>&1 | tee e1-p12-evidence/git-pack-source.log
+          grep -Eq 'test result: ok\. 2 passed; 0 failed;' \
+            e1-p12-evidence/git-pack-source.log
+      - name: Independent MP4 movie/track/codec source parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib independent_mp4::tests -- --nocapture \
+            2>&1 | tee e1-p12-evidence/mp4-box-source.log
+          grep -Eq 'test result: ok\. 2 passed; 0 failed;' \
+            e1-p12-evidence/mp4-box-source.log
+      - name: Repeat prior independent Git DAG and WAV oracles on final tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib independent_git_history::tests -- --nocapture \
+            2>&1 | tee e1-p12-evidence/history-compat.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib reviewed_outcome_oracle::tests -- --nocapture \
+            2>&1 | tee e1-p12-evidence/reviewed-compat.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p12-native-source-${{ matrix.os }}
+          path: e1-p12-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+  native-independent-application-acceptance:
+    needs: actual-source-parsers
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Recheck SHA/lock before operating on real OS resources
+        shell: bash
+        env:
+          EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p12-native-apps
+          printf 'HEAD_SHA=%s\n' "$EXACT_SHA" > e1-p12-native-apps/source.txt
+      - name: Bind real Git/FFmpeg/FFprobe and cooperative process guardian on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v git
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+          echo "LU_E1_P07_GIT=$(readlink -f "$(command -v git)")" >> "$GITHUB_ENV"
+          echo "LU_E1_P07_FFPROBE=$(readlink -f "$(command -v ffprobe)")" >> "$GITHUB_ENV"
+          echo "LU_E1_P12_FFMPEG=$(readlink -f "$(command -v ffmpeg)")" >> "$GITHUB_ENV"
+          cargo build --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --bin lu-linux-group-guard
+          guard="$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-group-guard"
+          test -x "$guard"
+          echo "LU_E1_P08_TEST_GUARD_BINARY=$guard" >> "$GITHUB_ENV"
+          sha256sum "$(command -v git)" "$(command -v ffmpeg)" \
+            "$(command -v ffprobe)" "$guard" > e1-p12-native-apps/binaries.sha256
+      - name: Bind real installed Git/FFmpeg/FFprobe on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $git=(Get-Command git.exe -ErrorAction Stop).Source
+          $ffmpeg=Get-Command ffmpeg.exe -ErrorAction SilentlyContinue
+          $ffprobe=Get-Command ffprobe.exe -ErrorAction SilentlyContinue
+          if (-not $ffmpeg -or -not $ffprobe) {
+            choco install ffmpeg -y --no-progress
+            $ffmpeg=Get-Command 'C:\ProgramData\chocolatey\bin\ffmpeg.exe' -ErrorAction Stop
+            $ffprobe=Get-Command 'C:\ProgramData\chocolatey\bin\ffprobe.exe' -ErrorAction Stop
+          }
+          if (-not (Test-Path $git) -or -not (Test-Path $ffmpeg.Source) -or
+              -not (Test-Path $ffprobe.Source)) {
+            throw 'Real Windows Git/FFmpeg/FFprobe images unavailable'
+          }
+          Add-Content $env:GITHUB_ENV "LU_E1_P07_GIT=$git"
+          Add-Content $env:GITHUB_ENV "LU_E1_P07_FFPROBE=$($ffprobe.Source)"
+          Add-Content $env:GITHUB_ENV "LU_E1_P12_FFMPEG=$($ffmpeg.Source)"
+          Get-FileHash -Algorithm SHA256 -LiteralPath $git,$ffmpeg.Source,$ffprobe.Source |
+            Format-Table -AutoSize | Out-String |
+            Set-Content e1-p12-native-apps/binaries.sha256
+      - name: Actual Git clean dirty deleted staged and false-count tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            real_git_status_clean_dirty_deleted_and_staged_changes_are_bounded \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p12-native-apps/native-git-status.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p12-native-apps/native-git-status.log
+      - name: Real Git pack/merge commit graph and corrupt checksum rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            real_git_loose_merge_graph_is_verified_without_invoking_git_by_oracle \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p12-native-apps/native-packed-git-history.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p12-native-apps/native-packed-git-history.log
+      - name: Real FFmpeg creates separate MP4 video and AAC audio, supervised FFprobe returns verified facts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            real_mp4_video_and_aac_audio_are_independently_verified \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p12-native-apps/native-mp4-aac.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p12-native-apps/native-mp4-aac.log
+      - name: Complete reviewed model-tool loop with five separate verified source outcomes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            actual_model_selected_reviewed_git_and_media_tools_return_verified_receipts \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p12-native-apps/complete-reviewed-tool-loop.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p12-native-apps/complete-reviewed-tool-loop.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p12-native-apps-${{ matrix.os }}
+          path: e1-p12-native-apps/
+          retention-days: 14
+          if-no-files-found: warn
