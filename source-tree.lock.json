@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f56da2e157aaa89d03d72be5a5d2edc6d8e8ff90",
+  "sourceCommitBeforeLock": "1fb77aa36bcb7c17322f46f55f1351d27541b01f",
   "trackedFileCount": 704,
   "files": [
     {
@@ -1473,7 +1473,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_host_scheduler.rs",
-      "blob": "20b921b246ede2b26c972a77e9032488df6cf12c"
+      "blob": "a264558499614663bdd3928ab85f33a978ae700b"
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_ledger.rs",
