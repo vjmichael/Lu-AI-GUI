@@ -51,6 +51,52 @@ jobs:
         run: |
           echo 'DEV02_UPSTREAM_LSP_ARCHIVE_REVIEW_SECURITY_TESTS=PASS'
           echo 'DEV02_SIGNED_OR_APPROVED_LSP_RELEASE=NO'
+
+  original-upstream-license-notices:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Reject mutable or forged original notices
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python3 -m unittest discover -s ide/packaging -p 'test_collect_original_lsp_notices.py' -v
+      - name: Fetch four pinned release-tag original license notices
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ide/packaging/collect_original_lsp_notices.py \
+            --manifest ide/packaging/lsp_original_upstream_notices_20261108.json \
+            --output "$RUNNER_TEMP/lu-ide-original-lsp-notices" --fetch-pinned
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          directory=Path(os.environ["RUNNER_TEMP"])/"lu-ide-original-lsp-notices"
+          receipt=json.loads((directory/"original-upstream-notice-receipt.json").read_text())
+          assert len(receipt["notices"])==4
+          assert receipt["originalBytesVerified"] is True
+          assert receipt["redistributionApproved"] is False
+          assert receipt["dependenciesAudited"] is False
+          assert receipt["legalReviewSigned"] is False
+          print("DEV02_FOUR_PINNED_RELEASE_ORIGINAL_LICENSE_NOTICE_BYTES=PASS")
+          print("DEV02_REDISTRIBUTION_LEGAL_OR_DEPENDENCY_APPROVAL=NOT_GRANTED")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: dev02-original-native-provider-notices-no-redistribution-approval
+          path: ${{ runner.temp }}/lu-ide-original-lsp-notices/
+          if-no-files-found: error
+          retention-days: 7
+
   real-official-release-sha:
     needs: offline-archive-security
     runs-on: ubuntu-24.04
