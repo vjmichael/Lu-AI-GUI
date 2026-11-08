@@ -122,6 +122,7 @@ fn parse_track(trak:&Atom<'_>,budget:&mut usize)->Option<TrackFacts>{
             b"hvc1"|"hev1"=>"hevc",
             b"av01"=>"av1",
             b"vp09"=>"vp9",
+            b"mp4v"=>"mpeg4",
             _=>return None
         };
         // Codec configuration must be present, otherwise a forged
@@ -131,10 +132,14 @@ fn parse_track(trak:&Atom<'_>,budget:&mut usize)->Option<TrackFacts>{
             "h264"=>b"avcC".as_slice(),
             "hevc"=>b"hvcC".as_slice(),
             "av1"=>b"av1C".as_slice(),
+            "mpeg4"=>b"esds".as_slice(),
             _=>b"vpcC".as_slice()
         };
         if !nested.iter().any(|x|x.kind.as_slice()==config
-            &&!x.value.is_empty()){return None}
+            &&(if codec=="mpeg4"{
+                x.value.len()>=12&&x.value[..4]==[0,0,0,0]
+                    &&has_esds_object_type(&x.value[4..],0x20)
+            }else{!x.value.is_empty()})){return None}
         let width=be16(entry.value.get(24..26)?)? as u64;
         let height=be16(entry.value.get(26..28)?)? as u64;
         if !(1..=16384).contains(&width)||!(1..=16384).contains(&height){
@@ -154,7 +159,7 @@ fn parse_track(trak:&Atom<'_>,budget:&mut usize)->Option<TrackFacts>{
         let nested=atoms(&entry.value[28..],6,budget)?;
         let esds=unique(&nested,b"esds")?;
         if esds.value.len()<12||esds.value[..4]!=[0,0,0,0]
-            ||!is_aac_esds(&esds.value[4..]){return None}
+            ||!has_esds_object_type(&esds.value[4..],0x40){return None}
         Some(TrackFacts{codec:"aac",kind,width:None,height:None,
             channels:Some(channels),sample_rate:Some(sample_rate)})
     }
@@ -162,7 +167,7 @@ fn parse_track(trak:&Atom<'_>,budget:&mut usize)->Option<TrackFacts>{
 /// Locate a correctly delimited MPEG-4 DecoderConfigDescriptor (tag 0x04)
 /// within the ordinary ES_Descriptor sequence (tag 0x03), and require
 /// MPEG-4 Audio ObjectTypeIndication 0x40. Never infer AAC from mp4a alone.
-fn is_aac_esds(bytes:&[u8])->bool{
+fn has_esds_object_type(bytes:&[u8],requested:u8)->bool{
     let Some((outer,next))=descriptor(bytes,0) else{return false};
     if outer.0!=3{return false}
     let payload=&bytes[outer.1..next];
@@ -177,7 +182,7 @@ fn is_aac_esds(bytes:&[u8])->bool{
     if flags&0x20!=0{offset=offset.saturating_add(2)}
     if offset>=payload.len(){return false}
     let Some((desc,end))=descriptor(payload,offset) else{return false};
-    desc.0==4&&end<=payload.len()&&payload.get(desc.1)==Some(&0x40)
+    desc.0==4&&end<=payload.len()&&payload.get(desc.1)==Some(&requested)
 }
 fn descriptor(bytes:&[u8],start:usize)->Option<((u8,usize),usize)>{
     let tag=*bytes.get(start)?;
