@@ -66,8 +66,17 @@ function languageExtension(filename) {
  * undo history, cursor, and selection when the user switches tabs.
  * The state is never sent across the Tauri IPC boundary automatically.
  */
+export const LARGE_SOURCE_LIGHTWEIGHT_THRESHOLD = 128 * 1024;
+export function isLargeSourceEditor(text) {
+  return typeof text === 'string' &&
+    text.length > LARGE_SOURCE_LIGHTWEIGHT_THRESHOLD;
+}
 export function createEditorState(text, filename, onChange, onSelectionChange) {
-  const syntax = languageExtension(filename);
+  // CodeMirror already retains an immutable line tree; for the largest
+  // accepted native files, do not eagerly construct an expensive language
+  // parse tree or wrap extremely long lines. Editing/Undo still work.
+  const lightweight = isLargeSourceEditor(text);
+  const syntax = lightweight ? null : languageExtension(filename);
   // Keep original uniform CRLF/CR source bytes when editing and checkpointing.
   const withoutCrLf = text.replace(/\r\n/g, '');
   const separator = text.includes('\r\n') && !/[\r\n]/.test(withoutCrLf)
@@ -85,7 +94,7 @@ export function createEditorState(text, filename, onChange, onSelectionChange) {
       ...(styleNonce ? [EditorView.cspNonce.of(styleNonce)] : []),
       oneDark,
       lspDiagnosticField,
-      EditorView.lineWrapping,
+      ...(!lightweight ? [EditorView.lineWrapping] : []),
       // Native WebView accessibility: expose the actual editable surface to
       // keyboard and screen-reader users and black-box installed OS tests.
       EditorView.contentAttributes.of({ 'aria-label': 'Source editor text',
