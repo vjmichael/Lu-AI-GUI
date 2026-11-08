@@ -1,0 +1,54 @@
+name: IDE DEV-01 bounded quick-open source acceptance
+on:
+  push:
+    branches: ['ide/dev01-bounded-quick-open-20261108']
+    paths:
+      - 'ide/app/web/**'
+      - 'ide/app/tests/dev01_quick_open*.test.mjs'
+      - '.github/workflows/ide-dev01-quick-open-native-ci.yml'
+  pull_request:
+    paths:
+      - 'ide/app/web/**'
+      - 'ide/app/tests/dev01_quick_open*.test.mjs'
+      - '.github/workflows/ide-dev01-quick-open-native-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  frontend-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact-head source checkout and immutable dependency lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+      - name: Full native Node app build and frontend regression
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Strict scope acceptance
+        shell: bash
+        run: |
+          echo "DEV01_QUICK_OPEN_NATIVE_FRONTEND_SOURCE=PASS"
+          echo "DEV01_REAL_INSTALLED_OS_UI=NOT_ACCEPTED"
+          echo "DEV01_PROTECTED_RUN_DEBUG_OR_RELEASE=NOT_ACCEPTED"
