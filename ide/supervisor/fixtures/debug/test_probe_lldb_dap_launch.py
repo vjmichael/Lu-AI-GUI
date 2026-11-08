@@ -1,5 +1,6 @@
 """Fixed LLDB launch diagnostic parser and security boundary tests."""
 import unittest
+from pathlib import Path
 
 from probe_lldb_dap_launch import (
     BUNDLE, TARGET, BWRAP, MAX_BYTES, classification, frame, launch_request,
@@ -24,6 +25,23 @@ class FixedLaunchDiagnosticTests(unittest.TestCase):
         self.assertIn("--ro-bind", BWRAP)
         self.assertIn("--proc", BWRAP)
         self.assertNotIn("--share-net", BWRAP)
+        self.assertNotIn("--cap-add", BWRAP)
+
+    def test_real_linux_dap_cwd_is_private_tmpfs_with_fixed_program(self):
+        source = (Path(__file__).resolve().parents[2] /
+                  "src" / "linux_lsp_worker.rs").read_text(encoding="utf-8")
+        dap = source.split("pub fn start_linux_dap(", 1)[1].split(
+            "pub struct LinuxDapSession", 1)[0]
+        # Do not grant write access to the sealed project to satisfy LLVM.
+        self.assertIn('.arg("--tmpfs")\n        .arg("/tmp")', dap)
+        self.assertIn('.arg("--chdir")\n        .arg("/tmp")', dap)
+        self.assertNotIn('.arg("--chdir")\n        .arg("/workspace")', dap)
+        self.assertIn('.arg("/ls")', dap)
+        self.assertIn('let native_executable = format!("/ls/bin/{executable}");', dap)
+        self.assertIn('launch_fixed_fixture("/ls/debuggee/wo6-selftest")',
+                      source.replace("\\n", "").replace(" ", ""))
+        self.assertEqual(BWRAP[BWRAP.index("--chdir") + 1], "/tmp")
+        self.assertIn("--unshare-all", BWRAP)
         self.assertNotIn("--cap-add", BWRAP)
 
     def test_one_complete_frame_consumed_without_echoing_message(self):
