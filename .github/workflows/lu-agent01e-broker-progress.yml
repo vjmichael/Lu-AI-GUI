@@ -8,6 +8,7 @@ on:
       - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
       - 'src-tauri/lu-core/src/lib.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
       - 'lu-desktop/tests/native-chat/src/lib.rs'
@@ -21,6 +22,7 @@ on:
       - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
       - 'src-tauri/lu-core/src/lib.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
       - 'lu-desktop/tests/native-chat/src/lib.rs'
@@ -61,7 +63,7 @@ jobs:
           set -euo pipefail
           node --test lu-desktop/tests/agent01e-progress-ui.test.mjs \
             2>&1 | tee agent01e-evidence/ui-bridge-node.log
-          grep -Fq '# pass 5' agent01e-evidence/ui-bridge-node.log
+          grep -Fq '# pass 6' agent01e-evidence/ui-bridge-node.log
           grep -Fq '# fail 0' agent01e-evidence/ui-bridge-node.log
       - uses: actions/upload-artifact@v4
         if: always()
@@ -131,6 +133,14 @@ jobs:
           fi
           grep -Fq "test result: ok. $count passed; 0 failed;" \
             agent01e-evidence/real-chat-progress.log
+      - name: Validate real saved-chat current-goal and exact native review verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml             --lib agent_plan_review::tests -- --nocapture             2>&1 | tee agent01e-evidence/real-goal-plan-review.log
+          grep -Fq 'test agent_plan_review::tests::actual_chat_goal_supersession_invalidates_plan_approval_reference ... ok'             agent01e-evidence/real-goal-plan-review.log
+          grep -Fq 'test agent_plan_review::tests::exact_native_review_cannot_authorize_different_revision_or_action ... ok'             agent01e-evidence/real-goal-plan-review.log
+          grep -Fq 'test result: ok. 2 passed; 0 failed;'             agent01e-evidence/real-goal-plan-review.log
       - name: Parent AGENT-01A/B/C/D integration regressions at exact E head
         shell: bash
         run: |
