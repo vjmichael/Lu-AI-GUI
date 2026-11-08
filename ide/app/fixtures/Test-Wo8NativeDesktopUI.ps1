@@ -216,6 +216,25 @@ function Click([string]$label) {
     $p.Invoke()
   } catch { Deny ('ui_invoke_failure_'+$label.Replace(' ','_')) }
 }
+function Keypress-DraftClipboardCopy {
+  # An accessibility InvokePattern does not necessarily grant WebView2 the
+  # transient user activation required by navigator.clipboard.writeText.
+  # Use the real installed OS keyboard path on the UIA-discovered button:
+  # no script injection, native IPC, synthetic clipboard value or bypass.
+  $button=Find-Control 'Copy draft reference' 'Button'
+  if (!$button.Current.IsEnabled -or !$button.Current.IsKeyboardFocusable) {
+    Deny 'installed_draft_copy_button_not_keyboard_actionable'
+  }
+  $top=$proc.MainWindowHandle
+  [void][P04NativeWebViewWindows]::SetForegroundWindow($top)
+  if ([P04NativeWebViewWindows]::GetForegroundWindow() -ne $top) {
+    Deny 'installed_draft_copy_window_not_foreground'
+  }
+  $button.SetFocus()
+  Start-Sleep -Milliseconds 100
+  [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+  Write-Host 'P05_B2_NATIVE_COPY_INPUT=owned_webview_uia_focus_real_os_enter'
+}
 function Require([string]$text) {
   [void](Find-Control $text '' 15)
 }
@@ -949,7 +968,7 @@ try {
         Deny 'draft_reference_implicit_disk_save'
       }
       [System.Windows.Forms.Clipboard]::Clear()
-      Click 'Copy draft reference'
+      Keypress-DraftClipboardCopy
       $first=''
       $deadline=(Get-Date).AddSeconds(16)
       while ((Get-Date) -lt $deadline) {
@@ -966,6 +985,17 @@ try {
           $first -notmatch 'draftSha256=[a-f0-9]{64}' -or
           $first -notmatch 'lifetime=session-only' -or
           $first.Contains('P05_B2_SESSION_ONLY') -or $first.Contains('fn main')) {
+        # Diagnostics must come from the installed WebView or OS clipboard,
+        # never write a fabricated reference to satisfy acceptance.
+        Write-Host ('P05_B2_CLIPBOARD_TEXT_LENGTH='+$first.Length)
+        try {
+          $reason=Find-Control 'Could not copy the unsaved draft reference' '' 3
+          $message=[string]$reason.Current.Name
+          if ($message.Length -gt 240) { $message=$message.Substring(0,240) }
+          Write-Host ('P05_B2_INSTALLED_WEBVIEW_COPY_ERROR='+($message -replace '[\r\n]+',' '))
+        } catch {
+          Write-Host 'P05_B2_INSTALLED_WEBVIEW_COPY_ERROR=not_exposed'
+        }
         Deny 'installed_draft_reference_clipboard_not_verified'
       }
       $editor=Find-Control 'Source editor text' '' 20
@@ -973,7 +1003,7 @@ try {
       [System.Windows.Forms.SendKeys]::SendWait('^z')
       Start-Sleep -Milliseconds 500
       [System.Windows.Forms.Clipboard]::Clear()
-      Click 'Copy draft reference'
+      Keypress-DraftClipboardCopy
       $second=''
       $deadline=(Get-Date).AddSeconds(16)
       while ((Get-Date) -lt $deadline) {
@@ -1019,7 +1049,7 @@ try {
       }
       Require 'Saved main.rs'
       [System.Windows.Forms.Clipboard]::Clear()
-      Click 'Copy draft reference'
+      Keypress-DraftClipboardCopy
       $third=''
       $deadline=(Get-Date).AddSeconds(16)
       while ((Get-Date) -lt $deadline) {
@@ -1058,7 +1088,7 @@ try {
       }
       $savedSha=(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
       [System.Windows.Forms.Clipboard]::Clear()
-      Click 'Copy draft reference'
+      Keypress-DraftClipboardCopy
       $restarted=''
       $deadline=(Get-Date).AddSeconds(16)
       while ((Get-Date) -lt $deadline) {
