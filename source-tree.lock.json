@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b4e4ff6474b6e4f643167e4219feae8b6c2682ca",
+  "sourceCommitBeforeLock": "d38bff352441e822beffb7aeb833f87b9a42442d",
   "trackedFileCount": 474,
   "files": [
     {
@@ -37,7 +37,7 @@
     },
     {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
-      "blob": "cc707f754f8343bfe908aef7c4233adadb5118aa"
+      "blob": "fc724c6e0959edb521cc104184825a91762ae9a2"
     },
     {
       "path": ".github/workflows/lu-wave1-native-tools.yml",
@@ -349,7 +349,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/archive_desktop.rs",
-      "blob": "37b9ec0d1227492a8192eede818552c62db491cf"
+      "blob": "7cfd664a77606cd925d0363e282ec34c8efb4721"
     },
     {
       "path": "lu-desktop/src-tauri/src/archive_process_worker.rs",
