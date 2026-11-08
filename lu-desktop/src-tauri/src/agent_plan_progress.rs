@@ -32,6 +32,9 @@
      /// The SHA itself is never a capability token.
      pub revision_sha256:Option<String>,
      pub revision_review:String,
+     /// Host source verification is not available for nonempty assumptions
+     /// in this first native review UI, so approval is withheld.
+     pub pending_source_checks:u8,
      pub supervisor_state:String,
      pub step_count:u8,
      pub steps:Vec<AgentStepProgress>,
@@ -93,6 +96,7 @@
      for table in [
          "lu_agent_plans","lu_agent_plan_revisions",
          "lu_agent_plan_revision_steps","lu_agent_plan_revision_reviews",
+         "lu_agent_plan_revision_assumptions",
          "lu_agent_schedule_owners","lu_agent_schedule_proposals",
          "lu_agent_deliverable_receipts",
      ]{
@@ -135,7 +139,7 @@
              plans.push(AgentPlanProgress{
                  plan_id:plan,original_human_turn_id:turn,plan_state:state,
                  latest_revision:0,revision_sha256:None,
-                 revision_review:"NO_PROPOSAL".into(),
+                 revision_review:"NO_PROPOSAL".into(),pending_source_checks:0,
                  supervisor_state:"NOT_CLAIMED".into(),step_count:0,
                  steps:Vec::new(),
                  next_safe_action:"Prepare a plan proposal for human review. Do not execute.",
@@ -159,6 +163,14 @@
              None=>"PENDING_HUMAN_REVIEW",
              _=>return Err("Damaged human review decision".into())
          };
+         let count:i64=db.query_row(
+             "SELECT COUNT(*) FROM lu_agent_plan_revision_assumptions
+              WHERE plan_id=?1 AND revision_index=?2",
+             params![plan,revision_number],|r|r.get(0)
+         ).map_err(|_|"Assumption-source references unavailable")?;
+         if !(0..=16).contains(&count){
+             return Err("Too many assumption-source references".into())
+         }
          let owner:Option<(String,String)>=db.query_row(
              "SELECT revision_sha256,state FROM lu_agent_schedule_owners
               WHERE plan_id=?1",
@@ -242,6 +254,7 @@
              latest_revision:revision_number as u8,
              revision_sha256:Some(revision_sha),
              revision_review:review.into(),
+             pending_source_checks:count as u8,
              supervisor_state:owner_state.into(),
              step_count:steps.len() as u8,steps,
              next_safe_action:next,
@@ -283,6 +296,8 @@ mod tests{
                 kind TEXT,depends_on INTEGER,expected TEXT);
              CREATE TABLE lu_agent_plan_revision_reviews(
                 plan_id TEXT,revision_index INTEGER,decision TEXT);
+             CREATE TABLE lu_agent_plan_revision_assumptions(
+                plan_id TEXT,revision_index INTEGER,source_id TEXT);
              CREATE TABLE lu_agent_schedule_owners(
                 plan_id TEXT,revision_sha256 TEXT,state TEXT);
              CREATE TABLE lu_agent_schedule_proposals(
