@@ -246,3 +246,29 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .lspSuggestion span{color:#a3b7cc;white-space:normal}
 .lspResultPanel pre{font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;
   color:#c4d6e8;margin:0 0 5px;font-family:Consolas,monospace}
+
+/* DEV-02.1 read-only, revision-gated diagnostic navigation over open tabs. */
+.lspProjectProblems{padding:10px 14px;border-top:1px solid #435c73;
+  max-height:275px;overflow:auto;background:#122539;display:flex;
+  flex-direction:column;gap:8px;color:#dce8f3;font-size:12px}
+.lspProjectProblemsHeading{display:flex;justify-content:space-between;
+  flex-wrap:wrap;align-items:center;gap:8px}
+.lspProjectProblemsFilters{display:flex;gap:8px;flex-wrap:wrap;
+  align-items:center}
+.lspProjectProblemsFilters label{font-size:11px;color:#bcd1e5}
+.lspProjectProblemsFilters input,.lspProjectProblemsFilters select{
+  padding:7px;min-width:130px;max-width:100%;border:1px solid #6d8299;
+  border-radius:5px;background:#091927;color:#f4f8fc;font:inherit}
+.lspProjectProblemsFilters input{flex:1 1 175px}
+.lspProjectProblemsFilters input:focus-visible,.lspProjectProblemsFilters select:focus-visible,
+.lspProjectProblem:focus-visible{outline:2px solid #f0c95a;outline-offset:2px}
+.lspProblemCounts{margin:0;color:#b5d6eb;font-size:11px}
+.lspProblemCaution{margin:0;color:#f2c98a;font-size:11px;line-height:1.4}
+.lspProjectProblemsResults{display:flex;flex-direction:column;gap:4px;
+  max-height:175px;overflow:auto}
+.lspProjectProblem{display:flex;flex-direction:column;gap:4px;align-items:flex-start;
+  padding:8px 9px;border:1px solid #47627d;border-radius:5px;
+  font:inherit;color:#dfebf6;background:#193149;cursor:pointer;text-align:left}
+.lspProjectProblem:hover{background:#284765}
+.lspProjectProblem span:first-child{font-size:11px;color:#f0cd8a}
+.lspProjectProblem span:last-child{overflow-wrap:anywhere;white-space:pre-wrap}

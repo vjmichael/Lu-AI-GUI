@@ -5,6 +5,7 @@ import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
+import { projectProblems, stillCurrentProblem } from './lsp_problems.js';
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 import { belongsToSelectedProject } from './job_render_guard.js';
 
@@ -86,6 +87,10 @@ function App() {
     detail: 'Protected language-server admission has not been accepted.'
   });
   const [lspNativeDiagnostics, setLspNativeDiagnostics] = useState({});
+  const [projectProblemsOpen, setProjectProblemsOpen] = useState(false);
+  const [projectProblemSeverity, setProjectProblemSeverity] = useState('all');
+  const [projectProblemSearch, setProjectProblemSearch] = useState('');
+  const problemJumpNonce = useRef(0);
   const [lspCompletions, setLspCompletions] = useState(null);
   const [lspHover, setLspHover] = useState(null);
   const [lspJumpRequest, setLspJumpRequest] = useState(null);
@@ -197,6 +202,8 @@ function App() {
     // Invalidate any provider data from the previous workspace. No cross-
     // project response may be shown or applied to the newly selected editor.
     setLspNativeDiagnostics({});
+    setProjectProblemsOpen(false);
+    setProjectProblemSearch('');
     setLspCompletions(null);
     setLspHover(null);
     setLspJumpRequest(null);
@@ -226,6 +233,28 @@ function App() {
     [activeTab, lspHover]);
 
   const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
+  const problemsForProject = useMemo(() => projectProblems(
+    projectTabs, lspNativeDiagnostics, activeProject?.projectId || 'no-active-project',
+    { severity: projectProblemSeverity, query: projectProblemSearch }
+  ), [tabs, activeProject?.projectId, lspNativeDiagnostics,
+    projectProblemSeverity, projectProblemSearch]);
+  function navigateProjectProblem(item) {
+    // Cross-file navigation only among already-open, project-registered
+    // CodeMirror tabs and only at this *current* verified source revision.
+    const tab = tabs.find(candidate => candidate.key === item.tabKey &&
+      candidate.projectId === activeProjectIdRef.current);
+    if (!tab || !stillCurrentProblem(tab, lspNativeDiagnostics[tab.key], item)) {
+      setProblem('Diagnostic became stale. Refresh the protected language session.');
+      return;
+    }
+    setActiveTabKey(tab.key);
+    setSection('explorer');
+    setLspJumpRequest({
+      from: item.from, to: item.to,
+      tabIdentity: tab.key + ':' + tab.generation,
+      nonce: ++problemJumpNonce.current,
+    });
+  }
   const anyDirty = tabs.some(tab => tab.dirty);
   const isExplorer = section === 'explorer';
   const isProposals = section === 'proposals';
@@ -2791,6 +2820,13 @@ function App() {
                   <button type="button" className="ghostBtn editorToolButton"
                     disabled={!lspRunningForTab || lspBusy}
                     onClick={() => void requestLspFeature('diagnostics')}>Problems</button>
+                  <button type="button" className="ghostBtn editorToolButton"
+                    aria-expanded={projectProblemsOpen}
+                    aria-controls="projectProblemsPanel"
+                    title="Read-only diagnostics from exact-source authorized open tabs"
+                    onClick={() => setProjectProblemsOpen(value => !value)}>
+                    All problems{problemsForProject.total ? ' · '+problemsForProject.total : ''}
+                  </button>
                   <button className="ghostBtn editorToolButton" aria-label="Find in file"
                     onClick={() => { setFindOpen(true); setFindIndex(-1); }}>Find · Ctrl+F</button>
                   <button className="ghostBtn editorToolButton" disabled={explorerPending || !!savingKey}
@@ -2873,6 +2909,57 @@ function App() {
                   previous[activeTab.key] === line ? previous :
                     { ...previous, [activeTab.key]: line })}
               />
+              {projectProblemsOpen && <section id="projectProblemsPanel"
+                aria-label="Open-project verified language-server problems"
+                className="lspProjectProblems">
+                <div className="lspProjectProblemsHeading">
+                  <strong>Problems across open files</strong>
+                  <button className="ghostBtn" type="button"
+                    onClick={() => setProjectProblemsOpen(false)}>Close problems</button>
+                </div>
+                <div className="lspProjectProblemsFilters">
+                  <label htmlFor="projectProblemSeverity">Severity</label>
+                  <select id="projectProblemSeverity" value={projectProblemSeverity}
+                    onChange={event => setProjectProblemSeverity(event.target.value)}>
+                    <option value="all">All</option><option value="error">Errors</option>
+                    <option value="warning">Warnings</option><option value="info">Info</option>
+                  </select>
+                  <label htmlFor="projectProblemSearch">Filter verified problems</label>
+                  <input id="projectProblemSearch" type="search" maxLength={128}
+                    value={projectProblemSearch}
+                    onChange={event => setProjectProblemSearch(event.target.value)}
+                    placeholder="Filename or diagnostic message"/>
+                </div>
+                <p className="lspProblemCounts" role="status">
+                  {problemsForProject.errors} errors · {problemsForProject.warnings} warnings ·
+                  {' '}{problemsForProject.infos} info ·
+                  {' '}{problemsForProject.verifiedTabs} source-verified open tabs
+                  {problemsForProject.staleTabs > 0 &&
+                    ' · '+problemsForProject.staleTabs+' stale responses hidden'}
+                </p>
+                {problemsForProject.capacityLimited && <p className="lspProblemCaution">
+                  Partial results: open tab or problem display limit reached.
+                </p>}
+                {problemsForProject.verifiedTabs === 0 && <p className="lspProblemCaution">
+                  No verified language-server diagnostics yet. An empty list is not
+                  proof the project has no errors; protected language services
+                  must be authorized and running.
+                </p>}
+                {problemsForProject.verifiedTabs > 0 &&
+                  problemsForProject.items.length === 0 && <p>
+                    No source-verified problems match this filter.
+                  </p>}
+                <div className="lspProjectProblemsResults">
+                  {problemsForProject.items.map((item, index) =>
+                    <button type="button" key={item.tabKey+':'+item.from+':'+index}
+                      className="lspProjectProblem"
+                      onClick={() => navigateProjectProblem(item)}
+                      aria-label={item.kind+' in '+item.relativePath+' line '+item.line}>
+                      <span>{item.kind} · {item.relativePath}:{item.line}</span>
+                      <span>{item.message}</span>
+                    </button>)}
+                </div>
+              </section>}
               {activeLspDiagnostics.length > 0 && <section className="lspResultPanel"
                 aria-label="Language server problems">
                 <strong>Problems · {activeLspDiagnostics.length}</strong>
