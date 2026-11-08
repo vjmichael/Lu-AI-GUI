@@ -105,14 +105,14 @@ jobs:
             --test e1_reviewed_model_tools -- --nocapture \
             2>&1 | tee e1-p07-evidence/model-tool-contract.log
           grep -Eq 'test result: ok\. 4 passed; 0 failed;' e1-p07-evidence/model-tool-contract.log
-      - name: Actual model-shaped Git and FFprobe native execution and persisted journal proof
+      - name: Five real OS tools plus scripted supervised-model session and durable journal proof
         shell: bash
         run: |
           set -euo pipefail
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
             --test e1_reviewed_model_tools -- --ignored --nocapture \
             2>&1 | tee e1-p07-evidence/actual-model-to-app.log
-          grep -Eq 'test result: ok\. 1 passed; 0 failed;' e1-p07-evidence/actual-model-to-app.log
+          grep -Eq 'test result: ok\. 2 passed; 0 failed;' e1-p07-evidence/actual-model-to-app.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
