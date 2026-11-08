@@ -730,7 +730,7 @@ try {
       [IO.File]::AppendAllText((Join-Path $fixed 'main.rs'),"`n// WO9_NATIVE_REVIEWED_CHANGE`n")
       Click 'Source control'
       Require 'Reviewed local Git staging and commit'
-      $before=(git -C $fixed rev-parse HEAD).Trim()
+      $gitHeadBefore=(git -C $fixed rev-parse HEAD).Trim()
       if ($LASTEXITCODE -ne 0) { Deny 'wo9_fixture_git_head_unavailable' }
       $pathInput=Find-Control 'Project-relative tracked file' 'Edit' 20
       $pathInput.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('main.rs')
@@ -750,7 +750,7 @@ try {
       Confirm-NativeOneUseDialog 'Confirm local Git commit' 'Commit exact staged file'
       Require 'Local commit'
       $after=(git -C $fixed rev-parse HEAD).Trim()
-      if ($LASTEXITCODE -ne 0 -or $before -eq $after) { Deny 'wo9_native_commit_not_observed' }
+      if ($LASTEXITCODE -ne 0 -or $gitHeadBefore -eq $after) { Deny 'wo9_native_commit_not_observed' }
       $files=@(git -C $fixed diff-tree --no-commit-id --name-only -r HEAD)
       if ($files.Count -ne 1 -or $files[0] -ne 'main.rs') {
         Deny 'wo9_git_commit_changed_unreviewed_files'
