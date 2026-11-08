@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c21c24aec7e6c5fa2fd5985182ad8579203d736f",
-  "trackedFileCount": 642,
+  "sourceCommitBeforeLock": "45545e4336fbca2cc0b772d28286196859355878",
+  "trackedFileCount": 645,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -46,6 +46,10 @@
     {
       "path": ".github/workflows/lu-e1-p06b-real-thirdparty.yml",
       "blob": "a19e87b36c553eb25f17d7930b0bc10f5b031007"
+    },
+    {
+      "path": ".github/workflows/lu-e1-p06c-typed-git.yml",
+      "blob": "0cb61b043baf6ba12eeb76bf46e49d74f599cb9c"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -293,7 +297,7 @@
     },
     {
       "path": "docs/LU_E1_P06B_NATIVE_ACCEPTANCE_20261107.md",
-      "blob": "fb79d83f1e5921a0db0aa217c403e6dc766051d0"
+      "blob": "6bf3b28a60a328d3ea24c8b326c85d4cfbf37946"
     },
     {
       "path": "docs/LU_E1_P06_THIRDPARTY_ADAPTERS_20261107.md",
@@ -350,6 +354,10 @@
     {
       "path": "docs/LU_M5_LOCAL_MEMORY_END_TO_END_20261107.md",
       "blob": "1d94a9238a653347b9e75cd0670b44f05721d8ee"
+    },
+    {
+      "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
+      "blob": "503db642d8568d8b20ef970b73e0134353b0c31c"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
@@ -429,7 +437,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "dd31f405104a3c317cf8e8f57c7662fccdbf6f53"
+      "blob": "4e61c5d54e18fd7d881bbddc014304d2dc6d66c7"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1549,7 +1557,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "3a05a43d06f1754da8eb038a07ba45ace454cd8e"
+      "blob": "8ba82beeafd4e5fbcca73860c61187ec2fdb0c93"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1624,6 +1632,10 @@
       "blob": "4020765b17f9a36dcb600b918449d4409394b9e7"
     },
     {
+      "path": "src-tauri/lu-core/src/native_app_typed_git.rs",
+      "blob": "4a47997f25ebe2213e4cd0e63929d67652cb0ed6"
+    },
+    {
       "path": "src-tauri/lu-core/src/native_app_version_execution.rs",
       "blob": "2b1b916d1e4fc800481b87556a4ec037254625cb"
     },
@@ -1677,7 +1689,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "627c69da67215a36d59a9a8c96c26be457c16d5f"
+      "blob": "12bb77f659205f60a8f41ecab6c4a5f673ae6878"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
