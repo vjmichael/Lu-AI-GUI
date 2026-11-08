@@ -39,6 +39,26 @@ use lu_ide_execution_supervisor::linux_worker::{
 };
 
 const VALID_RECIPES: [&str; 4] = ["rust_check", "rust_build", "rust_tests", "lu_ide_host_tests"];
+const MULTILANG_RECIPES: [&str; 3] = ["python_pytest", "js_tests", "cpp_cmake_build"];
+
+#[cfg(feature = "native-multilang")]
+fn multilang_release_pin(recipe_id: &str) -> Option<&'static str> {
+    #[cfg(windows)]
+    { match recipe_id {
+        "python_pytest" => option_env!("LU_IDE_DEV03_WINDOWS_PYTHON_SHA256"),
+        "js_tests" => option_env!("LU_IDE_DEV03_WINDOWS_NODE_SHA256"),
+        "cpp_cmake_build" => option_env!("LU_IDE_DEV03_WINDOWS_CMAKE_SHA256"),
+        _ => None,
+    }}
+    #[cfg(target_os = "linux")]
+    { match recipe_id {
+        "python_pytest" => option_env!("LU_IDE_DEV03_LINUX_PYTHON_SHA256"),
+        "js_tests" => option_env!("LU_IDE_DEV03_LINUX_NODE_SHA256"),
+        "cpp_cmake_build" => option_env!("LU_IDE_DEV03_LINUX_CMAKE_SHA256"),
+        _ => None,
+    }}
+}
+
 const MAX_HISTORY: usize = 32;
 const MAX_RUNTIME_MS: u64 = 5 * 60_000;
 
@@ -117,6 +137,56 @@ fn installation(app: &AppHandle) -> Result<Installation, String> {
     }
 }
 
+/// Native runtime readiness only; this is NEVER execution permission.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MultilangProfileReadiness {
+    profile_id: &'static str,
+    ready: bool,
+    code: &'static str,
+}
+
+#[cfg(feature = "native-multilang")]
+fn installation_multilang(app: &AppHandle, recipe_id: &str)
+    -> Result<Installation, String> {
+    if !MULTILANG_RECIPES.contains(&recipe_id) {
+        return Err("DEV03_RECIPE_DENIED".into());
+    }
+    let expected=approved_pin(multilang_release_pin(recipe_id))?;
+    #[cfg(windows)]
+    {
+        let resource=app.path().resource_dir().map_err(|_|"DEV03_RESOURCE_ROOT_MISSING")?;
+        let toolchain=resource.join("build-tools").join("windows-runtimes").join(recipe_id);
+        let attested=lu_ide_execution_supervisor::runtime_bundles::verify_runtime_bundle(
+            recipe_id, &toolchain,expected)
+            .map_err(|_|"DEV03_RUNTIME_UNTRUSTED")?;
+        let service=resource.join("recovery").join("windows_recovery_service.exe");
+        let service_sha=approved_pin(PINNED_SERVICE)?;
+        if digest_file(&service)? != service_sha {
+            return Err("DEV03_RECOVERY_SERVICE_PIN_MISMATCH".into());
+        }
+        let broker=TrustedBroker {
+            executable:service,
+            expected_sha256:service_sha.to_owned(),
+            private_witness_directory:resource.join("recovery"),
+        };
+        Ok(Installation {
+            toolchain_sha256:attested.tree_sha256,toolchain,broker,
+        })
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _=app;
+        let actual=lu_ide_execution_supervisor::linux_worker
+            ::installed_multilang_toolchain_digest(recipe_id)
+            .map_err(|_|"DEV03_RUNTIME_UNTRUSTED")?;
+        if actual!=expected {
+            return Err("DEV03_RUNTIME_PIN_MISMATCH".into());
+        }
+        Ok(Installation {toolchain_sha256:actual})
+    }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildRunView {
@@ -154,6 +224,7 @@ pub struct ActiveView {
 #[serde(rename_all = "camelCase")]
 pub struct BuildStatus {
     ready: bool,
+    multilang_ready: Vec<MultilangProfileReadiness>,
     code: String,
     description: &'static str,
     current: Option<ActiveView>,
@@ -210,6 +281,19 @@ impl NativeBuildRuntime {
     }
     pub fn status(&self, app: &AppHandle, project_id: &str) -> Result<BuildStatus, String> {
         let availability = installation(app).map(|_| ());
+        let multilang_ready:Vec<MultilangProfileReadiness>=MULTILANG_RECIPES.iter()
+            .map(|&profile_id| {
+                #[cfg(feature = "native-multilang")]
+                let result=installation_multilang(app,profile_id).map(|_|());
+                #[cfg(not(feature = "native-multilang"))]
+                let result:Result<(),String>=Err("DEV03_OPTIN_FEATURE_DISABLED".into());
+                MultilangProfileReadiness {
+                    profile_id,ready:result.is_ok(),
+                    code:if result.is_ok() {
+                        "DEV03_RUNTIME_PIN_VERIFIED_NATIVE_ADMISSION_PER_JOB"
+                    } else { "DEV03_RUNTIME_NOT_READY" },
+                }
+            }).collect();
         let locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
         let current = locked.current.as_ref().filter(|job| job.project_id == project_id)
             .map(|job| ActiveView {
@@ -252,6 +336,7 @@ impl NativeBuildRuntime {
         journal.reverse();
         Ok(BuildStatus {
             ready: availability.is_ok(),
+            multilang_ready,
             code: match availability {
                 Ok(()) => "BUILD_RELEASE_RESOURCES_VERIFIED_ADMISSION_PER_JOB".into(),
                 Err(code) => code,
@@ -307,7 +392,9 @@ impl NativeBuildRuntime {
         project_id: &str,
         recipe_id: &str,
     ) -> Result<BuildRunView, String> {
-        if !VALID_RECIPES.contains(&recipe_id) {
+        if !VALID_RECIPES.contains(&recipe_id)
+            && !(cfg!(feature = "native-multilang")
+                && MULTILANG_RECIPES.contains(&recipe_id)) {
             return Err("BUILD_RECIPE_DENIED".into());
         }
         let cancel = Arc::new(NativeCancel::default());
@@ -349,6 +436,11 @@ impl NativeBuildRuntime {
         cancel: &Arc<NativeCancel>,
         requested: &Arc<AtomicBool>,
     ) -> Result<BuildRunView, String> {
+        #[cfg(feature = "native-multilang")]
+        let installed = if MULTILANG_RECIPES.contains(&recipe_id) {
+            installation_multilang(app,recipe_id)?
+        } else { installation(app)? };
+        #[cfg(not(feature = "native-multilang"))]
         let installed = installation(app)?;
         let source_root = registry.trusted_native_worker_root(project_id)
             .map_err(|_| "BUILD_PROJECT_NOT_ACTIVE")?;
@@ -402,7 +494,7 @@ impl NativeBuildRuntime {
             }
             let choice = app.dialog()
                 .message(format!(
-                    "Run a restricted, offline Rust job?\n\n\
+                    "Run an exact restricted offline project build/test job?\n\n\
                     Project: {project_id}\nRecipe: {recipe_id}\nSource HEAD: {head}\n\
                     Frozen source SHA-256: {}\nToolchain SHA-256: {}\n\n\
                     The OS worker will execute code from the sealed copy. No project files \
