@@ -1,5 +1,14 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Current priority: blocker-first product readiness (Nov 7 Phoenix / Nov 8 UTC)
+
+**Start here:** [Product Readiness & Blocker Ledger](docs/IDE_PRODUCT_READINESS_BLOCKER_LEDGER_20261108.md). This ledger records each native failure, owning PR, dependencies, exact evidence and completion criterion. It is the active execution queue; the existing [P01–P07 phase ledger](docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md) remains canonical for phase acceptance.
+
+**Immediate group A:** A1 P06-R2 Windows case-only filename fixture on #111 ([42445698778](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42445698778)); A2 B3 Windows PowerShell parser #100 ([42443088413](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42443088413)); A3 B2 installed Windows clipboard/draft reference #99 ([42443379591](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42443379591)); A4 B3-on-B2 ancestry reconciliation **only after B2 full native pass**. Group B: P04 GTK chooser #102, P03 protected LLDB/clangd #104, P06-R1 Linux+observer #108, integrated installed Windows/Linux verification. Then build one accepted RC and expand normal editor, build/test/debug, Git and toolchain usage. An older isolated passing source/installer result is not a final integrated result.
+
+**Owner holds:** final license/legal review when final shipping tree is frozen; unsigned Windows development path and publisher signing identity deferred; P07/WO10 Lu Core bridge deferred until Core v1.0; physical Windows installed testing distinct from hosted CI. Keep all existing historical PRs/CI until replacement evidence exists. `main` has no `ide/` directory as of this snapshot. No blocked task has been accepted by creating this document alone.
+
+
 ## P06 now has source-committed, OS-reviewed dependency lockfiles (November 7)
 
 Both original CI-approved immutable Cargo.lock and npm package-lock.json bytes have been committed directly as source blobs; reviewed SHA-256 and original Git blob identities are enforced on both OSs. The P06 temporary read-only lockfile exporter is removed; source CI now runs npm ci and Cargo --locked. Native builds/GUI, 48 historic missing license notices (new evidence pending), signed release, independent license review, and protected OS acceptance remain separate release gates.

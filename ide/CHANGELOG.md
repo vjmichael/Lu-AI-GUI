@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **Product-readiness blocker-first task ledger (Nov 7 Phoenix / Nov 8 UTC):** Audited exact PR heads and native logs; created `ide/docs/IDE_PRODUCT_READINESS_BLOCKER_LEDGER_20261108.md`. Established stable BLK-01..08 native/source blockers, INT-01..04 integration gates and DEV-01..09 daily-driver goals, with task dependencies, OS acceptance, links and explicit checkpoint rules. A1 Windows P06-R2 casefold, A2 P05 B3 PowerShell parser and A3 B2 real clipboard remain first; no native gate was closed by this documentation change. Final legal review deferred until shipped binary set is known; signing and P07 remains separately deferred.
+
+
 - **P06 WebView2 runtime obligation (Nov 7):** Kept original MIT wrapper text separate from mandatory three-binding default-deny Microsoft runtime redistribution review, with frozen policy and hostile tests. No legal clearance.
 
 - **P06 selectors MPL full legal text (Nov 7):** Pinned canonical complete MPL-2.0 SPDX v3.28.0 text, checked exact selectors 0.38.0 frozen cargo checksum and preserved mandatory original covered-file source and legal review status. No legal approval inferred.
