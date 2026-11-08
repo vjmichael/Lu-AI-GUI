@@ -1,0 +1,84 @@
+name: IDE P06-R2 shipping-content manifest native source acceptance (NOT RELEASE)
+on:
+  push:
+    branches: ['ide/p06-r2-shipping-content-inventory-20261108']
+    paths:
+      - 'ide/packaging/p06_shipping_content.py'
+      - 'ide/packaging/test_p06_shipping_content.py'
+      - 'ide/docs/IDE_P06_R2_SHIPPING_CONTENT_20261108.md'
+      - '.github/workflows/ide-p06-shipping-content-source.yml'
+  pull_request:
+    paths:
+      - 'ide/packaging/p06_shipping_content.py'
+      - 'ide/packaging/test_p06_shipping_content.py'
+      - '.github/workflows/ide-p06-shipping-content-source.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  candidate-tree-manifest-source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Assert exact source and hostile native path/hash tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python -m unittest discover -s ide/packaging -p 'test_p06_shipping_content.py' -v
+          echo 'P06_R2_NATIVE_SOURCE_AND_ADVERSARIAL_TESTS=PASS'
+      - name: Roundtrip actual host filesystem observations without installed claims
+        shell: bash
+        env:
+          EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          TEST_PLATFORM: ${{ matrix.os }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, pathlib, subprocess, sys, tempfile
+          with tempfile.TemporaryDirectory(prefix="p06-shipment-native-") as td:
+              root = pathlib.Path(td) / "candidate"
+              (root / "bin").mkdir(parents=True)
+              (root / "THIRD_PARTY_LICENSES").mkdir()
+              (root / "bin" / "lu-ide.exe").write_bytes(b"MZ" + b"test-fixture" * 12)
+              (root / "THIRD_PARTY_LICENSES" / "LICENSE.txt").write_bytes(b"Full test notice\n" + b"X" * 256)
+              report = pathlib.Path(td) / "shipping-snapshot.json"
+              base = [sys.executable, "ide/packaging/p06_shipping_content.py",
+                      "--root", str(root), "--source-sha", os.environ["EXACT_SHA"],
+                      "--platform", os.environ["TEST_PLATFORM"],
+                      "--tree-kind", "unpacked_package_candidate",
+                      "--output", str(report)]
+              subprocess.run(base, check=True)
+              snapshot = json.loads(report.read_text(encoding="utf-8"))
+              assert snapshot["fileCount"] == 2
+              assert snapshot["releaseApproved"] is False
+              assert snapshot["licenseLegalReviewApproved"] is False
+              assert snapshot["nativeInstalledVerified"] is False
+              subprocess.run(base + ["--verify"], check=True)
+              (root / "bin" / "lu-ide.exe").write_bytes(b"MZtampered")
+              rejected = subprocess.run(base + ["--verify"], capture_output=True)
+              assert rejected.returncode == 2
+              assert b"shipment_snapshot_differs_from_actual_tree" in rejected.stderr
+          print("P06_R2_NATIVE_HASHED_TREE_ROUNDTRIP=PASS_UNATTESTED_FIXTURE")
+          PY
+      - name: Explicitly retain installed and legal authority separation
+        shell: bash
+        run: |
+          echo 'P06_R2_REAL_INSTALLED_PACKAGE_WITNESS=NOT_TESTED'
+          echo 'P06_R2_NATIVE_BINARY_SHIPMENT_CLOSURE=NOT_TESTED'
+          echo 'P06_R2_PUBLISHER_LEGAL_REVIEW=DEFERRED_UNTIL_FINAL_SHIP_SET'
+          echo 'P06_R2_RELEASE_AND_PROTECTED_EXECUTION=NOT_AUTHORIZED'
