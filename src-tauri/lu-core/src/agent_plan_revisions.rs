@@ -370,13 +370,15 @@ fn read_history(db:&Connection,plan:&str)->Result<Vec<RevisionSnapshot>,Revision
         }
         let (review_state,review_turn)=match human_review{
             None=>("PENDING_HUMAN_REVIEW",None),
-            Some((turn,decision))=>{
-                if !exact(&turn,"g-")||turn==source_human_turn_id{
+            Some((review_turn,decision))=>{
+                // The saved review must be a DIFFERENT human turn than the
+                // one that introduced the proposal being reviewed.
+                if !exact(&review_turn,"g-")||review_turn==turn{
                     return Err(RevisionError::CorruptHistory)
                 }
                 match decision.as_str(){
-                    "APPROVE_PLAN_ONLY"=>("APPROVED_PLAN_ONLY",Some(turn)),
-                    "REJECT_PLAN"=>("REJECTED_PLAN",Some(turn)),
+                    "APPROVE_PLAN_ONLY"=>("APPROVED_PLAN_ONLY",Some(review_turn)),
+                    "REJECT_PLAN"=>("REJECTED_PLAN",Some(review_turn)),
                     _=>return Err(RevisionError::CorruptHistory)
                 }
             }
