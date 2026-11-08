@@ -569,7 +569,8 @@ impl AgentHostScheduler{
             params![plan]
         )?;
         tx.commit()?;
-        self.forget_live_owner(plan,owner)?;
+        // Keep only the current-process identity so duplicate cancellation
+        // notices remain idempotent; OWNED admission stays blocked by state.
         Ok(WriteStatus::New)
     }
     /// Caller must independently verify the prior HOST ended. Never
@@ -840,7 +841,7 @@ mod tests{
         assert_eq!(s.claim_host(
             &f.plan,&f.chat,&f.origin,&id("h-",99),&f.revision,
             session_budget(),&a,&b,&Sources(true)
-        ),Err(ScheduleError::StaleOwner));
+        ),Err(ScheduleError::ReviewRequired));
         assert_eq!(s.claim_host(
             &f.plan,&id("c-",88),&f.origin,&id("h-",88),&f.revision,
             session_budget(),&a,&b,&Sources(true)
@@ -954,7 +955,7 @@ mod tests{
         assert_eq!(s.claim_host(
             &f.plan,&f.chat,&f.origin,&id("h-",99),&f.revision,
             session_budget(),&a,&b,&Sources(true)
-        ),Err(ScheduleError::StaleOwner));
+        ),Err(ScheduleError::ReviewRequired));
         drop(s);drop(c);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
     }
     #[test]
