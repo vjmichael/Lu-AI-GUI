@@ -131,7 +131,12 @@ def worker_gate(root):
     if not isinstance(data,dict):
         raise Denied("worker_reconciliation_must_be_object")
     # Fixture proof only; real production broker MUST provide kernel receipts.
-    if (data.get("activeWorkers")!=0 or data.get("allReconciled") is not True
+    # JSON booleans and floats compare equal to integer zero in Python.
+    # Neither is a valid OS worker-count receipt; reject malformed evidence
+    # before journaling or renaming any payload.
+    worker_count=data.get("activeWorkers")
+    if (type(worker_count) is not int or worker_count != 0
+            or data.get("allReconciled") is not True
             or data.get("osTreeEmpty") is not True):
         raise Denied("workers_not_quiescent_for_upgrade")
 
