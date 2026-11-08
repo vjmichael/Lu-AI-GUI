@@ -13,7 +13,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import sys
 import zipfile
 
@@ -25,7 +24,6 @@ from review_upstream_lsp_archives import (
 
 SCHEMA = "lu.ide.dev02.disposable-native-lsp-payload.v1"
 MAX_PACKAGE_MEMBER = 512 * 1024 * 1024
-MAX_PACKAGE_MEMBERS = 9  # 3 executables, 4 notices, manifest, spare denied
 
 
 def allowed_temp_destination(path: Path) -> None:
@@ -53,8 +51,17 @@ def install_verified(package: Path, destination: Path, expected: dict) -> dict:
     if destination.exists() or destination.is_symlink():
         raise ValueError("test install must start absent")
     members = expected["files"]
-    if set(members) != set(expected["files"]) or len(members) != 7:
-        raise ValueError("incomplete provider/notice file inventory")
+    provider_names = {x for x in members if x.startswith("providers/")}
+    notice_names = {x for x in members if x.startswith("notices/")}
+    if (expected.get("schema") != SCHEMA or
+            expected.get("releaseApproved") is not False or
+            expected.get("redistributionApproved") is not False or
+            expected.get("nativeWorkerContainmentAccepted") is not False or
+            expected.get("dependencyClosureVerified") is not False or
+            expected.get("noAutomaticExecution") is not True or
+            len(provider_names) != 3 or len(notice_names) != 4 or
+            len(members) != 7):
+        raise ValueError("incomplete or unauthorized candidate package")
     from pathlib import PurePosixPath
     for name, record in members.items():
         parts = PurePosixPath(name).parts
