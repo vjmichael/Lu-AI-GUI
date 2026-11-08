@@ -186,6 +186,14 @@ impl HostReviewedApplicationCatalog{
         })
     }
 
+    /// The trusted execution broker must resolve the SAME reviewed binary
+    /// identity as the read-only catalog. No model/public inventory exposes
+    /// this path or can supply its own review identity. This is not a grant.
+    pub(crate) fn host_reviewed_entry(&self,app_id:&str)
+        ->Option<HostReviewedExecutable>{
+        self.reviewed.get(app_id).cloned()
+    }
+
     pub fn len(&self)->usize{self.reviewed.len()}
     pub fn is_empty(&self)->bool{self.reviewed.is_empty()}
 }

@@ -172,12 +172,42 @@ pub fn inspect_host_reviewed_read_application(
     authority:&ConversationAuthority,
     host_policy:&dyn ToolAuthorizer,
 )->Result<AppAdmissionObservation,AdmissionError>{
+    inspect_host_reviewed_application_for_effect(
+        spec,origin,call,descriptor,authority,host_policy,ToolEffect::ReadWorkspace
+    )
+}
+
+/// Host-only code-execution admission for the narrow reviewed-worker P03.
+/// This does not spawn a process. Unlike read-only P01 discovery it requires
+/// a separate CURRENT ExecuteCode grant and trusted host policy.
+pub(crate) fn inspect_host_reviewed_code_application(
+    spec:&HostReviewedExecutable,
+    origin:&BoundCallOrigin,
+    call:&ToolInvocation,
+    descriptor:&ToolDescriptor,
+    authority:&ConversationAuthority,
+    host_policy:&dyn ToolAuthorizer,
+)->Result<AppAdmissionObservation,AdmissionError>{
+    inspect_host_reviewed_application_for_effect(
+        spec,origin,call,descriptor,authority,host_policy,ToolEffect::ExecuteCode
+    )
+}
+
+fn inspect_host_reviewed_application_for_effect(
+    spec:&HostReviewedExecutable,
+    origin:&BoundCallOrigin,
+    call:&ToolInvocation,
+    descriptor:&ToolDescriptor,
+    authority:&ConversationAuthority,
+    host_policy:&dyn ToolAuthorizer,
+    expected_effect:ToolEffect,
+)->Result<AppAdmissionObservation,AdmissionError>{
     if !identifier(&spec.app_id)||!version(&spec.app_version)
        ||!identifier(&spec.tool_id)||!identifier(&spec.workspace_id)
        ||!digest(&spec.expected_sha256){
         return Err(AdmissionError::InvalidHostSpecification)
     }
-    if descriptor.effect!=ToolEffect::ReadWorkspace{
+    if descriptor.effect!=expected_effect{
         return Err(AdmissionError::NotReadOnly)
     }
     if spec.tool_id!=descriptor.id||spec.tool_id!=call.tool_id||

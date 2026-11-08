@@ -57,3 +57,55 @@ It does **not** claim that \`--version\`, a PE VERSIONINFO resource, a publisher
 - CI: genuine Linux and Windows native Rust Core tests must pass at the **final exact head**, including P01 fixed Rust test type/structure, positive catalog discovery, expired/revoked/forged/host-veto denial, duplicate and changed-byte identities, stale digest, unsupported format and Windows/Unix OS identity.
 - Source code alone is not passing test evidence. No new OS privilege, shell, browser access, arbitrary app controller, model-selected executable or effectful tool is registered.
 - **Physical installed Windows/AMD Vulkan/NSIS testing remains deferred until the Lu v1.0 release-candidate phase** by owner decision. GitHub-hosted native Windows test results are not a claim that the owner's installed Lu has run.
+
+
+## E1-P03 — contained, reviewed ONE-SHOT worker execution
+
+**Implementation candidate** on separate stacked branch \`lu/e1-p03-contained-app-worker-20261107\`, based on E1-P02 PR #103. E1-P02's standalone Windows/Linux CI should continue without being replaced by this work. Owner’s physical installed-Windows acceptance is still deferred until closer to Lu v1.0; hosted Windows/Linux genuine native process tests remain required immediately.
+
+### First real execution contract (bounded deliberately)
+
+\`src-tauri/lu-core/src/native_app_execution.rs\` is a **host-only execution broker** for a single exact, audited operation: the first-party \`lu-e1-version-worker\` with \`--lu-e1-version-one-shot\`. Host registration provides the exact executable file, expected SHA-256 and reviewed version, as introduced by P01/P02. The model supplies **NO executable name, argv, working directory, environment, PID, network address, filesystem target, or verification result.** A separate current \`ExecuteCode\` capability is required; the read-only availability discovery grant is explicitly insufficient.
+
+Before launch, the broker checks the current trusted user-turn/task/workspace and independent host policy, reopens and hashes the actual PE/ELF executable and its OS identity, then durably writes \`PREPARED\` → \`EXECUTING\` to \`EffectJournal\`. A duplicate or \`UNCERTAIN\` call ID is denied rather than retried. It delegates the actual process to Lu’s existing \`BackgroundProcessSupervisor\`, which owns the child, clears the environment, closes stdin, constrains stdout to the small native progress protocol, discards stderr, uses a fixed executable-parent directory and a 15-second host deadline.
+
+- **Windows:** the existing suspended-launch/Job Object implementation owns the process tree and receives an explicit **256 MiB job memory cap** for this one-shot mode.
+- **Linux:** existing process group and \`PR_SET_PDEATHSIG\` host-death binding are used; this mode receives a **256 MiB RLIMIT_AS**. These protections do NOT independently prove full network namespace isolation or absence of all filesystem effects in arbitrary third-party binaries; arbitrary external application execution remains disabled.
+- **Revocation:** a synchronous user-task-revocation listener fences launch with the same mutex, then cancels the exact owned worker and conservatively marks the effect \`UNCERTAIN\`. A host-originated cancellation also checks the exact original conversation/task identity, not a model-provided PID.
+- **Completion:** supervisor proves process exit and a bounded \`P\`/\`D\` protocol receipt. Lu’s independent task store persists the source receipt, and the broker compares it against the **host-known literal one-shot version-marker digest**. Only then can the *specific process action* reach \`APPLIED\`; receipt JSON explicitly says \`independentApplicationOutputVerified=false\`. A malformed/truncated receipt, timeout, failed worker, aborted launch or cancellation stays \`UNCERTAIN\`, never automatic retry.
+- **Crash/restart:** only the exclusively restarted host may reconcile SQLite \`RUNNING\` to \`INTERRUPTED\` and journal \`EXECUTING\` to \`UNCERTAIN\`. A current worker must never be misclassified as crashed just because a model loses context.
+
+### What E1-P03 actually executes
+
+Two genuine native Rust example binaries are built from source, not fake file descriptors or monkeypatched OS calls:
+
+1. \`e1_reviewed_version_worker\` emits the strict, bounded completion marker without accessing a document, shell, network or credentials.
+2. \`e1_reviewed_slow_worker\` sleeps before the same marker so a real running OS process can be cancelled and reaped by Lu’s process supervisor.
+
+The dedicated \`src-tauri/lu-core/tests/e1_reviewed_execution.rs\` checks a launched real worker and durable post-restart journal, the actual revoked process kill/reap, wrong-origin cancellation, host veto, changed binary digest, duplicate ID denial and interrupted startup reconciliation. Tests depending on external built examples are **explicitly ignored in ordinary Cargo tests** and are **explicitly run using \`--ignored\` in a dedicated real Windows/Linux GitHub matrix**, which builds and supplies the binaries by absolute path. An ordinary core unit-test pass must never be counted as these OS tests.
+
+### Remaining boundaries before general-purpose app operations
+
+E1-P03 is **an initial safe reviewed process execution primitive**, *not* arbitrary CLI/script/general third-party application execution or a user-installed-app result. Full E1-P03 completion still requires a separately audited typed/model-facing host registration, OS resource and network/credential policies appropriate to each external application, argument-level resource broker, and tested cancellation/timeout for each allowed operation. E1-P04 adds independent semantic output validation (e.g. expected worksheet cells rather than a process-exit or digest marker), and E1-P05 compares outcomes against direct-model and existing utility baselines. No new model-facing \`ExecuteCode\` tool has been automatically registered.
+
+
+## E1-P03 cancellation/recovery closeout review — November 7, 2026
+
+**No actual GitHub native runner result has been obtained yet** for E1-P03 commit \`149d888eb1f3d3246964173f53cf115aebfe8c15\`. At inspection, the dedicated Windows/Linux run \`42441697036\` remains QUEUED at frozen-source, and Desktop CI \`42441697004\` / source identity \`42441696902\` are queued. Do not mark cancellation/OS descendant containment/journal acceptance complete from code review.
+
+### Identified real code-level cancellation race, repaired in next commit
+
+The initial \`ConversationAuthority\` revocation listener removed the active broker entry *before* verifying \`BackgroundProcessSupervisor::cancel_owned\` had actually terminated and reaped the owned process. Similarly, \`cancel_current_task\` left the journal conservatively \`UNCERTAIN\` but discarded no failed-cancellation custody and could later publish a normal \`APPLIED\` receipt for the same completed worker. This was a genuine fail-closedness gap discovered by source inspection, **not a fabricated CI failure**.
+
+The broker now:
+- Marks its active entry \`revoke_pending=true\` and marks the journal \`UNCERTAIN\` **before** attempting OS cancellation.
+- Removes the entry immediately only when \`cancel_owned\` returns success after OS process reaping. If cancellation cannot be confirmed, the broker **retains** the entry and returns \`WorkerCancellationUncertain\`.
+- A subsequently observed terminal task status can clear retained tracking through \`poll\`, but a \`revoke_pending\` entry is never eligible for an \`APPLIED\` publication, even if a late valid protocol digest is present.
+- A real native fast-worker regression deliberately lets the underlying supervisor reap the process before the E1 broker receives the completion. Task revocation then sees no owned child to kill, must retain custody until broker reconciliation, and must preserve the journal as \`UNCERTAIN\`.
+- Another real native fixture deliberately exceeds the fixed 15-second runtime deadline; the test requires \`TimedOut\`, owned worker absence, no verified result, and \`UNCERTAIN\` durable journal with replay denied. These are appended to the dedicated Windows/Linux \`--ignored\` actual-worker test matrix, not counted through ordinary unit tests.
+
+### Evidence gates
+
+**Required:** on the final exact commit, frozen source passes, Linux+Windows core compile succeeds, the two pre-existing OS-native fast and slow tests pass, late-revocation and deadline-expiry native regressions pass, real OS worker/process-tree reaping is witnessed by supervisor APIs, durable SQLite journal remains \`APPLIED\` only for the successful fixed protocol worker and \`UNCERTAIN\` for aborted/missing/ambiguous operations, and historical call IDs do not execute twice. The full dedicated matrix must have real job logs and uploaded evidence. Do not close E1-P03 before that.
+
+Real user's installed Windows/NSIS/Vulkan acceptance is independently deferred until near Lu v1.0; hosted Windows 2025 CI is still required now.

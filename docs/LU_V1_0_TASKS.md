@@ -427,3 +427,21 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 - **E1-P02:** Host-only bounded reviewed application catalog; per-current-user-turn permission and host policy, exact read-only tool and workspace, on-demand actual executable SHA-256 + opened OS identity, fail-closed removal/duplicate/version mismatch, no registered default apps, no PATH scanning or app process launch. Linux/Windows native source tests and isolated E1 CI submitted but **new exact-head results pending**.
 - **Version claim limit:** reviewed release label bound to a checked SHA-256, NOT a live application version response or publisher signature. A contained and approved runtime version probe, when needed, belongs to E1-P03.
 - **Owner release schedule:** defer real hardware/interactive Windows, WebView, two-GGUF AMD Vulkan and NSIS install/uninstall acceptance to near Lu v1.0. Continue hosted Windows/Linux native tests now.
+
+
+## E1-P03 — reviewed application native execution (November 7, 2026)
+
+- **New isolated workstream** \`lu/e1-p03-contained-app-worker-20261107\`, stacked on E1-P02 draft PR #103. Real physical Windows/installer/Vulkan testing remains deferred near Lu v1.0 by owner instruction; native GitHub Windows/Linux actual process tests are **not** deferred.
+- Existing E1-P02 read-only app discovery is a separate authority. The new E1-P03 broker requires a fresh/current \`ExecuteCode\` grant tied to the exact persisted user turn, task, tool and workspace; model text never supplies binary/args/process ID.
+- The only admitted initial operation is Lu’s audited first-party \`--lu-e1-version-one-shot\` worker with host-reviewed binary SHA and file identity, 15-second fixed deadline, empty child environment, null stdin, bounded progress protocol, existing Windows Job Object and Linux process group + parent-death protection. 256 MiB OS address-space/job cap for this fixed mode. This is **not** a generic shell or third-party application-launch authority.
+- The execution journal persists \`PREPARED\`/\`EXECUTING\` **before spawn**; owner cancellation and task revocation kill/reap the actual process tree and record \`UNCERTAIN\`. Duplicate and prior uncertain IDs do not restart. Only matched process-exit/host-known marker receipts can mark the process action APPLIED, with application output correctness explicitly NOT verified.
+- Real native evidence workflow builds two genuine fast/slow Rust OS worker executables, performs runtime launch, completes validated protocol, revokes live workers, checks original conversation cancellation scope, bad binary/hash and host veto, and simulates exclusive restart UNCERTAIN reconciliation. These process-dependent Rust tests are explicitly run via \`cargo test -- --ignored\` in dedicated Windows/Linux CI; ordinary tests do not silently count them.
+- **Status:** source implementation submitted, full P03 CI/native execution and system isolation acceptance pending; general reviewed third-party adapters and semantic outcome verification remain later gates.
+
+
+## E1-P03 exact-head regression closeout candidate — November 7, 2026
+
+- Dedicated E1-P03 Windows/Linux CI on \`149d888e\` was observed queued, with no actual OS worker result; do not confuse a queued job with acceptance.
+- Source inspection found broker revocation discarded process custody before verifying kill/reap, and a late worker result could conflict with cancellation. **Fix:** \`revoke_pending\` state, durable UNCERTAIN before cancellation, retained custody on failed kill, and no APPLIED publication after revoked/cancelled outcomes.
+- Added real fast-worker race test (OS process already reaped when revocation arrives), and 22-second bounded timeout fixture to prove the supervisor's 15-second hard deadline and non-replayable UNCERTAIN journal, on **both hosted Windows/Linux**.
+- E1-P03 full native acceptance **OPEN** until the new exact-head compiler, source identity, process-kill, timeout and restart journal results are complete; physical installed Windows stays deferred to near v1.0.
