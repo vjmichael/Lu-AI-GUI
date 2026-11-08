@@ -42,18 +42,13 @@ fn atoms<'a>(bytes:&'a [u8],depth:usize,budget:&mut usize)->Option<Vec<Atom<'a>>
     }
     Some(out)
 }
-fn unique<'a>(items:&'a [Atom<'a>],name:&[u8;4])->Option<&'a Atom<'a>>{
+fn unique<'a,'b>(items:&'b [Atom<'a>],name:&[u8;4])->Option<&'b Atom<'a>>{
     let mut found=None;
     for item in items.iter().filter(|x|kind(x,name)){
         if found.is_some(){return None}
         found=Some(item)
     }
     found
-}
-fn child<'a>(parent:&'a Atom<'a>,name:&[u8;4],depth:usize,
-    budget:&mut usize)->Option<Atom<'a>>{
-    let nested=atoms(parent.value,depth,budget)?;
-    Some(*unique(&nested,name)?)
 }
 fn timescale_and_duration(data:&[u8])->Option<(u64,u64)>{
     let version=*data.first()?;
@@ -142,7 +137,7 @@ fn parse_track(trak:&Atom<'_>,budget:&mut usize)->Option<TrackFacts>{
             &&!x.value.is_empty()){return None}
         let width=be16(entry.value.get(24..26)?)? as u64;
         let height=be16(entry.value.get(26..28)?)? as u64;
-        if !(1..=16384).contains(&width)||(1..=16384).contains(&height)==false{
+        if !(1..=16384).contains(&width)||!(1..=16384).contains(&height){
             return None
         }
         Some(TrackFacts{codec,kind,width:Some(width),height:Some(height),
