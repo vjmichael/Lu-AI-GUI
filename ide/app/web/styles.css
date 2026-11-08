@@ -272,3 +272,17 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .lspProjectProblem:hover{background:#284765}
 .lspProjectProblem span:first-child{font-size:11px;color:#f0cd8a}
 .lspProjectProblem span:last-child{overflow-wrap:anywhere;white-space:pre-wrap}
+
+/* B3 saved-file search. The pane does not offer replace-all or run commands. */
+.projectSearchWorkspace{display:flex;flex-direction:column;gap:12px}
+.projectSearchControls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.projectSearchControls>input{background:#101e30;border:1px solid #4e6b84;border-radius:6px;color:#eff8ff;padding:10px 12px;flex:1;min-width:200px}
+.projectSearchControls label{display:flex;align-items:center;gap:6px;color:#c3dbed;font-size:12px;white-space:nowrap}
+.projectSearchControls label input{width:auto;min-width:0;flex:none}
+.projectSearchSummary{color:#a5c7dc;font-size:12px}
+.projectSearchResults{display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 350px);overflow-y:auto}
+.projectSearchHit{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;width:100%;background:#16293d;border:1px solid #3a5570;border-radius:8px;color:#e9f5ff;padding:12px;cursor:pointer}
+.projectSearchHit:hover,.projectSearchHit:focus-visible{border-color:#87b8e0;background:#1e344e}
+.projectSearchHit:disabled{opacity:.6;cursor:wait}
+.projectSearchHit code{font:12px Consolas,"Cascadia Code",ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:#d7e7f6}
+.projectSearchHit small{color:#93b3cb;overflow-wrap:anywhere}
