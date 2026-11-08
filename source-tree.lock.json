@@ -61,7 +61,7 @@
     },
     {
       "path": ".github/workflows/lu-e1-p07-genuine-gguf.yml",
-      "blob": "003babb5e205a1929f6b276955622627a033c27d"
+      "blob": "cbb0dd67347501ee63c817c727b76840b9880079"
     },
     {
       "path": ".github/workflows/lu-e1-p07-reviewed-app.yml",
