@@ -666,3 +666,36 @@ test('B4 two-pane layout preserves distinct native-registered CodeMirror tabs an
   assert.match(pure,/secondaryKey === primaryKey/);
   assert.doesNotMatch(pure,/invoke\(|fetch\(|navigator\.clipboard|Command::new/);
 });
+
+
+test('B5 large-project preview obeys native file bounds, retains Undo, windows UI DOM and rejects unknown host paths', () => {
+  const ui=read('../web/main.jsx');
+  const editor=read('../web/code_editor.jsx');
+  const working=read('../web/editor_working_set.js');
+  const native=read('../../host/src/browser.rs');
+  const css=read('../web/styles.css');
+  assert.match(native,/MAX_TEXT_BYTES: u64 = 512 \* 1024/);
+  assert.match(native,/MAX_ENTRY_COUNT: usize = 400/);
+  assert.match(native,/file\.take\(MAX_TEXT_BYTES \+ 1\)\.read_to_end/);
+  assert.match(native,/let base = self\.source_capability\(project_id\)/);
+  assert.match(working,/MAX_OPEN_TABS_PER_PROJECT = 48/);
+  assert.match(working,/VISIBLE_TABS = 12/);
+  assert.match(working,/INITIAL_VISIBLE_TREE_ENTRIES = 120/);
+  assert.match(ui,/admitOpenTabs\(tabs,item\.projectId,/);
+  assert.match(ui,/admitOpenTabs\(tabs,projectId,\[key\]\)/);
+  assert.match(ui,/admitOpenTabs\(tabs,activeProject\.projectId,\[key\]\)/);
+  assert.match(ui,/visibleEditorTabs\.visible\.map\(tab/);
+  assert.match(ui,/visibleTree\.visible\.map\(entry/);
+  assert.match(ui,/aria-label="Earlier open source tabs"/);
+  assert.match(ui,/aria-label="Later open source tabs"/);
+  assert.match(ui,/aria-label="Jump to open file"/);
+  assert.match(ui,/aria-label="Open project-relative file"/);
+  assert.match(ui,/verifiedRelativeSourcePath\(relativeOpenPath\)/);
+  assert.match(ui,/await selectEntry\(\{kind:'file',relativePath:path/);
+  assert.match(editor,/LARGE_SOURCE_LIGHTWEIGHT_THRESHOLD = 128 \* 1024/);
+  assert.match(editor,/const syntax = lightweight \? null : languageExtension\(filename\)/);
+  assert.match(editor,/view\.state\.sliceDoc\(\) !== completionApplyRequest\.expectedDraft/);
+  assert.match(css,/\.sourceGoToFile/);
+  assert.match(css,/\.editorTabJump/);
+  assert.doesNotMatch(working,/fetch\(|invoke\(|localStorage|new EditorState|\\.writeFile/);
+});
