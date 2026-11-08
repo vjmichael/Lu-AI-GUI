@@ -281,3 +281,18 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
   outline:2px solid #efcb42;outline-offset:2px}
 .sourceCreateButtons{display:flex;gap:6px}
 .sourceCreateForm small{font-size:10px;line-height:1.5;color:#b4c9dd}
+
+/* DEV-01.3 explicitly human-owned file transaction and recovery UI. */
+.sourceFileActions{display:flex;flex-wrap:wrap;gap:5px;align-items:center;
+  padding:8px;border-top:1px solid #405770}
+.sourceFileActions span{font-size:11px;flex:1 1 100%;overflow-wrap:anywhere;color:#bed1e2}
+.sourceFileActions button{font-size:11px;flex:1 1 auto}
+.sourceTrashPanel{padding:9px 8px;max-height:290px;overflow:auto;display:grid;gap:8px;
+  border-top:1px solid #405770;border-bottom:1px solid #405770;background:#14293d}
+.sourceTrashEntry{display:flex;flex-direction:column;gap:5px;padding:7px;
+  border:1px solid #526c84;border-radius:5px}
+.sourceTrashEntry span{font-size:11px;overflow-wrap:anywhere}
+.sourceTrashEntry small{font-size:10px;color:#f5ce8a}
+.sourceTrashEntry .ghostBtn{align-self:flex-start}
+.sourceTrashPanel button:focus-visible,.sourceFileActions button:focus-visible{
+  outline:2px solid #efcb42;outline-offset:2px}
