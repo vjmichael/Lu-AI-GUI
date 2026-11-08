@@ -17,6 +17,7 @@ pub mod agent_plan_ledger;
 pub mod agent_plan_revisions;
 pub mod agent_deliverable_receipts;
 pub mod agent_host_scheduler;
+pub mod agent_reviewed_broker_bridge;
 pub mod ai_operations;
 pub mod ansf;
 pub mod ansf_live_chat;
