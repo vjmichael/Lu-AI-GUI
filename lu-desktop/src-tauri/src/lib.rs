@@ -5136,7 +5136,10 @@ struct NativeToolActivityView{
 fn lu_tool_turn_history(
     state:State<'_,Arc<DesktopState>>,chat_id:String,
 )->Result<Vec<NativeToolActivityView>,String>{
-    state.chats.history(&chat_id)?;
+    // Authenticate the selected original ANSF book with a one-entry
+    // indexed window; never replay an effectively infinite conversation
+    // simply to open a read-only tool-audit pane.
+    state.chats.history_window(&chat_id,None,"older",1)?;
     let mut entries=Vec::new();
     for (source,file) in [
         ("Workspace","lu-workspace-read-audit.sqlite"),
