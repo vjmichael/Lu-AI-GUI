@@ -28,7 +28,7 @@
 | TOOLS-04 | P1 | Archive listing/inspection before archive extraction or creation | TODO | Zip-slip, symlink, decompression bomb limits, duplicate members, OS CI |
 | JOURNAL-01 | P0 | Durable effect journal, idempotent replay and cancellation | TODO | Kill/restart/uncertain-effect reconciliation |
 | MEMORY-01 | P0 | Working/object memory, provenance and belief revision | TODO | Editable and independently checkable retrieval |\n| CONTEXT-01 | P0 | Canonical recoverable goals, provenance, cross-chat context and task handoff (never authority transfer) | DOCS RECOVERED | Durable Lu Core continuity + host-authenticated recall integration and crash/restart tests |
-| AGENT-01 | P1 | Durable agent orchestration, loop guard, progress cards | P1/A non-executing durable plan ledger SOURCE CANDIDATE; actual scheduler / OS receipts / installed E2E OPEN | Cross-OS real SQLite + human turn tests, independently verified worker custody and explicit fresh authorization before multi-step continuation |
+| AGENT-01 | P1 | Durable agent orchestration, loop guard, progress cards | A durable plan ledger + B immutable goal/assumption/deliverable revisions SOURCE CANDIDATES; real agent scheduler / OS receipts / installed E2E OPEN | Exact-head native Windows/Linux real SQLite and ANSF acceptance; independently checked external effects, fresh human authority and near-v1.0 installed-app proof |
 | UX-01 | P1 | Chat, diagnostics, accessible UI and streaming hardening | IN PROGRESS | UI automated tests |
 | RELEASE-01 | P0 | Signed NSIS installer, upgrade and independent v1.0 E2E | DEFERRED | Near-v1.0 Win10/11 acceptance |
 
@@ -759,3 +759,12 @@ details: `docs/LU_E1_P13_SOURCE_REVISION_CUSTODY_20261108.md`.
 - Real production ChatStore's persisted `TrustedUserTurnVerifier` is exercised by the portable native-chat integration test. Dedicated exact-head Windows/Linux SQLite and test artifacts queued; no CI acceptance or physical installed application acceptance is claimed.
 - Remaining AGENT-01B through 01E: goal/assumption revision history and deliverables, independently verified external effect/receipt joins, host-fenced authorizing scheduler, conversation progress cards and installed-app E2E. Only integrate actual execution once the E1-P03/P06/P07/P10/P12/P13 native gates and E1-P15 continuity evidence pass.
 - Detailed implementation/acceptance: `docs/LU_AGENT01A_DURABLE_PLAN_LEDGER_20261108.md`.
+
+## AGENT-01B — immutable goal, assumption, dependency and deliverable revisions (Nov 8, 2026)
+
+- **Draft workgroup:** `lu/agent01b-immutable-goal-plan-revisions-20261108` stacked on AGENT-01A draft PR #152 (separate from E1-P15 PR #151).
+- New `agent_plan_revisions.rs` uses the original AGENT-01A host-owned SQLite plan file: at most 64 immutable plan revisions linked by expected-parent SHA-256, containing stable ANSF goal/event IDs, up to 16 host-verified assumption source IDs and at most 32 typed dependency/deliverable steps. Original revision must match AGENT-01A steps; changed revisions append rather than rewrite.
+- Host-calculated Context Change Monitor flags goal, assumption, dependency and deliverable changes; no-op and falsely classified change reasons fail closed. A second, separately verified human review of the exact revision hash is required to call a proposal `APPROVED_PLAN_ONLY`. Approval explicitly does **not** create tool permissions or start a worker.
+- New source-only five-test Rust suite, real ChatStore+ANSF goal event integration acceptance, and exact-head Windows/Linux workflow. Native/installed results remain **OPEN** pending actual evidence; physical Windows app testing stays near Lu v1.0.
+- **Next:** AGENT-01C verified OS effect/receipt-to-deliverable linkage and host-exclusive plan owner; AGENT-01D bounded, approved execution only after P03/P06/P07/P10/P12/P13 and P15 genuine acceptance; AGENT-01E chat progress cards and installed E2E.
+- Details: `docs/LU_AGENT01B_IMMUTABLE_PLAN_REVISIONS_20261108.md`.
