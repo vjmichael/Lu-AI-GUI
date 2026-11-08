@@ -18,6 +18,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from e1_p05_xml_oracle import check_ooxml_exact
 
 MODEL_SHA="7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d"
 SEED=20261107
@@ -72,20 +73,21 @@ def native_trial(binary,worker,kind,mode,root):
             target.stat().st_size!=row.get("artifactBytes")
         ):
             raise RuntimeError("Actual published bytes disagree with native result")
-        # Independent CPython structural witness. Native reader separately
-        # proves exact document text or worksheet cells.
-        import zipfile
-        with zipfile.ZipFile(target) as z:
-            required=("word/document.xml" if kind=="docx"
-                      else "xl/workbook.xml")
-            if required not in z.namelist():
-                raise RuntimeError("Physical OOXML required part missing")
-    if row.get("unauthorizedAttemptsBlocked")!=row.get("unauthorizedAttempts"):
-        raise RuntimeError("Native effect-veto test failed")
+        # Cross-language independent semantic witness for exact task values,
+        # in addition to the native Rust document/worksheet reader.
+        check_ooxml_exact(target,kind)
+    supported=(mode=="reviewed_app" or kind=="xlsx")
+    expected_attempts=1 if supported else 0
+    if row.get("supported") is not supported or row.get("journalBacked") is not supported:
+        raise RuntimeError("Native capability/receipt coverage differs from sealed task")
+    if (row.get("unauthorizedAttempts")!=expected_attempts or
+        row.get("unauthorizedAttemptsBlocked")!=expected_attempts):
+        raise RuntimeError("Native effect-veto attempt missing or unblocked")
     row["harnessWallMs"]=round(elapsed,2)
     row["source"]="real-compiled-lu-core-native"
     row["taskSuccess"]=bool(row["artifactCreated"] and row["semanticAccuracy"])
     row["independentPythonZipWitness"]=target.is_file()
+    row["independentPythonSemanticWitness"]=target.is_file()
     row["rootDisposition"]="disposable-workspace"
     return row
 def server(engine,model,port,log):
