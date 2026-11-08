@@ -1069,6 +1069,34 @@ async fn ide_review_source_change(
     .map_err(|_| "REVIEW_TASK_UNAVAILABLE".to_string())?
 }
 
+/// Human-only native filesystem creation; the parent is an already-open,
+/// picker-authorized project capability. No arbitrary desktop path or overwrite.
+#[tauri::command]
+async fn ide_create_source_entry(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_dir: String,
+    name: String,
+    kind: String,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
+) -> Result<lu_ide_workspace::source_create::SourceCreateReceipt, String> {
+    let registry = Arc::clone(state.inner());
+    let ledger = Arc::clone(ledger.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let created = registry
+            .create_source_entry(&project_id, &relative_dir, &name, &kind)
+            .map_err(|error| error.code().to_owned())?;
+        observe(
+            &ledger, &project_id, "source.create",
+            "Empty source entry created through native project capability",
+            created.revision.as_deref(), Some(&created.relative_path),
+        );
+        Ok(created)
+    })
+    .await
+    .map_err(|_| "SOURCE_CREATE_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// An explicit user-initiated save with optimistic file-revision protection.
 /// There is no model-origin tool path or unrestricted filesystem write command.
 #[tauri::command]
@@ -1272,6 +1300,7 @@ pub fn run() {
             ide_read_source_span,
             ide_review_source_change,
             ide_save_source_file,
+            ide_create_source_entry,
             ide_import_proposal,
             ide_list_proposals,
             ide_review_proposal,
