@@ -290,7 +290,7 @@ pub fn publish_input(
     recipe_id: &str,
 ) -> Result<PublishedInput, SnapshotError> {
     let manifest_relative_path = match recipe_id {
-        "rust_check" | "rust_tests" => "Cargo.toml",
+        "rust_check" | "rust_build" | "rust_tests" => "Cargo.toml",
         "lu_ide_host_tests" => "ide/host/Cargo.toml",
         _ => return Err(SnapshotError::InvalidName),
     };
