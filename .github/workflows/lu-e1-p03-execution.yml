@@ -65,12 +65,13 @@ jobs:
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_app_admission::tests -- --nocapture 2>&1 | tee e1-p03-native-evidence/p01.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_app_catalog::tests -- --nocapture 2>&1 | tee e1-p03-native-evidence/p02.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_app_execution::tests -- --nocapture 2>&1 | tee e1-p03-native-evidence/p03-contract.log
-      - name: Build TWO genuine local OS-native reviewed worker executables
+      - name: Build THREE genuine local OS-native reviewed worker executables
         shell: bash
         run: |
           set -euo pipefail
           cargo build --locked --manifest-path src-tauri/lu-core/Cargo.toml \
-            --example e1_reviewed_version_worker --example e1_reviewed_slow_worker
+            --example e1_reviewed_version_worker --example e1_reviewed_slow_worker \
+            --example e1_reviewed_timeout_worker
       - name: Run installed-runner real process and crash/revocation tests
         shell: bash
         run: |
@@ -79,8 +80,10 @@ jobs:
           if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
           export LU_E1_VERSION_WORKER="$GITHUB_WORKSPACE/src-tauri/lu-core/target/debug/examples/e1_reviewed_version_worker${suffix}"
           export LU_E1_SLOW_WORKER="$GITHUB_WORKSPACE/src-tauri/lu-core/target/debug/examples/e1_reviewed_slow_worker${suffix}"
+          export LU_E1_TIMEOUT_WORKER="$GITHUB_WORKSPACE/src-tauri/lu-core/target/debug/examples/e1_reviewed_timeout_worker${suffix}"
           test -s "$LU_E1_VERSION_WORKER"
           test -s "$LU_E1_SLOW_WORKER"
+          test -s "$LU_E1_TIMEOUT_WORKER"
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
             --test e1_reviewed_execution -- --nocapture 2>&1 | tee e1-p03-native-evidence/e1-restart-contract.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \

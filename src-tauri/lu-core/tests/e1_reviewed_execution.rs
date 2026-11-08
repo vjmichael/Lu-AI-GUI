@@ -276,6 +276,88 @@ fn wrong_digest_or_host_veto_never_starts_or_prepares_effect(){
     drop(executor);
     clean(f);
 }
+
+#[test]
+#[ignore="requires real compiled E1 native worker; dedicated CI uses --ignored"]
+fn late_revocation_after_os_reap_retains_custody_until_uncertain_reconciliation(){
+    let exe=env_worker("LU_E1_VERSION_WORKER");
+    let f=build_fixture(&exe);
+    let executor=E1ReviewedApplicationExecutor::new(
+        f.authority.clone(),Arc::clone(&f.workers),
+        Arc::clone(&f.tasks),Arc::clone(&f.effects)
+    ).unwrap();
+    let c=call("e1-call-late-revoke");
+    executor.launch_version_probe(
+        &f.catalog,&origin(),&c,&descriptor(),&Host(true)
+    ).unwrap();
+    // Simulate the shared host process supervisor observing worker exit
+    // BEFORE the E1 broker publishes the journal effect receipt.
+    let mut completed=false;
+    for _ in 0..300{
+        f.workers.poll().unwrap();
+        if !f.workers.can_cancel(&c.call_id){
+            completed=true;
+            break
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(completed,"the actual OS worker must be reaped");
+    assert_eq!(f.tasks.get(&c.call_id).unwrap().unwrap().state,
+        TaskState::Completed);
+    assert_eq!(f.effects.get(&c.call_id).unwrap().unwrap().state,
+        EffectState::Executing);
+    // Cancellation is now too late to kill an already reaped worker;
+    // retaining an UNCERTAIN journal is safer than inventing applied work.
+    f.authority.revoke_task("task-e1").unwrap();
+    assert_eq!(executor.active_count().unwrap(),1,
+        "failed kill/reap must retain broker custody until reconciliation");
+    assert_eq!(f.effects.get(&c.call_id).unwrap().unwrap().state,
+        EffectState::Uncertain);
+    executor.poll().unwrap();
+    assert_eq!(executor.active_count().unwrap(),0);
+    assert_eq!(f.effects.get(&c.call_id).unwrap().unwrap().state,
+        EffectState::Uncertain);
+    assert_eq!(f.effects.prepare(&c).unwrap(),
+        PrepareOutcome::Existing(EffectState::Uncertain));
+    drop(executor);
+    clean(f);
+}
+
+#[test]
+#[ignore="requires real deadline-exceeding E1 native worker; CI builds the binary"]
+fn actual_owned_timeout_kills_worker_and_never_marks_effect_applied(){
+    let exe=env_worker("LU_E1_TIMEOUT_WORKER");
+    let f=build_fixture(&exe);
+    let executor=E1ReviewedApplicationExecutor::new(
+        f.authority.clone(),Arc::clone(&f.workers),
+        Arc::clone(&f.tasks),Arc::clone(&f.effects)
+    ).unwrap();
+    let c=call("e1-call-timeout");
+    executor.launch_version_probe(
+        &f.catalog,&origin(),&c,&descriptor(),&Host(true)
+    ).unwrap();
+    assert!(f.workers.can_cancel(&c.call_id));
+    let mut stopped=false;
+    for _ in 0..1750{
+        executor.poll().unwrap();
+        if executor.active_count().unwrap()==0{
+            stopped=true;
+            break
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+    assert!(stopped,"host-owned 15-second deadline must terminate worker");
+    assert!(!f.workers.can_cancel(&c.call_id));
+    assert_eq!(f.tasks.get(&c.call_id).unwrap().unwrap().state,
+        TaskState::TimedOut);
+    assert_eq!(f.effects.get(&c.call_id).unwrap().unwrap().state,
+        EffectState::Uncertain);
+    assert!(f.tasks.verified_result(&c.call_id,"w-e1").unwrap().is_none());
+    assert_eq!(f.effects.prepare(&c).unwrap(),
+        PrepareOutcome::Existing(EffectState::Uncertain));
+    drop(executor);
+    clean(f);
+}
 #[test]
 fn journal_requires_exclusive_restart_and_preserves_uncertainty(){
     let dir=local_dir();fs::create_dir_all(&dir).unwrap();

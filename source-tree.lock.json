@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "df57e46328e4f4b54f12b91773530be83748426c",
-  "trackedFileCount": 620,
+  "sourceCommitBeforeLock": "149d888eb1f3d3246964173f53cf115aebfe8c15",
+  "trackedFileCount": 621,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -25,7 +25,7 @@
     },
     {
       "path": ".github/workflows/lu-e1-p03-execution.yml",
-      "blob": "f34213ca330b68065d3503e1dc1d16b6dbc1a939"
+      "blob": "bc54f8a633cdc58bf2932e2f25071658f5c8c2f8"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -253,7 +253,7 @@
     },
     {
       "path": "docs/LU_E1_REVIEWED_APP_ADMISSION_20261107.md",
-      "blob": "cdd6b47245b3591d18e30ff14637f65120f442a9"
+      "blob": "3723c40a4f559824bd757d263daed2160b493e6b"
     },
     {
       "path": "docs/LU_FILESYSTEM_DISCOVERY_P01.md",
@@ -381,7 +381,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "6511c690c8a488aa06f6a0a6917bc5df037e7f4c"
+      "blob": "14d082333bf618a39cf114c5cf6f621005e02a0e"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1184,6 +1184,10 @@
       "blob": "3d083d86559062714042a243142ebaf0c0dd16f4"
     },
     {
+      "path": "src-tauri/lu-core/examples/e1_reviewed_timeout_worker.rs",
+      "blob": "7b55ceb5a43798931866b4c3b87e9396d24f6be9"
+    },
+    {
       "path": "src-tauri/lu-core/examples/e1_reviewed_version_worker.rs",
       "blob": "746bfa27c7f7fe9e7626d930757c0f2b97be02bf"
     },
@@ -1541,7 +1545,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_app_execution.rs",
-      "blob": "56a6ebf730b2118b17b7733834e2276c2a79e218"
+      "blob": "abf46b8c050db0d705ddc9489d6094c6ec8d6503"
     },
     {
       "path": "src-tauri/lu-core/src/native_ar_deb.rs",
@@ -2141,7 +2145,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_execution.rs",
-      "blob": "b4146a510adecda39e93272f8295e60059680224"
+      "blob": "f13bf62f9ee797c347a9d01fbd51a0d616f9d1b2"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",

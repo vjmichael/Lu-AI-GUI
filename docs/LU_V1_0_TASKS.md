@@ -437,3 +437,11 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 - The execution journal persists \`PREPARED\`/\`EXECUTING\` **before spawn**; owner cancellation and task revocation kill/reap the actual process tree and record \`UNCERTAIN\`. Duplicate and prior uncertain IDs do not restart. Only matched process-exit/host-known marker receipts can mark the process action APPLIED, with application output correctness explicitly NOT verified.
 - Real native evidence workflow builds two genuine fast/slow Rust OS worker executables, performs runtime launch, completes validated protocol, revokes live workers, checks original conversation cancellation scope, bad binary/hash and host veto, and simulates exclusive restart UNCERTAIN reconciliation. These process-dependent Rust tests are explicitly run via \`cargo test -- --ignored\` in dedicated Windows/Linux CI; ordinary tests do not silently count them.
 - **Status:** source implementation submitted, full P03 CI/native execution and system isolation acceptance pending; general reviewed third-party adapters and semantic outcome verification remain later gates.
+
+
+## E1-P03 exact-head regression closeout candidate — November 7, 2026
+
+- Dedicated E1-P03 Windows/Linux CI on \`149d888e\` was observed queued, with no actual OS worker result; do not confuse a queued job with acceptance.
+- Source inspection found broker revocation discarded process custody before verifying kill/reap, and a late worker result could conflict with cancellation. **Fix:** \`revoke_pending\` state, durable UNCERTAIN before cancellation, retained custody on failed kill, and no APPLIED publication after revoked/cancelled outcomes.
+- Added real fast-worker race test (OS process already reaped when revocation arrives), and 22-second bounded timeout fixture to prove the supervisor's 15-second hard deadline and non-replayable UNCERTAIN journal, on **both hosted Windows/Linux**.
+- E1-P03 full native acceptance **OPEN** until the new exact-head compiler, source identity, process-kill, timeout and restart journal results are complete; physical installed Windows stays deferred to near v1.0.

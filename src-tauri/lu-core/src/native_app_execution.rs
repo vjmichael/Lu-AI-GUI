@@ -64,6 +64,9 @@ struct RunningOperation{
     call_id:String,
     workspace_id:String,
     origin:BoundCallOrigin,
+    /// A revoked/cancel-requested effect is never eligible for APPLIED,
+    /// even if an OS kill fails or a late protocol result appears.
+    revoke_pending:bool,
 }
 #[derive(Default)]
 struct ExecutionGate{
@@ -110,10 +113,16 @@ impl E1ReviewedApplicationExecutor{
         let journal_on_revoke=Arc::clone(&effects);
         authority.on_task_revoked(Arc::new(move |task_id|{
             if let Ok(mut state)=gate_on_revoke.lock(){
-                if let Some(entry)=state.by_origin_task.remove(task_id){
-                    let _=workers_on_revoke
-                        .cancel_owned(&entry.call_id,&entry.workspace_id);
+                if let Some(entry)=state.by_origin_task.get_mut(task_id){
+                    // Change journal state BEFORE attempting process kill.
+                    // If termination is uncertain keep custody of the worker
+                    // and forbid any later successful receipt publication.
+                    entry.revoke_pending=true;
                     let _=journal_on_revoke.mark_uncertain(&entry.call_id);
+                    if workers_on_revoke
+                        .cancel_owned(&entry.call_id,&entry.workspace_id).is_ok(){
+                        state.by_origin_task.remove(task_id);
+                    }
                 }
             }
         })).map_err(|_|E1ExecutionError::LockUnavailable)?;
@@ -188,7 +197,8 @@ impl E1ReviewedApplicationExecutor{
         }
         guard.by_origin_task.insert(origin.task_id.clone(),RunningOperation{
             call_id:call.call_id.clone(),workspace_id:reviewed.workspace_id,
-            origin:origin.clone()
+            origin:origin.clone(),
+            revoke_pending:false,
         });
         Ok(())
     }
@@ -208,6 +218,21 @@ impl E1ReviewedApplicationExecutor{
                 .ok_or(E1ExecutionError::WorkerStatusUnavailable)?;
             if matches!(record.state,TaskState::Running|TaskState::Pending|
                 TaskState::Paused){continue}
+            if entry.revoke_pending{
+                // A previous failed OS kill did not release our custody.
+                // Reconcile only when the OS supervisor reports a terminal
+                // task; never publish a late protocol receipt as APPLIED.
+                // Re-assert durable UNCERTAIN in case the revocation handler
+                // failed to commit its first journal transition.
+                if self.effects.get(&entry.call_id)
+                    .map_err(|_|E1ExecutionError::JournalUnavailable)?
+                    .is_some_and(|effect|effect.state==EffectState::Executing){
+                    self.effects.mark_uncertain(&entry.call_id)
+                        .map_err(|_|E1ExecutionError::JournalUnavailable)?;
+                }
+                done.push(task.clone());
+                continue
+            }
             if record.state==TaskState::Completed{
                 let proof=self.tasks.verified_result(
                     &entry.call_id,&entry.workspace_id
@@ -256,8 +281,14 @@ impl E1ReviewedApplicationExecutor{
             return Err(E1ExecutionError::WrongCancellationOrigin)
         }
         let entry=entry.clone();
-        let stopped=self.workers.cancel_owned(&entry.call_id,&entry.workspace_id);
+        // Record uncertainty before attempting the OS stop. A failure
+        // must not erase worker custody or let a subsequent completion
+        // convert the cancelled effect into an APPLIED result.
+        if let Some(owned)=gate.by_origin_task.get_mut(&origin.task_id){
+            owned.revoke_pending=true;
+        }
         let _=self.effects.mark_uncertain(&entry.call_id);
+        let stopped=self.workers.cancel_owned(&entry.call_id,&entry.workspace_id);
         if stopped.is_err(){
             return Err(E1ExecutionError::WorkerCancellationUncertain)
         }
