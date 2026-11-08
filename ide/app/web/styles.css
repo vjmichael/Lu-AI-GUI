@@ -300,6 +300,7 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .splitEditorGrid{flex:1;display:flex;min-height:0;min-width:0;overflow:hidden}
 .splitEditorGrid.enabled{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .splitPrimaryPane,.splitSecondaryPane{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.splitEditorGrid.single>.splitPrimaryPane{flex:1;width:100%;min-width:0}
 .splitSecondaryPane{border-left:2px solid #456985;background:#111f31}
 .splitSecondaryHeader{display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-height:39px;padding:7px 10px;border-bottom:1px solid #40576e;font-size:11px}
 .splitSecondaryHeader strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:35%;color:#e0edf9}
