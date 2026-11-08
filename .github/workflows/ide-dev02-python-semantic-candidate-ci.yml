@@ -1,0 +1,127 @@
+name: IDE DEV-02.4 real Python LSP semantic provider comparison CI only
+on:
+  push:
+    branches: ['ide/dev02-python-semantic-native-evaluation-20261108']
+    paths:
+      - 'ide/packaging/python_semantic_native_benchmark.py'
+      - 'ide/packaging/stage_ty_semantic_candidate_ci.py'
+      - 'ide/packaging/test_python_semantic_native_benchmark.py'
+      - '.github/workflows/ide-dev02-python-semantic-candidate-ci.yml'
+  pull_request:
+    paths:
+      - 'ide/packaging/python_semantic_native_benchmark.py'
+      - 'ide/packaging/stage_ty_semantic_candidate_ci.py'
+      - 'ide/packaging/test_python_semantic_native_benchmark.py'
+      - '.github/workflows/ide-dev02-python-semantic-candidate-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  genuine-standalone-provider-research:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require exact head and no shipped semantic Python permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: candidate Python runtime was approved for redistribution without review'
+            exit 2
+          fi
+          python3 -m unittest discover -s ide/packaging -p 'test_python_semantic_native_benchmark.py' -v
+      - name: Stage exact version test-only BasedPyright npm with lifecycle scripts OFF
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/lu-ide-pyright-evaluation"
+          mkdir -p "$target"
+          npm install --prefix "$target" basedpyright@1.40.2 \
+            --no-save --ignore-scripts --no-audit --no-fund \
+            --registry=https://registry.npmjs.org
+          target="$target/node_modules/basedpyright"
+          test -f "$target/package.json"
+          test -f "$target/langserver.index.js"
+          node -e '
+          const fs=require("fs");
+          const path=process.argv[1];
+          const manifest=JSON.parse(fs.readFileSync(path,"utf8"));
+          if(manifest.name!=="basedpyright" || manifest.version!=="1.40.2") {
+            throw Error("DENIED: installed CI BasedPyright is not exact 1.40.2");
+          }
+          ' "$target/package.json"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          root=Path(os.environ["RUNNER_TEMP"])/"lu-ide-pyright-evaluation/node_modules/basedpyright"
+          lang=root/"langserver.index.js"
+          pkg=root/"package.json"
+          packet={
+            "schema":"lu.ide.e2.basedpyright-candidate.v1",
+            "candidateVersion":"1.40.2",
+            "entrypointSha256":hashlib.sha256(lang.read_bytes()).hexdigest(),
+            "packageManifestSha256":hashlib.sha256(pkg.read_bytes()).hexdigest(),
+            "reviewedForLuDistribution":False,
+            "testedInsideProtectedLu":False
+          }
+          (Path(os.environ["RUNNER_TEMP"])/"lu-ide-basedpyright-candidate-receipt.json").write_text(
+            json.dumps(packet,indent=2,sort_keys=True)+"\n")
+          print("DEV02_REAL_BASEDPYRIGHT_TEST_CANDIDATE=1.40.2")
+          PY
+      - name: Verify exact official ty 0.0.99 beta archive and extract CI-only binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.os }}" == "windows-2022" ]]; then
+            platform=windows-x86_64
+          else
+            platform=linux-x86_64
+          fi
+          python3 ide/packaging/stage_ty_semantic_candidate_ci.py \
+            --platform "$platform" --destination "$RUNNER_TEMP/lu-ide-ty-evaluation"
+      - name: Benchmark 20 real Python source fixtures with actual JSON-RPC LSP engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.os }}" == "windows-2022" ]]; then
+            ty_binary="$RUNNER_TEMP/lu-ide-ty-evaluation/ty.exe"
+          else
+            ty_binary="$RUNNER_TEMP/lu-ide-ty-evaluation/ty"
+          fi
+          node_binary="$(python3 -c 'import shutil;print(shutil.which("node"))')"
+          python3 ide/packaging/python_semantic_native_benchmark.py \
+            --node "$node_binary" \
+            --basedpyright "$RUNNER_TEMP/lu-ide-pyright-evaluation/node_modules/basedpyright/langserver.index.js" \
+            --ty "$ty_binary" \
+            --out "$RUNNER_TEMP/lu-ide-python-semantic-native-comparison.json"
+          echo 'DEV02_PYTHON_SEMANTIC_CANDIDATE_REAL_OS_PROTOCOL=PASS'
+          echo 'DEV02_PYTHON_SEMANTIC_INSTALLED_LU_PERMISSION=NOT_GRANTED'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev02-python-semantic-candidate-metrics-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/lu-ide-python-semantic-native-comparison.json
+            ${{ runner.temp }}/lu-ide-basedpyright-candidate-receipt.json
+            ${{ runner.temp }}/lu-ide-ty-evaluation/candidate-receipt.json
+          if-no-files-found: warn
+          retention-days: 7
