@@ -1,0 +1,93 @@
+name: Lu E1-P06D Native Git Context Operations
+on:
+  push:
+    branches: ['lu/e1-p06d-typed-git-context-20261107']
+    paths:
+      - 'src-tauri/lu-core/src/native_app_typed_git.rs'
+      - 'src-tauri/lu-core/src/native_background_process.rs'
+      - '.github/workflows/lu-e1-p06d-git-context.yml'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/native_app_typed_git.rs'
+      - 'src-tauri/lu-core/src/native_background_process.rs'
+      - '.github/workflows/lu-e1-p06d-git-context.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p06d-context-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source-identity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/verify-source-tree.mjs
+  native-git-context:
+    needs: source-identity
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Resolve actual installed Git executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, shutil
+          git = shutil.which("git")
+          if not git: raise RuntimeError("Genuine Git executable absent")
+          binary = os.path.realpath(git)
+          if not os.path.isabs(binary) or not os.path.isfile(binary):
+            raise RuntimeError("Genuine Git binary is not a file")
+          with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as output:
+            output.write("LU_E1_P06_GIT="+binary+"\n")
+          print("REAL_GIT_PRESENT", binary)
+          PY
+      - name: Run parser and strict output tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e1-p06d-evidence
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_app_typed_git::tests -- --nocapture \
+            2>&1 | tee e1-p06d-evidence/unit-parsers.log
+      - name: Run actual installed Git branch, detached-HEAD, history and prior operations
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_app_typed_git::tests -- --ignored --nocapture \
+            2>&1 | tee e1-p06d-evidence/native-real-git.log
+      - name: Prevent regression in bounded stdout custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_background_process::tests::thirdparty_stdout_capture_is_bounded_and_one_use \
+            -- --nocapture 2>&1 | tee e1-p06d-evidence/stdout-custody.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p06d-git-context-${{ matrix.os }}
+          path: e1-p06d-evidence/
+          retention-days: 14
+          if-no-files-found: warn

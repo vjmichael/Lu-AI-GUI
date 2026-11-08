@@ -28,12 +28,14 @@ pub const RESOURCE_REQUEST:&[u8]=b"lu.e1.git.host-approved-repo-read.v1";
 const MAX_REPOSITORIES:usize=32;
 
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
-pub enum GitReadOperation{HeadCommit,TrackedStatus}
+pub enum GitReadOperation{HeadCommit,TrackedStatus,CurrentBranch,HistoryCount}
 impl GitReadOperation{
     pub fn request(self)->&'static [u8]{
         match self{
             Self::HeadCommit=>b"lu.e1.git.head-commit.v1",
             Self::TrackedStatus=>b"lu.e1.git.tracked-status.v1",
+            Self::CurrentBranch=>b"lu.e1.git.current-branch.v1",
+            Self::HistoryCount=>b"lu.e1.git.history-count.v1",
         }
     }
     fn args(self,repo:&Path)->Vec<OsString>{
@@ -52,6 +54,14 @@ impl GitReadOperation{
             },
             Self::TrackedStatus=>{
                 args.extend(["status","--porcelain=v1","--untracked-files=no"]
+                    .map(OsString::from));
+            },
+            Self::CurrentBranch=>{
+                args.extend(["branch","--show-current","--no-color"]
+                    .map(OsString::from));
+            },
+            Self::HistoryCount=>{
+                args.extend(["rev-list","--count","HEAD"]
                     .map(OsString::from));
             },
         }
@@ -168,6 +178,8 @@ impl HostGitReadCatalog{
 enum ParsedGitResult{
     HeadCommit(String),
     TrackedStatus(u32),
+    CurrentBranch(Option<String>),
+    HistoryCount(u64),
 }
 fn parse_git_output(op:GitReadOperation,bytes:&[u8])->Option<ParsedGitResult>{
     if bytes.len()>16_384{return None}
@@ -176,6 +188,28 @@ fn parse_git_output(op:GitReadOperation,bytes:&[u8])->Option<ParsedGitResult>{
         return None
     }
     match op{
+        GitReadOperation::CurrentBranch=>{
+            if raw.is_empty(){return Some(ParsedGitResult::CurrentBranch(None))}
+            let branch=raw.strip_suffix('\n')?;
+            if branch.is_empty()||branch.len()>128
+                ||branch.starts_with('-')||branch.ends_with('/')
+                ||branch.ends_with(".lock")
+                ||branch.contains("..")||branch.contains("//")
+                ||branch.contains('@')||branch.contains('\n')
+                ||!branch.bytes().all(|b|
+                    b.is_ascii_alphanumeric()||matches!(b,b'_'|b'-'|b'.'|b'/')){
+                return None
+            }
+            Some(ParsedGitResult::CurrentBranch(Some(branch.into())))
+        },
+        GitReadOperation::HistoryCount=>{
+            let value=raw.strip_suffix('\n')?;
+            if value.is_empty()||value.len()>20
+                ||!value.bytes().all(|b|b.is_ascii_digit())
+                ||value.len()>1&&value.starts_with('0')
+                ||value.contains('\n'){return None}
+            Some(ParsedGitResult::HistoryCount(value.parse::<u64>().ok()?))
+        },
         GitReadOperation::HeadCommit=>{
             let head=raw.strip_suffix('\n')?;
             if head.contains('\n')||![40,64].contains(&head.len())
@@ -355,11 +389,15 @@ impl TypedGitReadBroker{
                         if let Some(parsed)=parse_git_output(
                             active.operation,&captured.bytes
                         ){
-                            let (kind,commit,changed)=match parsed{
+                            let (kind,commit,changed,branch,history)=match parsed{
                                 ParsedGitResult::HeadCommit(hash)=>
-                                    ("head_commit",Some(hash),None),
+                                    ("head_commit",Some(hash),None,None,None),
                                 ParsedGitResult::TrackedStatus(n)=>
-                                    ("tracked_status",None,Some(n)),
+                                    ("tracked_status",None,Some(n),None,None),
+                                ParsedGitResult::CurrentBranch(b)=>
+                                    ("current_branch",None,None,b,None),
+                                ParsedGitResult::HistoryCount(n)=>
+                                    ("history_count",None,None,None,Some(n)),
                             };
                             let receipt=json!({
                                 "schema":"lu-e1-p06c-typed-git-read-v1",
@@ -367,6 +405,8 @@ impl TypedGitReadBroker{
                                 "kind":kind,
                                 "headCommit":commit,
                                 "trackedChangedEntries":changed,
+                                "currentBranch":branch,
+                                "historyCommitCount":history,
                                 "observedStdoutSha256":captured.sha256,
                                 "observedStdoutBytes":captured.bytes.len(),
                                 "osChildReaped":true,
@@ -641,6 +681,73 @@ mod tests{
         assert_eq!(parse_git_output(
             GitReadOperation::HeadCommit,b"abc\n"
         ),None);
+    }
+    #[test]
+    fn typed_branch_and_history_output_rejects_injection_and_bad_ranges(){
+        assert_eq!(parse_git_output(GitReadOperation::CurrentBranch,b"main\n"),
+            Some(ParsedGitResult::CurrentBranch(Some("main".into()))));
+        assert_eq!(parse_git_output(GitReadOperation::CurrentBranch,b""),
+            Some(ParsedGitResult::CurrentBranch(None)));
+        assert_eq!(parse_git_output(GitReadOperation::HistoryCount,b"1024\n"),
+            Some(ParsedGitResult::HistoryCount(1024)));
+        for invalid in [
+            b"-bad\n".as_slice(),b"a..b\n".as_slice(),
+            b"feature/x.lock\n".as_slice(),b"main\nextra\n".as_slice(),
+            b"../../escape\n".as_slice(),b"main\x1b[32m\n".as_slice()
+        ]{
+            assert_eq!(parse_git_output(GitReadOperation::CurrentBranch,invalid),None);
+        }
+        for invalid in [b"-1\n".as_slice(),b"01\n".as_slice(),
+                        b"12\n12\n".as_slice(),b"18446744073709551616\n".as_slice()]{
+            assert_eq!(parse_git_output(GitReadOperation::HistoryCount,invalid),None);
+        }
+    }
+    #[test]
+    #[ignore="genuine external Git current branch and history on Windows/Linux"]
+    fn actual_git_branch_and_commit_history_are_host_supervised(){
+        for op in [GitReadOperation::CurrentBranch,GitReadOperation::HistoryCount]{
+            let fixture=Fixture::new(op,true);
+            let expected=match op{
+                GitReadOperation::CurrentBranch=>
+                    invoke_git(&fixture.git,&fixture.repo,&["branch","--show-current"]).trim().to_string(),
+                GitReadOperation::HistoryCount=>
+                    invoke_git(&fixture.git,&fixture.repo,&["rev-list","--count","HEAD"]).trim().to_string(),
+                _=>unreachable!(),
+            };
+            let broker=fixture.broker();
+            fixture.launch(&broker,true).unwrap();
+            let receipt=fixture.finish(&broker);
+            assert_eq!(receipt["osChildReaped"],true);
+            assert_eq!(receipt["hostReadWorkspaceAuthorized"],true);
+            match op{
+                GitReadOperation::CurrentBranch=>{
+                    assert_eq!(receipt["kind"],"current_branch");
+                    assert_eq!(receipt["currentBranch"],expected);
+                },
+                GitReadOperation::HistoryCount=>{
+                    assert_eq!(receipt["kind"],"history_count");
+                    assert_eq!(receipt["historyCommitCount"],1);
+                    assert_eq!(expected,"1");
+                },
+                _=>unreachable!(),
+            }
+            let dir=fixture.root.clone();drop(broker);drop(fixture);
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
+    #[test]
+    #[ignore="real Git detached HEAD produces empty branch stdout on native host"]
+    fn actual_git_detached_head_is_recorded_without_fake_branch(){
+        let fixture=Fixture::new(GitReadOperation::CurrentBranch,true);
+        invoke_git(&fixture.git,&fixture.repo,&["checkout","-q","--detach","HEAD"]);
+        let broker=fixture.broker();
+        fixture.launch(&broker,true).unwrap();
+        let receipt=fixture.finish(&broker);
+        assert_eq!(receipt["kind"],"current_branch");
+        assert!(receipt["currentBranch"].is_null());
+        assert_eq!(receipt["observedStdoutBytes"],0);
+        let dir=fixture.root.clone();drop(broker);drop(fixture);
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     #[ignore="real installed Git required; dedicated Windows/Linux P06C native workflow"]
