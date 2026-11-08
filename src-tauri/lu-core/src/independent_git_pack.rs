@@ -285,9 +285,16 @@ mod tests{
         // reconstructed target size. The instruction header MUST NOT
         // be mistaken for the output object size.
         let base=vec![b'A';100_000];
-        let compact=[0xa0,0x8d,0x06,0xa0,0x8d,0x06,0x90,0xa0,0x86,0x01];
-        // The synthesized delta varints are intentionally rejected if
-        // invalid; the native Git regression below proves real deltas.
-        assert!(apply_delta(&base,&compact,compact.len()).is_none());
+        // Base=100000, reconstructed size=100003, 100000-byte copy
+        // followed by a three-byte insert. Only 14 instruction bytes!
+        let compact=[
+            0xa0,0x8d,0x06, 0xa3,0x8d,0x06,
+            0xf0,0xa0,0x86,0x01,
+            3,b'X',b'Y',b'Z'
+        ];
+        let mut expected=base.clone();
+        expected.extend_from_slice(b"XYZ");
+        assert_eq!(apply_delta(&base,&compact,compact.len()),Some(expected));
+        assert!(apply_delta(&base,&compact,100_003).is_none());
     }
 }
