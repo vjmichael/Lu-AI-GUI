@@ -1,0 +1,165 @@
+name: Lu M5 Repeated-Task Memory E2E Candidates
+on:
+  push:
+    branches: ['lu/m5-local-memory-e2e-20261107']
+    paths:
+      - 'lu-desktop/tests/native-chat/**'
+      - 'lu-desktop/tests/m5-*.test.mjs'
+      - 'src-tauri/lu-core/tests/m5_*.rs'
+      - 'scripts/m5-*.ps1'
+      - 'benchmarks/memory/m5_**'
+      - '.github/workflows/lu-m5-memory-replay.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'lu-desktop/tests/native-chat/**'
+      - 'lu-desktop/tests/m5-*.test.mjs'
+      - 'src-tauri/lu-core/tests/m5_*.rs'
+      - 'scripts/m5-*.ps1'
+      - 'benchmarks/memory/m5_**'
+      - '.github/workflows/lu-m5-memory-replay.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-m5-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source-and-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify every tracked source against frozen Git blobs
+        run: node scripts/verify-source-tree.mjs
+      - name: Verify isolated benchmark contract (NOT model results)
+        run: |
+          python3 -m py_compile benchmarks/memory/m5_repeated_task_real_model.py benchmarks/memory/m5_comparative_acceptance.py
+          python3 -m unittest discover -s benchmarks/memory -p 'test_m5_*.py' -v
+          node --test lu-desktop/tests/m5-workorders-contract.test.mjs
+  native-replay:
+    needs: source-and-contract
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Run actual desktop ANSF/SQLite replay, correction and interrupted-worker tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p m5-native-evidence
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml m5_native_replay_acceptance -- --nocapture 2>&1 | tee m5-native-evidence/native-replay.log
+      - name: Re-run source-backed claim and procedure revisions on original Lu Core
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_belief_revision::tests -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_verified_procedures::tests -- --nocapture
+      - name: Native actual authority, revoked task and interrupted journal acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test m5_effect_authority_acceptance -- --nocapture 2>&1 | tee m5-native-evidence/native-effect-authority.log
+      - name: Parse reviewed physical Windows pilot script; do not simulate installed app
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $tokens=$null
+          $parseErrors=$null
+          $null=[System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path -LiteralPath 'scripts/m5-windows-installed-memory-pilot.ps1').Path,
+            [ref]$tokens,[ref]$parseErrors)
+          if(@($parseErrors).Count -gt 0){
+            foreach($e in $parseErrors){Write-Error $e.Message}
+            exit 1
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-m5-native-replay-${{ matrix.os }}
+          path: m5-native-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+  genuine-gguf-paired-replay:
+    needs: source-and-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      MODEL_SHA: 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Compile actual Lu ANSF source/book and cross-book read adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-source-tree.mjs
+          cargo build --locked --release --manifest-path src-tauri/lu-core/Cargo.toml --example ansf_memory_baseline
+      - name: Build SHA-pinned CPU llama.cpp local-model server
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch b12143 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/llama-cpp"
+          test "$(git -C "$RUNNER_TEMP/llama-cpp" rev-parse HEAD)" = 2bc46baa9207d098d03741ac394e7faaf1a955b6
+          cmake -S "$RUNNER_TEMP/llama-cpp" -B "$RUNNER_TEMP/llama-build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/llama-build" --config Release --target llama-server --parallel 3
+      - name: Obtain real SHA-pinned Qwen GGUF
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 5 https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf -o "$RUNNER_TEMP/qwen.gguf"
+          printf '%s  %s\n' "$MODEL_SHA" "$RUNNER_TEMP/qwen.gguf" | sha256sum -c -
+      - name: Execute genuine paired no-memory / original-ANSF repeated-task Qwen generations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/memory/m5_repeated_task_real_model.py \
+            --native "$GITHUB_WORKSPACE/src-tauri/lu-core/target/release/examples/ansf_memory_baseline" \
+            --engine "$RUNNER_TEMP/llama-build/bin/llama-server" \
+            --model "$RUNNER_TEMP/qwen.gguf" --repeats 2 \
+            --output-dir /tmp/lu-m5-real-paired-replay
+      - name: Generate M5-05 incomplete-by-default evidence report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/lu-m5-real-paired-replay
+          if test -f /tmp/lu-m5-real-paired-replay/results.json; then
+            python3 benchmarks/memory/m5_comparative_acceptance.py               --model /tmp/lu-m5-real-paired-replay/results.json               --output /tmp/lu-m5-real-paired-replay/m5-05-pilot-gate.json
+          else
+            python3 benchmarks/memory/m5_comparative_acceptance.py               --output /tmp/lu-m5-real-paired-replay/m5-05-pilot-gate.json
+          fi
+      - name: Report strictly genuine measured output; never synthesize missing data
+        if: always()
+        shell: bash
+        run: |
+          if test -f /tmp/lu-m5-real-paired-replay/summary.md; then
+            cat /tmp/lu-m5-real-paired-replay/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No finished real-model repeat-task results. M5 GGUF acceptance OPEN." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-m5-real-qwen-repeated-task-evidence
+          path: /tmp/lu-m5-real-paired-replay/
+          if-no-files-found: warn
+          retention-days: 14

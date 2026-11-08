@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f333a26df263a6fc7562aefcf417dfc66b8bd9c7",
-  "trackedFileCount": 601,
+  "sourceCommitBeforeLock": "82342470f6c6ca5a38d6b2f7b43e27845e1e0ac6",
+  "trackedFileCount": 611,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -42,6 +42,10 @@
     {
       "path": ".github/workflows/lu-m4-verified-memory.yml",
       "blob": "d48826f14830a358111b6f569cee8b54c3ce0528"
+    },
+    {
+      "path": ".github/workflows/lu-m5-memory-replay.yml",
+      "blob": "f864b709416d2358ee02cbd736203fb7bf5e56d0"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -144,8 +148,24 @@
       "blob": "57a6487559b2ceb9a63e7c0d8d276f217b15d708"
     },
     {
+      "path": "benchmarks/memory/m5_comparative_acceptance.py",
+      "blob": "699faa44b54fc9d56072f6dc82d473034c01054d"
+    },
+    {
+      "path": "benchmarks/memory/m5_repeated_task_real_model.py",
+      "blob": "a32b88f9b94f6f8ecbfc4be0ddfef567d14567d7"
+    },
+    {
       "path": "benchmarks/memory/test_cognitum_three_arm.py",
       "blob": "5383faefad94c048b4f87f92bc5f6d5781d7f588"
+    },
+    {
+      "path": "benchmarks/memory/test_m5_comparative_acceptance.py",
+      "blob": "45462a4fa19dca1ce6d23dabb75bddf98db59246"
+    },
+    {
+      "path": "benchmarks/memory/test_m5_repeated_task_contract.py",
+      "blob": "c611bc3e747a00849f224d24a64aba5af9deb185"
     },
     {
       "path": "benchmarks/memory/test_three_arm_real_model.py",
@@ -266,6 +286,10 @@
     {
       "path": "docs/LU_M4_VERIFIED_PROCEDURAL_MEMORY_20261107.md",
       "blob": "9f5e6a1242768c4d496f5f1a3a5bf9e71a216c7b"
+    },
+    {
+      "path": "docs/LU_M5_LOCAL_MEMORY_END_TO_END_20261107.md",
+      "blob": "1d94a9238a653347b9e75cd0670b44f05721d8ee"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
@@ -410,6 +434,10 @@
     {
       "path": "docs/acceptance/LU_M4_NATIVE_AND_INSTALLED_ACCEPTANCE_20261107.md",
       "blob": "acd981f208f3295fd4ca18aa0e7bbd44d880454f"
+    },
+    {
+      "path": "docs/acceptance/LU_M5_WINDOWS_EFFECT_PILOT_20261107.md",
+      "blob": "4ccef074fefb4de4ec6708053aa10b3fff4c7296"
     },
     {
       "path": "docs/acceptance/LU_R20_WINDOWS_GPU_MEMORY_LOAD_UNLOAD_20261101.md",
@@ -844,6 +872,10 @@
       "blob": "ed0338fe22e4e19159fd708c495302761acbb2b1"
     },
     {
+      "path": "lu-desktop/tests/m5-workorders-contract.test.mjs",
+      "blob": "3b6f4e07d55622538c11f4468f71fe55bd477861"
+    },
+    {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
       "blob": "bed636bd5f57242fbffcb9e006de7a0a9234d52f"
     },
@@ -857,7 +889,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "299459667b75819010092197d4c5281bbd6b432b"
+      "blob": "d7e6d387f38808c36148baeeea35585dd5f9d487"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
@@ -1054,6 +1086,10 @@
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",
       "blob": "8dfbd888b0a040de719d3a11b46e6176caa7bb84"
+    },
+    {
+      "path": "scripts/m5-windows-installed-memory-pilot.ps1",
+      "blob": "47b032f51b4c87a1414d980a5a4839d2647dffea"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",
@@ -2110,6 +2146,10 @@
     {
       "path": "src-tauri/lu-core/tests/linux_gpu_nodes.rs",
       "blob": "e777af9252f11fd681b06e2c2b3bb8692e09e43f"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/m5_effect_authority_acceptance.rs",
+      "blob": "baa9ebdcf6c3a3ebb9ce885cbf672d956be4db24"
     },
     {
       "path": "src-tauri/lu-core/tests/model_json_boundary.rs",

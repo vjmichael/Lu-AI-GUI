@@ -597,3 +597,233 @@ mod m4_real_book_restart_integration{
     }
     fn now()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()}
 }
+
+
+/// M5 P01: REAL production desktop ANSF/SQLite replay across a fresh
+/// ChatStore opener and a different active conversation. This records only
+/// deterministic native evidence, not invented GGUF generations or model ROI.
+#[cfg(test)]
+mod m5_native_replay_acceptance{
+    use super::{
+        chat_store::ChatStore,
+        continuity::ContinuityStore,
+        journal::{EffectJournal,EffectState},
+        contracts::{ToolInvocation,ProtoPayload},
+    };
+    use std::{fs,path::PathBuf,time::{SystemTime,UNIX_EPOCH}};
+
+    fn fixture()->PathBuf{
+        std::env::temp_dir().join(format!("lu-m5-replay-{}-{}",
+            std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH)
+                .unwrap().as_nanos()))
+    }
+    fn now()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()}
+
+    #[test]
+    fn repeated_task_control_vs_memory_after_reopen_conflict_and_human_correction(){
+        let root=fixture();fs::create_dir_all(&root).unwrap();
+        let (source_chat,active_chat,first_source,second_source);
+        let project="lu";let task="replay-worker";
+        let original_task="Continue project juniper backend verification without running tools";
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+            source_chat=chats.create_chat().unwrap().chat_id;
+            active_chat=chats.create_chat().unwrap().chat_id;
+            chats.append_user_with_turn_id(
+                &source_chat,"g-00000000000000000000000000000051",
+                "The juniper backend report says Vulkan. This is user testimony, not independent verification."
+            ).unwrap();
+            first_source=chats.original_history_page(
+                &source_chat,&source_chat,None,8
+            ).unwrap().entries.last().unwrap().source_id.clone();
+            chats.m4_note_reported_claim(
+                &source_chat,&first_source,"m5-claim-vulkan",project,task,
+                "juniper","backend","Vulkan","2.0",now()+3600
+            ).unwrap();
+            chats.append_user_with_turn_id(
+                &source_chat,"g-00000000000000000000000000000052",
+                "Another juniper backend report says ROCm; the earlier claim may be obsolete."
+            ).unwrap();
+            second_source=chats.original_history_page(
+                &source_chat,&source_chat,None,8
+            ).unwrap().entries.last().unwrap().source_id.clone();
+            assert_ne!(first_source,second_source);
+            chats.m4_note_reported_claim(
+                &source_chat,&second_source,"m5-claim-rocm",project,task,
+                "juniper","backend","ROCm","2.0",now()+3600
+            ).unwrap();
+            chats.record_continuity(
+                &source_chat,project,task,"m5-cp-one",
+                &[first_source.clone(),second_source.clone()],
+                "Two competing unverified engine reports; no native evidence of a winner",
+                "Ask for fresh host GPU/backend validation before executing",
+                &["Conflicting version evidence".into()],&continuity
+            ).unwrap();
+            chats.append_user_with_turn_id(
+                &source_chat,"g-00000000000000000000000000000053",
+                "Historical authorizations cannot be reused in a new chat."
+            ).unwrap();
+            // The old turn identity belongs ONLY to the source conversation.
+            assert!(chats.trusted_user_turn_text(
+                &active_chat,"g-00000000000000000000000000000053"
+            ).is_none());
+            // Simulate a cold stop of the desktop profile and SQLite handles.
+        }
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+            let journal=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+            chats.append_user(&active_chat,original_task).unwrap();
+
+            // Control arm: the normal active chat history has no cross-chat
+            // original text; it is intentionally NOT passed historical context.
+            let control=chats.recent_model_history(&active_chat,16).unwrap();
+            assert!(control.iter().any(|m|m.text==original_task));
+            assert!(control.iter().all(|m|
+                !m.text.contains("Vulkan")&&!m.text.contains("ROCm")
+            ));
+
+            // Memory arm: actual ANSF profile ownership, source-id reopens,
+            // immutable checkpoints, and derived claim assessment are used.
+            let checkpoint=chats.recall_project_continuity(
+                &active_chat,project,task,&continuity
+            ).unwrap().unwrap();
+            assert_eq!(checkpoint.source_chat_id,source_chat);
+            assert_eq!(checkpoint.original_source_ids.len(),2);
+            assert_eq!(checkpoint.blockers,vec!["Conflicting version evidence"]);
+            assert!(checkpoint.next_action.contains("fresh host GPU/backend validation"));
+            for id in &checkpoint.original_source_ids{
+                let hit=chats.known_source_for_turn(&active_chat,id).unwrap();
+                assert_eq!(&hit.source_id,id);
+                assert_eq!(hit.source_chat_id,source_chat);
+                assert!(!hit.truncated);
+            }
+            let rows=chats.m4_belief_context(
+                &source_chat,project,task,"juniper","backend","2.0",
+                &continuity,&journal
+            ).unwrap();
+            assert_eq!(rows.len(),2);
+            assert!(rows.iter().all(|r|
+                r["status"]=="contradicted_human_review_required"&&
+                r["notToolAuthorization"]==true
+            ));
+            // An old grant does not become a current turn.
+            assert!(chats.trusted_user_turn_text(
+                &active_chat,"g-00000000000000000000000000000053"
+            ).is_none());
+            assert!(chats.known_source_for_turn(
+                &active_chat,"ansf:v1:invalid:100"
+            ).is_err());
+
+            // A genuine later human original is required to retract one
+            // claim. Historical originals stay readable for audit.
+            chats.append_user(&source_chat,
+                "I withdraw the ROCm report; verify Vulkan independently."
+            ).unwrap();
+            let correction=chats.original_history_page(
+                &source_chat,&source_chat,None,3
+            ).unwrap().entries.last().unwrap().source_id.clone();
+            assert!(chats.m4_retract_claim(
+                &source_chat,"m5-claim-rocm",&first_source,"Earlier text is not a correction"
+            ).is_err());
+            chats.m4_retract_claim(
+                &source_chat,"m5-claim-rocm",&correction,
+                "Human-sourced withdrawal of conflicting report"
+            ).unwrap();
+            let updated=chats.m4_belief_context(
+                &source_chat,project,task,"juniper","backend","2.0",
+                &continuity,&journal
+            ).unwrap();
+            assert_eq!(updated.iter().filter(|r|
+                r["status"]=="reported_unverified"
+            ).count(),1);
+            assert_eq!(updated.iter().filter(|r|
+                r["status"]=="retracted_not_current"
+            ).count(),1);
+            let version_changed=chats.m4_belief_context(
+                &source_chat,project,task,"juniper","backend","3.0",
+                &continuity,&journal
+            ).unwrap();
+            assert_eq!(version_changed.iter().filter(|r|
+                r["status"]=="stale_not_current"
+            ).count(),1);
+            assert!(version_changed.iter().all(|r|
+                r["status"]!="independently_verified"
+            ));
+            assert_eq!(chats.known_source_for_turn(
+                &active_chat,&second_source).unwrap().source_id,second_source);
+        }
+        {
+            // Second genuine SQLite reopen: correction remains durable.
+            let chats=ChatStore::open(&root).unwrap();
+            let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+            let journal=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+            let view=chats.m4_belief_context(
+                &source_chat,project,task,"juniper","backend","2.0",
+                &continuity,&journal
+            ).unwrap();
+            assert_eq!(view.iter().filter(|r|
+                r["status"]=="retracted_not_current"
+            ).count(),1);
+            assert!(chats.trusted_user_turn_text(
+                &active_chat,"g-00000000000000000000000000000053"
+            ).is_none());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn interrupted_effect_reconciles_on_restart_and_never_becomes_completed_work(){
+        let root=fixture();fs::create_dir_all(&root).unwrap();
+        let (source,original);
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+            source=chats.create_chat().unwrap().chat_id;
+            chats.append_user(&source,
+                "Verify the juniper package only with an independently checked native receipt"
+            ).unwrap();
+            original=chats.original_history_page(
+                &source,&source,None,5
+            ).unwrap().entries.last().unwrap().source_id.clone();
+            chats.record_continuity(
+                &source,"lu","m5-interrupt","m5-cp-interrupted",
+                &[original.clone()],"Worker launched but did not finish",
+                "Reconcile status; never replay prior native effects automatically",
+                &["Interrupted worker".into()],&continuity
+            ).unwrap();
+            let journal=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+            journal.prepare(&ToolInvocation{
+                call_id:"m5-call-interrupted".into(),tool_id:"lu.test.worker".into(),
+                workspace_id:Some("lu-desktop-local-profile".into()),
+                input:ProtoPayload{
+                    type_url:"lu.test.Worker".into(),bytes:vec![7,5]
+                }
+            }).unwrap();
+            journal.mark_executing("m5-call-interrupted").unwrap();
+            // Real journal left in EXECUTING when this opener is dropped.
+        }
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            let journal=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+            let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+            assert_eq!(journal.reconcile_interrupted().unwrap(),1);
+            assert_eq!(journal.reconcile_interrupted().unwrap(),0);
+            assert_eq!(journal.get("m5-call-interrupted").unwrap().unwrap().state,
+                EffectState::Uncertain);
+            assert!(continuity.link_verified_effect(
+                "m5-cp-interrupted","m5-call-interrupted",&journal
+            ).is_err());
+            let checkpoint=chats.recall_project_continuity(
+                &source,"lu","m5-interrupt",&continuity
+            ).unwrap().unwrap();
+            assert_eq!(checkpoint.original_source_ids,vec![original]);
+            assert_eq!(checkpoint.blockers,vec!["Interrupted worker"]);
+            assert!(continuity.verified_effects_for_checkpoint(
+                "m5-cp-interrupted",&journal
+            ).unwrap().is_empty());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+}
