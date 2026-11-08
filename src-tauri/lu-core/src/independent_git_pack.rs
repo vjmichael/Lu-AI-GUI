@@ -116,7 +116,7 @@ impl PackFile{
         }
         let n=fanout;
         if be32(pack.get(8..12)?)? as usize!=n{return None}
-        let ids_start=8+1024;
+        let ids_start:usize=8+1024;
         let crcs_start=ids_start.checked_add(n.checked_mul(width)?)?;
         let offsets_start=crcs_start.checked_add(n.checked_mul(4)?)?;
         let extra_start=offsets_start.checked_add(n.checked_mul(4)?)?;

@@ -118,8 +118,8 @@ fn parse_track(trak:&Atom<'_>,budget:&mut usize)->Option<TrackFacts>{
     if kind=="video"{
         if entry.value.len()<78{return None}
         let codec=match &entry.kind{
-            b"avc1"|"avc3"=>"h264",
-            b"hvc1"|"hev1"=>"hevc",
+            b"avc1"|b"avc3"=>"h264",
+            b"hvc1"|b"hev1"=>"hevc",
             b"av01"=>"av1",
             b"vp09"=>"vp9",
             b"mp4v"=>"mpeg4",
