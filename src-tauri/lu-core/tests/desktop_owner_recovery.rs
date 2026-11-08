@@ -20,7 +20,17 @@ fn second_owner_is_excluded_until_first_releases_os_sqlite_lock() {
     let owner = DesktopOwner::acquire(&lock).unwrap();
     assert!(matches!(DesktopOwner::acquire(&lock), Err(OwnerError::AlreadyRunning)));
     drop(owner);
-    let second_owner = DesktopOwner::acquire(&lock).unwrap();
+    // Windows may briefly retain SQLite WAL/shm handles after rollback. The
+    // released owner must become available within a bounded grace period.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let second_owner = loop {
+        match DesktopOwner::acquire(&lock) {
+            Ok(owner) => break owner,
+            Err(OwnerError::AlreadyRunning) if std::time::Instant::now() < deadline =>
+                std::thread::sleep(std::time::Duration::from_millis(10)),
+            Err(error) => panic!("released desktop owner never became available: {error:?}"),
+        }
+    };
     assert!(matches!(DesktopOwner::acquire(&lock), Err(OwnerError::AlreadyRunning)));
     drop(second_owner);
     fs::remove_dir_all(root).unwrap();

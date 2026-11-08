@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d38bff352441e822beffb7aeb833f87b9a42442d",
+  "sourceCommitBeforeLock": "9b3c628877ce95e5086513ee0c000cd035c66bf6",
   "trackedFileCount": 474,
   "files": [
     {
@@ -437,7 +437,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/office_batch_desktop.rs",
-      "blob": "8b38d62c764579febcb612fc3953ccff386345d1"
+      "blob": "88399f6cef64c257697bc007d69038edf1da132f"
     },
     {
       "path": "lu-desktop/src-tauri/src/office_revision_desktop.rs",
@@ -1529,7 +1529,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/continuity_conversation_scope.rs",
-      "blob": "d21d8c1dd226d947070fd76c3287e01ec8012124"
+      "blob": "7a5d34be9446d4f9c3fd7f12b3845ae303695c02"
     },
     {
       "path": "src-tauri/lu-core/tests/conversation_authority.rs",
@@ -1557,7 +1557,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/desktop_owner_recovery.rs",
-      "blob": "821dfc4dead26fd11a03616420c967788cdacd9a"
+      "blob": "f30b0e0a3af9ac4491db6202bf39ba418a2fa697"
     },
     {
       "path": "src-tauri/lu-core/tests/diagnostic_contract.rs",
