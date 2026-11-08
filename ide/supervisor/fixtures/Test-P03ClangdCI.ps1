@@ -7,6 +7,17 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $lines=@(Get-Content -LiteralPath $WorkflowPath -Encoding UTF8)
+# Native E2 must have exactly one of each real OS job. A stale duplicate
+# YAML fragment after Linux's final done previously produced a no-jobs
+# workflow-validation FAILURE, not a protected worker test verdict.
+foreach($job in @('  protected-clangd-windows:','  delegated-clangd-linux:')){
+  if(@($lines | Where-Object { $_ -ceq $job }).Count -ne 1){
+    throw 'P03_E2_NATIVE_OS_JOB_DUPLICATED_OR_MISSING'
+  }
+}
+if($lines[-1].Trim() -ne 'done'){
+  throw 'P03_E2_NATIVE_WORKFLOW_UNEXPECTED_TRAILING_CONTENT'
+}
 $label='      - name: Prepare self-measured clangd acceptance bundle'
 $starts=@(for($i=0;$i -lt $lines.Count;$i++){if($lines[$i] -ceq $label){$i}})
 if($starts.Count -ne 1){throw 'P03_CLANGD_WORKFLOW_EXACT_STEP_REQUIRED'}
