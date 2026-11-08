@@ -53,6 +53,13 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: GTK native chooser policy source regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ide/app/fixtures/gtk_chooser_confirmation_policy.py ide/app/fixtures/wo8_linux_editor_atspi.py
+          python3 -m unittest discover -s ide/app/fixtures -p 'test_gtk_chooser_confirmation_policy.py' -v
+          echo "IDE_B6_GTK_NATIVE_CHOOSER_POLICY=PASS"
       - name: Run actual B6 regressions and full frontend build/test
         shell: bash
         working-directory: ide/app
@@ -83,3 +90,89 @@ jobs:
           path: ${{ runner.temp }}/ide-b6/native-source-receipt.txt
           if-no-files-found: warn
           retention-days: 14
+
+  installed-ubuntu26-gtk-b6:
+    name: B6 actual installed GTK chooser diagnostic / ubuntu-26.04
+    runs-on: ubuntu-26.04
+    timeout-minutes: 110
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify actual Ubuntu 26.04 and exact checked-out source
+        shell: bash
+        run: |
+          set -euo pipefail
+          . /etc/os-release
+          test "$ID" = ubuntu && test "$VERSION_ID" = 26.04
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          python3 -m unittest discover -s ide/app/fixtures -p 'test_gtk_chooser_confirmation_policy.py' -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Install native GTK, WebKit and OS accessibility tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libssl-dev libgtk-3-dev \
+            xvfb xauth xdotool dbus-x11 x11-utils \
+            at-spi2-core python3-pyatspi openbox
+      - name: Build unsigned real Debian package with original license proof
+        shell: bash
+        working-directory: ide/app
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python3 ../packaging/verify_tauri_minor.py --repo-root ../..
+          python3 ../packaging/upstream_notice_receipt.py --repo-root ../.. \
+            --source-sha "${{ github.sha }}" \
+            --output src-tauri/upstream-notice-receipt.json
+          python3 ../packaging/collect_verification_licenses.py \
+            --repo-root ../.. --output src-tauri/verification-notices \
+            --source-sha "${{ github.sha }}" \
+            --upstream-receipt src-tauri/upstream-notice-receipt.json
+          npx --yes @tauri-apps/cli@2.12.4 build \
+            --config src-tauri/tauri.wo8.linux.conf.json --bundles deb
+      - name: Reject unverified installed package notice or source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          test "${#packages[@]}" -eq 1
+          dpkg-deb --contents "${packages[0]}" | grep -F '/THIRD_PARTY_LICENSES/inventory.json' >/dev/null
+          python3 ide/packaging/verify_p04_license_bundle.py \
+            --license-root ide/app/src-tauri/verification-notices \
+            --source-sha "${{ github.sha }}" --require-upstream \
+            --artifact "${packages[0]}" \
+            --receipt ide/app/src-tauri/b6-package-notice-receipt.json
+      - name: Actual installed Debian GTK chooser, editor and uninstall
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          test "${#packages[@]}" -eq 1
+          bash ide/app/fixtures/Test-Wo8InstalledDeb.sh "${packages[0]}" "$(git rev-parse HEAD)"
+          echo "IDE_B6_GENUINE_INSTALLED_LINUX26_FOLDER_CHOOSER=PASS"
+          echo "IDE_B6_WINDOWS_AND_UBUNTU24_INSTALLED_GUI=NOT_ESTABLISHED"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-b6-ubuntu26-real-installed-gtk-debug-${{ github.sha }}
+          path: |
+            ide/app/src-tauri/b6-package-notice-receipt.json
+            ide/app/src-tauri/upstream-notice-receipt.json
+          if-no-files-found: warn
+          retention-days: 7
