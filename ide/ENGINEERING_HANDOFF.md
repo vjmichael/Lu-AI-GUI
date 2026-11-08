@@ -1,11 +1,13 @@
 # Lu IDE — Engineering handoff / continuation entrypoint
 
-**Updated:** 2026-11-05 (America/Phoenix)  
+**Historical base updated:** 2026-11-05; active blocker ledger added 2026-11-07 (America/Phoenix) / 2026-11-08 UTC.  
 **Repository:** [vjmichael/Lu-AI-GUI](https://github.com/vjmichael/Lu-AI-GUI)  
 **Source branch:** `ide/workspace-development`  
 **IMPORTANT:** This is a **standalone Tauri 2 / React / Rust executable**, not a panel embedded in Lu Desktop. Keep all changes within `ide/` or IDE-specific workflows; **do not modify Lu Core** for ordinary IDE milestones.
 
 This entrypoint is intended to spare the next development conversation from rediscovering the original scope, CI, app paths, and acceptance history.
+
+> **Current task authority:** [Product Readiness & Blocker Ledger](docs/IDE_PRODUCT_READINESS_BLOCKER_LEDGER_20261108.md) and [P01–P07 phase gate ledger](docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md). The `ide/workspace-development` source branch named above is the historical base, not today's integrated release candidate. Start with A1/BLK-01 (Windows P06-R2 casefold native fixture), A2/BLK-02 (B3 Windows parser), A3/BLK-03 (B2 real Windows draft clipboard), and A4/BLK-04 only when B2 native pass exists. Existing P03/P04 Linux/Windows and P06 R1 native gates remain open. See task document for exact PRs, CI runs and operating rules; do not close any original PR merely because a newer branch compiles.
 
 ## C6 continuation pointer — task/evidence ledger (source only)
 The latest Wave 3 task bridge is `ide/host/src/task_evidence.rs` and the optional `DevelopmentEvent.task` in `ide/host/src/continuity.rs`. The native app now supports typed human progress updates and explicit host-probed task CI observations, which are materialized into `ProjectContext.tasks`. The journal remains the single private source; project Markdown is untrusted orientation, not proof of completion. Task status never accepts completed/accepted. Check `ide/docs/IDE_WAVE_C6_TASK_EVIDENCE.md` for exact evidence and acceptance limits, and always verify exact GitHub HEAD before citing CI.
