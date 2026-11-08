@@ -597,3 +597,50 @@ submitted. **Native/installed acceptance OPEN until real OS results are
 inspected.** This tool evidence display does not authorize any new
 app operation or claim process-tree cleanup. Details:
 `docs/LU_E1_P09_REVIEWED_APP_EVIDENCE_20261108.md`.
+
+## E1-P10 — Independently verified reviewed application outcomes (Nov 8, 2026)
+
+**Source branch:** `lu/e1-p10-independent-operation-oracles-20261108`
+stacked on E1-P09 PR #135. Source-only candidate; full exact-head
+Windows/Linux OS acceptance remains **OPEN**. E1-P08C Linux cgroup
+custody PR #133 remains a separate process-protection workstream.
+
+Added host-only `reviewed_outcome_oracle.rs` that reads the
+original authenticated, host-approved resource directly: Git HEAD
+and branch via bounded `.git/HEAD`/loose or packed ref checks, and
+ordinary WAV PCM/IEEE-float format, duration, codec, rate and channels
+via a second RIFF parser and independent full SHA-256. This path never
+runs the same Git/FFprobe binary again and never trusts model claims.
+A conflict refuses feedback to the model. Nontrivial tracked-status,
+reachable Git commit history and MP4 are **UNSUPPORTED**, never
+presented as independently verified; altered WAV bytes are a conflict.
+
+This independent check now runs in Lu's **actual registered reviewed
+model-tool execution path after the OS child has completed and its
+inner effect is APPLIED, but before sending the typed model result**.
+The separate `lu_independent_outcomes` SQLite table binds each
+VERIFIED/UNSUPPORTED/CONFLICT verdict to the exact existing APPLIED
+worker receipt SHA-256, with immutable idempotent or conflict-rejecting
+writes, WAL/FULL and restart persistence. No original process journal
+state is overwritten by a semantic mismatch; OS operation observed and
+outcome fact disagreed remain separate sources of truth.
+
+E1-P09 read-only Tool activity now also reports independently verified,
+unsupported and conflicting factual outcome counts, with a clear
+*verified at time of observation, not durable current external state*
+warning. Missing earlier outcome tables never fabricate new proof.
+A model FinalAnswer cannot override an UNCERTAIN/CONFLICT native
+observation, and this read-only evidence grants no new capability.
+
+The new exact-head native CI must build/run three direct-source Rust
+oracles, immutable journal tests, real SQLite desktop aggregation,
+React contracts and Windows Tauri; additionally, the **actual** Git
+and FFprobe applications run under Lu's owned Windows/Linux supervisor.
+For five reviewed operations the integration test requires precisely
+**three independently verified and two explicitly unsupported outcomes**,
+with ten distinct inner/outer effect receipts and restart reopening.
+Real GGUF tool choice, physical installed Windows acceptance, Linux
+E1-P08C migration protection and semantic coverage of Git status,
+Git history and MP4 remain independent OPEN gates.
+
+See `docs/LU_E1_P10_INDEPENDENT_OPERATION_OUTCOMES_20261108.md`.

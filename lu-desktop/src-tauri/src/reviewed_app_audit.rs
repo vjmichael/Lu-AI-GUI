@@ -27,6 +27,10 @@ pub struct ReviewedEffectCounts{
     /// APPLIED records with a nonempty retained journal receipt.
     /// A receipt does not prove an old worker is still gone after restart.
     pub applied_with_receipt:u32,
+    /// E1-P10: distinct host factual observations, not worker self-reports.
+    pub independently_verified:u32,
+    pub outcome_unsupported:u32,
+    pub outcome_conflict:u32,
 }
 impl ReviewedEffectCounts{
     pub fn total(&self)->u32{
@@ -47,9 +51,16 @@ pub fn classify_reviewed_evidence(
     }
     if generation_failures>0{return "MODEL_FAILED"}
     if counts.is_some_and(|v|v.failed>0){return "EFFECT_FAILED"}
+    if counts.is_some_and(|v|v.outcome_conflict>0){
+        return "OUTCOME_CONFLICT"
+    }
     if rejections>0{return "REJECTED"}
     if counts.is_some_and(|v|v.applied>v.applied_with_receipt){
         return "APPLIED_RECEIPT_MISSING"
+    }
+    if final_answers>0&&counts.is_some_and(|v|v.applied>0
+        &&v.applied==v.independently_verified){
+        return "INDEPENDENTLY_VERIFIED_AT_OBSERVATION"
     }
     if final_answers>0&&counts.is_some_and(|v|v.applied>0){
         return "ANSWER_RECORDED_WITH_APPLIED_JOURNAL"
@@ -143,6 +154,40 @@ pub fn read_reviewed_effect_counts(
             _=>return Err("Invalid effect state in reviewed journal".into())
         }
     }
+    // Legacy E1-P08/P09 effect databases can predate this separate
+    // verifier table. Missing table means NO independent verification.
+    let exists:i64=connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table'
+         AND name='lu_independent_outcomes'",
+        [],|row|row.get(0)
+    ).map_err(|_|"Outcome evidence schema unavailable")?;
+    if exists==1{
+        let mut q=connection.prepare(
+            "SELECT o.verdict,COUNT(*) FROM lu_independent_outcomes o
+             JOIN lu_effects e ON e.call_id=o.call_id
+             WHERE e.state='APPLIED' AND e.receipt IS NOT NULL
+             GROUP BY o.verdict"
+        ).map_err(|_|"Outcome journal query unavailable")?;
+        let rows=q.query_map([],|row|Ok((
+            row.get::<_,String>(0)?,row.get::<_,i64>(1)?
+        ))).map_err(|_|"Outcome journal query failed")?;
+        for row in rows{
+            let (verdict,n)=row.map_err(|_|"Outcome journal row invalid")?;
+            let n=u32::try_from(n).map_err(|_|"Outcome count overflow")?;
+            if n>MAX_EFFECTS{return Err("Outcome count exceeded limit".into())}
+            match verdict.as_str(){
+                "VERIFIED"=>counts.independently_verified=n,
+                "UNSUPPORTED"=>counts.outcome_unsupported=n,
+                "CONFLICT"=>counts.outcome_conflict=n,
+                _=>return Err("Unexpected independent outcome state".into())
+            }
+        }
+        if counts.independently_verified
+            .saturating_add(counts.outcome_unsupported)
+            .saturating_add(counts.outcome_conflict)>counts.applied{
+            return Err("Outcome count exceeds applied effects".into())
+        }
+    }
     Ok(Some(counts))
 }
 
@@ -215,6 +260,41 @@ mod tests{
         counts.applied_with_receipt=1;
         assert_eq!(classify_reviewed_evidence(1,1,0,Some(&counts)),"MODEL_FAILED");
         assert_eq!(classify_reviewed_evidence(1,0,1,Some(&counts)),"REJECTED");
+    }
+    #[test]
+    fn independent_outcome_is_distinct_from_worker_applied_receipt(){
+        use lu_core::journal::IndependentOutcomeVerdict;
+        use sha2::{Digest,Sha256};
+        let root=root();fs::create_dir_all(&root).unwrap();
+        let id=format!("g-{:032x}",45);
+        let db=root.join(format!("lu-reviewed-effects-{id}.sqlite"));
+        let journal=EffectJournal::open(&db).unwrap();
+        for call in ["verified","unsupported","conflict"]{
+            journal.prepare(&invocation(call)).unwrap();
+            journal.mark_executing(call).unwrap();
+            journal.mark_applied(call,b"OS-receipt").unwrap();
+        }
+        let observed=format!("{:x}",Sha256::digest(b"facts"));
+        journal.record_independent_outcome("verified",b"OS-receipt",
+            IndependentOutcomeVerdict::Verified,"GIT_HEAD_DIRECT_V1",
+            Some(&observed)).unwrap();
+        journal.record_independent_outcome("unsupported",b"OS-receipt",
+            IndependentOutcomeVerdict::Unsupported,
+            "GIT_STATUS_UNSUPPORTED_V1",None).unwrap();
+        journal.record_independent_outcome("conflict",b"OS-receipt",
+            IndependentOutcomeVerdict::Conflict,
+            "GIT_BRANCH_DIRECT_V1",None).unwrap();
+        let view=read_reviewed_effect_counts(&root,&id).unwrap().unwrap();
+        assert_eq!(view.applied,3);
+        assert_eq!(view.independently_verified,1);
+        assert_eq!(view.outcome_unsupported,1);
+        assert_eq!(view.outcome_conflict,1);
+        assert_eq!(classify_reviewed_evidence(1,0,0,Some(&view)),
+            "OUTCOME_CONFLICT");
+        let serialized=serde_json::to_string(&view).unwrap();
+        assert!(!serialized.contains("OS-receipt"));
+        assert!(!serialized.contains("verified\""));
+        drop(journal);fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn rejects_non_host_ids_and_never_looks_at_arbitrary_paths(){

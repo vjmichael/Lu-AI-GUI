@@ -348,6 +348,13 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
             ToolTurnOutcome::ToolResult{call_id,ref data,..}=>{
                 assert_eq!(data["ok"],true,"{name} failed");
                 assert_eq!(data["result"][key],expected,"{name} result mismatch");
+                let verification=if matches!(suffix,"gh"|"gb"|"fm"){
+                    "VERIFIED"
+                }else{"UNSUPPORTED"};
+                assert_eq!(
+                    data["result"]["independentOutcome"]["status"],
+                    verification,"{name} incorrectly claimed independent source proof"
+                );
                 if name=="lu_reviewed_media_facts"{
                     assert_eq!(data["result"]["streams"][0]["codec"],"pcm_s16le");
                     assert_eq!(data["result"]["streams"][0]["channels"],1);
@@ -370,6 +377,20 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
     assert_eq!(durable_ids.len(),10,"five tools each need an outer and OS effect");
     assert_eq!(durable_ids.iter().collect::<BTreeSet<_>>().len(),10,
         "all durable effect identities must be distinct");
+    // This is a genuinely independent second SQLite witness. Git status
+    // and history MUST remain unsupported rather than falsely verified.
+    let conn=rusqlite::Connection::open(f.dir.join("effects.sqlite")).unwrap();
+    let verified:i64=conn.query_row(
+        "SELECT COUNT(*) FROM lu_independent_outcomes WHERE verdict='VERIFIED'",
+        [],|row|row.get(0)).unwrap();
+    let unsupported:i64=conn.query_row(
+        "SELECT COUNT(*) FROM lu_independent_outcomes WHERE verdict='UNSUPPORTED'",
+        [],|row|row.get(0)).unwrap();
+    let conflicts:i64=conn.query_row(
+        "SELECT COUNT(*) FROM lu_independent_outcomes WHERE verdict='CONFLICT'",
+        [],|row|row.get(0)).unwrap();
+    assert_eq!((verified,unsupported,conflicts),(3,2,0));
+    drop(conn);
 
     let dir=f.dir.clone();
     drop(turn);drop(f);

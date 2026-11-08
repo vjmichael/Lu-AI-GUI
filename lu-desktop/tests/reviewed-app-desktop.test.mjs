@@ -76,3 +76,28 @@ test('read-only reviewed-app tool activity shows durable effects, never model cl
   assert.doesNotMatch(audit,/pub fn (?:execute|launch|grant|replay)_/);
   assert.doesNotMatch(ui,/invoke\('lu_reviewed_app_ask',\s*\{[^}]*\b(?:path|executable|argv|permission)\s*:/s);
 });
+
+test('E1-P10 shows independent at-observation proof, not worker or model authority',()=>{
+  const oracle=readFileSync(new URL('../../src-tauri/lu-core/src/reviewed_outcome_oracle.rs',import.meta.url),'utf8');
+  const worker=readFileSync(new URL('../../src-tauri/lu-core/src/native_reviewed_app_tool.rs',import.meta.url),'utf8');
+  const journal=readFileSync(new URL('../../src-tauri/lu-core/src/journal.rs',import.meta.url),'utf8');
+  const audit=readFileSync(new URL('../src-tauri/src/reviewed_app_audit.rs',import.meta.url),'utf8');
+  assert.match(worker,/verify_git\(repository_root,git_op,&value\)/);
+  assert.match(worker,/verify_media\(/);
+  assert.match(worker,/journal\.record_independent_outcome\(/);
+  assert.match(worker,/IndependentOutcomeVerdict::Conflict/);
+  assert.match(worker,/independentOutcome/);
+  assert.match(journal,/CREATE TABLE IF NOT EXISTS lu_independent_outcomes/);
+  assert.match(journal,/state!="APPLIED"/);
+  assert.match(oracle,/WAV_PCM_DIRECT_V1/);
+  assert.match(oracle,/GIT_HEAD_DIRECT_V1/);
+  assert.match(oracle,/GIT_STATUS_UNSUPPORTED_V1/);
+  assert.match(oracle,/MP4_UNSUPPORTED_V1/);
+  assert.doesNotMatch(oracle,/Command::new|\.spawn\(/);
+  assert.match(audit,/INDEPENDENTLY_VERIFIED_AT_OBSERVATION/);
+  assert.match(audit,/OUTCOME_CONFLICT/);
+  assert.match(ui,/item.reviewedEffects.independentlyVerified/);
+  assert.match(ui,/item.reviewedEffects.outcomeConflict/);
+  assert.match(ui,/It does not prove that/);
+  assert.doesNotMatch(ui,/invoke\('lu_reviewed_app_ask',\s*\{[^}]*\b(?:path|executable|argv|permission)\s*:/s);
+});
