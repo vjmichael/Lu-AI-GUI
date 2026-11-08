@@ -63,7 +63,7 @@ jobs:
       - name: Archive source SHA-bound unapproved observation
         uses: actions/upload-artifact@v4
         with:
-          name: ide-p06-live-native-evidence-${{ github.sha }}-not-release
+          name: ide-p06-live-native-evidence-${{ github.event.pull_request.head.sha || github.sha }}-not-release
           path: ide/p06-observed-native-actions.json
           retention-days: 14
           if-no-files-found: error
