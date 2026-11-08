@@ -13,8 +13,14 @@ publish = false
 # builds and all release packaging unless CI opts in explicitly.
 [features]
 e1-p08-crash-fixture = []
+e1-p08c-cgroup-crash-fixture = []
 
 [[bin]]
 name = "lu-e1-p08-linux-crash-parent"
 path = "src/bin/lu-e1-p08-linux-crash-parent.rs"
 required-features = ["e1-p08-crash-fixture"]
+
+[[bin]]
+name = "lu-e1-p08c-cgroup-crash-host"
+path = "src/bin/lu-e1-p08c-cgroup-crash-host.rs"
+required-features = ["e1-p08c-cgroup-crash-fixture"]
