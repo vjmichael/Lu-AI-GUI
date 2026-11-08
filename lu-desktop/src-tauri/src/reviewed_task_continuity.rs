@@ -291,7 +291,26 @@ mod tests{
         assert_eq!(reviewed_turn_continuity(&path,
             &format!("c-{:032x}",3),&turn).unwrap().unwrap().journal_state,
             "ORIGIN_MISMATCH");
-        drop(effect);drop(tasks);fs::remove_dir_all(&path).unwrap();
+        drop(effect);drop(tasks);
+        // Genuine SQLite close/reopen: results are derived from durable
+        // bytes, not a previously held model-turn runtime object.
+        let reopened=reviewed_turn_continuity(&path,&chat,&turn)
+            .unwrap().unwrap();
+        assert_eq!(reopened.continuation,"FRESH_REQUEST_ONLY");
+        // Independently tamper the persisted second-witness digest.
+        // An APPLIED original effect is still NOT acceptable semantic proof.
+        let db=Connection::open(&effectfile).unwrap();
+        db.execute(
+            "UPDATE lu_independent_outcomes SET receipt_sha256=?1
+             WHERE call_id='call-gh'",
+            rusqlite::params!["0".repeat(64)]
+        ).unwrap();
+        drop(db);
+        let altered=reviewed_turn_continuity(&path,&chat,&turn)
+            .unwrap().unwrap();
+        assert_eq!(altered.continuation,"RECONCILIATION_REQUIRED");
+        assert_eq!(altered.operations[0].outcome,"RECEIPT_MISMATCH");
+        fs::remove_dir_all(&path).unwrap();
     }
     #[test]
     fn missing_and_uncertain_journals_never_offer_resume(){
