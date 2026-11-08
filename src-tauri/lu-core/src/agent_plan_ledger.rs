@@ -15,7 +15,7 @@ pub enum PlanStepKind{
     CollectSource,Inspect,Analyze,IndependentlyCheck,HumanReview,Present,
 }
 impl PlanStepKind{
-    fn as_str(self)->&'static str{
+    pub(crate) fn as_str(self)->&'static str{
         match self{
             Self::CollectSource=>"COLLECT_SOURCE",
             Self::Inspect=>"INSPECT",
@@ -25,7 +25,7 @@ impl PlanStepKind{
             Self::Present=>"PRESENT",
         }
     }
-    fn parse(s:&str)->Option<Self>{
+    pub(crate) fn parse(s:&str)->Option<Self>{
         match s{
             "COLLECT_SOURCE"=>Some(Self::CollectSource),
             "INSPECT"=>Some(Self::Inspect),
