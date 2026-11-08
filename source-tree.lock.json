@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "94236c7a0fae36f0b724f348074fe1ae674e14df",
-  "trackedFileCount": 714,
+  "sourceCommitBeforeLock": "f8595c657d1ba27c07c234a5b1ea034893e9f892",
+  "trackedFileCount": 719,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -196,6 +196,10 @@
       "blob": "e074d565278ce9e20a30c4199f64374dc3af4c48"
     },
     {
+      "path": ".github/workflows/lu-ux-chat01-message-interactions.yml",
+      "blob": "75a0b73487d03bbc05a44fe56e1c36aa6f881cce"
+    },
+    {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
       "blob": "c3af6cbde3bb64cf01ff1067669a943a20ee88d4"
     },
@@ -385,7 +389,7 @@
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
-      "blob": "bdb755348b78f2c69ece29b9303b2a3840b71e08"
+      "blob": "b44d5d9ab6c98c9ac8ed245a691917dda07f8aa5"
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
@@ -584,6 +588,10 @@
       "blob": "60b0a08cea732cc800f2f64a69b724402e559010"
     },
     {
+      "path": "docs/LU_UX_CHAT01_MESSAGE_INTERACTIONS_20261108.md",
+      "blob": "1525ebfd84c849b5af51bf8eed77e8e038d888dc"
+    },
+    {
       "path": "docs/LU_V1_01_WINDOWS_ICON_IMPORT_DEV_20261103.md",
       "blob": "9aa609c5a8612489d5e08e326bca24638c0dfeee"
     },
@@ -597,7 +605,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "cd8ebab08ba9e461a3658a535557da56180fa68e"
+      "blob": "4d0c035b1a8438a9decbda06c8be3300724ea0aa"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -844,6 +852,10 @@
       "blob": "12b6a9a0cea452387074685f9de5cf0ca3bf7c39"
     },
     {
+      "path": "lu-desktop/src-tauri/src/chat_message_interactions.rs",
+      "blob": "0d3b04262c7b9ef5da90e07b5f52267793554fff"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
       "blob": "7a785f225bebddeaa30894d838d6e2059a26fe13"
     },
@@ -881,7 +893,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "8ab1a4752c6c8289f08f43e65e79d81f425eaed1"
+      "blob": "2543cf029253e80c897e20c334b0d848bf8201cd"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1145,7 +1157,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "566e3590554eaa161cc5c33ec0630629a723bc67"
+      "blob": "f2be3522819dc1366d7e81223ade230d7bb9a5dd"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
@@ -1248,6 +1260,10 @@
       "blob": "a0fa2893a0ef26a8a1fddce8931ed4aeefb884c6"
     },
     {
+      "path": "lu-desktop/tests/ux-chat01-message-interactions.test.mjs",
+      "blob": "c9425824ecc84756216b574fd1e015b40ba00a16"
+    },
+    {
       "path": "lu-desktop/tests/windows-physical/Lu_R13_Vision_Test_Fixture.png",
       "blob": "75b285b65e39c9c00238dd3f2b93a5f7e049fc0d"
     },
@@ -1329,7 +1345,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "3321de2b28dc0a50a30f4e6dfa1951b6ec6c734a"
+      "blob": "e6c360bfd5d4301659791ce2ee5c1a7fa302204e"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1338,6 +1354,10 @@
     {
       "path": "lu-desktop/web/markdown_view.mjs",
       "blob": "77f11da955e27a7f145e6985ef8c004c152788e9"
+    },
+    {
+      "path": "lu-desktop/web/message_interactions.mjs",
+      "blob": "2d8937c330640e2912bd07590cb4b2074a781d53"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -1349,7 +1369,7 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "b2e980edde6aed0a52409b24b375b506b225b0d4"
+      "blob": "4fac8bc640f79b8211e2d6c36487072f8fab1033"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
