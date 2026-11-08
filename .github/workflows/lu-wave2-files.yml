@@ -153,6 +153,8 @@ jobs:
         run: npm run build
       - name: Verify Wave 2 native approval wiring
         run: npm run check
+      - name: Compile real Rust file-scan worker integration fixture
+        run: cargo build --manifest-path tests/native-file-scan/Cargo.toml
       - name: Test React UI interaction utilities
         run: npm run test:ui
   desktop-native-windows:
