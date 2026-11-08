@@ -1,5 +1,7 @@
 # Lu v1.0 tracked task list
 
+**Owner test scheduling — November 7, 2026:** Defer routine **real-world physical Windows installed-app testing** (actual Lu.exe/WebView/AMD Vulkan, two GGUFs, NSIS install/uninstall, signed/reviewed release candidate) until close to **Lu v1.0 launch**. Continue source development and native GitHub Actions Windows/Linux compile and regression tests now. This postpones *when* manual release acceptance runs; it does not waive, pass or substitute for any missing physical evidence. Do not repeatedly block other source work on an unavailable personal Windows device.
+
 **Workflow decision 2026-11-03:** Develop locally; use GitHub CI to check committed source. No routine physical Windows retests. Keep a deferred manual acceptance ledger for the near-v1.0 release candidate. An accepted functional alpha is not a production-stable v1.0.
 
 **Accepted baseline:** `0.1.0-alpha.2`. **Local development:** `0.1.0-alpha.3-dev.1` (icon resource and byte-counted GGUF import changes). Never overwrite the accepted installer; every change gets a new version/commit and CI evidence. The repository application tree is still older than the local source snapshot: **REPO-01 is a blocker to claiming current-development CI coverage**.
@@ -20,6 +22,7 @@
 | AUTH-01 | P0 | Authenticated user-turn tool scopes and revocation | PARTIAL | Adversarial authorization and live desktop grant/dispatch tests |
 | LIFECYCLE-01 | P0 | Native process lifecycle, cancellation, clean termination and resource safeguards (not mandatory sandboxing) | TODO | Actual Windows start/stop/reap and crash recovery |
 | TOOLS-01 | P0 | First-party native read, search, atomic file writes, git, archives and JSON | TODO | End-to-end authorized Protobuf calls |
+| E1-APP-EXEC | P1 | Reviewed application identity, scoped discovery, then contained execution and independent feedback | P01–P02 SOURCE CANDIDATE; OS CI PENDING; P03–P05 OPEN | Genuine Linux/Windows current-turn catalog tests, actual typed supervised effect journal; physical installed Windows deferred to pre-v1.0 |
 | TOOLS-02 | P0 | **Original MBRL**: model/API JSON strict validation, one normalization, two regenerations, typed rejection | SOURCE EXTENDED; CI PENDING | No user-facing JSON tool; model/proposal/SSE borders, typed Protobuf, scoped authority, no effect replay, structured feedback |
 | TOOLS-03 | P0 | Git status/log/diff under Jan-first narrow schema and Code-task scope | SOURCE PROTOTYPE; CI PENDING | Original §3.9/§5.2 cross-check, typed native Protobuf, real repo tests, hostile Git config/process lifecycle, Linux/Windows, desktop authority |
 | TOOLS-04 | P1 | Archive listing/inspection before archive extraction or creation | TODO | Zip-slip, symlink, decompression bomb limits, duplicate members, OS CI |
@@ -417,3 +420,10 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 - `docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md` is the binding consolidated **tool subsystem** entrypoint: original §3.9 Code workspace placement; §4.6–4.9 JSON boundary/Protobuf/recovery/effect journal; §5.2 unified internal domains vs narrow model schemas; §7 loop guard; plus confirmed Lu owner-specific authorization, independent runtime and v2 DLC decisions. Central design links both records.
 - **TOOLS-03** is a unified native Git inspection *domain* in Lu Core, not an automatically advertised Git/IDE agent. Model-facing tools are narrow, host-approved repository/code-task only. Source proof fixture and OS CI job added on `lu/tools-03-git-inspection-20261104`; source lock/CI/hostile repository failure injection and installed GUI acceptance must be independently checked. No Git write operation or general shell grant was added.
 - **Every next native tool requires a documented original section mapping before implementation.** A later assistant-generated tool idea may not supersede original intent. Source-only tests cannot be marked v1.0 release-complete.
+
+## E1 reviewed application admission — November 7, 2026
+
+- **E1-P01:** Added host-reviewed executable preflight and genuine ELF/PE SHA-256 admission, source branch `lu/e1-reviewed-app-admission-20261107`, PR #103. Initial native Linux/Windows CI **FAILED** due to `wrong.app_version="../replace"` incorrectly assigning `&str` to `String` in a test; also found Unix symlink test accidentally nested inside another test. Both are repaired in the next E1-P02 submission. Never claim earlier failed CI succeeded.
+- **E1-P02:** Host-only bounded reviewed application catalog; per-current-user-turn permission and host policy, exact read-only tool and workspace, on-demand actual executable SHA-256 + opened OS identity, fail-closed removal/duplicate/version mismatch, no registered default apps, no PATH scanning or app process launch. Linux/Windows native source tests and isolated E1 CI submitted but **new exact-head results pending**.
+- **Version claim limit:** reviewed release label bound to a checked SHA-256, NOT a live application version response or publisher signature. A contained and approved runtime version probe, when needed, belongs to E1-P03.
+- **Owner release schedule:** defer real hardware/interactive Windows, WebView, two-GGUF AMD Vulkan and NSIS install/uninstall acceptance to near Lu v1.0. Continue hosted Windows/Linux native tests now.

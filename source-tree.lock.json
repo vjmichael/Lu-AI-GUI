@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "82342470f6c6ca5a38d6b2f7b43e27845e1e0ac6",
-  "trackedFileCount": 611,
+  "sourceCommitBeforeLock": "791dbb44348ca6969b7af5b82ffbfca398fe4077",
+  "trackedFileCount": 615,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -18,6 +18,10 @@
     {
       "path": ".github/workflows/lu-ci.yml",
       "blob": "b478eaaa33261f41284262dd0a4a08dbf778f7fa"
+    },
+    {
+      "path": ".github/workflows/lu-e1-app-admission.yml",
+      "blob": "c8cf8a0d7dadd28edb4a8d35f861b18b54db9669"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -244,6 +248,10 @@
       "blob": "3f0677108c9cce3ece07a7511f046eb871c1a43b"
     },
     {
+      "path": "docs/LU_E1_REVIEWED_APP_ADMISSION_20261107.md",
+      "blob": "28fa5c57292821175601df301e1baf480d6ecb20"
+    },
+    {
       "path": "docs/LU_FILESYSTEM_DISCOVERY_P01.md",
       "blob": "f3f58365544ad8370dd54e8acea9c2ae7dc84da6"
     },
@@ -369,7 +377,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "7a93af8743b9b83f78664df52cca176e0cff6bca"
+      "blob": "d9c622fc1dd3af8abe59253bb85e08905fbf9a4a"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1461,7 +1469,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "1fad84e0c54dd09f7805aaef6e62823eeae69fb4"
+      "blob": "312d5b327e9c1c658a009d4bcd94503ca86db62a"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1510,6 +1518,14 @@
     {
       "path": "src-tauri/lu-core/src/multimodal_saved_turn.rs",
       "blob": "46d3c4105580551056209132db2bd3c30510726b"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_app_admission.rs",
+      "blob": "b301638bed8918a933fb92f3eb294a8f34081eea"
+    },
+    {
+      "path": "src-tauri/lu-core/src/native_app_catalog.rs",
+      "blob": "436bf19362cab955fb548081ad68dd8188f614da"
     },
     {
       "path": "src-tauri/lu-core/src/native_ar_deb.rs",
