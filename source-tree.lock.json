@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "353ec100baa11bc918139f38c15566e7dec80629",
+  "sourceCommitBeforeLock": "a77179cbc4273cc5f305589b33d17e670dfcaf88",
   "trackedFileCount": 692,
   "files": [
     {
@@ -1173,7 +1173,7 @@
     },
     {
       "path": "lu-desktop/tests/reviewed-app-desktop.test.mjs",
-      "blob": "65b96a2cf4e42880647dfccc4c830354befa3686"
+      "blob": "c030673f3eeadf869f1349290ffe8621c0d1abb1"
     },
     {
       "path": "lu-desktop/tests/reviewed-tool-feedback.test.mjs",
