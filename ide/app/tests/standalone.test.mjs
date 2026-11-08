@@ -43,7 +43,10 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_workflow_export_manifest', 'ide_workflow_export_bundle',
     'ide_git_review_file', 'ide_git_stage_reviewed', 'ide_git_commit_reviewed',
     'ide_workflow_create', 'ide_workflow_list_runs', 'ide_workflow_cancel_pending',
-    'ide_workflow_run_step', 'ide_workflow_verify_native_receipt'
+    'ide_workflow_run_step', 'ide_workflow_verify_native_receipt',
+    // B3 read-only project search plus B2 native-private draft vault lifecycle.
+    'ide_find_in_project', 'ide_draft_checkpoint', 'ide_draft_latest',
+    'ide_draft_load', 'ide_draft_discard'
   ].sort());
   // E2's dynamic method string is restricted to the two inspected options.
   assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
@@ -263,7 +266,7 @@ test('R3.7 in-file find navigates the active unsaved buffer without native IPC',
   const css = read('../web/styles.css');
   assert.match(web, /key === 'f'/);
   assert.match(web, /role="search" aria-label="Find in active file"/);
-  assert.match(web, /locateMatches\(activeTab\?\.draft/);
+  assert.match(web, /locateMatches\(activeEditorState\?\.doc\.toString\(\)/);
   assert.match(web, /aria-label="Previous match"/);
   assert.match(web, /aria-label="Next match"/);
   assert.match(read('../web/find_replace.js'), /MAX_FIND_MATCHES = 10000/);
@@ -528,7 +531,7 @@ test('Wave B human-owned Find and Replace preserves explicit Save and undo', () 
   assert.match(web, /aria-label="Replacement text"/);
   assert.match(web, /aria-label="Replace current match"/);
   assert.match(web, /aria-label="Replace all matches"/);
-  assert.match(web, /planReplacement\(activeTab\.draft/);
+  assert.match(web, /planReplacement\(searchText/);
   assert.match(web, /window\.confirm\(/);
   assert.match(web, /Draft only · Undo available · Save required/);
   assert.match(web, /replaceRequest=\{replaceRequest\?\.tabKey/);
