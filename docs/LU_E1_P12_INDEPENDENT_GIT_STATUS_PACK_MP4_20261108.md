@@ -49,7 +49,12 @@ If a scoped direct-source count differs from the supervised Git
 bounded Git PACK and IDX v2 decoder. It validates fanout tables and
 object offsets, full pack/index cryptographic checksums and materialized
 object identities, and reconstructs ordinary objects and offset/ref
-deltas using bounded copy/insert instructions.
+deltas using bounded copy/insert instructions. Git pack delta entries
+store the inflated **delta-instruction length**, distinct from the
+reconstructed object's target size; the decoder verifies both declared
+lengths separately. A 14-byte synthetic delta reconstructing 100,003
+bytes and actual native OFS_DELTA blob packs guard against confusing
+those sizes.
 
 The Git history observer now reuses a single object store for
 loose and packed commits, walking all reachable parent edges and
@@ -102,7 +107,10 @@ resources:
 - Git clean, dirty, deleted, forged count and staged-index refusal,
   using installed native Git only for fixture truth and setup.
 - A real four-commit Git merge, native repacking, independent packed
-  graph count and deliberate checksum corruption.
+  graph count and deliberate checksum corruption. A separate real Git
+  fixture generates 20 nearly identical blobs, proves the presence of
+  a native OFS_DELTA and requires exact-byte reconstruction of every
+  historical blob through Lu's own independent pack reader.
 - Installed FFmpeg-generated ordinary MPEG-4 Visual and AAC MP4
   files, probed by Lu's actual supervised FFprobe adapter, compared
   to the independent box parser and tampered-duration negative control.
