@@ -49,7 +49,7 @@ jobs:
           echo "LU_E1_P07_FFPROBE=$(command -v ffprobe)" >> "$GITHUB_ENV"
           python3 -m py_compile benchmarks/e1/e1_p07_llama_completion.py
           git --version | tee e1-p07-gguf-evidence/native-app-versions.log
-          ffprobe -version | head -n 1 | tee -a e1-p07-gguf-evidence/native-app-versions.log
+          ffprobe -version | sed -n '1p' | tee -a e1-p07-gguf-evidence/native-app-versions.log
           printf 'SOURCE_SHA=%s\n' "$EXPECTED_HEAD" | tee e1-p07-gguf-evidence/source.txt
       - name: Build SHA-pinned actual llama.cpp CPU server
         shell: bash
