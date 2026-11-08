@@ -437,7 +437,8 @@ mod tests{
     use super::*;
     #[test]
     fn reviewed_desktop_opt_in_accepts_only_exact_binary_mode(){
-        assert!(matches!("git"|"media","git"|"media"));
+        assert!(matches!("git","git"|"media"));
+        assert!(matches!("media","git"|"media"));
         for denied in ["shell","run","command","python","mcp","git_push"]{
             assert!(!matches!(denied,"git"|"media"))
         }
