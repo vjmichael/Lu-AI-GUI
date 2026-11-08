@@ -720,6 +720,10 @@ impl DesktopState {
                 None=>unlinked+=1,
             }
         }
+        // Also cover an abnormal exit between saving the human Send and
+        // creating the first external-tool SQLite journal. Query the bounded
+        // ANSF visible index, not the full conversation transcript.
+        reported+=chats.mark_unfinished_reviewed_queues()?;
         if reported>0||unlinked>0{
             eprintln!(
                 "LU_E1_P08_REVIEWED_CHAT_RECOVERY notified={} unlinked={}",
