@@ -93,14 +93,14 @@
      }
      Ok(exists)
  }
- fn open_read(root:&Path)->Result<Option<Connection>,String>{
+ pub(crate) fn open_read(root:&Path)->Result<Option<Connection>,String>{
      if !safe_database(root)?{return Ok(None)}
      Connection::open_with_flags(
          path(root),OpenFlags::SQLITE_OPEN_READ_ONLY|
          OpenFlags::SQLITE_OPEN_NO_MUTEX
      ).map(Some).map_err(|_|"Message metadata database unreadable".into())
  }
- fn open_write(root:&Path)->Result<Connection,String>{
+ pub(crate) fn open_write(root:&Path)->Result<Connection,String>{
      // Don't silently follow a malicious replacement or broken existing DB.
      let _=safe_database(root)?;
      let db=Connection::open(path(root))
@@ -127,7 +127,7 @@
      ).map_err(|_|"Cannot initialize message metadata")?;
      Ok(db)
  }
- fn confirm_chat(chat:&str,chats:&ChatStore)->Result<(),String>{
+ pub(crate) fn confirm_chat(chat:&str,chats:&ChatStore)->Result<(),String>{
      if !good_chat(chat){return Err("Invalid conversation identity".into())}
      chats.history_window(chat,None,"older",1).map(|_|())
  }
