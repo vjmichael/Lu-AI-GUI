@@ -110,8 +110,10 @@ class TestPayloadObservation(unittest.TestCase):
             capture(*self.args)
         (self.root / "Readme.TXT").unlink()
         (self.root / "EMPTY.txt").touch()
-        with self.assertRaisesRegex(Denied, "unsafe_or_empty_payload_file"):
-            capture(*self.args)
+        observed = capture(*self.args)
+        self.assertEqual(observed["fileCount"], 4)
+        self.assertEqual(next(x for x in observed["files"]
+                              if x["path"] == "EMPTY.txt")["bytes"], 0)
 
     def test_forbid_traversal_control_characters(self):
         for bad in ("", "../etc/passwd", "./bin/lu", "foo//bar",
