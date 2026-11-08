@@ -76,7 +76,7 @@ fn table_exists(conn:&Connection,name:&str)->Result<bool,String>{
     ).map_err(|_|"Reviewed journal schema unavailable")?;
     Ok(exists==1)
 }
-fn operation_for(call:&str,tool:&str)->Option<(&'static str,&str)>{
+fn operation_for<'a>(call:&'a str,tool:&str)->Option<(&'static str,&'a str)>{
     const TYPES:[(&str,&str,&str);5]=[
         ("-gh","lu.reviewed.git.head","Git HEAD"),
         ("-gs","lu.reviewed.git.status","Git tracked status"),
