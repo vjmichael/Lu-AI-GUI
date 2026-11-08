@@ -12,7 +12,7 @@ import sys
 import time
 from wo8_linux_editor_atspi import (
     ROOT,SOURCE,accessible,activate,key,type_text,focus_editor,
-    select_native_folder,editor_project,start,stop,
+    select_native_folder,editor_project,start,stop,wait_source,
 )
 SENTINEL="B2_PRIVATE_UNSAVED_DRAFT_ONLY"
 
@@ -81,6 +81,11 @@ def main():
         if hashlib.sha256(SOURCE.read_bytes()).hexdigest()!=source_before:
             deny("recovery_wrote_project_source_without_save")
         print("B2_LINUX_REAL_INSTALLED_RESTART_RECOVERY_NO_SOURCE_WRITE=PASS",flush=True)
+        activate("Save · Ctrl+S")
+        wait_source(SENTINEL,seconds=20)
+        if hashlib.sha256(SOURCE.read_bytes()).hexdigest()==source_before:
+            deny("explicit_save_did_not_write_recovered_draft")
+        print("B2_LINUX_REAL_INSTALLED_EXPLICIT_RECOVERED_DRAFT_SAVE=PASS",flush=True)
     finally:
         stop(second)
 
