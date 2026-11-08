@@ -162,13 +162,51 @@ jobs:
             $draftFixture=Join-Path $env:RUNNER_TEMP ('lu-ide-p05-b2-draft-'+$env:GITHUB_RUN_ID)
             New-Item -ItemType Directory -Path $draftFixture | Out-Null
             [IO.File]::WriteAllText((Join-Path $draftFixture 'main.rs'),"fn main() { println!(`"draft`"); }`n")
-            $draftDigest=(Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $draftFixture 'main.rs')).Hash
-            & pwsh -NoProfile -Sta -File 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario DraftBufferReference -FixtureRoot $draftFixture
-            if ($LASTEXITCODE -ne 0) { throw 'DENIED: real installed P05 B2 draft/undo clipboard acceptance failed' }
-            if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $draftFixture 'main.rs')).Hash -ne $draftDigest) {
-              throw 'DENIED: P05 B2 clipboard or Undo silently modified disk bytes'
+            $draftSource=Join-Path $draftFixture 'main.rs'
+            $draftDigest=(Get-FileHash -Algorithm SHA256 -LiteralPath $draftSource).Hash
+            # Capture the one disposable CodeMirror session UUID reported
+            # by the actual installed UI. A second installed process must
+            # create a different UUID and restore only saved disk bytes.
+            $draftTrace=@(& pwsh -NoProfile -Sta -File 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario DraftBufferReference -FixtureRoot $draftFixture 2>&1)
+            $draftRc=$LASTEXITCODE
+            foreach ($line in $draftTrace) { Write-Host ([string]$line) }
+            if ($draftRc -ne 0) { throw 'DENIED: real installed P05 B2 copy/Undo/Save acceptance failed' }
+            $markers=@($draftTrace | Where-Object { [string]$_ -match '^P05_B2_NATIVE_SESSION_BUFFER_ID=[a-fA-F0-9-]{36}
+            $uninstallers=@(Get-ChildItem $root -Filter '*uninstall*.exe' -File)
+            if ($uninstallers.Count -ne 1) { throw 'DENIED: installed uninstaller missing' }
+            $uninstaller=$uninstallers[0].FullName
+            $removal=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+            if ($removal.ExitCode -ne 0 -or (Test-Path $exe)) { throw 'DENIED: uninstall did not remove installed IDE' }
+            $uninstalled=$true
+            Write-Host 'WO8_NATIVE_INSTALLED_UI_AND_PROJECT=PASS'
+            Write-Host 'WO8_NATIVE_PROTECTED_FEATURES=NOT_ACCEPTED'
+          } finally {
+            if ($installed -and !$uninstalled) {
+              Write-Warning 'WO8 native installed test incomplete; cleanup attempted and acceptance not granted'
+              if ($uninstaller -and (Test-Path $uninstaller)) {
+                try { Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait | Out-Null } catch {}
+              }
             }
-            Write-Host 'P05_B2_INSTALLED_NATIVE_WINDOWS_DRAFT_NO_IMPLICIT_SAVE=PASS'
+          }
+      - name: Bound result meaning
+        shell: pwsh
+        run: |
+          Write-Host 'Only real unsigned installed desktop/UI/folder and source read accepted.'
+          Write-Host 'No signed release, protected tool execution or cross-crash recovery claim.'
+ })
+            if ($markers.Count -ne 1) { throw 'DENIED: no unique genuine installed B2 clipboard buffer ID' }
+            $previousId=([string]$markers[0]).Split('=',2)[1]
+            $actualSaved=Get-FileHash -Algorithm SHA256 -LiteralPath $draftSource
+            if ($actualSaved.Hash -eq $draftDigest -or
+                !([IO.File]::ReadAllText($draftSource)).Contains('P05_B2_EXPLICIT_SAVE')) {
+              throw 'DENIED: B2 native Save did not explicitly persist a revised source'
+            }
+            & pwsh -NoProfile -Sta -File 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario DraftBufferReferenceRestart -FixtureRoot $draftFixture -ExpectedPreviousBufferId $previousId
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: native restart reused an invalid B2 clipboard session or disk revision' }
+            if ((Get-FileHash -Algorithm SHA256 -LiteralPath $draftSource).Hash -ne $actualSaved.Hash) {
+              throw 'DENIED: B2 native restart/copy changed saved disk bytes'
+            }
+            Write-Host 'P05_B2_INSTALLED_NATIVE_WINDOWS_DRAFT_UNDO_SAVE_RESTART=PASS'
             $uninstallers=@(Get-ChildItem $root -Filter '*uninstall*.exe' -File)
             if ($uninstallers.Count -ne 1) { throw 'DENIED: installed uninstaller missing' }
             $uninstaller=$uninstallers[0].FullName
