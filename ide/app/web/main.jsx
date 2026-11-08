@@ -3857,6 +3857,38 @@ function App() {
                     {' · '}Task acceptance: <strong>Not verified</strong></p>
                   <p>CI observation: {task.ciLinkState.replaceAll('_', ' ')}
                     {task.observedCi && <> · {task.observedCi.verdict.replaceAll('_', ' ')}</>}</p>
+                  <div className="taskLinkedSources" aria-label={'Linked source files for '+task.taskId}>
+                    <strong>Linked saved-source observations · {task.sourceLinks?.length??0}</strong>
+                    <p>Recorded native source revisions are historical. Open editor
+                      identity is not proof of unchanged disk; recheck explicitly.
+                      An edited task leaves prior links attached as history.</p>
+                    {(task.sourceLinks??[]).map(link=>{
+                      const tab=tabs.find(t=>t.projectId===activeProject?.projectId &&
+                        t.relativePath===link.relativePath);
+                      const state=tab?editorStates.current.get(tab.key):null;
+                      const display=sourceLinkDisplay(link,task,tab,activeProject?.projectId);
+                      const key=task.taskId+':'+link.relativePath;
+                      const checked=taskSourceChecks[key];
+                      return <div className="taskLinkedSourceRow" key={link.relativePath}>
+                        <code>{link.relativePath}</code>
+                        <small>Recorded SHA {link.savedRevision.slice(0,12)}…</small>
+                        <span>{display.replaceAll('_',' ')}</span>
+                        {tab && state?.sliceDoc()!==tab.savedText &&
+                          <span>Unsaved editor changes not linked</span>}
+                        <button type="button" className="ghostBtn"
+                          aria-label={'Recheck linked source '+link.relativePath}
+                          disabled={contextBusy || editorTaskBusy ||
+                            checked?.state==='checking'}
+                          onClick={()=>void recheckLinkedTaskSource(task,link)}>
+                          {checked?.state==='checking'?'Checking…':'Recheck disk'}
+                        </button>
+                        {checked && checked.state!=='checking' &&
+                          <small role="status">Last explicit recheck:
+                            {' '}{checked.state.replaceAll('_',' ')}
+                          </small>}
+                      </div>;
+                    })}
+                  </div>
                   {task.acceptanceGates.map(gate =>
                     <p key={gate.gate}>{gate.gate.replaceAll('_', ' ')}:
                       <strong> {gate.state.replaceAll('_', ' ')}</strong></p>)}
@@ -4274,6 +4306,36 @@ function App() {
                   pageTabWindow(projectTabs,previous,1))}>›</button>
             </div>
             {activeTab && activeTab.projectId === activeProject?.projectId ? <>
+              <section className="taskSourceLinkBar" aria-label="Associate source with development task">
+                <strong>C7 · Task evidence</strong>
+                <button type="button" className="ghostBtn"
+                  disabled={editorTaskBusy || taskBusy || !!savingKey || explorerPending}
+                  onClick={()=>void loadEditorTaskCatalog()}>
+                  {editorTaskBusy ? 'Working…' : 'Load C6 tasks'}
+                </button>
+                {editorTaskCatalog?.projectId===activeProject?.projectId &&
+                  editorTaskCatalog.tasks.length>0 && <>
+                    <label htmlFor="c7EditorTaskChoice">Task</label>
+                    <select id="c7EditorTaskChoice" value={editorTaskId}
+                      disabled={editorTaskBusy}
+                      onChange={event=>setEditorTaskId(event.target.value)}>
+                      {editorTaskCatalog.tasks.map(task=><option key={task.taskId}
+                        value={task.taskId}>{task.taskId} · {task.title}</option>)}
+                    </select>
+                    <button type="button" className="ghostBtn"
+                      aria-label="Link saved source revision to selected task"
+                      disabled={editorTaskBusy || taskBusy || !!savingKey ||
+                        explorerPending || !editorTaskId}
+                      onClick={()=>void linkActiveSourceToTask(activeTab)}>
+                      Link saved file to task
+                    </button>
+                  </>}
+                {editorTaskCatalog?.projectId===activeProject?.projectId &&
+                  !editorTaskCatalog.tasks.length &&
+                  <span>Create a development task in Continuity first.</span>}
+                <small>Host-verified saved SHA only. Draft bytes, test results,
+                  and task acceptance are never inferred from an editor tab.</small>
+              </section>
               <div className="sourcePreviewHeader">
                 <strong>{activeTab.relativePath}</strong>
                 <span className="editorToolbar">
