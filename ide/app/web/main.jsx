@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState, isLargeSourceEditor } from './code_editor.jsx';
 import { secondaryEditor, initialSecondaryKey, canSaveFocusedPane } from './editor_layout.js';
 import { captureProjectView, restoreProjectView } from './editor_project_view.js';
+import { planCleanBackgroundTabClosure } from './editor_clean_tab_reclamation.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
   TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
@@ -2080,6 +2081,39 @@ function App() {
     }
   }
 
+  function closeCleanBackgroundTabs() {
+    const projectId=activeProjectIdRef.current;
+    if (!projectId || savingKey || explorerPending || explorerIoTicket.current ||
+        draftRecoveryBusy || reviewPending || inboxBusy) return;
+    // An editor transaction can be newer than the last React tab render.
+    // The pure planner refuses to close a tab unless its actual CodeMirror
+    // text still exactly matches the saved disk-base text.
+    const protectedKeys=new Set([activeTabKey,secondaryTabKey,review?.tabKey]
+      .filter(Boolean));
+    for (const key of draftInFlight.current) protectedKeys.add(key);
+    for (const key of draftTimers.current.keys()) protectedKeys.add(key);
+    for (const tab of tabsRef.current) {
+      if (lspSession?.projectId===tab.projectId &&
+          lspSession.relativePath===tab.relativePath) protectedKeys.add(tab.key);
+    }
+    const plan=planCleanBackgroundTabClosure(tabsRef.current,projectId,
+      protectedKeys,key=>editorStates.current.get(key)?.sliceDoc());
+    if (!plan.closeKeys.length) {
+      setHint('No verified clean background tabs to close. Unsaved and active panes were kept.');
+      return;
+    }
+    const closing=new Set(plan.closeKeys);
+    // Single synchronous user action, no native IPC, no filesystem writes,
+    // and no await between the live-state witnesses and memory reclamation.
+    for (const key of closing) {
+      editorStates.current.delete(key);
+      clearPrivateDraftSession(key);
+    }
+    setTabs(previous=>previous.filter(tab=>!closing.has(tab.key)));
+    setHint('Closed '+closing.size+' clean background tab(s). Both editor panes, '+
+      'unsaved drafts and project files were preserved.');
+  }
+
   function closeTab(key) {
     const selected = tabs.find(tab => tab.key === key);
     if (!selected) return;
@@ -3437,6 +3471,14 @@ function App() {
                 aria-pressed={splitEditorOpen} disabled={!activeTab}
                 onClick={toggleSplitEditor}>
                 {splitEditorOpen ? 'Close split' : 'Split editor'}
+              </button>
+              <button type="button" className="ghostBtn"
+                aria-label="Close clean background tabs"
+                disabled={!activeProject || projectTabs.length<2 || !!savingKey ||
+                  explorerPending || !!explorerIoTicket.current ||
+                  draftRecoveryBusy || reviewPending || inboxBusy}
+                onClick={closeCleanBackgroundTabs}>
+                Close clean tabs
               </button>
               {splitEditorOpen && <>
                 <label htmlFor="secondary-editor-select">Second editor</label>
