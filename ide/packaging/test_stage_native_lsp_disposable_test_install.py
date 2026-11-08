@@ -101,9 +101,6 @@ class DisposableNativeLspPayloadTests(unittest.TestCase):
                              root/"test-output", "linux-x86_64")
             self.assertFalse((root/"test-output").exists())
             # Original upstream notice Git blob SHA must reject altered content.
-            manifest, notices, archives, original = self.fixture(
-                root / "second", "linux-x86_64"
-            ) if False else (manifest, notices, archives, original)
             notice = original / notices["notices"][0]["destination"]
             notice.write_bytes(b"forged")
             with self.assertRaisesRegex(ValueError, "Git blob byte identity"):
@@ -142,9 +139,13 @@ class DisposableNativeLspPayloadTests(unittest.TestCase):
                 (runner/"already").mkdir()
                 with self.assertRaisesRegex(ValueError,"absent"):
                     allowed_temp_destination(runner/"already")
-                (runner/"linked").symlink_to(runner/"already",target_is_directory=True)
-                with self.assertRaises(ValueError):
-                    allowed_temp_destination(runner/"linked/new")
+                try:
+                    (runner/"linked").symlink_to(runner/"already",target_is_directory=True)
+                except (OSError, NotImplementedError):
+                    pass  # Windows runners can prohibit symlink creation
+                else:
+                    with self.assertRaises(ValueError):
+                        allowed_temp_destination(runner/"linked/new")
             with patch.dict(os.environ, {"GITHUB_ACTIONS":"false",
                                          "RUNNER_TEMP":str(runner)}):
                 with self.assertRaises(ValueError):
