@@ -91,8 +91,8 @@ def provision(stage: Path) -> tuple[str, str]:
     # Network only during CI creation of CANDIDATE. The generated file tree
     # is fully archived and cannot pip install once the worker runs.
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
-         "--no-input", "--no-cache-dir", "--isolated", "--target",
+        [sys.executable, "-m", "pip", "--isolated", "install", "--disable-pip-version-check",
+         "--no-input", "--no-cache-dir", "--target",
          str(site), *REQUIREMENTS],
         check=True, timeout=180,
     )
