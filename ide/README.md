@@ -1,10 +1,10 @@
 # Lu IDE — standalone development application
 
-> **Current authoritative work tracking (Nov 7, 2026):** [Release Closeout P01–P07](docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md). P01 source consolidation complete on [draft PR #78](https://github.com/vjmichael/Lu-AI-GUI/pull/78); next P02 not started; P07 (Lu Core/DLC bridge) deferred until after Lu Core v1.0. The historical eight-stage design and early R3 notes below are retained as historical design context, **not current implementation or release-acceptance status**. WO9 native installed CI and signed release gates are still open.
+> **Current coordination (Nov 7 Phoenix / Nov 8 UTC):** Start with the [Product Readiness & Blocker Ledger](docs/IDE_PRODUCT_READINESS_BLOCKER_LEDGER_20261108.md), then the [P01–P07 Release Closeout Phase Ledger](docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md) and [Project State](PROJECT_STATE.md). P01 source consolidation is complete; P02–P06 native/release verification, P05 B2/B3, and the P06-R2 source matrix still have open blockers. P07/WO10 Lu Core bridge is deferred until after Core v1.0. The older R3/stage narrative below remains **historical**, not evidence of currently accepted installed capabilities.
 
 
-**Status:** R3.4 Windows smoke accepted; R3.5 candidate adds a native proposal inbox and editor-only approved staging. File saves remain explicit and human-owned; package manager, executable workers and Lu bridge remain disabled.  
-**Repo:** `vjmichael/Lu-AI-GUI` · **IDE-only branch:** `ide/workspace-development`
+**Current status:** Standalone advanced alpha; installed and protected Windows/Linux acceptance **OPEN**. Current IDE source is distributed across retained draft PR branches; a fully accepted single release candidate is not yet merged into `main`. Normal reviewed file edits are implemented; general project toolchain management and project debugging remain incomplete.  
+**Repo:** `vjmichael/Lu-AI-GUI` · **Blocker plan branch:** `ide/product-readiness-blocker-ledger-20261108` (documentation-only, stacked on P06-R2 #111).
 
 Lu IDE is its **own desktop application**, with its own process, project registry and native UI. It belongs in the same Git repository as Lu Core for convenience, but it **does not load inside Lu Desktop**, does not link against `lu-core`, and does not require Lu to run.
 
