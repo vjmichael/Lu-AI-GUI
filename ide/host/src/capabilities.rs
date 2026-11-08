@@ -81,6 +81,15 @@ fn metadata() -> Vec<CapabilityMeta> {
             "saved manifest SHA, bounded conventional test hints and explicit unavailable native routes; no grant, worker, toolchain or task acceptance"
         ),
         capability!(
+            "job.reviewAdapter",
+            "ide_review_multilang_adapter",
+            "Review fixed Python, Node or CMake adapter contract",
+            "Bind a known immutable language-adapter step contract to the registered project's clean Git HEAD and current saved manifest SHA. Preflight only; no native worker exists for these languages.",
+            "read",
+            "active native-picker registered project, fixed non-Rust profile ID, exact saved manifest revision and clean Git HEAD",
+            "source-scoped review fingerprint, fixed toolchain/step requirements, and explicit missing worker, pin, snapshot and acceptance gates; no execution"
+        ),
+        capability!(
             "job.prepare",
             "ide_prepare_execution_intent",
             "Prepare a non-executable job request",
@@ -570,8 +579,8 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 48);
-        assert!(catalog.capabilities.len() <= 48);
+        assert_eq!(catalog.capabilities.len(), 49);
+        assert!(catalog.capabilities.len() <= 49);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
         for item in &catalog.capabilities {
@@ -606,7 +615,7 @@ mod tests {
                 "read" | "network_read" | "session_write" | "catalog_write" | "file_write"
             ));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 45);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 47);
     }
 
     #[test]
