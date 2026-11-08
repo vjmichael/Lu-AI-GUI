@@ -406,11 +406,11 @@ mod tests{
     impl TrustedUserTurnVerifier for Human{
         fn verify_user_turn(&self,_chat:&str,_turn:&str)->bool{true}
     }
-    struct Sources;
+    struct Sources(bool);
     impl HostPlanReferenceVerifier for Sources{
         fn goal_event_belongs_to_chat(&self,_chat:&str,_g:&str,_e:&str)->bool{true}
-        fn goal_event_is_current(&self,_chat:&str,_g:&str,_e:&str)->bool{true}
-        fn assumption_source_is_readable(&self,_chat:&str,_s:&str)->bool{true}
+        fn goal_event_is_current(&self,_chat:&str,_g:&str,_e:&str)->bool{self.0}
+        fn assumption_source_is_readable(&self,_chat:&str,_s:&str)->bool{self.0}
     }
     struct Review;
     impl HostPlanReviewVerifier for Review{
@@ -464,10 +464,10 @@ mod tests{
             }]
         };
         let recorded=revisions.append_proposal(&plan,&chat,&turn,&revision,
-            None,&proposal,&Human,&Sources).unwrap();
+            None,&proposal,&Human,&Sources(true)).unwrap();
         revisions.record_review(&plan,&chat,&review_turn,
             &recorded.revision_sha256,HumanDecision::Approve,
-            &Human,&Review,&Sources).unwrap();
+            &Human,&Review,&Sources(true)).unwrap();
         let tasks=TaskStore::open(
             &profile.join(format!("lu-reviewed-task-{turn}.sqlite"))
         ).unwrap();
@@ -516,26 +516,26 @@ mod tests{
         let (ledger,revisions,receipts)=stores(&f);
         assert_eq!(receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-            &f.profile,&ledger,&revisions,&Sources
+            &f.profile,&ledger,&revisions,&Sources(true)
         ),Ok(ReceiptWrite::New));
         assert_eq!(receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-            &f.profile,&ledger,&revisions,&Sources
+            &f.profile,&ledger,&revisions,&Sources(true)
         ),Ok(ReceiptWrite::AlreadyRecorded));
         let list=receipts.history(
-            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions,&Sources
+            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions,&Sources(true)
         ).unwrap();
         assert_eq!(list.len(),1);
         assert_eq!(list[0].status,"VERIFIED_AT_OBSERVATION");
         assert_eq!(list[0].continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
         assert_eq!(list[0].independent_method,"GIT_HEAD_DIRECT_V1");
         assert_eq!(receipts.history(&f.plan,&id("c-",99),
-            &f.turn,&f.profile,&ledger,&revisions,&Sources),
+            &f.turn,&f.profile,&ledger,&revisions,&Sources(true)),
             Err(DeliverableError::WrongOrigin));
         drop(receipts);drop(revisions);drop(ledger);
         let (ledger,revisions,receipts)=stores(&f);
         assert_eq!(receipts.history(&f.plan,&f.chat,&f.turn,
-            &f.profile,&ledger,&revisions,&Sources).unwrap()[0].status,
+            &f.profile,&ledger,&revisions,&Sources(true)).unwrap()[0].status,
             "VERIFIED_AT_OBSERVATION");
         drop(receipts);drop(revisions);drop(ledger);
         fs::remove_dir_all(f.profile).unwrap();
@@ -547,7 +547,7 @@ mod tests{
             let (ledger,revisions,receipts)=stores(&f);
             assert_eq!(receipts.record_observed(
                 &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-                &f.profile,&ledger,&revisions,&Sources
+                &f.profile,&ledger,&revisions,&Sources(true)
             ),Err(DeliverableError::UnverifiedEffect));
             drop(receipts);drop(revisions);drop(ledger);
             fs::remove_dir_all(f.profile).unwrap();
@@ -559,7 +559,7 @@ mod tests{
         let (ledger,revisions,receipts)=stores(&f);
         receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,
-            &f.call,&f.profile,&ledger,&revisions,&Sources
+            &f.call,&f.profile,&ledger,&revisions,&Sources(true)
         ).unwrap();
         let path=f.profile.join(format!("lu-reviewed-effects-{}.sqlite",f.turn));
         let db=Connection::open(path).unwrap();
@@ -569,11 +569,11 @@ mod tests{
         ).unwrap();
         drop(db);
         assert_eq!(receipts.history(
-            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions,&Sources
+            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions,&Sources(true)
         ).unwrap()[0].status,"NEEDS_RECONCILIATION");
         assert_eq!(receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-            &f.profile,&ledger,&revisions,&Sources
+            &f.profile,&ledger,&revisions,&Sources(true)
         ),Err(DeliverableError::ConflictingReceipt));
         drop(receipts);drop(revisions);drop(ledger);
         fs::remove_dir_all(f.profile).unwrap();
@@ -586,10 +586,29 @@ mod tests{
             &id("e-",50)).unwrap();
         assert_eq!(receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-            &f.profile,&ledger,&revisions,&Sources
+            &f.profile,&ledger,&revisions,&Sources(true)
         ),Err(DeliverableError::UnapprovedPlan));
         assert_eq!(ledger.snapshot(&f.plan,&f.chat,&f.turn)
             .unwrap().unwrap().continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
+        drop(receipts);drop(revisions);drop(ledger);
+        fs::remove_dir_all(f.profile).unwrap();
+    }
+    #[test]
+    fn stale_goal_reference_cannot_certify_or_display_current_deliverable(){
+        let f=fixture(true,false);
+        let (ledger,revisions,receipts)=stores(&f);
+        assert_eq!(receipts.record_observed(
+            &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
+            &f.profile,&ledger,&revisions,&Sources(false)
+        ),Err(DeliverableError::UnapprovedPlan));
+        receipts.record_observed(
+            &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
+            &f.profile,&ledger,&revisions,&Sources(true)
+        ).unwrap();
+        assert_eq!(receipts.history(
+            &f.plan,&f.chat,&f.turn,&f.profile,
+            &ledger,&revisions,&Sources(false)
+        ).unwrap()[0].status,"NEEDS_RECONCILIATION");
         drop(receipts);drop(revisions);drop(ledger);
         fs::remove_dir_all(f.profile).unwrap();
     }
@@ -605,7 +624,7 @@ mod tests{
         let (ledger,revisions,receipts)=stores(&f);
         assert_eq!(receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-            &f.profile,&ledger,&revisions,&Sources
+            &f.profile,&ledger,&revisions,&Sources(true)
         ),Err(DeliverableError::InvalidJournal));
         drop(receipts);drop(revisions);drop(ledger);
         fs::remove_dir_all(f.profile).unwrap();
