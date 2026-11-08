@@ -96,6 +96,55 @@ pub struct RevisionProposal{
     pub steps:Vec<RevisionStep>,
     pub reason:RevisionReason,
 }
+/// Host-derived context-change summary; never trust an author-supplied
+/// reason alone to describe what really changed between revisions.
+#[derive(Clone,Debug,Default,PartialEq,Eq)]
+pub struct PlanRevisionDelta{
+    pub goal_changed:bool,
+    pub assumptions_changed:bool,
+    pub dependencies_changed:bool,
+    pub deliverables_changed:bool,
+}
+impl PlanRevisionDelta{
+    fn any(&self)->bool{
+        self.goal_changed||self.assumptions_changed||
+            self.dependencies_changed||self.deliverables_changed
+    }
+}
+fn revision_delta(old:&RevisionProposal,new:&RevisionProposal)->PlanRevisionDelta{
+    let graph=old.steps.len()!=new.steps.len()
+        ||old.steps.iter().zip(&new.steps).any(|(a,b)|
+            a.kind!=b.kind||a.depends_on!=b.depends_on);
+    let outputs=old.steps.len()!=new.steps.len()
+        ||old.steps.iter().zip(&new.steps).any(|(a,b)|
+            a.deliverable_id!=b.deliverable_id||a.expected!=b.expected);
+    PlanRevisionDelta{
+        goal_changed:old.goal_id!=new.goal_id||
+            old.goal_event_id!=new.goal_event_id,
+        assumptions_changed:old.assumption_sources!=new.assumption_sources,
+        dependencies_changed:graph,
+        deliverables_changed:outputs,
+    }
+}
+fn reason_matches_delta(reason:RevisionReason,delta:&PlanRevisionDelta)->bool{
+    delta.any()&&match reason{
+        RevisionReason::Initial=>false,
+        RevisionReason::GoalChanged=>delta.goal_changed,
+        RevisionReason::AssumptionsChanged=>delta.assumptions_changed,
+        RevisionReason::DependenciesChanged=>delta.dependencies_changed,
+        RevisionReason::DeliverablesChanged=>delta.deliverables_changed,
+        RevisionReason::ScopeChanged|RevisionReason::Correction=>true,
+    }
+}
+fn payload_for(snapshot:&RevisionSnapshot)->RevisionProposal{
+    RevisionProposal{
+        goal_id:snapshot.goal_id.clone(),
+        goal_event_id:snapshot.goal_event_id.clone(),
+        assumption_sources:snapshot.assumption_sources.clone(),
+        steps:snapshot.steps.clone(),reason:snapshot.reason,
+    }
+}
+
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum HumanDecision{Approve,Reject}
 impl HumanDecision{
@@ -156,6 +205,8 @@ pub struct RevisionSnapshot{
     pub reason:RevisionReason,
     pub parent_sha256:Option<String>,
     pub revision_sha256:String,
+    /// Computed from actual previous revision payload, never model text.
+    pub changes:Option<PlanRevisionDelta>,
     /// PENDING_HUMAN_REVIEW, APPROVED_PLAN_ONLY, or REJECTED_PLAN.
     pub review_state:&'static str,
     pub review_turn_id:Option<String>,
@@ -326,12 +377,20 @@ fn read_history(db:&Connection,plan:&str)->Result<Vec<RevisionSnapshot>,Revision
                 }
             }
         };
+        let changes=if let Some(previous)=revisions.last(){
+            let delta=revision_delta(&payload_for(previous),&proposal);
+            if !reason_matches_delta(reason,&delta){
+                return Err(RevisionError::CorruptHistory)
+            }
+            Some(delta)
+        }else{None};
         revisions.push(RevisionSnapshot{
             revision_index:ordinal as u8,revision_id:id,
             source_human_turn_id:turn,
             goal_id,goal_event_id,assumption_sources:assumptions,
             steps,reason,parent_sha256:parent,
-            revision_sha256:sha.clone(),review_state,review_turn_id:review_turn,
+            revision_sha256:sha.clone(),changes,
+            review_state,review_turn_id:review_turn,
             execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION"
         });
         expected_parent=Some(sha);
@@ -497,8 +556,12 @@ impl AgentPlanRevisionStore{
                     &&row.2==step.depends_on.map(i64::from)){
                 return Err(RevisionError::InvalidProposal)
             }
-        }else if proposal.reason==RevisionReason::Initial{
-            return Err(RevisionError::InvalidProposal)
+        }else{
+            let previous=last.expect("nonempty revision history");
+            let delta=revision_delta(&payload_for(previous),proposal);
+            if !reason_matches_delta(proposal.reason,&delta){
+                return Err(RevisionError::InvalidProposal)
+            }
         }
         let parent=last.map(|x|x.revision_sha256.as_str());
         let digest=hash_revision(plan,revision_id,source_turn,parent,proposal);
@@ -679,6 +742,10 @@ mod tests{
             &Sources{allowed:true}).unwrap();
         assert_eq!(second.revision_index,2);
         assert_eq!(store.history(&p,&c).unwrap().len(),2);
+        let changes=store.latest(&p,&c).unwrap().unwrap().changes.unwrap();
+        assert!(changes.goal_changed);
+        assert!(!changes.assumptions_changed);
+        assert!(!changes.dependencies_changed);
         assert_eq!(store.latest(&p,&c).unwrap().unwrap().parent_sha256,
             Some(receipt.revision_sha256));
         drop(store);let _=std::fs::remove_file(path);
@@ -770,4 +837,33 @@ mod tests{
         assert_eq!(r.revision_index,1);
         drop(store);let _=std::fs::remove_file(path);
     }
+    #[test]
+    fn change_monitor_rejects_mislabelled_or_noop_revisions(){
+        let (path,p,c,t)=fixture();
+        let store=AgentPlanRevisionStore::open(&path).unwrap();
+        let first=store.append_proposal(&p,&c,&t,&id("v-",1),None,&proposal(1,1),
+            &Human{granted:true},&Sources{allowed:true}).unwrap();
+        let mut unchanged=proposal(1,1);
+        unchanged.reason=RevisionReason::Correction;
+        assert_eq!(store.append_proposal(&p,&c,&id("g-",5),&id("v-",2),
+            Some(&first.revision_sha256),&unchanged,
+            &Human{granted:true},&Sources{allowed:true}),
+            Err(RevisionError::InvalidProposal));
+        unchanged.steps[1].expected=ExpectedDeliverable::StructuredFindings;
+        unchanged.reason=RevisionReason::GoalChanged;
+        assert_eq!(store.append_proposal(&p,&c,&id("g-",5),&id("v-",2),
+            Some(&first.revision_sha256),&unchanged,
+            &Human{granted:true},&Sources{allowed:true}),
+            Err(RevisionError::InvalidProposal));
+        unchanged.reason=RevisionReason::DeliverablesChanged;
+        store.append_proposal(&p,&c,&id("g-",5),&id("v-",2),
+            Some(&first.revision_sha256),&unchanged,
+            &Human{granted:true},&Sources{allowed:true}).unwrap();
+        let changes=store.latest(&p,&c).unwrap().unwrap().changes.unwrap();
+        assert!(changes.deliverables_changed);
+        assert!(!changes.goal_changed);
+        assert!(!changes.dependencies_changed);
+        drop(store);let _=std::fs::remove_file(path);
+    }
+
 }
