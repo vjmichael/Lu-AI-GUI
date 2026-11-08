@@ -488,6 +488,28 @@ async fn ide_record_task_update(
     .map_err(|_| "TASK_UPDATE_UNAVAILABLE".to_owned())?
 }
 
+/// C7: user-selected task/file association is verified against actual
+/// native registered project source bytes and the latest C6 task revision.
+/// No source text, draft, CI verdict or worker authorization can be supplied.
+#[tauri::command]
+async fn ide_link_task_source(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    ledger: State<'_, Arc<DevelopmentLedger>>,
+    project_id: String,
+    task_id: String,
+    relative_path: String,
+    expected_saved_revision: String,
+) -> Result<lu_ide_workspace::task_evidence::TaskSummary, String> {
+    let registry = Arc::clone(registry.inner());
+    let ledger = Arc::clone(ledger.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        ledger.record_task_source(&registry, &project_id, &task_id,
+            &relative_path, &expected_saved_revision)
+            .map_err(|error| error.code().to_owned())
+    })
+    .await.map_err(|_| "TASK_SOURCE_UNAVAILABLE".to_owned())?
+}
+
 /// C6: native host independently checks exact-head public GitHub Actions and
 /// appends the bounded observation to a specific task revision. The UI cannot
 /// submit a verdict, commit SHA, or supposed CI receipt.
@@ -1392,6 +1414,7 @@ pub fn run() {
             ide_debug_reconcile,
             ide_read_project_context,
             ide_record_task_update,
+            ide_link_task_source,
             ide_observe_task_ci,
             ide_read_git_status,
             ide_read_git_diff,
