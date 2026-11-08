@@ -97,6 +97,21 @@ pub struct ContinuityView{
 
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
+
+pub fn m3_explicit_resume_target(prompt:&str)->Option<(String,String)>{
+    if prompt.len()>256||prompt.contains('\0'){return None}
+    let words=prompt.split_whitespace().collect::<Vec<_>>();
+    if words.len()!=5||!words[0].eq_ignore_ascii_case("resume")||
+       !words[1].eq_ignore_ascii_case("project")||
+       !words[3].eq_ignore_ascii_case("task"){return None}
+    fn safe(s:&str)->bool{
+        !s.is_empty()&&s.len()<=128&&s.bytes()
+            .all(|b|b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'))
+    }
+    if !safe(words[2])||!safe(words[4]){return None}
+    Some((words[2].into(),words[4].into()))
+}
+
 pub struct HistoryWindowPage{
     pub entries:Vec<HistoryWindowEntry>,
     pub next_cursor:Option<i64>,

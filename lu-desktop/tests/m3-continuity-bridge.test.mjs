@@ -33,3 +33,13 @@ test('CCM compares source-validated task changes but cannot authorize execution'
  assert.match(pane,/Context Change Monitor · review changed task assumptions/);
  assert.match(pane,/lu_m3_context_change/);
 });
+
+test('explicit human resume rehydrates verified originals, CCM, and applied receipts only',()=>{
+ assert.match(chat,/pub fn m3_explicit_resume_target\(/);
+ assert.match(host,/chat_store::m3_explicit_resume_target\(&prompt\)/);
+ assert.match(host,/LU HOST READ-ONLY OPERATIONAL RESUME/);
+ assert.match(host,/confirmed_prior_applied_receipts/);
+ assert.match(host,/all_future_tool_effects/);
+ assert.match(host,/verified_effects_for_checkpoint/);
+ assert.match(pane,/Resume project lu task windows-installer/);
+});

@@ -111,3 +111,18 @@ Lu Core now contains a pinned offline GGUF semantic embedding worker. The truste
 SQLite per-book semantic projections remain derived, source-linked and rebuildable. The new incremental indexer locates as-yet-unindexed original user/assistant entries and sends only the first 2048 characters of a selected original to the local worker in batches of at most 16. Index writes can restart after a crash without duplicating originals. The independently navigable history pane can load/stop a local embedding GGUF, index the selected book and search via hybrid FTS5 plus source-validated vectors. When a trusted embedding model is loaded, ordinary human-origin GGUF Send also attempts bounded hybrid recall with original source IDs and explicit untrusted-data framing. A known user-supplied source ID still takes precedence, and absent/failing embedding service falls back to lexical recall.
 
 **OPEN:** exact-head Windows/Linux native tests and desktop build; real installed GGUF embedding acceptance; licensing and model package selection; 6-month transcripts and source-hash rebinding after restarts; multi-chunk long-message indexing beyond first 2048 characters; scalable many-book index; safe performance/cancellation/resource budgets; an unbiased semantic search benchmark and S4 real-model three-arm test. The local worker and protocol are source integrated, **not yet an accepted semantic retrieval feature**. Native protocol tests use loopback fixtures, not a real embedding model. No model is implicitly installed or downloaded.
+
+## Explicit one-line automatic operational resumption
+
+In the ordinary Send box type `Resume project <project-id> task <task-id>`
+with the canonical IDs saved by the user. The trusted host parses exactly
+this **current human turn** (not arbitrary model output or an old ANSF
+message), verifies cited original entries, obtains the latest checkpoint,
+compares it to the preceding immutable checkpoint via CCM, and rechecks
+journal evidence against actual APPLIED receipt bytes. It then inserts a
+bounded, **read-only, non-authorizing** operational status envelope. The user
+does not need to manually copy the previous transcript. Missing/tampered
+source or receipt becomes `unavailable` or `uncertain`, not fabricated
+success or automatic worker replay. This is context restoration, **not**
+permissionless rebuilding, package installation or a replacement for
+Windows installed-app acceptance.

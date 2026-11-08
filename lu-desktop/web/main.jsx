@@ -381,7 +381,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
 
     <details className="ansfAssetsMemory" aria-label="Project continuity">
       <summary>Continue previous work · project checkpoint</summary>
-      <small>Source-linked task progress remains available across Lu conversations and model changes. Historical work does not grant a new tool operation.</small>
+      <small>Source-linked task progress remains available across Lu conversations and model changes. Historical work does not grant a new tool operation. For automatic read-only recovery in a new human chat, send: Resume project lu task windows-installer (use your exact saved project and task IDs).</small>
       <form className="ansfAssetForm" onSubmit={saveCheckpoint}>
         <label>Project ID
           <input value={resumeProject} maxLength={128}
