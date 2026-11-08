@@ -73,7 +73,10 @@ user-supplied PID is involved.
   the watchdog and a shell with a live sleep grandchild, preserve an
   unrelated control process, SIGKILL the Lu-like host, then inspect
   `/proc` states and require the guard, worker and grandchild to be
-  non-running while the unrelated control remains alive. Merely checking
+  non-running while the unrelated control remains alive. The test pins
+  the guardian, worker and grandchild via Linux `pidfd_open()` before
+  crash injection; failure cleanup uses only `pidfd_send_signal()` against
+  those kernel identities, never a stale numeric PGID. Merely checking
   SQLite statuses cannot pass this test.
 - A separate real supervised reviewed Git/FFprobe test with the staged
   guardian actively in the trusted worker launch path. The recorded
