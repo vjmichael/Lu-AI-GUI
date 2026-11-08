@@ -35,6 +35,7 @@ mod reviewed_app_desktop;
 mod reviewed_app_recovery;
 mod reviewed_app_audit;
 mod reviewed_task_continuity;
+mod agent_plan_progress;
 mod archive_desktop;
 mod archive_batch_desktop;
 mod archive_split_desktop;
@@ -5135,6 +5136,17 @@ struct NativeToolActivityView{
     #[serde(skip_serializing_if="Option::is_none")]
     reviewed_continuity:Option<reviewed_task_continuity::ReviewedTurnContinuity>,
 }
+/// AGENT-01E: host-owned read-only original-conversation plan history.
+/// This command does not authorize or schedule a worker. The WebView supplies
+/// ONLY a selected chat ID, never an arbitrary SQLite path, claim or grant.
+#[tauri::command]
+fn lu_agent_plan_progress(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,
+)->Result<Vec<agent_plan_progress::AgentPlanProgress>,String>{
+    let root=state.catalog_path.parent()
+        .ok_or("Agent progress profile directory missing")?;
+    agent_plan_progress::read_chat_progress(root,&chat_id,&state.chats)
+}
 #[tauri::command]
 fn lu_tool_turn_history(
     state:State<'_,Arc<DesktopState>>,chat_id:String,
@@ -7474,6 +7486,7 @@ pub fn run() {
             lu_approve_read_proposal,
             lu_accept_native_action_proposal,
             lu_tool_turn_history,
+            lu_agent_plan_progress,
             lu_deny_native_action_proposal,
             lu_dismiss_read_proposal,
             lu_document_settings,
