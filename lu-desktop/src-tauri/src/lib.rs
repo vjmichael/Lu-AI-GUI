@@ -5173,18 +5173,15 @@ fn lu_tool_turn_history(
             // Model audit success and an APPLIED effect are two different
             // observations. Never label a model final answer as actual OS
             // cleanup, especially for prior UNCERTAIN worker effects.
-            let status=if reviewed_effects.as_ref().is_some_and(|e|e.unresolved()){
-                "EFFECT_UNCERTAIN_OR_IN_FLIGHT"
+            let status=if source=="Reviewed app"{
+                reviewed_app_audit::classify_reviewed_evidence(
+                    evidence.final_answers,evidence.generation_failures,
+                    evidence.rejections,reviewed_effects.as_ref()
+                )
             }else if evidence.generation_failures>0{
-                "MODEL_FAILED"
+                "FAILED"
             }else if evidence.rejections>0{
                 "REJECTED"
-            }else if source=="Reviewed app"&&evidence.final_answers>0
-                &&reviewed_effects.as_ref().is_some_and(|e|
-                    e.applied>0&&e.applied==e.applied_with_receipt){
-                "ANSWER_RECORDED_WITH_APPLIED_JOURNAL"
-            }else if source=="Reviewed app"&&evidence.final_answers>0{
-                "MODEL_ANSWER_ONLY"
             }else if evidence.final_answers>0{
                 "COMPLETED"
             }else{"INCOMPLETE_OR_INTERRUPTED"};
