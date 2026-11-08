@@ -121,7 +121,7 @@ jobs:
           if ($packages.Count -ne 1) { throw 'DENIED: one reviewed installer required' }
           python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha '${{ github.sha }}' --require-upstream --artifact $packages[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: real NSIS notices invalid' }
-          $install=Join-Path $env:RUNNER_TEMP ('lu-ide-dev02-native-'+$env:GITHUB_RUN_ID)
+          $install=Join-Path $env:ProgramFiles ('Lu-IDE-DEV02-Native-'+$env:GITHUB_RUN_ID)
           $project=Join-Path $env:RUNNER_TEMP ('lu-ide-dev02-lsp-project-'+$env:GITHUB_RUN_ID)
           if ((Test-Path $install) -or (Test-Path $project)) { throw 'DENIED: disposable runner not clean' }
           New-Item -ItemType Directory -Path $project | Out-Null
@@ -147,12 +147,25 @@ jobs:
               (Get-AuthenticodeSignature -LiteralPath $service).Status -ne 'Valid') {
               throw 'DENIED: installed protected broker not independently signed/pinned'
             }
-            $sc=& sc.exe create LuIdeRecoveryBroker ('binPath= "'+$service+'"') 'obj= "NT AUTHORITY\LocalService"' 'start= demand'
-            if ($LASTEXITCODE -ne 0) { throw 'DENIED: independent installed protected service creation failed' }
-            $brokerCreated=$true
-            & sc.exe start LuIdeRecoveryBroker | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'DENIED: genuine LocalService broker could not start' }
+            # The independently reviewed elevated installer is essential:
+            # it validates both signed installed binaries, approved host SID,
+            # restricted service SID, private evidence ACLs and SCM privileges.
+            # A bare sc.exe create/start does NOT prove these boundaries.
             $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash
+            if ((Get-AuthenticodeSignature -LiteralPath $exe).Status -ne 'Valid') {
+              throw 'DENIED: installed native LSP desktop host not Authenticode signed'
+            }
+            & 'ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1' `
+              -ServiceExecutable $service `
+              -ExpectedServiceSha256 $env:LU_IDE_REVIEWED_SIGNED_SERVICE_SHA256 `
+              -ApprovedHostExecutable $exe `
+              -ExpectedHostSha256 $sha -Start
+            if (!$?) { throw 'DENIED: reviewed elevated restricted LocalService deployment failed' }
+            $brokerCreated=$true
+            $installedService=Get-CimInstance Win32_Service -Filter "Name='LuIdeRecoveryBroker'"
+            if (!$installedService -or $installedService.State -ne 'Running') {
+              throw 'DENIED: configured restricted protected broker not running'
+            }
             & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario Dev02ProtectedLsp -FixtureRoot $project
             if (!$?) { throw 'DENIED: Windows UIA protected three-language acceptance failed' }
             foreach($file in @('Cargo.toml','main.rs','main.cpp','hello.py')) {
@@ -164,7 +177,17 @@ jobs:
           } finally {
             if ($brokerCreated) {
               & sc.exe stop LuIdeRecoveryBroker | Out-Null
+              if ($LASTEXITCODE -ne 0) {
+                throw 'DENIED: restricted broker stop failed during real uninstall'
+              }
               & sc.exe delete LuIdeRecoveryBroker | Out-Null
+              if ($LASTEXITCODE -ne 0) {
+                throw 'DENIED: restricted broker deletion failed during real uninstall'
+              }
+              Start-Sleep -Seconds 2
+              if (Get-CimInstance Win32_Service -Filter "Name='LuIdeRecoveryBroker'") {
+                throw 'DENIED: restricted broker still exists after uninstall'
+              }
             }
             if ($installed) {
               $uninstallers=@(Get-ChildItem $install -Filter '*uninstall*.exe' -File -ErrorAction SilentlyContinue)

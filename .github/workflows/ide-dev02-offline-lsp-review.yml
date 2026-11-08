@@ -1,0 +1,60 @@
+name: IDE DEV-02.3 offline LSP evidence intake and Python semantic review
+on:
+  push:
+    branches: ['ide/dev02-python-provider-review-and-lsp-intake-20261108']
+    paths:
+      - 'ide/packaging/prepare_lsp_candidate_review.py'
+      - 'ide/packaging/test_prepare_lsp_candidate_review.py'
+      - 'ide/docs/IDE_DEV02_3_OFFLINE_REVIEW_AND_PYTHON_SEMANTIC_20261108.md'
+      - '.github/workflows/ide-dev02-offline-lsp-review.yml'
+  pull_request:
+    paths:
+      - 'ide/packaging/prepare_lsp_candidate_review.py'
+      - 'ide/packaging/test_prepare_lsp_candidate_review.py'
+      - 'ide/docs/IDE_DEV02_3_OFFLINE_REVIEW_AND_PYTHON_SEMANTIC_20261108.md'
+      - '.github/workflows/ide-dev02-offline-lsp-review.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  offline-review:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prove source identity and safe offline LSP bundle manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: unreviewed provider release unexpectedly approved'
+            exit 2
+          fi
+      - name: Native offline binary/license proof and candidate refusal tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s ide/packaging -p 'test_prepare_lsp_candidate_review.py' -v
+          python3 -m py_compile ide/packaging/prepare_lsp_candidate_review.py
+      - name: No executable release authority asserted
+        shell: bash
+        run: |
+          echo 'DEV02_OFFLINE_LSP_APPROVAL_PACKET_UNIT_TESTS=PASS'
+          echo 'DEV02_REAL_PROVIDER_ASSET_DIGESTS=NOT_PROVIDED'
+          echo 'DEV02_SIGNED_OR_LEGAL_RELEASE=NOT_ACCEPTED'
+          echo 'DEV02_PYTHON_SEMANTIC_PROVIDER=NOT_SELECTED'
