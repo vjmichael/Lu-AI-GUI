@@ -4011,10 +4011,12 @@ function App() {
           role="region" aria-label="Read-only native tool activity">
           <strong>Native tool activity</strong>
           <small>Host-recorded Reader, Workspace, Git and reviewed-app tool-turn evidence.
-            Model answers are not OS receipts. Reviewed-app effect counts come from
-            separate durable SQLite journals; an interrupted worker is not proven
-            terminated by its journal state. Viewing never restores permission
-            or replays an operation.</small>
+            Model answers are not OS receipts. E1-P10 independently compares
+            approved Git HEAD/branch and PCM WAV
+            facts with the source itself, not a second Git/FFprobe invocation.
+            Other operations remain unverified. An interrupted worker is
+            not proven terminated by its journal state. Viewing never restores
+            permission or replays an operation.</small>
           <div className="settingsActions">
             <button type="button" className="subtleButton"
               disabled={toolHistoryBusy}
@@ -4041,8 +4043,15 @@ function App() {
                   : 'No effect journal exists; no verified worker outcome can be inferred.'}
               </small>}
               {item.source==='Reviewed app' && <small>
-                APPLIED is a persisted journal classification, not independent proof
-                of current external process state, durable effects or OS descendant reaping.
+                Independent outcomes at the time of observation: {item.reviewedEffects
+                  ? `${item.reviewedEffects.independentlyVerified||0} verified · ${item.reviewedEffects.outcomeUnsupported||0} unsupported · ${item.reviewedEffects.outcomeConflict||0} contradicted`
+                  : 'No independently verified outcome evidence'}.
+              </small>}
+              {item.source==='Reviewed app' && <small>
+                Verified means a distinct host-only source check matched the
+                recorded application result at the time. It does not prove that
+                files remain unchanged or that processes are still terminated.
+                APPLIED alone means an execution receipt, not semantic truth.
               </small>}
             </div>)}
         </section>}
