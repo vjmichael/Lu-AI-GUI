@@ -141,9 +141,17 @@ def capture(root, source_sha, platform, tree_kind):
     records = []
     folded = set()
     total = 0
-    for current, dirs, files in os.walk(base, topdown=True, followlinks=False):
+    def on_walk_error(exc):
+        raise Denied("unreadable_payload_subtree") from exc
+
+    for current, dirs, files in os.walk(
+        base, topdown=True, followlinks=False, onerror=on_walk_error
+    ):
         prefix = Path(current).relative_to(base)
-        _lstat(Path(current))
+        if not stat.S_ISDIR(_lstat(Path(current)).st_mode):
+            raise Denied("payload_tree_changed_during_walk")
+        if len(folded) + len(dirs) + len(files) > MAX_ITEMS:
+            raise Denied("payload_tree_limits_exceeded")
         for name in sorted(dirs):
             p = Path(current) / name
             rel = _safe_relative((prefix / name).as_posix())
