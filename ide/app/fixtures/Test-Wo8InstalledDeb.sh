@@ -47,6 +47,7 @@ echo "WO8_LINUX_INSTALLED_DEB_GRAPHICAL_LAUNCH=PASS"
 printf 'fn main() { println!("native"); }\n' >"${fixture}/main.rs"
 env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
   dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+  bash ide/app/fixtures/wo8_linux_wm_session.sh \
   /usr/bin/python3 ide/app/fixtures/wo8_linux_editor_atspi.py || deny linux_native_editor_acceptance_failed
 echo "WO8_LINUX_INSTALLED_EDITOR_AND_CONFLICT=PASS"
 echo "WO8_LINUX_PROTECTED_RUN_DEBUG=NOT_ACCEPTED"

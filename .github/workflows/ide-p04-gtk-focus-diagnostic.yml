@@ -1,0 +1,140 @@
+name: IDE P04 GTK real X11 focus native diagnostic
+# Diagnostic-only native OS execution while the historical Ubuntu 24.04 runner
+# remains queued. NOT a replacement for pinned P02/P03/P04/P05 acceptance.
+on:
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/host/**'
+      - 'ide/packaging/**'
+      - '.github/workflows/ide-linux-26-installed-diagnostic.yml'
+  push:
+    branches: ['ide/p04-linux-gtk-focused-20261108']
+    paths:
+      - 'ide/app/**'
+      - 'ide/packaging/**'
+      - 'ide/PROJECT_STATE.md'
+      - 'ide/CHANGELOG.md'
+      - '.github/workflows/ide-p04-gtk-focus-diagnostic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  installed-linux-26-gtk-editor-rollback-and-zip:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 110
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Prove exact Linux 26.04 native diagnostic image and source head
+        shell: bash
+        run: |
+          set -euo pipefail
+          . /etc/os-release
+          test "$ID" = ubuntu
+          test "$VERSION_ID" = 26.04
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "IDE_LINUX_NATIVE_DIAGNOSTIC_IMAGE=ubuntu_26_04_NOT_24_04_RELEASE"
+      - name: Native GTK WebKit and OS accessibility prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev \
+            xvfb xauth xdotool dbus-x11 x11-utils at-spi2-core python3-pyatspi openbox
+      - name: Build real unsigned installed Debian with exact upstream notices
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python ../packaging/verify_tauri_minor.py --repo-root ../..
+          python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha "${{ github.event.pull_request.head.sha || github.sha }}" --output src-tauri/upstream-notice-receipt.json
+          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha "${{ github.event.pull_request.head.sha || github.sha }}" --upstream-receipt src-tauri/upstream-notice-receipt.json
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.wo8.linux.conf.json --bundles deb
+      - name: Check real Debian package licenses and source-bound artifact bytes
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          test "${#packages[@]}" -eq 1
+          test "$(dpkg-deb --field "${packages[0]}" Architecture)" = amd64
+          dpkg-deb --contents "${packages[0]}" | grep -F '/THIRD_PARTY_LICENSES/inventory.json' >/dev/null
+          dpkg-deb --contents "${packages[0]}" | grep -F '/THIRD_PARTY_LICENSES/upstream-fetch.json' >/dev/null
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha "$SOURCE_SHA" --require-upstream --artifact "${packages[0]}" --receipt ide/app/src-tauri/wo9-verification-package-receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lu-ide-p04-gtk-focus-linux26-unsigned-diagnostic
+          path: |
+            ide/app/src-tauri/target/release/bundle/deb/*.deb
+            ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/wo9-verification-package-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Real previous-version dpkg installation, injected upgrade failure, rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          test "${#packages[@]}" -eq 1
+          bash ide/app/fixtures/Test-P04UnsignedDebBrokenUpgrade.sh "${packages[0]}"
+      - name: Installed native Linux GTK editor, OS folder picker, save, restart and conflict
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          test "${#packages[@]}" -eq 1
+          bash ide/app/fixtures/Test-Wo8InstalledDeb.sh "${packages[0]}" "$(git rev-parse HEAD)"
+      - name: Installed Linux GTK portfolio ZIP exact bytes and uninstall
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          test "${#packages[@]}" -eq 1
+          package="$(dpkg-deb --field "${packages[0]}" Package)"
+          test "$package" = lu-ide
+          sudo dpkg --install "${packages[0]}"
+          cleanup() { sudo dpkg --remove "$package" || true; }
+          trap cleanup EXIT
+          test -x /usr/bin/lu-ide-desktop
+          fixture="$RUNNER_TEMP/wo9-linux26-fixture-$GITHUB_RUN_ID"
+          exportdir="$RUNNER_TEMP/wo9-linux26-export-$GITHUB_RUN_ID"
+          mkdir -m 700 -p "$fixture/dist" "$exportdir"
+          printf 'fn main() { println!("native"); }\n' > "$fixture/main.rs"
+          printf 'independently verified WO9 package\n' > "$fixture/dist/verified.tar"
+          git -C "$fixture" init -q
+          git -C "$fixture" add main.rs dist/verified.tar
+          git -C "$fixture" -c user.name='WO9 native fixture' -c user.email='wo9@localhost.invalid' commit -q -m 'fixed native data'
+          python3 -m py_compile ide/app/fixtures/wo9_linux_workflow_atspi.py
+          env WO8_INSTALLED_EXE=/usr/bin/lu-ide-desktop WO8_FIXTURE_ROOT="$fixture" WO9_EXPORT_ROOT="$exportdir" \
+            WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11 \
+            dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+            bash ide/app/fixtures/wo8_linux_wm_session.sh /usr/bin/python3 ide/app/fixtures/wo9_linux_workflow_atspi.py
+          test "$(find "$exportdir" -name '*.zip' -type f | wc -l)" -eq 1
+          sudo dpkg --remove "$package"
+          test ! -x /usr/bin/lu-ide-desktop
+          trap - EXIT
+          echo 'IDE_LINUX_26_NATIVE_INSTALLED_EDITOR_AND_ZIP=PASS'
+          echo 'IDE_UBUNTU_24_04_EQUIVALENCE_AND_SIGNED_RELEASE=NOT_ACCEPTED'

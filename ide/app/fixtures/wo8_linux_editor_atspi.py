@@ -183,7 +183,11 @@ def _x11_dialog_activation(attempt):
     try:
         subprocess.run(["xdotool", "windowactivate", "--sync", active],
                        check=True, timeout=5)
-        key("Return" if attempt % 2 == 0 else "alt+o")
+        # An actual Select Folder dialog often uses Alt+S, not Alt+O.
+        # Try the focused default action first, then a native GTK selection
+        # mnemonic. No success is inferred unless the OS dialog closes and
+        # the exact project appears in installed UI.
+        key(("Return", "alt+s", "alt+o", "Return")[attempt % 4])
         print("P04_GTK_X11_CHOOSER=visible_real_os_dialog_keyboard;"
               "attempt=" + str(attempt), flush=True)
         return True
@@ -241,6 +245,108 @@ def _atspi_bounded_chooser_mouse(attempt):
     return False
 
 
+def _x11_focused_chooser_keyboard(attempt):
+    # EWMH getactivewindow is absent on the native Xvfb/Openbox CI desktop,
+    # despite a visible OS file chooser. Query the actual X11 keyboard-focus
+    # window instead, and require its native position/extent to be INSIDE an
+    # independently visible AT-SPI file chooser (never the Tauri main window).
+    try:
+        focused = subprocess.check_output(
+            ["xdotool", "getwindowfocus"], text=True, timeout=5).strip()
+        if not focused.isdigit() or int(focused) <= 0:
+            return False
+        raw = subprocess.check_output(
+            ["xdotool", "getwindowgeometry", "--shell", focused],
+            text=True, timeout=5)
+        values = {}
+        for line in raw.splitlines():
+            if "=" not in line:
+                continue
+            key_name, value = line.split("=", 1)
+            if key_name in ("X", "Y", "WIDTH", "HEIGHT"):
+                values[key_name] = int(value)
+        if set(values) != {"X", "Y", "WIDTH", "HEIGHT"}:
+            return False
+        x, y, width, height = (values[name] for name in
+                               ("X", "Y", "WIDTH", "HEIGHT"))
+        if width < 1 or height < 1:
+            return False
+    except (ValueError, OSError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired):
+        print("P04_GTK_NATIVE_FOCUS=unavailable", flush=True)
+        return False
+    for node in elements():
+        try:
+            if "file chooser" not in (node.getRoleName() or "").casefold():
+                continue
+            states = node.getState()
+            if not (states.contains(pyatspi.STATE_SHOWING)
+                    and states.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            region = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            if (region.width < 320 or region.height < 180
+                    or width > region.width or height > region.height):
+                continue
+            mid_x, mid_y = x + width // 2, y + height // 2
+            if not (region.x + 3 < mid_x < region.x + region.width - 3
+                    and region.y + 3 < mid_y < region.y + region.height - 3):
+                continue
+            # This physical key is sent only when the OS keyboard-focus window
+            # is contained in the real chooser rectangle. A keypress isn't
+            # evidence that native project registration completed.
+            key(("alt+o", "alt+s", "Return", "alt+s")[attempt % 4])
+            print("P04_GTK_NATIVE_FOCUS=real_x11_focus_within_visible_chooser;"
+                  "attempt=" + str(attempt), flush=True)
+            return True
+        except (ValueError, OSError, subprocess.CalledProcessError,
+                subprocess.TimeoutExpired):
+            continue
+    print("P04_GTK_NATIVE_FOCUS=focus_outside_visible_chooser", flush=True)
+    return False
+
+
+def _native_chooser_spatial_button(button):
+    # Some GTK/portal accessibility providers orphan the action-button
+    # ancestry. Permit one only when its real geometry lies completely
+    # inside a visible GTK chooser AND the active X11 window has the exact
+    # native picker title. Never infer ownership from its caption alone.
+    try:
+        active = subprocess.check_output(
+            ["xdotool", "getactivewindow"], text=True, timeout=5).strip()
+        if not active.isdigit() or int(active) <= 0:
+            return False
+        title = subprocess.check_output(
+            ["xdotool", "getwindowname", active], text=True, timeout=5
+        ).strip().casefold()
+        if title not in ("open", "open folder", "select folder",
+                         "choose folder", "choose a folder",
+                         "select a folder", "select"):
+            return False
+        button_rect = button.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+        if button_rect.width < 8 or button_rect.height < 8:
+            return False
+        for native in elements():
+            if "file chooser" not in (native.getRoleName() or "").casefold():
+                continue
+            states = native.getState()
+            if not (states.contains(pyatspi.STATE_SHOWING)
+                    and states.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            box = native.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            if (box.width >= 320 and box.height >= 180
+                    and box.x + 3 <= button_rect.x
+                    and box.y + 3 <= button_rect.y
+                    and button_rect.x + button_rect.width <= box.x + box.width - 3
+                    and button_rect.y + button_rect.height <= box.y + box.height - 3):
+                return True
+    except (OSError, ValueError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired):
+        pass
+    except Exception:
+        pass
+    return False
+
+
 def _native_picker_confirm(attempt=0):
     # The previous real Ubuntu 26.04 run clicked an authentic AT-SPI
     # chooser action THREE times and the dialog never closed. A generic
@@ -253,9 +359,15 @@ def _native_picker_confirm(attempt=0):
         try:
             name = (obj.name or "").strip().casefold()
             role = (obj.getRoleName() or "").casefold()
-            if name not in priority or "button" not in role or not _native_dialog_ancestor(obj):
+            if name not in priority or "button" not in role:
                 continue
-            if not obj.getState().contains(pyatspi.STATE_ENABLED):
+            state = obj.getState()
+            if not (state.contains(pyatspi.STATE_ENABLED)
+                    and state.contains(pyatspi.STATE_SHOWING)
+                    and state.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            if not (_native_dialog_ancestor(obj)
+                    or _native_chooser_spatial_button(obj)):
                 continue
             try:
                 rect = obj.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
@@ -270,6 +382,11 @@ def _native_picker_confirm(attempt=0):
         except Exception:
             continue
     ranked.sort(key=lambda record: record[:4])
+    # Bounded, fixed-category evidence only; never log arbitrary GTK labels,
+    # paths, filename contents, or unreviewed application/window titles.
+    print("P04_GTK_NATIVE_APPROVAL_CONTROLS=verified_visible_buttons:"
+          + str(len(ranked)) + ";"
+          + ",".join(item[4].replace(" ", "_") for item in ranked[:8]), flush=True)
     # Consecutive failed OS confirmation attempts must not hit the same
     # first generic toolbar Open when multiple native candidates exist.
     start = min(attempt, max(0, len(ranked) - 1))
@@ -287,9 +404,25 @@ def _native_picker_confirm(attempt=0):
                         return
         except Exception:
             continue
+    # Some GTK controls expose geometry and keyboard focus but not an
+    # AT-SPI click action. Activate the verified chooser-owned button with
+    # real X11 Space, not a fabricated callback or a blind global click.
+    for item in ranked[start:] + ranked[:start]:
+        try:
+            _, _, _, _, name, obj = item
+            if obj.queryComponent().grabFocus():
+                key("space")
+                print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION="
+                      "real_focused_native_button_space;caption="
+                      + name.replace(" ", "_"), flush=True)
+                return
+        except Exception:
+            continue
     # A separately witnessed native GTK X11 dialog may have zero exposed
     # AT-SPI action buttons. Try bounded real OS keyboard acceptance instead.
     if _x11_dialog_activation(attempt):
+        return
+    if _x11_focused_chooser_keyboard(attempt):
         return
     if _atspi_bounded_chooser_mouse(attempt):
         return
@@ -372,6 +505,86 @@ def _select_real_fixture_directory():
     return False
 
 
+def _native_exact_fixture_typeahead():
+    # Fallback if the GTK provider does not expose a child row. Never select
+    # through a filesystem API: focus a real visible chooser list in X11 and
+    # send the *exact ephemeral fixture basename* as physical keyboard input.
+    # An absent list or missing live OS window fails closed.
+    if not _native_chooser_still_open():
+        return False
+    try:
+        active = subprocess.check_output(
+            ["xdotool", "getactivewindow"], text=True, timeout=5).strip()
+        title = subprocess.check_output(
+            ["xdotool", "getwindowname", active], text=True, timeout=5
+        ).strip().casefold()
+        if title not in ("open", "open folder", "select folder", "choose folder",
+                         "choose a folder", "select a folder", "select"):
+            print("P04_GTK_TYPEAHEAD=nonchooser_x11_title",flush=True)
+            return False
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        print("P04_GTK_TYPEAHEAD=no_native_active_window",flush=True)
+        return False
+    roles = {}
+    for obj in elements():
+        try:
+            if not _native_dialog_ancestor(obj):
+                continue
+            kind = (obj.getRoleName() or "").casefold()
+            if not obj.getState().contains(pyatspi.STATE_SHOWING):
+                continue
+            for word in ("list", "table", "tree", "row", "cell", "icon"):
+                if word in kind:
+                    roles[word] = roles.get(word, 0) + 1
+            if not any(word in kind for word in ("list", "table", "tree")):
+                continue
+            if not obj.queryComponent().grabFocus():
+                continue
+            type_text(ROOT.name)
+            print("P04_GTK_TYPEAHEAD=exact_basename_on_native_file_list",flush=True)
+            return True
+        except (ValueError, OSError, subprocess.CalledProcessError,
+                subprocess.TimeoutExpired):
+            continue
+        except Exception:
+            continue
+    print("P04_GTK_FILE_LIST_ROLES=" +
+          ",".join(k + ":" + str(v) for k,v in sorted(roles.items())),flush=True)
+    return False
+
+
+def _native_exact_fixture_location():
+    # A real Ubuntu26 run saw zero selectable AT-SPI child rows even after
+    # presenting ROOT.parent, and typeahead did not select a folder. GTK's
+    # Ctrl+L location entry can select the exact existing folder directly.
+    # This remains a physical X11 keyboard action *inside* an independently
+    # observed visible native chooser, not a registry, WebView or IPC action.
+    if not ROOT.is_dir() or not SOURCE.is_file() or not _native_chooser_still_open():
+        return False
+    try:
+        active = subprocess.check_output(
+            ["xdotool", "getactivewindow"], text=True, timeout=5).strip()
+        if not active.isdigit() or int(active) <= 0:
+            return False
+        title = subprocess.check_output(
+            ["xdotool", "getwindowname", active], text=True, timeout=5
+        ).strip().casefold()
+        if title not in ("open", "open folder", "select folder", "choose folder",
+                         "choose a folder", "select a folder", "select"):
+            print("P04_GTK_EXACT_LOCATION=nonchooser_x11_window", flush=True)
+            return False
+        key("ctrl+l")
+        key("ctrl+a")
+        type_text(str(ROOT))
+        key("Return")
+        print("P04_GTK_EXACT_LOCATION=physical_os_entry_of_verified_fixture", flush=True)
+        return True
+    except (OSError, ValueError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired):
+        print("P04_GTK_EXACT_LOCATION=os_keyboard_unavailable", flush=True)
+        return False
+
+
 def select_native_folder():
     # The former parent-path chooser test saw zero AT-SPI rows for the child.
     # GTK's native Ctrl+L location entry accepts an absolute path to the
@@ -384,10 +597,21 @@ def select_native_folder():
         deny("ephemeral_fixture_was_already_registered_before_picker")
     activate("+ Open folder")
     time.sleep(1)
+    # GTK SELECT_FOLDER distinguishes *displayed* directory from *selected*
+    # directory. Opening the fixture itself can leave no selected child.
+    # First display its trusted parent, then select the exact fixture row.
     key("ctrl+l")
-    type_text(str(ROOT))
+    type_text(str(ROOT.parent))
     key("Return")
     time.sleep(1.4)
+    print("P04_GTK_FOLDER_NAVIGATION=entered_exact_fixture_parent",flush=True)
+    if not _select_real_fixture_directory():
+        _native_exact_fixture_typeahead()
+        # The last real Ubuntu26 run still saw no selected row, despite a
+        # typeahead acknowledgement. Target the *actual* fixture directory
+        # in GTK's own location entry; never infer selection from typing.
+        _native_exact_fixture_location()
+        time.sleep(0.45)
     # GTK SELECT_FOLDER may interpret the first accept as "navigate into
     # selected directory" instead of closing. Native CI proved the real
     # dialog remained open afterward. Confirm only while the authentic OS
@@ -400,13 +624,14 @@ def select_native_folder():
             # keyboard to go up and select the exact fixture child. If GTK
             # does not expose that row, reassert the exact path in its native
             # location entry without blindly accepting an unrelated window.
-            key("alt+Up")
+            key("ctrl+l")
+            type_text(str(ROOT.parent))
+            key("Return")
             time.sleep(0.7)
             if not _select_real_fixture_directory():
-                key("ctrl+l")
-                type_text(str(ROOT))
-                print("P04_GTK_EXACT_PATH_ENTRY=reasserted_in_native_chooser",flush=True)
-                time.sleep(0.5)
+                _native_exact_fixture_typeahead()
+                _native_exact_fixture_location()
+                print("P04_GTK_EXACT_PARENT_RESELECTION=attempted",flush=True)
         if not _native_chooser_still_open():
             break
         _native_picker_confirm(attempts)
