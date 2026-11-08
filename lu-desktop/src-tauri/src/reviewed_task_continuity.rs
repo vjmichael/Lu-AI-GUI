@@ -195,6 +195,18 @@ pub(crate) fn reviewed_turn_continuity(
     let mut operations=Vec::new();
     let mut needs_review=false;
     for (call,tool,state,size,receipt) in all{
+        // An unexpected or incomplete effect in this per-turn journal
+        // is unresolved evidence even if another inner worker verified.
+        // Read-grant rows may legitimately lack independent OS facts.
+        let recognized=matches!(tool.as_str(),
+            "lu.reviewed.git.head"|"lu.reviewed.git.status"|
+            "lu.reviewed.git.branch"|"lu.reviewed.git.history"|
+            "lu.reviewed.media.facts"|"lu.reviewed.git.repo-read"|
+            "lu.reviewed.media.file-read");
+        if !recognized||matches!(state.as_str(),
+            "UNCERTAIN"|"EXECUTING"|"PREPARED"|"FAILED"){
+            needs_review=true;
+        }
         let Some((label,model_call))=operation_for(&call,&tool) else{continue};
         if !matches!(state.as_str(),
             "PREPARED"|"EXECUTING"|"APPLIED"|"FAILED"|"UNCERTAIN"){
