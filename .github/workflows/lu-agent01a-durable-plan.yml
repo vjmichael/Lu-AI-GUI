@@ -1,0 +1,91 @@
+name: Lu AGENT-01A Durable Plan Native SQLite
+on:
+  push:
+    branches: ['lu/agent01a-durable-plan-ledger-20261108']
+    paths:
+      - 'src-tauri/lu-core/src/agent_plan_ledger.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'lu-desktop/tests/native-chat/src/lib.rs'
+      - '.github/workflows/lu-agent01a-durable-plan.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/agent_plan_ledger.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'lu-desktop/tests/native-chat/src/lib.rs'
+      - '.github/workflows/lu-agent01a-durable-plan.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-agent01a-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  real-native-sqlite:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check exact commit and frozen Git source
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p agent01a-evidence
+          printf 'SOURCE=%s\nRUNNER=%s\n' "$EXPECTED_HEAD" "$RUNNER_OS" \
+            > agent01a-evidence/source.txt
+      - name: Real Lu Core SQLite plan ledger regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_plan_ledger::tests -- --nocapture \
+            2>&1 | tee agent01a-evidence/agent-plan-sqlite.log
+          for name in \
+            host_verified_plan_dag_persists_and_rejects_cross_chat_rebinding \
+            rejects_cycles_unbounded_tasks_and_wrong_direction \
+            observations_are_not_execution_proof_and_are_idempotent \
+            restart_reconciliation_does_not_claim_worker_death_or_retry \
+            explicit_cancel_intent_blocks_further_plan_steps_but_not_os_processes; do
+            grep -Fq "test agent_plan_ledger::tests::$name ... ok" \
+              agent01a-evidence/agent-plan-sqlite.log
+          done
+          grep -Fq 'test result: ok. 5 passed; 0 failed;' \
+            agent01a-evidence/agent-plan-sqlite.log
+      - name: Production ChatStore human authorization against real new ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib agent01a_real_human_journal_acceptance::only_the_real_saved_human_turn_can_bind_durable_plan \
+            -- --nocapture 2>&1 | tee agent01a-evidence/human-turn-native.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            agent01a-evidence/human-turn-native.log
+      - name: Confirm this is a no-execution source candidate
+        shell: bash
+        run: |
+          echo 'AGENT-01A only proves real SQLite planning and original saved human-turn identity. It does NOT execute or reap external workers, prove model-selected tools, or install a Lu app.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01a-native-${{ matrix.os }}
+          path: agent01a-evidence/
+          retention-days: 14
+          if-no-files-found: warn
