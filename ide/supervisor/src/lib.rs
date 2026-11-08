@@ -15,6 +15,7 @@ mod dap_transport;
 pub mod linux_worker;
 #[cfg(feature = "lsp-transport")]
 mod lsp_transport;
+pub mod runtime_bundles;
 pub mod snapshot;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 pub mod windows_broker;
