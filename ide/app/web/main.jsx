@@ -315,6 +315,10 @@ function App() {
   // both panes is forbidden, including during project switches and close.
   const secondaryTab = splitEditorOpen ? secondaryEditor(
     projectTabs, activeProject?.projectId, activeTab?.key, secondaryTabKey) : null;
+  const secondaryLspDiagnostics = useMemo(() =>
+    secondaryTab ? visibleDiagnostics(
+      secondaryTab,lspNativeDiagnostics[secondaryTab.key]) : [],
+    [secondaryTab,lspNativeDiagnostics]);
   function selectPrimaryEditorTab(key) {
     setTabWindowStart(previous=>centerSelectedTab(projectTabs,key,previous));
     if (splitEditorOpen && key === secondaryTabKey && activeTabKey !== key)
@@ -3571,8 +3575,7 @@ function App() {
                       key={secondaryTab.key + ':' + secondaryTab.generation + ':secondary'}
                       tabIdentity={secondaryTab.key + ':' + secondaryTab.generation}
                       editorState={editorStates.current.get(secondaryTab.key)}
-                      diagnostics={visibleDiagnostics(
-                        secondaryTab,lspNativeDiagnostics[secondaryTab.key])}
+                      diagnostics={secondaryLspDiagnostics}
                       onCursorLine={line=>setCursorByTab(previous =>
                         previous[secondaryTab.key]===line ? previous :
                           {...previous,[secondaryTab.key]:line})}
