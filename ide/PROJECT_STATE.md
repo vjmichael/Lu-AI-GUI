@@ -639,3 +639,8 @@ Draft test-only candidate work uses the same 20 deterministic Python project fil
 ### DEV-02.4 ty actual upstream server shutdown evidence
 
 Review of official `astral-sh/ty/scripts/build_ty_pgo.py` confirms a necessary terminal sequence: `shutdown` acknowledged, `exit` notified, then `stdin.close()` and process `wait`. Lu's first candidate comparator omitted EOF. At PR #134 current source this was repaired without relaxing `cleanExit`: zero exit after acknowledged LSP shutdown, explicit exit notification, no forced OS kill and actual reaping are independently required. CI source unit regression models shutdown→exit→EOF→wait and distinguishes nonzero exit (reaped, NOT clean). Exact-head OS results needed to determine whether ty’s first failure was a missed EOF or a genuine provider defect; do not claim an installed Lu LSP pass.
+
+
+## B7 project workspace navigation continuity — Nov 8
+
+Source branch `ide/b7-project-workspace-continuity-20261108` is stacked after B6 exact source `a562ed08ee511fa28faf9aff1c25b89a95d86eaf`. Project switch captures/restores the active source tab, secondary pane and tab-window position strictly from current registered tabs; it cannot revive a closed file or copy private drafts. Unregistering an inactive project does not tear down the active split. No persistence of raw editor data or expansion of native authority. Documentation: `ide/docs/IDE_B7_PROJECT_WORKSPACE_NAVIGATION_20261108.md`. Full Node / installed Windows/Linux tests remain open; older B4/B5/B6 acceptance gates are preserved for later review.
