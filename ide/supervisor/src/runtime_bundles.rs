@@ -79,13 +79,17 @@ pub fn verify_runtime_bundle(
         return Err(denied());
     }
     let canonical=fs::canonicalize(root).map_err(|_| denied())?;
-    if canonical!=root { // force installer-derived canonical root; no aliases.
+    // On Windows canonical paths legitimately acquire the \\?\ device prefix.
+    // Native registration still rejects reparse points at every traversed
+    // child. On Unix, no alias to a different root-owned path is permitted.
+    #[cfg(unix)]
+    if canonical!=root {
         return Err(denied());
     }
     let mut files=Vec::new();
     let mut count=0usize;
     let mut bytes=0u64;
-    scan(root, root, 0, &mut files, &mut count, &mut bytes)?;
+    scan(&canonical, &canonical, 0, &mut files, &mut count, &mut bytes)?;
     files.sort_by(|a,b|a.0.cmp(&b.0));
     for needed in profile.required(cfg!(windows)) {
         if files.binary_search_by(|item|item.0.as_str().cmp(needed)).is_err() {
@@ -104,7 +108,7 @@ pub fn verify_runtime_bundle(
     let actual=format!("{:x}",hasher.finalize());
     if actual != expected_sha256 { return Err(SupervisorError::WrongProjectOrSource); }
     Ok(VerifiedRuntimeBundle {
-        profile, root:root.to_owned(), tree_sha256:actual,
+        profile, root:canonical, tree_sha256:actual,
         file_count:count, total_bytes:bytes,
     })
 }
