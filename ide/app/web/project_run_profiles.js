@@ -10,6 +10,7 @@ const definitions = [
   ["js_tests", "javascript", "test", "package.json", null],
   ["cpp_cmake_build", "cpp", "build", "CMakeLists.txt", null],
   ["lu_ide_host_tests", "rust", "test", "ide/host/Cargo.toml", "lu_ide_host_tests"],
+  ["rust_build", "rust", "build", "Cargo.toml", "rust_build"],
 ];
 const byId=new Map(definitions.map(([id, language, operation, path, recipe])=>
   [id,{language,operation,path,recipe}]));
