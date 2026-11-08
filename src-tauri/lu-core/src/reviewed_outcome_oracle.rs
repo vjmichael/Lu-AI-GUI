@@ -4,9 +4,8 @@
 //! termination test. The separate OracleEvidence is persisted only *after*
 //! the original supervised worker effect reaches APPLIED with its receipt.
 //! We currently verify direct Git HEAD/current-branch facts and ordinary
-//! PCM/IEEE-float RIFF WAV facts. Tracked Git status,
-//! linked Git worktrees and MP4 are explicitly UNSUPPORTED and never upgrade
-//! to an independently verified result.
+//! PCM/IEEE-float RIFF WAV, ordinary MP4, and simple tracked worktree
+//! state. Nonconforming features remain UNSUPPORTED, never fabricated.
 //!
 //! No executable, path, permission, ID, codec hint or proof comes from model
 //! text; the caller passes only current human-selected host-approved paths.
@@ -16,6 +15,8 @@ use sha2::{Digest,Sha256};
 use crate::{
     journal::IndependentOutcomeVerdict,
     independent_git_history::loose_commit_count,
+    independent_git_status::tracked_worktree_changes,
+    independent_mp4::{parse_mp4,matches_ffprobe},
     native_app_typed_git::GitReadOperation,
     native_app_typed_ffprobe::ReviewedContainer,
 };
@@ -121,17 +122,16 @@ fn resolve_git_ref(git_dir:&Path,reference:&str)->Option<String>{
 }
 /// Independently inspect the HEAD/branch files, without invoking Git or
 /// reading stdout. A changed/malformed direct HEAD conflicts with the
-/// worker receipt. Tracked status is explicitly unverified; history is
-/// independently traversed only when all reachable Git commits are loose.
+/// worker receipt. Source observers operate without spawning Git; status
+/// and pack traversal are strictly bounded and reject unsupported states.
 pub fn verify_git(
     root:&Path,operation:GitReadOperation,worker_receipt:&Value,
 )->OracleEvidence{
     let method=match operation{
         GitReadOperation::HeadCommit=>"GIT_HEAD_DIRECT_V1",
         GitReadOperation::CurrentBranch=>"GIT_BRANCH_DIRECT_V1",
-        GitReadOperation::TrackedStatus=>
-            return OracleEvidence::unsupported("GIT_STATUS_UNSUPPORTED_V1"),
-        GitReadOperation::HistoryCount=>"GIT_HISTORY_LOOSE_DAG_V1",
+        GitReadOperation::TrackedStatus=>"GIT_STATUS_INDEX_TREE_V1",
+        GitReadOperation::HistoryCount=>"GIT_HISTORY_OBJECT_DAG_V2",
     };
     let git=root.join(".git");
     if !git.is_dir(){return OracleEvidence::conflict(method)}
@@ -139,6 +139,24 @@ pub fn verify_git(
         return OracleEvidence::conflict(method)
     };
     match operation{
+        GitReadOperation::TrackedStatus=>{
+            let resolved=match head{
+                DirectGitHead::Detached(hash)=>Some(hash),
+                DirectGitHead::Attached(refname)=>resolve_git_ref(&git,&refname),
+            };
+            let Some(hash)=resolved else{return OracleEvidence::unsupported(method)};
+            let Some(changed)=tracked_worktree_changes(root,&hash) else{
+                return OracleEvidence::unsupported(method)
+            };
+            if worker_receipt.get("kind").and_then(Value::as_str)
+                !=Some("tracked_status")
+                ||worker_receipt.get("trackedChangedEntries").and_then(Value::as_u64)
+                    !=Some(changed as u64){
+                return OracleEvidence::conflict(method)
+            }
+            OracleEvidence::verified(method,format!(
+                "tracked={hash}:{changed}").as_bytes())
+        },
         GitReadOperation::HistoryCount=>{
             let resolved=match head{
                 DirectGitHead::Detached(hash)=>Some(hash),
@@ -147,8 +165,8 @@ pub fn verify_git(
             let Some(hash)=resolved else{
                 return OracleEvidence::unsupported(method)
             };
-            // Directly decode, hash-check and traverse ALL reachable
-            // loose commit objects. No git, rev-list, shell or hooks.
+            // Directly decode, hash-check and traverse reachable
+            // loose OR bounded packed objects; never invoke rev-list.
             let Some(actual)=loose_commit_count(&git,&hash) else{
                 return OracleEvidence::unsupported(method)
             };
@@ -272,10 +290,9 @@ fn parse_wav(bytes:&[u8])->Option<WavFacts>{
 pub fn verify_media(
     media:&Path,expected_sha:&str,kind:ReviewedContainer,worker_receipt:&Value,
 )->OracleEvidence{
-    let method="WAV_PCM_DIRECT_V1";
-    if kind==ReviewedContainer::Mp4{
-        return OracleEvidence::unsupported("MP4_UNSUPPORTED_V1")
-    }
+    let method=if kind==ReviewedContainer::Mp4{
+        "MP4_BOXES_DIRECT_V1"
+    }else{"WAV_PCM_DIRECT_V1"};
     let Some(meta)=fs::symlink_metadata(media).ok() else{
         return OracleEvidence::conflict(method)
     };
@@ -290,6 +307,17 @@ pub fn verify_media(
         worker_receipt.get("approvedMediaSha256").and_then(Value::as_str)
             !=Some(expected_sha){
         return OracleEvidence::conflict(method)
+    }
+    if kind==ReviewedContainer::Mp4{
+        let Some(movie)=parse_mp4(&bytes) else{
+            return OracleEvidence::unsupported(method)
+        };
+        if !matches_ffprobe(&movie,worker_receipt){
+            return OracleEvidence::conflict(method)
+        }
+        return OracleEvidence::verified(method,format!(
+            "mp4={observed_sha}:{}:{:?}",movie.duration_millis,movie.tracks
+        ).as_bytes())
     }
     let Some(wav)=parse_wav(&bytes) else{
         // Do not call compressed, extensible or unrecognized WAV independently
