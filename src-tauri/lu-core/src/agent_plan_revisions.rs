@@ -316,7 +316,7 @@ fn read_history(db:&Connection,plan:&str)->Result<Vec<RevisionSnapshot>,Revision
         let (review_state,review_turn)=match human_review{
             None=>("PENDING_HUMAN_REVIEW",None),
             Some((turn,decision))=>{
-                if !exact(&turn,"g-")||turn==id{
+                if !exact(&turn,"g-")||turn==source_human_turn_id{
                     return Err(RevisionError::CorruptHistory)
                 }
                 match decision.as_str(){
