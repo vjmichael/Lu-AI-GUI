@@ -434,6 +434,54 @@ def _select_real_fixture_directory():
     return False
 
 
+def _native_exact_fixture_typeahead():
+    # Fallback if the GTK provider does not expose a child row. Never select
+    # through a filesystem API: focus a real visible chooser list in X11 and
+    # send the *exact ephemeral fixture basename* as physical keyboard input.
+    # An absent list or missing live OS window fails closed.
+    if not _native_chooser_still_open():
+        return False
+    try:
+        active = subprocess.check_output(
+            ["xdotool", "getactivewindow"], text=True, timeout=5).strip()
+        title = subprocess.check_output(
+            ["xdotool", "getwindowname", active], text=True, timeout=5
+        ).strip().casefold()
+        if title not in ("open", "open folder", "select folder", "choose folder",
+                         "choose a folder", "select a folder", "select"):
+            print("P04_GTK_TYPEAHEAD=nonchooser_x11_title",flush=True)
+            return False
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        print("P04_GTK_TYPEAHEAD=no_native_active_window",flush=True)
+        return False
+    roles = {}
+    for obj in elements():
+        try:
+            if not _native_dialog_ancestor(obj):
+                continue
+            kind = (obj.getRoleName() or "").casefold()
+            if not obj.getState().contains(pyatspi.STATE_SHOWING):
+                continue
+            for word in ("list", "table", "tree", "row", "cell", "icon"):
+                if word in kind:
+                    roles[word] = roles.get(word, 0) + 1
+            if not any(word in kind for word in ("list", "table", "tree")):
+                continue
+            if not obj.queryComponent().grabFocus():
+                continue
+            type_text(ROOT.name)
+            print("P04_GTK_TYPEAHEAD=exact_basename_on_native_file_list",flush=True)
+            return True
+        except (ValueError, OSError, subprocess.CalledProcessError,
+                subprocess.TimeoutExpired):
+            continue
+        except Exception:
+            continue
+    print("P04_GTK_FILE_LIST_ROLES=" +
+          ",".join(k + ":" + str(v) for k,v in sorted(roles.items())),flush=True)
+    return False
+
+
 def select_native_folder():
     # The former parent-path chooser test saw zero AT-SPI rows for the child.
     # GTK's native Ctrl+L location entry accepts an absolute path to the
@@ -446,10 +494,16 @@ def select_native_folder():
         deny("ephemeral_fixture_was_already_registered_before_picker")
     activate("+ Open folder")
     time.sleep(1)
+    # GTK SELECT_FOLDER distinguishes *displayed* directory from *selected*
+    # directory. Opening the fixture itself can leave no selected child.
+    # First display its trusted parent, then select the exact fixture row.
     key("ctrl+l")
-    type_text(str(ROOT))
+    type_text(str(ROOT.parent))
     key("Return")
     time.sleep(1.4)
+    print("P04_GTK_FOLDER_NAVIGATION=entered_exact_fixture_parent",flush=True)
+    if not _select_real_fixture_directory():
+        _native_exact_fixture_typeahead()
     # GTK SELECT_FOLDER may interpret the first accept as "navigate into
     # selected directory" instead of closing. Native CI proved the real
     # dialog remained open afterward. Confirm only while the authentic OS
@@ -462,13 +516,13 @@ def select_native_folder():
             # keyboard to go up and select the exact fixture child. If GTK
             # does not expose that row, reassert the exact path in its native
             # location entry without blindly accepting an unrelated window.
-            key("alt+Up")
+            key("ctrl+l")
+            type_text(str(ROOT.parent))
+            key("Return")
             time.sleep(0.7)
             if not _select_real_fixture_directory():
-                key("ctrl+l")
-                type_text(str(ROOT))
-                print("P04_GTK_EXACT_PATH_ENTRY=reasserted_in_native_chooser",flush=True)
-                time.sleep(0.5)
+                _native_exact_fixture_typeahead()
+                print("P04_GTK_EXACT_PARENT_RESELECTION=attempted",flush=True)
         if not _native_chooser_still_open():
             break
         _native_picker_confirm(attempts)
