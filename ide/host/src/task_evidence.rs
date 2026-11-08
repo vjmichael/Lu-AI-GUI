@@ -444,8 +444,11 @@ impl DevelopmentLedger {
     pub fn record_task_source(
         &self, registry: &IdeWorkspaceRegistry, project_id: &str,
         task_id: &str, relative_path: &str, expected_saved_revision: &str,
+        expected_task_update_event_id: &str,
     ) -> Result<TaskSummary, ContinuityError> {
         if !valid_task_id(task_id)
+            || expected_task_update_event_id.len() != 36
+            || !expected_task_update_event_id.starts_with("evt-")
             || crate::browser::validate_relative(relative_path, false).is_err()
             || expected_saved_revision.len() != 64
             || !expected_saved_revision.bytes().all(|b|
@@ -461,6 +464,9 @@ impl DevelopmentLedger {
         let before = tasks.into_iter()
             .find(|task| task.task_id == task_id)
             .ok_or(ContinuityError::TaskNotFound)?;
+        if before.update_event_id != expected_task_update_event_id {
+            return Err(ContinuityError::TaskStale);
+        }
         let preview = registry.preview_source_file(project_id, relative_path)
             .map_err(|_| ContinuityError::ProjectUnavailable)?;
         if preview.revision != expected_saved_revision
