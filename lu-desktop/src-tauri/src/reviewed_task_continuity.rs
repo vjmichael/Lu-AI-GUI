@@ -85,7 +85,7 @@ fn operation_for(call:&str,tool:&str)->Option<(&'static str,&str)>{
         ("-fm","lu.reviewed.media.facts","Media facts"),
     ];
     TYPES.iter().find_map(|(suffix,id,label)|{
-        (tool==*id).then(||call.strip_suffix(suffix).map(|outer|(*label,outer))).flatten()
+        (tool==*id).then(||call.strip_suffix(*suffix).map(|outer|(*label,outer))).flatten()
     }).filter(|(_,outer)|!outer.is_empty()&&outer.len()<=115)
 }
 fn empty_view(state:&'static str)->ReviewedTurnContinuity{
@@ -190,8 +190,8 @@ pub(crate) fn reviewed_turn_continuity(
             return Err("Reviewed effect count exceeded hard limit".into())
         }
     }
-    let outer:BTreeMap<String,String>=all.iter().map(|(id,tool,_,_,_)|
-        (id.clone(),tool.clone())).collect();
+    let outer:BTreeMap<String,(String,String)>=all.iter().map(|(id,tool,state,_,_)|
+        (id.clone(),(tool.clone(),state.clone()))).collect();
     let mut operations=Vec::new();
     let mut needs_review=false;
     for (call,tool,state,size,receipt) in all{
@@ -200,7 +200,8 @@ pub(crate) fn reviewed_turn_continuity(
             "PREPARED"|"EXECUTING"|"APPLIED"|"FAILED"|"UNCERTAIN"){
             return Err("Unrecognized native effect state".into())
         }
-        let outer_ok=outer.get(model_call).is_some_and(|v|v==&tool);
+        let outer_ok=outer.get(model_call)
+            .is_some_and(|(kind,state)|kind==&tool&&state=="APPLIED");
         let (task_complete,progress,events)=checkpoint(&task,&call,turn)?;
         let receipt_ok=size.is_some_and(|len|len>0&&len<=MAX_RECEIPT)
             &&receipt.as_deref().is_some_and(|v|v.len() as i64==size.unwrap_or(0));
