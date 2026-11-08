@@ -25,3 +25,16 @@ test('B3 installed NSIS workflow verifies source-bound upstream notices, real un
   }
   assert.doesNotMatch(ci,/New-SelfSignedCertificate|releaseApproved: true/i);
 });
+
+test('B3 native installed search reuses exact verified project rather than an unverified second registration', () => {
+  const ci=read('../../../.github/workflows/ide-p05-b3-installed-native.yml');
+  const section=ci.split("const_development_sentinel_absent").join("");
+  assert.match(section,/SearchProjectSaved -FixtureRoot \$fixture/);
+  assert.doesNotMatch(section,/New-Item -ItemType Directory -Path \$searchFixture/);
+  for (const expected of [
+    "$searchBefore", "$searchAfter", "P05_B3_FIXED_MATCH",
+    "P05_B3_CHANGED_AFTER_SEARCH", "installed B3 external SHA-change fixture not observed",
+    "P05_B3_INSTALLED_NATIVE_WINDOWS_REVISION_SAFE_SEARCH=PASS",
+  ]) assert.ok(section.includes(expected),expected);
+  assert.doesNotMatch(section,/window\.__TAURI_INTERNALS__|invoke_tauri|continue-on-error:\s*true/i);
+});
