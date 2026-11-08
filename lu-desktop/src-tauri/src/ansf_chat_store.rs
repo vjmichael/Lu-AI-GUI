@@ -644,25 +644,9 @@ pub const REVIEWED_QUEUE_MARKER:&str=
         }
         let Some(chat_id)=owner else{return Ok(None)};
         let book=self.require(&chat_id)?;
-        let mut after=0i64;
-        let mut terminal=false;
-        let mut already_notified=false;
-        loop{
-            let page=book.live_chat_events_after(&chat_id,after,100)
-                .map_err(to_err)?;
-            if page.is_empty(){break}
-            for stored in page{
-                after=stored.seq;
-                if stored.event.generation_id.as_deref()!=Some(turn_id){continue}
-                match stored.event.kind{
-                    LiveKind::AssistantCompleted|LiveKind::AssistantCancelled=>
-                        terminal=true,
-                    LiveKind::AssistantProgress if stored.event.text==NOTICE=>
-                        already_notified=true,
-                    _=>{}
-                }
-            }
-        }
+        let (terminal,already_notified)=book.reviewed_turn_recovery_state(
+            &chat_id,turn_id,NOTICE
+        ).map_err(to_err)?;
         if terminal||already_notified{return Ok(Some(false))}
         // Adds a durable ANSF display checkpoint with interrupted=true,
         // cancelled=false. A crash after the immutable event append but
