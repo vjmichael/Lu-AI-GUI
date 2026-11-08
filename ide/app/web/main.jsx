@@ -15,6 +15,8 @@ import { planTaskSourceLink, sourceLinkDisplay,
   checkedSourceReobservation } from './task_source_evidence.js';
 import { safeProjectRunProfileDiscovery,
   selectExistingProtectedRecipe } from './project_run_profiles.js';
+import { planReviewedAdapterRequest,
+  checkedReviewedAdapterContract } from './reviewed_adapters.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
   TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
@@ -167,6 +169,11 @@ function App() {
   const [projectRunProfiles,setProjectRunProfiles] = useState(null);
   const [profileDiscoveryBusy,setProfileDiscoveryBusy] = useState(false);
   const profileDiscoveryRequest=useRef(0);
+  // DEV-03.2B: nonexecuting review of three native fixed interpreter
+  // contracts. Never a build grant, worker handle or installed toolchain.
+  const [adapterReview,setAdapterReview]=useState(null);
+  const [adapterReviewBusy,setAdapterReviewBusy]=useState(false);
+  const adapterReviewRequest=useRef(0);
   const [buildBusy, setBuildBusy] = useState(false);
   const [buildCancelBusy, setBuildCancelBusy] = useState(false);
   const [buildResult, setBuildResult] = useState(null);
@@ -326,8 +333,11 @@ function App() {
     buildStatusRequest.current += 1;
     setBuildStatus(null);
     profileDiscoveryRequest.current += 1;
+    adapterReviewRequest.current += 1;
     setProjectRunProfiles(null);
     setProfileDiscoveryBusy(false);
+    setAdapterReview(null);
+    setAdapterReviewBusy(false);
     setBuildResult(null);
     setBuildBusy(false);
     setBuildCancelBusy(false);
@@ -1225,6 +1235,9 @@ function App() {
     if(!projectId || profileDiscoveryBusy || buildBusy ||
        explorerIoTicket.current || workspaceLayoutOp.current) return;
     const request=++profileDiscoveryRequest.current;
+    adapterReviewRequest.current += 1;
+    setAdapterReview(null);
+    setAdapterReviewBusy(false);
     setProfileDiscoveryBusy(true);
     setProblem('');
     try {
@@ -1244,6 +1257,43 @@ function App() {
     } finally {
       if(request===profileDiscoveryRequest.current)
         setProfileDiscoveryBusy(false);
+    }
+  }
+
+  async function inspectReviewedMultilangAdapter(profileId) {
+    const projectId=activeProjectIdRef.current;
+    if (!projectId || adapterReviewBusy || profileDiscoveryBusy ||
+        buildBusy || explorerIoTicket.current || workspaceLayoutOp.current)
+      return;
+    let requestPlan;
+    try {
+      requestPlan=planReviewedAdapterRequest(
+        projectRunProfiles,projectId,profileId);
+    } catch(error) {
+      setProblem('Cannot review adapter: '+String(error));
+      return;
+    }
+    const request=++adapterReviewRequest.current;
+    const discovery=profileDiscoveryRequest.current;
+    setAdapterReviewBusy(true);
+    setAdapterReview(null);
+    setProblem('');
+    try {
+      const result=await invoke('ide_review_multilang_adapter',requestPlan);
+      if (request!==adapterReviewRequest.current ||
+          discovery!==profileDiscoveryRequest.current ||
+          activeProjectIdRef.current!==projectId) return;
+      const checked=checkedReviewedAdapterContract(result,requestPlan);
+      setAdapterReview(checked);
+      setHint('Native contract reviewed for '+profileId+
+        '. No language worker, source snapshot or execution approval was issued.');
+    } catch(error) {
+      if (request===adapterReviewRequest.current &&
+          activeProjectIdRef.current===projectId)
+        setProblem('Native adapter review denied: '+String(error));
+    } finally {
+      if (request===adapterReviewRequest.current)
+        setAdapterReviewBusy(false);
     }
   }
 
@@ -3136,8 +3186,37 @@ function App() {
                             onClick={()=>chooseProjectRunProfile(profile.id)}>
                             Select existing protected Cargo recipe
                           </button>
-                        : <p role="status">No reviewed native worker adapter.
-                            Execution unavailable; project scripts are untrusted.</p>}
+                        : <div className="dev03AdapterReview">
+                            <p role="status">No reviewed native worker adapter.
+                              Execution unavailable; project scripts are untrusted.</p>
+                            <button type="button" className="ghostBtn"
+                              disabled={adapterReviewBusy || profileDiscoveryBusy ||
+                                !profile.sha || buildBusy}
+                              onClick={()=>void inspectReviewedMultilangAdapter(profile.id)}>
+                              {adapterReviewBusy ? 'Reviewing…' :
+                                'Inspect fixed native adapter contract'}
+                            </button>
+                            {adapterReview?.projectId===activeProject?.projectId &&
+                              adapterReview.profileId===profile.id &&
+                              adapterReview.manifestSha===profile.sha &&
+                              <section className="dev03AdapterReceipt"
+                                aria-label={'Non-executable adapter review '+profile.id}>
+                                <strong>Contract only — execution blocked</strong>
+                                <p>Clean Git HEAD:
+                                  {' '}{adapterReview.cleanGitHead.slice(0,12)}…</p>
+                                <p>Review fingerprint:
+                                  {' '}{adapterReview.fingerprint.slice(0,16)}…</p>
+                                <p>Unverified tool bundle:
+                                  {' '}{adapterReview.toolchainBundleId}</p>
+                                <p>Fixed candidate worker operations
+                                  (none executed):</p>
+                                {adapterReview.steps.map(step=>
+                                  <p key={step.stepId}><code>{step.toolId}
+                                    {' '}{step.fixedArgs.join(' ')}</code></p>)}
+                                <p>Source snapshot not sealed; OS worker not
+                                  available; installed acceptance not established.</p>
+                              </section>}
+                          </div>}
                     </article>)}
                 </div>}
               <p>The existing protected Cargo runner still independently
