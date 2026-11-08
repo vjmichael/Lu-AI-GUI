@@ -12,6 +12,7 @@ import { belongsToSelectedProject } from './job_render_guard.js';
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
   { id: 'explorer', title: 'Explorer', glyph: '▤' },
+  { id: 'project-search', title: 'Find in project', glyph: '⌕' },
   { id: 'proposals', title: 'Proposals', glyph: '⇄' },
   { id: 'capabilities', title: 'Capabilities', glyph: '◇' },
   { id: 'continuity', title: 'Continuity', glyph: '▦' },
@@ -65,6 +66,12 @@ function App() {
   const [findRequest, setFindRequest] = useState(null);
   const [cursorByTab, setCursorByTab] = useState({});
   const [referencePending, setReferencePending] = useState(false);
+  const [projectSearchQuery, setProjectSearchQuery] = useState('');
+  const [projectSearchCase, setProjectSearchCase] = useState(false);
+  const [projectSearchResults, setProjectSearchResults] = useState(null);
+  const [projectSearchBusy, setProjectSearchBusy] = useState(false);
+  const projectSearchGeneration = useRef(0);
+  const projectSearchOpenNonce = useRef(0);
   const [draftReferencePending, setDraftReferencePending] = useState(false);
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
@@ -172,6 +179,9 @@ function App() {
   useEffect(() => {
     // Invalidate in-flight project evidence when the selected project changes.
     gitEvidenceRequest.current += 1;
+    projectSearchGeneration.current += 1;
+    setProjectSearchResults(null);
+    setProjectSearchBusy(false);
     setGitEvidenceBusy(false);
     setGitDiff(null);
     setGitHistory(null);
@@ -240,6 +250,7 @@ function App() {
   const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
   const anyDirty = tabs.some(tab => tab.dirty);
   const isExplorer = section === 'explorer';
+  const isProjectSearch = section === 'project-search';
   const isProposals = section === 'proposals';
   const isCapabilities = section === 'capabilities';
   const isLanguages = section === 'languages';
@@ -1515,6 +1526,94 @@ function App() {
     setLspCompletions(null);
   }
 
+  async function runProjectSearch() {
+    if (!activeProject || !projectSearchQuery.trim() || projectSearchBusy) return;
+    const generation = ++projectSearchGeneration.current;
+    const projectId = activeProject.projectId;
+    setProjectSearchBusy(true);
+    setProjectSearchResults(null);
+    setProblem('');
+    try {
+      const results = await invoke('ide_find_in_project', {
+        projectId,
+        query: projectSearchQuery,
+        caseSensitive: projectSearchCase,
+      });
+      // A superseded search is never presented as current project evidence.
+      if (generation !== projectSearchGeneration.current) return;
+      setProjectSearchResults(results);
+    } catch (error) {
+      if (generation === projectSearchGeneration.current)
+        setProblem('Could not search project: ' + String(error));
+    } finally {
+      if (generation === projectSearchGeneration.current) setProjectSearchBusy(false);
+    }
+  }
+
+  async function openProjectSearchMatch(match) {
+    if (!activeProject || explorerPending || projectSearchBusy) return;
+    if (projectSearchResults?.projectId !== activeProject.projectId) return;
+    const key = keyFor(activeProject.projectId, match.relativePath);
+    setExplorerPending(true);
+    setProblem('');
+    try {
+      // Recheck disk for both newly opened files AND existing tabs. A stored
+      // tab SHA by itself cannot prove that the disk has not since changed.
+      const opened = await invoke('ide_preview_source_file', {
+        projectId: activeProject.projectId,
+        relativePath: match.relativePath,
+      });
+      if (opened.revision !== match.revision) {
+        throw new Error('FILE_CHANGED_ON_DISK: search again to refresh the result');
+      }
+      const existing = tabs.find(tab => tab.key === key);
+      if (existing) {
+        setSection('explorer');
+        setActiveTabKey(key);
+        if (existing.dirty || existing.revision !== opened.revision) {
+          setProblem('This editor draft/revision differs from the saved search result. ' +
+            'The existing draft was not modified or navigated using stale coordinates.');
+          return;
+        }
+        const state = editorStates.current.get(key);
+        if (!state) throw new Error('EDITOR_STATE_UNAVAILABLE');
+        const line = state.doc.line(match.line);
+        const from = line.from + match.columnUtf16 - 1;
+        const to = from + match.matchLengthUtf16;
+        if (from < line.from || to > line.to) {
+          throw new Error('SEARCH_RANGE_UNVERIFIABLE: source coordinates changed');
+        }
+        setFindRequest({ tabKey: key, from, to,
+          nonce: ++projectSearchOpenNonce.current });
+        return;
+      }
+      resetBufferIdentity(key, opened.projectId, opened.relativePath, opened.revision);
+      const state = createEditorState(opened.text, opened.relativePath,
+        (editorState, draft) => onEditorChange(key, editorState, draft),
+        editorState => onEditorSelection(key, editorState));
+      const line = state.doc.line(match.line);
+      const from = line.from + match.columnUtf16 - 1;
+      const to = from + match.matchLengthUtf16;
+      if (from < line.from || to > line.to) {
+        throw new Error('SEARCH_RANGE_UNVERIFIABLE: source coordinates changed');
+      }
+      editorStates.current.set(key, state);
+      setTabs(previous => [...previous, {
+        key, projectId: opened.projectId, relativePath: opened.relativePath,
+        revision: opened.revision, savedText: opened.text, draft: opened.text,
+        dirty: false, generation: 0, bufferRevision: 0,
+      }]);
+      setActiveTabKey(key);
+      setFindRequest({ tabKey: key, from, to,
+        nonce: ++projectSearchOpenNonce.current });
+      setSection('explorer');
+    } catch (error) {
+      setProblem('Could not open this exact saved search result: ' + String(error));
+    } finally {
+      setExplorerPending(false);
+    }
+  }
+
   function onEditorChange(key, state, draft) {
     editorStates.current.set(key, state);
     const previous = bufferIdentities.current.get(key);
@@ -1757,14 +1856,15 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1 aria-label={isJobs ? 'Execution requests' : undefined}>{isJobs ? 'Execution requests' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <h1 aria-label={isJobs ? 'Execution requests' : undefined}>{isJobs ? 'Execution requests' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProjectSearch ? 'Find in project' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
           <p>{isJobs ? 'Historical review intents · Protected native Run/Test · Explicit cancellation' :
             isPackages ? 'Multi-project Git and artifact review · No release permission' :
             isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
             isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
             isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
             isLanguages ? 'Open-source LSP engines · Protected worker status · No auto-install' :
-            isProposals ? 'Data-only review inbox · No automatic changes · Lu disconnected' :
+            isProjectSearch ? 'Literal saved-text search · Revision-checked results · No writes' :
+             isProposals ? 'Data-only review inbox · No automatic changes · Lu disconnected' :
             isExplorer ? 'Tabbed code editor · Explicit, revision-checked saves · No code execution' :
             'Choose projects without executing their code.'}</p>
         </div>
@@ -1772,7 +1872,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isPackages ? (readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isPackages ? (readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProjectSearch ? void runProjectSearch() : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -2001,6 +2101,66 @@ function App() {
                       Cancel intent / withdraw review
                     </button>}
                 </article>)}
+              </div>
+            </>}
+          </section>
+        : isProjectSearch
+        ? <section className="workspaceContent projectSearchWorkspace" aria-label="Find in project">
+            <div className="sectionHeading">
+              <h2>Find in saved project files</h2>
+              <span>Read only · No generated folders or executable scans</span>
+            </div>
+            <p className="capabilityNotice">Search only the current registered project.
+              Results reflect saved disk revisions, not unsaved editor drafts. This is a bounded
+              scan and may omit binary, oversized or generated files. Nothing is executed or modified.</p>
+            <form className="projectSearchControls" onSubmit={event => {
+              event.preventDefault(); void runProjectSearch();
+            }}>
+              <input aria-label="Search project text" placeholder="Literal text to find across project"
+                value={projectSearchQuery} maxLength={128}
+                onChange={event => {
+                  setProjectSearchQuery(event.target.value);
+                  setProjectSearchResults(null);
+                  projectSearchGeneration.current += 1;
+                  setProjectSearchBusy(false);
+                }}/>
+              <label><input type="checkbox" checked={projectSearchCase}
+                onChange={event => {
+                  setProjectSearchCase(event.target.checked);
+                  setProjectSearchResults(null);
+                  projectSearchGeneration.current += 1;
+                  setProjectSearchBusy(false);
+                }}/> Match case</label>
+              <button className="primaryBtn" type="submit"
+                disabled={!activeProject || !projectSearchQuery.trim() || projectSearchBusy}>
+                {projectSearchBusy ? 'Searching…' : 'Search project'}
+              </button>
+            </form>
+            {projectSearchBusy && <p role="status">Inspecting bounded saved-file source…</p>}
+            {projectSearchResults && projectSearchResults.projectId === activeProject?.projectId && <>
+              <p className="projectSearchSummary">
+                {projectSearchResults.matches.length} match(es) ·
+                {' '}{projectSearchResults.filesScanned} file(s) scanned ·
+                {' '}{projectSearchResults.bytesScanned.toLocaleString()} bytes read
+                {projectSearchResults.skippedFiles > 0 &&
+                  ' · ' + projectSearchResults.skippedFiles + ' binary/large/unreadable file(s) skipped'}
+              </p>
+              {projectSearchResults.truncated && <p role="status" className="reviewWarning">
+                Search limits reached. Results are incomplete; narrow the project or search term.
+              </p>}
+              {projectSearchResults.matches.length === 0 && <p>
+                No matching saved source found in the inspected scope.</p>}
+              <div className="projectSearchResults">
+                {projectSearchResults.matches.map((hit, index) =>
+                  <button type="button" className="projectSearchHit"
+                    key={hit.relativePath + ':' + hit.fromByte + ':' + index}
+                    disabled={explorerPending}
+                    onClick={() => void openProjectSearchMatch(hit)}>
+                    <strong>{hit.relativePath}:{hit.line}:{hit.columnUtf16}</strong>
+                    <code>{hit.preview}</code>
+                    <small>Saved SHA-256: {hit.revision.slice(0, 12)}… ·
+                      bytes {hit.fromByte}–{hit.toByte}</small>
+                  </button>)}
               </div>
             </>}
           </section>
