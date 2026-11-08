@@ -2145,6 +2145,114 @@
         "workerExecutionEnabled",
         "installationAcceptance"
       ]
+    },
+    "ProjectSearchMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "columnUtf16": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "matchLengthUtf16": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fromByte": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "toByte": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preview": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "relativePath",
+        "revision",
+        "line",
+        "columnUtf16",
+        "matchLengthUtf16",
+        "fromByte",
+        "toByte",
+        "preview"
+      ]
+    },
+    "ProjectSearchResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "caseSensitive": {
+          "type": "boolean"
+        },
+        "scope": {
+          "type": "string",
+          "const": "saved_utf8_text_excluding_generated_directories"
+        },
+        "filesScanned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "entriesSeen": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytesScanned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skippedFiles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matches": {
+          "type": "array",
+          "maxItems": 240,
+          "items": {
+            "$ref": "#/$defs/ProjectSearchMatch"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "query",
+        "caseSensitive",
+        "scope",
+        "filesScanned",
+        "entriesSeen",
+        "bytesScanned",
+        "skippedFiles",
+        "matches",
+        "truncated"
+      ]
     }
   },
   "operations": {
@@ -4139,6 +4247,34 @@
           "releaseApproved",
           "automaticExecution"
         ]
+      }
+    },
+    "source.findProject": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "caseSensitive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "projectId",
+          "query",
+          "caseSensitive"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectSearchResult"
       }
     }
   }
