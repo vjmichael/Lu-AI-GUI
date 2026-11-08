@@ -54,6 +54,8 @@ def safe_part(part: str) -> bool:
 
 
 def stable_files(root: Path) -> tuple[list[tuple[str, Path, int, str]], str, int]:
+    if root.is_symlink():
+        raise Refused("runtime root link forbidden")
     root = root.resolve(strict=True)
     if not root.is_dir() or root.is_symlink():
         raise Refused("runtime root is not a regular directory")
