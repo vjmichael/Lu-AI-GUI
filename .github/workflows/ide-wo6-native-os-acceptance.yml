@@ -217,6 +217,16 @@ jobs:
           # distro resource lookup from genuine kernel/stdio/DAP failures.
           # Only fixed categories are shown; raw stderr and paths are hidden.
           python3 ide/supervisor/fixtures/debug/probe_lldb_dap_initialize.py
+      - name: Isolate fixed LLDB-DAP launch denial category without weakening sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          # These tests and diagnostic execute only the first-party sealed
+          # debuggee, inside a real unprivileged Bwrap namespace.
+          python3 -m py_compile ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py
+          python3 ide/supervisor/fixtures/debug/test_probe_lldb_dap_launch.py -v
+          timeout --signal=TERM --kill-after=3s 45s python3 ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py
+          echo 'P03_LLDB_LAUNCH_PROBE=diagnostic_only_no_cgroup_or_job_acceptance'
       - name: Compile trusted fixed delegated OS host and native DAP fixture
         shell: bash
         run: |
