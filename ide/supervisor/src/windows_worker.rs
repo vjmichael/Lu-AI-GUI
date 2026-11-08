@@ -1552,11 +1552,11 @@ mod tests {
         fs::write(src.join("bin/rustc.exe"), b"known-pinned-rustc").unwrap();
         let expected = trusted_offline_toolchain_digest(&src).unwrap();
         let first = root.join("first");
-        stage_toolchain(&src, &first, &expected).unwrap();
+        stage_toolchain(&src, &first, &expected, "rust_check").unwrap();
         assert_eq!(digest_tree(&first, None, 100, 100_000).unwrap(), expected);
         fs::write(src.join("bin/cargo.exe"), b"unexpected-cargo-update").unwrap();
         assert_eq!(
-            stage_toolchain(&src, &root.join("second"), &expected).unwrap_err(),
+            stage_toolchain(&src, &root.join("second"), &expected, "rust_check").unwrap_err(),
             SupervisorError::WrongProjectOrSource
         );
         let _ = fs::remove_dir_all(root);
@@ -1617,7 +1617,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!("lu-ide-d7-fixture-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
-        assert!(stage_toolchain(&base, &base.join("stage"), &"a".repeat(64)).is_err());
+        assert!(stage_toolchain(&base, &base.join("stage"), &"a".repeat(64), "rust_check").is_err());
         let _ = fs::remove_dir_all(base);
     }
 }
