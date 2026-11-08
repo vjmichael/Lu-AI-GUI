@@ -42,3 +42,15 @@ This is a **test-only** use of Node and candidate executables in trusted ephemer
 - Source unit tests: `ide/packaging/test_python_semantic_native_benchmark.py`
 
 **Accept only exact-head native CI evidence, not a source implementation claim.**
+
+
+## Real first-head failures and repaired diagnostic precision
+
+The first real [Win2022/Ubuntu24 benchmark #42494557323](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42494557323) FAILED on both OS. This was not hypothetical: both BasedPyright and ty successfully initialized, and both returned 20/20 real hovers and completions. ty returned 20/20 same-file definitions on both platforms. BasedPyright returned 20/20 definitions on Ubuntu but **0/20 Windows definitions accepted by the first exact URI-string matcher**, so its first Windows result must not be reported as passing. ty produced a final `terminalReaped=false` in the original ambiguous benchmark, despite valid semantics. This was not proof of an orphan: the first benchmark conflated any nonzero process exit code with no OS reaping.
+
+Source repair for the next exact-head native run:
+- Normalize only valid local `file:` URI paths through OS-native path decoding/canonicalization before deciding same-file identity; remote hosts, query/fragment, cross-file navigation and non-file schemes remain denied. A failed definition now emits bounded nonidentifying response-shape classification rather than source or candidate file paths.
+- Distinguish actual process reaping, LSP `shutdown` acknowledgement, `exit` notification, forced OS kill, precise exit code, clean exit and bounded stderr class. **Clean exit is a separate required acceptance gate**; nonzero exits are NOT silently converted into a passing terminal lifecycle.
+- Keep the same 20 fixture files, same native source checks, and same 18/20 hover/definition and 10/20 completion acceptance floors. A candidate is not selected from an unaccepted or incomplete benchmark.
+
+The binary test still operates in a disposable CI workspace without a production Lu worker, license approval or installed UI access. New OS receipts are needed before closing this gate.
