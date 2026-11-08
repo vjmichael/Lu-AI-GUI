@@ -1,0 +1,258 @@
+name: IDE DEV-02.5 real installed TEST-ONLY native language-server resource packages
+on:
+  push:
+    branches: ['ide/dev02-test-only-installed-lsp-bundle-20261108']
+    paths:
+      - 'ide/**'
+      - '.github/workflows/ide-dev02-test-only-installed-lsp-ci.yml'
+  pull_request:
+    paths:
+      - 'ide/**'
+      - '.github/workflows/ide-dev02-test-only-installed-lsp-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  real-temporary-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            bundle: deb
+          - os: windows-2022
+            platform: windows-x86_64
+            bundle: nsis
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 125
+    env:
+      CARGO_INCREMENTAL: 0
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Verify source and immutable install graph, deny approved release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "87d0045a4be1c78651f080300aba71c14dbe1f30"
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: no owner/legal provider redistribution approval'
+            exit 2
+          fi
+          python3 -m unittest discover -s ide/packaging -p 'test_stage_test_only_lsp_resources.py' -v
+      - name: Actual Linux desktop and ATSPI native prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev xvfb xauth xdotool dbus-x11 python3-pyatspi at-spi2-core openbox
+      - name: Fetch published six-asset manifest only from fixed SHA256 release URLs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ide/packaging/stage_test_only_lsp_resources.py \
+            --release-manifest ide/packaging/lsp_upstream_archive_candidates_20261108.json \
+            --notice-manifest ide/packaging/lsp_original_upstream_notices_20261108.json \
+            --archive-cache "$RUNNER_TEMP/lu-ide-technical-official-archives" \
+            --output "$RUNNER_TEMP/lu-ide-technical-resources" \
+            --platform "${{ matrix.platform }}" --source-sha "$SOURCE_SHA" --fetch-locked
+      - name: Prove three real native binaries and all original notices, compile pinned test-only native host
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,shutil
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])/"lu-ide-technical-resources"
+          receipt=json.loads((root/"technical-lsp-resource-receipt.json").read_text())
+          if receipt["sourceHead"]!=os.environ["SOURCE_SHA"]:
+              raise SystemExit("DENIED: technical resource receipt wrong source commit")
+          for flag in ("releaseApproved","redistributionReviewed","signedServiceInstalled",
+                       "runLanguageServers","installedProtectedSessionAccepted"):
+              if receipt[flag] is not False:
+                  raise SystemExit("DENIED: unreviewed technical bundle gained approval")
+          if set(receipt["resources"])!={"clangd","rust-analyzer","ruff"}:
+              raise SystemExit("DENIED: missing native LSP provider")
+          for provider,record in receipt["resources"].items():
+              if record["licenseFiles"]<1 or len(record["bundleSha256"])!=64:
+                  raise SystemExit("DENIED: missing original notice or exact tree pin")
+              with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as writer:
+                  writer.write(record["compileTimePin"]+"="+record["bundleSha256"]+"\n")
+          dest=Path("ide/app/src-tauri/test-lsp-resources")
+          if dest.exists():
+              raise SystemExit("DENIED: existing test-only installer resource tree")
+          shutil.copytree(root,dest,symlinks=False)
+          print("DEV02_TEST_ONLY_THREE_APPROVED_BYTE_IDENTITIES_NO_RELEASE_RIGHT=PASS")
+          PY
+      - name: Original first-party Cargo/npm dependency notice collection and exact technical build
+        shell: bash
+        working-directory: ide/app
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          cargo fetch --manifest-path src-tauri/Cargo.toml --locked
+          python3 ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform "${{ matrix.os }}"
+          python3 ../packaging/upstream_notice_receipt.py \
+            --repo-root ../.. --source-sha "$SOURCE_SHA" \
+            --output src-tauri/upstream-notice-receipt.json
+          python3 ../packaging/collect_verification_licenses.py \
+            --repo-root ../.. --output src-tauri/verification-notices \
+            --source-sha "$SOURCE_SHA" \
+            --upstream-receipt src-tauri/upstream-notice-receipt.json
+          cargo check --manifest-path src-tauri/Cargo.toml --features native-lsp --lib --locked
+          if [[ "${{ matrix.platform }}" == "linux-x86_64" ]]; then
+            config=src-tauri/tauri.dev02.technical-linux.conf.json
+          else
+            config=src-tauri/tauri.dev02.technical-windows.conf.json
+          fi
+          npx --yes @tauri-apps/cli@2.12.4 build \
+            --config "$config" --bundles "${{ matrix.bundle }}" --features native-lsp
+      - name: Actually install Debian and verify root-owned installed verified binaries, GTK and uninstall
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          if [[ ${#packages[@]} -ne 1 ]]; then
+            echo 'DENIED: exactly one Debian technical package required' >&2
+            exit 2
+          fi
+          deb="${packages[0]}"
+          pkg="$(dpkg-deb --field "$deb" Package)"
+          if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
+            echo 'DENIED: package already installed outside CI scope' >&2
+            exit 2
+          fi
+          installed=0
+          cleanup() {
+            if [[ "$installed" -eq 1 ]]; then
+              sudo dpkg --remove "$pkg" || return 2
+              if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
+                echo 'DENIED: actual Debian package not removed' >&2
+                return 2
+              fi
+            fi
+          }
+          trap cleanup EXIT
+          sudo dpkg --install "$deb"
+          installed=1
+          test -x /usr/bin/lu-ide-desktop
+          python3 - <<'PY'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])/"lu-ide-technical-resources"
+          r=json.loads((root/"technical-lsp-resource-receipt.json").read_text())
+          paths=subprocess.check_output(["dpkg","-L","lu-ide-desktop"],text=True).splitlines()
+          for provider,record in r["resources"].items():
+              expected=provider if provider!="clangd" else "clangd"
+              suffix=f"/language-servers/{provider}/bin/{expected}"
+              matches=[Path(p) for p in paths if p.endswith(suffix)]
+              if len(matches)!=1:
+                  raise SystemExit(f"DENIED: installed native Debian {provider} not uniquely found")
+              binary=matches[0]
+              if binary.is_symlink() or binary.stat().st_uid!=0 or binary.stat().st_mode & 0o022:
+                  raise SystemExit(f"DENIED: Debian native {provider} file ownership/permissions")
+              if hashlib.sha256(binary.read_bytes()).hexdigest()!=record["binarySha256"]:
+                  raise SystemExit(f"DENIED: installed native {provider} SHA mismatch")
+              parent=binary.parent.parent/"NOTICES"
+              if len(list(parent.iterdir()))!=record["licenseFiles"]:
+                  raise SystemExit("DENIED: installed original upstream notices missing")
+          if not any(p.endswith("DEVELOPMENT-ONLY-NOT-FOR-DISTRIBUTION.txt") for p in paths):
+              raise SystemExit("DENIED: test-only installed package missing warning")
+          print("DEV02_TECHNICAL_DEBIAN_INSTALLED_ALL_THREE_NATIVE_BINARIES_WITH_NOTICES=PASS")
+          print("DEV02_INSTALLED_PROTECTED_LSP_PROCESS=NOT_ACCEPTED")
+          PY
+          fixture="$RUNNER_TEMP/lu-ide-technical-gtk-${GITHUB_RUN_ID}"
+          mkdir -m 700 "$fixture"
+          printf 'fn main() {}\n' > "$fixture/main.rs"
+          env WO8_INSTALLED_EXE=/usr/bin/lu-ide-desktop WO8_FIXTURE_ROOT="$fixture" \
+            dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+            /usr/bin/python3 ide/app/fixtures/dev02_test_only_installed_linux.py
+          echo 'DEV02_TEST_ONLY_INSTALLED_DEBIAN_APP_AND_RESOURCES=PASS'
+      - name: Actually install Windows NSIS, UIAutomation and verify original installed bytes and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-StrictMode -Version Latest
+          $packages=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
+          if ($packages.Count -ne 1) { throw 'DENIED: exactly one technical NSIS setup required' }
+          $install=Join-Path $env:RUNNER_TEMP ('lu-ide-technical-native-'+$env:GITHUB_RUN_ID)
+          if (Test-Path $install) { throw 'DENIED: installation target already exists' }
+          $installed=$false
+          try {
+            $p=Start-Process -FilePath $packages[0].FullName -ArgumentList @('/S',('/D='+$install)) -PassThru -Wait
+            $exe=Join-Path $install 'lu-ide-desktop.exe'
+            if ($p.ExitCode -ne 0 -or !(Test-Path -LiteralPath $exe -PathType Leaf)) {
+              throw 'DENIED: actual technical NSIS installation failed'
+            }
+            $installed=$true
+            $receipt=Get-Content -Raw (Join-Path $env:RUNNER_TEMP 'lu-ide-technical-resources/technical-lsp-resource-receipt.json') | ConvertFrom-Json
+            $all=@(Get-ChildItem -LiteralPath $install -Recurse -File)
+            foreach ($record in @($receipt.resources.PSObject.Properties)) {
+              $name=[string]$record.Name
+              $binary=if($name -eq 'clangd'){'clangd.exe'}elseif($name -eq 'rust-analyzer'){'rust-analyzer.exe'}else{'ruff.exe'}
+              $suffix=('language-servers\'+$name+'\bin\'+$binary)
+              $matching=@($all | Where-Object { $_.FullName.EndsWith($suffix,[StringComparison]::OrdinalIgnoreCase) })
+              if ($matching.Count -ne 1 -or
+                  (Get-FileHash -Algorithm SHA256 -LiteralPath $matching[0].FullName).Hash -ine $record.Value.binarySha256) {
+                throw ('DENIED: installed Windows resource SHA mismatch for '+$name)
+              }
+              $notices=Join-Path $matching[0].Directory.Parent.FullName 'NOTICES'
+              if (!(Test-Path $notices) -or
+                  @(Get-ChildItem -LiteralPath $notices -File).Count -ne [int]$record.Value.licenseFiles) {
+                throw ('DENIED: installed Windows upstream notice inventory missing for '+$name)
+              }
+            }
+            if (@($all | Where-Object Name -eq 'DEVELOPMENT-ONLY-NOT-FOR-DISTRIBUTION.txt').Count -ne 1) {
+              throw 'DENIED: installed technical package lacks no-release sentinel'
+            }
+            if (@($all | Where-Object Name -eq 'windows_recovery_service.exe').Count -ne 0) {
+              throw 'DENIED: signed production broker must not be simulated in technical package'
+            }
+            $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario Shell
+            if (!$?) { throw 'DENIED: actual installed Windows WebView UIA shell failed' }
+            Write-Host 'DEV02_TEST_ONLY_INSTALLED_NSIS_UIA_AND_VERIFIED_LSP_BYTES=PASS'
+            Write-Host 'DEV02_INSTALLED_PROTECTED_LSP_PROCESS=NOT_ACCEPTED'
+          } finally {
+            if ($installed) {
+              $uninstallers=@(Get-ChildItem -LiteralPath $install -Filter '*uninstall*.exe' -File)
+              if ($uninstallers.Count -ne 1) { throw 'DENIED: actual NSIS uninstaller missing' }
+              $removal=Start-Process -FilePath $uninstallers[0].FullName -ArgumentList '/S' -PassThru -Wait
+              if ($removal.ExitCode -ne 0 -or (Test-Path $exe)) {
+                throw 'DENIED: technical NSIS package not removed'
+              }
+              Write-Host 'DEV02_TEST_ONLY_INSTALLED_NSIS_UNINSTALL=PASS'
+            }
+          }
+      - name: No binary or installer distribution
+        if: always()
+        shell: bash
+        run: |
+          echo 'DEV02_TEST_ONLY_INSTALLER_BUILT_INSTALLED_REMOVED=SEE_OS_JOB_STATUS'
+          echo 'DEV02_TECHNICAL_INSTALLERS_AND_PROVIDER_BINARIES_NOT_UPLOADED'
+          echo 'DEV02_PRODUCTION_LANGUAGE_SERVER_RUN_APPROVED=NO'
+          echo 'DEV02_LEGAL_DISTRIBUTION_APPROVED=NO'
