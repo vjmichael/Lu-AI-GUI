@@ -2526,7 +2526,7 @@ function App() {
 
   async function saveTab(tab) {
     if (!tab || !tab.dirty || savingKey || explorerPending ||
-        workspaceLayoutOp.current) return;
+        explorerIoTicket.current || workspaceLayoutOp.current) return;
     const content = tab.draft;
     const base = tab.revision;
     const saveStartedBuffer=bufferIdentities.current.get(tab.key);
@@ -2571,7 +2571,8 @@ function App() {
   }
 
   async function reviewTab(tab) {
-    if (!tab || !tab.dirty || reviewPending || explorerPending || savingKey) return;
+    if (!tab || !tab.dirty || reviewPending || explorerPending ||
+        explorerIoTicket.current || savingKey) return;
     setReviewPending(true);
     setProblem('');
     try {
