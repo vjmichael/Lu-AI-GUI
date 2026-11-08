@@ -35,6 +35,11 @@ pub mod ansf_source_ids;
 #[path = "../../../../src-tauri/lu-core/src/ansf_semantic.rs"]
 pub mod ansf_semantic;
 
+#[path = "../../../../src-tauri/lu-core/src/contracts.rs"]
+pub mod contracts;
+#[path = "../../../../src-tauri/lu-core/src/journal.rs"]
+pub mod journal;
+
 #[path = "../../../../src-tauri/lu-core/src/continuity.rs"]
 pub mod continuity;
 

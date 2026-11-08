@@ -474,7 +474,7 @@ impl AnsfStore {
 
     /// Forward cursor for the independently navigable history pane. Nothing
     /// newer is inferred from a summary; each page reads original ANSF rows.
-    pub fn page_after(
+    pub fn original_page_after(
         &self,session_id:&str,after_id:i64,limit:usize
     )->Result<(Vec<Entry>,bool),AnsfError>{
         if !valid_id(session_id)||after_id<0||limit==0||limit>64{

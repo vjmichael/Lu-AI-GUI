@@ -65,14 +65,14 @@ pub struct OriginalHistoryPage{
 }
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
-#[derive(Debug,Clone,Serialize)]
-#[serde(rename_all="camelCase")]
 pub struct OriginalHistoryForwardPage{
     pub source_chat_id:String,
     pub entries:Vec<RecallHit>,
     pub next_after_id:Option<i64>,
     pub has_more:bool,
 }
+#[derive(Debug,Clone,Serialize)]
+#[serde(rename_all="camelCase")]
 pub struct OriginalTextPage{
     pub source_id:String,
     pub source_chat_id:String,
@@ -788,7 +788,7 @@ impl ChatStore {
         self.require(active_chat)?;
         if limit==0||limit>40{return Err("History page size must be 1..40".into())}
         let book=self.require(source_chat)?;
-        let (entries,has_more)=book.page_after(source_chat,after_id,limit)
+        let (entries,has_more)=book.original_page_after(source_chat,after_id,limit)
             .map_err(to_err)?;
         let title:String={
             let conn=self.catalog.lock().map_err(to_err)?;

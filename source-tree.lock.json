@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "289554f777a2d3e856f67ef15fc1a41f2fd0754b",
+  "sourceCommitBeforeLock": "b21923ff8661b54f300d80078a1648ed7c7f0be1",
   "trackedFileCount": 579,
   "files": [
     {
@@ -505,7 +505,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "8da20476aab11094aa04698e11240559f798c0b5"
+      "blob": "dc40e8c9e9d62dd0f38609cb753b893fbebb62b7"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -797,7 +797,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "fc570d0f50707b1f438f20d05b3083f8739054b1"
+      "blob": "39ff12c0e36d9e57a62e65ebfbcbeedc836622d0"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
@@ -1093,7 +1093,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf.rs",
-      "blob": "0448cb46535b198b19e053580ea08e0004b51899"
+      "blob": "0c7e861f37e0da06672a56aa5da5b348fa0a0261"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_artifact_links.rs",
