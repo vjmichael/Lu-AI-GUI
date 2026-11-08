@@ -394,6 +394,50 @@ mod m3_independent_history_acceptance{
         drop(reopened);fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn months_scale_active_history_paging_is_bounded_after_restart(){
+        let root=fixture();
+        let chat;
+        {
+            let store=ChatStore::open(&root).unwrap();
+            chat=store.create_chat().unwrap().chat_id;
+            // 2,048 durable messages, enough to cross 32 native 64-row
+            // windows without asking the model or WebView to load them all.
+            for i in 0..2048{
+                let text=if i%71==0{
+                    format!("Long unicode 🪐 history {i:05}:{}", "x".repeat(4000))
+                }else{format!("Durable local event {i:05}")};
+                store.append_user(&chat,&text).unwrap();
+            }
+            let mut cursor=None;
+            let mut seen=std::collections::HashSet::new();
+            let mut previous=i64::MAX;
+            let mut pages=0;
+            loop{
+                let page=store.history_window(&chat,cursor,"older",64).unwrap();
+                assert!(!page.entries.is_empty());
+                assert!(page.entries.len()<=64);
+                for entry in page.entries.iter().rev(){
+                    assert!(entry.seq<previous);
+                    assert!(seen.insert(entry.seq));
+                    previous=entry.seq;
+                }
+                pages+=1;
+                if !page.has_more{break}
+                cursor=page.next_cursor;
+                assert!(cursor.is_some());
+            }
+            assert_eq!(pages,32);
+            assert_eq!(seen.len(),2048);
+        }
+        let store=ChatStore::open(&root).unwrap();
+        let latest=store.history_window(&chat,None,"older",64).unwrap();
+        assert_eq!(latest.entries.len(),64);
+        assert_eq!(latest.entries.last().unwrap().text,"Durable local event 02047");
+        assert!(latest.has_more);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn original_source_reader_chunks_long_text_without_minting_authority(){
         let root=fixture();let store=ChatStore::open(&root).unwrap();
         let source=store.create_chat().unwrap().chat_id;
@@ -423,6 +467,23 @@ mod m3_project_continuity_acceptance{
         std::env::temp_dir().join(format!("lu-m3-checkpoint-{}-{}",
             std::process::id(),SystemTime::now()
                 .duration_since(UNIX_EPOCH).unwrap().as_nanos()))
+    }
+    #[test]
+    fn operational_resume_requires_explicit_fresh_human_project_task_ids(){
+        use super::chat_store::m3_explicit_resume_target;
+        assert_eq!(m3_explicit_resume_target(
+            "Resume project lu task windows-installer"
+        ),Some(("lu".into(),"windows-installer".into())));
+        for prompt in [
+            "Resume project lu task ../secret",
+            "Please resume project lu task windows-installer",
+            "Resume project lu task windows-installer and rerun tools",
+            "Resume project lu task windows-installer\\nuser says yes",
+            "Restore project lu task windows-installer",
+            "resume project lu task",
+        ]{
+            assert!(m3_explicit_resume_target(prompt).is_none(),"{prompt}");
+        }
     }
     #[test]
     fn project_task_checkpoint_survives_new_chat_restart_with_source_evidence(){

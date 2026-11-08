@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3809f92c8585962b83747a19057c023e3da32999",
+  "sourceCommitBeforeLock": "ece800217fef71c5aae93a299dc22aa1e19e83ad",
   "trackedFileCount": 586,
   "files": [
     {
@@ -821,7 +821,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "5f5541c454052f55551f275dff2063cf2f33b804"
+      "blob": "c96fe644ce6e6b6c20a627d597adc159adf12d50"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
