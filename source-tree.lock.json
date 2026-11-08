@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "1431c35b6c1071faa17a961fbcf4684023c789c4",
+  "sourceCommitBeforeLock": "0e8a2f6f406309b3fd6b0748a2d5becb9d532e79",
   "trackedFileCount": 696,
   "files": [
     {
@@ -93,7 +93,7 @@
     },
     {
       "path": ".github/workflows/lu-e1-p15-conversation-recovery.yml",
-      "blob": "be3554473da996e969c718db7087a8e8dd10b7b1"
+      "blob": "af85aa529333d011e33c231bff4c0287f10e2f09"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -913,7 +913,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_task_continuity.rs",
-      "blob": "6cf33b373f193e4c73ae5268678c567d9faf84f0"
+      "blob": "8789cd6b374153d2899c49f89b63b01c3869650b"
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
