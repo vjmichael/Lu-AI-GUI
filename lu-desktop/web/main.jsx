@@ -2605,8 +2605,8 @@ function App() {
   }
   function quoteSavedMessage(entry){
     const excerpt=entry.text.slice(0,1200)
-      .split('\\n').map(line=>'> '+line).join('\\n');
-    setPrompt(prev=>(prev?prev+'\\n\\n':'')+excerpt+'\\n\\n');
+      .split('\n').map(line=>'> '+line).join('\n');
+    setPrompt(prev=>(prev?prev+'\n\n':'')+excerpt+'\n\n');
     composerRef.current?.focus();
   }
   useEffect(()=>{
