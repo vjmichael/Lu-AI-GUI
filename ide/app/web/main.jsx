@@ -535,6 +535,8 @@ function App() {
       'Replace this unsaved editor draft with the preserved recovery copy? Project files remain unchanged.'))
       return;
     const currentIdentity=bufferIdentities.current.get(tab.key);
+    const currentDraft=editorStates.current.get(tab.key)?.sliceDoc();
+    const originalRevision=currentIdentity?.revision;
     setDraftRecoveryBusy(true);
     setProblem('');
     try {
@@ -545,7 +547,10 @@ function App() {
           relativePath:tab.relativePath,checkpointId:record.checkpointId}),
       ]);
       if (bufferIdentities.current.get(tab.key)?.bufferId!==currentIdentity?.bufferId ||
-          !tabsRef.current.some(x=>x.key===tab.key)) return;
+          bufferIdentities.current.get(tab.key)?.revision!==originalRevision ||
+          editorStates.current.get(tab.key)?.sliceDoc()!==currentDraft ||
+          !tabsRef.current.some(x=>x.key===tab.key))
+        throw Error('BUFFER_CHANGED_DURING_DRAFT_RECOVERY');
       if (disk.projectId!==tab.projectId || disk.relativePath!==tab.relativePath ||
           recovered.checkpointId!==record.checkpointId ||
           (record.draftSha256 && recovered.draftSha256!==record.draftSha256) ||
@@ -561,6 +566,12 @@ function App() {
       if (lspSession?.projectId===tab.projectId &&
           lspSession.relativePath===tab.relativePath)
         await stopLspSession();
+      // Stopping an LSP may yield; never restore over a buffer edited during
+      // the awaited side operation or after a tab was reopened.
+      if (bufferIdentities.current.get(tab.key)?.bufferId!==currentIdentity?.bufferId ||
+          bufferIdentities.current.get(tab.key)?.revision!==originalRevision ||
+          editorStates.current.get(tab.key)?.sliceDoc()!==currentDraft)
+        throw Error('BUFFER_CHANGED_DURING_DRAFT_RECOVERY');
       clearPrivateDraftSession(tab.key);
       resetBufferIdentity(tab.key,tab.projectId,tab.relativePath,disk.revision);
       draftHeadByTab.current.set(tab.key,record.checkpointId);
