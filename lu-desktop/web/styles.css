@@ -403,3 +403,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   .messageReactions button{min-width:35px}
   .messageReplayBackdrop{padding:10px}
 }
+
+/* User-selectable light/dark bubbles: preserve readable markdown contrast. */
+.message .markdownBody h2,.message .markdownBody h3,.message .markdownBody h4,
+.message .markdownBody h5,.message .markdownBody a{color:inherit}
+.message .markdownBody a{text-decoration:underline;text-underline-offset:3px}
+.message .markdownBody :not(pre)>code{color:#edf5ff}
