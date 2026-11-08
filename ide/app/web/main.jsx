@@ -3,6 +3,11 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
+import {
+  newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
+  captureBufferSpan, resolveBufferSpan, formatBufferReference,
+  formatPersistentDraftReference, draftRecoveryAssessment,
+} from './buffer_identity.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
 import { projectProblems, stillCurrentProblem } from './lsp_problems.js';
@@ -73,6 +78,9 @@ function App() {
   const [findRequest, setFindRequest] = useState(null);
   const [cursorByTab, setCursorByTab] = useState({});
   const [referencePending, setReferencePending] = useState(false);
+  const [draftReferencePending, setDraftReferencePending] = useState(false);
+  const [draftRecoveryBusy, setDraftRecoveryBusy] = useState(false);
+  const [draftRecoveryByTab, setDraftRecoveryByTab] = useState({});
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
   const [listing, setListing] = useState(null);
@@ -151,6 +159,38 @@ function App() {
   const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
+  const bufferIdentities = useRef(new Map());
+  const draftHeadByTab = useRef(new Map());
+  const draftAutoPreserve = useRef(new Set());
+  const draftTimers = useRef(new Map());
+  const draftInFlight = useRef(new Set());
+  const draftLookupVersion = useRef(new Map());
+  const tabsRef = useRef([]);
+  tabsRef.current = tabs;
+  function resetBufferIdentity(key, projectId, relativePath, savedRevision) {
+    const identity = newBufferIdentity(projectId, relativePath,
+      savedRevision, crypto.randomUUID());
+    bufferIdentities.current.set(key, identity);
+    return identity;
+  }
+  function onEditorSelection(key, state) {
+    editorStates.current.set(key, state);
+  }
+  function clearPrivateDraftSession(key) {
+    const timer = draftTimers.current.get(key);
+    if (timer) clearTimeout(timer);
+    draftTimers.current.delete(key);
+    draftAutoPreserve.current.delete(key);
+    draftHeadByTab.current.delete(key);
+    bufferIdentities.current.delete(key);
+    draftLookupVersion.current.set(key, (draftLookupVersion.current.get(key) || 0) + 1);
+    setDraftRecoveryByTab(previous => {
+      const next = { ...previous };
+      delete next[key];
+      return next;
+    });
+  }
+
   useEffect(() => {
     // Read-only, project-independent inventory. No provider lookup executes.
     Promise.all([invoke('ide_list_language_servers'), invoke('ide_lsp_worker_status')])
