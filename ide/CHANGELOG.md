@@ -389,3 +389,5 @@ See the engineering handoff and linked acceptance documents for exact evidence. 
 - **Native GUI diagnostic (Nov 8):** Observed actual Windows WO9 dialogs and WebView native focus recovery, but exact Git commit HEAD was unchanged at immediate check; now waits bounded 24s for real hash change and checks diff-tree. Linux GTK native chooser distinguishes visible active window from stale hidden AT-SPI nodes and requires exact registered project independently of dialogs. No native acceptance yet; default-deny signing unchanged.
 
 - **Linux installed GTK (Nov 8):** Real X11 file chooser exposed no button actions after successful unsigned `.deb` and native dpkg rollback. Added narrowly scoped X11 keyboard confirmation only for an AT-SPI-visible and title-identified chooser; genuine project registration remains mandatory. OS retest pending.
+
+- **Installed GTK follow-up (Nov 8):** After X11 active-window lookup failed on real Ubuntu26 CI, added OS xdotool click limited to the AT-SPI-visible native file chooser geometry, followed by exact Tauri GUI registration proof; installed acceptance still pending.

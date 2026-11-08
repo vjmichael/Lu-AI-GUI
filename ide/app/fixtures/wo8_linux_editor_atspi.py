@@ -192,6 +192,55 @@ def _x11_dialog_activation(attempt):
         return False
 
 
+def _atspi_bounded_chooser_mouse(attempt):
+    # Xvfb + GTK can expose a visible file-chooser widget without an X11
+    # active-window property or accessible action button. Use only its actual
+    # OS AT-SPI bounding rectangle, never guessed global screen coordinates.
+    try:
+        size = subprocess.check_output(
+            ["xdotool", "getdisplaygeometry"], text=True, timeout=5).strip().split()
+        if len(size) != 2:
+            return False
+        screen_w, screen_h = (int(v) for v in size)
+    except (OSError, ValueError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired):
+        print("P04_GTK_CHOOSER_SPATIAL=display_geometry_unavailable", flush=True)
+        return False
+    for node in elements():
+        try:
+            if "file chooser" not in (node.getRoleName() or "").casefold():
+                continue
+            flags = node.getState()
+            if not (flags.contains(pyatspi.STATE_SHOWING)
+                    and flags.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            rect = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            if (rect.width < 320 or rect.height < 180 or rect.x < 0 or rect.y < 0
+                    or rect.x + rect.width > screen_w
+                    or rect.y + rect.height > screen_h):
+                continue
+            # GTK action row occupies the bottom-right portion. Both attempts
+            # stay entirely within the actual visible native chooser widget.
+            margin = 95 if attempt % 2 == 0 else 55
+            px = int(rect.x + rect.width - margin)
+            py = int(rect.y + rect.height - 32)
+            if not (rect.x + 8 < px < rect.x + rect.width - 8
+                    and rect.y + 8 < py < rect.y + rect.height - 8):
+                continue
+            subprocess.run(
+                ["xdotool", "mousemove", "--sync", str(px), str(py)],
+                check=True, timeout=5)
+            subprocess.run(["xdotool", "click", "1"], check=True, timeout=5)
+            print("P04_GTK_CHOOSER_SPATIAL=real_os_click_inside_visible_atspi_chooser;"
+                  "attempt=" + str(attempt), flush=True)
+            return True
+        except (ValueError, OSError, subprocess.CalledProcessError,
+                subprocess.TimeoutExpired):
+            continue
+    print("P04_GTK_CHOOSER_SPATIAL=no_valid_visible_native_chooser_geometry",flush=True)
+    return False
+
+
 def _native_picker_confirm(attempt=0):
     # The previous real Ubuntu 26.04 run clicked an authentic AT-SPI
     # chooser action THREE times and the dialog never closed. A generic
@@ -241,6 +290,8 @@ def _native_picker_confirm(attempt=0):
     # A separately witnessed native GTK X11 dialog may have zero exposed
     # AT-SPI action buttons. Try bounded real OS keyboard acceptance instead.
     if _x11_dialog_activation(attempt):
+        return
+    if _atspi_bounded_chooser_mouse(attempt):
         return
     print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=missing_real_chooser_button;"
           "matching_dialog_buttons=" + str(len(ranked)), flush=True)

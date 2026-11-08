@@ -517,3 +517,6 @@ Windows WO9 real consent x2 and project review PASS, but Git HEAD did not change
 
 ### Linux GTK chooser active-window fallback
 Latest native Ubuntu 26.04 `.deb` build/failed-upgrade recovery passed, but GTK chooser showed no native action buttons; implemented bounded OS X11 chooser-identified keyboard fallback gated on actual AT-SPI visible chooser and real app registration. Native OS retest is pending. Signing/legal publisher identity remain deferred, release remains default deny.
+
+### P04 GTK CI native spatial witness
+The previous Ubuntu26 exact installed test [42436702598](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42436702598) proved dpkg rollback but found neither an X11 active window nor an AT-SPI action button for the **visible** native GTK chooser. A new bounded physical X11 mouse attempt is strictly derived from the chooser's accessible rectangle and independently checked against display bounds. The test still must observe a changed, registered project in the real installed app and remains FAIL on no registration. It is diagnostic native GUI repair, not a process/security containment downgrade or a signed-release claim. Ubuntu24 actual native acceptance remains required.

@@ -81,6 +81,21 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn("Deny 'wo9_native_commit_not_observed'",source)
         self.assertIn("git -C $fixed diff-tree --no-commit-id",source)
 
+    def test_gtk_spatial_acceptance_only_inside_native_visible_chooser(self):
+        src=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
+        section=src.split("def _atspi_bounded_chooser_mouse(attempt):",1)[1].split(
+            "def _native_picker_confirm(",1)[0]
+        for term in ("xdotool", "getdisplaygeometry", "pyatspi.STATE_SHOWING",
+                     "pyatspi.STATE_VISIBLE", "DESKTOP_COORDS",
+                     "rect.width < 320", "rect.height < 180",
+                     "rect.x + rect.width > screen_w", "rect.y + rect.height > screen_h",
+                     "xdotool\", \"mousemove", "xdotool\", \"click"):
+            self.assertIn(term,section)
+        self.assertIn("if _atspi_bounded_chooser_mouse(attempt):",src)
+        self.assertIn("if not _registered_native_project_is_exposed():",src)
+        self.assertNotIn("window.__TAURI_INTERNALS__",section)
+        self.assertNotIn("invoke_tauri",section)
+
     def test_linux_os_chooser_keyboard_fallback_requires_real_native_active_window(self):
         source=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
         section=source.split("def _x11_dialog_activation(attempt):",1)[1].split(
