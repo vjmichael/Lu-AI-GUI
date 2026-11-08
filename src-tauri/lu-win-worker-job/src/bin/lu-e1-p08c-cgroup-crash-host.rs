@@ -9,7 +9,7 @@ fn main(){
         .expect("cgroup not delegated: fail native kernel acceptance");
     let mut child=Command::new("/usr/bin/python3");
     child.args(["-u","-c",
-        "import subprocess; p=subprocess.Popen(['/bin/sleep','90'], start_new_session=True); print(p.pid,flush=True); p.wait()"])
+        "import subprocess,pathlib; p=subprocess.Popen(['/bin/sleep','90'],start_new_session=True); cg=next(x[3:] for x in pathlib.Path('/proc/self/cgroup').read_text().splitlines() if x.startswith('0::')); nested=pathlib.Path('/sys/fs/cgroup')/cg.lstrip('/')/'lu-e1-nested'; nested.mkdir(); (nested/'cgroup.procs').write_text(str(p.pid)); print(p.pid,flush=True); p.wait()"])
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
     custody.bind_before_exec(&mut child)
         .expect("cannot bind process before exec");
