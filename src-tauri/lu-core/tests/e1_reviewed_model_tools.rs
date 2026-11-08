@@ -477,6 +477,12 @@ fn real_git_loose_merge_graph_is_verified_without_invoking_git_by_oracle(){
     let mut bytes=fs::read(&pack).unwrap();
     let last=bytes.len()-1;
     bytes[last]^=0x40;
+    // Native Git writes packs read-only (0444) on Linux and may set a
+    // readonly attribute on Windows. Only this owned *test fixture* is
+    // made writable before intentional checksum corruption.
+    let mut permissions=fs::metadata(&pack).unwrap().permissions();
+    permissions.set_readonly(false);
+    fs::set_permissions(&pack,permissions).unwrap();
     fs::write(&pack,bytes).unwrap();
     assert_eq!(verify_git(&repo,GitReadOperation::HistoryCount,&reported).verdict,
         IndependentOutcomeVerdict::Unsupported);
@@ -592,6 +598,12 @@ fn real_git_delta_packs_reconstruct_original_verified_blob_bytes(){
     let pack=idx.with_extension("pack");
     let mut bytes=fs::read(&pack).unwrap();
     *bytes.last_mut().unwrap()^=0x21;
+    // Native Git writes packs read-only (0444) on Linux and may set a
+    // readonly attribute on Windows. Only this owned *test fixture* is
+    // made writable before intentional checksum corruption.
+    let mut permissions=fs::metadata(&pack).unwrap().permissions();
+    permissions.set_readonly(false);
+    fs::set_permissions(&pack,permissions).unwrap();
     fs::write(&pack,bytes).unwrap();
     assert!(ObjectReader::new(&repo.join(".git")).read(&expected[0].0).is_none());
     fs::remove_dir_all(root).unwrap();
