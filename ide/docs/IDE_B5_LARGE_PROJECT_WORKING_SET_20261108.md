@@ -22,7 +22,7 @@ benchmarked claims of any particular performance gain.
 
 ## Bounded implementation
 
-- **At most 48 tabs per registered project.** New opens, saved project-search
+- **At most 48 tabs per registered project and 96 tabs globally across projects.** New opens, saved project-search
   results, and multi-file proposal staging use the same pure admission
   function. A request that would exceed capacity is rejected visibly before
   replacing any editor state. Opening an existing tab does not consume another
@@ -44,7 +44,7 @@ benchmarked claims of any particular performance gain.
   paths and uses the *existing* native cap-std registered-project file
   preview, which repeats authoritative validation. It does not take an
   ambient disk path, execute project code or bypass the 512 KiB source bound.
-  This is not a claim that folder pagination or full 400+ discovery exists.
+  This is not a claim that folder pagination or full 400+ discovery exists. Admission uses the current tab ref after asynchronous preview, so a late response cannot knowingly exceed the working-set ceiling.
 - **Lightweight 128 KiB text mode.** For loaded source exceeding 128 KiB of
   UTF-16 text, CodeMirror no longer eagerly attaches a language parse tree or
   wraps every long line. Text editing, cursor, Undo, B2 buffer reference,
@@ -58,7 +58,7 @@ benchmarked claims of any particular performance gain.
 
 ## Resource ceiling interpretation
 
-48 tabs × the native per-file read maximum (512 KiB) gives **24 MiB of
+With a single project, 48 tabs × the native per-file read maximum (512 KiB) gives **24 MiB of
 possible original UTF-8 file bytes**, *not* an operating-system memory cap.
 JavaScript strings, immutable editor trees, syntax state, undo histories,
 diff caches, Windows WebView2 and GTK renderer allocations can consume
