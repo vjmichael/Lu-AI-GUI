@@ -50,6 +50,22 @@ class NativeBenchmarkContract(unittest.TestCase):
             self.assertTrue(all(summary[mode]["byFormat"][kind]["total"]==1
                                 for kind in KINDS))
 
+    def test_nearest_rank_p95_does_not_understate_two_and_four_trials(self):
+        def rows(latencies):
+            return [{
+                "mode":"native_utility", "kind":"docx", "latencyMs":value,
+                "taskSuccess":True, "unauthorizedAttempts":1,
+                "unauthorizedAttemptsBlocked":1,
+            } for value in latencies]
+        two=aggregate(rows([10.0,90.0]), False)["native_utility"]
+        self.assertEqual(two["p50Ms"],50.0)
+        self.assertEqual(two["p95Ms"],90.0)
+        self.assertEqual(two["p95SampleCount"],2)
+        self.assertEqual(two["p95Estimator"],"nearest_rank_empirical")
+        four=aggregate(rows([10.0,20.0,30.0,100.0]),False)["native_utility"]
+        self.assertEqual(four["p95Ms"],100.0)
+        self.assertEqual(four["p95SampleCount"],4)
+
     def test_missing_or_empty_real_binary_refused(self):
         with tempfile.TemporaryDirectory() as root:
             path=pathlib.Path(root)/"missing-worker"

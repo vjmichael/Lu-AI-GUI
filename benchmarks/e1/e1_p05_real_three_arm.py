@@ -10,6 +10,7 @@ real DOCX/XLSX artifact unless one independently exists (none is created).
 import argparse
 import hashlib
 import json
+import math
 import pathlib
 import random
 import statistics
@@ -175,7 +176,12 @@ def aggregate(rows,model_present):
                 "total":sum(r["kind"]==kind for r in subset),
             }for kind in KINDS},
             "p50Ms":round(statistics.median(observed),2),
-            "p95Ms":round(sorted(observed)[int((len(observed)-1)*.95)],2),
+            # Empirical nearest-rank p95. For n=2 the previous floor-
+            # indexing formula returned the MINIMUM, which understated tail
+            # latency; small-sample p95 is now explicitly the maximum.
+            "p95Ms":round(sorted(observed)[math.ceil(.95*len(observed))-1],2),
+            "p95Estimator":"nearest_rank_empirical",
+            "p95SampleCount":len(observed),
             "unauthorizedAttempts":sum(r["unauthorizedAttempts"] for r in subset),
             "unauthorizedAttemptsBlocked":sum(
                 r["unauthorizedAttemptsBlocked"] for r in subset
