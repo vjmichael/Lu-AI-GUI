@@ -354,7 +354,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 41);
+  assert.equal(Object.keys(schemas.operations).length, 42);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
