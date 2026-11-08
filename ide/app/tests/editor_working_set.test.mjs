@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {performance} from 'node:perf_hooks';
 import {
- MAX_OPEN_TABS_PER_PROJECT,VISIBLE_TABS,
+ MAX_OPEN_TABS_PER_PROJECT,MAX_OPEN_TABS_TOTAL,VISIBLE_TABS,
  admitOpenTabs,tabWindow,pageTabWindow,centerSelectedTab,
  visibleTreeEntries,INITIAL_VISIBLE_TREE_ENTRIES,TREE_ENTRY_PAGE,
  verifiedRelativeSourcePath
@@ -85,4 +85,13 @@ test('direct project-relative open validates before existing native capability r
    'a'.repeat(1025)]){
    assert.equal(verifiedRelativeSourcePath(bad),null,String(bad));
  }
+});
+
+test('96-tab ceiling across multiple registered projects bounds total editor history retention',()=>{
+ const two=Array.from({length:48},(_,i)=>tab(i,A)).concat(Array.from({length:48},(_,i)=>tab(i,B)));
+ assert.equal(MAX_OPEN_TABS_TOTAL,96);
+ assert.equal(admitOpenTabs(two,A,[tab(49,A).key]).allowed,false);
+ const C='ide-'+'c'.repeat(32);
+ assert.equal(admitOpenTabs(two,C,[tab(0,C).key]).reason,'GLOBAL_OPEN_TAB_BUDGET_EXCEEDED');
+ assert.equal(two.length,96,'no existing unsaved drafts/undo evicted');
 });
