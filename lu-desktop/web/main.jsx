@@ -13,6 +13,7 @@ import {stagedImageDimensions,REGION_IMAGE_OPERATIONS,
 import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryAnchor} from './history_window_geometry.mjs';
+import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppearance,textForBackground,visibleReactionBySeq} from './message_interactions.mjs';
 
 function MessageText({text, role='assistant'}) {
   if (role === 'user') return <div className="messageContent userText">{text}</div>;
@@ -699,6 +700,10 @@ function App() {
 
   const [historyPaneOpen,setHistoryPaneOpen]=useState(false);
   const [history, setHistory] = useState([]);
+  // UX-CHAT01: per-chat decoration state does not enter model context.
+  const [messageDecorationsByChat,setMessageDecorationsByChat]=useState({});
+  const [messageReplay,setMessageReplay]=useState(null);
+  const [messageDecorationBusy,setMessageDecorationBusy]=useState(false);
   // Active transcript is a bounded visible window, not the entire ANSF book.
   const [historyWindow,setHistoryWindow]=useState({
     older:null,hasOlder:false,hasNewer:false
@@ -2551,6 +2556,84 @@ function App() {
       setError('Plan interruption not recorded: '+String(error));
     }finally{setAgentReviewBusy(false)}
   }
+  async function setChatMessageReaction(entry,emoji){
+    if(!chatId||!Number.isSafeInteger(entry?.seq))return;
+    const selected=messageDecorationsByChat[chatId]?.reactionsBySeq?.[entry.seq];
+    setMessageDecorationBusy(true);
+    try{
+      const row=await invoke('lu_set_message_reaction',{
+        chatId,seq:entry.seq,emoji:selected===emoji?null:emoji
+      });
+      const id=chatId;
+      setMessageDecorationsByChat(prev=>{
+        const prior=prev[id]||{appearance:DEFAULT_APPEARANCE,reactionsBySeq:{}};
+        const reactionsBySeq={...prior.reactionsBySeq};
+        if(row)reactionsBySeq[entry.seq]=row.emoji;
+        else delete reactionsBySeq[entry.seq];
+        return {...prev,[id]:{...prior,reactionsBySeq}};
+      });
+    }catch(error){
+      setError('Message reaction not saved: '+String(error));
+    }finally{setMessageDecorationBusy(false)}
+  }
+  async function saveChatAppearance(next){
+    if(!chatId)return;
+    const id=chatId;
+    setMessageDecorationBusy(true);
+    try{
+      const appearance=await invoke('lu_set_chat_appearance',{
+        chatId:id,appearance:safeAppearance(next)
+      });
+      setMessageDecorationsByChat(prev=>{
+        const previous=prev[id]||{reactionsBySeq:{}};
+        return {...prev,[id]:{...previous,appearance:safeAppearance(appearance)}};
+      });
+    }catch(error){
+      setError('Chat appearance not saved: '+String(error));
+    }finally{setMessageDecorationBusy(false)}
+  }
+  async function copySavedMessage(entry){
+    try{await navigator.clipboard.writeText(entry.text)}
+    catch(error){setError('Could not copy this message: '+String(error))}
+  }
+  function reuseSavedUserPrompt(entry){
+    if(entry.role!=='user')return;
+    // This only populates the editable composer. It DOES NOT submit,
+    // regenerate an effect, or transfer a previous turn's authority.
+    setPrompt(entry.text);
+    composerRef.current?.focus();
+  }
+  function quoteSavedMessage(entry){
+    const excerpt=entry.text.slice(0,1200)
+      .split('\\n').map(line=>'> '+line).join('\\n');
+    setPrompt(prev=>(prev?prev+'\\n\\n':'')+excerpt+'\\n\\n');
+    composerRef.current?.focus();
+  }
+  useEffect(()=>{
+    const id=chatId;
+    if(!id)return;
+    let active=true;
+    const seqs=history.filter(entry=>Number.isSafeInteger(entry.seq)&&entry.seq>0)
+      .slice(-64).map(entry=>entry.seq);
+    invoke('lu_message_decorations',{chatId:id,seqs}).then(data=>{
+      if(!active)return;
+      setMessageDecorationsByChat(prev=>({
+        ...prev,[id]:{
+          appearance:safeAppearance(data?.appearance),
+          reactionsBySeq:visibleReactionBySeq(data?.reactions)
+        }
+      }));
+    }).catch(error=>{
+      if(active&&currentChat.current===id){
+        setError('Chat decoration history unavailable: '+String(error));
+      }
+    });
+    return ()=>{active=false};
+  },[chatId,history]);
+  const chatAppearance=safeAppearance(
+    messageDecorationsByChat[chatId]?.appearance
+  );
+  const chatReactions=messageDecorationsByChat[chatId]?.reactionsBySeq||{};
   async function refreshWriteRecovery(targetChat = chatId) {
     if (!targetChat) { setWriteRecovery([]); return; }
     const records = await invoke('lu_write_recovery', {chatId: targetChat});
@@ -3817,16 +3900,47 @@ function App() {
           </section>)}
         </div>}
       </section>}
-      <div className="transcriptWrap"><div className="messages" ref={transcriptRef} onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label="Conversation history, cursor paginated">
+      <div className="transcriptWrap"><div className="messages" ref={transcriptRef}
+        style={{backgroundColor:chatAppearance.background,color:textForBackground(chatAppearance.background)}}
+        onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label="Conversation history, cursor paginated">
         {historyWindow.hasOlder&&<button type="button" className="subtleButton"
           onClick={()=>void loadOlderUiHistory()}>Load older ANSF page</button>}
 
         {!history.length && <div className="welcome"><div className="welcomeSymbol">L</div>
           <h2>What can I help you build?</h2>
           <p>Local conversations are saved separately. Start a new chat or choose one from your history.</p></div>}
-        {displayedHistory.map((entry,i) => <div key={entry.seq??i} data-ansf-seq={entry.seq??undefined} className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}>
+        {displayedHistory.map((entry,i) => <div key={entry.seq??i}
+          data-ansf-seq={entry.seq??undefined}
+          className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}
+          style={{backgroundColor:entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble,
+            color:textForBackground(entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble)}}>
           <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
-          <MessageText text={entry.text} role={entry.role}/></div>)}
+          <MessageText text={entry.text} role={entry.role}/>
+          {Number.isSafeInteger(entry.seq)&&entry.seq>0&&
+            <div className="messageActions" role="group" aria-label={'Actions for saved message '+entry.seq}>
+              <button type="button" onClick={()=>void copySavedMessage(entry)}
+                aria-label="Copy saved message">Copy</button>
+              <button type="button" onClick={()=>setMessageReplay({
+                chatId,seq:entry.seq,role:entry.role,text:entry.text
+              })} aria-label="Replay original saved message">Replay</button>
+              {entry.role==='user'&&<button type="button"
+                onClick={()=>reuseSavedUserPrompt(entry)} aria-label="Reuse saved prompt without sending">
+                Reuse prompt
+              </button>}
+              <button type="button" onClick={()=>quoteSavedMessage(entry)}
+                aria-label="Quote saved message in composer">Quote</button>
+              <div className="messageReactions" role="group" aria-label="React to this message">
+                {MESSAGE_REACTIONS.map(emoji=>
+                  <button type="button" key={emoji}
+                    disabled={messageDecorationBusy}
+                    aria-pressed={chatReactions[entry.seq]===emoji}
+                    aria-label={'React '+emoji}
+                    onClick={()=>void setChatMessageReaction(entry,emoji)}>
+                    {emoji}
+                  </button>)}
+              </div>
+            </div>}
+        </div>)}
         {historyWindow.hasNewer&&<button type="button" className="subtleButton"
           onClick={()=>void loadNewerUiHistory()}>Load newer ANSF page</button>}
         {visibleJob && <div className="message assistant streaming"><span className="messageRole" role="status" aria-live="polite" aria-atomic="true">
@@ -3849,6 +3963,24 @@ function App() {
         {!atBottom && <button type="button" className="jumpLatest" onClick={jumpToLatest}
           aria-label="Jump to latest message">↓ Jump to latest</button>}
       </div>
+      {messageReplay?.chatId===chatId&&<div className="messageReplayBackdrop"
+        role="presentation" onClick={()=>setMessageReplay(null)}>
+        <section className="messageReplayDialog" role="dialog" aria-modal="true"
+          aria-label="Replay saved conversation message"
+          onClick={event=>event.stopPropagation()}>
+          <header><strong>Replay saved message · {messageReplay.role==='user'?'You':'Lu'}</strong>
+            <button type="button" onClick={()=>setMessageReplay(null)}>Close</button></header>
+          <small>This is an exact saved display replay; it never reruns the AI, calls tools,
+            or restores earlier authority.</small>
+          <MessageText text={messageReplay.text} role={messageReplay.role}/>
+          <div className="settingsActions">
+            <button type="button" onClick={()=>void copySavedMessage(messageReplay)}>
+              Copy original
+            </button>
+            <button type="button" onClick={()=>setMessageReplay(null)}>Done</button>
+          </div>
+        </section>
+      </div>}
       <div className="composerArea">
         <div className="composerResizer" onPointerDown={beginComposerDrag} role="separator"
           aria-label="Resize composer" aria-orientation="horizontal" tabIndex={0}
