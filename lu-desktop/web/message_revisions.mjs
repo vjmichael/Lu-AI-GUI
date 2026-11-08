@@ -9,8 +9,12 @@ export function revisionsBySequence(entries){
     if(!Number.isSafeInteger(entry.currentVersion)||entry.currentVersion<0
       ||entry.currentVersion>MAX_VISIBLE_REVISIONS)continue;
     if(!isSha(entry.originalSha256)||!isSha(entry.currentSha256))continue;
+    // A completed assistant original may exceed the correction limit.
+    // Display the real original up to a bounded viewer size rather than
+    // pretending that a long, genuine message has no provenance.
     if(typeof entry.originalText!=='string'||typeof entry.currentText!=='string'
-      ||entry.originalText.length>MAX_EDIT_BYTES||entry.currentText.length>MAX_EDIT_BYTES)continue;
+      ||entry.originalText.length>256*1024||entry.currentText.length>256*1024
+      ||(entry.currentVersion>0&&entry.currentText.length>MAX_EDIT_BYTES))continue;
     result[entry.seq]=entry;
   }
   return result;
