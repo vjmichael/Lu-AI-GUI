@@ -1,0 +1,237 @@
+name: Lu E1-P10 Independent Reviewed Outcomes
+on:
+  push:
+    branches: ['lu/e1-p10-independent-operation-oracles-20261108']
+    paths:
+      - 'src-tauri/lu-core/src/reviewed_outcome_oracle.rs'
+      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
+      - 'src-tauri/lu-core/src/journal.rs'
+      - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
+      - 'lu-desktop/src-tauri/src/reviewed_app_audit.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/tests/native-reviewed-recovery/**'
+      - 'lu-desktop/tests/reviewed-app-desktop.test.mjs'
+      - '.github/workflows/lu-e1-p10-independent-outcomes.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/reviewed_outcome_oracle.rs'
+      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
+      - 'src-tauri/lu-core/src/journal.rs'
+      - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
+      - 'lu-desktop/src-tauri/src/reviewed_app_audit.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/tests/native-reviewed-recovery/**'
+      - 'lu-desktop/tests/reviewed-app-desktop.test.mjs'
+      - '.github/workflows/lu-e1-p10-independent-outcomes.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p10-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-independent-oracle:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 95
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact frozen head and receipt folder
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p10-evidence
+          echo "SOURCE_HEAD=$EXPECTED_SHA" > e1-p10-evidence/provenance.txt
+      - name: Run actual independent source-file oracles on native OS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib reviewed_outcome_oracle::tests -- --nocapture \
+            2>&1 | tee e1-p10-evidence/native-source-oracles.log
+          grep -Eq 'test result: ok\. 3 passed; 0 failed;' \
+            e1-p10-evidence/native-source-oracles.log
+      - name: Bind exact real EffectJournal receipt to immutable verified fact
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib journal::independent_outcome_tests -- --nocapture \
+            2>&1 | tee e1-p10-evidence/immutable-outcome-ledger.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p10-evidence/immutable-outcome-ledger.log
+      - name: Actual production desktop SQLite evidence and backwards compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-reviewed-recovery/Cargo.toml \
+            --lib reviewed_app_audit::tests -- --nocapture \
+            2>&1 | tee e1-p10-evidence/reviewed-desktop-audit.log
+          grep -Eq 'test result: ok\. [45] passed; 0 failed;' \
+            e1-p10-evidence/reviewed-desktop-audit.log
+      - name: React and desktop read-only proof integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/reviewed-app-desktop.test.mjs \
+            2>&1 | tee e1-p10-evidence/frontend-contract.log
+          grep -Eq '# pass [6-9]' e1-p10-evidence/frontend-contract.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p10-oracles-${{ matrix.os }}
+          path: e1-p10-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+  real-reviewer-native-apps:
+    needs: native-independent-oracle
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact head, immutable source, native receipts
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p10-real-apps
+          echo "SOURCE_HEAD=$EXPECTED_SHA" > e1-p10-real-apps/provenance.txt
+      - name: Stage actual native Git and FFprobe on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+          git_path="$(readlink -f "$(command -v git)")"
+          probe_path="$(readlink -f "$(command -v ffprobe)")"
+          test -f "$git_path" && test -f "$probe_path"
+          echo "LU_E1_P07_GIT=$git_path" >> "$GITHUB_ENV"
+          echo "LU_E1_P07_FFPROBE=$probe_path" >> "$GITHUB_ENV"
+          cargo build --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --bin lu-linux-group-guard
+          guard="$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-group-guard"
+          test -x "$guard"
+          echo "LU_E1_P08_TEST_GUARD_BINARY=$guard" >> "$GITHUB_ENV"
+          sha256sum "$git_path" "$probe_path" "$guard" \
+            > e1-p10-real-apps/native-app-identities.txt
+      - name: Stage actual Git and FFprobe on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $git=(Get-Command git.exe -ErrorAction Stop).Source
+          $probe=Get-Command ffprobe.exe -ErrorAction SilentlyContinue
+          if (-not $probe) {
+            choco install ffmpeg -y --no-progress
+            $candidate='C:\ProgramData\chocolatey\bin\ffprobe.exe'
+            if (Test-Path -LiteralPath $candidate) {
+              $probe=Get-Command $candidate -ErrorAction Stop
+            } else {
+              $probe=Get-Command ffprobe.exe -ErrorAction Stop
+            }
+          }
+          if (-not (Test-Path -LiteralPath $git) -or -not (Test-Path -LiteralPath $probe.Source)) {
+            throw 'Real Windows Git / FFprobe unavailable'
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_E1_P07_GIT=$git"
+          Add-Content -Path $env:GITHUB_ENV -Value "LU_E1_P07_FFPROBE=$($probe.Source)"
+          Get-FileHash -Algorithm SHA256 -LiteralPath $git,$probe.Source |
+            Format-Table -AutoSize | Out-String |
+            Set-Content e1-p10-real-apps/native-app-identities.txt
+      - name: Require five real reviewed OS operations and exact independent outcomes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            actual_model_selected_reviewed_git_and_media_tools_return_verified_receipts \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p10-real-apps/actual-git-ffprobe-outcomes.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p10-real-apps/actual-git-ffprobe-outcomes.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p10-real-${{ matrix.os }}
+          path: e1-p10-real-apps/
+          retention-days: 14
+          if-no-files-found: warn
+  actual-windows-tauri:
+    needs: native-independent-oracle
+    runs-on: windows-2025
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-source-tree.mjs
+      - name: CI-only nonfunctional inference image placeholders
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build actual frontend and check code
+        working-directory: lu-desktop
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+          npm run check
+      - name: Windows Tauri compile with independently verified outcomes
+        shell: pwsh
+        run: |
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib reviewed_app_audit::tests -- --nocapture
