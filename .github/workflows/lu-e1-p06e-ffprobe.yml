@@ -59,6 +59,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Provision real CI-only FFmpeg and FFprobe native tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            choco install ffmpeg --yes --no-progress
+          elif [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          else
+            echo "Unsupported runner: $RUNNER_OS" >&2
+            exit 1
+          fi
+          command -v ffmpeg
+          command -v ffprobe
       - name: Assert actual SHA and find real host FFmpeg/FFprobe binaries
         shell: bash
         env:
