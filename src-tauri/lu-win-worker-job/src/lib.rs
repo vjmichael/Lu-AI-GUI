@@ -196,7 +196,7 @@ impl Job {
 
     /// Limit only the fixed internal archive codecs, not GGUF inference.
     pub fn set_memory_limit(&self,bytes:usize)->io::Result<()>{
-        if bytes<512*1024*1024 || bytes>4*1024*1024*1024usize{
+        if bytes<256*1024*1024 || bytes>4*1024*1024*1024usize{
             return Err(io::Error::other("invalid worker memory quota"))
         }
         let mut info=ExtendedLimitInformation::default();
