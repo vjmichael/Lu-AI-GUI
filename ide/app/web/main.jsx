@@ -69,6 +69,9 @@ function App() {
   const [directory, setDirectory] = useState('');
   const [listing, setListing] = useState(null);
   const [explorerPending, setExplorerPending] = useState(false);
+  const [entryCreateKind, setEntryCreateKind] = useState(null);
+  const [entryCreateName, setEntryCreateName] = useState('');
+  const [entryCreateBusy, setEntryCreateBusy] = useState(false);
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const [quickOpenQuery, setQuickOpenQuery] = useState('');
   const [quickOpenPaths, setQuickOpenPaths] = useState([]);
@@ -166,8 +169,12 @@ function App() {
 
   const activeProjectIdRef = useRef(null);
   activeProjectIdRef.current = activeProject?.projectId ?? null;
+  const currentDirectoryRef = useRef('');
+  currentDirectoryRef.current = directory;
 
   useEffect(() => {
+    setEntryCreateKind(null);
+    setEntryCreateName('');
     // A late native directory response must never populate a different project's picker.
     quickOpenRequest.current += 1;
     setQuickOpenOpen(false);
@@ -1331,8 +1338,65 @@ function App() {
     }
   }
 
+  // DEV-01.2: one explicitly confirmed human action, bounded to the
+  // current native picker-registered project and existing explorer directory.
+  // Never emulate a save, model action, or absolute WebView filesystem path.
+  async function createNativeEntry(event) {
+    event.preventDefault();
+    if (!activeProject || entryCreateBusy || explorerPending || savingKey ||
+        (entryCreateKind !== 'file' && entryCreateKind !== 'directory')) return;
+    const name = entryCreateName.trim();
+    if (!name || name !== entryCreateName || name.length > 255 ||
+        name.includes('/') || name.includes('\\') || name === '.' || name === '..') {
+      setProblem('Enter one file/folder name without path separators or trailing spaces.');
+      return;
+    }
+    const projectId = activeProject.projectId;
+    const parentDir = directory;
+    const kind = entryCreateKind;
+    const path = parentDir ? parentDir + '/' + name : name;
+    setEntryCreateBusy(true);
+    setProblem('');
+    try {
+      const created = await invoke('ide_create_source_entry', {
+        projectId, relativeDir: parentDir, name, kind
+      });
+      if (!created || created.created !== true ||
+          created.projectId !== projectId ||
+          created.relativePath !== path || created.kind !== kind) {
+        throw Error('INVALID_NATIVE_CREATE_RECEIPT');
+      }
+      // The OS-side operation has succeeded. A later project/directory
+      // switch may change only presentation, not redo the mutation.
+      if (activeProjectIdRef.current !== projectId ||
+          currentDirectoryRef.current !== parentDir) return;
+      setEntryCreateKind(null);
+      setEntryCreateName('');
+      setHint('Created empty ' + kind + ' ' + path + '. Other open editor drafts were preserved.');
+      try {
+        const next = await invoke('ide_list_source_directory', {
+          projectId, relativeDir: parentDir
+        });
+        if (activeProjectIdRef.current === projectId &&
+            currentDirectoryRef.current === parentDir &&
+            next?.projectId === projectId && next?.relativeDir === parentDir) {
+          setListing(next);
+        }
+      } catch {
+        setProblem('Created ' + path +
+          ', but native directory refresh failed. Reopen the folder to verify.');
+      }
+    } catch (error) {
+      setProblem(String(error).includes('SOURCE_TARGET_ALREADY_EXISTS')
+        ? 'That name already exists (including case-only aliases). Nothing was replaced.'
+        : 'Native source creation denied: ' + String(error));
+    } finally { setEntryCreateBusy(false); }
+  }
+
   async function openDirectory(project, path) {
-    if (explorerPending) return;
+    if (explorerPending || entryCreateBusy) return;
+    setEntryCreateKind(null);
+    setEntryCreateName('');
     setExplorerPending(true);
     setProblem('');
     try {
@@ -2793,9 +2857,43 @@ function App() {
           <div className="sourceTree">
             <div className="sourceTreeHeader">
               <strong>Files</strong>
-              <button type="button" className="ghostBtn" disabled={explorerPending || !!savingKey}
+              <button type="button" className="ghostBtn"
+                disabled={explorerPending || !!savingKey || entryCreateBusy}
                 onClick={openQuickOpen} title="Find files in this project (Ctrl+P)">Quick open · Ctrl+P</button>
             </div>
+            <div className="sourceCreateActions" aria-label="Create a project source entry">
+              <button type="button" className="ghostBtn"
+                disabled={explorerPending || entryCreateBusy || !!savingKey}
+                onClick={() => { setEntryCreateKind('file'); setEntryCreateName(''); setProblem(''); }}>
+                + File
+              </button>
+              <button type="button" className="ghostBtn"
+                disabled={explorerPending || entryCreateBusy || !!savingKey}
+                onClick={() => { setEntryCreateKind('directory'); setEntryCreateName(''); setProblem(''); }}>
+                + Folder
+              </button>
+            </div>
+            {entryCreateKind && <form className="sourceCreateForm" onSubmit={createNativeEntry}>
+              <label htmlFor="sourceEntryName">
+                Create empty {entryCreateKind === 'file' ? 'file' : 'folder'} inside current directory
+              </label>
+              <input id="sourceEntryName" type="text" autoFocus maxLength={255}
+                value={entryCreateName} disabled={entryCreateBusy}
+                onChange={event => setEntryCreateName(event.target.value)}
+                placeholder={entryCreateKind === 'file' ? 'example.rs' : 'new-folder'}/>
+              <div className="sourceCreateButtons">
+                <button type="submit" className="primaryBtn"
+                  disabled={entryCreateBusy || explorerPending || !!savingKey ||
+                    !entryCreateName.trim()}>
+                  {entryCreateBusy ? 'Creating…' : 'Create'}
+                </button>
+                <button type="button" className="ghostBtn" disabled={entryCreateBusy}
+                  onClick={() => { setEntryCreateKind(null); setEntryCreateName(''); }}>
+                  Cancel
+                </button>
+              </div>
+              <small>Native exclusive creation only. Existing files are never overwritten.</small>
+            </form>}
             <div className="sourcePath" title={directory || '/'}>
               <button type="button" className="pathLink" disabled={explorerPending}
                 onClick={() => activeProject && openDirectory(activeProject, '')}>
