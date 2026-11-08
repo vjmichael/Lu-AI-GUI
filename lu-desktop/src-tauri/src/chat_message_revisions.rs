@@ -440,13 +440,13 @@ mod tests{
     #[test]
     fn immutable_original_and_append_only_display_edits_survive_restart(){
         let (root,chats,chat,seq)=fixture();
-        let original=original(&chats,&chat,seq).unwrap();
-        let base=hash(&original.text);
+        let source_message=original(&chats,&chat,seq).unwrap();
+        let base=hash(&source_message.text);
         let first=edit(&root,&chat,seq,0,&base,
             "Human-edited request (display correction)",&chats).unwrap();
         assert_eq!(first.current_version,1);
         assert_eq!(first.editor,"HUMAN_DISPLAY_CORRECTION");
-        assert_eq!(first.original_text,original.text);
+        assert_eq!(first.original_text,source_message.text);
         let second=edit(&root,&chat,seq,1,&first.current_sha256,
             "Second human display correction",&chats).unwrap();
         assert_eq!(second.current_version,2);
@@ -456,7 +456,9 @@ mod tests{
         // Corrected display MUST NOT change canonical ANSF original.
         assert_eq!(original(&chats,&chat,seq).unwrap().text,
             "Original user request, with tool history");
-        let db=open_read(&root).unwrap().unwrap();
+        let db=Connection::open(
+            root.join("lu-message-interactions.sqlite")
+        ).unwrap();
         assert!(db.execute(
             "UPDATE lu_message_revisions SET corrected_text='forged'
              WHERE chat_id=?1 AND seq=?2 AND version=1",
@@ -468,7 +470,7 @@ mod tests{
         assert_eq!(saved.entries.len(),1);
         assert_eq!(saved.entries[0].current_version,2);
         assert_eq!(saved.entries[0].original_sha256,base);
-        assert_eq!(saved.entries[0].original_text,original.text);
+        assert_eq!(saved.entries[0].original_text,source_message.text);
         drop(restarted);fs::remove_dir_all(root).unwrap();
     }
     #[test]
@@ -499,7 +501,9 @@ mod tests{
         assert_eq!(pinned.pinned_parent_sha256,v1.current_sha256);
         assert_eq!(pinned.pinned_parent_excerpt,
             "Display correction before reply");
-        let db=open_read(&root).unwrap().unwrap();
+        let db=Connection::open(
+            root.join("lu-message-interactions.sqlite")
+        ).unwrap();
         assert!(db.execute(
             "UPDATE lu_message_reply_intents SET parent_seq=?1
              WHERE chat_id=?2 AND reply_turn_id=?3",
