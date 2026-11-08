@@ -799,6 +799,20 @@ mod tests{
         assert_eq!(store.record_review(&p,&c,&id("g-",11),&r.revision_sha256,
             HumanDecision::Reject,&Human{granted:true},&Review{allowed:true}),
             Err(RevisionError::DuplicateConflict));
+        // A subsequent goal revision never inherits a prior human approval.
+        let mut revised=proposal(1,2);
+        revised.reason=RevisionReason::GoalChanged;
+        let next=store.append_proposal(&p,&c,&id("g-",12),&id("v-",2),
+            Some(&r.revision_sha256),&revised,
+            &Human{granted:true},&Sources{allowed:true}).unwrap();
+        assert_eq!(store.latest(&p,&c).unwrap().unwrap().review_state,
+            "PENDING_HUMAN_REVIEW");
+        assert_eq!(store.history(&p,&c).unwrap()[0].review_state,
+            "APPROVED_PLAN_ONLY");
+        assert_eq!(store.record_review(&p,&c,&review_turn,&r.revision_sha256,
+            HumanDecision::Approve,&Human{granted:true},&Review{allowed:true}),
+            Err(RevisionError::StaleParent));
+        assert_eq!(next.revision_index,2);
         let db=Connection::open(&path).unwrap();
         assert!(db.execute("UPDATE lu_agent_plan_revisions SET goal_id='spoof'
             WHERE plan_id=?1",params![p]).is_err());
