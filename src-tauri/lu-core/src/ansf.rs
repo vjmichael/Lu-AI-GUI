@@ -182,7 +182,6 @@ impl AnsfStore {
         crate::ansf_live_chat::initialize_live_chat_schema(&conn)?;
         crate::ansf_goal_records::initialize_goal_record_schema(&conn)?;
         crate::ansf_semantic::initialize_semantic_schema(&conn)?;
-        crate::ansf_verified_procedures::initialize_procedure_schema(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

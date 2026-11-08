@@ -151,6 +151,10 @@ impl AnsfStore{
     )->Result<VerifiedProcedure,AnsfError>{
         if !valid(candidate){return Err(AnsfError::InvalidInput)}
         let c=candidate;
+        {
+            let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+            initialize_procedure_schema(&conn)?;
+        }
         let source_sha=self.source_is_current(&c.session_id,c.source_entry_id)?
             .ok_or(AnsfError::InvalidInput)?;
         let cp=continuity.latest_for_conversation(
@@ -215,6 +219,10 @@ impl AnsfStore{
     )->Result<(),AnsfError>{
         if !id(procedure_id)||!id(session_id)||correction_entry_id<=0||
             !text(reason){return Err(AnsfError::InvalidInput)}
+        {
+            let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+            initialize_procedure_schema(&conn)?;
+        }
         let correction=self.read_entry(session_id,correction_entry_id)?
             .ok_or(AnsfError::InvalidInput)?;
         if correction.role!="user"||
@@ -254,6 +262,7 @@ impl AnsfStore{
             limit==0||limit>MAX_HITS{return Err(AnsfError::InvalidInput)}
         let stored={
             let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+            initialize_procedure_schema(&conn)?;
             let mut stmt=conn.prepare(
                 &format!("SELECT {FIELDS} FROM ansf_verified_procedures p
                     WHERE p.session_id=?1 AND p.project_id=?2 AND p.task_id=?3
@@ -264,9 +273,10 @@ impl AnsfStore{
                                      WHERE successors.replaces_id=p.procedure_id)
                     ORDER BY p.recorded_utc DESC,p.procedure_id DESC LIMIT ?7")
             )?;
-            stmt.query_map(params![session_id,project_id,task_id,tool_id,
+            let records=stmt.query_map(params![session_id,project_id,task_id,tool_id,
                 tool_version,application_version,limit as i64],map_record)?
-                .collect::<Result<Vec<_>,_>>()?
+                .collect::<Result<Vec<_>,_>>()?;
+            records
         };
         let mut verified=Vec::new();
         for record in stored{

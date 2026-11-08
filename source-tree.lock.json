@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "780377d79a74e32d11f09586ea309e250505cdb4",
+  "sourceCommitBeforeLock": "abfe824f885d71eaf2527c15a6f245db5dcf8629",
   "trackedFileCount": 593,
   "files": [
     {
@@ -1141,7 +1141,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf.rs",
-      "blob": "85d2e79f787e7e427e5552066d048268592c3a31"
+      "blob": "0c7e861f37e0da06672a56aa5da5b348fa0a0261"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_artifact_links.rs",
@@ -1189,7 +1189,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_verified_procedures.rs",
-      "blob": "00f54473e9267268c2cd59a23c2db3567fdbf454"
+      "blob": "d32591507cade9bc2261af0dcf18f5de848f8fe0"
     },
     {
       "path": "src-tauri/lu-core/src/benchmark_contract.rs",
