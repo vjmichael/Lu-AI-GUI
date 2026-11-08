@@ -5,6 +5,8 @@ import { CodeEditor, createEditorState, isLargeSourceEditor } from './code_edito
 import { secondaryEditor, initialSecondaryKey, canSaveFocusedPane } from './editor_layout.js';
 import { captureProjectView, restoreProjectView } from './editor_project_view.js';
 import { planCleanBackgroundTabClosure } from './editor_clean_tab_reclamation.js';
+import { rememberedWorkspaceFromTabs, checkedRememberedWorkspace,
+  revalidatedResumeDecision } from './workspace_layout.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
   TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
@@ -91,6 +93,12 @@ function App() {
   const [draftRecoveryByTab, setDraftRecoveryByTab] = useState({});
   const [persistentReferenceInput, setPersistentReferenceInput] = useState('');
   const [activeProject, setActiveProject] = useState(null);
+  // B9 private navigation metadata: opt-in manual Remember and Restore.
+  // Never persist CodeMirror EditorState, source content or B2 private drafts.
+  const [rememberedLayout, setRememberedLayout] = useState(null);
+  const [workspaceLayoutBusy, setWorkspaceLayoutBusy] = useState(false);
+  const workspaceLayoutOp = useRef(null);
+  const workspaceLayoutReadVersion = useRef(0);
   const [directory, setDirectory] = useState('');
   const [relativeOpenPath, setRelativeOpenPath] = useState('');
   const [listing, setListing] = useState(null);
@@ -228,6 +236,26 @@ function App() {
 
   const activeProjectIdRef = useRef(null);
   activeProjectIdRef.current = activeProject?.projectId ?? null;
+
+  useEffect(() => {
+    // Load only a navigation hint for the active registered project. No
+    // sources are opened and no private draft recovery is automatic.
+    const projectId=activeProject?.projectId;
+    const serial=++workspaceLayoutReadVersion.current;
+    setRememberedLayout(null);
+    if (!projectId) return () => {workspaceLayoutReadVersion.current++;};
+    void invoke('ide_workspace_layout_read',{projectId}).then(layout=>{
+      if (serial!==workspaceLayoutReadVersion.current ||
+          activeProjectIdRef.current!==projectId) return;
+      setRememberedLayout(layout
+        ? checkedRememberedWorkspace(layout,projectId) : null);
+    }).catch(error=>{
+      if (serial===workspaceLayoutReadVersion.current &&
+          activeProjectIdRef.current===projectId)
+        setProblem('Remembered tab layout unavailable: '+String(error));
+    });
+    return () => { workspaceLayoutReadVersion.current++; };
+  },[activeProject?.projectId]);
 
   useEffect(() => {
     // Invalidate in-flight project evidence when the selected project changes.
@@ -2081,6 +2109,179 @@ function App() {
     }
   }
 
+  async function rememberWorkspaceForRestart() {
+    const projectId=activeProjectIdRef.current;
+    if (!projectId || workspaceLayoutOp.current || explorerPending ||
+        explorerIoTicket.current || savingKey || draftRecoveryBusy) return;
+    let layout;
+    try {
+      layout=rememberedWorkspaceFromTabs(tabsRef.current,projectId,
+        activeTabKey,secondaryTabKey,splitEditorOpen,tabWindowStart,
+        key=>editorStates.current.get(key)?.sliceDoc());
+    } catch(error) {
+      setProblem('Cannot remember workspace: '+String(error));
+      return;
+    }
+    if (layout.files.some(file=>file.wasDirty) && !window.confirm(
+      'Remember file tabs and pane layout only? Unsaved edits are NOT stored in '+ 
+      'this layout. Use Preserve draft for private recovery before a restart.'))
+      return;
+    const token=Symbol('b9-remember');
+    workspaceLayoutOp.current=token;
+    setWorkspaceLayoutBusy(true);
+    setProblem('');
+    try {
+      const stored=await invoke('ide_workspace_layout_save',{layout});
+      if (workspaceLayoutOp.current!==token ||
+          activeProjectIdRef.current!==projectId) return;
+      setRememberedLayout(checkedRememberedWorkspace(stored,projectId));
+      setHint('Remembered '+stored.files.length+
+        ' file paths and pane positions privately. No source or unsaved text was saved.');
+    } catch(error) {
+      if (workspaceLayoutOp.current===token)
+        setProblem('Could not remember workspace: '+String(error));
+    } finally {
+      if (workspaceLayoutOp.current===token) {
+        workspaceLayoutOp.current=null;
+        setWorkspaceLayoutBusy(false);
+      }
+    }
+  }
+
+  async function forgetRememberedWorkspace() {
+    const projectId=activeProjectIdRef.current;
+    if (!projectId || workspaceLayoutOp.current || !rememberedLayout ||
+        !window.confirm('Forget the saved tab layout? Source files and B2 private drafts stay intact.'))
+      return;
+    const token=Symbol('b9-forget');
+    workspaceLayoutOp.current=token;
+    setWorkspaceLayoutBusy(true);
+    try {
+      await invoke('ide_workspace_layout_clear',{projectId});
+      if (workspaceLayoutOp.current===token &&
+          activeProjectIdRef.current===projectId) {
+        setRememberedLayout(null);
+        setHint('Forgot saved tab navigation only. Editor drafts and project files were kept.');
+      }
+    } catch(error) {
+      if (workspaceLayoutOp.current===token)
+        setProblem('Cannot forget remembered layout: '+String(error));
+    } finally {
+      if (workspaceLayoutOp.current===token) {
+        workspaceLayoutOp.current=null;
+        setWorkspaceLayoutBusy(false);
+      }
+    }
+  }
+
+  async function resumeRememberedWorkspace() {
+    const projectId=activeProjectIdRef.current;
+    if (!projectId || !rememberedLayout || workspaceLayoutOp.current ||
+        explorerPending || explorerIoTicket.current || savingKey ||
+        draftRecoveryBusy || reviewPending) return;
+    let layout;
+    try {layout=checkedRememberedWorkspace(rememberedLayout,projectId);}
+    catch(error){setProblem('Remembered workspace cannot be trusted: '+String(error));return;}
+    if (layout.files.some(file=>file.wasDirty) && !window.confirm(
+      'Some files previously had unsaved changes. Restore only their latest SAVED '+ 
+      'disk content? Existing dirty tabs will not be overwritten. Use Preserve/Recover '+ 
+      'draft separately for any private checkpoints.'))
+      return;
+    const ticket=beginExplorerIo();
+    if (!ticket) return;
+    const token=Symbol('b9-resume');
+    workspaceLayoutOp.current=token;
+    setWorkspaceLayoutBusy(true);
+    setProblem('');
+    const initiallyOpen=new Set(tabsRef.current.map(tab=>tab.key));
+    let unavailable=0,changed=0,previouslyDirty=0;
+    const verified=[];
+    try {
+      // Every restored file is separately read through the ORIGINAL registered
+      // cap-std source browser. Saved paths are not arbitrary OS path grants.
+      for (const entry of layout.files) {
+        let preview;
+        try {
+          preview=await invoke('ide_preview_source_file',{
+            projectId,relativePath:entry.relativePath,
+          });
+        } catch {
+          unavailable++;
+          continue; // Deleted, moved, inaccessible or no longer a text file.
+        }
+        if (workspaceLayoutOp.current!==token ||
+            explorerIoTicket.current!==ticket ||
+            activeProjectIdRef.current!==projectId) return;
+        const decision=revalidatedResumeDecision(layout,entry,preview,projectId);
+        if (decision.action!=='open_saved') {
+          unavailable++;
+          continue;
+        }
+        if (decision.changedOnDisk) changed++;
+        if (decision.hadUnsavedDraft) previouslyDirty++;
+        verified.push(preview);
+      }
+      if ([...initiallyOpen].some(key=>!tabsRef.current.some(tab=>tab.key===key)))
+        throw Error('B9_OPEN_TABS_CHANGED_DURING_RESUME');
+      const added=verified.filter(preview=>!tabsRef.current.some(tab=>
+        tab.key===keyFor(projectId,preview.relativePath)));
+      if (!admitOpenTabs(tabsRef.current,projectId,
+          added.map(file=>keyFor(projectId,file.relativePath))).allowed)
+        throw Error('B9_TAB_BUDGET: close unused tabs before restoring');
+      if (workspaceLayoutOp.current!==token ||
+          explorerIoTicket.current!==ticket ||
+          activeProjectIdRef.current!==projectId) return;
+      const freshTabs=added.map(opened=>{
+        const key=keyFor(projectId,opened.relativePath);
+        const tab={
+          key,projectId,relativePath:opened.relativePath,
+          revision:opened.revision,savedText:opened.text,
+          draft:opened.text,dirty:false,generation:0,bufferRevision:0,
+        };
+        clearPrivateDraftSession(key);
+        resetBufferIdentity(key,projectId,opened.relativePath,opened.revision);
+        editorStates.current.set(key,createEditorState(
+          opened.text,opened.relativePath,
+          (state,draft)=>onEditorChange(key,state,draft),
+          state=>onEditorSelection(key,state)
+        ));
+        return tab;
+      });
+      const visible=[...tabsRef.current,...freshTabs];
+      const rememberedView={
+        schemaVersion:1,projectId,
+        primaryKey:layout.primaryPath ? keyFor(projectId,layout.primaryPath):null,
+        secondaryKey:layout.secondaryPath ? keyFor(projectId,layout.secondaryPath):null,
+        splitOpen:layout.splitOpen,tabWindowStart:layout.tabWindowStart,
+      };
+      const focus=restoreProjectView(visible,projectId,rememberedView);
+      projectEditorViews.current.set(projectId,rememberedView);
+      if (freshTabs.length) setTabs(previous=>{
+        const keys=new Set(previous.map(tab=>tab.key));
+        return [...previous,...freshTabs.filter(tab=>!keys.has(tab.key))];
+      });
+      setActiveTabKey(focus.primaryKey);
+      setSecondaryTabKey(focus.secondaryKey);
+      setSplitEditorOpen(focus.splitOpen);
+      setTabWindowStart(focus.tabWindowStart);
+      setSection('explorer');
+      for (const tab of freshTabs) void checkExistingDraft(tab);
+      setHint('Revalidated '+verified.length+' saved files; opened '+
+        freshTabs.length+' missing tabs; '+changed+' disk revisions changed; '+
+        unavailable+' unavailable. '+previouslyDirty+
+        ' were previously unsaved—only explicit B2 draft recovery can restore their edits.');
+    } catch(error) {
+      if (workspaceLayoutOp.current===token)
+        setProblem('Saved workspace was not restored: '+String(error));
+    } finally {
+      if (workspaceLayoutOp.current===token) {
+        workspaceLayoutOp.current=null;
+        setWorkspaceLayoutBusy(false);
+      }
+      finishExplorerIo(ticket);
+    }
+  }
+
   function closeCleanBackgroundTabs() {
     const projectId=activeProjectIdRef.current;
     if (!projectId || savingKey || explorerPending || explorerIoTicket.current ||
@@ -3467,6 +3668,26 @@ function App() {
           </div>
           <div className="sourcePreview" role="region" aria-label="Source code editor">
             <div className="editorLayoutToolbar">
+              <button type="button" className="ghostBtn"
+                aria-label="Remember open tabs for restart"
+                disabled={!activeProject || !projectTabs.length || workspaceLayoutBusy ||
+                  explorerPending || !!savingKey}
+                onClick={()=>void rememberWorkspaceForRestart()}>
+                {workspaceLayoutBusy ? 'Working…' : 'Remember tabs'}
+              </button>
+              <button type="button" className="ghostBtn"
+                aria-label="Restore remembered saved tabs"
+                disabled={!rememberedLayout || workspaceLayoutBusy || explorerPending ||
+                  !!savingKey}
+                onClick={()=>void resumeRememberedWorkspace()}>
+                Restore remembered
+              </button>
+              <button type="button" className="ghostBtn"
+                aria-label="Forget remembered tab layout"
+                disabled={!rememberedLayout || workspaceLayoutBusy || explorerPending}
+                onClick={()=>void forgetRememberedWorkspace()}>
+                Forget layout
+              </button>
               <button type="button" className="ghostBtn" aria-label="Toggle split editor"
                 aria-pressed={splitEditorOpen} disabled={!activeTab}
                 onClick={toggleSplitEditor}>
