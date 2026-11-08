@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
-import { CodeEditor, createEditorState } from './code_editor.jsx';
+import { CodeEditor, createEditorState, isLargeSourceEditor } from './code_editor.jsx';
 import { secondaryEditor, initialSecondaryKey, canSaveFocusedPane } from './editor_layout.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
@@ -3369,7 +3369,9 @@ function App() {
                 <strong>{activeTab.relativePath}</strong>
                 <span className="editorToolbar">
                   <span>{activeTab.draft.length.toLocaleString()} chars ·
-                    {activeTab.dirty ? ' Unsaved' : ' Saved'}</span>
+                    {activeTab.dirty ? ' Unsaved' : ' Saved'}
+                    {isLargeSourceEditor(activeTab.draft) ? ' · Lightweight editor' : ''}
+                  </span>
                   <button className="ghostBtn editorToolButton"
                     disabled={referencePending || explorerPending || !!savingKey}
                     title="Copy a reference to the current saved file and cursor line"
