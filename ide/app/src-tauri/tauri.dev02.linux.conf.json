@@ -1,0 +1,11 @@
+{
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "resources": {
+      "verification-notices/": "THIRD_PARTY_LICENSES",
+      "reviewed-lsp-resources/language-servers/": "language-servers",
+      "reviewed-lsp-resources/linux-lsp-staging-evidence.json": "linux-lsp-staging-evidence.json"
+    }
+  }
+}
