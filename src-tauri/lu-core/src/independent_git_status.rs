@@ -9,8 +9,8 @@
 //! UNSUPPORTED rather than guessed. A 0 count is not a general clean
 //! repository guarantee unless every precondition below succeeded.
 use std::{collections::{BTreeMap,BTreeSet},fs,io::Read,path::{Component,Path}};
-use crate::independent_git_history::{sha1_digest,read_object_raw};
-use sha2::{Digest,Sha256};
+use crate::independent_git_history::{sha1_digest,ObjectReader};
+// Git's committed object identity is verified by the independent reader.
 
 const MAX_INDEX:usize=4*1024*1024;
 const MAX_ENTRIES:usize=4096;
@@ -61,7 +61,7 @@ fn index_entries(git:&Path)->Option<BTreeMap<String,String>>{
     let count=be32(bytes.get(8..12)?)? as usize;
     if count>MAX_ENTRIES{return None}
     let data_end=bytes.len().checked_sub(20)?;
-    if sha1_digest(&bytes[..data_end])!=bytes[data_end..]{return None}
+    if sha1_digest(&bytes[..data_end]).as_slice()!=&bytes[data_end..]{return None}
     let mut pos=12usize;
     let mut map=BTreeMap::new();
     for _ in 0..count{
@@ -112,11 +112,11 @@ fn head_tree_id(commit:&[u8])->Option<String>{
     Some(value.to_string())
 }
 fn collect_tree(
-    git:&Path,oid:&str,prefix:&str,depth:usize,
+    reader:&mut ObjectReader,oid:&str,prefix:&str,depth:usize,
     budget:&mut usize,entries:&mut BTreeMap<String,String>,
 )->Option<()>{
     if depth>MAX_DEPTH||*budget==0{return None}
-    let (kind,bytes)=read_object_raw(git,oid)?;
+    let (kind,bytes)=reader.read(oid)?;
     if kind!="tree"{return None}
     let mut pos=0usize;
     while pos<bytes.len(){
@@ -139,7 +139,7 @@ fn collect_tree(
         }else{format!("{prefix}/{basename}")};
         match mode{
             "40000"|"040000"=>collect_tree(
-                git,&child,&name,depth+1,budget,entries
+                reader,&child,&name,depth+1,budget,entries
             )?,
             "100644"=>{
                 if entries.insert(name,child).is_some(){return None}
@@ -174,12 +174,13 @@ pub fn tracked_worktree_changes(repo:&Path,head:&str)->Option<u32>{
         ||config.contains("fsmonitor")||config.contains("ignorestat")
         ||config.contains("worktree"){return None}
     let index=index_entries(&git)?;
-    let (kind,commit)=read_object_raw(&git,head)?;
+    let mut reader=ObjectReader::new(&git);
+    let (kind,commit)=reader.read(head)?;
     if kind!="commit"{return None}
     let tree_id=head_tree_id(&commit)?;
     let mut tracked=BTreeMap::new();
     let mut budget=MAX_ENTRIES*4;
-    collect_tree(&git,&tree_id,"",0,&mut budget,&mut tracked)?;
+    collect_tree(&mut reader,&tree_id,"",0,&mut budget,&mut tracked)?;
     if index!=tracked{return None} // staged changes NOT claimed verified
     let mut changed=0u32;
     let mut bytes_read=0u64;
