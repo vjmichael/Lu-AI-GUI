@@ -500,8 +500,10 @@ impl ModelStepGenerator for GenuineGgufStep{
         // Do not normalize, fix, rewrite, or inject a preferred tool call.
         // ModelTurnJournal will durably record exactly these bytes.
         self.raw_replies.push(actual.to_string());
-        eprintln!("E1_P07_GGUF_GENERATION_{}_BYTES={}",
-            self.raw_replies.len(),actual.len());
+        eprintln!("E1_P07_GGUF_RAW_STEP_{}={}",
+            self.raw_replies.len(),
+            serde_json::to_string(actual).unwrap().chars().take(4096)
+                .collect::<String>());
         Ok(actual.into())
     }
 }
