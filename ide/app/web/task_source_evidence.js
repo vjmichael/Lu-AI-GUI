@@ -29,7 +29,8 @@ export function planTaskSourceLink(tasks, chosenTaskId, tab, liveText, activePro
   const alreadyLinked=task.sourceLinks.some(link=>link.relativePath===tab.relativePath);
   return {
     request:Object.freeze({projectId:activeProjectId,taskId:chosenTaskId,
-      relativePath:tab.relativePath,expectedSavedRevision:tab.revision}),
+      relativePath:tab.relativePath,expectedSavedRevision:tab.revision,
+      expectedTaskUpdateEventId:task.updateEventId}),
     boundUpdateEventId:task.updateEventId,
     // Only a boolean is reported; the user's draft bytes stay in CodeMirror.
     hasUnrecordedDraft:liveText!==tab.savedText || tab.draft!==tab.savedText,
