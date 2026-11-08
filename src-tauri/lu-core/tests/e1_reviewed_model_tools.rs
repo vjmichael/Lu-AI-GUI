@@ -449,7 +449,8 @@ async fn scripted_model_enters_real_reviewed_turn_session_and_receives_os_feedba
         "model continuation must include the actual verified Git result");
     assert!(report.records.iter().any(|record|{
         matches!(record,NativeTurnRecord::ToolFeedback(value)
-            if value["result"]["headCommit"].as_str()==Some(expected_head.as_str()))
+            if value["response"]["result"]["headCommit"].as_str()
+                ==Some(expected_head.as_str()))
     }));
     // A completed conversation revokes the short-lived grant: no later
     // assistant text or replay can authorize another third-party execution.
