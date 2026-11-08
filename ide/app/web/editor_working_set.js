@@ -5,6 +5,7 @@
  * This does NOT evict a dirty tab, silently discard Undo, or close files.
  */
 export const MAX_OPEN_TABS_PER_PROJECT = 48;
+export const MAX_OPEN_TABS_TOTAL = 96;
 export const VISIBLE_TABS = 12;
 export const INITIAL_VISIBLE_TREE_ENTRIES = 120;
 export const TREE_ENTRY_PAGE = 120;
@@ -17,10 +18,16 @@ export function admitOpenTabs(tabs, projectId, incomingKeys) {
     .map(tab=>tab.key));
   const additions = new Set(incomingKeys.filter(key =>
     typeof key === 'string' && key && !present.has(key)));
-  const remaining = Math.max(0,MAX_OPEN_TABS_PER_PROJECT-present.size);
-  return {allowed:additions.size <= remaining,
+  const global=new Set(tabs.filter(tab=>tab && typeof tab.key==='string').map(tab=>tab.key));
+  const remaining=Math.max(0,Math.min(
+    MAX_OPEN_TABS_PER_PROJECT-present.size,
+    MAX_OPEN_TABS_TOTAL-global.size));
+  const projectExceeded=present.size+additions.size>MAX_OPEN_TABS_PER_PROJECT;
+  const globalExceeded=global.size+additions.size>MAX_OPEN_TABS_TOTAL;
+  return {allowed:!projectExceeded && !globalExceeded,
     remaining,required:additions.size,
-    reason:additions.size>remaining?'OPEN_TAB_BUDGET_EXCEEDED':null};
+    reason:projectExceeded?'OPEN_TAB_BUDGET_EXCEEDED':
+      globalExceeded?'GLOBAL_OPEN_TAB_BUDGET_EXCEEDED':null};
 }
 
 export function tabWindow(projectTabs, requestedStart=0, windowSize=VISIBLE_TABS) {
