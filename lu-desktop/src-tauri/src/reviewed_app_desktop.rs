@@ -221,6 +221,10 @@ pub(crate) async fn lu_reviewed_app_ask(
     let (ticket,position)=host.generation_queue
         .enqueue(&session_id,&chat_id,&gid)?;
     host.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+    // Durable, indexed pre-execution marker. If Lu stops between Send and
+    // creating the separate worker journals, the next exclusive startup can
+    // still identify and annotate this exact authenticated human turn.
+    host.chats.append_progress(&chat_id,&gid,chat_store::REVIEWED_QUEUE_MARKER)?;
     let cancellation=Cancellation::default();
     let current_step=Arc::new(Mutex::new(None));
     host.reader_generations.lock()
