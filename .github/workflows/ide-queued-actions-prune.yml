@@ -1,4 +1,4 @@
-name: IDE maintenance prune superseded queued Actions only
+name: IDE and Lu Core maintenance prune superseded queued Actions only
 on:
   push:
     branches:
@@ -25,31 +25,32 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "${{ github.sha }}" ]]
-          python3 -m py_compile ide/scripts/prune_superseded_queued_actions.py
-      - name: Preview stale queued IDE branch runs without writing
+          python3 -m py_compile ide/scripts/prune_superseded_repo_actions.py
+          python3 -m unittest discover -s ide/scripts -p 'test_repo_queue_hygiene.py' -v
+      - name: Preview replaceable stale Lu Core and IDE runs without writing
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 ide/scripts/prune_superseded_queued_actions.py \
-            --receipt "${RUNNER_TEMP}/ide-queued-actions-preview.json"
-      - name: Request cancellation of only stale queued and pending IDE branch SHAs
+          python3 ide/scripts/prune_superseded_repo_actions.py \
+            --receipt "${RUNNER_TEMP}/repo-queued-actions-preview.json"
+      - name: Request cancellation of only replaceable superseded queued/pending SHA checks
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 ide/scripts/prune_superseded_queued_actions.py --apply \
-            --receipt "${RUNNER_TEMP}/ide-queued-actions-prune.json"
+          python3 ide/scripts/prune_superseded_repo_actions.py --apply \
+            --receipt "${RUNNER_TEMP}/repo-queued-actions-prune.json"
           echo "CANCEL_REQUEST_ACCEPTED_IS_NOT_TERMINAL_PROOF"
       - name: Retain exact audited queue decision and accepted cancellation requests
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ide-superseded-actions-queue-prune-receipt
+          name: ide-lu-core-superseded-queue-prune-receipt
           path: |
-            ${{ runner.temp }}/ide-queued-actions-preview.json
-            ${{ runner.temp }}/ide-queued-actions-prune.json
+            ${{ runner.temp }}/repo-queued-actions-preview.json
+            ${{ runner.temp }}/repo-queued-actions-prune.json
           if-no-files-found: warn
           retention-days: 7
