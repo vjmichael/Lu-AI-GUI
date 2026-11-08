@@ -905,6 +905,51 @@ async fn ide_list_capabilities() -> lu_ide_workspace::capabilities::CapabilityCa
     lu_ide_workspace::capabilities::list_capabilities()
 }
 
+/// B9. Navigation metadata is not a source snapshot or permission grant.
+#[tauri::command]
+async fn ide_workspace_layout_read(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    layouts: State<'_, Arc<lu_ide_workspace::workspace_layout::WorkspaceLayoutStore>>,
+    project_id: String,
+) -> Result<Option<lu_ide_workspace::workspace_layout::WorkspaceLayout>, String> {
+    let registry = Arc::clone(registry.inner());
+    let layouts = Arc::clone(layouts.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        layouts.read(&registry, &project_id).map_err(str::to_owned)
+    }).await.map_err(|_| "B9_LAYOUT_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// The human explicitly records only relative paths and hashes. Before an
+/// atomic app-data write, the existing registered capability independently
+/// re-opens every saved source and compares its revision. No project write.
+#[tauri::command]
+async fn ide_workspace_layout_save(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    layouts: State<'_, Arc<lu_ide_workspace::workspace_layout::WorkspaceLayoutStore>>,
+    layout: lu_ide_workspace::workspace_layout::WorkspaceLayout,
+) -> Result<lu_ide_workspace::workspace_layout::WorkspaceLayout, String> {
+    let registry = Arc::clone(registry.inner());
+    let layouts = Arc::clone(layouts.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        layouts.save(&registry, layout).map_err(str::to_owned)
+    }).await.map_err(|_| "B9_LAYOUT_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// Explicit removal of saved navigation only. Private B2 draft checkpoints
+/// and registered project source files are never deleted by this command.
+#[tauri::command]
+async fn ide_workspace_layout_clear(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    layouts: State<'_, Arc<lu_ide_workspace::workspace_layout::WorkspaceLayoutStore>>,
+    project_id: String,
+) -> Result<bool, String> {
+    let registry = Arc::clone(registry.inner());
+    let layouts = Arc::clone(layouts.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        layouts.clear(&registry, &project_id).map_err(str::to_owned)
+    }).await.map_err(|_| "B9_LAYOUT_TASK_UNAVAILABLE".to_owned())?
+}
+
 #[tauri::command]
 async fn ide_list_projects(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
@@ -1283,6 +1328,10 @@ pub fn run() {
                 data.join("private-draft-recovery"))
                 .map_err(|_|std::io::Error::other("IDE private draft vault unavailable"))?;
             app.manage(Arc::new(drafts));
+            let navigation=lu_ide_workspace::workspace_layout::WorkspaceLayoutStore::open(
+                data.join("private-workspace-navigation"))
+                .map_err(|_|std::io::Error::other("IDE private navigation unavailable"))?;
+            app.manage(Arc::new(navigation));
             app.manage(Arc::new(registry));
             let snapshots = InventorySnapshots::new(data.join("evidence-baselines.json"))
                 .map_err(|_| std::io::Error::other("IDE evidence history failed to open"))?;
@@ -1358,6 +1407,9 @@ pub fn run() {
             ide_workflow_export_manifest,
             ide_workflow_export_bundle,
             ide_list_projects,
+            ide_workspace_layout_read,
+            ide_workspace_layout_save,
+            ide_workspace_layout_clear,
             ide_choose_project,
             ide_open_project,
             ide_close_project,
