@@ -13,6 +13,7 @@ import { belongsToSelectedProject } from './job_render_guard.js';
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
   { id: 'explorer', title: 'Explorer', glyph: '▤' },
+  { id: 'project-search', title: 'Find in project', glyph: '⌕' },
   { id: 'proposals', title: 'Proposals', glyph: '⇄' },
   { id: 'capabilities', title: 'Capabilities', glyph: '◇' },
   { id: 'continuity', title: 'Continuity', glyph: '▦' },
@@ -56,6 +57,12 @@ function App() {
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState('');
   const [hint, setHint] = useState('');
+  const [projectSearchQuery, setProjectSearchQuery] = useState('');
+  const [projectSearchCase, setProjectSearchCase] = useState(false);
+  const [projectSearchResults, setProjectSearchResults] = useState(null);
+  const [projectSearchBusy, setProjectSearchBusy] = useState(false);
+  const projectSearchGeneration = useRef(0);
+  const projectSearchOpenNonce = useRef(0);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
   const [replaceVisible, setReplaceVisible] = useState(false);
@@ -165,6 +172,9 @@ function App() {
 
   useEffect(() => {
     // Invalidate in-flight project evidence when the selected project changes.
+    projectSearchGeneration.current += 1;
+    setProjectSearchResults(null);
+    setProjectSearchBusy(false);
     gitEvidenceRequest.current += 1;
     setGitEvidenceBusy(false);
     setGitDiff(null);
@@ -258,6 +268,7 @@ function App() {
   }
   const anyDirty = tabs.some(tab => tab.dirty);
   const isExplorer = section === 'explorer';
+  const isProjectSearch = section === 'project-search';
   const isProposals = section === 'proposals';
   const isCapabilities = section === 'capabilities';
   const isLanguages = section === 'languages';
@@ -1500,6 +1511,94 @@ function App() {
     setLspHover(null);
   }
 
+  async function runProjectSearch() {
+    const projectId = activeProject?.projectId;
+    if (!projectId || !projectSearchQuery.trim() || projectSearchBusy) return;
+    const generation = ++projectSearchGeneration.current;
+    setProjectSearchBusy(true);
+    setProjectSearchResults(null);
+    setProblem('');
+    try {
+      const results = await invoke('ide_find_in_project', {
+        projectId, query: projectSearchQuery, caseSensitive: projectSearchCase,
+      });
+      // Project/session changes supersede this response, never reassign it.
+      if (generation !== projectSearchGeneration.current ||
+          activeProjectIdRef.current !== projectId) return;
+      if (results.projectId !== projectId || !Array.isArray(results.matches))
+        throw new Error('PROJECT_SEARCH_RESULT_NOT_SCOPED');
+      setProjectSearchResults(results);
+    } catch (error) {
+      if (generation === projectSearchGeneration.current &&
+          activeProjectIdRef.current === projectId)
+        setProblem('Could not search project: ' + String(error));
+    } finally {
+      if (generation === projectSearchGeneration.current)
+        setProjectSearchBusy(false);
+    }
+  }
+
+  async function openProjectSearchMatch(match) {
+    const projectId = activeProject?.projectId;
+    if (!projectId || explorerPending || projectSearchBusy ||
+        projectSearchResults?.projectId !== projectId) return;
+    const generation = projectSearchGeneration.current;
+    const key = keyFor(projectId, match.relativePath);
+    setExplorerPending(true);
+    setProblem('');
+    try {
+      // Never trust a search hit alone: re-read and rehash saved disk bytes.
+      const opened = await invoke('ide_preview_source_file', {
+        projectId, relativePath: match.relativePath,
+      });
+      if (activeProjectIdRef.current !== projectId ||
+          generation !== projectSearchGeneration.current)
+        return; // A different project or search took over.
+      if (opened.projectId !== projectId || opened.relativePath !== match.relativePath ||
+          opened.revision !== match.revision)
+        throw new Error('FILE_CHANGED_ON_DISK: search again');
+      const existing = tabs.find(tab => tab.key === key);
+      if (existing && (existing.dirty || existing.revision !== opened.revision ||
+                        existing.savedText !== opened.text)) {
+        setActiveTabKey(key);
+        setSection('explorer');
+        setProblem('Search refers to saved disk bytes. The existing editor draft differs. ' +
+          'No draft was changed and no stale coordinates were applied.');
+        return;
+      }
+      const state = existing
+        ? editorStates.current.get(key)
+        : createEditorState(opened.text, opened.relativePath,
+            (editorState, draft) => onEditorChange(key, editorState, draft));
+      if (!state) throw new Error('EDITOR_STATE_UNAVAILABLE');
+      const line = state.doc.line(match.line);
+      const from = line.from + match.columnUtf16 - 1;
+      const to = from + match.matchLengthUtf16;
+      if (from < line.from || to > line.to || to <= from ||
+          state.doc.sliceString(from, to).length !== match.matchLengthUtf16)
+        throw new Error('SEARCH_RANGE_UNVERIFIABLE');
+      if (!existing) {
+        editorStates.current.set(key, state);
+        setTabs(previous => [...previous, {
+          key, projectId, relativePath: opened.relativePath,
+          revision: opened.revision, savedText: opened.text,
+          draft: opened.text, dirty: false, generation: 0,
+          bufferRevision: 0,
+        }]);
+      }
+      setActiveTabKey(key);
+      setFindRequest({ tabKey: key, from, to,
+        nonce: ++projectSearchOpenNonce.current });
+      setSection('explorer');
+    } catch (error) {
+      if (activeProjectIdRef.current === projectId &&
+          generation === projectSearchGeneration.current)
+        setProblem('Cannot open that saved search hit: ' + String(error));
+    } finally {
+      setExplorerPending(false);
+    }
+  }
+
   async function selectEntry(entry) {
     if (!activeProject || explorerPending) return;
     if (entry.kind === 'directory') {
@@ -1698,7 +1797,7 @@ function App() {
       <nav aria-label="IDE sections" className="ideNav">
         {sections.map(item => <button key={item.id} type="button"
           className={'navItem' + (section === item.id ? ' selected' : '')}
-          disabled={item.pending || (item.id === 'explorer' && !activeProject)}
+          disabled={item.pending || ((item.id === 'explorer' || item.id === 'project-search') && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
           onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'packages') void readWorkflowRuns(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
@@ -1716,8 +1815,9 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1 aria-label={isJobs ? 'Execution requests' : undefined}>{isJobs ? 'Execution requests' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
-          <p>{isJobs ? 'Historical review intents · Protected native Run/Test · Explicit cancellation' :
+          <h1 aria-label={isJobs ? 'Execution requests' : undefined}>{isProjectSearch ? 'Find in project' : isJobs ? 'Execution requests' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <p>{isProjectSearch ? 'Saved-source search · Revision-checked hits · No writes' :
+            isJobs ? 'Historical review intents · Protected native Run/Test · Explicit cancellation' :
             isPackages ? 'Multi-project Git and artifact review · No release permission' :
             isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
             isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
@@ -1960,6 +2060,66 @@ function App() {
                       Cancel intent / withdraw review
                     </button>}
                 </article>)}
+              </div>
+            </>}
+          </section>
+        : isProjectSearch
+        ? <section className="workspaceContent projectSearchWorkspace" aria-label="Find in project">
+            <div className="sectionHeading">
+              <h2>Find in saved project files</h2>
+              <span>Read-only · Native registered project only</span>
+            </div>
+            <p className="capabilityNotice">Search a bounded set of UTF-8 files saved on disk.
+              Unsaved drafts are never searched or overwritten. Generated, binary or large
+              files may be excluded, and a partial scan must not be treated as a complete result.</p>
+            <form className="projectSearchControls" onSubmit={event => {
+              event.preventDefault(); void runProjectSearch();
+            }}>
+              <input aria-label="Search project text" placeholder="Literal text to find"
+                value={projectSearchQuery} maxLength={128}
+                onChange={event => {
+                  setProjectSearchQuery(event.target.value);
+                  setProjectSearchResults(null);
+                  projectSearchGeneration.current += 1;
+                  setProjectSearchBusy(false);
+                }}/>
+              <label><input type="checkbox" checked={projectSearchCase}
+                onChange={event => {
+                  setProjectSearchCase(event.target.checked);
+                  setProjectSearchResults(null);
+                  projectSearchGeneration.current += 1;
+                  setProjectSearchBusy(false);
+                }}/> Match case</label>
+              <button className="primaryBtn" type="submit"
+                disabled={!activeProject || !projectSearchQuery.trim() || projectSearchBusy}>
+                {projectSearchBusy ? 'Searching…' : 'Search project'}
+              </button>
+            </form>
+            {projectSearchBusy && <p role="status">Searching saved project sources…</p>}
+            {projectSearchResults?.projectId === activeProject?.projectId && <>
+              <p className="projectSearchSummary">
+                {projectSearchResults.matches.length} match(es) ·
+                {' '}{projectSearchResults.filesScanned} files scanned ·
+                {' '}{projectSearchResults.bytesScanned.toLocaleString()} bytes read
+                {projectSearchResults.skippedFiles > 0 &&
+                  ' · ' + projectSearchResults.skippedFiles + ' skipped files'}
+              </p>
+              {projectSearchResults.truncated && <p role="status" className="reviewWarning">
+                Search limits reached: results are incomplete. Narrow the search scope.
+              </p>}
+              {projectSearchResults.matches.length === 0 && <p>
+                No matching saved source found in the inspected scope.</p>}
+              <div className="projectSearchResults">
+                {projectSearchResults.matches.map((hit, index) =>
+                  <button type="button" className="projectSearchHit"
+                    key={hit.relativePath + ':' + hit.fromByte + ':' + index}
+                    disabled={explorerPending}
+                    onClick={() => void openProjectSearchMatch(hit)}>
+                    <strong>{hit.relativePath}:{hit.line}:{hit.columnUtf16}</strong>
+                    <code>{hit.preview}</code>
+                    <small>Saved SHA-256 {hit.revision.slice(0, 12)}… ·
+                      UTF-8 bytes {hit.fromByte}–{hit.toByte}</small>
+                  </button>)}
               </div>
             </>}
           </section>
