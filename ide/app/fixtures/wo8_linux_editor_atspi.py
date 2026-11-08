@@ -305,6 +305,48 @@ def _x11_focused_chooser_keyboard(attempt):
     return False
 
 
+def _native_chooser_spatial_button(button):
+    # Some GTK/portal accessibility providers orphan the action-button
+    # ancestry. Permit one only when its real geometry lies completely
+    # inside a visible GTK chooser AND the active X11 window has the exact
+    # native picker title. Never infer ownership from its caption alone.
+    try:
+        active = subprocess.check_output(
+            ["xdotool", "getactivewindow"], text=True, timeout=5).strip()
+        if not active.isdigit() or int(active) <= 0:
+            return False
+        title = subprocess.check_output(
+            ["xdotool", "getwindowname", active], text=True, timeout=5
+        ).strip().casefold()
+        if title not in ("open", "open folder", "select folder",
+                         "choose folder", "choose a folder",
+                         "select a folder", "select"):
+            return False
+        button_rect = button.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+        if button_rect.width < 8 or button_rect.height < 8:
+            return False
+        for native in elements():
+            if "file chooser" not in (native.getRoleName() or "").casefold():
+                continue
+            states = native.getState()
+            if not (states.contains(pyatspi.STATE_SHOWING)
+                    and states.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            box = native.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            if (box.width >= 320 and box.height >= 180
+                    and box.x + 3 <= button_rect.x
+                    and box.y + 3 <= button_rect.y
+                    and button_rect.x + button_rect.width <= box.x + box.width - 3
+                    and button_rect.y + button_rect.height <= box.y + box.height - 3):
+                return True
+    except (OSError, ValueError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired):
+        pass
+    except Exception:
+        pass
+    return False
+
+
 def _native_picker_confirm(attempt=0):
     # The previous real Ubuntu 26.04 run clicked an authentic AT-SPI
     # chooser action THREE times and the dialog never closed. A generic
@@ -317,9 +359,15 @@ def _native_picker_confirm(attempt=0):
         try:
             name = (obj.name or "").strip().casefold()
             role = (obj.getRoleName() or "").casefold()
-            if name not in priority or "button" not in role or not _native_dialog_ancestor(obj):
+            if name not in priority or "button" not in role:
                 continue
-            if not obj.getState().contains(pyatspi.STATE_ENABLED):
+            state = obj.getState()
+            if not (state.contains(pyatspi.STATE_ENABLED)
+                    and state.contains(pyatspi.STATE_SHOWING)
+                    and state.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            if not (_native_dialog_ancestor(obj)
+                    or _native_chooser_spatial_button(obj)):
                 continue
             try:
                 rect = obj.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
@@ -334,6 +382,11 @@ def _native_picker_confirm(attempt=0):
         except Exception:
             continue
     ranked.sort(key=lambda record: record[:4])
+    # Bounded, fixed-category evidence only; never log arbitrary GTK labels,
+    # paths, filename contents, or unreviewed application/window titles.
+    print("P04_GTK_NATIVE_APPROVAL_CONTROLS=verified_visible_buttons:"
+          + str(len(ranked)) + ";"
+          + ",".join(item[4].replace(" ", "_") for item in ranked[:8]), flush=True)
     # Consecutive failed OS confirmation attempts must not hit the same
     # first generic toolbar Open when multiple native candidates exist.
     start = min(attempt, max(0, len(ranked) - 1))
@@ -349,6 +402,20 @@ def _native_picker_confirm(attempt=0):
                               ";ranked_candidates=" + str(len(ranked)) +
                               ";attempt=" + str(attempt), flush=True)
                         return
+        except Exception:
+            continue
+    # Some GTK controls expose geometry and keyboard focus but not an
+    # AT-SPI click action. Activate the verified chooser-owned button with
+    # real X11 Space, not a fabricated callback or a blind global click.
+    for item in ranked[start:] + ranked[:start]:
+        try:
+            _, _, _, _, name, obj = item
+            if obj.queryComponent().grabFocus():
+                key("space")
+                print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION="
+                      "real_focused_native_button_space;caption="
+                      + name.replace(" ", "_"), flush=True)
+                return
         except Exception:
             continue
     # A separately witnessed native GTK X11 dialog may have zero exposed
