@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "1a244c2a63aa9cc479270969448d0a511c2b2ad8",
-  "trackedFileCount": 647,
+  "sourceCommitBeforeLock": "038af878a272d7f2eba41775003d71b5db509347",
+  "trackedFileCount": 650,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -25,11 +25,11 @@
     },
     {
       "path": ".github/workflows/lu-e1-p03-execution.yml",
-      "blob": "bc54f8a633cdc58bf2932e2f25071658f5c8c2f8"
+      "blob": "032d6c7cdbb8263ffb7232d1ce1c7f06341aa924"
     },
     {
       "path": ".github/workflows/lu-e1-p04-artifact-custody.yml",
-      "blob": "aa462d780876f93048903137323699ae74ce6fdd"
+      "blob": "e855ce3fd3520eef2143514ad01b839798cf8455"
     },
     {
       "path": ".github/workflows/lu-e1-p04-output-oracle.yml",
@@ -37,7 +37,7 @@
     },
     {
       "path": ".github/workflows/lu-e1-p05-three-arm.yml",
-      "blob": "52e1e79461fbc93fecd032dbcdd3ec803cf0927a"
+      "blob": "0aa0058550d7e5101d3c2a4c1a526360e04cc613"
     },
     {
       "path": ".github/workflows/lu-e1-p06-thirdparty-adapters.yml",
@@ -45,15 +45,15 @@
     },
     {
       "path": ".github/workflows/lu-e1-p06b-real-thirdparty.yml",
-      "blob": "a19e87b36c553eb25f17d7930b0bc10f5b031007"
+      "blob": "e070a1e3816f3472a29bc3ad312f1c917aff2c9d"
     },
     {
       "path": ".github/workflows/lu-e1-p06c-typed-git.yml",
-      "blob": "0cb61b043baf6ba12eeb76bf46e49d74f599cb9c"
+      "blob": "2a3201c8d0fe21e46c4c1a91bcb5bebb4d8d68bd"
     },
     {
       "path": ".github/workflows/lu-e1-p06d-git-context.yml",
-      "blob": "db91dd69968913f0e5dc9975398a60ba8b5a0829"
+      "blob": "d8ccd5147e31f812edf251e8bc570e575e9774c2"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -177,19 +177,27 @@
     },
     {
       "path": "benchmarks/e1/e1_p05_real_three_arm.py",
-      "blob": "5cf268430782de9fcbe3e527a4e8db00a20bbebc"
+      "blob": "8a1e5dadd0135b08678902e850cd8576b5bc238d"
     },
     {
       "path": "benchmarks/e1/e1_p05_xml_oracle.py",
       "blob": "6ab4516b6d528e40b0e013b7559594b5e5563da3"
     },
     {
+      "path": "benchmarks/e1/test_e1_p05_raw_receipt.py",
+      "blob": "6c412bcf09dc0c30bb7329abd68ec183d78f583f"
+    },
+    {
       "path": "benchmarks/e1/test_e1_p05_real_contract.py",
-      "blob": "5193194ec0dc1b15f27b445b68406d55f0666ab4"
+      "blob": "2a6b1b13b1780a5ce3e4518ef53d76f2380bcef3"
     },
     {
       "path": "benchmarks/e1/test_e1_p05_xml_oracle.py",
       "blob": "4d43ad1c19a120c34197015961cecc8af9b9a7f3"
+    },
+    {
+      "path": "benchmarks/e1/verify_e1_p05_raw.py",
+      "blob": "c98ddb0c7b8b4ba90b6a561974bd7caee3518dc3"
     },
     {
       "path": "benchmarks/memory/cognitum_three_arm_real_model.py",
@@ -294,6 +302,10 @@
     {
       "path": "docs/LU_DECISION_MEMORY_REGISTER_20261107.md",
       "blob": "3f0677108c9cce3ece07a7511f046eb871c1a43b"
+    },
+    {
+      "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
+      "blob": "4598bdb53b3b19e69b7a0ae212fffbf9321d9067"
     },
     {
       "path": "docs/LU_E1_P05_COMPARATIVE_20261107.md",
@@ -445,7 +457,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "f3c6a332922790c654079bee16b317f02d39595b"
+      "blob": "bd74fe5bc3b421da85c3667d78db4e6c2ebb5b68"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
