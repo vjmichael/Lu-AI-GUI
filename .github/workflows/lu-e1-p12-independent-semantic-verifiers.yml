@@ -198,6 +198,17 @@ jobs:
             2>&1 | tee e1-p12-native-apps/native-packed-git-history.log
           grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
             e1-p12-native-apps/native-packed-git-history.log
+      - name: Native Git OFS_DELTA chain reconstructs exact 20 source blobs and refuses pack corruption
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            real_git_delta_packs_reconstruct_original_verified_blob_bytes \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p12-native-apps/native-packed-delta-blobs.log
+          grep -Eq 'test result: ok\\. 1 passed; 0 failed;' \
+            e1-p12-native-apps/native-packed-delta-blobs.log
       - name: Real FFmpeg creates separate MP4 video and AAC audio, supervised FFprobe returns verified facts
         shell: bash
         run: |
