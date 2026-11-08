@@ -53,3 +53,14 @@ export function visibleTreeEntries(list,requestedCount=INITIAL_VISIBLE_TREE_ENTR
   return {visible:entries.slice(0,allowed),
     total:entries.length,remaining:Math.max(0,entries.length-allowed)};
 }
+
+/** Local validation only. Native cap-std path validation is authoritative. */
+export function verifiedRelativeSourcePath(value) {
+  if (typeof value!=='string') return null;
+  const path=value.trim();
+  if (!path || path.length>1024 || path.startsWith('/') ||
+      path.endsWith('/') || path.includes('\\') || path.includes(':') ||
+      /[\u0000-\u001f\u007f]/.test(path) ||
+      path.split('/').some(part=>!part || part==='.' || part==='..')) return null;
+  return path;
+}
