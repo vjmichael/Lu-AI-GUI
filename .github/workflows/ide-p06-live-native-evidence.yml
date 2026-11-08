@@ -5,6 +5,13 @@ on:
     paths:
       - 'ide/packaging/p06_live_native_jobs.py'
       - 'ide/packaging/test_p06_live_native_jobs.py'
+      - 'ide/packaging/upstream_notice_receipt.py'
+      - 'ide/packaging/test_upstream_notice_receipt.py'
+      - 'ide/packaging/collect_verification_licenses.py'
+      - 'ide/packaging/verify_p04_license_bundle.py'
+      - 'ide/packaging/upstream-licenses/**'
+      - '.gitattributes'
+      - '.github/workflows/ide-p06-dependency-evidence.yml'
       - 'ide/docs/IDE_P06_LIVE_NATIVE_EVIDENCE_20261107.md'
       - 'ide/docs/IDE_P06_GOVERNANCE_REPRODUCIBILITY_20261107.md'
       - 'ide/docs/IDE_RELEASE_CLOSEOUT_P01_P07_20261107.md'
@@ -15,6 +22,13 @@ on:
     paths:
       - 'ide/packaging/p06_live_native_jobs.py'
       - 'ide/packaging/test_p06_live_native_jobs.py'
+      - 'ide/packaging/upstream_notice_receipt.py'
+      - 'ide/packaging/test_upstream_notice_receipt.py'
+      - 'ide/packaging/collect_verification_licenses.py'
+      - 'ide/packaging/verify_p04_license_bundle.py'
+      - 'ide/packaging/upstream-licenses/**'
+      - '.gitattributes'
+      - '.github/workflows/ide-p06-dependency-evidence.yml'
       - '.github/workflows/ide-p06-live-native-evidence.yml'
   workflow_dispatch:
 permissions:
