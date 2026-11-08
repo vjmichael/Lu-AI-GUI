@@ -2096,7 +2096,7 @@ function App() {
               </button>
             </form>
             {projectSearchBusy && <p role="status">Searching saved project sources…</p>}
-            {projectSearchResults?.projectId === activeProject?.projectId && <>
+            {projectSearchResults && projectSearchResults.projectId === activeProject?.projectId && <>
               <p className="projectSearchSummary">
                 {projectSearchResults.matches.length} match(es) ·
                 {' '}{projectSearchResults.filesScanned} files scanned ·
