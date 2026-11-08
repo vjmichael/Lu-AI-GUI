@@ -944,7 +944,7 @@ pub fn start_windows_dap(
     // current-directory compatibility from project input. No broadened
     // AppContainer file/registry/network access or inherited environment.
     let adapter_cwd = executable.parent().ok_or_else(denied)?;
-    if !clean_meta(adapter_cwd)?.is_dir() || adapter_cwd != bundle.join("bin") {
+    if !clean_meta(adapter_cwd)?.is_dir() {
         return Err(denied());
     }
     let env = min_environment(&local, &bundle)?;
