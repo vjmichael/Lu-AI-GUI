@@ -23,6 +23,7 @@ pub mod inventory_history;
 pub mod lsp;
 pub mod lsp_session;
 pub mod proposal;
+pub mod project_search_port;
 pub mod resource_probe;
 pub mod review;
 pub mod reviewed_git;
