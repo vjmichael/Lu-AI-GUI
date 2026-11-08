@@ -15,7 +15,6 @@ on:
       - 'src-tauri/lu-core/src/native_app_catalog.rs'
       - 'src-tauri/lu-core/src/lib.rs'
       - '.github/workflows/lu-e1-app-admission.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

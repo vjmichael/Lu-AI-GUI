@@ -8,7 +8,6 @@ on:
       - 'benchmarks/memory/**'
       - 'src-tauri/lu-core/examples/ansf_memory_baseline.rs'
       - '.github/workflows/lu-m3-cognitum-real-benchmark.yml'
-      - 'source-tree.lock.json'
 permissions:
   contents: read
 jobs:

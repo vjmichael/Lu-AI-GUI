@@ -12,7 +12,6 @@ on:
       - 'lu-desktop/tests/p09-office-boundary.test.mjs'
       - 'lu-desktop/web/main.jsx'
       - '.github/workflows/lu-p09-office-boundary.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

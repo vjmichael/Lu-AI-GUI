@@ -1,0 +1,43 @@
+name: Lu CI Queue Hygiene (superseded only)
+on:
+  push:
+    branches: ['lu/ci-queue-hygiene-20261107']
+    paths:
+      - 'scripts/ci_prune_superseded.py'
+      - 'tests/test_ci_prune_superseded.py'
+      - '.github/workflows/lu-ci-queue-cleanup.yml'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Apply cancellation only to superseded queued/pending runs'
+        type: boolean
+        required: false
+        default: false
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: lu-ci-queue-hygiene
+  cancel-in-progress: false
+jobs:
+  prune-superseded:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate fail-closed cleanup selector
+        run: python3 -m unittest discover -s tests -p 'test_ci_prune_superseded.py' -v
+      - name: Cancel only proven superseded queued/pending runs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRUNE_MODE: ${{ github.event_name == 'push' && 'apply' || (inputs.apply && 'apply' || 'dry-run') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$PRUNE_MODE" == 'apply' ]]; then
+            python3 scripts/ci_prune_superseded.py --apply
+          else
+            python3 scripts/ci_prune_superseded.py
+          fi

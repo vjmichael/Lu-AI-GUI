@@ -6,7 +6,6 @@ on:
       - 'lu-desktop/**'
       - 'docs/TOOLS_WAVE4_CONTEXTUAL_CAPABILITIES.md'
       - '.github/workflows/lu-wave4-contextual-tools.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

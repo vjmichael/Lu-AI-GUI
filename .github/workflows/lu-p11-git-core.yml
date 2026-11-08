@@ -9,7 +9,6 @@ on:
       - 'src-tauri/lu-core/src/native_git_inspect.rs'
       - 'src-tauri/lu-core/tests/native_git_inspect.rs'
       - 'docs/LU_P11_GIT_CORE.md'
-      - 'source-tree.lock.json'
       - '.github/workflows/lu-p11-git-core.yml'
   workflow_dispatch:
 

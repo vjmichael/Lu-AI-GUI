@@ -5,7 +5,6 @@ on:
       - 'src-tauri/**'
       - 'lu-desktop/**'
       - '.github/workflows/lu-wave2-files.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

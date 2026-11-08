@@ -20,7 +20,6 @@ on:
       - 'docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md'
       - 'docs/LU_R22_STRUCTURED_CHAT_AND_ALPHA_V1_ROADMAP.md'
       - '.github/workflows/lu-v1-observe-learn.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

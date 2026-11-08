@@ -14,7 +14,6 @@ on:
       - 'src-tauri/lu-core/src/native_app_execution.rs'
       - 'src-tauri/lu-core/src/lib.rs'
       - '.github/workflows/lu-e1-p04-output-oracle.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read
