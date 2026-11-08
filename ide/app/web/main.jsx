@@ -2077,6 +2077,8 @@ function App() {
     }
     const ticket = beginExplorerIo();
     if (!ticket) return;
+    // CodeMirror state can change before React publishes the next tabs render.
+    const editorStateAtStart = editorStates.current.get(tab.key);
     setProblem('');
     try {
       const opened = await invoke('ide_preview_source_file', {
@@ -2084,6 +2086,7 @@ function App() {
       });
       const latestTab = tabsRef.current.find(item => item.key === tab.key);
       if (explorerIoTicket.current !== ticket ||
+          editorStates.current.get(tab.key) !== editorStateAtStart ||
           !lateReloadCanCommit(tab,latestTab,opened,activeProjectIdRef.current))
         throw new Error('Reload stopped: project, source or draft changed during native read.');
       clearPrivateDraftSession(tab.key);
