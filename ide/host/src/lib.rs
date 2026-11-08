@@ -25,6 +25,7 @@ pub mod lsp;
 pub mod lsp_session;
 pub mod project_search;
 pub mod project_run_profiles;
+pub mod reviewed_adapters;
 pub mod proposal;
 pub mod resource_probe;
 pub mod review;
