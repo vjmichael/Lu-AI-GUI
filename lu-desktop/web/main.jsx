@@ -14,6 +14,7 @@ import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.m
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryAnchor} from './history_window_geometry.mjs';
 import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppearance,textForBackground,visibleReactionBySeq} from './message_interactions.mjs';
+import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget} from './message_revisions.mjs';
 
 function MessageText({text, role='assistant'}) {
   if (role === 'user') return <div className="messageContent userText">{text}</div>;
@@ -703,6 +704,13 @@ function App() {
   // UX-CHAT01: per-chat decoration state does not enter model context.
   const [messageDecorationsByChat,setMessageDecorationsByChat]=useState({});
   const [messageReplay,setMessageReplay]=useState(null);
+  const [revisionHistoryByChat,setRevisionHistoryByChat]=useState({});
+  const [revisionPendingByChat,setRevisionPendingByChat]=useState({});
+  const [messageEditor,setMessageEditor]=useState(null);
+  const [messageProvenance,setMessageProvenance]=useState(null);
+  const [linkedReplyTarget,setLinkedReplyTarget]=useState(null);
+  const [linkedReplyText,setLinkedReplyText]=useState('');
+  const [revisionActionBusy,setRevisionActionBusy]=useState(false);
   const [messageDecorationBusy,setMessageDecorationBusy]=useState(false);
   // Active transcript is a bounded visible window, not the entire ANSF book.
   const [historyWindow,setHistoryWindow]=useState({
@@ -2643,8 +2651,102 @@ function App() {
     });
     return ()=>{active=false};
   },[chatId,history]);
+  // Display-only revision projection over the same bounded original ANSF
+  // history window. Never replaces original history or model context.
+  useEffect(()=>{
+    const id=chatId;
+    if(!id)return;
+    const seqs=history.filter(x=>Number.isSafeInteger(x.seq)&&x.seq>0)
+      .map(x=>x.seq);
+    const slices=[];
+    for(let start=0;start<seqs.length;start+=64){
+      slices.push(seqs.slice(start,start+64));
+    }
+    if(!slices.length)slices.push([]);
+    let active=true;
+    Promise.all(slices.map(batch=>invoke('lu_message_revision_page',{
+      chatId:id,seqs:batch
+    }))).then(pages=>{
+      if(!active)return;
+      const all=pages.flatMap(page=>page?.entries||[]);
+      const pending=Math.max(0,...pages.map(page=>page?.pendingReplyLinks||0));
+      setRevisionHistoryByChat(prev=>({
+        ...prev,[id]:revisionsBySequence(all)
+      }));
+      setRevisionPendingByChat(prev=>({...prev,[id]:pending}));
+    }).catch(error=>{
+      if(active&&currentChat.current===id){
+        setError('Message revision history unavailable: '+String(error));
+      }
+    });
+    return ()=>{active=false};
+  },[chatId,history]);
+  async function editSavedMessage(){
+    const editor=messageEditor;
+    if(!chatId||!editor||revisionActionBusy)return;
+    setRevisionActionBusy(true);
+    try{
+      const row=await invoke('lu_edit_message_display',{
+        chatId,seq:editor.seq,expectedVersion:editor.version,
+        expectedSha:editor.sha,text:editor.text
+      });
+      setRevisionHistoryByChat(prev=>({
+        ...prev,[chatId]:{
+          ...(prev[chatId]||{}),[row.seq]:row
+        }
+      }));
+      setMessageEditor(null);
+    }catch(error){
+      setError('Display correction not saved: '+String(error));
+    }finally{setRevisionActionBusy(false)}
+  }
+  async function postLinkedHumanReply(){
+    const target=linkedReplyTarget;
+    const id=chatId;
+    if(!id||!target||!linkedReplyText.trim()||revisionActionBusy)return;
+    setRevisionActionBusy(true);
+    try{
+      const receipt=await invoke('lu_post_linked_reply',{
+        chatId:id,parentSeq:target.seq,parentVersion:target.version,
+        parentSha:target.sha,text:linkedReplyText
+      });
+      if(!receipt||receipt.status!=='LINKED_ORIGINAL_HUMAN_TURN_NO_MODEL_EXECUTION'){
+        throw Error('Original reply linkage not confirmed');
+      }
+      setLinkedReplyTarget(null);
+      setLinkedReplyText('');
+      await refreshChats();
+      if(currentChat.current===id){
+        const entries=await loadLatestUiHistory(id);
+        if(currentChat.current===id)setHistory(entries);
+      }
+      setActivity('Posted a linked human reply; no model/tool execution.');
+    }catch(error){
+      setError('Reply outcome uncertain: '+String(error)+
+        ' Inspect history and reconcile; do not repost automatically.');
+    }finally{setRevisionActionBusy(false)}
+  }
+  async function reconcileExistingHumanReplies(){
+    if(!chatId||revisionActionBusy)return;
+    const id=chatId;
+    setRevisionActionBusy(true);
+    try{
+      const linked=await invoke('lu_reconcile_message_replies',{chatId:id});
+      setActivity('Reconciled '+linked+' already-saved reply link(s); no messages resent.');
+      if(currentChat.current===id){
+        const entries=await loadLatestUiHistory(id);
+        if(currentChat.current===id)setHistory(entries);
+      }
+    }catch(error){
+      setError('Reply reconciliation failed: '+String(error));
+    }finally{setRevisionActionBusy(false)}
+  }
   useEffect(()=>{
     setMessageReplay(null);
+    setMessageEditor(null);
+    setMessageProvenance(null);
+    setLinkedReplyTarget(null);
+    setLinkedReplyText('');
   },[chatId]);
   useEffect(()=>{
     if(!messageReplay)return;
@@ -2658,6 +2760,7 @@ function App() {
     messageDecorationsByChat[chatId]?.appearance
   );
   const chatReactions=messageDecorationsByChat[chatId]?.reactionsBySeq||{};
+  const displayRevisions=revisionHistoryByChat[chatId]||{};
   async function refreshWriteRecovery(targetChat = chatId) {
     if (!targetChat) { setWriteRecovery([]); return; }
     const records = await invoke('lu_write_recovery', {chatId: targetChat});
