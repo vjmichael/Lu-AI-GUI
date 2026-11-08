@@ -20,7 +20,7 @@ import subprocess
 import sys
 import tempfile
 
-from verify_language_servers import safe_file, verify
+from verify_language_servers import safe_file, verify, reviewed_native_resources
 
 
 def digest_file(path: Path) -> str:
@@ -124,6 +124,15 @@ def stage(
             expected = row["sha256ByPlatform"][platform].lower()
             if digest_file(target) != expected:
                 raise ValueError("resource changed after byte-for-byte staging")
+            # Preserve every independently approved original native DLL and
+            # Clang resource under its exact fixed worker-relative location.
+            native_resources=reviewed_native_resources(row,bundle_root,platform)
+            for relative,original,expected_resource in native_resources:
+                asset=target.parent.parent.joinpath(*relative.split("/"))
+                asset.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copyfile(original,asset)
+                if digest_file(asset)!=expected_resource:
+                    raise ValueError("original native resource mutated during staging")
             notice_dir = target.parent.parent / "NOTICES"
             notice_dir.mkdir(parents=True, exist_ok=True)
             for index, path in enumerate(row["licenseNoticeFiles"]):
@@ -137,6 +146,7 @@ def stage(
                 "version": row["releaseVersion"],
                 "license": row["licenseExpression"],
                 "notices": len(row["licenseNoticeFiles"]),
+                "originalNativeResourceFiles":len(native_resources),
                 "bundleSha256": windows_lsp_tree_digest(target.parent.parent),
                 "rustEnvPin": {
                     "clangd": "LU_IDE_E2_CLANGD_BUNDLE_SHA256",
