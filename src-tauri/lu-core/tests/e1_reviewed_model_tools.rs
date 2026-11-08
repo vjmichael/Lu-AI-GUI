@@ -563,13 +563,13 @@ async fn genuine_gguf_independently_selects_git_and_media_tools_and_survives_jou
         let mut call_ids=Vec::new();
         assert!(report.records.iter().any(|entry|{
             if let NativeTurnRecord::ToolFeedback(data)=entry{
-                if data["toolName"]==expected_name {
-                    if let Some(id)=data["callId"].as_str(){call_ids.push(id.to_string());}
+                if data["name"]==expected_name {
+                    if let Some(id)=data["call_id"].as_str(){call_ids.push(id.to_string());}
                     return if use_git{
-                        data["data"]["result"][expected_key]==expected_head
+                        data["response"]["result"][expected_key]==expected_head
                     }else{
-                        data["data"]["result"]["durationMilliseconds"]==1000
-                            &&data["data"]["result"]["streams"][0]["codec"]=="pcm_s16le"
+                        data["response"]["result"]["durationMilliseconds"]==1000
+                            &&data["response"]["result"]["streams"][0]["codec"]=="pcm_s16le"
                     };
                 }
             }
