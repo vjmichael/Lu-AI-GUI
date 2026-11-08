@@ -48,5 +48,21 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertNotIn("subprocess.run([\"gh\"", fixture)
 
 
+    def test_real_windows_b5_measurement_has_one_exact_source_gate(self):
+        script = Path(__file__).with_name("Test-Wo8NativeDesktopUI.ps1").read_text(
+            encoding="utf-8")
+        self.assertEqual(script.count("function B5-Memory("), 1,
+                         "Duplicate function after final cleanup is not executable")
+        self.assertEqual(script.count("b5_performance_source_commit_not_exact_checkout"), 1)
+        self.assertIn("if ($env:B5_EXACT_CHECKOUT_SHA -notmatch '^[a-f0-9]{40}$' -or",
+                      script)
+        self.assertIn("sourceCommit=$env:B5_EXACT_CHECKOUT_SHA", script)
+        self.assertIn("rssPeakObservedBytes", script)
+        self.assertIn("privatePeakObservedBytes", script)
+        self.assertNotIn("\n -or\n          (git rev-parse HEAD)", script)
+        self.assertTrue(script.rstrip().endswith("}"),
+                        "Unexpected executable block after the native app cleanup")
+
+
 if __name__ == "__main__":
     unittest.main()
