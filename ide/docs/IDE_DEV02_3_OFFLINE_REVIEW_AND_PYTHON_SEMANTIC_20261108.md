@@ -75,4 +75,4 @@ Official sources as of November 8, 2026: https://github.com/microsoft/pyright/bl
 - **Linux**: self-hosted runner under the exact delegated `lu-ide-delegated/lu-ide-host` cgroup hierarchy, root-owned bundle installed outside project home, root-owned `/usr/bin/bwrap`, enabled cgroup-v2 process/memory/CPU controllers and usable GTK/AT-SPI; reviewer-approved binaries and notices; real Debian install/process isolation/native GUI/uninstall.
 - **Both**: CI executes the full exact-head native Tauri source matrix, checksum locks, hostile source tests, genuine installed LSP protocol and physical source integrity tests, then captures immutable receipts. Owner legal release approval and future signing identity remain separate, explicitly user-deferred tasks.
 
-**No self-hosted runner was found/provisioned or actually executed by this source-only task, and no real binaries were provided. No installed LSP acceptance can be closed.**
+**No protected self-hosted runner availability has been independently verified, none was provisioned or executed by this task, and no real provider binaries were supplied to it. Installed LSP acceptance remains open.**
