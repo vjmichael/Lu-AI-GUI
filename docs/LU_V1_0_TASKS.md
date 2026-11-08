@@ -29,7 +29,7 @@
 | JOURNAL-01 | P0 | Durable effect journal, idempotent replay and cancellation | TODO | Kill/restart/uncertain-effect reconciliation |
 | MEMORY-01 | P0 | Working/object memory, provenance and belief revision | TODO | Editable and independently checkable retrieval |\n| CONTEXT-01 | P0 | Canonical recoverable goals, provenance, cross-chat context and task handoff (never authority transfer) | DOCS RECOVERED | Durable Lu Core continuity + host-authenticated recall integration and crash/restart tests |
 | AGENT-01 | P1 | Durable agent orchestration, loop guard, progress cards | A/B/C/D durable plan, immutable revisions, historical receipts and bounded scheduler + E broker preflight/native-reviewed UI SOURCE CANDIDATES; actual dispatch/installed E2E OPEN | Exact-head Windows/Linux unit and Tauri checks, original-chat goal verifier, E1 OS execution/custody gates, host-generated plan admission, full NSIS physical acceptance |
-| UX-01 | P1 | Chat, diagnostics, accessible UI and streaming hardening | IN PROGRESS | UI automated tests |
+| UX-01 | P1 | Chat, diagnostics, accessible UI and streaming hardening | UX-CHAT01 reactions/copy/replay and per-conversation background/bubble colors SOURCE CANDIDATE; subsequent edit/reply UX OPEN | Exact-head Windows/Linux ChatStore/SQLite and React tests, physical installed Windows accessibility/theme and persistence acceptance |
 | RELEASE-01 | P0 | Signed NSIS installer, upgrade and independent v1.0 E2E | DEFERRED | Near-v1.0 Win10/11 acceptance |
 
 ## Change tracking convention
@@ -797,3 +797,11 @@ details: `docs/LU_E1_P13_SOURCE_REVISION_CUSTODY_20261108.md`.
 - Dedicated AGENT-01E exact-head Windows/Linux Rust + Node/React + Tauri CI exercises real SQLite and original ChatStore implementations, original ANSF goal change, host-only broker authority, restarted host fence, native decision identity, read-only history, corruption and symlink negative checks. All OS worker receipts inside these tests remain **synthetic fixtures**; scheduled CI jobs are not acceptance until actual logs pass.
 - Missing production host-generated plan creation and actual model decomposition workflow still prevent ordinary chat requests from automatically appearing in AGENT plan timelines. Live reviewed-agent dispatch, installed-app native confirmation, real OS process cancellation and complete source assumption verification remain gated on E1-P03/P06/P07/P10/P12/P13/P15 and near-v1.0 physical Windows NSIS tests; E1-P08C Linux cgroup-v2 escape-custody remains separately scoped.
 - Details and acceptance: `docs/LU_AGENT01E_BROKER_PROGRESS_INTEGRATION_20261108.md`.
+
+## UX-CHAT01 — dynamic messaging history interactions (Nov 8, 2026)
+
+- Confirmed `LU_CENTRAL_DESIGN.md` already carried copy/retry/edit/quote and role styling but had **omitted explicit emoji reactions, custom chat background, independently configurable human/Lu bubble colors and non-executing Replay semantics**. Added these user decisions under section 6.
+- Implemented real ANSF-sequence-ID-scoped 👍❤️😂🎉😮👀 reactions and strict #RRGGBB chat/background/bubble color controls with persistent host-owned SQLite metadata, one local reaction per original message, no mutation of canonical source or leakage into model prompts.
+- Added one-click Copy, local read-only Replay modal, manual Reuse prompt and Quote draft actions. They **never resubmit** a prior user turn, regenerate old tool results, renew authorization, or replay an uncertain OS effect; streaming placeholders receive no saved reaction.
+- Frontend reaction/color panel and native `lu_message_decorations`, `lu_set_message_reaction`, `lu_set_chat_appearance` commands use existing authenticated original ChatStore; indexed exact-seq lookup refuses wrong-chat/unknown message and SQL file/sidecars reject symlink paths.
+- Native portable Windows/Linux ChatStore integration and Node/UI/React test workflow added; source-only candidate and installed physical acceptance open. Future UX-CHAT02 editing/revision/provenance, UX-CHAT03 admitted wallpaper/TTS provider. Details: `docs/LU_UX_CHAT01_MESSAGE_INTERACTIONS_20261108.md`.
