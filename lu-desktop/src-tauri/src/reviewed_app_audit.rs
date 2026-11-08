@@ -36,6 +36,28 @@ impl ReviewedEffectCounts{
         self.uncertain>0||self.executing>0||self.prepared>0
     }
 }
+/// Strict display classification: a model answer never upgrades an
+/// unresolved, failed or missing OS effect journal to successful execution.
+pub fn classify_reviewed_evidence(
+    final_answers:u32,generation_failures:u32,rejections:u32,
+    counts:Option<&ReviewedEffectCounts>
+)->&'static str{
+    if counts.is_some_and(ReviewedEffectCounts::unresolved){
+        return "EFFECT_UNCERTAIN_OR_IN_FLIGHT"
+    }
+    if generation_failures>0{return "MODEL_FAILED"}
+    if counts.is_some_and(|v|v.failed>0){return "EFFECT_FAILED"}
+    if rejections>0{return "REJECTED"}
+    if counts.is_some_and(|v|v.applied>v.applied_with_receipt){
+        return "APPLIED_RECEIPT_MISSING"
+    }
+    if final_answers>0&&counts.is_some_and(|v|v.applied>0){
+        return "ANSWER_RECORDED_WITH_APPLIED_JOURNAL"
+    }
+    if final_answers>0{return "MODEL_ANSWER_ONLY"}
+    "INCOMPLETE_OR_INTERRUPTED"
+}
+
 fn valid_turn_id(value:&str)->bool{
     let bytes=value.as_bytes();
     bytes.len()==34&&bytes.starts_with(b"g-")&&bytes[2..]
@@ -172,6 +194,27 @@ mod tests{
         assert!(!displayed.contains("call-"));
         assert!(!displayed.contains("w-reviewed"));
         drop(effects);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn model_answer_never_overrides_failed_uncertain_or_missing_native_receipt(){
+        let mut counts=ReviewedEffectCounts{applied:1,applied_with_receipt:1,
+            ..ReviewedEffectCounts::default()};
+        assert_eq!(classify_reviewed_evidence(1,0,0,None),"MODEL_ANSWER_ONLY");
+        assert_eq!(classify_reviewed_evidence(1,0,0,Some(&counts)),
+            "ANSWER_RECORDED_WITH_APPLIED_JOURNAL");
+        counts.uncertain=1;
+        assert_eq!(classify_reviewed_evidence(1,0,0,Some(&counts)),
+            "EFFECT_UNCERTAIN_OR_IN_FLIGHT");
+        counts.uncertain=0;
+        counts.failed=1;
+        assert_eq!(classify_reviewed_evidence(1,0,0,Some(&counts)),"EFFECT_FAILED");
+        counts.failed=0;
+        counts.applied_with_receipt=0;
+        assert_eq!(classify_reviewed_evidence(1,0,0,Some(&counts)),
+            "APPLIED_RECEIPT_MISSING");
+        counts.applied_with_receipt=1;
+        assert_eq!(classify_reviewed_evidence(1,1,0,Some(&counts)),"MODEL_FAILED");
+        assert_eq!(classify_reviewed_evidence(1,0,1,Some(&counts)),"REJECTED");
     }
     #[test]
     fn rejects_non_host_ids_and_never_looks_at_arbitrary_paths(){
