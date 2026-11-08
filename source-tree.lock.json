@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7b4209825cda49b1396b1e1599a2913672fd46a3",
+  "sourceCommitBeforeLock": "11059682806258862b6ac14184e01ed914cd32b9",
   "trackedFileCount": 686,
   "files": [
     {
@@ -85,7 +85,7 @@
     },
     {
       "path": ".github/workflows/lu-e1-p12-independent-semantic-verifiers.yml",
-      "blob": "0dbc995ba3864a0bafb52f1f1dc3fbe0b23ecab3"
+      "blob": "d4bc788abea1a35e043e23850d62cb2afbf2234f"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -401,7 +401,7 @@
     },
     {
       "path": "docs/LU_E1_P12_INDEPENDENT_GIT_STATUS_PACK_MP4_20261108.md",
-      "blob": "2c661676d737b7bdf212313098cf924d9a77d521"
+      "blob": "bce338ffe31434f7f5505db1a82f590f401a4e14"
     },
     {
       "path": "docs/LU_E1_REVIEWED_APP_ADMISSION_20261107.md",
@@ -1661,7 +1661,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/independent_git_pack.rs",
-      "blob": "7a7d3cf7e24a881aa267f405840725a95c6988f9"
+      "blob": "7ba29c1eaec2eceb1071576be151f652481e48ca"
     },
     {
       "path": "src-tauri/lu-core/src/independent_git_status.rs",
@@ -2397,7 +2397,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "5e648dd7c35db409de0cb12f3ad744259125365e"
+      "blob": "d437e69a35a4f7e2b0e2f22728267c3431da55d0"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
