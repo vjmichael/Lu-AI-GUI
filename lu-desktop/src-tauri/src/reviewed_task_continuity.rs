@@ -347,6 +347,20 @@ mod tests{
             .unwrap().unwrap();
         assert_eq!(altered.continuation,"RECONCILIATION_REQUIRED");
         assert_eq!(altered.operations[0].outcome,"RECEIPT_MISMATCH");
+        // A hash-compatible receipt paired with the WRONG independent
+        // operation is still not an approved oracle for Git HEAD.
+        let db=Connection::open(&effectfile).unwrap();
+        let genuine_receipt=format!("{:x}",Sha256::digest(b"receipt"));
+        db.execute(
+            "UPDATE lu_independent_outcomes SET receipt_sha256=?1,
+             method='GIT_BRANCH_DIRECT_V1' WHERE call_id='call-gh'",
+            rusqlite::params![genuine_receipt]
+        ).unwrap();
+        drop(db);
+        let wrong_method=reviewed_turn_continuity(&path,&chat,&turn)
+            .unwrap().unwrap();
+        assert_eq!(wrong_method.continuation,"RECONCILIATION_REQUIRED");
+        assert_eq!(wrong_method.operations[0].outcome,"OUTCOME_INCONSISTENT");
         fs::remove_dir_all(&path).unwrap();
     }
     #[test]
