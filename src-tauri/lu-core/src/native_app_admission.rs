@@ -41,6 +41,9 @@ pub struct AppAdmissionObservation{
     pub reviewed_sha256:String,
     pub observed_bytes:u64,
     pub executable_format:String,
+    /// ID observed from the opened OS handle; checked against a fresh pathname
+    /// re-open before returning. It is not a durable spawn/handle authority.
+    pub opened_os_file_identity:String,
     /// A positive hash proves bytes at preflight, not a worker OS pin.
     pub executable_digest_matched:bool,
     /// Explicit E1-P01 limitation: opening a file does NOT launch an app.
@@ -132,6 +135,27 @@ fn image_format(prefix:&[u8])->Result<&'static str,AdmissionError>{
     }
 }
 
+/// Stable identity of the open OS handle, not a path-derived guess.
+fn opened_identity(file:&File)->Result<String,AdmissionError>{
+    #[cfg(windows)]
+    {
+        return lu_win_worker_job::file_guard::opened_file_identity(file)
+            .map_err(|_|AdmissionError::InvalidExecutable);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let m=file.metadata().map_err(|_|AdmissionError::ReadFailed)?;
+        if !m.is_file()||m.ino()==0{return Err(AdmissionError::InvalidExecutable)}
+        return Ok(format!("{:016x}{:016x}",m.dev(),m.ino()))
+    }
+    #[cfg(not(any(windows,unix)))]
+    {
+        let _=file;
+        Err(AdmissionError::Unavailable)
+    }
+}
+
 /// The trusted host calls this after choosing an installed action. Only
 /// *current* exact user-turn authority for the read-only descriptor can
 /// authorize even the preflight. A historical source, model-supplied path,
@@ -166,6 +190,7 @@ pub fn inspect_host_reviewed_read_application(
 
     let mut file=verify_path(&spec.executable)?;
     let initial=file.metadata().map_err(|_|AdmissionError::ReadFailed)?;
+    let original_file_id=opened_identity(&file)?;
     let mut total=0u64;
     let mut header=Vec::with_capacity(FORMAT_PREFIX);
     let mut hasher=Sha256::new();
@@ -186,6 +211,13 @@ pub fn inspect_host_reviewed_read_application(
     if last.len()!=initial.len()||last.modified().ok()!=initial.modified().ok(){
         return Err(AdmissionError::ChangedOrWrongDigest)
     }
+    // A pathname can be redirected after the first open, even while the
+    // original file handle still hashes correctly. Re-open and cross-check
+    // the OS identity, not merely size/mtime or a previously stored path.
+    let reopened=verify_path(&spec.executable)?;
+    if opened_identity(&reopened)?!=original_file_id{
+        return Err(AdmissionError::ChangedOrWrongDigest)
+    }
     let observed=format!("{:x}",hasher.finalize());
     if observed!=spec.expected_sha256.to_ascii_lowercase(){
         return Err(AdmissionError::ChangedOrWrongDigest)
@@ -198,6 +230,7 @@ pub fn inspect_host_reviewed_read_application(
         reviewed_sha256:observed,
         observed_bytes:total,
         executable_format:format.into(),
+        opened_os_file_identity:original_file_id,
         executable_digest_matched:true,
         process_started:false,
         functional_output_independently_verified:false,
@@ -339,7 +372,7 @@ mod tests{
                 effect:ToolEffect::ExecuteCode,..descriptor()
             },&authority,&Host(true)),
             Err(AdmissionError::NotReadOnly));
-        wrong=real.clone();wrong.app_version="../replace";
+        wrong=real.clone();wrong.app_version="../replace".into();
         assert_eq!(inspect_host_reviewed_read_application(
             &wrong,&origin(),&call(),&descriptor(),&authority,&Host(true)),
             Err(AdmissionError::InvalidHostSpecification));
@@ -347,6 +380,7 @@ mod tests{
         assert!(!Path::new(&real.executable).is_relative());
         drop(_book); // Windows cannot delete an open SQLite fixture.
         fs::remove_dir_all(dir).unwrap();
+    }
     #[cfg(unix)]
     #[test]
     fn symlink_alias_cannot_impersonate_the_reviewed_executable(){
@@ -361,6 +395,5 @@ mod tests{
             Err(AdmissionError::ReparseOrSymlink));
         drop(book);
         fs::remove_dir_all(dir).unwrap();
-    }
     }
 }

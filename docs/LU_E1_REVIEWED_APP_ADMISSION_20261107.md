@@ -32,3 +32,28 @@ Tests use the *actual native Rust test executable* as the genuine local PE/ELF f
 - **Current submission:** E1-P01 preflight source plus native tests; source lock and CI to be checked at the exact submitted head. No source-only pass claim.
 - **Kept open:** M3, M4, M5 genuine local GGUF measurements, native source-specific CI where queued, and pre-v1.0 physical Windows/NSIS/Vulkan tests. The Windows deferral is a *scheduling decision*, not proof of installed acceptance.
 - **Do not grant:** arbitrary shell/process/API/GUI automation, network, code execution, new root access or historic approval reuse through the existence of this E1-P01 module.
+
+
+## E1-P02 — reviewed application catalogue, current binary and version evidence
+
+**Implementation submitted, native CI pending.** This P02 slice creates a production Lu Core host-only \`HostReviewedApplicationCatalog\` in \`src-tauri/lu-core/src/native_app_catalog.rs\`. It does not auto-register any app, execute a version command, accept PATH as a trustworthy executable, install packages, or activate a model tool by itself.
+
+### Host-owned catalogue
+
+- The trusted host enrolls an exact app ID, reviewed release version label, workspace, native read-only tool ID, absolute installed executable, and SHA-256 of the reviewed release's binary. Limits: at most 64 enrolled apps / 64 exposed tools per discovery call. Duplicate app IDs or tool IDs and invalid host records are refused.
+- On every \`discover_for_current_task\` call, Lu requires the current persisted user-turn authority, exact tool descriptor, read-only effect, matching workspace and independent host policy. Only reviewed tools actually exposed by the trusted host are candidates. Unregistered tools, denied tasks and missing/stale binaries do **not** appear in the result list; the module deliberately does not leak denied filesystem details to a model.
+- The preflight reopens the actual ordinary local executable, validates ELF/PE bytes, hashes the whole binary, checks the file size/time against the opened handle, obtains real OS handle identity (Linux/Unix device+inode; Windows existing safe \`lu-win-worker-job::file_guard::opened_file_identity\` bridge, volume+128-bit ID), and reopens the path to check that the identity did not change during the preflight. A file replacement with new bytes, changed digest or swapped path cannot be advertised as the reviewed release.
+- \`delist_reviewed\` removes an entry from the host catalogue; this is **not** a substitute for revoking any existing user task. Discovery rechecks the live authority every time, so revoked grants cannot reappear through cached inventory.
+- Observations are bounded data: app ID, native tool, reviewed release version, checked digest, file format, byte count and OS identity token, plus explicit \`process_started=false\` and \`output_verified=false\`. No file path or command line is exposed by discovery.
+
+### What “version verified” means at P02
+
+The returned version is a **host-reviewed label cryptographically bound to the on-disk executable digest**. If binary bytes differ from the host's per-version SHA-256, the candidate is unavailable; a newer binary must be separately reviewed and re-enrolled. The result explicitly states \`version_basis=host_reviewed_version_bound_to_matching_binary_sha256\` and \`independently_queried_runtime_version=false\`.
+
+It does **not** claim that \`--version\`, a PE VERSIONINFO resource, a publisher signature, a package manager, a child process, or a live application API actually reported this version. Safe independent runtime/product version interrogation, where required, belongs to the separately approved contained E1-P03 adapter. Merely matching the reviewed label does not prove real application functionality or install readiness.
+
+### Verification matrix and release boundary
+
+- CI: genuine Linux and Windows native Rust Core tests must pass at the **final exact head**, including P01 fixed Rust test type/structure, positive catalog discovery, expired/revoked/forged/host-veto denial, duplicate and changed-byte identities, stale digest, unsupported format and Windows/Unix OS identity.
+- Source code alone is not passing test evidence. No new OS privilege, shell, browser access, arbitrary app controller, model-selected executable or effectful tool is registered.
+- **Physical installed Windows/AMD Vulkan/NSIS testing remains deferred until the Lu v1.0 release-candidate phase** by owner decision. GitHub-hosted native Windows test results are not a claim that the owner's installed Lu has run.
