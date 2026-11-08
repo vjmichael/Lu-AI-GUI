@@ -78,6 +78,10 @@ jobs:
       - name: Fixed scope evidence
         run: |
           echo "P05_B3_NATIVE_SOURCE_CI=PASS"
-          echo "P05_B3_LINUX_RELEASE_TARGET=ubuntu_24_04_native_source_lane"
-          echo "P05_B3_LINUX_26_DIAGNOSTIC_ONLY=NOT_RELEASE_PARITY"
+          case "${{ matrix.os }}" in
+            ubuntu-24.04) echo "P05_B3_UBUNTU24_NATIVE_SOURCE=PASS" ;;
+            ubuntu-26.04) echo "P05_B3_UBUNTU26_DIAGNOSTIC_SOURCE=PASS" ;;
+            windows-2022) echo "P05_B3_WINDOWS2022_NATIVE_SOURCE=PASS" ;;
+            *) exit 1 ;;
+          esac
           echo "P05_B3_SIGNED_RELEASE_AND_INSTALLED_EQUIVALENCE=NOT_ACCEPTED"
