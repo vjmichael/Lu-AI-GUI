@@ -673,3 +673,40 @@ physical Windows installed application, autonomous local GGUF use,
 Git worktree status, packed object history and MP4 remain separate.
 
 Details: `docs/LU_E1_P11_INDEPENDENT_GIT_HISTORY_20261108.md`.
+
+## E1-P12 — independent Git tracked-status, packed objects and MP4 verification (Nov 8, 2026)
+
+**Source candidate:** `lu/e1-p12-git-status-pack-mp4-20261108`,
+stacked on E1-P11 PR #139. Three bounded first-party source validators
+have been implemented without giving the model command/path/authorization
+control, without executing Git/FFprobe a second time, and without
+sandboxing Lu Core:
+
+- `independent_git_status.rs`: checks SHA-1 Git index v2/v3 checksum,
+  fully merged index consistency with the actual HEAD tree and each
+  ordinary approved regular tracked worktree file's Git blob identity.
+  Supports clean, unstaged modified/deleted files; staged differences,
+  renames, filters, symlinks, sparse/split indexes and unusual file modes
+  explicitly remain UNSUPPORTED. A contradicted supported count is CONFLICT.
+- `independent_git_pack.rs`: bounded pack/IDX v2 checksum-verified
+  native object loading with offset/ref delta reconstruction and
+  object SHA validation. The history oracle now counts parents across
+  loose and packed commit DAGs (no Git replay), reporting either
+  independently VERIFIED, CONFLICT or UNSUPPORTED.
+- `independent_mp4.rs`: direct, bounded ISO-BMFF movie and track
+  parsing for ordinary nonfragmented MP4 duration, video dimensions,
+  named codecs and AAC audio rate/channels, comparing source facts
+  against the supervised FFprobe receipt. SHA changes and contradictory
+  claims are CONFLICT; unknown atoms/codecs/timelines remain UNSUPPORTED.
+
+The E1-P10 immutable independent-outcome SQLite table and E1-P09 read-only
+Tool activity panel remain the durable/user-visible evidence layer.
+New native Windows/Linux workflow independently runs real Git clean,
+dirty, deleted, staged, packed merges, pack corruption, FFmpeg video/AAC
+MP4 generation, actual supervised FFprobe, and the complete five-tool
+model interface. **Current-head native acceptance OPEN.** Live GGUF
+planning, physical installed Windows, E1-P08C stronger worker descendant
+security, broader Git and MP4 format handling and resource identity
+race hardening retain their own independent gates.
+
+See `docs/LU_E1_P12_INDEPENDENT_GIT_STATUS_PACK_MP4_20261108.md`.
