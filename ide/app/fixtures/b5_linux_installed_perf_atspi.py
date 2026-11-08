@@ -9,6 +9,7 @@ frames or isolated filesystem throughput. They include clipboard verification.
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import statistics
 import subprocess
@@ -139,7 +140,13 @@ def main():
     originals={p.name:sha(p) for p in files}
     if SOURCE.stat().st_size<130*1024 or SOURCE.stat().st_size>512*1024:
         deny("large_file_fixture_outside_native_128_512_kib_window")
-    metric={"schemaVersion":1,"sourceCommit":os.environ.get("GITHUB_SHA",""),
+    exact=os.environ.get("B5_EXACT_CHECKOUT_SHA","")
+    if not re.fullmatch(r"[a-f0-9]{40}",exact):
+        deny("missing_exact_checkout_sha")
+    observed=subprocess.check_output(["git","rev-parse","HEAD"],
+        text=True,timeout=5).strip()
+    if observed!=exact: deny("perf_receipt_source_sha_not_checked_out")
+    metric={"schemaVersion":1,"sourceCommit":exact,
         "os":"ubuntu-24.04","method":"installed-GTK-WebKit-native-AT-SPI-X11-and-proc",
         "sourceBytes":SOURCE.stat().st_size,
         "fileCountToOpen":48,

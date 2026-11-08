@@ -69,16 +69,16 @@ for number in range(48):
     (folder/name).write_text(text,encoding="utf-8")
 (folder/"p47.rs").write_text("// B5_SOURCE_p47 must be rejected as tab 49\n",encoding="utf-8")
 PY
-env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$perf" \
+env B5_EXACT_CHECKOUT_SHA="$head_sha" WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$perf" \
   dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
   /usr/bin/python3 ide/app/fixtures/b5_linux_installed_perf_atspi.py \
   || deny linux_b5_real_ui_rss_latency_acceptance_failed
 [[ -s "$RUNNER_TEMP/ide-b5-linux-installed-performance.json" ]] \
   || deny missing_real_linux_os_performance_receipt
-python3 - "$RUNNER_TEMP/ide-b5-linux-installed-performance.json" <<'PY'
+python3 - "$RUNNER_TEMP/ide-b5-linux-installed-performance.json" "$head_sha" <<'PY'
 import json,sys
 r=json.load(open(sys.argv[1],encoding="utf-8"))
-assert r["schemaVersion"]==1
+assert r["schemaVersion"]==1 and r["sourceCommit"]==sys.argv[2]
 assert len(r["openRoundTripMs"])==47
 assert len(r["switchRoundTripMs"])==12
 assert r["bounded49thDenial"] and r["explicitSaveVerified"] and r["noImplicitSaveVerified"]

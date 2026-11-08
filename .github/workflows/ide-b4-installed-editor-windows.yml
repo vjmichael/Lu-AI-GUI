@@ -145,6 +145,7 @@ jobs:
             [IO.File]::WriteAllText((Join-Path $perfFixture 'p47.rs'),
               "// B5_SOURCE_p47 must be denied as tab 49`n")
             $metricFile=Join-Path $env:RUNNER_TEMP 'ide-b5-windows-installed-performance.json'
+            $env:B5_EXACT_CHECKOUT_SHA=(git rev-parse HEAD).Trim()
             & pwsh -NoProfile -Sta -File 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' `
               -InstalledExecutable $exe -ExpectedSha256 $sha `
               -Scenario B5LargeProject -FixtureRoot $perfFixture `
@@ -157,6 +158,7 @@ jobs:
             }
             $actual=Get-Content -LiteralPath $metricFile -Raw | ConvertFrom-Json
             if ($actual.schemaVersion -ne 1 -or
+                $actual.sourceCommit -cne $env:B5_EXACT_CHECKOUT_SHA -or
                 $actual.openRoundTripMs.Count -ne 47 -or
                 $actual.switchRoundTripMs.Count -ne 12 -or
                 $actual.memorySamples.Count -lt 6 -or
