@@ -126,6 +126,7 @@ pub mod native_app_version_execution;
 pub mod native_app_typed_git;
 pub mod native_app_typed_ffprobe;
 pub mod native_reviewed_app_tool;
+pub mod reviewed_outcome_oracle;
 pub mod native_zip_extract;
 pub mod native_archive_tree;
 pub mod native_archive_batch;
