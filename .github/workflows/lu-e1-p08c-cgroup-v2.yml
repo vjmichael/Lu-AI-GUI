@@ -1,0 +1,129 @@
+name: Lu E1-P08C Delegated cgroup v2 Native Custody
+on:
+  push:
+    branches: ['lu/e1-p08c-delegated-cgroup-custody-20261108']
+    paths:
+      - 'src-tauri/lu-win-worker-job/**'
+      - 'benchmarks/e1/e1_p08c_cgroup_crash_acceptance.py'
+      - '.github/workflows/lu-e1-p08c-cgroup-v2.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-win-worker-job/**'
+      - 'benchmarks/e1/e1_p08c_cgroup_crash_acceptance.py'
+      - '.github/workflows/lu-e1-p08c-cgroup-v2.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p08c-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  portable-library:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate exact commit and frozen Lu source
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          node scripts/verify-source-tree.mjs
+      - name: Compile native worker job library on the genuine OS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib -- --nocapture
+  kernel-delegated-cgroup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify source and Linux kernel host, not a mocked cgroup
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          node scripts/verify-source-tree.mjs
+          test "$(uname -s)" = Linux
+          test "$(stat -fc %T /sys/fs/cgroup)" = cgroup2fs
+          mkdir -p e1-p08c-evidence
+          echo "HEAD_SHA=$HEAD_SHA" > e1-p08c-evidence/source.txt
+          printf 'RUNNER_UID=%s\n' "$(id -u)" >> e1-p08c-evidence/source.txt
+          sed -n '1,4p' /proc/self/cgroup >> e1-p08c-evidence/source.txt
+          python3 -m py_compile benchmarks/e1/e1_p08c_cgroup_crash_acceptance.py
+      - name: Build actual Linux guardian and feature-gated destructive fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --features e1-p08c-cgroup-crash-fixture \
+            --bin lu-linux-cgroup-guard --bin lu-e1-p08c-cgroup-crash-host
+          sha256sum \
+            src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard \
+            src-tauri/lu-win-worker-job/target/debug/lu-e1-p08c-cgroup-crash-host \
+            > e1-p08c-evidence/native-binaries.sha256
+      - name: Independent unprivileged native acceptance inside systemd-managed delegated unit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          test -d /run/systemd/system
+          # sudo ONLY creates the OS-owned delegated service in CI.
+          # The actual Lu host, guardian, worker and test run as the
+          # ordinary non-root GitHub runner. No sudo in Lu product code.
+          sudo systemd-run --wait --pipe --collect \
+            --unit="lu-e1p08c-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --property=Type=exec \
+            --property=Delegate=yes \
+            --property="User=$(id -un)" \
+            --property="WorkingDirectory=$GITHUB_WORKSPACE" \
+            /usr/bin/python3 \
+            benchmarks/e1/e1_p08c_cgroup_crash_acceptance.py \
+            --guard "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard" \
+            --parent "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-e1-p08c-cgroup-crash-host" \
+            2>&1 | tee e1-p08c-evidence/kernel-cgroup-acceptance.log
+          grep -q 'E1_P08C_SETSID_CGROUP_CUSTODY_PASS=1' e1-p08c-evidence/kernel-cgroup-acceptance.log
+      - name: No false green when host OS delegation is unavailable
+        if: always()
+        shell: bash
+        run: |
+          if ! grep -q 'E1_P08C_SETSID_CGROUP_CUSTODY_PASS=1' \
+            e1-p08c-evidence/kernel-cgroup-acceptance.log 2>/dev/null; then
+            echo 'E1-P08C OPEN: native cgroup-v2 delegation/kill proof missing.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p08c-native-cgroup-v2
+          path: e1-p08c-evidence/
+          retention-days: 14
+          if-no-files-found: warn
