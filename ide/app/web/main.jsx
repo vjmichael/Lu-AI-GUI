@@ -72,6 +72,13 @@ function App() {
   const [entryCreateKind, setEntryCreateKind] = useState(null);
   const [entryCreateName, setEntryCreateName] = useState('');
   const [entryCreateBusy, setEntryCreateBusy] = useState(false);
+  const [selectedFilePath, setSelectedFilePath] = useState(null);
+  const [fileTargetPath, setFileTargetPath] = useState(null);
+  const [fileActionBusy, setFileActionBusy] = useState(false);
+  const [trashVisible, setTrashVisible] = useState(false);
+  const [trashBusy, setTrashBusy] = useState(false);
+  const [trashItems, setTrashItems] = useState([]);
+  const [trashError, setTrashError] = useState('');
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const [quickOpenQuery, setQuickOpenQuery] = useState('');
   const [quickOpenPaths, setQuickOpenPaths] = useState([]);
@@ -175,6 +182,11 @@ function App() {
   useEffect(() => {
     setEntryCreateKind(null);
     setEntryCreateName('');
+    setSelectedFilePath(null);
+    setFileTargetPath(null);
+    setTrashVisible(false);
+    setTrashItems([]);
+    setTrashError('');
     // A late native directory response must never populate a different project's picker.
     quickOpenRequest.current += 1;
     setQuickOpenOpen(false);
@@ -1341,6 +1353,169 @@ function App() {
   // DEV-01.2: one explicitly confirmed human action, bounded to the
   // current native picker-registered project and existing explorer directory.
   // Never emulate a save, model action, or absolute WebView filesystem path.
+  // DEV-01.3 file-only mutations. All writes are authorized only by a human
+  // in this pane, with an actual saved-file SHA revalidated by the native host.
+  // Open tabs are refused even if clean: never change their backing paths.
+  function canMutateSelected(path) {
+    const pid = activeProject?.projectId;
+    if (!pid || !path || explorerPending || fileActionBusy || entryCreateBusy ||
+        savingKey || pending || trashBusy) return false;
+    return !tabs.some(tab => tab.projectId === pid && tab.relativePath === path);
+  }
+
+  async function refreshAfterFileOperation(pid, dir) {
+    // A native rename/trash changes the Quick Open index.
+    quickOpenRequest.current += 1;
+    setQuickOpenOpen(false);
+    if (activeProjectIdRef.current !== pid ||
+        currentDirectoryRef.current !== dir) return;
+    try {
+      const listing = await invoke('ide_list_source_directory', {
+        projectId: pid, relativeDir: dir,
+      });
+      if (activeProjectIdRef.current === pid &&
+          currentDirectoryRef.current === dir &&
+          listing?.projectId === pid && listing?.relativeDir === dir) {
+        setListing(listing);
+      }
+    } catch (error) {
+      setProblem('File operation succeeded, but the native directory refresh failed: ' +
+        String(error));
+    }
+  }
+
+  async function moveSelectedSource(event) {
+    event.preventDefault();
+    const path = selectedFilePath;
+    if (!canMutateSelected(path) || !fileTargetPath) return;
+    const destination = fileTargetPath.trim();
+    if (destination !== fileTargetPath || destination === path ||
+        destination.startsWith('/') || destination.includes('\\') ||
+        destination.length > 1024) {
+      setProblem('Enter a different project-relative file path with an existing parent folder.');
+      return;
+    }
+    const pid = activeProject.projectId;
+    const dir = directory;
+    setFileActionBusy(true);
+    setProblem('');
+    try {
+      const fresh = await invoke('ide_preview_source_file', {projectId: pid, relativePath: path});
+      if (fresh?.projectId !== pid || fresh?.relativePath !== path) {
+        throw Error('INVALID_NATIVE_SOURCE_PREVIEW');
+      }
+      const moved = await invoke('ide_move_source_file', {
+        projectId: pid, sourcePath: path, destinationPath: destination,
+        expectedRevision: fresh.revision,
+      });
+      if (!moved || moved.projectId !== pid || moved.operation !== 'move' ||
+          moved.originalRelativePath !== path ||
+          moved.currentRelativePath !== destination ||
+          moved.revision !== fresh.revision) throw Error('INVALID_NATIVE_MOVE_RECEIPT');
+      if (activeProjectIdRef.current !== pid) return;
+      setSelectedFilePath(null);
+      setFileTargetPath(null);
+      setHint('Moved ' + path + ' to ' + destination +
+        ' without replacing another file. Open tabs were not changed.');
+      await refreshAfterFileOperation(pid, dir);
+    } catch (error) {
+      setProblem('Native file move denied: ' + String(error) +
+        '. No IDE tab or draft was discarded.');
+    } finally { setFileActionBusy(false); }
+  }
+
+  async function trashSelectedSource() {
+    const path = selectedFilePath;
+    if (!canMutateSelected(path)) {
+      setProblem('Close any open tab for this file before moving it to recoverable trash.');
+      return;
+    }
+    if (!window.confirm('Move ' + path +
+      ' to project-local recoverable trash? No file is permanently deleted.')) return;
+    const pid = activeProject.projectId;
+    const dir = directory;
+    setFileActionBusy(true);
+    setProblem('');
+    try {
+      const fresh = await invoke('ide_preview_source_file', {projectId: pid, relativePath: path});
+      if (fresh?.projectId !== pid || fresh?.relativePath !== path) {
+        throw Error('INVALID_NATIVE_SOURCE_PREVIEW');
+      }
+      const result = await invoke('ide_trash_source_file', {
+        projectId: pid, sourcePath: path, expectedRevision: fresh.revision,
+      });
+      if (!result || result.projectId !== pid || result.operation !== 'trash' ||
+          result.originalRelativePath !== path || result.revision !== fresh.revision ||
+          !result.trashToken) throw Error('INVALID_NATIVE_TRASH_RECEIPT');
+      if (activeProjectIdRef.current !== pid) return;
+      setSelectedFilePath(null);
+      setFileTargetPath(null);
+      setHint('Trashed ' + path + ' with recoverable token. Use Project trash to restore.');
+      await refreshAfterFileOperation(pid, dir);
+      if (trashVisible) {
+        const trash = await invoke('ide_list_trashed_sources', {projectId: pid});
+        if (activeProjectIdRef.current === pid) setTrashItems(Array.isArray(trash) ? trash : []);
+      }
+    } catch (error) {
+      setProblem('Native trash denied or interrupted: ' + String(error) +
+        '. Use Project trash to inspect possible recovery copies.');
+    } finally { setFileActionBusy(false); }
+  }
+
+  async function showSourceTrash() {
+    if (!activeProject || trashBusy || fileActionBusy) return;
+    if (trashVisible) {
+      setTrashVisible(false);
+      return;
+    }
+    const pid = activeProject.projectId;
+    setTrashVisible(true);
+    setTrashBusy(true);
+    setTrashError('');
+    try {
+      const entries = await invoke('ide_list_trashed_sources', {projectId: pid});
+      if (activeProjectIdRef.current !== pid) return;
+      if (!Array.isArray(entries) || entries.length > 128 ||
+          entries.some(item => !item || typeof item.token !== 'string' ||
+            typeof item.originalRelativePath !== 'string')) {
+        throw Error('INVALID_NATIVE_TRASH_LIST');
+      }
+      setTrashItems(entries);
+    } catch (error) {
+      if (activeProjectIdRef.current === pid) {
+        setTrashError('Cannot verify the native trash records: ' + String(error));
+        setTrashItems([]);
+      }
+    } finally { setTrashBusy(false); }
+  }
+
+  async function restoreTrashedSource(item) {
+    if (!activeProject || trashBusy || fileActionBusy || explorerPending ||
+        !item?.payloadPresent || item.originalPresent ||
+        tabs.some(tab => tab.projectId === activeProject.projectId &&
+          tab.relativePath === item.originalRelativePath)) return;
+    const pid = activeProject.projectId, dir = directory;
+    if (!window.confirm('Restore ' + item.originalRelativePath +
+      ' from project trash? Existing destinations are never replaced.')) return;
+    setTrashBusy(true);
+    setProblem('');
+    try {
+      const result = await invoke('ide_restore_source_file', {projectId: pid, token: item.token});
+      if (!result || result.projectId !== pid || result.operation !== 'restore' ||
+          result.trashToken !== item.token ||
+          result.currentRelativePath !== item.originalRelativePath ||
+          result.revision !== item.revision) throw Error('INVALID_NATIVE_RESTORE_RECEIPT');
+      if (activeProjectIdRef.current !== pid) return;
+      setHint('Restored ' + item.originalRelativePath + ' without replacing an existing file.');
+      const entries = await invoke('ide_list_trashed_sources', {projectId: pid});
+      if (activeProjectIdRef.current === pid && Array.isArray(entries)) setTrashItems(entries);
+      await refreshAfterFileOperation(pid, dir);
+    } catch (error) {
+      setProblem('Native restore denied: ' + String(error) +
+        '. The recoverable trash record has not been discarded.');
+    } finally { setTrashBusy(false); }
+  }
+
   async function createNativeEntry(event) {
     event.preventDefault();
     if (!activeProject || entryCreateBusy || explorerPending || savingKey ||
@@ -1394,7 +1569,10 @@ function App() {
   }
 
   async function openDirectory(project, path) {
-    if (explorerPending || entryCreateBusy) return;
+    if (explorerPending || entryCreateBusy || fileActionBusy) return;
+    setSelectedFilePath(null);
+    setFileTargetPath(null);
+    setFileTargetPath(null);
     setEntryCreateKind(null);
     setEntryCreateName('');
     setExplorerPending(true);
@@ -1548,7 +1726,10 @@ function App() {
   }
 
   async function selectEntry(entry) {
-    if (!activeProject || explorerPending) return;
+    if (!activeProject || explorerPending || fileActionBusy) return;
+    if (entry.kind === 'file') {
+      setSelectedFilePath(entry.relativePath);
+    }
     if (entry.kind === 'directory') {
       await openDirectory(activeProject, entry.relativePath);
     } else if (entry.kind === 'file') {
@@ -2861,6 +3042,51 @@ function App() {
                 disabled={explorerPending || !!savingKey || entryCreateBusy}
                 onClick={openQuickOpen} title="Find files in this project (Ctrl+P)">Quick open · Ctrl+P</button>
             </div>
+            <div className="sourceFileActions" aria-label="Selected file operations">
+              <span>{selectedFilePath || 'Select a file for safe move or trash'}</span>
+              <button type="button" className="ghostBtn"
+                disabled={!selectedFilePath || fileActionBusy || explorerPending}
+                onClick={() => setFileTargetPath(selectedFilePath)}>Rename / move</button>
+              <button type="button" className="ghostBtn"
+                disabled={!selectedFilePath || fileActionBusy || explorerPending}
+                onClick={() => void trashSelectedSource()}>Trash file</button>
+              <button type="button" className="ghostBtn"
+                disabled={trashBusy || fileActionBusy} onClick={() => void showSourceTrash()}>
+                {trashVisible ? 'Hide project trash' : 'Project trash'}
+              </button>
+            </div>
+            {fileTargetPath !== null && <form className="sourceCreateForm"
+              onSubmit={moveSelectedSource}>
+              <label htmlFor="sourceMoveTarget">Rename/move file to existing project folder</label>
+              <input id="sourceMoveTarget" value={fileTargetPath} type="text"
+                maxLength={1024} disabled={fileActionBusy}
+                onChange={event => setFileTargetPath(event.target.value)}/>
+              <div className="sourceCreateButtons">
+                <button type="submit" className="primaryBtn" disabled={fileActionBusy}>
+                  {fileActionBusy ? 'Moving…' : 'Move without overwrite'}
+                </button>
+                <button type="button" className="ghostBtn" disabled={fileActionBusy}
+                  onClick={() => setFileTargetPath(null)}>Cancel</button>
+              </div>
+              <small>Close the file tab first. Directories and existing targets cannot be moved.</small>
+            </form>}
+            {trashVisible && <div className="sourceTrashPanel" aria-label="Project trash">
+              <strong>Recoverable project trash</strong>
+              {trashBusy && <p role="status">Reading native trash receipts…</p>}
+              {trashError && <p role="alert" className="treeCaution">{trashError}</p>}
+              {!trashBusy && !trashError && trashItems.length === 0 &&
+                <p className="treeCaution">No recoverable files recorded.</p>}
+              {trashItems.map(item => <div className="sourceTrashEntry" key={item.token}>
+                <span title={item.originalRelativePath}>{item.originalRelativePath}</span>
+                {(!item.payloadPresent || item.originalPresent) &&
+                  <small>Recovery inspection needed: duplicate or incomplete record</small>}
+                <button type="button" className="ghostBtn"
+                  disabled={trashBusy || fileActionBusy ||
+                    !item.payloadPresent || item.originalPresent}
+                  onClick={() => void restoreTrashedSource(item)}>Restore</button>
+              </div>)}
+              <small>Project-local retained copies are not automatically deleted.</small>
+            </div>}
             <div className="sourceCreateActions" aria-label="Create a project source entry">
               <button type="button" className="ghostBtn"
                 disabled={explorerPending || entryCreateBusy || !!savingKey}

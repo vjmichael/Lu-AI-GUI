@@ -28,6 +28,7 @@ pub mod review;
 pub mod reviewed_git;
 pub mod source_span;
 pub mod source_create;
+pub mod source_file_transactions;
 pub mod task_evidence;
 pub mod wire;
 pub mod workflow_orchestrator;

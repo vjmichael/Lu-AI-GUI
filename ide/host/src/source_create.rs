@@ -46,7 +46,7 @@ fn source_component_allowed(component: &str) -> bool {
     true
 }
 
-fn portable_components(parts: &[String]) -> Result<(), BrowserError> {
+pub(crate) fn portable_components(parts: &[String]) -> Result<(), BrowserError> {
     if parts.iter().all(|part| source_component_allowed(part)) {
         Ok(())
     } else {
