@@ -125,6 +125,12 @@ test('reject fabricated SHA, inconsistency, oversized hints and unsafe paths',()
     /DEV03_PROFILE_UNTRUSTED/);
 });
 
+test('safe Unicode test filenames remain displayable without path traversal',()=>{
+  const data=fixture();
+  data.profiles[2].testHintPaths=['tests/test_épreuve.py'];
+  const safe=safeProjectRunProfileDiscovery(data,project);
+  assert.deepEqual(safe.profiles[2].hints,['tests/test_épreuve.py']);
+});
 test('native source reads fixed known manifests, no untrusted path or executable',()=>{
   const host=readFileSync(new URL('../../host/src/project_run_profiles.rs',
     import.meta.url),'utf8');
