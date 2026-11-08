@@ -7,6 +7,7 @@ import {
   newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
   captureBufferSpan, resolveBufferSpan, formatBufferReference,
   formatPersistentDraftReference, draftRecoveryAssessment,
+  parsePersistentDraftReference,
 } from './buffer_identity.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
@@ -81,6 +82,7 @@ function App() {
   const [draftReferencePending, setDraftReferencePending] = useState(false);
   const [draftRecoveryBusy, setDraftRecoveryBusy] = useState(false);
   const [draftRecoveryByTab, setDraftRecoveryByTab] = useState({});
+  const [persistentReferenceInput, setPersistentReferenceInput] = useState('');
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
   const [listing, setListing] = useState(null);
@@ -514,8 +516,8 @@ function App() {
     },750));
   }
 
-  async function restorePreservedDraft(tab) {
-    const record=draftRecoveryByTab[tab?.key];
+  async function restorePreservedDraft(tab,referenceOverride=null) {
+    const record=referenceOverride || draftRecoveryByTab[tab?.key];
     if (!tab || !record || draftRecoveryBusy || savingKey) return;
     if (tab.dirty && !window.confirm(
       'Replace this unsaved editor draft with the preserved recovery copy? Project files remain unchanged.'))
@@ -533,7 +535,11 @@ function App() {
       if (bufferIdentities.current.get(tab.key)?.bufferId!==currentIdentity?.bufferId ||
           !tabsRef.current.some(x=>x.key===tab.key)) return;
       if (disk.projectId!==tab.projectId || disk.relativePath!==tab.relativePath ||
-          recovered.checkpointId!==record.checkpointId)
+          recovered.checkpointId!==record.checkpointId ||
+          (record.draftSha256 && recovered.draftSha256!==record.draftSha256) ||
+          (record.bufferId && recovered.bufferId!==record.bufferId) ||
+          (record.bufferRevision!==undefined &&
+            recovered.bufferRevision!==record.bufferRevision))
         throw Error('DRAFT_RECOVERY_SOURCE_MISMATCH');
       if (draftRecoveryAssessment(recovered,tab.projectId,tab.relativePath,
             disk.revision)==='disk_revision_changed' &&
@@ -562,6 +568,18 @@ function App() {
     } catch (error) {
       setProblem('Unable to recover preserved draft: '+String(error));
     } finally {setDraftRecoveryBusy(false);}
+  }
+
+  function recoverDraftByReference(tab) {
+    if (!tab || draftRecoveryBusy || savingKey) return;
+    try {
+      const parsed=parsePersistentDraftReference(persistentReferenceInput.trim());
+      if (parsed.projectId!==tab.projectId || parsed.relativePath!==tab.relativePath)
+        throw Error('REFERENCE_BELONGS_TO_DIFFERENT_PROJECT_OR_FILE');
+      void restorePreservedDraft(tab,parsed);
+    } catch(error) {
+      setProblem('Cannot recover referenced draft: '+String(error));
+    }
   }
 
   async function discardPreservedDraft(tab) {
@@ -3451,6 +3469,17 @@ function App() {
                 <strong>Symbol information</strong>
                 <pre>{activeLspHover}</pre>
               </section>}
+              <div className="draftRecoveryReferenceBar">
+                <label htmlFor="b2-persistent-draft-reference">Recover exact private draft reference</label>
+                <input id="b2-persistent-draft-reference"
+                  aria-label="Persistent draft reference" spellCheck={false}
+                  maxLength={2048} value={persistentReferenceInput}
+                  placeholder="Paste ide-draft:v1 reference for this file"
+                  onChange={event=>setPersistentReferenceInput(event.target.value)}/>
+                <button className="ghostBtn" disabled={!persistentReferenceInput.trim() ||
+                  draftRecoveryBusy || !!savingKey}
+                  onClick={()=>recoverDraftByReference(activeTab)}>Recover by reference</button>
+              </div>
               <div className="editorInfoBar">
                 Draft revision {bufferIdentities.current.get(activeTab.key)?.revision ?? 0}
                 {' · '}{draftAutoPreserve.current.has(activeTab.key)
