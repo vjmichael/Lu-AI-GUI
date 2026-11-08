@@ -3226,6 +3226,32 @@ function App() {
                     onClick={() => copySourceReference(activeTab)}>
                     {referencePending ? 'Checking…' : 'Copy source reference'}
                   </button>
+                  <button className="ghostBtn editorToolButton"
+                    disabled={draftReferencePending || draftRecoveryBusy || explorerPending || !!savingKey}
+                    title="Copy an exact volatile CodeMirror buffer range; does not save source"
+                    onClick={() => void copyDraftReference(activeTab)}>
+                    {draftReferencePending ? 'Checking…' : 'Copy draft reference'}
+                  </button>
+                  <button className="ghostBtn editorToolButton"
+                    disabled={draftReferencePending || draftRecoveryBusy || explorerPending || !!savingKey}
+                    title="Preserve complete draft under IDE-private app data and copy a durable immutable reference"
+                    onClick={() => void preserveDraft(activeTab,true)}>
+                    {draftReferencePending ? 'Preserving…' : 'Preserve draft + copy durable reference'}
+                  </button>
+                  {draftRecoveryByTab[activeTab.key] && <>
+                    <button className="ghostBtn editorToolButton"
+                      disabled={draftRecoveryBusy || !!savingKey}
+                      title="Explicitly restore verified private checkpoint into unsaved editor only"
+                      onClick={() => void restorePreservedDraft(activeTab)}>
+                      {draftRecoveryBusy ? 'Checking recovery…' : 'Recover preserved draft'}
+                    </button>
+                    <button className="ghostBtn editorToolButton"
+                      disabled={draftRecoveryBusy || !!savingKey}
+                      title="Delete IDE-private recovery history only; no project source deletion"
+                      onClick={() => void discardPreservedDraft(activeTab)}>
+                      Discard private recovery
+                    </button>
+                  </>}
                   {lspAvailableForTab && !lspSession && <button type="button"
                     className="ghostBtn editorToolButton" disabled={lspBusy}
                     title={'Require native human consent, then start isolated '+lspProviderForTab}
@@ -3426,10 +3452,17 @@ function App() {
                 <pre>{activeLspHover}</pre>
               </section>}
               <div className="editorInfoBar">
+                Draft revision {bufferIdentities.current.get(activeTab.key)?.revision ?? 0}
+                {' · '}{draftAutoPreserve.current.has(activeTab.key)
+                  ? 'Private draft checkpointing enabled after explicit Preserve · '
+                  : 'Private recovery is opt-in · '}
+                {draftRecoveryByTab[activeTab.key]
+                  ? 'Preserved checkpoint available · ' : ''}
                 {lspRunningForTab ? 'Protected '+lspProviderForTab+' running · approved session · ' :
                   'Language intelligence requires protected worker and native consent · '}
-                Edits stay in memory until Save.
-                External changes cause a conflict instead of silently overwriting them.
+                Project files change only on explicit Save.
+                Preserved drafts contain source text in private local app data; they are not encrypted.
+                External source changes cause a revision conflict.
               </div>
             </> : <div className="sourcePreviewEmpty">
               <div className="emptySymbol">⌘</div>
