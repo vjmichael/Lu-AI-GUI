@@ -11,6 +11,17 @@ test('P05 B2 native Windows draft must use real CodeMirror and clipboard, with n
     "draft_undo_did_not_advance_same_session_revision",
     "P05_B2_INSTALLED_DRAFT_REFERENCE_COPY_UNDO_NO_IMPLICIT_SAVE=PASS"]) assert.ok(part.includes(term),term);
   assert.doesNotMatch(part,/window\.__TAURI_INTERNALS__|invoke_tauri|shell_exec/i);
+  // A UIA accessibility InvokePattern is not necessarily a trusted browser
+  // clipboard user gesture. Require genuine OS input to the focused WebView.
+  const input=script.split('function Keypress-DraftClipboardCopy {',2)[1]?.split('function Require(',1)[0];
+  assert.ok(input, 'installed OS keyboard clipboard action missing');
+  for (const term of [
+    "Find-Control 'Copy draft reference' 'Button'",
+    'GetForegroundWindow()', '$button.SetFocus()',
+    "[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')",
+  ]) assert.ok(input.includes(term),term);
+  assert.match(part,/Keypress-DraftClipboardCopy/);
+  assert.doesNotMatch(input,/Clipboard.*(SetText|SetDataObject)|__TAURI_INTERNALS__|invoke_tauri/i);
 });
 test('Native B2 unsigned NSIS acceptance must preserve exact source and license evidence', () => {
   const ci=read('../../../.github/workflows/ide-p05-b2-installed-native.yml');
