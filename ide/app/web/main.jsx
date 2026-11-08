@@ -89,6 +89,7 @@ function App() {
   const [persistentReferenceInput, setPersistentReferenceInput] = useState('');
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
+  const [relativeOpenPath, setRelativeOpenPath] = useState('');
   const [listing, setListing] = useState(null);
   const [visibleTreeCount, setVisibleTreeCount] = useState(INITIAL_VISIBLE_TREE_ENTRIES);
   const [explorerPending, setExplorerPending] = useState(false);
@@ -1937,6 +1938,21 @@ function App() {
     }
   }
 
+  async function openRelativeSourcePath() {
+    const path=relativeOpenPath.trim();
+    if (!activeProject || !path || path.length>1024 || path.startsWith('/') ||
+        path.includes('\\') || path.includes(':') ||
+        path.split('/').some(part=>!part || part==='.' || part==='..') ||
+        /[\\x00-\\x1f]/.test(path)) {
+      setProblem('Enter a valid project-relative source file path. '+
+        'No absolute or parent-relative paths are allowed.');
+      return;
+    }
+    // Uses the existing native picked-directory read, even if this file was
+    // absent from the 400-entry partial directory listing. No ambient paths.
+    await selectEntry({kind:'file',relativePath:path,name:path.split('/').pop()});
+  }
+
   async function selectEntry(entry) {
     if (!activeProject || explorerPending) return;
     if (entry.kind === 'directory') {
@@ -3278,6 +3294,16 @@ function App() {
             <div className="sourceTreeHeader">
               <strong>Files</strong><span>Project</span>
             </div>
+            <form className="sourceGoToFile" onSubmit={event=>{
+              event.preventDefault(); void openRelativeSourcePath();
+            }}>
+              <input aria-label="Open project-relative file" spellCheck={false}
+                maxLength={1024} value={relativeOpenPath}
+                placeholder="Open src/path/file.rs"
+                onChange={event=>setRelativeOpenPath(event.target.value)}/>
+              <button type="submit" disabled={!activeProject || !relativeOpenPath.trim() ||
+                explorerPending || !!savingKey}>Open file</button>
+            </form>
             <div className="sourcePath" title={directory || '/'}>
               <button type="button" className="pathLink" disabled={explorerPending}
                 onClick={() => activeProject && openDirectory(activeProject, '')}>
@@ -3305,7 +3331,8 @@ function App() {
             </button>}
             {listing?.truncated && <p className="treeCaution">
               Native directory result is partial (400-entry limit). Additional files
-              may require Find in project; no completeness claim.
+              can be opened by entering their registered project-relative path above.
+              No completeness claim.
             </p>}
             {!explorerPending && listing && listing.entries.length === 0 &&
               <p className="treeCaution">Empty directory.</p>}
