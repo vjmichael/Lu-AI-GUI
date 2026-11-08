@@ -1103,7 +1103,9 @@ mod tests{
         for id in [outer,worker]{
             effect.prepare(&tool(id,&f.origin)).unwrap();
             effect.mark_executing(id).unwrap();
-            effect.mark_applied(id,if id==worker{b"worker receipt"}else{b"outer receipt"})
+            effect.mark_applied(id,if id==worker{
+                "worker receipt".as_bytes()
+            }else{"outer receipt".as_bytes()})
                 .unwrap();
         }
         effect.record_independent_outcome(
