@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
+import { secondaryEditor, initialSecondaryKey, canSaveFocusedPane } from './editor_layout.js';
 import { locateMatches, planReplacement } from './find_replace.js';
 import {
   newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
@@ -89,6 +90,8 @@ function App() {
   const [explorerPending, setExplorerPending] = useState(false);
   const [tabs, setTabs] = useState([]);
   const [activeTabKey, setActiveTabKey] = useState(null);
+  const [splitEditorOpen, setSplitEditorOpen] = useState(false);
+  const [secondaryTabKey, setSecondaryTabKey] = useState(null);
   const [savingKey, setSavingKey] = useState(null);
   const [review, setReview] = useState(null);
   const [reviewPending, setReviewPending] = useState(false);
@@ -255,6 +258,8 @@ function App() {
     // Invalidate any provider data from the previous workspace. No cross-
     // project response may be shown or applied to the newly selected editor.
     setLspNativeDiagnostics({});
+    setSplitEditorOpen(false);
+    setSecondaryTabKey(null);
     setProjectProblemsOpen(false);
     setProjectProblemSearch('');
     setLspCompletions(null);
@@ -286,6 +291,20 @@ function App() {
     [activeTab, lspHover]);
 
   const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
+  // A CodeMirror EditorState is owned by one tab; mounting the same tab in
+  // both panes is forbidden, including during project switches and close.
+  const secondaryTab = splitEditorOpen ? secondaryEditor(
+    projectTabs, activeProject?.projectId, activeTab?.key, secondaryTabKey) : null;
+  function selectPrimaryEditorTab(key) {
+    if (splitEditorOpen && key === secondaryTabKey && activeTabKey !== key)
+      setSecondaryTabKey(activeTabKey);
+    setActiveTabKey(key);
+  }
+  function toggleSplitEditor() {
+    if (splitEditorOpen) { setSplitEditorOpen(false); return; }
+    setSecondaryTabKey(initialSecondaryKey(projectTabs,activeProject?.projectId,activeTabKey));
+    setSplitEditorOpen(true);
+  }
   const problemsForProject = useMemo(() => projectProblems(
     projectTabs, lspNativeDiagnostics, activeProject?.projectId || 'no-active-project',
     { severity: projectProblemSeverity, query: projectProblemSearch }
@@ -1582,6 +1601,8 @@ function App() {
       clearPrivateDraftSession(tab.key);
     });
     setTabs(previous => previous.filter(tab => tab.projectId !== projectId));
+    setSecondaryTabKey(null);
+    setSplitEditorOpen(false);
     if (activeTabKey && affected.some(tab => tab.key === activeTabKey)) {
       setActiveTabKey(null);
     }
@@ -1934,6 +1955,7 @@ function App() {
       void stopLspSession();
     }
     editorStates.current.delete(key);
+    if (secondaryTabKey === key) setSecondaryTabKey(null);
     clearPrivateDraftSession(key);
     setReview(previous => previous?.tabKey === key ? null : previous);
     const other = tabs.filter(tab => tab.key !== key);
@@ -2076,12 +2098,15 @@ function App() {
         setFindIndex(-1);
       } else if (key === 's') {
         event.preventDefault();
-        if (activeTab) void saveTab(activeTab);
+        const focusedPane = event.target?.closest?.('[data-ide-editor-pane]')
+          ?.getAttribute('data-ide-editor-pane') || 'primary';
+        const target = canSaveFocusedPane(focusedPane,activeTab,secondaryTab);
+        if (target) void saveTab(target);
       }
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [pending, explorerPending, savingKey, activeTab, tabs, section]);
+  }, [pending, explorerPending, savingKey, activeTab, secondaryTab, tabs, section]);
 
   useEffect(() => {
     const warn = event => {
@@ -3241,12 +3266,30 @@ function App() {
               <p className="treeCaution">Empty directory.</p>}
           </div>
           <div className="sourcePreview" role="region" aria-label="Source code editor">
+            <div className="editorLayoutToolbar">
+              <button type="button" className="ghostBtn" aria-label="Toggle split editor"
+                aria-pressed={splitEditorOpen} disabled={!activeTab}
+                onClick={toggleSplitEditor}>
+                {splitEditorOpen ? 'Close split' : 'Split editor'}
+              </button>
+              {splitEditorOpen && <>
+                <label htmlFor="secondary-editor-select">Second editor</label>
+                <select id="secondary-editor-select" aria-label="Second editor file"
+                  value={secondaryTab?.key || ''}
+                  onChange={event=>setSecondaryTabKey(event.target.value || null)}>
+                  <option value="">Choose an open file</option>
+                  {projectTabs.filter(tab=>tab.key!==activeTabKey).map(tab=>
+                    <option key={tab.key} value={tab.key}>{tab.relativePath}</option>)}
+                </select>
+                <span>Two distinct buffers · saves remain explicit</span>
+              </>}
+            </div>
             <div className="editorTabs" role="tablist" aria-label="Open source files">
               {projectTabs.map(tab => <div className={'editorTab' +
                 (tab.key === activeTabKey ? ' selected' : '')} key={tab.key}>
                 <button type="button" role="tab" aria-selected={tab.key === activeTabKey}
                   className="editorTabSelect" title={tab.relativePath}
-                  onClick={() => setActiveTabKey(tab.key)}>
+                  onClick={() => selectPrimaryEditorTab(tab.key)}>
                   <span>{leafFor(tab.relativePath)}</span>
                   {tab.dirty && <span className="unsavedDot" title="Unsaved changes">●</span>}
                 </button>
@@ -3386,6 +3429,8 @@ function App() {
                   <span className="editorFindCount">Draft only · Undo available · Save required</span>
                 </div>}
               </div>}
+              <div className={'splitEditorGrid' + (splitEditorOpen ? ' enabled' : ' single')}>
+                <div className="splitPrimaryPane" data-ide-editor-pane="primary">
               <CodeEditor
                 diagnostics={activeLspDiagnostics}
                 jumpRequest={lspJumpRequest}
@@ -3412,6 +3457,46 @@ function App() {
                   previous[activeTab.key] === line ? previous :
                     { ...previous, [activeTab.key]: line })}
               />
+
+                </div>
+                {splitEditorOpen && <div className="splitSecondaryPane"
+                  data-ide-editor-pane="secondary" aria-label="Secondary source editor">
+                  {secondaryTab ? <>
+                    <div className="splitSecondaryHeader">
+                      <strong title={secondaryTab.relativePath}>{secondaryTab.relativePath}</strong>
+                      <span>{secondaryTab.dirty ? 'Unsaved draft' : 'Saved source'}</span>
+                      <button className="ghostBtn" type="button"
+                        onClick={() => selectPrimaryEditorTab(secondaryTab.key)}>
+                        Make primary
+                      </button>
+                      <button className="ghostBtn" type="button"
+                        disabled={!secondaryTab.dirty || !!savingKey || explorerPending}
+                        onClick={() => void saveTab(secondaryTab)}>
+                        Save second file
+                      </button>
+                    </div>
+                    <CodeEditor
+                      key={secondaryTab.key + ':' + secondaryTab.generation + ':secondary'}
+                      tabIdentity={secondaryTab.key + ':' + secondaryTab.generation}
+                      editorState={editorStates.current.get(secondaryTab.key)}
+                      diagnostics={visibleDiagnostics(
+                        secondaryTab,lspNativeDiagnostics[secondaryTab.key])}
+                      onCursorLine={line=>setCursorByTab(previous =>
+                        previous[secondaryTab.key]===line ? previous :
+                          {...previous,[secondaryTab.key]:line})}
+                      onCursorPosition={position=>setCursorPositions(previous=>{
+                        const prior=previous[secondaryTab.key];
+                        if(prior?.line===position.line && prior?.character===position.character)
+                          return previous;
+                        return {...previous,[secondaryTab.key]:position};
+                      })}
+                    />
+                  </> : <div className="splitSecondaryPlaceholder">
+                    <p>Open a second file and select it above to compare and edit side by side.</p>
+                    <p>No duplicate buffer is created. Unsaved edits remain in their original tabs.</p>
+                  </div>}
+                </div>}
+              </div>
               {projectProblemsOpen && <section id="projectProblemsPanel"
                 aria-label="Open-project verified language-server problems"
                 className="lspProjectProblems">

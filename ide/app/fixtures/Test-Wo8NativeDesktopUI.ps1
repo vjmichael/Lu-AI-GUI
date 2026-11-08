@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','B4SplitEditor')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -1027,6 +1027,98 @@ try {
       Require-LspReaped 'ruff' $priorRuff
       Write-Host 'DEV02_INSTALLED_WINDOWS_PYTHON_RUFF_PROTECTED_DIAGNOSTICS=PASS'
       Write-Host 'DEV02_INSTALLED_WINDOWS_ALL_THREE_PROTECTED_PROVIDERS=PASS'
+    }
+    if ($Scenario -eq 'B4SplitEditor') {
+      # Actual installed Windows WebView2 UIA, no JavaScript or Tauri API bypass.
+      $mainSource=Join-Path $fixed 'main.rs'
+      $secondSource=Join-Path $fixed 'second.rs'
+      if (!(Test-Path -LiteralPath $secondSource -PathType Leaf)) {
+        Deny 'b4_second_source_missing'
+      }
+      $mainBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath $mainSource).Hash
+      $secondBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath $secondSource).Hash
+      Click 'second.rs'
+      Click 'Toggle split editor'
+      Require 'Second editor file'
+      Require 'Save second file'
+      function Get-B4NativeEditors {
+        $seen=@{}
+        $editors=@()
+        foreach($accessRoot in @(NativeAccessibilityRoots)) {
+          try {
+            $nodes=$accessRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+              [System.Windows.Automation.Condition]::TrueCondition)
+            foreach($node in $nodes) {
+              try {
+                if ([string]$node.Current.Name -ne 'Source editor text') { continue }
+                $rect=$node.Current.BoundingRectangle
+                if ($rect.IsEmpty -or $rect.Width -lt 60 -or $rect.Height -lt 40) { continue }
+                $loc=('{0:F0}-{1:F0}-{2:F0}-{3:F0}' -f $rect.X,$rect.Y,$rect.Width,$rect.Height)
+                if ($seen.ContainsKey($loc)) { continue }
+                $seen[$loc]=$true
+                if (!$node.Current.IsKeyboardFocusable) {
+                  Deny 'b4_installed_codemirror_pane_not_focusable'
+                }
+                $editors+=,[pscustomobject]@{ Node=$node; X=$rect.X; Y=$rect.Y }
+              } catch {
+                if ($_.Exception.Message -like 'WO8_NATIVE_UI_DENIED:*') { throw }
+              }
+            }
+          } catch {
+            if ($_.Exception.Message -like 'WO8_NATIVE_UI_DENIED:*') { throw }
+          }
+        }
+        if ($editors.Count -ne 2) {
+          Deny ('b4_installed_requires_two_distinct_accessible_editors_count_'+$editors.Count)
+        }
+        $ordered=@($editors | Sort-Object X,Y)
+        if ([Math]::Abs($ordered[0].X-$ordered[1].X) -lt 35) {
+          $ordered=@($editors | Sort-Object Y,X)
+        }
+        return $ordered
+      }
+      $editors=@(Get-B4NativeEditors)
+      $editors[1].Node.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}{ENTER}// B4_SECONDARY_ONLY')
+      Start-Sleep -Milliseconds 650
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $mainSource).Hash -ne $mainBefore -or
+          (Get-FileHash -Algorithm SHA256 -LiteralPath $secondSource).Hash -ne $secondBefore) {
+        Deny 'b4_unsaved_split_edit_modified_project_source'
+      }
+      Click 'Save second file'
+      $deadline=(Get-Date).AddSeconds(16)
+      $secondarySaved=$false
+      do {
+        Start-Sleep -Milliseconds 400
+        $secondarySaved=[IO.File]::ReadAllText($mainSource).Contains('B4_SECONDARY_ONLY')
+      } while (!$secondarySaved -and (Get-Date) -lt $deadline)
+      if (!$secondarySaved -or
+          (Get-FileHash -Algorithm SHA256 -LiteralPath $secondSource).Hash -ne $secondBefore) {
+        Deny 'b4_secondary_save_modified_wrong_project_source'
+      }
+      # With the actual original primary editor physically focused, Ctrl+S
+      # must save only that source, not the already-saved secondary source.
+      $mainSaved=(Get-FileHash -Algorithm SHA256 -LiteralPath $mainSource).Hash
+      $editors=@(Get-B4NativeEditors)
+      $editors[0].Node.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}{ENTER}// B4_PRIMARY_ONLY')
+      Start-Sleep -Milliseconds 500
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $secondSource).Hash -ne $secondBefore) {
+        Deny 'b4_primary_draft_autosaved_without_user'
+      }
+      [System.Windows.Forms.SendKeys]::SendWait('^s')
+      $deadline=(Get-Date).AddSeconds(16)
+      $primarySaved=$false
+      do {
+        Start-Sleep -Milliseconds 400
+        $primarySaved=[IO.File]::ReadAllText($secondSource).Contains('B4_PRIMARY_ONLY')
+      } while (!$primarySaved -and (Get-Date) -lt $deadline)
+      if (!$primarySaved -or
+          (Get-FileHash -Algorithm SHA256 -LiteralPath $mainSource).Hash -ne $mainSaved) {
+        Deny 'b4_focused_ctrl_s_saved_wrong_pane'
+      }
+      Write-Host 'B4_REAL_INSTALLED_WINDOWS_TWO_DISTINCT_CODEMIRROR_PANES=PASS'
+      Write-Host 'B4_REAL_INSTALLED_WINDOWS_EXPLICIT_SECONDARY_AND_FOCUSED_PRIMARY_SAVE=PASS'
     }
     if ($Scenario -eq 'ExternalConflict') {
       # A real external editor replaces the file after the CodeMirror draft is

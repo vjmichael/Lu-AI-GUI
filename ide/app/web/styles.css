@@ -292,3 +292,19 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .draftRecoveryReferenceBar label{font-size:11px;color:#bcd5eb}
 .draftRecoveryReferenceBar input{flex:1;min-width:220px;padding:6px 8px;background:#09172a;color:#e4effb;border:1px solid #4b667d;border-radius:5px;font:11px ui-monospace,Consolas,monospace}
 .draftRecoveryReferenceBar button{white-space:nowrap}
+
+/* B4: independent CodeMirror EditorState in each pane; never duplicate one tab. */
+.editorLayoutToolbar{display:flex;align-items:center;gap:10px;padding:7px 12px;background:#142438;border-bottom:1px solid #34465c;flex-wrap:wrap;font-size:11px;color:#aec5dc}
+.editorLayoutToolbar label{white-space:nowrap}
+.editorLayoutToolbar select{max-width:340px;min-width:140px;background:#0b1b2d;border:1px solid #456482;color:#e7f4ff;padding:6px 9px;border-radius:6px}
+.splitEditorGrid{flex:1;display:flex;min-height:0;min-width:0;overflow:hidden}
+.splitEditorGrid.enabled{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.splitPrimaryPane,.splitSecondaryPane{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.splitEditorGrid.single>.splitPrimaryPane{flex:1;width:100%;min-width:0}
+.splitSecondaryPane{border-left:2px solid #456985;background:#111f31}
+.splitSecondaryHeader{display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-height:39px;padding:7px 10px;border-bottom:1px solid #40576e;font-size:11px}
+.splitSecondaryHeader strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:35%;color:#e0edf9}
+.splitSecondaryHeader span{color:#95b5d0}
+.splitSecondaryHeader .ghostBtn{padding:5px 8px}
+.splitSecondaryPlaceholder{display:flex;justify-content:center;align-items:center;flex-direction:column;padding:18px;text-align:center;color:#acc5df;font-size:12px;flex:1}
+@media(max-width:1100px){.splitEditorGrid.enabled{grid-template-columns:minmax(0,1fr)}.splitSecondaryPane{border-left:0;border-top:2px solid #456985}.splitEditorGrid.enabled{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}}
