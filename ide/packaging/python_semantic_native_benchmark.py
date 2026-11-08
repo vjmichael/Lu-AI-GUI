@@ -16,6 +16,8 @@ import os
 from pathlib import Path
 import queue
 import statistics
+import urllib.parse
+import urllib.request
 import subprocess
 import sys
 import tempfile
@@ -169,30 +171,61 @@ class LspClient:
                 return message.get("result"),(time.monotonic()-began)*1000
         raise TimeoutError("LSP real provider request timed out: "+method)
 
-    def close(self):
-        try:
-            if self.proc.poll() is None:
-                self.request("shutdown",{},timeout=5)
-                self.notify("exit",{})
-                self.proc.wait(timeout=5)
-        except (OSError,RuntimeError,TimeoutError,subprocess.TimeoutExpired):
-            pass
+    def close(self) -> dict:
+        # Record individual OS lifecycle evidence. A reaped process is NOT
+        # necessarily a clean shutdown, and exit code 1 is not a process leak.
+        outcome = {
+            "shutdownAcknowledged": False, "exitNotificationSent": False,
+            "forcedTermination": False, "reaped": False, "cleanExit": False,
+            "exitCode": None, "shutdownError": None,
+            "stderrClass": [],
+        }
         if self.proc.poll() is None:
-            if os.name=="nt":
-                subprocess.run(["taskkill","/PID",str(self.proc.pid),"/T","/F"],
-                    stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
-                    timeout=12,check=False)
+            try:
+                self.request("shutdown", {}, timeout=5)
+                outcome["shutdownAcknowledged"] = True
+            except (OSError, RuntimeError, TimeoutError) as error:
+                outcome["shutdownError"] = type(error).__name__
+            if outcome["shutdownAcknowledged"]:
+                try:
+                    self.notify("exit", {})
+                    outcome["exitNotificationSent"] = True
+                except (OSError, RuntimeError) as error:
+                    outcome["shutdownError"] = type(error).__name__
+            if outcome["exitNotificationSent"]:
+                try:
+                    self.proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    outcome["shutdownError"] = "ExitWaitTimeout"
+        if self.proc.poll() is None:
+            outcome["forcedTermination"] = True
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill","/PID",str(self.proc.pid),"/T","/F"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=12, check=False,
+                )
             else:
                 import signal
-                os.killpg(self.proc.pid,signal.SIGKILL)
+                os.killpg(self.proc.pid, signal.SIGKILL)
             self.proc.wait(timeout=10)
         if self.proc.poll() is None:
-            raise RuntimeError("candidate LSP was not reaped")
-        if self.proc.returncode not in (0,None):
-            # Some servers exit 1 after the LSP shutdown handshake; do not
-            # misrepresent a partial or failed shutdown as production recovery.
-            return False
-        return True
+            raise RuntimeError("candidate LSP process still alive after OS cleanup")
+        outcome["exitCode"] = self.proc.returncode
+        outcome["reaped"] = True
+        outcome["cleanExit"] = (
+            outcome["shutdownAcknowledged"] and
+            outcome["exitNotificationSent"] and
+            not outcome["forcedTermination"] and self.proc.returncode == 0
+        )
+        # Only bounded error classes; do not embed paths, source text, PIDs
+        # or arbitrary provider stderr into public benchmark receipts.
+        for line in self.stderr_lines[-8:]:
+            lower = line.lower()
+            for term in ("panic", "error", "warning", "shutdown", "exit", "closed"):
+                if term in lower and term not in outcome["stderrClass"]:
+                    outcome["stderrClass"].append(term)
+        return outcome
 
 
 def completions(result:list|dict|None,expected:str)->bool:
@@ -200,11 +233,51 @@ def completions(result:list|dict|None,expected:str)->bool:
     return any(isinstance(x,dict) and x.get("label")==expected for x in items)
 
 
+def same_local_uri(candidate: str, expected: str) -> bool:
+    """Only the identical native fixture file, without query/fragment/remote host.
+
+    Python's original URL text comparison is too strict on Windows, where
+    LSP providers may normalize drive-letter casing and percent encoding.
+    """
+    if not isinstance(candidate, str) or not isinstance(expected, str):
+        return False
+    try:
+        left, right = urllib.parse.urlsplit(candidate), urllib.parse.urlsplit(expected)
+        if any(uri.scheme.lower() != "file" or uri.netloc not in ("", "localhost")
+               or uri.query or uri.fragment for uri in (left, right)):
+            return False
+        a = urllib.request.url2pathname(left.path)
+        b = urllib.request.url2pathname(right.path)
+        if not os.path.isabs(a) or not os.path.isabs(b):
+            return False
+        return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+    except (OSError, ValueError):
+        return False
+
+
 def definition_is_inside_source(result,uri:str)->bool:
     items=result if isinstance(result,list) else [result] if isinstance(result,dict) else []
     return any(isinstance(x,dict) and (
-        x.get("uri")==uri or x.get("targetUri")==uri
+        same_local_uri(x.get("uri"),uri) or
+        same_local_uri(x.get("targetUri"),uri)
     ) for x in items)
+
+
+def definition_response_class(result) -> str:
+    """Non-sensitive shape on a failed synthetic fixture URI comparison."""
+    items=result if isinstance(result,list) else [result] if isinstance(result,dict) else []
+    if not items: return "null_or_empty"
+    obj=items[0]
+    if not isinstance(obj,dict): return "non_object"
+    uri=obj.get("targetUri") or obj.get("uri")
+    if not isinstance(uri,str): return "no_location_uri"
+    try:
+        parsed=urllib.parse.urlsplit(uri)
+        return ("scheme_"+parsed.scheme[:12]+
+            ("_remote" if parsed.netloc not in ("","localhost") else "_local")+
+            ("_file_extension_py" if parsed.path.lower().endswith(".py") else "_other_extension"))
+    except ValueError:
+        return "malformed_location_uri"
 
 
 def hover_is_real(result)->bool:
@@ -221,7 +294,8 @@ def score(label:str,argv:list[str],project:Path,sources)->dict:
     run=LspClient(argv,project)
     data={"engine":label,"cases":FIXTURE_COUNT,"hover":0,"definition":0,
           "completion":0,"diagnosticFileCount":0,"nativeInitialized":False,
-          "terminalReaped":False,"failures":[],"latencyMs":defaultdict(list)}
+          "terminalReaped":False,"terminalClean":False,"termination":None,
+          "failures":[],"latencyMs":defaultdict(list)}
     try:
         rooturi=project.as_uri()
         initialized,_=run.request("initialize",{
@@ -266,9 +340,9 @@ def score(label:str,argv:list[str],project:Path,sources)->dict:
                     if verify(value):
                         data[kind]+=1
                     else:
-                        data["failures"].append(
-                            f"{path.name}:{kind}:empty_or_mismatched_response"
-                        )
+                        reason=(definition_response_class(value)
+                                if kind=="definition" else "empty_or_mismatched_response")
+                        data["failures"].append(f"{path.name}:{kind}:{reason}")
                 except (TimeoutError,RuntimeError,OSError) as error:
                     data["failures"].append(
                         f"{path.name}:{kind}:{type(error).__name__}"
@@ -283,7 +357,10 @@ def score(label:str,argv:list[str],project:Path,sources)->dict:
                 observed.add(params.get("uri",""))
         data["diagnosticFileCount"]=len(observed)
     finally:
-        data["terminalReaped"]=run.close()
+        lifecycle=run.close()
+        data["termination"]=lifecycle
+        data["terminalReaped"]=lifecycle["reaped"]
+        data["terminalClean"]=lifecycle["cleanExit"]
     records={}
     for kind,values in data.pop("latencyMs").items():
         ordered=sorted(values)
@@ -340,10 +417,12 @@ def main()->int:
     for record in reports:
         print(record["engine"]+": "+str({
             k:record[k] for k in ("nativeInitialized","hover","definition",
-                                  "completion","diagnosticFileCount","terminalReaped")
+                                  "completion","diagnosticFileCount",
+                                  "terminalReaped","terminalClean","termination")
         }),flush=True)
     if any((not rec["nativeInitialized"] or not rec["terminalReaped"] or
-            rec["hover"]<18 or rec["definition"]<18 or rec["completion"]<10)
+            not rec["terminalClean"] or rec["hover"]<18 or
+            rec["definition"]<18 or rec["completion"]<10)
            for rec in reports):
         print("DENIED: real Python candidate acceptance thresholds not met",file=sys.stderr)
         return 1
