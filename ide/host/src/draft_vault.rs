@@ -52,13 +52,24 @@ fn clean_file(path:&Path)->Result<()>{
     Ok(())
 }
 fn private_dir(path:&Path)->Result<()>{
-    if path.exists(){return clean_dir(path)}
-    fs::create_dir(path).map_err(|_|"DRAFT_DIRECTORY_UNAVAILABLE")?;
-    #[cfg(unix)]{
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path,fs::Permissions::from_mode(0o700))
-          .map_err(|_|"DRAFT_DIRECTORY_UNAVAILABLE")?;
+    if path.exists(){
+        clean_dir(path)?;
+        #[cfg(unix)]{
+            use std::os::unix::fs::PermissionsExt;
+            let mode=fs::metadata(path).map_err(|_|"DRAFT_DIRECTORY_UNAVAILABLE")?
+                .permissions().mode();
+            if mode & 0o077 != 0 {return Err("DRAFT_UNSAFE_DIRECTORY")}
+        }
+        return Ok(())
     }
+    #[cfg(unix)]{
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder=fs::DirBuilder::new();
+        builder.mode(0o700);
+        builder.create(path).map_err(|_|"DRAFT_DIRECTORY_UNAVAILABLE")?;
+    }
+    #[cfg(not(unix))]
+    fs::create_dir(path).map_err(|_|"DRAFT_DIRECTORY_UNAVAILABLE")?;
     clean_dir(path)
 }
 fn atomic(path:&Path,data:&[u8])->Result<()>{
