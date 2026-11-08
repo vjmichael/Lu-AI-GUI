@@ -329,3 +329,43 @@ jobs:
           done
       - name: Scope
         run: echo "Native OS check/test/cancel fixture only; installed desktop and release toolchain acceptance remain independent."
+ 
+  p03-native-exact-head-cross-platform:
+    # This is an actual OS-success aggregator, NOT source-only acceptance,
+    # product signing, or installed-release authorization. It never consumes
+    # historical green checks or a synthesized PR merge SHA.
+    if: ${{ always() }}
+    needs:
+      - native-windows-fixed-debugger
+      - native-linux-delegated-fixed-debugger
+      - native-linux-protected-cargo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Require one exact SHA and complete OS protected-debugger successes
+        shell: bash
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          WINDOWS: ${{ needs['native-windows-fixed-debugger'].result }}
+          LINUX_DAP: ${{ needs['native-linux-delegated-fixed-debugger'].result }}
+          LINUX_CARGO: ${{ needs['native-linux-protected-cargo'].result }}
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$PR_HEAD" ]]; then
+            echo "P03_NATIVE_FINAL_EXACT_HEAD=DENIED"
+            exit 1
+          fi
+          printf 'P03_NATIVE_FINAL_JOB_STATES=windows:%s,linux_dap:%s,linux_cargo:%s\n' "$WINDOWS" "$LINUX_DAP" "$LINUX_CARGO"
+          if [[ "$WINDOWS" != success || "$LINUX_DAP" != success || "$LINUX_CARGO" != success ]]; then
+            echo "P03_NATIVE_FINAL_CROSS_PLATFORM=DENIED_OPEN_NATIVE_OS_GATES"
+            exit 1
+          fi
+          echo "P03_NATIVE_FINAL_EXACT_HEAD=PASS"
+          echo "P03_NATIVE_FINAL_CROSS_PLATFORM=PASS_REAL_OS_JOBS"
+          echo "P03_NATIVE_FINAL_SIGNED_INSTALLED_RELEASE=NOT_INFERRED"
