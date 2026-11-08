@@ -36,6 +36,8 @@ struct OwnedWorker {
     deadline:Option<Instant>,
     #[cfg(windows)]
     job:Option<lu_win_worker_job::Job>,
+    #[cfg(target_os="linux")]
+    guardian:Option<lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian>,
 }
 pub struct BackgroundProcessSupervisor {
     store:Arc<TaskStore>,
@@ -495,6 +497,18 @@ impl BackgroundProcessSupervisor {
         }
         self.store.create(&plan.task_id,Some(&plan.workspace_id),None)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+        // A native Linux group guardian is an additional *first-party*
+        // lifetime witness: its own PGID remains alive until the host ends
+        // the worker, or its Lu-owned pipe closes after an abnormal exit.
+        // Only reviewed typed Git/FFprobe operations need this new gate.
+        #[cfg(target_os="linux")]
+        let guardian=if typed_capture.is_some(){
+            lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian::spawn_if_available()
+                .map_err(|_|{
+                    let _=self.store.fail_pending(&plan.task_id);
+                    BackgroundProcessError::SpawnFailed
+                })?
+        }else{None};
         let mut command=Command::new(&executable);
         command.args(&plan.args).env_clear().stdin(Stdio::null())
             .stdout(if plan.progress_protocol||typed_capture.is_some(){
@@ -510,6 +524,10 @@ impl BackgroundProcessSupervisor {
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
+            #[cfg(target_os="linux")]
+            command.process_group(guardian.as_ref()
+                .map_or(0,|w|w.group_id()));
+            #[cfg(not(target_os="linux"))]
             command.process_group(0);
         }
         #[cfg(target_os="linux")]
@@ -597,6 +615,8 @@ impl BackgroundProcessSupervisor {
             deadline:plan.max_runtime_seconds.map(|n|Instant::now()+Duration::from_secs(n)),
             #[cfg(windows)]
             job:Some(job),
+            #[cfg(target_os="linux")]
+            guardian,
         };
         workers.insert(plan.task_id.clone(),owner);
         if self.store.start(&plan.task_id).is_err(){
@@ -650,6 +670,14 @@ impl BackgroundProcessSupervisor {
             let mut owner=workers.remove(&id).expect("owned worker still registered");
             #[cfg(windows)]
             drop(owner.job.take()); // Close Job and any inherited stdout handles.
+            // Shut down the Linux PGID anchor before joining pipes: a
+            // descendant may have inherited worker stdout. A verified
+            // guardian SIGKILL is required, not merely a leader exit.
+            #[cfg(target_os="linux")]
+            if let Some(guardian)=owner.guardian.as_mut(){
+                guardian.stop_and_verify_signal()
+                    .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+            }
             let had_reader=owner.progress_reader.is_some();
             let had_version_reader=owner.version_reader.is_some();
             let version=owner.version_reader.take()
@@ -800,14 +828,23 @@ impl BackgroundProcessSupervisor {
     }
 }
 fn terminate_owned(worker:&mut OwnedWorker)->Result<(),BackgroundProcessError>{
-    #[cfg(unix)]
+    #[cfg(target_os="linux")]
     {
-        // Entire host-created process group, not a model supplied PID.
-        if lu_win_worker_job::unix_owned::kill_owned_group(&worker.child).is_err(){
-            // If the original child is already dead, a direct kill is harmless,
-            // but cannot prove descendants were reaped. Do not report success.
-            return Err(BackgroundProcessError::ProcessUncertain);
+        if let Some(guardian)=worker.guardian.as_mut(){
+            // The guardian is an independently-running PGID anchor. Closing
+            // its Lu-owned pipe makes it SIGKILL its own group. We require
+            // the exact kernel SIGKILL termination as an acknowledgement.
+            guardian.stop_and_verify_signal()
+                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+        }else{
+            lu_win_worker_job::unix_owned::kill_owned_group(&worker.child)
+                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
         }
+    }
+    #[cfg(all(unix,not(target_os="linux")))]
+    {
+        lu_win_worker_job::unix_owned::kill_owned_group(&worker.child)
+            .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
     }
     #[cfg(windows)]
     {
