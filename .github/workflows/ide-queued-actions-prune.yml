@@ -9,7 +9,9 @@ permissions:
   actions: write
 concurrency:
   group: ide-queued-actions-prune-maintenance
-  cancel-in-progress: false
+  # This bounded, idempotent audit may supersede its own obsolete attempt.
+  # It never changes concurrency groups or cancellation rules of Lu Core.
+  cancel-in-progress: true
 jobs:
   prune:
     runs-on: ubuntu-26.04
