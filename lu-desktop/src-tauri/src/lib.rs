@@ -33,6 +33,7 @@ use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 mod workspace_desktop;
 mod reviewed_app_desktop;
 mod reviewed_app_recovery;
+mod reviewed_app_audit;
 mod archive_desktop;
 mod archive_batch_desktop;
 mod archive_split_desktop;
@@ -5128,17 +5129,23 @@ struct NativeToolActivityView{
     tool_feedback:u32,
     rejected_events:u32,
     repaired_responses:u32,
+    #[serde(skip_serializing_if="Option::is_none")]
+    reviewed_effects:Option<reviewed_app_audit::ReviewedEffectCounts>,
 }
 #[tauri::command]
 fn lu_tool_turn_history(
     state:State<'_,Arc<DesktopState>>,chat_id:String,
 )->Result<Vec<NativeToolActivityView>,String>{
-    state.chats.history(&chat_id)?;
+    // Authenticate the selected original ANSF book with a one-entry
+    // indexed window; never replay an effectively infinite conversation
+    // simply to open a read-only tool-audit pane.
+    state.chats.history_window(&chat_id,None,"older",1)?;
     let mut entries=Vec::new();
     for (source,file) in [
         ("Workspace","lu-workspace-read-audit.sqlite"),
         ("Reader","lu-reader-turn-audit.sqlite"),
         ("Git","lu-git-read-audit.sqlite"),
+        ("Reviewed app","lu-reviewed-app-model-audit.sqlite"),
     ]{
         let path=state.catalog_path.with_file_name(file);
         // Reading history must never create a fake audit database.
@@ -5153,17 +5160,42 @@ fn lu_tool_turn_history(
         let observed=journal.summaries_for_conversation(&chat_id,32)
             .map_err(|_|"Tool audit read failed")?;
         for evidence in observed{
-            let state=if evidence.generation_failures>0{"FAILED"}
-                else if evidence.rejections>0{"REJECTED"}
-                else if evidence.final_answers>0{"COMPLETED"}
-                else{"INCOMPLETE_OR_INTERRUPTED"};
+            // A shared model audit's task id is NOT proof of a trusted human
+            // request. Only an original host-authenticated turn can expose
+            // reviewed-app journal state for the selected conversation.
+            let reviewed_effects=if source=="Reviewed app"{
+                if state.chats.trusted_user_turn_text(
+                    &chat_id,&evidence.task_id
+                ).is_none(){continue}
+                let profile=state.catalog_path.parent()
+                    .ok_or("Reviewed evidence profile directory missing")?;
+                reviewed_app_audit::read_reviewed_effect_counts(
+                    profile,&evidence.task_id
+                )?
+            }else{None};
+            // Model audit success and an APPLIED effect are two different
+            // observations. Never label a model final answer as actual OS
+            // cleanup, especially for prior UNCERTAIN worker effects.
+            let status=if source=="Reviewed app"{
+                reviewed_app_audit::classify_reviewed_evidence(
+                    evidence.final_answers,evidence.generation_failures,
+                    evidence.rejections,reviewed_effects.as_ref()
+                )
+            }else if evidence.generation_failures>0{
+                "FAILED"
+            }else if evidence.rejections>0{
+                "REJECTED"
+            }else if evidence.final_answers>0{
+                "COMPLETED"
+            }else{"INCOMPLETE_OR_INTERRUPTED"};
             entries.push(NativeToolActivityView{
                 task_id:evidence.task_id,
                 source:source.into(),recorded_at:evidence.last_at,
-                state:state.into(),model_responses:evidence.model_outputs,
+                state:status.into(),model_responses:evidence.model_outputs,
                 tool_feedback:evidence.tool_feedback,
                 rejected_events:evidence.rejections,
                 repaired_responses:evidence.repaired_replies,
+                reviewed_effects,
             });
         }
     }

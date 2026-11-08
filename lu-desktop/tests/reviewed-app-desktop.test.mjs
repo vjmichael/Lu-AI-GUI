@@ -57,3 +57,22 @@ test('desktop only permits reviewed Git reads or FFprobe WAV/MP4 facts, never ar
   assert.match(desktop,/file must be WAV or MP4/i);
   assert.doesNotMatch(desktop,/fn execute_arbitrary_command\(/);
 });
+
+test('read-only reviewed-app tool activity shows durable effects, never model claims as OS proof',()=>{
+  const audit=readFileSync(new URL('../src-tauri/src/reviewed_app_audit.rs',import.meta.url),'utf8');
+  assert.match(host,/\("Reviewed app","lu-reviewed-app-model-audit.sqlite"\)/);
+  assert.match(host,/trusted_user_turn_text\(/);
+  assert.match(host,/read_reviewed_effect_counts\(/);
+  assert.match(host,/classify_reviewed_evidence\(/);
+  assert.match(ui,/Reviewed app effect journal:/);
+  assert.match(ui,/item.reviewedEffects.appliedWithReceipt/);
+  assert.match(ui,/item.reviewedEffects.uncertain/);
+  assert.match(ui,/Model answers are not OS receipts/);
+  assert.match(audit,/SQLITE_OPEN_READ_ONLY/);
+  assert.match(audit,/lu-reviewed-effects-\{host_turn_id\}\.sqlite/);
+  assert.match(audit,/Invalid reviewed evidence turn identity/);
+  assert.match(audit,/APPLIED_RECEIPT_MISSING/);
+  assert.match(audit,/EFFECT_UNCERTAIN_OR_IN_FLIGHT/);
+  assert.doesNotMatch(audit,/pub fn (?:execute|launch|grant|replay)_/);
+  assert.doesNotMatch(ui,/invoke\('lu_reviewed_app_ask',\s*\{[^}]*\b(?:path|executable|argv|permission)\s*:/s);
+});

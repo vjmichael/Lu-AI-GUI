@@ -3,3 +3,6 @@
 //! are the same SQLite implementations used by the installed native host.
 #[path = "../../../src-tauri/src/reviewed_app_recovery.rs"]
 mod reviewed_app_recovery;
+
+#[path = "../../../src-tauri/src/reviewed_app_audit.rs"]
+mod reviewed_app_audit;

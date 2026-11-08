@@ -569,3 +569,31 @@ ordinary cooperative Git/FFprobe descendants. True delegated cgroup
 custody and abnormal-host-crash cleanup are independent E1-P08C OPEN
 gates, not a mandatory sandbox on Lu Core. See
 docs/LU_E1_P08_CGROUP_V2_ESCAPE_DECISION_20261108.md.
+
+## E1-P09 — read-only reviewed application effect evidence (Nov 8, 2026)
+
+**New independent branch** `lu/e1-p09-reviewed-app-evidence-panel-20261108`
+stacked on repaired E1-P08 PR #130; E1-P08C kernel custody PR #133
+remains an independent acceptance gate. The existing **Tool activity**
+window now includes authenticated original reviewed Git/FFprobe turns,
+using the production host's already durable model/tool audit *and*
+the separate native worker effect SQLite journals. It shows bounded
+APPLIED (with receipt), UNCERTAIN, FAILED, EXECUTING and PREPARED counts
+without returning file paths, arbitrary model text, worker stdout,
+receipt bytes or allowing a tool replay. `MODEL_ANSWER_ONLY` is not
+OS success; any incomplete/uncertain effect wins over a model FinalAnswer.
+
+The native read-only aggregate refuses malformed host turn IDs, linked
+SQLite/WAL/SHM files and Windows reparse files, oversized journals and
+unrecognized effect states; a missing journal is explicitly missing,
+never created by a read. The history endpoint now verifies the
+original ANSF conversation with a **one-entry indexed window** instead
+of replaying every event in a potentially infinite chat.
+
+Dedicated exact-head Windows/Linux portable production-source tests,
+real SQLite EffectJournal state and privacy regressions, React contract
+tests, Windows Tauri build/tests, and frozen source verification are
+submitted. **Native/installed acceptance OPEN until real OS results are
+inspected.** This tool evidence display does not authorize any new
+app operation or claim process-tree cleanup. Details:
+`docs/LU_E1_P09_REVIEWED_APP_EVIDENCE_20261108.md`.
