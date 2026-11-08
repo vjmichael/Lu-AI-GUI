@@ -4,7 +4,8 @@ import { EditorState } from '@codemirror/state';
 import {
   newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
   captureBufferSpan,
-  resolveBufferSpan, formatBufferReference,
+  resolveBufferSpan, formatBufferReference, formatPersistentDraftReference,
+  draftRecoveryAssessment,
 } from '../web/buffer_identity.js';
 
 const base = 'a'.repeat(64);
@@ -188,4 +189,28 @@ test('late Save may rebase the original draft after typing, but not a reopened t
   assert.equal(wrongSource.status, 'replaced_buffer');
   const badHash = rebaseBufferAfterSave(typedAgain, opened, 'not-a-hash');
   assert.equal(badHash.status, 'replaced_buffer');
+});
+
+
+test('durable draft reference survives session identity reset without exposing contents', () => {
+  const record={
+    schemaVersion:1,projectId:'ide-'+'a'.repeat(32),relativePath:'src/hello.rs',
+    bufferId:'12345678-abcd-4321-aaaa-123456789abc',bufferRevision:19,
+    baseDiskRevision:'b'.repeat(64),draftSha256:'c'.repeat(64),
+    checkpointId:'d'.repeat(64),text:'top secret unsaved source',
+  };
+  const message=formatPersistentDraftReference(record);
+  assert.match(message,/^ide-draft:v1/);
+  assert.match(message,/lifetime=persistent-private-app-data/);
+  assert.match(message,/checkpoint=d{64}/);
+  assert.match(message,/baseDisk=b{64}/);
+  assert.doesNotMatch(message,/top secret unsaved source/);
+  assert.equal(draftRecoveryAssessment(record,record.projectId,record.relativePath,
+    record.baseDiskRevision),'same_saved_base');
+  assert.equal(draftRecoveryAssessment(record,record.projectId,record.relativePath,
+    'e'.repeat(64)),'disk_revision_changed');
+  assert.equal(draftRecoveryAssessment(record,'wrong',record.relativePath,
+    record.baseDiskRevision),'untrusted_draft_reference');
+  assert.throws(()=>formatPersistentDraftReference({...record,checkpointId:'bad'}),
+    /INVALID_PERSISTENT_DRAFT_REFERENCE/);
 });
