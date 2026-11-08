@@ -414,3 +414,159 @@
      }
      Ok(recovered)
  }
+
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use std::{fs,path::PathBuf,time::{SystemTime,UNIX_EPOCH}};
+    fn id(prefix:&str,n:u64)->String{format!("{prefix}{n:032x}")}
+    fn fixture()->(PathBuf,ChatStore,String,i64){
+        let root=std::env::temp_dir().join(format!(
+            "lu-ux-chat02-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        chats.append_user_with_turn_id(
+            &chat,&id("g-",1),"Original user request, with tool history"
+        ).unwrap();
+        let seq=chats.history_window(&chat,None,"older",1)
+            .unwrap().entries[0].seq;
+        (root,chats,chat,seq)
+    }
+    #[test]
+    fn immutable_original_and_append_only_display_edits_survive_restart(){
+        let (root,chats,chat,seq)=fixture();
+        let original=original(&chats,&chat,seq).unwrap();
+        let base=hash(&original.text);
+        let first=edit(&root,&chat,seq,0,&base,
+            "Human-edited request (display correction)",&chats).unwrap();
+        assert_eq!(first.current_version,1);
+        assert_eq!(first.editor,"HUMAN_DISPLAY_CORRECTION");
+        assert_eq!(first.original_text,original.text);
+        let second=edit(&root,&chat,seq,1,&first.current_sha256,
+            "Second human display correction",&chats).unwrap();
+        assert_eq!(second.current_version,2);
+        assert_eq!(second.versions.len(),2);
+        assert!(edit(&root,&chat,seq,0,&base,
+            "Stale overwriting editor",&chats).is_err());
+        // Corrected display MUST NOT change canonical ANSF original.
+        assert_eq!(original(&chats,&chat,seq).unwrap().text,
+            "Original user request, with tool history");
+        let db=open_read(&root).unwrap().unwrap();
+        assert!(db.execute(
+            "UPDATE lu_message_revisions SET corrected_text='forged'
+             WHERE chat_id=?1 AND seq=?2 AND version=1",
+            params![chat,seq]
+        ).is_err());
+        drop(db);drop(chats);
+        let restarted=ChatStore::open(&root).unwrap();
+        let saved=read(&root,&chat,&[seq],&restarted).unwrap();
+        assert_eq!(saved.entries.len(),1);
+        assert_eq!(saved.entries[0].current_version,2);
+        assert_eq!(saved.entries[0].original_sha256,base);
+        assert_eq!(saved.entries[0].original_text,original.text);
+        drop(restarted);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn linked_reply_pins_parent_version_and_original_authenticated_turn(){
+        let (root,chats,chat,parent)=fixture();
+        let v1=edit(&root,&chat,parent,0,
+            &hash("Original user request, with tool history"),
+            "Display correction before reply",&chats).unwrap();
+        let turn=id("g-",2);
+        prepare_reply(&root,&chat,parent,1,&v1.current_sha256,
+            &turn,"New human message in reply to corrected display",&chats).unwrap();
+        assert!(reconcile_reply(&root,&chat,&turn,&chats).unwrap().is_none());
+        chats.append_user_with_turn_id(&chat,&turn,
+            "New human message in reply to corrected display").unwrap();
+        let linked=reconcile_reply(&root,&chat,&turn,&chats)
+            .unwrap().unwrap();
+        assert_eq!(linked.parent_version,1);
+        assert_eq!(linked.parent_seq,parent);
+        assert!(linked.reply_seq>parent);
+        assert_eq!(reconcile_reply(&root,&chat,&turn,&chats)
+            .unwrap().unwrap().reply_seq,linked.reply_seq);
+        // A later display edit never moves the reply's pinned citation.
+        let _v2=edit(&root,&chat,parent,1,&v1.current_sha256,
+            "New display correction after reply",&chats).unwrap();
+        let page=read(&root,&chat,&[linked.reply_seq],&chats).unwrap();
+        let pinned=page.entries[0].reply_to.as_ref().unwrap();
+        assert_eq!(pinned.pinned_parent_version,1);
+        assert_eq!(pinned.pinned_parent_sha256,v1.current_sha256);
+        assert_eq!(pinned.pinned_parent_excerpt,
+            "Display correction before reply");
+        let db=open_read(&root).unwrap().unwrap();
+        assert!(db.execute(
+            "UPDATE lu_message_reply_intents SET parent_seq=?1
+             WHERE chat_id=?2 AND reply_turn_id=?3",
+            params![999_i64,chat,turn]
+        ).is_err());
+        drop(db);drop(chats);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn crash_between_prepare_and_original_message_reconciles_without_reposting(){
+        let (root,chats,chat,parent)=fixture();
+        let target=hash("Original user request, with tool history");
+        let turn=id("g-",3);
+        prepare_reply(&root,&chat,parent,0,&target,&turn,
+            "A crash-recovered human reply",&chats).unwrap();
+        assert_eq!(reconcile_pending(&root,&chat,&chats).unwrap(),0);
+        assert_eq!(read(&root,&chat,&[parent],&chats).unwrap().pending_reply_links,1);
+        // ANSF is durable, yet the link was not finalized before restart.
+        chats.append_user_with_turn_id(&chat,&turn,
+            "A crash-recovered human reply").unwrap();
+        drop(chats);
+        let reopened=ChatStore::open(&root).unwrap();
+        assert_eq!(reconcile_pending(&root,&chat,&reopened).unwrap(),1);
+        assert_eq!(reconcile_pending(&root,&chat,&reopened).unwrap(),0);
+        let (seq,original_text)=reopened.original_user_turn_visible_seq(
+            &chat,&turn).unwrap().unwrap();
+        assert_eq!(original_text,"A crash-recovered human reply");
+        assert_eq!(read(&root,&chat,&[seq],&reopened).unwrap().entries[0]
+            .reply_to.as_ref().unwrap().parent_seq,parent);
+        drop(reopened);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn wrong_chat_unknown_message_stale_parent_and_wrong_turn_are_refused(){
+        let (root,chats,chat,parent)=fixture();
+        let other=chats.create_chat().unwrap().chat_id;
+        let old=hash("Original user request, with tool history");
+        assert!(edit(&root,&other,parent,0,&old,
+            "forged cross-chat edit",&chats).is_err());
+        assert!(edit(&root,&chat,parent+999,0,&old,
+            "unknown sequence edit",&chats).is_err());
+        let current=edit(&root,&chat,parent,0,&old,
+            "First correction",&chats).unwrap();
+        assert!(prepare_reply(&root,&chat,parent,0,&old,&id("g-",4),
+            "Stale pinned target",&chats).is_err());
+        assert!(prepare_reply(&root,&other,parent,1,&current.current_sha256,
+            &id("g-",4),"Cross-chat target",&chats).is_err());
+        prepare_reply(&root,&chat,parent,1,&current.current_sha256,
+            &id("g-",5),"Expected text",&chats).unwrap();
+        chats.append_user_with_turn_id(&chat,&id("g-",5),
+            "Different text that was actually committed").unwrap();
+        assert!(reconcile_reply(&root,&chat,&id("g-",5),&chats).is_err());
+        drop(chats);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn invalid_version_text_and_missing_db_never_become_a_model_action(){
+        let (root,chats,chat,seq)=fixture();
+        assert!(!root.join("lu-message-interactions.sqlite").exists());
+        let empty=read(&root,&chat,&[seq],&chats).unwrap();
+        assert_eq!(empty.entries[0].current_version,0);
+        assert!(!root.join("lu-message-interactions.sqlite").exists());
+        assert!(edit(&root,&chat,seq,0,&hash(
+            "Original user request, with tool history"),"", &chats).is_err());
+        assert!(edit(&root,&chat,seq,0,&hash(
+            "Original user request, with tool history"),
+            &"x".repeat(16*1024+1), &chats).is_err());
+        assert!(prepare_reply(&root,&chat,seq,99,&hash(
+            "Original user request, with tool history"),
+            &id("g-",9),"Invalid version",&chats).is_err());
+        drop(chats);fs::remove_dir_all(root).unwrap();
+    }
+}
