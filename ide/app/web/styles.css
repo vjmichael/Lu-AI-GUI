@@ -340,3 +340,20 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .diskCompareColumns pre{font:11px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow:auto;background:#071729;border:1px solid #35526b;border-radius:5px;margin:4px 0;padding:8px}
 .diskCompareColumns small{color:#f4c589}
 @media(max-width:900px){.diskCompareColumns{grid-template-columns:minmax(0,1fr)}}
+
+/* B11: explicit conflict choices. All source samples render as escaped React
+ * text, never as HTML or an executable patch. Bound available panel space. */
+.mergeReviewPanel{flex:none;display:flex;flex-direction:column;gap:10px;padding:12px;background:#13283b;border-top:2px solid #6a94ac;border-bottom:1px solid #42647a;max-height:390px;overflow:auto;color:#dfebf5;font-size:12px}
+.mergeReviewPanel p{margin:0;line-height:1.55;color:#bcd3e3}
+.mergeReviewPanel code{color:#e4c792}
+.mergeReviewPanel .primaryBtn{align-self:flex-start}
+.mergeConflict{padding:9px;min-width:0;border:1px solid #50748b;border-radius:6px}
+.mergeConflict legend{color:#e8caa0;padding:0 5px;font-weight:600}
+.mergeConflictChoices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.mergeConflictChoice{min-width:0;border:1px solid #4c647b;border-radius:5px;padding:8px;display:flex;flex-direction:column;gap:7px;background:#091e2f;cursor:pointer}
+.mergeConflictChoice:has(input:checked){border-color:#aad8f9;background:#193f57}
+.mergeConflictChoice>span{display:flex;align-items:center;gap:5px;font-weight:600}
+.mergeConflictChoice input{accent-color:#89c6ed}
+.mergeConflictChoice pre{min-height:45px;max-height:110px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:7px;background:#071625;color:#e0f1ff;font:11px/1.5 ui-monospace,Consolas,monospace}
+.mergeConflictChoice small{color:#ffd6a1}
+@media(max-width:1000px){.mergeConflictChoices{grid-template-columns:minmax(0,1fr)}}
