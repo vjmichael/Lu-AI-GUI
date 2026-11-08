@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','DraftBufferReference')][string]$Scenario='Shell',
   [string]$FixtureRoot=''
 )
 Set-StrictMode -Version Latest
@@ -934,6 +934,65 @@ try {
       $stillOpen=Find-Control 'Source editor text' ''
       if (!$stillOpen.Current.IsKeyboardFocusable) { Deny 'conflicted_draft_was_discarded' }
       Write-Host 'WO8_NATIVE_EXTERNAL_SOURCE_CONFLICT_DENIED_AND_UNSAVED_DRAFT_PRESERVED=PASS'
+    }
+    if ($Scenario -eq 'DraftBufferReference') {
+      $source=Join-Path $fixed 'main.rs'
+      $originalSha=(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+      $editor=Find-Control 'Source editor text' '' 25
+      if (!$editor.Current.IsKeyboardFocusable) { Deny 'draft_editor_not_keyboard_focusable' }
+      $editor.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}')
+      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}// P05_B2_SESSION_ONLY')
+      Start-Sleep -Milliseconds 800
+      if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $originalSha) {
+        Deny 'draft_reference_implicit_disk_save'
+      }
+      [System.Windows.Forms.Clipboard]::Clear()
+      Click 'Copy draft reference'
+      $first=''
+      $deadline=(Get-Date).AddSeconds(16)
+      while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 300
+        if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+          $first=[System.Windows.Forms.Clipboard]::GetText()
+          if ($first.StartsWith('ide-buffer:v1')) { break }
+        }
+      }
+      $idMatch=[regex]::Match($first,'(?:^| )buffer=([a-fA-F0-9-]{36})')
+      $revMatch=[regex]::Match($first,'(?:^| )revision=([1-9][0-9]*)')
+      if (!$first.StartsWith('ide-buffer:v1') -or !$idMatch.Success -or !$revMatch.Success -or
+          $first -notmatch ('baseDisk='+$originalSha) -or
+          $first -notmatch 'draftSha256=[a-f0-9]{64}' -or
+          $first -notmatch 'lifetime=session-only' -or
+          $first.Contains('P05_B2_SESSION_ONLY') -or $first.Contains('fn main')) {
+        Deny 'installed_draft_reference_clipboard_not_verified'
+      }
+      $editor=Find-Control 'Source editor text' '' 20
+      $editor.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^z')
+      Start-Sleep -Milliseconds 500
+      [System.Windows.Forms.Clipboard]::Clear()
+      Click 'Copy draft reference'
+      $second=''
+      $deadline=(Get-Date).AddSeconds(16)
+      while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 300
+        if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+          $second=[System.Windows.Forms.Clipboard]::GetText()
+          if ($second.StartsWith('ide-buffer:v1')) { break }
+        }
+      }
+      $secondId=[regex]::Match($second,'(?:^| )buffer=([a-fA-F0-9-]{36})')
+      $secondRev=[regex]::Match($second,'(?:^| )revision=([1-9][0-9]*)')
+      if (!$second.StartsWith('ide-buffer:v1') -or !$secondId.Success -or !$secondRev.Success -or
+          $secondId.Groups[1].Value -cne $idMatch.Groups[1].Value -or
+          [int]$secondRev.Groups[1].Value -le [int]$revMatch.Groups[1].Value) {
+        Deny 'draft_undo_did_not_advance_same_session_revision'
+      }
+      if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $originalSha) {
+        Deny 'draft_undo_implicitly_saved_source'
+      }
+      Write-Host 'P05_B2_INSTALLED_DRAFT_REFERENCE_COPY_UNDO_NO_IMPLICIT_SAVE=PASS'
     }
     if ($Scenario -eq 'EditorPersistence') {
       $source=Join-Path $fixed 'main.rs'
