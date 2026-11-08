@@ -317,3 +317,8 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .treeLoadMore{color:#aed5f3;border-top:1px solid #3a5974;background:#142a43;justify-content:center;font-size:11px}
 .editorTabs .editorTab{max-width:185px}
 .editorTabs .editorTabSelect{max-width:158px}
+
+.sourceGoToFile{display:flex;gap:6px;align-items:stretch;padding:8px 10px;border-bottom:1px solid #30445b}
+.sourceGoToFile input{flex:1;min-width:0;color:#e4f0fa;background:#07182b;border:1px solid #48667e;padding:7px;border-radius:4px;font:11px Consolas,ui-monospace,monospace}
+.sourceGoToFile button{flex:none;border:1px solid #4d7595;border-radius:4px;background:#18344c;color:#cee8f8;font-size:11px;cursor:pointer}
+.sourceGoToFile button:disabled{opacity:.4;cursor:default}
