@@ -88,6 +88,8 @@ test('frontend selectable build IDs never include npm, pytest, CMake or shell',(
   assert.ok(schema.definitions.ProjectRunProfile.properties.profileId.enum.includes('rust_build'));
   assert.ok(schema.definitions.ProjectRunProfile.properties.existingNativeRecipeId.anyOf[0]
     .enum.includes('rust_build'));
+  assert.ok(schema.operations['job.prepare'].request.properties.recipeId.enum
+    .includes('rust_build'));
   assert.match(ui,/invoke\('ide_build_start',/);
   const portion=ui.slice(ui.indexOf('function chooseProjectRunProfile'),
     ui.indexOf('async function refreshProtectedBuildStatus'));
