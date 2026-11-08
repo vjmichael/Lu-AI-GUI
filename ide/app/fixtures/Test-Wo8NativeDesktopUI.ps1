@@ -342,6 +342,11 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
   $ownedRoots=0
   $titleMatches=0
   $buttonMatches=0
+  $ownedSubtreeButtons=0
+  $matchingCaption=0
+  $captionWithForeignPid=0
+  $matchingCaptionDisabled=0
+  $matchedNameNonButtons=0
   while ((Get-Date) -lt $deadline) {
     $roots=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,
       [System.Windows.Automation.Condition]::TrueCondition)
@@ -359,17 +364,28 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
           [System.Windows.Automation.Condition]::TrueCondition)
         foreach($child in $desc) {
           try {
-            if ($child.Current.ProcessId -ne $proc.Id -or
-                $child.Current.ControlType -ne [System.Windows.Automation.ControlType]::Button -or
-                $child.Current.Name -ne $approvalCaption -or
-                !$child.Current.IsEnabled) { continue }
+            # Every candidate is a real OS UIA descendant of an exact
+            # app-PID-owned top-level Window/Pane with the approved title.
+            # Hosted UIA providers can report a different/zero descendant
+            # PID; the independently scoped ancestor establishes ownership.
+            # Never enumerate arbitrary desktop buttons for approval.
+            $isButton=$child.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button
+            $name=[string]$child.Current.Name
+            if($isButton){$ownedSubtreeButtons++}
+            if($name -ne $approvalCaption){continue}
+            if(!$isButton){$matchedNameNonButtons++;continue}
+            $matchingCaption++
+            if($child.Current.ProcessId -ne $proc.Id){$captionWithForeignPid++}
+            if(!$child.Current.IsEnabled){$matchingCaptionDisabled++;continue}
             $buttonMatches++
-            $child.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+            # If InvokePattern is not supported, reject this approval;
+            # do not substitute app IPC, synthetic web clicks, or SendKeys.
+            $pattern=$child.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+            $pattern.Invoke()
             Write-Host 'P04_NATIVE_ONE_USE_DIALOG=real_owned_os_button_invoked'
             return
           } catch {
-            # An unusable native button is denial, not a reason to fall back
-            # to synthetic JavaScript/host commands or a foreign control.
+            # Unavailable native patterns remain deny, never approve.
           }
         }
       } catch {}
@@ -379,7 +395,12 @@ function Confirm-NativeOneUseDialog([string]$titleFragment,[string]$approvalCapt
   # Bounded OS-only diagnostics: counts, never foreign window titles, user
   # paths, source contents, window text, or unapproved control activation.
   Write-Host ('P04_NATIVE_CONSENT_OBSERVATION=owned_roots_'+$ownedRoots+
-    ';matched_titles_'+$titleMatches+';matched_buttons_'+$buttonMatches)
+    ';matched_titles_'+$titleMatches+';subtree_buttons_'+$ownedSubtreeButtons+
+    ';matching_caption_'+$matchingCaption+
+    ';matching_caption_foreign_pid_'+$captionWithForeignPid+
+    ';caption_disabled_'+$matchingCaptionDisabled+
+    ';caption_non_button_'+$matchedNameNonButtons+
+    ';matched_buttons_'+$buttonMatches)
   Deny 'real_native_consent_dialog_not_observed'
 }
 try {
