@@ -239,6 +239,99 @@ pub mod unix_owned {
     // child with CommandExt::process_group(0); never accept a model PID here.
     unsafe extern "C" {fn kill(pid:i32, signal:i32)->i32;}
     const SIGKILL:i32=9;
+    /// E1-P08 Linux-only: the private process group stays anchored by a small
+    /// independently running first-party guardian, not the disposable
+    /// Git/FFprobe leader. After an abnormal Lu exit its stdin pipe reaches
+    /// EOF and it kills its OWN process group. No stale saved PID is signalled.
+    #[cfg(target_os="linux")]
+    pub struct LinuxOwnedGroupGuardian{
+        child:Child,
+        stdin:Option<std::process::ChildStdin>,
+        stopped:bool,
+    }
+    #[cfg(target_os="linux")]
+    impl LinuxOwnedGroupGuardian{
+        /// Release builds require the sibling first-party installed helper.
+        /// Debug builds can run old independent worker tests without bundling
+        /// the new helper. The explicit debug-only override is for CI, not a
+        /// model-visible executable chooser or production configuration.
+        pub fn spawn_if_available()->io::Result<Option<Self>>{
+            use std::{os::unix::{fs::PermissionsExt,process::CommandExt},io::Read};
+            let current=std::env::current_exe()?;
+            let installed=current.parent()
+                .ok_or_else(||io::Error::other("Lu executable parent missing"))?
+                .join("lu-linux-group-guard");
+            let candidate=if cfg!(debug_assertions){
+                std::env::var_os("LU_E1_P08_TEST_GUARD_BINARY")
+                    .map(std::path::PathBuf::from).unwrap_or(installed)
+            }else{installed};
+            let meta=match std::fs::symlink_metadata(&candidate){
+                Ok(meta)=>meta,
+                Err(e) if e.kind()==io::ErrorKind::NotFound&&cfg!(debug_assertions)=>
+                    return Ok(None),
+                Err(e)=>return Err(e),
+            };
+            if !meta.is_file()||meta.file_type().is_symlink()
+                ||meta.permissions().mode()&0o111==0
+                ||meta.permissions().mode()&0o022!=0{
+                return Err(io::Error::other("untrusted Lu group guardian file"))
+            }
+            let mut command=std::process::Command::new(&candidate);
+            command.process_group(0).env_clear()
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null());
+            let mut child=command.spawn()?;
+            let mut banner=[0u8;6];
+            let ready=child.stdout.take()
+                .ok_or_else(||io::Error::other("group guardian handshake pipe missing"))?
+                .read_exact(&mut banner);
+            if ready.is_err()||&banner!=b"READY\n"{
+                let _=child.kill();let _=child.wait();
+                return Err(io::Error::other("group guardian failed private-group handshake"))
+            }
+            let stdin=child.stdin.take()
+                .ok_or_else(||io::Error::other("group guardian lifetime pipe missing"))?;
+            if child.try_wait()?.is_some(){
+                return Err(io::Error::other("group guardian died before worker admission"))
+            }
+            Ok(Some(Self{child,stdin:Some(stdin),stopped:false}))
+        }
+        pub fn group_id(&self)->i32{self.child.id() as i32}
+        /// A successful handshake proves private PGID ownership; SIGKILL
+        /// of the guardian proves group-wide signalling, not that separately
+        /// adopted zombie descendants have been wait()-reaped by Lu.
+        pub fn stop_and_verify_signal(&mut self)->io::Result<()>{
+            use std::{os::unix::process::ExitStatusExt,time::{Duration,Instant}};
+            if self.stopped{return Ok(())}
+            if self.child.try_wait()?.is_some(){
+                return Err(io::Error::other("group guardian died before closure"))
+            }
+            drop(self.stdin.take()); // EOF triggers guardian kill(0,SIGKILL)
+            let deadline=Instant::now()+Duration::from_secs(3);
+            loop{
+                if let Some(status)=self.child.try_wait()?{
+                    self.stopped=true;
+                    return if status.signal()==Some(SIGKILL){Ok(())}
+                    else{Err(io::Error::other("group guardian did not die by group SIGKILL"))};
+                }
+                if Instant::now()>=deadline{
+                    // Kill only the still-owned guardian, never a guessed
+                    // PGID or a PID restored from an old SQLite record.
+                    let _=self.child.kill();let _=self.child.wait();
+                    self.stopped=true;
+                    return Err(io::Error::other("group guardian did not acknowledge EOF"))
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+    #[cfg(target_os="linux")]
+    impl Drop for LinuxOwnedGroupGuardian{
+        fn drop(&mut self){
+            if !self.stopped{let _=self.stop_and_verify_signal();}
+        }
+    }
     #[cfg(target_os="linux")]
     unsafe extern "C"{
         fn renameat2(oldfd:i32,old:*const std::ffi::c_char,
