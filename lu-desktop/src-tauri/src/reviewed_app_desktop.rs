@@ -447,7 +447,7 @@ mod tests{
         let root=std::env::temp_dir().join(format!(
             "lu-e1-p07-chat-restart-{}-{}",
             std::process::id(),
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
+            SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                 .unwrap().as_nanos()
         ));
         let turn=format!("g-{}","a".repeat(32));
