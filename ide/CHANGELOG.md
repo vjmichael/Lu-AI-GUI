@@ -391,3 +391,5 @@ See the engineering handoff and linked acceptance documents for exact evidence. 
 - **Linux installed GTK (Nov 8):** Real X11 file chooser exposed no button actions after successful unsigned `.deb` and native dpkg rollback. Added narrowly scoped X11 keyboard confirmation only for an AT-SPI-visible and title-identified chooser; genuine project registration remains mandatory. OS retest pending.
 
 - **Installed GTK follow-up (Nov 8):** After X11 active-window lookup failed on real Ubuntu26 CI, added OS xdotool click limited to the AT-SPI-visible native file chooser geometry, followed by exact Tauri GUI registration proof; installed acceptance still pending.
+
+- **P04 GTK diagnostic continuation (Nov 8):** Added isolated native Ubuntu26 OS focus-window geometry acceptance test after actual chooser AT-SPI clicks failed to close; native key only when X11 keyboard focus lies inside visible chooser. Exact installed editor outcome remains open; PR97 security jobs unchanged.

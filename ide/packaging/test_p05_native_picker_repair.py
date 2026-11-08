@@ -81,6 +81,22 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn("Deny 'wo9_native_commit_not_observed'",source)
         self.assertIn("git -C $fixed diff-tree --no-commit-id",source)
 
+    def test_x11_focus_window_keyboard_only_within_visible_native_gtk_chooser(self):
+        native=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
+        focus=native.split("def _x11_focused_chooser_keyboard(attempt):",1)[1].split(
+            "def _native_picker_confirm(",1)[0]
+        for key in ('"getwindowfocus"', '"getwindowgeometry"',
+                    'pyatspi.STATE_SHOWING', 'pyatspi.STATE_VISIBLE',
+                    'region.width < 320', 'region.height < 180',
+                    'width > region.width', 'height > region.height',
+                    'region.x + 3 < mid_x', 'region.y + 3 < mid_y',
+                    'key("alt+o" if attempt % 2 == 0 else "Return")'):
+            self.assertIn(key,focus)
+        self.assertIn("if _x11_focused_chooser_keyboard(attempt):",native)
+        self.assertIn("if not _registered_native_project_is_exposed():",native)
+        self.assertNotIn("window.__TAURI_INTERNALS__",focus)
+        self.assertNotIn("invoke_tauri",focus)
+
     def test_gtk_spatial_acceptance_only_inside_native_visible_chooser(self):
         src=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
         section=src.split("def _atspi_bounded_chooser_mouse(attempt):",1)[1].split(

@@ -241,6 +241,66 @@ def _atspi_bounded_chooser_mouse(attempt):
     return False
 
 
+def _x11_focused_chooser_keyboard(attempt):
+    # EWMH getactivewindow is absent on the native Xvfb/Openbox CI desktop,
+    # despite a visible OS file chooser. Query the actual X11 keyboard-focus
+    # window instead, and require its native position/extent to be INSIDE an
+    # independently visible AT-SPI file chooser (never the Tauri main window).
+    try:
+        focused = subprocess.check_output(
+            ["xdotool", "getwindowfocus"], text=True, timeout=5).strip()
+        if not focused.isdigit() or int(focused) <= 0:
+            return False
+        raw = subprocess.check_output(
+            ["xdotool", "getwindowgeometry", "--shell", focused],
+            text=True, timeout=5)
+        values = {}
+        for line in raw.splitlines():
+            if "=" not in line:
+                continue
+            key_name, value = line.split("=", 1)
+            if key_name in ("X", "Y", "WIDTH", "HEIGHT"):
+                values[key_name] = int(value)
+        if set(values) != {"X", "Y", "WIDTH", "HEIGHT"}:
+            return False
+        x, y, width, height = (values[name] for name in
+                               ("X", "Y", "WIDTH", "HEIGHT"))
+        if width < 1 or height < 1:
+            return False
+    except (ValueError, OSError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired):
+        print("P04_GTK_NATIVE_FOCUS=unavailable", flush=True)
+        return False
+    for node in elements():
+        try:
+            if "file chooser" not in (node.getRoleName() or "").casefold():
+                continue
+            states = node.getState()
+            if not (states.contains(pyatspi.STATE_SHOWING)
+                    and states.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            region = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            if (region.width < 320 or region.height < 180
+                    or width > region.width or height > region.height):
+                continue
+            mid_x, mid_y = x + width // 2, y + height // 2
+            if not (region.x + 3 < mid_x < region.x + region.width - 3
+                    and region.y + 3 < mid_y < region.y + region.height - 3):
+                continue
+            # This physical key is sent only when the OS keyboard-focus window
+            # is contained in the real chooser rectangle. A keypress isn't
+            # evidence that native project registration completed.
+            key("alt+o" if attempt % 2 == 0 else "Return")
+            print("P04_GTK_NATIVE_FOCUS=real_x11_focus_within_visible_chooser;"
+                  "attempt=" + str(attempt), flush=True)
+            return True
+        except (ValueError, OSError, subprocess.CalledProcessError,
+                subprocess.TimeoutExpired):
+            continue
+    print("P04_GTK_NATIVE_FOCUS=focus_outside_visible_chooser", flush=True)
+    return False
+
+
 def _native_picker_confirm(attempt=0):
     # The previous real Ubuntu 26.04 run clicked an authentic AT-SPI
     # chooser action THREE times and the dialog never closed. A generic
@@ -290,6 +350,8 @@ def _native_picker_confirm(attempt=0):
     # A separately witnessed native GTK X11 dialog may have zero exposed
     # AT-SPI action buttons. Try bounded real OS keyboard acceptance instead.
     if _x11_dialog_activation(attempt):
+        return
+    if _x11_focused_chooser_keyboard(attempt):
         return
     if _atspi_bounded_chooser_mouse(attempt):
         return
