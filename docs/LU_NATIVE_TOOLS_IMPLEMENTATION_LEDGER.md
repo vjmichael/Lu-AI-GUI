@@ -1,3 +1,7 @@
+## M3 baseline correction — original real GGUF answers scored with literal placeholder bug (2026-11-07)
+
+Two real-model suites produced 84 responses each, but the original scorer falsely marked every format-wrapped correct answer wrong (0/28 each arm). A conservative **post-hoc, non-preregistered** read of one immutable artifact yielded 2/28 no memory, 6/28 recent chat and 18/28 recent+ANSF exact-source; this is NOT an accepted memory win. Corrected benchmark prompt/scorer and native Python regression tests submitted for future prospective reruns. See [exact baseline diagnostic](LU_ANSF_BENCHMARK_DIAGNOSTIC_20261107.md).
+
 ## M3 P1 auto asset reuse + verified applied effect proof — 2026-11-07 (SOURCE; CI PENDING)
 
 New source-authorized project/name/version asset reuse resolver checks prior local SHA-256 and falls back to valid historical copy; independent history UI automatically loads availability during task resumption. Core ContinuityStore links existing APPLIED-only EffectJournal receipts immutably to confirmed task checkpoints; restart and UNCERTAIN rejection tests. No automatic downloads, re-execution or new authorizations. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).

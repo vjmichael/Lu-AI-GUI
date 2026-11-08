@@ -27,6 +27,20 @@ class BenchContract(unittest.TestCase):
         self.assertIn("NOVA-3",recent)
         self.assertNotIn("Silver Finch",recent)
         self.assertNotIn("Blue Harbor",recent)
+    def test_answer_placeholder_diagnostics_are_scored_symmetrically(self):
+        for output in ("<value> Linux</value>","<value> Linux",
+                       "<short exact value> Linux;","ANSWER: Linux"):
+            self.assertEqual(m.norm(output),m.norm("Linux"))
+        self.assertEqual(m.norm("<unknown>"),m.norm("UNKNOWN"))
+        for output in ("<value>","<short exact value>",
+                       "<value> 12 milliseconds; UNKNOWN.",
+                       "ANSWER: 7; answer: 31"):
+            self.assertNotEqual(m.norm(output),m.norm("7"))
+            self.assertNotEqual(m.norm(output),m.norm("12"))
+        self.assertNotEqual(m.norm("<value> 31"),m.norm("21"))
+    def test_prompt_never_teaches_literal_placeholder(self):
+        self.assertNotIn("<value>",m.SYSTEM)
+        self.assertNotIn("<short exact value>",m.SYSTEM)
     def test_answer_scoring_no_generous_inference(self):
         self.assertEqual(m.norm("ANSWER: Blue Harbor"),m.norm("Blue Harbor"))
         self.assertNotEqual(m.norm("ANSWER: 9"),m.norm("7"))

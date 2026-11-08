@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b21923ff8661b54f300d80078a1648ed7c7f0be1",
-  "trackedFileCount": 579,
+  "sourceCommitBeforeLock": "46b855e37926565ecaf3b5a8b3c78763ff5a465c",
+  "trackedFileCount": 580,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -129,11 +129,11 @@
     },
     {
       "path": "benchmarks/memory/test_three_arm_real_model.py",
-      "blob": "dd50a0b9ca71e1366114ac30ab12a993ccb52b0d"
+      "blob": "a0d15bb93600258399d2f8dabb8417db5503f78b"
     },
     {
       "path": "benchmarks/memory/three_arm_real_model.py",
-      "blob": "a7be171728e2ed6b79a5987b92eea09eaf0896b5"
+      "blob": "b5d6b326a64228c97c89a1498301711b4627f351"
     },
     {
       "path": "docs/CANONICAL_REPOSITORY_AND_R16_HANDOFF.md",
@@ -162,6 +162,10 @@
     {
       "path": "docs/LU_ALPHA_01_ACCEPTED_BASELINE_20261103.md",
       "blob": "0c3165d92786b0a8a1c24f885d30eac6a997aa5d"
+    },
+    {
+      "path": "docs/LU_ANSF_BENCHMARK_DIAGNOSTIC_20261107.md",
+      "blob": "c27d3e090a08c7f95fbcfaa5f102434c8c1b21a7"
     },
     {
       "path": "docs/LU_ANSF_DIRECT_IDS_EXTERNAL_ARTIFACTS_20261107.md",
@@ -233,7 +237,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "554350b8f6d91f85a15ba6e3f91be81688b432e3"
+      "blob": "b30176da46d0bce9bffd62b94ecc6acf684e875c"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
