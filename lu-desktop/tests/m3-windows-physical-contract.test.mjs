@@ -14,6 +14,10 @@ test('real installed app requires independent hashes and native UIA process iden
     assert.ok(smoke.includes(marker),marker);
   }
   assert.doesNotMatch(smoke,/acceptance='PASS'/);
+  assert.match(smoke,/\$report\.nativeWorkerReaped -eq 'PASS_OS_REAP'/);
+  assert.match(smoke,/\$report\.historyLibraryUIA -eq 'BUTTON_OBSERVED_ONLY'/);
+  assert.match(smoke,/\$scenariosReady/);
+  assert.match(smoke,/INCOMPLETE_NOT_ACCEPTED/);
   assert.doesNotMatch(smoke,/Invoke-WebRequest|DownloadFile|curl.exe/i);
 });
 test('NSIS actual install and uninstall cannot pass by artifact hash alone',()=>{

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0ab25b5204c9f750d2539045cf269ccd42ad9779",
+  "sourceCommitBeforeLock": "78f432966f802c1b46b38387c412433c00395ced",
   "trackedFileCount": 590,
   "files": [
     {
@@ -813,7 +813,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-windows-physical-contract.test.mjs",
-      "blob": "e113fc41df95cdcde9416befac9246d4eb653de9"
+      "blob": "290ec628912525592efac46698c3bf6795035d29"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
@@ -1017,7 +1017,7 @@
     },
     {
       "path": "scripts/m3-windows-installed-acceptance.ps1",
-      "blob": "6eaed633e15919b210a8421800a4149216217393"
+      "blob": "ec13233db9da24c2dcce759b0c602825d3fb104b"
     },
     {
       "path": "scripts/m3-windows-nsis-cycle.ps1",

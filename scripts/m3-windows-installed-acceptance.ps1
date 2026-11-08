@@ -174,7 +174,26 @@ try {
   }
   Close-Lu $child
   $report.appClosedGracefully='PASS'
-  $report.acceptance='EVIDENCE_READY_FOR_INDEPENDENT_REVIEW_NOT_AUTO_APPROVED'
+  # A launched UIA window alone is NOT installed M3 acceptance. Require the
+  # true OS-observed native child, a verified reap, and each explicitly
+  # witnessed interactive scenario. Even then, only independent review
+  # can approve the release.
+  $machineReady=($report.installedNativeWindow -eq 'PASS' -and
+    $report.windowsUIAutomationIdentity -eq 'PASS' -and
+    $report.historyLibraryUIA -eq 'BUTTON_OBSERVED_ONLY' -and
+    $report.genuineEngineProcess -eq 'OS_IMAGE_PATH_AND_SHA256_VERIFIED' -and
+    $report.nativeWorkerReaped -eq 'PASS_OS_REAP' -and
+    $report.appClosedGracefully -eq 'PASS')
+  $scenarioFields=@('hotScrollTwoThousandTurns','streamingWhilePaging',
+    'semanticParaphraseRecall','modelTurnAndCancellation',
+    'restartHistoryAndCCM','sourceAndEffectsAuthority')
+  $scenariosReady=[bool]$ExerciseManualScenarios
+  foreach($field in $scenarioFields){
+    if($report[$field] -ne 'OPERATOR_REPORTED_PASS'){$scenariosReady=$false}
+  }
+  $report.acceptance=if($machineReady -and $scenariosReady){
+    'EVIDENCE_READY_FOR_INDEPENDENT_REVIEW_NOT_AUTO_APPROVED'
+  }else{'INCOMPLETE_NOT_ACCEPTED'}
 }catch{
   $report.errors=@($report.errors)+@($_.Exception.Message)
   $report.acceptance='NOT_ACCEPTED'
@@ -185,4 +204,4 @@ try {
   Write-Output ('Evidence file: '+(Join-Path $EvidenceDir 'm3-windows-installed-evidence.json'))
   Write-Output 'Manual answers are explicitly USER-REPORTED, never automated CI PASS.'
 }
-if($report.acceptance -eq 'NOT_ACCEPTED'){exit 2}
+if($report.acceptance -ne 'EVIDENCE_READY_FOR_INDEPENDENT_REVIEW_NOT_AUTO_APPROVED'){exit 2}
