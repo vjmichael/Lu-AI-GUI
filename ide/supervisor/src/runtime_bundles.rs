@@ -41,10 +41,12 @@ impl RuntimeProfile {
             (Self::NodeTests, false) => &["bin/node", "LICENSES/node.txt"],
             (Self::CmakeCTest, true) => &["bin/cmake.exe", "bin/ctest.exe",
                 "bin/ninja.exe", "bin/clang.exe", "bin/clang++.exe",
-                "LICENSES/cmake.txt", "LICENSES/ninja.txt", "LICENSES/llvm.txt"],
+                "LICENSES/cmake.txt", "LICENSES/ninja.txt", "LICENSES/llvm.txt",
+                "drivers/dev03-cmake.cmake"],
             (Self::CmakeCTest, false) => &["bin/cmake", "bin/ctest", "bin/ninja",
                 "bin/clang", "bin/clang++",
-                "LICENSES/cmake.txt", "LICENSES/ninja.txt", "LICENSES/llvm.txt"],
+                "LICENSES/cmake.txt", "LICENSES/ninja.txt", "LICENSES/llvm.txt",
+                "drivers/dev03-cmake.cmake"],
         }
     }
 }
