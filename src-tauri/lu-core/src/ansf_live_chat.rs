@@ -485,6 +485,38 @@ impl AnsfStore{
         for row in rows{result.push(decode(row?)?)}
         Ok(result)
     }
+    /// Host restart: locate *only* the active queued reviewed-app display
+    /// placeholders without loading the whole conversation into memory.
+    /// This is a read-only navigation index, never a new authority grant.
+    pub fn pending_reviewed_queue_turns(
+        &self,session_id:&str,exact_host_marker:&str,limit:usize
+    )->Result<Vec<String>,AnsfError>{
+        if !valid_session(session_id)||exact_host_marker.is_empty()
+            ||exact_host_marker.len()>512||limit==0||limit>128{
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let mut statement=conn.prepare(
+            "SELECT d.generation_id FROM ansf_visible_chat d
+             JOIN ansf_live_chat_events e ON e.seq=d.latest_event_seq
+             WHERE d.session_id=?1 AND d.role='assistant'
+               AND d.status='interrupted' AND e.kind='assistant_progress'
+               AND e.text=?2 AND d.generation_id IS NOT NULL
+             ORDER BY d.first_seq ASC LIMIT ?3"
+        )?;
+        let rows=statement.query_map(
+            params![session_id,exact_host_marker,(limit+1) as i64],
+            |row|row.get::<_,String>(0)
+        )?;
+        let mut ids=Vec::new();
+        for row in rows{
+            let id=row?;
+            if !opaque(&id,"g-"){return Err(AnsfError::InvalidInput)}
+            ids.push(id);
+        }
+        if ids.len()>limit{return Err(AnsfError::InvalidInput)}
+        Ok(ids)
+    }
     /// No legacy import, model output, Reader event or copied memory can pass
     /// as a current host-authenticated user turn.
     pub fn authenticated_chat_turn(&self,session_id:&str,turn_id:&str)
