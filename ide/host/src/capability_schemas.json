@@ -4420,6 +4420,10 @@
           {
             "type": "null"
           }
+        ],
+        "type": [
+          "object",
+          "null"
         ]
       }
     },
