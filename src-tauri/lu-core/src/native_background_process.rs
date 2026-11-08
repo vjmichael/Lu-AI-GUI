@@ -84,6 +84,59 @@ fn verified_executable(path:&Path,digest:&str)->Result<PathBuf,BackgroundProcess
     }
     Ok(canonical)
 }
+/// E1-P06E single local media input. This is *not* permission to access any
+/// host path: the caller must independently authorize the original user
+/// turn and host-enroll this exact file digest. An opened-handle OS directory
+/// broker is a separate future stronger TOCTOU boundary.
+pub(crate) fn verified_media_input(
+    path:&Path,expected_sha256:&str
+)->Result<u64,BackgroundProcessError>{
+    if !path.is_absolute()||
+        path.components().any(|component|matches!(component,
+            std::path::Component::CurDir|std::path::Component::ParentDir))
+        ||expected_sha256.len()!=64
+        ||!expected_sha256.bytes().all(|b|b.is_ascii_hexdigit()){
+        return Err(BackgroundProcessError::InvalidPlan)
+    }
+    for part in path.ancestors(){
+        let meta=fs::symlink_metadata(part)
+            .map_err(|_|BackgroundProcessError::InvalidPlan)?;
+        if meta.file_type().is_symlink(){
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if meta.file_attributes()&0x400!=0{
+                return Err(BackgroundProcessError::InvalidPlan)
+            }
+        }
+    }
+    let meta=fs::metadata(path).map_err(|_|BackgroundProcessError::InvalidPlan)?;
+    if !meta.is_file()||meta.len()==0||meta.len()>256*1024*1024{
+        return Err(BackgroundProcessError::InvalidPlan)
+    }
+    let mut input=fs::File::open(path)
+        .map_err(|_|BackgroundProcessError::InvalidPlan)?;
+    let mut h=Sha256::new();
+    let mut count=0u64;
+    let mut buf=[0u8;64*1024];
+    loop{
+        let n=input.read(&mut buf).map_err(|_|BackgroundProcessError::InvalidPlan)?;
+        if n==0{break}
+        count=count.checked_add(n as u64).ok_or(BackgroundProcessError::InvalidPlan)?;
+        if count>256*1024*1024{
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
+        h.update(&buf[..n]);
+    }
+    if count!=meta.len()
+        ||format!("{:x}",h.finalize())!=expected_sha256.to_ascii_lowercase(){
+        return Err(BackgroundProcessError::InvalidPlan)
+    }
+    Ok(count)
+}
+
 /// Worker progress stream is a deliberately tiny, bounded native protocol.
 /// The caller has already pinned the executable hash, so this is a receipt,
 /// never an authorization grant or a model-provided status claim.
@@ -361,6 +414,46 @@ impl BackgroundProcessSupervisor {
             return Err(BackgroundProcessError::InvalidPlan)
         }
         self.start_host_approved_internal(plan,Some((output_limit,is_status||is_branch)))
+    }
+
+    /// E1-P06E: host-owned read-only FFprobe *single-file* inspection. This
+    /// gates the exact compiled CLI shape; it does not offer a generic
+    /// subprocess, a model-selected file path or sandbox native Lu Core.
+    pub(crate) fn start_host_approved_media_probe(
+        &self,plan:TrustedWorkerPlan,output_limit:usize,
+        reviewed_media_sha256:&str
+    )->Result<(),BackgroundProcessError>{
+        if !(1..=16_384).contains(&output_limit)
+            ||plan.progress_protocol
+            ||plan.max_runtime_seconds.is_none_or(|n|!(1..=30).contains(&n))
+            ||plan.args.len()!=12
+            ||plan.args[0].to_str()!=Some("-v")
+            ||plan.args[1].to_str()!=Some("error")
+            ||plan.args[2].to_str()!=Some("-protocol_whitelist")
+            ||plan.args[3].to_str()!=Some("file")
+            ||plan.args[4].to_str()!=Some("-f")
+            ||!matches!(plan.args[5].to_str(),Some("wav"|"mov"))
+            ||plan.args[6].to_str()!=Some("-show_entries")
+            ||plan.args[7].to_str()!=Some(
+                "format=duration:stream=index,codec_type,codec_name,width,height,sample_rate,channels")
+            ||plan.args[8].to_str()!=Some("-of")
+            ||plan.args[9].to_str()!=Some("json")
+            ||plan.args[10].to_str()!=Some("-i"){
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
+        // Check at the actual supervisor admission boundary, not just
+        // during catalog enrollment or the separate permission preflight.
+        let input=Path::new(&plan.args[11]);
+        let extension=input.extension().and_then(|s|s.to_str());
+        let correct_extension=match plan.args[5].to_str(){
+            Some("wav")=>extension.is_some_and(|s|s.eq_ignore_ascii_case("wav")),
+            Some("mov")=>extension.is_some_and(|s|s.eq_ignore_ascii_case("mp4")),
+            _=>false
+        };
+        if !correct_extension{return Err(BackgroundProcessError::InvalidPlan)}
+        let observed=verified_media_input(input,reviewed_media_sha256)?;
+        if observed==0{return Err(BackgroundProcessError::InvalidPlan)}
+        self.start_host_approved_internal(plan,Some((output_limit,false)))
     }
     fn start_host_approved_internal(
         &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>
@@ -739,6 +832,28 @@ impl Drop for BackgroundProcessSupervisor{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn media_input_hash_refuses_missing_symlinks_and_changed_bytes(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-e1-p06e-media-{}-{:?}",std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path=root.join("sample.wav");
+        fs::write(&path,b"fixed tiny sample").unwrap();
+        let expected=format!("{:x}",Sha256::digest(b"fixed tiny sample"));
+        assert_eq!(verified_media_input(&path,&expected).unwrap(),17);
+        fs::write(&path,b"different sample").unwrap();
+        assert!(verified_media_input(&path,&expected).is_err());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let link=root.join("linked.wav");
+            symlink(&path,&link).unwrap();
+            assert!(verified_media_input(&link,&expected).is_err());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn thirdparty_stdout_capture_is_bounded_and_one_use(){
         use std::io::Cursor;

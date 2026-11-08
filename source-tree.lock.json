@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "038af878a272d7f2eba41775003d71b5db509347",
-  "trackedFileCount": 650,
+  "sourceCommitBeforeLock": "ad031b7091e5b3e437c386a4e0569c71b61c1f60",
+  "trackedFileCount": 653,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -54,6 +54,10 @@
     {
       "path": ".github/workflows/lu-e1-p06d-git-context.yml",
       "blob": "d8ccd5147e31f812edf251e8bc570e575e9774c2"
+    },
+    {
+      "path": ".github/workflows/lu-e1-p06e-ffprobe.yml",
+      "blob": "afe0e53feb52480a3c009cd24d865206f03129c1"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -320,6 +324,10 @@
       "blob": "124648d48a0624d1e7e97a8f354841212cdbd4f0"
     },
     {
+      "path": "docs/LU_E1_P06E_MEDIA_ADAPTER_20261107.md",
+      "blob": "89c841326ccb73757319254c59e6c4c7dcd0cfcd"
+    },
+    {
       "path": "docs/LU_E1_P06_THIRDPARTY_ADAPTERS_20261107.md",
       "blob": "01fdcc42396a313382eba362acc09af060e797d5"
     },
@@ -457,7 +465,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "bd74fe5bc3b421da85c3667d78db4e6c2ebb5b68"
+      "blob": "d279bcde70b88654797848581f6749ddf2ae8570"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1577,7 +1585,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "8ba82beeafd4e5fbcca73860c61187ec2fdb0c93"
+      "blob": "1b62e0d9ce0e62089fc932b11ecd0ec1b5069965"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -1652,6 +1660,10 @@
       "blob": "4020765b17f9a36dcb600b918449d4409394b9e7"
     },
     {
+      "path": "src-tauri/lu-core/src/native_app_typed_ffprobe.rs",
+      "blob": "cac2bd3e06542e3d6410dab6f029818ede502981"
+    },
+    {
       "path": "src-tauri/lu-core/src/native_app_typed_git.rs",
       "blob": "745b2fd28231e350964d64b39e1ac07347dc3c0a"
     },
@@ -1709,7 +1721,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "e080b8de5a1f855c9b4c21e3cc8b6528366012c1"
+      "blob": "3aed7aac97936e52ef860a877ec4e2bb53823d61"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
