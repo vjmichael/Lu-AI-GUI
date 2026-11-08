@@ -1017,6 +1017,30 @@ mod agent01b_real_chat_goal_revision_acceptance{
                 Ok(RecordState::New));
             assert_eq!(proposals.latest(&plan,&chat).unwrap().unwrap().execution_authority,
                 "NOT_AUTHORIZED_FOR_EXECUTION");
+            // A subsequent real ANSF SetGoal supersedes this source event.
+            // The stale revision cannot be reintroduced as current planning.
+            let changed_event=format!("m-{:032x}",17);
+            let revised_goal=GoalEvent{
+                event_id:changed_event.clone(),goal_id:goal_id.clone(),
+                question_id:None,kind:GoalEventKind::SetGoal,
+                text:"Produce an independently checked engineering report".into(),
+                choice:None,comment:None
+            };
+            chats.append_goal_memory_event(&chat,revised_goal.clone()).unwrap();
+            ansf.mirror_goal_event(&chat,&revised_goal).unwrap();
+            let mut new_draft=request.clone();
+            new_draft.reason=RevisionReason::GoalChanged;
+            assert_eq!(proposals.append_proposal(
+                &plan,&chat,&later,&format!("v-{:032x}",18),Some(&sha),
+                &new_draft,&chats,&sources),
+                Err(RevisionError::UnverifiedSource));
+            new_draft.goal_event_id=changed_event;
+            let new_revision=proposals.append_proposal(
+                &plan,&chat,&later,&format!("v-{:032x}",18),Some(&sha),
+                &new_draft,&chats,&sources).unwrap();
+            assert_eq!(new_revision.revision_index,2);
+            assert_eq!(proposals.latest(&plan,&chat).unwrap().unwrap().review_state,
+                "PENDING_HUMAN_REVIEW");
         }
         {
             let chats=ChatStore::open(&root).unwrap();
@@ -1024,8 +1048,10 @@ mod agent01b_real_chat_goal_revision_acceptance{
             assert_eq!(chats.trusted_user_turn_text(&chat,&later).as_deref(),
                 Some("I explicitly approve the reviewed plan revision."));
             let reread=proposals.latest(&plan,&chat).unwrap().unwrap();
-            assert_eq!(reread.review_state,"APPROVED_PLAN_ONLY");
-            assert_eq!(reread.revision_sha256,sha);
+            assert_eq!(reread.review_state,"PENDING_HUMAN_REVIEW");
+            assert_eq!(reread.parent_sha256,Some(sha.clone()));
+            assert_eq!(proposals.history(&plan,&chat).unwrap()[0].review_state,
+                "APPROVED_PLAN_ONLY");
             assert_eq!(reread.execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
         }
         fs::remove_dir_all(root).unwrap();
