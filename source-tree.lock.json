@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f8595c657d1ba27c07c234a5b1ea034893e9f892",
+  "sourceCommitBeforeLock": "0b074c6043bb837e6aa49c6fd564f7ea3f02aeaa",
   "trackedFileCount": 719,
   "files": [
     {
@@ -1345,7 +1345,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "e6c360bfd5d4301659791ce2ee5c1a7fa302204e"
+      "blob": "8c9be497aab7c08485e5bfc84e5c74b8eff159f9"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1369,7 +1369,7 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "4fac8bc640f79b8211e2d6c36487072f8fab1033"
+      "blob": "0b9d3335c94552f99ea40ccc7242136c2e7a9535"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
