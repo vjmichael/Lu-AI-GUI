@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "16e61f2d056975fa2b286ac86c2557b12a22a082",
-  "trackedFileCount": 596,
+  "sourceCommitBeforeLock": "c84544956aca808bcd9e8655d806779bb980891c",
+  "trackedFileCount": 600,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -41,7 +41,7 @@
     },
     {
       "path": ".github/workflows/lu-m4-verified-memory.yml",
-      "blob": "b097a780889861588b54622d4fe89f3d230d0d7a"
+      "blob": "d48826f14830a358111b6f569cee8b54c3ce0528"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -138,6 +138,10 @@
     {
       "path": "benchmarks/memory/cognitum_three_arm_real_model.py",
       "blob": "f73079246833563d052e37224e47dc839d3c3594"
+    },
+    {
+      "path": "benchmarks/memory/m4_real_local_model.py",
+      "blob": "57a6487559b2ceb9a63e7c0d8d276f217b15d708"
     },
     {
       "path": "benchmarks/memory/test_cognitum_three_arm.py",
@@ -402,6 +406,10 @@
     {
       "path": "docs/acceptance/LU_M3_WINDOWS_NATIVE_ACCEPTANCE_20261107.md",
       "blob": "ebedc54a3b544ffc3d3c635f09c3ec0426b85c95"
+    },
+    {
+      "path": "docs/acceptance/LU_M4_NATIVE_AND_INSTALLED_ACCEPTANCE_20261107.md",
+      "blob": "acd981f208f3295fd4ca18aa0e7bbd44d880454f"
     },
     {
       "path": "docs/acceptance/LU_R20_WINDOWS_GPU_MEMORY_LOAD_UNLOAD_20261101.md",
@@ -1040,6 +1048,10 @@
       "blob": "d7da5eb88ac3df849228a45178d48a618ba355e0"
     },
     {
+      "path": "scripts/m4-windows-installed-memory-acceptance.ps1",
+      "blob": "23938a9f1705eeccffbb86fdb748346b050e40fd"
+    },
+    {
       "path": "scripts/p02-native-windows-evidence.ps1",
       "blob": "e7d9187de60160da55bf5a9d1c2bca5abd35127e"
     },
@@ -1126,6 +1138,10 @@
     {
       "path": "src-tauri/lu-core/examples/llama_cli_smoke.rs",
       "blob": "ac28e86fe1062dd195a01e005daf025dc006c4f1"
+    },
+    {
+      "path": "src-tauri/lu-core/examples/m4_belief_model_proof.rs",
+      "blob": "53b1536784269c66656412d6f439185e1242956e"
     },
     {
       "path": "src-tauri/lu-core/examples/persistent_llama_resilience_smoke.rs",
