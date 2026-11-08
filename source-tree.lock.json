@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "aff21264590b654c0efb02c4127efd42ab4094cd",
+  "sourceCommitBeforeLock": "2e57c760f8df2f8cdf4fb7d0e2daa6eba6ce7fb9",
   "trackedFileCount": 670,
   "files": [
     {
@@ -205,7 +205,7 @@
     },
     {
       "path": "benchmarks/e1/e1_p08_linux_group_guard.py",
-      "blob": "1638e09c0c8f8cf54e5a64d8c84ce1cfa88e9311"
+      "blob": "7e62ee0ed47e0605081f689b410cdf34dd44052b"
     },
     {
       "path": "benchmarks/e1/test_e1_p05_raw_receipt.py",
@@ -357,7 +357,7 @@
     },
     {
       "path": "docs/LU_E1_P08_LINUX_GROUP_GUARD_20261108.md",
-      "blob": "be4ef8f1b94774decbef22ae223cfc42b5f00fca"
+      "blob": "5d152ae87694b12ff94059ebedb4dfb33510a5d6"
     },
     {
       "path": "docs/LU_E1_P08_REVIEWED_RESTART_RECOVERY_20261107.md",
