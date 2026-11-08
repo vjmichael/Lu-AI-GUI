@@ -217,7 +217,8 @@ def main():
             print("P03_LLDB_FIXED_LAUNCH_DIAGNOSTIC=fixed_bundle_missing",
                   flush=True)
             return 0  # Diagnostic, not native authorization.
-    witness("copied_outside_namespace", [ADAPTER], TARGET)
+    # Only execute a debuggee inside Bwrap. The existing initialize-only
+    # witness covers the unsandboxed distribution and copied adapter.
     witness("copied_readonly_namespace", BWRAP, "/ls/debuggee/wo6-selftest")
     print("P03_LLDB_FIXED_LAUNCH_DIAGNOSTIC_ONLY=not_kernel_cgroup_acceptance",
           flush=True)
