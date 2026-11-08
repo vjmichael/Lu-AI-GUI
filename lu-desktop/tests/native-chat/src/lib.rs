@@ -890,7 +890,7 @@ mod agent01a_real_human_journal_acceptance{
 mod agent01b_real_chat_goal_revision_acceptance{
     use super::{
         ansf::AnsfStore,
-        ansf_goals::{GoalEvent,GoalEventKind},
+        ansf_goals::{GoalEvent,GoalEventKind,project_goal_events},
         chat_store::ChatStore,
         agent_plan_ledger::{AgentPlanLedger,PlanStepKind,PlanStepSpec},
         agent_plan_revisions::{
@@ -908,6 +908,12 @@ mod agent01b_real_chat_goal_revision_acceptance{
                 events.iter().any(|entry|
                     entry.event_id==event&&entry.goal_id==goal
                     &&entry.kind==GoalEventKind::SetGoal))
+        }
+        fn goal_event_is_current(&self,chat:&str,goal:&str,event:&str)->bool{
+            self.ansf.goal_events(chat).ok()
+                .and_then(|records|project_goal_events(&records).ok())
+                .is_some_and(|latest|latest.goal_id.as_deref()==Some(goal)
+                    &&latest.revision_event_id.as_deref()==Some(event))
         }
         fn assumption_source_is_readable(&self,_chat:&str,_source:&str)->bool{
             // Source-read authorization is a different host gate, intentionally
@@ -1006,7 +1012,8 @@ mod agent01b_real_chat_goal_revision_acceptance{
                 chat:&chat,turn:&later,plan:&plan,sha:&sha
             };
             assert_eq!(proposals.record_review(
-                &plan,&chat,&later,&sha,HumanDecision::Approve,&chats,&decision),
+                &plan,&chat,&later,&sha,HumanDecision::Approve,
+                &chats,&decision,&sources),
                 Ok(RecordState::New));
             assert_eq!(proposals.latest(&plan,&chat).unwrap().unwrap().execution_authority,
                 "NOT_AUTHORIZED_FOR_EXECUTION");
