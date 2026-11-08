@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -184,7 +185,9 @@ def audit(api, *, apply=False, now=None):
             "workflowName": str(r.get("name", ""))[:120],
             "event": r["event"], "statusAtDiscovery": r["status"],
         } for r in candidates[:MAX_REQUESTS]],
-        "acceptedRequests": [], "outcomes": [], "errors": [],
+        "acceptedRequests": [], "terminalCancelledRuns": [],
+        "terminalOtherOutcomes": [], "notTerminalAtAuditEnd": [],
+        "outcomes": [], "errors": [],
     }
     if not apply:
         return report
@@ -210,6 +213,37 @@ def audit(api, *, apply=False, now=None):
             report["outcomes"].append({"runId": rid, "outcome": outcome})
         except RuntimeError as exc:
             report["errors"].append({"runId": rid, "reason": str(exc)})
+    # GitHub 202 only acknowledges an asynchronous cancellation REQUEST.
+    # Do not count it as a cancellation unless a subsequent independent GET
+    # reports status=completed AND conclusion=cancelled for that exact run.
+    pending = set(report["acceptedRequests"])
+    for sweep in range(4):
+        if not pending:
+            break
+        if sweep:
+            time.sleep(2)
+        for rid in sorted(pending):
+            try:
+                _, observed = api.request(
+                    "GET", f"/repos/{REPO}/actions/runs/{rid}")
+                if observed.get("id") != rid:
+                    raise RuntimeError("CANCELLATION_RECEIPT_RUN_ID_MISMATCH")
+                if observed.get("status") == "completed":
+                    if observed.get("conclusion") == "cancelled":
+                        report["terminalCancelledRuns"].append(rid)
+                    else:
+                        report["terminalOtherOutcomes"].append({
+                            "runId": rid,
+                            "conclusion": str(observed.get("conclusion", ""))[:40],
+                        })
+                    pending.remove(rid)
+            except RuntimeError as exc:
+                report["errors"].append({
+                    "runId": rid, "reason": "terminal_verification_" + str(exc)
+                })
+                pending.remove(rid)
+    report["terminalCancelledRuns"].sort()
+    report["notTerminalAtAuditEnd"] = sorted(pending)
     return report
 
 
@@ -228,11 +262,14 @@ def main():
         "queueRunsInspected": result["queueRunsInspected"],
         "eligibleSupersededCount": result["eligibleSupersededCount"],
         "cancelRequestsAccepted": len(result["acceptedRequests"]),
+        "terminalCancelledVerified": len(result["terminalCancelledRuns"]),
+        "cancellationStillUnverified": len(result["notTerminalAtAuditEnd"]),
+        "terminalOtherOutcomes": len(result["terminalOtherOutcomes"]),
         "requestFailures": len(result["errors"]),
         "deferredCandidates": result["deferredCandidates"],
         "receipt": str(path),
     }, sort_keys=True))
-    if result["errors"]:
+    if result["errors"] or result["notTerminalAtAuditEnd"] or result["terminalOtherOutcomes"]:
         raise SystemExit(1)
 
 
