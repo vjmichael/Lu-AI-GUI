@@ -1,3 +1,47 @@
+## M3-S3 local-only embedding runtime — 2026-11-07 (SOURCE/CI PENDING)
+
+Pinned local GGUF embeddings worker with Windows Job containment, explicit OS-selected GGUF, incremental original source SQLite vector indexing and optional FTS5+semantic recall for pane and human GGUF Send. No cloud transfer or model-granted permissions; native local protocol tests. Genuine embedding model, installed acceptance and semantic-quality benchmark open. See [S1–S4 plan](LU_M3_SEMANTIC_S1_S4_20261107.md).
+
+## M3 baseline correction — original real GGUF answers scored with literal placeholder bug (2026-11-07)
+
+Two real-model suites produced 84 responses each, but the original scorer falsely marked every format-wrapped correct answer wrong (0/28 each arm). A conservative **post-hoc, non-preregistered** read of one immutable artifact yielded 2/28 no memory, 6/28 recent chat and 18/28 recent+ANSF exact-source; this is NOT an accepted memory win. Corrected benchmark prompt/scorer and native Python regression tests submitted for future prospective reruns. See [exact baseline diagnostic](LU_ANSF_BENCHMARK_DIAGNOSTIC_20261107.md).
+
+## M3 P1 auto asset reuse + verified applied effect proof — 2026-11-07 (SOURCE; CI PENDING)
+
+New source-authorized project/name/version asset reuse resolver checks prior local SHA-256 and falls back to valid historical copy; independent history UI automatically loads availability during task resumption. Core ContinuityStore links existing APPLIED-only EffectJournal receipts immutably to confirmed task checkpoints; restart and UNCERTAIN rejection tests. No automatic downloads, re-execution or new authorizations. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
+## M3 P0 hot scroll improvement — 2026-11-07 (SOURCE COMMITTED; NATIVE/INSTALLED PENDING)
+
+Stable-sequence viewport anchoring across page eviction, resume exact source cursor after chat switch, bounded independent History Library forward/back pagination, 192 displayed row cap, synthetic height/10k-row tests plus 520 original-entry native restart tests. CI and real installed Windows scroll acceptance pending. See [M3](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
+## M3 prior Continuity Plane desktop bridge — 2026-11-07 (SOURCE/CI PENDING)
+
+Reused existing immutable Lu Core ContinuityStore, wired host-owned SQLite storage; native-approved source-linked save and owner-scoped cross-chat latest-task recall in independent History Library pane; completed work, blockers and next action persist after restart; no recalled source/effect grant. Production portable native source tests and CI contract submitted. Automatic resume, verified procedural action receipts and CCM still open. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
+## M3 active-chat history windowing — 2026-11-07 (SOURCE/CI PENDING)
+
+Added derived, text-free display-message pointer projection in ANSF SQLite; bounded 64-row before/after original stream cursor API; desktop uses 64-row initial latest pages and max 192 rendered rows with on-demand older/newer loading. Durable cancelled/complete streaming statuses preserved. Synthetic native tests added. Variable-height eviction, exact scroll continuity, very long transcripts and installed Win11 acceptance remain open. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
+## M3 asset-ledger foundation — 2026-11-07 (SOURCE/CI PENDING)
+
+Committed small immutable source-linked operational asset references outside ANSF; host-native picker + explicit confirm records SHA-256/size/version for SDK/NSIS/MSVC/LLVM packages. Reopening re-hashes and distinguishes present/missing/changed. Independent Library pane exposes manual register/verify. No automatic procedural reuse, build environment restoration, or user task authority added; physical installed acceptance open. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
+## M3 recovered original UX — independently browsable ANSF page history (2026-11-07; SOURCE/CI PENDING)
+
+Added original-entry stable-ID backward page queries, host-authenticated history-browser and bounded text-page commands; replaced embedded M3 Recall with independent floating Library inspector. Added native paging/restart/host-auth tests and cross-platform CI. *Not* yet virtualized main chat transcript; still source candidate, not installed acceptance. See [M3 work order](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md).
+
+## M3 requirement correction: originally agreed ANSF staged memory and development continuity — November 7, 2026
+
+The original ANSF/SQLite specification already included a separate navigable history/search pane, cursor-virtualized infinite-looking active transcript, staged short/long/procedural retrieval and a source-referenced operational ledger to prevent repeated NSIS, Windows SDK, MSVC, LLVM and installer dependency discovery between Lu conversations. The M3 prototype has NOT completed these behaviors. They are HIGH-PRIORITY ACCEPTANCE GATES, not new proposals. See the [M3 fidelity correction](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md). Semantic embeddings are optional accelerators, not substitutes for continuity and original-source navigation.
+
+## M3-S1 / M3-S2 semantic original-book index and hybrid retrieval — November 7, 2026 (SOURCE CANDIDATE; CI PENDING)
+
+Added a rebuildable per-original-ANSF-book vector projection with model-version and source hash checks; bounded exact cosine candidate retrieval; canonical source-ID RRF lexical/semantic fusion; a host-only ChatStore hybrid seam; native synthetic fixture and restart/authority regressions, and Windows/Linux CI jobs. **Not yet** an operational embedding engine or a passed three-arm benchmark. S3 actual local model integration and S4 baseline experiments are still open. See [M3 S1–S4 work ledger](LU_M3_SEMANTIC_S1_S4_20261107.md).
+
+## M3 original ANSF cross-conversation recall — November 7, 2026 (SOURCE CANDIDATE; NATIVE/INSTALLED PENDING)
+
+Stacked on unmerged M2 PR #94 exact `4cfc7ddb0344bff594b1decbfaa88d62e7c52441`. Bounded per-book lexical FTS retrieval, direct host-authenticated canonical source IDs, local GGUF prompt historical-data injection, human Recall UI, and native cross-chat/restart/authority tests are submitted. Real Windows/Linux exact-head and installed runtime proof are open; long-history virtualization, relevance benchmarking and external artifact broker remain open. See [M3 gate ledger](LU_M3_CROSS_CONVERSATION_RECALL_20261107.md). Do not merge ahead of M2 acceptance.
+
 ## M2 ANSF SQLite-native conversation cutover — November 7, 2026 (CI PENDING)
 
 New [M2 canonical ANSF conversation cutover receipt](LU_M2_ANSF_CONVERSATION_CUTOVER_20261107.md) replaces the old provisional JSONL journal with source-coded per-book ANSF/SQLite live chat entries, indexed Library/SQLite chat metadata, host/legacy provenance and verified user-turn/Reader authority checks; adds native relational goal/clarification records (Yes/No/Not now), and imports old Lu JSONL/R14 history as observed and untrusted. **New runtime writes no JSONL event journal.** Pending native Linux/Windows and installed GGUF acceptance, migration interruption/reconciliation, bounded UI history and external artifact broker. Do not claim release acceptance before verification; the three-arm memory benchmark remains independent and does not block further M2 engineering.

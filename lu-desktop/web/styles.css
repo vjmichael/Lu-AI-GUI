@@ -310,3 +310,49 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .m2QuestionChoices{display:flex;gap:8px;flex-wrap:wrap;}
 @media(max-width:680px){.m2MemoryHeader{align-items:flex-start;flex-direction:column;}
   .m2MemoryPane{max-height:40vh;}}
+
+
+/* M3 historical memory pane is independently scrollable/navigation-scoped.
+   It overlays instead of replacing the active chat, composer or transcript. */
+.ansfHistoryPane{
+  position:fixed;top:0;right:0;bottom:0;z-index:1500;
+  display:flex;flex-direction:column;gap:10px;
+  width:min(490px,95vw);max-height:100dvh;
+  padding:16px;overflow:hidden;
+  background:var(--surface, #161a22);color:var(--text, #f0f2f7);
+  border-left:1px solid var(--border, #444);
+  box-shadow:-10px 0 35px #0007;
+}
+.ansfHistoryHeader{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.ansfHistoryHeader div{display:flex;flex-direction:column;gap:3px}
+.ansfHistoryHeader small,.ansfHistoryPane small{opacity:.83;overflow-wrap:anywhere}
+.ansfHistoryPicker{display:flex;flex-direction:column;gap:5px}
+.ansfHistoryPicker select,.ansfHistorySearch input{
+  min-width:0;width:100%;padding:8px;border-radius:6px;
+}
+.ansfHistorySearch{display:flex;gap:8px}
+.ansfHistorySearch input{flex:1}
+.ansfHistoryScroll{min-height:100px;flex:1;overflow-y:auto;overscroll-behavior:contain}
+.ansfHistoryEntry{padding:10px 4px;border-bottom:1px solid var(--border,#444)}
+.ansfHistoryEntry p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.4}
+.ansfHistoryEntry code{display:block;overflow-wrap:anywhere;font-size:10px;opacity:.75}
+.ansfOriginalReader{
+  flex:0 1 36%;min-height:110px;overflow:auto;
+  padding:10px;border:1px solid var(--border,#444);border-radius:8px;
+}
+.ansfOriginalReader header{display:flex;align-items:center;justify-content:space-between}
+.ansfOriginalReader pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto}
+.ansfHistoryError{color:#ff9a9a}
+
+
+/* M3 source-linked operational asset evidence, scoped to the history pane. */
+.ansfAssetsMemory{border:1px solid var(--border,#555);border-radius:8px;
+  padding:8px;max-height:33vh;overflow:auto}
+.ansfAssetsMemory summary{cursor:pointer;font-weight:600}
+.ansfAssetForm{display:flex;flex-direction:column;gap:7px;margin:8px 0}
+.ansfAssetForm label{display:flex;flex-direction:column;gap:3px}
+.ansfAssetForm input{width:100%;min-width:0;padding:7px}
+.ansfAssetRows{max-height:20vh;overflow:auto}
+.ansfAssetRows article{border-bottom:1px solid var(--border,#555);padding:5px 0;
+  display:flex;flex-direction:column;gap:3px}
+.ansfAssetRows code{overflow-wrap:anywhere}

@@ -11,6 +11,7 @@ import {stagedImageDimensions,REGION_IMAGE_OPERATIONS,
   imagePointerPixel,imageDragRectangle} from './image_assembly_geometry.mjs';
 import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
+import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryAnchor} from './history_window_geometry.mjs';
 
 function MessageText({text, role='assistant'}) {
   if (role === 'user') return <div className="messageContent userText">{text}</div>;
@@ -20,6 +21,546 @@ function MessageText({text, role='assistant'}) {
 }
 const MAX_TEXT_ATTACHMENT = 64 * 1024;
 const MAX_IMAGE_ATTACHMENT = 8 * 1024 * 1024;
+
+
+/**
+ * Independent human ANSF history reader. Does not call setChatId, setHistory,
+ * setPrompt or touch the live transcript ref; its navigation/query/cursor
+ * state belongs solely to the secondary pane.
+ */
+function AnsfHistoryPane({activeChatId,chats,onClose}){
+  const [browseChatId,setBrowseChatId]=useState(activeChatId||'');
+  const [entries,setEntries]=useState([]);
+  const [before,setBefore]=useState(null);
+  const [hasMore,setHasMore]=useState(false);
+  const [hasNewer,setHasNewer]=useState(false);
+  const [query,setQuery]=useState('');
+  const [matches,setMatches]=useState([]);
+  const [reading,setReading]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [assetProject,setAssetProject]=useState('lu');
+  const [assetName,setAssetName]=useState('');
+  const [assetVersion,setAssetVersion]=useState('');
+  const [assetSource,setAssetSource]=useState('');
+  const [assetRows,setAssetRows]=useState([]);
+  const [assetBusy,setAssetBusy]=useState(false);
+  const [semanticModelId,setSemanticModelId]=useState('');
+  const [semanticBusy,setSemanticBusy]=useState(false);
+  const [semanticReceipt,setSemanticReceipt]=useState('');
+  const [resumeProject,setResumeProject]=useState('lu');
+  const [resumeTask,setResumeTask]=useState('windows-installer');
+  const [resumeSource,setResumeSource]=useState('');
+  const [resumeCompleted,setResumeCompleted]=useState('');
+  const [resumeNext,setResumeNext]=useState('');
+  const [resumeBlockers,setResumeBlockers]=useState('');
+  const [resumeRecord,setResumeRecord]=useState(null);
+  const [contextChange,setContextChange]=useState(null);
+  const [resumeBusy,setResumeBusy]=useState(false);
+  const [effectCallId,setEffectCallId]=useState('');
+  const [verifiedEffects,setVerifiedEffects]=useState([]);
+  const [requiredName,setRequiredName]=useState('');
+  const [requiredVersion,setRequiredVersion]=useState('');
+  const [requiredPlan,setRequiredPlan]=useState([]);
+
+  const requests=useRef(0);
+  const scrollRef=useRef(null);
+  const pendingPaneAnchor=useRef(null);
+  useEffect(()=>{
+    if(!activeChatId)return;
+    invoke('lu_m3_embedding_status',{chatId:activeChatId})
+      .then(model=>setSemanticModelId(model||''))
+      .catch(()=>setSemanticModelId(''));
+  },[activeChatId]);
+  useEffect(()=>{
+    if(!activeChatId||!browseChatId)return;
+    const request=++requests.current;
+    setEntries([]);setBefore(null);setHasMore(false);setHasNewer(false);
+    setReading(null);setError('');setBusy(true);
+    invoke('lu_m3_history_page',{
+      chatId:activeChatId,sourceChatId:browseChatId,
+      beforeEntryId:null,limit:24
+    }).then(page=>{
+      if(request!==requests.current)return;
+      setEntries(page.entries);setBefore(page.nextBeforeId);
+      setHasMore(page.hasMore);
+    }).catch(e=>{
+      if(request===requests.current)setError('Older messages unavailable: '+String(e));
+    }).finally(()=>{if(request===requests.current)setBusy(false)});
+    return ()=>{requests.current+=1;};
+  },[activeChatId,browseChatId]);
+  const PANE_VISIBLE_ROWS=192;
+  function originalEntryNumber(hit){
+    const id=Number(hit?.sourceId?.slice(hit.sourceId.lastIndexOf(':')+1));
+    if(!Number.isSafeInteger(id)||id<1)throw Error('Invalid canonical ANSF source sequence');
+    return id;
+  }
+  function mergeOriginalPages(existing,incoming,direction){
+    const byId=new Map();
+    for(const entry of [...existing,...incoming]){
+      originalEntryNumber(entry);
+      byId.set(entry.sourceId,entry);
+    }
+    const sorted=[...byId.values()].sort((x,y)=>originalEntryNumber(x)-originalEntryNumber(y));
+    const evicted=sorted.length>PANE_VISIBLE_ROWS;
+    return {rows:direction==='older'
+      ?sorted.slice(0,PANE_VISIBLE_ROWS):sorted.slice(-PANE_VISIBLE_ROWS),evicted};
+  }
+  async function older(){
+    if(!hasMore||!before||busy||!activeChatId)return;
+    const request=++requests.current;setBusy(true);setError('');
+    pendingPaneAnchor.current=captureHistoryAnchor(scrollRef.current);
+    try{
+      const page=await invoke('lu_m3_history_page',{
+        chatId:activeChatId,sourceChatId:browseChatId,
+        beforeEntryId:before,limit:24
+      });
+      if(request!==requests.current)return;
+      const merged=mergeOriginalPages(entries,page.entries,'older');
+      setEntries(merged.rows);
+      setBefore(page.nextBeforeId);setHasMore(page.hasMore);
+      if(merged.evicted)setHasNewer(true);
+    }catch(e){
+      pendingPaneAnchor.current=null;
+      if(request===requests.current)setError('Older page unavailable: '+String(e));
+    }finally{if(request===requests.current)setBusy(false)}
+  }
+  async function newer(){
+    if(!hasNewer||busy||!activeChatId||!entries.length)return;
+    const request=++requests.current;setBusy(true);setError('');
+    pendingPaneAnchor.current=captureHistoryAnchor(scrollRef.current);
+    const sourceId=originalEntryNumber(entries.at(-1));
+    try{
+      const page=await invoke('lu_m3_history_page_after',{
+        chatId:activeChatId,sourceChatId:browseChatId,
+        afterEntryId:sourceId,limit:24
+      });
+      if(request!==requests.current)return;
+      const merged=mergeOriginalPages(entries,page.entries,'newer');
+      setEntries(merged.rows);
+      setHasNewer(page.hasMore);
+      if(merged.evicted){
+        setBefore(originalEntryNumber(merged.rows[0]));
+        setHasMore(true);
+      }
+    }catch(e){
+      pendingPaneAnchor.current=null;
+      if(request===requests.current)setError('Newer page unavailable: '+String(e));
+    }finally{if(request===requests.current)setBusy(false)}
+  }
+  function onHistoryScroll(){
+    const el=scrollRef.current;
+    if(!el||busy)return;
+    if(el.scrollTop<140&&hasMore)void older();
+    else if(el.scrollHeight-el.scrollTop-el.clientHeight<140&&hasNewer)void newer();
+  }
+  useLayoutEffect(()=>{
+    const el=scrollRef.current;
+    if(el&&pendingPaneAnchor.current!==null){
+      restoreHistoryAnchor(el,pendingPaneAnchor.current);
+      pendingPaneAnchor.current=null;
+    }
+  },[entries]);
+  async function search(e){
+    e.preventDefault();
+    if(!activeChatId||!query.trim()||busy)return;
+    const request=++requests.current;setBusy(true);setError('');
+    try{
+      if(query.trim().startsWith('ansf:v1:')){
+        await openSource(query.trim());
+        return;
+      }
+      const hits=await invoke('lu_m3_semantic_recall',{
+        chatId:activeChatId,query:query.trim()
+      });
+      if(request===requests.current){setMatches(hits);setReading(null)}
+    }catch(e){if(request===requests.current)setError('Search unavailable: '+String(e))}
+    finally{if(request===requests.current)setBusy(false)}
+  }
+  async function openSource(sourceId){
+    if(!activeChatId)return;
+    const data=await invoke('lu_m3_source_text_page',{
+      chatId:activeChatId,sourceId,offsetChars:0,limitChars:4096
+    });
+    setReading(data);
+  }
+  async function readMore(){
+    if(!reading?.nextOffsetChars||busy||!activeChatId)return;
+    const previous=reading;setBusy(true);setError('');
+    try{
+      const page=await invoke('lu_m3_source_text_page',{
+        chatId:activeChatId,sourceId:previous.sourceId,
+        offsetChars:previous.nextOffsetChars,limitChars:4096
+      });
+      setReading(current=>current?.sourceId===page.sourceId&&
+        current?.nextOffsetChars===page.offsetChars?
+        {...page,text:current.text+page.text}:current);
+    }catch(e){setError('Source continuation unavailable: '+String(e))}
+    finally{setBusy(false)}
+  }
+  async function openChecked(sourceId){
+    if(busy)return;
+    setBusy(true);setError('');
+    try{await openSource(sourceId)}
+    catch(e){setError('Original source unavailable: '+String(e))}
+    finally{setBusy(false)}
+  }
+  async function enableSemantic(){
+    if(!activeChatId||semanticBusy)return;
+    setSemanticBusy(true);setError('');setSemanticReceipt('');
+    try{
+      const id=await invoke('lu_m3_embedding_enable',{chatId:activeChatId});
+      if(id){setSemanticModelId(id);setSemanticReceipt(
+        'Verified local embedding GGUF loaded; choose Index this book to add semantic candidates.'
+      )}
+    }catch(e){setError('Local semantic model could not start: '+String(e))}
+    finally{setSemanticBusy(false)}
+  }
+  async function indexSemantic(){
+    if(!activeChatId||!browseChatId||!semanticModelId||semanticBusy)return;
+    setSemanticBusy(true);setError('');
+    try{
+      const result=await invoke('lu_m3_semantic_index',{
+        chatId:activeChatId,sourceChatId:browseChatId,limit:12
+      });
+      setSemanticReceipt(
+        result.indexedNow+' new original entries indexed, '+result.totalIndexed+
+        ' total for this book. Repeat to index more.'
+      );
+    }catch(e){setError('Semantic source indexing stopped: '+String(e))}
+    finally{setSemanticBusy(false)}
+  }
+  async function disableSemantic(){
+    if(!activeChatId||semanticBusy)return;
+    setSemanticBusy(true);setError('');
+    try{
+      await invoke('lu_m3_embedding_disable',{chatId:activeChatId});
+      setSemanticModelId('');setSemanticReceipt(
+        'Local embedding worker stopped. Original ANSF and rebuildable vector index preserved.'
+      );
+    }catch(e){setError('Local embedding model shutdown failed: '+String(e))}
+    finally{setSemanticBusy(false)}
+  }
+  async function inspectAssets(){
+    if(!activeChatId||!assetProject.trim()||assetBusy)return;
+    setAssetBusy(true);setError('');
+    try{
+      const rows=await invoke('lu_m3_operational_inventory',{
+        chatId:activeChatId,projectId:assetProject.trim()
+      });
+      setAssetRows(rows);
+    }catch(e){setError('Build asset inventory unavailable: '+String(e))}
+    finally{setAssetBusy(false)}
+  }
+  async function rememberAsset(e){
+    e.preventDefault();
+    const sourceId=assetSource.trim()||reading?.sourceId;
+    if(!activeChatId||!assetProject.trim()||!assetName.trim()||
+       !assetVersion.trim()||!sourceId||assetBusy)return;
+    setAssetBusy(true);setError('');
+    try{
+      const result=await invoke('lu_m3_remember_asset',{
+        chatId:activeChatId,projectId:assetProject.trim(),
+        logicalName:assetName.trim(),version:assetVersion.trim(),
+        sourceId
+      });
+      if(result){
+        setAssetRows(items=>[result,...items.filter(r=>r.recordId!==result.recordId)]);
+        setAssetSource(sourceId);
+      }
+    }catch(e){setError('Local package was not recorded: '+String(e))}
+    finally{setAssetBusy(false)}
+  }
+  async function resumeCheckpoint(){
+    if(!activeChatId||!resumeProject.trim()||!resumeTask.trim()||resumeBusy)return;
+    setResumeBusy(true);setError('');
+    try{
+      const value=await invoke('lu_m3_resume_continuity',{
+        chatId:activeChatId,projectId:resumeProject.trim(),
+        taskId:resumeTask.trim()
+      });
+      setResumeRecord(value);
+      setContextChange(null);
+      setRequiredPlan([]);
+      setVerifiedEffects([]);
+      // Read-only automatic reconciliation: re-hash registered packages and
+      // recheck APPLIED journal receipts before presenting a next-step plan.
+      if(value){
+        const [assets,effects,changes]=await Promise.all([
+          invoke('lu_m3_resume_resources',{
+            chatId:activeChatId,projectId:resumeProject.trim()
+          }),
+          invoke('lu_m3_task_effects',{
+            chatId:activeChatId,projectId:resumeProject.trim(),
+            taskId:resumeTask.trim()
+          }),
+          invoke('lu_m3_context_change',{
+            chatId:activeChatId,projectId:resumeProject.trim(),
+            taskId:resumeTask.trim()
+          })
+        ]);
+        setContextChange(changes);
+        setAssetProject(resumeProject.trim());
+        setAssetRows(assets);
+        setVerifiedEffects(effects);
+      }
+    }catch(e){setError('Task continuity lookup unavailable: '+String(e))}
+    finally{setResumeBusy(false)}
+  }
+  async function planRequiredAsset(e){
+    e.preventDefault();
+    if(!activeChatId||!resumeProject.trim()||!requiredName.trim()||
+       !requiredVersion.trim()||resumeBusy)return;
+    setResumeBusy(true);setError('');
+    try{
+      const result=await invoke('lu_m3_plan_required_assets',{
+        chatId:activeChatId,projectId:resumeProject.trim(),
+        requirements:[{logicalName:requiredName.trim(),
+          version:requiredVersion.trim()}]
+      });
+      setRequiredPlan(result);
+    }catch(e){setError('Required package verification unavailable: '+String(e))}
+    finally{setResumeBusy(false)}
+  }
+  async function saveCheckpoint(e){
+    e.preventDefault();
+    const sourceId=resumeSource.trim()||
+      (reading?.sourceChatId===activeChatId?reading.sourceId:null);
+    if(!activeChatId||!sourceId||!resumeCompleted.trim()||
+       !resumeNext.trim()||resumeBusy)return;
+    setResumeBusy(true);setError('');
+    try{
+      const saved=await invoke('lu_m3_record_continuity',{
+        chatId:activeChatId,projectId:resumeProject.trim(),
+        taskId:resumeTask.trim(),sourceIds:[sourceId],
+        completedWork:resumeCompleted.trim(),nextAction:resumeNext.trim(),
+        blockers:resumeBlockers.split('\n').map(x=>x.trim()).filter(Boolean).slice(0,32)
+      });
+      if(saved)setResumeRecord(saved);
+    }catch(e){setError('Checkpoint not saved: '+String(e))}
+    finally{setResumeBusy(false)}
+  }
+  async function linkAppliedEffect(e){
+    e.preventDefault();
+    if(!activeChatId||!resumeRecord||!effectCallId.trim()||resumeBusy)return;
+    setResumeBusy(true);setError('');
+    try{
+      const proof=await invoke('lu_m3_link_applied_effect',{
+        chatId:activeChatId,projectId:resumeRecord.projectId,
+        taskId:resumeRecord.taskId,callId:effectCallId.trim()
+      });
+      if(proof){
+        setVerifiedEffects(old=>[...old.filter(x=>x.callId!==proof.callId),proof]);
+        setEffectCallId('');
+      }
+    }catch(e){setError('Effect receipt was not verified: '+String(e))}
+    finally{setResumeBusy(false)}
+  }
+  return <aside className="ansfHistoryPane" aria-label="Independent ANSF history browser">
+    <header className="ansfHistoryHeader">
+      <div><strong>ANSF Library</strong><small>Independent history · active chat unchanged</small></div>
+      <button type="button" className="subtleButton" onClick={onClose}
+        aria-label="Close history browser">Close</button>
+    </header>
+    <label className="ansfHistoryPicker">Browse original conversation
+      <select value={browseChatId} onChange={e=>setBrowseChatId(e.target.value)}
+        aria-label="Browse history of conversation">
+        {chats.map(c=><option key={c.chatId} value={c.chatId}>{c.title}</option>)}
+      </select>
+    </label>
+    <form onSubmit={search} className="ansfHistorySearch">
+      <input type="search" value={query} maxLength={256}
+        onChange={e=>setQuery(e.target.value)}
+        placeholder="Keywords or exact ansf:v1: ID"
+        aria-label="Search historical messages"/>
+      <button type="submit" disabled={busy||!query.trim()}>Search</button>
+    </form>
+    {error&&<p role="alert" className="ansfHistoryError">{error}</p>}
+    <small>Historical source text is read-only context, never a new tool permission.</small>
+    <details className="ansfAssetsMemory" aria-label="Local semantic retrieval">
+      <summary>Local semantic search · original-source hybrid</summary>
+      <small>Optional, offline-only GGUF embedding worker. No cloud history transfer; the SQLite originals remain authoritative. Search falls back to lexical recall when unloaded.</small>
+      <p>{semanticModelId
+        ?'Local semantic model loaded: '+semanticModelId
+        :'No separate local embedding model is loaded.'}</p>
+      {semanticReceipt&&<small>{semanticReceipt}</small>}
+      {!semanticModelId?<button type="button" disabled={semanticBusy}
+        onClick={()=>void enableSemantic()}>
+          {semanticBusy?'Starting local engine…':'Choose local embedding GGUF…'}
+        </button>:<div>
+        <button type="button" disabled={semanticBusy}
+          onClick={()=>void indexSemantic()}>
+          {semanticBusy?'Indexing originals…':'Index next 12 entries of this book'}
+        </button>
+        <button type="button" disabled={semanticBusy}
+          onClick={()=>void disableSemantic()}>Stop embedding worker</button>
+      </div>}
+      <small>New original messages are indexed incrementally. An unindexed or unsuitable embedding model does not grant answers or permissions.</small>
+    </details>
+
+    <details className="ansfAssetsMemory" aria-label="Project continuity">
+      <summary>Continue previous work · project checkpoint</summary>
+      <small>Source-linked task progress remains available across Lu conversations and model changes. Historical work does not grant a new tool operation. For automatic read-only recovery in a new human chat, send: Resume project lu task windows-installer (use your exact saved project and task IDs).</small>
+      <form className="ansfAssetForm" onSubmit={saveCheckpoint}>
+        <label>Project ID
+          <input value={resumeProject} maxLength={128}
+            onChange={e=>setResumeProject(e.target.value)}/>
+        </label>
+        <label>Task ID
+          <input value={resumeTask} maxLength={128}
+            onChange={e=>setResumeTask(e.target.value)}/>
+        </label>
+        <label>ANSF evidence from this conversation
+          <input value={resumeSource||
+             (reading?.sourceChatId===activeChatId?reading?.sourceId:'')}
+            maxLength={224} onChange={e=>setResumeSource(e.target.value)}
+            placeholder="Source ID from this original chat"/>
+        </label>
+        <label>Work completed and verified
+          <textarea value={resumeCompleted} maxLength={4096} rows={2}
+            onChange={e=>setResumeCompleted(e.target.value)}/>
+        </label>
+        <label>Next action
+          <textarea value={resumeNext} maxLength={4096} rows={2}
+            onChange={e=>setResumeNext(e.target.value)}/>
+        </label>
+        <label>Unresolved blockers (one per line)
+          <textarea value={resumeBlockers} maxLength={4096} rows={2}
+            onChange={e=>setResumeBlockers(e.target.value)}/>
+        </label>
+        <button type="submit" disabled={resumeBusy||!resumeCompleted.trim()||
+          !resumeNext.trim()||!(resumeSource||
+          (reading?.sourceChatId===activeChatId&&reading?.sourceId))}>
+          Confirm and save checkpoint…</button>
+      </form>
+      <button type="button" disabled={resumeBusy||!resumeProject.trim()||!resumeTask.trim()}
+        onClick={()=>void resumeCheckpoint()}>
+        {resumeBusy?'Reading checkpoint…':'Find latest task checkpoint'}</button>
+      {resumeRecord&&<section className="ansfHistoryEntry" aria-label="Verified project continuity">
+        <strong>{resumeRecord.projectId} · {resumeRecord.taskId}</strong>
+        <small>Origin chat {resumeRecord.sourceChatId} · original evidence {resumeRecord.originalSourceIds.join(', ')}</small>
+        {contextChange?.needsReview&&<section role="status" aria-label="Context Change Monitor review">
+          <strong>Context Change Monitor · review changed task assumptions</strong>
+          <small>Compared checkpoints {contextChange.previousCheckpointId} and {contextChange.currentCheckpointId}. Historical changes never approve a new action.</small>
+          {contextChange.nextActionChanged&&<p>Next action changed. Review before continuing.</p>}
+          {contextChange.completedWorkChanged&&<p>Completed-work description changed; verify the APPLIED receipts.</p>}
+          {contextChange.sourceEvidenceChanged&&<p>Original ANSF source evidence changed; reconcile supersession.</p>}
+          {contextChange.addedBlockers.map(b=><p key={'added-'+b}>New blocker: {b}</p>)}
+          {contextChange.clearedBlockers.map(b=><p key={'cleared-'+b}>Cleared blocker (verify): {b}</p>)}
+        </section>}
+        <p>Completed: {resumeRecord.completedWork}</p>
+        <p>Next: {resumeRecord.nextAction}</p>
+        {resumeRecord.blockers.map((b,i)=><p key={i}>Blocker: {b}</p>)}
+        <small>This is context, not current permission to run any tool.</small>
+        <strong>Previously completed native effects (verified receipts)</strong>
+        {verifiedEffects.length===0&&<small>No linked applied tool receipts.</small>}
+        {verifiedEffects.map(e=><small key={e.callId}>
+          {e.toolId} · {e.callId} · SHA-256 {e.receiptSha256}
+        </small>)}
+        <form className="ansfAssetForm" onSubmit={linkAppliedEffect}>
+          <label>Previously completed tool call ID
+            <input value={effectCallId} maxLength={128}
+              onChange={e=>setEffectCallId(e.target.value)}
+              placeholder="Native effect journal call ID"/>
+          </label>
+          <button type="submit" disabled={resumeBusy||!effectCallId.trim()}>
+            Confirm and link existing APPLIED receipt…</button>
+        </form>
+        <strong>Required toolchain recovery plan</strong>
+        <small>List an exact required package and version. Verified existing bytes can be reused after fresh tool authorization; missing, changed and unrecorded assets need a new human-approved acquisition. This check never installs anything.</small>
+        <form className="ansfAssetForm" onSubmit={planRequiredAsset}>
+          <label>Required package
+            <input value={requiredName} maxLength={180}
+              onChange={e=>setRequiredName(e.target.value)}
+              placeholder="Windows SDK package"/>
+          </label>
+          <label>Exact required version
+            <input value={requiredVersion} maxLength={180}
+              onChange={e=>setRequiredVersion(e.target.value)}
+              placeholder="Previously approved version"/>
+          </label>
+          <button type="submit" disabled={resumeBusy||!requiredName.trim()||
+            !requiredVersion.trim()}>Verify required dependency</button>
+        </form>
+        {requiredPlan.map(x=><small key={x.logicalName+'-'+x.version} role="status">
+          {x.logicalName} {x.version} · {x.state} · {x.nextAction}
+        </small>)}
+        <strong>Automatically revalidated project resources</strong>
+        <small>Only verified_present files may be considered for reuse. 
+          A file identity never grants execution.</small>
+        {assetRows.filter(a=>a.projectId===resumeRecord.projectId).map(asset=><small key={asset.recordId}>
+          {asset.logicalName} {asset.version} · {asset.presence}
+        </small>)}
+      </section>}
+    </details>
+    <details className="ansfAssetsMemory">
+      <summary>Operational memory · reusable build assets</summary>
+      <small>Host-verified file hashes and source IDs; a remembered path is not an execution permission.</small>
+      <form className="ansfAssetForm" onSubmit={rememberAsset}>
+        <label>Project ID
+          <input value={assetProject} maxLength={128}
+            onChange={e=>setAssetProject(e.target.value)} placeholder="lu"/>
+        </label>
+        <label>Asset label
+          <input value={assetName} maxLength={180}
+            onChange={e=>setAssetName(e.target.value)} placeholder="Windows SDK ZIP"/>
+        </label>
+        <label>Version or build identity
+          <input value={assetVersion} maxLength={180}
+            onChange={e=>setAssetVersion(e.target.value)} placeholder="10.0.x / SHA build"/>
+        </label>
+        <label>Original ANSF source ID
+          <input value={assetSource||reading?.sourceId||''} maxLength={224}
+            onChange={e=>setAssetSource(e.target.value)}
+            placeholder="First open an original source"/>
+        </label>
+        <button type="submit" disabled={assetBusy||!assetName.trim()||
+          !assetVersion.trim()||!(assetSource||reading?.sourceId)}>
+          Choose file and remember hash…</button>
+      </form>
+      <button type="button" disabled={assetBusy||!assetProject.trim()}
+        onClick={()=>void inspectAssets()}>{assetBusy?'Verifying…':'Recheck saved assets'}</button>
+      <div className="ansfAssetRows">
+        {assetRows.map(asset=><article key={asset.recordId}>
+          <strong>{asset.logicalName}</strong><small>{asset.version} · {asset.presence}</small>
+          <code>{asset.location}</code>
+          <small>{asset.bytes} bytes · SHA-256: {asset.sha256}</small>
+        </article>)}
+      </div>
+    </details>
+    <div className="ansfHistoryScroll" ref={scrollRef} onScroll={onHistoryScroll}>
+      {hasMore&&<button type="button" onClick={()=>void older()} disabled={busy}>
+        {busy?'Loading…':'Load older page'}</button>}
+      {entries.map(entry=><article className="ansfHistoryEntry" key={entry.sourceId}
+        data-ansf-seq={originalEntryNumber(entry)}>
+        <small>{entry.role==='user'?'You':'Lu'} · {entry.chatTitle}</small>
+        <p>{entry.excerpt}{entry.truncated?' …':''}</p>
+        <button type="button" className="subtleButton" disabled={busy}
+          onClick={()=>void openChecked(entry.sourceId)}>Read full original</button>
+        <code>{entry.sourceId}</code>
+      </article>)}
+      {hasNewer&&<button type="button" onClick={()=>void newer()} disabled={busy}>
+        {busy?"Loading…":"Load newer original page"}</button>}
+      {!entries.length&&!busy&&<small>No completed original entries on this page.</small>}
+      {matches.length>0&&<section aria-label="Historical search results">
+        <h3>Matching originals</h3>
+        {matches.map(hit=><article className="ansfHistoryEntry" key={hit.sourceId}>
+          <strong>{hit.chatTitle}</strong><p>{hit.excerpt}</p>
+          <button type="button" className="subtleButton" disabled={busy}
+            onClick={()=>void openChecked(hit.sourceId)}>Read matching original</button>
+        </article>)}
+      </section>}
+    </div>
+    {reading&&<section className="ansfOriginalReader" aria-label="Exact original source reader">
+      <header><strong>Original · {reading.role}</strong>
+        <button type="button" onClick={()=>setReading(null)}>Close source</button></header>
+      <pre>{reading.text}</pre>
+      <small>{reading.text.length} displayed characters of {reading.totalChars} · {reading.sourceId}</small>
+      {reading.nextOffsetChars!==null&&<button type="button" disabled={busy}
+        onClick={()=>void readMore()}>Read next source page</button>}
+    </section>}
+  </aside>;
+}
 
 function App() {
   const [models, setModels] = useState([]);
@@ -45,9 +586,15 @@ function App() {
   const [m2PanelOpen,setM2PanelOpen]=useState(false);
   const [m2Busy,setM2Busy]=useState(false);
 
-  const activeChatRef=useRef(null);
-  activeChatRef.current=chatId;
+  const [historyPaneOpen,setHistoryPaneOpen]=useState(false);
   const [history, setHistory] = useState([]);
+  // Active transcript is a bounded visible window, not the entire ANSF book.
+  const [historyWindow,setHistoryWindow]=useState({
+    older:null,hasOlder:false,hasNewer:false
+  });
+  const loadingWindow=useRef(false);
+  const pendingPrepend=useRef(null);
+
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
   const [captureLocalTaskId,setCaptureLocalTaskId]=useState(null);
@@ -1363,19 +1910,101 @@ function App() {
     setFolders(list.folders);
     return list.chats;
   }
+  const MAX_VISIBLE_CHAT_ROWS=MAX_HISTORY_ROWS;
+  async function loadLatestUiHistory(id){
+    const page=await invoke('lu_history_window',{
+      chatId:id,cursor:null,direction:'older',limit:64
+    });
+    if(requestedChat.current===id||currentChat.current===id){
+      setHistoryWindow({
+        older:page.nextCursor,hasOlder:page.hasMore,hasNewer:false
+      });
+    }
+    return page.entries;
+  }
+  // Reopen the original source near its remembered stable-ID cursor rather
+  // than applying stale absolute pixel offsets to a different loaded window.
+  async function loadRememberedUiHistory(id){
+    const remembered=scrollByChat.current.get(id);
+    const anchor=remembered?.anchor;
+    if(!remembered?.follow&&Number.isSafeInteger(anchor?.seq)&&anchor.seq>0){
+      const [page,newer]=await Promise.all([
+        invoke('lu_history_window',{
+          chatId:id,cursor:anchor.seq+1,direction:'older',limit:64
+        }),
+        invoke('lu_history_window',{
+          chatId:id,cursor:anchor.seq,direction:'newer',limit:1
+        })
+      ]);
+      if(requestedChat.current===id){
+        setHistoryWindow({
+          older:page.nextCursor,hasOlder:page.hasMore,
+          hasNewer:newer.entries.length>0
+        });
+      }
+      return page.entries;
+    }
+    return loadLatestUiHistory(id);
+  }
+  async function loadOlderUiHistory(){
+    const id=currentChat.current;
+    if(!id||loadingWindow.current||!historyWindow.hasOlder||
+       historyWindow.older===null)return;
+    loadingWindow.current=true;
+    const anchor=captureHistoryAnchor(transcriptRef.current);
+    try{
+      const page=await invoke('lu_history_window',{
+        chatId:id,cursor:historyWindow.older,direction:'older',limit:48
+      });
+      if(currentChat.current!==id)return;
+      const merged=mergeHistoryWindow(history,page.entries,'older',MAX_VISIBLE_CHAT_ROWS);
+      pendingPrepend.current={chatId:id,anchor};
+      followOutput.current=false;
+      setHistory(merged.rows);
+      setHistoryWindow(prev=>({
+        older:page.nextCursor,hasOlder:page.hasMore,
+        hasNewer:prev.hasNewer||merged.evictedNewer
+      }));
+    }catch(e){setError('Previous history page unavailable: '+String(e))}
+    finally{loadingWindow.current=false}
+  }
+  async function loadNewerUiHistory(){
+    const id=currentChat.current;
+    const last=history.at(-1)?.seq;
+    if(!id||!last||loadingWindow.current||!historyWindow.hasNewer)return;
+    loadingWindow.current=true;
+    const anchor=captureHistoryAnchor(transcriptRef.current);
+    try{
+      const page=await invoke('lu_history_window',{
+        chatId:id,cursor:last,direction:'newer',limit:48
+      });
+      if(currentChat.current!==id)return;
+      const merged=mergeHistoryWindow(history,page.entries,'newer',MAX_VISIBLE_CHAT_ROWS);
+      pendingPrepend.current={chatId:id,anchor};
+      followOutput.current=false;
+      setHistory(merged.rows);
+      setHistoryWindow(prev=>({
+        older:merged.evictedOlder?merged.rows[0]?.seq:prev.older,
+        hasOlder:prev.hasOlder||merged.evictedOlder,
+        hasNewer:page.hasMore
+      }));
+    }catch(e){setError('Next history page unavailable: '+String(e))}
+    finally{loadingWindow.current=false}
+  }
   async function switchChat(id) {
     if (currentChat.current !== id) {
       // Capture the outgoing reading position before the asynchronous read.
       const el = transcriptRef.current;
       if (el) scrollByChat.current.set(currentChat.current || 'new', {
-        top: el.scrollTop, follow: followOutput.current
+        top: el.scrollTop, follow: followOutput.current,
+        anchor: captureHistoryAnchor(el)
       });
       pendingDrafts.current.set(currentChat.current || 'new', {
         prompt: draftText.current, images: draftImages.current, files: draftFiles.current
       });
     }
     requestedChat.current = id;
-    const entries = await invoke('lu_history', {chatId: id});
+    const entries = await loadRememberedUiHistory(id);
     if (requestedChat.current !== id) return;
     currentChat.current = id;
     const draft = pendingDrafts.current.get(id) || {prompt:'',images:[],files:[]};
@@ -1468,7 +2097,7 @@ function App() {
       // Native auto turns aren't initiated by a WebView invoke. Read their
       // journaled assistant output, including after a background tab switch.
       if (currentChat.current===finishedChat){
-        invoke('lu_history',{chatId:finishedChat})
+        loadLatestUiHistory(finishedChat)
           .then(items=>{if(alive&&currentChat.current===finishedChat)setHistory(items);})
           .catch(()=>{});
       }
@@ -1491,6 +2120,9 @@ function App() {
     followOutput.current = follow;
     scrollByChat.current.set(currentChat.current || 'new', {top: el.scrollTop, follow});
     setAtBottom(follow);
+    if(el.scrollTop<140&&historyWindow.hasOlder)void loadOlderUiHistory();
+    if(el.scrollHeight-el.scrollTop-el.clientHeight<140&&historyWindow.hasNewer)
+      void loadNewerUiHistory();
   }
   function jumpToLatest() {
     const el = transcriptRef.current;
@@ -1499,20 +2131,36 @@ function App() {
     el.scrollTop = el.scrollHeight;
     scrollByChat.current.set(currentChat.current || 'new', {top: el.scrollTop, follow:true});
     setAtBottom(true);
+    if(historyWindow.hasNewer&&chatId){
+      const target=chatId;
+      void loadLatestUiHistory(target).then(rows=>{
+        if(currentChat.current===target)setHistory(rows);
+      }).catch(e=>setError('Latest history unavailable: '+String(e)));
+    }
   }
   useLayoutEffect(() => {
     const el = transcriptRef.current;
     if (!el) return;
     const stored = scrollByChat.current.get(chatId || 'new');
     followOutput.current = stored?.follow ?? true;
-    el.scrollTop = restoredScrollTop(stored, el.scrollHeight, el.clientHeight);
+    if(stored?.anchor&&!stored.follow)restoreHistoryAnchor(el,stored.anchor);
+    else el.scrollTop = restoredScrollTop(stored, el.scrollHeight, el.clientHeight);
     setAtBottom(followOutput.current);
   }, [chatId]);
   useLayoutEffect(() => {
     const el = transcriptRef.current;
-    if (!el || !followOutput.current) return;
+    if (!el || !followOutput.current || pendingPrepend.current) return;
     el.scrollTop = el.scrollHeight;
   }, [history, visibleStream, chatId]);
+  useLayoutEffect(()=>{
+    const el=transcriptRef.current;
+    const pending=pendingPrepend.current;
+    if(!el||!pending)return;
+    if(pending.chatId===currentChat.current)restoreHistoryAnchor(el,pending.anchor);
+    followOutput.current=false;
+    pendingPrepend.current=null;
+  },[history]);
+
   useEffect(() => { if (!settingsOpen) composerRef.current?.focus(); }, [chatId]);
   useEffect(() => {
     function onShortcut(event) {
@@ -1687,6 +2335,8 @@ function App() {
         targetId = newChat.chatId;
         currentChat.current = targetId;
         setChatId(targetId);
+        setHistoryWindow({older:null,hasOlder:false,hasNewer:false});
+        setHistory([]);
         await refreshChats();
       } catch (error) { setError(String(error)); return; }
     }
@@ -1694,7 +2344,7 @@ function App() {
     try {
       const result = await invoke('lu_inspect_text_file', {chatId: targetId});
       if (result && currentChat.current === targetId) {
-        setHistory(await invoke('lu_history', {chatId: targetId}));
+        setHistory(await loadLatestUiHistory(targetId));
         setActivity(result.truncated ? 'File inspected (first 64 KiB)' : 'File inspected');
       }
       if (result) await refreshChats();
@@ -1702,7 +2352,7 @@ function App() {
       setError(String(error));
       await refreshChats().catch(() => {});
       if (currentChat.current === targetId)
-        setHistory(await invoke('lu_history', {chatId: targetId}).catch(() => []));
+        setHistory(await loadLatestUiHistory(targetId).catch(() => []));
     }
   }
 
@@ -1714,7 +2364,7 @@ function App() {
       if (result) {
         await refreshChats();
         if (currentChat.current === proposal.chatId)
-          setHistory(await invoke('lu_history', {chatId: proposal.chatId}));
+          setHistory(await loadLatestUiHistory(proposal.chatId));
         setActivity(result.truncated ? 'Approved native read completed (truncated)' : 'Approved native read completed');
       }
     } catch (error) {
@@ -1796,7 +2446,7 @@ function App() {
         setLatestRestored({...restored,chatId});
         await refreshChats();
         if (currentChat.current === chatId)
-          setHistory(await invoke('lu_history',{chatId}));
+          setHistory(await loadLatestUiHistory(chatId));
       } else setActivity('Kept current file; restoration denied');
     } catch (error) { setError(String(error)); }
     finally {
@@ -1839,7 +2489,7 @@ function App() {
       if (edited) {
         await refreshChats();
         if (currentChat.current === proposal.chatId)
-          setHistory(await invoke('lu_history',{chatId:proposal.chatId}));
+          setHistory(await loadLatestUiHistory(proposal.chatId));
         setActivity('Edited existing file: '+edited.fileName);
         setLatestEdited({...edited,proposalId:proposal.proposalId,chatId:proposal.chatId});
       } else setActivity('Edit denied in native confirmation');
@@ -1968,7 +2618,7 @@ function App() {
         setActivity('Archive group created: '+result.groupName);
         await refreshChats();
         if(currentChat.current===review.chatId){
-          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
         }
       }
     }catch(e){
@@ -2044,7 +2694,7 @@ function App() {
         setActivity('Archive extracted: ' + receipt.targetFolder);
         await refreshChats();
         if (currentChat.current === review.chatId)
-          setHistory(await invoke('lu_history', {chatId: review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       } else {
         setActivity('Archive extraction denied in native confirmation');
       }
@@ -2120,7 +2770,7 @@ function App() {
         setActivity('Created ' + receipt.documentFormat.toUpperCase() + ': ' + receipt.fileName);
         await refreshChats();
         if (currentChat.current === review.chatId)
-          setHistory(await invoke('lu_history', {chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       } else {
         setActivity('Document creation denied in native confirmation');
       }
@@ -2180,7 +2830,7 @@ function App() {
         setActivity('Saved new document revision: ' + receipt.targetNewName);
         await refreshChats();
         if (currentChat.current === review.chatId)
-          setHistory(await invoke('lu_history', {chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       } else {
         setActivity('Office revision denied in native confirmation');
       }
@@ -2236,7 +2886,7 @@ function App() {
         setActivity('File ' + receipt.operation + ' completed: ' + receipt.targetName);
         await refreshChats();
         if (currentChat.current === view.chatId)
-          setHistory(await invoke('lu_history', {chatId:view.chatId}));
+          setHistory(await loadLatestUiHistory(view.chatId));
       } else {
         setActivity('File operation denied in native confirmation');
       }
@@ -2296,7 +2946,7 @@ function App() {
         await refreshTrashHistory(review.chatId);
         await refreshChats();
         if (currentChat.current===review.chatId)
-          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       } else {
         setActivity('File trash denied in native confirmation');
       }
@@ -2346,7 +2996,7 @@ function App() {
         await refreshTrashHistory(review.chatId);
         await refreshChats();
         if (currentChat.current===review.chatId)
-          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       } else {
         setActivity('Restore denied in native confirmation');
       }
@@ -2421,7 +3071,7 @@ function App() {
         setActivity('Created approved multi-edit version: '+receipt.fileName);
         await refreshChats();
         if (currentChat.current===review.chatId)
-          setHistory(await invoke('lu_history',{chatId:review.chatId}));
+          setHistory(await loadLatestUiHistory(review.chatId));
       }else{setActivity('Office batch denied by native confirmation');}
     }catch(error){
       setError('Office batch rejected or uncertain. Inspect recovery before retry: '+String(error));
@@ -2463,7 +3113,7 @@ function App() {
       if (written) {
         await refreshChats();
         if (currentChat.current === proposal.chatId)
-          setHistory(await invoke('lu_history', {chatId: proposal.chatId}));
+          setHistory(await loadLatestUiHistory(proposal.chatId));
         setActivity('Created new file: ' + written.fileName);
         setLatestCreated({...written, proposalId: proposal.proposalId, chatId: proposal.chatId});
       } else {
@@ -2507,6 +3157,8 @@ function App() {
       activeId=created.chatId;
       currentChat.current=activeId;
       setChatId(activeId);
+      setHistoryWindow({older:null,hasOlder:false,hasNewer:false});
+      setHistory([]);
     }
     setJobs(prev=>({...prev,[activeId]:{
       generationId:null,phase:'selecting-document',position:0,text:''
@@ -2535,7 +3187,7 @@ function App() {
     } finally {
       await refreshChats().catch(()=>{});
       if (currentChat.current===activeId){
-        const entries=await invoke('lu_history',{chatId:activeId}).catch(()=>null);
+        const entries=await loadLatestUiHistory(activeId).catch(()=>null);
         if (entries&&currentChat.current===activeId)setHistory(entries);
       }
       setJobs(prev=>removeJob(prev,activeId));
@@ -2557,6 +3209,8 @@ function App() {
       activeId=created.chatId;
       currentChat.current=activeId;
       setChatId(activeId);
+      setHistoryWindow({older:null,hasOlder:false,hasNewer:false});
+      setHistory([]);
     }
     setJobs(prev=>({...prev,[activeId]:{
       generationId:null,phase:'selecting-workspace',position:0,text:''
@@ -2584,7 +3238,7 @@ function App() {
     } finally {
       await refreshChats().catch(()=>{});
       if (currentChat.current===activeId) {
-        const entries=await invoke('lu_history',{chatId:activeId}).catch(()=>null);
+        const entries=await loadLatestUiHistory(activeId).catch(()=>null);
         if(entries&&currentChat.current===activeId)setHistory(entries);
       }
       setJobs(prev=>removeJob(prev,activeId));
@@ -2620,6 +3274,8 @@ function App() {
       activeId = created.chatId;
       currentChat.current = activeId;
       setChatId(activeId);
+      setHistoryWindow({older:null,hasOlder:false,hasNewer:false});
+      setHistory([]);
     }
     // A workspace opt-in is consumed on this Send even if the picker is
     // denied/cancelled. No future conversation inherits a filesystem grant.
@@ -2661,7 +3317,7 @@ function App() {
       await refreshChats().catch(error => setError(String(error)));
       // A background turn must never steal focus from another conversation.
       if (currentChat.current === activeId) {
-        const entries = await invoke('lu_history', {chatId:activeId})
+        const entries = await loadLatestUiHistory(activeId)
           .catch(error => {setError(String(error));return null;});
         if (entries && currentChat.current === activeId) setHistory(entries);
       }
@@ -2891,6 +3547,8 @@ function App() {
         <button className="settingsButton" onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
       </div>
     </aside>
+    {historyPaneOpen&&chatId&&<AnsfHistoryPane activeChatId={chatId}
+      chats={chats} onClose={()=>setHistoryPaneOpen(false)}/>}
     <main className="workspace">
       {backgroundTerminalNotice && <button type="button"
         className="backgroundGlobalNotice"
@@ -2921,6 +3579,9 @@ function App() {
             </div>}
           </div>
           {loaded && <button className="quickEject" disabled={busy} title="Unload active model" onClick={unloadModel}>⏏</button>}
+          <button type="button" className="subtleButton" title="Open independent ANSF history"
+            disabled={!chatId} aria-expanded={historyPaneOpen}
+            onClick={()=>setHistoryPaneOpen(v=>!v)}>History library</button>
           <button className="quietSettings" title="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
         </div>
       </header>
@@ -2982,14 +3643,19 @@ function App() {
           </section>)}
         </div>}
       </section>}
-      <div className="transcriptWrap"><div className="messages" ref={transcriptRef} onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-relevant="additions">
+      <div className="transcriptWrap"><div className="messages" ref={transcriptRef} onScroll={onTranscriptScroll} role="log" aria-live="off" aria-label="Conversation history, cursor paginated">
+        {historyWindow.hasOlder&&<button type="button" className="subtleButton"
+          onClick={()=>void loadOlderUiHistory()}>Load older ANSF page</button>}
+
         {!history.length && <div className="welcome"><div className="welcomeSymbol">L</div>
           <h2>What can I help you build?</h2>
           <p>Local conversations are saved separately. Start a new chat or choose one from your history.</p></div>}
-        {displayedHistory.map((entry,i) => <div key={i} className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}>
+        {displayedHistory.map((entry,i) => <div key={entry.seq??i} data-ansf-seq={entry.seq??undefined} className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}>
           <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
           <MessageText text={entry.text} role={entry.role}/></div>)}
-        {visibleJob && <div className="message assistant streaming"><span className="messageRole">
+        {historyWindow.hasNewer&&<button type="button" className="subtleButton"
+          onClick={()=>void loadNewerUiHistory()}>Load newer ANSF page</button>}
+        {visibleJob && <div className="message assistant streaming"><span className="messageRole" role="status" aria-live="polite" aria-atomic="true">
           {visibleJob.phase === 'queued' ? `Lu · queued${visibleJob.position ? ' (#' + visibleJob.position + ')' : ''}`
            : visibleJob.phase === 'submitting' ? 'Lu · submitting'
            : visibleJob.cancelling ? 'Lu · stopping'

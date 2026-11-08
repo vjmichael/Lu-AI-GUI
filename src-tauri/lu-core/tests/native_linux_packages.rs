@@ -223,5 +223,24 @@ async fn model_archive_list_uses_native_cpio_with_strict_output_budget(){
     assert_eq!(data["result"]["total_entries"],1);
     assert_eq!(fs::read(root.join("archive.cpio")).unwrap(),bytes);
     assert_eq!(fs::read_dir(&root).unwrap().count(),1);
-    drop(dir);fs::remove_dir_all(root).unwrap();
+    // The archive registry and granted capability handles are still alive at
+    // this point. Windows correctly refuses to remove their open directory.
+    // Close every owner explicitly before asserting fixture cleanup.
+    drop(data);
+    drop(turn);
+    drop(registry);
+    drop(catalog);
+    drop(auth);
+    drop(dir);
+    let mut cleanup=fs::remove_dir_all(&root);
+    // On Windows, a just-closed file handle may briefly remain held by an AV
+    // scanner. Retry only ERROR_SHARING_VIOLATION with a finite 500ms budget;
+    // other failures (and a persistent lock) remain genuine test failures.
+    #[cfg(windows)]
+    for _ in 0..20{
+        if cleanup.as_ref().err().and_then(|e|e.raw_os_error())!=Some(32){break}
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        cleanup=fs::remove_dir_all(&root);
+    }
+    cleanup.unwrap();
 }

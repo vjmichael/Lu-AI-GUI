@@ -1,0 +1,94 @@
+name: Lu M3 Cognitum Real GGUF Three-Arm
+on:
+  push:
+    branches: [lu/m3-cross-chat-recall-source-ids-20261107]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'benchmarks/memory/**'
+      - 'src-tauri/lu-core/examples/ansf_memory_baseline.rs'
+      - '.github/workflows/lu-m3-cognitum-real-benchmark.yml'
+      - 'source-tree.lock.json'
+permissions:
+  contents: read
+jobs:
+  source-and-real-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CHAT_SHA: 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
+      BGE_SHA: f046db1dc724cf4f6f0a0c5917e922823b73eb1d27b8f9a9c2797f7866974804
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: vjmichael/cognitum
+          ref: 3c7614634ed210580644708be304a14702ec5325
+          path: cognitum-source
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Verify exact Lu and Cognitum source and benchmark contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-source-tree.mjs
+          python3 -m unittest discover -s benchmarks/memory -p 'test_*.py' -v
+          test "$(git -C cognitum-source rev-parse HEAD)" = 3c7614634ed210580644708be304a14702ec5325
+          test "$(git -C cognitum-source hash-object C14_CLOSEOUT.md)" = 9414e78f97776a259b6a5f3fb21bdab20542defc
+          test "$(git -C cognitum-source hash-object docs/components/spatial/C15-T3-T4-P13B-experimental-checkpoint-ledger-2026-10-29.md)" = 384470a3c600ddf0511eb116aa1f97924a34ad9c
+          test "$(git -C cognitum-source hash-object docs/components/security/P51-p46-recovery-containment-host-evidence-ledger-2026-10-31.md)" = 2f4d11a26f6ab49836679a2f62d438201b2144df
+          test "$(git -C cognitum-source hash-object research/ch40m8-exact-key/evidence/CH40M8_ACCEPTANCE.json)" = c015fdb410ada332f73f0cddf5c67a7d7a2d75dd
+      - name: Compile actual Lu Core source retrieval and tests
+        run: |
+          cargo build --locked --release --manifest-path src-tauri/lu-core/Cargo.toml --example ansf_memory_baseline
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_semantic::tests
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_source_ids::tests
+      - name: Compile SHA-pinned CPU llama.cpp server
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch b12143 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/llama-cpp"
+          actual="$(git -C "$RUNNER_TEMP/llama-cpp" rev-parse HEAD)"
+          test "$(printf '%s' "$actual" | cut -c 1-7)" = 2bc46ba
+          echo "ENGINE_COMMIT=$actual" >> "$GITHUB_ENV"
+          cmake -S "$RUNNER_TEMP/llama-cpp" -B "$RUNNER_TEMP/llama-build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/llama-build" --config Release --target llama-server --parallel 3
+      - name: Obtain hash-verified genuine answer and embedding GGUFs
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 5 https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf -o "$RUNNER_TEMP/qwen.gguf"
+          curl -fL --retry 4 --retry-delay 5 https://huggingface.co/ggml-org/bge-small-en-v1.5-Q8_0-GGUF/resolve/main/bge-small-en-v1.5-q8_0.gguf -o "$RUNNER_TEMP/bge.gguf"
+          printf '%s  %s\n' "$CHAT_SHA" "$RUNNER_TEMP/qwen.gguf" | sha256sum -c -
+          printf '%s  %s\n' "$BGE_SHA" "$RUNNER_TEMP/bge.gguf" | sha256sum -c -
+      - name: Real BGE indexed ANSF FTS5 plus paired Qwen three-arm generations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/memory/cognitum_three_arm_real_model.py \
+            --cognitum-root "$GITHUB_WORKSPACE/cognitum-source" \
+            --native "$GITHUB_WORKSPACE/src-tauri/lu-core/target/release/examples/ansf_memory_baseline" \
+            --engine "$RUNNER_TEMP/llama-build/bin/llama-server" \
+            --engine-version "b12143:$ENGINE_COMMIT" \
+            --model "$RUNNER_TEMP/qwen.gguf" --model-sha256 "$CHAT_SHA" \
+            --embedding-model "$RUNNER_TEMP/bge.gguf" --embedding-sha256 "$BGE_SHA" \
+            --output-dir /tmp/lu-m3-cognitum --repeats 2
+      - name: Report measured outcome, never a fake substitute
+        if: always()
+        run: |
+          if test -f /tmp/lu-m3-cognitum/summary.md; then
+            cat /tmp/lu-m3-cognitum/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No complete genuine model evidence." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-m3-cognitum-evidence
+          path: /tmp/lu-m3-cognitum/
+          if-no-files-found: warn
+          retention-days: 14

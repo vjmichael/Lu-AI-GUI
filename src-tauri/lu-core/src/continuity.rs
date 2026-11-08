@@ -3,6 +3,8 @@
 //! Checkpoints are derived observations, not authority and not edits to chat.
 //! Hosts must authenticate session/project access before calling this API.
 use rusqlite::{params, Connection, OptionalExtension};
+use sha2::{Digest,Sha256};
+use crate::journal::{EffectJournal,EffectState};
 use std::{path::Path, sync::Mutex};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +20,14 @@ impl From<rusqlite::Error> for ContinuityError {
     }
 }
 
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct VerifiedEffectEvidence{
+    pub checkpoint_id:String,
+    pub call_id:String,
+    pub tool_id:String,
+    pub receipt_sha256:String,
+    pub receipt_bytes:u64,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskCheckpoint {
     pub checkpoint_id: String,
@@ -41,6 +51,50 @@ type StoredCheckpoint = (
     String,
 );
 
+/// Context Change Monitor: a read-only comparison of two immutable, source-
+/// backed checkpoints from the same task. A changed historical fact is NOT
+/// approval to run a tool, and a changed plan needs human review.
+#[derive(Debug,Clone,PartialEq,Eq,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct ContextChangeReview{
+    pub project_id:String,
+    pub task_id:String,
+    pub previous_checkpoint_id:String,
+    pub current_checkpoint_id:String,
+    pub next_action_changed:bool,
+    pub completed_work_changed:bool,
+    pub source_evidence_changed:bool,
+    pub added_blockers:Vec<String>,
+    pub cleared_blockers:Vec<String>,
+    pub needs_review:bool,
+}
+pub fn compare_task_checkpoints(
+    previous:&TaskCheckpoint,current:&TaskCheckpoint
+)->Result<ContextChangeReview,ContinuityError>{
+    if !validate(previous)||!validate(current)||
+       previous.project_id!=current.project_id||
+       previous.task_id!=current.task_id||
+       previous.checkpoint_id==current.checkpoint_id{
+        return Err(ContinuityError::InvalidInput)
+    }
+    let added_blockers=current.blockers.iter()
+        .filter(|b|!previous.blockers.contains(b)).cloned().collect::<Vec<_>>();
+    let cleared_blockers=previous.blockers.iter()
+        .filter(|b|!current.blockers.contains(b)).cloned().collect::<Vec<_>>();
+    let next_action_changed=previous.next_action!=current.next_action;
+    let completed_work_changed=previous.completed_work!=current.completed_work;
+    let source_evidence_changed=previous.conversation_id!=current.conversation_id||
+        previous.source_entry_ids!=current.source_entry_ids;
+    let needs_review=next_action_changed||completed_work_changed||
+        source_evidence_changed||!added_blockers.is_empty()||!cleared_blockers.is_empty();
+    Ok(ContextChangeReview{
+        project_id:current.project_id.clone(),task_id:current.task_id.clone(),
+        previous_checkpoint_id:previous.checkpoint_id.clone(),
+        current_checkpoint_id:current.checkpoint_id.clone(),
+        next_action_changed,completed_work_changed,source_evidence_changed,
+        added_blockers,cleared_blockers,needs_review
+    })
+}
 pub struct ContinuityStore {
     conn: Mutex<Connection>,
 }
@@ -95,6 +149,22 @@ impl ContinuityStore {
             CREATE TRIGGER IF NOT EXISTS continuity_no_delete
                 BEFORE DELETE ON continuity_checkpoints BEGIN
                 SELECT RAISE(ABORT,'continuity checkpoints are immutable');
+            END;
+            CREATE TABLE IF NOT EXISTS continuity_verified_effects(
+                checkpoint_id TEXT NOT NULL REFERENCES continuity_checkpoints(checkpoint_id),
+                call_id TEXT NOT NULL,
+                tool_id TEXT NOT NULL,
+                receipt_sha256 TEXT NOT NULL,
+                receipt_bytes INTEGER NOT NULL CHECK(receipt_bytes > 0),
+                PRIMARY KEY(checkpoint_id,call_id)
+            );
+            CREATE TRIGGER IF NOT EXISTS continuity_effect_no_update
+                BEFORE UPDATE ON continuity_verified_effects BEGIN
+                SELECT RAISE(ABORT,'effect evidence is immutable');
+            END;
+            CREATE TRIGGER IF NOT EXISTS continuity_effect_no_delete
+                BEFORE DELETE ON continuity_verified_effects BEGIN
+                SELECT RAISE(ABORT,'effect evidence is immutable');
             END;",
         )?;
         Ok(Self {
@@ -182,6 +252,93 @@ impl ContinuityStore {
             return Err(ContinuityError::IdentityConflict);
         }
         Ok(())
+    }
+
+    /// Attach only an ALREADY-APPLIED, nonempty immutable host effect receipt
+    /// to an existing source-backed checkpoint. A model cannot promote a
+    /// PREPARED/EXECUTING/FAILED/UNCERTAIN effect to completed work.
+    /// Host caller must establish current task scope and user confirmation.
+    pub fn link_verified_effect(
+        &self,checkpoint_id:&str,call_id:&str,journal:&EffectJournal
+    )->Result<VerifiedEffectEvidence,ContinuityError>{
+        if !valid_id(checkpoint_id)||!valid_id(call_id){
+            return Err(ContinuityError::InvalidInput)
+        }
+        let record=journal.get(call_id)
+            .map_err(|_|ContinuityError::InvalidInput)?
+            .ok_or(ContinuityError::InvalidInput)?;
+        if record.state!=EffectState::Applied{
+            return Err(ContinuityError::InvalidInput)
+        }
+        let bytes=record.receipt.as_deref()
+            .filter(|v|!v.is_empty()).ok_or(ContinuityError::InvalidInput)?;
+        let evidence=VerifiedEffectEvidence{
+            checkpoint_id:checkpoint_id.to_string(),
+            call_id:call_id.to_string(),tool_id:record.tool_id,
+            receipt_sha256:format!("{:x}",Sha256::digest(bytes)),
+            receipt_bytes:bytes.len() as u64
+        };
+        let conn=self.conn.lock().map_err(|_|ContinuityError::Locked)?;
+        let exists:i64=conn.query_row(
+            "SELECT COUNT(*) FROM continuity_checkpoints WHERE checkpoint_id=?1",
+            [checkpoint_id],|r|r.get(0)
+        )?;
+        if exists!=1{return Err(ContinuityError::InvalidInput)}
+        conn.execute(
+            "INSERT OR IGNORE INTO continuity_verified_effects
+             (checkpoint_id,call_id,tool_id,receipt_sha256,receipt_bytes)
+             VALUES(?1,?2,?3,?4,?5)",
+            params![evidence.checkpoint_id,evidence.call_id,evidence.tool_id,
+                evidence.receipt_sha256,evidence.receipt_bytes as i64]
+        )?;
+        let saved:VerifiedEffectEvidence=conn.query_row(
+            "SELECT checkpoint_id,call_id,tool_id,receipt_sha256,receipt_bytes
+             FROM continuity_verified_effects
+             WHERE checkpoint_id=?1 AND call_id=?2",
+            params![checkpoint_id,call_id],|r|Ok(VerifiedEffectEvidence{
+                checkpoint_id:r.get(0)?,call_id:r.get(1)?,
+                tool_id:r.get(2)?,receipt_sha256:r.get(3)?,
+                receipt_bytes:r.get::<_,i64>(4)? as u64
+            })
+        )?;
+        if saved!=evidence{return Err(ContinuityError::IdentityConflict)}
+        Ok(saved)
+    }
+
+    /// Read-only evidence lookup revalidates the original EffectJournal.
+    /// Nothing here retries a tool call or grants new effect permission.
+    pub fn verified_effects_for_checkpoint(
+        &self,checkpoint_id:&str,journal:&EffectJournal
+    )->Result<Vec<VerifiedEffectEvidence>,ContinuityError>{
+        if !valid_id(checkpoint_id){return Err(ContinuityError::InvalidInput)}
+        let stored={
+            let conn=self.conn.lock().map_err(|_|ContinuityError::Locked)?;
+            let mut stmt=conn.prepare(
+                "SELECT checkpoint_id,call_id,tool_id,receipt_sha256,receipt_bytes
+                 FROM continuity_verified_effects WHERE checkpoint_id=?1
+                 ORDER BY call_id LIMIT 65"
+            )?;
+            let rows=stmt.query_map([checkpoint_id],|r|Ok(VerifiedEffectEvidence{
+                checkpoint_id:r.get(0)?,call_id:r.get(1)?,
+                tool_id:r.get(2)?,receipt_sha256:r.get(3)?,
+                receipt_bytes:r.get::<_,i64>(4)? as u64
+            }))?.collect::<Result<Vec<_>,_>>()?;
+            rows
+        };
+        if stored.len()>64{return Err(ContinuityError::InvalidInput)}
+        for e in &stored{
+            let actual=journal.get(&e.call_id)
+                .map_err(|_|ContinuityError::InvalidInput)?
+                .ok_or(ContinuityError::InvalidInput)?;
+            let receipt=actual.receipt.as_deref().filter(|v|!v.is_empty())
+                .ok_or(ContinuityError::InvalidInput)?;
+            if actual.state!=EffectState::Applied||actual.tool_id!=e.tool_id||
+               receipt.len() as u64!=e.receipt_bytes||
+               format!("{:x}",Sha256::digest(receipt))!=e.receipt_sha256{
+                return Err(ContinuityError::IdentityConflict)
+            }
+        }
+        Ok(stored)
     }
 
     /// Scoped history lookup: never infer permission to inspect a second chat
@@ -310,6 +467,44 @@ impl ContinuityStore {
             }
             Ok(checkpoint)
         }).transpose()
+    }
+
+    /// Two most recent immutable records, newest first. The caller MUST
+    /// authenticate both cited ANSF books before comparing any source facts.
+    pub fn recent_for_task(
+        &self,project_id:&str,task_id:&str
+    )->Result<Vec<TaskCheckpoint>,ContinuityError>{
+        if !valid_id(project_id)||!valid_id(task_id){
+            return Err(ContinuityError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|ContinuityError::Locked)?;
+        let mut stmt=conn.prepare(
+            "SELECT checkpoint_id,project_id,task_id,conversation_id,
+                    source_entry_ids,completed_work,next_action,blockers
+             FROM continuity_checkpoints
+             WHERE project_id=?1 AND task_id=?2 ORDER BY sequence DESC LIMIT 2"
+        )?;
+        let saved=stmt.query_map(params![project_id,task_id],|r|Ok((
+            r.get::<_,String>(0)?,r.get::<_,String>(1)?,
+            r.get::<_,String>(2)?,r.get::<_,String>(3)?,
+            r.get::<_,String>(4)?,r.get::<_,String>(5)?,
+            r.get::<_,String>(6)?,r.get::<_,String>(7)?
+        )))?.collect::<Result<Vec<_>,_>>()?;
+        let mut out=Vec::with_capacity(saved.len());
+        for (checkpoint_id,project_id,task_id,conversation_id,
+             source_entry_ids,completed_work,next_action,blockers) in saved{
+            let item=TaskCheckpoint{
+                checkpoint_id,project_id,task_id,conversation_id,
+                source_entry_ids:serde_json::from_str(&source_entry_ids)
+                    .map_err(|_|ContinuityError::InvalidInput)?,
+                completed_work,next_action,
+                blockers:serde_json::from_str(&blockers)
+                    .map_err(|_|ContinuityError::InvalidInput)?,
+            };
+            if !validate(&item){return Err(ContinuityError::InvalidInput)}
+            out.push(item);
+        }
+        Ok(out)
     }
 
     pub fn latest(

@@ -1,0 +1,107 @@
+name: Lu M3 ANSF Cross-Conversation Recall
+on:
+  push:
+    branches:
+      - lu/m3-cross-chat-recall-source-ids-20261107
+  pull_request:
+    paths:
+      - 'lu-desktop/src-tauri/src/ansf_chat_store.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/tests/native-chat/**'
+      - 'lu-desktop/tests/m3-ansf-recall.test.mjs'
+      - '.github/workflows/lu-m3-ansf-recall.yml'
+      - 'src-tauri/lu-core/src/ansf*.rs'
+      - 'lu-desktop/tests/m3-*.test.mjs'
+      - 'lu-desktop/web/history_window_geometry.mjs'
+      - 'src-tauri/lu-core/src/continuity.rs'
+      - 'src-tauri/lu-core/src/operational_asset_ledger.rs'
+      - 'src-tauri/lu-core/tests/continuity_effect_receipts.rs'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-m3:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact committed source
+        run: node scripts/verify-source-tree.mjs
+      - name: Test M3 production native desktop cross-chat retrieval
+        run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml m3_cross_chat_acceptance -- --nocapture
+      - name: Test cross-chat project task continuity, source identity and restart
+        run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml m3_project_continuity_acceptance -- --nocapture
+      - name: Test independent ANSF page cursor and source continuation
+        run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml m3_independent_history_acceptance -- --nocapture
+      - name: Test M2 restart/migration compatibility
+        run: cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml -- --nocapture
+      - name: Test checkpoint links only independently verified APPLIED effect receipts
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test continuity_effect_receipts -- --nocapture
+      - name: Test verified operational asset reuse across restart and mutation
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib operational_asset_ledger::tests -- --nocapture
+      - name: Test canonical ANSF direct source IDs
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_source_ids::tests -- --nocapture
+      - name: Test local-only GGUF embedding worker HTTP, fixed vector shapes and loopback
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_embedding_worker::tests -- --nocapture
+      - name: Test M3-S1 native SQLite vector index and S2 rank fusion
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_semantic::tests -- --nocapture
+      - name: Verify M3 history geometry, semantic, assets and continuity contracts
+        run: node --test lu-desktop/tests/m3-*.test.mjs
+  desktop-windows-compile:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Stage NONFUNCTIONAL build-only engine placeholders
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Compile actual frontend
+        working-directory: lu-desktop
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+          npm run check
+      - name: Parse actual Windows M3 acceptance scripts with PowerShell AST
+        shell: pwsh
+        run: |
+          foreach($name in @('scripts/m3-windows-installed-acceptance.ps1','scripts/m3-windows-nsis-cycle.ps1')){
+            $tokens=$null
+            $errors=$null
+            $null=[System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $name).Path,[ref]$tokens,[ref]$errors)
+            if(@($errors).Count -ne 0){
+              foreach($err in $errors){Write-Error "$($err.Message) at $($err.Extent)"}
+              exit 1
+            }
+            Write-Host "PowerShell native acceptance script syntax PASS: $name"
+          }
+      - name: Compile Lu desktop host (not installed-app acceptance)
+        run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml

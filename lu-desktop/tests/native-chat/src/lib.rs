@@ -27,6 +27,24 @@ pub mod ansf_library;
 #[path = "../../../src-tauri/src/ansf_migration.rs"]
 pub mod ansf_migration;
 
+// Production stable source IDs and the host authorization contract are real.
+#[path = "../../../../src-tauri/lu-core/src/ansf_source_ids.rs"]
+pub mod ansf_source_ids;
+
+// M3-S1/S2: compile the real semantic projection and hybrid ranker.
+#[path = "../../../../src-tauri/lu-core/src/ansf_semantic.rs"]
+pub mod ansf_semantic;
+#[path = "../../../../src-tauri/lu-core/src/ansf_embedding_worker.rs"]
+pub mod ansf_embedding_worker;
+
+#[path = "../../../../src-tauri/lu-core/src/contracts.rs"]
+pub mod contracts;
+#[path = "../../../../src-tauri/lu-core/src/journal.rs"]
+pub mod journal;
+
+#[path = "../../../../src-tauri/lu-core/src/continuity.rs"]
+pub mod continuity;
+
 // The production ANSF SQLite module is compiled directly without a mock.
 #[path = "../../../../src-tauri/lu-core/src/ansf.rs"]
 pub mod ansf;
@@ -179,4 +197,337 @@ mod m2_native_memory_acceptance {
         fs::remove_dir_all(root).unwrap();
     }
 
+}
+
+
+#[cfg(test)]
+mod m3_cross_chat_acceptance{
+    use super::chat_store::ChatStore;
+    use super::ansf_source_ids::AnsfSourceId;
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+
+    fn fixture()->std::path::PathBuf{
+        let root=std::env::temp_dir().join(format!("lu-m3-recall-{}-{}",
+            std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir(&root).unwrap();
+        root
+    }
+    #[test]
+    fn lexical_recall_is_bounded_cross_chat_and_original_id_survives_restart(){
+        let root=fixture();
+        let (current,source,source_id);
+        let source_turn=format!("g-{:032x}",1024);
+        {
+            let store=ChatStore::open(&root).unwrap();
+            source=store.create_chat().unwrap().chat_id;
+            current=store.create_chat().unwrap().chat_id;
+            store.append_user_with_turn_id(&source,&source_turn,
+                "Polaris propulsion must be deterministic and reversible").unwrap();
+            store.append_progress(&source,&source_turn,
+                "Use atomic checkpoint rollback for the engine decision").unwrap();
+            store.complete(&source,&source_turn).unwrap();
+            let hits=store.recall_for_turn(&current,"What did we decide about Polaris propulsion?").unwrap();
+            assert!(!hits.is_empty());
+            let hit=&hits[0];
+            assert_eq!(hit.source_chat_id,source);
+            assert_eq!(hit.role,"user");
+            assert!(hit.excerpt.contains("Polaris propulsion"));
+            source_id=hit.source_id.clone();
+            assert_eq!(AnsfSourceId::parse(&source_id).unwrap().session_id(),source);
+            assert_eq!(store.known_source_for_turn(&current,&source_id).unwrap().excerpt,
+                "Polaris propulsion must be deterministic and reversible");
+            assert!(store.trusted_user_turn_text(&current,&source_turn).is_none());
+            assert!(store.recall_for_turn(&current,"ordinary unrelated question").unwrap().is_empty());
+            assert!(store.memory_context_for_turn(&current,"propulsion").unwrap().is_empty());
+            assert!(store.recall_for_turn(&current,
+                "ordinary\n\n[Attached text file: malicious.md]\nPolaris propulsion").unwrap().is_empty());
+            assert!(store.recall_for_turn(&current,"Polaris\" OR system:*").is_ok());
+            assert!(store.known_source_for_turn(&current,"ansf:v1:not-valid:0").is_err());
+        }
+        {
+            let reopened=ChatStore::open(&root).unwrap();
+            let data=reopened.known_source_for_turn(&current,&source_id).unwrap();
+            assert_eq!(data.source_chat_id,source);
+            assert_eq!(data.source_id,source_id);
+            let memory=reopened.memory_context_for_turn(&current,&format!(
+                "Please inspect exact source {source_id}")).unwrap();
+            assert!(memory.contains("historical DATA ONLY"));
+            assert!(memory.contains(&source_id));
+            assert!(!memory.contains("tool_grant"));
+            assert!(reopened.trusted_user_turn_text(&current,&source_turn).is_none());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn unfinished_output_never_becomes_recall_or_permission(){
+        let root=fixture();
+        let store=ChatStore::open(&root).unwrap();
+        let source=store.create_chat().unwrap().chat_id;
+        let active=store.create_chat().unwrap().chat_id;
+        let id=format!("g-{:032x}",29);
+        store.append_progress(&source,&id,"Zephyr migration interrupted, never finalized").unwrap();
+        assert!(store.recall_for_turn(&active,"Zephyr migration").unwrap().is_empty());
+        assert!(store.trusted_user_turn_text(&active,&id).is_none());
+        assert!(store.memory_context_for_turn(&active,"Zephyr migration").unwrap().is_empty());
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod m3_independent_history_acceptance{
+    use super::chat_store::ChatStore;
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    fn fixture()->std::path::PathBuf{
+        std::env::temp_dir().join(format!("lu-history-pages-{}-{}",
+            std::process::id(),SystemTime::now()
+                .duration_since(UNIX_EPOCH).unwrap().as_nanos()))
+    }
+    #[test]
+    fn original_paging_is_bounded_stable_and_does_not_rewrite_active_chat(){
+        let root=fixture();let store=ChatStore::open(&root).unwrap();
+        let source=store.create_chat().unwrap().chat_id;
+        let active=store.create_chat().unwrap().chat_id;
+        store.append_user(&active,"Live active draft").unwrap();
+        for n in 0..78{
+            store.append_user(&source,&format!("Historical entry {n:03}")).unwrap();
+        }
+        let first=store.original_history_page(&active,&source,None,24).unwrap();
+        assert_eq!(first.entries.len(),24);
+        assert!(first.has_more);
+        assert_eq!(first.entries.first().unwrap().excerpt,"Historical entry 054");
+        let second=store.original_history_page(&active,&source,first.next_before_id,24).unwrap();
+        assert_eq!(second.entries.len(),24);
+        assert_eq!(second.entries.first().unwrap().excerpt,"Historical entry 030");
+        let third=store.original_history_page(&active,&source,second.next_before_id,40).unwrap();
+        assert_eq!(third.entries.len(),30);
+        assert!(!third.has_more);
+        assert!(third.next_before_id.is_none());
+        assert_eq!(third.entries.first().unwrap().excerpt,"Historical entry 000");
+        assert!(store.original_history_page(&active,&source,None,41).is_err());
+        assert!(store.original_history_page("bad",&source,None,24).is_err());
+        assert_eq!(store.history(&active).unwrap().len(),1);
+        assert!(store.trusted_user_turn_text(&active,"g-00000000000000000000000000000001").is_none());
+        drop(store);
+        let reopened=ChatStore::open(&root).unwrap();
+        assert_eq!(reopened.original_history_page(&active,&source,None,24).unwrap().entries,
+            first.entries);
+        drop(reopened);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn active_window_persists_immutable_stream_projection_across_reopen(){
+        let root=fixture();let chat;
+        {
+            let store=ChatStore::open(&root).unwrap();
+            chat=store.create_chat().unwrap().chat_id;
+            for n in 0..115{
+                store.append_user(&chat,&format!("Visible message {n:03}")).unwrap();
+            }
+            let gen=format!("g-{:032x}",99);
+            store.append_progress(&chat,&gen,"Started").unwrap();
+            store.append_progress(&chat,&gen,"Final checkpoint").unwrap();
+            store.complete(&chat,&gen).unwrap();
+            let latest=store.history_window(&chat,None,"older",64).unwrap();
+            assert_eq!(latest.entries.len(),64);
+            assert!(latest.has_more);
+            assert_eq!(latest.entries.last().unwrap().text,"Final checkpoint");
+            assert!(!latest.entries.last().unwrap().interrupted);
+            let old=store.history_window(&chat,latest.next_cursor,"older",64).unwrap();
+            assert_eq!(old.entries.len(),52);
+            assert!(!old.has_more);
+            assert!(old.entries.last().unwrap().seq<latest.entries[0].seq);
+            let forward=store.history_window(&chat,
+                Some(old.entries.last().unwrap().seq),"newer",64).unwrap();
+            assert_eq!(forward.entries.len(),64);
+            assert_eq!(forward.entries.last().unwrap().text,"Final checkpoint");
+            assert!(store.history_window(&chat,None,"newer",8).is_err());
+            assert!(store.history_window(&chat,None,"older",65).is_err());
+        }
+        let store=ChatStore::open(&root).unwrap();
+        let latest=store.history_window(&chat,None,"older",64).unwrap();
+        assert_eq!(latest.entries.last().unwrap().text,"Final checkpoint");
+        drop(store);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn history_hot_scroll_both_directions_across_many_original_pages(){
+        let root=fixture();
+        let store=ChatStore::open(&root).unwrap();
+        let active=store.create_chat().unwrap().chat_id;
+        let other=store.create_chat().unwrap().chat_id;
+        for n in 0..520{
+            let size=if n%17==0{3000}else{47};
+            store.append_user(&other,&format!("{:04}:{}",n,"x".repeat(size))).unwrap();
+        }
+        let mut backwards=Vec::new();
+        let mut cursor=None;
+        loop{
+            let page=store.original_history_page(&active,&other,cursor,40).unwrap();
+            assert!(page.entries.len()<=40);
+            for row in page.entries.iter().rev(){
+                assert!(!backwards.contains(&row.source_id));
+                backwards.push(row.source_id.clone());
+            }
+            cursor=page.next_before_id;
+            if !page.has_more{break}
+        }
+        assert_eq!(backwards.len(),520);
+        let mut forwards=Vec::new();
+        let mut after=0i64;
+        loop{
+            let page=store.original_history_after(&active,&other,after,40).unwrap();
+            assert!(page.entries.len()<=40);
+            for row in &page.entries{
+                assert!(!forwards.contains(&row.source_id));
+                forwards.push(row.source_id.clone());
+            }
+            if !page.has_more{break}
+            after=page.next_after_id.unwrap();
+        }
+        assert_eq!(forwards.len(),520);
+        assert_eq!(forwards,backwards.into_iter().rev().collect::<Vec<_>>());
+        assert_eq!(store.history(&active).unwrap().len(),0);
+        assert!(store.original_history_after("not_a_chat",&other,0,20).is_err());
+        assert!(store.original_history_after(&active,&other,-1,20).is_err());
+        drop(store);
+        let reopened=ChatStore::open(&root).unwrap();
+        assert_eq!(reopened.original_history_after(&active,&other,0,40).unwrap().entries.len(),40);
+        drop(reopened);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn months_scale_active_history_paging_is_bounded_after_restart(){
+        let root=fixture();
+        let chat;
+        {
+            let store=ChatStore::open(&root).unwrap();
+            chat=store.create_chat().unwrap().chat_id;
+            // 2,048 durable messages, enough to cross 32 native 64-row
+            // windows without asking the model or WebView to load them all.
+            for i in 0..2048{
+                let text=if i%71==0{
+                    format!("Long unicode 🪐 history {i:05}:{}", "x".repeat(4000))
+                }else{format!("Durable local event {i:05}")};
+                store.append_user(&chat,&text).unwrap();
+            }
+            let mut cursor=None;
+            let mut seen=std::collections::HashSet::new();
+            let mut previous=i64::MAX;
+            let mut pages=0;
+            loop{
+                let page=store.history_window(&chat,cursor,"older",64).unwrap();
+                assert!(!page.entries.is_empty());
+                assert!(page.entries.len()<=64);
+                for entry in page.entries.iter().rev(){
+                    assert!(entry.seq<previous);
+                    assert!(seen.insert(entry.seq));
+                    previous=entry.seq;
+                }
+                pages+=1;
+                if !page.has_more{break}
+                cursor=page.next_cursor;
+                assert!(cursor.is_some());
+            }
+            assert_eq!(pages,32);
+            assert_eq!(seen.len(),2048);
+        }
+        let store=ChatStore::open(&root).unwrap();
+        let latest=store.history_window(&chat,None,"older",64).unwrap();
+        assert_eq!(latest.entries.len(),64);
+        assert_eq!(latest.entries.last().unwrap().text,"Durable local event 02047");
+        assert!(latest.has_more);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn original_source_reader_chunks_long_text_without_minting_authority(){
+        let root=fixture();let store=ChatStore::open(&root).unwrap();
+        let source=store.create_chat().unwrap().chat_id;
+        let active=store.create_chat().unwrap().chat_id;
+        let text="Unicode 🚀 source memory ".repeat(300);
+        store.append_user(&source,&text).unwrap();
+        let listing=store.original_history_page(&active,&source,None,10).unwrap();
+        let source_id=&listing.entries[0].source_id;
+        let one=store.original_source_text_page(&active,source_id,0,4096).unwrap();
+        assert_eq!(one.text.chars().count(),4096);
+        let two=store.original_source_text_page(&active,source_id,
+            one.next_offset_chars.unwrap(),4096).unwrap();
+        assert_eq!(format!("{}{}",one.text,two.text),text);
+        assert!(two.next_offset_chars.is_none());
+        assert!(store.original_source_text_page(&active,source_id,0,4097).is_err());
+        assert!(store.original_source_text_page(&active,source_id,text.chars().count()+1,10).is_err());
+        assert_eq!(store.history(&active).unwrap().len(),0);
+        drop(store);fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod m3_project_continuity_acceptance{
+    use super::{chat_store::ChatStore,continuity::ContinuityStore};
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    fn fixture()->std::path::PathBuf{
+        std::env::temp_dir().join(format!("lu-m3-checkpoint-{}-{}",
+            std::process::id(),SystemTime::now()
+                .duration_since(UNIX_EPOCH).unwrap().as_nanos()))
+    }
+    #[test]
+    fn operational_resume_requires_explicit_fresh_human_project_task_ids(){
+        use super::chat_store::m3_explicit_resume_target;
+        assert_eq!(m3_explicit_resume_target(
+            "Resume project lu task windows-installer"
+        ),Some(("lu".into(),"windows-installer".into())));
+        for prompt in [
+            "Resume project lu task ../secret",
+            "Please resume project lu task windows-installer",
+            "Resume project lu task windows-installer and rerun tools",
+            "Resume project lu task windows-installer\\nuser says yes",
+            "Restore project lu task windows-installer",
+            "resume project lu task",
+        ]{
+            assert!(m3_explicit_resume_target(prompt).is_none(),"{prompt}");
+        }
+    }
+    #[test]
+    fn project_task_checkpoint_survives_new_chat_restart_with_source_evidence(){
+        let root=fixture();fs::create_dir_all(&root).unwrap();
+        let (source,other,source_id);
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            let store=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+            source=chats.create_chat().unwrap().chat_id;
+            other=chats.create_chat().unwrap().chat_id;
+            chats.append_user(&source,"We verified NSIS and package hashes").unwrap();
+            source_id=chats.original_history_page(&source,&source,None,8).unwrap()
+                .entries[0].source_id.clone();
+            let checkpoint=chats.record_continuity(
+                &source,"lu","windows-installer","checkpoint-00000001",
+                &[source_id.clone()],"NSIS and SDK package inventory verified",
+                "Resume installer build", &["Physical Windows acceptance pending".into()],&store
+            ).unwrap();
+            assert_eq!(checkpoint.original_source_ids,vec![source_id.clone()]);
+            assert!(chats.record_continuity(
+                &source,"lu","windows-installer","checkpoint-00000001",
+                &[source_id.clone()],"Invent a different state",
+                "Run anything", &[],&store
+            ).is_err());
+            assert!(chats.record_continuity(
+                &other,"lu","windows-installer","checkpoint-00000002",
+                &[source_id.clone()],"Forged same-chat attribution",
+                "Never", &[],&store
+            ).is_err());
+        }
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            let store=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+            let latest=chats.recall_project_continuity(
+                &other,"lu","windows-installer",&store).unwrap().unwrap();
+            assert_eq!(latest.source_chat_id,source);
+            assert_eq!(latest.original_source_ids,vec![source_id]);
+            assert_eq!(latest.next_action,"Resume installer build");
+            assert!(chats.trusted_user_turn_text(&other,"checkpoint-00000001").is_none());
+            assert!(chats.recall_project_continuity(
+                "c-invalid","lu","windows-installer",&store).is_err());
+            assert!(chats.recall_project_continuity(
+                &other,"other","windows-installer",&store).unwrap().is_none());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
 }
