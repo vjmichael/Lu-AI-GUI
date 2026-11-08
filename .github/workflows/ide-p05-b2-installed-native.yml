@@ -5,6 +5,14 @@ on:
       - 'ide/app/**'
       - 'ide/docs/IDE_P05_B2_DRAFT_REFERENCE_PORT_20261107.md'
       - '.github/workflows/ide-p05-b2-installed-native.yml'
+  push:
+    branches: ['ide/p05-b2-draft-refs-20261107']
+    paths:
+      - 'ide/app/**'
+      - 'ide/host/**'
+      - 'ide/PROJECT_STATE.md'
+      - 'ide/CHANGELOG.md'
+      - '.github/workflows/ide-p05-b2-installed-native.yml'
   workflow_dispatch:
 permissions:
   contents: read
