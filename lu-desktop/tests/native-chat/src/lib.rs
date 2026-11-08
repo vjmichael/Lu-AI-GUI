@@ -50,6 +50,8 @@ pub mod journal;
 pub mod continuity;
 #[path = "../../../../src-tauri/lu-core/src/agent_plan_ledger.rs"]
 pub mod agent_plan_ledger;
+#[path = "../../../../src-tauri/lu-core/src/agent_plan_revisions.rs"]
+pub mod agent_plan_revisions;
 
 // The production ANSF SQLite module is compiled directly without a mock.
 #[path = "../../../../src-tauri/lu-core/src/ansf.rs"]
@@ -875,6 +877,150 @@ mod agent01a_real_human_journal_acceptance{
             Ok(PlanWrite::AlreadyRecorded));
         assert_eq!(ledger.snapshot(&pid,&chat_id,&tid).unwrap().unwrap().steps.len(),2);
         drop(ledger);drop(chats);
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+
+// AGENT-01B integration: both the real immutable ChatStore human turn and
+// the real ANSF goal event must exist before any plan proposal is accepted.
+// Approval is a separately matched, host-only human decision for an exact
+// immutable revision hash, never authority to execute an application.
+#[cfg(test)]
+mod agent01b_real_chat_goal_revision_acceptance{
+    use super::{
+        ansf::AnsfStore,
+        ansf_goals::{GoalEvent,GoalEventKind},
+        chat_store::ChatStore,
+        agent_plan_ledger::{AgentPlanLedger,PlanStepKind,PlanStepSpec},
+        agent_plan_revisions::{
+            AgentPlanRevisionStore,HostPlanReferenceVerifier,
+            HostPlanReviewVerifier,HumanDecision,RevisionError,
+            RevisionProposal,RevisionReason,RevisionStep,ExpectedDeliverable,
+            RecordState,
+        }
+    };
+    use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    struct RealSources<'a>{ansf:&'a AnsfStore}
+    impl HostPlanReferenceVerifier for RealSources<'_>{
+        fn goal_event_belongs_to_chat(&self,chat:&str,goal:&str,event:&str)->bool{
+            self.ansf.goal_events(chat).ok().is_some_and(|events|
+                events.iter().any(|entry|
+                    entry.event_id==event&&entry.goal_id==goal
+                    &&entry.kind==GoalEventKind::SetGoal))
+        }
+        fn assumption_source_is_readable(&self,_chat:&str,_source:&str)->bool{
+            // Source-read authorization is a different host gate, intentionally
+            // unavailable in this integration test and never guessed.
+            false
+        }
+    }
+    struct ExactReview<'a>{
+        chat:&'a str,turn:&'a str,plan:&'a str,sha:&'a str,
+    }
+    impl HostPlanReviewVerifier for ExactReview<'_>{
+        fn has_exact_human_decision(
+            &self,chat:&str,turn:&str,plan:&str,sha:&str,decision:HumanDecision
+        )->bool{
+            decision==HumanDecision::Approve && chat==self.chat
+                &&turn==self.turn&&plan==self.plan&&sha==self.sha
+        }
+    }
+    #[test]
+    fn real_saved_human_goal_and_exact_review_survive_restart_without_tool_grant(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-agent01b-real-goal-{}-{}",
+            std::process::id(),SystemTime::now()
+                .duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let plan=format!("p-{:032x}",9);
+        let first=format!("g-{:032x}",10);
+        let later=format!("g-{:032x}",11);
+        let revision=format!("v-{:032x}",12);
+        let goal_id=format!("goal-{:032x}",13);
+        let goal_event_id=format!("m-{:032x}",14);
+        let chat;
+        let sha;
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            let ansf=AnsfStore::open(&root.join("ansf.sqlite")).unwrap();
+            chat=chats.create_chat().unwrap().chat_id;
+            let foreign=chats.create_chat().unwrap().chat_id;
+            chats.append_user_with_turn_id(
+                &chat,&first,"Build a research report with independently checked evidence"
+            ).unwrap();
+            let goal=GoalEvent{
+                event_id:goal_event_id.clone(),goal_id:goal_id.clone(),
+                question_id:None,kind:GoalEventKind::SetGoal,
+                text:"Produce a source-backed technical report".into(),
+                choice:None,comment:None
+            };
+            chats.append_goal_memory_event(&chat,goal.clone()).unwrap();
+            ansf.ensure_session(&chat,"profile","Lu goal").unwrap();
+            ansf.mirror_goal_event(&chat,&goal).unwrap();
+            let file=root.join("plans.sqlite");
+            let ledger=AgentPlanLedger::open(&file).unwrap();
+            ledger.register(&plan,&chat,&first,&[
+                PlanStepSpec{kind:PlanStepKind::CollectSource,depends_on:None},
+                PlanStepSpec{kind:PlanStepKind::IndependentlyCheck,depends_on:Some(0)},
+            ],&chats).unwrap();
+            let proposals=AgentPlanRevisionStore::open(&file).unwrap();
+            let request=RevisionProposal{
+                goal_id:goal_id.clone(),goal_event_id:goal_event_id.clone(),
+                assumption_sources:vec![],
+                reason:RevisionReason::Initial,
+                steps:vec![
+                    RevisionStep{
+                        kind:PlanStepKind::CollectSource,depends_on:None,
+                        deliverable_id:format!("d-{:032x}",15),
+                        expected:ExpectedDeliverable::SourceReferences,
+                    },
+                    RevisionStep{
+                        kind:PlanStepKind::IndependentlyCheck,depends_on:Some(0),
+                        deliverable_id:format!("d-{:032x}",16),
+                        expected:ExpectedDeliverable::IndependentWitness,
+                    },
+                ],
+            };
+            let sources=RealSources{ansf:&ansf};
+            assert_eq!(proposals.append_proposal(
+                &plan,&foreign,&first,&revision,None,&request,&chats,&sources),
+                Err(RevisionError::UnverifiedHumanTurn));
+            let mut false_goal=request.clone();
+            false_goal.goal_event_id=format!("m-{:032x}",99);
+            assert_eq!(proposals.append_proposal(
+                &plan,&chat,&first,&revision,None,&false_goal,&chats,&sources),
+                Err(RevisionError::UnverifiedSource));
+            let receipt=proposals.append_proposal(
+                &plan,&chat,&first,&revision,None,&request,&chats,&sources
+            ).unwrap();
+            assert_eq!(receipt.record_state,RecordState::New);
+            sha=receipt.revision_sha256;
+            assert_eq!(proposals.latest(&plan,&chat).unwrap().unwrap().review_state,
+                "PENDING_HUMAN_REVIEW");
+            chats.append_user_with_turn_id(
+                &chat,&later,"I explicitly approve the reviewed plan revision."
+            ).unwrap();
+            let decision=ExactReview{
+                chat:&chat,turn:&later,plan:&plan,sha:&sha
+            };
+            assert_eq!(proposals.record_review(
+                &plan,&chat,&later,&sha,HumanDecision::Approve,&chats,&decision),
+                Ok(RecordState::New));
+            assert_eq!(proposals.latest(&plan,&chat).unwrap().unwrap().execution_authority,
+                "NOT_AUTHORIZED_FOR_EXECUTION");
+        }
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            let proposals=AgentPlanRevisionStore::open(&root.join("plans.sqlite")).unwrap();
+            assert_eq!(chats.trusted_user_turn_text(&chat,&later).as_deref(),
+                Some("I explicitly approve the reviewed plan revision."));
+            let reread=proposals.latest(&plan,&chat).unwrap().unwrap();
+            assert_eq!(reread.review_state,"APPROVED_PLAN_ONLY");
+            assert_eq!(reread.revision_sha256,sha);
+            assert_eq!(reread.execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
+        }
         fs::remove_dir_all(root).unwrap();
     }
 }
