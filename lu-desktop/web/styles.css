@@ -409,3 +409,6 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .message .markdownBody h5,.message .markdownBody a{color:inherit}
 .message .markdownBody a{text-decoration:underline;text-underline-offset:3px}
 .message .markdownBody :not(pre)>code{color:#edf5ff}
+
+/* Background-specific foreground color also applies to empty-chat guidance. */
+.messages .welcome p{color:inherit;opacity:.77}
