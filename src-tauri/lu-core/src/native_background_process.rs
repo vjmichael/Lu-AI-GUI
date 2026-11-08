@@ -308,13 +308,23 @@ impl BackgroundProcessSupervisor {
         if !(1..=16_384).contains(&output_limit)
             ||plan.progress_protocol
             ||plan.max_runtime_seconds.is_none_or(|n|!(1..=30).contains(&n))
-            ||plan.args.len()!=6
-            ||plan.args[0].to_str()!=Some("--no-optional-locks")
-            ||plan.args[1].to_str()!=Some("-C"){
+            ||plan.args.len()!=8
+            ||plan.args[0].to_str()!=Some("-c")
+            ||plan.args[1].to_str()!=Some("core.fsmonitor=false")
+            ||plan.args[2].to_str()!=Some("--no-optional-locks")
+            ||plan.args[3].to_str()!=Some("-C"){
             return Err(BackgroundProcessError::InvalidPlan)
         }
-        let repo=Path::new(&plan.args[2]);
-        if !repo.is_absolute(){return Err(BackgroundProcessError::InvalidPlan)}
+        let repo=Path::new(&plan.args[4]);
+        if !repo.is_absolute()||repo.components().any(|part|
+            matches!(part,std::path::Component::CurDir
+                |std::path::Component::ParentDir)){
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
+        if !fs::canonicalize(repo)
+            .map_err(|_|BackgroundProcessError::InvalidPlan)?.is_dir(){
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
         // Refuse symlinks/junctions at any ancestor or .git boundary; the
         // reviewed source root is NOT a path selected by the model.
         for ancestor in repo.ancestors(){
@@ -335,12 +345,12 @@ impl BackgroundProcessSupervisor {
         if !meta.is_dir()||meta.file_type().is_symlink(){
             return Err(BackgroundProcessError::InvalidPlan)
         }
-        let is_head=plan.args[3].to_str()==Some("rev-parse")
-            &&plan.args[4].to_str()==Some("--verify")
-            &&plan.args[5].to_str()==Some("HEAD");
-        let is_status=plan.args[3].to_str()==Some("status")
-            &&plan.args[4].to_str()==Some("--porcelain=v1")
-            &&plan.args[5].to_str()==Some("--untracked-files=no");
+        let is_head=plan.args[5].to_str()==Some("rev-parse")
+            &&plan.args[6].to_str()==Some("--verify")
+            &&plan.args[7].to_str()==Some("HEAD");
+        let is_status=plan.args[5].to_str()==Some("status")
+            &&plan.args[6].to_str()==Some("--porcelain=v1")
+            &&plan.args[7].to_str()==Some("--untracked-files=no");
         if !is_head&&!is_status{
             return Err(BackgroundProcessError::InvalidPlan)
         }

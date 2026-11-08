@@ -38,6 +38,10 @@ impl GitReadOperation{
     }
     fn args(self,repo:&Path)->Vec<OsString>{
         let mut args=vec![
+            // A repository can configure a command-invoking fsmonitor hook.
+            // Do not run such helpers from this strictly read-only adapter.
+            OsString::from("-c"),
+            OsString::from("core.fsmonitor=false"),
             OsString::from("--no-optional-locks"),
             OsString::from("-C"),
             repo.as_os_str().to_owned()
@@ -87,7 +91,10 @@ fn reviewed_hash(value:&str)->bool{
     value.len()==64&&value.bytes().all(|b|b.is_ascii_hexdigit())
 }
 fn check_repo_root(path:&Path)->Result<PathBuf,GitReadError>{
-    if !path.is_absolute(){return Err(GitReadError::InvalidHostRecord)}
+    if !path.is_absolute()||path.components().any(|part|
+        matches!(part,std::path::Component::CurDir|std::path::Component::ParentDir)){
+        return Err(GitReadError::InvalidHostRecord)
+    }
     // This initial typed Git adapter supports ordinary, local, non-linked
     // repositories only; symlinked roots, linked worktrees and .git files are
     // rejected rather than silently escalating to another repository.
@@ -106,13 +113,16 @@ fn check_repo_root(path:&Path)->Result<PathBuf,GitReadError>{
         }
     }
     let root=fs::canonicalize(path).map_err(|_|GitReadError::InvalidHostRecord)?;
-    if root!=path||!root.is_dir(){return Err(GitReadError::InvalidHostRecord)}
+    if !root.is_dir(){return Err(GitReadError::InvalidHostRecord)}
     let meta=fs::symlink_metadata(root.join(".git"))
         .map_err(|_|GitReadError::InvalidHostRecord)?;
     if !meta.is_dir()||meta.file_type().is_symlink(){
         return Err(GitReadError::InvalidHostRecord)
     }
-    Ok(root)
+    // Retain the original host-approved absolute path for native Git.
+    // Windows canonicalize() can inject an extended-length prefix that Git
+    // for Windows does not consistently accept as a command argument.
+    Ok(path.to_path_buf())
 }
 impl HostGitReadCatalog{
     pub fn new()->Self{Self::default()}

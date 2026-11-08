@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "92c4a3677f0c6bb17972994149a4c9f38fddbf77",
+  "sourceCommitBeforeLock": "45545e4336fbca2cc0b772d28286196859355878",
   "trackedFileCount": 645,
   "files": [
     {
@@ -357,7 +357,7 @@
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
-      "blob": "8ba126657fb3abd9c97db6e75a5fa45182902a1a"
+      "blob": "503db642d8568d8b20ef970b73e0134353b0c31c"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
@@ -437,7 +437,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "d1206247a5e7a491d3e113dbf3cea4effe95a648"
+      "blob": "4e61c5d54e18fd7d881bbddc014304d2dc6d66c7"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1633,7 +1633,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_app_typed_git.rs",
-      "blob": "af443c04d4c56a69cf29c64c87842eeebc8edcf0"
+      "blob": "4a47997f25ebe2213e4cd0e63929d67652cb0ed6"
     },
     {
       "path": "src-tauri/lu-core/src/native_app_version_execution.rs",
@@ -1689,7 +1689,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "627014c4f0338f3a8fa06a634e0aafdcd3bd52d1"
+      "blob": "12bb77f659205f60a8f41ecab6c4a5f673ae6878"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",

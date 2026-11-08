@@ -31,12 +31,13 @@ group also does NOT demonstrate filesystem or network sandboxing.
 ## E1-P06C typed useful Git read operations
 
 The host-approved external Git binary supports two exact, read-only actions:
-1. HEAD revision through: git --no-optional-locks -C [approved-repo]
+1. HEAD revision through: git -c core.fsmonitor=false --no-optional-locks -C [approved-repo]
    rev-parse --verify HEAD
-2. Tracked working-tree status through: git --no-optional-locks -C [approved-repo]
+2. Tracked working-tree status through: git -c core.fsmonitor=false --no-optional-locks -C [approved-repo]
    status --porcelain=v1 --untracked-files=no
 
-The host selects the absolute canonical repository root and reviewed
+The host selects an absolute, component-normalized repository root (verified
+against its canonical path without rewriting the native Git argument) and reviewed
 executable SHA-256. The model supplies neither the repository path nor arbitrary
 CLI arguments. The original human turn must grant **both ReadWorkspace and
 ExecuteCode**, and the separate host policy must approve. The Git process is
@@ -80,3 +81,14 @@ inventory passing does not close a native acceptance gate.
 prove those checks.** Broader third-party read/write, media/Office tools,
 publisher review and physical installed Windows/NSIS/Vulkan acceptance are
 separate later phases.
+
+### Read-only Git hardening and Windows path compatibility
+
+Git repositories can configure filesystem-monitor helper commands. The exact
+fixed host-owned argv now disables core.fsmonitor, alongside --no-optional-locks,
+so a tracked-status inspection does not invoke a configurable fsmonitor helper.
+Repository roots are verified against filesystem metadata with symlink and
+traversal-component rejection; however, the originally approved native
+absolute spelling is passed to Git rather than blindly substituting Rust's
+Windows extended-length canonical path. These checks do not promise complete
+handle-pinned TOCTOU elimination.
