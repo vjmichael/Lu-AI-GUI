@@ -2581,7 +2581,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "4ae1d73f644c58b4c78a1511f8317c9cd996e2c9"
+      "blob": "968ccd825a665d661ff0fc421e632d43e3cdd9f1"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
