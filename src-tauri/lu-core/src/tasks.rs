@@ -173,6 +173,12 @@ impl TaskStore {
                byte_count INTEGER NOT NULL CHECK(byte_count>0),
                recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );
+             CREATE TABLE IF NOT EXISTS lu_reviewed_turn_origin (
+               singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+               conversation_id TEXT NOT NULL,
+               user_turn_id TEXT NOT NULL,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
              CREATE TABLE IF NOT EXISTS lu_task_auto_continue (
                workspace_id TEXT PRIMARY KEY NOT NULL,
                enabled INTEGER NOT NULL CHECK(enabled IN (0,1))
@@ -302,6 +308,39 @@ impl TaskStore {
         if inserted == 0 {
             return Err(TaskStoreError::DuplicateTaskId);
         }
+        Ok(())
+    }
+
+    /// E1-P15: durable singleton origin of a reviewed native tool turn.
+    /// The caller MUST first verify the original persisted human chat turn.
+    /// This records identity, never authorization or executable permission.
+    /// Rebinding an existing journal to another conversation fails closed.
+    pub fn bind_reviewed_human_turn(
+        &self, conversation_id:&str, user_turn_id:&str
+    )->Result<(),TaskStoreError>{
+        let valid=|value:&str,prefix:&str|
+            value.len()==prefix.len()+32
+            &&value.starts_with(prefix)
+            &&value[prefix.len()..].bytes().all(|b|
+                b.is_ascii_hexdigit()&&!b.is_ascii_uppercase());
+        if !valid(conversation_id,"c-")||!valid(user_turn_id,"g-"){
+            return Err(TaskStoreError::InvalidTaskId)
+        }
+        let mut conn=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=conn.transaction()?;
+        tx.execute(
+            "INSERT OR IGNORE INTO lu_reviewed_turn_origin
+             (singleton,conversation_id,user_turn_id) VALUES(1,?1,?2)",
+            params![conversation_id,user_turn_id],
+        )?;
+        let existing:(String,String)=tx.query_row(
+            "SELECT conversation_id,user_turn_id FROM lu_reviewed_turn_origin
+             WHERE singleton=1",[],|row|Ok((row.get(0)?,row.get(1)?))
+        )?;
+        if existing.0!=conversation_id||existing.1!=user_turn_id{
+            return Err(TaskStoreError::InvalidTransition)
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -1278,3 +1317,36 @@ mod p02_verified_result_tests {
     }
 }
 
+
+#[cfg(test)]
+mod e1_p15_origin_binding_tests{
+    use super::*;
+    #[test]
+    fn reviewed_origin_is_durable_idempotent_and_cannot_be_reassigned(){
+        let file=std::env::temp_dir().join(format!(
+            "lu-e1-p15-origin-{}-{}.sqlite",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let a=format!("c-{:032x}",11);
+        let b=format!("c-{:032x}",12);
+        let turn=format!("g-{:032x}",21);
+        {
+            let store=TaskStore::open(&file).unwrap();
+            assert!(store.bind_reviewed_human_turn("c-not-a-chat",&turn).is_err());
+            store.bind_reviewed_human_turn(&a,&turn).unwrap();
+            store.bind_reviewed_human_turn(&a,&turn).unwrap();
+            assert_eq!(store.bind_reviewed_human_turn(&b,&turn),
+                Err(TaskStoreError::InvalidTransition));
+        }
+        {
+            let reopened=TaskStore::open(&file).unwrap();
+            reopened.bind_reviewed_human_turn(&a,&turn).unwrap();
+            assert!(reopened.bind_reviewed_human_turn(&a,
+                &format!("g-{:032x}",22)).is_err());
+        }
+        let _=std::fs::remove_file(&file);
+        let _=std::fs::remove_file(format!("{}-wal",file.display()));
+        let _=std::fs::remove_file(format!("{}-shm",file.display()));
+    }
+}

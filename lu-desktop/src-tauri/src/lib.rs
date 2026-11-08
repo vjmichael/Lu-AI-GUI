@@ -34,6 +34,9 @@ mod workspace_desktop;
 mod reviewed_app_desktop;
 mod reviewed_app_recovery;
 mod reviewed_app_audit;
+mod reviewed_task_continuity;
+mod agent_plan_progress;
+mod agent_plan_review;
 mod archive_desktop;
 mod archive_batch_desktop;
 mod archive_split_desktop;
@@ -5131,6 +5134,142 @@ struct NativeToolActivityView{
     repaired_responses:u32,
     #[serde(skip_serializing_if="Option::is_none")]
     reviewed_effects:Option<reviewed_app_audit::ReviewedEffectCounts>,
+    #[serde(skip_serializing_if="Option::is_none")]
+    reviewed_continuity:Option<reviewed_task_continuity::ReviewedTurnContinuity>,
+}
+/// AGENT-01E: approve or reject ONE exact plan revision only after an OS
+/// native confirmation. This never opens a ConversationAuthority task or
+/// grants any tool. Every accepted review gets a new saved human CHAT turn.
+#[tauri::command]
+async fn lu_agent_review_plan(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,plan_id:String,revision_sha:String,decision:String,
+)->Result<bool,String>{
+    use lu_core::agent_plan_revisions::{
+        AgentPlanRevisionStore,HumanDecision,
+    };
+    let action=match decision.as_str(){
+        "approve"=>HumanDecision::Approve,
+        "reject"=>HumanDecision::Reject,
+        _=>return Err("Unknown exact plan decision".into())
+    };
+    let host=Arc::clone(state.inner());
+    host.chats.history_window(&chat_id,None,"older",1)?;
+    tauri::async_runtime::spawn_blocking(move||{
+        let root=host.catalog_path.parent()
+            .ok_or("Plan profile directory unavailable")?;
+        let path=agent_plan_review::existing_plan_file(root)?;
+        let matching=agent_plan_progress::read_chat_progress(
+            root,&chat_id,&host.chats
+        )?.into_iter().find(|p|p.plan_id==plan_id)
+            .ok_or("Plan not in this original conversation")?;
+        if matching.revision_sha256.as_deref()!=Some(revision_sha.as_str())
+            ||matching.revision_review!="PENDING_HUMAN_REVIEW"{
+            return Err("Plan changed or was already reviewed".into())
+        }
+        let revisions=AgentPlanRevisionStore::open(&path)
+            .map_err(|e|format!("Cannot inspect reviewed plan: {e:?}"))?;
+        let current=revisions.latest(&plan_id,&chat_id)
+            .map_err(|e|format!("Plan revision lookup unavailable: {e:?}"))?
+            .ok_or("No current plan revision")?;
+        if current.revision_sha256!=revision_sha
+            ||current.review_state!="PENDING_HUMAN_REVIEW"{
+            return Err("Original plan review changed".into())
+        }
+        let summary=current.steps.iter().enumerate().map(|(index,step)|
+            format!("{}. {:?} → {:?}",index+1,step.kind,step.expected)
+        ).collect::<Vec<_>>().join("\n");
+        let action_label=if action==HumanDecision::Approve{
+            "Approve plan only"
+        }else{"Reject plan"};
+        let approved=app.dialog().message(format!(
+            "Plan: {}\nRevision: {}\nSteps:\n{}\n\n{} does NOT run \
+             tools, authorize worker processes, or resume an interrupted \
+             operation. Native resource/OS acceptance remains separate.",
+            plan_id,revision_sha,summary,action_label
+        )).title("Lu — Review exact agent plan")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              action_label.into(),"Cancel".into()
+          )).blocking_show();
+        if !approved{return Ok(false)}
+        let turn=next_id("g-");
+        host.chats.append_user_with_turn_id(
+            &chat_id,&turn,
+            &format!("Native-reviewed decision: {} for plan {} revision {}. \
+                     No tool execution permission granted.",
+                decision,plan_id,revision_sha)
+        )?;
+        let sources=agent_plan_review::OriginalChatGoalSources{
+            chats:&host.chats
+        };
+        let proof=agent_plan_review::NativePlanConsent::
+            from_native_confirmation(
+                &chat_id,&turn,&plan_id,&revision_sha,action
+            );
+        revisions.record_review(
+            &plan_id,&chat_id,&turn,&revision_sha,action,
+            &host.chats,&proof,&sources
+        ).map_err(|e|format!("Plan review refused: {e:?}"))?;
+        Ok(true)
+    }).await.map_err(|_|"Native plan review task failed")?
+}
+/// Record a human's explicit cancellation INTENT for the original plan.
+/// No claim is made that a queued/external OS worker was terminated.
+#[tauri::command]
+async fn lu_agent_cancel_plan(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,plan_id:String,
+)->Result<bool,String>{
+    let host=Arc::clone(state.inner());
+    host.chats.history_window(&chat_id,None,"older",1)?;
+    tauri::async_runtime::spawn_blocking(move||{
+        let root=host.catalog_path.parent()
+            .ok_or("Plan profile directory unavailable")?;
+        let path=agent_plan_review::existing_plan_file(root)?;
+        let current=agent_plan_progress::read_chat_progress(
+            root,&chat_id,&host.chats
+        )?.into_iter().find(|p|p.plan_id==plan_id)
+            .ok_or("Plan not owned by this conversation")?;
+        if current.plan_state=="CANCEL_REQUESTED"{
+            return Err("Cancellation intent already recorded".into())
+        }
+        let confirmed=app.dialog().message(format!(
+            "Record cancellation INTENT for plan {}?\n\n\
+             This blocks further plan decisions but does NOT certify that \
+             any external subprocess or descendant has stopped. Recovery \
+             and OS cleanup must be independently checked.",
+             plan_id
+        )).title("Lu — Record plan interruption")
+          .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+              "Record cancel intent".into(),"Keep plan".into()
+          )).blocking_show();
+        if !confirmed{return Ok(false)}
+        let ledger=lu_core::agent_plan_ledger::AgentPlanLedger::open(&path)
+            .map_err(|e|format!("Plan ledger unavailable: {e:?}"))?;
+        ledger.request_cancel(
+            &plan_id,&chat_id,&current.original_human_turn_id,
+            &next_id("e-")
+        ).map_err(|e|format!("Cancellation intent refused: {e:?}"))?;
+        host.chats.append_user_with_turn_id(
+            &chat_id,&next_id("g-"),
+            &format!("Requested cancellation intent for plan {}. \
+                     External worker termination has NOT been verified.",
+                plan_id)
+        )?;
+        Ok(true)
+    }).await.map_err(|_|"Plan cancellation review failed")?
+}
+
+/// AGENT-01E: host-owned read-only original-conversation plan history.
+/// This command does not authorize or schedule a worker. The WebView supplies
+/// ONLY a selected chat ID, never an arbitrary SQLite path, claim or grant.
+#[tauri::command]
+fn lu_agent_plan_progress(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,
+)->Result<Vec<agent_plan_progress::AgentPlanProgress>,String>{
+    let root=state.catalog_path.parent()
+        .ok_or("Agent progress profile directory missing")?;
+    agent_plan_progress::read_chat_progress(root,&chat_id,&state.chats)
 }
 #[tauri::command]
 fn lu_tool_turn_history(
@@ -5173,6 +5312,19 @@ fn lu_tool_turn_history(
                     profile,&evidence.task_id
                 )?
             }else{None};
+            // E1-P15: derive the original conversation's recovery view only
+            // after the host verifies its already-persisted human turn.
+            // This read-only projection grants no execution or resumption.
+            let reviewed_continuity=if source=="Reviewed app" &&
+                state.chats.trusted_user_turn_text(
+                    &chat_id,&evidence.task_id
+                ).is_some(){
+                let profile=state.catalog_path.parent()
+                    .ok_or("Reviewed task profile missing")?;
+                reviewed_task_continuity::reviewed_turn_continuity(
+                    profile,&chat_id,&evidence.task_id
+                )?
+            }else{None};
             // Model audit success and an APPLIED effect are two different
             // observations. Never label a model final answer as actual OS
             // cleanup, especially for prior UNCERTAIN worker effects.
@@ -5195,7 +5347,7 @@ fn lu_tool_turn_history(
                 tool_feedback:evidence.tool_feedback,
                 rejected_events:evidence.rejections,
                 repaired_responses:evidence.repaired_replies,
-                reviewed_effects,
+                reviewed_effects,reviewed_continuity,
             });
         }
     }
@@ -7458,6 +7610,9 @@ pub fn run() {
             lu_approve_read_proposal,
             lu_accept_native_action_proposal,
             lu_tool_turn_history,
+            lu_agent_plan_progress,
+            lu_agent_review_plan,
+            lu_agent_cancel_plan,
             lu_deny_native_action_proposal,
             lu_dismiss_read_proposal,
             lu_document_settings,

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
-import {explainToolOutcome} from './reviewed_tool_feedback.mjs';
+import {explainToolOutcome,explainReviewedContinuation} from './reviewed_tool_feedback.mjs';
 import { fullEditChangeLines } from './edit_diff.mjs';
 import { MarkdownView } from './markdown_view.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
@@ -813,6 +813,8 @@ function App() {
   const [nativeActionProposals,setNativeActionProposals]=useState({}); // inert Wave 3 review intents
   const [toolActivityOpen,setToolActivityOpen]=useState(false);
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
+  const [agentProgressByChat,setAgentProgressByChat]=useState({});
+  const [agentReviewBusy,setAgentReviewBusy]=useState(false);
   const [toolProgressByChat,setToolProgressByChat]=useState({});
   const [turnCapabilitiesByChat,setTurnCapabilitiesByChat]=useState({});
   const [toolHistoryBusy,setToolHistoryBusy]=useState(false);
@@ -2505,11 +2507,49 @@ function App() {
     if (!targetChat)return;
     setToolHistoryBusy(true);
     try{
-      const entries=await invoke('lu_tool_turn_history',{chatId:targetChat});
-      setToolHistoryByChat(prev=>({...prev,[targetChat]:entries||[]}));
-    }catch(error){
-      if (currentChat.current===targetChat)setError('Tool evidence unavailable: '+String(error));
+      // Both reads are host-selected and independent. A partial/malformed
+      // agent ledger cannot hide already verified native tool audit records.
+      const results=await Promise.allSettled([
+        invoke('lu_tool_turn_history',{chatId:targetChat}),
+        invoke('lu_agent_plan_progress',{chatId:targetChat})
+      ]);
+      if(results[0].status==='fulfilled'){
+        setToolHistoryByChat(prev=>({...prev,[targetChat]:results[0].value||[]}));
+      }
+      if(results[1].status==='fulfilled'){
+        setAgentProgressByChat(prev=>({...prev,[targetChat]:results[1].value||[]}));
+      }
+      const failures=results.filter(x=>x.status==='rejected');
+      if(failures.length && currentChat.current===targetChat){
+        setError('Some durable task evidence is unavailable: '+
+          failures.map(x=>String(x.reason)).join(' | '));
+      }
     }finally{setToolHistoryBusy(false)}
+  }
+  async function reviewAgentPlan(plan,decision){
+    if(!chatId||!plan?.revisionSha256)return;
+    setAgentReviewBusy(true);
+    try{
+      const acted=await invoke('lu_agent_review_plan',{
+        chatId,planId:plan.planId,revisionSha:plan.revisionSha256,
+        decision
+      });
+      if(acted)await refreshToolActivity(chatId);
+    }catch(error){
+      setError('Plan review not recorded: '+String(error));
+    }finally{setAgentReviewBusy(false)}
+  }
+  async function cancelAgentPlan(plan){
+    if(!chatId||!plan?.planId)return;
+    setAgentReviewBusy(true);
+    try{
+      const acted=await invoke('lu_agent_cancel_plan',{
+        chatId,planId:plan.planId
+      });
+      if(acted)await refreshToolActivity(chatId);
+    }catch(error){
+      setError('Plan interruption not recorded: '+String(error));
+    }finally{setAgentReviewBusy(false)}
   }
   async function refreshWriteRecovery(targetChat = chatId) {
     if (!targetChat) { setWriteRecovery([]); return; }
@@ -4027,6 +4067,70 @@ function App() {
             <button type="button" className="subtleButton"
               onClick={()=>setToolActivityOpen(false)}>Close</button>
           </div>
+          <section className="readProposalCard" role="region"
+            aria-label="Durable agent planning and recovery">
+            <strong>Agent work plans — original conversation</strong>
+            <small>Read-only, host-owned step history. Approval applies only to a
+              plan revision, not tool execution. A previous checked receipt is
+              historical evidence, not proof of current source or worker state.</small>
+            {(agentProgressByChat[chatId]||[]).length===0 &&
+              <small>No durable agent plans are linked to this conversation yet.
+                Ordinary chat and reviewed tools remain available through their
+                existing separate authorization.</small>}
+            {(agentProgressByChat[chatId]||[]).map(plan=>
+              <div className="readProposalCard" key={plan.planId}
+                role="group" aria-label={'Agent plan '+plan.planId}>
+                <strong>Plan {plan.planId.slice(0,14)} · {plan.planState.replaceAll('_',' ')}</strong>
+                <small>Revision {plan.latestRevision} · Human review:
+                  {' '+plan.revisionReview.replaceAll('_',' ')} · Supervisor:
+                  {' '+plan.supervisorState.replaceAll('_',' ')}</small>
+                <small>Original saved human turn: {plan.originalHumanTurnId}</small>
+                {plan.pendingSourceChecks>0 &&
+                  <small>Assumptions requiring independent authorized source review:
+                    {' '+plan.pendingSourceChecks}. Approval remains unavailable.</small>}
+                <div className="settingsActions">
+                  {plan.revisionReview==='PENDING_HUMAN_REVIEW'&&plan.revisionSha256&&
+                    <>
+                      <button type="button" className="subtleButton"
+                        disabled={agentReviewBusy||plan.pendingSourceChecks>0}
+                        onClick={()=>void reviewAgentPlan(plan,'approve')}>
+                        Approve plan only
+                      </button>
+                      <button type="button" className="subtleButton"
+                        disabled={agentReviewBusy}
+                        onClick={()=>void reviewAgentPlan(plan,'reject')}>
+                        Reject plan
+                      </button>
+                    </>}
+                  {plan.planState!=='CANCEL_REQUESTED' &&
+                    <button type="button" className="subtleButton"
+                      disabled={agentReviewBusy}
+                      onClick={()=>void cancelAgentPlan(plan)}>
+                      Record cancellation intent
+                    </button>}
+                </div>
+                <small>Approval, rejection and cancellation require a native
+                  confirmation. None launches, resumes or terminates an OS worker.</small>
+                {plan.steps.map(step=>
+                  <div className="readProposalCard"
+                    key={step.stepIndex} role="group"
+                    aria-label={'Agent step '+(step.stepIndex+1)}>
+                    <strong>Step {step.stepIndex+1}: {step.purpose.replaceAll('_',' ').toLowerCase()}</strong>
+                    <small>Expected result: {step.expectedDeliverable.replaceAll('_',' ').toLowerCase()}</small>
+                    <small>Dependency: {step.dependsOn===null?
+                      'none':'step '+(step.dependsOn+1)} ·
+                      {' '+step.scheduleState.replaceAll('_',' ').toLowerCase()}</small>
+                    {step.historicalWitnessLinked&&
+                      <small>Independent witness reference was recorded.
+                        Live source, process custody and receipt must be rechecked.</small>}
+                  </div>
+                )}
+                <small>Next safe action: {plan.nextSafeAction}</small>
+                <small>Execution authority: none. No automatic retry or
+                  continuation is available from this history view.</small>
+              </div>
+            )}
+          </section>
           {(toolHistoryByChat[chatId]||[]).length===0&&
             <small>No persisted native model/tool events in this conversation.</small>}
           {(toolHistoryByChat[chatId]||[]).map(item=>
@@ -4058,6 +4162,28 @@ function App() {
                 remain unchanged or that processes are still terminated.
                 APPLIED alone means an execution receipt, not semantic truth.
               </small>}
+              {item.source==='Reviewed app' && item.reviewedContinuity && <section
+                role="region" aria-label="Reviewed task recovery timeline"
+                className="readProposalCard">
+                <strong>Original conversation — durable task recovery</strong>
+                <small>{explainReviewedContinuation(item.reviewedContinuity.continuation).title}</small>
+                <small>{explainReviewedContinuation(item.reviewedContinuity.continuation).explanation}</small>
+                <small>{item.reviewedContinuity.explanation}</small>
+                <small>Next safe step: {explainReviewedContinuation(item.reviewedContinuity.continuation).action}</small>
+                <small>Origin bound: {item.reviewedContinuity.originBound?'yes':'not established'}.
+                  Journal: {item.reviewedContinuity.journalState}.
+                  This view never resumes a task or grants execution.</small>
+                {item.reviewedContinuity.operations.map((op,index)=>
+                  <div key={index} className="readProposalCard">
+                    <strong>{op.operation}</strong>
+                    <small>OS effect: {op.processState}. Independent outcome: {op.outcome}.</small>
+                    <small>Original model call: {op.originalModelCallLinked?'linked':'not proven'}.
+                      Worker task: {op.workerTaskLinked?'completed in journal':'not proven complete'}.</small>
+                    <small>Durable checkpoints: {op.checkpointEvents};
+                      last recorded progress: {op.lastCheckpoint==null?'not saved':op.lastCheckpoint+'%'}.</small>
+                  </div>
+                )}
+              </section>}
             </div>)}
         </section>}
         {(wave2RecoveryByChat[chatId] || []).length > 0 && <section

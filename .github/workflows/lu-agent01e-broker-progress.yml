@@ -1,0 +1,209 @@
+name: Lu AGENT-01E Planned Broker Binding and Conversation Recovery
+on:
+  push:
+    branches: ['lu/agent01e-broker-progress-integration-20261108']
+    paths:
+      - 'src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs'
+      - 'src-tauri/lu-core/src/agent_host_scheduler.rs'
+      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/tests/native-chat/src/lib.rs'
+      - 'lu-desktop/tests/agent01e-progress-ui.test.mjs'
+      - '.github/workflows/lu-agent01e-broker-progress.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs'
+      - 'src-tauri/lu-core/src/agent_host_scheduler.rs'
+      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/tests/native-chat/src/lib.rs'
+      - 'lu-desktop/tests/agent01e-progress-ui.test.mjs'
+      - '.github/workflows/lu-agent01e-broker-progress.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-agent01e-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  source-and-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact frozen source
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p agent01e-evidence
+          printf 'HEAD=%s\nOS=%s\n' "$EXPECTED_HEAD" "$RUNNER_OS" > agent01e-evidence/provenance.txt
+      - name: Test original ChatGPT Work-independent React/Tauri UI evidence contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01e-progress-ui.test.mjs \
+            2>&1 | tee agent01e-evidence/ui-bridge-node.log
+          grep -Fq '# pass 6' agent01e-evidence/ui-bridge-node.log
+          grep -Fq '# fail 0' agent01e-evidence/ui-bridge-node.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01e-ui-source
+          path: agent01e-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+  native-sqlite-and-broker:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm current exact source
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p agent01e-evidence
+          printf 'HEAD=%s\nOS=%s\n' "$EXPECTED_HEAD" "$RUNNER_OS" > agent01e-evidence/provenance.txt
+      - name: Compile and test actual Lu Core scheduler-to-reviewed-broker binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_reviewed_broker_bridge::tests -- --nocapture \
+            2>&1 | tee agent01e-evidence/broker-native.log
+          grep -Fq 'test agent_reviewed_broker_bridge::tests::actual_conversation_authority_not_planner_approval_controls_broker_capabilities ... ok' \
+            agent01e-evidence/broker-native.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' agent01e-evidence/broker-native.log
+      - name: Compile genuine desktop read-only recovery projection with actual saved human ChatStore
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib agent_plan_progress::tests -- --nocapture \
+            2>&1 | tee agent01e-evidence/real-chat-progress.log
+          for name in \
+            genuine_saved_human_turn_scopes_read_only_plan_and_pending_review \
+            recorded_human_approval_and_interruption_never_mark_worker_proven \
+            inconsistent_schema_is_error_not_fabricated_empty_history; do
+            grep -Fq "test agent_plan_progress::tests::$name ... ok" \
+              agent01e-evidence/real-chat-progress.log
+          done
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            grep -Fq 'test agent_plan_progress::tests::symlinked_plan_database_is_rejected ... ok' \
+              agent01e-evidence/real-chat-progress.log
+            count=4
+          else
+            count=3
+          fi
+          grep -Fq "test result: ok. $count passed; 0 failed;" \
+            agent01e-evidence/real-chat-progress.log
+      - name: Validate real saved-chat current-goal and exact native review verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml             --lib agent_plan_review::tests -- --nocapture             2>&1 | tee agent01e-evidence/real-goal-plan-review.log
+          grep -Fq 'test agent_plan_review::tests::actual_chat_goal_supersession_invalidates_plan_approval_reference ... ok'             agent01e-evidence/real-goal-plan-review.log
+          grep -Fq 'test agent_plan_review::tests::exact_native_review_cannot_authorize_different_revision_or_action ... ok'             agent01e-evidence/real-goal-plan-review.log
+          grep -Fq 'test result: ok. 2 passed; 0 failed;'             agent01e-evidence/real-goal-plan-review.log
+      - name: Parent AGENT-01A/B/C/D integration regressions at exact E head
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scope in agent_plan_ledger::tests agent_plan_revisions::tests \
+                       agent_deliverable_receipts::tests agent_host_scheduler::tests; do
+            cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+              --lib "$scope" -- --nocapture \
+              2>&1 | tee -a agent01e-evidence/stack-parent-native.log
+          done
+          if grep -Fq 'test result: FAILED.' agent01e-evidence/stack-parent-native.log; then exit 1; fi
+      - name: Declare proof boundary
+        shell: bash
+        run: |
+          echo 'AGENT-01E tests use real Rust/SQLite sources and ChatStore but mock host review/step-consent and synthetic OS receipts. NO real GGUF tool choice, installed NSIS launch, live Git/FFprobe child, completed Job Object/cgroup custody or active agent step dispatch is claimed.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01e-native-${{ matrix.os }}
+          path: agent01e-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+  windows-desktop-typecheck:
+    needs: source-and-ui
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert source identity
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+      - name: CI placeholders only — not installed runtime binaries
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build React and type-check full original Windows desktop
+        shell: pwsh
+        run: |
+          Push-Location lu-desktop
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+          npm run check
+          Pop-Location
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Report actual limit
+        shell: bash
+        run: |
+          echo 'Windows compilation != installed NSIS test. No model-loaded actual worker process, local GGUF tool selection or Windows Job Object descendant reaping proven.' >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,167 @@
+name: Lu E1-P15 Conversation Task Recovery Native Candidate
+on:
+  push:
+    branches: ['lu/e1-p15-conversation-continuity-candidate-20261108']
+    paths:
+      - 'src-tauri/lu-core/src/tasks.rs'
+      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
+      - 'lu-desktop/src-tauri/src/reviewed_task_continuity.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/web/reviewed_tool_feedback.mjs'
+      - 'lu-desktop/tests/reviewed-task-continuity.test.mjs'
+      - 'lu-desktop/tests/native-reviewed-recovery/**'
+      - '.github/workflows/lu-e1-p15-conversation-recovery.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/tasks.rs'
+      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
+      - 'lu-desktop/src-tauri/src/reviewed_task_continuity.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/web/reviewed_tool_feedback.mjs'
+      - 'lu-desktop/tests/reviewed-task-continuity.test.mjs'
+      - 'lu-desktop/tests/native-reviewed-recovery/**'
+      - '.github/workflows/lu-e1-p15-conversation-recovery.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-e1-p15-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  source-and-human-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact frozen source head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+      - name: Run P15 actual JS status and UI contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e1-p15-evidence
+          node --test lu-desktop/tests/reviewed-task-continuity.test.mjs \
+            2>&1 | tee e1-p15-evidence/continuity-ui-node.log
+          grep -Fq '# pass 5' e1-p15-evidence/continuity-ui-node.log
+          grep -Fq '# fail 0' e1-p15-evidence/continuity-ui-node.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p15-ui-source
+          path: e1-p15-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+  native-sqlite-recovery:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify native checkout source and record candidate provenance
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p15-evidence
+          printf 'HEAD=%s\nOS=%s\n' "$EXPECTED_HEAD" "$RUNNER_OS" \
+            | tee e1-p15-evidence/provenance.txt
+      - name: Test actual production TaskStore immutable human binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib e1_p15_origin_binding_tests -- --nocapture \
+            2>&1 | tee e1-p15-evidence/original-human-binding.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            e1-p15-evidence/original-human-binding.log
+      - name: Test actual production read-only SQLite recovery module
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-reviewed-recovery/Cargo.toml \
+            --lib reviewed_task_continuity::tests -- --nocapture \
+            2>&1 | tee e1-p15-evidence/native-task-continuity.log
+          grep -Fq 'test result: ok. 3 passed; 0 failed;' \
+            e1-p15-evidence/native-task-continuity.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p15-sqlite-${{ matrix.os }}
+          path: e1-p15-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+  windows-desktop-compile:
+    needs: source-and-human-ui
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert exact source
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+      - name: Prepare CI-only nonfunctional bundled runtime placeholders
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Compile original desktop Tauri and React (NOT installed acceptance)
+        shell: pwsh
+        run: |
+          Push-Location lu-desktop
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+          npm run check
+          Pop-Location
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Disclose native installed-app acceptance status
+        shell: bash
+        run: |
+          echo 'E1-P15 source/CI candidate only. This job DID NOT install or launch a real NSIS app, exercise GGUF, or prove descendant cleanup. Physical installed Windows acceptance remains OPEN.' >> "$GITHUB_STEP_SUMMARY"

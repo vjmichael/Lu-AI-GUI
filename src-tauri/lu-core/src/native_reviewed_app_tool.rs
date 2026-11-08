@@ -729,6 +729,34 @@ impl ReviewedApplicationTurnSession{
         ).map_err(|e|format!("reviewed model turn denied: {e:?}"))?;
         Ok(Self{registry,catalog,authority,turn,policy,effects,origin})
     }
+    /// AGENT-01D/E: bind a live scheduler proposal to this ACTUAL
+    /// already host-authorized reviewed broker registry and fresh user turn.
+    /// It only inspects current capability scope. It does NOT dispatch,
+    /// open grants, retry an old effect or certify OS descendant reaping.
+    /// The native OS execution/installed-app acceptance gate remains open.
+    #[allow(clippy::too_many_arguments)]
+    pub fn preflight_scheduled_step(
+        &self,
+        scheduler:&crate::agent_host_scheduler::AgentHostScheduler,
+        ledger:&crate::agent_plan_ledger::AgentPlanLedger,
+        revisions:&crate::agent_plan_revisions::AgentPlanRevisionStore,
+        sources:&dyn crate::agent_plan_revisions::HostPlanReferenceVerifier,
+        plan_id:&str,original_turn:&str,owner_id:&str,
+        owner_epoch:u64,revision_sha:&str,claim_id:&str,step:u8,
+        operation:crate::agent_reviewed_broker_bridge::ReviewedBrokerOperation,
+    )->Result<crate::agent_reviewed_broker_bridge::ScheduledBrokerBinding,String>{
+        let binding=crate::agent_reviewed_broker_bridge::preflight_reviewed_broker(
+            scheduler,ledger,revisions,sources,
+            &self.authority,
+            plan_id,&self.origin.conversation_id,original_turn,
+            owner_id,owner_epoch,revision_sha,claim_id,step,
+            &self.origin,operation
+        ).map_err(|e|format!("Scheduled broker preflight refused: {e:?}"))?;
+        crate::agent_reviewed_broker_bridge::verify_actual_broker_session(
+            self,&binding
+        ).map_err(|e|format!("Reviewed app registry refused claim: {e:?}"))?;
+        Ok(binding)
+    }
     pub fn schemas(&self)->Result<Vec<Value>,String>{
         self.turn.schemas(&self.catalog).map_err(|e|format!("{e:?}"))
     }
