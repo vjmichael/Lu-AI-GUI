@@ -9,7 +9,7 @@
  use sha2::{Digest,Sha256};
  use crate::{
      agent_plan_ledger::{AgentPlanLedger,PlanStepKind},
-     agent_plan_revisions::{AgentPlanRevisionStore,ExpectedDeliverable},
+     agent_plan_revisions::{AgentPlanRevisionStore,ExpectedDeliverable,HostPlanReferenceVerifier},
  };
  const MAX_JOURNAL:u64=64*1024*1024;
  const MAX_RECEIPT:usize=32*1024;
@@ -218,6 +218,7 @@
          &self,plan:&str,chat:&str,turn:&str,revision_sha:&str,
          step_index:u8,call_id:&str,profile:&Path,
          ledger:&AgentPlanLedger,revisions:&AgentPlanRevisionStore,
+         sources:&dyn HostPlanReferenceVerifier,
      )->Result<ReceiptWrite,DeliverableError>{
          if !exact(plan,"p-")||!exact(chat,"c-")||!exact(turn,"g-")
              ||!sha_ok(revision_sha)||call_id.len()>128||call_id.is_empty(){
@@ -234,6 +235,11 @@
              .ok_or(DeliverableError::UnapprovedPlan)?;
          if rev.revision_sha256!=revision_sha{
              return Err(DeliverableError::StaleRevision)
+         }
+         if !sources.goal_event_is_current(chat,&rev.goal_id,&rev.goal_event_id)
+             ||rev.assumption_sources.iter().any(|s|
+                 !sources.assumption_source_is_readable(chat,s)){
+             return Err(DeliverableError::UnapprovedPlan)
          }
          if rev.review_state!="APPROVED_PLAN_ONLY"{
              return Err(DeliverableError::UnapprovedPlan)
@@ -305,6 +311,7 @@
      pub fn history(
          &self,plan:&str,chat:&str,turn:&str,profile:&Path,
          ledger:&AgentPlanLedger,revisions:&AgentPlanRevisionStore,
+         sources:&dyn HostPlanReferenceVerifier,
      )->Result<Vec<HistoricalDeliverable>,DeliverableError>{
          if !exact(plan,"p-")||!exact(chat,"c-")||!exact(turn,"g-"){
              return Err(DeliverableError::InvalidId)
@@ -348,8 +355,14 @@
                  ||step.deliverable_id!=deliverable{
                  return Err(DeliverableError::InvalidJournal)
              }
+             let current_sources=sources.goal_event_is_current(
+                 chat,&revision.goal_id,&revision.goal_event_id)
+                 &&revision.assumption_sources.iter().all(|s|
+                     sources.assumption_source_is_readable(chat,s));
              let status=if latest!=Some(rev.as_str()){
                  "SUPERSEDED_HISTORICAL_WITNESS"
+             }else if !current_sources{
+                 "NEEDS_RECONCILIATION"
              }else{
                  match observe_existing(turn,&call,profile){
                      Ok(check) if check.tool_id==tool
@@ -378,7 +391,7 @@
 mod tests{
     use super::*;
     use crate::{
-        agent_plan_ledger::{PlanStepSpec,HostObservation},
+        agent_plan_ledger::PlanStepSpec,
         agent_plan_revisions::{
             RevisionProposal,RevisionReason,RevisionStep,HumanDecision,
             HostPlanReferenceVerifier,HostPlanReviewVerifier,
@@ -468,7 +481,7 @@ mod tests{
             effect.prepare(&invocation(x,&turn)).unwrap();
             effect.mark_executing(x).unwrap();
             effect.mark_applied(x,
-                if x==call{"worker receipt".as_bytes()}else{"outer receipt".as_bytes()}
+                if x==call.as_str(){"worker receipt".as_bytes()}else{"outer receipt".as_bytes()}
             ).unwrap();
         }
         if verified{
@@ -503,26 +516,26 @@ mod tests{
         let (ledger,revisions,receipts)=stores(&f);
         assert_eq!(receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-            &f.profile,&ledger,&revisions
+            &f.profile,&ledger,&revisions,&Sources
         ),Ok(ReceiptWrite::New));
         assert_eq!(receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-            &f.profile,&ledger,&revisions
+            &f.profile,&ledger,&revisions,&Sources
         ),Ok(ReceiptWrite::AlreadyRecorded));
         let list=receipts.history(
-            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions
+            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions,&Sources
         ).unwrap();
         assert_eq!(list.len(),1);
         assert_eq!(list[0].status,"VERIFIED_AT_OBSERVATION");
         assert_eq!(list[0].continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
         assert_eq!(list[0].independent_method,"GIT_HEAD_DIRECT_V1");
         assert_eq!(receipts.history(&f.plan,&id("c-",99),
-            &f.turn,&f.profile,&ledger,&revisions),
+            &f.turn,&f.profile,&ledger,&revisions,&Sources),
             Err(DeliverableError::WrongOrigin));
         drop(receipts);drop(revisions);drop(ledger);
         let (ledger,revisions,receipts)=stores(&f);
         assert_eq!(receipts.history(&f.plan,&f.chat,&f.turn,
-            &f.profile,&ledger,&revisions).unwrap()[0].status,
+            &f.profile,&ledger,&revisions,&Sources).unwrap()[0].status,
             "VERIFIED_AT_OBSERVATION");
         drop(receipts);drop(revisions);drop(ledger);
         fs::remove_dir_all(f.profile).unwrap();
@@ -534,7 +547,7 @@ mod tests{
             let (ledger,revisions,receipts)=stores(&f);
             assert_eq!(receipts.record_observed(
                 &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-                &f.profile,&ledger,&revisions
+                &f.profile,&ledger,&revisions,&Sources
             ),Err(DeliverableError::UnverifiedEffect));
             drop(receipts);drop(revisions);drop(ledger);
             fs::remove_dir_all(f.profile).unwrap();
@@ -546,21 +559,21 @@ mod tests{
         let (ledger,revisions,receipts)=stores(&f);
         receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,
-            &f.call,&f.profile,&ledger,&revisions
+            &f.call,&f.profile,&ledger,&revisions,&Sources
         ).unwrap();
         let path=f.profile.join(format!("lu-reviewed-effects-{}.sqlite",f.turn));
         let db=Connection::open(path).unwrap();
         db.execute(
             "UPDATE lu_independent_outcomes SET observed_sha256=?1
-             WHERE call_id=?2",params!["f".repeat(64),f.call]
+             WHERE call_id=?2",params!["f".repeat(64),&f.call]
         ).unwrap();
         drop(db);
         assert_eq!(receipts.history(
-            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions
+            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions,&Sources
         ).unwrap()[0].status,"NEEDS_RECONCILIATION");
         assert_eq!(receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-            &f.profile,&ledger,&revisions
+            &f.profile,&ledger,&revisions,&Sources
         ),Err(DeliverableError::ConflictingReceipt));
         drop(receipts);drop(revisions);drop(ledger);
         fs::remove_dir_all(f.profile).unwrap();
@@ -573,7 +586,7 @@ mod tests{
             &id("e-",50)).unwrap();
         assert_eq!(receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-            &f.profile,&ledger,&revisions
+            &f.profile,&ledger,&revisions,&Sources
         ),Err(DeliverableError::UnapprovedPlan));
         assert_eq!(ledger.snapshot(&f.plan,&f.chat,&f.turn)
             .unwrap().unwrap().continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
@@ -592,7 +605,7 @@ mod tests{
         let (ledger,revisions,receipts)=stores(&f);
         assert_eq!(receipts.record_observed(
             &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
-            &f.profile,&ledger,&revisions
+            &f.profile,&ledger,&revisions,&Sources
         ),Err(DeliverableError::InvalidJournal));
         drop(receipts);drop(revisions);drop(ledger);
         fs::remove_dir_all(f.profile).unwrap();
