@@ -277,9 +277,7 @@ impl IdeWorkspaceRegistry {
                             revision: revision.clone(),
                             line: index + 1,
                             column_utf16: line[..match_from].encode_utf16().count() + 1,
-                            match_length_utf16: line[match_from..match_to]
-                                .encode_utf16()
-                                .count(),
+                            match_length_utf16: line[match_from..match_to].encode_utf16().count(),
                             from_byte: (line_start_byte + match_from) as u64,
                             to_byte: (line_start_byte + match_to) as u64,
                             preview: excerpt(line, match_from, match_to),
