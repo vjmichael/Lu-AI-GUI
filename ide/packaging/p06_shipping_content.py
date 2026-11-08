@@ -72,10 +72,12 @@ def _safe_relative(rel):
 
 
 def _hash_regular(path, expected):
-    if not stat.S_ISREG(expected.st_mode) or expected.st_size <= 0 or (
+    # Empty files are valid package members and must remain in the inventory:
+    # ignoring them would miss deletions, additions and packaging drift.
+    if not stat.S_ISREG(expected.st_mode) or expected.st_size < 0 or (
         expected.st_size > MAX_FILE
     ):
-        raise Denied("unsafe_or_empty_payload_file")
+        raise Denied("unsafe_payload_file")
     # O_NOFOLLOW handles leaf symlinks on Linux; lstat + reparse check is
     # additionally required for Windows. Neither substitutes for a secured
     # OS-created immutable installation snapshot under hostile concurrency.
