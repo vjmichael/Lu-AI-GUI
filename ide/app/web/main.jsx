@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
-import { CodeEditor, createEditorState } from './code_editor.jsx';
+import { CodeEditor, createEditorState, isLargeSourceEditor } from './code_editor.jsx';
 import { secondaryEditor, initialSecondaryKey, canSaveFocusedPane } from './editor_layout.js';
+import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
+  visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
+  TREE_ENTRY_PAGE, verifiedRelativeSourcePath } from './editor_working_set.js';
 import { locateMatches, planReplacement } from './find_replace.js';
 import {
   newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
@@ -86,10 +89,13 @@ function App() {
   const [persistentReferenceInput, setPersistentReferenceInput] = useState('');
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
+  const [relativeOpenPath, setRelativeOpenPath] = useState('');
   const [listing, setListing] = useState(null);
+  const [visibleTreeCount, setVisibleTreeCount] = useState(INITIAL_VISIBLE_TREE_ENTRIES);
   const [explorerPending, setExplorerPending] = useState(false);
   const [tabs, setTabs] = useState([]);
   const [activeTabKey, setActiveTabKey] = useState(null);
+  const [tabWindowStart, setTabWindowStart] = useState(0);
   const [splitEditorOpen, setSplitEditorOpen] = useState(false);
   const [secondaryTabKey, setSecondaryTabKey] = useState(null);
   const [savingKey, setSavingKey] = useState(null);
@@ -260,6 +266,7 @@ function App() {
     setLspNativeDiagnostics({});
     setSplitEditorOpen(false);
     setSecondaryTabKey(null);
+    setTabWindowStart(0);
     setProjectProblemsOpen(false);
     setProjectProblemSearch('');
     setLspCompletions(null);
@@ -268,7 +275,8 @@ function App() {
     setLspCompletionApplyRequest(null);
   }, [activeProject?.projectId]);
 
-  const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
+  const activeTab = useMemo(() => tabs.find(tab => tab.key === activeTabKey) || null,
+    [tabs,activeTabKey]);
   const currentLanguageId = languageForPath(activeTab?.relativePath);
   const lspAvailableForTab = !!lspWorker?.ready && !!activeTab &&
     !!currentLanguageId && Array.isArray(lspWorker.supportedLanguages) &&
@@ -290,12 +298,29 @@ function App() {
     ? visibleHover(activeTab, lspHover.response) : '',
     [activeTab, lspHover]);
 
-  const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
+  const projectTabs = useMemo(() => tabs.filter(tab =>
+    tab.projectId === activeProject?.projectId),[tabs,activeProject?.projectId]);
+  const visibleEditorTabs = useMemo(() => tabWindow(projectTabs,tabWindowStart),
+    [projectTabs,tabWindowStart]);
+  const visibleTree = visibleTreeEntries(listing?.entries,visibleTreeCount);
+  useEffect(() => {
+    // An external source hit, diagnostic or programmatic tab selection must
+    // make that tab reachable. Manual paging itself never changes selection.
+    setTabWindowStart(previous=>centerSelectedTab(projectTabs,activeTabKey,previous));
+  },[activeTabKey,projectTabs.length,activeProject?.projectId]);
+  useEffect(()=>{
+    setVisibleTreeCount(INITIAL_VISIBLE_TREE_ENTRIES);
+  },[directory,listing?.projectId,listing?.relativeDir]);
   // A CodeMirror EditorState is owned by one tab; mounting the same tab in
   // both panes is forbidden, including during project switches and close.
   const secondaryTab = splitEditorOpen ? secondaryEditor(
     projectTabs, activeProject?.projectId, activeTab?.key, secondaryTabKey) : null;
+  const secondaryLspDiagnostics = useMemo(() =>
+    secondaryTab ? visibleDiagnostics(
+      secondaryTab,lspNativeDiagnostics[secondaryTab.key]) : [],
+    [secondaryTab,lspNativeDiagnostics]);
   function selectPrimaryEditorTab(key) {
+    setTabWindowStart(previous=>centerSelectedTab(projectTabs,key,previous));
     if (splitEditorOpen && key === secondaryTabKey && activeTabKey !== key)
       setSecondaryTabKey(activeTabKey);
     setActiveTabKey(key);
@@ -1544,6 +1569,12 @@ function App() {
       const rootListing = await invoke('ide_list_source_directory', {
         projectId: item.projectId, relativeDir: '',
       });
+      const admission=admitOpenTabs(tabsRef.current,item.projectId,
+        approved.edits.map(edit=>keyFor(item.projectId,edit.relativePath)));
+      if (!admission.allowed) {
+        throw Error('OPEN_TAB_BUDGET_EXCEEDED: close unused tabs before staging. '+
+          'No proposal source files were modified.');
+      }
       const stagedTabs = approved.edits.map((edit, index) => {
         const key = keyFor(item.projectId, edit.relativePath);
         const previous = tabs.find(tab => tab.key === key);
@@ -1846,6 +1877,11 @@ function App() {
         projectSearchResults?.projectId !== projectId) return;
     const generation = projectSearchGeneration.current;
     const key = keyFor(projectId, match.relativePath);
+    if (!admitOpenTabs(tabsRef.current,projectId,[key]).allowed) {
+      setProblem('Open-file limit ('+MAX_OPEN_TABS_PER_PROJECT+
+        ') reached. Close an unused tab; saved-source search is unchanged.');
+      return;
+    }
     setExplorerPending(true);
     setProblem('');
     try {
@@ -1906,6 +1942,18 @@ function App() {
     }
   }
 
+  async function openRelativeSourcePath() {
+    const path=verifiedRelativeSourcePath(relativeOpenPath);
+    if (!activeProject || !path) {
+      setProblem('Enter a valid project-relative source file path. '+
+        'No absolute or parent-relative paths are allowed.');
+      return;
+    }
+    // Uses the existing native picked-directory read, even if this file was
+    // absent from the 400-entry partial directory listing. No ambient paths.
+    await selectEntry({kind:'file',relativePath:path,name:path.split('/').pop()});
+  }
+
   async function selectEntry(entry) {
     if (!activeProject || explorerPending) return;
     if (entry.kind === 'directory') {
@@ -1913,7 +1961,13 @@ function App() {
     } else if (entry.kind === 'file') {
       const key = keyFor(activeProject.projectId, entry.relativePath);
       if (tabs.some(tab => tab.key === key)) {
-        setActiveTabKey(key);
+        selectPrimaryEditorTab(key);
+        return;
+      }
+      const tabAdmission=admitOpenTabs(tabsRef.current,activeProject.projectId,[key]);
+      if (!tabAdmission.allowed) {
+        setProblem('Open-file budget ('+MAX_OPEN_TABS_PER_PROJECT+
+          ') reached. Close an unused file to preserve existing drafts and Undo.');
         return;
       }
       setExplorerPending(true);
@@ -3242,6 +3296,16 @@ function App() {
             <div className="sourceTreeHeader">
               <strong>Files</strong><span>Project</span>
             </div>
+            <form className="sourceGoToFile" onSubmit={event=>{
+              event.preventDefault(); void openRelativeSourcePath();
+            }}>
+              <input aria-label="Open project-relative file" spellCheck={false}
+                maxLength={1024} value={relativeOpenPath}
+                placeholder="Open src/path/file.rs"
+                onChange={event=>setRelativeOpenPath(event.target.value)}/>
+              <button type="submit" disabled={!activeProject || !relativeOpenPath.trim() ||
+                explorerPending || !!savingKey}>Open file</button>
+            </form>
             <div className="sourcePath" title={directory || '/'}>
               <button type="button" className="pathLink" disabled={explorerPending}
                 onClick={() => activeProject && openDirectory(activeProject, '')}>
@@ -3251,7 +3315,7 @@ function App() {
             </div>
             {directory && <button type="button" className="fileRow backRow"
               disabled={explorerPending} onClick={() => openDirectory(activeProject, parentPath)}>↰ ..</button>}
-            {listing?.entries.map(entry =>
+            {visibleTree.visible.map(entry =>
               <button type="button" key={entry.relativePath}
                 className={'fileRow' + (activeTab?.relativePath === entry.relativePath ? ' active' : '')}
                 disabled={explorerPending || (entry.kind !== 'directory' && entry.kind !== 'file')}
@@ -3261,7 +3325,17 @@ function App() {
                   entry.kind === 'file' ? '▤' : '⤷'}</span>
                 <span className="fileName">{entry.name}</span>
               </button>)}
-            {listing?.truncated && <p className="treeCaution">Large directory: showing first 400 entries.</p>}
+            {visibleTree.remaining>0 && <button type="button"
+              className="fileRow treeLoadMore" disabled={explorerPending}
+              onClick={()=>setVisibleTreeCount(previous=>previous+TREE_ENTRY_PAGE)}>
+              Show next {Math.min(TREE_ENTRY_PAGE,visibleTree.remaining)} entries
+              · {visibleTree.total} loaded from native directory
+            </button>}
+            {listing?.truncated && <p className="treeCaution">
+              Native directory result is partial (400-entry limit). Additional files
+              can be opened by entering their registered project-relative path above.
+              No completeness claim.
+            </p>}
             {!explorerPending && listing && listing.entries.length === 0 &&
               <p className="treeCaution">Empty directory.</p>}
           </div>
@@ -3285,7 +3359,24 @@ function App() {
               </>}
             </div>
             <div className="editorTabs" role="tablist" aria-label="Open source files">
-              {projectTabs.map(tab => <div className={'editorTab' +
+              <button type="button" className="editorTabPage"
+                aria-label="Earlier open source tabs" disabled={!visibleEditorTabs.hiddenBefore}
+                onClick={()=>setTabWindowStart(previous=>
+                  pageTabWindow(projectTabs,previous,-1))}>‹</button>
+              <span className="editorTabCount" aria-live="polite">
+                {visibleEditorTabs.count===0 ? 'No files' :
+                  (visibleEditorTabs.start+1)+'–'+visibleEditorTabs.end+' of '+
+                   visibleEditorTabs.count} · max {MAX_OPEN_TABS_PER_PROJECT}
+              </span>
+              <select className="editorTabJump" aria-label="Jump to open file"
+                value={activeTab?.projectId===activeProject?.projectId ?
+                  activeTab.key : ''}
+                onChange={event=>selectPrimaryEditorTab(event.target.value)}>
+                <option value="">Open tabs</option>
+                {projectTabs.map(tab=><option key={tab.key} value={tab.key}>
+                  {tab.dirty?'● ':''}{tab.relativePath}</option>)}
+              </select>
+              {visibleEditorTabs.visible.map(tab => <div className={'editorTab' +
                 (tab.key === activeTabKey ? ' selected' : '')} key={tab.key}>
                 <button type="button" role="tab" aria-selected={tab.key === activeTabKey}
                   className="editorTabSelect" title={tab.relativePath}
@@ -3297,13 +3388,19 @@ function App() {
                   disabled={savingKey === tab.key} title={'Close ' + tab.relativePath}
                   aria-label={'Close ' + tab.relativePath} onClick={() => closeTab(tab.key)}>×</button>
               </div>)}
+              <button type="button" className="editorTabPage"
+                aria-label="Later open source tabs" disabled={!visibleEditorTabs.hiddenAfter}
+                onClick={()=>setTabWindowStart(previous=>
+                  pageTabWindow(projectTabs,previous,1))}>›</button>
             </div>
             {activeTab && activeTab.projectId === activeProject?.projectId ? <>
               <div className="sourcePreviewHeader">
                 <strong>{activeTab.relativePath}</strong>
                 <span className="editorToolbar">
                   <span>{activeTab.draft.length.toLocaleString()} chars ·
-                    {activeTab.dirty ? ' Unsaved' : ' Saved'}</span>
+                    {activeTab.dirty ? ' Unsaved' : ' Saved'}
+                    {isLargeSourceEditor(activeTab.draft) ? ' · Lightweight editor' : ''}
+                  </span>
                   <button className="ghostBtn editorToolButton"
                     disabled={referencePending || explorerPending || !!savingKey}
                     title="Copy a reference to the current saved file and cursor line"
@@ -3479,8 +3576,7 @@ function App() {
                       key={secondaryTab.key + ':' + secondaryTab.generation + ':secondary'}
                       tabIdentity={secondaryTab.key + ':' + secondaryTab.generation}
                       editorState={editorStates.current.get(secondaryTab.key)}
-                      diagnostics={visibleDiagnostics(
-                        secondaryTab,lspNativeDiagnostics[secondaryTab.key])}
+                      diagnostics={secondaryLspDiagnostics}
                       onCursorLine={line=>setCursorByTab(previous =>
                         previous[secondaryTab.key]===line ? previous :
                           {...previous,[secondaryTab.key]:line})}

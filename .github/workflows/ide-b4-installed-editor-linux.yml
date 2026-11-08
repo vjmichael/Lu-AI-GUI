@@ -85,3 +85,12 @@ jobs:
           bash ide/app/fixtures/Test-B4InstalledDeb.sh "${packages[0]}" "$(git rev-parse HEAD)"
           echo 'B4_NATIVE_INSTALLED_DEBIAN_GTK_TWO_EDITOR_SAVE=PASS'
           echo 'B4_LU_CORE_INTEGRATION_AND_SIGNED_RELEASE=NOT_APPROVED'
+
+      - name: Publish actual installed Debian GTK process-memory and editor latency receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-b5-linux-real-installed-editor-performance
+          path: ${{ runner.temp }}/ide-b5-linux-installed-performance.json
+          if-no-files-found: warn
+          retention-days: 7

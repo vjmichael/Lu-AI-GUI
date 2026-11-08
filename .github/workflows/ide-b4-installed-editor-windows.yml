@@ -130,6 +130,45 @@ jobs:
                 !$second.Contains('B4_PRIMARY_ONLY')) {
               throw 'DENIED: independently saved native split editor source missing'
             }
+            # Reuse this same genuinely installed, license-verified NSIS.
+            # Real OS WebView2 UI + 48 files + OS child-process RSS and timings.
+            $perfFixture=Join-Path $env:RUNNER_TEMP ('lu-ide-b5-perf-'+$env:GITHUB_RUN_ID)
+            New-Item -ItemType Directory -Path $perfFixture | Out-Null
+            for($i=0;$i -lt 48;$i++) {
+              $leaf=if($i -eq 0){'main.rs'}else{'p{0:D2}.rs' -f ($i-1)}
+              $marker=if($i -eq 0){'main'}else{'p{0:D2}' -f ($i-1)}
+              $many=if($i -eq 0 -or $i%4 -eq 0){3000}else{80}
+              $line="// B5_SOURCE_$marker native editor benchmark bytes, never execute this source`n"
+              [IO.File]::WriteAllText((Join-Path $perfFixture $leaf),($line*$many),
+                [Text.UTF8Encoding]::new($false))
+            }
+            [IO.File]::WriteAllText((Join-Path $perfFixture 'p47.rs'),
+              "// B5_SOURCE_p47 must be denied as tab 49`n")
+            $metricFile=Join-Path $env:RUNNER_TEMP 'ide-b5-windows-installed-performance.json'
+            $env:B5_EXACT_CHECKOUT_SHA=(git rev-parse HEAD).Trim()
+            & pwsh -NoProfile -Sta -File 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' `
+              -InstalledExecutable $exe -ExpectedSha256 $sha `
+              -Scenario B5LargeProject -FixtureRoot $perfFixture `
+              -MetricsFile $metricFile
+            if ($LASTEXITCODE -ne 0) {
+              throw 'DENIED: installed B5 OS UI/memory/latency measurement failed'
+            }
+            if (!(Test-Path -LiteralPath $metricFile -PathType Leaf)) {
+              throw 'DENIED: installed B5 performance evidence file missing'
+            }
+            $actual=Get-Content -LiteralPath $metricFile -Raw | ConvertFrom-Json
+            if ($actual.schemaVersion -ne 1 -or
+                $actual.sourceCommit -cne $env:B5_EXACT_CHECKOUT_SHA -or
+                $actual.openRoundTripMs.Count -ne 47 -or
+                $actual.switchRoundTripMs.Count -ne 12 -or
+                $actual.memorySamples.Count -lt 6 -or
+                $actual.rssPeakObservedBytes -le 0 -or
+                !$actual.noImplicitSaveVerified -or
+                !$actual.bounded49thDenial -or
+                !$actual.explicitSaveVerified) {
+              throw 'DENIED: installed B5 memory and interaction sample incomplete'
+            }
+            Write-Host 'B5_WINDOWS_INSTALLED_OS_MEMORY_LOADING_INTERACTION=MEASURED_NOT_APPROVED'
             $uninstallers=@(Get-ChildItem -LiteralPath $root -Filter '*uninstall*.exe' -File)
             if ($uninstallers.Count -ne 1) {throw 'DENIED: real NSIS uninstaller missing'}
             $done=Start-Process -FilePath $uninstallers[0].FullName -ArgumentList '/S' -Wait -PassThru
@@ -148,3 +187,12 @@ jobs:
               }
             }
           }
+
+      - name: Publish exact-head measured Windows WebView2 installed-editor OS receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-b5-windows-real-installed-editor-performance
+          path: ${{ runner.temp }}/ide-b5-windows-installed-performance.json
+          if-no-files-found: warn
+          retention-days: 7
