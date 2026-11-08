@@ -99,8 +99,10 @@ def main() -> None:
             expected_suffix = "/" + leaf.name
             if not actual[worker_pid].endswith(expected_suffix):
                 raise RuntimeError("worker executed before cgroup admission")
-            if not actual[descendant_pid].endswith(expected_suffix):
-                raise RuntimeError("setsid child escaped worker cgroup")
+            if not actual[descendant_pid].endswith(expected_suffix + "/lu-e1-nested"):
+                raise RuntimeError("setsid child was not admitted into nested worker cgroup")
+            if events(leaf / "lu-e1-nested").get("populated") != "1":
+                raise RuntimeError("nested cgroup lacked a live setsid descendant")
             if actual[guardian_pid].endswith(expected_suffix):
                 raise RuntimeError("guardian wrongly placed inside killable subtree")
             if actual[guardian_pid] != kernel_membership(parent.pid):
@@ -116,7 +118,7 @@ def main() -> None:
                 "E1_P08C_BEFORE "
                 f"guard={guardian_pid} worker={worker_pid} setsid={descendant_pid} "
                 f"control={control.pid} populated=1 "
-                "guard_outside=1 pre_exec_cgroup=1",
+                "guard_outside=1 pre_exec_cgroup=1 nested_cgroup=1",
                 flush=True,
             )
             os.kill(parent.pid, signal.SIGKILL)
@@ -146,7 +148,7 @@ def main() -> None:
             print(
                 "E1_P08C_SETSID_CGROUP_CUSTODY_PASS=1 "
                 "setsid_escaped_pgid=1 setsid_still_in_cgroup=1 "
-                "crashed_owner=1 guardian_outside=1 cgroup_empty=1 "
+                "crashed_owner=1 guardian_outside=1 nested_killed=1 cgroup_empty=1 "
                 "unrelated_alive=1",
                 flush=True,
             )
