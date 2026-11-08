@@ -1,5 +1,10 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## IDE B3: current-stack read-only Find in Project port — November 8, 2026
+
+A new development branch ide/b3-saved-project-search-port-20261108 is stacked on DEV-02.6B PR #141. The original B3 project-wide saved-source bounded search and native tests from PR #46 are now ported without removing the original PR. The active current Tauri host registers ide_find_in_project and a new source.findProject read-only typed capability; the capability catalog grows from 41 to 42 and preserves all previous operations. The current React/CodeMirror application has a Find in project pane with literal search, match case, skipped/truncated reporting, verified saved SHA-256 hit navigation, unsaved-draft isolation and project-change stale response denial. New exact-head native Windows/Linux CI tests host, UI and Tauri source. **Source committed; CI and genuine installed-app UI acceptance are NOT yet passed.** Original independent B2 unsaved buffer identity PR #43, its installed Windows PR #45, and B3 PR #46 remain open for independent source diff and evidence review. Docs: ide/docs/IDE_B3_PROJECT_SEARCH_CURRENT_STACK_PORT_20261108.md.
+
+
 ## DEV-02.6B original resource closure and native protected three-provider protocol (November 8, 2026)
 
 **DEV-02.6B production-stager correction:** The approved-release verifier now rejects binary-only clangd packages and requires independent cross-OS native resource-file source/SHA inventories; Windows NSIS and Linux Debian staging both copy the reviewed DLL/Clang resource tree and rehash it into the whole-bundle Rust pin. Existing source tests were extended for exact preservation/tamper/path denials. The actual release manifest remains disabled. Exact-head native source/protocol verification and original archive dynamic closure are still OPEN.

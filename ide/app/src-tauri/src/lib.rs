@@ -1013,6 +1013,22 @@ async fn ide_list_source_directory(
     .map_err(|_| "BROWSER_TASK_UNAVAILABLE".to_string())?
 }
 
+/// B3: registered project, bounded literal saved-source search.
+/// Reads only under the native picker capability. No scripts or writes.
+#[tauri::command]
+async fn ide_find_in_project(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    query: String,
+    case_sensitive: bool,
+) -> Result<lu_ide_workspace::project_search::ProjectSearchResult, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.find_in_project(&project_id, &query, case_sensitive)
+            .map_err(|error| error.code().to_owned())
+    }).await.map_err(|_| "PROJECT_SEARCH_UNAVAILABLE".to_owned())?
+}
+
 /// Read a precisely identified span from a previously observed saved revision.
 /// No AI bridge, shell execution, file mutation or implicit authority.
 #[tauri::command]
@@ -1269,6 +1285,7 @@ pub fn run() {
             ide_close_project,
             ide_unregister_project,
             ide_list_source_directory,
+            ide_find_in_project,
             ide_preview_source_file,
             ide_read_source_span,
             ide_review_source_change,
