@@ -37,6 +37,7 @@ mod reviewed_app_audit;
 mod reviewed_task_continuity;
 mod agent_plan_progress;
 mod agent_plan_review;
+mod agent_plan_admission;
 mod chat_message_interactions;
 mod chat_message_revisions;
 mod archive_desktop;

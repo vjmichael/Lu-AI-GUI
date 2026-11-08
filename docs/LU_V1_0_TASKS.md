@@ -6,6 +6,43 @@
 
 **Accepted baseline:** `0.1.0-alpha.2`. **Local development:** `0.1.0-alpha.3-dev.1` (icon resource and byte-counted GGUF import changes). Never overwrite the accepted installer; every change gets a new version/commit and CI evidence. The repository application tree is still older than the local source snapshot: **REPO-01 is a blocker to claiming current-development CI coverage**.
 
+## ACTIVE K/I/A/F WORK QUEUE — November 8, 2026
+
+**Source of truth for current scheduling:** [K/I/A/F active execution-layer ledger](LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md), [canonical K/I/A/F philosophy](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md), and [human-centered memory-first refinement](LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md). The earlier per-tool TODO table below is historical and may be stale; do not reinterpret old “TOOLS TODO” as permission to build mini-apps. **Current tool scope is reasonably sufficient; focus on getting models to use real reviewed interfaces effectively.** Three roles: **Foundational / Utility / Specialist**.
+
+### GROUP 1 — Still needing implementation finished
+
+| ID | Priority | Implementation outstanding |
+|---|---|---|
+| IMP-01 AGENT-01F | P0 | Host-generated real ANSF original-goal DRAFT admission stage, then model/normal-chat plan ingress, idempotency, UI review and clarified-goal continuity; no model-origin execution permission |
+| IMP-02 MEMORY-LOOP | P0 | ANSF original-source/procedural memory, belief revision, context-change detection and clarification integration in genuine model and resumed task turns |
+| IMP-03 EXEC-INTERFACE | P0 | Actual GGUF-selected installed Git/FFprobe/application operations through existing reviewed broker, not replacement app features |
+| IMP-04 EXEC-AUTH | P0 | Fresh per-step human/host scope, effect/resource/egress control, broker-to-agent live admission without claiming preflight already dispatches |
+| IMP-05 EXEC-LIFECYCLE | P0 | OS worker start/cancel/reap/restart, Linux cgroup-v2 escape custody, Windows Job Object evidence and uncertain-effect recovery |
+| IMP-06 EXEC-FEEDBACK | P0 | Independent semantic output/source validation, typed model feedback, source revision checks and honest VERIFIED/UNSUPPORTED/CONFLICT reporting |
+| IMP-07 TASK-LOOP | P0 | Source-goal/clarify → plan/review → authorized worker → independent outcome → user-visible feedback → safe continuation/recovery |
+| IMP-08 MEASURE-KIAF | P1 | Genuine local GGUF three-arm task benchmark, failure attribution K/I/A/F and resource/latency/token measurements |
+| IMP-09 UX-FOLLOWUP | P1 | Rich message-thread navigation and new authorized model turn derived from an edited message, separately from display-only correction |
+| IMP-10 V1-SHELL | P1 | Real model load/preview/accessibility and late release hardening |
+
+### GROUP 2 — Waiting on GitHub operations, verification and acceptance
+
+| ID | Acceptance open, NOT implementation status |
+|---|---|
+| GATE-01 | Exact-head REPO-01 source, Windows/Linux Rust/SQLite/ANSF and React/Tauri compilation and regression results |
+| GATE-02 | E1-P03–P07 genuine supervised application, authorization, model tool choice and inner/outer journal results |
+| GATE-03 | E1-P08C–P13 real Windows/Linux process custody, independent Git/MP4/FFprobe oracles, source revision/uncertain outcomes |
+| GATE-04 | E1-P15/AGENT-01A–F real plan, goal, review, host ownership, restart and eventual live execution acceptance |
+| GATE-05 | UX-CHAT01/02 original-history, edit/reply/provenance native CI and later installed GUI |
+| GATE-06 | M2–M5 ANSF/memory migration, persistent retrieval and genuine-model benchmarks |
+| GATE-07 | Same-model KIAF plan-only vs reviewed execution vs limited utilities measurable evidence |
+| GATE-08 | Near-v1.0 installed Windows NSIS/WebView/GGUF/MMProj/AMD Vulkan, worker stop/recovery, upgrade/uninstall; deferred in time only |
+| GATE-09 | Final shipped dependency legal/redistribution, signing and publisher review |
+
+**Evidence snapshot:** prior UX-CHAT02 PR #158 head `4e6ac21f915095e2d033cd297a1169c1a7a0240e`: 48 associated workflows queued or pending at last check, zero completed at that SHA. Current AGENT-01F branch will require its own exact-head Windows/Linux receipts; no source changes imply acceptance. Earlier E1 Git pack/MP4 compile and obsolete source assertions were source-repaired but have not passed current-head native tests.
+
+**Historical table follows.** Its November 3 statuses are retained for chronology, not to replace the two groups above.
+
 ## Tasks
 
 | ID | Priority | Task | State | Proof needed |

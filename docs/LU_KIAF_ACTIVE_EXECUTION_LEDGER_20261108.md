@@ -1,0 +1,52 @@
+# Lu K/I/A/F — Active execution roadmap and evidence ledger
+
+**Owner direction:** November 8, 2026. **Status:** binding current prioritization, NOT a production acceptance claim. Based on [canonical K/I/A/F](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md), [memory-first user-centered policy](LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md), [tool scope audit](LU_AI_EXECUTION_TOOL_REVIEW_20261107.md), and [v1.0 task ledger](LU_V1_0_TASKS.md).
+
+## Policy: model intelligence, Lu execution, user control
+
+Practical AI Capability = f(**K**: the selected model's knowledge/reasoning, **I**: actual available execution/observation interfaces, **A**: authenticated human-governed authority for the exact task/effect/resource, **F**: observed outcomes, independent verification, feedback and crash recovery). The user supplies the actual goal; Lu's ANSF-backed memory, provenance and clarification continuity allow the model to reason without repetitive recaps. This conceptual model is not a numerical score.
+
+**Exactly three categories:** **Foundational** (general observation, filesystem, model/worker interfaces, authorization, memory, scheduling, execution, verification/recovery); **Utility** (small deterministic, justified shortcuts such as archives, basic image/format conversion, JSON/Protobuf, Git inspection); **Specialist** (mature full Office/LibreOffice, Zotero, graphics suites, IDE/NVP/Cognitum, operated through reviewed existing applications/DLCs, not recreated inside Lu Core).
+
+**Owner decision:** Existing P01–P12 utility breadth is reasonable at this stage. Freeze speculative per-domain mini-app expansion; preserve useful bounded utilities. Improve real model-neutral execution I, exact A, independently verified F, user intent/memory continuity and genuine K benchmarks. Add a new primitive only for a measured gap existing utility/app interfaces cannot solve. No mandatory MCP, Docker or Lu-wide sandbox; OS worker custody where needed is not an assistant-wide access sandbox.
+
+**Evidence is staged:** source candidate ≠ Windows/Linux native pass ≠ genuine GGUF-selected OS work ≠ installed Windows release acceptance. Never promote queued, cancelled or fixture-only CI to proof of end-to-end task success.
+
+## GROUP 1 — Still needing implementation finished (do not stop on queued CI)
+
+| ID | Priority | Missing implementation / completion definition |
+|---|---|---|
+| IMP-01 AGENT-01F | P0 | Host-minted draft plan for a real original saved human turn/current ANSF goal; source candidate stage 1 in this branch. Then complete model-proposed normal-chat plan ingress, idempotency, staged recovery, review UX and exact-goal/clarification rechecks. **Never** infer effect authorization from a draft. |
+| IMP-02 MEMORY-LOOP | P0 | Make original source-backed ANSF retrieval, belief revision, operational/procedural memory, human clarification and task continuity work together in actual model/resumed task turns; memory does not confer permission. |
+| IMP-03 EXEC-INTERFACE | P0 | Enable actual loaded GGUF tool selection and real reviewed installed Git/FFprobe/app operations through the already designed host native execution broker. Don't clone specialist apps. |
+| IMP-04 EXEC-AUTH | P0 | Bind active plan steps to fresh explicit human-origin task, resource/effect, credentials/egress scopes and revocation; implement actual broker dispatch separately from currently non-dispatching AGENT-01E preflight. |
+| IMP-05 EXEC-LIFECYCLE | P0 | Real OS process cancellation/reap, UNCERTAIN effect reconciliation, kernel cgroup-v2 descendant escape protection where promised, Windows Job Object child custody and crash stop guarantees. |
+| IMP-06 EXEC-FEEDBACK | P0 | Independent output/source oracles, method-specific VERIFIED/UNSUPPORTED/CONFLICT and source revision checks; typed feedback to model/human that cannot override worker journals. |
+| IMP-07 TASK-LOOP | P0 | Full plan/clarify/approve→execute→verify→feedback→recover, with model reasoning in K, user and host in A, actual I and independently witnessed F; never auto-replay an uncertain effect. |
+| IMP-08 KIAF-MEASURE | P1 | Prospective real-GGUF capability tests: plan-only vs approved execution vs bounded utility; record failure origin, task correctness, context/tokens, latency, CPU/GPU and memory. |
+| IMP-09 UX-FOLLOWUP | P1 | Rich thread navigation and user-initiated new authenticated model turn from an edited message are separate; display edits preserve original ANSF history and never replay tools. |
+| IMP-10 RELEASE-SHELL | P1 | GGUF loading responsiveness, actual measured progress, image restoration, accessible UI and supported installation hardening. |
+
+## GROUP 2 — Waiting on GH operations, verification, independent acceptance
+
+| Gate | What has to be observed (not merely implemented) |
+|---|---|
+| GATE-01 REPO/CI | Exact-head source lock plus Windows/Linux Rust/SQLite/ANSF and React/Tauri build/test. Diagnose and repair actual failed jobs. |
+| GATE-02 E1-P03–P07 | Genuine Windows/Linux supervised Git/FFprobe operations, original authorization, process cancellation, inner/outer journal, model tool-choice as separate real-GGUF gate. |
+| GATE-03 E1-P08C–P13 | Linux cgroup-v2 escape/host-crash containment, Windows Job Object, trusted source freshness and independent Git/MP4/FFprobe verification, prior P09/P10 actual regressions. |
+| GATE-04 E1-P15/AGENT | Actual ANSF/SQLite original-task planning, human review, recovery timeline, no duplicate effect, host ownership and eventual live broker/step lifecycle proof. |
+| GATE-05 UX-CHAT | UX-CHAT01/02 original identity, edits, replies, startup reconciliation and native/React acceptance; installed WebView deferred. |
+| GATE-06 MEMORY | M2–M5 native source migration, restart, retrieval/procedural memory and genuine three-arm GGUF benchmark remeasurement. |
+| GATE-07 KIAF BENCH | Same model/quantization, repeatable authorized tasks, independent result witnesses and K/I/A/F vs environment failure attribution. |
+| GATE-08 WIN-RELEASE | Near v1.0 physical installed NSIS/Win10/11 WebView, GGUF/MMProj AMD Vulkan, approved tools, worker kill/restart, uninstall. Deferred in **time**, never waived. |
+| GATE-09 SIGN/LEGAL | Complete shipped dependency inventory, independent redistribution/legal check and actual release-signing identity decision at end. |
+
+## Current work order
+
+1. Preserve memory-first goal/clarification/source continuity as the grounding for real agent work, while native E1 tests continue.
+2. Stage AGENT-01F real host-only plan draft admission; finish model/normal-chat ingress next. Existing AGENT-01A–E plan/revision/receipt/scheduler/review sources are drafted but non-dispatching.
+3. Connect the existing supervised reviewed native execution path only after separate E1 real OS authority, output and lifecycle guarantees are established. No new full-feature tool mini-apps.
+4. Process GitHub's completed exact-head results when available and repair the failures. Don't block source implementation solely because jobs are queued.
+5. Benchmark genuine selected GGUF tasks and independent outcomes; defer routine physical installed-Windows tests until near v1.0.
+
+**Last source/evidence snapshot at start of this work:** parent UX-CHAT02 PR #158 head `4e6ac21f915095e2d033cd297a1169c1a7a0240e`; all 48 associated workflow runs queued/pending, zero completed at inspection. Earlier shared E1 Git-pack/MP4 Rust compiler bugs and an obsolete UI assertion were source-repaired on that branch; native pass has not been observed. This AGENT-01F branch is an additional **unaccepted** candidate and must carry its own exact-head CI receipts.

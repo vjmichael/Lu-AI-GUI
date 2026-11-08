@@ -9,6 +9,7 @@ on:
       - 'src-tauri/lu-core/src/lib.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_admission.rs'
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
       - 'lu-desktop/tests/native-chat/src/lib.rs'
@@ -23,6 +24,7 @@ on:
       - 'src-tauri/lu-core/src/lib.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_admission.rs'
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
       - 'lu-desktop/tests/native-chat/src/lib.rs'
@@ -141,6 +143,22 @@ jobs:
           grep -Fq 'test agent_plan_review::tests::actual_chat_goal_supersession_invalidates_plan_approval_reference ... ok'             agent01e-evidence/real-goal-plan-review.log
           grep -Fq 'test agent_plan_review::tests::exact_native_review_cannot_authorize_different_revision_or_action ... ok'             agent01e-evidence/real-goal-plan-review.log
           grep -Fq 'test result: ok. 2 passed; 0 failed;'             agent01e-evidence/real-goal-plan-review.log
+      - name: AGENT-01F real ANSF goal draft-only plan admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib agent_plan_admission::tests -- --nocapture \
+            2>&1 | tee agent01e-evidence/agent01f-plan-admission.log
+          for case in \
+            real_saved_turn_and_current_goal_stage_only_reviewable_draft \
+            cross_chat_unverified_turn_and_pending_clarification_are_denied \
+            invalid_steps_and_superseded_human_turn_do_not_write; do
+            grep -Fq "test agent_plan_admission::tests::$case ... ok" \
+              agent01e-evidence/agent01f-plan-admission.log
+          done
+          grep -Fq 'test result: ok. 3 passed; 0 failed;' \
+            agent01e-evidence/agent01f-plan-admission.log
       - name: Parent AGENT-01A/B/C/D integration regressions at exact E head
         shell: bash
         run: |
