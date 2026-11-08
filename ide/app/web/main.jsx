@@ -2829,7 +2829,7 @@ function App() {
                     {currentLanguageId === 'python' ?
                       'Ruff · diagnostics only' :
                       lspProviderForTab + ' · diagnostics / completion / hover / definition'}
-                  </span>
+                  </span>}
                   <button type="button" className="ghostBtn editorToolButton"
                     disabled={!lspRunningForTab || lspBusy}
                     onClick={() => void requestLspFeature('diagnostics')}>Problems</button>
