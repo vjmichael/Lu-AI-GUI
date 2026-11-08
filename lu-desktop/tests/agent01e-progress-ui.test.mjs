@@ -59,3 +59,24 @@ test('E: SQLite records are display facts only and tests explicitly cover uncert
   assert.match(progress,/inconsistent_schema_is_error_not_fabricated_empty_history/);
   assert.match(bridge,/actual_conversation_authority_not_planner_approval_controls_broker_capabilities/);
 });
+
+
+test('E: native dialogs are required for approve, reject, cancel; never tool execution',()=>{
+  const review=readFileSync(new URL('../src-tauri/src/agent_plan_review.rs',import.meta.url),'utf8');
+  assert.match(host,/async fn lu_agent_review_plan\(/);
+  assert.match(host,/async fn lu_agent_cancel_plan\(/);
+  assert.match(host,/MessageDialogButtons::OkCancelCustom/);
+  assert.match(host,/revision_sha256/);
+  assert.match(host,/record_review\(/);
+  assert.match(host,/request_cancel\(/);
+  assert.match(host,/lu_agent_review_plan,/);
+  assert.match(host,/lu_agent_cancel_plan,/);
+  assert.match(ui,/reviewAgentPlan\(plan,'approve'\)/);
+  assert.match(ui,/reviewAgentPlan\(plan,'reject'\)/);
+  assert.match(ui,/cancelAgentPlan\(plan\)/);
+  assert.match(ui,/plan\.pendingSourceChecks>0/);
+  assert.match(review,/fn goal_event_is_current\(/);
+  assert.match(review,/assumption_source_is_readable/);
+  assert.match(review,/return.*false/);
+  assert.doesNotMatch(review,/Command::new|\.spawn\(|run_journaled_observed\(/);
+});
