@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 const read = path => readFileSync(new URL(path,import.meta.url),'utf8');
 const windows=read('../fixtures/Test-Wo8NativeDesktopUI.ps1');
 const linux=read('../fixtures/dev01_linux_installed_atspi.py');
-const yaml=read('../../.github/workflows/ide-dev01-installed-integration-ci.yml');
+const yaml=read('../../../.github/workflows/ide-dev01-installed-integration-ci.yml');
 
 test('Windows integrated acceptance exercises real installed UIA, OS sources and force-kill restart',()=>{
   for(const needle of [
