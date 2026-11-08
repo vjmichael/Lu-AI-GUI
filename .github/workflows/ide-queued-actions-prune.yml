@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prune:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 12
     steps:
       - name: Checkout exact maintenance source
@@ -24,6 +24,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . /etc/os-release
+          [[ "$ID" == ubuntu && "$VERSION_ID" == 26.04 ]]
           [[ "$(git rev-parse HEAD)" == "${{ github.sha }}" ]]
           python3 -m py_compile ide/scripts/prune_superseded_repo_actions.py
           python3 -m unittest discover -s ide/scripts -p 'test_repo_queue_hygiene.py' -v
