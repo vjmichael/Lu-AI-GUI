@@ -76,3 +76,13 @@ Official sources as of November 8, 2026: https://github.com/microsoft/pyright/bl
 - **Both**: CI executes the full exact-head native Tauri source matrix, checksum locks, hostile source tests, genuine installed LSP protocol and physical source integrity tests, then captures immutable receipts. Owner legal release approval and future signing identity remain separate, explicitly user-deferred tasks.
 
 **No protected self-hosted runner availability has been independently verified, none was provisioned or executed by this task, and no real provider binaries were supplied to it. Installed LSP acceptance remains open.**
+
+## Pinned upstream candidate discovery — official release SHA (not approval)
+
+To avoid repeated rediscovery of upstream packages, the first-party `ide/packaging/lsp_upstream_archive_candidates_20261108.json` retains the exact official 2026-11-08 lookup results for **six x86-64 archive assets** (Windows + Linux) from these GitHub release pages:
+
+- `clangd/clangd` `23.1.0`: Windows `clangd-windows-23.1.0.zip` and Linux `clangd-linux-23.1.0.zip`, with original GitHub release SHA256 fields.
+- `rust-lang/rust-analyzer` `2026-11-02`: `rust-analyzer-x86_64-pc-windows-msvc.zip` and `rust-analyzer-x86_64-unknown-linux-gnu.gz`.
+- `astral-sh/ruff` `0.17.4`: `ruff-x86_64-pc-windows-msvc.zip` and `ruff-x86_64-unknown-linux-gnu.tar.gz`.
+
+`review_upstream_lsp_archives.py` can verify these exact archive SHA256s offline or fetch only the pinned release URLs with an explicit `--fetch-locked` on GitHub Actions, inspect archives without extracting arbitrary paths, stream only one bounded native binary per archive, compute extracted binary SHA256 and delete binary staging afterward. `.github/workflows/ide-dev02-upstream-native-asset-intake.yml` runs malicious-archive tests on Windows/Ubuntu, then a real Ubuntu hosted run downloads and verifies the six pinned archives, uploads **only a JSON digest receipt** with 7-day retention (no public redistribution of executable files). **The official release metadata is evidence of byte identity, not independent review of upstream copyright, redistribution license, transitive dynamic dependency, OS containment, or service signing.** It cannot set the main manifest `releaseApproved` flag.
