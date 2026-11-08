@@ -28,7 +28,7 @@
 | TOOLS-04 | P1 | Archive listing/inspection before archive extraction or creation | TODO | Zip-slip, symlink, decompression bomb limits, duplicate members, OS CI |
 | JOURNAL-01 | P0 | Durable effect journal, idempotent replay and cancellation | TODO | Kill/restart/uncertain-effect reconciliation |
 | MEMORY-01 | P0 | Working/object memory, provenance and belief revision | TODO | Editable and independently checkable retrieval |\n| CONTEXT-01 | P0 | Canonical recoverable goals, provenance, cross-chat context and task handoff (never authority transfer) | DOCS RECOVERED | Durable Lu Core continuity + host-authenticated recall integration and crash/restart tests |
-| AGENT-01 | P1 | Durable agent orchestration, loop guard, progress cards | A durable plan ledger + B immutable goal/assumption/deliverable revisions SOURCE CANDIDATES; real agent scheduler / OS receipts / installed E2E OPEN | Exact-head native Windows/Linux real SQLite and ANSF acceptance; independently checked external effects, fresh human authority and near-v1.0 installed-app proof |
+| AGENT-01 | P1 | Durable agent orchestration, loop guard, progress cards | A durable plan + B immutable revisions + C independent historical receipt witness SOURCE CANDIDATES; genuine agent scheduler / installed E2E OPEN | Exact-head Windows/Linux SQLite checks, E1-P03/P06/P07/P10/P12/P13/P15 real OS evidence and release installed-app proof |
 | UX-01 | P1 | Chat, diagnostics, accessible UI and streaming hardening | IN PROGRESS | UI automated tests |
 | RELEASE-01 | P0 | Signed NSIS installer, upgrade and independent v1.0 E2E | DEFERRED | Near-v1.0 Win10/11 acceptance |
 
@@ -768,3 +768,12 @@ details: `docs/LU_E1_P13_SOURCE_REVISION_CUSTODY_20261108.md`.
 - New source-only five-test Rust suite, real ChatStore+ANSF goal event integration acceptance, and exact-head Windows/Linux workflow. Native/installed results remain **OPEN** pending actual evidence; physical Windows app testing stays near Lu v1.0.
 - **Next:** AGENT-01C verified OS effect/receipt-to-deliverable linkage and host-exclusive plan owner; AGENT-01D bounded, approved execution only after P03/P06/P07/P10/P12/P13 and P15 genuine acceptance; AGENT-01E chat progress cards and installed E2E.
 - Details: `docs/LU_AGENT01B_IMMUTABLE_PLAN_REVISIONS_20261108.md`.
+
+## AGENT-01C — host-only independent deliverable receipts and exact-head CI audit (Nov 8, 2026)
+
+- Source branch `lu/agent01c-verified-deliverable-receipts-20261108` stacked on AGENT-01B draft PR #153 (A PR #152, B PR #153 remain draft).
+- New `agent_deliverable_receipts.rs` joins one human-reviewed, current-goal independent-witness deliverable to its original outer model call, actual reviewed inner worker effect, completed scoped TaskStore journal entry and separately VERIFIED original EffectJournal outcome/receipt digest. Only exact reviewed Git and FFprobe methods are allowed; no arbitrary tools, raw worker output or source paths appear in a recorded witness. SQLite writes are immutable and bounded; reopening independently revalidates the underlying records.
+- A verified-at-observation witness is **not** an actual worker termination proof, live source snapshot, runnable task, or worker resume. A cancelled/stale/uncertain plan cannot create new witness links. New AGENT-01C native Windows/Linux CI uses real SQLite source modules with **fixture** OS receipts; physical installed app deferred near v1.0.
+- Historical actual CI failure evidence: P03 Windows 5/6 failed `WorkerStartFailed` (old job-memory minimum); P07 Windows and genuine GGUF jobs failed FFprobe preflight; P09 Windows 3/3 Rust passed but workflow expected >=4, thus CI failed; P10 Windows 2/3 passed and packed-refs test failed. Newer source repairs are NOT verified until exact-head OS CI completes. Current P03/P06/P07/P09/P10/P11/P12/P13/P15/AGENT-01A/B native jobs checked queued/pending.
+- Full exact-run IDs, failure classification and acceptance limitations: `docs/LU_AGENT01C_VERIFIED_DELIVERABLE_RECEIPTS_20261108.md`.
+- Next AGENT-01D gated: host-exclusive scheduler and per-new-turn human authorization, terminal OS custody evidence, source revalidation and bounded progress; do not enable actual autonomous worker continuation before the E1 native receipts pass.
