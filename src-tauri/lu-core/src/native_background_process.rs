@@ -115,14 +115,15 @@ impl Drop for CapturedVersionOutput{
     fn drop(&mut self){self.bytes.fill(0);}
 }
 fn read_bounded_version_stdout(
-    mut pipe:impl Read,limit:usize
+    pipe:impl Read,limit:usize,empty_is_valid:bool
 )->Option<CapturedVersionOutput>{
-    if !(1..=4096).contains(&limit){return None}
+    if !(1..=16_384).contains(&limit){return None}
+    let mut pipe=pipe;
     let mut bytes=Vec::with_capacity(limit.min(256));
     // Read at most limit+1 bytes. If the child produces more, reject and
     // drop its pipe instead of storing arbitrary unbounded process output.
     if pipe.take(limit as u64+1).read_to_end(&mut bytes).is_err()
-        ||bytes.is_empty()||bytes.len()>limit{
+        ||(!empty_is_valid&&bytes.is_empty())||bytes.len()>limit{
         bytes.fill(0);
         return None
     }
@@ -296,10 +297,57 @@ impl BackgroundProcessSupervisor {
                     |"print('Python '+('9'*8192))"))
         );
         if !version_only{return Err(BackgroundProcessError::InvalidPlan)}
-        self.start_host_approved_internal(plan,Some(output_limit))
+        self.start_host_approved_internal(plan,Some((output_limit,false)))
+    }
+    /// Host-owned, bounded read-only Git operations; this does NOT sandbox
+    /// Lu and it is NOT a generic CLI bridge. The repository root is provided
+    /// only by the trusted host broker and rechecked immediately before spawn.
+    pub(crate) fn start_host_approved_git_read(
+        &self,plan:TrustedWorkerPlan,output_limit:usize
+    )->Result<(),BackgroundProcessError>{
+        if !(1..=16_384).contains(&output_limit)
+            ||plan.progress_protocol
+            ||plan.max_runtime_seconds.is_none_or(|n|!(1..=30).contains(&n))
+            ||plan.args.len()!=6
+            ||plan.args[0].to_str()!=Some("--no-optional-locks")
+            ||plan.args[1].to_str()!=Some("-C"){
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
+        let repo=Path::new(&plan.args[2]);
+        if !repo.is_absolute(){return Err(BackgroundProcessError::InvalidPlan)}
+        // Refuse symlinks/junctions at any ancestor or .git boundary; the
+        // reviewed source root is NOT a path selected by the model.
+        for ancestor in repo.ancestors(){
+            let meta=fs::symlink_metadata(ancestor)
+                .map_err(|_|BackgroundProcessError::InvalidPlan)?;
+            if meta.file_type().is_symlink(){return Err(BackgroundProcessError::InvalidPlan)}
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                if meta.file_attributes()&0x400!=0{
+                    return Err(BackgroundProcessError::InvalidPlan)
+                }
+            }
+        }
+        let dotgit=repo.join(".git");
+        let meta=fs::symlink_metadata(&dotgit)
+            .map_err(|_|BackgroundProcessError::InvalidPlan)?;
+        if !meta.is_dir()||meta.file_type().is_symlink(){
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
+        let is_head=plan.args[3].to_str()==Some("rev-parse")
+            &&plan.args[4].to_str()==Some("--verify")
+            &&plan.args[5].to_str()==Some("HEAD");
+        let is_status=plan.args[3].to_str()==Some("status")
+            &&plan.args[4].to_str()==Some("--porcelain=v1")
+            &&plan.args[5].to_str()==Some("--untracked-files=no");
+        if !is_head&&!is_status{
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
+        self.start_host_approved_internal(plan,Some((output_limit,is_status)))
     }
     fn start_host_approved_internal(
-        &self,plan:TrustedWorkerPlan,version_capture:Option<usize>
+        &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>
     )->Result<(),BackgroundProcessError>{
         if !valid_id(&plan.task_id)||!valid_id(&plan.workspace_id)
           ||plan.max_runtime_seconds.is_some_and(|n|n==0||n>86_400)
@@ -340,7 +388,7 @@ impl BackgroundProcessSupervisor {
             .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
         let mut command=Command::new(&executable);
         command.args(&plan.args).env_clear().stdin(Stdio::null())
-            .stdout(if plan.progress_protocol||version_capture.is_some(){
+            .stdout(if plan.progress_protocol||typed_capture.is_some(){
                 Stdio::piped()
             }else{Stdio::null()})
             .stderr(Stdio::null())
@@ -361,7 +409,7 @@ impl BackgroundProcessSupervisor {
                 Some("--lu-file-scan-worker")=>Some(1024*1024*1024u64),
                 Some("--lu-e1-version-one-shot")|
                 Some("--lu-e1-artifact-one-shot")=>Some(256*1024*1024u64),
-                _ if version_capture.is_some()=>Some(256*1024*1024u64),
+                _ if typed_capture.is_some()=>Some(256*1024*1024u64),
                 _=>None
             };
             lu_win_worker_job::unix_owned::bind_owned_worker_pre_exec(
@@ -397,7 +445,7 @@ impl BackgroundProcessSupervisor {
         #[cfg(windows)]
         if (matches!(plan.args.first().and_then(|s|s.to_str()),
             Some("--lu-e1-version-one-shot"|"--lu-e1-artifact-one-shot"))
-            ||version_capture.is_some())
+            ||typed_capture.is_some())
             &&job.set_memory_limit(256*1024*1024).is_err(){
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed)
@@ -431,7 +479,7 @@ impl BackgroundProcessSupervisor {
         // Delay progress consumption until the SQLite RUNNING transition.
         // A fast worker must not lose its first checkpoint to a startup race.
         let progress_pipe=if plan.progress_protocol{child.stdout.take()}else{None};
-        let version_pipe=if version_capture.is_some(){child.stdout.take()}else{None};
+        let version_pipe=if typed_capture.is_some(){child.stdout.take()}else{None};
         let owner=OwnedWorker{
             workspace_id:plan.workspace_id,
             child,
@@ -448,9 +496,9 @@ impl BackgroundProcessSupervisor {
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::StoreUnavailable);
         }
-        if let (Some(pipe),Some(limit))=(version_pipe,version_capture){
+        if let (Some(pipe),Some((limit,empty_is_valid)))=(version_pipe,typed_capture){
             let reader=std::thread::spawn(move||
-                read_bounded_version_stdout(pipe,limit)
+                read_bounded_version_stdout(pipe,limit,empty_is_valid)
             );
             workers.get_mut(&plan.task_id)
                 .expect("just registered running version child")
@@ -679,12 +727,14 @@ mod tests{
     fn thirdparty_stdout_capture_is_bounded_and_one_use(){
         use std::io::Cursor;
         let bytes=b"git version 2.47.3\n";
-        let out=read_bounded_version_stdout(Cursor::new(bytes),64).unwrap();
+        let out=read_bounded_version_stdout(Cursor::new(bytes),64,false).unwrap();
         assert_eq!(out.bytes,bytes);
         assert_eq!(out.sha256,format!("{:x}",Sha256::digest(bytes)));
-        assert!(read_bounded_version_stdout(Cursor::new(bytes),4).is_none());
-        assert!(read_bounded_version_stdout(Cursor::new(&b""[..]),64).is_none());
-        assert!(read_bounded_version_stdout(Cursor::new(bytes),4097).is_none());
+        assert!(read_bounded_version_stdout(Cursor::new(bytes),4,false).is_none());
+        assert!(read_bounded_version_stdout(Cursor::new(&b""[..]),64,false).is_none());
+        let clean=read_bounded_version_stdout(Cursor::new(&b""[..]),64,true).unwrap();
+        assert!(clean.bytes.is_empty());
+        assert!(read_bounded_version_stdout(Cursor::new(bytes),16_385,false).is_none());
     }
     #[test]
     fn genuine_scanner_receipts_update_sqlite_without_model(){

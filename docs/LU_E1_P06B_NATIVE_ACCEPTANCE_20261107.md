@@ -86,3 +86,7 @@ termination, no surviving owned children, and durable journal observations.
 Physical installed Windows/NSIS/Vulkan remains deferred until near Lu v1.0.
 No benchmark comparison or late stdout response may be substituted for
 native execution.
+
+## E1-P06C architecture clarification — Lu is not sandboxed
+
+Production Lu remains native and has the ordinary OS user's host access. **Access ≠ Permission ≠ Authority**: Job Objects and Linux child process groups provide lifecycle management, while authenticated user-turn grants govern tool action authority. Neither is a mandatory sandbox around Lu. Risk-based optional restrictions for selected untrusted external code are a separate design choice, not the default constraint on the native Lu assistant. See docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md.

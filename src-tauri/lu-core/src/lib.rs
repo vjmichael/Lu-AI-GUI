@@ -123,6 +123,7 @@ pub mod native_app_output_oracle;
 pub mod native_app_artifact_custody;
 pub mod native_app_adapter;
 pub mod native_app_version_execution;
+pub mod native_app_typed_git;
 pub mod native_zip_extract;
 pub mod native_archive_tree;
 pub mod native_archive_batch;
