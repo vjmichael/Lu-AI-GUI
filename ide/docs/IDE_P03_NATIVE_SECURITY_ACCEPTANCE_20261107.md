@@ -96,3 +96,12 @@ The P03 head `a96560dca4c942bf5fc2a91830566ea5214d12af` lacked any E2 native cla
 ### Exact native Rust format repair (November 7)
 
 Older branch-head Windows/Linux native probe and P02 runs failed solely at `cargo fmt --check` due two exact formatter diffs in `ide/sandbox/src/bin/linux_delegated_ci_wo4_host.rs` and `linux_delegated_ci_wo6_dap_host.rs`; Linux/Windows native kernel tests themselves had separately passed. Both expressions are now identical to the Rust 1.99 CI formatter output, without changing security behavior. **Actual final exact-head formatter result remains pending**, distinct from real debugger/clangd acceptance.
+
+
+### IDE 10 continuation — P03 native Windows script corruption, exact-head revalidation
+
+[Previous exact-head protected E2 run 42403027786](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42403027786) had an actual Windows PowerShell **ParserError** in the self-measured clangd import-audit inline `run:` block. It was truncated inside `if ($dll -notmatch ...` before an AppContainer probe ran. The protected Linux clangd job from that same run passed, but the Windows failure provides **no native permission verdict** at that SHA.
+
+On continuation branch `ide/p03-p04-native-closeout-20261107`, restored syntactically complete direct PE import parsing and closure of the foreach/if block. Same-distribution LLVM DLL staging is unchanged. The parser reports only the count of direct imports absent from the pinned private directory; those may be Windows OS-supplied DLLs and this is **not** full transitive or dynamic-dependency proof. Added `ide/supervisor/fixtures/Test-P03ClangdCI.ps1` to parse the exact native `pwsh` step using the native PowerShell AST before expensive compilation; wired into both E2 Windows and P03 exact-head Windows source jobs. No startup capability, broad PATH, ACL, AppContainer token, service permission, or signing-policy change.
+
+**Open:** exact continuation-head E2 Windows parser/native clangd result; historical restricted clangd exit-1 permission failure, fixed Windows LLDB-DAP AppContainer normal/cancel, Linux LLDB-DAP launch/stack/stop, and final actual OS kernel/host restart witnesses. Do not infer any of these passes from source syntax repair.
