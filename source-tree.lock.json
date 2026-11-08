@@ -65,7 +65,7 @@
     },
     {
       "path": ".github/workflows/lu-e1-p07-reviewed-app.yml",
-      "blob": "6e8ac965ab64d4d9affa050609668259a8e54c76"
+      "blob": "28ddb1edaa296bc3d23ef17c20fd8fa64eb87ad4"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -825,7 +825,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_desktop.rs",
-      "blob": "e927f47c4a0c66104117768fe3be31f97321c8d0"
+      "blob": "aab8550afa8ce9803ca9f24e43ac01693a7cbc1b"
     },
     {
       "path": "lu-desktop/src-tauri/src/rollback_review.rs",
