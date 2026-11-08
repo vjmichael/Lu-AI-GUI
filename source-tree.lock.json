@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "109c83bfa88a25473ee703f683f3a30fc680cd7d",
+  "sourceCommitBeforeLock": "a6d60806f0bcc51a5a1d9b2dea6281a30b698d7e",
   "trackedFileCount": 698,
   "files": [
     {
@@ -305,7 +305,7 @@
     },
     {
       "path": "docs/LU_AGENT01B_IMMUTABLE_PLAN_REVISIONS_20261108.md",
-      "blob": "55474b6606cf91bf2eda4f363da284fd88681cad"
+      "blob": "40b2039d5a6eda939fdb8522f541880f184f74dc"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -1097,7 +1097,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "f82a0246221073eccee7e678f7efc878ca8872c4"
+      "blob": "0422a92217bbb255ace8a5bafc78b4ecfd6c7f69"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
@@ -1457,7 +1457,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_revisions.rs",
-      "blob": "4d1cab3878322db5cd396dd002c5e3fdf60bd005"
+      "blob": "7609642ee1ba0b6cd1a10faf0b5b59d6c4db3622"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
