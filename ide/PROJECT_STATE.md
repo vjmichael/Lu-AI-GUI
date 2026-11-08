@@ -500,3 +500,8 @@ Actual failed CI logs, their job IDs, and the corrective commits are recorded in
 - [Chronological changelog](CHANGELOG.md), [continuity protocol](CONTINUITY_PROTOCOL.md), [engineering handoff](ENGINEERING_HANDOFF.md), [capability-first architecture](docs/CAPABILITY_FIRST_ARCHITECTURE.md).
 - Repository branch source was inspected using the GitHub connector. No local checkout or user Windows filesystem was inspected. **No R3.6–A3 Windows installer or local NSIS package has been verified in this session.**
 - Do not infer that a Git commit is a tested build, that a CI success is an installed launch, or that historical resource memory authorizes execution.
+
+
+## IDE native release and external review — November 7/8, 2026
+
+The active draft PR #97 continues P02–P06. Windows WO9 real OS popup caption is UIA Text/Pane rather than Button; added exact app-owned separate HWND physical bounded click and regression, pending installed CI. P03 Windows AppContainer LLDB-DAP still fails permission-denied before handshake, Linux fixed LLDB-DAP and installed GTK remain native pending. Signing tool now requires a private-key certificate with valid Code Signing EKU, dates and chain; no real publisher cert/secret is available, release still denied. A technical P06 review packet records prior unsigned Windows artifact run 42430581152, its installer/inventory digests, 521 resolved notices, 0 unresolved notice sources, 6 upstream originals and outstanding independent legal/target/binary/GPG review. P05 retains all 38 workflows and original historical PRs with nine unported B2/B3 source blobs. Signed two-version installed rollback and P07/WO10 integration are not accepted.

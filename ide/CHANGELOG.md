@@ -378,3 +378,6 @@ This records **what changed**. Read [PROJECT_STATE.md](PROJECT_STATE.md) for wha
 - R1–R2: standalone Windows shell, projects and read-only source browsing.
 
 See the engineering handoff and linked acceptance documents for exact evidence. Do not use these summaries as substitute for exact commit or artifact verification.
+
+
+- **IDE P02–P06 release closeout (Nov 7/8, draft):** Real Windows WO9 TaskDialog accessibility observation led to a guarded OS-only Text/Pane caption pointer witness (pending native acceptance). Strengthened executable signing preflight for valid trusted Code Signing certificate chain and private key. Filed actual 521-package, zero-missing-notice unsigned NSIS artifact technical receipt and independent legal/signature review checklist. This is *not* a signed release or legal clearance.

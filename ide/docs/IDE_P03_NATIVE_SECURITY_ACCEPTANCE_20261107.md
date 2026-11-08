@@ -110,3 +110,8 @@ On continuation branch `ide/p03-p04-native-closeout-20261107`, restored syntacti
 ### IDE continuation: bounded LLDB response-shape classification
 
 Previous genuine Linux cgroup/Bwrap LLDB native debuggee launch reached a correlated adapter `success:false` response but only `other_adapter_error` was reported, with no `body.error.format`. The debug-only fixed-vocabulary classifier now examines bounded alternative JSON response slots (`body.error.description`, `body.error.message`, plain `body.error`, `body.message`) before the generic response message, never printing adapter-supplied strings or project paths. Host regressions cover permission, ptrace, missing target and launch classes. A future **exact-head native Linux DAP launch/stop/stack/cancel result** is required; this is diagnostic development, not proof or a relaxed cgroup/Bwrap/ptrace grant.
+
+
+## Protected Windows LLDB-DAP still denied, not a containment pass
+
+In native run [42403027740](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42403027740), the service/Job/AppContainer admission reached suspended child attestation, grant consumption and a genuine resumed process. The fixed adapter then exited with code 1 before its DAP initialize handshake; only `PROTECTED_LSP_NATIVE_STDERR_CLASS=permission_denied`, `PROTECTED_LSP_NATIVE_DENIAL_CONTEXT=unspecified` was observed. The independent preflight outside AppContainer **did** initialize and had zero unresolved direct transitive DLL imports. Source/OS tests cannot treat a cached preflight as real protected normal or cancel. We have **not** expanded AppContainer capabilities, ACLs, network access or the trusted launch recipes; exact-head native Windows service-debug tests and Linux fixed-LLDB launch/stop/stack/cancel remain OPEN.

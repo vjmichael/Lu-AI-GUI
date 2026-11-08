@@ -127,3 +127,8 @@ Both unsigned verification-package builders now copy the actual `npm install` ge
 ### IDE continuation: GTK native file-dialog vocabulary and Windows owned consent
 
 Expanded the accepted genuine GTK file chooser button captions to include `Select Folder` and `Open Folder`, preserving exact AT-SPI button role, native chooser ancestor and actual OS action; zero project registration remains denial. Windows one-use consent is now anchored to the actual installed process's top-level dialog title and requires a real enabled OS UIA button InvokePattern. Hosted descendant providers may report a different PID, so root/window process ownership—not a second descendant PID match—is the security boundary; fixed counters report denial without user data. Added source regression guards. **No success claimed** until newly built Windows WO9 and Linux Debian installed real UI jobs pass on exact current head.
+
+
+## Exact WO9 native UI failure and bounded repair
+
+Windows installed run [42430581152](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42430581152) accepted the real native file picker and project reopen but then recorded `matched_titles_93;subtree_buttons_0;caption_non_button_93` and failed closed at the stage consent dialog. The actual OS TaskDialog provider exposes the exact custom approval caption as UIA Text/Pane, not a Button. The next source allows a physical OS pointer click ONLY on that named enabled Text/Pane rectangle, strictly inside a distinct installed-process native popup HWND whose title matches; a genuine UIA Button still uses InvokePattern. No app IPC/JS mock, foreign window or general permission bypass. **Exact-head native stage/commit/uninstall retest required.**
