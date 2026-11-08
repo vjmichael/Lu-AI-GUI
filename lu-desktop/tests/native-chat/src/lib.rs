@@ -34,6 +34,8 @@ pub mod ansf_source_ids;
 // M3-S1/S2: compile the real semantic projection and hybrid ranker.
 #[path = "../../../../src-tauri/lu-core/src/ansf_semantic.rs"]
 pub mod ansf_semantic;
+#[path = "../../../../src-tauri/lu-core/src/ansf_embedding_worker.rs"]
+pub mod ansf_embedding_worker;
 
 #[path = "../../../../src-tauri/lu-core/src/contracts.rs"]
 pub mod contracts;

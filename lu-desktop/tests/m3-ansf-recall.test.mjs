@@ -29,7 +29,7 @@ test('M3 human recall and original-source navigation stay in independent pane',(
   const pane=ui.slice(ui.indexOf('function AnsfHistoryPane('),ui.indexOf('function App() {'));
   assert.ok(pane.length>500,'independent pane component');
   assert.match(pane,/aria-label="Independent ANSF history browser"/);
-  assert.ok(pane.includes("invoke('lu_m3_recall'"));
+  assert.ok(pane.includes("invoke('lu_m3_semantic_recall'"));
   assert.ok(pane.includes("invoke('lu_m3_history_page'"));
   assert.ok(pane.includes("invoke('lu_m3_source_text_page'"));
   assert.match(pane,/Read full original/);

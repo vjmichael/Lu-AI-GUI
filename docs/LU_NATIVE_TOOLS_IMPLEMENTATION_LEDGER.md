@@ -1,3 +1,7 @@
+## M3-S3 local-only embedding runtime — 2026-11-07 (SOURCE/CI PENDING)
+
+Pinned local GGUF embeddings worker with Windows Job containment, explicit OS-selected GGUF, incremental original source SQLite vector indexing and optional FTS5+semantic recall for pane and human GGUF Send. No cloud transfer or model-granted permissions; native local protocol tests. Genuine embedding model, installed acceptance and semantic-quality benchmark open. See [S1–S4 plan](LU_M3_SEMANTIC_S1_S4_20261107.md).
+
 ## M3 baseline correction — original real GGUF answers scored with literal placeholder bug (2026-11-07)
 
 Two real-model suites produced 84 responses each, but the original scorer falsely marked every format-wrapped correct answer wrong (0/28 each arm). A conservative **post-hoc, non-preregistered** read of one immutable artifact yielded 2/28 no memory, 6/28 recent chat and 18/28 recent+ANSF exact-source; this is NOT an accepted memory win. Corrected benchmark prompt/scorer and native Python regression tests submitted for future prospective reruns. See [exact baseline diagnostic](LU_ANSF_BENCHMARK_DIAGNOSTIC_20261107.md).

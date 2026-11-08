@@ -45,6 +45,9 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
   const [assetSource,setAssetSource]=useState('');
   const [assetRows,setAssetRows]=useState([]);
   const [assetBusy,setAssetBusy]=useState(false);
+  const [semanticModelId,setSemanticModelId]=useState('');
+  const [semanticBusy,setSemanticBusy]=useState(false);
+  const [semanticReceipt,setSemanticReceipt]=useState('');
   const [resumeProject,setResumeProject]=useState('lu');
   const [resumeTask,setResumeTask]=useState('windows-installer');
   const [resumeSource,setResumeSource]=useState('');
@@ -59,6 +62,12 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
   const requests=useRef(0);
   const scrollRef=useRef(null);
   const pendingPaneAnchor=useRef(null);
+  useEffect(()=>{
+    if(!activeChatId)return;
+    invoke('lu_m3_embedding_status',{chatId:activeChatId})
+      .then(model=>setSemanticModelId(model||''))
+      .catch(()=>setSemanticModelId(''));
+  },[activeChatId]);
   useEffect(()=>{
     if(!activeChatId||!browseChatId)return;
     const request=++requests.current;
@@ -157,7 +166,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
         await openSource(query.trim());
         return;
       }
-      const hits=await invoke('lu_m3_recall',{
+      const hits=await invoke('lu_m3_semantic_recall',{
         chatId:activeChatId,query:query.trim()
       });
       if(request===requests.current){setMatches(hits);setReading(null)}
@@ -191,6 +200,42 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     try{await openSource(sourceId)}
     catch(e){setError('Original source unavailable: '+String(e))}
     finally{setBusy(false)}
+  }
+  async function enableSemantic(){
+    if(!activeChatId||semanticBusy)return;
+    setSemanticBusy(true);setError('');setSemanticReceipt('');
+    try{
+      const id=await invoke('lu_m3_embedding_enable',{chatId:activeChatId});
+      if(id){setSemanticModelId(id);setSemanticReceipt(
+        'Verified local embedding GGUF loaded; choose Index this book to add semantic candidates.'
+      )}
+    }catch(e){setError('Local semantic model could not start: '+String(e))}
+    finally{setSemanticBusy(false)}
+  }
+  async function indexSemantic(){
+    if(!activeChatId||!browseChatId||!semanticModelId||semanticBusy)return;
+    setSemanticBusy(true);setError('');
+    try{
+      const result=await invoke('lu_m3_semantic_index',{
+        chatId:activeChatId,sourceChatId:browseChatId,limit:12
+      });
+      setSemanticReceipt(
+        result.indexedNow+' new original entries indexed, '+result.totalIndexed+
+        ' total for this book. Repeat to index more.'
+      );
+    }catch(e){setError('Semantic source indexing stopped: '+String(e))}
+    finally{setSemanticBusy(false)}
+  }
+  async function disableSemantic(){
+    if(!activeChatId||semanticBusy)return;
+    setSemanticBusy(true);setError('');
+    try{
+      await invoke('lu_m3_embedding_disable',{chatId:activeChatId});
+      setSemanticModelId('');setSemanticReceipt(
+        'Local embedding worker stopped. Original ANSF and rebuildable vector index preserved.'
+      );
+    }catch(e){setError('Local embedding model shutdown failed: '+String(e))}
+    finally{setSemanticBusy(false)}
   }
   async function inspectAssets(){
     if(!activeChatId||!assetProject.trim()||assetBusy)return;
@@ -306,6 +351,27 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
     </form>
     {error&&<p role="alert" className="ansfHistoryError">{error}</p>}
     <small>Historical source text is read-only context, never a new tool permission.</small>
+    <details className="ansfAssetsMemory" aria-label="Local semantic retrieval">
+      <summary>Local semantic search · original-source hybrid</summary>
+      <small>Optional, offline-only GGUF embedding worker. No cloud history transfer; the SQLite originals remain authoritative. Search falls back to lexical recall when unloaded.</small>
+      <p>{semanticModelId
+        ?'Local semantic model loaded: '+semanticModelId
+        :'No separate local embedding model is loaded.'}</p>
+      {semanticReceipt&&<small>{semanticReceipt}</small>}
+      {!semanticModelId?<button type="button" disabled={semanticBusy}
+        onClick={()=>void enableSemantic()}>
+          {semanticBusy?'Starting local engine…':'Choose local embedding GGUF…'}
+        </button>:<div>
+        <button type="button" disabled={semanticBusy}
+          onClick={()=>void indexSemantic()}>
+          {semanticBusy?'Indexing originals…':'Index next 12 entries of this book'}
+        </button>
+        <button type="button" disabled={semanticBusy}
+          onClick={()=>void disableSemantic()}>Stop embedding worker</button>
+      </div>}
+      <small>New original messages are indexed incrementally. An unindexed or unsuitable embedding model does not grant answers or permissions.</small>
+    </details>
+
     <details className="ansfAssetsMemory" aria-label="Project continuity">
       <summary>Continue previous work · project checkpoint</summary>
       <small>Source-linked task progress remains available across Lu conversations and model changes. Historical work does not grant a new tool operation.</small>

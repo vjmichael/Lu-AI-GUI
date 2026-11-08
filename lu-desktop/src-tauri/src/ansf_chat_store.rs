@@ -667,6 +667,38 @@ impl ChatStore {
         Ok(hit)
     }
 
+    /// M3-S3 first local semantic indexing slice. Deterministic 2048-character
+    /// passage from the original user/assistant text, no copied transcript.
+    /// The index row itself is the durable progress record; calling again
+    /// skips already indexed source IDs after restart or a failed worker.
+    pub fn index_local_semantic_batch(
+        &self,active_chat:&str,source_chat:&str,
+        worker:&mut lu_core::ansf_embedding_worker::LocalEmbeddingWorker,
+        limit:usize
+    )->Result<(usize,i64),String>{
+        self.require(active_chat)?;
+        let book=self.require(source_chat)?;
+        if limit==0||limit>16{return Err("Invalid semantic indexing batch".into())}
+        let candidates=book.semantic_pending_entries(
+            source_chat,worker.model_id(),limit
+        ).map_err(to_err)?;
+        let mut indexed=0;
+        for entry in candidates{
+            // Compact first block only; revision-aware multi-chunk passage
+            // indexing remains explicitly open in the S3 work ledger.
+            let passage:String=entry.content.chars().take(2048).collect();
+            if passage.trim().is_empty(){continue}
+            let v=worker.embed(&passage)?;
+            book.index_semantic_passage(
+                source_chat,entry.id,0,worker.model_id(),&v
+            ).map_err(to_err)?;
+            indexed+=1;
+        }
+        let total=book.semantic_indexed_count(source_chat,worker.model_id())
+            .map_err(to_err)?;
+        Ok((indexed,total))
+    }
+
     /// M3-S2 hybrid seam. A trusted LOCAL embedding engine supplies query
     /// vectors; this API does not accept model-generated file paths or grants.
     /// It is NOT wired to automatic Send until a real pinned embedding engine

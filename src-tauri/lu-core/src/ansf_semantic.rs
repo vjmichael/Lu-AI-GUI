@@ -75,6 +75,53 @@ fn similarity(query:&[f32],bytes:&[u8])->Result<f32,AnsfError>{
     Ok((dot/(na.sqrt()*nb.sqrt())).clamp(-1.0,1.0) as f32)
 }
 impl AnsfStore{
+    /// Incremental local-only semantic indexing. The stored original text is
+    /// returned only to the trusted host and a supervised local embedding
+    /// model; the FTS/semantic projection never becomes a second transcript.
+    /// Already indexed originals are skipped after crash/restart. Passage
+    /// chunking beyond the first bounded text block is a later quality gate.
+    pub fn semantic_pending_entries(
+        &self,session_id:&str,embedding_model:&str,limit:usize
+    )->Result<Vec<Entry>,AnsfError>{
+        if session_id.is_empty()||session_id.len()>128||
+           session_id.contains('\0')||!valid_model(embedding_model)||
+           limit==0||limit>24{return Err(AnsfError::InvalidInput)}
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let mut stmt=conn.prepare(
+            "SELECT e.id,e.session_id,e.chapter_id,e.message_id,e.role,e.summary,e.content
+             FROM ansf_entries e
+             WHERE e.session_id=?1 AND e.role IN ('user','assistant')
+               AND length(trim(e.content))>0
+               AND NOT EXISTS(
+                SELECT 1 FROM ansf_semantic_projection s
+                WHERE s.entry_id=e.id AND s.embedding_model=?2 AND s.chunk_ordinal=0
+               )
+             ORDER BY e.id ASC LIMIT ?3"
+        )?;
+        stmt.query_map(params![session_id,embedding_model,limit as i64],|r|{
+            Ok(Entry{
+                id:r.get(0)?,session_id:r.get(1)?,chapter_id:r.get(2)?,
+                message_id:r.get(3)?,role:r.get(4)?,summary:r.get(5)?,
+                content:r.get(6)?
+            })
+        })?.collect::<Result<Vec<_>,_>>().map_err(Into::into)
+    }
+    pub fn semantic_indexed_count(
+        &self,session_id:&str,embedding_model:&str
+    )->Result<i64,AnsfError>{
+        if session_id.is_empty()||session_id.len()>128||
+           session_id.contains('\0')||!valid_model(embedding_model){
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM ansf_semantic_projection s
+             JOIN ansf_entries e ON e.id=s.entry_id
+             WHERE e.session_id=?1 AND s.embedding_model=?2 AND s.chunk_ordinal=0",
+            params![session_id,embedding_model],|r|r.get(0)
+        )?)
+    }
+
     /// Host-supplied deterministic embedding of a passage from an immutable
     /// original. Re-indexing identical bytes is idempotent; conflicting bytes
     /// under the same embedding model/version are refused, not overwritten.
@@ -265,6 +312,23 @@ mod tests{
         assert!(db.semantic_candidates("c-3","model-v1",&[1.0,0.0,0.0],5).is_err());
         assert!(db.semantic_candidates("c-3","model-v1",&[0.0,0.0],5).is_err());
         assert!(db.semantic_candidates("c-3","bad;id",&[0.0,1.0],5).is_err());
+    }
+    #[test]
+    fn incremental_original_index_skips_completed_entries_after_restart(){
+        let db=AnsfStore::in_memory().unwrap();
+        db.create_session("c-index","local","Test").unwrap();
+        db.start_chapter("c-index","Decision").unwrap();
+        let a=db.append_entry("c-index","a",EntryRole::User,"Task","Where is the installer?").unwrap();
+        let b=db.append_entry("c-index","b",EntryRole::Assistant,"Answer","Stored in local build assets").unwrap();
+        let first=db.semantic_pending_entries("c-index","model-v1",1).unwrap();
+        assert_eq!(first[0].id,a);
+        db.index_semantic_passage("c-index",a,0,"model-v1",&[0.9,0.1]).unwrap();
+        assert_eq!(db.semantic_indexed_count("c-index","model-v1").unwrap(),1);
+        let second=db.semantic_pending_entries("c-index","model-v1",12).unwrap();
+        assert_eq!(second.len(),1);
+        assert_eq!(second[0].id,b);
+        assert_eq!(db.semantic_pending_entries("c-index","model-v2",12).unwrap().len(),2);
+        assert!(db.semantic_pending_entries("c-index","model-v1",25).is_err());
     }
     #[test]
     fn source_fusion_prefers_matches_retrieved_by_both_channels(){

@@ -11,3 +11,4 @@ serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 base64 = "0.22"
+lu-win-worker-job = { path = "../../../src-tauri/lu-win-worker-job" }

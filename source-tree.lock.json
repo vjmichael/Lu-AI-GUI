@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "46b855e37926565ecaf3b5a8b3c78763ff5a465c",
-  "trackedFileCount": 580,
+  "sourceCommitBeforeLock": "93131f3fd9a40f08b3d22b8237d574330ed6ecaf",
+  "trackedFileCount": 582,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/lu-m3-ansf-recall.yml",
-      "blob": "3a884a70594b449986088850f687b5ff44dcadef"
+      "blob": "25dc35ae5d95e346bc13f4e0e672ca6b9b86dd75"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -229,15 +229,15 @@
     },
     {
       "path": "docs/LU_M3_CROSS_CONVERSATION_RECALL_20261107.md",
-      "blob": "d3bdbac2114fe85f7daa7b3929f2bcc028718798"
+      "blob": "345f1f76556f0d783c06a9c18b75d89d22d2d8de"
     },
     {
       "path": "docs/LU_M3_SEMANTIC_S1_S4_20261107.md",
-      "blob": "2f1376be1fe92476112d4b73eacc30840f68882d"
+      "blob": "fd5bcbec2cc17941e5456313abe9911381a5ab0a"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "b30176da46d0bce9bffd62b94ecc6acf684e875c"
+      "blob": "939f6b42b3a600407fd083b36af22a4ffd1d0aaa"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -509,7 +509,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "dc40e8c9e9d62dd0f38609cb753b893fbebb62b7"
+      "blob": "d821c8fd13d1ff9160339146567bde5cc6cae951"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -577,7 +577,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "b5e749b2b3a32a97f918f7c75a44cd31dea516c5"
+      "blob": "29f06332a6190fa64041c86b452ba6f2e4cdd36c"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -753,7 +753,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-ansf-recall.test.mjs",
-      "blob": "9a7b78b795e319553e39606039c033aad368b78b"
+      "blob": "2ffe8af346924b19b49ca7520cc0338c2adccdc6"
     },
     {
       "path": "lu-desktop/tests/m3-asset-resume.test.mjs",
@@ -770,6 +770,10 @@
     {
       "path": "lu-desktop/tests/m3-history-pane.test.mjs",
       "blob": "d74027b3e6a67b6f2a15e2813dea20786eacf40f"
+    },
+    {
+      "path": "lu-desktop/tests/m3-local-embedding.test.mjs",
+      "blob": "eeb684ebf1918562f3ddfc3af21ac3dbf62b80df"
     },
     {
       "path": "lu-desktop/tests/m3-operational-assets.test.mjs",
@@ -797,11 +801,11 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/Cargo.toml",
-      "blob": "34f9c4d55b440fe1628e7a130dfc2c68c1e92f66"
+      "blob": "30f9d570034b93c5e7a8ad0c5fbd3b229280e3e4"
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "39ff12c0e36d9e57a62e65ebfbcbeedc836622d0"
+      "blob": "5f5541c454052f55551f275dff2063cf2f33b804"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
@@ -965,7 +969,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "c4c68ce376af6c22f0197e1ff41c2011f1b1bbb8"
+      "blob": "dddfbc5ba91401a2ed0ee133b4e020f5fd8a9061"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1104,6 +1108,10 @@
       "blob": "701e2721f0e36bc6021b38f4d3c91b5f2874874e"
     },
     {
+      "path": "src-tauri/lu-core/src/ansf_embedding_worker.rs",
+      "blob": "f124bbbf051010d892c64a5e12af6e7f0689a3f0"
+    },
+    {
       "path": "src-tauri/lu-core/src/ansf_goal_records.rs",
       "blob": "3b3b291ed5730317f90962f26dc2610014665db8"
     },
@@ -1129,7 +1137,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_semantic.rs",
-      "blob": "75d540337cd5cbcca6ddc90c7a4eb4f2369c04b2"
+      "blob": "4a4620834f09bf17a585ee7ea4ec89c5dfac8041"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_source_ids.rs",
@@ -1341,7 +1349,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "28fdbeaa1f2158328af8165cd03deb34d9980dc5"
+      "blob": "2940c6e207d58b709926814c32370dffb70622be"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
