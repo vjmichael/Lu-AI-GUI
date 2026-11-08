@@ -514,3 +514,58 @@ Implemented a new host-only, typed FFprobe broker with reviewed executable SHA, 
 ## E1-P07 — model/desktop reviewed Git and FFprobe tools (Nov 7, 2026)
 
 Source implementation adds five argument-free reviewed app model tools (Git HEAD/status/branch/history and WAV/MP4 facts) to the real Lu ModelToolCatalog, NativeToolRegistry, NativeToolTurn and supervised inference loop. A new one-turn desktop Tauri/native picker and two React Send opt-ins bind original saved human messages to ReadWorkspace and ExecuteCode grants, without permitting a model-chosen program, path or argument. Independent inner OS-worker and outer conversation effect IDs prevent durable journal collision; a cancellation monitor revokes the task and kills owned processes. Expanded native tests now check five independently parsed real OS Git/FFprobe results and ten persisted outer/inner effects, plus a second scripted-model production conversation-session test. A new SHA-pinned Qwen3-0.6B GGUF + llama.cpp Ubuntu acceptance workflow must prove the model *itself* selected Git and FFprobe without host routing and that the live tool feedback/final answers and receipts survive SQLite reopen. Source complete for the candidate; all exact-head CI checks and installed-Windows UI acceptance OPEN. No blanket sandbox on Lu Core and no required MCP or Docker. See docs/LU_E1_P07_REVIEWED_APPLICATION_CHAT_20261107.md.
+
+## E1-P08 — reviewed native-app crash/restart journal reconciliation (Nov 7, 2026)
+
+After E1-P07 but without closing its pending CI: implemented new
+`reviewed_app_recovery.rs` and integrated it at desktop startup under the
+pre-existing exclusive `DesktopOwner` writer lease. It scans strictly
+host-minted and bounded per-turn Git/FFprobe SQLite journals (no user/model
+paths), rejects malformed/linked/reparse files, converts stale RUNNING
+tasks to INTERRUPTED and EXECUTING effects to UNCERTAIN, preserves APPLIED
+receipts, and does not replay an operation. One-sided journals from a
+crash between file creations are handled without making up the missing
+database. Counts-only operator diagnostics are emitted when recovery
+is needed. Added a Tauri-free production-source harness testing genuine
+SQLite restart, preservation, idempotency, one-sided creation failure,
+malformed filenames and Unix symlinks. Dedicated exact-head Ubuntu 24.04,
+Windows 2025 and Windows desktop Tauri workflow added. **Source candidate,
+native/installed acceptance OPEN**. This is effect/ledger recovery, NOT
+proof that a Linux child survived or was reaped after parent death.
+The original authenticated ANSF user turn now receives a persisted
+interrupted assistant history marker, matched and deduplicated by turn ID
+using indexed SQLite event state. Completed responses are never rewritten;
+queued Send markers cover a crash before worker journals exist. Normal
+reviewed errors also become visible unsuccessful history checkpoints.
+Linux-only source adds a first-party lifetime guardian that anchors the
+reviewed worker's private PGID and SIGKILLs its own group on Lu pipe EOF,
+including parent SIGKILL. Dedicated real-host-crash, real-grandchild
+and unrelated-process survival tests are submitted; cgroup/setsid
+escape containment and adopted-child reaping are NOT proven.
+The debug-only crash fixture is gated by an opt-in Cargo feature and
+the future Linux single installer still needs the guardian sibling binary.
+**Exact-head Windows/Linux CI and kernel crash proof are OPEN.**
+The physical installed-Windows acceptance remains deferred toward v1.0.
+See docs/LU_E1_P08_REVIEWED_RESTART_RECOVERY_20261107.md and
+docs/LU_E1_P08_LINUX_GROUP_GUARD_20261108.md.
+
+## E1-P08B/C — exact native repair and escape-capable worker decision (Nov 8, 2026)
+
+Earlier E1-P08 hosted native receipts at run 42454451010: Windows
+portable 3/3 PASSED; Ubuntu 24.04 portable 4/4 PASSED; Windows Tauri
+compile FAILED with Rust E0369 in the previously committed reviewed
+desktop mode test. Replaced the invalid `matches!("git"|"media",...)`
+expression with independently valid literal match tests. Exact-current-head
+Windows Tauri proof remains OPEN, as does the new guardian test matrix.
+
+Linux kernel negative control reproduced `setsid()` child survival
+after original-group SIGKILL, despite remaining in the same cgroup;
+the child was cleaned up via a kernel-pinned pidfd. Submitted the
+negative control to dedicated native CI. **Decision: cgroup-v2 delegated
+subtree + cgroup.kill is necessary before Lu can promise complete
+termination of descendants that escape a process group.** Current
+group guardian remains lower-assurance and explicitly scoped to
+ordinary cooperative Git/FFprobe descendants. True delegated cgroup
+custody and abnormal-host-crash cleanup are independent E1-P08C OPEN
+gates, not a mandatory sandbox on Lu Core. See
+docs/LU_E1_P08_CGROUP_V2_ESCAPE_DECISION_20261108.md.

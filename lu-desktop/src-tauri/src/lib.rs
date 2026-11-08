@@ -32,6 +32,7 @@ mod reader_desktop;
 use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 mod workspace_desktop;
 mod reviewed_app_desktop;
+mod reviewed_app_recovery;
 mod archive_desktop;
 mod archive_batch_desktop;
 mod archive_split_desktop;
@@ -689,6 +690,46 @@ impl DesktopState {
         let owner = lu_core::desktop_owner::DesktopOwner::acquire(
             &root.join("desktop-owner.sqlite")
         ).map_err(|e| format!("Lu app data directory already in use or unavailable: {e:?}"))?;
+        // E1-P08: while holding DesktopOwner's OS-exclusive writer lease,
+        // reconcile leftover per-turn supervised Git/FFprobe journals before
+        // exposing tool execution. Preserve APPLIED receipts; never retry an
+        // uncertain effect, treat an interrupted worker as NOT proven reaped.
+        let reviewed_recovery=
+            reviewed_app_recovery::reconcile_reviewed_application_journals(&root)
+                .map_err(|e|format!("Reviewed application startup recovery failed: {e}"))?;
+        if reviewed_recovery.interrupted_tasks>0
+            ||reviewed_recovery.uncertain_effects>0
+            ||reviewed_recovery.partial_turns>0{
+            eprintln!(
+                "LU_E1_P08_REVIEWED_RESTART task_journals={} effect_journals={} interrupted={} uncertain={} partial={}",
+                reviewed_recovery.task_journals,reviewed_recovery.effect_journals,
+                reviewed_recovery.interrupted_tasks,reviewed_recovery.uncertain_effects,
+                reviewed_recovery.partial_turns
+            );
+        }
+        let chats=ChatStore::open(&root)?;
+        // A per-turn ledger is not a chat message. Match its generation ID to
+        // a trusted original ANSF user turn, then persist the interrupted
+        // marker in that chat only. Completed turns are never rewritten.
+        let mut reported=0usize;
+        let mut unlinked=0usize;
+        for turn in &reviewed_recovery.turns_to_report{
+            match chats.mark_reviewed_turn_interrupted(turn)?{
+                Some(true)=>reported+=1,
+                Some(false)=>{},
+                None=>unlinked+=1,
+            }
+        }
+        // Also cover an abnormal exit between saving the human Send and
+        // creating the first external-tool SQLite journal. Query the bounded
+        // ANSF visible index, not the full conversation transcript.
+        reported+=chats.mark_unfinished_reviewed_queues()?;
+        if reported>0||unlinked>0{
+            eprintln!(
+                "LU_E1_P08_REVIEWED_CHAT_RECOVERY notified={} unlinked={}",
+                reported,unlinked
+            );
+        }
         // Under DesktopOwner's exclusive process lease, previous image
         // PREPARED exports are UNCERTAIN. Never replay a selected Save path.
         let mut image_history=lu_core::native_image_revision_history::ImageRevisionLedger::open(
@@ -863,7 +904,7 @@ impl DesktopState {
             source_reuse:lu_core::ai_operations::SourceReuseIndex::new(),
             models_dir,
             catalog_path,
-            chats: ChatStore::open(&root)?,
+            chats,
             operational_assets:lu_core::operational_asset_ledger::OperationalAssetLedger::open(
                 &root.join("lu-operational-assets.sqlite")
             ).map_err(|e|format!("Operational asset ledger unavailable: {e:?}"))?,
