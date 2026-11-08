@@ -104,6 +104,36 @@ fn verify_admitted_leaf(path:&Path)->io::Result<()>{
     Ok(())
 }
 
+/// After kernel cgroup.kill reports recursive emptiness, remove nested
+/// empty cgroups bottom-up. cgroup.kill does not unlink their directories.
+/// Never follow symlinks or delete arbitrary filesystem contents; only
+/// kernel cgroup directories whose live-process state is zero are removed.
+fn remove_owned_empty_tree(path:&Path,depth:usize,budget:&mut usize)->io::Result<()>{
+    if depth>16||*budget==0{
+        return Err(error("cgroup subtree removal exceeded fixed safety bounds"))
+    }
+    *budget-=1;
+    check_no_links(path)?;
+    if !populated_zero(path)?{
+        return Err(error("cgroup subtree not empty after kernel kill"))
+    }
+    for entry in fs::read_dir(path)?{
+        let entry=entry?;
+        let kind=entry.file_type()?;
+        if kind.is_symlink(){
+            return Err(error("linked member inside cgroup hierarchy"))
+        }
+        if kind.is_dir(){
+            remove_owned_empty_tree(&entry.path(),depth+1,budget)?;
+        }else if !kind.is_file(){
+            return Err(error("unexpected cgroup interface entry type"))
+        }
+        // Kernel interface files are virtual; never unlink them.
+    }
+    fs::remove_dir(path)?;
+    Ok(())
+}
+
 /// Entry point of the installed FIRST-PARTY guardian. The host alone holds
 /// the writer end of stdin; on host SIGKILL EOF still triggers kernel kill.
 /// It runs in the parent cgroup; moving this guardian into the killable leaf
@@ -142,9 +172,12 @@ pub fn guardian_main()->io::Result<()>{
         }
         Ok(())
     })();
-    // Retain evidence of an unemptied subtree. Never erase the directory
-    // or report success if kernel cleanup failed.
-    if result.is_ok(){fs::remove_dir(&leaf)?}
+    // An empty recursive subtree can still contain empty child cgroup
+    // directories. Remove only those kernel groups; keep failed evidence.
+    if result.is_ok(){
+        let mut budget=1024usize;
+        remove_owned_empty_tree(&leaf,0,&mut budget)?;
+    }
     result
 }
 pub struct LinuxCgroupGuardian{
