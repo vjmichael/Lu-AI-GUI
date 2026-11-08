@@ -105,8 +105,10 @@ test('exact CRLF/CR/LF source bytes and missing final newline remain intact',()=
   const second=resolve('one\rtwo','ONE\rtwo','one\rTWO');
   assert.equal(second.answer.text,'ONE\rTWO');
   const third=resolve('a\nb','a\nB','a\nb\n');
-  assert.equal(typeof third.answer.text,'string');
-  assert.ok(third.answer.text.includes('B'));
+  // Changing the final line while another source adjusts its newline is
+  // overlapping, so the user must explicitly pick the intended bytes.
+  assert.equal(third.plan.conflicts.length,1);
+  assert.equal(renderReviewedMerge(third.plan,{'conflict-1':'draft'}).text,'a\nB');
 });
 
 test('Unicode including astral code points survives without byte corruption',()=>{
@@ -176,5 +178,5 @@ test('UI is explicit, requires a fresh native read and never dispatches Save',()
   assert.match(cm,/view\.dispatch\(\{changes:\{from:0,to:view\.state\.doc\.length,/);
   assert.match(cm,/mergeCallback\.current\?\.\(req\.nonce,true\)/);
   const effect=cm.slice(cm.indexOf('if (!view || !mergeApplyRequest'),cm.indexOf('},[mergeApplyRequest,tabIdentity]'));
-  assert.doesNotMatch(effect,/createEditorState|ide_save_source_file|invoke\(/);
+  assert.doesNotMatch(effect.replace(/\/\/[^\n]*/g,''),/createEditorState|ide_save_source_file|invoke\(/);
 });
