@@ -253,6 +253,8 @@ function App() {
   activeProjectIdRef.current = activeProject?.projectId ?? null;
   const selectedMergeTabRef = useRef(null);
   selectedMergeTabRef.current = activeTabKey;
+  const editorVisibleRef=useRef(false);
+  editorVisibleRef.current=section==='explorer';
 
   useEffect(() => {
     // Load only a navigation hint for the active registered project. No
@@ -386,6 +388,10 @@ function App() {
     [secondaryTab,lspNativeDiagnostics]);
   function selectPrimaryEditorTab(key) {
     if (mergeBusy || mergeApplyRequest) return;
+    if (key!==activeTabKey) {
+      setMergeReview(null);
+      setMergeChoices({});
+    }
     setTabWindowStart(previous=>centerSelectedTab(projectTabs,key,previous));
     if (splitEditorOpen && key === secondaryTabKey && activeTabKey !== key)
       setSecondaryTabKey(activeTabKey);
@@ -2454,7 +2460,7 @@ function App() {
   async function prepareExternalMerge(tab) {
     const projectId=activeProjectIdRef.current;
     if (!tab || tab.projectId!==projectId ||
-        selectedMergeTabRef.current!==tab.key ||
+        selectedMergeTabRef.current!==tab.key || !editorVisibleRef.current ||
         mergeBusy || workspaceLayoutOp.current || explorerIoTicket.current ||
         savingKey || reviewPending || draftRecoveryBusy || inboxBusy) return;
     const state=editorStates.current.get(tab.key);
@@ -2478,6 +2484,7 @@ function App() {
         explorerIoTicket.current===ticket &&
         selectedMergeTabRef.current===tab.key &&
         activeProjectIdRef.current===projectId &&
+        editorVisibleRef.current &&
         !!current && current.savedText===tab.savedText &&
         current.draft===tab.draft && current.revision===tab.revision &&
         current.bufferRevision===tab.bufferRevision &&
@@ -2518,7 +2525,7 @@ function App() {
     const review=mergeReview;
     const projectId=activeProjectIdRef.current;
     if (!review || mergeBusy || mergeApplyRequest ||
-        selectedMergeTabRef.current!==review.tabKey ||
+        selectedMergeTabRef.current!==review.tabKey || !editorVisibleRef.current ||
         projectId!==review.projectId ||
         workspaceLayoutOp.current || explorerIoTicket.current ||
         savingKey || reviewPending || draftRecoveryBusy) return;
@@ -2550,6 +2557,7 @@ function App() {
       if (serial!==mergeSerial.current ||
           explorerIoTicket.current!==ticket ||
           selectedMergeTabRef.current!==review.tabKey ||
+          !editorVisibleRef.current ||
           !mergeCanApply(review,tab,state,activeProjectIdRef.current,latest))
         throw Error('B11_RECHECK_FAILED: source or draft changed; review again');
       const nonce=++mergeNonce.current;
@@ -2569,13 +2577,15 @@ function App() {
     } finally { finishExplorerIo(ticket); }
   }
 
-  function finishReviewedExternalMerge(nonce,applied) {
+  function finishReviewedExternalMerge(nonce,applied,reason=null) {
     const req=mergeApplyRequest;
     if (!req || req.nonce!==nonce) return;
     setMergeApplyRequest(null);
     setMergeBusy(false);
     if (!applied) {
-      setProblem('The editor changed before the merge transaction. No rebase was made.');
+      setProblem(reason==='B11_LINE_ENDING_RELOAD_REQUIRED'
+        ? 'The disk or merged file uses a different newline format from the active CodeMirror state. No merge applied; preserve your draft and explicitly reload before reconciling line endings.'
+        : 'The editor changed before the merge transaction. No source rebase was made.');
       return;
     }
     const tab=tabsRef.current.find(item=>item.key===req.tabKey);
@@ -2658,6 +2668,7 @@ function App() {
       void stopLspSession();
     }
     editorStates.current.delete(key);
+    setMergeReview(previous=>previous?.tabKey===key ? null : previous);
     if (secondaryTabKey === key) setSecondaryTabKey(null);
     clearPrivateDraftSession(key);
     setReview(previous => previous?.tabKey === key ? null : previous);
@@ -2692,6 +2703,7 @@ function App() {
           editorStates.current.get(tab.key) !== editorStateAtStart ||
           !lateReloadCanCommit(tab,latestTab,opened,activeProjectIdRef.current))
         throw new Error('Reload stopped: project, source or draft changed during native read.');
+      setMergeReview(previous=>previous?.tabKey===tab.key ? null : previous);
       clearPrivateDraftSession(tab.key);
       resetBufferIdentity(tab.key,opened.projectId,opened.relativePath,opened.revision);
       editorStates.current.set(tab.key, createEditorState(
@@ -2736,6 +2748,7 @@ function App() {
         return true;
       }
       bufferIdentities.current.set(tab.key,rebased.identity);
+      setMergeReview(previous=>previous?.tabKey===tab.key ? null : previous);
       // If typing continued during the save, the newer draft is kept dirty.
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: saved.revision, savedText: content,
@@ -2843,7 +2856,8 @@ function App() {
       <nav aria-label="IDE sections" className="ideNav">
         {sections.map(item => <button key={item.id} type="button"
           className={'navItem' + (section === item.id ? ' selected' : '')}
-          disabled={item.pending || ((item.id === 'explorer' || item.id === 'project-search') && !activeProject)}
+          disabled={item.pending || mergeBusy || !!mergeApplyRequest ||
+            ((item.id === 'explorer' || item.id === 'project-search') && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
           onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'packages') void readWorkflowRuns(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
@@ -4402,7 +4416,8 @@ function App() {
                 }}
                 mergeApplyRequest={mergeApplyRequest?.tabKey===activeTab.key
                   ? mergeApplyRequest : null}
-                onMergeApplied={(nonce,applied)=>finishReviewedExternalMerge(nonce,applied)}
+                onMergeApplied={(nonce,applied,reason)=>
+                  finishReviewedExternalMerge(nonce,applied,reason)}
                 key={activeTab.key + ':' + activeTab.generation}
                 tabIdentity={activeTab.key + ':' + activeTab.generation}
                 editorState={editorStates.current.get(activeTab.key)}
