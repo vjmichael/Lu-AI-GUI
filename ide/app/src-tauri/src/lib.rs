@@ -721,6 +721,24 @@ async fn ide_build_reconcile(
     }
 }
 
+/// DEV-03.2B: native read-only review of one fixed language adapter
+/// contract. This does not install toolchains, authorize a job or execute.
+#[tauri::command]
+async fn ide_review_multilang_adapter(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    profile_id: String,
+    expected_saved_manifest_sha256: String,
+) -> Result<lu_ide_workspace::reviewed_adapters::ReviewedAdapterContract, String> {
+    let registry = Arc::clone(registry.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.review_multilang_adapter(
+            &project_id, &profile_id, &expected_saved_manifest_sha256,
+        ).map_err(str::to_owned)
+    })
+    .await.map_err(|_| "DEV03_ADAPTER_REVIEW_UNAVAILABLE".to_owned())?
+}
+
 /// DEV-03.1: enumerate fixed registered-project build/test profiles and
 /// conventional test-name hints. This read-only command grants no execution.
 #[tauri::command]
@@ -1421,6 +1439,7 @@ pub fn run() {
             ide_decide_execution_intent,
             ide_list_execution_intents,
             ide_discover_project_run_profiles,
+            ide_review_multilang_adapter,
             ide_build_status,
             ide_build_start,
             ide_build_cancel,
