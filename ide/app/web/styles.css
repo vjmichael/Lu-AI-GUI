@@ -309,3 +309,25 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .sourceRecoveryEntry strong{font-size:11px}
 .sourceRecoveryEntry .ghostBtn{justify-self:start}
 .sourceRecoveryEntry button:focus-visible{outline:2px solid #efcb42;outline-offset:2px}
+
+/* DEV-01.5 two-pane source editing. No duplicated document stores. */
+.sourceSplitControls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  background:#13263a;border-bottom:1px solid #425d75;padding:7px 14px;
+  font-size:12px;flex-shrink:0}
+.sourceSplitControls select{background:#0c1d2e;color:#f2f7ff;
+  border:1px solid #6c89a6;border-radius:5px;padding:6px;min-width:120px;max-width:360px}
+.sourceEditorPair{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden}
+.sourceEditorPrimary,.sourceEditorSecondary{display:flex;flex-direction:column;
+  flex:1 1 50%;min-height:0;min-width:0;overflow:hidden}
+.sourceEditorPair:not(.split) .sourceEditorPrimary{flex:1 1 auto}
+.sourceEditorSecondary{border-left:2px solid #52728c}
+.secondaryEditorHeader{display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  padding:8px 10px;background:#162d43;border-bottom:1px solid #405a75;
+  font-size:11px;flex-shrink:0}
+.secondaryEditorHeader strong{flex:1;overflow:hidden;text-overflow:ellipsis}
+.secondaryEditorHeader span{color:#d7bd83}
+.sourceSplitEmpty{padding:14px;font-size:12px;color:#c3d8ed}
+.sourceSplitControls select:focus-visible,.secondaryEditorHeader button:focus-visible{
+  outline:2px solid #efcb42;outline-offset:2px}
+@media(max-width:830px){.sourceEditorPair.split{flex-direction:column}
+ .sourceEditorSecondary{border-left:0;border-top:2px solid #52728c}}

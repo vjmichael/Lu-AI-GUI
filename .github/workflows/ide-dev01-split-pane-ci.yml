@@ -1,0 +1,54 @@
+name: IDE DEV-01.5 split editor frontend regression
+on:
+  push:
+    branches: ['ide/dev01-split-editor-panes-20261108']
+    paths:
+      - 'ide/app/web/**'
+      - 'ide/app/tests/**'
+      - '.github/workflows/ide-dev01-split-pane-ci.yml'
+  pull_request:
+    paths:
+      - 'ide/app/web/**'
+      - 'ide/app/tests/**'
+      - '.github/workflows/ide-dev01-split-pane-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  split-editor-native-source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact checkout and immutable npm lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+      - name: Native OS Node frontend build and full regression
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Bounded result
+        shell: bash
+        run: |
+          echo "DEV01_SPLIT_PANES_FRONTEND_SOURCE=PASS"
+          echo "DEV01_INSTALLED_KEYBOARD_AND_FOCUS=NOT_ACCEPTED"
+          echo "DEV01_SIGNED_RELEASE=NOT_ACCEPTED"

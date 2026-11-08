@@ -95,6 +95,9 @@ function App() {
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const recoveryBlocked = useRef(new Set());
   const [activeTabKey, setActiveTabKey] = useState(null);
+  const [splitEnabled, setSplitEnabled] = useState(false);
+  const [secondaryTabKey, setSecondaryTabKey] = useState(null);
+  const [focusedEditorKey, setFocusedEditorKey] = useState(null);
   const [savingKey, setSavingKey] = useState(null);
   const [review, setReview] = useState(null);
   const [reviewPending, setReviewPending] = useState(false);
@@ -189,6 +192,9 @@ function App() {
   useEffect(() => {
     setEntryCreateKind(null);
     setEntryCreateName('');
+    setSplitEnabled(false);
+    setSecondaryTabKey(null);
+    setFocusedEditorKey(null);
     setSelectedFilePath(null);
     setFileTargetPath(null);
     setTrashVisible(false);
@@ -323,6 +329,8 @@ function App() {
     [activeTab, lspHover]);
 
   const projectTabs = tabs.filter(tab => tab.projectId === activeProject?.projectId);
+  const secondaryTab = splitEnabled ? projectTabs.find(tab =>
+    tab.key === secondaryTabKey && tab.key !== activeTabKey) : null;
   const anyDirty = tabs.some(tab => tab.dirty);
   const isExplorer = section === 'explorer';
   const isProposals = section === 'proposals';
@@ -1941,6 +1949,8 @@ function App() {
       void stopLspSession();
     }
     editorStates.current.delete(key);
+    if (secondaryTabKey === key) setSecondaryTabKey(null);
+    if (focusedEditorKey === key) setFocusedEditorKey(null);
     setReview(previous => previous?.tabKey === key ? null : previous);
     const other = tabs.filter(tab => tab.key !== key);
     setTabs(other);
@@ -2119,6 +2129,24 @@ function App() {
     void selectEntry({kind: 'file', relativePath: path});
   }
 
+  // DEV-01.5: two different existing editor tabs, one canonical CodeMirror
+  // document state per file. Split never clones or saves a draft implicitly.
+  function toggleEditorSplit() {
+    if (splitEnabled) {
+      setSplitEnabled(false);
+      setSecondaryTabKey(null);
+      return;
+    }
+    const alternative = projectTabs.find(tab => tab.key !== activeTabKey);
+    if (!activeTab || !alternative) {
+      setHint('Open a second file tab to enable side-by-side editing.');
+      return;
+    }
+    setSecondaryTabKey(alternative.key);
+    setSplitEnabled(true);
+    setHint('Split view opened. Each pane edits its original tab; Save remains explicit.');
+  }
+
   useEffect(() => {
     const shortcut = event => {
       if (!(event.ctrlKey || event.metaKey)) return;
@@ -2140,12 +2168,13 @@ function App() {
         setFindIndex(-1);
       } else if (key === 's') {
         event.preventDefault();
-        if (activeTab) void saveTab(activeTab);
+        const target = projectTabs.find(tab => tab.key === focusedEditorKey) || activeTab;
+        if (target) void saveTab(target);
       }
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [pending, explorerPending, savingKey, activeTab, activeProject, tabs, section, quickOpenOpen]);
+  }, [pending, explorerPending, savingKey, activeTab, activeProject, tabs, projectTabs, focusedEditorKey, section, quickOpenOpen]);
 
   useEffect(() => {
     const warn = event => {
@@ -3361,7 +3390,7 @@ function App() {
                 (tab.key === activeTabKey ? ' selected' : '')} key={tab.key}>
                 <button type="button" role="tab" aria-selected={tab.key === activeTabKey}
                   className="editorTabSelect" title={tab.relativePath}
-                  onClick={() => setActiveTabKey(tab.key)}>
+                  onClick={() => { setActiveTabKey(tab.key); setFocusedEditorKey(tab.key); }}>
                   <span>{leafFor(tab.relativePath)}</span>
                   {tab.dirty && <span className="unsavedDot" title="Unsaved changes">●</span>}
                 </button>
@@ -3371,11 +3400,31 @@ function App() {
               </div>)}
             </div>
             {activeTab && activeTab.projectId === activeProject?.projectId ? <>
+              {splitEnabled && <div className="sourceSplitControls">
+                <label htmlFor="secondaryEditorSelect">Right pane</label>
+                <select id="secondaryEditorSelect" aria-label="Select second editor tab"
+                  value={secondaryTab?.key || ''}
+                  onChange={event => setSecondaryTabKey(event.target.value)}>
+                  <option value="">Select another open tab</option>
+                  {projectTabs.filter(tab => tab.key !== activeTabKey).map(tab =>
+                    <option value={tab.key} key={tab.key}>{tab.relativePath}</option>)}
+                </select>
+                <button type="button" className="ghostBtn"
+                  onClick={() => { setSplitEnabled(false); setSecondaryTabKey(null); }}>
+                  Close split
+                </button>
+              </div>}
               <div className="sourcePreviewHeader">
                 <strong>{activeTab.relativePath}</strong>
                 <span className="editorToolbar">
                   <span>{activeTab.draft.length.toLocaleString()} chars ·
                     {activeTab.dirty ? ' Unsaved' : ' Saved'}</span>
+                  <button type="button" className="ghostBtn editorToolButton"
+                    disabled={projectTabs.length < 2 && !splitEnabled}
+                    title="Show two different open source files side by side"
+                    onClick={toggleEditorSplit}>
+                    {splitEnabled ? 'Single pane' : 'Split editor'}
+                  </button>
                   <button className="ghostBtn editorToolButton"
                     disabled={referencePending || explorerPending || !!savingKey}
                     title="Copy a reference to the current saved file and cursor line"
@@ -3461,6 +3510,11 @@ function App() {
                   <span className="editorFindCount">Draft only · Undo available · Save required</span>
                 </div>}
               </div>}
+              <div className={'sourceEditorPair' + (splitEnabled ? ' split' : '')}>
+                <div className="sourceEditorPrimary" role="region"
+                  aria-label="Primary source editor pane"
+                  onFocusCapture={() => setFocusedEditorKey(activeTab.key)}
+                  onPointerDown={() => setFocusedEditorKey(activeTab.key)}>
               <CodeEditor
                 diagnostics={activeLspDiagnostics}
                 jumpRequest={lspJumpRequest}
@@ -3487,6 +3541,32 @@ function App() {
                   previous[activeTab.key] === line ? previous :
                     { ...previous, [activeTab.key]: line })}
               />
+                </div>
+                {splitEnabled && <div className="sourceEditorSecondary" role="region"
+                  aria-label="Secondary source editor pane"
+                  onFocusCapture={() => secondaryTab && setFocusedEditorKey(secondaryTab.key)}
+                  onPointerDown={() => secondaryTab && setFocusedEditorKey(secondaryTab.key)}>
+                  {secondaryTab ? <>
+                    <div className="secondaryEditorHeader">
+                      <strong>{secondaryTab.relativePath}</strong>
+                      <span>{secondaryTab.dirty ? 'Unsaved' : 'Saved'}</span>
+                      <button type="button" className="ghostBtn"
+                        disabled={!secondaryTab.dirty || !!savingKey || explorerPending}
+                        onClick={() => void saveTab(secondaryTab)}>Save secondary</button>
+                    </div>
+                    <CodeEditor
+                      key={secondaryTab.key + ':' + secondaryTab.generation + ':secondary'}
+                      tabIdentity={secondaryTab.key + ':' + secondaryTab.generation}
+                      editorState={editorStates.current.get(secondaryTab.key)}
+                      onCursorLine={line => setCursorByTab(previous =>
+                        previous[secondaryTab.key] === line ? previous :
+                          {...previous, [secondaryTab.key]: line})}
+                    />
+                  </> : <p className="sourceSplitEmpty">
+                    Select another open file tab for the right pane. No draft was copied.
+                  </p>}
+                </div>}
+              </div>
               {activeLspDiagnostics.length > 0 && <section className="lspResultPanel"
                 aria-label="Language server problems">
                 <strong>Problems · {activeLspDiagnostics.length}</strong>
