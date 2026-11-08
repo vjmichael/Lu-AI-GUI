@@ -496,7 +496,13 @@ function App() {
         setHint('Draft checkpoint preserved privately; source file unchanged.');
       }
     } catch (error) {
-      setProblem('Draft recovery checkpoint failed: '+String(error));
+      if (String(error).includes('DRAFT_HISTORY_FULL')) {
+        draftAutoPreserve.current.delete(tab.key);
+        setProblem('Private draft history is full. Earlier durable references are safe; '+
+          'continuous checkpointing paused until you explicitly manage the recovery history.');
+      } else {
+        setProblem('Draft recovery checkpoint failed: '+String(error));
+      }
     } finally {
       draftInFlight.current.delete(tab.key);
       if (copyPersistent) setDraftReferencePending(false);
