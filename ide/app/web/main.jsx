@@ -4062,7 +4062,10 @@ function App() {
                       <strong>{label}</strong>
                       {region.identical
                         ? <p>Contents match exactly.</p>
-                        : <>
+                        : region.lineEndingOnlyDifference
+                          ? <p>Logical lines match, but newline bytes differ
+                              (for example LF versus CRLF). No text was modified.</p>
+                          : <>
                             <p>First difference at line {region.firstDifferentLine}.
                               {' '}Earlier side: {region.leftChangedLines} changed lines;
                               disk side: {region.rightChangedLines} changed lines.</p>
