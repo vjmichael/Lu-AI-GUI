@@ -1569,7 +1569,7 @@ function App() {
       const rootListing = await invoke('ide_list_source_directory', {
         projectId: item.projectId, relativeDir: '',
       });
-      const admission=admitOpenTabs(tabs,item.projectId,
+      const admission=admitOpenTabs(tabsRef.current,item.projectId,
         approved.edits.map(edit=>keyFor(item.projectId,edit.relativePath)));
       if (!admission.allowed) {
         throw Error('OPEN_TAB_BUDGET_EXCEEDED: close unused tabs before staging. '+
@@ -1877,7 +1877,7 @@ function App() {
         projectSearchResults?.projectId !== projectId) return;
     const generation = projectSearchGeneration.current;
     const key = keyFor(projectId, match.relativePath);
-    if (!admitOpenTabs(tabs,projectId,[key]).allowed) {
+    if (!admitOpenTabs(tabsRef.current,projectId,[key]).allowed) {
       setProblem('Open-file limit ('+MAX_OPEN_TABS_PER_PROJECT+
         ') reached. Close an unused tab; saved-source search is unchanged.');
       return;
@@ -1964,7 +1964,8 @@ function App() {
         selectPrimaryEditorTab(key);
         return;
       }
-      if (!admitOpenTabs(tabs,activeProject.projectId,[key]).allowed) {
+      const tabAdmission=admitOpenTabs(tabsRef.current,activeProject.projectId,[key]);
+      if (!tabAdmission.allowed) {
         setProblem('Open-file budget ('+MAX_OPEN_TABS_PER_PROJECT+
           ') reached. Close an unused file to preserve existing drafts and Undo.');
         return;
