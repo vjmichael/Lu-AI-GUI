@@ -17,7 +17,8 @@ fn main(){
     if unsafe{getpid()}<=1 || unsafe{getpgrp()!=getpid()}{
         std::process::exit(95)
     }
-    if io::stdout().write_all(b"READY\n").is_err(){
+    let mut ready=io::stdout();
+    if ready.write_all(b"READY\n").is_err()||ready.flush().is_err(){
         std::process::exit(96)
     }
     let mut stdin=io::stdin().lock();
