@@ -335,8 +335,7 @@ def bundle(repo_root:Path, output:Path, source_sha:str, require_complete=False, 
                         or item.get("sourceUrl") != source_url
                         or item.get("matchesUpstream") is not True
                         or item.get("bundledSourceSha256") != row["sha256"]
-                        or not isinstance(item.get("sourceSha256"), str)
-                        or len(item["sourceSha256"]) != 64):
+                        or item.get("sourceSha256") != row["sha256"]):
                     raise Denied("unverified_upstream_notice_source:" + name)
             target = stage / "upstream-fetch.json"
             shutil.copyfile(receipt_path, target, follow_symlinks=False)
