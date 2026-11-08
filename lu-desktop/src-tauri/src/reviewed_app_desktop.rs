@@ -416,8 +416,22 @@ pub(crate) async fn lu_reviewed_app_ask(
             host.chats.complete(&chat_id,&gid_run)?;
             Ok(answer.answer)
         })();
-        if work.as_ref().err().is_some_and(|e|e.contains("Cancelled")){
-            let _=host.chats.cancel(&chat_id,&gid_run);
+        // A failed native/model turn must never disappear from the user's
+        // history. Status is deliberately host-authored and contains no
+        // potentially sensitive native error, argv or worker stdout.
+        if let Err(error)=&work{
+            if error.contains("Cancelled"){
+                let _=host.chats.append_progress(
+                    &chat_id,&gid_run,
+                    "Reviewed application request was cancelled. No operation will be replayed."
+                );
+                let _=host.chats.cancel(&chat_id,&gid_run);
+            }else{
+                let _=host.chats.append_progress(
+                    &chat_id,&gid_run,
+                    "Reviewed application request did not complete. No tool was automatically retried; an in-flight effect may need verification before retrying."
+                );
+            }
         }
         let phase=match &work{
             Ok(_)=>"completed",
