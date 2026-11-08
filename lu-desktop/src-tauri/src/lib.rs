@@ -3736,6 +3736,62 @@ fn m3_asset_view(
         sha256:record.sha256,bytes:record.bytes,presence
     }
 }
+#[derive(Debug,Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+struct M3RequiredAssetInput{logical_name:String,version:String}
+#[derive(Clone,Serialize)]
+#[serde(rename_all="camelCase")]
+struct M3RequiredAssetView{
+    logical_name:String,
+    version:String,
+    state:String,
+    next_action:String,
+    source_id:Option<String>,
+    observed_sha256:Option<String>,
+}
+/// Host-scoped current requirements, checked against immutable previous asset
+/// receipts. No historical permission is imported and no work is performed.
+#[tauri::command]
+async fn lu_m3_plan_required_assets(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,
+    project_id:String,requirements:Vec<M3RequiredAssetInput>
+)->Result<Vec<M3RequiredAssetView>,String>{
+    use lu_core::operational_asset_ledger::{
+        RequiredAsset,AssetReuseState,RecoveryNextAction
+    };
+    let state=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        state.chats.original_history_page(&chat_id,&chat_id,None,1)?;
+        let required=requirements.into_iter().map(|x|RequiredAsset{
+            logical_name:x.logical_name,version:x.version
+        }).collect::<Vec<_>>();
+        let plan=state.operational_assets.plan_required_assets(
+            &project_id,&required,|source|
+                state.chats.original_source_text_page(&chat_id,source,0,1).is_ok()
+        ).map_err(|e|format!("Required asset verification failed: {e:?}"))?;
+        Ok(plan.into_iter().map(|x|{
+            let state=match x.state{
+                AssetReuseState::VerifiedPresent=>"verified_present",
+                AssetReuseState::RecordedMissing=>"missing",
+                AssetReuseState::RecordedChanged=>"changed_or_unsafe",
+                AssetReuseState::NotRecorded=>"not_recorded"
+            };
+            let next_action=match x.next_action{
+                RecoveryNextAction::ReuseAfterFreshEffectAuthorization=>
+                    "reuse_requires_current_effect_authorization",
+                RecoveryNextAction::ReacquireAfterFreshHumanReview=>
+                    "reacquire_requires_fresh_human_review"
+            };
+            M3RequiredAssetView{
+                logical_name:x.required.logical_name,version:x.required.version,
+                state:state.into(),next_action:next_action.into(),
+                source_id:x.observation.as_ref().map(|r|r.source_id.clone()),
+                observed_sha256:x.observation.as_ref().map(|r|r.sha256.clone()),
+            }
+        }).collect::<Vec<_>>())
+    }).await.map_err(|_|"Required asset planning worker unavailable")?
+}
+
 /// Determine which existing, previously verified build packages are truly
 /// reusable NOW, without repicking/downloading/unpacking them. Read-only.
 #[tauri::command]
@@ -7330,6 +7386,7 @@ pub fn run() {
             lu_m3_record_continuity,
             lu_m3_resolve_asset,
             lu_m3_resume_resources,
+            lu_m3_plan_required_assets,
             lu_m3_task_effects,
             lu_m3_link_applied_effect,
             lu_background_tasks,

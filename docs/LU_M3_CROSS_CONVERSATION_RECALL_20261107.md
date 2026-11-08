@@ -126,3 +126,7 @@ source or receipt becomes `unavailable` or `uncertain`, not fabricated
 success or automatic worker replay. This is context restoration, **not**
 permissionless rebuilding, package installation or a replacement for
 Windows installed-app acceptance.
+
+## Requirement-aware package planning (source implementation)
+
+The host now accepts bounded **current-user specified, exact logical package name/version requirements** for the selected project. Native Core checks previous immutable source-authorized asset receipts and rehashes actual files; it returns `verified_present`, `missing`, `changed_or_unsafe`, or `not_recorded`. Each row carries either `reuse_requires_current_effect_authorization` or `reacquire_requires_fresh_human_review`, never an installation command. The independent ANSF History pane exposes this planning operation. New core tests cover duplicate requirements, denied historical source, changed/missing files, and unrecorded packages. This avoids unnecessary rediscovery but **does not yet perform installer/toolchain restoration**; that remains blocked on genuine package and permission custody, native execution acceptance and an installed Windows witness.

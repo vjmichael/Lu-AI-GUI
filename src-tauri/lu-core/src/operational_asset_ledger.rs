@@ -48,6 +48,27 @@ pub struct AssetReuseDecision{
     pub record:Option<AssetRecord>,
 }
 
+/// Requirements come from a current, trusted user task or vetted host
+/// recipe. Recorded historical assets are evidence, NEVER an execute grant.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct RequiredAsset{
+    pub logical_name:String,
+    pub version:String,
+}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum RecoveryNextAction{
+    ReuseAfterFreshEffectAuthorization,
+    ReacquireAfterFreshHumanReview,
+}
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct RequiredAssetPlan{
+    pub required:RequiredAsset,
+    pub state:AssetReuseState,
+    pub next_action:RecoveryNextAction,
+    /// A prior observation may be missing or changed. Its path must never
+    /// become an OS command/installation destination without fresh custody.
+    pub observation:Option<AssetRecord>,
+}
 pub struct OperationalAssetLedger{conn:Mutex<Connection>}
 fn identifier(s:&str)->bool{
     !s.is_empty()&&s.len()<=128&&
@@ -245,6 +266,41 @@ impl OperationalAssetLedger{
         }))
     }
 
+    /// Resolve an exact finite set of CURRENT required toolchain inputs.
+    /// Uses only previously registered, source-allowed observations, rehashes
+    /// bytes now, and marks each absent/stale item for a NEW human-approved
+    /// acquisition. Never issues network requests, unpack, install or execute.
+    pub fn plan_required_assets(
+        &self,project_id:&str,required:&[RequiredAsset],
+        mut source_allowed:impl FnMut(&str)->bool
+    )->Result<Vec<RequiredAssetPlan>,AssetError>{
+        if !identifier(project_id)||required.is_empty()||required.len()>24{
+            return Err(AssetError::InvalidInput)
+        }
+        let mut unique=std::collections::HashSet::new();
+        let mut result=Vec::with_capacity(required.len());
+        for requirement in required{
+            if !label(&requirement.logical_name)||!label(&requirement.version)||
+               !unique.insert((&requirement.logical_name,&requirement.version)){
+                return Err(AssetError::InvalidInput)
+            }
+            let decision=self.resolve_for_reuse(
+                project_id,&requirement.logical_name,&requirement.version,
+                |source|source_allowed(source)
+            )?;
+            let next_action=if decision.state==AssetReuseState::VerifiedPresent{
+                RecoveryNextAction::ReuseAfterFreshEffectAuthorization
+            }else{
+                RecoveryNextAction::ReacquireAfterFreshHumanReview
+            };
+            result.push(RequiredAssetPlan{
+                required:requirement.clone(),state:decision.state,
+                next_action,observation:decision.record,
+            });
+        }
+        Ok(result)
+    }
+
     /// A historical record is *not* a live file guarantee. Never return a
     /// usable path as an execution grant; the real tool still needs its
     /// current user task grant and pinned file handle.
@@ -323,6 +379,41 @@ mod tests{
         assert!(status.record.is_some());
         assert_eq!(ledger.resolve_for_reuse("lu","NSIS","v1",|_|true)
             .unwrap().state,AssetReuseState::NotRecorded);
+        drop(ledger);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn current_required_toolchain_plan_never_reuses_absent_or_unapproved_bytes(){
+        let root=fixture();fs::create_dir_all(&root).unwrap();
+        let sdk=root.join("win-sdk.zip");fs::write(&sdk,b"pinned real SDK").unwrap();
+        let ledger=OperationalAssetLedger::open(&root.join("assets.sqlite")).unwrap();
+        let item=proposal(sdk.clone());
+        ledger.record_verified(&item,|_|true).unwrap();
+        let requirements=[
+            RequiredAsset{logical_name:"Windows SDK package".into(),version:"10.0-test".into()},
+            RequiredAsset{logical_name:"NSIS".into(),version:"3.x".into()},
+        ];
+        let plan=ledger.plan_required_assets("lu",&requirements,|_|true).unwrap();
+        assert_eq!(plan.len(),2);
+        assert_eq!(plan[0].state,AssetReuseState::VerifiedPresent);
+        assert_eq!(plan[0].next_action,
+            RecoveryNextAction::ReuseAfterFreshEffectAuthorization);
+        assert_eq!(plan[1].state,AssetReuseState::NotRecorded);
+        assert_eq!(plan[1].next_action,
+            RecoveryNextAction::ReacquireAfterFreshHumanReview);
+        assert!(plan[1].observation.is_none());
+        let denied=ledger.plan_required_assets("lu",&requirements,|_|false).unwrap();
+        assert_eq!(denied[0].state,AssetReuseState::NotRecorded);
+        fs::write(&sdk,b"modified SDK").unwrap();
+        let stale=ledger.plan_required_assets("lu",&requirements,|_|true).unwrap();
+        assert_eq!(stale[0].state,AssetReuseState::RecordedChanged);
+        assert_eq!(stale[0].next_action,
+            RecoveryNextAction::ReacquireAfterFreshHumanReview);
+        fs::remove_file(&sdk).unwrap();
+        let missing=ledger.plan_required_assets("lu",&requirements,|_|true).unwrap();
+        assert_eq!(missing[0].state,AssetReuseState::RecordedMissing);
+        assert!(ledger.plan_required_assets("lu",&requirements[..0],|_|true).is_err());
+        assert!(ledger.plan_required_assets("lu",
+            &[requirements[0].clone(),requirements[0].clone()],|_|true).is_err());
         drop(ledger);fs::remove_dir_all(root).unwrap();
     }
     #[test]

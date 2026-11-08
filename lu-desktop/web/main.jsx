@@ -59,6 +59,9 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
   const [resumeBusy,setResumeBusy]=useState(false);
   const [effectCallId,setEffectCallId]=useState('');
   const [verifiedEffects,setVerifiedEffects]=useState([]);
+  const [requiredName,setRequiredName]=useState('');
+  const [requiredVersion,setRequiredVersion]=useState('');
+  const [requiredPlan,setRequiredPlan]=useState([]);
 
   const requests=useRef(0);
   const scrollRef=useRef(null);
@@ -278,6 +281,7 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
       });
       setResumeRecord(value);
       setContextChange(null);
+      setRequiredPlan([]);
       setVerifiedEffects([]);
       // Read-only automatic reconciliation: re-hash registered packages and
       // recheck APPLIED journal receipts before presenting a next-step plan.
@@ -301,6 +305,21 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
         setVerifiedEffects(effects);
       }
     }catch(e){setError('Task continuity lookup unavailable: '+String(e))}
+    finally{setResumeBusy(false)}
+  }
+  async function planRequiredAsset(e){
+    e.preventDefault();
+    if(!activeChatId||!resumeProject.trim()||!requiredName.trim()||
+       !requiredVersion.trim()||resumeBusy)return;
+    setResumeBusy(true);setError('');
+    try{
+      const result=await invoke('lu_m3_plan_required_assets',{
+        chatId:activeChatId,projectId:resumeProject.trim(),
+        requirements:[{logicalName:requiredName.trim(),
+          version:requiredVersion.trim()}]
+      });
+      setRequiredPlan(result);
+    }catch(e){setError('Required package verification unavailable: '+String(e))}
     finally{setResumeBusy(false)}
   }
   async function saveCheckpoint(e){
@@ -447,6 +466,25 @@ function AnsfHistoryPane({activeChatId,chats,onClose}){
           <button type="submit" disabled={resumeBusy||!effectCallId.trim()}>
             Confirm and link existing APPLIED receipt…</button>
         </form>
+        <strong>Required toolchain recovery plan</strong>
+        <small>List an exact required package and version. Verified existing bytes can be reused after fresh tool authorization; missing, changed and unrecorded assets need a new human-approved acquisition. This check never installs anything.</small>
+        <form className="ansfAssetForm" onSubmit={planRequiredAsset}>
+          <label>Required package
+            <input value={requiredName} maxLength={180}
+              onChange={e=>setRequiredName(e.target.value)}
+              placeholder="Windows SDK package"/>
+          </label>
+          <label>Exact required version
+            <input value={requiredVersion} maxLength={180}
+              onChange={e=>setRequiredVersion(e.target.value)}
+              placeholder="Previously approved version"/>
+          </label>
+          <button type="submit" disabled={resumeBusy||!requiredName.trim()||
+            !requiredVersion.trim()}>Verify required dependency</button>
+        </form>
+        {requiredPlan.map(x=><small key={x.logicalName+'-'+x.version} role="status">
+          {x.logicalName} {x.version} · {x.state} · {x.nextAction}
+        </small>)}
         <strong>Automatically revalidated project resources</strong>
         <small>Only verified_present files may be considered for reuse. 
           A file identity never grants execution.</small>

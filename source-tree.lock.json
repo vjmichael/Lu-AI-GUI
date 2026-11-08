@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e53f3844bfcc5b1f9f7a442581b842d6d7ac9ee1",
+  "sourceCommitBeforeLock": "0ab25b5204c9f750d2539045cf269ccd42ad9779",
   "trackedFileCount": 590,
   "files": [
     {
@@ -245,7 +245,7 @@
     },
     {
       "path": "docs/LU_M3_CROSS_CONVERSATION_RECALL_20261107.md",
-      "blob": "618b61e06f426c2cba768c3092d871c70ad879c6"
+      "blob": "2100f19844eab4bafa221dc84455fa0eacd3c268"
     },
     {
       "path": "docs/LU_M3_SEMANTIC_S1_S4_20261107.md",
@@ -597,7 +597,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "1372bbae1e210748eb3c06a78ff563861e6ed2c1"
+      "blob": "e3a47166d6fbcd0a7a8a2f4fb5b35b73b501c6fd"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -777,7 +777,7 @@
     },
     {
       "path": "lu-desktop/tests/m3-asset-resume.test.mjs",
-      "blob": "ccc300666efd2954c3057108ef74e5d85cafd330"
+      "blob": "cdecaafcf2ecd8cabe4b55afe15ab412ca5a39cb"
     },
     {
       "path": "lu-desktop/tests/m3-continuity-bridge.test.mjs",
@@ -993,7 +993,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "b47909a0734a5c960d944e033e0745c439d5509a"
+      "blob": "320a967420f70f51a208077f8ca50540daa89649"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1729,7 +1729,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/operational_asset_ledger.rs",
-      "blob": "49e93401ed993be0266384584c405612681b8984"
+      "blob": "4b108afe5024997f7796af17117ebf5056fa1dc2"
     },
     {
       "path": "src-tauri/lu-core/src/ownership_store.rs",

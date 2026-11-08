@@ -25,3 +25,16 @@ test('host automatically reconciles existing package availability on task resump
  assert.match(pane,/Only verified_present files may be considered for reuse/);
  assert.doesNotMatch(pane,/setChatId|switchChat/);
 });
+
+test('the required toolchain planner refuses missing or changed packages and does not execute effects',()=>{
+ assert.match(core,/pub fn plan_required_assets\(/);
+ assert.match(core,/pub struct RequiredAssetPlan/);
+ assert.match(core,/RecoveryNextAction::ReacquireAfterFreshHumanReview/);
+ assert.match(core,/fn current_required_toolchain_plan_never_reuses_absent_or_unapproved_bytes/);
+ assert.match(host,/async fn lu_m3_plan_required_assets\(/);
+ assert.match(host,/state\.operational_assets\.plan_required_assets\(/);
+ assert.match(host,/lu_m3_plan_required_assets,/);
+ assert.match(pane,/lu_m3_plan_required_assets/);
+ assert.match(pane,/Required toolchain recovery plan/);
+ assert.match(pane,/This check never installs anything/);
+});
