@@ -721,6 +721,21 @@ async fn ide_build_reconcile(
     }
 }
 
+/// DEV-03.1: enumerate fixed registered-project build/test profiles and
+/// conventional test-name hints. This read-only command grants no execution.
+#[tauri::command]
+async fn ide_discover_project_run_profiles(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::project_run_profiles::ProjectRunProfileDiscovery, String> {
+    let registry = Arc::clone(registry.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.discover_project_run_profiles(&project_id)
+            .map_err(str::to_owned)
+    })
+    .await.map_err(|_| "DEV03_DISCOVERY_UNAVAILABLE".to_owned())?
+}
+
 /// D1 records a bounded user-selected job *intent*, never a process launch.
 #[tauri::command]
 async fn ide_prepare_execution_intent(
@@ -1405,6 +1420,7 @@ pub fn run() {
             ide_prepare_execution_intent,
             ide_decide_execution_intent,
             ide_list_execution_intents,
+            ide_discover_project_run_profiles,
             ide_build_status,
             ide_build_start,
             ide_build_cancel,
