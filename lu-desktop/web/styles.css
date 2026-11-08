@@ -356,3 +356,59 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .ansfAssetRows article{border-bottom:1px solid var(--border,#555);padding:5px 0;
   display:flex;flex-direction:column;gap:3px}
 .ansfAssetRows code{overflow-wrap:anywhere}
+
+
+/* UX-CHAT01: interactive, bounded ANSF original-message actions. */
+.messageActions{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:12px;
+  padding-top:9px;border-top:1px solid currentColor;font-size:11px}
+.messageActions>button,.messageReactions button{font-size:11px;color:inherit;
+  background:transparent;border:1px solid currentColor;border-radius:7px;
+  padding:5px 8px;opacity:.74}
+.messageActions>button:hover,.messageReactions button:hover{opacity:1}
+.messageReactions{display:inline-flex;flex-wrap:wrap;gap:3px;
+  align-items:center;margin-left:auto}
+.messageReactions button{font-size:16px;min-width:33px;padding:3px 5px}
+.messageReactions button[aria-pressed="true"]{opacity:1;outline:2px solid currentColor;
+  outline-offset:1px;background:#ffffff22}
+.messageActions button:focus-visible,.messageReactions button:focus-visible{
+  outline:2px solid currentColor;outline-offset:2px}
+.message .messageRole{color:inherit;opacity:.72}
+.chatAppearanceSettings{margin:18px 0;padding:12px;border:1px solid #3d5069;
+  border-radius:10px}
+.chatAppearanceSettings h3{margin:0 0 7px}
+.appearancePresetRow{display:flex;gap:6px;flex-wrap:wrap;margin-top:13px}
+.appearancePresetRow button{padding:6px 9px;font-size:12px;color:#dce5ee;
+  border:1px solid #536b86;background:#243a51;border-radius:7px}
+.chatColorInputs{margin-top:15px;display:grid;gap:8px}
+.chatColorInputs label{display:flex;justify-content:space-between;gap:15px;
+  align-items:center;font-size:12px;color:#c2d3e7}
+.chatColorInputs input[type="color"]{width:64px;height:31px;cursor:pointer;
+  padding:2px;background:#172538;border:1px solid #728da8;border-radius:6px}
+.messageReplayBackdrop{position:fixed;inset:0;background:#081321c9;z-index:43;
+  display:grid;place-items:center;padding:20px}
+.messageReplayDialog{max-width:720px;width:100%;max-height:85vh;overflow-y:auto;
+  padding:20px;background:#1b2b3e;color:#dce5ee;border:1px solid #7294b6;
+  border-radius:14px;box-shadow:0 17px 55px #0009}
+.messageReplayDialog header{display:flex;align-items:center;justify-content:space-between;
+  gap:12px;margin-bottom:10px}
+.messageReplayDialog header button{color:#dce5ee;background:#2e4967;
+  padding:6px 9px;border:1px solid #607f9c;border-radius:7px}
+.messageReplayDialog small{display:block;color:#b5cadd;font-size:12px;line-height:1.6}
+.messageReplayDialog .messageContent{max-height:55vh;overflow-y:auto}
+.messageReplayDialog .settingsActions button{padding:7px 12px;border-radius:8px;
+  color:#eff6ff;background:#2b4865;border:1px solid #5d7894}
+@media(max-width:600px){
+  .messageActions{gap:5px}
+  .messageReactions{margin-left:0;width:100%}
+  .messageReactions button{min-width:35px}
+  .messageReplayBackdrop{padding:10px}
+}
+
+/* User-selectable light/dark bubbles: preserve readable markdown contrast. */
+.message .markdownBody h2,.message .markdownBody h3,.message .markdownBody h4,
+.message .markdownBody h5,.message .markdownBody a{color:inherit}
+.message .markdownBody a{text-decoration:underline;text-underline-offset:3px}
+.message .markdownBody :not(pre)>code{color:#edf5ff}
+
+/* Background-specific foreground color also applies to empty-chat guidance. */
+.messages .welcome p{color:inherit;opacity:.77}
