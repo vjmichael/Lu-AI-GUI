@@ -357,3 +357,17 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .mergeConflictChoice pre{min-height:45px;max-height:110px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:7px;background:#071625;color:#e0f1ff;font:11px/1.5 ui-monospace,Consolas,monospace}
 .mergeConflictChoice small{color:#ffd6a1}
 @media(max-width:1000px){.mergeConflictChoices{grid-template-columns:minmax(0,1fr)}}
+
+/* C7: native C6 task source linkage. No source contents or task verdicts here. */
+.taskSourceLinkBar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;background:#10283b;border-bottom:1px solid #4b6a7c;color:#deecf6;font-size:11px}
+.taskSourceLinkBar>strong{color:#e6cc9d;white-space:nowrap}
+.taskSourceLinkBar label{color:#bcd4e8}
+.taskSourceLinkBar select{min-width:130px;max-width:310px;flex:1;background:#071a2b;color:#e8f3fb;border:1px solid #51708a;border-radius:5px;padding:6px}
+.taskSourceLinkBar>small{color:#9fc5db;flex-basis:100%;line-height:1.4}
+.taskLinkedSources{display:flex;flex-direction:column;gap:6px;margin:8px 0;padding:8px 10px;background:#12273b;border:1px solid #39556b;border-radius:6px}
+.taskLinkedSources>p{margin:0;color:#afcce2;font-size:11px}
+.taskLinkedSourceRow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:6px;background:#0e1f31;border-radius:4px;font-size:11px}
+.taskLinkedSourceRow code{color:#deefff;overflow-wrap:anywhere}
+.taskLinkedSourceRow>span{color:#edc694}
+.taskLinkedSourceRow>small{color:#b7d2e5}
+.taskLinkedSourceRow>.ghostBtn{margin-left:auto}
