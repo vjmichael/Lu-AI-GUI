@@ -1,0 +1,97 @@
+name: IDE DEV-02.3 official LSP release archive hash intake
+on:
+  push:
+    branches: ['ide/dev02-python-provider-review-and-lsp-intake-20261108']
+    paths:
+      - 'ide/packaging/review_upstream_lsp_archives.py'
+      - 'ide/packaging/lsp_upstream_archive_candidates_20261108.json'
+      - 'ide/packaging/test_review_upstream_lsp_archives.py'
+      - '.github/workflows/ide-dev02-upstream-native-asset-intake.yml'
+  pull_request:
+    paths:
+      - 'ide/packaging/review_upstream_lsp_archives.py'
+      - 'ide/packaging/lsp_upstream_archive_candidates_20261108.json'
+      - 'ide/packaging/test_review_upstream_lsp_archives.py'
+      - '.github/workflows/ide-dev02-upstream-native-asset-intake.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  offline-archive-security:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify exact head, no release approval and hostile unpack tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python3 -m unittest discover -s ide/packaging -p 'test_review_upstream_lsp_archives.py' -v
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: released actual language server without legal/provenance approval'
+            exit 2
+          fi
+      - name: No installed binary authority
+        shell: bash
+        run: |
+          echo 'DEV02_UPSTREAM_LSP_ARCHIVE_REVIEW_SECURITY_TESTS=PASS'
+          echo 'DEV02_SIGNED_OR_APPROVED_LSP_RELEASE=NO'
+  real-official-release-sha:
+    needs: offline-archive-security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Download exactly six original releases and verify published archive SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python3 ide/packaging/review_upstream_lsp_archives.py \
+            --manifest ide/packaging/lsp_upstream_archive_candidates_20261108.json \
+            --archive-root "$RUNNER_TEMP/lu-ide-native-lsp-original-archives" \
+            --receipt "$RUNNER_TEMP/lu-ide-native-lsp-original-binary-hashes.json" \
+            --fetch-locked
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          packet=json.loads((Path(os.environ["RUNNER_TEMP"]) /
+             "lu-ide-native-lsp-original-binary-hashes.json").read_text())
+          entries=packet["sources"]
+          assert len(entries)==6 and len({(x["provider"],x["platform"]) for x in entries})==6
+          assert not packet["releaseApproved"]
+          assert not packet["redistributionApproved"]
+          assert not packet["originalNoticesVerified"]
+          assert not packet["installedOrExecuted"]
+          assert all(len(x["executableSha256"])==64 for x in entries)
+          print("DEV02_SIX_OFFICIAL_UPSTREAM_RELEASE_ARCHIVE_AND_NATIVE_EXECUTABLE_SHA256=PASS")
+          print("DEV02_LICENSE_NOTICE_AND_REDISTRIBUTION_APPROVAL=NOT_ACCEPTED")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev02-upstream-native-binary-digests-no-release-approval
+          path: ${{ runner.temp }}/lu-ide-native-lsp-original-binary-hashes.json
+          if-no-files-found: warn
+          retention-days: 7
