@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **B11 reviewed external-source merge (Nov 8):** Adds conservative 3-way base/draft/current-disk line merge to the existing B10 disk-change inspector. Nonoverlapping edits combine; overlapping conflicts require separate explicit human base/draft/disk choices. A fresh native preview must match exact reviewed SHA, source and immutable CodeMirror state before applying one Undo-able editor transaction. No disk Save, external process, new native command, automatic conflict choice, or private draft deletion. LF/CRLF normalization mismatch refuses to apply. 18 new source tests passed under exact-source V8 assertion emulation, plus 1,488 generated merge checks; actual native Windows/Linux and installed NSIS/Debian acceptance remain OPEN.
+
+
 - **B10 read-only external disk change review (Nov 8):** The standalone editor can explicitly audit up to 48 currently open registered source tabs for changed saved SHA, unavailable files, or stale native responses; then compare bounded excerpts of the saved base, live CodeMirror draft and latest disk contents. Reports hold metadata only; comparisons cap six 240-character lines per side and distinguish newline-only drift. Native reads use unchanged cap-std source preview and synchronous explorer tickets. No background file watcher, Save, reload, patch or merge is implicit. Ten new Node regressions committed and their test bodies executed successfully under a V8-compatible harness (not native Node/npm acceptance). Exact-head OS CI, installed UI source drift acceptance and earlier B gates remain OPEN.
 
 
