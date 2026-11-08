@@ -4,7 +4,7 @@
  //! tool authority, independently verified receipts or earlier replies.
  //! Human edits of assistant text are explicitly labeled human corrections.
  //! Reply is a NEW HOST-AUTHENTICATED USER turn, not a model/tool retry.
- use rusqlite::{params,Connection,OptionalExtension};
+ use rusqlite::{params,Connection,OptionalExtension,TransactionBehavior};
  use serde::Serialize;
  use sha2::{Digest,Sha256};
  use crate::chat_store::{ChatStore,HistoryWindowEntry};
@@ -284,7 +284,8 @@
      }
      let mut db=open_write(root)?;
      ensure_schema(&db)?;
-     let tx=db.transaction().map_err(|_|"Correction transaction unavailable")?;
+     let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)
+         .map_err(|_|"Correction transaction unavailable")?;
      let chain=versions(Some(&tx),chat,seq,&source)?;
      let version=chain.len() as i64;
      let last=chain.last().map(|x|x.sha256.clone())
@@ -320,13 +321,16 @@
      }
      let mut db=open_write(root)?;
      ensure_schema(&db)?;
-     let pinned=display_at(Some(&db),chats,chat,parent,version,sha)?;
-     let latest=versions(Some(&db),chat,parent,&original(chats,chat,parent)?)?;
+     // Take SQLite's writer reservation before checking the latest parent:
+     // an edit cannot race between pinned-source validation and PREPARED.
+     let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)
+         .map_err(|_|"Reply transaction unavailable")?;
+     let pinned=display_at(Some(&tx),chats,chat,parent,version,sha)?;
+     let latest=versions(Some(&tx),chat,parent,&original(chats,chat,parent)?)?;
      if version!=latest.len() as i64{
          return Err("Parent was edited; review the latest version before replying".into())
      }
      if pinned.text.is_empty(){return Err("Pinned reply source missing".into())}
-     let tx=db.transaction().map_err(|_|"Reply transaction unavailable")?;
      let count:i64=tx.query_row(
          "SELECT COUNT(*) FROM lu_message_reply_intents WHERE chat_id=?1",
          params![chat],|r|r.get(0)
@@ -349,7 +353,8 @@
      if !exact_turn(turn){return Err("Invalid human reply turn".into())}
      let mut db=open_write(root)?;
      ensure_schema(&db)?;
-     let tx=db.transaction().map_err(|_|"Reply reconciliation unavailable")?;
+     let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)
+         .map_err(|_|"Reply reconciliation unavailable")?;
      let prepared:Option<(i64,i64,String,String,String,Option<i64>)>=tx.query_row(
          "SELECT parent_seq,parent_version,parent_sha256,reply_sha256,
                  state,reply_seq
@@ -396,13 +401,16 @@
      if !exists(&db,"lu_message_reply_intents")?{return Ok(0)}
      let mut stmt=db.prepare(
          "SELECT reply_turn_id FROM lu_message_reply_intents
-          WHERE chat_id=?1 AND state='PREPARED' LIMIT 65"
+          WHERE chat_id=?1 AND state='PREPARED'
+          ORDER BY created_at,reply_turn_id LIMIT 2049"
      ).map_err(|_|"Cannot scan prepared reply links")?;
      let rows=stmt.query_map(params![chat],|r|r.get::<_,String>(0))
          .map_err(|_|"Prepared reply link query failed")?;
      let mut turns=Vec::new();
      for row in rows{
-         if turns.len()>=64{return Err("Too many pending reply links".into())}
+         if turns.len()>=MAX_REPLIES as usize{
+             return Err("Too many pending reply links".into())
+         }
          turns.push(row.map_err(|_|"Invalid prepared reply turn")?);
      }
      drop(stmt);drop(db);
