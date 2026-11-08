@@ -1,5 +1,7 @@
 # Lu v1.0 tracked task list
 
+**Owner test scheduling — November 7, 2026:** Defer routine **real-world physical Windows installed-app testing** (actual Lu.exe/WebView/AMD Vulkan, two GGUFs, NSIS install/uninstall, signed/reviewed release candidate) until close to **Lu v1.0 launch**. Continue source development and native GitHub Actions Windows/Linux compile and regression tests now. This postpones *when* manual release acceptance runs; it does not waive, pass or substitute for any missing physical evidence. Do not repeatedly block other source work on an unavailable personal Windows device.
+
 **Workflow decision 2026-11-03:** Develop locally; use GitHub CI to check committed source. No routine physical Windows retests. Keep a deferred manual acceptance ledger for the near-v1.0 release candidate. An accepted functional alpha is not a production-stable v1.0.
 
 **Accepted baseline:** `0.1.0-alpha.2`. **Local development:** `0.1.0-alpha.3-dev.1` (icon resource and byte-counted GGUF import changes). Never overwrite the accepted installer; every change gets a new version/commit and CI evidence. The repository application tree is still older than the local source snapshot: **REPO-01 is a blocker to claiming current-development CI coverage**.
