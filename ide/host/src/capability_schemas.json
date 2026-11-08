@@ -3071,6 +3071,7 @@
             "type": "string",
             "enum": [
               "rust_check",
+              "rust_build",
               "rust_tests",
               "lu_ide_host_tests"
             ]
