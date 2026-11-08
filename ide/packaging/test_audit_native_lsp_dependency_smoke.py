@@ -49,9 +49,12 @@ class Dev026NativeClosureSourceTests(unittest.TestCase):
         store.mkdir()
         for provider in original["releases"]:
             provider["version"]="test-1"
+            # The production pin checker validates BOTH OS URLs, even in a
+            # single-native-host fixture; update every target release URL.
+            for target in provider["targets"].values():
+                target["url"]=("https://github.com/"+provider["repo"]+
+                               "/releases/download/test-1/"+target["name"])
             row=provider["targets"][platform]
-            row["url"]=("https://github.com/"+provider["repo"]+
-                        "/releases/download/test-1/"+row["name"])
             archive=store/row["name"]
             payload=(b"\x7fELF"+provider["id"].encode() if platform.startswith("linux")
                      else synthetic_pe_with_import())
