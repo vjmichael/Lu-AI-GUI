@@ -34,10 +34,10 @@ REQUIRED = {
     ("cpp_cmake_build", "windows-x64"): (
         "bin/cmake.exe", "bin/ctest.exe", "bin/ninja.exe", "bin/clang.exe",
         "bin/clang++.exe", "LICENSES/cmake.txt", "LICENSES/ninja.txt",
-        "LICENSES/llvm.txt"),
+        "LICENSES/llvm.txt", "drivers/dev03-cmake.cmake"),
     ("cpp_cmake_build", "linux-x64"): (
         "bin/cmake", "bin/ctest", "bin/ninja", "bin/clang", "bin/clang++",
-        "LICENSES/cmake.txt", "LICENSES/ninja.txt", "LICENSES/llvm.txt"),
+        "LICENSES/cmake.txt", "LICENSES/ninja.txt", "LICENSES/llvm.txt", "drivers/dev03-cmake.cmake"),
 }
 
 
