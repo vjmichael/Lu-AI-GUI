@@ -1696,7 +1696,8 @@ function App() {
   }
 
   async function operation(command, args) {
-    if (pending || savingKey || explorerPending || explorerIoTicket.current) return;
+    if (pending || savingKey || explorerPending || explorerIoTicket.current ||
+        workspaceLayoutOp.current) return;
     if (command === 'ide_close_project' &&
       tabs.some(tab => tab.projectId === args.projectId && tab.dirty) &&
       !window.confirm('Discard unsaved changes in this project?')) return;
@@ -1726,7 +1727,7 @@ function App() {
   // This operation only removes the IDE's registration. It never issues a
   // filesystem deletion; the native host cannot accept an OS path from here.
   function confirmUnregister(project) {
-    if (pending || savingKey || explorerPending) return;
+    if (pending || savingKey || explorerPending || workspaceLayoutOp.current) return;
     const hasDirty = tabs.some(tab => tab.projectId === project.projectId && tab.dirty);
     const message = 'Remove "' + project.displayName + '" from Lu IDE?\n\n' +
       'The original project folder and ALL files on disk will be kept. ' +
@@ -2134,6 +2135,7 @@ function App() {
       const stored=await invoke('ide_workspace_layout_save',{layout});
       if (workspaceLayoutOp.current!==token ||
           activeProjectIdRef.current!==projectId) return;
+      workspaceLayoutReadVersion.current++;
       setRememberedLayout(checkedRememberedWorkspace(stored,projectId));
       setHint('Remembered '+stored.files.length+
         ' file paths and pane positions privately. No source or unsaved text was saved.');
@@ -2160,6 +2162,7 @@ function App() {
       await invoke('ide_workspace_layout_clear',{projectId});
       if (workspaceLayoutOp.current===token &&
           activeProjectIdRef.current===projectId) {
+        workspaceLayoutReadVersion.current++;
         setRememberedLayout(null);
         setHint('Forgot saved tab navigation only. Editor drafts and project files were kept.');
       }
@@ -2223,6 +2226,10 @@ function App() {
       }
       if ([...initiallyOpen].some(key=>!tabsRef.current.some(tab=>tab.key===key)))
         throw Error('B9_OPEN_TABS_CHANGED_DURING_RESUME');
+      if (!verified.length) {
+        setHint('No remembered files could be verified. Current editor tabs were not changed.');
+        return;
+      }
       const added=verified.filter(preview=>!tabsRef.current.some(tab=>
         tab.key===keyFor(projectId,preview.relativePath)));
       if (!admitOpenTabs(tabsRef.current,projectId,
@@ -3598,17 +3605,19 @@ function App() {
                   </div>
                   <div className="projectActions">
                     {project.active && <button className="primaryBtn"
-                      disabled={explorerPending || pending}
+                      disabled={explorerPending || pending || workspaceLayoutBusy}
                       onClick={() => openDirectory(project, '')}>Edit</button>}
                     {project.active
-                      ? <button className="ghostBtn" disabled={pending || !!savingKey}
+                      ? <button className="ghostBtn" disabled={pending || !!savingKey ||
+                          workspaceLayoutBusy}
                           onClick={() => operation('ide_close_project',
                             {projectId: project.projectId})}>Close</button>
                       : <button className="ghostBtn" disabled={pending || !project.available}
                           onClick={() => operation('ide_open_project',
                             {projectId: project.projectId})}>Reopen</button>}
                     <button className="removeProjectBtn"
-                      disabled={pending || explorerPending || !!savingKey}
+                      disabled={pending || explorerPending || !!savingKey ||
+                        workspaceLayoutBusy}
                       aria-label={'Remove ' + project.displayName + ' from IDE registration'}
                       onClick={() => confirmUnregister(project)}>Remove from IDE</button>
                   </div>
