@@ -381,3 +381,5 @@ See the engineering handoff and linked acceptance documents for exact evidence. 
 
 
 - **IDE P02–P06 release closeout (Nov 7/8, draft):** Real Windows WO9 TaskDialog accessibility observation led to a guarded OS-only Text/Pane caption pointer witness (pending native acceptance). Strengthened executable signing preflight for valid trusted Code Signing certificate chain and private key. Filed actual 521-package, zero-missing-notice unsigned NSIS artifact technical receipt and independent legal/signature review checklist. This is *not* a signed release or legal clearance.
+
+- **Native IDE OS closeout (Nov 7/8):** Corrected WO9 installed Windows fixture's Git-HEAD versus worker-count baseline shadowing following real native consent and stage/commit success. Added fail-closed regression; restricted Linux ZIP destination acceptance to actual OS chooser. Added an explicitly non-equivalent Ubuntu 26.04 installed GTK editor/rollback/ZIP diagnostic while 24.04 jobs remain queued. Publisher signing and final independent legal sign-off deferred without release bypass.

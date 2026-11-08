@@ -26,9 +26,9 @@ if ($ExpectedSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
     (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash -ine $ExpectedSha256) {
   Deny 'installed_binary_digest_mismatch'
 }
-$before=@{}
+$workerBaseline=@{}
 foreach($name in @('lldb-dap','clangd','rust-analyzer','ruff','cargo','windows_recovery_service')) {
-  $before[$name]=BoundedProcess $name
+  $workerBaseline[$name]=BoundedProcess $name
 }
 $root=$null
 $proc=$null
@@ -949,8 +949,8 @@ try {
       Write-Host 'WO8_INSTALLED_NATIVE_FOLDER_REGISTRATION_AND_SOURCE_OPEN=PASS'
     }
   }
-  foreach($name in $before.Keys) {
-    if ((BoundedProcess $name) -gt $before[$name]) {
+  foreach($name in $workerBaseline.Keys) {
+    if ((BoundedProcess $name) -gt $workerBaseline[$name]) {
       Deny ('unauthorized_worker_autostart_'+$name)
     }
   }

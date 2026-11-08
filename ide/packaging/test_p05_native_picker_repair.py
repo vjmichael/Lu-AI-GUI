@@ -63,6 +63,24 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn("real_native_consent_dialog_not_observed",section)
         self.assertNotIn("window.__TAURI_INTERNALS__",section)
 
+    def test_wo9_git_head_never_overwrites_worker_autostart_baseline(self):
+        native=(ROOT/"ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").read_text(encoding="utf-8")
+        self.assertIn("$workerBaseline=@{}",native)
+        self.assertIn("$workerBaseline[$name]=BoundedProcess $name",native)
+        self.assertIn("foreach($name in $workerBaseline.Keys)",native)
+        self.assertIn("(BoundedProcess $name) -gt $workerBaseline[$name]",native)
+        self.assertIn("$gitHeadBefore=(git -C $fixed rev-parse HEAD).Trim()",native)
+        self.assertIn("$gitHeadBefore -eq $after",native)
+        self.assertNotIn("$before.Keys",native)
+        self.assertNotIn("$before=(git",native)
+    def test_linux_wo9_zip_destination_is_only_real_native_chooser(self):
+        native=(ROOT/"ide/app/fixtures/wo9_linux_workflow_atspi.py").read_text(encoding="utf-8")
+        self.assertIn("ui._native_chooser_still_open()",native)
+        self.assertIn("ui._native_picker_confirm()",native)
+        self.assertIn('deny("export_native_chooser_remained_open")',native)
+        self.assertNotIn('ui.activate(caption',native)
+        self.assertIn("archive_bytes_differ_from_source",native)
+
     def test_neither_platform_uses_internal_api_or_synthetic_acceptance(self):
         for path in ("ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1",
                      "ide/app/fixtures/wo8_linux_editor_atspi.py"):

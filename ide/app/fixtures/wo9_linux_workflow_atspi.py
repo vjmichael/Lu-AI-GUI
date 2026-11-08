@@ -45,12 +45,18 @@ def main():
         ui.type_text(str(export))
         ui.key("Return")
         time.sleep(1)
-        for caption in ("Select", "Open", "Choose Folder"):
-            try:
-                ui.activate(caption, timeout=2)
-                break
-            except RuntimeError:
-                continue
+        # No arbitrary AT-SPI "Open" or "Select" controls. The real
+        # exported-ZIP destination is approved only within the native
+        # GTK file chooser; Enter may already have closed the dialog.
+        confirmations = 0
+        while ui._native_chooser_still_open() and confirmations < 3:
+            ui._native_picker_confirm()
+            confirmations += 1
+            time.sleep(0.7)
+        if ui._native_chooser_still_open():
+            deny("export_native_chooser_remained_open")
+        print("WO9_LINUX_NATIVE_EXPORT_CHOOSER=real_os_entry;"
+              "confirmations=" + str(confirmations), flush=True)
         deadline = time.monotonic() + 35
         files = []
         while time.monotonic() < deadline:
