@@ -1014,6 +1014,34 @@ mod tests{
         drop(s);drop(c);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();
     }
     #[test]
+    fn clean_release_is_irreversible_and_cannot_become_a_restart_lease(){
+        let f=fixture();let (a,b,c,s)=opened(&f);
+        claim(&f,&s,&a,&b);
+        assert!(s.release_without_dispatch(
+            &f.plan,&f.chat,&f.origin,&f.owner,1
+        ).is_ok());
+        assert_eq!(s.view(&f.plan,&f.chat,&f.origin,&a)
+            .unwrap().unwrap().state,"RELEASED");
+        assert_eq!(s.claim_host(
+            &f.plan,&f.chat,&f.origin,&f.owner,&f.revision,
+            session_budget(),&a,&b,&Sources(true)
+        ),Err(ScheduleError::ReviewRequired));
+        let db=Connection::open(&f.db).unwrap();
+        assert!(db.execute(
+            "UPDATE lu_agent_schedule_owners SET state='OWNED' WHERE plan_id=?1",
+            params![&f.plan]
+        ).is_err());
+        drop(db);
+        drop(s);drop(c);drop(b);drop(a);
+        let (a,b,c,s)=opened(&f);
+        assert_eq!(s.claim_host(
+            &f.plan,&f.chat,&f.origin,&id("h-",99),&f.revision,
+            session_budget(),&a,&b,&Sources(true)
+        ),Err(ScheduleError::ReviewRequired));
+        drop(s);drop(c);drop(b);drop(a);
+        fs::remove_dir_all(f.root).unwrap();
+    }
+    #[test]
     fn stale_goal_and_stale_plan_revision_cannot_receive_a_step(){
         let f=fixture();let (a,b,c,s)=opened(&f);
         assert_eq!(s.claim_host(
