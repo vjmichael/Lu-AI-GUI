@@ -1117,6 +1117,38 @@ mod tests{
             &f.plan,&f.chat,&f.origin,&f.owner,1,
             &f.revision,0,&id("q-",50),&f.root,&a,&b,&c,&Sources(true)
         ),Ok(WriteStatus::AlreadyRecorded));
+        // A changed source witness after an earlier historical admission
+        // blocks the next dependency. Cached "OBSERVED" is insufficient.
+        let effects_path=f.root.join(
+            format!("lu-reviewed-effects-{}.sqlite",f.origin));
+        let raw=Connection::open(&effects_path).unwrap();
+        raw.execute(
+            "UPDATE lu_independent_outcomes SET observed_sha256=?1
+             WHERE call_id=?2",
+            params!["f".repeat(64),worker]
+        ).unwrap();
+        assert_eq!(s.propose_step(
+            &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
+            1,&id("q-",52),&id("g-",53),step_budget(),
+            &a,&b,&Sources(true),&Human,&Fresh(true),&f.root,&c
+        ),Err(ScheduleError::DependencyUnverified));
+        // Repairing synthetic fixtures is possible here; production never
+        // silently "fixes" a contradictory independent observation.
+        raw.execute(
+            "UPDATE lu_independent_outcomes SET observed_sha256=?1
+             WHERE call_id=?2",
+            params!["a".repeat(64),worker]
+        ).unwrap();
+        drop(raw);
+        // Reserve budgets ACROSS the lifetime of this plan. Each individual
+        // request is within the per-step ceiling, but the total is too large.
+        let mut excessive=step_budget();
+        excessive.model_token_ceiling=800;
+        assert_eq!(s.propose_step(
+            &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,
+            1,&id("q-",52),&id("g-",53),excessive,
+            &a,&b,&Sources(true),&Human,&Fresh(true),&f.root,&c
+        ),Err(ScheduleError::LimitReached));
         // A second proposed step requires another verified and distinct
         // human request; never old-effect replay.
         assert_eq!(s.propose_step(
