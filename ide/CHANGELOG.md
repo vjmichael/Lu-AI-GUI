@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **IDE 10 P02/P06 evidence then P03/P04 source repair (Nov 7):** Windows P06 55f70b6 native evidence archived 521 package inventory entries, zero missing package notices; Ubuntu P02 source/installed and P06 inventory were queued at inspection, and seven special MPL/r-efi plus separate native/binary distribution legal reviews remain open. On separate draft continuation branch stacked on P06, repaired a malformed Windows protected-clangd PowerShell PE-import check and added exact inline PowerShell AST parser CI; tightened genuine Windows owned native consent dialog to Window/Pane OS UIA without auto-approval; fixed disposable transactional upgrade worker count type confusion with hostile upgrade/rollback tests. Exact new-head native CI, protected AppContainer/DAP, Linux installed, signed installer and legal release acceptance remain OPEN; P05 cleanup deferred.
+
+
 - **P06 WebView2 runtime obligation (Nov 7):** Kept original MIT wrapper text separate from mandatory three-binding default-deny Microsoft runtime redistribution review, with frozen policy and hostile tests. No legal clearance.
 
 - **P06 selectors MPL full legal text (Nov 7):** Pinned canonical complete MPL-2.0 SPDX v3.28.0 text, checked exact selectors 0.38.0 frozen cargo checksum and preserved mandatory original covered-file source and legal review status. No legal approval inferred.
