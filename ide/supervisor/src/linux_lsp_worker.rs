@@ -644,8 +644,13 @@ pub fn start_linux_dap(
         .arg("--setenv")
         .arg("LANG")
         .arg("C")
+        // DAP launches only the fixed absolute first-party debuggee.
+        // The read-only project input is not a working directory for LLVM.
+        // Match the already-contained diagnostic: a private, ephemeral
+        // tmpfs cwd permits LLDB relative runtime state without access to
+        // host home or write access to the sealed project/bundle.
         .arg("--chdir")
-        .arg("/workspace")
+        .arg("/tmp")
         .arg("--")
         .arg(&native_executable)
         .args(args)
