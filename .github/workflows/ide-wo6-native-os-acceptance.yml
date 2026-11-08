@@ -4,6 +4,9 @@ on:
     paths:
       - 'ide/supervisor/**'
       - 'ide/sandbox/**'
+      # Native DAP launch protocol originates in the host crate, so a host
+      # protocol repair MUST re-run the real protected OS acceptance matrix.
+      - 'ide/host/src/dap_session.rs'
       - '.github/workflows/ide-wo6-native-os-acceptance.yml'
   workflow_dispatch:
 permissions:
