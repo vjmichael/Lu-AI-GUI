@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
+import { collectQuickOpenFiles, matchQuickOpenFiles } from './quick_open.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
@@ -68,6 +69,15 @@ function App() {
   const [directory, setDirectory] = useState('');
   const [listing, setListing] = useState(null);
   const [explorerPending, setExplorerPending] = useState(false);
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false);
+  const [quickOpenQuery, setQuickOpenQuery] = useState('');
+  const [quickOpenPaths, setQuickOpenPaths] = useState([]);
+  const [quickOpenBusy, setQuickOpenBusy] = useState(false);
+  const [quickOpenLimited, setQuickOpenLimited] = useState(false);
+  const [quickOpenError, setQuickOpenError] = useState('');
+  const [quickOpenSelection, setQuickOpenSelection] = useState(0);
+  const [quickOpenProjectId, setQuickOpenProjectId] = useState(null);
+  const quickOpenRequest = useRef(0);
   const [tabs, setTabs] = useState([]);
   const [activeTabKey, setActiveTabKey] = useState(null);
   const [savingKey, setSavingKey] = useState(null);
@@ -158,6 +168,13 @@ function App() {
   activeProjectIdRef.current = activeProject?.projectId ?? null;
 
   useEffect(() => {
+    // A late native directory response must never populate a different project's picker.
+    quickOpenRequest.current += 1;
+    setQuickOpenOpen(false);
+    setQuickOpenPaths([]);
+    setQuickOpenProjectId(null);
+    setQuickOpenBusy(false);
+    setQuickOpenError('');
     // Invalidate in-flight project evidence when the selected project changes.
     gitEvidenceRequest.current += 1;
     setGitEvidenceBusy(false);
@@ -203,6 +220,7 @@ function App() {
     setLspCompletionApplyRequest(null);
   }, [activeProject?.projectId]);
 
+  const quickOpenMatches = matchQuickOpenFiles(quickOpenPaths, quickOpenQuery);
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
   const currentLanguageId = languageForPath(activeTab?.relativePath);
   const lspAvailableForTab = !!lspWorker?.ready && !!activeTab &&
@@ -1620,11 +1638,69 @@ function App() {
     if (saved) setReview(null);
   }
 
+  // DEV-01: bounded read-only native directory enumeration. Every preview
+  // still passes through the native project's protected source-open command.
+  function closeQuickOpen() {
+    quickOpenRequest.current += 1;
+    setQuickOpenOpen(false);
+    setQuickOpenBusy(false);
+    setQuickOpenProjectId(null);
+    setQuickOpenError('');
+  }
+
+  function openQuickOpen() {
+    if (!activeProject || pending || explorerPending || savingKey) return;
+    const projectId = activeProject.projectId;
+    const request = ++quickOpenRequest.current;
+    setQuickOpenProjectId(projectId);
+    setQuickOpenOpen(true);
+    setQuickOpenBusy(true);
+    setQuickOpenQuery('');
+    setQuickOpenPaths([]);
+    setQuickOpenSelection(0);
+    setQuickOpenLimited(false);
+    setQuickOpenError('');
+    void collectQuickOpenFiles({
+      projectId,
+      listDirectory: (id, dir) => invoke('ide_list_source_directory', {
+        projectId: id, relativeDir: dir,
+      }),
+      isCurrent: () => request === quickOpenRequest.current &&
+        activeProjectIdRef.current === projectId,
+    }).then(result => {
+      if (request !== quickOpenRequest.current ||
+          activeProjectIdRef.current !== projectId) return;
+      setQuickOpenPaths(result.paths);
+      setQuickOpenLimited(result.truncated);
+    }).catch(error => {
+      if (request !== quickOpenRequest.current ||
+          activeProjectIdRef.current !== projectId) return;
+      setQuickOpenError('Cannot complete this read-only native file listing: ' +
+        String(error));
+      setQuickOpenPaths([]);
+    }).finally(() => {
+      if (request === quickOpenRequest.current &&
+          activeProjectIdRef.current === projectId) setQuickOpenBusy(false);
+    });
+  }
+
+  function activateQuickOpen(path) {
+    if (!quickOpenOpen || quickOpenBusy || explorerPending || savingKey ||
+        quickOpenProjectId !== activeProjectIdRef.current ||
+        !quickOpenMatches.includes(path)) return;
+    closeQuickOpen();
+    setSection('explorer');
+    void selectEntry({kind: 'file', relativePath: path});
+  }
+
   useEffect(() => {
     const shortcut = event => {
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
-      if (key === 'o') {
+      if (key === 'p' && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        if (!quickOpenOpen) openQuickOpen();
+      } else if (key === 'o') {
         event.preventDefault();
         if (!pending && !explorerPending && !savingKey) void operation('ide_choose_project');
       } else if (key === 'h' && section === 'explorer' && activeTab) {
@@ -1643,7 +1719,7 @@ function App() {
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [pending, explorerPending, savingKey, activeTab, tabs, section]);
+  }, [pending, explorerPending, savingKey, activeTab, activeProject, tabs, section, quickOpenOpen]);
 
   useEffect(() => {
     const warn = event => {
@@ -2716,7 +2792,9 @@ function App() {
         : <section className="sourceWorkspace" aria-label="Source explorer and editor">
           <div className="sourceTree">
             <div className="sourceTreeHeader">
-              <strong>Files</strong><span>Project</span>
+              <strong>Files</strong>
+              <button type="button" className="ghostBtn" disabled={explorerPending || !!savingKey}
+                onClick={openQuickOpen} title="Find files in this project (Ctrl+P)">Quick open · Ctrl+P</button>
             </div>
             <div className="sourcePath" title={directory || '/'}>
               <button type="button" className="pathLink" disabled={explorerPending}
@@ -3041,6 +3119,59 @@ function App() {
           anyDirty ? '● Unsaved changes' : 'Ready'} · Ctrl+O folder · Ctrl+S save</span>
       </footer>
     </main>
+    {quickOpenOpen && quickOpenProjectId === activeProject?.projectId &&
+      <div className="quickOpenBackdrop">
+        <section role="dialog" aria-modal="true" aria-labelledby="quickOpenHeading"
+          className="quickOpenDialog" onKeyDown={event => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              closeQuickOpen();
+            } else if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              setQuickOpenSelection(index => Math.min(index + 1, quickOpenMatches.length - 1));
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              setQuickOpenSelection(index => Math.max(0, index - 1));
+            } else if (event.key === 'Enter' && !quickOpenBusy &&
+                       quickOpenMatches.length > 0) {
+              event.preventDefault();
+              activateQuickOpen(quickOpenMatches[Math.max(0, quickOpenSelection)] ||
+                quickOpenMatches[0]);
+            }
+          }}>
+          <div className="quickOpenTop">
+            <strong id="quickOpenHeading">Quick open · current project</strong>
+            <button type="button" className="ghostBtn" onClick={closeQuickOpen}
+              aria-label="Close quick open">Close · Esc</button>
+          </div>
+          <label htmlFor="quickOpenInput">File name or relative path</label>
+          <input id="quickOpenInput" type="search" autoFocus
+            value={quickOpenQuery}
+            onChange={event => {
+              setQuickOpenQuery(event.target.value);
+              setQuickOpenSelection(0);
+            }}
+            placeholder="Type to filter reviewed project files…" />
+          {quickOpenBusy && <p role="status">Reading bounded native project directory entries…</p>}
+          {quickOpenError && <p role="alert" className="treeCaution">{quickOpenError}</p>}
+          {!quickOpenBusy && quickOpenLimited && <p className="treeCaution">
+            Partial results: native directory truncation or quick-open traversal budget reached.
+          </p>}
+          {!quickOpenBusy && !quickOpenError && quickOpenMatches.length === 0 &&
+            <p className="treeCaution">No indexed files match. Nothing on disk was changed.</p>}
+          <div className="quickOpenResults" role="listbox" aria-label="Matching project files">
+            {quickOpenMatches.map((path, index) =>
+              <button type="button" role="option" aria-selected={index === quickOpenSelection}
+                key={path} className={'quickOpenResult' +
+                  (index === quickOpenSelection ? ' selected' : '')}
+                onMouseEnter={() => setQuickOpenSelection(index)}
+                onClick={() => activateQuickOpen(path)}>{path}</button>)}
+          </div>
+          <p className="quickOpenScope">Read-only index · up to 24 native directories
+            and 500 files. Opening still checks the file in the native host.
+            Search does not save, execute, or follow links.</p>
+        </section>
+      </div>}
   </div>;
 }
 
