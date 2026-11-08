@@ -50,7 +50,9 @@ export function safeProjectRunProfileDiscovery(result,projectId) {
         !Array.isArray(raw.testHintPaths) || raw.testHintPaths.length>20 ||
         !raw.testHintPaths.every(path=>typeof path==="string" &&
           path.startsWith("tests/") && path.length<=1024 &&
-          !path.includes("..") && !path.includes("\\") && !/[^\x20-\x7e]/.test(path)))
+          !path.includes("\\") && !/[\x00-\x1f\x7f]/.test(path) &&
+          path.split("/").every(segment=>segment && segment!=="." &&
+            segment!==".." && !segment.includes(":"))))
       throw Error("DEV03_PROFILE_UNTRUSTED");
     seen.add(raw.profileId);
     return Object.freeze({
