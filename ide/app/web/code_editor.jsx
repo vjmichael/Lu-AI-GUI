@@ -118,6 +118,7 @@ export function createEditorState(text, filename, onChange, onSelectionChange) {
 }
 
 export function CodeEditor({ editorState, tabIdentity, findRequest, replaceRequest,
+  mergeApplyRequest, onMergeApplied,
   diagnostics = EMPTY_DIAGNOSTICS, jumpRequest, completionApplyRequest,
   onCursorLine, onCursorPosition, onReplaceApplied, onCompletionApplied }) {
   const container = useRef(null);
@@ -130,6 +131,8 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
   cursorPositionCallback.current = onCursorPosition;
   const completionCallback = useRef(onCompletionApplied);
   completionCallback.current = onCompletionApplied;
+  const mergeCallback = useRef(onMergeApplied);
+  mergeCallback.current = onMergeApplied;
   useLayoutEffect(() => {
     if (!container.current) return;
     const view = new EditorView({
@@ -188,6 +191,33 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     if (!view) return;
     view.dispatch({ effects: setLspDiagnostics.of(diagnostics) });
   }, [diagnostics, tabIdentity]);
+  useEffect(() => {
+    const view=viewRef.current;
+    if (!view || !mergeApplyRequest ||
+        mergeApplyRequest.tabIdentity!==tabIdentity) return;
+    const fail=()=>mergeCallback.current?.(mergeApplyRequest.nonce,false);
+    const req=mergeApplyRequest;
+    // The exact immutable EditorState identity is mandatory. An edit or
+    // selection update since human review invalidates this request.
+    if (view.state!==req.expectedEditorState ||
+        view.state.sliceDoc()!==req.expectedDraft ||
+        typeof req.mergedText!=='string' || req.mergedText.length>128*1024) {
+      fail();return;
+    }
+    try {
+      // One undoable CodeMirror transaction; DO NOT createEditorState or
+      // touch project files. Rebased disk metadata is owned by the parent
+      // only after a positive exact-document callback.
+      if (req.mergedText!==req.expectedDraft) {
+        view.dispatch({changes:{from:0,to:view.state.doc.length,
+          insert:req.mergedText},scrollIntoView:false});
+      }
+      if (view.state.sliceDoc()!==req.mergedText) {fail();return;}
+      mergeCallback.current?.(req.nonce,true);
+      view.focus();
+    } catch {fail();}
+  },[mergeApplyRequest,tabIdentity]);
+
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !jumpRequest || jumpRequest.tabIdentity !== tabIdentity) return;
