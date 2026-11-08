@@ -7,7 +7,7 @@ import unittest
 from python_semantic_native_benchmark import (
     FIXTURE_COUNT, fixtures, framing, read_packet, completions,
     hover_is_real, definition_is_inside_source,
-    same_local_uri, definition_response_class, SCHEMA,
+    same_local_uri, definition_response_class, LspClient, SCHEMA,
 )
 from stage_ty_semantic_candidate_ci import PINS, VERSION
 
@@ -71,6 +71,45 @@ class PythonSemanticBenchmarkSourceTests(unittest.TestCase):
             else:
                 self.assertFalse(same_local_uri(
                     path.with_name("CASE_00.py").as_uri(),uri))
+
+    def test_true_termination_record_requires_shutdown_exit_eof_and_zero_code(self):
+        # No real process launch: verify order and classification mechanically.
+        for exit_code in (0, 1):
+            events=[]
+            class Pipe:
+                def close(self):
+                    events.append("stdin_eof")
+            class Process:
+                returncode=None
+                stdin=Pipe()
+                def poll(self):
+                    return self.returncode
+                def wait(self,timeout):
+                    events.append("wait")
+                    if "stdin_eof" not in events:
+                        raise AssertionError("must close stdin before waiting")
+                    self.returncode=exit_code
+                    return exit_code
+            client=object.__new__(LspClient)
+            client.proc=Process()
+            client.stderr_lines=[]
+            def request(method,params,timeout):
+                self.assertEqual(method,"shutdown")
+                events.append("shutdown")
+                return None,0
+            def notify(method,params):
+                self.assertEqual(method,"exit")
+                events.append("exit")
+            client.request=request
+            client.notify=notify
+            result=client.close()
+            self.assertEqual(events,["shutdown","exit","stdin_eof","wait"])
+            self.assertTrue(result["reaped"])
+            self.assertTrue(result["shutdownAcknowledged"])
+            self.assertTrue(result["exitNotificationSent"])
+            self.assertFalse(result["forcedTermination"])
+            self.assertEqual(result["exitCode"],exit_code)
+            self.assertEqual(result["cleanExit"],exit_code==0)
 
     def test_ty_beta_releases_are_pinned_for_both_native_platforms(self):
         self.assertEqual(VERSION,"0.0.99")
