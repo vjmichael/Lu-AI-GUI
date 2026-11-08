@@ -117,7 +117,7 @@ jobs:
           $report=Get-Content (Join-Path $evidence 'installed-acceptance.json') -Raw | ConvertFrom-Json
           foreach($key in @('installed','launched','uia','projectRegistered','editorOpened','edited',
                             'clipboardVerified','durableClipboardVerified','recoveredAfterRestart',
-                            'noImplicitSave','completed')){
+                            'noImplicitSave','explicitSaveVerified','completed')){
             if ($report.$key -ne $true) {throw "DENIED: native B2 installed acceptance missing $key"}
           }
           $installRoot=Join-Path $env:RUNNER_TEMP 'LuIdeInstalledAcceptance/Installed'
