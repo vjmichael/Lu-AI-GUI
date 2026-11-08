@@ -33,7 +33,7 @@ fn discovers_real_saved_manifests_without_using_untrusted_script_content() {
     let result=registry.discover_project_run_profiles(&id).unwrap();
     assert_eq!(result.schema_version,1);
     assert_eq!(result.project_id,id);
-    assert_eq!(result.profiles.len(),6);
+    assert_eq!(result.profiles.len(),7);
     assert!(!result.manifest_contents_exported);
     assert!(!result.process_started);
     assert!(!result.worker_grant_issued);
@@ -51,6 +51,8 @@ fn discovers_real_saved_manifests_without_using_untrusted_script_content() {
     assert_eq!(result.profiles[2].test_candidates,1);
     assert_eq!(result.profiles[3].test_candidates,1);
     assert_eq!(result.profiles[4].test_candidates,0);
+    assert_eq!(result.profiles[6].profile_id,"rust_build");
+    assert_eq!(result.profiles[6].existing_native_recipe_id,Some("rust_build"));
     assert_eq!(result.profiles[2].test_hint_paths,vec!["tests/test_calc.py"]);
     assert_eq!(result.profiles[3].test_hint_paths,vec!["tests/unit.test.ts"]);
     assert!(result.profiles[2].existing_native_recipe_id.is_none());
