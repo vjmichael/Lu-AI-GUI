@@ -28,7 +28,7 @@ The dedicated `.github/workflows/lu-agent01d-host-scheduler.yml` requires an exa
 
 - One original host claims a durable plan; other owners are denied, including after process reopen with the same persisted owner ID. SQLite ownership rows cannot be rewritten or deleted.
 - A new human consent turn and exact budget are required. Incorrect user turn, no explicit approval, oversized single-step requests, changed step identity and unverified dependencies fail closed.
-- Duplicate cancellation is idempotent on the original live host; cancellation and host-process-stop quarantine do not falsely claim old workers have ended. Process restart cannot silently recover scheduling authority.
+- Duplicate cancellation is idempotent on the original live host; cancellation and host-process-stop quarantine do not falsely claim old workers have ended. Process restart cannot silently recover scheduling authority. An additional native regression proves a clean RELEASED session cannot be reactivated, even via direct SQLite state manipulation.
 - A superseded goal or changed plan revision invalidates the previous schedule.
 - Absent or contradictory independent witness cannot complete or release a step; original real SQLite TaskStore/EffectJournal test **fixtures** exercise the join.
 - Altering the original independent witness after historical acknowledgement blocks a dependent step even if the scheduler's cached past status said it was verified. Aggregate budget exhaustion rejects a second proposal even if each individual reservation is within per-step caps.
