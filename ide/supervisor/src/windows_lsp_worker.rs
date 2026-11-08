@@ -936,6 +936,17 @@ pub fn start_windows_dap(
     if !clean_meta(&executable)?.is_file() {
         return Err(denied());
     }
+    // The DAP adapter never runs a project command; its only authorized
+    // target is the absolute, sealed first-party self-test executable.
+    // Run its own startup in the independently measured bundle directory,
+    // rather than a staged project/workspace directory. This prevents
+    // untrusted relative LLVM config/resource lookup and isolates lowbox
+    // current-directory compatibility from project input. No broadened
+    // AppContainer file/registry/network access or inherited environment.
+    let adapter_cwd = executable.parent().ok_or_else(denied)?;
+    if !clean_meta(adapter_cwd)?.is_dir() {
+        return Err(denied());
+    }
     let env = min_environment(&local, &bundle)?;
     let command_text = format!(
         "\"{}\"{}",
@@ -976,7 +987,7 @@ pub fn start_windows_dap(
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
     let (process, child_thread, stdin_write, stdout_read, debug_stderr) =
-        match spawn_contained_stdio(&profile, &job, &executable, &mut command, &workspace, &env) {
+        match spawn_contained_stdio(&profile, &job, &executable, &mut command, adapter_cwd, &env) {
             Ok(value) => {
                 native_lsp_trace("suspended_child_attested");
                 value

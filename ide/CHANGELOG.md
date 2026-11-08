@@ -391,3 +391,6 @@ See the engineering handoff and linked acceptance documents for exact evidence. 
 - **Linux installed GTK (Nov 8):** Real X11 file chooser exposed no button actions after successful unsigned `.deb` and native dpkg rollback. Added narrowly scoped X11 keyboard confirmation only for an AT-SPI-visible and title-identified chooser; genuine project registration remains mandatory. OS retest pending.
 
 - **Installed GTK follow-up (Nov 8):** After X11 active-window lookup failed on real Ubuntu26 CI, added OS xdotool click limited to the AT-SPI-visible native file chooser geometry, followed by exact Tauri GUI registration proof; installed acceptance still pending.
+
+
+- **P03 LLDB 18 fixed launch (Nov 7/8):** Native Linux cgroup/Bwrap DAP initialized but rejected fixed launch; upstream LLVM 18 expects an array for launch `env`. Switched exact zero-variable launch from `env:{}` to `env:[]` and added wire regression. Full Linux stop/stack/cancel and Windows AppContainer acceptance still OPEN. The owner's preferred unsigned Windows distribution must not relax protected tool execution or alter default-deny approval.

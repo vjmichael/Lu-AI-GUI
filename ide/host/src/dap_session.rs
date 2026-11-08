@@ -165,7 +165,10 @@ impl DapSession {
                 // be denied under the kernel Bwrap/AppArmor namespace.
                 // Disabling target stdio reduces exposed I/O; no shell.
                 "disableSTDIO": true,
-                "args": [], "env": {}, "runInTerminal": false
+                // LLVM 18's lldb-dap requires env to be an array of
+                // NAME=VALUE entries. Newer adapters also accept arrays.
+                // Use no additional variables; never inherit host settings.
+                "args": [], "env": [], "runInTerminal": false
             }),
         )?;
         self.launch_sent = true;
@@ -671,6 +674,13 @@ mod tests {
         assert!(std::str::from_utf8(&wire)
             .unwrap()
             .contains(r#""disableSTDIO":true"#));
+        // LLVM 18 Linux: `env` is ARRAY only; using {} was rejected by
+        // its launch configuration. Newer LLVM still supports this form.
+        let request_wire = std::str::from_utf8(&wire).unwrap();
+        assert!(request_wire.contains(r#""env":[]"#));
+        assert!(!request_wire.contains(r#""env":{}"#));
+        assert!(request_wire.contains(r#""args":[]"#));
+        assert!(request_wire.contains(r#""runInTerminal":false"#));
         assert_eq!(session.phase(), DapPhase::Launching);
         let observed = session
             .receive(&framed(json!({

@@ -4,6 +4,9 @@ on:
     paths:
       - 'ide/supervisor/**'
       - 'ide/sandbox/**'
+      # Native DAP launch protocol originates in the host crate, so a host
+      # protocol repair MUST re-run the real protected OS acceptance matrix.
+      - 'ide/host/src/dap_session.rs'
       - '.github/workflows/ide-wo6-native-os-acceptance.yml'
   workflow_dispatch:
 permissions:
@@ -17,6 +20,16 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Never test GitHub's synthesized PR merge commit as the exact head.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Attest exact P03 native source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'P03_DAP_NATIVE_EXACT_HEAD=PASS'
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
@@ -24,6 +37,12 @@ jobs:
         with:
           # Pinned upstream Windows Python used only for OS test DLL closure.
           python-version: '3.10.11'
+      - name: Protect sealed AppContainer adapter startup source contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python ide/supervisor/fixtures/debug/test_windows_dap_appcontainer_source.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed Windows AppContainer debugger startup contract failed' }
       - name: Compile protected service, bootstrap and genuine LLDB-DAP fixture
         shell: pwsh
         run: |
@@ -150,6 +169,16 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Never test GitHub's synthesized PR merge commit as the exact head.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Attest exact P03 native source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'P03_DAP_NATIVE_EXACT_HEAD=PASS'
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
@@ -194,6 +223,16 @@ jobs:
           # distro resource lookup from genuine kernel/stdio/DAP failures.
           # Only fixed categories are shown; raw stderr and paths are hidden.
           python3 ide/supervisor/fixtures/debug/probe_lldb_dap_initialize.py
+      - name: Isolate fixed LLDB-DAP launch denial category without weakening sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          # These tests and diagnostic execute only the first-party sealed
+          # debuggee, inside a real unprivileged Bwrap namespace.
+          python3 -m py_compile ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py
+          python3 ide/supervisor/fixtures/debug/test_probe_lldb_dap_launch.py -v
+          timeout --signal=TERM --kill-after=3s 45s python3 ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py
+          echo 'P03_LLDB_LAUNCH_PROBE=diagnostic_only_no_cgroup_or_job_acceptance'
       - name: Compile trusted fixed delegated OS host and native DAP fixture
         shell: bash
         run: |
@@ -234,6 +273,16 @@ jobs:
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Never test GitHub's synthesized PR merge commit as the exact head.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Attest exact P03 native source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'P03_DAP_NATIVE_EXACT_HEAD=PASS'
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
@@ -286,3 +335,43 @@ jobs:
           done
       - name: Scope
         run: echo "Native OS check/test/cancel fixture only; installed desktop and release toolchain acceptance remain independent."
+ 
+  p03-native-exact-head-cross-platform:
+    # This is an actual OS-success aggregator, NOT source-only acceptance,
+    # product signing, or installed-release authorization. It never consumes
+    # historical green checks or a synthesized PR merge SHA.
+    if: ${{ always() }}
+    needs:
+      - native-windows-fixed-debugger
+      - native-linux-delegated-fixed-debugger
+      - native-linux-protected-cargo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Require one exact SHA and complete OS protected-debugger successes
+        shell: bash
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          WINDOWS: ${{ needs['native-windows-fixed-debugger'].result }}
+          LINUX_DAP: ${{ needs['native-linux-delegated-fixed-debugger'].result }}
+          LINUX_CARGO: ${{ needs['native-linux-protected-cargo'].result }}
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$PR_HEAD" ]]; then
+            echo "P03_NATIVE_FINAL_EXACT_HEAD=DENIED"
+            exit 1
+          fi
+          printf 'P03_NATIVE_FINAL_JOB_STATES=windows:%s,linux_dap:%s,linux_cargo:%s\n' "$WINDOWS" "$LINUX_DAP" "$LINUX_CARGO"
+          if [[ "$WINDOWS" != success || "$LINUX_DAP" != success || "$LINUX_CARGO" != success ]]; then
+            echo "P03_NATIVE_FINAL_CROSS_PLATFORM=DENIED_OPEN_NATIVE_OS_GATES"
+            exit 1
+          fi
+          echo "P03_NATIVE_FINAL_EXACT_HEAD=PASS"
+          echo "P03_NATIVE_FINAL_CROSS_PLATFORM=PASS_REAL_OS_JOBS"
+          echo "P03_NATIVE_FINAL_SIGNED_INSTALLED_RELEASE=NOT_INFERRED"
