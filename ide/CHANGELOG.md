@@ -402,3 +402,6 @@ See the engineering handoff and linked acceptance documents for exact evidence. 
 
 
 - **DEV-02.4 real Python benchmarking failure repairs (Nov 8):** First installed-on-CI candidate server comparison #42494557323 returned real 20/20 hover+completion on both BasedPyright/ty OS paths, 20/20 ty definitions on both; BasedPyright 20/20 definition on Ubuntu, 0/20 accepted on Windows. ty's terminal flag was false on both OS. Added strict native `file:` canonicalized same-file identity checks and bounded mismatch classification; separated OS reaping from clean LSP shutdown/exit code/forced kill in response receipts, with independent hard acceptance for clean exit. Actual final-head rerun remains pending. These are not production Lu installed workers.
+
+
+- **DEV-02.4 upstream LSP shutdown contract repair (Nov 8):** Verified ty's own real LSP fixture sends `shutdown` → `exit` → closes client stdin → waits. The first Lu real comparison did not close stdin; corrected actual benchmark order and added unit coverage proving bounded native protocol EOF and nonzero-exit still never qualifies as clean. Real Win/Linux rerun pending; no installed Lu language-worker authority granted.
