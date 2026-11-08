@@ -137,6 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --features e1-p08-crash-fixture \
             --bin lu-linux-group-guard --bin lu-e1-p08-linux-crash-parent
           sha256sum src-tauri/lu-win-worker-job/target/debug/lu-linux-group-guard \
             src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-crash-parent \
