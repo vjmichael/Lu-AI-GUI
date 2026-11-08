@@ -69,7 +69,7 @@ fn literal_offsets(line: &str, query: &str, case_sensitive: bool) -> Vec<(usize,
         boundaries.push((folded.len(), offset + ch.len_utf8()));
     }
     folded
-        .match_indices(&normalized_query)
+        .match_indices(normalized_query.as_str())
         .filter_map(|(start, found)| {
             let end = start + found.len();
             let first = boundaries.binary_search_by_key(&start, |pair| pair.0).ok()?;
