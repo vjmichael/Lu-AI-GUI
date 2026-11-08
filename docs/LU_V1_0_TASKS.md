@@ -514,3 +514,23 @@ Implemented a new host-only, typed FFprobe broker with reviewed executable SHA, 
 ## E1-P07 — model/desktop reviewed Git and FFprobe tools (Nov 7, 2026)
 
 Source implementation adds five argument-free reviewed app model tools (Git HEAD/status/branch/history and WAV/MP4 facts) to the real Lu ModelToolCatalog, NativeToolRegistry, NativeToolTurn and supervised inference loop. A new one-turn desktop Tauri/native picker and two React Send opt-ins bind original saved human messages to ReadWorkspace and ExecuteCode grants, without permitting a model-chosen program, path or argument. Independent inner OS-worker and outer conversation effect IDs prevent durable journal collision; a cancellation monitor revokes the task and kills owned processes. Expanded native tests now check five independently parsed real OS Git/FFprobe results and ten persisted outer/inner effects, plus a second scripted-model production conversation-session test. A new SHA-pinned Qwen3-0.6B GGUF + llama.cpp Ubuntu acceptance workflow must prove the model *itself* selected Git and FFprobe without host routing and that the live tool feedback/final answers and receipts survive SQLite reopen. Source complete for the candidate; all exact-head CI checks and installed-Windows UI acceptance OPEN. No blanket sandbox on Lu Core and no required MCP or Docker. See docs/LU_E1_P07_REVIEWED_APPLICATION_CHAT_20261107.md.
+
+## E1-P08 — reviewed native-app crash/restart journal reconciliation (Nov 7, 2026)
+
+After E1-P07 but without closing its pending CI: implemented new
+`reviewed_app_recovery.rs` and integrated it at desktop startup under the
+pre-existing exclusive `DesktopOwner` writer lease. It scans strictly
+host-minted and bounded per-turn Git/FFprobe SQLite journals (no user/model
+paths), rejects malformed/linked/reparse files, converts stale RUNNING
+tasks to INTERRUPTED and EXECUTING effects to UNCERTAIN, preserves APPLIED
+receipts, and does not replay an operation. One-sided journals from a
+crash between file creations are handled without making up the missing
+database. Counts-only operator diagnostics are emitted when recovery
+is needed. Added a Tauri-free production-source harness testing genuine
+SQLite restart, preservation, idempotency, one-sided creation failure,
+malformed filenames and Unix symlinks. Dedicated exact-head Ubuntu 24.04,
+Windows 2025 and Windows desktop Tauri workflow added. **Source candidate,
+native/installed acceptance OPEN**. This is effect/ledger recovery, NOT
+proof that a Linux child survived or was reaped after parent death.
+The physical installed-Windows acceptance remains deferred toward v1.0.
+See docs/LU_E1_P08_REVIEWED_RESTART_RECOVERY_20261107.md.
