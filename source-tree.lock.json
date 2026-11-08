@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "75c201a569a09790cc905aa4c4fbc45f37772722",
+  "sourceCommitBeforeLock": "6f873108a32bd320de6f5b33c871f2d864012b1b",
   "trackedFileCount": 728,
   "files": [
     {
@@ -13,7 +13,7 @@
     },
     {
       "path": ".github/workflows/lu-agent01c-deliverable-receipts.yml",
-      "blob": "2b94cd127733efbb0d635495a69f3676eeee8d87"
+      "blob": "f27573424da7f0d1f0a8e764f598e8108c4dfdfa"
     },
     {
       "path": ".github/workflows/lu-agent01d-host-scheduler.yml",
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-agent01e-broker-progress.yml",
-      "blob": "3ce2adb0e7dee6b72bd8a8579a89055efed6d7a0"
+      "blob": "4f7445c95f1b4d5d7afbb24c50056237a06f2953"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -345,7 +345,7 @@
     },
     {
       "path": "docs/LU_AGENT01F_MODEL_PLAN_INGRESS_20261108.md",
-      "blob": "eaeeae53df699cd108ffbfc9282302e07dff49c4"
+      "blob": "62db7b643dda528a4e45476ace411eedd81e260b"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -489,7 +489,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "4e9fdc9c5405cf00c06a6c2d35afb121ba17b7fb"
+      "blob": "99d395a9f2feebec630d86cd710acdbef977005e"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -621,7 +621,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "a51088143b89a1be9830e69d8876a481b631970b"
+      "blob": "9bb4af4b54213eea7e902c4cb9fa57bd74e7de84"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1561,7 +1561,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_deliverable_receipts.rs",
-      "blob": "547376d67b063debe11f5fffd158a1d165af4fa7"
+      "blob": "1d45544ed4719c29449c4d139f2b5d402d625a2c"
     },
     {
       "path": "src-tauri/lu-core/src/agent_host_scheduler.rs",
@@ -1577,7 +1577,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs",
-      "blob": "f4742a9ce05669e2b446bb0cad72d4b65c464059"
+      "blob": "73a1317b1756265a8c8844686aa230f0656c3698"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
