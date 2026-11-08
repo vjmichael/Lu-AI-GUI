@@ -79,14 +79,19 @@
  }
  fn safe_database(root:&Path)->Result<bool,String>{
      let main=path(root);
-     if !checked(&main)?{return Ok(false)}
+     let exists=checked(&main)?;
+     // Even with no main DB, reject a linked orphan WAL/SHM sidecar
+     // before SQLite could initialize the file and follow the suffix.
      for suffix in ["-wal","-shm"]{
          let mut other=main.as_os_str().to_os_string();
          other.push(suffix);
          let other=PathBuf::from(other);
-         let _=checked(&other)?;
+         let present=checked(&other)?;
+         if present&&!exists{
+             return Err("Orphan message metadata journal sidecar".into())
+         }
      }
-     Ok(true)
+     Ok(exists)
  }
  fn open_read(root:&Path)->Result<Option<Connection>,String>{
      if !safe_database(root)?{return Ok(None)}
