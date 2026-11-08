@@ -144,10 +144,15 @@ class LspClient:
             return
         self.send({"jsonrpc":"2.0","id":message["id"],"result":result})
 
-    def request(self,method:str,params:dict,timeout:float=TIMEOUT):
+    def request(self,method:str,params:dict|None,timeout:float=TIMEOUT):
         self.next_id+=1
         wanted=self.next_id
-        self.send({"jsonrpc":"2.0","id":wanted,"method":method,"params":params})
+        request={"jsonrpc":"2.0","id":wanted,"method":method}
+        # The LSP shutdown request has no params. Ty strictly returns
+        # InvalidParams (-32602) if a client sends an empty {} object.
+        if params is not None:
+            request["params"]=params
+        self.send(request)
         began=time.monotonic()
         deadline=began+timeout
         while time.monotonic()<deadline:
@@ -183,7 +188,7 @@ class LspClient:
         }
         if self.proc.poll() is None:
             try:
-                self.request("shutdown", {}, timeout=5)
+                self.request("shutdown", None, timeout=5)
                 outcome["shutdownAcknowledged"] = True
             except (OSError, RuntimeError, TimeoutError) as error:
                 outcome["shutdownError"] = type(error).__name__
@@ -272,7 +277,11 @@ def same_local_uri(candidate: str, expected: str) -> bool:
         b = urllib.request.url2pathname(right.path)
         if not os.path.isabs(a) or not os.path.isabs(b):
             return False
-        return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+        # On Windows, distinct valid file: spellings (drive casing, short
+        # names) can resolve to the SAME NTFS file while string realpath
+        # comparisons disagree. An OS inode/file-ID test is stricter than
+        # casefolding untrusted paths: both files must actually exist.
+        return os.path.samefile(a,b)
     except (OSError, ValueError):
         return False
 
