@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "81ed3b176b66105a5fddba72456c62f6de8450cf",
+  "sourceCommitBeforeLock": "974633b4581a609557da27181adf1f6b94068048",
   "trackedFileCount": 701,
   "files": [
     {
@@ -1469,7 +1469,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_revisions.rs",
-      "blob": "7609642ee1ba0b6cd1a10faf0b5b59d6c4db3622"
+      "blob": "43bc7b53cc92ad29a093db0f1cda5bcb038b9fbf"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
