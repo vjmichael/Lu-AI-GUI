@@ -38,6 +38,10 @@ class LanguageServerBundlePolicyTests(unittest.TestCase):
                 "linux-x86_64": hashlib.sha256(b"linux fixture").hexdigest(),
             }
             row["licenseNoticeFiles"] = ["LICENSE"]
+            row["nativeResourceManifestReviewed"] = True
+            row["nativeResourceFilesByPlatform"] = {
+                "windows-x86_64": {}, "linux-x86_64": {},
+            }
             manifest["releaseApproved"] = True
             temporary = root / "manifest.json"
             temporary.write_text(json.dumps(manifest), encoding="utf-8")
@@ -71,6 +75,43 @@ class LanguageServerBundlePolicyTests(unittest.TestCase):
             path.write_text(json.dumps(manifest), encoding="utf-8")
             with self.assertRaises(ValueError):
                 verify(path, root, release=True)
+
+
+    def test_clangd_binary_only_approval_is_denied_even_with_notices(self):
+        from verify_language_servers import reviewed_native_resources
+        with tempfile.TemporaryDirectory() as temp:
+            root=pathlib.Path(temp)
+            (root/"clangd.exe").write_bytes(b"candidate")
+            (root/"original.dll").write_bytes(b"original sibling")
+            row={"id":"clangd","category":"native",
+                 "nativeResourceManifestReviewed":True,
+                 "nativeResourceFilesByPlatform":{
+                   "windows-x86_64":{},
+                   "linux-x86_64":{},
+                 }}
+            with self.assertRaisesRegex(ValueError,"LLVM resources"):
+                reviewed_native_resources(row,root,"windows-x86_64")
+            row["nativeResourceFilesByPlatform"]["windows-x86_64"]={
+                "bin/original.dll":{
+                    "path":"original.dll",
+                    "sha256":hashlib.sha256(b"original sibling").hexdigest()
+                }
+            }
+            self.assertEqual(len(reviewed_native_resources(
+                row,root,"windows-x86_64")),1)
+            row["nativeResourceFilesByPlatform"]["windows-x86_64"]={
+                "../outside.dll":{
+                    "path":"original.dll",
+                    "sha256":hashlib.sha256(b"original sibling").hexdigest()
+                }
+            }
+            with self.assertRaisesRegex(ValueError,"unsafe"):
+                reviewed_native_resources(row,root,"windows-x86_64")
+            row["nativeResourceFilesByPlatform"]["windows-x86_64"]={
+                "bin/original.dll":{"path":"original.dll","sha256":"0"*64}
+            }
+            with self.assertRaisesRegex(ValueError,"SHA mismatch"):
+                reviewed_native_resources(row,root,"windows-x86_64")
 
 
 if __name__ == "__main__":
