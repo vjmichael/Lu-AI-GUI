@@ -1,0 +1,85 @@
+name: IDE B3 current-stack saved project search Windows Linux native acceptance
+on:
+  push:
+    branches: ['ide/b3-saved-project-search-port-20261108']
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-b3-current-stack-native.yml'
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-b3-current-stack-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  real-native-host-tauri-ui-b3:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Verify exact source and unchanged production deny boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "87d0045a4be1c78651f080300aba71c14dbe1f30"
+          python3 ide/packaging/verify_language_servers.py
+          if python3 ide/packaging/verify_language_servers.py --release; then
+            echo 'DENIED: source search cannot enable unreviewed native language server release'
+            exit 2
+          fi
+          if git diff HEAD -- ide/host/src/editor.rs ide/host/src/reviewed_git.rs ide/supervisor/src ; then
+            echo 'B3 only provides capability-scoped saved source search'
+          fi
+      - name: Linux native GTK/Tauri compile prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Execute real bounded host and native project search Rust tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          echo 'IDE_B3_NATIVE_SAVED_SOURCE_CAPABILITY_TESTS=PASS'
+      - name: Build real current frontend and execute all human-editor tests
+        shell: bash
+        working-directory: ide/app
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          echo 'IDE_B3_CURRENT_REACT_EDITOR_SEARCH_UI_TESTS=PASS'
+      - name: Check native current Tauri command/typed-capability integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets --locked
+          echo 'IDE_B3_CURRENT_TAURI_SOURCE_NATIVE_COMPILATION=PASS'
+          echo 'IDE_B3_GENUINE_INSTALLED_NSIS_DEBIAN_UI_ACCEPTANCE=OPEN'
+          echo 'IDE_B3_NO_UNREVIEWED_EXECUTION_OR_LU_CORE_BRIDGE=PASS'
