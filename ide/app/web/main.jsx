@@ -6,6 +6,7 @@ import { locateMatches, planReplacement } from './find_replace.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
 import { projectProblems, stillCurrentProblem } from './lsp_problems.js';
+import { languageServiceCapabilities, languageMethodAvailable } from './lsp_language_capabilities.js';
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 import { belongsToSelectedProject } from './job_render_guard.js';
 
@@ -215,9 +216,9 @@ function App() {
   const lspAvailableForTab = !!lspWorker?.ready && !!activeTab &&
     !!currentLanguageId && Array.isArray(lspWorker.supportedLanguages) &&
     lspWorker.supportedLanguages.includes(currentLanguageId);
-  const lspProviderForTab = currentLanguageId === 'rust' ? 'rust-analyzer' :
-    currentLanguageId === 'python' ? 'Ruff' : 'clangd';
-  const lspSupportsNavigation = currentLanguageId !== 'python';
+  const lspCapabilities = languageServiceCapabilities(currentLanguageId);
+  const lspProviderForTab = lspCapabilities?.provider || 'unavailable language provider';
+  const lspSupportsNavigation = languageMethodAvailable(currentLanguageId, 'definition');
   const lspRunningForTab = !!lspSession && !!activeTab &&
     lspSession.projectId === activeTab.projectId &&
     lspSession.relativePath === activeTab.relativePath;
@@ -1439,7 +1440,12 @@ function App() {
     const tab = activeTab;
     if (!tab || !lspRunningForTab || !lspAvailableForTab) return;
     if (!['completion', 'hover', 'definition', 'diagnostics'].includes(kind)) return;
-    if (kind !== 'diagnostics' && !lspSupportsNavigation) return;
+    if (!languageMethodAvailable(currentLanguageId, kind)) {
+      setHint('This installed provider does not support ' + kind +
+        ' for ' + String(currentLanguageId || 'this file') +
+        '. A reviewed semantic language server is required.');
+      return;
+    }
     // The native host must independently revalidate this current project,
     // saved disk hash, exact unsaved editor buffer revision, worker scope,
     // peer identity and user approval before forwarding an LSP message.
@@ -2809,7 +2815,7 @@ function App() {
                   <button type="button" className="ghostBtn editorToolButton"
                     disabled={!lspRunningForTab || lspBusy || !lspSupportsNavigation}
                     title={lspRunningForTab ? 'Ask protected '+lspProviderForTab+' for completions' :
-                      'Start a consented protected clangd session first'}
+                      'Start the approved protected language server for this file first'}
                     onClick={() => void requestLspFeature('completion')}>Complete</button>
                   <button type="button" className="ghostBtn editorToolButton"
                     disabled={!lspRunningForTab || lspBusy || !lspSupportsNavigation}
@@ -2817,6 +2823,13 @@ function App() {
                   <button type="button" className="ghostBtn editorToolButton"
                     disabled={!lspRunningForTab || lspBusy || !lspSupportsNavigation}
                     onClick={() => void requestLspFeature('definition')}>Definition</button>
+                  {lspCapabilities && <span className="lspLanguageCapabilityNotice"
+                    title={lspCapabilities.status}
+                    aria-label={'Language server capabilities: ' + lspCapabilities.status}>
+                    {currentLanguageId === 'python' ?
+                      'Ruff · diagnostics only' :
+                      lspProviderForTab + ' · diagnostics / completion / hover / definition'}
+                  </span>
                   <button type="button" className="ghostBtn editorToolButton"
                     disabled={!lspRunningForTab || lspBusy}
                     onClick={() => void requestLspFeature('diagnostics')}>Problems</button>
