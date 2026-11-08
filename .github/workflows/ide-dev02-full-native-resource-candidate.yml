@@ -98,3 +98,34 @@ jobs:
           path: ${{ runner.temp }}/dev026b-original-full-resources/candidate-full-resource-receipt.json
           if-no-files-found: warn
           retention-days: 7
+
+  compile-real-protected-os-api-not-execution:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            features: lsp-transport,protected-recovery-service
+          - os: ubuntu-24.04
+            features: lsp-transport,linux-worker
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Build actual native Windows/Linux protected fixture API; do not execute uncontained
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          cargo check --manifest-path ide/supervisor/Cargo.toml \
+            --features "${{ matrix.features }}" \
+            --example e2_native_multilang_protected_acceptance
+          echo DEV026B_NATIVE_SUPERVISOR_EXAMPLE_COMPILES=PASS
+          echo DEV026B_REAL_PROTECTED_RUNNER_EXECUTION=NOT_PERFORMED
