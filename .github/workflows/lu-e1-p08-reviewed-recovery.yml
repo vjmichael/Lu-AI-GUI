@@ -166,3 +166,59 @@ jobs:
           path: e1-p08-guardian-evidence/
           retention-days: 14
           if-no-files-found: warn
+
+  linux-guardian-reviewed-tools:
+    needs: linux-guardian-crash-recovery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert frozen exact source and installed real applications
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          command -v git
+          command -v ffprobe
+          echo "LU_E1_P07_GIT=$(readlink -f "$(command -v git)")" >> "$GITHUB_ENV"
+          echo "LU_E1_P07_FFPROBE=$(readlink -f "$(command -v ffprobe)")" >> "$GITHUB_ENV"
+      - name: Build and bind first-party process-group lifetime guardian
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --bin lu-linux-group-guard
+          path="$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-group-guard"
+          test -x "$path"
+          echo "LU_E1_P08_TEST_GUARD_BINARY=$path" >> "$GITHUB_ENV"
+      - name: Exercise real Git and FFprobe via guardian-owned native Lu supervisor
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e1-p08-guardian-tools
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            actual_model_selected_reviewed_git_and_media_tools_return_verified_receipts \
+            -- --ignored --nocapture 2>&1 | tee e1-p08-guardian-tools/real-reviewed-apps.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p08-guardian-tools/real-reviewed-apps.log
+          printf 'LINUX_GROUP_GUARD=STAGED_AND_USED\n' > e1-p08-guardian-tools/guard-state.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-e1-p08-guardian-reviewed-native-git-ffprobe
+          path: e1-p08-guardian-tools/
+          retention-days: 14
+          if-no-files-found: warn
