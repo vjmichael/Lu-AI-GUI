@@ -15,7 +15,7 @@ use sha2::{Digest,Sha256};
 use crate::{
     journal::IndependentOutcomeVerdict,
     independent_git_history::loose_commit_count,
-    independent_git_status::tracked_worktree_changes,
+    independent_git_status::tracked_worktree_snapshot,
     independent_mp4::{parse_mp4,matches_ffprobe},
     native_app_typed_git::GitReadOperation,
     native_app_typed_ffprobe::ReviewedContainer,
@@ -106,7 +106,12 @@ fn resolve_git_ref(git_dir:&Path,reference:&str)->Option<String>{
         let content=small_string(&loose,MAX_HEAD)?;
         return is_hex_hash(&content).then_some(content)
     }
-    let packed=small_string(&git_dir.join("packed-refs"),MAX_PACKED)?;
+    // packed-refs is a multiline Git text file. Unlike a single loose
+    // ref, its *internal newlines* are legal and necessary; the previous
+    // small_string() reader incorrectly rejected valid packed refs.
+    let packed=String::from_utf8(
+        read_nosymlink(&git_dir.join("packed-refs"),MAX_PACKED)?
+    ).ok()?;
     let mut matched=None;
     for line in packed.lines(){
         if line.starts_with('#')||line.starts_with('^')||line.trim().is_empty(){
@@ -119,6 +124,48 @@ fn resolve_git_ref(git_dir:&Path,reference:&str)->Option<String>{
         }
     }
     matched
+}
+/// A source-derived revision witness observed independently from the
+/// reviewed Git subprocess. This function never accepts the worker's
+/// reported facts and returns None for states the bounded source validators
+/// cannot independently represent. Includes the *content* of ordinary
+/// tracked files, not only their dirty-file count.
+pub fn git_source_revision(root:&Path,operation:GitReadOperation)->Option<String>{
+    let git=root.join(".git");
+    if !git.is_dir(){return None}
+    let head=direct_head(&git)?;
+    let source=match operation{
+        GitReadOperation::CurrentBranch=>{
+            match head{
+                DirectGitHead::Detached(_)=>"detached".to_string(),
+                DirectGitHead::Attached(name)=>format!("branch:{name}"),
+            }
+        },
+        GitReadOperation::HeadCommit=>{
+            let value=match head{
+                DirectGitHead::Detached(hash)=>hash,
+                DirectGitHead::Attached(refname)=>resolve_git_ref(&git,&refname)?,
+            };
+            format!("head:{value}")
+        },
+        GitReadOperation::TrackedStatus=>{
+            let value=match head{
+                DirectGitHead::Detached(hash)=>hash,
+                DirectGitHead::Attached(refname)=>resolve_git_ref(&git,&refname)?,
+            };
+            let (count,state)=tracked_worktree_snapshot(root,&value)?;
+            format!("tracked:{value}:{count}:{state}")
+        },
+        GitReadOperation::HistoryCount=>{
+            let value=match head{
+                DirectGitHead::Detached(hash)=>hash,
+                DirectGitHead::Attached(refname)=>resolve_git_ref(&git,&refname)?,
+            };
+            let count=loose_commit_count(&git,&value)?;
+            format!("history:{value}:{count}")
+        },
+    };
+    Some(format!("{:x}",Sha256::digest(source.as_bytes())))
 }
 /// Independently inspect the HEAD/branch files, without invoking Git or
 /// reading stdout. A changed/malformed direct HEAD conflicts with the
@@ -145,7 +192,8 @@ pub fn verify_git(
                 DirectGitHead::Attached(refname)=>resolve_git_ref(&git,&refname),
             };
             let Some(hash)=resolved else{return OracleEvidence::unsupported(method)};
-            let Some(changed)=tracked_worktree_changes(root,&hash) else{
+            let Some((changed,_content_revision))=
+                tracked_worktree_snapshot(root,&hash) else{
                 return OracleEvidence::unsupported(method)
             };
             if worker_receipt.get("kind").and_then(Value::as_str)
