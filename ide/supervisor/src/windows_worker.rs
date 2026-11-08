@@ -192,22 +192,26 @@ pub fn trusted_offline_toolchain_digest(bundle: &Path) -> Result<String, Supervi
     digest_tree(bundle, None, MAX_BUNDLE_FILES, MAX_BUNDLE_BYTES)
 }
 
-fn stage_toolchain(bundle: &Path, dest: &Path, expected: &str) -> Result<(), SupervisorError> {
+fn stage_toolchain(bundle: &Path, dest: &Path, expected: &str, recipe_id: &str) -> Result<(), SupervisorError> {
     if !expected.bytes().all(|x| x.is_ascii_hexdigit()) || expected.len() != 64 {
         return Err(SupervisorError::InvalidPlan);
     }
-    // The native host chooses a pinned offline bundle root. The WebView
-    // cannot provide paths, hashes, commands, flags or executables.
-    for executable in ["bin/cargo.exe", "bin/rustc.exe"] {
-        let p = bundle.join(executable);
-        if !clean_meta(&p)?.is_file() {
+    // The native host chooses a fixed, release-pinned offline bundle.
+    // Runtime profile IDs are an opt-in feature, not a caller-supplied path.
+    let multilang = cfg!(feature = "multilang-worker")
+        && crate::runtime_bundles::RuntimeProfile::for_id(recipe_id).is_some();
+    if multilang {
+        crate::runtime_bundles::verify_runtime_bundle(recipe_id, bundle, expected)?;
+    } else {
+        for executable in ["bin/cargo.exe", "bin/rustc.exe"] {
+            if !clean_meta(&bundle.join(executable))?.is_file() {
+                return Err(denied());
+            }
+        }
+        if !clean_meta(&bundle.join("lib"))?.is_dir()
+            || !clean_meta(&bundle.join("cargo-home"))?.is_dir() {
             return Err(denied());
         }
-    }
-    if !clean_meta(&bundle.join("lib"))?.is_dir()
-        || !clean_meta(&bundle.join("cargo-home"))?.is_dir()
-    {
-        return Err(denied());
     }
     let parent = dest.parent().ok_or_else(denied)?;
     let name = dest.file_name().ok_or_else(denied)?;
@@ -219,7 +223,9 @@ fn stage_toolchain(bundle: &Path, dest: &Path, expected: &str) -> Result<(), Sup
         MAX_BUNDLE_BYTES,
         1024 * 1024 * 1024,
     )?;
-    if copied_hash != expected {
+    if multilang {
+        crate::runtime_bundles::verify_runtime_bundle(recipe_id, dest, expected)?;
+    } else if copied_hash != expected {
         return Err(SupervisorError::WrongProjectOrSource);
     }
     Ok(())
@@ -688,11 +694,70 @@ fn bootstrap_environment(
     }
     Ok(env.encode_utf16().collect())
 }
+/// Runtime-only AppContainer bootstrap, no inherited Python/Node/CMake,
+/// shell, PATH, HOME or registry build settings from the desktop user.
+fn bootstrap_multilang_environment(
+    local: &Path, workspace: &Path, output: &Path, tools: &Path,
+) -> Result<Vec<u16>, SupervisorError> {
+    let system = std::env::var_os("SystemRoot").ok_or_else(denied)?;
+    if !Path::new(&system).is_absolute()
+        || workspace.to_str().is_none()
+        || output.to_str().is_none()
+        || !clean_meta(&tools.join("bin"))?.is_dir()
+    {
+        return Err(denied());
+    }
+    let os_system32 = Path::new(&system).join("System32");
+    let env=format!(
+        "HOME={}\\0LOCALAPPDATA={}\\0PATH={};{}\\0PYTHONDONTWRITEBYTECODE=1\\0SystemRoot={}\\0TEMP={}\\0TMP={}\\0\\0",
+        local.display(),local.display(),tools.join("bin").display(),
+        os_system32.display(),system.to_string_lossy(),local.display(),
+        local.display()
+    ).replace("\\0","\0");
+    if env.encode_utf16().count()>32767
+        || env.chars().any(|ch|ch=='\u{0001}') {
+        return Err(denied());
+    }
+    Ok(env.encode_utf16().collect())
+}
+
 fn command_for(
     plan: &JobPlan,
     tools: &Path,
     workspace: &Path,
+    output: &Path,
 ) -> Result<(PathBuf, Vec<u16>), SupervisorError> {
+    if cfg!(feature = "multilang-worker") {
+        let (binary, manifest, args) = match plan.recipe_id.as_str() {
+            "python_pytest" => ("bin/python.exe", "pyproject.toml",
+                "-I -m pytest -q -p no:cacheprovider".to_owned()),
+            "js_tests" => ("bin/node.exe", "package.json",
+                "--test --test-reporter=tap".to_owned()),
+            "cpp_cmake_build" => ("bin/cmake.exe", "CMakeLists.txt",
+                format!(
+                    "-DLU_IDE_WORKSPACE=\"{}\" -DLU_IDE_OUTPUT=\"{}\" -P \"{}\"",
+                    workspace.display(),output.display(),
+                    tools.join("drivers/dev03-cmake.cmake").display(),
+                )),
+            _ => ("", "", String::new()),
+        };
+        if !binary.is_empty() {
+            let executable=tools.join(binary);
+            if !clean_meta(&executable)?.is_file()
+                || !clean_meta(&workspace.join(manifest))?.is_file() {
+                return Err(denied());
+            }
+            // All paths are host-created AppContainer directories, not a
+            // project path, command string or environment from the WebView.
+            let command=format!("\"{}\" {}",executable.display(),args);
+            if command.contains('\n') || command.contains('\r')
+                || command.contains('\"')
+                    && executable.to_string_lossy().contains('\"') {
+                return Err(denied());
+            }
+            return Ok((executable,wstr(&command)));
+        }
+    }
     let (subcommand, manifest) = match plan.recipe_id.as_str() {
         "rust_check" => ("check", "Cargo.toml"),
         "rust_build" => ("build", "Cargo.toml"),
@@ -1006,11 +1071,18 @@ where
         trusted_offline_toolchain_root,
         &toolchain,
         &plan.toolchain_sha256,
+        &plan.recipe_id,
     )?;
     acceptance_trace("toolchain_staged");
     fs::create_dir(&output).map_err(io_denied)?;
-    let (exe, mut command) = command_for(plan, &toolchain, &workspace)?;
-    let env = bootstrap_environment(&local, &workspace, &output, &toolchain)?;
+    let (exe, mut command) = command_for(plan, &toolchain, &workspace, &output)?;
+    let multilang = cfg!(feature = "multilang-worker")
+        && crate::runtime_bundles::RuntimeProfile::for_id(&plan.recipe_id).is_some();
+    let env = if multilang {
+        bootstrap_multilang_environment(&local, &workspace, &output, &toolchain)?
+    } else {
+        bootstrap_environment(&local, &workspace, &output, &toolchain)?
+    };
     // Journal is never placed inside the child-controlled AppContainer tree.
     let journal_canonical = supervisor
         .journal_path
@@ -1036,7 +1108,10 @@ where
         seal: input.seal.clone(),
     };
     verify_input(&final_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
-    if trusted_offline_toolchain_digest(&toolchain)? != plan.toolchain_sha256 {
+    if multilang {
+        crate::runtime_bundles::verify_runtime_bundle(
+            &plan.recipe_id, &toolchain, &plan.toolchain_sha256)?;
+    } else if trusted_offline_toolchain_digest(&toolchain)? != plan.toolchain_sha256 {
         return Err(SupervisorError::WrongProjectOrSource);
     }
     acceptance_trace("staged_digests_verified");
