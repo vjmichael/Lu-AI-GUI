@@ -22,12 +22,18 @@ HEX = re.compile(r"^[a-f0-9]{64}$")
 def safe_file(root: pathlib.Path, relative: str) -> pathlib.Path:
     if not relative or relative.startswith(("/", "\\")):
         raise ValueError("absolute/empty path")
-    item = pathlib.PurePosixPath(relative)
-    if any(part in {"", ".", ".."} for part in item.parts) or "\\" in relative:
+    if "\\" in relative or any(part in {"", ".", ".."} for part in relative.split("/")):
         raise ValueError("path escape")
-    result = root.joinpath(*item.parts)
-    if result.is_symlink() or not result.is_file():
-        raise ValueError("missing or linked bundle asset")
+    item = pathlib.PurePosixPath(relative)
+    if root.is_symlink():
+        raise ValueError("linked resource root")
+    result = root
+    for part in item.parts:
+        result = result / part
+        if result.is_symlink():
+            raise ValueError("symlink in original resource path")
+    if not result.is_file():
+        raise ValueError("missing original bundle asset")
     if not result.resolve().is_relative_to(root.resolve()):
         raise ValueError("bundle path escaped root")
     return result
@@ -71,7 +77,7 @@ def reviewed_native_resources(row: dict, root: pathlib.Path, platform: str):
         parts=relative.split("/")
         if (len(parts)>18 or any(not part or part in (".","..") or
             len(part)>200 or not re.fullmatch(r"[A-Za-z0-9._+-]+",part)
-            for part in parts) or parts[0]=="NOTICES"):
+            for part in parts) or parts[0].casefold()=="notices"):
             raise ValueError("unsafe native original resource layout")
         folded=relative.casefold()
         if folded in seen:
