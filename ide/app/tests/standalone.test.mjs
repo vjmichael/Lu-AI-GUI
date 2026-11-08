@@ -295,7 +295,7 @@ test('Wave A2 registry advertises actual host operations without granting execut
   const commands = [...registry.matchAll(/capability!\(\s*"[^"]+"\s*,\s*"(ide_[a-z_]+)"/g)]
     .map(match => match[1]);
   const registered = [...tauri.matchAll(/^\s+(ide_[a-z_]+),?$/gm)].map(match => match[1]);
-  assert.equal(commands.length, 42, 'native capability catalog preserves existing WO9 operations and adds bounded read-only source search');
+  assert.equal(commands.length, 46, 'native capability catalog preserves existing WO9 operations and adds bounded read-only source search');
   assert.equal(new Set(commands).size, commands.length);
   const nativeLspCommands = [
     'ide_lsp_worker_status', 'ide_lsp_start_session',
@@ -354,7 +354,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 42);
+  assert.equal(Object.keys(schemas.operations).length, 46);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
@@ -594,4 +594,46 @@ test('B3 project search is saved-byte and capability-scoped, never an execution 
   assert.match(frontend, /activeProjectIdRef\.current !== projectId/);
   assert.match(frontend, /projectSearchGeneration\.current/);
   assert.match(css, /\.projectSearchResults/);
+});
+
+
+test('B2 private durable draft identity and recovery never grant project source writes', () => {
+  const web=read('../web/main.jsx');
+  const editor=read('../web/code_editor.jsx');
+  const identity=read('../web/buffer_identity.js');
+  const native=read('../src-tauri/src/lib.rs');
+  const vault=read('../../host/src/draft_vault.rs');
+  const catalog=read('../../host/src/capabilities.rs');
+  const schemas=JSON.parse(read('../../host/src/capability_schemas.json'));
+  for(const command of ['ide_draft_checkpoint','ide_draft_latest',
+    'ide_draft_load','ide_draft_discard']){
+    assert.match(native,new RegExp('async fn '+command+'\\('));
+    assert.match(native,new RegExp('registry\\.preview_source_file'));
+  }
+  assert.match(native,/data\.join\("private-draft-recovery"\)/);
+  assert.match(native,/vault\.checkpoint\(input\)/);
+  assert.match(vault,/fs::rename\(&temp,path\)/);
+  assert.match(vault,/sync_all\(\)/);
+  assert.match(vault,/DRAFT_CHECKPOINT_CONFLICT/);
+  assert.match(vault,/MAX_HISTORY:usize=24/);
+  assert.match(vault,/MAX_DRAFT_BYTES:usize=512\*1024/);
+  assert.match(web,/crypto\.randomUUID\(\)/);
+  assert.match(web,/advanceBufferIdentity\(previousBuffer\)/);
+  assert.match(web,/rebaseBufferAfterSave\(currentBuffer,saveStartedBuffer,saved\.revision\)/);
+  assert.match(web,/resolveBufferSpan\(snapshot,current,currentState\)/);
+  assert.match(web,/ide_draft_checkpoint/);
+  assert.match(web,/ide_draft_latest/);
+  assert.match(web,/ide_draft_load/);
+  assert.match(web,/ide_draft_discard/);
+  assert.match(web,/Recover preserved draft/);
+  assert.match(web,/Preserve draft \+ copy durable reference/);
+  assert.match(web,/Private recovery is opt-in/);
+  assert.match(editor,/EditorState\.lineSeparator\.of\(separator\)/);
+  assert.match(editor,/onSelectionChange\?\.\(update\.state\)/);
+  assert.match(identity,/lifetime=persistent-private-app-data/);
+  assert.doesNotMatch(identity,/invoke\(|window\.fetch|navigator\.clipboard/);
+  assert.equal(schemas.operations['draft.checkpoint'].result.$ref,'#/$defs/DraftSnapshot');
+  assert.equal(schemas.operations['draft.load'].result.$ref,'#/$defs/DraftSnapshot');
+  assert.equal(schemas.operations['draft.discard'].result.type,'null');
+  assert.match(catalog,/"draft\.checkpoint"[\s\S]*?"ide_draft_checkpoint"/);
 });
