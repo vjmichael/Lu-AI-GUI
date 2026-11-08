@@ -212,7 +212,7 @@ mod enabled {
         let uri=session.native_document_uri().to_owned();
         let source=DiagnosticSource{
             project_id:plan.project_id.clone(),
-            file_id:format!("file_{}",case.id.replace('-','_')),
+            file_id:format!("file_{}",case.id.replace('-',"_")),
             disk_sha256:snapshot.seal.manifest_sha256.clone(),
             buffer_revision:1,
             language_id:case.language.into(),
