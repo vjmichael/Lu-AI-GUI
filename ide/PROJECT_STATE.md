@@ -674,3 +674,25 @@ Branch `ide/c7-task-source-evidence-20261108` stacked on B11 exact head `d49de2b
 ## DEV-03.1 fixed project build/test discovery — November 8, 2026
 
 Branch `ide/dev03-project-run-profile-discovery-20261108`, stacked on C7 exact commit `07f0a889bd14c3d587e26678307a5c8d32f9fe6e`. Starts Group D DEV-03. New native `IdeWorkspaceRegistry.discover_project_run_profiles` and Tauri `ide_discover_project_run_profiles` inspect only six built-in project manifest conventions, recording current saved SHA or missing/unreadable, and at most 20 conventional test file paths from bounded read-only `tests/` listings. Source text, scripts, workers, commands and effect authority are not accepted from UI or exports. React Jobs page offers explicit Inspect, showing true unavailable Python/JS/CMake project adapters; it can select an existing Cargo recipe ID only, still requiring the unchanged protected WO6 snapshot/pins/OS approval before any actual Run. Typed catalog now 48 operations and 45 definitions. Six native filesystem tests committed; nine exact-source frontend test bodies passed in local V8 with Node assertion emulation (NOT native Node). Workflow `.github/workflows/ide-dev03-project-profiles-native.yml` queues real Windows2022/Ubuntu24 Rust/Node/Tauri source checks. This is **DEV-03.1 source-implemented only**; DEV-03.2 separately approved execution adapters, DEV-03.3 streaming output, DEV-03.4 full test discovery, DEV-03.5 kernel cancellation/installed E2E remain open. Original Group A/B OS failures and Group C candidate consolidation remain independent parallel gates. Handoff: `ide/docs/IDE_DEV03_PROJECT_PROFILES_20261108.md`.
+
+## DEV-03.2A protected Rust project Cargo Build — November 8, 2026
+
+DEV-03.2A on branch ide/dev03-reviewed-rust-build-20261108, stacked on
+DEV-03.1 exact 80486012e817de2f6c64892695e66ebb99292286, extends the
+existing WO6 frozen-source and reviewed native Cargo runner with a fourth
+fixed recipe: rust_build. Exactly Cargo build --locked --offline --manifest-path
+Cargo.toml under original Linux cgroup/Bubblewrap and Windows
+AppContainer/Job/SCM pinned toolchain routes. The original snapshot,
+clean Git HEAD, fresh native OS confirmation, one-use supervisor admission,
+kernel descendant process cancellation and durable journal remain intact.
+Jobs UI exposes Cargo Build and the read-only discoverer now has seven
+profiles; Python pytest, JS/TS tests and CMake are still nonexecuting
+until their own reviewed native adapters exist. Typed profile schemas now
+have seven bounded entries. Added native Rust plan/snapshot/intent hostile
+tests and seven new cross-layer JS contracts; all sixteen JS test bodies
+passed under exact-source V8/Node-assert emulation (NOT native Node).
+Native real OS workflow: .github/workflows/ide-dev03-reviewed-rust-build-native.yml.
+Exact-head Windows/Linux Rust/Node/Tauri and installed protected build,
+cancel/restart and worker source-immunity acceptance remain OPEN.
+Engineering handoff: ide/docs/IDE_DEV03_REVIEWED_RUST_BUILD_20261108.md.
+
