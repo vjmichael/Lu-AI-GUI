@@ -65,9 +65,15 @@ def _public_github_json(path):
     if token:
         headers["Authorization"] = "Bearer " + token
     request = urllib.request.Request(url, headers=headers, method="GET")
-    # Follow no arbitrary redirects, no mutable remote input from source.
+    # Do not follow redirects with a repository Actions read token; a new
+    # domain or path must never receive the Authorization header.
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, request, fp, code, msg, headers, newurl):
+            raise EvidenceError("github_api_redirect_denied")
+
+    opener = urllib.request.build_opener(NoRedirect)
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with opener.open(request, timeout=15) as response:
             if response.geturl().split("?", 1)[0].startswith(
                 "https://api.github.com/repos/" + REPO + "/actions/"
             ) is False:
