@@ -29,8 +29,8 @@ fn source_component_allowed(component: &str) -> bool {
     // is user-controlled. Protect Windows portablility and DOS device aliases.
     let lower = component.to_ascii_lowercase();
     if lower == ".git" || lower == ".lu-ide" || lower.starts_with(".lu-ide-")
-        || component.ends_with([' ', '.'])
-        || component.contains(['<', '>', '"', '|', '?', '*'])
+        || component.ends_with(' ') || component.ends_with('.')
+        || component.chars().any(|c| matches!(c, '<' | '>' | '"' | '|' | '?' | '*'))
     {
         return false;
     }
