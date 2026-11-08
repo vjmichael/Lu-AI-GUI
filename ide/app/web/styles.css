@@ -268,3 +268,16 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .quickOpenResult:hover,.quickOpenResult.selected{background:#29435d;border-color:#537e9c}
 .quickOpenScope{font-size:11px;line-height:1.5;color:#bdcede;margin:4px 0 0}
 @media(max-width:600px){.quickOpenBackdrop{padding-top:4vh}.quickOpenDialog{padding:12px}}
+
+/* DEV-01.2 native exclusive file/folder creation. Explicit input/confirmation. */
+.sourceCreateActions{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px 6px}
+.sourceCreateActions .ghostBtn{flex:1;min-width:75px;font-size:12px}
+.sourceCreateForm{padding:10px;display:grid;gap:7px;background:#172d41;
+  border-top:1px solid #405770;border-bottom:1px solid #405770}
+.sourceCreateForm label{font-size:11px;color:#dbe7f5}
+.sourceCreateForm input{box-sizing:border-box;min-width:0;width:100%;color:#f1f6fd;
+  border:1px solid #758aa0;background:#071929;border-radius:5px;padding:9px;font:inherit}
+.sourceCreateForm input:focus-visible,.sourceCreateButtons button:focus-visible{
+  outline:2px solid #efcb42;outline-offset:2px}
+.sourceCreateButtons{display:flex;gap:6px}
+.sourceCreateForm small{font-size:10px;line-height:1.5;color:#b4c9dd}
