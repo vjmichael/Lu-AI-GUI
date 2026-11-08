@@ -31,6 +31,32 @@ def digest_file(path: Path) -> str:
     return result.hexdigest()
 
 
+def windows_lsp_tree_digest(root: Path) -> str:
+    """Match Windows cap-std D7B digest_tree (path, size, hex SHA, NUL).
+
+    Only derived from an exclusively staged reviewed resource tree. This is
+    not a user-supplied path authority, service grant or signing receipt.
+    """
+    total = hashlib.sha256()
+    def visit(folder: Path) -> None:
+        for child in sorted(folder.iterdir(), key=lambda path: path.name):
+            if child.is_symlink():
+                raise ValueError("symlink in staged Windows language-server tree")
+            if child.is_dir():
+                visit(child)
+            elif child.is_file():
+                relative = child.relative_to(root).as_posix()
+                total.update(relative.encode("utf-8"))
+                total.update(b"\x00")
+                total.update(child.stat().st_size.to_bytes(8, "little"))
+                total.update(digest_file(child).encode("ascii"))
+                total.update(b"\x00")
+            else:
+                raise ValueError("unsafe staged native Windows bundle entry")
+    visit(root)
+    return total.hexdigest()
+
+
 def signed_service(path: Path) -> bool:
     """A release Windows service needs OS Authenticode validation, no fixture bypass."""
     if os.name != "nt":
@@ -111,8 +137,14 @@ def stage(
                 "version": row["releaseVersion"],
                 "license": row["licenseExpression"],
                 "notices": len(row["licenseNoticeFiles"]),
-                # The Rust native worker MUST separately measure the complete
-                # staged bundle tree, including NOTICES, before runtime.
+                "bundleSha256": windows_lsp_tree_digest(target.parent.parent),
+                "rustEnvPin": {
+                    "clangd": "LU_IDE_E2_CLANGD_BUNDLE_SHA256",
+                    "rust-analyzer": "LU_IDE_E2_RUST_ANALYZER_BUNDLE_SHA256",
+                    "ruff": "LU_IDE_E2_RUFF_BUNDLE_SHA256",
+                }[ident],
+                # Rust MUST independently remeasure the entire installed
+                # tree before it consumes the one-shot protected grant.
             }
         service_target = stage_root / "recovery" / "windows_recovery_service.exe"
         service_target.parent.mkdir(parents=True, exist_ok=True)
