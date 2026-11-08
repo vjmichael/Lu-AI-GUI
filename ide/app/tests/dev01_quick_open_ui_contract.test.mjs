@@ -6,11 +6,11 @@ const logic = readFileSync(new URL('../web/quick_open.js',import.meta.url),'utf8
 
 test('real editor Ctrl+P and visible quick-open affordance use native source APIs only',()=>{
   for (const marker of [
-    "collectQuickOpenFiles, matchQuickOpenFiles",
+    "matchQuickOpenFiles, safeProjectRelativePath",
     "if (key === 'p' && !event.shiftKey && !event.altKey)",
     "Quick open · Ctrl+P", 'role="dialog"', 'aria-modal="true"',
     'aria-label="Matching project files"', 'onClick={() => activateQuickOpen(path)}',
-    "invoke('ide_list_source_directory'", "void selectEntry({kind: 'file', relativePath: path})",
+    "invoke('ide_index_project_files'", "void selectEntry({kind: 'file', relativePath: path})",
     "activeProjectIdRef.current !== projectId",
     "quickOpenProjectId !== activeProjectIdRef.current",
     "setQuickOpenLimited(result.truncated)",
