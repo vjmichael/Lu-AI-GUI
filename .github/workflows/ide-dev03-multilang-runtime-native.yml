@@ -1,0 +1,118 @@
+name: IDE DEV03 multi-language pinned runtime native candidate
+on:
+  push:
+    branches: [ide/dev03-multilang-offline-runtime-bundles-20261108]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-dev03-runtime-exact-head
+  cancel-in-progress: true
+
+jobs:
+  exact-head-runtime:
+    name: Runtime bundle and opt-in protected worker / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Assert exact commit and no new default executor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          BASE=c05be009e63906a3f977f1205b7637bd4475d652
+          git merge-base --is-ancestor "$BASE" HEAD
+          git diff --exit-code "$BASE" HEAD -- \
+            ide/host/src/browser.rs ide/host/src/task_evidence.rs \
+            ide/supervisor/src/windows_broker.rs \
+            ide/supervisor/src/windows_recovery_service.rs \
+            ide/supervisor/src/windows_service_client.rs \
+            ide/app/src-tauri/src/debug_backend.rs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Ubuntu Tauri native headers
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Deterministic archive, checksum and malicious staging tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s ide/tools/tests -p 'test_package_reviewed_runtime.py' -v
+          python -m py_compile \
+            ide/tools/package_reviewed_runtime.py \
+            ide/tools/provision_node_candidate.py
+      - name: Package genuine Node candidate and smoke relocated binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ide/tools/provision_node_candidate.py \
+            --stage .dev03-runtime-stage \
+            --output .dev03-node-candidate.zip
+          python -c "import json,zipfile; z=zipfile.ZipFile('.dev03-node-candidate.zip'); m=json.loads(z.read('runtime-manifest.json')); assert m['runtimeExecutionEnabled'] is False and m['approval']=='candidate_not_approved'; print(m['runtimeTreeSha256'])"
+          echo DEV03_NODE_PACKAGE_CANDIDATE_NOT_RELEASE_PIN=PASS
+      - name: Native host and full supervisor with reviewed runtime feature
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cargo test --manifest-path ide/supervisor/Cargo.toml \
+              --features windows-worker,protected-recovery-service,multilang-worker --all-targets
+          else
+            cargo test --manifest-path ide/supervisor/Cargo.toml \
+              --features linux-worker,multilang-worker --all-targets
+          fi
+          echo DEV03_MULTILANG_SUPERVISOR_NATIVE_PASS
+      - name: Native opt-in multi-language Tauri compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml \
+            --features native-multilang --all-targets --locked
+          echo DEV03_OPTIN_MULTILANG_TAURI_NATIVE_PASS
+          echo DEV03_INSTALLED_APP_NSI_GTK_ACCEPTANCE=OPEN
+      - name: Archive actual candidate plus manifest
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: ide-dev03-node-22.16.0-candidate-${{ matrix.os }}
+          path: .dev03-node-candidate.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Record exact-head OS receipt
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .dev03-receipts
+          printf 'sha=%s\nos=%s\nrun=%s\nnode_candidate=true\nruntime_pin_review=OPEN\nos_execution_e2e=OPEN\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" "$GITHUB_RUN_ID" \
+            > .dev03-receipts/native.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-dev03-runtime-evidence-${{ matrix.os }}
+          path: .dev03-receipts/native.txt
+          if-no-files-found: error
+          retention-days: 14
