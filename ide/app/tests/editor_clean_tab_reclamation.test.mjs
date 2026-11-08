@@ -81,5 +81,9 @@ test('UI explicitly opts in and snapshots actual CodeMirror state before closure
   assert.match(source,/for \(const key of draftInFlight\.current\)/);
   assert.match(source,/for \(const key of draftTimers\.current\.keys\(\)\)/);
   assert.match(source,/setTabs\(previous=>previous\.filter\(tab=>!closing\.has\(tab\.key\)\)\)/);
-  assert.doesNotMatch(source,/function closeCleanBackgroundTabs\(\)[\s\S]*?function closeTab\(key\)[\s\S]*?invoke\('ide_save_source_file'/);
+  const beginning=source.indexOf('function closeCleanBackgroundTabs()');
+  const end=source.indexOf('function closeTab(key)',beginning);
+  assert.ok(beginning>=0 && end>beginning);
+  const handler=source.slice(beginning,end);
+  assert.doesNotMatch(handler,/invoke\(|ide_save_source_file|await /);
 });
