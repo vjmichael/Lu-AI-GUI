@@ -245,3 +245,125 @@
      }
      Ok(plans)
  }
+
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use std::time::{SystemTime,UNIX_EPOCH};
+    fn fixture()->(PathBuf,ChatStore,String,String,String){
+        let root=std::env::temp_dir().join(format!(
+            "lu-agent01e-progress-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        let turn=format!("g-{:032x}",7);
+        let plan=format!("p-{:032x}",8);
+        chats.append_user_with_turn_id(
+            &chat,&turn,"Please review this multi-step plan").unwrap();
+        let db=Connection::open(root.join("lu-agent-plans.sqlite")).unwrap();
+        // Minimal schema fixture, but the read_chat_progress implementation
+        // and saved HUMAN ChatStore verifier are the real production code.
+        db.execute_batch(
+            "CREATE TABLE lu_agent_plans(
+                plan_id TEXT,conversation_id TEXT,human_turn_id TEXT,
+                state TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+             CREATE TABLE lu_agent_plan_revisions(
+                plan_id TEXT,revision_index INTEGER,revision_sha256 TEXT);
+             CREATE TABLE lu_agent_plan_revision_steps(
+                plan_id TEXT,revision_index INTEGER,step_index INTEGER,
+                kind TEXT,depends_on INTEGER,expected TEXT);
+             CREATE TABLE lu_agent_plan_revision_reviews(
+                plan_id TEXT,revision_index INTEGER,decision TEXT);
+             CREATE TABLE lu_agent_schedule_owners(
+                plan_id TEXT,revision_sha256 TEXT,state TEXT);
+             CREATE TABLE lu_agent_schedule_proposals(
+                plan_id TEXT,revision_sha256 TEXT,step_index INTEGER,state TEXT);
+             CREATE TABLE lu_agent_deliverable_receipts(
+                plan_id TEXT,revision_sha256 TEXT,step_index INTEGER);"
+        ).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_plans(plan_id,conversation_id,human_turn_id,state)
+             VALUES(?1,?2,?3,'DRAFT')",
+            params![plan,chat,turn]).unwrap();
+        let digest="a".repeat(64);
+        db.execute(
+            "INSERT INTO lu_agent_plan_revisions VALUES(?1,1,?2)",
+            params![plan,digest]).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_plan_revision_steps VALUES(
+                ?1,1,0,'INDEPENDENT_CHECK',NULL,'INDEPENDENT_WITNESS')",
+            params![plan]).unwrap();
+        (root,chats,chat,turn,plan)
+    }
+    #[test]
+    fn genuine_saved_human_turn_scopes_read_only_plan_and_pending_review(){
+        let (root,chats,chat,turn,plan)=fixture();
+        let before=read_chat_progress(&root,&chat,&chats).unwrap();
+        assert_eq!(before.len(),1);
+        assert_eq!(before[0].plan_id,plan);
+        assert_eq!(before[0].original_human_turn_id,turn);
+        assert_eq!(before[0].revision_review,"PENDING_HUMAN_REVIEW");
+        assert_eq!(before[0].steps[0].schedule_state,"NOT_SCHEDULED");
+        assert_eq!(before[0].execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
+        let other=chats.create_chat().unwrap().chat_id;
+        assert!(read_chat_progress(&root,&other,&chats).unwrap().is_empty());
+        drop(chats);
+        let reopened=ChatStore::open(&root).unwrap();
+        assert_eq!(read_chat_progress(&root,&chat,&reopened).unwrap().len(),1);
+        drop(reopened);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn recorded_human_approval_and_interruption_never_mark_worker_proven(){
+        let (root,chats,chat,_,plan)=fixture();
+        let db=Connection::open(root.join("lu-agent-plans.sqlite")).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_plan_revision_reviews VALUES(
+                ?1,1,'APPROVE_PLAN_ONLY')",params![plan]).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_schedule_owners VALUES(
+                ?1,?2,'RECOVERY_REQUIRED')",
+            params![plan,"a".repeat(64)]).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_schedule_proposals VALUES(
+                ?1,?2,0,'ABANDONED_UNCERTAIN')",
+            params![plan,"a".repeat(64)]).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_deliverable_receipts VALUES(
+                ?1,?2,0)",params![plan,"a".repeat(64)]).unwrap();
+        drop(db);
+        let result=read_chat_progress(&root,&chat,&chats).unwrap();
+        assert_eq!(result[0].revision_review,"APPROVED_PLAN_ONLY");
+        assert_eq!(result[0].supervisor_state,"RECOVERY_REQUIRED");
+        assert_eq!(result[0].steps[0].schedule_state,
+            "INTERRUPTED_NEEDS_RECONCILIATION");
+        assert!(result[0].steps[0].historical_witness_linked);
+        assert!(result[0].next_safe_action.contains("no automatic replay"));
+        assert_eq!(result[0].execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
+        drop(chats);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn inconsistent_schema_is_error_not_fabricated_empty_history(){
+        let (root,chats,chat,_,_)=fixture();
+        let db=Connection::open(root.join("lu-agent-plans.sqlite")).unwrap();
+        db.execute("DROP TABLE lu_agent_schedule_proposals",[]).unwrap();
+        drop(db);
+        assert!(read_chat_progress(&root,&chat,&chats).is_err());
+        drop(chats);fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_plan_database_is_rejected(){
+        use std::os::unix::fs::symlink;
+        let (root,chats,chat,_,_)=fixture();
+        let path=root.join("lu-agent-plans.sqlite");
+        let moved=root.join("actual-plan.sqlite");
+        fs::rename(&path,&moved).unwrap();
+        symlink(&moved,&path).unwrap();
+        assert!(read_chat_progress(&root,&chat,&chats).is_err());
+        drop(chats);fs::remove_dir_all(root).unwrap();
+    }
+}
