@@ -164,36 +164,13 @@ jobs:
             [IO.File]::WriteAllText((Join-Path $draftFixture 'main.rs'),"fn main() { println!(`"draft`"); }`n")
             $draftSource=Join-Path $draftFixture 'main.rs'
             $draftDigest=(Get-FileHash -Algorithm SHA256 -LiteralPath $draftSource).Hash
-            # Capture the one disposable CodeMirror session UUID reported
-            # by the actual installed UI. A second installed process must
-            # create a different UUID and restore only saved disk bytes.
+            # Only the real installed UI reports the random disposable B2
+            # buffer ID. The second process must create a different ID.
             $draftTrace=@(& pwsh -NoProfile -Sta -File 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario DraftBufferReference -FixtureRoot $draftFixture 2>&1)
             $draftRc=$LASTEXITCODE
             foreach ($line in $draftTrace) { Write-Host ([string]$line) }
             if ($draftRc -ne 0) { throw 'DENIED: real installed P05 B2 copy/Undo/Save acceptance failed' }
-            $markers=@($draftTrace | Where-Object { [string]$_ -match '^P05_B2_NATIVE_SESSION_BUFFER_ID=[a-fA-F0-9-]{36}
-            $uninstallers=@(Get-ChildItem $root -Filter '*uninstall*.exe' -File)
-            if ($uninstallers.Count -ne 1) { throw 'DENIED: installed uninstaller missing' }
-            $uninstaller=$uninstallers[0].FullName
-            $removal=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
-            if ($removal.ExitCode -ne 0 -or (Test-Path $exe)) { throw 'DENIED: uninstall did not remove installed IDE' }
-            $uninstalled=$true
-            Write-Host 'WO8_NATIVE_INSTALLED_UI_AND_PROJECT=PASS'
-            Write-Host 'WO8_NATIVE_PROTECTED_FEATURES=NOT_ACCEPTED'
-          } finally {
-            if ($installed -and !$uninstalled) {
-              Write-Warning 'WO8 native installed test incomplete; cleanup attempted and acceptance not granted'
-              if ($uninstaller -and (Test-Path $uninstaller)) {
-                try { Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait | Out-Null } catch {}
-              }
-            }
-          }
-      - name: Bound result meaning
-        shell: pwsh
-        run: |
-          Write-Host 'Only real unsigned installed desktop/UI/folder and source read accepted.'
-          Write-Host 'No signed release, protected tool execution or cross-crash recovery claim.'
- })
+            $markers=@($draftTrace | Where-Object { [string]$_ -match '^P05_B2_NATIVE_SESSION_BUFFER_ID=[a-fA-F0-9-]{36}$' })
             if ($markers.Count -ne 1) { throw 'DENIED: no unique genuine installed B2 clipboard buffer ID' }
             $previousId=([string]$markers[0]).Split('=',2)[1]
             $actualSaved=Get-FileHash -Algorithm SHA256 -LiteralPath $draftSource
