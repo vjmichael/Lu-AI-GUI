@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c03d5d638aa89e75b19bc6e04a5f4bec924740b7",
-  "trackedFileCount": 600,
+  "sourceCommitBeforeLock": "86b739a7aa0fdcf590947b583d390df24a92f50e",
+  "trackedFileCount": 601,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -840,6 +840,10 @@
       "blob": "6a4d9ab24b7c91d069cfd833d7f434bd2dab0374"
     },
     {
+      "path": "lu-desktop/tests/m4-installed-acceptance-contract.test.mjs",
+      "blob": "ed0338fe22e4e19159fd708c495302761acbb2b1"
+    },
+    {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
       "blob": "bed636bd5f57242fbffcb9e006de7a0a9234d52f"
     },
@@ -1049,7 +1053,7 @@
     },
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",
-      "blob": "23938a9f1705eeccffbb86fdb748346b050e40fd"
+      "blob": "8dfbd888b0a040de719d3a11b46e6176caa7bb84"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",

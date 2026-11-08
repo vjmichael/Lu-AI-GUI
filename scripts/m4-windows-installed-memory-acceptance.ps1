@@ -58,6 +58,8 @@ $receipt=[ordered]@{
   restartUiWindow='NOT_TESTED'
   workerObserved='NOT_TESTED'
   workerReapedAfterClose='NOT_TESTED'
+  replacementWorkerObserved='NOT_TESTED'
+  replacementWorkerReaped='NOT_TESTED'
   results=[ordered]@{}
   operatorWasSourceOfManualAssertions=$true
   installedAcceptance='NOT_ACCEPTED'
@@ -139,9 +141,21 @@ try{
   Write-Host 'Verify prior original source and correction still exist; then switch to the separately reviewed replacement GGUF.'
   Ask-Actual-Operator 'sourcePreservedAcrossRestart' 'Exact original text and source IDs persisted after restart?'
   Ask-Actual-Operator 'modelSwapRetainsOriginalEvidence' 'After replacing the model, correction and status still remain?'
+  $secondSeen=@(Engine-Pids)
+  $receipt.replacementWorkerObserved=if($secondSeen.Count){
+    'PASS_IMAGE_AND_SHA256_AT_SAMPLE'
+  }else{'INCONCLUSIVE_NO_PINNED_WORKER_AT_SAMPLE'}
   Close-App $second
+  Start-Sleep -Milliseconds 900
+  $secondSurvived=@(Engine-Pids|Where-Object {$secondSeen -contains $_})
+  $receipt.replacementWorkerReaped=if($secondSeen.Count -and !$secondSurvived.Count){
+    'PASS_OS_REAP_OBSERVED'
+  }else{'INCONCLUSIVE_OR_FAILED_REAP'}
+  if($secondSurvived.Count){throw 'Replacement-model worker survived Lu restart/exit'}
   $ready=($receipt.workerObserved -eq 'PASS_IMAGE_AND_SHA256_AT_SAMPLE' -and
-    $receipt.workerReapedAfterClose -eq 'PASS_OS_REAP_OBSERVED')
+    $receipt.workerReapedAfterClose -eq 'PASS_OS_REAP_OBSERVED' -and
+    $receipt.replacementWorkerObserved -eq 'PASS_IMAGE_AND_SHA256_AT_SAMPLE' -and
+    $receipt.replacementWorkerReaped -eq 'PASS_OS_REAP_OBSERVED')
   foreach($key in $fields){
     if($receipt.results[$key] -ne 'OPERATOR_REPORTED_PASS'){$ready=$false}
   }
