@@ -55,6 +55,16 @@ class PythonSemanticBenchmarkSourceTests(unittest.TestCase):
             path.write_text("def f(): pass\n",encoding="utf-8")
             uri=path.as_uri()
             self.assertTrue(same_local_uri(uri,uri))
+            # Both paths must exist and resolve to the identical OS file
+            # identity, never merely share a similar name or extension.
+            alias=path.with_name("case_00_alias.py")
+            try:
+                os.link(path,alias)
+                self.assertTrue(same_local_uri(alias.as_uri(),uri))
+            except OSError:
+                pass
+            missing=path.with_name("case_00_nonexistent.py")
+            self.assertFalse(same_local_uri(missing.as_uri(),uri))
             self.assertTrue(definition_is_inside_source(
                 [{"targetUri":uri,"targetRange":{}}],uri))
             self.assertTrue(definition_is_inside_source(
@@ -100,6 +110,8 @@ class PythonSemanticBenchmarkSourceTests(unittest.TestCase):
             client.stderr_lines=[]
             def request(method,params,timeout):
                 self.assertEqual(method,"shutdown")
+                # A strict LSP provider rejects shutdown params={} (-32602).
+                self.assertIsNone(params)
                 events.append("shutdown")
                 return None,0
             def notify(method,params):
