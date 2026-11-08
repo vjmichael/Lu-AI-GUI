@@ -364,7 +364,11 @@ function App() {
   const parentPath = directory.split('/').slice(0, -1).join('/');
   // Both search and replacement operate on the active unsaved buffer only.
   // The pure planner counts matches before anything is changed.
-  const matchPlan = locateMatches(activeTab?.draft ?? '', findQuery, caseSensitiveFind);
+  const activeEditorState = activeTab ? editorStates.current.get(activeTab.key) : null;
+  // CodeMirror positions are UTF-16 in its canonical LF Text tree; serialized
+  // source can use CRLF. Search and replace offsets must refer to the tree.
+  const matchPlan = locateMatches(activeEditorState?.doc.toString() ?? '',
+    findQuery, caseSensitiveFind);
   const matches = matchPlan.matches;
   function navigateMatch(delta) {
     if (matchPlan.truncated || !matches.length || !activeTab) return;
@@ -377,7 +381,9 @@ function App() {
 
   function replaceMatches(all = false) {
     if (!activeTab || savingKey || explorerPending || !findQuery || matchPlan.truncated) return;
-    const planned = planReplacement(activeTab.draft, findQuery, replaceText, {
+    const searchText = editorStates.current.get(activeTab.key)?.doc.toString();
+    if (searchText === undefined) return;
+    const planned = planReplacement(searchText, findQuery, replaceText, {
       caseSensitive: caseSensitiveFind, all, selectedIndex: findIndex,
     });
     if (planned.status !== 'ready') return;
