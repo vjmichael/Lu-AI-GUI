@@ -495,6 +495,25 @@ mod tests {
         (project, staging)
     }
     #[test]
+    fn fixed_cargo_build_freezes_source_and_manifest_without_script_selection() {
+        let (project, stage) = fixture();
+        let frozen = publish_input(&project, &stage, "rust_build").unwrap();
+        assert_eq!(frozen.seal.manifest_relative_path, "Cargo.toml");
+        assert_eq!(frozen.seal.file_count, 3);
+        assert!(verify_input(&frozen).is_ok());
+        assert!(matches!(
+            publish_input(&project, &stage, "python_pytest"),
+            Err(SnapshotError::InvalidName)
+        ));
+        assert!(matches!(
+            publish_input(&project, &stage, "cargo build --manifest-path ../outside"),
+            Err(SnapshotError::InvalidName)
+        ));
+        retire_input(frozen).unwrap();
+        fs::remove_dir_all(project.parent().unwrap()).unwrap();
+    }
+
+    #[test]
     fn snapshot_copies_hashes_and_revalidates_seal() {
         let (project, stage) = fixture();
         let copied = publish_input(&project, &stage, "rust_tests").unwrap();
