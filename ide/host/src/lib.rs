@@ -32,6 +32,7 @@ pub mod source_span;
 pub mod task_evidence;
 pub mod wire;
 pub mod workflow_orchestrator;
+pub mod workspace_layout;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
