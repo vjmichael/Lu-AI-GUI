@@ -18,7 +18,7 @@ public static class LuMouse {
 '@
 $report = [ordered]@{ tested='installed-nsis-windows'; installed=$false; launched=$false;
   uia=$false; projectRegistered=$false; editorOpened=$false; edited=$false;
-  clipboardVerified=$false; durableClipboardVerified=$false; recoveredAfterRestart=$false; noImplicitSave=$false; completed=$false; failure=$null }
+  clipboardVerified=$false; durableClipboardVerified=$false; recoveredAfterRestart=$false; explicitSaveVerified=$false; noImplicitSave=$false; completed=$false; failure=$null }
 $app = $null
 function Screenshot([string]$name) {
   try {
@@ -228,6 +228,18 @@ try {
   if((Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash -ne $original) {
     throw 'Recovery changed project source without Save'
   }
+  # Explicit human Save after recovery is the ONLY allowed project file change.
+  ClickItem 'Save · Ctrl+S'
+  $changed=$false
+  for($i=0;$i -lt 40;$i++) {
+    Start-Sleep -Milliseconds 350
+    if((Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash -ne $original) {
+      $changed=$true
+      break
+    }
+  }
+  if(!$changed) {throw 'Native editor did not save recovered draft after explicit Save'}
+  $report.explicitSaveVerified=$true
   $report.completed=$true
   Screenshot 'draft-reference-success'
 } catch {
