@@ -1,0 +1,14 @@
+{
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "resources": {
+      "test-lsp-resources/language-servers/": "language-servers",
+      "test-lsp-resources/technical-lsp-resource-receipt.json": "technical-lsp-resource-receipt.json",
+      "test-lsp-resources/DEVELOPMENT-ONLY-NOT-FOR-DISTRIBUTION.txt": "DEVELOPMENT-ONLY-NOT-FOR-DISTRIBUTION.txt",
+      "verification-notices/": "THIRD_PARTY_LICENSES"
+    }
+  }
+}
