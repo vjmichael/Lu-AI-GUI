@@ -2643,6 +2643,17 @@ function App() {
     });
     return ()=>{active=false};
   },[chatId,history]);
+  useEffect(()=>{
+    setMessageReplay(null);
+  },[chatId]);
+  useEffect(()=>{
+    if(!messageReplay)return;
+    const closeOnEscape=event=>{
+      if(event.key==='Escape')setMessageReplay(null);
+    };
+    window.addEventListener('keydown',closeOnEscape);
+    return ()=>window.removeEventListener('keydown',closeOnEscape);
+  },[messageReplay]);
   const chatAppearance=safeAppearance(
     messageDecorationsByChat[chatId]?.appearance
   );
@@ -3982,7 +3993,7 @@ function App() {
           aria-label="Replay saved conversation message"
           onClick={event=>event.stopPropagation()}>
           <header><strong>Replay saved message · {messageReplay.role==='user'?'You':'Lu'}</strong>
-            <button type="button" onClick={()=>setMessageReplay(null)}>Close</button></header>
+            <button type="button" autoFocus onClick={()=>setMessageReplay(null)}>Close</button></header>
           <small>This is an exact saved display replay; it never reruns the AI, calls tools,
             or restores earlier authority.</small>
           <MessageText text={messageReplay.text} role={messageReplay.role}/>
