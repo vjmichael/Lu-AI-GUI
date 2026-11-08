@@ -30,6 +30,7 @@ pub mod source_span;
 pub mod source_create;
 pub mod source_file_transactions;
 pub mod draft_recovery;
+pub mod source_index;
 pub mod task_evidence;
 pub mod wire;
 pub mod workflow_orchestrator;
