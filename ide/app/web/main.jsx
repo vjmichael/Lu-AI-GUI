@@ -13,6 +13,8 @@ import { planThreeWayMerge, renderReviewedMerge,
   conflictExcerpt, mergeCanApply } from './editor_conflict_merge.js';
 import { planTaskSourceLink, sourceLinkDisplay,
   checkedSourceReobservation } from './task_source_evidence.js';
+import { safeProjectRunProfileDiscovery,
+  selectExistingProtectedRecipe } from './project_run_profiles.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
   TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
@@ -160,6 +162,11 @@ function App() {
   const [intentRecipe, setIntentRecipe] = useState('lu_ide_host_tests');
   const [intentBusy, setIntentBusy] = useState(false);
   const [buildStatus, setBuildStatus] = useState(null);
+  // DEV-03.1: per-project read-only profile discovery. The only effect of
+  // choosing a profile is selecting an existing approved Cargo recipe ID.
+  const [projectRunProfiles,setProjectRunProfiles] = useState(null);
+  const [profileDiscoveryBusy,setProfileDiscoveryBusy] = useState(false);
+  const profileDiscoveryRequest=useRef(0);
   const [buildBusy, setBuildBusy] = useState(false);
   const [buildCancelBusy, setBuildCancelBusy] = useState(false);
   const [buildResult, setBuildResult] = useState(null);
@@ -318,6 +325,9 @@ function App() {
     setReviewIntentId(null);
     buildStatusRequest.current += 1;
     setBuildStatus(null);
+    profileDiscoveryRequest.current += 1;
+    setProjectRunProfiles(null);
+    setProfileDiscoveryBusy(false);
     setBuildResult(null);
     setBuildBusy(false);
     setBuildCancelBusy(false);
@@ -1208,6 +1218,47 @@ function App() {
     } finally {
       if (request === intentRequest.current) setIntentBusy(false);
     }
+  }
+
+  async function inspectProjectRunProfiles() {
+    const projectId=activeProjectIdRef.current;
+    if(!projectId || profileDiscoveryBusy || buildBusy ||
+       explorerIoTicket.current || workspaceLayoutOp.current) return;
+    const request=++profileDiscoveryRequest.current;
+    setProfileDiscoveryBusy(true);
+    setProblem('');
+    try {
+      const observed=await invoke('ide_discover_project_run_profiles',{projectId});
+      if(request!==profileDiscoveryRequest.current ||
+         activeProjectIdRef.current!==projectId) return;
+      const checked=safeProjectRunProfileDiscovery(observed,projectId);
+      setProjectRunProfiles(checked);
+      setHint('Inspected '+checked.profiles.length+
+        ' fixed build/test profiles without executing project code.');
+    } catch(error) {
+      if(request===profileDiscoveryRequest.current &&
+         activeProjectIdRef.current===projectId) {
+        setProjectRunProfiles(null);
+        setProblem('Could not inspect project run profiles: '+String(error));
+      }
+    } finally {
+      if(request===profileDiscoveryRequest.current)
+        setProfileDiscoveryBusy(false);
+    }
+  }
+
+  function chooseProjectRunProfile(profileId) {
+    const projectId=activeProjectIdRef.current;
+    try {
+      const selected=selectExistingProtectedRecipe(
+        projectRunProfiles,profileId,projectId);
+      // An immutable recipe selector is NOT an OS confirmation or grant.
+      // Existing startProtectedBuild still gates with pinned release
+      // resources, a frozen input snapshot and fresh native OS approval.
+      setIntentRecipe(selected);
+      setHint('Selected existing protected Cargo recipe '+selected+
+        '. No process started; native approval remains required.');
+    } catch(error) { setProblem('Profile is not runnable: '+String(error)); }
   }
 
   async function refreshProtectedBuildStatus() {
@@ -3044,6 +3095,55 @@ function App() {
               <h2>Build, test and job requests</h2>
               <span>WO6 · Native OS admission required</span>
             </div>
+            <section className="continuityDocument" aria-label="DEV-03 project build and test profiles">
+              <div className="capabilityHeading">
+                <h3>DEV-03 · Project-specific build/test discovery</h3>
+                <button type="button" className="ghostBtn"
+                  disabled={!activeProject || profileDiscoveryBusy || buildBusy}
+                  onClick={()=>void inspectProjectRunProfiles()}>
+                  {profileDiscoveryBusy ? 'Inspecting…' : 'Inspect project profiles'}
+                </button>
+              </div>
+              <p>Native read-only inspection of fixed manifest conventions and
+                conventional files in tests/. This is not exhaustive test
+                discovery, does not execute scripts, and does not validate
+                package dependencies or approve a worker.</p>
+              {projectRunProfiles?.projectId===activeProject?.projectId &&
+                <div className="dev03ProfileGrid">
+                  {projectRunProfiles.profiles.map(profile=>
+                    <article className="dev03ProfileCard" key={profile.id}>
+                      <div className="capabilityHeading">
+                        <strong>{profile.title}</strong>
+                        <small>{profile.operation}</small>
+                      </div>
+                      <p><code>{profile.manifest}</code> ·
+                        {' '}{profile.manifestState.replaceAll('_',' ')}</p>
+                      {profile.sha &&
+                        <small>Saved source SHA-256:
+                          {' '}{profile.sha.slice(0,16)}…</small>}
+                      <p>Conventional test file candidates:
+                        {' '}{profile.testCandidates} ·
+                        {' '}{profile.scanState.replaceAll('_',' ')}</p>
+                      {!!profile.hints.length &&
+                        <p>Example paths:
+                          {' '}{profile.hints.slice(0,4).join(', ')}
+                          {profile.hints.length>4 && ' …'}</p>}
+                      {profile.existingRecipe
+                        ? <button type="button" className="ghostBtn"
+                            disabled={profile.manifestState!==
+                              'saved_file_sha_observed_not_validated' ||
+                              !!buildStatus?.current || buildBusy}
+                            onClick={()=>chooseProjectRunProfile(profile.id)}>
+                            Select existing protected Cargo recipe
+                          </button>
+                        : <p role="status">No reviewed native worker adapter.
+                            Execution unavailable; project scripts are untrusted.</p>}
+                    </article>)}
+                </div>}
+              <p>The existing protected Cargo runner still independently
+                verifies its own source snapshot, toolchain and OS admission.
+                Selecting a recipe here never starts work.</p>
+            </section>
             <div className="continuityDocument jobIntentComposer" aria-label="Protected native build and test">
               <h3>Protected Run / Test</h3>
               <p>Only approved offline Cargo recipes can be executed from a frozen source snapshot
