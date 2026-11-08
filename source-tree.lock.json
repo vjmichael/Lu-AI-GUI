@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "dd231ad78eb61ca7abdaf9f0afa0d037e5b610c0",
+  "sourceCommitBeforeLock": "f333a26df263a6fc7562aefcf417dfc66b8bd9c7",
   "trackedFileCount": 601,
   "files": [
     {
@@ -1129,7 +1129,7 @@
     },
     {
       "path": "src-tauri/lu-core/examples/ansf_memory_baseline.rs",
-      "blob": "e41d68ec5cefeaf33ad644b78e52c36b6b17e335"
+      "blob": "86ba151520dfa43baaa53b9ff5f416d90fd10329"
     },
     {
       "path": "src-tauri/lu-core/examples/inference_supervisor_smoke.rs",
