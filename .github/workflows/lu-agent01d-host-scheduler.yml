@@ -60,13 +60,14 @@ jobs:
             only_one_durable_host_can_own_a_plan_and_nothing_is_executable \
             fresh_human_consent_and_requested_resource_ceiling_are_required \
             cancel_intent_and_host_quarantine_do_not_reap_or_replay_workers \
+            clean_release_is_irreversible_and_cannot_become_a_restart_lease \
             stale_goal_and_stale_plan_revision_cannot_receive_a_step \
             no_independent_receipt_means_no_completion_and_no_next_step \
             independently_checked_historical_receipt_unlocks_only_a_new_proposal; do
             grep -Fq "test agent_host_scheduler::tests::$name ... ok" \
               agent01d-evidence/host-scheduling-native.log
           done
-          grep -Fq 'test result: ok. 6 passed; 0 failed;' \
+          grep -Fq 'test result: ok. 7 passed; 0 failed;' \
             agent01d-evidence/host-scheduling-native.log
       - name: Run original AGENT-01A/B/C behavior against current integrated head
         shell: bash
