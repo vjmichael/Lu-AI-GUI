@@ -61,7 +61,7 @@ jobs:
           cargo test --manifest-path lu-desktop/tests/native-reviewed-recovery/Cargo.toml \
             --lib reviewed_app_audit::tests -- --nocapture \
             2>&1 | tee e1-p09-evidence/native-journal-audit.log
-          grep -Eq 'test result: ok\. [23] passed; 0 failed;' e1-p09-evidence/native-journal-audit.log
+          grep -Eq 'test result: ok\. [4-9][0-9]* passed; 0 failed;' e1-p09-evidence/native-journal-audit.log
       - name: Host UI integration and no fake authority contract
         shell: bash
         run: |
