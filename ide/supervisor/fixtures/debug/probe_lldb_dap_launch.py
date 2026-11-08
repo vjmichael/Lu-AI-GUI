@@ -96,7 +96,9 @@ def parse(buffer):
 
 def classification(response):
     """Fixed-vocabulary native diagnostics; never print error payload."""
-    error = (response.get("body") or {}).get("error") or {}
+    body = response.get("body")
+    error = body.get("error") if isinstance(body, dict) else {}
+    error = error or {}
     fragments = []
     if isinstance(error, str):
         fragments.append(error)
