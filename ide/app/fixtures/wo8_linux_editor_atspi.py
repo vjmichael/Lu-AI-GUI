@@ -153,6 +153,45 @@ def _native_dialog_ancestor(node):
     return False
 
 
+def _x11_dialog_activation(attempt):
+    # AT-SPI can expose a GTK chooser role while omitting its action buttons.
+    # Only the active visible *OS chooser window*, verified by both AT-SPI
+    # role and X11 title, is eligible for a native keyboard fallback.
+    # Never send keys to the Tauri main window or an unrelated application.
+    if not _native_chooser_still_open():
+        return False
+    try:
+        active = subprocess.check_output(
+            ["xdotool", "getactivewindow"], text=True, timeout=5).strip()
+        if not active.isdigit():
+            return False
+        title = subprocess.check_output(
+            ["xdotool", "getwindowname", active], text=True, timeout=5).strip().casefold()
+    except (OSError, ValueError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired):
+        print("P04_GTK_X11_CHOOSER=active_window_unavailable", flush=True)
+        return False
+    allowed = ("open", "open folder", "select folder", "select a folder",
+               "choose folder", "choose a folder", "select")
+    if title not in allowed and not any(
+            text in title for text in ("select folder", "choose folder", "open folder")):
+        print("P04_GTK_X11_CHOOSER=unrecognized_active_window_title", flush=True)
+        return False
+    # xdotool genuinely delivers OS keyboard events to the focused GTK
+    # dialog. A sent key is never itself accepted as a successful project
+    # registration; the installed WebView must expose the exact project.
+    try:
+        subprocess.run(["xdotool", "windowactivate", "--sync", active],
+                       check=True, timeout=5)
+        key("Return" if attempt % 2 == 0 else "alt+o")
+        print("P04_GTK_X11_CHOOSER=visible_real_os_dialog_keyboard;"
+              "attempt=" + str(attempt), flush=True)
+        return True
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        print("P04_GTK_X11_CHOOSER=native_key_unavailable", flush=True)
+        return False
+
+
 def _native_picker_confirm(attempt=0):
     # The previous real Ubuntu 26.04 run clicked an authentic AT-SPI
     # chooser action THREE times and the dialog never closed. A generic
@@ -199,6 +238,10 @@ def _native_picker_confirm(attempt=0):
                         return
         except Exception:
             continue
+    # A separately witnessed native GTK X11 dialog may have zero exposed
+    # AT-SPI action buttons. Try bounded real OS keyboard acceptance instead.
+    if _x11_dialog_activation(attempt):
+        return
     print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=missing_real_chooser_button;"
           "matching_dialog_buttons=" + str(len(ranked)), flush=True)
     deny("native_dialog_confirmation_not_found")

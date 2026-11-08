@@ -81,6 +81,20 @@ class NativePickerSourceTests(unittest.TestCase):
         self.assertIn("Deny 'wo9_native_commit_not_observed'",source)
         self.assertIn("git -C $fixed diff-tree --no-commit-id",source)
 
+    def test_linux_os_chooser_keyboard_fallback_requires_real_native_active_window(self):
+        source=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
+        section=source.split("def _x11_dialog_activation(attempt):",1)[1].split(
+            "def _native_picker_confirm(",1)[0]
+        for term in ("_native_chooser_still_open()", "xdotool", "getactivewindow",
+                     "getwindowname", "windowactivate", "Return", "alt+o",
+                     "unrecognized_active_window_title"):
+            self.assertIn(term, section)
+        self.assertIn("if _x11_dialog_activation(attempt):",source)
+        self.assertIn("if not _registered_native_project_is_exposed():",source)
+        self.assertIn('deny("native_folder_chooser_did_not_register_project")',source)
+        self.assertNotIn("window.__TAURI_INTERNALS__",section)
+        self.assertNotIn("invoke_tauri",section)
+
     def test_linux_real_dialog_prefers_exact_select_and_spatial_acceptance(self):
         native=(ROOT/"ide/app/fixtures/wo8_linux_editor_atspi.py").read_text(encoding="utf-8")
         chooser=native.split("def _native_picker_confirm(",1)[1].split(

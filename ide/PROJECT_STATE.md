@@ -514,3 +514,6 @@ Nov 7/8 exact-head Ubuntu26 installed app: real rollback, notice bytes and GUI w
 
 ## Exact native UI diagnostic follow-up
 Windows WO9 real consent x2 and project review PASS, but Git HEAD did not change at instantaneous readback; native test now polls actual commit SHA for 24s (no synthetic success). Ubuntu26 real Debian rollback PASS, but only one generic GTK Open control appeared and project chooser never satisfied OS registration; active visible chooser and exact non-dialog GUI project required, otherwise denied. Source tests added; signing/independent legal review remain explicitly deferred and release false.
+
+### Linux GTK chooser active-window fallback
+Latest native Ubuntu 26.04 `.deb` build/failed-upgrade recovery passed, but GTK chooser showed no native action buttons; implemented bounded OS X11 chooser-identified keyboard fallback gated on actual AT-SPI visible chooser and real app registration. Native OS retest is pending. Signing/legal publisher identity remain deferred, release remains default deny.
