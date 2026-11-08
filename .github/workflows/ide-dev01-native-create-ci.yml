@@ -1,0 +1,80 @@
+name: IDE DEV-01.2 native file and folder creation
+on:
+  push:
+    branches: ['ide/dev01-native-create-20261108']
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-dev01-native-create-ci.yml'
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-dev01-native-create-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  dev01-native-source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 85
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Prove exact source SHA and reviewed locked deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "87d0045a4be1c78651f080300aba71c14dbe1f30"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+      - name: Install native WebKit system headers
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Real host source and file operation regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets
+      - name: Real standalone frontend build and scope tests
+        working-directory: ide/app
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Native desktop Tauri type check pinned to existing lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --lib --locked
+      - name: Bounded source acceptance only
+        shell: bash
+        run: |
+          echo "DEV01_NATIVE_CREATE_WIN_LINUX_SOURCE=PASS"
+          echo "DEV01_REAL_INSTALLED_UI=NOT_ACCEPTED"
+          echo "DEV01_RENAME_MOVE_TRASH_RECOVERY=NOT_ACCEPTED"
+          echo "DEV01_RELEASE_SIGNING_LEGAL=NOT_ACCEPTED"
