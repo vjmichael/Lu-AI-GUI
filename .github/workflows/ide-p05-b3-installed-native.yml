@@ -8,6 +8,8 @@ on:
   push:
     branches: ['ide/p05-b3-project-search-20261107']
     paths:
+      - 'ide/docs/IDE_P05_B3_PROJECT_SEARCH_PORT_20261107.md'
+      - '.github/workflows/ide-p05-b3-native-ci.yml'
       - 'ide/app/**'
       - 'ide/host/**'
       - 'ide/PROJECT_STATE.md'
