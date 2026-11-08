@@ -600,6 +600,15 @@ impl ChatStore {
         self.require(chat_id).ok()?.authenticated_chat_turn(chat_id,user_turn_id)
             .ok().flatten().map(|(text,_)|text)
     }
+    /// Source of truth for a linked reply: a host-authenticated turn's
+    /// ORIGINAL visible ANSF sequence, not a mutable display revision.
+    pub fn original_user_turn_visible_seq(
+        &self,chat_id:&str,turn_id:&str
+    )->Result<Option<(i64,String)>,String>{
+        self.require(chat_id)?
+            .authenticated_chat_turn_visible_seq(chat_id,turn_id)
+            .map_err(to_err)
+    }
     pub fn reader_user_turn_matches(&self,chat_id:&str,generation_id:&str,
         expected_text:&str)->Result<bool,String>{
         self.require(chat_id)?.authenticated_reader_turn(chat_id,generation_id,expected_text)
