@@ -4,8 +4,9 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','DraftBufferReference')][string]$Scenario='Shell',
-  [string]$FixtureRoot=''
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','DraftBufferReference','DraftBufferReferenceRestart')][string]$Scenario='Shell',
+  [string]$FixtureRoot='',
+  [string]$ExpectedPreviousBufferId=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -458,7 +459,7 @@ try {
   Click 'Projects'
   Require 'Workspace projects'
   $stage='picker'
-  if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
+  if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject','DraftBufferReferenceRestart')) {
     # Native folder chooser must be opened through UI, never by trusting input path.
     Click '+ Open folder'
     Start-Sleep -Seconds 2
@@ -478,7 +479,7 @@ try {
         !(Test-Path -LiteralPath (Join-Path $fixed 'main.rs'))) {
       Deny 'non_disposable_or_missing_fixture'
     }
-    if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
+    if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject','DraftBufferReferenceRestart')) {
       # Native chooser name is not an IDE project registration.
       [System.Windows.Forms.SendKeys]::SendWait('^l')
       if ($fixed -match '[+^%~(){}\[\]]') { Deny 'native_picker_path_contains_keyboard_metacharacters' }
@@ -993,6 +994,150 @@ try {
         Deny 'draft_undo_implicitly_saved_source'
       }
       Write-Host 'P05_B2_INSTALLED_DRAFT_REFERENCE_COPY_UNDO_NO_IMPLICIT_SAVE=PASS'
+      # Now change and explicitly Save a new revision. Only the real UI Save
+      # may mutate the fixture; a clipboard reference must never do so.
+      $editor=Find-Control 'Source editor text' '' 20
+      $editor.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}')
+      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}// P05_B2_EXPLICIT_SAVE')
+      Start-Sleep -Milliseconds 450
+      if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $originalSha) {
+        Deny 'draft_post_undo_implicit_disk_save'
+      }
+      Click 'Save · Ctrl+S'
+      $newSha=''
+      $deadline=(Get-Date).AddSeconds(18)
+      do {
+        Start-Sleep -Milliseconds 350
+        $newSha=(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($newSha -ne $originalSha -and
+            [IO.File]::ReadAllText($source).Contains('P05_B2_EXPLICIT_SAVE')) { break }
+      } while ((Get-Date) -lt $deadline)
+      if ($newSha -eq $originalSha -or
+          ![IO.File]::ReadAllText($source).Contains('P05_B2_EXPLICIT_SAVE')) {
+        Deny 'draft_explicit_save_did_not_persist'
+      }
+      Require 'Saved main.rs'
+      [System.Windows.Forms.Clipboard]::Clear()
+      Click 'Copy draft reference'
+      $third=''
+      $deadline=(Get-Date).AddSeconds(16)
+      while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 300
+        if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+          $third=[System.Windows.Forms.Clipboard]::GetText()
+          if ($third.StartsWith('ide-buffer:v1')) { break }
+        }
+      }
+      $thirdId=[regex]::Match($third,'(?:^| )buffer=([a-fA-F0-9-]{36})')
+      $thirdRev=[regex]::Match($third,'(?:^| )revision=([1-9][0-9]*)')
+      if (!$third.StartsWith('ide-buffer:v1') -or !$thirdId.Success -or !$thirdRev.Success -or
+          $thirdId.Groups[1].Value -cne $idMatch.Groups[1].Value -or
+          [int]$thirdRev.Groups[1].Value -le [int]$secondRev.Groups[1].Value -or
+          $third -notmatch ('baseDisk='+$newSha) -or
+          $third -notmatch 'draftSha256=[a-f0-9]{64}' -or
+          $third -notmatch 'lifetime=session-only' -or
+          $third.Contains('P05_B2_EXPLICIT_SAVE') -or
+          (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $newSha) {
+        Deny 'saved_draft_reference_not_rebased_to_actual_native_disk_sha'
+      }
+      # Purely random disposable-session identity; never print file content.
+      # The workflow forwards this OS-observed value to the next real launch.
+      Write-Host ('P05_B2_NATIVE_SESSION_BUFFER_ID='+$thirdId.Groups[1].Value)
+      Write-Host 'P05_B2_INSTALLED_DRAFT_EXPLICIT_SAVE_REBASE=PASS'
+    }
+    if ($Scenario -eq 'DraftBufferReferenceRestart') {
+      # This is a distinct installed application process. Reopen the known
+      # persisted project via its real visible UI, never a native IPC shortcut.
+      if ($ExpectedPreviousBufferId -notmatch '^[a-fA-F0-9-]{36}
+      $source=Join-Path $fixed 'main.rs'
+      $saved=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
+      $editor=Find-Control 'Source editor text' ''
+      if (!$editor.Current.IsKeyboardFocusable) { Deny 'editor_not_accessibly_focusable' }
+      $editor.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^{END}')
+      [System.Windows.Forms.SendKeys]::SendWait('{ENTER}// WO8_EXPLICIT_PERSISTENCE_SENTINEL')
+      Start-Sleep -Milliseconds 900
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne $saved) {
+        Deny 'unsaved_editor_draft_mutated_disk'
+      }
+      Click 'Review changes'
+      Require 'Save reviewed changes'
+      Click 'Return to editor'
+      Click 'Save · Ctrl+S'
+      $deadline=(Get-Date).AddSeconds(12)
+      do {
+        Start-Sleep -Milliseconds 450
+        $current=[IO.File]::ReadAllText($source)
+        if ($current.Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) { break }
+      } while ((Get-Date) -lt $deadline)
+      if (!$current.Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) { Deny 'explicit_save_not_persisted' }
+      Require 'Saved main.rs'
+      Write-Host 'WO8_INSTALLED_NATIVE_REVIEW_AND_EXPLICIT_SAVE=PASS'
+    } elseif ($Scenario -eq 'P04ReinstalledProject') {
+      # No new picker registration: verify persisted user catalog and source
+      # in the genuinely reinstalled desktop, without writing source bytes.
+      Require 'Source editor text'
+      Require 'main.rs'
+      Write-Host 'P04_INSTALLED_REINSTALL_PERSISTED_PROJECT_AND_EDITOR=PASS'
+    } elseif ($Scenario -eq 'PersistedRestart') {
+      if (![IO.File]::ReadAllText((Join-Path $fixed 'main.rs')).Contains('WO8_EXPLICIT_PERSISTENCE_SENTINEL')) {
+        Deny 'previously_saved_file_missing_after_restart'
+      }
+      Require 'Source editor text'
+      Write-Host 'WO8_NATIVE_PERSISTENT_PROJECT_REOPEN_AND_SOURCE=PASS'
+    } else {
+      Write-Host 'WO8_INSTALLED_NATIVE_FOLDER_REGISTRATION_AND_SOURCE_OPEN=PASS'
+    }
+  }
+  foreach($name in $workerBaseline.Keys) {
+    if ((BoundedProcess $name) -gt $workerBaseline[$name]) {
+      Deny ('unauthorized_worker_autostart_'+$name)
+    }
+  }
+  Write-Host ('WO8_INSTALLED_NATIVE_UI_SCENARIO='+$Scenario+':PASS')
+  Write-Host 'WO8_INSTALLED_PROTECTED_RUN_TEST_DEBUG=NOT_ACCEPTED'
+} finally {
+  if ($proc) {
+    try {
+      $proc.Refresh()
+      if (!$proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force -ErrorAction Stop
+        $proc.WaitForExit(10000) | Out-Null
+      }
+    } catch { Deny 'desktop_process_reap_unverified' }
+  }
+}
+) {
+        Deny 'missing_previous_native_buffer_identity'
+      }
+      $source=Join-Path $fixed 'main.rs'
+      if (![IO.File]::ReadAllText($source).Contains('P05_B2_EXPLICIT_SAVE')) {
+        Deny 'previous_actual_disk_save_missing_after_restart'
+      }
+      $savedSha=(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+      [System.Windows.Forms.Clipboard]::Clear()
+      Click 'Copy draft reference'
+      $restarted=''
+      $deadline=(Get-Date).AddSeconds(16)
+      while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 300
+        if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+          $restarted=[System.Windows.Forms.Clipboard]::GetText()
+          if ($restarted.StartsWith('ide-buffer:v1')) { break }
+        }
+      }
+      $restartId=[regex]::Match($restarted,'(?:^| )buffer=([a-fA-F0-9-]{36})')
+      if (!$restarted.StartsWith('ide-buffer:v1') -or !$restartId.Success -or
+          $restartId.Groups[1].Value -ieq $ExpectedPreviousBufferId -or
+          $restarted -notmatch ('baseDisk='+$savedSha) -or
+          $restarted -notmatch 'draftSha256=[a-f0-9]{64}' -or
+          $restarted -notmatch 'lifetime=session-only' -or
+          $restarted.Contains('P05_B2_EXPLICIT_SAVE') -or
+          (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $savedSha) {
+        Deny 'native_restart_reused_stale_session_draft_reference'
+      }
+      Write-Host 'P05_B2_INSTALLED_RESTART_NEW_SESSION_ID_AND_SAVED_SHA=PASS'
     }
     if ($Scenario -eq 'EditorPersistence') {
       $source=Join-Path $fixed 'main.rs'
