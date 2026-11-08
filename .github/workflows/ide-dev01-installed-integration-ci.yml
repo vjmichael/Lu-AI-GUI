@@ -1,0 +1,278 @@
+name: IDE DEV-01.3-01.6 genuine installed desktop integration
+on:
+  push:
+    branches: ['ide/dev01-installed-integration-20261108']
+    paths:
+      - 'ide/app/**'
+      - 'ide/host/**'
+      - '.github/workflows/ide-dev01-installed-integration-ci.yml'
+  pull_request:
+    paths:
+      - 'ide/app/**'
+      - 'ide/host/**'
+      - '.github/workflows/ide-dev01-installed-integration-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  genuine-installed-windows-dev01:
+    runs-on: windows-2022
+    timeout-minutes: 105
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Verify exact SHA and immutable lock bytes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ine '${{ github.event.pull_request.head.sha || github.sha }}') {
+            throw 'DENIED: real installed Windows SHA checkout drift'
+          }
+          if ((git rev-parse HEAD:ide/app/package-lock.json).Trim() -ne 'dfe4412bfacfc22ad1149f5213f4a26aa49b4067') {
+            throw 'DENIED: native Node lock not reviewed'
+          }
+          if ((git rev-parse HEAD:ide/app/src-tauri/Cargo.lock).Trim() -ne '87d0045a4be1c78651f080300aba71c14dbe1f30') {
+            throw 'DENIED: native Cargo lock not reviewed'
+          }
+      - name: Real Windows source and UI witness contract
+        working-directory: ide/app
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact locked frontend dependency build failed' }
+          npm run check
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: genuine frontend test contracts failed' }
+      - name: Fetch resolved Windows Cargo bytes and collect original third-party license inventory
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: Cargo locked fetch failed' }
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: Windows dependency provenance differs' }
+          python ide/packaging/verify_tauri_minor.py --repo-root .
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: Tauri minor not verified' }
+          python ide/packaging/upstream_notice_receipt.py --repo-root . --source-sha $env:SOURCE_SHA --output ide/app/src-tauri/upstream-notice-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: upstream original licenses not retrieved' }
+          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --upstream-receipt ide/app/src-tauri/upstream-notice-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: original license notice inventory incomplete' }
+      - name: Build actual unsigned Windows NSIS package
+        working-directory: ide/app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.installed-smoke.conf.json --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: genuine NSIS build failed' }
+      - name: Verify exact installed Windows artifact and execute all four GUI features
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-StrictMode -Version Latest
+          $setups=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'DENIED: exactly one real NSIS package required' }
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --require-upstream --artifact $setups[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: package license evidence invalid' }
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1').Path,
+            [ref]$tokens,[ref]$errors)
+          if ($errors.Count) { throw "DENIED: real OS UIA witness syntax failed: $($errors[0])" }
+          $install=Join-Path $env:RUNNER_TEMP ('lu-ide-dev01-install-'+$env:GITHUB_RUN_ID)
+          $project=Join-Path $env:RUNNER_TEMP ('lu-ide-dev01-project-'+$env:GITHUB_RUN_ID)
+          $app=Join-Path $install 'lu-ide-desktop.exe'
+          if ((Test-Path $install) -or (Test-Path $project)) {
+            throw 'DENIED: runner project/installer not disposable'
+          }
+          New-Item -ItemType Directory -Path $project | Out-Null
+          [IO.File]::WriteAllText((Join-Path $project 'main.rs'),"fn main() { println!(`"dev01`"); }`n")
+          [IO.File]::WriteAllText((Join-Path $project 'side.rs'),"fn side() {}`n")
+          [IO.File]::WriteAllText((Join-Path $project 'move-me.rs'),"fn move_me() {}`n")
+          for ($dir=0; $dir -lt 24; $dir++) {
+            $folder=Join-Path $project ('src-{0:D2}' -f $dir)
+            New-Item -ItemType Directory -Path $folder | Out-Null
+            for ($file=0; $file -lt 36; $file++) {
+              [IO.File]::WriteAllText((Join-Path $folder ('file-{0:D3}.rs' -f $file)), 'source')
+            }
+          }
+          $installed=$false
+          $removed=$false
+          try {
+            $proc=Start-Process -FilePath $setups[0].FullName -ArgumentList @('/S',('/D='+$install)) -PassThru -Wait
+            if ($proc.ExitCode -ne 0 -or !(Test-Path -LiteralPath $app -PathType Leaf)) {
+              throw 'DENIED: native installer or installed binary missing'
+            }
+            $installed=$true
+            $inventory=Join-Path $install 'THIRD_PARTY_LICENSES\inventory.json'
+            $upstream=Join-Path $install 'THIRD_PARTY_LICENSES\upstream-fetch.json'
+            if (!(Test-Path -LiteralPath $inventory) -or !(Test-Path -LiteralPath $upstream)) {
+              throw 'DENIED: installed native license bundle missing'
+            }
+            $manifest=Get-Content -LiteralPath $inventory -Raw | ConvertFrom-Json
+            if ($manifest.sourceSha -ine $env:SOURCE_SHA -or $manifest.releaseApproved -ne $false) {
+              throw 'DENIED: installed native notices bound to wrong SHA or fake release approval'
+            }
+            $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $app).Hash
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $app -ExpectedSha256 $sha -Scenario Dev01Integrated -FixtureRoot $project
+            if (!$?) { throw 'DENIED: real Windows first installed DEV01 GUI sequence failed' }
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $app -ExpectedSha256 $sha -Scenario Dev01RecoveryRestart -FixtureRoot $project
+            if (!$?) { throw 'DENIED: real Windows post-kill draft recovery failed' }
+            $uninstallers=@(Get-ChildItem $install -Filter '*uninstall*.exe' -File)
+            if ($uninstallers.Count -ne 1) { throw 'DENIED: genuine native uninstaller missing' }
+            $removedProcess=Start-Process -FilePath $uninstallers[0].FullName -ArgumentList '/S' -PassThru -Wait
+            if ($removedProcess.ExitCode -ne 0 -or (Test-Path $app)) {
+              throw 'DENIED: installed Windows package not cleanly removed'
+            }
+            $removed=$true
+            Write-Host 'DEV01_INSTALLED_WINDOWS_ALL_FOUR_AND_UNINSTALL=PASS'
+            Write-Host 'DEV01_REAL_WINDOWS_PROCESS_KILL_RECOVERY=PASS'
+            Write-Host 'DEV01_SIGNED_RELEASE=NOT_ACCEPTED'
+          } finally {
+            if ($installed -and !$removed) {
+              $uninstaller=@(Get-ChildItem $install -Filter '*uninstall*.exe' -File -ErrorAction SilentlyContinue)
+              if ($uninstaller.Count -eq 1) {
+                try { Start-Process -FilePath $uninstaller[0].FullName -ArgumentList '/S' -PassThru -Wait | Out-Null } catch {}
+              }
+              Write-Warning 'DEV01 Windows installed acceptance did not finish; cleanup attempted'
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev01-windows-native-installer-licensing
+          path: |
+            ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
+            ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/verification-package-receipt.json
+          if-no-files-found: warn
+          retention-days: 7
+  genuine-installed-linux-dev01:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 105
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Verify exact Linux SHA and original immutable locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "87d0045a4be1c78651f080300aba71c14dbe1f30"
+      - name: Real GTK/AT-SPI Debian package and native test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev xvfb xauth xdotool dbus-x11 x11-utils at-spi2-core python3-pyatspi openbox
+      - name: Validate Linux genuine accessibility driver syntax before installing
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile ide/app/fixtures/dev01_linux_installed_atspi.py ide/app/fixtures/wo8_linux_editor_atspi.py
+          python3 - <<'PY'
+          from pathlib import Path
+          driver=Path("ide/app/fixtures/dev01_linux_installed_atspi.py").read_text()
+          for action in ("native.select_native_folder()", "native.editor_project()",
+                         "first.kill()", "second = native.start()", "native.activate("):
+              assert action in driver, action
+          assert "window.__TAURI_INTERNALS__" not in driver
+          print("DEV01_LINUX_GENUINE_ATSPI_DRIVER_SOURCE=PASS")
+          PY
+      - name: Real Linux frontend, source graph, and provenance
+        shell: bash
+        working-directory: ide/app
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
+          python ../packaging/verify_tauri_minor.py --repo-root ../..
+          python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha "${{ github.event.pull_request.head.sha || github.sha }}" --output src-tauri/upstream-notice-receipt.json
+          python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha "${{ github.event.pull_request.head.sha || github.sha }}" --upstream-receipt src-tauri/upstream-notice-receipt.json
+          npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.wo8.linux.conf.json --bundles deb
+      - name: Install, exercise and remove actual Debian package with four native OS GUI features
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
+          [[ "${#packages[@]}" -eq 1 ]] || { echo 'DENIED: requires one exact real Debian package'; exit 2; }
+          deb="${packages[0]}"
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha "${{ github.event.pull_request.head.sha || github.sha }}" --require-upstream --artifact "$deb" --receipt ide/app/src-tauri/verification-package-receipt.json
+          dpkg-deb --contents "$deb" | grep -F '/THIRD_PARTY_LICENSES/inventory.json' >/dev/null
+          dpkg-deb --contents "$deb" | grep -F '/THIRD_PARTY_LICENSES/upstream-fetch.json' >/dev/null
+          package="$(dpkg-deb --field "$deb" Package)"
+          [[ "$package" == lu-ide-desktop || "$package" == lu-ide ]] || exit 2
+          if [[ "$(dpkg-query --show --showformat='${Status}' "$package" 2>/dev/null || true)" == 'install ok installed' ]]; then
+            echo 'DENIED: preexisting IDE package on runner' >&2
+            exit 2
+          fi
+          installed=0
+          cleanup() {
+            if [[ "$installed" -eq 1 ]]; then
+              sudo dpkg --remove "$package" || return 2
+              if dpkg-query --show --showformat='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+                echo 'DENIED: Debian package still installed' >&2
+                return 2
+              fi
+            fi
+          }
+          trap cleanup EXIT
+          sudo dpkg --install "$deb"
+          installed=1
+          [[ -x /usr/bin/lu-ide-desktop ]] || { echo 'DENIED: installed Linux executable missing' >&2; exit 2; }
+          root="$RUNNER_TEMP/lu-ide-dev01-project-${GITHUB_RUN_ID}"
+          mkdir -m 700 "$root"
+          printf 'fn main() { println!("dev01"); }\n' > "$root/main.rs"
+          printf 'fn side() {}\n' > "$root/side.rs"
+          printf 'fn move_me() {}\n' > "$root/move-me.rs"
+          for dir in $(seq 0 23); do
+            folder="$(printf '%s/src-%02d' "$root" "$dir")"
+            mkdir -m 700 "$folder"
+            for file in $(seq 0 35); do
+              printf 'source' > "$(printf '%s/file-%03d.rs' "$folder" "$file")"
+            done
+          done
+          env WO8_INSTALLED_EXE=/usr/bin/lu-ide-desktop WO8_FIXTURE_ROOT="$root" \
+            dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+            /usr/bin/python3 ide/app/fixtures/dev01_linux_installed_atspi.py
+          echo 'DEV01_LINUX_REAL_DEBIAN_ALL_FOUR=PASS'
+          echo 'DEV01_LINUX_SIGNATURE_AND_LEGAL_APPROVAL=NOT_ACCEPTED'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev01-linux-native-debian-licensing
+          path: |
+            ide/app/src-tauri/target/release/bundle/deb/*.deb
+            ide/app/src-tauri/verification-notices/**
+            ide/app/src-tauri/verification-package-receipt.json
+          if-no-files-found: warn
+          retention-days: 7
