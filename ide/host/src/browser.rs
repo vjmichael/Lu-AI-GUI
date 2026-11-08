@@ -29,6 +29,7 @@ pub enum BrowserError {
     TooLarge,
     Conflict,
     InvalidRevision,
+    InvalidSearch,
     Io(io::Error),
     HostUnavailable,
 }
