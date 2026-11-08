@@ -1,9 +1,9 @@
-//! E2 native Windows-only Tauri host for reviewed installer-packaged clangd.
+//! E2 native Windows/Linux Tauri host for reviewed installer-packaged language servers.
 //! This module is compiled ONLY with explicit native-lsp feature. The default
 //! IDE alpha exposes no language-server executable or Lu bridge.
 //! An OS dialog (not a UI boolean) grants one fresh D3 job for an exact source
 //! snapshot after release pins, registered project and disk revision checks.
-#![cfg(all(windows, feature = "native-lsp"))]
+#![cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
 use std::{
     fs::{self, File},
     io::Read,
@@ -19,13 +19,23 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use lu_ide_workspace::IdeWorkspaceRegistry;
 use lu_ide_execution_supervisor::{
-    JobPlan, Supervisor,
-    snapshot::publish_lsp_input,
+    JobPlan, Supervisor, snapshot::publish_lsp_input,
+};
+#[cfg(windows)]
+use lu_ide_execution_supervisor::{
     windows_broker::TrustedBroker,
     windows_worker::lsp_native::{
         native_lsp_bundle_digest, start_windows_lsp, WindowsLspSession,
     },
 };
+#[cfg(target_os = "linux")]
+use lu_ide_execution_supervisor::linux_worker::lsp_native::{
+    native_lsp_bundle_digest, start_linux_lsp, LinuxLspSession,
+};
+#[cfg(windows)]
+type NativeLspSession = WindowsLspSession;
+#[cfg(target_os = "linux")]
+type NativeLspSession = LinuxLspSession;
 use lu_ide_workspace::{
     lsp::{DiagnosticSource},
     lsp_session::{LspEvent, Position, Diagnostic, Completion, Definition},
@@ -40,6 +50,7 @@ const APPROVED_RUST_ANALYZER_BUNDLE: Option<&str> =
     option_env!("LU_IDE_E2_RUST_ANALYZER_BUNDLE_SHA256");
 const APPROVED_RUFF_BUNDLE: Option<&str> =
     option_env!("LU_IDE_E2_RUFF_BUNDLE_SHA256");
+#[cfg(windows)]
 const APPROVED_SERVICE: Option<&str> =
     option_env!("LU_IDE_E2_D7D_SERVICE_SHA256");
 
@@ -50,6 +61,7 @@ fn pin(value: Option<&str>) -> Result<&str, String> {
     }
     Ok(text)
 }
+#[cfg(windows)]
 fn hash_file(path:&Path)->Result<String,String>{
     let mut f=File::open(path).map_err(|_|"LSP_SERVICE_MISSING")?;
     let mut hasher=Sha256::new();
@@ -63,6 +75,7 @@ fn hash_file(path:&Path)->Result<String,String>{
 }
 struct Installation {
     bundle: PathBuf,
+    #[cfg(windows)]
     service: TrustedBroker,
     bundle_sha256: String,
 }
@@ -75,20 +88,29 @@ fn installation(app:&AppHandle,server_id:&str)->Result<Installation,String>{
     };
     let root=app.path().resource_dir().map_err(|_|"LSP_RESOURCE_ROOT_UNAVAILABLE")?;
     let bundle=root.join("language-servers").join(server_id);
-    let service=root.join("recovery").join("windows_recovery_service.exe");
     let expected_bundle=pin(approved)?;
+    #[cfg(windows)]
+    let service=root.join("recovery").join("windows_recovery_service.exe");
+    #[cfg(windows)]
     let expected_service=pin(APPROVED_SERVICE)?;
     let observed=native_lsp_bundle_digest(&bundle,recipe)
         .map_err(|_|"LSP_UNTRUSTED_BUNDLE")?;
     if observed!=expected_bundle {return Err("LSP_BUNDLE_PIN_MISMATCH".into());}
+    #[cfg(windows)]
     if hash_file(&service)?!=expected_service {
         return Err("LSP_SERVICE_PIN_MISMATCH".into());
     }
+    #[cfg(windows)]
     let broker=TrustedBroker{
         executable:service,expected_sha256:expected_service.to_owned(),
         private_witness_directory:root.join("recovery"),
     };
-    Ok(Installation{bundle,service:broker,bundle_sha256:observed})
+    Ok(Installation{
+        bundle,
+        #[cfg(windows)]
+        service:broker,
+        bundle_sha256:observed,
+    })
 }
 pub fn installed_languages(app:&AppHandle)->Vec<String> {
     let mut result=Vec::new();
@@ -155,7 +177,7 @@ struct Active {
     saved_revision:String,
     text:String,
     diagnostics:Vec<Diagnostic>,
-    session:WindowsLspSession,
+    session:NativeLspSession,
 }
 impl Active {
     fn output(&self)->LspReply {
@@ -287,9 +309,19 @@ impl NativeLspRuntime {
         self.supervisor.record_human_approval(
             &prepared.job_id,&prepared.plan_sha256,&observed,true,
         ).map_err(|e|e.code())?;
+        // Both OS paths consume the same exact project/source grant and
+        // native pinned release digest; Linux additionally requires a
+        // root-owned bundle, root-owned bwrap and kernel cgroup-v2 quotas.
+        // No same-user fallback and no PATH-based language servers.
+        #[cfg(windows)]
         let mut session=start_windows_lsp(
             Arc::clone(&self.supervisor),&prepared.job_id,&plan,&observed,
             &input,&install.bundle,&install.service,
+        ).map_err(|e|e.code())?;
+        #[cfg(target_os = "linux")]
+        let mut session=start_linux_lsp(
+            Arc::clone(&self.supervisor),&prepared.job_id,&plan,&observed,
+            &input,&install.bundle,
         ).map_err(|e|e.code())?;
         session.initialize().map_err(|e|e.code())?;
         let started=Instant::now();
