@@ -5,7 +5,7 @@ import { CodeEditor, createEditorState, isLargeSourceEditor } from './code_edito
 import { secondaryEditor, initialSecondaryKey, canSaveFocusedPane } from './editor_layout.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
   visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
-  TREE_ENTRY_PAGE } from './editor_working_set.js';
+  TREE_ENTRY_PAGE, verifiedRelativeSourcePath } from './editor_working_set.js';
 import { locateMatches, planReplacement } from './find_replace.js';
 import {
   newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
@@ -1939,11 +1939,8 @@ function App() {
   }
 
   async function openRelativeSourcePath() {
-    const path=relativeOpenPath.trim();
-    if (!activeProject || !path || path.length>1024 || path.startsWith('/') ||
-        path.includes('\\') || path.includes(':') ||
-        path.split('/').some(part=>!part || part==='.' || part==='..') ||
-        /[\\x00-\\x1f]/.test(path)) {
+    const path=verifiedRelativeSourcePath(relativeOpenPath);
+    if (!activeProject || !path) {
       setProblem('Enter a valid project-relative source file path. '+
         'No absolute or parent-relative paths are allowed.');
       return;
