@@ -2253,6 +2253,104 @@
         "matches",
         "truncated"
       ]
+    },
+    "DraftSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "bufferId": {
+          "type": "string"
+        },
+        "bufferRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baseDiskRevision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "draftSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 524288
+        },
+        "checkpointId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "relativePath",
+        "bufferId",
+        "bufferRevision",
+        "baseDiskRevision",
+        "draftSha256",
+        "text",
+        "checkpointId"
+      ]
+    },
+    "DraftCheckpointInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relativePath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "bufferId": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128
+        },
+        "bufferRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baseDiskRevision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 524288
+        },
+        "expectedHead": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "projectId",
+        "relativePath",
+        "bufferId",
+        "bufferRevision",
+        "baseDiskRevision",
+        "text",
+        "expectedHead"
+      ]
     }
   },
   "operations": {
@@ -4275,6 +4373,116 @@
       },
       "result": {
         "$ref": "#/$defs/ProjectSearchResult"
+      }
+    },
+    "draft.checkpoint": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "$ref": "#/$defs/DraftCheckpointInput"
+          }
+        },
+        "required": [
+          "input"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/DraftSnapshot"
+      }
+    },
+    "draft.latest": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath"
+        ]
+      },
+      "result": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/DraftSnapshot"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "type": [
+          "object",
+          "null"
+        ]
+      }
+    },
+    "draft.load": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "checkpointId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath",
+          "checkpointId"
+        ]
+      },
+      "result": {
+        "$ref": "#/$defs/DraftSnapshot"
+      }
+    },
+    "draft.discard": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "expectedHead": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "projectId",
+          "relativePath",
+          "expectedHead"
+        ]
+      },
+      "result": {
+        "type": "null"
       }
     }
   }

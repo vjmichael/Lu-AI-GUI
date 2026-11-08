@@ -12,6 +12,7 @@ pub mod capabilities;
 pub mod continuity;
 pub mod dap_session;
 pub mod editor;
+pub mod draft_vault;
 pub mod execution_intents;
 pub mod git_evidence;
 pub mod git_status;

@@ -333,6 +333,42 @@ fn metadata() -> Vec<CapabilityMeta> {
             "catalog without project"
         ),
         capability!(
+            "draft.checkpoint",
+            "ide_draft_checkpoint",
+            "Preserve unsaved editor checkpoint",
+            "Write a bounded immutable revisioned draft only to IDE private app data with CAS; never Save project files.",
+            "catalog_write",
+            "active OS-selected project, validated source, current buffer ID and expected private head",
+            "fsynced private checkpoint ID, full draft digest and exact retained content; no project write"
+        ),
+        capability!(
+            "draft.latest",
+            "ide_draft_latest",
+            "Inspect private preserved draft",
+            "Read the latest bound private draft checkpoint for a registered project file without auto-restoring.",
+            "read",
+            "active OS-selected project and registered source file",
+            "verified checkpoint data or none; saved-file conflict independently checked"
+        ),
+        capability!(
+            "draft.load",
+            "ide_draft_load",
+            "Recover exact preserved checkpoint",
+            "Read an immutable content-addressed private snapshot; never automatically replace editor or saved files.",
+            "read",
+            "active OS-selected project and exact private checkpoint SHA-256",
+            "verified original buffer revision and content with no effect on project source"
+        ),
+        capability!(
+            "draft.discard",
+            "ide_draft_discard",
+            "Discard preserved private draft history",
+            "Explicitly delete a selected file's private checkpoint history only after exact current-head match.",
+            "catalog_write",
+            "active registered source, exact private checkpoint ID and human discard decision",
+            "private checkpoint history removed; original project file unchanged"
+        ),
+        capability!(
             "source.findProject",
             "ide_find_in_project",
             "Find saved source in project",
@@ -516,7 +552,7 @@ mod tests {
         assert_eq!(catalog.schema_version, 2);
         assert!(!catalog.connected_to_lu);
         assert!(catalog.descriptions_only);
-        assert_eq!(catalog.capabilities.len(), 42);
+        assert_eq!(catalog.capabilities.len(), 46);
         assert!(catalog.capabilities.len() <= 48);
         let mut ids = HashSet::new();
         let mut commands = HashSet::new();
@@ -552,7 +588,7 @@ mod tests {
                 "read" | "network_read" | "session_write" | "catalog_write" | "file_write"
             ));
         }
-        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 40);
+        assert_eq!(catalog.schema_definitions.as_object().unwrap().len(), 42);
     }
 
     #[test]

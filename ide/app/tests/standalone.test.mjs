@@ -43,7 +43,10 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_workflow_export_manifest', 'ide_workflow_export_bundle',
     'ide_git_review_file', 'ide_git_stage_reviewed', 'ide_git_commit_reviewed',
     'ide_workflow_create', 'ide_workflow_list_runs', 'ide_workflow_cancel_pending',
-    'ide_workflow_run_step', 'ide_workflow_verify_native_receipt'
+    'ide_workflow_run_step', 'ide_workflow_verify_native_receipt',
+    // B3 read-only project search plus B2 native-private draft vault lifecycle.
+    'ide_find_in_project', 'ide_draft_checkpoint', 'ide_draft_latest',
+    'ide_draft_load', 'ide_draft_discard'
   ].sort());
   // E2's dynamic method string is restricted to the two inspected options.
   assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
@@ -263,7 +266,7 @@ test('R3.7 in-file find navigates the active unsaved buffer without native IPC',
   const css = read('../web/styles.css');
   assert.match(web, /key === 'f'/);
   assert.match(web, /role="search" aria-label="Find in active file"/);
-  assert.match(web, /locateMatches\(activeTab\?\.draft/);
+  assert.match(web, /locateMatches\(activeEditorState\?\.doc\.toString\(\)/);
   assert.match(web, /aria-label="Previous match"/);
   assert.match(web, /aria-label="Next match"/);
   assert.match(read('../web/find_replace.js'), /MAX_FIND_MATCHES = 10000/);
@@ -295,7 +298,7 @@ test('Wave A2 registry advertises actual host operations without granting execut
   const commands = [...registry.matchAll(/capability!\(\s*"[^"]+"\s*,\s*"(ide_[a-z_]+)"/g)]
     .map(match => match[1]);
   const registered = [...tauri.matchAll(/^\s+(ide_[a-z_]+),?$/gm)].map(match => match[1]);
-  assert.equal(commands.length, 42, 'native capability catalog preserves existing WO9 operations and adds bounded read-only source search');
+  assert.equal(commands.length, 46, 'native capability catalog preserves prior 42 operations and adds four private recovery operations');
   assert.equal(new Set(commands).size, commands.length);
   const nativeLspCommands = [
     'ide_lsp_worker_status', 'ide_lsp_start_session',
@@ -354,7 +357,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 42);
+  assert.equal(Object.keys(schemas.operations).length, 46);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
@@ -429,7 +432,7 @@ test('Wave A2 typed request keys match actual Rust Tauri argument names', () => 
     const signature = native.match(new RegExp('async fn ' + command + '\\(([\\s\\S]*?)\\) ->'));
     assert.ok(signature, id + ': missing native function');
     const parameters = [...signature[1].matchAll(/^\s*([a-z_]+):\s*(.+?),?\s*$/gm)]
-      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'coordinator', 'inbox', 'ledger', 'snapshots', 'intents'].includes(name))
+      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'coordinator', 'inbox', 'ledger', 'snapshots', 'intents', 'vault'].includes(name))
       .map(name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()))
       .sort();
     const typed = Object.keys(schemas.operations[id].request.properties).sort();
@@ -528,7 +531,7 @@ test('Wave B human-owned Find and Replace preserves explicit Save and undo', () 
   assert.match(web, /aria-label="Replacement text"/);
   assert.match(web, /aria-label="Replace current match"/);
   assert.match(web, /aria-label="Replace all matches"/);
-  assert.match(web, /planReplacement\(activeTab\.draft/);
+  assert.match(web, /planReplacement\(searchText/);
   assert.match(web, /window\.confirm\(/);
   assert.match(web, /Draft only · Undo available · Save required/);
   assert.match(web, /replaceRequest=\{replaceRequest\?\.tabKey/);
@@ -594,4 +597,46 @@ test('B3 project search is saved-byte and capability-scoped, never an execution 
   assert.match(frontend, /activeProjectIdRef\.current !== projectId/);
   assert.match(frontend, /projectSearchGeneration\.current/);
   assert.match(css, /\.projectSearchResults/);
+});
+
+
+test('B2 private durable draft identity and recovery never grant project source writes', () => {
+  const web=read('../web/main.jsx');
+  const editor=read('../web/code_editor.jsx');
+  const identity=read('../web/buffer_identity.js');
+  const native=read('../src-tauri/src/lib.rs');
+  const vault=read('../../host/src/draft_vault.rs');
+  const catalog=read('../../host/src/capabilities.rs');
+  const schemas=JSON.parse(read('../../host/src/capability_schemas.json'));
+  for(const command of ['ide_draft_checkpoint','ide_draft_latest',
+    'ide_draft_load','ide_draft_discard']){
+    assert.match(native,new RegExp('async fn '+command+'\\('));
+    assert.match(native,new RegExp('registry\\.preview_source_file'));
+  }
+  assert.match(native,/data\.join\("private-draft-recovery"\)/);
+  assert.match(native,/vault\.checkpoint\(input\)/);
+  assert.match(vault,/fs::rename\(&temp,path\)/);
+  assert.match(vault,/sync_all\(\)/);
+  assert.match(vault,/DRAFT_CHECKPOINT_CONFLICT/);
+  assert.match(vault,/MAX_HISTORY:usize=24/);
+  assert.match(vault,/MAX_DRAFT_BYTES:usize=512\*1024/);
+  assert.match(web,/crypto\.randomUUID\(\)/);
+  assert.match(web,/advanceBufferIdentity\(previousBuffer\)/);
+  assert.match(web,/rebaseBufferAfterSave\(currentBuffer,saveStartedBuffer,saved\.revision\)/);
+  assert.match(web,/resolveBufferSpan\(snapshot,current,currentState\)/);
+  assert.match(web,/ide_draft_checkpoint/);
+  assert.match(web,/ide_draft_latest/);
+  assert.match(web,/ide_draft_load/);
+  assert.match(web,/ide_draft_discard/);
+  assert.match(web,/Recover preserved draft/);
+  assert.match(web,/Preserve draft \+ copy durable reference/);
+  assert.match(web,/Private recovery is opt-in/);
+  assert.match(editor,/EditorState\.lineSeparator\.of\(separator\)/);
+  assert.match(editor,/onSelectionChange\?\.\(update\.state\)/);
+  assert.match(identity,/lifetime=persistent-private-app-data/);
+  assert.doesNotMatch(identity,/invoke\(|window\.fetch|navigator\.clipboard/);
+  assert.equal(schemas.operations['draft.checkpoint'].result.$ref,'#/$defs/DraftSnapshot');
+  assert.equal(schemas.operations['draft.load'].result.$ref,'#/$defs/DraftSnapshot');
+  assert.equal(schemas.operations['draft.discard'].result.type,'null');
+  assert.match(catalog,/"draft\.checkpoint"[\s\S]*?"ide_draft_checkpoint"/);
 });

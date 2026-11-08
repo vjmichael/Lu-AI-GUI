@@ -3,6 +3,12 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
+import {
+  newBufferIdentity, advanceBufferIdentity, rebaseBufferAfterSave,
+  captureBufferSpan, resolveBufferSpan, formatBufferReference,
+  formatPersistentDraftReference, draftRecoveryAssessment,
+  parsePersistentDraftReference,
+} from './buffer_identity.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
 import { projectProblems, stillCurrentProblem } from './lsp_problems.js';
@@ -73,6 +79,10 @@ function App() {
   const [findRequest, setFindRequest] = useState(null);
   const [cursorByTab, setCursorByTab] = useState({});
   const [referencePending, setReferencePending] = useState(false);
+  const [draftReferencePending, setDraftReferencePending] = useState(false);
+  const [draftRecoveryBusy, setDraftRecoveryBusy] = useState(false);
+  const [draftRecoveryByTab, setDraftRecoveryByTab] = useState({});
+  const [persistentReferenceInput, setPersistentReferenceInput] = useState('');
   const [activeProject, setActiveProject] = useState(null);
   const [directory, setDirectory] = useState('');
   const [listing, setListing] = useState(null);
@@ -151,6 +161,38 @@ function App() {
   const [inventoryComparison, setInventoryComparison] = useState(null);
   // CodeMirror EditorState is retained for each tab, including its undo stack.
   const editorStates = useRef(new Map());
+  const bufferIdentities = useRef(new Map());
+  const draftHeadByTab = useRef(new Map());
+  const draftAutoPreserve = useRef(new Set());
+  const draftTimers = useRef(new Map());
+  const draftInFlight = useRef(new Set());
+  const draftLookupVersion = useRef(new Map());
+  const tabsRef = useRef([]);
+  tabsRef.current = tabs;
+  function resetBufferIdentity(key, projectId, relativePath, savedRevision) {
+    const identity = newBufferIdentity(projectId, relativePath,
+      savedRevision, crypto.randomUUID());
+    bufferIdentities.current.set(key, identity);
+    return identity;
+  }
+  function onEditorSelection(key, state) {
+    editorStates.current.set(key, state);
+  }
+  function clearPrivateDraftSession(key) {
+    const timer = draftTimers.current.get(key);
+    if (timer) clearTimeout(timer);
+    draftTimers.current.delete(key);
+    draftAutoPreserve.current.delete(key);
+    draftHeadByTab.current.delete(key);
+    bufferIdentities.current.delete(key);
+    draftLookupVersion.current.set(key, (draftLookupVersion.current.get(key) || 0) + 1);
+    setDraftRecoveryByTab(previous => {
+      const next = { ...previous };
+      delete next[key];
+      return next;
+    });
+  }
+
   useEffect(() => {
     // Read-only, project-independent inventory. No provider lookup executes.
     Promise.all([invoke('ide_list_language_servers'), invoke('ide_lsp_worker_status')])
@@ -322,7 +364,11 @@ function App() {
   const parentPath = directory.split('/').slice(0, -1).join('/');
   // Both search and replacement operate on the active unsaved buffer only.
   // The pure planner counts matches before anything is changed.
-  const matchPlan = locateMatches(activeTab?.draft ?? '', findQuery, caseSensitiveFind);
+  const activeEditorState = activeTab ? editorStates.current.get(activeTab.key) : null;
+  // CodeMirror positions are UTF-16 in its canonical LF Text tree; serialized
+  // source can use CRLF. Search and replace offsets must refer to the tree.
+  const matchPlan = locateMatches(activeEditorState?.doc.toString() ?? '',
+    findQuery, caseSensitiveFind);
   const matches = matchPlan.matches;
   function navigateMatch(delta) {
     if (matchPlan.truncated || !matches.length || !activeTab) return;
@@ -335,7 +381,9 @@ function App() {
 
   function replaceMatches(all = false) {
     if (!activeTab || savingKey || explorerPending || !findQuery || matchPlan.truncated) return;
-    const planned = planReplacement(activeTab.draft, findQuery, replaceText, {
+    const searchText = editorStates.current.get(activeTab.key)?.doc.toString();
+    if (searchText === undefined) return;
+    const planned = planReplacement(searchText, findQuery, replaceText, {
       caseSensitive: caseSensitiveFind, all, selectedIndex: findIndex,
     });
     if (planned.status !== 'ready') return;
@@ -353,6 +401,228 @@ function App() {
     setHint((all ? 'Replaced ' + planned.count + ' matches' : 'Replaced one match') +
       ' in the editor draft. Use Undo to reverse or Save to write the file.');
     setProblem('');
+  }
+
+
+  async function copyDraftReference(tab) {
+    if (!tab || draftReferencePending) return;
+    const state = editorStates.current.get(tab.key);
+    const identity = bufferIdentities.current.get(tab.key);
+    if (!state || !identity || state.sliceDoc() !== tab.draft) {
+      setProblem('This editor draft changed; choose the tab and try again.');
+      return;
+    }
+    const selection = state.selection.main;
+    const from = selection.empty ? state.doc.lineAt(selection.head).from : selection.from;
+    const to = selection.empty ? state.doc.lineAt(selection.head).to : selection.to;
+    let snapshot;
+    try { snapshot = captureBufferSpan(identity,state,from,to); }
+    catch (error) { setProblem('Cannot capture this draft span: ' + String(error)); return; }
+    setDraftReferencePending(true);
+    setProblem('');
+    try {
+      const digest=await crypto.subtle.digest('SHA-256',
+        new TextEncoder().encode(state.sliceDoc()));
+      const hex=Array.from(new Uint8Array(digest),
+        byte => byte.toString(16).padStart(2,'0')).join('');
+      const current=bufferIdentities.current.get(tab.key);
+      const currentState=editorStates.current.get(tab.key);
+      if (resolveBufferSpan(snapshot,current,currentState).status !== 'current' ||
+          currentState.sliceDoc() !== state.sliceDoc())
+        throw Error('BUFFER_CHANGED_DURING_REFERENCE_COPY');
+      await navigator.clipboard.writeText(formatBufferReference(snapshot,hex));
+      setHint('Copied a session-only draft reference. For cross-restart references use Preserve draft.');
+    } catch (error) {
+      setProblem('Could not copy draft reference: '+String(error));
+    } finally { setDraftReferencePending(false); }
+  }
+
+  async function checkExistingDraft(tab) {
+    const key=tab.key;
+    const identity=bufferIdentities.current.get(key);
+    const lookup=(draftLookupVersion.current.get(key)||0)+1;
+    draftLookupVersion.current.set(key,lookup);
+    try {
+      const record=await invoke('ide_draft_latest',{
+        projectId:tab.projectId,relativePath:tab.relativePath
+      });
+      if (draftLookupVersion.current.get(key)!==lookup ||
+          bufferIdentities.current.get(key)?.bufferId!==identity?.bufferId) return;
+      if (record) {
+        draftHeadByTab.current.set(key,record.checkpointId);
+        setDraftRecoveryByTab(previous=>({...previous,[key]:record}));
+        setHint('Preserved draft available for '+tab.relativePath+
+          '. Recover it explicitly; saved source was not changed.');
+      }
+    } catch (error) {
+      if (draftLookupVersion.current.get(key)===lookup) {
+        setProblem('Draft recovery inspection unavailable: '+String(error));
+      }
+    }
+  }
+
+  async function preserveDraft(tab,copyPersistent=false) {
+    if (!tab || draftInFlight.current.has(tab.key)) return;
+    const identity=bufferIdentities.current.get(tab.key);
+    const state=editorStates.current.get(tab.key);
+    if (!identity || !state || state.sliceDoc().length>524288 ||
+        !tabsRef.current.some(row=>row.key===tab.key) ||
+        identity.projectId!==tab.projectId || identity.relativePath!==tab.relativePath) {
+      setProblem('Draft is unavailable or exceeds private 512 KiB recovery limit.');
+      return;
+    }
+    // Capture immutable editor revision before native async write.
+    const text=state.sliceDoc();
+    const input={
+      projectId:identity.projectId,relativePath:identity.relativePath,
+      bufferId:identity.bufferId,bufferRevision:identity.revision,
+      baseDiskRevision:identity.savedRevision,text,
+      expectedHead:draftHeadByTab.current.get(tab.key)||null,
+    };
+    draftInFlight.current.add(tab.key);
+    if (copyPersistent) setDraftReferencePending(true);
+    try {
+      const saved=await invoke('ide_draft_checkpoint',{input});
+      if (bufferIdentities.current.get(tab.key)?.bufferId !== identity.bufferId)
+        return; // Old editor replaced: do not bind its checkpoint to new tab.
+      draftHeadByTab.current.set(tab.key,saved.checkpointId);
+      setDraftRecoveryByTab(previous=>({...previous,[tab.key]:saved}));
+      draftAutoPreserve.current.add(tab.key);
+      if (copyPersistent) {
+        // A permanent reference names *exactly* the persisted immutable bytes.
+        await navigator.clipboard.writeText(formatPersistentDraftReference(saved));
+        setHint('Copied durable IDE-private draft reference. Project file was not saved.');
+      } else {
+        setHint('Draft checkpoint preserved privately; source file unchanged.');
+      }
+    } catch (error) {
+      if (String(error).includes('DRAFT_HISTORY_FULL')) {
+        draftAutoPreserve.current.delete(tab.key);
+        setProblem('Private draft history is full. Earlier durable references are safe; '+
+          'continuous checkpointing paused until you explicitly manage the recovery history.');
+      } else {
+        setProblem('Draft recovery checkpoint failed: '+String(error));
+      }
+    } finally {
+      draftInFlight.current.delete(tab.key);
+      if (copyPersistent) setDraftReferencePending(false);
+      const current=bufferIdentities.current.get(tab.key);
+      if (current?.bufferId===identity.bufferId &&
+          current.revision>identity.revision &&
+          draftAutoPreserve.current.has(tab.key))
+        scheduleDraftPreserve(tab.key);
+    }
+  }
+
+  function scheduleDraftPreserve(key) {
+    const prior=draftTimers.current.get(key);
+    if (prior) clearTimeout(prior);
+    if (!draftAutoPreserve.current.has(key)) return;
+    draftTimers.current.set(key,setTimeout(()=>{
+      draftTimers.current.delete(key);
+      const tab=tabsRef.current.find(row=>row.key===key);
+      if (tab && tab.dirty && !draftInFlight.current.has(key))
+        void preserveDraft(tab,false);
+      else if (tab && tab.dirty && draftInFlight.current.has(key))
+        scheduleDraftPreserve(key);
+    },750));
+  }
+
+  async function restorePreservedDraft(tab,referenceOverride=null) {
+    const record=referenceOverride || draftRecoveryByTab[tab?.key];
+    if (!tab || !record || draftRecoveryBusy || savingKey) return;
+    if (tab.dirty && !window.confirm(
+      'Replace this unsaved editor draft with the preserved recovery copy? Project files remain unchanged.'))
+      return;
+    const currentIdentity=bufferIdentities.current.get(tab.key);
+    const currentDraft=editorStates.current.get(tab.key)?.sliceDoc();
+    const originalRevision=currentIdentity?.revision;
+    setDraftRecoveryBusy(true);
+    setProblem('');
+    try {
+      const [disk,recovered]=await Promise.all([
+        invoke('ide_preview_source_file',{projectId:tab.projectId,
+          relativePath:tab.relativePath}),
+        invoke('ide_draft_load',{projectId:tab.projectId,
+          relativePath:tab.relativePath,checkpointId:record.checkpointId}),
+      ]);
+      if (bufferIdentities.current.get(tab.key)?.bufferId!==currentIdentity?.bufferId ||
+          bufferIdentities.current.get(tab.key)?.revision!==originalRevision ||
+          editorStates.current.get(tab.key)?.sliceDoc()!==currentDraft ||
+          !tabsRef.current.some(x=>x.key===tab.key))
+        throw Error('BUFFER_CHANGED_DURING_DRAFT_RECOVERY');
+      if (disk.projectId!==tab.projectId || disk.relativePath!==tab.relativePath ||
+          recovered.checkpointId!==record.checkpointId ||
+          (record.draftSha256 && recovered.draftSha256!==record.draftSha256) ||
+          (record.bufferId && recovered.bufferId!==record.bufferId) ||
+          (record.bufferRevision!==undefined &&
+            recovered.bufferRevision!==record.bufferRevision))
+        throw Error('DRAFT_RECOVERY_SOURCE_MISMATCH');
+      if (draftRecoveryAssessment(recovered,tab.projectId,tab.relativePath,
+            disk.revision)==='disk_revision_changed' &&
+          !window.confirm('Saved source has changed since this draft was preserved. '+
+            'Recover it as an unsaved editor draft without writing to disk?'))
+        return;
+      if (lspSession?.projectId===tab.projectId &&
+          lspSession.relativePath===tab.relativePath)
+        await stopLspSession();
+      // Stopping an LSP may yield; never restore over a buffer edited during
+      // the awaited side operation or after a tab was reopened.
+      if (bufferIdentities.current.get(tab.key)?.bufferId!==currentIdentity?.bufferId ||
+          bufferIdentities.current.get(tab.key)?.revision!==originalRevision ||
+          editorStates.current.get(tab.key)?.sliceDoc()!==currentDraft)
+        throw Error('BUFFER_CHANGED_DURING_DRAFT_RECOVERY');
+      clearPrivateDraftSession(tab.key);
+      resetBufferIdentity(tab.key,tab.projectId,tab.relativePath,disk.revision);
+      draftHeadByTab.current.set(tab.key,record.checkpointId);
+      draftAutoPreserve.current.add(tab.key);
+      setDraftRecoveryByTab(previous=>({...previous,[tab.key]:recovered}));
+      editorStates.current.set(tab.key,createEditorState(
+        recovered.text,tab.relativePath,
+        (state,draft)=>onEditorChange(tab.key,state,draft),
+        state=>onEditorSelection(tab.key,state)
+      ));
+      setTabs(previous=>previous.map(row=>row.key===tab.key?{
+        ...row,revision:disk.revision,savedText:disk.text,draft:recovered.text,
+        dirty:recovered.text!==disk.text,generation:row.generation+1,
+        bufferRevision:(row.bufferRevision??0)+1,
+      }:row));
+      setHint('Recovered private checkpoint to editor only. Review changes before explicit Save.');
+    } catch (error) {
+      setProblem('Unable to recover preserved draft: '+String(error));
+    } finally {setDraftRecoveryBusy(false);}
+  }
+
+  function recoverDraftByReference(tab) {
+    if (!tab || draftRecoveryBusy || savingKey) return;
+    try {
+      const parsed=parsePersistentDraftReference(persistentReferenceInput.trim());
+      if (parsed.projectId!==tab.projectId || parsed.relativePath!==tab.relativePath)
+        throw Error('REFERENCE_BELONGS_TO_DIFFERENT_PROJECT_OR_FILE');
+      void restorePreservedDraft(tab,parsed);
+    } catch(error) {
+      setProblem('Cannot recover referenced draft: '+String(error));
+    }
+  }
+
+  async function discardPreservedDraft(tab) {
+    const record=draftRecoveryByTab[tab?.key];
+    if (!tab || !record || draftRecoveryBusy ||
+        !window.confirm('Delete private recovery history for this file? Project source will not change.'))
+      return;
+    setDraftRecoveryBusy(true);
+    try {
+      await invoke('ide_draft_discard',{projectId:tab.projectId,
+        relativePath:tab.relativePath,expectedHead:record.checkpointId});
+      draftHeadByTab.current.delete(tab.key);
+      draftAutoPreserve.current.delete(tab.key);
+      const timer=draftTimers.current.get(tab.key);
+      if(timer)clearTimeout(timer);
+      draftTimers.current.delete(tab.key);
+      setDraftRecoveryByTab(previous=>({...previous,[tab.key]:null}));
+      setHint('Deleted private recovery history only. Project source and current editor remain unchanged.');
+    } catch(error){setProblem('Unable to discard private draft: '+String(error));}
+    finally{setDraftRecoveryBusy(false);}
   }
 
   async function copySourceReference(tab) {
@@ -1258,9 +1528,12 @@ function App() {
       const stagedTabs = approved.edits.map((edit, index) => {
         const key = keyFor(item.projectId, edit.relativePath);
         const previous = tabs.find(tab => tab.key === key);
+        clearPrivateDraftSession(key);
+        resetBufferIdentity(key,item.projectId,edit.relativePath,edit.expectedRevision);
         editorStates.current.set(key, createEditorState(
           edit.proposedText, edit.relativePath,
-          (state, draft) => onEditorChange(key, state, draft)
+          (state, draft) => onEditorChange(key, state, draft),
+          state => onEditorSelection(key,state)
         ));
         return {
           key, projectId: item.projectId, relativePath: edit.relativePath,
@@ -1304,7 +1577,10 @@ function App() {
   function discardProjectTabs(projectId) {
     setReview(previous => previous?.projectId === projectId ? null : previous);
     const affected = tabs.filter(tab => tab.projectId === projectId);
-    affected.forEach(tab => editorStates.current.delete(tab.key));
+    affected.forEach(tab => {
+      editorStates.current.delete(tab.key);
+      clearPrivateDraftSession(tab.key);
+    });
     setTabs(previous => previous.filter(tab => tab.projectId !== projectId));
     if (activeTabKey && affected.some(tab => tab.key === activeTabKey)) {
       setActiveTabKey(null);
@@ -1503,6 +1779,11 @@ function App() {
 
   function onEditorChange(key, state, draft) {
     editorStates.current.set(key, state);
+    const previousBuffer = bufferIdentities.current.get(key);
+    if (previousBuffer) {
+      bufferIdentities.current.set(key,advanceBufferIdentity(previousBuffer));
+      scheduleDraftPreserve(key);
+    }
     setReview(previous => previous?.tabKey === key ? null : previous);
     setTabs(previous => previous.map(tab =>
       tab.key === key ? { ...tab, draft, dirty: draft !== tab.savedText,
@@ -1569,7 +1850,8 @@ function App() {
       const state = existing
         ? editorStates.current.get(key)
         : createEditorState(opened.text, opened.relativePath,
-            (editorState, draft) => onEditorChange(key, editorState, draft));
+            (editorState, draft) => onEditorChange(key, editorState, draft),
+            state => onEditorSelection(key,state));
       if (!state) throw new Error('EDITOR_STATE_UNAVAILABLE');
       const line = state.doc.line(match.line);
       const from = line.from + match.columnUtf16 - 1;
@@ -1578,6 +1860,8 @@ function App() {
           state.doc.sliceString(from, to).length !== match.matchLengthUtf16)
         throw new Error('SEARCH_RANGE_UNVERIFIABLE');
       if (!existing) {
+        clearPrivateDraftSession(key);
+        resetBufferIdentity(key,projectId,opened.relativePath,opened.revision);
         editorStates.current.set(key, state);
         setTabs(previous => [...previous, {
           key, projectId, relativePath: opened.relativePath,
@@ -1587,6 +1871,8 @@ function App() {
         }]);
       }
       setActiveTabKey(key);
+      if (!existing) void checkExistingDraft({key,projectId,
+        relativePath:opened.relativePath});
       setFindRequest({ tabKey: key, from, to,
         nonce: ++projectSearchOpenNonce.current });
       setSection('explorer');
@@ -1622,12 +1908,16 @@ function App() {
           savedText: opened.text, draft: opened.text,
           dirty: false, generation: 0, bufferRevision: 0,
         };
+        clearPrivateDraftSession(key);
+        resetBufferIdentity(key,opened.projectId,opened.relativePath,opened.revision);
         editorStates.current.set(key, createEditorState(
           opened.text, opened.relativePath,
-          (state, draft) => onEditorChange(key, state, draft)
+          (state, draft) => onEditorChange(key, state, draft),
+          state => onEditorSelection(key,state)
         ));
         setTabs(previous => [...previous, newTab]);
         setActiveTabKey(key);
+        void checkExistingDraft(newTab);
       } catch (error) { setProblem(String(error)); }
       finally { setExplorerPending(false); }
     }
@@ -1644,6 +1934,7 @@ function App() {
       void stopLspSession();
     }
     editorStates.current.delete(key);
+    clearPrivateDraftSession(key);
     setReview(previous => previous?.tabKey === key ? null : previous);
     const other = tabs.filter(tab => tab.key !== key);
     setTabs(other);
@@ -1667,10 +1958,14 @@ function App() {
       const opened = await invoke('ide_preview_source_file', {
         projectId: tab.projectId, relativePath: tab.relativePath,
       });
+      clearPrivateDraftSession(tab.key);
+      resetBufferIdentity(tab.key,opened.projectId,opened.relativePath,opened.revision);
       editorStates.current.set(tab.key, createEditorState(
         opened.text, opened.relativePath,
-        (state, draft) => onEditorChange(tab.key, state, draft)
+        (state, draft) => onEditorChange(tab.key, state, draft),
+        state => onEditorSelection(tab.key,state)
       ));
+      void checkExistingDraft(tab);
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: opened.revision, savedText: opened.text,
         draft: opened.text, dirty: false, generation: item.generation + 1,
@@ -1685,6 +1980,7 @@ function App() {
     if (!tab || !tab.dirty || savingKey || explorerPending) return;
     const content = tab.draft;
     const base = tab.revision;
+    const saveStartedBuffer=bufferIdentities.current.get(tab.key);
     setSavingKey(tab.key);
     setProblem('');
     setHint('');
@@ -1695,6 +1991,14 @@ function App() {
         expectedRevision: base,
         text: content,
       });
+      // A native Save does not authorize rebasing a replaced editor identity.
+      const currentBuffer=bufferIdentities.current.get(tab.key);
+      const rebased=rebaseBufferAfterSave(currentBuffer,saveStartedBuffer,saved.revision);
+      if (rebased.status!=='rebased') {
+        setHint('A previous editor instance was saved; current draft was not altered.');
+        return true;
+      }
+      bufferIdentities.current.set(tab.key,rebased.identity);
       // If typing continued during the save, the newer draft is kept dirty.
       setTabs(previous => previous.map(item => item.key === tab.key ? {
         ...item, revision: saved.revision, savedText: content,
@@ -2963,6 +3267,32 @@ function App() {
                     onClick={() => copySourceReference(activeTab)}>
                     {referencePending ? 'Checking…' : 'Copy source reference'}
                   </button>
+                  <button className="ghostBtn editorToolButton"
+                    disabled={draftReferencePending || draftRecoveryBusy || explorerPending || !!savingKey}
+                    title="Copy an exact volatile CodeMirror buffer range; does not save source"
+                    onClick={() => void copyDraftReference(activeTab)}>
+                    {draftReferencePending ? 'Checking…' : 'Copy draft reference'}
+                  </button>
+                  <button className="ghostBtn editorToolButton"
+                    disabled={draftReferencePending || draftRecoveryBusy || explorerPending || !!savingKey}
+                    title="Preserve complete draft under IDE-private app data and copy a durable immutable reference"
+                    onClick={() => void preserveDraft(activeTab,true)}>
+                    {draftReferencePending ? 'Preserving…' : 'Preserve draft + copy durable reference'}
+                  </button>
+                  {draftRecoveryByTab[activeTab.key] && <>
+                    <button className="ghostBtn editorToolButton"
+                      disabled={draftRecoveryBusy || !!savingKey}
+                      title="Explicitly restore verified private checkpoint into unsaved editor only"
+                      onClick={() => void restorePreservedDraft(activeTab)}>
+                      {draftRecoveryBusy ? 'Checking recovery…' : 'Recover preserved draft'}
+                    </button>
+                    <button className="ghostBtn editorToolButton"
+                      disabled={draftRecoveryBusy || !!savingKey}
+                      title="Delete IDE-private recovery history only; no project source deletion"
+                      onClick={() => void discardPreservedDraft(activeTab)}>
+                      Discard private recovery
+                    </button>
+                  </>}
                   {lspAvailableForTab && !lspSession && <button type="button"
                     className="ghostBtn editorToolButton" disabled={lspBusy}
                     title={'Require native human consent, then start isolated '+lspProviderForTab}
@@ -3162,11 +3492,29 @@ function App() {
                 <strong>Symbol information</strong>
                 <pre>{activeLspHover}</pre>
               </section>}
+              <div className="draftRecoveryReferenceBar">
+                <label htmlFor="b2-persistent-draft-reference">Recover exact private draft reference</label>
+                <input id="b2-persistent-draft-reference"
+                  aria-label="Persistent draft reference" spellCheck={false}
+                  maxLength={2048} value={persistentReferenceInput}
+                  placeholder="Paste ide-draft:v1 reference for this file"
+                  onChange={event=>setPersistentReferenceInput(event.target.value)}/>
+                <button className="ghostBtn" disabled={!persistentReferenceInput.trim() ||
+                  draftRecoveryBusy || !!savingKey}
+                  onClick={()=>recoverDraftByReference(activeTab)}>Recover by reference</button>
+              </div>
               <div className="editorInfoBar">
+                Draft revision {bufferIdentities.current.get(activeTab.key)?.revision ?? 0}
+                {' · '}{draftAutoPreserve.current.has(activeTab.key)
+                  ? 'Private draft checkpointing enabled after explicit Preserve · '
+                  : 'Private recovery is opt-in · '}
+                {draftRecoveryByTab[activeTab.key]
+                  ? 'Preserved checkpoint available · ' : ''}
                 {lspRunningForTab ? 'Protected '+lspProviderForTab+' running · approved session · ' :
                   'Language intelligence requires protected worker and native consent · '}
-                Edits stay in memory until Save.
-                External changes cause a conflict instead of silently overwriting them.
+                Project files change only on explicit Save.
+                Preserved drafts contain source text in private local app data; they are not encrypted.
+                External source changes cause a revision conflict.
               </div>
             </> : <div className="sourcePreviewEmpty">
               <div className="emptySymbol">⌘</div>

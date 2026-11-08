@@ -286,3 +286,9 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .projectSearchHit:disabled{opacity:.6;cursor:wait}
 .projectSearchHit code{font:12px Consolas,"Cascadia Code",ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:#d7e7f6}
 .projectSearchHit small{color:#93b3cb;overflow-wrap:anywhere}
+
+/* B2 private app-data draft recovery, deliberately distinct from Save. */
+.draftRecoveryReferenceBar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px;background:#12233b;border-top:1px solid #35506d}
+.draftRecoveryReferenceBar label{font-size:11px;color:#bcd5eb}
+.draftRecoveryReferenceBar input{flex:1;min-width:220px;padding:6px 8px;background:#09172a;color:#e4effb;border:1px solid #4b667d;border-radius:5px;font:11px ui-monospace,Consolas,monospace}
+.draftRecoveryReferenceBar button{white-space:nowrap}
