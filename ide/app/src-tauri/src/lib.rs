@@ -1027,10 +1027,17 @@ async fn ide_unregister_project(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
     project_id: String,
     ledger: State<'_, Arc<DevelopmentLedger>>,
+    layouts: State<'_, Arc<lu_ide_workspace::workspace_layout::WorkspaceLayoutStore>>,
 ) -> Result<Vec<ProjectSummary>, String> {
     let registry = Arc::clone(state.inner());
     let ledger = Arc::clone(ledger.inner());
+    let layouts = Arc::clone(layouts.inner());
     tauri::async_runtime::spawn_blocking(move || {
+        // Remove the private navigation hint before dropping the catalog ID,
+        // including for a currently closed but still registered project.
+        // B2 draft records and project source bytes remain untouched.
+        layouts.purge_for_unregister(&registry, &project_id)
+            .map_err(str::to_owned)?;
         registry
             .unregister(&project_id)
             .map_err(|error| stable_error(&error).to_string())?;
