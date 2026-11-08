@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState } from './code_editor.jsx';
 import { locateMatches, planReplacement } from './find_replace.js';
-import { collectQuickOpenFiles, matchQuickOpenFiles } from './quick_open.js';
+import { matchQuickOpenFiles, safeProjectRelativePath } from './quick_open.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
@@ -84,6 +84,7 @@ function App() {
   const [quickOpenPaths, setQuickOpenPaths] = useState([]);
   const [quickOpenBusy, setQuickOpenBusy] = useState(false);
   const [quickOpenLimited, setQuickOpenLimited] = useState(false);
+  const [quickOpenMetrics, setQuickOpenMetrics] = useState(null);
   const [quickOpenError, setQuickOpenError] = useState('');
   const [quickOpenSelection, setQuickOpenSelection] = useState(0);
   const [quickOpenProjectId, setQuickOpenProjectId] = useState(null);
@@ -305,7 +306,9 @@ function App() {
     return () => { alive = false; };
   }, [activeProject?.projectId]);
 
-  const quickOpenMatches = matchQuickOpenFiles(quickOpenPaths, quickOpenQuery);
+  const quickOpenMatches = useMemo(
+    () => matchQuickOpenFiles(quickOpenPaths, quickOpenQuery),
+    [quickOpenPaths, quickOpenQuery]);
   const activeTab = tabs.find(tab => tab.key === activeTabKey) || null;
   const currentLanguageId = languageForPath(activeTab?.relativePath);
   const lspAvailableForTab = !!lspWorker?.ready && !!activeTab &&
@@ -2095,19 +2098,33 @@ function App() {
     setQuickOpenPaths([]);
     setQuickOpenSelection(0);
     setQuickOpenLimited(false);
+    setQuickOpenMetrics(null);
     setQuickOpenError('');
-    void collectQuickOpenFiles({
-      projectId,
-      listDirectory: (id, dir) => invoke('ide_list_source_directory', {
-        projectId: id, relativeDir: dir,
-      }),
-      isCurrent: () => request === quickOpenRequest.current &&
-        activeProjectIdRef.current === projectId,
-    }).then(result => {
+    void invoke('ide_index_project_files', {projectId}).then(result => {
       if (request !== quickOpenRequest.current ||
           activeProjectIdRef.current !== projectId) return;
+      if (!result || result.projectId !== projectId ||
+          !Array.isArray(result.paths) || result.paths.length > 4000 ||
+          typeof result.truncated !== 'boolean' ||
+          !Number.isSafeInteger(result.directoriesVisited) ||
+          result.directoriesVisited > 128 ||
+          !Number.isSafeInteger(result.entriesExamined) ||
+          result.entriesExamined > 20000 ||
+          !Number.isSafeInteger(result.elapsedMs) ||
+          result.elapsedMs < 0 ||
+          result.paths.some(path => !safeProjectRelativePath(path) ||
+            path.split('/').some(part => part.toLowerCase() === '.lu-ide-trash' ||
+              part.toLowerCase().startsWith('.lu-ide-')))) {
+        throw Error('INVALID_BOUNDED_NATIVE_PROJECT_INDEX');
+      }
       setQuickOpenPaths(result.paths);
       setQuickOpenLimited(result.truncated);
+      setQuickOpenMetrics({
+        directories: result.directoriesVisited,
+        files: result.paths.length,
+        entries: result.entriesExamined,
+        elapsedMs: result.elapsedMs,
+      });
     }).catch(error => {
       if (request !== quickOpenRequest.current ||
           activeProjectIdRef.current !== projectId) return;
@@ -3783,8 +3800,13 @@ function App() {
                 onMouseEnter={() => setQuickOpenSelection(index)}
                 onClick={() => activateQuickOpen(path)}>{path}</button>)}
           </div>
-          <p className="quickOpenScope">Read-only index · up to 24 native directories
-            and 500 files. Opening still checks the file in the native host.
+          <p className="quickOpenScope">Native bounded index · up to 128 directories
+            and 4,000 files, with a host-side time/entry budget.
+            {quickOpenMetrics && <span> Indexed {quickOpenMetrics.files} files across
+              {' '}{quickOpenMetrics.directories} directories, examined
+              {' '}{quickOpenMetrics.entries} entries in {quickOpenMetrics.elapsedMs} ms.
+            </span>}
+            Opening still verifies the file in the native host.
             Search does not save, execute, or follow links.</p>
         </section>
       </div>}

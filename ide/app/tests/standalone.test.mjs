@@ -28,7 +28,7 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
 
   assert.deepEqual([...new Set(calls)].sort(), [
     'ide_choose_project', 'ide_close_project', 'ide_list_projects',
-    'ide_list_source_directory', 'ide_open_project', 'ide_preview_source_file',
+    'ide_list_source_directory', 'ide_index_project_files', 'ide_open_project', 'ide_preview_source_file',
     'ide_review_source_change', 'ide_save_source_file', 'ide_create_source_entry', 'ide_move_source_file', 'ide_trash_source_file', 'ide_list_trashed_sources', 'ide_restore_source_file', 'ide_recovery_checkpoint', 'ide_recovery_list', 'ide_recovery_adopt', 'ide_recovery_forget', 'ide_unregister_project',
     'ide_import_proposal', 'ide_list_proposals', 'ide_review_proposal',
     'ide_decide_proposal', 'ide_stage_proposal', 'ide_discard_proposal',

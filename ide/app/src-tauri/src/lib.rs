@@ -995,6 +995,20 @@ async fn ide_unregister_project(
     .map_err(|_| "PROJECT_TASK_UNAVAILABLE".to_string())?
 }
 
+/// One source-SHA-scoped ephemeral native index, bounded in OS work and
+/// result size. Browsers cannot supply ambient paths or run project code.
+#[tauri::command]
+async fn ide_index_project_files(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::source_index::ProjectFileIndex, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.index_project_files(&project_id)
+            .map_err(|e| e.code().to_owned())
+    }).await.map_err(|_| "SOURCE_INDEX_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// These read-only requests require a registered, currently open project ID.
 /// Paths are *relative within* a cap-std capability; never absolute WebView paths.
 #[tauri::command]
@@ -1434,6 +1448,7 @@ pub fn run() {
             ide_close_project,
             ide_unregister_project,
             ide_list_source_directory,
+            ide_index_project_files,
             ide_preview_source_file,
             ide_read_source_span,
             ide_review_source_change,

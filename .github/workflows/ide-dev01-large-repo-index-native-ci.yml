@@ -1,0 +1,77 @@
+name: IDE DEV-01.6 native large-project indexing
+on:
+  push:
+    branches: ['ide/dev01-large-project-index-20261108']
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-dev01-large-repo-index-native-ci.yml'
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-dev01-large-repo-index-native-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-index-source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 95
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Exact-head source and original reviewed immutable locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD:ide/app/src-tauri/Cargo.lock)" = "87d0045a4be1c78651f080300aba71c14dbe1f30"
+          test "$(git rev-parse HEAD:ide/app/package-lock.json)" = "dfe4412bfacfc22ad1149f5213f4a26aa49b4067"
+      - name: Actual Linux desktop development libraries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+      - name: Native Rust host filesystem index, stress and format acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets -- --nocapture
+      - name: Full frontend package and static safety contract
+        shell: bash
+        working-directory: ide/app
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Native Tauri desktop type checking
+        shell: bash
+        run: cargo check --manifest-path ide/app/src-tauri/Cargo.toml --lib --locked
+      - name: Scope and metrics meaning
+        shell: bash
+        run: |
+          echo "DEV01_NATIVE_INDEX_SOURCE_AND_MEASURED_OS_METRICS=PASS"
+          echo "DEV01_INSTALLED_LARGE_REPO_PILOT=NOT_ACCEPTED"
+          echo "DEV01_FINAL_RELEASE_SIGNING_LEGAL=NOT_ACCEPTED"
