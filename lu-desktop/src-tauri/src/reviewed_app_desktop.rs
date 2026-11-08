@@ -443,6 +443,48 @@ mod tests{
         }
     }
     #[test]
+    fn reviewed_conversation_user_and_verified_answer_survive_chat_store_restart(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-e1-p07-chat-restart-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        let turn=format!("g-{}","a".repeat(32));
+        let chat_id;
+        {
+            let chats=ChatStore::open(&root).unwrap();
+            chat_id=chats.create_chat().unwrap().chat_id;
+            chats.append_user_with_turn_id(
+                &chat_id,&turn,"Please inspect my selected Git HEAD"
+            ).unwrap();
+            assert_eq!(
+                chats.trusted_user_turn_text(&chat_id,&turn).as_deref(),
+                Some("Please inspect my selected Git HEAD")
+            );
+            chats.append_progress(
+                &chat_id,&turn,"The reviewed Git HEAD is 0123456789abcdef."
+            ).unwrap();
+            chats.complete(&chat_id,&turn).unwrap();
+        }
+        let reopened=ChatStore::open(&root).unwrap();
+        let recovered=reopened.history(&chat_id).unwrap();
+        assert_eq!(recovered.len(),2);
+        assert_eq!(recovered[0].role,"user");
+        assert_eq!(recovered[0].text,"Please inspect my selected Git HEAD");
+        assert_eq!(recovered[1].role,"assistant");
+        assert_eq!(recovered[1].text,
+            "The reviewed Git HEAD is 0123456789abcdef.");
+        assert!(!recovered[1].interrupted);
+        assert!(!recovered[1].cancelled);
+        assert_eq!(
+            reopened.trusted_user_turn_text(&chat_id,&turn).as_deref(),
+            Some("Please inspect my selected Git HEAD")
+        );
+        drop(reopened);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn reviewed_profile_can_only_name_an_exact_host_owned_operation(){
         let repo=Path::new("/tmp/approved-repo");
         let binary=Path::new("/usr/bin/git");
