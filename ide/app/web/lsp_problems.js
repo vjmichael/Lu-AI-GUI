@@ -25,7 +25,7 @@ export function projectProblems(tabs, nativeByTab, projectId, options = {}) {
       a.key.localeCompare(b.key));
   const truncatedTabs = sorted.length > MAX_PROBLEM_TABS;
   const files = sorted.slice(0, MAX_PROBLEM_TABS);
-  const items = [];
+  const candidates = [];
   let verifiedTabs = 0;
   let staleTabs = 0;
   let total = 0;
@@ -33,6 +33,7 @@ export function projectProblems(tabs, nativeByTab, projectId, options = {}) {
   let warnings = 0;
   let infos = 0;
   for (const tab of files) {
+    if (!Object.prototype.hasOwnProperty.call(nativeByTab, tab.key)) continue;
     const result = nativeByTab[tab.key];
     if (!result) continue;
     if (!matchesSource(tab, result)) {
@@ -53,8 +54,7 @@ export function projectProblems(tabs, nativeByTab, projectId, options = {}) {
       if (search && !(
         tab.relativePath.toLocaleLowerCase().includes(search) ||
         diagnostic.message.toLocaleLowerCase().includes(search))) continue;
-      if (items.length >= limit) continue;
-      items.push({
+      candidates.push({
         tabKey: tab.key, projectId: tab.projectId,
         relativePath: tab.relativePath, diskSha256: tab.revision,
         bufferRevision: tab.bufferRevision, generation: tab.generation,
@@ -63,17 +63,17 @@ export function projectProblems(tabs, nativeByTab, projectId, options = {}) {
       });
     }
   }
-  items.sort((a, b) => a.severity - b.severity ||
+  candidates.sort((a, b) => a.severity - b.severity ||
     a.relativePath.localeCompare(b.relativePath) ||
     a.line - b.line || a.from - b.from);
+  const items = candidates.slice(0, limit);
   return {
     items, total, errors, warnings, infos,
     verifiedTabs, staleTabs, searchedTabs: files.length,
-    truncated: truncatedTabs || items.length < total &&
-      severity === 'all' && search === '',
-    // Filtering may deliberately hide many diagnostics; indicate when
-    // the unfiltered verified count exceeds display capacity.
-    capacityLimited: total > limit || truncatedTabs,
+    truncated: truncatedTabs || candidates.length > limit,
+    // The display is partial only when matching entries exceed the budget;
+    // filtering out other severities does not imply truncated matches.
+    capacityLimited: candidates.length > limit || truncatedTabs,
   };
 }
 
