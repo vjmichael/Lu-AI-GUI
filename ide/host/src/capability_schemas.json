@@ -1824,7 +1824,8 @@
           "type": "string",
           "enum": [
             "human_update",
-            "ci_observation"
+            "ci_observation",
+            "source_observation"
           ]
         },
         "title": {
@@ -1896,7 +1897,8 @@
               "type": "null"
             }
           ]
-        }
+        },
+        "sourceLink": {"$ref": "#/$defs/TaskSourceLink"}
       },
       "required": [
         "taskId",
@@ -1930,6 +1932,18 @@
         "state",
         "provenance"
       ]
+    },
+    "TaskSourceLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "savedRevision": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "boundUpdateEventId": {"type": "string", "pattern": "^evt-[a-f0-9]{32}$"},
+        "observedUnixSeconds": {"type": "integer", "minimum": 1},
+        "source": {"type": "string", "const": "native_registered_source_read"}
+      },
+      "required": ["relativePath", "savedRevision", "boundUpdateEventId", "observedUnixSeconds", "source"]
     },
     "TaskSummary": {
       "type": "object",
@@ -2003,6 +2017,11 @@
         "taskAcceptance": {
           "type": "string",
           "const": "not_verified"
+        },
+        "sourceLinks": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/TaskSourceLink"},
+          "maxItems": 12
         }
       },
       "required": [
@@ -2018,7 +2037,8 @@
         "observedCi",
         "ciLinkState",
         "acceptanceGates",
-        "taskAcceptance"
+        "taskAcceptance",
+        "sourceLinks"
       ]
     },
     "IntentSummary": {
@@ -2955,6 +2975,21 @@
       "result": {
         "$ref": "#/$defs/TaskSummary"
       }
+    },
+    "task.sourceLink": {
+      "request": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {"type": "string", "minLength": 1},
+          "taskId": {"type": "string", "minLength": 1, "maxLength": 64},
+          "relativePath": {"type": "string", "minLength": 1, "maxLength": 1024},
+          "expectedSavedRevision": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "expectedTaskUpdateEventId": {"type": "string", "pattern": "^evt-[a-f0-9]{32}$"}
+        },
+        "required": ["projectId", "taskId", "relativePath", "expectedSavedRevision", "expectedTaskUpdateEventId"]
+      },
+      "result": {"$ref": "#/$defs/TaskSummary"}
     },
     "task.ciObserve": {
       "request": {
