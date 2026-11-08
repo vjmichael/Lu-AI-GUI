@@ -304,6 +304,95 @@ mod tests{
         std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH)
         .unwrap().as_nanos()))}
     #[test]
+    fn editing_a_procedural_source_revokes_retrieval_without_rewriting_original(){
+        use crate::ansf_revisions::RevisionOrigin;
+        let root=root();fs::create_dir_all(&root).unwrap();
+        let book=AnsfStore::open(&root.join("book.sqlite")).unwrap();
+        book.create_session("c-test","ws-test","Revision proof").unwrap();
+        book.start_chapter("c-test","Work").unwrap();
+        let src=book.append_entry("c-test","original",EntryRole::User,
+            "Original","First trusted version").unwrap();
+        let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+        let journal=EffectJournal::open(&root.join("journal.sqlite")).unwrap();
+        let cp=TaskCheckpoint{checkpoint_id:"cp-rev".into(),project_id:"lu".into(),
+            task_id:"review".into(),conversation_id:"c-test".into(),
+            source_entry_ids:vec![src],completed_work:"Completed".into(),
+            next_action:"Proceed only after revalidation".into(),blockers:vec![]};
+        continuity.append_verified(&cp,&book).unwrap();
+        journal.prepare(&ToolInvocation{
+            call_id:"call-rev".into(),tool_id:"lu.verify".into(),
+            workspace_id:Some("ws-test".into()),
+            input:ProtoPayload{type_url:"lu.test.Verification".into(),bytes:vec![3]}
+        }).unwrap();
+        journal.mark_executing("call-rev").unwrap();
+        journal.mark_applied("call-rev",b"independently tested postcondition").unwrap();
+        continuity.link_verified_effect("cp-rev","call-rev",&journal).unwrap();
+        let p=ProcedureCandidate{
+            procedure_id:"proc-rev".into(),project_id:"lu".into(),task_id:"review".into(),
+            session_id:"c-test".into(),source_entry_id:src,
+            checkpoint_id:"cp-rev".into(),call_id:"call-rev".into(),
+            tool_id:"lu.verify".into(),tool_version:"1.0".into(),
+            application_version:"1.0".into(),title:"Original version".into(),
+            prerequisites:vec![],steps:vec!["Read observed result".into()],
+            failure_conditions:vec![],replaces_id:None,
+        };
+        book.promote_verified_procedure(&p,&continuity,&journal,|_|true).unwrap();
+        let mut conflicting=p.clone();conflicting.steps=vec!["Wrong new meaning".into()];
+        assert!(book.promote_verified_procedure(&conflicting,&continuity,&journal,|_|true).is_err());
+        assert_eq!(book.reusable_verified_procedures("c-test","lu","review",
+            "lu.verify","1.0","1.0",2,&continuity,&journal,|_|true).unwrap().len(),1);
+        let revised=book.append_edited_entry("c-test","original","Changed",
+            "This earlier instruction has been replaced",
+            RevisionOrigin::VerifiedUser).unwrap().unwrap();
+        assert!(revised.revised_entry_id>src);
+        assert!(book.read_entry("c-test",src).unwrap().is_some());
+        assert!(book.promote_verified_procedure(&p,&continuity,&journal,|_|true).is_err());
+        assert!(book.reusable_verified_procedures("c-test","lu","review",
+            "lu.verify","1.0","1.0",2,&continuity,&journal,|_|true).unwrap().is_empty());
+        drop(book);drop(journal);drop(continuity);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn uncertain_effect_never_promotes_even_if_checkpoint_mentions_the_source(){
+        let root=root();fs::create_dir_all(&root).unwrap();
+        let book=AnsfStore::open(&root.join("book.sqlite")).unwrap();
+        book.create_session("c-failed","w-failed","Interrupted").unwrap();
+        book.start_chapter("c-failed","Interrupted work").unwrap();
+        let src=book.append_entry("c-failed","msg-failed",EntryRole::User,
+            "Instruction","User requested a cautious workflow").unwrap();
+        let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+        let journal=EffectJournal::open(&root.join("journal.sqlite")).unwrap();
+        continuity.append_verified(&TaskCheckpoint{
+            checkpoint_id:"cp-failed".into(),project_id:"lu".into(),
+            task_id:"danger".into(),conversation_id:"c-failed".into(),
+            source_entry_ids:vec![src],completed_work:"Not completed".into(),
+            next_action:"Reconcile".into(),blockers:vec![],
+        },&book).unwrap();
+        journal.prepare(&ToolInvocation{
+            call_id:"call-failed".into(),tool_id:"lu.write".into(),
+            workspace_id:Some("w-failed".into()),
+            input:ProtoPayload{type_url:"lu.test.Write".into(),bytes:vec![5]}
+        }).unwrap();
+        journal.mark_executing("call-failed").unwrap();
+        journal.mark_uncertain("call-failed").unwrap();
+        assert!(continuity.link_verified_effect("cp-failed","call-failed",&journal).is_err());
+        let p=ProcedureCandidate{
+            procedure_id:"proc-failed".into(),project_id:"lu".into(),
+            task_id:"danger".into(),session_id:"c-failed".into(),
+            source_entry_id:src,checkpoint_id:"cp-failed".into(),
+            call_id:"call-failed".into(),tool_id:"lu.write".into(),
+            tool_version:"1.0".into(),application_version:"1.0".into(),
+            title:"Not independently verified".into(),prerequisites:vec![],
+            steps:vec!["Attempt effect again".into()],failure_conditions:vec![],
+            replaces_id:None,
+        };
+        assert!(book.promote_verified_procedure(&p,&continuity,&journal,|_|true).is_err());
+        assert!(book.reusable_verified_procedures("c-failed","lu","danger",
+            "lu.write","1.0","1.0",3,&continuity,&journal,|_|true).unwrap().is_empty());
+        drop(book);drop(continuity);drop(journal);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn promotion_requires_original_and_real_verified_effect_then_rechecks_corrections(){
         let root=root();fs::create_dir_all(&root).unwrap();
         let book=AnsfStore::open(&root.join("book.sqlite")).unwrap();

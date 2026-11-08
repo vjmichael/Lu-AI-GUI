@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4f786086cd520a78ceda8902f93a3fa02202f9f0",
+  "sourceCommitBeforeLock": "780377d79a74e32d11f09586ea309e250505cdb4",
   "trackedFileCount": 593,
   "files": [
     {
@@ -1189,7 +1189,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_verified_procedures.rs",
-      "blob": "761b26a2ba79b0f51d10b9107584141d1dc97384"
+      "blob": "00f54473e9267268c2cd59a23c2db3567fdbf454"
     },
     {
       "path": "src-tauri/lu-core/src/benchmark_contract.rs",
