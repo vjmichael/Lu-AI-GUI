@@ -11,13 +11,15 @@ const TASK_PREFIX:&str="lu-reviewed-task-";
 const EFFECT_PREFIX:&str="lu-reviewed-effects-";
 const MAX_RECOVERY_ENTRIES:usize=4096;
 
-#[derive(Debug,Default,Clone,Copy,PartialEq,Eq)]
+#[derive(Debug,Default,Clone,PartialEq,Eq)]
 pub(crate) struct ReviewedRestartRecovery{
     pub task_journals:usize,
     pub effect_journals:usize,
     pub interrupted_tasks:usize,
     pub uncertain_effects:usize,
     pub partial_turns:usize,
+    /// Host-generated generation IDs; never model-origin or arbitrary paths.
+    pub turns_to_report:Vec<String>,
 }
 #[derive(Default)]
 struct RecoveryPair{
@@ -93,7 +95,8 @@ pub(crate) fn reconcile_reviewed_application_journals(
         }
     }
     let mut recovered=ReviewedRestartRecovery::default();
-    for pair in turns.values(){
+    for (turn,pair) in &turns{
+        recovered.turns_to_report.push(turn.clone());
         if pair.task.is_none()||pair.effect.is_none(){
             recovered.partial_turns+=1;
         }
@@ -169,7 +172,8 @@ mod tests{
         let result=reconcile_reviewed_application_journals(&root).unwrap();
         assert_eq!(result,ReviewedRestartRecovery{
             task_journals:1,effect_journals:1,
-            interrupted_tasks:1,uncertain_effects:1,partial_turns:0
+            interrupted_tasks:1,uncertain_effects:1,partial_turns:0,
+            turns_to_report:vec![id.clone()]
         });
         let tasks=TaskStore::open(&task_db(&root,&id)).unwrap();
         assert_eq!(tasks.get("running-child").unwrap().unwrap().state,
