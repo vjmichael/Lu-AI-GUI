@@ -120,7 +120,7 @@ jobs:
             2>&1 | tee agent01e-evidence/broker-native.log
           grep -Fq 'test agent_reviewed_broker_bridge::tests::actual_conversation_authority_not_planner_approval_controls_broker_capabilities ... ok' \
             agent01e-evidence/broker-native.log
-          grep -Fq 'test result: ok. 2 passed; 0 failed;' agent01e-evidence/broker-native.log
+          grep -Fq 'test result: ok. 3 passed; 0 failed;' agent01e-evidence/broker-native.log
       - name: Compile genuine desktop read-only recovery projection with actual saved human ChatStore
         shell: bash
         run: |

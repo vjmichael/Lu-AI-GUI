@@ -29,3 +29,16 @@
 4. Observe actual Windows/Linux CI results and repair specific errors; real GGUF benchmark and installed Windows NSIS acceptance near v1.0 are independent gates.
 
 **This stage is model-to-reviewable-plan continuity, not a finished autonomous execution system.**
+
+## Stage 3 — fresh reviewed worker turn to original goal deliverable (source only)
+
+**Correctness repair:** The original authenticated human turn that created the plan is an immutable *plan origin*, not the newly authenticated user turn required to execute one approved step. Earlier AGENT-01C `record_observed` looked only at original-turn SQLite worker journals, so it could not safely associate actual later step effects with the original plan.
+
+The source now provides:
+1. A `record_verified_execution_turn` API that binds **plan origin**, **exact fresh human step turn**, **live AGENT-01D scheduler claim**, current immutable revision, and original chat; a raw model result or old plan approval cannot supply this identity.
+2. A check against the actual E1-P15 per-worker `lu_reviewed_turn_origin` singleton (conversation ID + execution turn ID), the exact worker TaskStore journal and inner/outer APPLIED effects, and a separate `VERIFIED` outcome with matching receipt digest/method/source witness.
+3. An additive `execution_turn_id` SQLite receipt reference: historical rows with NULL retain old original-turn scope; genuine fresh-turn rows reopen the actual fresh journal after Lu restart. Missing/modified proof is explicitly `NEEDS_RECONCILIATION`.
+4. A broker `link_verified_scheduled_worker_outcome` helper that accepts only matching reviewed Git/FFprobe effects and, after independent evidence re-validation, acknowledges the claim as `OBSERVED_VERIFIED_HISTORICAL`. It does NOT run a worker and does NOT automatically authorize another step.
+5. Native tests for old/new SQLite schemas, wrong/missing fresh authorization and E1-P15 user-turn singleton, independent effect association and restart. CI is queued pending exact new head and **not** a pass.
+
+**Next missing runtime boundary:** create the user's fresh step confirmation and broker session in the desktop, with the host-reviewed selected repository/media and exact authority, call the existing supervised `run_journaled_observed` only after the relevant native OS E1 gates are independently accepted, then call the new proof join for the exact worker call and show verified/unsupported/conflict with recovery. Existing source integration alone has not invoked a GGUF worker or OS child.

@@ -61,16 +61,18 @@ jobs:
             absent_independent_check_or_wrong_method_cannot_verify_deliverable \
             changed_independent_witness_requires_reconciliation_after_restart \
             cancellation_intent_blocks_new_receipt_and_does_not_claim_os_cleanup \
-            stale_goal_reference_cannot_certify_or_display_current_deliverable; do
+            stale_goal_reference_cannot_certify_or_display_current_deliverable \
+            distinct_fresh_step_turn_can_prove_original_plan_from_real_sqlite \
+            older_deliverable_schema_migrates_without_inventing_worker_identity; do
             grep -Fq "test agent_deliverable_receipts::tests::$name ... ok" \
               agent01c-evidence/native-receipt-witness.log
           done
           if [[ "$RUNNER_OS" == Linux ]]; then
             grep -Fq 'test agent_deliverable_receipts::tests::symlinked_effect_journal_is_not_trusted_as_verification ... ok' \
               agent01c-evidence/native-receipt-witness.log
-            expected=6
+            expected=8
           else
-            expected=5
+            expected=7
           fi
           grep -Fq "test result: ok. $expected passed; 0 failed;" \
             agent01c-evidence/native-receipt-witness.log
