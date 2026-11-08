@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "abfe824f885d71eaf2527c15a6f245db5dcf8629",
-  "trackedFileCount": 593,
+  "sourceCommitBeforeLock": "00e7b533683a723dbfffa6a504e985de407e6800",
+  "trackedFileCount": 595,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -254,6 +254,10 @@
     {
       "path": "docs/LU_M3_SEMANTIC_S1_S4_20261107.md",
       "blob": "fd5bcbec2cc17941e5456313abe9911381a5ab0a"
+    },
+    {
+      "path": "docs/LU_M4_BELIEF_REVISION_20261107.md",
+      "blob": "1c264ba3e0c857a153b92646b35ffdee95175614"
     },
     {
       "path": "docs/LU_M4_VERIFIED_PROCEDURAL_MEMORY_20261107.md",
@@ -1148,6 +1152,10 @@
       "blob": "701e2721f0e36bc6021b38f4d3c91b5f2874874e"
     },
     {
+      "path": "src-tauri/lu-core/src/ansf_belief_revision.rs",
+      "blob": "dd3d39796c3a66f3044ecfadbfacc25e60a6d523"
+    },
+    {
       "path": "src-tauri/lu-core/src/ansf_embedding_worker.rs",
       "blob": "f124bbbf051010d892c64a5e12af6e7f0689a3f0"
     },
@@ -1393,7 +1401,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "ca46558770e25a9ccb63633b3cdefb4a7f421577"
+      "blob": "1fad84e0c54dd09f7805aaef6e62823eeae69fb4"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
