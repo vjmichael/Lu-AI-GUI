@@ -14,6 +14,7 @@
 
 pub mod agent_tool_loop;
 pub mod agent_plan_ledger;
+pub mod agent_plan_revisions;
 pub mod ai_operations;
 pub mod ansf;
 pub mod ansf_live_chat;
