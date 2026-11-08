@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import statistics
 import urllib.parse
 import urllib.request
@@ -186,6 +187,21 @@ class LspClient:
                 outcome["shutdownAcknowledged"] = True
             except (OSError, RuntimeError, TimeoutError) as error:
                 outcome["shutdownError"] = type(error).__name__
+                # No raw paths/project diagnostics from provider stderr.
+                # Keep a bounded machine-readable class and numeric LSP code.
+                cause = str(error)
+                if cause.startswith("LSP rejected shutdown"):
+                    outcome["shutdownFailureKind"] = "lsp_shutdown_rejected"
+                    code = re.search(r"['\"]code['\"]:\s*(-?\d+)",cause)
+                    outcome["shutdownLspCode"] = (int(code.group(1)) if code else None)
+                elif "packet reader terminated" in cause:
+                    outcome["shutdownFailureKind"] = "server_stdout_closed"
+                elif "exited mid-request" in cause:
+                    outcome["shutdownFailureKind"] = "server_exited_early"
+                elif isinstance(error,TimeoutError):
+                    outcome["shutdownFailureKind"] = "shutdown_response_timeout"
+                else:
+                    outcome["shutdownFailureKind"] = "other_protocol_error"
             if outcome["shutdownAcknowledged"]:
                 try:
                     self.notify("exit", {})
