@@ -463,3 +463,11 @@ Portable chat-journal CI located a genuine fixture path error in the newly added
 - Separate current-user-turn ExecuteCode + WriteWorkspace host grants, independent Office document text / worksheet cell semantic oracle, cap-std trusted directory create-new-only atomic publication, file re-read byte witness and separate SQLite process and publication receipts. Failures keep the journal UNCERTAIN; no replay.
 - Exact-head hosted Windows/Linux CI must build the real app producer, a slow cancellation fixture, and a forged-but-hash-valid OOXML fixture; tests run explicitly under --ignored so they cannot be silently skipped. Producer attribution refers **only to the reviewed first-party worker's owned pipe**, not a general external app.
 - E1-P04 generic third-party operation and physical installed Windows remain OPEN; proceed to E1-P05 with genuine task baselines and conservative missing-result reporting.
+
+
+## E1-P05 measured three-arm benchmark candidate — November 7, 2026
+
+- Source branch \`lu/e1-p05-three-arm-benchmark-20261107\` stacked on E1-P04B. Two fixed actual OOXML tasks: reviewed DOCX with the exact approved paragraph and XLSX with four expected cells. Test \`direct_model\` (real SHA-pinned local GGUF text), \`native_utility\` (existing Rust spreadsheet creator; DOCX creation unsupported), \`reviewed_app\` (actual supervised first-party worker and verified OS-pipe stdout publication).
+- Independent measurements: real native artifacts, hashes and ZIP structure checked from CPython; exact semantic content checked in Lu Core, effects journaled, original user grants and host veto checks, p50/p95 latency, raw model answers and model GGUF/engine/runtime/source identities.
+- The model is **not** attributed a document artifact from prose. Without a genuine model engine, direct-model status is \`NOT_EXECUTED\` rather than invented; native-only and model-inclusive runs remain distinct. Record explicit unsupported utility DOCX and reviewed worker's first-party nature to avoid spurious rankings.
+- GitHub CI native Linux/Windows plus local pinned Qwen three-arm job required at **final exact head**; physical installed-Windows/NSIS/Vulkan testing remains deferred near Lu v1.0; third-party app sandbox and dynamic tool-routing acceptance remain open.

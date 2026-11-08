@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e470bcd87fcc53fffb418926d55b2a1c70f233a7",
-  "trackedFileCount": 629,
+  "sourceCommitBeforeLock": "3070460fcc6b0b5aceb0e28848b8070d66c17cc4",
+  "trackedFileCount": 634,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -34,6 +34,10 @@
     {
       "path": ".github/workflows/lu-e1-p04-output-oracle.yml",
       "blob": "536b69a0a98300f292fc98fcc26002214bea7d0c"
+    },
+    {
+      "path": ".github/workflows/lu-e1-p05-three-arm.yml",
+      "blob": "52e1e79461fbc93fecd032dbcdd3ec803cf0927a"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -156,6 +160,14 @@
       "blob": "9b7273500c9a16717e9ed6fb388cfa0377c31348"
     },
     {
+      "path": "benchmarks/e1/e1_p05_real_three_arm.py",
+      "blob": "8151a02e9c0b6e16e5772af6d3c820dfb5869f25"
+    },
+    {
+      "path": "benchmarks/e1/test_e1_p05_real_contract.py",
+      "blob": "fea86bfa2483ff4a01170d9ca8e9a8518c772991"
+    },
+    {
       "path": "benchmarks/memory/cognitum_three_arm_real_model.py",
       "blob": "f73079246833563d052e37224e47dc839d3c3594"
     },
@@ -260,8 +272,12 @@
       "blob": "3f0677108c9cce3ece07a7511f046eb871c1a43b"
     },
     {
+      "path": "docs/LU_E1_P05_COMPARATIVE_20261107.md",
+      "blob": "1bd132d074b12a1eaeb441b626494c0fe1e599e8"
+    },
+    {
       "path": "docs/LU_E1_REVIEWED_APP_ADMISSION_20261107.md",
-      "blob": "cbbda7cfd3bd1c9865d954ea09acc34d0dbcf07c"
+      "blob": "543ab253462842492684377a2dc161284aa04201"
     },
     {
       "path": "docs/LU_FILESYSTEM_DISCOVERY_P01.md",
@@ -389,7 +405,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "f7f870994a42ee9e442c1d56f77143749bb618bc"
+      "blob": "2a14dccc345aa4f6d96e659e9497cdf634691cdf"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1194,6 +1210,10 @@
     {
       "path": "src-tauri/lu-core/examples/e1_artifact_slow_worker.rs",
       "blob": "3b9cec749b1623cd7da8175403e87d1208542b0f"
+    },
+    {
+      "path": "src-tauri/lu-core/examples/e1_p05_native_task.rs",
+      "blob": "a1be135ea7f46935e337327874a0217463f1ebd9"
     },
     {
       "path": "src-tauri/lu-core/examples/e1_reviewed_artifact_worker.rs",
