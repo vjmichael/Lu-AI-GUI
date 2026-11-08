@@ -372,3 +372,229 @@
          Ok(history)
      }
  }
+
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use crate::{
+        agent_plan_ledger::{PlanStepSpec,HostObservation},
+        agent_plan_revisions::{
+            RevisionProposal,RevisionReason,RevisionStep,HumanDecision,
+            HostPlanReferenceVerifier,HostPlanReviewVerifier,
+        },
+        contracts::{ProtoPayload,ToolInvocation},
+        journal::{EffectJournal,IndependentOutcomeVerdict},
+        tasks::TaskStore,
+        conversation_authority::TrustedUserTurnVerifier,
+    };
+    use std::time::{SystemTime,UNIX_EPOCH};
+    struct Human;
+    impl TrustedUserTurnVerifier for Human{
+        fn verify_user_turn(&self,_chat:&str,_turn:&str)->bool{true}
+    }
+    struct Sources;
+    impl HostPlanReferenceVerifier for Sources{
+        fn goal_event_belongs_to_chat(&self,_chat:&str,_g:&str,_e:&str)->bool{true}
+        fn goal_event_is_current(&self,_chat:&str,_g:&str,_e:&str)->bool{true}
+        fn assumption_source_is_readable(&self,_chat:&str,_s:&str)->bool{true}
+    }
+    struct Review;
+    impl HostPlanReviewVerifier for Review{
+        fn has_exact_human_decision(
+            &self,_chat:&str,_turn:&str,_p:&str,_h:&str,_d:HumanDecision
+        )->bool{true}
+    }
+    fn id(p:&str,n:u64)->String{format!("{p}{n:032x}")}
+    fn location()->PathBuf{
+        let root=std::env::temp_dir().join(format!(
+            "lu-agent01c-{}-{}",std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+    struct Fixture{
+        profile:PathBuf,plan:String,chat:String,turn:String,
+        revision:String,step:u8,call:String,
+    }
+    fn invocation(id:&str,turn:&str)->ToolInvocation{
+        ToolInvocation{
+            call_id:id.into(),tool_id:"lu.reviewed.git.head".into(),
+            workspace_id:Some(turn.into()),
+            input:ProtoPayload{type_url:"fixture-evidence-not-os-proof".into(),bytes:vec![1]}
+        }
+    }
+    /// These are fabricated FIXTURE receipts, not real OS worker proof.
+    /// The tests verify custody-join invariants, never Windows Job Objects.
+    fn fixture(verified:bool,wrong_method:bool)->Fixture{
+        let profile=location();
+        let (plan,chat,turn,review_turn)=(
+            id("p-",21),id("c-",22),id("g-",23),id("g-",24)
+        );
+        let revision=id("v-",25);
+        let step=0;
+        let call="host-call-gh".to_string();
+        let planfile=profile.join("agent-plans.sqlite");
+        let ledger=AgentPlanLedger::open(&planfile).unwrap();
+        ledger.register(&plan,&chat,&turn,&[
+            PlanStepSpec{kind:PlanStepKind::IndependentlyCheck,depends_on:None}
+        ],&Human).unwrap();
+        let revisions=AgentPlanRevisionStore::open(&planfile).unwrap();
+        let proposal=RevisionProposal{
+            goal_id:id("goal-",26),goal_event_id:id("m-",27),
+            assumption_sources:vec![],reason:RevisionReason::Initial,
+            steps:vec![RevisionStep{
+                kind:PlanStepKind::IndependentlyCheck,depends_on:None,
+                deliverable_id:id("d-",28),
+                expected:ExpectedDeliverable::IndependentWitness,
+            }]
+        };
+        let recorded=revisions.append_proposal(&plan,&chat,&turn,&revision,
+            None,&proposal,&Human,&Sources).unwrap();
+        revisions.record_review(&plan,&chat,&review_turn,
+            &recorded.revision_sha256,HumanDecision::Approve,
+            &Human,&Review,&Sources).unwrap();
+        let tasks=TaskStore::open(
+            &profile.join(format!("lu-reviewed-task-{turn}.sqlite"))
+        ).unwrap();
+        tasks.create(&call,Some(&turn),None).unwrap();
+        tasks.start(&call).unwrap();
+        tasks.complete(&call).unwrap();
+        let effect=EffectJournal::open(
+            &profile.join(format!("lu-reviewed-effects-{turn}.sqlite"))
+        ).unwrap();
+        for x in ["host-call",call.as_str()]{
+            effect.prepare(&invocation(x,&turn)).unwrap();
+            effect.mark_executing(x).unwrap();
+            effect.mark_applied(x,
+                if x==call{"worker receipt".as_bytes()}else{"outer receipt".as_bytes()}
+            ).unwrap();
+        }
+        if verified{
+            let observed=id("",29);
+            let method=if wrong_method{
+                "GIT_BRANCH_DIRECT_V1"
+            }else{"GIT_HEAD_DIRECT_V1"};
+            effect.record_independent_outcome(
+                &call,b"worker receipt",IndependentOutcomeVerdict::Verified,
+                method,Some(&observed.repeat(2))
+            ).unwrap();
+        }
+        drop(effect);drop(tasks);drop(revisions);drop(ledger);
+        Fixture{
+            profile,plan,chat,turn,
+            revision:recorded.revision_sha256,step,call
+        }
+    }
+    fn stores(f:&Fixture)->(
+        AgentPlanLedger,AgentPlanRevisionStore,AgentDeliverableReceipts
+    ){
+        let path=f.profile.join("agent-plans.sqlite");
+        (
+            AgentPlanLedger::open(&path).unwrap(),
+            AgentPlanRevisionStore::open(&path).unwrap(),
+            AgentDeliverableReceipts::open(&path).unwrap()
+        )
+    }
+    #[test]
+    fn matching_real_sqlite_receipt_and_independent_source_is_historical_not_execution(){
+        let f=fixture(true,false);
+        let (ledger,revisions,receipts)=stores(&f);
+        assert_eq!(receipts.record_observed(
+            &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
+            &f.profile,&ledger,&revisions
+        ),Ok(ReceiptWrite::New));
+        assert_eq!(receipts.record_observed(
+            &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
+            &f.profile,&ledger,&revisions
+        ),Ok(ReceiptWrite::AlreadyRecorded));
+        let list=receipts.history(
+            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions
+        ).unwrap();
+        assert_eq!(list.len(),1);
+        assert_eq!(list[0].status,"VERIFIED_AT_OBSERVATION");
+        assert_eq!(list[0].continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
+        assert_eq!(list[0].independent_method,"GIT_HEAD_DIRECT_V1");
+        assert_eq!(receipts.history(&f.plan,&id("c-",99),
+            &f.turn,&f.profile,&ledger,&revisions),
+            Err(DeliverableError::WrongOrigin));
+        drop(receipts);drop(revisions);drop(ledger);
+        let (ledger,revisions,receipts)=stores(&f);
+        assert_eq!(receipts.history(&f.plan,&f.chat,&f.turn,
+            &f.profile,&ledger,&revisions).unwrap()[0].status,
+            "VERIFIED_AT_OBSERVATION");
+        drop(receipts);drop(revisions);drop(ledger);
+        fs::remove_dir_all(f.profile).unwrap();
+    }
+    #[test]
+    fn absent_independent_check_or_wrong_method_cannot_verify_deliverable(){
+        for (verified,wrong_method) in [(false,false),(true,true)]{
+            let f=fixture(verified,wrong_method);
+            let (ledger,revisions,receipts)=stores(&f);
+            assert_eq!(receipts.record_observed(
+                &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
+                &f.profile,&ledger,&revisions
+            ),Err(DeliverableError::UnverifiedEffect));
+            drop(receipts);drop(revisions);drop(ledger);
+            fs::remove_dir_all(f.profile).unwrap();
+        }
+    }
+    #[test]
+    fn changed_independent_witness_requires_reconciliation_after_restart(){
+        let f=fixture(true,false);
+        let (ledger,revisions,receipts)=stores(&f);
+        receipts.record_observed(
+            &f.plan,&f.chat,&f.turn,&f.revision,f.step,
+            &f.call,&f.profile,&ledger,&revisions
+        ).unwrap();
+        let path=f.profile.join(format!("lu-reviewed-effects-{}.sqlite",f.turn));
+        let db=Connection::open(path).unwrap();
+        db.execute(
+            "UPDATE lu_independent_outcomes SET observed_sha256=?1
+             WHERE call_id=?2",params!["f".repeat(64),f.call]
+        ).unwrap();
+        drop(db);
+        assert_eq!(receipts.history(
+            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions
+        ).unwrap()[0].status,"NEEDS_RECONCILIATION");
+        assert_eq!(receipts.record_observed(
+            &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
+            &f.profile,&ledger,&revisions
+        ),Err(DeliverableError::ConflictingReceipt));
+        drop(receipts);drop(revisions);drop(ledger);
+        fs::remove_dir_all(f.profile).unwrap();
+    }
+    #[test]
+    fn cancellation_intent_blocks_new_receipt_and_does_not_claim_os_cleanup(){
+        let f=fixture(true,false);
+        let (ledger,revisions,receipts)=stores(&f);
+        ledger.request_cancel(&f.plan,&f.chat,&f.turn,
+            &id("e-",50)).unwrap();
+        assert_eq!(receipts.record_observed(
+            &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
+            &f.profile,&ledger,&revisions
+        ),Err(DeliverableError::UnapprovedPlan));
+        assert_eq!(ledger.snapshot(&f.plan,&f.chat,&f.turn)
+            .unwrap().unwrap().continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
+        drop(receipts);drop(revisions);drop(ledger);
+        fs::remove_dir_all(f.profile).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_effect_journal_is_not_trusted_as_verification(){
+        use std::os::unix::fs::symlink;
+        let f=fixture(true,false);
+        let original=f.profile.join(format!("lu-reviewed-effects-{}.sqlite",f.turn));
+        let moved=f.profile.join("actual-effect.sqlite");
+        fs::rename(&original,&moved).unwrap();
+        symlink(&moved,&original).unwrap();
+        let (ledger,revisions,receipts)=stores(&f);
+        assert_eq!(receipts.record_observed(
+            &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
+            &f.profile,&ledger,&revisions
+        ),Err(DeliverableError::InvalidJournal));
+        drop(receipts);drop(revisions);drop(ledger);
+        fs::remove_dir_all(f.profile).unwrap();
+    }
+}
