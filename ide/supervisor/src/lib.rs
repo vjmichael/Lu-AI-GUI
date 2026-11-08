@@ -1229,6 +1229,24 @@ mod tests {
         }
     }
     #[test]
+    fn reviewed_rust_build_is_a_fixed_isolated_recipe_not_generic_command() {
+        let mut build = plan();
+        build.recipe_id = "rust_build".into();
+        assert!(validate_plan(&build));
+        build.effect_class = "user_script".into();
+        assert!(!validate_plan(&build));
+        build.effect_class = "test_build_isolated".into();
+        build.recipe_id = "cargo build --release".into();
+        assert!(!validate_plan(&build));
+        build.recipe_id = "python_pytest".into();
+        assert!(!validate_plan(&build));
+        build.recipe_id = "js_tests".into();
+        assert!(!validate_plan(&build));
+        build.recipe_id = "cpp_cmake_build".into();
+        assert!(!validate_plan(&build));
+    }
+
+    #[test]
     fn rejects_unpinned_or_unbounded_plans() {
         let mut bad = plan();
         bad.recipe_id = "powershell -Command evil".into();
