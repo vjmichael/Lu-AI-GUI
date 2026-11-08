@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "04efdb3c5c19946f4e07fbc881be6062bc5f499a",
-  "trackedFileCount": 659,
+  "sourceCommitBeforeLock": "e911f583a3a4514cc8e8e236a9261f47f1b627f0",
+  "trackedFileCount": 661,
   "files": [
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -58,6 +58,10 @@
     {
       "path": ".github/workflows/lu-e1-p06e-ffprobe.yml",
       "blob": "afe0e53feb52480a3c009cd24d865206f03129c1"
+    },
+    {
+      "path": ".github/workflows/lu-e1-p07-genuine-gguf.yml",
+      "blob": "003babb5e205a1929f6b276955622627a033c27d"
     },
     {
       "path": ".github/workflows/lu-e1-p07-reviewed-app.yml",
@@ -190,6 +194,10 @@
     {
       "path": "benchmarks/e1/e1_p05_xml_oracle.py",
       "blob": "6ab4516b6d528e40b0e013b7559594b5e5563da3"
+    },
+    {
+      "path": "benchmarks/e1/e1_p07_llama_completion.py",
+      "blob": "90901717408fb9fc875f929d971df0135de23ebe"
     },
     {
       "path": "benchmarks/e1/test_e1_p05_raw_receipt.py",
@@ -337,7 +345,7 @@
     },
     {
       "path": "docs/LU_E1_P07_REVIEWED_APPLICATION_CHAT_20261107.md",
-      "blob": "35fee861718b7ff03281b011126794e2177f1e4b"
+      "blob": "800eeae5f3dd6053a92ef751ed44a16d82493386"
     },
     {
       "path": "docs/LU_E1_REVIEWED_APP_ADMISSION_20261107.md",
@@ -473,7 +481,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "8529b7b2c43c2f80b45cf7030bde7a48278797c5"
+      "blob": "e26ed72eff1df57d7563beba6fe09ede4b213d84"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -2297,7 +2305,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "3fc0f792fbcae3d3c97eb7dce5c4c4bc212115fd"
+      "blob": "f584d5e67b1d23d7573a31c13b90489934e4d2f2"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
