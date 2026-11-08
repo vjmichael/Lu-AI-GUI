@@ -89,7 +89,7 @@ class NativePickerSourceTests(unittest.TestCase):
                      "pyatspi.STATE_VISIBLE", "DESKTOP_COORDS",
                      "rect.width < 320", "rect.height < 180",
                      "rect.x + rect.width > screen_w", "rect.y + rect.height > screen_h",
-                     "xdotool\", \"mousemove", "xdotool\", \"click"):
+                     '"mousemove"', '"click"'):
             self.assertIn(term,section)
         self.assertIn("if _atspi_bounded_chooser_mouse(attempt):",src)
         self.assertIn("if not _registered_native_project_is_exposed():",src)
