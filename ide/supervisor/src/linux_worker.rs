@@ -468,7 +468,7 @@ fn command_for(
 ) -> Result<(Command, File), SupervisorError> {
     let manifest = match plan.recipe_id.as_str() {
         "lu_ide_host_tests" => "/workspace/ide/host/Cargo.toml",
-        "rust_tests" | "rust_check" => "/workspace/Cargo.toml",
+        "rust_tests" | "rust_check" | "rust_build" => "/workspace/Cargo.toml",
         _ => return Err(SupervisorError::InvalidPlan),
     };
     if !input
@@ -549,6 +549,9 @@ fn command_for(
     match plan.recipe_id.as_str() {
         "rust_check" => {
             cmd.arg("check");
+        }
+        "rust_build" => {
+            cmd.arg("build");
         }
         "rust_tests" | "lu_ide_host_tests" => {
             cmd.arg("test");
