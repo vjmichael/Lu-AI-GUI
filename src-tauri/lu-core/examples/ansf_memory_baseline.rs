@@ -136,12 +136,142 @@ fn read(root:&Path,active:&str,source_id:&str)->Result<(),String>{
     }
     Ok(())
 }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EmbeddingBatch {
+    model_id:String,
+    entries:Vec<EmbeddingSource>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EmbeddingSource { source_id:String, vector:Vec<f32> }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DiscoverQuery {
+    active_chat:String,
+    model_id:String,
+    question:String,
+    sessions:Vec<String>,
+    embedding:Vec<f32>,
+    limit:usize,
+}
+fn input_json<T:serde::de::DeserializeOwned>(path:&Path)->Result<T,String>{
+    let bytes=fs::read(path).map_err(|e|e.to_string())?;
+    must(!bytes.is_empty()&&bytes.len()<=8*1024*1024,"invalid bounded semantic input")?;
+    serde_json::from_slice(&bytes).map_err(|e|e.to_string())
+}
+/// Model embeddings are locally computed by the benchmark's independently
+/// SHA-pinned llama-server; Lu Core writes only derived index vectors.
+fn index_embeddings(root:&Path,request:&Path)->Result<(),String>{
+    let batch:EmbeddingBatch=input_json(request)?;
+    must(batch.model_id.len()>2&&batch.entries.len()<=512&&
+        !batch.entries.is_empty(),"invalid embedding index batch")?;
+    let lib=AnsfLibrary::open(&root.join("library.db"))
+        .map_err(|e|format!("{e:?}"))?;
+    let mut count=0;
+    for row in batch.entries{
+        let source=AnsfSourceId::parse(&row.source_id)
+            .map_err(|e|format!("{e:?}"))?;
+        let record=resolve_known_source(
+            &row.source_id,"c-active",&lib,&BenchAccess,
+            |book|allowed_book_opener(root,book),8192
+        ).map_err(|e|format!("untrusted original index rejected: {e:?}"))?;
+        must(record.source_role=="user"||record.source_role=="assistant",
+            "ineligible historical role")?;
+        let book=lib.get_book(source.session_id())
+            .map_err(|e|format!("{e:?}"))?.ok_or("missing authorized book")?;
+        let db=allowed_book_opener(root,&book).map_err(|e|format!("{e:?}"))?;
+        db.index_semantic_passage(source.session_id(),source.entry_id(),
+            0,&batch.model_id,&row.vector)
+            .map_err(|e|format!("semantic projection rejected: {e:?}"))?;
+        count+=1;
+    }
+    println!("{}",serde_json::json!({"indexed":count,"model_id":batch.model_id}));
+    Ok(())
+}
+/// Host-scoped native discovery across ALL authorized books. Neither question
+/// nor runtime receives an oracle source ID, expected answer or gold document.
+/// Strict source re-opening applies after FTS5/vector rank fusion.
+fn discover_sources(root:&Path,request:&Path)->Result<(),String>{
+    use lu_core::ansf_semantic::fuse_source_ranks;
+    let q:DiscoverQuery=input_json(request)?;
+    must(valid_name(&q.active_chat)&&q.active_chat=="c-active"&&
+        q.model_id.len()>=3&&q.question.len()<=512&&
+        !q.question.trim().is_empty()&&
+        q.sessions.len()<=16&&!q.sessions.is_empty()&&
+        (1..=5).contains(&q.limit),"invalid bounded semantic discovery")?;
+    let lib=AnsfLibrary::open(&root.join("library.db"))
+        .map_err(|e|format!("{e:?}"))?;
+    let words=q.question.split(|c:char|!c.is_ascii_alphanumeric())
+        .map(|w|w.to_ascii_lowercase())
+        .filter(|w|w.len()>=4&&!matches!(w.as_str(),
+            "what"|"which"|"does"|"when"|"many"|"from"|"with"|"were"|
+            "their"|"about"|"into"|"that"|"this"|"have"|"been"|"answer"))
+        .take(8).collect::<Vec<_>>();
+    let fts=words.join(" OR ");
+        .collect::<Vec<_>>().join(" OR ");
+    let mut lexical=Vec::new();
+    let mut semantic=Vec::new();
+    let mut seen=std::collections::HashSet::new();
+    for session in &q.sessions{
+        must(valid_name(session)&&session.starts_with("c-")&&seen.insert(session),
+            "duplicate or invalid source book")?;
+        let book=lib.get_book(session).map_err(|e|format!("{e:?}"))?
+            .ok_or("missing original book")?;
+        must(BenchAccess.may_read(&q.active_chat,session,&book.workspace_id),
+            "unauthorized history source")?;
+        let db=allowed_book_opener(root,&book).map_err(|e|format!("{e:?}"))?;
+        if !fts.is_empty(){
+            for e in db.search(session,&fts,8).map_err(|e|format!("{e:?}"))?{
+                if matches!(e.role.as_str(),"user"|"assistant"){
+                    lexical.push(e.stable_source_id().map_err(|e|format!("{e:?}"))?);
+                }
+            }
+        }
+        for hit in db.semantic_candidates(session,&q.model_id,&q.embedding,8)
+            .map_err(|e|format!("{e:?}"))?{
+            semantic.push((
+                hit.entry.stable_source_id().map_err(|e|format!("{e:?}"))?,
+                hit.similarity
+            ));
+        }
+    }
+    semantic.sort_by(|a,b|b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let semantic_ids=semantic.into_iter().map(|x|x.0).collect::<Vec<_>>();
+    let ranked=fuse_source_ranks(&lexical,&semantic_ids,q.limit)
+        .map_err(|e|format!("{e:?}"))?;
+    let mut result=Vec::new();
+    for rank in ranked{
+        let hit=resolve_known_source(
+            &rank.source_id,&q.active_chat,&lib,&BenchAccess,
+            |book|allowed_book_opener(root,book),8192
+        ).map_err(|e|format!("ranked original not verified: {e:?}"))?;
+        must(hit.source_role=="user"||hit.source_role=="assistant",
+            "tool source cannot be selected")?;
+        result.push(serde_json::json!({
+            "source_id":hit.source_id,"source_session":hit.source_session_id,
+            "source_message_id":hit.source_message_id,
+            "content":hit.content,"rank_score":rank.score
+        }));
+    }
+    println!("{}",serde_json::json!({
+        "status":"found","results":result,"lexical_candidates":lexical.len(),
+        "semantic_candidates":semantic_ids.len(),
+    }));
+    Ok(())
+}
+
 fn run()->Result<(),String>{
     let a:Vec<String>=env::args().collect();
     match a.as_slice(){
         [_,cmd,root,file] if cmd=="prepare"=>prepare(Path::new(root),Path::new(file)),
         [_,cmd,root,active,source] if cmd=="read"=>
             read(Path::new(root),active,source),
+        [_,cmd,root,input] if cmd=="index"=>
+            index_embeddings(Path::new(root),Path::new(input)),
+        [_,cmd,root,input] if cmd=="discover"=>
+            discover_sources(Path::new(root),Path::new(input)),
         _=>Err("usage: ansf_memory_baseline prepare <root> <fixture.json> | read <root> <active-chat> <source-id>".into())
     }
 }
