@@ -1,5 +1,8 @@
 # Lu IDE — Development changelog
 
+- **B10 read-only external disk change review (Nov 8):** The standalone editor can explicitly audit up to 48 currently open registered source tabs for changed saved SHA, unavailable files, or stale native responses; then compare bounded excerpts of the saved base, live CodeMirror draft and latest disk contents. Reports hold metadata only; comparisons cap six 240-character lines per side and distinguish newline-only drift. Native reads use unchanged cap-std source preview and synchronous explorer tickets. No background file watcher, Save, reload, patch or merge is implicit. Ten new Node regressions committed and their test bodies executed successfully under a V8-compatible harness (not native Node/npm acceptance). Exact-head OS CI, installed UI source drift acceptance and earlier B gates remain OPEN.
+
+
 - **B9 private restart-safe workspace navigation (Nov 8):** Native app-data store remembers at most 48 registered relative paths, saved SHA revisions, previously dirty flags and primary/secondary pane selections, with atomic private write and source identity validation through the original cap-std browser. Editor has opt-in Remember/Restore/Forget controls; restart alone never reopens files or recovers unsaved drafts. React changes do not overwrite existing dirty tabs; missing files and disk drift are reported. Native unregister purges layout metadata only. Rust native integration tests and ten Node tests staged; nine V8 helper checks passed. Actual exact-head Windows/Linux host, frontend, Tauri and installed UI acceptance remain OPEN.
 
 
