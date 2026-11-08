@@ -45,6 +45,7 @@ impl BrowserError {
             Self::TooLarge => "FILE_TOO_LARGE",
             Self::Conflict => "FILE_CHANGED_ON_DISK",
             Self::InvalidRevision => "INVALID_FILE_REVISION",
+            Self::InvalidSearch => "INVALID_SEARCH_QUERY",
             Self::Io(_) => "BROWSE_UNAVAILABLE",
             Self::HostUnavailable => "HOST_UNAVAILABLE",
         }
