@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "974633b4581a609557da27181adf1f6b94068048",
-  "trackedFileCount": 701,
+  "sourceCommitBeforeLock": "b8e33ece33e60320fc62c55dc1061bde445cd442",
+  "trackedFileCount": 704,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -14,6 +14,10 @@
     {
       "path": ".github/workflows/lu-agent01c-deliverable-receipts.yml",
       "blob": "2b94cd127733efbb0d635495a69f3676eeee8d87"
+    },
+    {
+      "path": ".github/workflows/lu-agent01d-host-scheduler.yml",
+      "blob": "168f4f2ec2b620d510a44df6d8adcbba9bcc9750"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -316,6 +320,10 @@
       "blob": "d872c09713e4aa1ce2d9328cfe835ef8abeb4fd0"
     },
     {
+      "path": "docs/LU_AGENT01D_BOUNDED_HOST_SCHEDULER_20261108.md",
+      "blob": "f468c394c06a00e049fee3a665fafa87d6efdd14"
+    },
+    {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
       "blob": "976d8080d3b2940b467fec4c5296829a8d601bea"
     },
@@ -573,7 +581,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "45cccfe99c1039550356ba362bde7ab36de6c091"
+      "blob": "55c4f26da0f7978d86832622432b86a9c1b40ea1"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1464,6 +1472,10 @@
       "blob": "547376d67b063debe11f5fffd158a1d165af4fa7"
     },
     {
+      "path": "src-tauri/lu-core/src/agent_host_scheduler.rs",
+      "blob": "6989ae39394480ccd4bf68b226a224168b5c37bc"
+    },
+    {
       "path": "src-tauri/lu-core/src/agent_plan_ledger.rs",
       "blob": "4df9a632bf10861620b042f97cd1bb6777171556"
     },
@@ -1753,7 +1765,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "41d6c0e3c7aa97acd8f7038ba8756995df15062a"
+      "blob": "320b6cbcdec39b403dd59e90e3f39280f203d71e"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
