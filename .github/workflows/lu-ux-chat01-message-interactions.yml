@@ -1,0 +1,178 @@
+name: Lu UX-CHAT01 Dynamic Message History Native Acceptance
+on:
+  push:
+    branches: ['lu/ux-chat01-message-interactions-20261108']
+    paths:
+      - 'lu-desktop/src-tauri/src/chat_message_interactions.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/tests/native-chat/src/lib.rs'
+      - 'lu-desktop/tests/ux-chat01-message-interactions.test.mjs'
+      - 'lu-desktop/web/message_interactions.mjs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/web/styles.css'
+      - 'docs/LU_CENTRAL_DESIGN.md'
+      - '.github/workflows/lu-ux-chat01-message-interactions.yml'
+      - 'source-tree.lock.json'
+  pull_request:
+    paths:
+      - 'lu-desktop/src-tauri/src/chat_message_interactions.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/tests/native-chat/src/lib.rs'
+      - 'lu-desktop/tests/ux-chat01-message-interactions.test.mjs'
+      - 'lu-desktop/web/message_interactions.mjs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/web/styles.css'
+      - 'docs/LU_CENTRAL_DESIGN.md'
+      - '.github/workflows/lu-ux-chat01-message-interactions.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-ux-chat01-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  source-and-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm exact frozen source
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p ux-chat01-evidence
+          printf 'HEAD=%s\nRUNNER_OS=%s\n' "$EXPECTED_HEAD" "$RUNNER_OS" \
+            > ux-chat01-evidence/provenance.txt
+      - name: Test real frontend message interaction helper and Lu design contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/ux-chat01-message-interactions.test.mjs \
+            2>&1 | tee ux-chat01-evidence/ui-node.log
+          grep -Fq '# pass 5' ux-chat01-evidence/ui-node.log
+          grep -Fq '# fail 0' ux-chat01-evidence/ui-node.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-ux-chat01-ui-source
+          path: ux-chat01-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+  native-chat-persistence:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify actual candidate head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p ux-chat01-evidence
+          printf 'HEAD=%s\nRUNNER_OS=%s\n' "$EXPECTED_HEAD" "$RUNNER_OS" \
+            > ux-chat01-evidence/provenance.txt
+      - name: Run actual production ChatStore+message decorations SQLite tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib chat_message_interactions::tests -- --nocapture \
+            2>&1 | tee ux-chat01-evidence/native-message-persistence.log
+          for testname in \
+            local_reactions_and_colors_persist_across_full_chat_store_restart \
+            cannot_react_to_unknown_message_or_other_conversation \
+            refuses_arbitrary_css_and_unknown_palette_fields; do
+            grep -Fq "test chat_message_interactions::tests::$testname ... ok" \
+              ux-chat01-evidence/native-message-persistence.log
+          done
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            grep -Fq 'test chat_message_interactions::tests::linked_metadata_file_is_rejected ... ok' \
+              ux-chat01-evidence/native-message-persistence.log
+            expected=4
+          else
+            expected=3
+          fi
+          grep -Fq "test result: ok. $expected passed; 0 failed;" \
+            ux-chat01-evidence/native-message-persistence.log
+      - name: Boundary disclosure
+        shell: bash
+        run: |
+          echo 'Actual Lu ChatStore + SQLite regression tests. Does not imply installed NSIS GUI/color picker or clipboard permission acceptance on physical Windows. Historic message Replay never calls GGUF or tool execution.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-ux-chat01-native-${{ matrix.os }}
+          path: ux-chat01-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+  windows-desktop-compile:
+    needs: source-and-ui
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact Git source
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+      - name: Explicitly nonfunctional CI-only engine placeholders
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Compile original React app and native desktop with history actions
+        shell: pwsh
+        run: |
+          Push-Location lu-desktop
+          if (Test-Path package-lock.json) { npm ci } else { npm install --no-audit --no-fund }
+          npm run build
+          npm run check
+          Pop-Location
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: State installed-app limitation
+        shell: bash
+        run: |
+          echo 'Windows source build is NOT installed NSIS/WebView acceptance. No real GGUF/FFprobe/model process or native clipboard interaction is proven by compiler results.' >> "$GITHUB_STEP_SUMMARY"
