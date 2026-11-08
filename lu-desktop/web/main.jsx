@@ -836,6 +836,9 @@ function App() {
   // An opt-in for exactly one ordinary Send. This boolean is never authority:
   // the host still requires an actual native directory picker.
   const [workspaceToolsNextSend,setWorkspaceToolsNextSend] = useState(false);
+  // One Send only. Native host shows an OS picker and reviews exact program
+  // and selected resource; no JS/model path can become execution authority.
+  const [reviewedAppNextSend,setReviewedAppNextSend] = useState(null);
   // Explicit one-turn Browser opt-in; native dialog remains the grant.
   const [browserResearchNextSend,setBrowserResearchNextSend]=useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
@@ -3360,8 +3363,9 @@ function App() {
     const input = prompt.trim();
     const useWorkspaceTools=workspaceToolsNextSend;
     const useBrowserResearch=browserResearchNextSend;
-    if(useWorkspaceTools&&useBrowserResearch){
-      setError('Choose either workspace tools or Browser research for this turn.');return;
+    const useReviewedApp=reviewedAppNextSend;
+    if([Boolean(useWorkspaceTools),Boolean(useBrowserResearch),Boolean(useReviewedApp)].filter(Boolean).length>1){
+      setError('Choose only one native workspace, reviewed app or Browser mode for this turn.');return;
     }
     if(useBrowserResearch&&(images.length||textFiles.length||input.length>12*1024)){
       setError('Browser research requires a text-only question of at most 12 KiB.');return;
@@ -3371,6 +3375,9 @@ function App() {
     }
     if (useWorkspaceTools && input.length>8192){
       setError('Workspace tool questions must be at most 8192 characters.');return;
+    }
+    if (useReviewedApp && (images.length || textFiles.length || input.length>8192)){
+      setError('Reviewed application tools require a text-only question no longer than 8192 characters.');return;
     }
     let submitted;
     try { submitted = buildSubmittedPrompt(input, textFiles); }
@@ -3391,6 +3398,7 @@ function App() {
     // denied/cancelled. No future conversation inherits a filesystem grant.
     if (useWorkspaceTools) setWorkspaceToolsNextSend(false);
     if (useBrowserResearch) setBrowserResearchNextSend(false);
+    if (useReviewedApp) setReviewedAppNextSend(null);
     setImageViewer(null);
     // Capture the submitted turn immediately; leave the composer available
     // for drafting the next prompt while inference runs.
@@ -3407,18 +3415,33 @@ function App() {
     let completed = false;
     let cancelled = false;
     try {
-      const output = useBrowserResearch
-        ? await invoke('lu_generate_browser', {
-            sessionId:runtime.sessionId,chatId:activeId,
-            prompt:input,origins:browserOrigins,maxNewTokens:512
+      const output = useReviewedApp
+        ? await invoke('lu_reviewed_app_ask', {
+            sessionId:runtime.sessionId,chatId:activeId,prompt:input,
+            mode:useReviewedApp
           })
-        : await invoke('lu_generate', {
+        : useBrowserResearch
+          ? await invoke('lu_generate_browser', {
+              sessionId:runtime.sessionId,chatId:activeId,
+              prompt:input,origins:browserOrigins,maxNewTokens:512
+            })
+          : await invoke('lu_generate', {
             sessionId: runtime.sessionId, chatId: activeId,
             prompt: submitted, imageRefs: refs, maxNewTokens: 512,
             readOnlyWorkspace: useWorkspaceTools
           });
-      if (typeof output !== 'string') throw Error('Lu did not return a text response');
-      completed = true;
+      if (output===null && useReviewedApp) {
+        // Native picker cancellation creates no user turn or permission.
+        cancelled = true;
+        if (currentChat.current === activeId) {
+          draftText.current=input;
+          pendingDrafts.current.set(activeId,{prompt:input,images:[],files:[]});
+          setPrompt(input);
+        }
+      } else {
+        if (typeof output !== 'string') throw Error('Lu did not return a text response');
+        completed = true;
+      }
     } catch (error) {
       cancelled = /Cancelled|Canceled/i.test(String(error));
       if (!cancelled && currentChat.current === activeId) setError(String(error));
@@ -4940,17 +4963,41 @@ function App() {
               aria-pressed={workspaceToolsNextSend}
               disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
               title="On the next normal Send, choose a folder in the native picker and let Lu use approved read-only tools for that one turn"
-              onClick={()=>{setBrowserResearchNextSend(false);setWorkspaceToolsNextSend(value=>!value);}}>
+              onClick={()=>{setReviewedAppNextSend(null);setBrowserResearchNextSend(false);setWorkspaceToolsNextSend(value=>!value);}}>
               {workspaceToolsNextSend?'Workspace tools: next Send ✓':'Use workspace tools on Send'}
             </button>
             {workspaceToolsNextSend && <span className="composerHelp" role="status">
               Next Send will open a native folder picker. Read-only access is granted for that turn only.
             </span>}
             <button type="button" className="subtleButton"
+              aria-pressed={reviewedAppNextSend==='git'}
+              disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
+              title="Next Send: choose a Git folder with the native picker, authorize read-only reviewed Git operations, and let the local model use them"
+              onClick={()=>{
+                setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(false);
+                setReviewedAppNextSend(v=>v==='git'?null:'git');
+              }}>
+              {reviewedAppNextSend==='git'?'Reviewed Git: next Send ✓':'Use reviewed Git on Send'}
+            </button>
+            <button type="button" className="subtleButton"
+              aria-pressed={reviewedAppNextSend==='media'}
+              disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
+              title="Next Send: choose one WAV/MP4 file with the native picker and let the local model request FFprobe metadata"
+              onClick={()=>{
+                setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(false);
+                setReviewedAppNextSend(v=>v==='media'?null:'media');
+              }}>
+              {reviewedAppNextSend==='media'?'Reviewed media: next Send ✓':'Use reviewed media on Send'}
+            </button>
+            {reviewedAppNextSend&&<span className="composerHelp" role="status">
+              Next Send opens a native {reviewedAppNextSend==='git'?'Git folder':'WAV/MP4 file'} picker.
+              Only approved read-only app operations are offered to Lu for that turn.
+            </span>}
+            <button type="button" className="subtleButton"
               aria-pressed={browserResearchNextSend}
               disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
               title="Next Send: request native approval for exact HTTPS origins, use a supervised read-only Browser and return a journaled answer"
-              onClick={()=>{setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(v=>!v);}}>
+              onClick={()=>{setReviewedAppNextSend(null);setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(v=>!v);}}>
               {browserResearchNextSend?'Browser research: next Send ✓':'Research with Lu browser (read only)'}
             </button>
             {browserResearchNextSend&&<label className="composerHelp">

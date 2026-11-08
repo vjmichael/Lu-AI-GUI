@@ -54,7 +54,10 @@ fn reviewed_meta_class(id:&str)->Option<&'static str>{
         "lu.background_receipt.get"|"lu.web.browser.read"|
         "lu.web.browser.interact"=>Some("foundational"),
         "lu.archive.list"|"lu.git.status"|"lu.git.log"|
-        "lu.git.diff"=>Some("utility"),
+        "lu.git.diff"|
+        "lu.reviewed.git.head"|"lu.reviewed.git.status"|
+        "lu.reviewed.git.branch"|"lu.reviewed.git.history"|
+        "lu.reviewed.media.facts"=>Some("utility"),
         // An unreviewed tool remains unclassified rather than being promoted
         // by merely choosing a familiar module prefix.
         _=>None
