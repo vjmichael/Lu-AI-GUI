@@ -295,7 +295,7 @@ test('Wave A2 registry advertises actual host operations without granting execut
   const commands = [...registry.matchAll(/capability!\(\s*"[^"]+"\s*,\s*"(ide_[a-z_]+)"/g)]
     .map(match => match[1]);
   const registered = [...tauri.matchAll(/^\s+(ide_[a-z_]+),?$/gm)].map(match => match[1]);
-  assert.equal(commands.length, 46, 'native capability catalog preserves existing WO9 operations and adds bounded read-only source search');
+  assert.equal(commands.length, 46, 'native capability catalog preserves prior 42 operations and adds four private recovery operations');
   assert.equal(new Set(commands).size, commands.length);
   const nativeLspCommands = [
     'ide_lsp_worker_status', 'ide_lsp_start_session',
@@ -429,7 +429,7 @@ test('Wave A2 typed request keys match actual Rust Tauri argument names', () => 
     const signature = native.match(new RegExp('async fn ' + command + '\\(([\\s\\S]*?)\\) ->'));
     assert.ok(signature, id + ': missing native function');
     const parameters = [...signature[1].matchAll(/^\s*([a-z_]+):\s*(.+?),?\s*$/gm)]
-      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'coordinator', 'inbox', 'ledger', 'snapshots', 'intents'].includes(name))
+      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'coordinator', 'inbox', 'ledger', 'snapshots', 'intents', 'vault'].includes(name))
       .map(name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()))
       .sort();
     const typed = Object.keys(schemas.operations[id].request.properties).sort();
