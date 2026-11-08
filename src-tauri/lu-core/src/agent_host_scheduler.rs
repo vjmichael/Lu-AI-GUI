@@ -986,12 +986,12 @@ mod tests{
         assert_eq!(s.request_cancel(
             &f.plan,&f.chat,&f.origin,&f.owner,1
         ),Ok(WriteStatus::AlreadyRecorded));
-        // Cancellation can race across the original planner and scheduler:
-        // the later quarantine must still be possible, but not rearm work.
-        a.request_cancel(&f.plan,&f.chat,&f.origin,&id("e-",85)).unwrap();
         assert_eq!(s.release_without_dispatch(
             &f.plan,&f.chat,&f.origin,&f.owner,1
         ),Err(ScheduleError::InvalidTransition));
+        // Cancellation can race across the original planner and scheduler:
+        // the later quarantine must still be possible, but not rearm work.
+        a.request_cancel(&f.plan,&f.chat,&f.origin,&id("e-",85)).unwrap();
         assert_eq!(s.quarantine_abandoned(
             &f.plan,&f.chat,&f.origin,&f.owner,&Stopped(true)
         ),Ok(WriteStatus::New));
