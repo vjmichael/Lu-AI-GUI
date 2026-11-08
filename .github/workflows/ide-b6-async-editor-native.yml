@@ -60,6 +60,18 @@ jobs:
           python3 -m py_compile ide/app/fixtures/gtk_chooser_confirmation_policy.py ide/app/fixtures/wo8_linux_editor_atspi.py
           python3 -m unittest discover -s ide/app/fixtures -p 'test_gtk_chooser_confirmation_policy.py' -v
           echo "IDE_B6_GTK_NATIVE_CHOOSER_POLICY=PASS"
+      - name: Parse full installed Windows B5 UIA and memory measurement fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1').Path,
+            [ref]$tokens,[ref]$errors)
+          if($errors.Count){
+            throw "B5 installed PowerShell fixture parse denied: $($errors[0])"
+          }
+          Write-Host "B6_B5_INSTALLED_WINDOWS_MEASUREMENT_POWERSHELL_SYNTAX=PASS"
       - name: Run actual B6 regressions and full frontend build/test
         shell: bash
         working-directory: ide/app
