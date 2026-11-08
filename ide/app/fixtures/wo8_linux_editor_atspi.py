@@ -14,6 +14,8 @@ import time
 
 import pyatspi
 
+from gtk_chooser_confirmation_policy import candidate_captions
+
 EXE = os.environ["WO8_INSTALLED_EXE"]
 ROOT = Path(os.environ["WO8_FIXTURE_ROOT"]).resolve()
 SOURCE = ROOT / "main.rs"
@@ -246,8 +248,13 @@ def _native_picker_confirm(attempt=0):
     # chooser action THREE times and the dialog never closed. A generic
     # "Open" can also be GTK's navigation button. Prefer actual Select
     # Folder and bottom-right action geometry, retaining native ancestry.
-    priority = {"select folder": 0, "choose folder": 1,
-                "select": 2, "open folder": 3, "open": 4}
+    # The real Ubuntu26 failure reported only one generic "Open" action,
+    # repeatedly activated with no dialog closure. That may be navigation,
+    # not acceptance. Suppress the same ineffective action on retries.
+    permitted = candidate_captions(
+        ("select folder", "choose folder", "select", "open folder", "open"),
+        attempt)
+    priority = {name: i for i, name in enumerate(permitted)}
     ranked = []
     for obj in elements():
         try:
@@ -270,10 +277,9 @@ def _native_picker_confirm(attempt=0):
         except Exception:
             continue
     ranked.sort(key=lambda record: record[:4])
-    # Consecutive failed OS confirmation attempts must not hit the same
-    # first generic toolbar Open when multiple native candidates exist.
-    start = min(attempt, max(0, len(ranked) - 1))
-    for item in ranked[start:] + ranked[:start]:
+    # An explicit folder-selection button may still be retried on the next
+    # attempt, but never the same generic 'Open' that failed to close GTK.
+    for item in ranked:
         try:
             _, _, _, _, name, obj = item
             action = obj.queryAction()
@@ -287,8 +293,12 @@ def _native_picker_confirm(attempt=0):
                         return
         except Exception:
             continue
-    # A separately witnessed native GTK X11 dialog may have zero exposed
-    # AT-SPI action buttons. Try bounded real OS keyboard acceptance instead.
+    # When there is no authentic explicit Select Folder action, or it fails
+    # to activate, use independent native OS witnesses. No repeating a
+    # generic toolbar Open/navigation action for each failed attempt.
+    if attempt > 0 and not ranked:
+        print("P04_GTK_RETRY_POLICY=generic_open_suppressed;"
+              "attempt=" + str(attempt), flush=True)
     if _x11_dialog_activation(attempt):
         return
     if _atspi_bounded_chooser_mouse(attempt):
@@ -405,7 +415,12 @@ def select_native_folder():
             if not _select_real_fixture_directory():
                 key("ctrl+l")
                 type_text(str(ROOT))
-                print("P04_GTK_EXACT_PATH_ENTRY=reasserted_in_native_chooser",flush=True)
+                # Commit the actual native location entry before trying a
+                # different GTK confirmation mode. A typed but unsubmitted
+                # location is not a selected folder.
+                key("Return")
+                print("P04_GTK_EXACT_PATH_ENTRY=reasserted_and_submitted_in_native_chooser",
+                      flush=True)
                 time.sleep(0.5)
         if not _native_chooser_still_open():
             break
