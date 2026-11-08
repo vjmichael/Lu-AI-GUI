@@ -38,7 +38,7 @@ use lu_ide_execution_supervisor::linux_worker::{
     RunCancellation as NativeCancel,
 };
 
-const VALID_RECIPES: [&str; 3] = ["rust_check", "rust_tests", "lu_ide_host_tests"];
+const VALID_RECIPES: [&str; 4] = ["rust_check", "rust_build", "rust_tests", "lu_ide_host_tests"];
 const MAX_HISTORY: usize = 32;
 const MAX_RUNTIME_MS: u64 = 5 * 60_000;
 
