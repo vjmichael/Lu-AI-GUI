@@ -1,5 +1,12 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## IDE 10 — P02 Linux/P06 notice evidence, P03/P04 native repairs (November 7)
+
+The active additional draft development branch `ide/p03-p04-native-closeout-20261107` starts from P06 #95 exact source `55f70b66bdbdfded57ee416011881eb9965904f6`; P01–P06 stacked originals remain draft and none were merged/retired. P02 Windows native source and WO8 installed tests passed at that parent exact SHA, while Ubuntu source, genuine Debian installed GTK, and P06 Ubuntu notice jobs were **queued** at inspection; no Linux acceptance inferred. P06 archived Windows report at that parent SHA records 521 resolved inventory entries and zero missing package-specific notices but the seven special MPL/r-efi and separate embedded-compiler, Apple/native SDK and WebView2 runtime obligations remain unapproved; legal/signing/release approval FALSE.
+
+P03 continuation repaired the malformed Windows clangd native CI inline PowerShell PE-import script (prior native ParserError) and added early exact-script AST parser regression; the PE check is diagnostic only, **not** an AppContainer/SCM/Job/LLDB positive witness. P04 continuation made the real installed native-dialog witness accept owned Window/Pane UIA fragments only with exact button/title and OS InvokePattern (prior Windows WO9 correctly denied missing dialog); and made fsynced disposable upgrade/rollback worker-quiescence admission reject boolean/float/string/null/non-integer counts, with hostile subprocess-based tests. **These new source changes await exact new-head CI and actual Win/Linux installed native results.** Signed two-version installer transitions, production worker reconciliation/rollback, final license clearance and protected native Run/Test/Debug remain OPEN. P05 native-gated PR/workflow retirement deferred; P07/WO10 Lu integration deferred until Lu Core v1.0.
+
+
 ## P06 now has source-committed, OS-reviewed dependency lockfiles (November 7)
 
 Both original CI-approved immutable Cargo.lock and npm package-lock.json bytes have been committed directly as source blobs; reviewed SHA-256 and original Git blob identities are enforced on both OSs. The P06 temporary read-only lockfile exporter is removed; source CI now runs npm ci and Cargo --locked. Native builds/GUI, 48 historic missing license notices (new evidence pending), signed release, independent license review, and protected OS acceptance remain separate release gates.
