@@ -696,3 +696,31 @@ Exact-head Windows/Linux Rust/Node/Tauri and installed protected build,
 cancel/restart and worker source-immunity acceptance remain OPEN.
 Engineering handoff: ide/docs/IDE_DEV03_REVIEWED_RUST_BUILD_20261108.md.
 
+
+
+## DEV-03.2B.1 multi-language adapter review contracts — November 8, 2026
+
+Branch ide/dev03-multilang-native-adapter-review-20261108 stacked on exact
+DEV-03.2A 1d6b1325967cfa20e8be7bba395e33ac2e506ff4. The native host now
+defines three immutable non-Rust adapter contracts: Python pytest, Node builtin
+test (JS/TS compatibility separately unverified), and CMake configure/build/
+CTest logical pipeline. An explicit native registered-project review checks
+clean Git HEAD, cap-std source reads, and exact saved manifest SHA-256 with a
+second preflight recheck. Review fingerprints are NOT credentials. There is
+NO toolchain bundle, frozen source snapshot, actual native OS worker, issued
+grant, source execution, task acceptance or installed acceptance for these
+languages. Frontend Jobs screen displays fixed steps and eight required
+future admission gates but deliberately offers no Run option. Added Tauri
+ide_review_multilang_adapter, capability job.reviewAdapter, now 49 catalog
+operations and 47 typed definitions, six genuine native Git/filesystem
+regression fixtures and 11 frontend hostile contract tests. Exact eleven JS
+test bodies passed under development-only V8 assertion emulation; real
+Node/Rust/Tauri/installed Windows/Linux results remain OPEN. Dedicated CI
+.github/workflows/ide-dev03-multilang-adapter-review-native.yml requires
+exact-head Windows 2022 and Ubuntu 24.04 tests and verifies original
+supervisor, protected workers and native build backend were unchanged.
+Engineering handoff: ide/docs/IDE_DEV03_MULTILANG_ADAPTER_REVIEW_20261108.md.
+Outstanding DEV-03.2B.2/.3/.4: pinned offline runtime bundles, reviewed
+platform-specific contained worker execution, real cancellation/recovery,
+artifacts and installed OS acceptance. The original product readiness
+BLK-05/06 and Group C integration gates remain separate open failures.
