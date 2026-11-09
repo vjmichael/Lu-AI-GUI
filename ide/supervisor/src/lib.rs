@@ -28,6 +28,7 @@ pub mod wo6_build_test_evidence;
 pub mod wo6_output_evidence;
 pub mod debug_binary_witness;
 pub mod debug_symbol_verification;
+pub mod project_debug_target;
 // The SCM-only recovery service must never compile into a plain D7C
 // windows-worker build: its per-job NUL lease requires a separately
 // installed and authenticated protected service identity.
