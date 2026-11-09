@@ -72,3 +72,13 @@ test('actual SQLite integration test withholds oracle after original completion'
   assert.match(receipts,/open_existing_readonly/);
   assert.match(receipts,/STOP_GOAL_OR_SOURCE_CHANGED/);
 });
+
+test('real Qwen two-step integration must reject missing original oracle after restart',()=>{
+  const real=readFileSync(new URL('../../src-tauri/lu-core/tests/e1_reviewed_model_tools.rs',import.meta.url),'utf8');
+  assert.match(real,/agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart/);
+  assert.match(real,/let parent_recovery=reconcile_recovery\(/);
+  assert.match(real,/let child_recovery=reconcile_recovery\(/);
+  assert.match(real,/STOP_ANCESTOR_ORACLE_UNVERIFIED/);
+  assert.match(real,/STOP_DESCENDANT_CUSTODY_UNPROVEN/);
+  assert.match(real,/NoIndependentCustodyProof/);
+});
