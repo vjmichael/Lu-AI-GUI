@@ -82,7 +82,7 @@ def verify_claim(root, claim, symbolizer, symbolizer_sha):
                                       claim["sourceSha256"], FILES["source"])
     binary, binary_bytes = safe_file(root, claim["binary"],
                                       claim["binarySha256"], FILES["binary"])
-    require(binary_bytes[:4] == b"\\x7fELF" if platform == "linux-elf64"
+    require(binary_bytes[:4] == b"\x7fELF" if platform == "linux-elf64"
             else binary_bytes[:2] == b"MZ", "EXECUTABLE_FORMAT_DENIED")
     if platform == "windows-pe-pdb":
         require(isinstance(claim["pdb"], str)

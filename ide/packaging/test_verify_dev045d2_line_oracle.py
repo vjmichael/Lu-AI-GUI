@@ -56,7 +56,7 @@ class HostileMappingTests(unittest.TestCase):
         self.binary = self.root / "fixture"
         self.llvm = self.root / "llvm-symbolizer-test"
         self.source.write_text("int probe(void) { return 42; }\n// second line\n", encoding="utf-8")
-        self.binary.write_bytes(b"\\x7fELF" + b"0" * 16)
+        self.binary.write_bytes(b"\x7fELF" + b"0" * 16)
         self.llvm.write_bytes(b"pinned-native-oracle-fixture")
         self.claim = claim_for(self.root, "linux-elf64", 1, 0x401000)
 
@@ -116,10 +116,10 @@ class HostileMappingTests(unittest.TestCase):
         with self.assertRaisesRegex(Denied, "INDEPENDENT_DIGEST_MISMATCH"):
             self.run_claim()
         self.source.write_text("int probe(void) { return 42; }\n// second line\n", encoding="utf-8")
-        self.binary.write_bytes(b"\\x7fELF" + b"9" * 16)
+        self.binary.write_bytes(b"\x7fELF" + b"9" * 16)
         with self.assertRaisesRegex(Denied, "INDEPENDENT_DIGEST_MISMATCH"):
             self.run_claim()
-        self.binary.write_bytes(b"\\x7fELF" + b"0" * 16)
+        self.binary.write_bytes(b"\x7fELF" + b"0" * 16)
         with self.assertRaisesRegex(Denied, "ORACLE_BINARY_MISMATCH"):
             with mock.patch("verify_dev045d2_line_oracle.subprocess.run"):
                 verify_claim(self.root, self.claim, self.llvm, "1" * 64)
