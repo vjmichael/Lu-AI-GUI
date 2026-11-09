@@ -40,6 +40,9 @@ dev045d3-ci-oracle = ["dap-transport", "linux-worker"]
 # D4C runs a pinned, native first-party LLVM PE/PDB reader only in
 # disposable debug CI; not a Lu release, Tauri command or general tool.
 dev045d4c-ci-oracle = ["dap-transport", "protected-recovery-service"]
+# A reviewed, patched LLVM 18 debugger owner-event sideband under one-use
+# Job/SCM custody, NEVER a default Windows release capability.
+dev045d5-ci-event-owner = ["dev045d4c-ci-oracle"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

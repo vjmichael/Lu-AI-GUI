@@ -15,6 +15,8 @@ mod dap_transport;
 pub mod native_kernel_pc;
 #[cfg(all(windows, feature = "dap-transport"))]
 pub mod windows_kernel_pc;
+#[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+mod windows_event_owner;
 #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
 mod windows_stopped_line_oracle;
 pub mod debug_binary_witness;
