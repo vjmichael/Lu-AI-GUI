@@ -87,6 +87,13 @@ jobs:
           assert 'verify_independent_dwarf_line_for_ci' in k
           assert 'verify_project_source_line_for_ci' in t
           assert 'build_terminal_receipt_sha256' in t
+          assert 'dev045d3-ci-oracle' in Path('ide/supervisor/Cargo.toml').read_text()
+          lsp = l.split('pub fn start_linux_lsp(', 1)[1].split('pub fn start_linux_dap(', 1)[0]
+          dap = l.split('fn start_linux_dap_inner(', 1)[1]
+          assert 'if let Some(target) = project_target' not in lsp
+          assert 'if let Some(target) = project_target' in dap
+          assert '.arg("/debug-target")' in dap
+          assert 'verify_stopped_project_image' in dap
           assert 'runInTerminal' not in k
           assert 'setBreakpoints' not in k
           assert 'setExpression' not in k
