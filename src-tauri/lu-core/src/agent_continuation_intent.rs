@@ -304,7 +304,27 @@ pub fn reverify_child_before_execution(
          FROM lu_agent_continuation_children WHERE child_plan_id=?1",
         params![child_plan],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))
     ).optional().map_err(|e|format!("Corrupt child lineage: {e}"))?;
-    let Some((parent,revision,step,prep_turn))=link else{return Ok(false)};
+    let Some((parent,revision,step,prep_turn))=link else{
+        // Crash after registering a child draft but before binding lineage:
+        // its human origin is already reserved by a continuation intent.
+        // Never mistake that incomplete draft for an ordinary first plan.
+        let child_turn:Option<String>=db.query_row(
+            "SELECT human_turn_id FROM lu_agent_plans WHERE plan_id=?1
+              AND conversation_id=?2",
+            params![child_plan,chat],|r|r.get(0)
+        ).optional().map_err(|e|e.to_string())?;
+        if let Some(turn)=child_turn{
+            let unlinked:i64=db.query_row(
+                "SELECT COUNT(*) FROM lu_agent_continuation_intents
+                 WHERE fresh_human_turn_id=?1",
+                params![turn],|r|r.get(0)
+            ).map_err(|e|e.to_string())?;
+            if unlinked!=0{
+                return Err("Unlinked continuation draft requires reconciliation".into())
+            }
+        }
+        return Ok(false)
+    };
     if !opaque_id(&parent,"p-")||!lowercase_sha(&revision)
         ||!opaque_id(&prep_turn,"g-")||step==0||step>31{
         return Err("Corrupt persisted parent/child lineage".into())
