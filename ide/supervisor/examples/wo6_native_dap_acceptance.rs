@@ -548,6 +548,8 @@ mod protected {
                 ).map_err(|_| "DENIED: real LLDB Job-owned stopped RIP/PDB/source/receipt chain mismatch")?;
                 if !evidence.os_owned_thread_context_matches_lldb
                     || !evidence.independent_pdb_source_line_verified
+                    || !evidence.kernel_debug_port_present
+                    || !evidence.debuggee_parent_is_native_lldb
                     || evidence.lldb_debug_event_owner_attested
                     || evidence.debugger_commands_authorized
                     || evidence.installed_app_accepted
@@ -568,7 +570,7 @@ mod protected {
                     evidence.build_terminal_receipt_sha256.clone()
                 ));
                 println!(
-                    "DEV045D4C_REAL_LU_JOB_RIP_PDB_AND_RUNNING_RECEIPTS=PASS;source_line={};os_pe_base=0x{:x};os_thread_context_matches_lldb=true;pdb_line=independent;debug_event_owner_attested=false;source_commands_authorized=false",
+                    "DEV045D4C_REAL_LU_JOB_RIP_PDB_AND_RUNNING_RECEIPTS=PASS;source_line={};os_pe_base=0x{:x};os_thread_context_matches_lldb=true;kernel_debug_port=true;parent_is_owned_lldb=true;pdb_line=independent;debug_event_owner_attested=false;source_commands_authorized=false",
                     evidence.source_line, evidence.loaded_pe_base,
                 );
             }

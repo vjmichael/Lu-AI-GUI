@@ -72,6 +72,12 @@ jobs:
           assert 'original_bundle_sha256' in native
           assert 'native_lsp_bundle_digest' in native
           assert 'target.verify()' in native
+          kernel=Path('ide/supervisor/src/windows_kernel_pc.rs').read_text()
+          assert 'CheckRemoteDebuggerPresent' in kernel
+          assert 'GetProcessId(debugger_process)' in kernel
+          assert 'kernel_parent_pid(module.pid)? != owner_pid' in kernel
+          assert 'actual_debug_event_owner_attested: false' in kernel
+          assert 'debuggee_parent_is_native_lldb' in host
           assert 'target.symbols.source_line_mapping_verified' in native
           assert 'source_line_mapping_verified: true' not in native
           assert 'lldb_owned_kernel_debug_event_attested: false' in native
