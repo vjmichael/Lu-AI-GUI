@@ -1,5 +1,27 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## DEV-04.5D4 Windows Job module witness — November 9, 2026 (UTC)
+
+Draft [PR #184](https://github.com/vjmichael/Lu-AI-GUI/pull/184)
+stacked on DEV-04.5D3 #181. New native Windows read-only verifier obtains
+job members from the existing restricted AppContainer Job handle, verifies
+one unique process executable and loaded PE32+ module via Windows process/
+ToolHelp APIs, independently checks sealed PE SHA-256, observed loaded
+base/SizeOfImage and derives the ASLR-correct preferred instruction
+address from the DAP claim. The protected DAP gateway also verifies
+the distinct debugger Authorized/Running and original Cargo Completed
+fsynced journal receipts plus exact native target/snapshot bindings.
+The real SCM/service-backed Windows acceptance fixture now has fixed
+`--project-debug-module` mode under the same protected worker; a separate
+Windows native CI matrix checks the new Win32 code and Linux regression.
+**Implementation only; exact-head native result OPEN.** A process/module
+mapping is NOT an independently observed stopped-thread RIP or PDB source
+line: both remain explicitly false and breakpoint/step/variables/evaluate
+remain disabled. Windows OS thread context + independent PDB line is the
+next D4B gate; installed signed-app acceptance remains independent.
+See `ide/docs/IDE_DEV045D4_WINDOWS_JOB_MODULE_20261108.md`.
+
+
 ## DEV-04.5D3 protected stop-to-source-line kernel and receipt binding — November 9, 2026 (UTC)
 
 Draft [PR #181](https://github.com/vjmichael/Lu-AI-GUI/pull/181) stacks on D2 #180.
