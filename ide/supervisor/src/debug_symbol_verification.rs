@@ -571,6 +571,30 @@ mod tests {
     }
     #[cfg(windows)]
     #[test]
+    fn full_native_output_manifest_pe_pdb_witness_rehashes_both_files(){
+        use crate::{debug_binary_witness::audit_debug_binary_candidate,
+            wo6_output_evidence::audit_published_output};
+        let root=std::env::temp_dir().join(format!("lu-dev043-pe-{:032x}",rand::random::<u128>()));
+        fs::create_dir_all(root.join("target/debug")).unwrap();
+        let exe=root.join("target/debug/fixture.exe");
+        let pdb=root.join("target/debug/fixture.pdb");
+        fs::write(&exe,minimal_pe()).unwrap();
+        fs::write(&pdb,minimal_matching_pdb()).unwrap();
+        let output=audit_published_output(&root).unwrap();
+        let binary=audit_debug_binary_candidate(&root,&output).unwrap().unwrap();
+        let result=verify_build_debug_symbols(&root,&output,&binary).unwrap().unwrap();
+        assert!(result.debug_symbols_attested);
+        assert_eq!(result.symbols_kind,"external_pdb_guid_age_dbi_match");
+        assert_eq!(result.symbols_relative_path.as_deref(),Some("target/debug/fixture.pdb"));
+        assert!(!result.debugger_execution_authorized);
+        let mut wrong=minimal_matching_pdb();
+        put32(&mut wrong,5*512+8,2);
+        fs::write(&pdb,wrong).unwrap();
+        assert!(verify_build_debug_symbols(&root,&output,&binary).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(windows)]
+    #[test]
     fn pe_rsds_and_pdb_msf_guid_age_dbi_machine_are_required(){
         let pe=minimal_pe();
         let rsds=pe32plus_rsds(&pe).unwrap();
