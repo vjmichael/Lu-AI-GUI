@@ -101,6 +101,47 @@ impl DapGateway {
         let process = self.process.as_mut().ok_or(SupervisorError::NoContainment)?;
         process.observe_windows_job_module(expected_binary, sha, pc)
     }
+    /// The only permitted test-only continue is the existing fixed DAP
+    /// disconnect, never arbitrary step/continue. The original LLDB
+    /// event-owner thread must emit CONTINUED before terminal success.
+    #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+    pub(crate) fn close_with_actual_owner_continue_for_ci(
+        mut self, seq: u64,
+    ) -> Result<(), SupervisorError> {
+        if self.session.phase() != DapPhase::Stopped || seq == 0 {
+            return Err(SupervisorError::NoContainment);
+        }
+        let disconnect = self.session.disconnect().map_err(protocol_denied)?;
+        self.send(&disconnect)?;
+        self.process.as_mut().ok_or(SupervisorError::NoContainment)?
+            .wait_owner_continued_for_ci(seq)?;
+        self.close()
+    }
+    /// Fixed CI-only worker failure injection: native process handle only;
+    /// Drop of DapGateway must still journal cancellation and kill Job tree.
+    #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+    pub(crate) fn crash_protected_lldb_for_ci(&mut self) -> Result<(), SupervisorError> {
+        if self.session.phase() != DapPhase::Stopped
+            || self.session.source_candidate().is_none() {
+            return Err(SupervisorError::NoContainment);
+        }
+        self.process.as_mut().ok_or(SupervisorError::NoContainment)?
+            .crash_owned_lldb_for_ci()
+    }
+    /// Exact kernel DebuggerThread sideband from a separately allowlisted
+    /// pipe, not DAP stdout; this has no public Tauri/WebView action.
+    #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+    pub(crate) fn verify_lldb_kernel_event_owner(
+        &mut self, pid: u32, tid: u32, rip: u64,
+    ) -> Result<crate::windows_event_owner::OwnerEvent, SupervisorError> {
+        if self.session.phase() != DapPhase::Stopped
+            || self.session.source_candidate()
+                .and_then(|f| f.instruction_address) != Some(rip) {
+            return Err(SupervisorError::NoContainment);
+        }
+        self.process.as_mut().ok_or(SupervisorError::NoContainment)?
+            .verify_lldb_kernel_event_owner(pid, tid, rip)
+    }
     #[cfg(windows)]
     pub(crate) fn verify_windows_native_debug_port(
         &mut self,

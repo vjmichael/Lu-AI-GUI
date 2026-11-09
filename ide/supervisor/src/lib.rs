@@ -15,6 +15,8 @@ mod dap_transport;
 pub mod native_kernel_pc;
 #[cfg(all(windows, feature = "dap-transport"))]
 pub mod windows_kernel_pc;
+#[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+mod windows_event_owner;
 #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
 mod windows_stopped_line_oracle;
 pub mod debug_binary_witness;
@@ -428,6 +430,57 @@ pub struct Supervisor {
     state: Mutex<Store>,
 }
 impl Supervisor {
+    /// The only permitted owner-event receipt destination is the already
+    /// approved native journal's private parent. Never a workspace, model
+    /// path or WebView-supplied folder. CI only.
+    #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    pub(crate) fn native_owner_receipt_root(&self) -> Result<PathBuf, SupervisorError> {
+        use std::os::windows::fs::MetadataExt;
+        let root = self.journal_path.parent().ok_or(SupervisorError::JournalUnavailable)?;
+        let metadata = fs::symlink_metadata(root).map_err(|_| SupervisorError::JournalUnavailable)?;
+        if !root.is_absolute() || !metadata.is_dir()
+            || metadata.file_type().is_symlink()
+            || metadata.file_attributes() & 0x400 != 0 {
+            return Err(SupervisorError::JournalUnavailable);
+        }
+        Ok(root.to_path_buf())
+    }
+    /// Prove the separate fsynced owner-event receipt survived supervisor
+    /// close/reopen. The path is derived solely from the original private
+    /// journal directory and native job ID; callers never choose a folder.
+    #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    pub fn verify_native_owner_receipt_after_restart(
+        &self, job_id: &str, seq: u64, expected_sha256: &str,
+    ) -> Result<(), SupervisorError> {
+        use sha2::{Digest, Sha256};
+        use std::os::windows::fs::MetadataExt;
+        if !job_id.starts_with("job-") || job_id.len() != 36
+            || !job_id[4..].bytes().all(|b| b.is_ascii_hexdigit())
+            || seq == 0 || seq > 4096
+            || expected_sha256.len() != 64
+            || !expected_sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(SupervisorError::JournalCorrupt);
+        }
+        let path = self.native_owner_receipt_root()?
+            .join(format!("lu-owner-{job_id}-{seq:016x}.receipt"));
+        let meta = fs::symlink_metadata(&path).map_err(|_| SupervisorError::JournalCorrupt)?;
+        if !meta.is_file() || meta.file_type().is_symlink()
+            || meta.file_attributes() & 0x400 != 0 || meta.len() > 1024
+            || meta.len() < 128 {
+            return Err(SupervisorError::JournalCorrupt);
+        }
+        let content = fs::read(&path).map_err(|_| SupervisorError::JournalCorrupt)?;
+        let got = format!("{:x}", Sha256::digest(&content));
+        if got != expected_sha256 {
+            return Err(SupervisorError::JournalCorrupt);
+        }
+        let text = std::str::from_utf8(&content)
+            .map_err(|_| SupervisorError::JournalCorrupt)?;
+        if !text.starts_with(&format!("lu-owner-v1\\n{job_id}\\n")) {
+            return Err(SupervisorError::JournalCorrupt);
+        }
+        Ok(())
+    }
     /// Path must be supplied by trusted application profile management.
     /// Do not point this at a repository or user-selected project file.
     pub fn open(journal_path: PathBuf) -> Result<Self, SupervisorError> {

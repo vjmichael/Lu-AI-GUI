@@ -227,6 +227,8 @@ mod protected {
         verify_job_module: bool,
         sample_stopped_thread: bool,
         verify_independent_pdb: bool,
+        verify_owner_event: bool,
+        crash_owner: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use lu_ide_execution_supervisor::{
             debug_binary_witness::audit_debug_binary_candidate,
@@ -486,7 +488,11 @@ mod protected {
         } else {
             println!("DEV045D2_WINDOWS_REAL_DAP_SOURCE_CLAIM=unavailable");
         }
-        if (sample_stopped_thread || verify_independent_pdb) && !verify_job_module {
+        if crash_owner && !verify_owner_event {
+            return Err("DENIED: fixed owner crash test requires original verified event".into());
+        }
+        if (sample_stopped_thread || verify_independent_pdb || verify_owner_event)
+            && !verify_job_module {
             return Err("DENIED: thread evidence cannot bypass PE module and journal witness".into());
         }
         if verify_job_module {
@@ -540,7 +546,7 @@ mod protected {
         // line reader; every native receipt must be preserved on restart.
         #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
         let mut bound_line_receipts: Option<(String, String)> = None;
-        if verify_independent_pdb {
+        if verify_independent_pdb && !verify_owner_event {
             #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
             {
                 let evidence = dap.verify_project_os_thread_pdb_receipts_for_ci(
@@ -579,7 +585,59 @@ mod protected {
                 return Err("DENIED: real LLDB/PDB mapping is CI-only and never enabled in release".into());
             }
         }
-        if cancel_project {
+        #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+        let mut owner_receipt: Option<(u64, String)> = None;
+        if verify_owner_event {
+            #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+            {
+                let owner = dap.verify_real_lldb_event_owner_for_ci(
+                    &supervisor, &debug_job.job_id, &debug_plan, &target,
+                ).map_err(|_| "DENIED: actual pinned LLDB owner DEBUG_EVENT/sideband/PDB/journal not verified")?;
+                if !owner.lldb_event_loop_owner_attested
+                    || !owner.protected_pe_pdb_verified
+                    || !owner.durable_receipt_verified
+                    || owner.debugger_commands_authorized
+                    || owner.installed_app_accepted
+                    || owner.debugger_job_id != debug_job.job_id
+                    || owner.debugger_plan_sha256 != debug_job.plan_sha256
+                    || owner.build_terminal_receipt_sha256 != receipt.terminal_receipt_hash
+                    || owner.owner_sequence == 0 || owner.stopped_rip == 0
+                    || owner.verified_source_line == 0 {
+                    return Err("DENIED: owner event did not bind exact approved debug journal".into());
+                }
+                bound_line_receipts = Some((
+                    owner.debug_running_receipt_sha256,
+                    owner.build_terminal_receipt_sha256,
+                ));
+                owner_receipt = Some((
+                    owner.owner_sequence, owner.native_owner_receipt_sha256,
+                ));
+                println!(
+                    "DEV045D5_REAL_LLDB_KERNEL_OWNER_STOP_PDB_JOURNALS=PASS;source_line={};native_owner_event=true;new_debugger_commands=false",
+                    owner.verified_source_line,
+                );
+            }
+            #[cfg(not(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner")))]
+            {
+                return Err("DENIED: first-party LLDB owner-event proof unavailable outside native CI".into());
+            }
+        }
+        if crash_owner {
+            #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+            {
+                dap.crash_real_lldb_after_owner_receipt_for_ci()
+                    .map_err(|_| "DENIED: native CI failed to kill the actual protected LLDB process")?;
+                if dap.verify_real_lldb_event_owner_for_ci(
+                    &supervisor, &debug_job.job_id, &debug_plan, &target,
+                ).is_ok() {
+                    return Err("DENIED: dead LLDB process replayed active kernel event evidence".into());
+                }
+                println!("DEV045D5_REAL_LLDB_WORKER_CRASH_REVOKES_OWNER=PASS");
+            }
+            #[cfg(not(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner")))]
+            return Err("DENIED: worker crash injection available only in reviewed CI".into());
+        }
+        if cancel_project || crash_owner {
             // The debugger reached a real stopped Cargo-built project and
             // returned actual nonempty thread/stack evidence. Dropping the
             // native gateway must journal CancelRequested BEFORE the Job
@@ -595,6 +653,17 @@ mod protected {
                 return Err("DENIED: project LLDB cancel receipts not fsynced before tree kill".into());
             }
             println!("DEV045C_WINDOWS_PROJECT_LLDB_CANCEL_JOB_TREE_AND_RECEIPTS=PASS");
+        } else if verify_owner_event {
+            #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+            {
+                let seq = owner_receipt.as_ref()
+                    .ok_or("DENIED: owner event receipt disappeared before DAP disconnect")?.0;
+                dap.close_with_real_owner_continue_for_ci(seq)
+                    .map_err(|_| "DENIED: original LLDB ContinueDebugEvent revocation missing before Job terminal")?;
+                println!("DEV045D5_NATIVE_LLDB_EVENT_CONTINUED_AND_REVOKED=PASS");
+            }
+            #[cfg(not(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner")))]
+            return Err("DENIED: unreviewed source cannot continue owner event".into());
         } else {
             dap.close().map_err(|e| e.code())?;
         }
@@ -606,7 +675,9 @@ mod protected {
         if sha(&source_file)? != original_source_sha {
             return Err("DENIED: debugger changed original project source".into());
         }
-        let expected_debug = if cancel_project { JobPhase::Cancelled } else { JobPhase::Completed };
+        let expected_debug = if cancel_project || crash_owner {
+            JobPhase::Cancelled
+        } else { JobPhase::Completed };
         let jobs = supervisor.inspect().map_err(|e| e.code())?;
         if jobs.len() != 2 || jobs.iter().any(|j| {
             j.requires_reconciliation
@@ -662,6 +733,13 @@ mod protected {
         }) {
             return Err("DENIED: native SCM debug receipts failed journal restart".into());
         }
+        #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+        if let Some((sequence, owner_sha)) = owner_receipt {
+            replay.verify_native_owner_receipt_after_restart(
+                &debug_job.job_id, sequence, &owner_sha,
+            ).map_err(|e| e.code())?;
+            println!("DEV045D5_OWNER_EVENT_FSYNC_RESTART_RECOVERY=PASS");
+        }
         // Opening a fresh supervisor session must not restore either prior
         // grant, even though both old plan hashes and receipts remain readable.
         if replay.record_human_approval(
@@ -680,27 +758,39 @@ mod protected {
         let args: Vec<String> = env::args().skip(1).collect();
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug"] {
-            return run_windows_project_debug(false, false, false, false);
+            return run_windows_project_debug(false, false, false, false, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-cancel"] {
-            return run_windows_project_debug(true, false, false, false);
+            return run_windows_project_debug(true, false, false, false, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-module"] {
-            return run_windows_project_debug(false, true, false, false);
+            return run_windows_project_debug(false, true, false, false, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-thread"] {
-            return run_windows_project_debug(false, true, true, false);
+            return run_windows_project_debug(false, true, true, false, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-line"] {
-            return run_windows_project_debug(false, true, true, true);
+            return run_windows_project_debug(false, true, true, true, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-line-cancel"] {
-            return run_windows_project_debug(true, true, true, true);
+            return run_windows_project_debug(true, true, true, true, false, false);
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-owner"] {
+            return run_windows_project_debug(false, true, true, true, true, false);
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-owner-cancel"] {
+            return run_windows_project_debug(true, true, true, true, true, false);
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-owner-crash"] {
+            return run_windows_project_debug(false, true, true, true, true, true);
         }
         let cancel = args.as_slice() == ["--cancel"];
         #[cfg(target_os = "linux")]

@@ -408,8 +408,11 @@ fn spawn_contained_stdio(
     executable: &Path,
     command: &mut Vec<u16>,
     cwd: &Path,
-    env: &[u16],
-) -> Result<(Handle, Handle, Handle, Handle, Option<Handle>), SupervisorError> {
+    env: &mut Vec<u16>,
+    owner_event_channel: bool,
+) -> Result<(
+    Handle, Handle, Handle, Handle, Option<Handle>, Option<(Handle, [u8; 16])>
+), SupervisorError> {
     let (child_stdin, host_stdin) = inheritable_pipe()?;
     let (host_stdout, child_stdout) = inheritable_pipe()?;
     uninheritable(host_stdin.0)?;
@@ -424,6 +427,27 @@ fn spawn_contained_stdio(
     } else {
         (nul_stderr()?, None)
     };
+    // The fourth handle is *only* a test-only reviewed LLDB event channel.
+    // Normal LSP, ordinary DAP and all release processes inherit exactly 3.
+    let event_pipe = if owner_event_channel
+        && cfg!(all(debug_assertions, feature = "dev045d5-ci-event-owner")) {
+        let (host_read, child_write) = inheritable_pipe()?;
+        uninheritable(host_read.0)?;
+        let nonce = rand::random::<u128>().to_le_bytes();
+        let nonce_hex: String = nonce.iter().map(|v| format!("{v:02x}")).collect();
+        let extra = format!(
+            "LU_IDE_OWNER_PIPE_HANDLE={:x}\0LU_IDE_OWNER_NONCE={}\0\0",
+            child_write.0 as usize, nonce_hex,
+        );
+        if env.len() < 2 || env[env.len() - 1] != 0
+            || env[env.len() - 2] != 0 {
+            return Err(denied());
+        }
+        env.pop();
+        env.extend(extra.encode_utf16());
+        if env.len() > 32767 { return Err(denied()); }
+        Some((host_read, child_write, nonce))
+    } else { None };
     let mut capabilities = SECURITY_CAPABILITIES::default();
     capabilities.AppContainerSid = profile.sid;
     capabilities.Capabilities = ptr::null_mut();
@@ -458,14 +482,21 @@ fn spawn_contained_stdio(
     {
         return Err(denied());
     }
-    let child_handles = [child_stdin.0, child_stdout.0, stderr.0];
+    let mut child_handles = vec![child_stdin.0, child_stdout.0, stderr.0];
+    if let Some((_, event_write, _)) = event_pipe.as_ref() {
+        child_handles.push(event_write.0);
+    }
+    if !matches!(child_handles.len(), 3 | 4)
+        || (child_handles.len() == 4 && !owner_event_channel) {
+        return Err(denied());
+    }
     if unsafe {
         UpdateProcThreadAttribute(
             attributes.raw(),
             0,
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST_VALUE,
             child_handles.as_ptr().cast(),
-            size_of::<[HANDLE; 3]>(),
+            child_handles.len() * size_of::<HANDLE>(),
             ptr::null_mut(),
             ptr::null(),
         )
@@ -484,7 +515,7 @@ fn spawn_contained_stdio(
     let cwd_wide = wide(cwd.as_os_str());
     let mut child = PROCESS_INFORMATION::default();
     // InheritHandles=TRUE is safe here ONLY because the kernel handle list
-    // restricts inheritance to the three explicitly selected pipe ends.
+    // restricts inheritance to 3 normal or 4 explicit CI-only pipe ends.
     if unsafe {
         CreateProcessW(
             exe_wide.as_ptr(),
@@ -516,9 +547,10 @@ fn spawn_contained_stdio(
         }
         return Err(denied());
     }
-    // child_stdin/stdout/stderr handles close here in the trusted host;
-    // parent holds only stdin-write and stdout-read.
-    Ok((process, thread, host_stdin, host_stdout, debug_stderr))
+    // Only the native host retains the owner-event read end. The extra
+    // write end closes here and cannot leak through normal launch paths.
+    let owner_read = event_pipe.map(|(host_read, _write, nonce)| (host_read, nonce));
+    Ok((process, thread, host_stdin, host_stdout, debug_stderr, owner_read))
 }
 
 struct BoundedWrite {
@@ -591,12 +623,57 @@ struct WindowsLspProcess {
     writer_thread: Option<JoinHandle<()>>,
     stdout_read: Handle,
     debug_stderr: Option<Handle>,
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    event_sideband: Option<crate::windows_event_owner::OwnerSideband>,
     released: bool,
 }
 // Process and handle ownership are exclusive; no native HANDLE is shared
 // concurrently and each pipe read/write occurs on one serialized worker actor.
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    fn wait_owner_continued_for_ci(
+        &mut self, seq: u64,
+    ) -> Result<(), SupervisorError> {
+        if !self.lease.alive() { return Err(SupervisorError::NoContainment); }
+        self.event_sideband.as_mut().ok_or(SupervisorError::NoContainment)?
+            .wait_exact_native_continue(seq)
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    fn crash_owned_lldb_for_ci(&mut self) -> Result<(), SupervisorError> {
+        if !self.lease.alive()
+            || unsafe { WaitForSingleObject(self.process.0, 0) } != WAIT_TIMEOUT {
+            return Err(SupervisorError::NoContainment);
+        }
+        if unsafe { TerminateProcess(self.process.0, 127) } == 0
+            || unsafe { WaitForSingleObject(self.process.0, 3_000) } != WAIT_OBJECT_0 {
+            return Err(SupervisorError::NoContainment);
+        }
+        // A surviving debuggee must NOT retain our private attestation
+        // writer. Native kernel pipe EOF is mandatory after LLDB dies;
+        // timeout means an inherited handle leaked or a worker survived.
+        self.event_sideband.as_mut()
+            .ok_or(SupervisorError::NoContainment)?
+            .expect_pipe_eof_after_lldb_crash()?;
+        Ok(())
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    fn verify_lldb_kernel_event_owner(
+        &mut self, pid: u32, tid: u32, rip: u64,
+    ) -> Result<crate::windows_event_owner::OwnerEvent, SupervisorError> {
+        if !self.lease.alive()
+            || unsafe { WaitForSingleObject(self.process.0, 0) } != WAIT_TIMEOUT
+            || !crate::windows_kernel_pc::job_has_member(self.job.handle.0, pid)? {
+            return Err(SupervisorError::NoContainment);
+        }
+        let event = self.event_sideband.as_mut()
+            .ok_or(SupervisorError::NoContainment)?
+            .current(pid, tid, rip)?;
+        crate::windows_kernel_pc::verify_lldb_event_owner_thread(
+            self.process.0, event.owner_tid,
+        )?;
+        Ok(event)
+    }
     #[cfg(feature = "dap-transport")]
     fn corroborate_windows_debug_port(
         &mut self,
@@ -806,7 +883,7 @@ pub fn start_windows_lsp(
     if !clean_meta(&executable)?.is_file() {
         return Err(denied());
     }
-    let env = min_environment(&local, &bundle)?;
+    let mut env = min_environment(&local, &bundle)?;
     let command_text = format!(
         "\"{}\"{}",
         executable.display(),
@@ -848,8 +925,11 @@ pub fn start_windows_lsp(
     }
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
-    let (process, child_thread, stdin_write, stdout_read, debug_stderr) =
-        match spawn_contained_stdio(&profile, &job, &executable, &mut command, &workspace, &env) {
+    let (process, child_thread, stdin_write, stdout_read, debug_stderr, _event_pipe) =
+        match spawn_contained_stdio(
+            &profile, &job, &executable, &mut command, &workspace,
+            &mut env, false,
+        ) {
             Ok(value) => {
                 native_lsp_trace("suspended_child_attested");
                 value
@@ -906,6 +986,8 @@ pub fn start_windows_lsp(
         writer_thread: Some(writer_thread),
         stdout_read,
         debug_stderr,
+        #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+        event_sideband: None,
         released: false,
     };
     let gateway = LspGateway::attach_native(
@@ -1076,7 +1158,7 @@ fn start_windows_dap_inner(
     if !clean_meta(&executable)?.is_file() {
         return Err(denied());
     }
-    let env = min_environment(&local, &bundle)?;
+    let mut env = min_environment(&local, &bundle)?;
     let command_text = format!(
         "\"{}\"{}",
         executable.display(),
@@ -1115,8 +1197,13 @@ fn start_windows_dap_inner(
     native_lsp_trace("scm_exact_nul_lease_fsynced");
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
-    let (process, child_thread, stdin_write, stdout_read, debug_stderr) =
-        match spawn_contained_stdio(&profile, &job, &executable, &mut command, &workspace, &env) {
+    let (process, child_thread, stdin_write, stdout_read, debug_stderr, owner_pipe) =
+        match spawn_contained_stdio(
+            &profile, &job, &executable, &mut command, &workspace,
+            &mut env,
+            plan.recipe_id == "dap_lldb_project"
+                && cfg!(all(debug_assertions, feature = "dev045d5-ci-event-owner")),
+        ) {
             Ok(value) => {
                 native_lsp_trace("suspended_child_attested");
                 value
@@ -1163,6 +1250,21 @@ fn start_windows_dap_inner(
         }
     };
     native_lsp_trace("writer_ready");
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    let event_sideband = if let Some((reader, nonce)) = owner_pipe {
+        let raw = reader.0 as usize;
+        // The bounded native reader exclusively owns this kernel handle
+        // from now on; it closes it on EOF, invalid wire or queue pressure.
+        std::mem::forget(reader);
+        match crate::windows_event_owner::start_owner_pipe_reader(raw, nonce) {
+            Ok(reader) => Some(reader),
+            Err(_) => {
+                let _ = job.kill_and_verify();
+                let _ = supervisor.native_quarantine_after_error(job_id);
+                return Err(SupervisorError::Quarantined);
+            }
+        }
+    } else { None };
     let actor = WindowsLspProcess {
         _profile: profile,
         lease,
@@ -1173,6 +1275,8 @@ fn start_windows_dap_inner(
         writer_thread: Some(writer_thread),
         stdout_read,
         debug_stderr,
+        #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+        event_sideband,
         released: false,
     };
     let gateway = crate::dap_transport::DapGateway::attach_native(
@@ -1221,6 +1325,30 @@ pub struct WindowsProjectStopPdbEvidence {
     pub kernel_debug_port_present: bool,
     pub debuggee_parent_is_native_lldb: bool,
     pub lldb_debug_event_owner_attested: bool,
+    pub debugger_commands_authorized: bool,
+    pub installed_app_accepted: bool,
+}
+/// Native-only evidence from the *actual* pinned LLVM debugger owner
+/// event loop, a separate private inherited pipe, the Job OS witness,
+/// original PE/PDB source line and durable one-use receipts. This is not a
+/// new permission to set a breakpoint, step, evaluate or inspect variables.
+#[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+#[derive(Debug, Clone)]
+pub struct WindowsOwnerEventAccepted {
+    pub debugger_job_id: String,
+    pub debugger_plan_sha256: String,
+    pub build_terminal_receipt_sha256: String,
+    pub debug_running_receipt_sha256: String,
+    pub native_owner_receipt_sha256: String,
+    pub owner_sequence: u64,
+    pub debuggee_pid: u32,
+    pub debuggee_thread_id: u32,
+    pub lldb_owner_thread_id: u32,
+    pub stopped_rip: u64,
+    pub verified_source_line: u32,
+    pub lldb_event_loop_owner_attested: bool,
+    pub protected_pe_pdb_verified: bool,
+    pub durable_receipt_verified: bool,
     pub debugger_commands_authorized: bool,
     pub installed_app_accepted: bool,
 }
@@ -1530,6 +1658,124 @@ impl WindowsDapSession {
             debugger_commands_authorized: false,
             installed_app_accepted: false,
         })
+    }
+    /// D5 native acceptance: the exact Windows kernel event, received and
+    /// still owned on the original debugger thread, is proven independently
+    /// of the LLDB-DAP JSON and bound to both fsynced supervisor journals.
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    pub fn verify_real_lldb_event_owner_for_ci(
+        &mut self, supervisor: &Supervisor, job_id: &str,
+        plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+    ) -> Result<WindowsOwnerEventAccepted, SupervisorError> {
+        use crate::windows_event_owner::persist_native_owner_receipt;
+        // First independently verify the actual protected Cargo->LLDB
+        // Job-owned OS RIP, compiler-generated PE/PDB line and source bytes.
+        let line = self.verify_project_os_thread_pdb_receipts_for_ci(
+            supervisor, job_id, plan, target,
+        )?;
+        if !line.os_owned_thread_context_matches_lldb
+            || !line.independent_pdb_source_line_verified
+            || !line.kernel_debug_port_present
+            || !line.debuggee_parent_is_native_lldb
+            || line.lldb_debug_event_owner_attested
+            || line.debugger_commands_authorized
+            || line.installed_app_accepted {
+            return Err(SupervisorError::NoContainment);
+        }
+        // The DAP frame isn't allowed to specify a PID or event owner.
+        // Recover actual Job-owned process and unique OS thread separately.
+        let target_module = self.verify_project_loaded_module(
+            supervisor, job_id, plan, target,
+        )?;
+        let sample = self.gateway.sample_windows_stopped_thread_rip(
+            &target_module.module,
+        )?;
+        if !sample.two_matching_samples || !sample.job_membership_rechecked
+            || sample.observed_rip != line.observed_rip {
+            return Err(SupervisorError::NoContainment);
+        }
+        let owner = self.gateway.verify_lldb_kernel_event_owner(
+            sample.process_id, sample.thread_id, sample.observed_rip,
+        )?;
+        if owner.kind != 1
+            || !matches!(owner.exception_code, 0x8000_0003 | 0x8000_0004)
+            || owner.first_chance != 1
+            || owner.pid != sample.process_id || owner.tid != sample.thread_id
+            || owner.rip != sample.observed_rip
+            || owner.exception_address < target_module.module.loaded_base
+            || owner.exception_address >= target_module.module.loaded_base
+                .checked_add(target_module.module.loaded_size)
+                .ok_or(SupervisorError::NoContainment)?
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        let root = supervisor.native_owner_receipt_root()?;
+        let hash = persist_native_owner_receipt(
+            &root, job_id, &self.native_plan_sha256,
+            &line.debug_running_receipt_sha256, &owner,
+        )?;
+        // An event CONTINUED while the receipt was being synced invalidates
+        // the stop. The native event loop sends CONTINUED on the SAME pipe
+        // before the job can be marked ready for any future debugger action.
+        let still = self.gateway.verify_lldb_kernel_event_owner(
+            sample.process_id, sample.thread_id, sample.observed_rip,
+        )?;
+        if still != owner
+            || !self.gateway.poll()?.is_empty()
+            || self.gateway.phase() != lu_ide_workspace::dap_session::DapPhase::Stopped
+            || self.gateway.source_candidate()
+                .and_then(|f| f.instruction_address) != Some(sample.observed_rip)
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let debug = supervisor.receipt_history(job_id)?;
+        if debug.last().is_none_or(|r| r.body.phase != JobPhase::Running
+            || r.body.plan_sha256 != self.native_plan_sha256
+            || r.entry_hash != line.debug_running_receipt_sha256)
+            || !debug.iter().any(|r| r.body.phase == JobPhase::Authorized
+                && r.body.plan_sha256 == self.native_plan_sha256) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        let build = supervisor.receipt_history(&target.lineage.build_job_id)?;
+        if build.last().is_none_or(|r| r.body.phase != JobPhase::Completed
+            || r.entry_hash != line.build_terminal_receipt_sha256
+            || r.body.plan_sha256 != target.lineage.build_plan_sha256) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        Ok(WindowsOwnerEventAccepted {
+            debugger_job_id: job_id.to_owned(),
+            debugger_plan_sha256: self.native_plan_sha256.clone(),
+            build_terminal_receipt_sha256: line.build_terminal_receipt_sha256,
+            debug_running_receipt_sha256: line.debug_running_receipt_sha256,
+            native_owner_receipt_sha256: hash,
+            owner_sequence: owner.seq,
+            debuggee_pid: owner.pid,
+            debuggee_thread_id: owner.tid,
+            lldb_owner_thread_id: owner.owner_tid,
+            stopped_rip: owner.rip,
+            verified_source_line: line.source_line,
+            lldb_event_loop_owner_attested: true,
+            protected_pe_pdb_verified: true,
+            durable_receipt_verified: true,
+            debugger_commands_authorized: false,
+            installed_app_accepted: false,
+        })
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    pub fn crash_real_lldb_after_owner_receipt_for_ci(
+        &mut self,
+    ) -> Result<(), SupervisorError> {
+        self.gateway.crash_protected_lldb_for_ci()
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    pub fn close_with_real_owner_continue_for_ci(
+        self, sequence: u64,
+    ) -> Result<(), SupervisorError> {
+        self.gateway.close_with_actual_owner_continue_for_ci(sequence)
     }
     pub fn close(self) -> Result<(), SupervisorError> {
         self.gateway.close()
