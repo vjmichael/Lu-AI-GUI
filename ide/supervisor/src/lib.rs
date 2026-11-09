@@ -1270,6 +1270,26 @@ mod tests {
         assert!(!validate_plan(&build));
     }
 
+    #[cfg(feature="dap-transport")]
+    #[test]
+    fn project_debug_requires_exact_nonreplayable_target_binding_in_hashed_d3_plan(){
+        let mut plan=plan();
+        plan.recipe_id="dap_lldb_project".into();
+        plan.effect_class="debug_inspection_isolated".into();
+        plan.process_limit=16;
+        assert!(!validate_plan(&plan)); // no build receipt/binary lineage
+        plan.debug_target_binding_sha256=Some("f".repeat(64));
+        assert!(validate_plan(&plan));
+        let initial=fingerprint(&plan).unwrap();
+        plan.debug_target_binding_sha256=Some("e".repeat(64));
+        assert_ne!(initial,fingerprint(&plan).unwrap());
+        let mut fixed=plan();
+        assert!(validate_plan(&fixed));
+        let legacy=serde_json::to_string(&fixed).unwrap();
+        assert!(!legacy.contains("debugTargetBindingSha256"));
+        fixed.debug_target_binding_sha256=Some("a".repeat(64));
+        assert!(!validate_plan(&fixed)); // no target for Cargo/LSP/fixed DAP
+    }
     #[test]
     fn rejects_unpinned_or_unbounded_plans() {
         let mut bad = plan();
