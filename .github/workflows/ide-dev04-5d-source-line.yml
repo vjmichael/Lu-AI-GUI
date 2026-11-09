@@ -1,0 +1,70 @@
+name: IDE DEV04.5D read-only native source-line preflight
+on:
+  pull_request:
+    paths:
+      - 'ide/host/src/dap_session.rs'
+      - 'ide/host/src/dap_source_lines.rs'
+      - 'ide/host/src/lib.rs'
+      - '.github/workflows/ide-dev04-5d-source-line.yml'
+      - 'ide/docs/IDE_DEV045D_SOURCE_LINE_PREFLIGHT_20261108.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev045d-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  bounded-source-coordinate-contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Require actual exact PR head checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "DEV045D_EXACT_SOURCE_HEAD=PASS"
+      - name: Pin native Rust toolchain for host review
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal
+      - name: Compile and run all host protocol/native review tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.88.0 test --manifest-path ide/host/Cargo.toml --lib
+      - name: Enforce source-review Rust formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.88.0 fmt --manifest-path ide/host/Cargo.toml -- --check
+      - name: Fail closed on execution/policy claims
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('ide/host/src/dap_source_lines.rs').read_text()
+          dap=Path('ide/host/src/dap_session.rs').read_text()
+          assert 'debug_symbol_line_table_verified: false' in source
+          assert 'debugger_execution_authorized: false' in source
+          assert 'installed_app_accepted: false' in source
+          assert 'self.last_source_candidate = None;' in dap
+          assert 'candidate_from_dap_frame' in dap
+          assert 'pub fn source_candidate' in dap
+          assert 'runInTerminal' not in source
+          assert 'setBreakpoints' not in source
+          assert 'evaluate' not in source.split('#[cfg(test)]')[0]
+          print('DEV045D_NO_ADAPTER_EXECUTION_RIGHTS=PASS')
+          PY
+          echo 'DEV045D_SOURCE_LINE_REVIEW=SOURCE_ONLY_NOT_LLDB_OS_ACCEPTANCE'
+          echo 'DEV045D_BREAKPOINT_STEP_VARIABLES=DISABLED'
