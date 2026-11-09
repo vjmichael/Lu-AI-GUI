@@ -60,6 +60,26 @@ fn multilang_release_pin(recipe_id: &str) -> Option<&'static str> {
     }}
 }
 
+// The supervisor serializes JobPhase with snake_case. Debug-lowercasing
+// would turn CancelRequested into "cancelrequested", silently breaking
+// recovery/progress guards and case-sensitive UI admission.
+fn native_phase_label(phase: JobPhase) -> &'static str {
+    match phase {
+        JobPhase::Prepared => "prepared",
+        JobPhase::Authorized => "authorized",
+        JobPhase::AdmissionPending => "admission_pending",
+        JobPhase::Running => "running",
+        JobPhase::ReleasePending => "release_pending",
+        JobPhase::CancelRequested => "cancel_requested",
+        JobPhase::Cancelled => "cancelled",
+        JobPhase::Completed => "completed",
+        JobPhase::Failed => "failed",
+        JobPhase::Denied => "denied",
+        JobPhase::RecoveryRequired => "recovery_required",
+        JobPhase::Uncertain => "uncertain",
+    }
+}
+
 const MAX_HISTORY: usize = 32;
 const MAX_RUNTIME_MS: u64 = 5 * 60_000;
 
@@ -321,7 +341,7 @@ impl NativeBuildRuntime {
                 project_id: job.project_id.clone(),
                 job_id: job.job_id.clone(),
                 plan_sha256: job.plan_sha256.clone(),
-                phase: format!("{:?}", job.phase).to_lowercase(),
+                phase: native_phase_label(job.phase).to_owned(),
                 requires_reconciliation: true,
             })
             .collect();
@@ -334,7 +354,7 @@ impl NativeBuildRuntime {
                 project_id: job.project_id,
                 job_id: job.job_id,
                 plan_sha256: job.plan_sha256,
-                phase: format!("{:?}", job.phase).to_lowercase(),
+                phase: native_phase_label(job.phase).to_owned(),
                 requires_reconciliation: job.requires_reconciliation,
             }).collect();
         journal.reverse();
@@ -632,7 +652,7 @@ impl NativeBuildRuntime {
             input_snapshot_sha256: plan.input_snapshot_sha256,
             manifest_sha256: plan.manifest_sha256,
             toolchain_sha256: plan.toolchain_sha256,
-            phase: format!("{:?}", native.summary.phase).to_lowercase(),
+            phase: native_phase_label(native.summary.phase).to_owned(),
             native_exit_code: exit_code,
             native_error_category,
             output_sha256,
