@@ -26,7 +26,7 @@ test('IDE05.4 postrun auditor is compiled only inside a deliberately enabled pro
 test('complete private output inventory must not reuse the truncated 96-file WebView projection',()=>{
   assert.match(output, /audit_complete_package_output\(root: &Path\)/);
   assert.match(output, /audit_output_internal\(root, true\)/);
-  assert.match(output, /if !retain_all \{ files\.truncate\(MAX_VISIBLE\); \}/);
+  assert.match(output, /if\s+!retain_all\s*\{\s*files\.truncate\(MAX_VISIBLE\);\s*\}/);
   assert.match(audit, /audit_complete_package_output\(output_root\)/);
   assert.match(audit, /final_inventory\.tree_sha256 != inventory\.tree_sha256/);
   assert.match(audit, /final_inventory\.file_count != inventory\.file_count/);
@@ -36,7 +36,7 @@ test('installed dist-info RECORD bytes and licenses must independently match the
   assert.match(audit, /record_fields\(line\.trim_end_matches\('\\r'\)\)/);
   assert.match(audit, /strip_prefix\("sha256="\)/);
   assert.match(audit, /hex_as_base64\(&observed\.1\)/);
-  assert.match(audit, /size\.parse::<u64>\(\)\.ok\(\)!=Some\(observed\.0\)/);
+  assert.match(audit, /size\.parse::<u64>\(\)\.ok\(\)\s*!=\s*Some\(observed\.0\)/);
   assert.match(audit, /"License-Expression"/);
   assert.match(audit, /"License-File"/);
   assert.match(audit, /verified_license_file_count/);
@@ -52,9 +52,9 @@ test('wheel origin and promotion are never fabricated from lockfile or installed
   assert.match(audit, /"wheels"/);
   assert.match(audit, /strip_prefix\("sha256:"\)/);
   assert.match(audit, /direct_url\.json/);
-  assert.match(audit, /wheel_archives_verified_against_lock:false/);
-  assert.match(audit, /source_provenance_verified:false/);
-  assert.match(audit, /approved_for_project_promotion:false/);
+  assert.match(audit, /wheel_archives_verified_against_lock:\s*false/);
+  assert.match(audit, /source_provenance_verified:\s*false/);
+  assert.match(audit, /approved_for_project_promotion:\s*false/);
   assert.match(audit, /fn independent_private_install_bytes_license_and_lock_are_checked/);
 });
 test('unsafe lock sources are rejected before human consent or worker process admission',()=>{
@@ -72,8 +72,8 @@ test('durable journal records prepared BEFORE supervisor admission and never gra
   assert.match(backend, /self\.supervisor\.prepare\(plan\.clone\(\)\)/);
   assert.match(ledger, /"package_prepared"/);
   assert.match(ledger, /"original_package_job_requires_native_reconciliation"/);
-  assert.match(ledger, /may_execute_or_retry_worker:false/);
-  assert.match(ledger, /installed_into_project:false/);
+  assert.match(ledger, /may_execute_or_retry_worker:\s*false/);
+  assert.match(ledger, /installed_into_project:\s*false/);
   assert.match(ledger, /file\.sync_all\(\)/);
   assert.match(ledger, /fn crash_between_supervisor_prepare_and_audit_stays_unresolved/);
   assert.match(ledger, /fn tampered_or_partial_journal_refuses_replay/);

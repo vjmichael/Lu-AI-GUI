@@ -56,6 +56,8 @@ jobs:
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
             librsvg2-dev libgtk-3-dev patchelf libssl-dev
       - name: Native Node host-to-WebView boundaries and frontend bundle
+        id: node_checks
+        continue-on-error: true
         working-directory: ide/app
         shell: bash
         run: |
@@ -68,12 +70,16 @@ jobs:
           npm run check
           echo IDE055_NODE_AND_UI_NATIVE_RUNNER_PASS
       - name: Native registered-project and manifest tests
+        id: host_tests
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
           cargo test --manifest-path ide/host/Cargo.toml --all-targets
           echo IDE055_NATIVE_HOST_PASS
       - name: Native package supervisor compiler, malicious fixtures and journal replay
+        id: supervisor_tests
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -88,6 +94,8 @@ jobs:
             --features "$features" --all-targets
           echo IDE055_NATIVE_SUPERVISOR_AND_HOSTILE_PACKAGE_FIXTURES_PASS
       - name: Actual platform Tauri package feature compile; not physical installation
+        id: tauri_compile
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -96,6 +104,8 @@ jobs:
           echo IDE055_NATIVE_PACKAGE_TAURI_COMPILED
           echo IDE055_HUMAN_DIALOG_AND_PHYSICAL_INSTALLED=OPEN
       - name: Rust formatting and immutable committed lockfiles
+        id: format_checks
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -104,6 +114,26 @@ jobs:
           cargo fmt --manifest-path ide/app/src-tauri/Cargo.toml -- --check
           git diff --exit-code -- ide/app/src-tauri/Cargo.lock ide/app/package-lock.json
           echo IDE055_FORMAT_LOCK_PASS
+      - name: Consolidated result must reflect every original compiler or test failure
+        shell: bash
+        if: always()
+        env:
+          NODE_OUTCOME: ${{ steps.node_checks.outcome }}
+          HOST_OUTCOME: ${{ steps.host_tests.outcome }}
+          SUPERVISOR_OUTCOME: ${{ steps.supervisor_tests.outcome }}
+          TAURI_OUTCOME: ${{ steps.tauri_compile.outcome }}
+          FORMAT_OUTCOME: ${{ steps.format_checks.outcome }}
+        run: |
+          printf 'NODE=%s HOST=%s SUPERVISOR=%s TAURI=%s FORMAT=%s\n' \
+            "$NODE_OUTCOME" "$HOST_OUTCOME" "$SUPERVISOR_OUTCOME" \
+            "$TAURI_OUTCOME" "$FORMAT_OUTCOME"
+          for status in "$NODE_OUTCOME" "$HOST_OUTCOME" "$SUPERVISOR_OUTCOME" "$TAURI_OUTCOME" "$FORMAT_OUTCOME"; do
+            if [ "$status" != success ]; then
+              echo "IDE055_GROUP_GATE_DENIED: failing or skipped mandatory step=$status"
+              exit 1
+            fi
+          done
+          echo IDE055_GROUP_COMPILER_MATRIX=PASSED
       - name: Store real source-platform receipt; never imply installed release
         if: always()
         shell: bash
