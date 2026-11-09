@@ -179,6 +179,18 @@ impl TaskStore {
                user_turn_id TEXT NOT NULL,
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );
+             CREATE TABLE IF NOT EXISTS lu_task_windows_job_custody(
+               task_id TEXT PRIMARY KEY REFERENCES lu_tasks(task_id),
+               workspace_id TEXT NOT NULL,
+               method TEXT NOT NULL CHECK(method='WINDOWS_JOB_ACTIVE_ZERO_V1'),
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_os_custody_no_update
+               BEFORE UPDATE ON lu_task_windows_job_custody
+               BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_os_custody_no_delete
+               BEFORE DELETE ON lu_task_windows_job_custody
+               BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
              CREATE TABLE IF NOT EXISTS lu_task_auto_continue (
                workspace_id TEXT PRIMARY KEY NOT NULL,
                enabled INTEGER NOT NULL CHECK(enabled IN (0,1))
@@ -344,6 +356,44 @@ impl TaskStore {
         Ok(())
     }
 
+    /// AGENT-01L: write a *historical* OS kernel observation only after
+    /// verified Windows Job admission, termination and ActiveProcesses==0.
+    /// The proof type has no public constructor: only the native Win32 Job
+    /// object can create it by querying its actual still-owned handle.
+    /// This does not attest an unrelated process, a Linux escaped session,
+    /// or an ongoing permission to start another worker.
+    #[cfg(windows)]
+    pub(crate) fn record_verified_windows_job_empty(
+        &self,task_id:&str,workspace_id:&str,
+        proof:&lu_win_worker_job::WindowsJobEmptyProof,
+    )->Result<(),TaskStoreError>{
+        let trusted=|v:&str,p:&str|
+            v.len()==p.len()+32&&v.starts_with(p)
+                &&v[p.len()..].bytes().all(|b|
+                    b.is_ascii_hexdigit()&&!b.is_ascii_uppercase());
+        if !trusted(workspace_id,"g-")||task_id.len()>128||task_id.is_empty()
+            ||!["-gh","-gs","-gb","-gc","-fm"]
+                .iter().any(|suffix|task_id.ends_with(suffix)){
+            return Err(TaskStoreError::InvalidTaskId)
+        }
+        let mut db=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=db.transaction()?;
+        let matching:i64=tx.query_row(
+            "SELECT COUNT(*) FROM lu_tasks t
+             JOIN lu_reviewed_turn_origin o ON o.singleton=1
+             WHERE t.task_id=?1 AND t.workspace_id=?2
+               AND o.user_turn_id=?2 AND t.state='COMPLETED'",
+            params![task_id,workspace_id],|r|r.get(0)
+        )?;
+        if matching!=1{return Err(TaskStoreError::InvalidTransition)}
+        tx.execute(
+            "INSERT INTO lu_task_windows_job_custody(
+              task_id,workspace_id,method) VALUES(?1,?2,?3)",
+            params![task_id,workspace_id,proof.method()]
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
     pub fn start(&self, task_id: &str) -> Result<(), TaskStoreError> {
         self.transition(task_id, "PENDING", TaskState::Running)
     }
