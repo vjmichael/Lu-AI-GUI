@@ -180,6 +180,87 @@ pub fn stage_fresh_continuation(
     })
 }
 
+
+/// Link the staged original intent to an independently registered CHILD plan.
+/// The child has its own plan identity, human origin, revision, later human
+/// review and fresh scheduler owner. This link is immutable and is NOT an
+/// execution permit. Failure between the two durable writes is inert and
+/// requires manual recovery; no operation is automatically replayed.
+pub fn bind_child_plan(
+    file:&Path,parent:&str,revision:&str,step:u8,
+    human_turn:&str,child:&str,
+)->Result<(),String>{
+    if !opaque_id(parent,"p-")||!opaque_id(child,"p-")
+        ||parent==child||!lowercase_sha(revision)
+        ||!opaque_id(human_turn,"g-")||step==0||step>31 {
+        return Err("Invalid immutable child lineage identity".into())
+    }
+    let mut db=Connection::open(file).map_err(|e|e.to_string())?;
+    db.pragma_update(None,"foreign_keys","ON").map_err(|e|e.to_string())?;
+    db.pragma_update(None,"synchronous","FULL").map_err(|e|e.to_string())?;
+    schema(&db)?;
+    db.execute_batch(
+        "CREATE TABLE IF NOT EXISTS lu_agent_continuation_children(
+            parent_plan_id TEXT NOT NULL REFERENCES lu_agent_plans(plan_id),
+            revision_sha256 TEXT NOT NULL,
+            step_index INTEGER NOT NULL CHECK(step_index BETWEEN 1 AND 31),
+            fresh_human_turn_id TEXT NOT NULL,
+            child_plan_id TEXT NOT NULL UNIQUE REFERENCES lu_agent_plans(plan_id),
+            PRIMARY KEY(parent_plan_id,revision_sha256,step_index),
+            UNIQUE(parent_plan_id,fresh_human_turn_id)
+        );
+        CREATE TRIGGER IF NOT EXISTS lu_agent_continuation_child_no_delete
+          BEFORE DELETE ON lu_agent_continuation_children
+          BEGIN SELECT RAISE(ABORT,'Immutable child plan link'); END;
+        CREATE TRIGGER IF NOT EXISTS lu_agent_continuation_child_no_update
+          BEFORE UPDATE ON lu_agent_continuation_children
+          BEGIN SELECT RAISE(ABORT,'Immutable child plan link'); END;"
+    ).map_err(|e|e.to_string())?;
+    let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e|e.to_string())?;
+    let staged:Option<String>=tx.query_row(
+        "SELECT fresh_human_turn_id FROM lu_agent_continuation_intents
+          WHERE plan_id=?1 AND revision_sha256=?2 AND step_index=?3",
+        params![parent,revision,step],|r|r.get(0)
+    ).optional().map_err(|e|e.to_string())?;
+    if staged.as_deref()!=Some(human_turn){
+        return Err("No exact fresh human continuation intent".into())
+    }
+    let source:Option<(String,String)>=tx.query_row(
+        "SELECT conversation_id,human_turn_id FROM lu_agent_plans
+          WHERE plan_id=?1",
+        params![parent],|r|Ok((r.get(0)?,r.get(1)?))
+    ).optional().map_err(|e|e.to_string())?;
+    let child_origin:Option<(String,String)>=tx.query_row(
+        "SELECT conversation_id,human_turn_id FROM lu_agent_plans
+          WHERE plan_id=?1",
+        params![child],|r|Ok((r.get(0)?,r.get(1)?))
+    ).optional().map_err(|e|e.to_string())?;
+    let Some((chat,_))=source else{return Err("Original parent plan missing".into())};
+    if child_origin.as_ref()!=Some(&(chat,human_turn.to_owned())){
+        return Err("Child is not a new plan from the exact fresh human turn".into())
+    }
+    let existing:Option<(String,String)>=tx.query_row(
+        "SELECT child_plan_id,fresh_human_turn_id
+          FROM lu_agent_continuation_children
+          WHERE parent_plan_id=?1 AND revision_sha256=?2 AND step_index=?3",
+        params![parent,revision,step],|r|Ok((r.get(0)?,r.get(1)?))
+    ).optional().map_err(|e|e.to_string())?;
+    if let Some((old_child,old_human))=existing{
+        if old_child!=child||old_human!=human_turn{
+            return Err("Another child already reserved for this step".into())
+        }
+    }else{
+        tx.execute(
+            "INSERT INTO lu_agent_continuation_children(
+              parent_plan_id,revision_sha256,step_index,fresh_human_turn_id,child_plan_id
+             ) VALUES(?1,?2,?3,?4,?5)",
+            params![parent,revision,step,human_turn,child]
+        ).map_err(|e|format!("Child plan lineage conflict: {e}"))?;
+    }
+    tx.commit().map_err(|e|e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
