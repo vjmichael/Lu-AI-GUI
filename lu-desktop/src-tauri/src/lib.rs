@@ -4306,7 +4306,9 @@ async fn generate_internal(
                 .map_err(|_|"Background notification inbox unavailable")?;
             // Ordinary Send may request an inert proposed file operation,
             // but only the host can match it to this exact user's intent.
-            let mut model_prompt=if plan_only{
+            let mut model_prompt=if plan_only ||
+                (origin==GenerationOrigin::Human &&
+                 agent_memory_handoff::explicit_agent_handoff_request(&prompt).is_some()){
                 // A plan proposal is not an existing file/native action.
                 // Do not introduce competing model instruction envelopes.
                 prompt.clone()
@@ -4359,7 +4361,8 @@ async fn generate_internal(
             // M3: lexical cross-chat recall and direct source-ID lookup are
             // read-only, host-scoped ANSF DATA. Never create user turns,
             // authority records or tool grants from remembered messages.
-            if origin==GenerationOrigin::Human && images.is_empty(){
+            if origin==GenerationOrigin::Human && images.is_empty() &&
+                agent_memory_handoff::explicit_agent_handoff_request(&prompt).is_none(){
                 let base=state.chats.memory_context_for_turn(&chat_id,&prompt);
                 let mut recalled=match base{
                     Ok(value)=>value,
