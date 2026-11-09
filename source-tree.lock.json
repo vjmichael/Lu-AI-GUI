@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f2d86b864f92a23c975b9b0d5c2d6702a8355b53",
-  "trackedFileCount": 811,
+  "sourceCommitBeforeLock": "7f2b676f7a99d70b50dfbd98c6656b838f80a739",
+  "trackedFileCount": 813,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -189,7 +189,7 @@
     },
     {
       "path": ".github/workflows/lu-memory-loop03b-native.yml",
-      "blob": "2f994786446794ad56a3ba999b930f1afdad1fb1"
+      "blob": "cc7206a8c1319c0f5cacd3b74d2cdc9cf165022d"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -324,8 +324,12 @@
       "blob": "2e1a78119482c85d9caa348e682537ef833fb1f8"
     },
     {
+      "path": "benchmarks/e1/memory_loop03c_positive_oracle_cases.py",
+      "blob": "e83561b0e04a3f7dec7208880eae9f738dc1a209"
+    },
+    {
       "path": "benchmarks/e1/memory_loop03c_real_qwen_comprehension.py",
-      "blob": "11ef3ea1c738fbf865b6dc58702b557033edb87f"
+      "blob": "f8e9fdf57ed1f6e20618646a9d76d749b277bd8a"
     },
     {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
@@ -346,6 +350,10 @@
     {
       "path": "benchmarks/e1/test_memory_loop02_qwen_feedback.py",
       "blob": "8cf0d5c95e13f3555d51374ce0bbcdae25ff301c"
+    },
+    {
+      "path": "benchmarks/e1/test_memory_loop03c_positive_git.py",
+      "blob": "f0b9d7358d29a3b56a3568448fcbc3d4e5fef70f"
     },
     {
       "path": "benchmarks/e1/test_memory_loop03c_real_qwen_comprehension.py",
@@ -605,7 +613,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "33ca0bccd5760cea166509a7996e41f40aaa7495"
+      "blob": "bda7a5e6af4422686d78b7f681a7ba32b7df570d"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -677,7 +685,7 @@
     },
     {
       "path": "docs/LU_MEMORY_LOOP03C_REAL_MODEL_COMPREHENSION_20261109.md",
-      "blob": "9134dc1028967bdc433cda1b1df208b53a1df777"
+      "blob": "2ba553c292f3e11f9804aedcde182a00626c4e03"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -1045,7 +1053,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "7862d0ecfd4f2e7864b7b062f22742b45b4c0793"
+      "blob": "ab0542d7402f8fb8b9df7e430f1d21da059e59c1"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
