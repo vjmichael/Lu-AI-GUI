@@ -1,5 +1,38 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## DEV-04.5D5 — First-party LLVM Windows event-loop owner and durable sideband (2026-11-09 UTC)
+
+Draft PR #192 stacked on D4D #190. Source-only/native-CI implementation:
+the actual pinned LLVM 18.1.8 DebuggerThread event loop has a reviewed
+overlay that emits nonce-bound, monotonic \`WaitForDebugEvent\` owner and
+\`ContinueDebugEvent\` revocation records through a fourth inherited
+anonymous pipe **only** for explicit debug CI. The pipe is made
+non-inheritable before launching the inferior. Normal Windows LSP/DAP and
+release binaries retain the exact original three-handle list.
+
+The host's bounded native reader validates 76-byte records, one-use
+nonce, Job-owned LLDB owner-thread PID, real stopped debuggee PID/TID/RIP,
+original sealed PE/PDB/immutable source and both fsynced build/debug
+journal chains. It writes a separately fsynced event receipt under the
+trusted supervisor journal parent and rechecks it after restart. CI-only
+\`--project-debug-owner\`, \`--project-debug-owner-cancel\` and
+\`--project-debug-owner-crash\` modes run against the real restricted
+Windows Job/SCM and a source-built, hash-recorded patched LLDB, not the
+system LLDB. The crash mode intentionally kills the genuine owned LLDB
+after an owner receipt, denies stale proof and requires Job cleanup and
+Cancelled journal reconciliation.
+
+**Acceptance not closed:** all exact-head Windows jobs were still queued
+when inspected; no actual Windows compilation/stop/continue/crash logs or
+installed release artifacts yet. The \`ContinueDebugEvent\` revoke path
+has parser/contract tests but needs a completed real native stop/continue
+sequence. The source-built LLVM Windows build and full native crash run
+must pass, then installed-app acceptance must be independently obtained.
+Do not expand breakpoint, stepping, variable, evaluate, attach, or
+general execution permissions. See
+\`ide/docs/IDE_DEV045D5_FIRST_PARTY_LLDB_OWNER_EVENT_20261109.md\`.
+
+
 ## DEV-04.5D4D — Windows debug-port and LLDB owner verification (2026-11-09)
 
 Draft work stacked on PR #189. Read-only native Windows OS corroboration

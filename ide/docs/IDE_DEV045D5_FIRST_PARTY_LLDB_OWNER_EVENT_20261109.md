@@ -82,11 +82,17 @@ diagnosed or called repaired until those logs exist.
   independent PE/PDB match → fsynced receipt → ContinueDebugEvent
   revocation ordering and exact native observer ownership in an installed
   Lu debugger, not only the CI entrypoint.
-- Force-kill the **actual protected LLDB worker** while holding a genuine
-  kernel event, prove native pipe EOF/partial frame denial, Job descendant
-  cleanup, SCM lease revocation and journal reconciliation after restart.
-  Parser truncation/nonce/replay unit tests and normal cancellation
-  are NOT an OS worker-crash acceptance.
+- The fixed **real protected LLDB crash-injection** test entry point
+  \`--project-debug-owner-crash\` now exists. It first obtains the same
+  real OS owner/PDB/source receipt, then uses the *original owned Windows
+  process HANDLE* to forcibly terminate the already authorized LLDB,
+  requires the earlier stop attestation to become unusable, and drops the
+  gateway so existing CancelRequested→Cancelled/Job descendant cleanup,
+  SCM lease release, journal restart and event-receipt rehash gates apply.
+  The new Windows CI script runs it alongside normal and cancellation modes.
+  **Still pending native OS execution:** a completed Windows result proving
+  crash exit, sideband EOF/partial frame denial and full descendant cleanup.
+  Source and unit tests alone cannot close this acceptance.
 - Obtain signed installed application acceptance and installed-app
   debugger UI proof separately.
 
