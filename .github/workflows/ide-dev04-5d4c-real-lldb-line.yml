@@ -72,7 +72,8 @@ jobs:
           assert 'original_bundle_sha256' in native
           assert 'native_lsp_bundle_digest' in native
           assert 'target.verify()' in native
-          assert 'source_line_mapping_verified' not in native
+          assert 'target.symbols.source_line_mapping_verified' in native
+          assert 'source_line_mapping_verified: true' not in native
           assert 'lldb_owned_kernel_debug_event_attested: false' in native
           assert 'debugger_commands_authorized: false' in native
           for forbidden in ('setBreakpoints', 'setExpression', 'runInTerminal',
