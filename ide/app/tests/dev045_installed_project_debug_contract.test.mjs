@@ -52,7 +52,7 @@ test('restart must deny replayed project target and is independent of historical
   assert.match(section,/Journal entries are not simulated debugger results/);
 });
 test('only a signed exact-head candidate with explicit pinned project-DAP asset manifest can enter installed UI gate',()=>{
-  const workflow=read('../../.github/workflows/ide-dev04-5-installed-project-debug-signed.yml');
+  const workflow=read('../../../.github/workflows/ide-dev04-5-installed-project-debug-signed.yml');
   assert.match(workflow,/workflow_dispatch:/);
   assert.doesNotMatch(workflow,/(?:^|\n)  pull_request:|(?:^|\n)  push:/);
   assert.match(workflow,/environment: lu-ide-native-e2e/);
@@ -68,7 +68,7 @@ test('only a signed exact-head candidate with explicit pinned project-DAP asset 
 });
 test('Linux acceptance remains real delegated cgroup build→private target→DAP, not installed release',()=>{
   const native=read('../../supervisor/examples/wo6_linux_native_build_acceptance.rs');
-  const workflow=read('../../.github/workflows/ide-wo6-native-os-acceptance.yml');
+  const workflow=read('../../../.github/workflows/ide-wo6-native-os-acceptance.yml');
   assert.match(native,/--project-debug/);
   assert.match(native,/seal_project_debug_target/);
   assert.match(native,/start_linux_project_dap/);
