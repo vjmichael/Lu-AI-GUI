@@ -755,46 +755,6 @@ pub fn start_windows_lsp(
         &plan.toolchain_sha256,
     )?;
     native_lsp_trace("bundle_staged");
-    let project_debuggee = if let Some(target) = project_target {
-        // Stage the previously independently audited binary/PDB into the
-        // new AppContainer LocalState. No host output path is reachable
-        // from the child, and no user-selected executable is trusted.
-        target.verify()?;
-        let name = std::ffi::OsStr::new("debug-target");
-        publish_into_native_parent(
-            &target.root,
-            &local,
-            name,
-            8,
-            128 * 1024 * 1024,
-            64 * 1024 * 1024,
-        )?;
-        let stage_root = local.join("debug-target");
-        let witness = crate::wo6_output_evidence::audit_published_output(&stage_root)?;
-        let binary =
-            crate::debug_binary_witness::audit_debug_binary_candidate(&stage_root, &witness)?
-                .ok_or_else(denied)?;
-        let symbols = crate::debug_symbol_verification::verify_build_debug_symbols(
-            &stage_root,
-            &witness,
-            &binary,
-        )?
-        .ok_or_else(denied)?;
-        if binary.binary_sha256 != target.binary.binary_sha256
-            || symbols.symbols_sha256 != target.symbols.symbols_sha256
-            || symbols.symbols_relative_path != target.symbols.symbols_relative_path
-        {
-            return Err(SupervisorError::WrongProjectOrSource);
-        }
-        Some(
-            stage_root
-                .join(target.confined_relative_binary())
-                .to_string_lossy()
-                .into_owned(),
-        )
-    } else {
-        None
-    };
     let staged_input = PublishedInput {
         root: workspace.clone(),
         seal: input.seal.clone(),
@@ -846,9 +806,6 @@ pub fn start_windows_lsp(
     native_lsp_trace("scm_exact_nul_lease_requested");
     lease.grant_null()?;
     native_lsp_trace("scm_exact_nul_lease_fsynced");
-    if let Some(target) = project_target {
-        target.verify()?;
-    }
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
     let (process, child_thread, stdin_write, stdout_read, debug_stderr) =
@@ -1026,6 +983,46 @@ fn start_windows_dap_inner(
         &plan.toolchain_sha256,
     )?;
     native_lsp_trace("bundle_staged");
+    let project_debuggee = if let Some(target) = project_target {
+        // Stage the previously independently audited binary/PDB into the
+        // new AppContainer LocalState. No host output path is reachable
+        // from the child, and no user-selected executable is trusted.
+        target.verify()?;
+        let name = std::ffi::OsStr::new("debug-target");
+        publish_into_native_parent(
+            &target.root,
+            &local,
+            name,
+            8,
+            128 * 1024 * 1024,
+            64 * 1024 * 1024,
+        )?;
+        let stage_root = local.join("debug-target");
+        let witness = crate::wo6_output_evidence::audit_published_output(&stage_root)?;
+        let binary =
+            crate::debug_binary_witness::audit_debug_binary_candidate(&stage_root, &witness)?
+                .ok_or_else(denied)?;
+        let symbols = crate::debug_symbol_verification::verify_build_debug_symbols(
+            &stage_root,
+            &witness,
+            &binary,
+        )?
+        .ok_or_else(denied)?;
+        if binary.binary_sha256 != target.binary.binary_sha256
+            || symbols.symbols_sha256 != target.symbols.symbols_sha256
+            || symbols.symbols_relative_path != target.symbols.symbols_relative_path
+        {
+            return Err(SupervisorError::WrongProjectOrSource);
+        }
+        Some(
+            stage_root
+                .join(target.confined_relative_binary())
+                .to_string_lossy()
+                .into_owned(),
+        )
+    } else {
+        None
+    };
     let staged_input = PublishedInput {
         root: workspace.clone(),
         seal: input.seal.clone(),
@@ -1076,6 +1073,9 @@ fn start_windows_dap_inner(
     native_lsp_trace("scm_exact_nul_lease_requested");
     lease.grant_null()?;
     native_lsp_trace("scm_exact_nul_lease_fsynced");
+    if let Some(target) = project_target {
+        target.verify()?;
+    }
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
     let (process, child_thread, stdin_write, stdout_read, debug_stderr) =
