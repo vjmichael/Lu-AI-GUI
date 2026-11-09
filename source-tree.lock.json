@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6bd08a041cbc2f31953bf45cdc464ec83c3a3b0d",
+  "sourceCommitBeforeLock": "7c5ea12f72b66da3c9e3eebd7166b4e271395dc6",
   "trackedFileCount": 762,
   "files": [
     {
@@ -393,7 +393,7 @@
     },
     {
       "path": "docs/LU_AGENT01K_INDEPENDENT_RECOVERY_20261108.md",
-      "blob": "7db0c2ca4a4cc184ea487f892164680a7710948a"
+      "blob": "f3cb7a54f7321881feb92ad1bea6cbf41ea5bdca"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -1165,7 +1165,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01k-independent-recovery.test.mjs",
-      "blob": "95e015102878cb5f1b4cbeb0de32b2a2c086f043"
+      "blob": "62468ac3099fc2a78a9eb006c9b4115c5fec98f3"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
@@ -1709,7 +1709,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_recovery_decision.rs",
-      "blob": "c8aaa76c541feb6a1e60d22465cedd402f1b59e9"
+      "blob": "38b85ca8f05cf95d3830f046f0cc01ad4db10355"
     },
     {
       "path": "src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs",
@@ -2701,7 +2701,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "996aa6fbc73f5587ae8edf657aecb4dc7d518d4d"
+      "blob": "879380ae13717eba9dbe40e05f3ce2ccc4f4fb66"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
