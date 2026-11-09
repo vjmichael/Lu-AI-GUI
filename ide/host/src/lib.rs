@@ -27,6 +27,7 @@ pub mod project_search;
 pub mod project_run_profiles;
 pub mod conventional_tests;
 pub mod reviewed_adapters;
+pub mod debug_target_review;
 pub mod proposal;
 pub mod resource_probe;
 pub mod review;

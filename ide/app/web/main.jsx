@@ -37,6 +37,7 @@ import { belongsToSelectedProject } from './job_render_guard.js';
 import { ingestJobProgress, visibleJobProgress } from './job_progress.js';
 import { safeConventionalTestDiscovery } from './conventional_tests.js';
 import { projectJobLifecycle } from './protected_job_lifecycle.js';
+import { safeDebugTargetReview } from './debug_target_review.js';
 import { acceptNativeOutput } from './native_build_output.js';
 
 const sections = [
@@ -191,6 +192,9 @@ function App() {
   const nativeJobOutputRef = useRef(null);
   const buildStatusRequest = useRef(0);
   const [debugStatus, setDebugStatus] = useState(null);
+  const [debugTargetReview,setDebugTargetReview]=useState(null);
+  const [debugTargetBusy,setDebugTargetBusy]=useState(false);
+  const debugTargetRequest=useRef(0);
   const [debugBusy, setDebugBusy] = useState(false);
   const [debugResult, setDebugResult] = useState(null);
   const [reviewIntentId, setReviewIntentId] = useState(null);
@@ -1289,6 +1293,34 @@ function App() {
         setProblem('Could not update job intent: ' + String(error));
     } finally {
       if (request === intentRequest.current) setIntentBusy(false);
+    }
+  }
+
+  async function inspectDebugTarget() {
+    const projectId=activeProjectIdRef.current;
+    const profile=projectRunProfiles?.profiles?.find(p=>p.id==='rust_build');
+    const sha=profile?.sha;
+    if(!projectId||debugTargetBusy||buildBusy||!sha||
+       projectRunProfiles.projectId!==projectId)return;
+    const request=++debugTargetRequest.current;
+    setDebugTargetBusy(true);
+    setProblem('');
+    try {
+      const raw=await invoke('ide_review_project_debug_target',
+        {projectId,expectedManifestSha256:sha});
+      if(request!==debugTargetRequest.current||
+         activeProjectIdRef.current!==projectId)return;
+      const result=safeDebugTargetReview(raw,projectId,sha);
+      setDebugTargetReview(result);
+      setHint('Reviewed project source provenance only. No executable or debugger grant exists.');
+    }catch(error){
+      if(request===debugTargetRequest.current&&
+         activeProjectIdRef.current===projectId){
+        setDebugTargetReview(null);
+        setProblem('Project debugger review denied: '+String(error));
+      }
+    }finally{
+      if(request===debugTargetRequest.current)setDebugTargetBusy(false);
     }
   }
 
@@ -3523,6 +3555,34 @@ function App() {
                 </div>
               </section>}
             </div>
+            <section className="continuityDocument" aria-label="DEV-04.1 project debug provenance review">
+              <div className="capabilityHeading">
+                <h3>DEV-04.1 · Project debugger target preparation</h3>
+                <button type="button" className="ghostBtn"
+                  disabled={!activeProject||debugTargetBusy||buildBusy||
+                    projectRunProfiles?.projectId!==activeProject?.projectId||
+                    !projectRunProfiles.profiles.some(p=>p.id==='rust_build'&&p.sha)}
+                  onClick={()=>void inspectDebugTarget()}>
+                  {debugTargetBusy?'Reviewing…':'Review Rust target provenance'}
+                </button>
+              </div>
+              <p>Read-only source review, not project debugging. A Cargo
+                manifest and clean Git state cannot attest a compiled executable,
+                debug symbols or a safe execution target. Project debugger
+                launch remains unavailable pending independently verified
+                build-to-binary provenance and native OS authorization.</p>
+              {debugTargetReview?.projectId===activeProject?.projectId &&
+                <div role="status">
+                  <p>Clean source HEAD:
+                    {' '}<code>{debugTargetReview.cleanGitHead}</code></p>
+                  <p>Saved Cargo manifest SHA:
+                    {' '}<code>{debugTargetReview.manifestSha}</code></p>
+                  <p>Native review fingerprint:
+                    {' '}<code>{debugTargetReview.fingerprint}</code></p>
+                  <p><strong>No attested executable; no debugger approval;
+                    no worker launched.</strong></p>
+                </div>}
+            </section>
             <div className="continuityDocument jobIntentComposer" aria-label="Protected native debugger self-test">
               <h3>Protected debugger (LLDB-DAP)</h3>
               <p>Only a reviewed, installer-pinned fixed debuggee can be launched for native

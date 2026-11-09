@@ -752,3 +752,8 @@ On branch `ide/dev03-5-protected-job-lifecycle-20261108` stacked on DEV-03.4 PR 
 
 
 **DEV-03.5 follow-up:** Native status now exposes last in-memory job ID only to the matching project; Jobs may inspect its bounded stdout/stderr after failure or cancellation exclusively when the same JobID is visible in the durable native journal. No output paths or authorization travel to the frontend, and none survive app restart. Both protected real-OS workflows are now triggered on DEV-03.5 app-layer changes for exact-head evidence.
+
+
+## DEV-04.1 project debugger target provenance preparation — November 8, 2026
+
+After DEV-03.5 draft PR #162, new branch `ide/dev04-1-debug-target-provenance-20261108` starts the next Group D debugger work without waiving the pending DEV-03 acceptance gates. Native registered-project-only review of the fixed `Cargo.toml` requires exact saved SHA-256, clean Git HEAD, capability-bound manifest access and a second read/worktree check. It returns only a domain-separated review fingerprint and declared missing prerequisites: no sealed source→binary manifest, no independently attested executable/debug symbols, no project debugger adapter, no grant, no process, no installed acceptance. Tauri command `ide_review_project_debug_target` and Jobs UI display source review. Host Git/dirty/symlink tests, JS forged-target tests, and exact-head Windows/Linux Rust/Node/Tauri workflow added. Remaining DEV-04.2–04.5: native build receipt→binary hash binding, debug-symbol attestation, protected project LLDB-DAP admission and installed OS acceptance. All actual Windows/Linux CI, signed/pinned worker and installed acceptance gates remain OPEN. Handoff: `ide/docs/IDE_DEV041_DEBUG_TARGET_PROVENANCE_20261108.md`.
