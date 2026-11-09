@@ -82,3 +82,7 @@ Practical AI Capability = f(**K**: the selected model's knowledge/reasoning, **I
 - **Tests submitted:** seven AGENT-01G Node source contracts; six Windows native reviewed-app Rust tests, existing exact-head ANSF/plan/receipt/scheduler/Windows React+Tauri checks. These are **not accepted until completed GitHub jobs provide native logs**. Actual OS worker acceptance and a loaded GGUF planning+tool-selection demonstration are STILL OPEN.
 
 [AGENT-01G design and open gates](LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md).
+
+## 2026-11-08 — AGENT-01G-R1 fail-closed scheduler lifecycle
+
+01G source now wraps its real host claim in `PlannedStepLifecycle`: any early failure/cancellation after claiming produces explicit scheduler cancellation INTENT and `CANCEL_INTENT_UNCERTAIN`, without inventing worker termination or enabling replay. Verified evidence is released only after durable original-conversation result storage. AGENT-01F's example now makes a standalone independent Git/media check an eligible first step without forcing unrelated goals into the reviewed utility set. CI contracts expanded to 10 Node cases plus 7 Windows Rust host tests, including real ANSF/SQLite scheduler reopen after abandoned claim. **Status: source candidate / waiting on exact-head GitHub native CI.** [Full 01G-R1 record](LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md).

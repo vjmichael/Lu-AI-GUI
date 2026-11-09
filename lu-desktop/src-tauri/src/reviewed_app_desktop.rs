@@ -195,6 +195,45 @@ impl HostFreshStepConsent for NativeScheduledStepConsent{
             &&self.revision==revision&&self.step==step&&self.budget==*budget
     }
 }
+/// An AGENT-01D plan claim must never vanish silently when a native worker
+/// fails, is cancelled, a model rejects the tool, or a SQLite operation
+/// errors after admission. Drop records a *cancellation intent*, NOT proof
+/// that a spawned child/descendant has stopped or can be safely retried.
+struct PlannedStepLifecycle{
+    ledger:AgentPlanLedger,
+    revisions:AgentPlanRevisionStore,
+    receipts:AgentDeliverableReceipts,
+    scheduler:AgentHostScheduler,
+    owner:String,
+    claim:String,
+    plan:String,
+    chat:String,
+    original_turn:String,
+    released:bool,
+}
+impl PlannedStepLifecycle{
+    fn release_after_durable_chat(&mut self)->Result<(),String>{
+        self.scheduler.release_without_dispatch(
+            &self.plan,&self.chat,&self.original_turn,&self.owner,1
+        ).map_err(|e|format!(
+            "Verified source recorded but plan release needs review: {e:?}"
+        ))?;
+        self.released=true;
+        Ok(())
+    }
+}
+impl Drop for PlannedStepLifecycle{
+    fn drop(&mut self){
+        if !self.released{
+            // Failing closed: a PROPOSED_NO_EXECUTION record becomes
+            // CANCEL_INTENT_UNCERTAIN. The native worker may still have
+            // applied a read, and no kernel/OS process reaping is inferred.
+            let _=self.scheduler.request_cancel(
+                &self.plan,&self.chat,&self.original_turn,&self.owner,1
+            );
+        }
+    }
+}
 fn schedule_budget()->ScheduleBudget{
     ScheduleBudget{
         max_claims:1,model_token_ceiling:1536,tool_call_ceiling:1,
@@ -549,7 +588,7 @@ async fn reviewed_app_ask_internal(
             // independent live in-process host fence create only the bounded
             // exact-step proposal; the reviewed per-turn broker still owns
             // every real tool invocation.
-            let schedule=if let Some(target)=scheduled.as_ref(){
+            let mut schedule=if let Some(target)=scheduled.as_ref(){
                 let profile=host.catalog_path.parent()
                     .ok_or("Host plan profile unavailable")?;
                 let planfile=crate::agent_plan_review::existing_plan_file(profile)?;
@@ -572,18 +611,27 @@ async fn reviewed_app_ask_internal(
                     &owner,&target.revision_sha,budget,
                     &ledger,&revisions,&sources
                 ).map_err(|e|format!("Original plan host claim refused: {e:?}"))?;
+                // Install RAII custody immediately after the host claim.
+                // If step admission, model, OS worker, oracle, or persistence
+                // fails, the recorded owner becomes CANCEL_REQUESTED.
+                let guard=PlannedStepLifecycle{
+                    ledger,revisions,receipts,scheduler,
+                    owner,claim,plan:target.plan_id.clone(),
+                    chat:chat_id.clone(),original_turn:target.original_turn.clone(),
+                    released:false
+                };
                 let consent=NativeScheduledStepConsent{
                     chat:chat_id.clone(),turn:gid_run.clone(),
                     plan:target.plan_id.clone(),revision:target.revision_sha.clone(),
                     step:target.step_index,budget
                 };
-                scheduler.propose_step(
+                guard.scheduler.propose_step(
                     &target.plan_id,&chat_id,&target.original_turn,
-                    &owner,1,&target.revision_sha,target.step_index,
-                    &claim,&gid_run,budget,&ledger,&revisions,&sources,
-                    &verifier,&consent,profile,&receipts
+                    &guard.owner,1,&target.revision_sha,target.step_index,
+                    &guard.claim,&gid_run,budget,&guard.ledger,&guard.revisions,&sources,
+                    &verifier,&consent,profile,&guard.receipts
                 ).map_err(|e|format!("Exact fresh human step refused: {e:?}"))?;
-                Some((ledger,revisions,receipts,scheduler,owner,claim))
+                Some(guard)
             }else{None};
             authority.open_user_task(TaskAuthority{
                 conversation_id:chat_id.clone(),
@@ -621,15 +669,15 @@ async fn reviewed_app_ask_internal(
                 policy,git,media
             ).map_err(|e|format!("Reviewed app could not be admitted: {e}"))?;
             let binding:Option<ScheduledBrokerBinding>=
-                if let (Some(target),Some((ledger,revisions,_,scheduler,owner,claim)))=
+                if let (Some(target),Some(guard))=
                     (scheduled.as_ref(),schedule.as_ref()){
                     let sources=crate::agent_plan_review::OriginalChatGoalSources{
                         chats:&host.chats
                     };
                     Some(reviewed.preflight_scheduled_step(
-                        scheduler,ledger,revisions,&sources,
-                        &target.plan_id,&target.original_turn,owner,1,
-                        &target.revision_sha,claim,target.step_index,target.operation
+                        &guard.scheduler,&guard.ledger,&guard.revisions,&sources,
+                        &target.plan_id,&target.original_turn,&guard.owner,1,
+                        &target.revision_sha,&guard.claim,target.step_index,target.operation
                     )?)
                 }else{None};
             let available=reviewed.capabilities()
@@ -746,9 +794,8 @@ async fn reviewed_app_ask_internal(
             // but cannot be silently cherry-picked as successful work.
             let mut host_verified_note=String::new();
             let mut verified_event=None;
-            if let (Some(target),Some(binding),Some((
-                ledger,revisions,receipts,scheduler,owner,_claim
-            )))=(scheduled.as_ref(),binding.as_ref(),schedule.as_ref()){
+            if let (Some(target),Some(binding),Some(guard))=
+                (scheduled.as_ref(),binding.as_ref(),schedule.as_ref()){
                 if answer.tool_calls!=1{
                     return Err("Plan step produced an ambiguous number of tool calls; review receipts before retrying".into())
                 }
@@ -772,10 +819,10 @@ async fn reviewed_app_ask_internal(
                 };
                 let witness=lu_core::agent_reviewed_broker_bridge::
                     link_verified_scheduled_worker_outcome(
-                        scheduler,ledger,revisions,receipts,&sources,
-                        &verifier,profile,&target.plan_id,&chat_id,
-                        &target.original_turn,owner,1,binding,
-                        &worker_origin,&call_id
+                        &guard.scheduler,&guard.ledger,&guard.revisions,
+                        &guard.receipts,&sources,&verifier,profile,
+                        &target.plan_id,&chat_id,&target.original_turn,
+                        &guard.owner,1,binding,&worker_origin,&call_id
                     ).map_err(|e|format!(
                         "A worker ran but its independent planned outcome is not verified: {e:?}"
                     ))?;
@@ -798,6 +845,12 @@ async fn reviewed_app_ask_internal(
             let answer_text=format!("{}{}",answer.answer,host_verified_note);
             host.chats.append_progress(&chat_id,&gid_run,&answer_text)?;
             host.chats.complete(&chat_id,&gid_run)?;
+            // Release only AFTER source evidence, exact historical claim,
+            // and the conversation-visible host witness are all durable.
+            // The plan cannot be re-admitted with prior authority.
+            if let Some(guard)=schedule.as_mut(){
+                guard.release_after_durable_chat()?;
+            }
             if let Some(event)=verified_event{
                 let _=emitted.emit("lu-agent-step-verified",event);
             }
@@ -836,6 +889,79 @@ async fn reviewed_app_ask_internal(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn claimed_step_lifecycle_drop_records_uncertain_cancel_intent(){
+        use lu_core::{
+            ansf_goals::{GoalEvent,GoalEventKind},
+            agent_plan_revisions::HumanDecision,
+        };
+        let root=std::env::temp_dir().join(format!(
+            "lu-agent01g-claimed-{}-{}",std::process::id(),
+            SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        let original=next_id("g-");
+        chats.append_user_with_turn_id(
+            &chat,&original,"Independently inspect my local Git HEAD"
+        ).unwrap();
+        chats.append_goal_memory_event(&chat,GoalEvent{
+            event_id:next_id("m-"),goal_id:next_id("goal-"),
+            question_id:None,kind:GoalEventKind::SetGoal,
+            text:"Verify local Git HEAD with an independently checked source".into(),
+            choice:None,comment:None
+        }).unwrap();
+        let draft=crate::agent_plan_admission::stage_initial_draft(
+            &root,&chats,&chat,&original,&[
+                crate::agent_plan_admission::ProposedStep{
+                    kind:PlanStepKind::IndependentlyCheck,
+                    depends_on:None,expected:ExpectedDeliverable::IndependentWitness
+                }
+            ]
+        ).unwrap();
+        let file=root.join("lu-agent-plans.sqlite");
+        let ledger=AgentPlanLedger::open(&file).unwrap();
+        let revisions=AgentPlanRevisionStore::open(&file).unwrap();
+        let receipts=AgentDeliverableReceipts::open(&file).unwrap();
+        let scheduler=AgentHostScheduler::open(&file).unwrap();
+        let reviewer=next_id("g-");
+        chats.append_user_with_turn_id(
+            &chat,&reviewer,"Native approve one plan revision only"
+        ).unwrap();
+        let sources=crate::agent_plan_review::OriginalChatGoalSources{chats:&chats};
+        let proof=crate::agent_plan_review::NativePlanConsent::
+            from_native_confirmation(
+                &chat,&reviewer,&draft.plan_id,&draft.revision_sha256,
+                HumanDecision::Approve
+            );
+        revisions.record_review(
+            &draft.plan_id,&chat,&reviewer,&draft.revision_sha256,
+            HumanDecision::Approve,&chats,&proof,&sources
+        ).unwrap();
+        let owner=next_id("h-");
+        scheduler.claim_host(
+            &draft.plan_id,&chat,&original,&owner,
+            &draft.revision_sha256,schedule_budget(),
+            &ledger,&revisions,&sources
+        ).unwrap();
+        let lease=PlannedStepLifecycle{
+            ledger,revisions,receipts,scheduler,owner,
+            claim:next_id("q-"),plan:draft.plan_id.clone(),
+            chat:chat.clone(),original_turn:original.clone(),released:false
+        };
+        // Simulate cancellation/failure after a real host claim but
+        // before execution proof. Dropping NEVER asserts worker cleanup.
+        drop(lease);
+        let scheduler=AgentHostScheduler::open(&file).unwrap();
+        let ledger=AgentPlanLedger::open(&file).unwrap();
+        assert_eq!(scheduler.view(
+            &draft.plan_id,&chat,&original,&ledger
+        ).unwrap().unwrap().state,"CANCEL_REQUESTED");
+        drop(scheduler);drop(ledger);drop(chats);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn approved_step_selection_does_not_admit_unreviewed_operations(){
         for op in ["git_head","git_status","git_branch","git_history","media_facts"]{

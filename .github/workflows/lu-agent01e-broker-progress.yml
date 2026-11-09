@@ -86,7 +86,7 @@ jobs:
           set -euo pipefail
           node --test lu-desktop/tests/agent01g-approved-step-integration.test.mjs \
             2>&1 | tee agent01e-evidence/agent01g-ui-bridge.log
-          grep -Fq '# pass 7' agent01e-evidence/agent01g-ui-bridge.log
+          grep -Fq '# pass 10' agent01e-evidence/agent01g-ui-bridge.log
           grep -Fq '# fail 0' agent01e-evidence/agent01g-ui-bridge.log
       - uses: actions/upload-artifact@v4
         if: always()
@@ -257,11 +257,12 @@ jobs:
           for case in \
             approved_step_selection_does_not_admit_unreviewed_operations \
             fresh_step_consent_is_bound_to_exact_new_human_turn_and_budget \
-            reviewed_worker_call_lookup_never_invents_missing_journals; do
+            reviewed_worker_call_lookup_never_invents_missing_journals \
+            claimed_step_lifecycle_drop_records_uncertain_cancel_intent; do
             grep -Fq "test reviewed_app_desktop::tests::$case ... ok" \
               agent01g-windows-evidence/agent01g-host-native.log
           done
-          grep -Fq 'test result: ok. 6 passed; 0 failed;' \
+          grep -Fq 'test result: ok. 7 passed; 0 failed;' \
             agent01g-windows-evidence/agent01g-host-native.log
       - uses: actions/upload-artifact@v4
         if: always()

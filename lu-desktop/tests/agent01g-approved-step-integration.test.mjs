@@ -68,3 +68,31 @@ test('ordinary reviewed-app mode remains a separate explicit native host flow',(
   assert.match(ui,/plan\.revisionReview==='APPROVED_PLAN_ONLY'/);
   assert.match(ui,/plan\.supervisorState==='NOT_CLAIMED'/);
 });
+
+test('failure after schedule admission is never silently treated as owner-free',()=>{
+  assert.match(host,/struct PlannedStepLifecycle/);
+  assert.match(host,/impl Drop for PlannedStepLifecycle/);
+  assert.match(host,/self\.scheduler\.request_cancel\(/);
+  assert.match(host,/if !self\.released/);
+  assert.match(host,/guard\.scheduler\.propose_step\(/);
+  assert.match(host,/let mut schedule=if let Some\(target\)=scheduled\.as_ref\(\)/);
+  assert.match(host,/guard\.release_after_durable_chat\(\)\?/);
+});
+test('a verified step can release authority only after durable conversation completion',()=>{
+  const persist=host.indexOf('host.chats.complete(&chat_id,&gid_run)?');
+  const release=host.indexOf('guard.release_after_durable_chat()?');
+  assert.ok(persist>=0&&release>persist);
+  assert.match(host,/scheduler\.release_without_dispatch\(/);
+  assert.match(host,/self\.released=true/);
+  assert.match(host,/NOT_AUTHORIZED_FOR_NEXT_STEP/);
+});
+
+test('planner offers eligible first independent check without manufacturing general tool authority',()=>{
+  const planner=readFileSync(new URL('../src-tauri/src/agent_plan_admission.rs',import.meta.url),'utf8');
+  const example=planner.slice(planner.indexOf('JSON object, without Markdown or comments:'));
+  assert.ok(example.indexOf('INDEPENDENT_CHECK')>=0);
+  assert.ok(example.indexOf('INDEPENDENT_CHECK')<example.indexOf('PRESENT'));
+  assert.match(example,/dependsOn/);
+  assert.match(planner,/Do NOT change unrelated goals to fit currently reviewed tools/);
+  assert.match(planner,/Other step kinds are plan data only/);
+});
