@@ -1,5 +1,19 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## DEV-04.6A debugger operation review and CI batching — Nov 9, 2026
+
+Working branch ide/dev04-6a-debug-control-admission-20261109 stacked on
+D5 PR #192. Private, non-executing debug operation previews now bind
+Job/plan/build/Running/owner-event/source SHA/OS stopped RIP and sequence.
+Same-line breakpoint and same-thread stepping can be reviewed; unverified
+variables and arbitrary source locations are denied. Revocation on event
+change/cancel/restart, one pending review and max eight previews. No
+native DAP request or new execution authority. D5 OS and installed gates
+remain OPEN. Owner decision: consolidate related CI suites into ONE batch
+at a coherent task-group boundary, no tiny workflows per commit. See
+ide/docs/IDE_DEV046A_DEBUG_COMMAND_REVIEW_AND_CI_BATCH_20261109.md.
+
+
 ## DEV-04.5D5 — First-party LLVM Windows event-loop owner and durable sideband (2026-11-09 UTC)
 
 Draft PR #192 stacked on D4D #190. Source-only/native-CI implementation:

@@ -1,5 +1,14 @@
 # Lu IDE — Development changelog
 
+- **DEV-04.6A source review previews and grouped CI (Nov 9):**
+  Bounded, non-executing debugger review fingerprints precise owner-event
+  receipts and Job/source/OS stop identity; denies other threads, unknown
+  frames and stale stop reuse. No DAP mutations or approval grants.
+  Per owner decision, one consolidated CI batch follows task-group work,
+  rather than repeatedly queueing tiny per-subtask workflows. Native and
+  installed debugger gates remain open.
+
+
 - **DEV-03.2B.1 multi-language native adapter review (Nov 8):** Host-native fixed Python pytest, Node builtin-test and CMake/Ninja/CTest contracts now bind a registered project's clean Git HEAD and exact manifest SHA, reject stale/dirty/foreign source and expose immutable proposed steps only. Added read-only Tauri job.reviewAdapter and Jobs UI, 49 typed capabilities/47 definitions, six native Git/filesystem tests and 11 frontend hostile cases (11/11 V8 assertion emulation). No interpreter/toolchain pins, process launch or OS worker were enabled; dedicated exact-head Windows/Linux CI and installed acceptance still OPEN.
 
 - **DEV-03.2A fixed protected Cargo Build (Nov 8):** Existing pinned, native-approved Cargo OS worker now also accepts a fourth exact rust_build recipe on both platforms, without shell/worker-boundary expansion. Seven-profile discovery and Jobs UI updated. 16 development-only JS assertions passed; actual native/installed gates OPEN.

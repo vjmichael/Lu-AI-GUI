@@ -19,6 +19,7 @@ pub mod windows_kernel_pc;
 mod windows_event_owner;
 #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
 mod windows_stopped_line_oracle;
+pub mod debug_command_review;
 pub mod debug_binary_witness;
 pub mod debug_symbol_verification;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
