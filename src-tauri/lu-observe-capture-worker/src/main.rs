@@ -110,14 +110,80 @@ mod windows_capture_worker {
 
     const MAX_CAPTURE_SECS:u64=20;
 
+    #[allow(unsafe_code)]
+    mod process_instance {
+        use windows::{
+            Win32::Foundation::{HANDLE,FILETIME,CloseHandle},
+            Win32::System::Threading::{
+                OpenProcess,GetProcessTimes,PROCESS_QUERY_LIMITED_INFORMATION
+            }
+        };
+        /// Refuse a foreground window owned by a different interactive
+        /// Windows logon/session. HWND visibility and DWM cloaking alone do
+        /// not establish same-session source authority.
+        pub(super) fn same_session(pid:u32)->Result<(),&'static str>{
+            use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
+            if pid==0{return Err("Missing native window PID")}
+            let mut mine=0u32;
+            let mut selected=0u32;
+            // SAFETY: both PIDs originate from OS handles; Win32 writes into
+            // distinct initialized u32 scalars. Query failure fails closed.
+            unsafe{
+                ProcessIdToSessionId(std::process::id(),&mut mine)
+            }.map_err(|_|"Current native desktop session unavailable")?;
+            unsafe{
+                ProcessIdToSessionId(pid,&mut selected)
+            }.map_err(|_|"Selected app session unavailable")?;
+            if mine!=selected{
+                return Err("Selected HWND belongs to another Windows session");
+            }
+            Ok(())
+        }
+        // Win32 HANDLE is *not* an automatically owning COM/WinRT object.
+        // Keep the process-query-only resource within a small RAII boundary.
+        struct ProcessQueryHandle(HANDLE);
+        impl Drop for ProcessQueryHandle{
+            fn drop(&mut self){
+                // SAFETY: the handle originated from successful OpenProcess
+                // in this scope, is owned exactly once and is not a pseudo
+                // handle. Drop does not export the handle to app/renderer.
+                let _=unsafe{CloseHandle(self.0)};
+            }
+        }
+        pub(super) fn born_at(pid:u32)->Result<u64,&'static str>{
+            if pid==0{return Err("Missing native process identity")}
+            // SAFETY: PID originates from the actual OS window; no handles,
+            // buffers or pointers are supplied by model/user input. Owned
+            // closes the query-only handle on every path. The four pointers
+            // point at initialized FILETIME records in this call frame.
+            let handle=unsafe{
+                OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,false,pid)
+            }.map_err(|_|"Cannot attest Windows process instance")?;
+            let process=ProcessQueryHandle(handle);
+            let mut created=FILETIME::default();
+            let mut ended=FILETIME::default();
+            let mut kernel=FILETIME::default();
+            let mut user=FILETIME::default();
+            unsafe{
+                GetProcessTimes(process.0,
+                    &mut created,&mut ended,&mut kernel,&mut user)
+            }.map_err(|_|"Process creation timestamp unavailable")?;
+            let instance=(u64::from(created.dwHighDateTime)<<32)
+                |u64::from(created.dwLowDateTime);
+            if instance==0{return Err("Invalid process creation timestamp")}
+            Ok(instance)
+        }
+    }
+
+
     struct OneFrame {
         started:Instant,
         captured:bool,
         nonce:String,
-        foreground_identity:Option<(usize,u32)>,
+        foreground_identity:Option<(usize,u32,u64)>,
     }
     impl GraphicsCaptureApiHandler for OneFrame {
-        type Flags=(String,Option<(usize,u32)>);
+        type Flags=(String,Option<(usize,u32,u64)>);
         type Error=Box<dyn Error+Send+Sync>;
         fn new(ctx:Context<Self::Flags>)->Result<Self,Self::Error>{
             Ok(Self{started:Instant::now(),captured:false,
@@ -135,9 +201,11 @@ mod windows_capture_worker {
             // mode binds to a native HWND + current owner PID, and fails
             // closed if that exact window is closed or replaced before
             // the only frame arrives. No window title is trusted.
-            if let Some((hwnd,pid))=self.foreground_identity{
+            if let Some((hwnd,pid,born))=self.foreground_identity{
                 let window=Window::from_raw_hwnd(hwnd as *mut std::ffi::c_void);
-                if !window.is_valid()||window.process_id()?!=pid{
+                if !window.is_valid()||window.process_id()?!=pid
+                    ||process_instance::same_session(pid).is_err()
+                    ||process_instance::born_at(pid).ok()!=Some(born){
                     control.stop();
                     return Err("Foreground window identity changed".into());
                 }
@@ -206,7 +274,11 @@ mod windows_capture_worker {
                 ||width>MAX_FRAME_WIDTH as i32||height>MAX_FRAME_HEIGHT as i32{
                 return Err("Selected window exceeds Lu's size limit".into());
             }
-            let identity=(window.as_raw_hwnd() as usize,pid);
+            // Bind capture to this exact process instance, not a recycled PID.
+            // If OS queries are unavailable, refuse rather than downgrade.
+            process_instance::same_session(pid)?;
+            let born=process_instance::born_at(pid)?;
+            let identity=(window.as_raw_hwnd() as usize,pid,born);
             let settings=Settings::new(
                 window,
                 CursorCaptureSettings::WithoutCursor,
