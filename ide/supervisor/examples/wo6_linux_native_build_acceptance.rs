@@ -1,12 +1,12 @@
 //! WO6 real Linux native Cargo check/test/cancellation under cgroup-v2 + bwrap.
 //! Fixed test-only source, no project-provided executable or shell. This
 //! acceptance fixture cannot satisfy installed-app/release approval.
-#[cfg(not(all(target_os = "linux", feature = "linux-worker")))]
+#[cfg(not(all(target_os = "linux", feature = "linux-worker", feature = "dap-transport")))]
 fn main() {
     eprintln!("DENIED: WO6 native Cargo acceptance needs protected Linux worker");
     std::process::exit(2);
 }
-#[cfg(all(target_os = "linux", feature = "linux-worker"))]
+#[cfg(all(target_os = "linux", feature = "linux-worker", feature = "dap-transport"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use lu_ide_execution_supervisor::{
         linux_worker::{execute_linux_worker_with_output, installed_toolchain_digest, RunCancellation},
