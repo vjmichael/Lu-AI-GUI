@@ -34,6 +34,7 @@ import { projectProblems, stillCurrentProblem } from './lsp_problems.js';
 import { languageServiceCapabilities, languageMethodAvailable } from './lsp_language_capabilities.js';
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 import { belongsToSelectedProject } from './job_render_guard.js';
+import { ingestJobProgress, visibleJobProgress } from './job_progress.js';
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
@@ -177,6 +178,7 @@ function App() {
   const [buildBusy, setBuildBusy] = useState(false);
   const [buildCancelBusy, setBuildCancelBusy] = useState(false);
   const [buildResult, setBuildResult] = useState(null);
+  const [jobProgressEvents, setJobProgressEvents] = useState([]);
   const buildStatusRequest = useRef(0);
   const [debugStatus, setDebugStatus] = useState(null);
   const [debugBusy, setDebugBusy] = useState(false);
@@ -491,7 +493,11 @@ function App() {
         if (value && typeof value.ready === 'boolean' &&
             Array.isArray(value.recent) && Array.isArray(value.journal) &&
             Array.isArray(value.quarantined))
-          setBuildStatus(value);
+          {
+            setBuildStatus(value);
+            setJobProgressEvents(previous =>
+              ingestJobProgress(previous, projectId, value));
+          }
       } catch {
         if (alive && activeProjectIdRef.current === projectId)
           setBuildStatus({
@@ -3247,6 +3253,26 @@ function App() {
                   {buildCancelBusy ? 'Requesting cancellation…' : 'Cancel and verify process-tree termination'}
                 </button>
               </>}
+              <section aria-label="DEV-03.3 live native job phase timeline"
+                className="continuityDocument">
+                <h4>DEV-03.3 · Live protected job progress</h4>
+                <p>Read-only native broker phases, refreshed while Jobs is open.
+                  No command stdout/stderr is exposed yet. A progress entry
+                  does not prove kernel cleanup, successful output, or release acceptance.</p>
+                {visibleJobProgress(jobProgressEvents, activeProject?.projectId)
+                  .length === 0
+                  ? <p>No verified native job phase observations for this project.</p>
+                  : <ol aria-live="polite">
+                    {visibleJobProgress(jobProgressEvents, activeProject?.projectId)
+                      .map((event, index) =>
+                        <li key={event.jobId + '-' + event.ordinal + '-' + index}>
+                          <code>{event.recipeId}</code> ·
+                          <code>{event.jobId}</code> ·
+                          {event.phase.replaceAll('_',' ')}
+                          {event.cancellationRequested ? ' · cancel requested' : ''}
+                        </li>)}
+                  </ol>}
+              </section>
               {belongsToSelectedProject(activeProject, buildResult) && <div role="status">
                 <p>Last worker result: <strong>{buildResult.phase}</strong> · Job {buildResult.jobId}</p>
                 <p>Native exit: {String(buildResult.nativeExitCode ?? 'unknown')} ·
