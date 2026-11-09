@@ -154,12 +154,14 @@ pub fn native_lsp_bundle_digest(root: &Path, recipe: &str) -> Result<String, Sup
         "lsp_ruff" => "ruff",
         #[cfg(feature = "dap-transport")]
         "dap_lldb_fixed" => "lldb-dap",
+        #[cfg(feature = "dap-transport")]
+        "dap_lldb_project" => "lldb-dap",
         _ => return Err(SupervisorError::InvalidPlan),
     };
     let bin = root.join("bin").join(filename);
     ensure_root_owned_tool(&bin)?;
     #[cfg(feature = "dap-transport")]
-    if recipe == "dap_lldb_fixed" {
+    if matches!(recipe,"dap_lldb_fixed"|"dap_lldb_project") {
         ensure_root_owned_tool(&root.join("debuggee/wo6-selftest"))?;
     }
     native_linux_lsp_trace("root_owned_clangd_binary_verified");
@@ -465,7 +467,14 @@ pub fn start_linux_lsp(
         .arg("/ls/bin:/usr/bin:/bin")
         .arg("--setenv")
         .arg("LANG")
-        .arg("C")
+        .arg("C");
+    if let Some(target)=project_target {
+        // The project binary is mounted read-only in the already isolated
+        // mount/PID/network namespace, never as a host executable launch.
+        target.verify()?;
+        command.arg("--ro-bind").arg(&target.root).arg("/debug-target");
+    }
+    command
         .arg("--chdir")
         .arg("/workspace")
         .arg("--")
@@ -570,9 +579,41 @@ pub fn start_linux_dap(
     input: &PublishedInput,
     release_root: &Path,
 ) -> Result<LinuxDapSession, SupervisorError> {
+    start_linux_dap_inner(supervisor,job_id,plan,current_native_head,
+        input,release_root,None)
+}
+#[cfg(feature = "dap-transport")]
+pub fn start_linux_project_dap(
+    supervisor:Arc<Supervisor>,job_id:&str,plan:&JobPlan,
+    current_native_head:&str,input:&PublishedInput,release_root:&Path,
+    project:&crate::project_debug_target::SealedProjectDebugTarget,
+)->Result<LinuxDapSession,SupervisorError>{
+    start_linux_dap_inner(supervisor,job_id,plan,current_native_head,
+        input,release_root,Some(project))
+}
+#[cfg(feature = "dap-transport")]
+fn start_linux_dap_inner(
+    supervisor: Arc<Supervisor>,
+    job_id: &str,
+    plan: &JobPlan,
+    current_native_head: &str,
+    input: &PublishedInput,
+    release_root: &Path,
+    project_target:Option<&crate::project_debug_target::SealedProjectDebugTarget>,
+) -> Result<LinuxDapSession, SupervisorError> {
     native_linux_lsp_trace("begin_recipe_check");
-    if plan.recipe_id != "dap_lldb_fixed" || plan.effect_class != "debug_inspection_isolated" {
-        return Err(SupervisorError::InvalidPlan);
+    if plan.effect_class!="debug_inspection_isolated" {return Err(SupervisorError::InvalidPlan);}
+    match (plan.recipe_id.as_str(),project_target){
+        ("dap_lldb_fixed",None) if plan.debug_target_binding_sha256.is_none()=>{}
+        ("dap_lldb_project",Some(target)) if
+            plan.debug_target_binding_sha256.as_deref()==Some(target.binding_sha256.as_str()) &&
+            target.lineage.project_id==plan.project_id &&
+            target.lineage.source_head==plan.source_head &&
+            target.lineage.source_snapshot_sha256==plan.input_snapshot_sha256 &&
+            target.lineage.manifest_sha256==plan.manifest_sha256=>{
+                target.verify()?;
+            }
+        _=>return Err(SupervisorError::InvalidPlan)
     }
     let executable = "lldb-dap";
     let args: &[&str] = &[];
@@ -730,11 +771,14 @@ pub fn start_linux_dap(
         Box::new(process),
     )?;
     native_linux_lsp_trace("gateway_attached");
-    Ok(LinuxDapSession { gateway })
+    let project_debuggee=project_target.map(|target|
+        format!("/debug-target/{}",target.confined_relative_binary()));
+    Ok(LinuxDapSession {gateway,project_debuggee})
 }
 #[cfg(feature = "dap-transport")]
 pub struct LinuxDapSession {
     gateway: crate::dap_transport::DapGateway,
+    project_debuggee: Option<String>,
 }
 #[cfg(feature = "dap-transport")]
 impl LinuxDapSession {
@@ -744,6 +788,10 @@ impl LinuxDapSession {
     pub fn launch_fixed_fixture(&mut self) -> Result<(), SupervisorError> {
         self.gateway
             .launch_fixed_fixture("/ls/debuggee/wo6-selftest")
+    }
+    pub fn launch_project_target(&mut self)->Result<(),SupervisorError>{
+        let target=self.project_debuggee.as_deref().ok_or(SupervisorError::InvalidPlan)?;
+        self.gateway.launch_verified_project(target)
     }
     pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {
         self.gateway.phase()

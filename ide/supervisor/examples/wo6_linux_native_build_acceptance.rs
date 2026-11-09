@@ -1,12 +1,12 @@
 //! WO6 real Linux native Cargo check/test/cancellation under cgroup-v2 + bwrap.
 //! Fixed test-only source, no project-provided executable or shell. This
 //! acceptance fixture cannot satisfy installed-app/release approval.
-#[cfg(not(all(target_os = "linux", feature = "linux-worker")))]
+#[cfg(not(all(target_os = "linux", feature = "linux-worker", feature = "dap-transport")))]
 fn main() {
     eprintln!("DENIED: WO6 native Cargo acceptance needs protected Linux worker");
     std::process::exit(2);
 }
-#[cfg(all(target_os = "linux", feature = "linux-worker"))]
+#[cfg(all(target_os = "linux", feature = "linux-worker", feature = "dap-transport"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use lu_ide_execution_supervisor::{
         linux_worker::{execute_linux_worker_with_output, installed_toolchain_digest, RunCancellation},
@@ -14,25 +14,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         snapshot::publish_input,
         debug_binary_witness::audit_debug_binary_candidate,
         debug_symbol_verification::verify_build_debug_symbols,
+        project_debug_target::{seal_project_debug_target,CompletedBuildLineage},
+        linux_worker::lsp_native::{native_lsp_bundle_digest,start_linux_project_dap},
         wo6_output_evidence::audit_published_output,
         JobPhase, JobPlan, Supervisor,
     };
+    use lu_ide_workspace::dap_session::{DapEvent,DapPhase};
     use std::os::unix::fs::PermissionsExt;
     use std::{
         env, fs,
         path::PathBuf,
         sync::Arc,
         thread,
-        time::{Duration, SystemTime, UNIX_EPOCH},
+        time::{Duration,Instant,SystemTime, UNIX_EPOCH},
     };
     let args: Vec<String> = env::args().skip(1).collect();
     let mode = args.as_slice();
+    let project_debug=mode==["--project-debug"];
     let (recipe, cancel) = match mode {
         [one] if one == "--check" => ("rust_check", false),
         [one] if one == "--test" => ("rust_tests", false),
         [one] if one == "--build" => ("rust_build", false),
+        [one] if one == "--project-debug" => ("rust_build", false),
         [one] if one == "--cancel" => ("rust_tests", true),
-        _ => return Err("DENIED: only fixed --check / --test / --build / --cancel allowed".into()),
+        _ => return Err("DENIED: only fixed check/test/build/project-debug/cancel modes".into()),
     };
     let root = env::temp_dir().join(format!(
         "lu-ide-wo6-cargo-{}-{}",
@@ -73,6 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         input_snapshot_sha256: input.seal.source_sha256.clone(),
         manifest_sha256: input.seal.manifest_sha256.clone(),
         toolchain_sha256: digest,
+        debug_target_binding_sha256: None,
         runtime_limit_ms: 90_000,
         memory_limit_bytes: 512 * 1024 * 1024,
         process_limit: 12,
@@ -80,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         effect_class: "test_build_isolated".into(),
     };
     let journal = root.join("receipts.jsonl");
-    let supervisor = Supervisor::open(journal.clone()).map_err(|e| e.code())?;
+    let supervisor = Arc::new(Supervisor::open(journal.clone()).map_err(|e|e.code())?);
     let prepared = supervisor.prepare(plan.clone()).map_err(|e| e.code())?;
     supervisor
         .record_human_approval(
@@ -181,6 +187,108 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         eprintln!("DEV043_LINUX_REAL_ELF_DWARF=PASS symbols_sha={}",
             symbols.symbols_sha256);
+        if project_debug {
+            let private=root.join("sealed-debug-targets");
+            fs::create_dir_all(&private)?;
+            fs::set_permissions(&private,fs::Permissions::from_mode(0o700))?;
+            let lineage=CompletedBuildLineage {
+                project_id:plan.project_id.clone(),
+                build_job_id:prepared.job_id.clone(),
+                build_plan_sha256:prepared.plan_sha256.clone(),
+                terminal_receipt_sha256:receipt.terminal_receipt_hash.clone(),
+                source_head:plan.source_head.clone(),
+                source_snapshot_sha256:plan.input_snapshot_sha256.clone(),
+                manifest_sha256:plan.manifest_sha256.clone(),
+                build_toolchain_sha256:plan.toolchain_sha256.clone(),
+                output_tree_sha256:output_witness.tree_sha256.clone(),
+                build_successfully_completed:true,
+                requires_reconciliation:false
+            };
+            let target=seal_project_debug_target(
+                &actual.output_directory,&private,lineage,&candidate,&symbols)
+                .map_err(|_|"DENIED: native Cargo output could not be privately sealed")?;
+            target.verify().map_err(|_|"DENIED: private debug target changed")?;
+            let bundle=PathBuf::from("/opt/lu-ide-wo6-dap-test");
+            let adapter_sha=native_lsp_bundle_digest(&bundle,"dap_lldb_project")
+                .map_err(|_|"DENIED: root-owned LLDB adapter not trusted")?;
+            let debugger_plan=JobPlan{
+                project_id:plan.project_id.clone(),
+                recipe_id:"dap_lldb_project".into(),
+                source_head:plan.source_head.clone(),
+                input_snapshot_sha256:plan.input_snapshot_sha256.clone(),
+                manifest_sha256:plan.manifest_sha256.clone(),
+                toolchain_sha256:adapter_sha,
+                debug_target_binding_sha256:Some(target.binding_sha256.clone()),
+                runtime_limit_ms:90_000,memory_limit_bytes:512*1024*1024,
+                process_limit:16,log_limit_bytes:64*1024,
+                effect_class:"debug_inspection_isolated".into()
+            };
+            let debug_job=supervisor.prepare(debugger_plan.clone())
+                .map_err(|e|e.code())?;
+            // CI fixed-scope native approval; not a user desktop approval.
+            supervisor.record_human_approval(&debug_job.job_id,
+                &debug_job.plan_sha256,&debugger_plan.source_head,true)
+                .map_err(|e|e.code())?;
+            let mut dap=start_linux_project_dap(Arc::clone(&supervisor),
+                &debug_job.job_id,&debugger_plan,&debugger_plan.source_head,
+                &input,&bundle,&target).map_err(|e|e.code())?;
+            dap.initialize().map_err(|e|e.code())?;
+            let began=Instant::now();
+            while dap.phase()!=DapPhase::Ready &&
+                  began.elapsed()<Duration::from_secs(20) {
+                dap.poll().map_err(|e|e.code())?;
+                thread::sleep(Duration::from_millis(30));
+            }
+            if dap.phase()!=DapPhase::Ready {
+                return Err("DENIED: protected project LLDB initialize timed out".into());
+            }
+            target.verify().map_err(|_|"DENIED: target changed before launch")?;
+            dap.launch_project_target().map_err(|e|e.code())?;
+            if dap.configuration_needed() {
+                dap.configuration_done().map_err(|e|e.code())?;
+            }
+            let began=Instant::now();
+            let(mut stopped,mut threads,mut stack)=(None,false,false);
+            let(mut requested_threads,mut requested_stack)=(false,false);
+            while began.elapsed()<Duration::from_secs(35){
+                for event in dap.poll().map_err(|e|e.code())?{
+                    match event{
+                        DapEvent::ConfigurationRequested=>dap.configuration_done()
+                            .map_err(|e|e.code())?,
+                        DapEvent::Stopped{thread_id}=>stopped=Some(thread_id),
+                        DapEvent::ThreadsReceived=>threads=true,
+                        DapEvent::StackTraceReceived=>stack=true,
+                        DapEvent::Terminated=>return Err(
+                            "DENIED: project debuggee exited before stack".into()),
+                        _=>{}
+                    }
+                }
+                if stopped.is_some()&&!requested_threads&&dap.phase()==DapPhase::Stopped {
+                    dap.threads().map_err(|e|e.code())?;
+                    requested_threads=true;
+                }
+                if threads&&!requested_stack{
+                    dap.stack_trace(stopped.ok_or("DENIED: missing stopped thread")?)
+                        .map_err(|e|e.code())?;
+                    requested_stack=true;
+                }
+                if stack{break;}
+                thread::sleep(Duration::from_millis(30));
+            }
+            if stopped.is_none()||!threads||!stack {
+                return Err("DENIED: real project debug stop/stack absent".into());
+            }
+            dap.close().map_err(|e|e.code())?;
+            let summary=supervisor.inspect().map_err(|e|e.code())?
+                .into_iter().find(|j|j.job_id==debug_job.job_id)
+                .ok_or("DENIED: project debug terminal receipt absent")?;
+            if summary.phase!=JobPhase::Completed || summary.requires_reconciliation{
+                return Err("DENIED: project debug kernel descendants not reconciled".into());
+            }
+            eprintln!("DEV044_LINUX_REAL_BUILD_TO_PROTECTED_LLDB=PASS bind={}",
+                target.binding_sha256);
+        }
+
     }
     if cancel && actual.summary.phase != JobPhase::Cancelled {
         return Err("DENIED: requested native process-tree kill missing".into());
@@ -199,7 +307,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     drop(supervisor);
     let replay = Supervisor::open(journal).map_err(|e| e.code())?;
     let jobs = replay.inspect().map_err(|e| e.code())?;
-    if jobs.len() != 1 || jobs[0].phase != expected || jobs[0].requires_reconciliation {
+    if jobs.len() != (if project_debug{2}else{1}) ||
+       jobs.iter().any(|job|job.phase!=expected || job.requires_reconciliation){
         return Err("DENIED: native Cargo journal restart/reconciliation invalid".into());
     }
     println!("PASS: genuine delegated Linux Cargo {recipe} OS worker, kernel cleanup and restart receipt");

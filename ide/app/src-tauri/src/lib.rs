@@ -553,7 +553,8 @@ async fn ide_debug_status(
     {
         let _ = (app, project_id);
         Ok(serde_json::json!({
-            "ready":false, "code":"DEBUG_PROTECTED_ADAPTER_NOT_INSTALLED",
+            "ready":false,"projectDebugSupported":false,
+            "code":"DEBUG_PROTECTED_ADAPTER_NOT_INSTALLED",
             "description":"Default IDE does not ship a native debugger.",
             "current":null, "last":null, "journal":[], "quarantined":[]
         }))
@@ -582,6 +583,38 @@ async fn ide_debug_run_fixture(
         Err("DEBUG_PROTECTED_ADAPTER_NOT_INSTALLED".into())
     }
 }
+/// DEV-04.4: only the native host picks its most recently completed,
+/// independently sealed Cargo build. No binary path, build receipt,
+/// LLDB arguments, process ID or permission come from WebView.
+#[tauri::command]
+async fn ide_debug_run_project(
+    app:AppHandle,
+    registry:State<'_,Arc<IdeWorkspaceRegistry>>,
+    project_id:String,
+)->Result<serde_json::Value,String>{
+    #[cfg(all(feature="native-project-debug",any(windows,target_os="linux")))]
+    {
+        let debug=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("DEV044_PROTECTED_DEBUGGER_MISSING")?;
+        let builds=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("DEV044_PROTECTED_BUILD_HOST_MISSING")?;
+        let debug=Arc::clone(debug.inner());
+        let builds=Arc::clone(builds.inner());
+        let registry=Arc::clone(registry.inner());
+        let result=tauri::async_runtime::spawn_blocking(move||{
+            let target=builds.native_project_debug_target(&project_id)?;
+            debug.run_project(&app,&registry,&project_id,target)
+        }).await.map_err(|_|"DEV044_PROJECT_DEBUG_TASK_UNAVAILABLE")??;
+        return serde_json::to_value(result)
+            .map_err(|_|"DEV044_DEBUG_RESULT_SERIALIZE_FAILED".into());
+    }
+    #[cfg(not(all(feature="native-project-debug",any(windows,target_os="linux"))))]
+    {
+        let _=(app,registry,project_id);
+        Err("DEV044_PROJECT_DEBUG_FEATURE_NOT_INSTALLED".into())
+    }
+}
+
 #[tauri::command]
 async fn ide_debug_cancel(
     app: AppHandle,
@@ -1495,6 +1528,7 @@ pub fn run() {
             ide_build_reconcile,
             ide_debug_status,
             ide_debug_run_fixture,
+            ide_debug_run_project,
             ide_debug_cancel,
             ide_debug_reconcile,
             ide_read_project_context,

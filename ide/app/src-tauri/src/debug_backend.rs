@@ -23,19 +23,23 @@ use lu_ide_workspace::{
     IdeWorkspaceRegistry,
 };
 use lu_ide_execution_supervisor::{
-    snapshot::publish_input, JobPhase, JobPlan, Supervisor,
+    snapshot::publish_input,
+    project_debug_target::SealedProjectDebugTarget,
+    JobPhase, JobPlan, Supervisor,
 };
 #[cfg(windows)]
 use lu_ide_execution_supervisor::{
     windows_broker::TrustedBroker,
     windows_worker::reconcile_windows_interrupted_via_service,
     windows_worker::lsp_native::{
-        native_lsp_bundle_digest, start_windows_dap, WindowsDapSession as NativeDapSession,
+        native_lsp_bundle_digest, start_windows_dap, start_windows_project_dap,
+        WindowsDapSession as NativeDapSession,
     },
 };
 #[cfg(target_os = "linux")]
 use lu_ide_execution_supervisor::linux_worker::lsp_native::{
-    native_lsp_bundle_digest, start_linux_dap, LinuxDapSession as NativeDapSession,
+    native_lsp_bundle_digest, start_linux_dap, start_linux_project_dap,
+    LinuxDapSession as NativeDapSession,
 };
 #[cfg(target_os = "linux")]
 use lu_ide_execution_supervisor::linux_worker::reconcile_linux_interrupted;
@@ -126,6 +130,12 @@ pub struct DebugWitness {
     pub verified_os_tree_release_by_worker: bool,
     pub installed_app_accepted: bool,
     pub target: &'static str,
+    pub origin_build_job_id: Option<String>,
+    pub origin_build_plan_sha256: Option<String>,
+    pub origin_build_receipt_sha256: Option<String>,
+    pub binary_sha256: Option<String>,
+    pub symbol_sha256: Option<String>,
+    pub target_binding_sha256: Option<String>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,6 +148,7 @@ pub struct DebugActive {
 #[serde(rename_all = "camelCase")]
 pub struct DebugStatus {
     ready: bool,
+    project_debug_supported: bool,
     code: String,
     current: Option<DebugActive>,
     last: Option<DebugWitness>,
@@ -200,7 +211,17 @@ impl NativeDebugRuntime {
                 project_id: job.project_id.clone(),
                 job_id: job.job_id.clone(),
                 plan_sha256: job.plan_sha256.clone(),
-                phase: format!("{:?}", job.phase).to_lowercase(),
+                phase: match job.phase {
+                    JobPhase::CancelRequested=>"cancel_requested",
+                    JobPhase::RecoveryRequired=>"recovery_required",
+                    JobPhase::AdmissionPending=>"admission_pending",
+                    JobPhase::ReleasePending=>"release_pending",
+                    JobPhase::Uncertain=>"uncertain",
+                    JobPhase::Completed=>"completed",JobPhase::Cancelled=>"cancelled",
+                    JobPhase::Failed=>"failed",JobPhase::Denied=>"denied",
+                    JobPhase::Running=>"running",JobPhase::Prepared=>"prepared",
+                    JobPhase::Authorized=>"authorized",
+                }.to_owned(),
                 requires_reconciliation: true,
             }).collect();
         // Last successful DAP result is session-only; never fabricate it after
@@ -212,12 +233,24 @@ impl NativeDebugRuntime {
                 project_id: job.project_id,
                 job_id: job.job_id,
                 plan_sha256: job.plan_sha256,
-                phase: format!("{:?}", job.phase).to_lowercase(),
+                phase: match job.phase {
+                    JobPhase::CancelRequested=>"cancel_requested",
+                    JobPhase::RecoveryRequired=>"recovery_required",
+                    JobPhase::AdmissionPending=>"admission_pending",
+                    JobPhase::ReleasePending=>"release_pending",
+                    JobPhase::Uncertain=>"uncertain",
+                    JobPhase::Completed=>"completed",JobPhase::Cancelled=>"cancelled",
+                    JobPhase::Failed=>"failed",JobPhase::Denied=>"denied",
+                    JobPhase::Running=>"running",JobPhase::Prepared=>"prepared",
+                    JobPhase::Authorized=>"authorized",
+                }.to_owned(),
                 requires_reconciliation: job.requires_reconciliation,
             }).collect();
         journal.reverse();
         Ok(DebugStatus {
             ready: available.is_ok() && quarantined.is_empty(),
+            project_debug_supported: cfg!(feature="native-project-debug") &&
+                available.is_ok() && quarantined.is_empty(),
             code: match available {
                 Ok(()) => "DEBUG_FIXTURE_BUNDLE_VERIFIED_OS_ADMISSION_PER_RUN".into(),
                 Err(code) => code,
@@ -275,17 +308,33 @@ impl NativeDebugRuntime {
     pub fn cancel(&self, project_id: &str, job_id: Option<&str>) -> Result<&'static str, String> {
         let locked = self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?;
         let active = locked.as_ref().ok_or("DEBUG_NO_ACTIVE_SESSION")?;
-        if active.project_id != project_id
-            || job_id.is_some_and(|id| active.job_id.as_deref() != Some(id))
-        {
-            return Err("DEBUG_SESSION_SCOPE_MISMATCH".into());
+        if active.project_id != project_id{return Err("DEBUG_SESSION_SCOPE_MISMATCH".into());}
+        match (active.job_id.as_deref(),job_id) {
+            (Some(current),Some(expected)) if current==expected=>{}
+            (None,None)=>{}
+            _=>return Err("DEBUG_EXACT_JOB_ID_REQUIRED".into())
         }
-        active.cancellation.store(true, Ordering::SeqCst);
+        if active.cancellation.swap(true, Ordering::SeqCst) {
+            return Err("DEBUG_CANCEL_ALREADY_REQUESTED".into());
+        }
         Ok("DEBUG_CANCEL_REQUESTED_OS_TERMINATION_PENDING")
     }
     pub fn run_fixture(
         &self, app: &AppHandle, registry: &IdeWorkspaceRegistry, project_id: &str,
     ) -> Result<DebugWitness, String> {
+        self.run_bound(app,registry,project_id,None)
+    }
+    #[cfg(feature="native-project-debug")]
+    pub fn run_project(
+        &self,app:&AppHandle,registry:&IdeWorkspaceRegistry,project_id:&str,
+        target:Arc<SealedProjectDebugTarget>,
+    )->Result<DebugWitness,String>{
+        self.run_bound(app,registry,project_id,Some(target))
+    }
+    fn run_bound(
+        &self,app:&AppHandle,registry:&IdeWorkspaceRegistry,project_id:&str,
+        target:Option<Arc<SealedProjectDebugTarget>>,
+    )->Result<DebugWitness,String>{
         if self.supervisor.inspect().map_err(|e| e.code().to_owned())?
             .iter().any(|job| job.requires_reconciliation)
         {
@@ -303,7 +352,8 @@ impl NativeDebugRuntime {
                 cancellation: Arc::clone(&cancellation),
             });
         }
-        let result = self.run_inner(app, registry, project_id, &cancellation);
+        let result = self.run_inner(app, registry, project_id,
+            &cancellation,target.as_deref());
         *self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")? = None;
         if let Ok(ref witness) = result {
             *self.last.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")? = Some(witness.clone());
@@ -313,6 +363,7 @@ impl NativeDebugRuntime {
     fn run_inner(
         &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
         project_id: &str, cancel: &AtomicBool,
+        target:Option<&SealedProjectDebugTarget>,
     ) -> Result<DebugWitness, String> {
         let install = installation(app)?;
         let root = registry.trusted_native_worker_root(project_id)
@@ -327,15 +378,27 @@ impl NativeDebugRuntime {
         }
         let input = publish_input(&root, &self.stage, "rust_check")
             .map_err(|e| e.code().to_owned())?;
+        if let Some(target)=target {
+            if target.lineage.project_id!=project_id ||
+               target.lineage.source_head!=head ||
+               target.lineage.source_snapshot_sha256!=input.seal.source_sha256 ||
+               target.lineage.manifest_sha256!=input.seal.manifest_sha256 ||
+               target.lineage.requires_reconciliation {
+                return Err("DEV044_BUILD_SOURCE_OR_RECEIPT_MISMATCH".into());
+            }
+            target.verify().map_err(|_|"DEV044_PROJECT_BINARY_OR_SYMBOLS_CHANGED")?;
+        }
         if cancel.load(Ordering::SeqCst) {
             return Err("DEBUG_CANCELLED_BEFORE_NATIVE_AUTHORIZATION".into());
         }
         let plan = JobPlan {
-            project_id: project_id.to_owned(), recipe_id: "dap_lldb_fixed".into(),
+            project_id: project_id.to_owned(),
+            recipe_id:if target.is_some(){"dap_lldb_project"}else{"dap_lldb_fixed"}.into(),
             source_head: head.clone(),
             input_snapshot_sha256: input.seal.source_sha256.clone(),
             manifest_sha256: input.seal.manifest_sha256.clone(),
             toolchain_sha256: install.digest.clone(),
+            debug_target_binding_sha256:target.map(|target|target.binding_sha256.clone()),
             runtime_limit_ms: 3 * 60_000, memory_limit_bytes: 512 * 1024 * 1024,
             process_limit: 16, log_limit_bytes: 64 * 1024,
             effect_class: "debug_inspection_isolated".into(),
@@ -352,18 +415,42 @@ impl NativeDebugRuntime {
         if cancel.load(Ordering::SeqCst) {
             return Err("DEBUG_CANCELLED_BEFORE_NATIVE_AUTHORIZATION".into());
         }
+        let (dialog_title,dialog_message,button)=if let Some(target)=target {
+            target.verify().map_err(|_|"DEV044_PRIVATE_BINARY_CHANGED_BEFORE_APPROVAL")?;
+            (
+                "Approve one protected project debugger",
+                format!(
+                    "Debug ONLY this independently sealed project Cargo executable under a new protected OS job?\n\n\
+                    Project: {project_id}\nBuild job: {}\nBuild receipt SHA-256: {}\n\
+                    Source snapshot SHA-256: {}\nBinary SHA-256: {}\n\
+                    Symbols SHA-256: {}\nNew D3 target binding: {}\n\n\
+                    No arbitrary attach, shell, terminal, path, arguments, expressions or credentials.\
+                    Cancellation requires verified kernel process-tree termination.",
+                    target.lineage.build_job_id,
+                    target.lineage.terminal_receipt_sha256,
+                    target.lineage.source_snapshot_sha256,
+                    target.binary.binary_sha256,
+                    target.symbols.symbols_sha256,target.binding_sha256
+                ),
+                "Debug this exact project build"
+            )
+        } else {
+            (
+                "Approve one protected native debugger self-test",
+                format!(
+                    "Run the reviewed fixed LLDB-DAP debugger self-test?\nProject: {project_id}\n\
+                     Source HEAD: {head}\nFrozen input SHA-256: {}\nAdapter SHA-256: {}",
+                    plan.input_snapshot_sha256,install.digest
+                ),
+                "Run fixed debugger self-test"
+            )
+        };
         let decision = app.dialog()
-            .message(format!(
-                "Run the reviewed, fixed LLDB-DAP debugger fixture INSIDE the protected OS worker?\n\n\
-                Project ID: {project_id}\nSource HEAD: {head}\n\
-                Frozen input SHA-256: {}\nAdapter+debuggee SHA-256: {}\n\n\
-                Only the installer-packaged self-test binary can be launched. \
-                No project executable, evaluated expression or user-supplied terminal command is permitted.",
-                plan.input_snapshot_sha256, install.digest,
-            ))
-            .title("Approve one protected native debugger self-test")
+            .message(dialog_message);
+        let decision = decision
+            .title(dialog_title)
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "Run fixed debugger self-test".into(), "Cancel".into(),
+                button.into(), "Cancel".into(),
             )).blocking_show();
         if !decision || cancel.load(Ordering::SeqCst) {
             return Err("DEBUG_HUMAN_APPROVAL_DENIED".into());
@@ -377,19 +464,29 @@ impl NativeDebugRuntime {
         {
             return Err("DEBUG_SOURCE_CHANGED_DURING_APPROVAL".into());
         }
+        if let Some(target)=target {
+            target.verify().map_err(|_|"DEV044_PRIVATE_TARGET_CHANGED_DURING_APPROVAL")?;
+        }
         self.supervisor.record_human_approval(
             &prepared.job_id, &prepared.plan_sha256, &head, true
         ).map_err(|e| e.code().to_owned())?;
         #[cfg(windows)]
-        let mut session: NativeDapSession = start_windows_dap(
-            Arc::clone(&self.supervisor), &prepared.job_id, &plan, &head,
-            &input, &install.bundle, &install.broker,
-        ).map_err(|e| e.code().to_owned())?;
+        let mut session: NativeDapSession = if let Some(target)=target {
+            start_windows_project_dap(Arc::clone(&self.supervisor),
+                &prepared.job_id,&plan,&head,&input,&install.bundle,
+                &install.broker,target)
+        } else {
+            start_windows_dap(Arc::clone(&self.supervisor), &prepared.job_id,
+                &plan, &head, &input, &install.bundle, &install.broker)
+        }.map_err(|e| e.code().to_owned())?;
         #[cfg(target_os = "linux")]
-        let mut session: NativeDapSession = start_linux_dap(
-            Arc::clone(&self.supervisor), &prepared.job_id, &plan, &head,
-            &input, &install.bundle,
-        ).map_err(|e| e.code().to_owned())?;
+        let mut session: NativeDapSession = if let Some(target)=target {
+            start_linux_project_dap(Arc::clone(&self.supervisor),
+                &prepared.job_id,&plan,&head,&input,&install.bundle,target)
+        } else {
+            start_linux_dap(Arc::clone(&self.supervisor), &prepared.job_id,
+                &plan,&head,&input,&install.bundle)
+        }.map_err(|e|e.code().to_owned())?;
         session.initialize().map_err(|e| e.code().to_owned())?;
         let init_at = Instant::now();
         while session.phase() != DapPhase::Ready && init_at.elapsed() < Duration::from_secs(15) {
@@ -402,7 +499,12 @@ impl NativeDebugRuntime {
         if session.phase() != DapPhase::Ready {
             return Err("DEBUG_INITIALIZE_TIMEOUT".into());
         }
-        session.launch_fixed_fixture().map_err(|e| e.code().to_owned())?;
+        if let Some(target)=target {
+            target.verify().map_err(|_|"DEV044_BINARY_CHANGED_BEFORE_LAUNCH")?;
+            session.launch_project_target().map_err(|e|e.code().to_owned())?;
+        } else {
+            session.launch_fixed_fixture().map_err(|e| e.code().to_owned())?;
+        }
         // Handle a valid initialized event already consumed during the
         // initialize response read. Never issue configuration before launch.
         if session.configuration_needed() {
@@ -468,7 +570,15 @@ impl NativeDebugRuntime {
             terminal_phase: "completed".into(),
             verified_os_tree_release_by_worker: true,
             installed_app_accepted: false,
-            target: "fixed_installer_selftest_only_not_project_debugger",
+            target:if target.is_some(){
+                "one_exact_private_project_build_in_protected_job"
+            } else {"fixed_installer_selftest_only_not_project_debugger"},
+            origin_build_job_id:target.map(|target|target.lineage.build_job_id.clone()),
+            origin_build_plan_sha256:target.map(|target|target.lineage.build_plan_sha256.clone()),
+            origin_build_receipt_sha256:target.map(|target|target.lineage.terminal_receipt_sha256.clone()),
+            binary_sha256:target.map(|target|target.binary.binary_sha256.clone()),
+            symbol_sha256:target.map(|target|target.symbols.symbols_sha256.clone()),
+            target_binding_sha256:target.map(|target|target.binding_sha256.clone()),
         })
     }
 }

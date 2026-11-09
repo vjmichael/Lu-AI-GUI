@@ -40,6 +40,7 @@ import { projectJobLifecycle } from './protected_job_lifecycle.js';
 import { safeDebugTargetReview } from './debug_target_review.js';
 import { safeDebugBinaryEvidence } from './debug_binary_evidence.js';
 import { safeDebugSymbolEvidence } from './debug_symbol_evidence.js';
+import { checkedProjectDebugWitness } from './project_debug_authority.js';
 import { acceptNativeOutput } from './native_build_output.js';
 
 const sections = [
@@ -1549,6 +1550,33 @@ function App() {
     } finally {
       setBuildBusy(false);
       await refreshProtectedBuildStatus();
+    }
+  }
+
+  async function runProtectedProjectDebugger() {
+    const projectId=activeProject?.projectId;
+    const witness=safeDebugSymbolEvidence(buildResult,projectId);
+    if(!projectId||!witness||!debugStatus?.projectDebugSupported||
+       !!debugStatus.current||debugBusy||buildBusy)return;
+    setDebugBusy(true);
+    setProblem('');
+    setDebugResult(null);
+    try {
+      // Only projectId reaches Tauri. All build receipts, binary files,
+      // debugger args and authorizations are resolved by the native host.
+      const result=await invoke('ide_debug_run_project',{projectId});
+      if(activeProjectIdRef.current!==projectId)return;
+      if(!checkedProjectDebugWitness(result,buildResult,projectId))
+        throw Error('DEV044_PROJECT_DEBUG_RECEIPT_DENIED');
+      setDebugResult(result);
+      setHint('Exact protected project debugger returned a native stop, stack and OS tree cleanup receipt.');
+    }catch(error){
+      if(activeProjectIdRef.current===projectId)
+        setProblem('Project debugger denied or failed: '+String(error));
+    }finally{
+      setDebugBusy(false);
+      if(activeProjectIdRef.current===projectId)
+        invoke('ide_debug_status',{projectId}).then(setDebugStatus).catch(()=>{});
     }
   }
 
@@ -3637,11 +3665,33 @@ function App() {
             </section>
             <div className="continuityDocument jobIntentComposer" aria-label="Protected native debugger self-test">
               <h3>Protected debugger (LLDB-DAP)</h3>
-              <p>Only a reviewed, installer-pinned fixed debuggee can be launched for native
-                stopped-thread/stack acceptance. Arbitrary project executables, process attach,
-                terminal commands, expressions and debugger script execution are not available.</p>
+              <section aria-label="DEV-04.4 protected project debugger">
+                <h4>DEV-04.4 · Debug exact completed project build</h4>
+                <p>A fresh human approval and a new protected Job/cgroup
+                  are required. The host selects only its last private,
+                  independently rehashed Cargo executable and matched
+                  debug symbols. Source, build receipt, and target digest
+                  must still match. No arbitrary executable, attach,
+                  shell, expressions, terminal, or debugger arguments.</p>
+                <button type="button" className="ghostBtn"
+                  disabled={!activeProject||!debugStatus?.projectDebugSupported||
+                    !!debugStatus.current||debugBusy||buildBusy||
+                    !safeDebugSymbolEvidence(buildResult,activeProject?.projectId)}
+                  onClick={()=>void runProtectedProjectDebugger()}>
+                  {debugBusy?'Protected project debugger running…':
+                    'Debug last verified project build'}
+                </button>
+                {!debugStatus?.projectDebugSupported &&
+                  <p>Project debugger release feature and native adapter
+                    are not independently installed/approved on this desktop.
+                    The default build remains nonexecuting.</p>}
+              </section>
+              <p>The fixed self-test remains available separately. Project debugging
+                requires the distinct opt-in native-project-debug feature,
+                a sealed protected build and an independently pinned installed LLDB.
+                Arbitrary attach, debugger scripts and terminal commands remain denied.</p>
               <p>Debugger: <strong>{debugStatus?.ready
-                ? 'Signed fixture bundle verified; OS containment checked per run'
+                ? 'Pinned debugger bundle observed; OS containment checked per run'
                 : (debugStatus?.code || 'Checking approved debugger assets…')}</strong></p>
               <p>{debugStatus?.description || 'An unpinned adapter cannot execute.'}</p>
               <button type="button" className="ghostBtn"
@@ -3684,7 +3734,18 @@ function App() {
                   <p>Journal entries are not simulated debugger results or release acceptance.</p>
                 </section>}
               {belongsToSelectedProject(activeProject, debugResult) && <div role="status">
-                <p>Native LLDB self-test: <strong>{debugResult.terminalPhase}</strong></p>
+                <p>{debugResult.target==='one_exact_private_project_build_in_protected_job'
+                  ? 'Protected project LLDB session' : 'Native LLDB self-test'}:
+                  <strong> {debugResult.terminalPhase}</strong></p>
+                {debugResult.target==='one_exact_private_project_build_in_protected_job' &&
+                  <>
+                    <p>Originating protected build:
+                      {' '}<code>{debugResult.originBuildJobId}</code></p>
+                    <p>Exact build terminal receipt:
+                      {' '}<code>{debugResult.originBuildReceiptSha256}</code></p>
+                    <p>Project debugger D3 target binding:
+                      {' '}<code>{debugResult.targetBindingSha256}</code></p>
+                  </>}
                 <p>Stopped thread: {debugResult.stoppedThread ?? 'none'} · Thread inspection:
                   {debugResult.threadsResponseObserved ? 'observed' : 'not proven'} · Stack:
                   {debugResult.stackResponseObserved ? 'observed' : 'not proven'}</p>

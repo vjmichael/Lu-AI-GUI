@@ -173,6 +173,44 @@ impl DapSession {
         Ok(frame)
     }
 
+    /// DEV-04.4: accept ONLY a native staged, OS-owned debug target.
+    /// A caller cannot select any other path, process, arguments or env.
+    /// This builds DAP bytes ONLY; actual authority resides in the D3 plan
+    /// with an exact sealed build target digest and native OS containment.
+    pub fn launch_verified_project(&mut self,program:&str)->Result<Vec<u8>,DapError>{
+        if self.phase!=DapPhase::Ready{return Err(DapError::InvalidPhase);}
+        let linux=program.strip_prefix("/debug-target/target/debug/")
+            .is_some_and(|file|!file.is_empty() && file.len()<=200 &&
+                !file.contains('.') && file.bytes().all(|b|
+                b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_')));
+        let windows=if program.len()<=1024 {
+            let normalized=program.replace('/',"\\");
+            let pieces:Vec<_>=normalized.split('\\').collect();
+            pieces.len()>4 && pieces.iter().any(|part|*part=="debug-target")
+                && normalized.contains("\\debug-target\\target\\debug\\")
+                && normalized.to_ascii_lowercase().ends_with(".exe")
+                && pieces.last().is_some_and(|name|{
+                    let base=name.strip_suffix(".exe").unwrap_or("");
+                    !base.is_empty() && base.len()<=196 &&
+                    base.bytes().all(|b|
+                        b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'))
+                })
+                && std::path::Path::new(program).is_absolute()
+        } else {false};
+        if !(linux||windows)||program.contains("..")||
+           program.chars().any(char::is_control) {
+            return Err(DapError::InvalidMessage);
+        }
+        let frame=self.request("launch",json!({
+            "program":program,"stopOnEntry":true,"noDebug":false,
+            "disableASLR":false,"disableSTDIO":true,
+            "args":[],"env":{},"runInTerminal":false
+        }))?;
+        self.launch_sent=true;
+        self.phase=DapPhase::Launching;
+        Ok(frame)
+    }
+
     /// Read-only pending signal for adapters that emit initialized immediately
     /// after the response (even before the fixed launch is sent). The trusted
     /// native host may examine this after launch; no DAP instruction is sent.
@@ -632,6 +670,46 @@ mod tests {
             vec![DapEvent::Disconnected]
         );
         assert_eq!(s.phase(), DapPhase::Terminated);
+    }
+    #[test]
+    fn only_native_sealed_project_path_can_form_project_launch_without_arguments(){
+        let mut session=DapSession::new();
+        session.phase=DapPhase::Ready;
+        for input in [
+            "/tmp/malicious","/debug-target/target/debug/../../etc/passwd",
+            "/debug-target/target/debug/other.so",
+            "/debug-target/target/debug/evil;sh",
+            "/workspace/target/debug/project",
+        ] {
+            assert_eq!(session.launch_verified_project(input).unwrap_err(),
+                DapError::InvalidMessage);
+        }
+        let wire=session.launch_verified_project(
+            "/debug-target/target/debug/fixture").unwrap();
+        let wire=String::from_utf8(wire).unwrap();
+        assert!(wire.contains("/debug-target/target/debug/fixture"));
+        assert!(wire.contains(r#""runInTerminal":false"#));
+        assert!(wire.contains(r#""disableSTDIO":true"#));
+        assert!(wire.contains(r#""disableASLR":false"#));
+        assert_eq!(session.phase(),DapPhase::Launching);
+        assert_eq!(session.launch_verified_project(
+            "/debug-target/target/debug/fixture").unwrap_err(),
+            DapError::InvalidPhase);
+    }
+    #[cfg(windows)]
+    #[test]
+    fn native_appcontainer_project_path_can_launch_but_foreign_windows_paths_cannot(){
+        let mut session=DapSession::new();
+        session.phase=DapPhase::Ready;
+        assert_eq!(session.launch_verified_project(
+            r"C:\Windows\System32\cmd.exe").unwrap_err(),DapError::InvalidMessage);
+        assert_eq!(session.launch_verified_project(
+            r"C:\Temp\debug-target\target\debug\..\evil.exe").unwrap_err(),
+            DapError::InvalidMessage);
+        let frame=session.launch_verified_project(
+            r"C:\Users\runner\AppData\Local\Packages\debug-target\target\debug\fixture.exe")
+            .unwrap();
+        assert!(String::from_utf8(frame).unwrap().contains("stopOnEntry"));
     }
     #[test]
     fn only_fixed_native_fixture_can_be_launched_and_response_is_correlated() {

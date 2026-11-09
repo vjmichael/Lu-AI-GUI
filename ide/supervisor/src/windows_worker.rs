@@ -1754,6 +1754,7 @@ mod tests {
             input_snapshot_sha256: "c".repeat(64),
             manifest_sha256: "d".repeat(64),
             toolchain_sha256: "e".repeat(64),
+            debug_target_binding_sha256: None,
             runtime_limit_ms: 3000,
             memory_limit_bytes: 128 * 1024 * 1024,
             process_limit: 3,

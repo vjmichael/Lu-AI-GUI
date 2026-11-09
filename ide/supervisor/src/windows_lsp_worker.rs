@@ -77,6 +77,8 @@ pub fn native_lsp_bundle_digest(root: &Path, recipe_id: &str) -> Result<String, 
         "lsp_ruff" => "ruff.exe",
         #[cfg(feature = "dap-transport")]
         "dap_lldb_fixed" => "lldb-dap.exe",
+        #[cfg(feature = "dap-transport")]
+        "dap_lldb_project" => "lldb-dap.exe",
         _ => return Err(SupervisorError::InvalidPlan),
     };
     if !clean_meta(root)?.is_dir()
@@ -86,7 +88,7 @@ pub fn native_lsp_bundle_digest(root: &Path, recipe_id: &str) -> Result<String, 
         return Err(denied());
     }
     #[cfg(feature = "dap-transport")]
-    if recipe_id == "dap_lldb_fixed"
+    if matches!(recipe_id,"dap_lldb_fixed"|"dap_lldb_project")
         && !clean_meta(&root.join("debuggee/wo6-selftest.exe"))?.is_file()
     {
         return Err(denied());
@@ -753,6 +755,28 @@ pub fn start_windows_lsp(
         &plan.toolchain_sha256,
     )?;
     native_lsp_trace("bundle_staged");
+    let project_debuggee=if let Some(target)=project_target {
+        // Stage the previously independently audited binary/PDB into the
+        // new AppContainer LocalState. No host output path is reachable
+        // from the child, and no user-selected executable is trusted.
+        target.verify()?;
+        let name=std::ffi::OsStr::new("debug-target");
+        publish_into_native_parent(&target.root,&local,name,8,
+            128*1024*1024,64*1024*1024)?;
+        let stage_root=local.join("debug-target");
+        let witness=crate::wo6_output_evidence::audit_published_output(&stage_root)?;
+        let binary=crate::debug_binary_witness::audit_debug_binary_candidate(
+            &stage_root,&witness)?.ok_or_else(denied)?;
+        let symbols=crate::debug_symbol_verification::verify_build_debug_symbols(
+            &stage_root,&witness,&binary)?.ok_or_else(denied)?;
+        if binary.binary_sha256!=target.binary.binary_sha256 ||
+           symbols.symbols_sha256!=target.symbols.symbols_sha256 ||
+           symbols.symbols_relative_path!=target.symbols.symbols_relative_path {
+            return Err(SupervisorError::WrongProjectOrSource);
+        }
+        Some(stage_root.join(target.confined_relative_binary())
+             .to_string_lossy().into_owned())
+    } else {None};
     let staged_input = PublishedInput {
         root: workspace.clone(),
         seal: input.seal.clone(),
@@ -804,6 +828,9 @@ pub fn start_windows_lsp(
     native_lsp_trace("scm_exact_nul_lease_requested");
     lease.grant_null()?;
     native_lsp_trace("scm_exact_nul_lease_fsynced");
+    if let Some(target)=project_target {
+        target.verify()?;
+    }
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
     let (process, child_thread, stdin_write, stdout_read, debug_stderr) =
@@ -891,8 +918,44 @@ pub fn start_windows_dap(
     trusted_release_bundle: &Path,
     trusted_service: &TrustedBroker,
 ) -> Result<WindowsDapSession, SupervisorError> {
-    if plan.recipe_id != "dap_lldb_fixed" || plan.effect_class != "debug_inspection_isolated" {
-        return Err(SupervisorError::InvalidPlan);
+    start_windows_dap_inner(supervisor,job_id,plan,current_native_source_head,
+        input,trusted_release_bundle,trusted_service,None)
+}
+#[cfg(feature = "dap-transport")]
+pub fn start_windows_project_dap(
+    supervisor: Arc<Supervisor>,
+    job_id: &str,
+    plan: &JobPlan,
+    current_native_source_head: &str,
+    input: &PublishedInput,
+    trusted_release_bundle: &Path,
+    trusted_service: &TrustedBroker,
+    project_target:&crate::project_debug_target::SealedProjectDebugTarget,
+) -> Result<WindowsDapSession, SupervisorError> {
+    start_windows_dap_inner(supervisor,job_id,plan,current_native_source_head,
+        input,trusted_release_bundle,trusted_service,Some(project_target))
+}
+#[cfg(feature = "dap-transport")]
+fn start_windows_dap_inner(
+    supervisor: Arc<Supervisor>,
+    job_id: &str,
+    plan: &JobPlan,
+    current_native_source_head: &str,
+    input: &PublishedInput,
+    trusted_release_bundle: &Path,
+    trusted_service: &TrustedBroker,
+    project_target:Option<&crate::project_debug_target::SealedProjectDebugTarget>,
+) -> Result<WindowsDapSession, SupervisorError> {
+    if plan.effect_class!="debug_inspection_isolated"{return Err(SupervisorError::InvalidPlan);}
+    match (plan.recipe_id.as_str(),project_target) {
+        ("dap_lldb_fixed",None) if plan.debug_target_binding_sha256.is_none()=>{}
+        ("dap_lldb_project",Some(target)) if
+            plan.debug_target_binding_sha256.as_deref()==Some(target.binding_sha256.as_str()) &&
+            target.lineage.project_id==plan.project_id &&
+            target.lineage.source_head==plan.source_head &&
+            target.lineage.source_snapshot_sha256==plan.input_snapshot_sha256 &&
+            target.lineage.manifest_sha256==plan.manifest_sha256 => {target.verify()?;}
+        _=>return Err(SupervisorError::InvalidPlan)
     }
     let executable_basename = "lldb-dap.exe";
     let arguments: &[&str] = &[];
@@ -1044,7 +1107,7 @@ pub fn start_windows_dap(
     )?;
     native_lsp_trace("gateway_attached");
     Ok(WindowsDapSession {
-        gateway,
+        gateway,project_debuggee,
         fixed_debuggee: bundle
             .join("debuggee/wo6-selftest.exe")
             .to_string_lossy()
@@ -1056,6 +1119,7 @@ pub fn start_windows_dap(
 pub struct WindowsDapSession {
     gateway: crate::dap_transport::DapGateway,
     fixed_debuggee: String,
+    project_debuggee: Option<String>,
 }
 #[cfg(feature = "dap-transport")]
 impl WindowsDapSession {
@@ -1064,6 +1128,10 @@ impl WindowsDapSession {
     }
     pub fn launch_fixed_fixture(&mut self) -> Result<(), SupervisorError> {
         self.gateway.launch_fixed_fixture(&self.fixed_debuggee)
+    }
+    pub fn launch_project_target(&mut self)->Result<(),SupervisorError>{
+        let target=self.project_debuggee.as_deref().ok_or(SupervisorError::InvalidPlan)?;
+        self.gateway.launch_verified_project(target)
     }
     pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {
         self.gateway.phase()

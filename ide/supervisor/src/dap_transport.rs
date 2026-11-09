@@ -110,6 +110,11 @@ impl DapGateway {
             .map_err(protocol_denied)?;
         self.send(&frame)
     }
+    pub(crate) fn launch_verified_project(&mut self,target:&str)->Result<(),SupervisorError>{
+        let frame=self.session.launch_verified_project(target)
+            .map_err(protocol_denied)?;
+        self.send(&frame)
+    }
     pub(crate) fn configuration_needed(&self) -> bool {
         self.session.configuration_needed()
     }
@@ -297,6 +302,7 @@ mod tests {
             input_snapshot_sha256: "c".repeat(64),
             manifest_sha256: "d".repeat(64),
             toolchain_sha256: "e".repeat(64),
+            debug_target_binding_sha256: None,
             runtime_limit_ms: 45_000,
             memory_limit_bytes: 256 * 1024 * 1024,
             process_limit: 4,
