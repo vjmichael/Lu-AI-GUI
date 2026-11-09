@@ -22,7 +22,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 160
     env:
-      LU_MEMORY_LOOP02_QWEN_FIXTURE_OUTPUT: ${{ runner.temp }}/memory-loop02-native-feedback.json
       MODEL_SHA256: 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p memory-loop02-real-qwen-evidence
+          echo "LU_MEMORY_LOOP02_QWEN_FIXTURE_OUTPUT=$RUNNER_TEMP/memory-loop02-native-feedback.json" >> "$GITHUB_ENV"
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           node scripts/verify-source-tree.mjs
           command -v git
