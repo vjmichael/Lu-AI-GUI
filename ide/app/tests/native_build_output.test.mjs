@@ -23,7 +23,9 @@ test('bounded and truncated with untrusted large text',()=>{
   let state=null;
   for(let i=0;i<350;i++)state=acceptNativeOutput(state,projectId,'job',page([
     {sequence:i+1,stream:'combined',text:'x'.repeat(500)}],i+1));
-  assert.equal(state.chunks.length,MAX_OUTPUT_LINES);
+  assert.ok(state.chunks.length <= MAX_OUTPUT_LINES);
+  assert.ok(state.chunks.length > 0);
+  assert.ok(state.chunks.reduce((n,item)=>n+item.text.length,0)<=65536);
   assert.ok(state.truncated);
 });
 test('requires native provenance marker and known job identity',()=>{
