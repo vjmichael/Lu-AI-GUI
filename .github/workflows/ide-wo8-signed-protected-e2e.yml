@@ -93,7 +93,7 @@ jobs:
             if (!(Test-Path -LiteralPath $debugLock -PathType Leaf)) {
               throw 'DENIED: reviewed project LLDB candidate lock missing'
             }
-            python ide/packaging/verify_dev045c_debug_bundle.py --installed-root $root --lock $debugLock --source-sha $env:SOURCE_SHA --platform windows-x86_64
+            python ide/packaging/verify_dev045c_debug_bundle.py --installed-root $root --lock $debugLock --source-sha $env:SOURCE_SHA --platform windows-x86_64 --installer-sha256 ([string]$manifest.installer.sha256).ToLowerInvariant() --desktop-sha256 ([string]$manifest.desktop.sha256).ToLowerInvariant() --service-sha256 ([string]$manifest.service.sha256).ToLowerInvariant()
             if ($LASTEXITCODE -ne 0) {
               throw 'DENIED: installed LLDB or dependencies differ from reviewed candidate'
             }
