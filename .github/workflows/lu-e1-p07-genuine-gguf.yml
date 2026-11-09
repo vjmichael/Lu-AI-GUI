@@ -5,12 +5,16 @@ on:
     paths:
       - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
       - 'benchmarks/e1/e1_p07_llama_completion.py'
+      - 'benchmarks/e1/agent01g_qwen_plan_probe.py'
+      - 'benchmarks/e1/test_agent01g_qwen_plan_probe.py'
       - '.github/workflows/lu-e1-p07-genuine-gguf.yml'
       - 'source-tree.lock.json'
   pull_request:
     paths:
       - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
       - 'benchmarks/e1/e1_p07_llama_completion.py'
+      - 'benchmarks/e1/agent01g_qwen_plan_probe.py'
+      - 'benchmarks/e1/test_agent01g_qwen_plan_probe.py'
       - '.github/workflows/lu-e1-p07-genuine-gguf.yml'
       - 'source-tree.lock.json'
   workflow_dispatch:
@@ -54,7 +58,11 @@ jobs:
           command -v ffprobe
           echo "LU_E1_P07_GIT=$(command -v git)" >> "$GITHUB_ENV"
           echo "LU_E1_P07_FFPROBE=$(command -v ffprobe)" >> "$GITHUB_ENV"
-          python3 -m py_compile benchmarks/e1/e1_p07_llama_completion.py
+          python3 -m py_compile benchmarks/e1/e1_p07_llama_completion.py benchmarks/e1/agent01g_qwen_plan_probe.py
+          python3 -m unittest discover -s benchmarks/e1 -p test_agent01g_qwen_plan_probe.py -v \
+            2>&1 | tee e1-p07-gguf-evidence/agent01g-plan-boundary-tests.log
+          grep -Fq 'Ran 8 tests' e1-p07-gguf-evidence/agent01g-plan-boundary-tests.log
+          grep -Fq 'OK' e1-p07-gguf-evidence/agent01g-plan-boundary-tests.log
           git --version | tee e1-p07-gguf-evidence/native-app-versions.log
           ffprobe -version | sed -n '1p' | tee -a e1-p07-gguf-evidence/native-app-versions.log
           printf 'SOURCE_SHA=%s\n' "$EXPECTED_HEAD" | tee e1-p07-gguf-evidence/source.txt
@@ -107,6 +115,38 @@ jobs:
           done
           test "$ready" = 1
           grep -q 'status' e1-p07-gguf-evidence/health.json
+      - name: Record genuine Qwen3 plan-format reliability without granting tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/e1/agent01g_qwen_plan_probe.py \
+            --port "$LU_E1_P07_LLAMA_PORT" \
+            --output e1-p07-gguf-evidence/agent01g-qwen3-plan-probe.json \
+            2>&1 | tee e1-p07-gguf-evidence/agent01g-qwen3-plan-probe.log
+          python3 - <<'PY'
+          import json
+          p="e1-p07-gguf-evidence/agent01g-qwen3-plan-probe.json"
+          r=json.load(open(p))
+          assert r["schema"]=="lu-agent01g-qwen3-review-only-plan-diagnostic-v1"
+          assert len(r["samples"])==3
+          assert r["never_authorizes_workers"] is True
+          print("Qwen3 plan-quality sample completed; counts are observational, not an execution grant")
+          PY
+          echo 'Qwen3 AGENT-01G planning-quality probe records actual bounded model responses, but never approves a plan, calls Git/FFprobe, or certifies Lu host execution.' >> "$GITHUB_STEP_SUMMARY"
+      - name: AGENT-01G genuine Qwen3 - original ANSF, fresh step, reviewed Git, oracle, restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          grep -Fq 'test agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart ... ok' \
+            e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          echo 'AGENT-01G real loaded-GGUF host-native ANSF plan/fresh consent, reviewed Git OS effect, independent oracle, restart passed. Installed UI native picker remains separate.' >> "$GITHUB_STEP_SUMMARY"
       - name: GGUF independently selects Git and FFprobe in production Lu tool loop
         shell: bash
         run: |

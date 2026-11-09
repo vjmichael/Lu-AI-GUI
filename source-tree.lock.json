@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "705a37fb6e50705edf9ca35a4c8d9e904325b70d",
-  "trackedFileCount": 724,
+  "sourceCommitBeforeLock": "4d536c4fba7ab24f25bcf2a4ea0876d2430c5b42",
+  "trackedFileCount": 746,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -13,7 +13,7 @@
     },
     {
       "path": ".github/workflows/lu-agent01c-deliverable-receipts.yml",
-      "blob": "2b94cd127733efbb0d635495a69f3676eeee8d87"
+      "blob": "f27573424da7f0d1f0a8e764f598e8108c4dfdfa"
     },
     {
       "path": ".github/workflows/lu-agent01d-host-scheduler.yml",
@@ -21,7 +21,11 @@
     },
     {
       "path": ".github/workflows/lu-agent01e-broker-progress.yml",
-      "blob": "3fe226e3db9f54b18546c75969c343a3155bb1fe"
+      "blob": "4d0d6cdeae4ec25ee45767d4c0f2f40b600d82cb"
+    },
+    {
+      "path": ".github/workflows/lu-agent01g-physical-windows-nsis.yml",
+      "blob": "ba94edd1a950a7c46bfc29d71ac5e18c44fc6d46"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -81,7 +85,7 @@
     },
     {
       "path": ".github/workflows/lu-e1-p07-genuine-gguf.yml",
-      "blob": "cbb0dd67347501ee63c817c727b76840b9880079"
+      "blob": "a95006244747a1e789f4a5d0374687e73667686e"
     },
     {
       "path": ".github/workflows/lu-e1-p07-reviewed-app.yml",
@@ -244,6 +248,10 @@
       "blob": "9b7273500c9a16717e9ed6fb388cfa0377c31348"
     },
     {
+      "path": "benchmarks/e1/agent01g_qwen_plan_probe.py",
+      "blob": "dcd40b41de2fab1649d2305f2d105ce3515b06f2"
+    },
+    {
       "path": "benchmarks/e1/e1_p05_real_three_arm.py",
       "blob": "8a1e5dadd0135b08678902e850cd8576b5bc238d"
     },
@@ -262,6 +270,10 @@
     {
       "path": "benchmarks/e1/e1_p08_setsid_escape_probe.py",
       "blob": "b655a718c5498509e7e24e0944cf14714f8e9a28"
+    },
+    {
+      "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
+      "blob": "83d07a6930624a375f8ded7a1c826a2d454813c6"
     },
     {
       "path": "benchmarks/e1/test_e1_p05_raw_receipt.py",
@@ -344,6 +356,18 @@
       "blob": "fd42c1d7f608fffa734aebb567ce4ba7844d4f3f"
     },
     {
+      "path": "docs/LU_AGENT01F_MODEL_PLAN_INGRESS_20261108.md",
+      "blob": "ae72f1d2398eb75d3cbd283926b3235accf8cb7f"
+    },
+    {
+      "path": "docs/LU_AGENT01G_PHYSICAL_WINDOWS_NSIS_TEST_BUILD_20261108.md",
+      "blob": "50a70eac9033274ed0be2457b28850e113c9a084"
+    },
+    {
+      "path": "docs/LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md",
+      "blob": "bb48b702a8d90989fdbcd902301a9682fc05176b"
+    },
+    {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
       "blob": "976d8080d3b2940b467fec4c5296829a8d601bea"
     },
@@ -393,7 +417,7 @@
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
-      "blob": "1a26d25a4734c75ce90f39f905bcac63810e6503"
+      "blob": "025cce921d4f47570f3746d007a3d9914b14c1bc"
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
@@ -484,6 +508,10 @@
       "blob": "3b57b83d8d605dfad3f1d234525e0637ae3861af"
     },
     {
+      "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
+      "blob": "e0d784ac007bd2efe685b61b7ff79d7ce2f3e26e"
+    },
+    {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
       "blob": "0bbad7e0b1da86dcc9467541b3496036e60e7522"
     },
@@ -529,7 +557,7 @@
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_IMPLEMENTATION_LEDGER.md",
-      "blob": "939f6b42b3a600407fd083b36af22a4ffd1d0aaa"
+      "blob": "fdc041c0bd8285d1af97d33b80a21ac3aef690a1"
     },
     {
       "path": "docs/LU_NATIVE_TOOLS_MERGED_DESIGN.md",
@@ -613,7 +641,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "243b8d3c312e136147466ab3459ebfc321680feb"
+      "blob": "aecaf50d2971d0932dd95538f4c615bdd90c03f5"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -672,6 +700,10 @@
       "blob": "059141c168eff1d3296c4477f256c8e4d5d86b5a"
     },
     {
+      "path": "docs/acceptance/LU_AGENT01G_PHYSICAL_WINDOWS_CPU_TEST_20261108.json.template",
+      "blob": "971afade9b71ee3b725eca2a4fde1ad153e48afc"
+    },
+    {
       "path": "docs/acceptance/LU_M3_WINDOWS_NATIVE_ACCEPTANCE_20261107.md",
       "blob": "ebedc54a3b544ffc3d3c635f09c3ec0426b85c95"
     },
@@ -702,6 +734,26 @@
     {
       "path": "docs/reference/Jan-Mod-Design-Document.md",
       "blob": "209fbfb903b2320037f3d440db45b93245a5cef7"
+    },
+    {
+      "path": "evidence/agent-01g/qwen2p5-local-cpu-20261108/README.md",
+      "blob": "dfc2f8b79cd7da9186cf74a35a922f0499c2d7b8"
+    },
+    {
+      "path": "evidence/agent-01g/qwen2p5-local-cpu-20261108/lu_engine_smoke_receipt.json",
+      "blob": "319cdc7a72a1ddd102b50ef9c275334194c3ce73"
+    },
+    {
+      "path": "evidence/agent-01g/qwen2p5-local-cpu-20261108/lu_native_gguf_git_diagnostic_first_attempt.json",
+      "blob": "9f2d5b0e3cf946e43ad709145b4f12558acd886a"
+    },
+    {
+      "path": "evidence/agent-01g/qwen2p5-local-cpu-20261108/lu_native_gguf_git_diagnostic_receipt.json",
+      "blob": "293fd144001fa5439e48f66e03ac77e536f5c21f"
+    },
+    {
+      "path": "evidence/agent-01g/qwen2p5-local-cpu-20261108/manifest.json",
+      "blob": "b9a4edf3918af832fa34012614026ae8246287e6"
     },
     {
       "path": "lu-desktop/.gitignore",
@@ -736,8 +788,16 @@
       "blob": "801cc5fd27a5a7b7b683eb2ef2caa51ddf21957d"
     },
     {
+      "path": "lu-desktop/packaging/NSIS_AGENT01G_PHYSICAL_WINDOWS_CPU_TEST.nsi",
+      "blob": "38eb331e4e4e8efd7f2d83ec38eed2c5d38549c9"
+    },
+    {
       "path": "lu-desktop/packaging/NSIS_DEV_EVAL_NOT_ALPHA.nsi",
       "blob": "5c76758a30ad342269a7f9608b7372618fc1f718"
+    },
+    {
+      "path": "lu-desktop/packaging/README_AGENT01G_PHYSICAL_WINDOWS_CPU_TEST.txt",
+      "blob": "e6345a8e93d1b228117e64877f36db40b284c160"
     },
     {
       "path": "lu-desktop/packaging/README_NOT_ALPHA.txt",
@@ -793,7 +853,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.toml",
-      "blob": "f10bf44c2b6ac5d0170f72e77a94d921789f004c"
+      "blob": "f3b557abfe9621f290dfde7e575cd716b4d08ee7"
     },
     {
       "path": "lu-desktop/src-tauri/build.rs",
@@ -820,8 +880,12 @@
       "blob": "8d41a727200fdc4b0daf4eb65368e4658da04ef5"
     },
     {
+      "path": "lu-desktop/src-tauri/src/agent_plan_admission.rs",
+      "blob": "98d86faf7d5f8b2b9c9e6593941811969b9d9807"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/agent_plan_progress.rs",
-      "blob": "b43d698101788b8c76e6f59bf9faa7cb67422347"
+      "blob": "fdd5a20080cf7c6921229532380acade24b4ba69"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_review.rs",
@@ -905,7 +969,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "a7c0e52ca869428e486f65e5b7b6a8db6652d53e"
+      "blob": "2be3c555fd42909ad062c672988954b6270f481f"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -977,7 +1041,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_desktop.rs",
-      "blob": "75604932c5e05780d9dda7acd63a0847ca9b1e81"
+      "blob": "d3eced4cc90dac6ac6e2c58a8500f45592cfa552"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_recovery.rs",
@@ -1034,6 +1098,22 @@
     {
       "path": "lu-desktop/tests/agent01e-progress-ui.test.mjs",
       "blob": "baaead669415fba10d0168fb34aec012789e7334"
+    },
+    {
+      "path": "lu-desktop/tests/agent01f-model-plan-ingress.test.mjs",
+      "blob": "2efee0b364cf99b8829f66243b90ebfd17534cdf"
+    },
+    {
+      "path": "lu-desktop/tests/agent01g-approved-step-integration.test.mjs",
+      "blob": "36f0d6e3812e8ddd59473a5771c4e68ed2d1b747"
+    },
+    {
+      "path": "lu-desktop/tests/agent01g-physical-installer-contract.test.mjs",
+      "blob": "13d464a310dc169dff681e7a7873e6f882e86000"
+    },
+    {
+      "path": "lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs",
+      "blob": "ce9e2b9087e6517966ec2a1edbd01215a966c67f"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
@@ -1169,7 +1249,7 @@
     },
     {
       "path": "lu-desktop/tests/native-chat/src/lib.rs",
-      "blob": "cbfa18247d7fe559386308f1241e6b156993c9d5"
+      "blob": "e2262649abc290033b7a2ac0eecac0549e607e57"
     },
     {
       "path": "lu-desktop/tests/native-dx/Cargo.toml",
@@ -1361,7 +1441,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "52392096fa981ce102bd8539f75730e3fdf68c80"
+      "blob": "868b2d3359559f75cd9606cb0a53f41b2307256d"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1390,6 +1470,10 @@
     {
       "path": "lu-desktop/web/styles.css",
       "blob": "2dea7827b9c584a27d89ee95380161421c6cdc54"
+    },
+    {
+      "path": "scripts/build-agent01g-physical-windows-nsis.ps1",
+      "blob": "43f56dd45d32b01640b8145f355b6aad6b1a41fe"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
@@ -1438,6 +1522,10 @@
     {
       "path": "scripts/stage-research-windows.ps1",
       "blob": "d207eba4ea560a02718753d91f20f1ffa805988c"
+    },
+    {
+      "path": "scripts/verify-agent01g-local-evidence.mjs",
+      "blob": "1db6fe05a373fae66b250d53311dc69f2abe772f"
     },
     {
       "path": "scripts/verify-observe-installed-windows.ps1",
@@ -1545,7 +1633,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_deliverable_receipts.rs",
-      "blob": "547376d67b063debe11f5fffd158a1d165af4fa7"
+      "blob": "1d45544ed4719c29449c4d139f2b5d402d625a2c"
     },
     {
       "path": "src-tauri/lu-core/src/agent_host_scheduler.rs",
@@ -1557,11 +1645,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_revisions.rs",
-      "blob": "43bc7b53cc92ad29a093db0f1cda5bcb038b9fbf"
+      "blob": "686703218f4e3c03bfca2ace4e179eeab4a719ab"
     },
     {
       "path": "src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs",
-      "blob": "da21a6406bced399ee7a7bfbd31fd756f35ada96"
+      "blob": "73a1317b1756265a8c8844686aa230f0656c3698"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
@@ -2549,7 +2637,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "80d30a94d8137b7bb344856a5e654dca927b44b9"
+      "blob": "01891c8b670af0198d872ccfd7ff16360c00aab8"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",

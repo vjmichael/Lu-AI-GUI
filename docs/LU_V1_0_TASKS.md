@@ -6,6 +6,43 @@
 
 **Accepted baseline:** `0.1.0-alpha.2`. **Local development:** `0.1.0-alpha.3-dev.1` (icon resource and byte-counted GGUF import changes). Never overwrite the accepted installer; every change gets a new version/commit and CI evidence. The repository application tree is still older than the local source snapshot: **REPO-01 is a blocker to claiming current-development CI coverage**.
 
+## ACTIVE K/I/A/F WORK QUEUE — November 8, 2026
+
+**Source of truth for current scheduling:** [K/I/A/F active execution-layer ledger](LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md), [canonical K/I/A/F philosophy](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md), and [human-centered memory-first refinement](LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md). The earlier per-tool TODO table below is historical and may be stale; do not reinterpret old “TOOLS TODO” as permission to build mini-apps. **Current tool scope is reasonably sufficient; focus on getting models to use real reviewed interfaces effectively.** Three roles: **Foundational / Utility / Specialist**.
+
+### GROUP 1 — Still needing implementation finished
+
+| ID | Priority | Implementation outstanding |
+|---|---|---|
+| IMP-01 AGENT-01F | P0 | Explicit real loaded-GGUF plan proposal through normal chat + current ANSF goal/memory into host-owned review-only DRAFT SOURCE CANDIDATE; complete model/OS proof, host concurrency and an approved fresh-step broker+oracle execution loop; no model-origin permission |
+| IMP-02 MEMORY-LOOP | P0 | ANSF original-source/procedural memory, belief revision, context-change detection and clarification integration in genuine model and resumed task turns |
+| IMP-03 EXEC-INTERFACE | P0 | One exact human-approved independent-witness reviewed Git/FFprobe step is now wired to the actual GGUF model/tool loop as SOURCE CANDIDATE; genuine selected-model/OS results and more operations are still open, no replacement apps |
+| IMP-04 EXEC-AUTH | P0 | AGENT-01G source now combines fresh native-selected resource+step confirmation, saved ANSF original turn, host-owned scheduler claim, reviewed broker preflight and real worker invocation; native/installed authority/lifecycle acceptance, multi-step continuation and broader scope remain open |
+| IMP-05 EXEC-LIFECYCLE | P0 | OS worker start/cancel/reap/restart, Linux cgroup-v2 escape custody, Windows Job Object evidence and uncertain-effect recovery |
+| IMP-06 EXEC-FEEDBACK | P0 | Independent semantic output/source validation, typed model feedback, source revision checks and honest VERIFIED/UNSUPPORTED/CONFLICT reporting |
+| IMP-07 TASK-LOOP | P0 | Source-goal/clarify → plan/review → authorized worker → independent outcome → user-visible feedback → safe continuation/recovery |
+| IMP-08 MEASURE-KIAF | P1 | Genuine local GGUF three-arm task benchmark, failure attribution K/I/A/F and resource/latency/token measurements |
+| IMP-09 UX-FOLLOWUP | P1 | Rich message-thread navigation and new authorized model turn derived from an edited message, separately from display-only correction |
+| IMP-10 V1-SHELL | P1 | Real model load/preview/accessibility and late release hardening |
+
+### GROUP 2 — Waiting on GitHub operations, verification and acceptance
+
+| ID | Acceptance open, NOT implementation status |
+|---|---|
+| GATE-01 | Exact-head REPO-01 source, Windows/Linux Rust/SQLite/ANSF and React/Tauri compilation and regression results |
+| GATE-02 | E1-P03–P07 genuine supervised application, authorization, model tool choice and inner/outer journal results |
+| GATE-03 | E1-P08C–P13 real Windows/Linux process custody, independent Git/MP4/FFprobe oracles, source revision/uncertain outcomes |
+| GATE-04 | E1-P15/AGENT-01A–G real plan, goal, review, one-step live reviewed Git/FFprobe/selected-GGUF, host OS custody and restart/uncertainty acceptance |
+| GATE-05 | UX-CHAT01/02 original-history, edit/reply/provenance native CI and later installed GUI |
+| GATE-06 | M2–M5 ANSF/memory migration, persistent retrieval and genuine-model benchmarks |
+| GATE-07 | Same-model KIAF plan-only vs reviewed execution vs limited utilities measurable evidence |
+| GATE-08 | Near-v1.0 installed Windows NSIS/WebView/GGUF/MMProj/AMD Vulkan, worker stop/recovery, upgrade/uninstall; deferred in time only |
+| GATE-09 | Final shipped dependency legal/redistribution, signing and publisher review |
+
+**Evidence snapshot:** prior UX-CHAT02 PR #158 head `4e6ac21f915095e2d033cd297a1169c1a7a0240e`: 48 associated workflows queued or pending at last check, zero completed at that SHA. Current AGENT-01F branch will require its own exact-head Windows/Linux receipts; no source changes imply acceptance. Earlier E1 Git pack/MP4 compile and obsolete source assertions were source-repaired but have not passed current-head native tests.
+
+**Historical table follows.** Its November 3 statuses are retained for chronology, not to replace the two groups above.
+
 ## Tasks
 
 | ID | Priority | Task | State | Proof needed |
@@ -31,6 +68,10 @@
 | AGENT-01 | P1 | Durable agent orchestration, loop guard, progress cards | A/B/C/D durable plan, immutable revisions, historical receipts and bounded scheduler + E broker preflight/native-reviewed UI SOURCE CANDIDATES; actual dispatch/installed E2E OPEN | Exact-head Windows/Linux unit and Tauri checks, original-chat goal verifier, E1 OS execution/custody gates, host-generated plan admission, full NSIS physical acceptance |
 | UX-01 | P1 | Chat, diagnostics, accessible UI and streaming hardening | UX-CHAT01 message reactions/copy/replay/themes + UX-CHAT02 append-only corrections/pinned human replies/provenance SOURCE CANDIDATES; installed E2E OPEN | Exact-head Windows/Linux ANSF/SQLite and React checks, genuine installed Windows keyboard, clipboard, edit/reply/restart, old-effect non-replay acceptance |
 | RELEASE-01 | P0 | Signed NSIS installer, upgrade and independent v1.0 E2E | DEFERRED | Near-v1.0 Win10/11 acceptance |
+
+**AGENT-01F stage 2 and 3 (November 8):** Source now routes an explicit text-only model plan turn through the existing loaded GGUF backend, strict no-tool JSON step parser, original human turn/current ANSF goal checks, inert durable plan draft and review UI. The reviewed broker checks step kind/expected output but still does **not** dispatch from this plan. AGENT-01C/01D now have a source-level fresh-human execution turn vs original plan turn receipt reconciliation path, checking the actual E1-P15 task origin singleton, inner/outer journals, independent verified outcome and broker claim before marking historical evidence. It is **not live execution**. Native CI, genuine model results, user-approved step dispatch and independently verified result/restart evidence are **OPEN**. See [AGENT-01F details](LU_AGENT01F_MODEL_PLAN_INGRESS_20261108.md).
+
+**AGENT-01G (November 8):** The reviewed-agent step handoff is now source implemented in `lu_agent_run_reviewed_step`: native file/folder picker + second exact step/plan/revision OS confirmation; freshly recorded original human step turn; actual `AgentHostScheduler::claim_host/propose_step` and `ReviewedApplicationTurnSession::preflight_scheduled_step/run_journaled_observed` with one reviewed operation; independently witnessed AGENT-01C/01D result linkage and host-authored conversation feedback. **No native/GGUF acceptance has been observed**. Host claims are still one-per-plan and may require explicit reconciliation; full multi-step continuation, Linux/Windows descendant custody and physical installed-app gates remain open. [AGENT-01G details](LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md).
 
 ## Change tracking convention
 Each change records task ID, commit SHA, tests (command/platform/results), CI run URL, failures, and deferred manual scenario. `DONE` means evidence exists for the stated scope only. Never treat mock/source-string tests as physical Windows evidence.
@@ -813,3 +854,13 @@ details: `docs/LU_E1_P13_SOURCE_REVISION_CUSTODY_20261108.md`.
 - New host-minted actual ANSF `g-...` human reply turn with pinned parent seq/version/SHA; no heuristic matching to a duplicated message body. PREPARED reply intent is persisted first; linked only after exact host-authenticated original ANSF turn sequence and text hash can be proved. Explicit recovery inspects pending original turns **without re-posting** after crashes.
 - React per-message **Edit display**, **Versions / source**, **Reply** actions, pinned reply citations and manual `Post linked human reply` composer; pending metadata is visibly reconcilable. No AI generation, reviewed native tool, old authority reuse, or task retry is triggered by the interactions.
 - Native test matrix and Node UI tests cover restart, stale edits, pinned reply versions after parent changes, cross-chat refusal, mismatched original reply bytes, durable post-append reconciliation and immutable SQLite triggers. Physical installed Windows, model/tool and UI accessibility gates remain open. Full details in `docs/LU_UX_CHAT02_MESSAGE_REVISIONS_REPLIES_20261108.md`.
+
+**AGENT-01G-R1 (November 8):** Implemented `PlannedStepLifecycle` host-claim guard: error paths durably mark the scheduler claim cancelled/uncertain rather than silently returning to an apparently reusable plan. Clean release requires independently witnessed result and completed original conversation. Real Rust/ANSF/SQLite claim-drop regression, Node source contracts (10) and Windows reviewed host tests (7) submitted to CI. Plan example allows directly eligible independent Git/media checks with no forced source-collection predecessor, without changing actual user goals. **Open:** exact-head CI, real selected GGUF/OS worker/independent source acceptance, full multi-step recovery and installed-Windows near-v1.0 verification. [Details](LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md).
+
+**AGENT-01G genuine CI repair / GGUF evidence (November 8/9):** Inspected actual previous-commit Windows/Linux AGENT-01A/01C logs; one remaining `lu-core` compiler error E0599 in `AnsfSourceId` test was source-fixed with `.encode()`. The E0689 integer and two E0308 MP4 byte-pattern compiler fixes already exist at current source. Verified user-owned local Qwen2.5-0.5B Q2_K GGUF: 415,182,688 bytes, SHA-256 `9ee36184e616dfc76df4f5dd66f908dbde6979524ae36e6cefb67f532f798cb8`, GGUF v3, 291 tensors, **not a token-inference run**. Existing GitHub Qwen3-0.6B pinned genuine-model workflow remains queued. No local llama.cpp executable available; exact-head native, real model-selected tool and independent OS-result gates stay OPEN. Safe multi-step host execution stays implementation-gated until real acceptance. [01G evidence](LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md).
+
+**AGENT-01G real local Qwen diagnostic evidence uploaded to GitHub (2026-11-08):** The archived Lu Debian CPU engine successfully loaded real Qwen2.5 GGUF and returned actual tokens; a separate host-side diagnostic accepted one real model-selected Git HEAD invocation with an independent on-disk ref comparison and refused a malformed tool-looking response. The 3 exact JSON receipts now live under `evidence/agent-01g/qwen2p5-local-cpu-20261108/` with a SHA-256 manifest and 5 deterministic evidence-only Node tests in AGENT CI. **No production Lu host, AGENT-01C/01D witness, exact-head native build or Linux/Windows OS custody is claimed.** The distinct GH E1-P07 genuine model workflow downloads Qwen3-0.6B from HF, no GGUF binary is tracked in Git. [AGENT-01G report](LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md).
+
+**AGENT-01G real GGUF→native broker→recovery acceptance (2026-11-08):** Source-added a genuine SHA-pinned Qwen3 E1-P07 test that must make its own tool decision and pass real saved ANSF goal, separate human review, fresh step scope, actual reviewed Git worker, independent result and original-plan durable restart/reconciliation. The test's human-dialog approvals are strict headless fixtures; physical native UI and OS descendant custody are distinct. New five-case source-contract tests do **not** count as execution acceptance. **Required native GH PASS still missing; sequential steps must not inherit authority or be enabled before acceptance.** [01G gate](LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md).
+
+**AGENT-01G physical Windows installer route (Nov 8):** Current-source isolated unsigned NSIS CPU test package builder is staged in `.github/workflows/lu-agent01g-physical-windows-nsis.yml`: real Rust/React Tauri binary, pinned llama.cpp source-built CPU server, compile-time SHA-bound engine, correct Win64 Common Controls v6, distinct profile and actual disposable native installer/uninstaller gate. This is **source/build automation awaiting GH native compilation**, NOT a produced installer link or installed/GGUF test PASS. Enables a physical Windows user to test native dialogs, approval boundaries, one real model-selected Git check, failure/restart and data isolation. It does **not** close AMD Vulkan/Job Object descendants or authorize multi-step automation. [Builder and manual acceptance](LU_AGENT01G_PHYSICAL_WINDOWS_NSIS_TEST_BUILD_20261108.md).

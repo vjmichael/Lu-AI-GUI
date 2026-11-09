@@ -1,0 +1,50 @@
+{
+  "schema": "lu-agent01g-local-diagnostic-evidence-v1",
+  "evidence_class": "INDEPENDENT_LOCAL_DIAGNOSTIC_NOT_LU_HOST_ACCEPTANCE",
+  "recorded_date_local": "2026-11-08",
+  "scope": "Local extracted Linux CPU llama.cpp runtime and a separately controlled Git fixture; not Lu's production ConversationAuthority, AGENT-01D scheduler or AGENT-01C outcome ledger",
+  "model": {
+    "basename": "qwen2.5-0.5b-instruct-q2_k.gguf",
+    "bytes": 415182688,
+    "sha256": "9ee36184e616dfc76df4f5dd66f908dbde6979524ae36e6cefb67f532f798cb8",
+    "gguf_version": 3
+  },
+  "engine": {
+    "package": "Lu-Desktop_0.8.5~lu20261030.7_amd64.deb",
+    "package_sha256": "a2bceab0d3da708674888c8fb77782f2bd26c09530c0cf626ae10ecd2e453408",
+    "upstream_revision": "7fe450e19305b828c199d602c23a8337aaa1f03b",
+    "backend": "CPU"
+  },
+  "receipts": [
+    {
+      "file": "lu_engine_smoke_receipt.json",
+      "bytes": 1412,
+      "sha256": "e03f4581cd0b1cc6c3abfd95f1518a709842470f7597617735cbcb611ad0e9c3",
+      "kind": "REAL_LOCAL_GGUF_SMOKE_NOT_LU_HOST"
+    },
+    {
+      "file": "lu_native_gguf_git_diagnostic_receipt.json",
+      "bytes": 1461,
+      "sha256": "ae325d45988aa446a128248cdd069c95df334ccf4792b83c73f3239fa7c1aab0",
+      "kind": "DIAGNOSTIC_ONE_REAL_MODEL_CHOSEN_TOOL_AND_INDEPENDENT_FIXTURE_WITNESS"
+    },
+    {
+      "file": "lu_native_gguf_git_diagnostic_first_attempt.json",
+      "bytes": 664,
+      "sha256": "3648dcbd8e357b2f512f86194dd80361731fcebef629e2a2e86284b436b25c05",
+      "kind": "REJECTED_MODEL_FAILED_TOOL_SELECTION"
+    }
+  ],
+  "limits": [
+    "No production Lu plan approval or native worker broker was exercised in this diagnostic.",
+    "This run does not provide an exact-head source compile, a native Windows or Linux CI pass, nor protected worker OS descendant-termination evidence.",
+    "A single valid tool selection and one rejected model answer do not establish model reliability.",
+    "No model binary or runtime binary is committed into this source repository."
+  ],
+  "github_genuine_model_workflow": {
+    "path": ".github/workflows/lu-e1-p07-genuine-gguf.yml",
+    "download": "Hugging Face QuantFactory Qwen3-0.6B Q4_K_M",
+    "expected_sha256": "7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d",
+    "status": "SEPARATE_GITHUB_CI_GATE_NOT_EVIDENCE_HERE"
+  }
+}

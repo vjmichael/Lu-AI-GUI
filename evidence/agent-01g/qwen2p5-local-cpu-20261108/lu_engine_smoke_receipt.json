@@ -1,0 +1,51 @@
+{
+  "engine": "/mnt/data/lu-gguf-acceptance/extracted-lu-deb/usr/lib/Lu/lu-inference/llama-server",
+  "model_basename": "qwen2.5-0.5b-instruct-q2_k.gguf",
+  "engine_version": "0.5.0-dev, upstream 7fe450e",
+  "model_sha256": "9ee36184e616dfc76df4f5dd66f908dbde6979524ae36e6cefb67f532f798cb8",
+  "port": "127.0.0.1:19283",
+  "ok": true,
+  "stage": "generated",
+  "healthy": {
+    "status": "ok"
+  },
+  "load_seconds": 1.842,
+  "generation_seconds": 2.142,
+  "result": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "4"
+        }
+      }
+    ],
+    "created": 1794186093,
+    "model": "/mnt/data/lu-gguf-acceptance/qwen2.5-0.5b-instruct-q2_k.gguf",
+    "system_fingerprint": "b1-7fe450e",
+    "object": "chat.completion",
+    "usage": {
+      "completion_tokens": 2,
+      "prompt_tokens": 43,
+      "total_tokens": 45,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "id": "chatcmpl-1DsJ47BkeooqeGX8BLJK3Or9quAtMgXW",
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 43,
+      "prompt_ms": 263.899,
+      "prompt_per_token_ms": 6.137186046511628,
+      "prompt_per_second": 162.94112520320274,
+      "predicted_n": 2,
+      "predicted_ms": 21.909,
+      "predicted_per_token_ms": 21.909,
+      "predicted_per_second": 45.64334291843535
+    }
+  },
+  "child_exited": true
+}

@@ -856,7 +856,7 @@ mod tests{
             &Human{granted:true},&Sources{allowed:true}),
             Err(RevisionError::InvalidProposal));
         a=proposal(1,1);
-        let source=AnsfSourceId::new("book-1",1).unwrap().stable_source_id().unwrap();
+        let source=AnsfSourceId::new("book-1",1).unwrap().encode();
         a.assumption_sources.push(source.clone());
         a.assumption_sources.push(source);
         assert_eq!(store.append_proposal(&p,&c,&t,&id("v-",1),None,&a,

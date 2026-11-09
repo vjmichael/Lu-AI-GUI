@@ -11,7 +11,8 @@
     agent_host_scheduler::AgentHostScheduler,
     agent_plan_ledger::AgentPlanLedger,
     agent_plan_revisions::{AgentPlanRevisionStore,HostPlanReferenceVerifier},
-    conversation_authority::{BoundCallOrigin,ConversationAuthority},
+    agent_deliverable_receipts::{AgentDeliverableReceipts,HistoricalDeliverable},
+    conversation_authority::{BoundCallOrigin,ConversationAuthority,TrustedUserTurnVerifier},
  };
  #[derive(Clone,Copy,Debug,PartialEq,Eq)]
  pub enum ReviewedBrokerOperation{
@@ -43,7 +44,22 @@
  pub enum BridgeError{
     NotHostOwned,WrongHumanTurn,StaleRevision,NotProposed,
     NoOriginalAuthority,WrongCapability,UnverifiedSource,
-    BrokerNotRegistered,
+    BrokerNotRegistered,PlanStepNotReviewedOperation,OutcomeNotIndependentlyVerified,
+ }
+ // AGENT-01F: a reviewed Git/FFprobe read is not a generic plan-step
+ // executor. Inspecting sources and independently witnessing a source fact
+ // are the only current step classes the broker can serve. A PRESENT or
+ // HUMAN_REVIEW step must not silently become a native execution request.
+ fn supported_reviewed_step(step:&crate::agent_plan_revisions::RevisionStep)->bool{
+    use crate::agent_plan_ledger::PlanStepKind;
+    use crate::agent_plan_revisions::ExpectedDeliverable;
+    matches!(
+        (step.kind,step.expected),
+        (PlanStepKind::CollectSource,ExpectedDeliverable::SourceReferences)
+        |(PlanStepKind::Inspect,ExpectedDeliverable::SourceReferences)
+        |(PlanStepKind::Inspect,ExpectedDeliverable::StructuredFindings)
+        |(PlanStepKind::IndependentlyCheck,ExpectedDeliverable::IndependentWitness)
+    )
  }
  #[allow(clippy::too_many_arguments)]
  pub fn preflight_reviewed_broker(
@@ -67,6 +83,9 @@
         .ok_or(BridgeError::StaleRevision)?;
     if now.revision_sha256!=revision_sha||now.review_state!="APPROVED_PLAN_ONLY"{
         return Err(BridgeError::StaleRevision)
+    }
+    if !now.steps.get(step as usize).is_some_and(supported_reviewed_step){
+        return Err(BridgeError::PlanStepNotReviewedOperation)
     }
     if !sources.goal_event_is_current(chat,&now.goal_id,&now.goal_event_id)
         ||now.assumption_sources.iter().any(|x|
@@ -111,6 +130,60 @@
         dispatch_status:"WAITING_FOR_INDEPENDENT_NATIVE_OS_ACCEPTANCE",
     })
  }
+ /// Only an independently verified new worker effect can satisfy a reviewed
+ /// plan's expected outcome. Fresh-step original human identity is DISTINCT
+ /// from the original plan request, and the plan remains non-executable.
+ fn call_matches_exact_binding(call:&str,binding:&ScheduledBrokerBinding)->bool{
+     let suffix=match binding.reviewed_execute_id{
+         "lu.reviewed.git.head"=>"-gh",
+         "lu.reviewed.git.status"=>"-gs",
+         "lu.reviewed.git.branch"=>"-gb",
+         "lu.reviewed.git.history"=>"-gc",
+         "lu.reviewed.media.facts"=>"-fm",
+         _=>return false
+     };
+     call.len()>suffix.len()&&call.len()<=128&&call.ends_with(suffix)
+ }
+ #[allow(clippy::too_many_arguments)]
+ pub fn link_verified_scheduled_worker_outcome(
+     scheduler:&AgentHostScheduler,
+     ledger:&AgentPlanLedger,
+     revisions:&AgentPlanRevisionStore,
+     receipts:&AgentDeliverableReceipts,
+     sources:&dyn HostPlanReferenceVerifier,
+     human:&dyn TrustedUserTurnVerifier,
+     profile:&std::path::Path,
+     plan:&str,chat:&str,original_turn:&str,owner_id:&str,epoch:u64,
+     binding:&ScheduledBrokerBinding,worker_origin:&BoundCallOrigin,
+     worker_call_id:&str,
+ )->Result<HistoricalDeliverable,BridgeError>{
+     if worker_origin.conversation_id!=chat
+         ||worker_origin.user_turn_id!=worker_origin.task_id
+         ||worker_origin.user_turn_id==original_turn
+         ||!call_matches_exact_binding(worker_call_id,binding){
+         return Err(BridgeError::WrongHumanTurn)
+     }
+     receipts.record_verified_execution_turn(
+         plan,chat,original_turn,&worker_origin.user_turn_id,
+         &binding.revision_sha256,binding.step_index,
+         &binding.claim_id,owner_id,epoch,worker_call_id,profile,
+         ledger,revisions,sources,scheduler,human
+     ).map_err(|_|BridgeError::OutcomeNotIndependentlyVerified)?;
+     scheduler.acknowledge_historical_receipt(
+         plan,chat,original_turn,owner_id,epoch,
+         &binding.revision_sha256,binding.step_index,&binding.claim_id,
+         profile,ledger,revisions,receipts,sources
+     ).map_err(|_|BridgeError::OutcomeNotIndependentlyVerified)?;
+     receipts.history(plan,chat,original_turn,profile,ledger,revisions,sources)
+         .map_err(|_|BridgeError::OutcomeNotIndependentlyVerified)?
+         .into_iter().find(|item|
+             item.revision_sha256==binding.revision_sha256
+             &&item.step_index==binding.step_index
+             &&item.effect_call_id==worker_call_id
+             &&item.tool_id==binding.reviewed_execute_id
+             &&item.status=="VERIFIED_AT_OBSERVATION"
+         ).ok_or(BridgeError::OutcomeNotIndependentlyVerified)
+ }
  /// Prove an independently registered, per-turn *actual* broker session
  /// offers exactly the reviewed tool behind the host's non-dispatching claim.
  /// This method does not call run_journaled_observed.
@@ -133,6 +206,38 @@
  }
  #[cfg(test)]
  mod tests{
+    #[test]
+    fn independent_result_link_requires_the_exact_reviewed_operation(){
+        let binding=ScheduledBrokerBinding{
+            claim_id:String::from("q-"),revision_sha256:String::from("rev"),
+            step_index:0,reviewed_execute_id:"lu.reviewed.git.head",
+            reviewed_read_id:"lu.reviewed.git.repo-read",
+            dispatch_status:"WAITING_FOR_INDEPENDENT_NATIVE_OS_ACCEPTANCE",
+        };
+        assert!(call_matches_exact_binding("host-call-gh",&binding));
+        assert!(!call_matches_exact_binding("host-call-gs",&binding));
+        assert!(!call_matches_exact_binding("host-call-fm",&binding));
+    }
+    #[test]
+    fn current_reviewed_broker_cannot_dispatch_presentation_or_human_review_steps(){
+        use super::supported_reviewed_step;
+        use crate::agent_plan_ledger::PlanStepKind;
+        use crate::agent_plan_revisions::{RevisionStep,ExpectedDeliverable};
+        let build=|kind,expected|RevisionStep{
+            kind,depends_on:None,deliverable_id:String::new(),expected
+        };
+        assert!(supported_reviewed_step(&build(
+            PlanStepKind::CollectSource,ExpectedDeliverable::SourceReferences)));
+        assert!(supported_reviewed_step(&build(
+            PlanStepKind::IndependentlyCheck,ExpectedDeliverable::IndependentWitness)));
+        for kind in [PlanStepKind::Present,PlanStepKind::HumanReview,PlanStepKind::Analyze]{
+            assert!(!supported_reviewed_step(&build(
+                kind,ExpectedDeliverable::Explanation)));
+        }
+        assert!(!supported_reviewed_step(&build(
+            PlanStepKind::Inspect,ExpectedDeliverable::HumanDecision)));
+    }
+
     use super::*;
     use crate::{
         agent_host_scheduler::{ScheduleBudget,HostFreshStepConsent},

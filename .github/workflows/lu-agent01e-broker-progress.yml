@@ -9,12 +9,19 @@ on:
       - 'src-tauri/lu-core/src/lib.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_admission.rs'
+      - 'lu-desktop/tests/agent01f-model-plan-ingress.test.mjs'
+      - 'lu-desktop/tests/agent01g-approved-step-integration.test.mjs'
+      - 'lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs'
+      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
       - 'lu-desktop/tests/native-chat/src/lib.rs'
       - 'lu-desktop/tests/agent01e-progress-ui.test.mjs'
       - '.github/workflows/lu-agent01e-broker-progress.yml'
       - 'source-tree.lock.json'
+      - 'evidence/agent-01g/qwen2p5-local-cpu-20261108/**'
+      - 'scripts/verify-agent01g-local-evidence.mjs'
   pull_request:
     paths:
       - 'src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs'
@@ -23,12 +30,19 @@ on:
       - 'src-tauri/lu-core/src/lib.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
       - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_admission.rs'
+      - 'lu-desktop/tests/agent01f-model-plan-ingress.test.mjs'
+      - 'lu-desktop/tests/agent01g-approved-step-integration.test.mjs'
+      - 'lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs'
+      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
       - 'lu-desktop/tests/native-chat/src/lib.rs'
       - 'lu-desktop/tests/agent01e-progress-ui.test.mjs'
       - '.github/workflows/lu-agent01e-broker-progress.yml'
       - 'source-tree.lock.json'
+      - 'evidence/agent-01g/qwen2p5-local-cpu-20261108/**'
+      - 'scripts/verify-agent01g-local-evidence.mjs'
   workflow_dispatch:
 permissions:
   contents: read
@@ -65,6 +79,39 @@ jobs:
             2>&1 | tee agent01e-evidence/ui-bridge-node.log
           grep -Fq '# pass 6' agent01e-evidence/ui-bridge-node.log
           grep -Fq '# fail 0' agent01e-evidence/ui-bridge-node.log
+      - name: AGENT-01F real loaded model ingress source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01f-model-plan-ingress.test.mjs             2>&1 | tee agent01e-evidence/agent01f-ui-bridge.log
+          grep -Fq '# pass 5' agent01e-evidence/agent01f-ui-bridge.log
+          grep -Fq '# fail 0' agent01e-evidence/agent01f-ui-bridge.log
+      - name: AGENT-01G approved-step read-only native broker source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01g-approved-step-integration.test.mjs \
+            2>&1 | tee agent01e-evidence/agent01g-ui-bridge.log
+          grep -Fq '# pass 10' agent01e-evidence/agent01g-ui-bridge.log
+          grep -Fq '# fail 0' agent01e-evidence/agent01g-ui-bridge.log
+      - name: AGENT-01G pinned Qwen3 fresh ANSF host-native proof source checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs \
+            2>&1 | tee agent01e-evidence/agent01g-real-model-chain-source.log
+          grep -Fq '# pass 5' agent01e-evidence/agent01g-real-model-chain-source.log
+          grep -Fq '# fail 0' agent01e-evidence/agent01g-real-model-chain-source.log
+          echo 'Source-contract assertions only. The separate Qwen3/native OS test must execute and pass.' >> "$GITHUB_STEP_SUMMARY"
+      - name: AGENT-01G real local GGUF diagnostic receipts, SHA-256 only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/verify-agent01g-local-evidence.mjs \
+            2>&1 | tee agent01e-evidence/agent01g-local-qwen-diagnostics.log
+          grep -Fq '# pass 5' agent01e-evidence/agent01g-local-qwen-diagnostics.log
+          grep -Fq '# fail 0' agent01e-evidence/agent01g-local-qwen-diagnostics.log
+          echo 'Five source evidence integrity tests are NOT Lu-host or real Qwen3 model-selected broker acceptance.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -109,7 +156,7 @@ jobs:
             2>&1 | tee agent01e-evidence/broker-native.log
           grep -Fq 'test agent_reviewed_broker_bridge::tests::actual_conversation_authority_not_planner_approval_controls_broker_capabilities ... ok' \
             agent01e-evidence/broker-native.log
-          grep -Fq 'test result: ok. 1 passed; 0 failed;' agent01e-evidence/broker-native.log
+          grep -Fq 'test result: ok. 3 passed; 0 failed;' agent01e-evidence/broker-native.log
       - name: Compile genuine desktop read-only recovery projection with actual saved human ChatStore
         shell: bash
         run: |
@@ -141,6 +188,26 @@ jobs:
           grep -Fq 'test agent_plan_review::tests::actual_chat_goal_supersession_invalidates_plan_approval_reference ... ok'             agent01e-evidence/real-goal-plan-review.log
           grep -Fq 'test agent_plan_review::tests::exact_native_review_cannot_authorize_different_revision_or_action ... ok'             agent01e-evidence/real-goal-plan-review.log
           grep -Fq 'test result: ok. 2 passed; 0 failed;'             agent01e-evidence/real-goal-plan-review.log
+      - name: AGENT-01F real ANSF goal draft-only plan admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib agent_plan_admission::tests -- --nocapture \
+            2>&1 | tee agent01e-evidence/agent01f-plan-admission.log
+          for case in \
+            real_saved_turn_and_current_goal_stage_only_reviewable_draft \
+            interrupted_two_phase_draft_staging_completes_without_duplicate \
+            model_completion_stages_original_goal_review_only \
+            malformed_effectful_or_duplicate_model_json_is_refused \
+            changed_goal_during_model_inference_is_refused \
+            cross_chat_unverified_turn_and_pending_clarification_are_denied \
+            invalid_steps_and_superseded_human_turn_do_not_write; do
+            grep -Fq "test agent_plan_admission::tests::$case ... ok" \
+              agent01e-evidence/agent01f-plan-admission.log
+          done
+          grep -Fq 'test result: ok. 7 passed; 0 failed;' \
+            agent01e-evidence/agent01f-plan-admission.log
       - name: Parent AGENT-01A/B/C/D integration regressions at exact E head
         shell: bash
         run: |
@@ -203,7 +270,32 @@ jobs:
           npm run check
           Pop-Location
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Run genuine Windows host reviewed-step native Rust guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p agent01g-windows-evidence
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            reviewed_app_desktop::tests -- --nocapture \
+            2>&1 | tee agent01g-windows-evidence/agent01g-host-native.log
+          for case in \
+            approved_step_selection_does_not_admit_unreviewed_operations \
+            fresh_step_consent_is_bound_to_exact_new_human_turn_and_budget \
+            reviewed_worker_call_lookup_never_invents_missing_journals \
+            claimed_step_lifecycle_drop_records_uncertain_cancel_intent; do
+            grep -Fq "test reviewed_app_desktop::tests::$case ... ok" \
+              agent01g-windows-evidence/agent01g-host-native.log
+          done
+          grep -Fq 'test result: ok. 7 passed; 0 failed;' \
+            agent01g-windows-evidence/agent01g-host-native.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01g-windows-native
+          path: agent01g-windows-evidence/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Report actual limit
         shell: bash
         run: |
-          echo 'Windows compilation != installed NSIS test. No model-loaded actual worker process, local GGUF tool selection or Windows Job Object descendant reaping proven.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Source-level AGENT-01G supervised reviewed-step integration is now present. A Windows native test is NOT a genuine loaded-GGUF model tool-selection E2E, installed app test, independent worker OS acceptance, or complete Job Object descendant reaping proof. All such gates remain open.' >> "$GITHUB_STEP_SUMMARY"

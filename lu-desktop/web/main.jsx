@@ -828,6 +828,7 @@ function App() {
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
   const [agentProgressByChat,setAgentProgressByChat]=useState({});
   const [agentReviewBusy,setAgentReviewBusy]=useState(false);
+  const [agentStepOpByKey,setAgentStepOpByKey]=useState({});
   const [toolProgressByChat,setToolProgressByChat]=useState({});
   const [turnCapabilitiesByChat,setTurnCapabilitiesByChat]=useState({});
   const [toolHistoryBusy,setToolHistoryBusy]=useState(false);
@@ -852,6 +853,8 @@ function App() {
   // An opt-in for exactly one ordinary Send. This boolean is never authority:
   // the host still requires an actual native directory picker.
   const [workspaceToolsNextSend,setWorkspaceToolsNextSend] = useState(false);
+  // One-turn model-side plan proposal. No tool grants or automatic execution.
+  const [planDraftNextSend,setPlanDraftNextSend] = useState(false);
   // One Send only. Native host shows an OS picker and reviews exact program
   // and selected resource; no JS/model path can become execution authority.
   const [reviewedAppNextSend,setReviewedAppNextSend] = useState(null);
@@ -2149,7 +2152,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {}, stopBrowserChallenge = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {}, stopBrowserChallenge = () => {}, stopPlanAdmission = () => {}, stopAgentWitness = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -2210,6 +2213,25 @@ function App() {
       if (!alive||!entry?.chatId||!entry?.generationId||!Array.isArray(entry.tools))return;
       setTurnCapabilitiesByChat(prev=>({...prev,[entry.chatId]:entry}));
     }).then(fn=>{if(alive)stopTurnCapabilities=fn;else fn();});
+    listen('lu-agent-plan-admission',e=>{
+      const result=e.payload;
+      if(!alive||!result?.chatId)return;
+      if(currentChat.current!==result.chatId)return;
+      if(result.status==='review_only_draft'&&result.planId){
+        setActivity('Lu recorded a review-only plan draft. Open Tool activity to review the original plan. No worker has executed.');
+      }else if(result.status==='not_admitted'){
+        setError('No plan was admitted: '+String(result.reason||'Invalid model plan'));
+      }
+    }).then(fn=>{if(alive)stopPlanAdmission=fn;else fn();});
+    listen('lu-agent-step-verified',e=>{
+      const result=e.payload;
+      if(!alive||!result?.chatId||!result?.planId)return;
+      if(currentChat.current===result.chatId){
+        setActivity('Step '+(result.stepIndex+1)+' recorded an independently checked '+
+          result.status+' witness ('+result.method+'). Another step needs new authorization.');
+        void refreshToolActivity(result.chatId);
+      }
+    }).then(fn=>{if(alive)stopAgentWitness=fn;else fn();});
     listen('lu-generation-finish', e=>{
       if (!alive || !e.payload?.chatId)return;
       const {chatId:finishedChat,generationId}=e.payload;
@@ -2238,7 +2260,7 @@ function App() {
       setBackgroundTerminalNotice(e.payload);
       if (backgroundPaneOpen) void refreshBackgroundTasks();
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); };
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); stopPlanAdmission(); stopAgentWitness(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -2550,6 +2572,35 @@ function App() {
       if(acted)await refreshToolActivity(chatId);
     }catch(error){
       setError('Plan review not recorded: '+String(error));
+    }finally{setAgentReviewBusy(false)}
+  }
+  async function runReviewedAgentStep(plan,step){
+    if(!chatId||!runtime.sessionId||!plan?.revisionSha256||
+       !Number.isSafeInteger(step?.stepIndex))return;
+    const targetChat=chatId;
+    const key=plan.planId+':'+step.stepIndex;
+    const operation=agentStepOpByKey[key]||'git_head';
+    setAgentReviewBusy(true);
+    try{
+      const answer=await invoke('lu_agent_run_reviewed_step',{
+        sessionId:runtime.sessionId,chatId:targetChat,
+        planId:plan.planId,revisionSha:plan.revisionSha256,
+        stepIndex:step.stepIndex,operation
+      });
+      if(answer===null)return; // Native picker or exact consent cancelled.
+      if(typeof answer!=='string')throw Error('Invalid reviewed step response');
+      await refreshToolActivity(targetChat);
+      if(currentChat.current===targetChat){
+        const latest=await loadLatestUiHistory(targetChat).catch(()=>null);
+        if(latest)setHistory(latest);
+        setActivity('Lu checked one independent step result. New authority is required for another step.');
+      }
+    }catch(error){
+      if(currentChat.current===targetChat){
+        setError('Reviewed step not accepted as independently verified: '+String(error)+
+          '. If a worker ran, inspect its receipts before retrying.');
+      }
+      await refreshToolActivity(targetChat).catch(()=>{});
     }finally{setAgentReviewBusy(false)}
   }
   async function cancelAgentPlan(plan){
@@ -3627,10 +3678,17 @@ function App() {
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
     const input = prompt.trim();
     const useWorkspaceTools=workspaceToolsNextSend;
+    const usePlanDraft=planDraftNextSend;
     const useBrowserResearch=browserResearchNextSend;
     const useReviewedApp=reviewedAppNextSend;
-    if([Boolean(useWorkspaceTools),Boolean(useBrowserResearch),Boolean(useReviewedApp)].filter(Boolean).length>1){
+    if([Boolean(useWorkspaceTools),Boolean(useBrowserResearch),Boolean(useReviewedApp),Boolean(usePlanDraft)].filter(Boolean).length>1){
       setError('Choose only one native workspace, reviewed app or Browser mode for this turn.');return;
+    }
+    if(usePlanDraft&&(images.length||textFiles.length||input.length>8192)){
+      setError('Draft plan mode requires a text-only original human request, at most 8192 characters.');return;
+    }
+    if(usePlanDraft&&!m2Context?.goalId){
+      setError('Set a saved ANSF goal before asking Lu to draft a plan.');return;
     }
     if(useBrowserResearch&&(images.length||textFiles.length||input.length>12*1024)){
       setError('Browser research requires a text-only question of at most 12 KiB.');return;
@@ -3662,6 +3720,7 @@ function App() {
     // A workspace opt-in is consumed on this Send even if the picker is
     // denied/cancelled. No future conversation inherits a filesystem grant.
     if (useWorkspaceTools) setWorkspaceToolsNextSend(false);
+    if (usePlanDraft) setPlanDraftNextSend(false);
     if (useBrowserResearch) setBrowserResearchNextSend(false);
     if (useReviewedApp) setReviewedAppNextSend(null);
     setImageViewer(null);
@@ -3693,7 +3752,8 @@ function App() {
           : await invoke('lu_generate', {
             sessionId: runtime.sessionId, chatId: activeId,
             prompt: submitted, imageRefs: refs, maxNewTokens: 512,
-            readOnlyWorkspace: useWorkspaceTools
+            readOnlyWorkspace: useWorkspaceTools,
+            planOnly: usePlanDraft
           });
       if (output===null && useReviewedApp) {
         // Native picker cancellation creates no user turn or permission.
@@ -3721,6 +3781,9 @@ function App() {
       }
       setJobs(prev => removeJob(prev,activeId));
       await refreshCatalog().catch(error => { if (currentChat.current === activeId) setError(String(error)); });
+      if (usePlanDraft) await refreshToolActivity(activeId).catch(error=>{
+        if (currentChat.current===activeId)setError(String(error));
+      });
     }
     if (!completed && !cancelled && currentChat.current === activeId && !draftText.current.trim()) {
       // Failed submissions remain editable. Already-journaled user turns are
@@ -4542,6 +4605,38 @@ function App() {
                     {step.historicalWitnessLinked&&
                       <small>Independent witness reference was recorded.
                         Live source, process custody and receipt must be rechecked.</small>}
+                    {plan.revisionReview==='APPROVED_PLAN_ONLY'&&
+                      plan.supervisorState==='NOT_CLAIMED'&&
+                      plan.planState!=='CANCEL_REQUESTED'&&
+                      plan.planState!=='NEEDS_REVIEW'&&
+                      (step.dependsOn===null||
+                        plan.steps[step.dependsOn]?.scheduleState==='HISTORICAL_WITNESS_RECORDED')&&
+                      step.purpose==='INDEPENDENT_CHECK'&&
+                      step.expectedDeliverable==='INDEPENDENT_WITNESS'&&
+                      step.scheduleState==='NOT_SCHEDULED'&&
+                      <div className="settingsActions">
+                        <label>Reviewed source operation
+                          <select value={agentStepOpByKey[plan.planId+':'+step.stepIndex]||'git_head'}
+                            onChange={e=>setAgentStepOpByKey(prev=>({
+                              ...prev,[plan.planId+':'+step.stepIndex]:e.target.value
+                            }))}>
+                            <option value="git_head">Git HEAD</option>
+                            <option value="git_status">Git tracked status</option>
+                            <option value="git_branch">Git current branch</option>
+                            <option value="git_history">Git history count</option>
+                            <option value="media_facts">FFprobe media facts</option>
+                          </select>
+                        </label>
+                        <button type="button" className="subtleButton"
+                          disabled={!loaded||working||chatBusy||agentReviewBusy}
+                          title="OS-select a resource and explicitly authorize exactly one inspected plan step. The loaded model uses one existing reviewed Git/FFprobe tool; Lu checks the worker's actual independent outcome."
+                          onClick={()=>void runReviewedAgentStep(plan,step)}>
+                          Review and run one step
+                        </button>
+                        <small>A new native permission dialog and selected local source are required.
+                          No old plan approval grants execution. Unsupported or uncertain
+                          results never complete a step automatically.</small>
+                      </div>}
                   </div>
                 )}
                 <small>Next safe action: {plan.nextSafeAction}</small>
@@ -5530,10 +5625,24 @@ function App() {
               title="Choose a folder and let Lu discover files by name, type, size, date or bounded text, then inspect or read them under one approved read-only tool turn"
               onClick={()=>void askWorkspaceDirectory()}>Ask Workspace</button>
             <button type="button" className="subtleButton"
+              aria-pressed={planDraftNextSend}
+              disabled={!loaded||chatBusy||working||!m2Context?.goalId||Boolean(images.length)||Boolean(textFiles.length)}
+              title="Use the loaded GGUF model to propose a strict, review-only step plan for the saved ANSF goal. Does NOT execute any tool."
+              onClick={()=>{
+                setWorkspaceToolsNextSend(false);setReviewedAppNextSend(null);
+                setBrowserResearchNextSend(false);setPlanDraftNextSend(v=>!v);
+              }}>
+              {planDraftNextSend?'Draft plan: next Send ✓':'Draft plan with Lu'}
+            </button>
+            {planDraftNextSend&&<span className="composerHelp" role="status">
+              The loaded model will propose a bounded plan from the saved ANSF goal.
+              Lu validates it and stores it for separate review; no tools will run.
+            </span>}
+            <button type="button" className="subtleButton"
               aria-pressed={workspaceToolsNextSend}
               disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
               title="On the next normal Send, choose a folder in the native picker and let Lu use approved read-only tools for that one turn"
-              onClick={()=>{setReviewedAppNextSend(null);setBrowserResearchNextSend(false);setWorkspaceToolsNextSend(value=>!value);}}>
+              onClick={()=>{setPlanDraftNextSend(false);setReviewedAppNextSend(null);setBrowserResearchNextSend(false);setWorkspaceToolsNextSend(value=>!value);}}>
               {workspaceToolsNextSend?'Workspace tools: next Send ✓':'Use workspace tools on Send'}
             </button>
             {workspaceToolsNextSend && <span className="composerHelp" role="status">
@@ -5544,7 +5653,7 @@ function App() {
               disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
               title="Next Send: choose a Git folder with the native picker, authorize read-only reviewed Git operations, and let the local model use them"
               onClick={()=>{
-                setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(false);
+                setPlanDraftNextSend(false);setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(false);
                 setReviewedAppNextSend(v=>v==='git'?null:'git');
               }}>
               {reviewedAppNextSend==='git'?'Reviewed Git: next Send ✓':'Use reviewed Git on Send'}
@@ -5554,7 +5663,7 @@ function App() {
               disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
               title="Next Send: choose one WAV/MP4 file with the native picker and let the local model request FFprobe metadata"
               onClick={()=>{
-                setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(false);
+                setPlanDraftNextSend(false);setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(false);
                 setReviewedAppNextSend(v=>v==='media'?null:'media');
               }}>
               {reviewedAppNextSend==='media'?'Reviewed media: next Send ✓':'Use reviewed media on Send'}
@@ -5567,7 +5676,7 @@ function App() {
               aria-pressed={browserResearchNextSend}
               disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
               title="Next Send: request native approval for exact HTTPS origins, use a supervised read-only Browser and return a journaled answer"
-              onClick={()=>{setReviewedAppNextSend(null);setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(v=>!v);}}>
+              onClick={()=>{setPlanDraftNextSend(false);setReviewedAppNextSend(null);setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(v=>!v);}}>
               {browserResearchNextSend?'Browser research: next Send ✓':'Research with Lu browser (read only)'}
             </button>
             {browserResearchNextSend&&<label className="composerHelp">

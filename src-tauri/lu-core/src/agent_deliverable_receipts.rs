@@ -10,6 +10,8 @@
  use crate::{
      agent_plan_ledger::{AgentPlanLedger,PlanStepKind},
      agent_plan_revisions::{AgentPlanRevisionStore,ExpectedDeliverable,HostPlanReferenceVerifier},
+     agent_host_scheduler::AgentHostScheduler,
+     conversation_authority::TrustedUserTurnVerifier,
  };
  const MAX_JOURNAL:u64=64*1024*1024;
  const MAX_RECEIPT:usize=32*1024;
@@ -19,6 +21,7 @@
      Database(String),Poisoned,InvalidId,WrongOrigin,UnapprovedPlan,
      StaleRevision,UnsupportedDeliverable,UnverifiedEffect,
      MissingJournal,InvalidJournal,ConflictingReceipt,LimitReached,
+     UnverifiedFreshStep,
  }
  impl From<rusqlite::Error> for DeliverableError{
      fn from(e:rusqlite::Error)->Self{Self::Database(e.to_string())}
@@ -114,7 +117,7 @@
  struct VerifiedObservation{
      tool_id:String,receipt_sha256:String,method:String,observed_sha256:String
  }
- fn observe_existing(turn:&str,call:&str,profile:&Path)
+ fn observe_existing(turn:&str,call:&str,profile:&Path,expected_chat:Option<&str>)
      ->Result<VerifiedObservation,DeliverableError>{
      let Some((outer,expected_tool,_))=worker_operation(call) else{
          return Err(DeliverableError::InvalidId)
@@ -123,6 +126,19 @@
      // The host selects the profile directory; model data cannot select paths.
      let effects=readonly(&profile.join(format!("lu-reviewed-effects-{turn}.sqlite")))?;
      let tasks=readonly(&profile.join(format!("lu-reviewed-task-{turn}.sqlite")))?;
+     // A genuine scheduled step belongs to a DIFFERENT fresh human turn.
+     // The existing E1-P15 reviewed worker origin singleton proves both
+     // that turn and its original conversation, not just a filename.
+     if let Some(chat)=expected_chat{
+         let actual:Option<(String,String)>=tasks.query_row(
+             "SELECT conversation_id,user_turn_id FROM lu_reviewed_turn_origin
+              WHERE singleton=1",[],|r|Ok((r.get(0)?,r.get(1)?))
+         ).optional().map_err(|_|DeliverableError::UnverifiedFreshStep)?;
+         if actual.as_ref().map(|(c,t)|(c.as_str(),t.as_str()))
+             !=Some((chat,turn)){
+             return Err(DeliverableError::UnverifiedFreshStep)
+         }
+     }
      let get_effect=|id:&str|->Result<(String,String,Option<Vec<u8>>),DeliverableError>{
          effects.query_row(
              "SELECT tool_id,state,
@@ -192,6 +208,7 @@
                step_index INTEGER NOT NULL CHECK(step_index BETWEEN 0 AND 31),
                deliverable_id TEXT NOT NULL,
                original_turn_id TEXT NOT NULL,
+               execution_turn_id TEXT,
                effect_call_id TEXT NOT NULL,
                tool_id TEXT NOT NULL,
                receipt_sha256 TEXT NOT NULL CHECK(length(receipt_sha256)=64),
@@ -208,6 +225,17 @@
                 BEFORE DELETE ON lu_agent_deliverable_receipts
                 BEGIN SELECT RAISE(ABORT,'Immutable deliverable witness'); END;"
          )?;
+         // Existing sealed source candidates have no execution_turn_id.
+         // NULL means the historically verified journal used the original
+         // turn; never invent a different fresh worker turn for legacy rows.
+         let mut statement=db.prepare("PRAGMA table_info(lu_agent_deliverable_receipts)")?;
+         let columns=statement.query_map([],|row|row.get::<_,String>(1))?
+             .collect::<Result<Vec<_>,_>>()?;
+         drop(statement);
+         if !columns.iter().any(|column|column=="execution_turn_id"){
+             db.execute("ALTER TABLE lu_agent_deliverable_receipts
+                         ADD COLUMN execution_turn_id TEXT",[])?;
+         }
          Ok(Self{db:Mutex::new(db)})
      }
      /// Attach only a historical independent OS-effect observation. The host
@@ -217,6 +245,48 @@
      pub fn record_observed(
          &self,plan:&str,chat:&str,turn:&str,revision_sha:&str,
          step_index:u8,call_id:&str,profile:&Path,
+         ledger:&AgentPlanLedger,revisions:&AgentPlanRevisionStore,
+         sources:&dyn HostPlanReferenceVerifier,
+     )->Result<ReceiptWrite,DeliverableError>{
+         // Historical same-turn fixture/API remains supported; an actual
+         // AGENT-01D scheduled execution MUST use a distinct fresh turn.
+         self.record_with_execution_turn(
+             plan,chat,turn,turn,revision_sha,step_index,call_id,profile,
+             ledger,revisions,sources
+         )
+     }
+     /// AGENT-01F: attach one REAL independently verified effect from a
+     /// fresh human-approved worker turn to an immutable original plan.
+     /// A mere original plan approval, model response or TaskStore APPLIED
+     /// cannot authorize this link. A live host-fenced scheduler claim and
+     /// separately authenticated fresh human turn are mandatory.
+     #[allow(clippy::too_many_arguments)]
+     pub fn record_verified_execution_turn(
+         &self,plan:&str,chat:&str,original_turn:&str,
+         execution_turn:&str,revision_sha:&str,
+         step_index:u8,claim_id:&str,owner_id:&str,epoch:u64,
+         call_id:&str,profile:&Path,
+         ledger:&AgentPlanLedger,revisions:&AgentPlanRevisionStore,
+         sources:&dyn HostPlanReferenceVerifier,
+         scheduler:&AgentHostScheduler,human:&dyn TrustedUserTurnVerifier,
+     )->Result<ReceiptWrite,DeliverableError>{
+         if !exact(execution_turn,"g-")||execution_turn==original_turn
+             ||!human.verify_user_turn(chat,execution_turn)
+             ||scheduler.check_live_claim(
+                 plan,chat,original_turn,owner_id,epoch,revision_sha,
+                 claim_id,step_index,execution_turn
+             ).is_err(){
+             return Err(DeliverableError::UnverifiedFreshStep)
+         }
+         self.record_with_execution_turn(
+             plan,chat,original_turn,execution_turn,revision_sha,
+             step_index,call_id,profile,ledger,revisions,sources
+         )
+     }
+     #[allow(clippy::too_many_arguments)]
+     fn record_with_execution_turn(
+         &self,plan:&str,chat:&str,turn:&str,execution_turn:&str,
+         revision_sha:&str,step_index:u8,call_id:&str,profile:&Path,
          ledger:&AgentPlanLedger,revisions:&AgentPlanRevisionStore,
          sources:&dyn HostPlanReferenceVerifier,
      )->Result<ReceiptWrite,DeliverableError>{
@@ -253,7 +323,10 @@
          if step_index as usize>=plan_view.steps.len(){
              return Err(DeliverableError::UnsupportedDeliverable)
          }
-         let observed=observe_existing(turn,call_id,profile)?;
+         let observed=observe_existing(
+             execution_turn,call_id,profile,
+             (execution_turn!=turn).then_some(chat)
+         )?;
          let mut db=self.db.lock().map_err(|_|DeliverableError::Poisoned)?;
          let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)?;
          // Recheck the exact parent revision still exists at this commit
@@ -266,20 +339,21 @@
          if current.as_deref()!=Some(revision_sha){
              return Err(DeliverableError::StaleRevision)
          }
-         let existing:Option<(String,String,String,String,String,String,String)>=
+         let existing:Option<(String,String,Option<String>,String,String,String,String,String)>=
              tx.query_row(
-                 "SELECT deliverable_id,original_turn_id,effect_call_id,tool_id,
-                         receipt_sha256,independent_method,observed_sha256
+                 "SELECT deliverable_id,original_turn_id,execution_turn_id,
+                         effect_call_id,tool_id,receipt_sha256,independent_method,observed_sha256
                   FROM lu_agent_deliverable_receipts
                   WHERE plan_id=?1 AND revision_sha256=?2 AND step_index=?3",
                  params![plan,revision_sha,step_index],
                  |r|Ok((
                      r.get(0)?,r.get(1)?,r.get(2)?,
-                     r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?
+                     r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?
                  ))
              ).optional()?;
-         if let Some((deliverable,original,effect,tool,receipt,method,observed_hash))=existing{
-             if deliverable!=step.deliverable_id||original!=turn||effect!=call_id
+         if let Some((deliverable,original,worker,effect,tool,receipt,method,observed_hash))=existing{
+             if deliverable!=step.deliverable_id||original!=turn
+                 ||worker.as_deref().unwrap_or(&original)!=execution_turn||effect!=call_id
                  ||tool!=observed.tool_id||receipt!=observed.receipt_sha256
                  ||method!=observed.method||observed_hash!=observed.observed_sha256{
                  return Err(DeliverableError::ConflictingReceipt)
@@ -294,11 +368,11 @@
          let result=tx.execute(
              "INSERT INTO lu_agent_deliverable_receipts(
                plan_id,revision_sha256,step_index,deliverable_id,
-               original_turn_id,effect_call_id,tool_id,receipt_sha256,
-               independent_method,observed_sha256)
-              VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+               original_turn_id,execution_turn_id,effect_call_id,tool_id,
+               receipt_sha256,independent_method,observed_sha256)
+              VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
              params![plan,revision_sha,step_index,
-                 step.deliverable_id,turn,call_id,observed.tool_id,
+                 step.deliverable_id,turn,execution_turn,call_id,observed.tool_id,
                  observed.receipt_sha256,observed.method,observed.observed_sha256]
          );
          if result.is_err(){return Err(DeliverableError::ConflictingReceipt)}
@@ -325,20 +399,25 @@
          let db=self.db.lock().map_err(|_|DeliverableError::Poisoned)?;
          let mut stmt=db.prepare(
              "SELECT revision_sha256,step_index,deliverable_id,original_turn_id,
-                     effect_call_id,tool_id,receipt_sha256,independent_method,
-                     observed_sha256 FROM lu_agent_deliverable_receipts
+                     execution_turn_id,effect_call_id,tool_id,receipt_sha256,
+                     independent_method,observed_sha256
+              FROM lu_agent_deliverable_receipts
               WHERE plan_id=?1 ORDER BY recorded_at,step_index LIMIT 33"
          )?;
          let rows=stmt.query_map(params![plan],|r|Ok((
              r.get::<_,String>(0)?,r.get::<_,i64>(1)?,
              r.get::<_,String>(2)?,r.get::<_,String>(3)?,
-             r.get::<_,String>(4)?,r.get::<_,String>(5)?,
+             r.get::<_,Option<String>>(4)?,r.get::<_,String>(5)?,
              r.get::<_,String>(6)?,r.get::<_,String>(7)?,
-             r.get::<_,String>(8)?
+             r.get::<_,String>(8)?,r.get::<_,String>(9)?
          )))?;
          let mut history=Vec::new();
          for row in rows{
-             let (rev,index,deliverable,origin,call,tool,receipt,method,observed)=row?;
+             let (rev,index,deliverable,origin,worker_turn,call,tool,receipt,method,observed)=row?;
+             let actual_turn=worker_turn.as_deref().unwrap_or(&origin);
+             if !exact(actual_turn,"g-"){
+                 return Err(DeliverableError::InvalidJournal)
+             }
              if history.len()>=MAX_WITNESSES{
                  return Err(DeliverableError::InvalidJournal)
              }
@@ -364,7 +443,10 @@
              }else if !current_sources{
                  "NEEDS_RECONCILIATION"
              }else{
-                 match observe_existing(turn,&call,profile){
+                 match observe_existing(
+                     actual_turn,&call,profile,
+                     (actual_turn!=origin).then_some(chat)
+                 ){
                      Ok(check) if check.tool_id==tool
                          &&check.receipt_sha256==receipt
                          &&check.method==method
@@ -611,6 +693,130 @@ mod tests{
         ).unwrap()[0].status,"NEEDS_RECONCILIATION");
         drop(receipts);drop(revisions);drop(ledger);
         fs::remove_dir_all(f.profile).unwrap();
+    }
+    struct ExactFreshStep{
+        chat:String,turn:String,plan:String,revision:String,
+        step:u8,budget:crate::agent_host_scheduler::ScheduleBudget,
+    }
+    impl crate::agent_host_scheduler::HostFreshStepConsent for ExactFreshStep{
+        fn explicitly_requested_step(
+            &self,chat:&str,turn:&str,plan:&str,revision:&str,step:u8,
+            budget:&crate::agent_host_scheduler::ScheduleBudget,
+        )->bool{
+            self.chat==chat&&self.turn==turn&&self.plan==plan
+                &&self.revision==revision&&self.step==step&&self.budget==*budget
+        }
+    }
+    fn fresh_budget()->crate::agent_host_scheduler::ScheduleBudget{
+        crate::agent_host_scheduler::ScheduleBudget{
+            max_claims:1,model_token_ceiling:512,tool_call_ceiling:1,
+            wall_clock_ceiling_ms:3000,output_ceiling_bytes:4096,
+        }
+    }
+    #[test]
+    fn distinct_fresh_step_turn_can_prove_original_plan_from_real_sqlite(){
+        use crate::agent_host_scheduler::AgentHostScheduler;
+        let f=fixture(true,false);
+        let execution_turn=id("g-",39);
+        // The real reviewed-app worker journals belong to the newly
+        // authenticated step turn, not the older original plan request.
+        for kind in ["task","effects"]{
+            fs::rename(
+                f.profile.join(format!("lu-reviewed-{kind}-{}.sqlite",f.turn)),
+                f.profile.join(format!("lu-reviewed-{kind}-{execution_turn}.sqlite"))
+            ).unwrap();
+        }
+        let db=Connection::open(f.profile.join(
+            format!("lu-reviewed-task-{execution_turn}.sqlite"))).unwrap();
+        db.execute("UPDATE lu_tasks SET workspace_id=?1 WHERE task_id=?2",
+            params![execution_turn,&f.call]).unwrap();
+        drop(db);
+        let (ledger,revisions,receipts)=stores(&f);
+        let scheduler=AgentHostScheduler::open(
+            &f.profile.join("agent-plans.sqlite")).unwrap();
+        let owner=id("h-",37);
+        let claim=id("q-",38);
+        let budget=fresh_budget();
+        scheduler.claim_host(&f.plan,&f.chat,&f.turn,&owner,
+            &f.revision,budget,&ledger,&revisions,&Sources(true)).unwrap();
+        let approval=ExactFreshStep{
+            chat:f.chat.clone(),turn:execution_turn.clone(),
+            plan:f.plan.clone(),revision:f.revision.clone(),
+            step:f.step,budget
+        };
+        scheduler.propose_step(
+            &f.plan,&f.chat,&f.turn,&owner,1,&f.revision,f.step,&claim,
+            &execution_turn,budget,&ledger,&revisions,&Sources(true),
+            &Human,&approval,&f.profile,&receipts
+        ).unwrap();
+        assert_eq!(receipts.record_observed(
+            &f.plan,&f.chat,&f.turn,&f.revision,f.step,&f.call,
+            &f.profile,&ledger,&revisions,&Sources(true)
+        ),Err(DeliverableError::MissingJournal));
+        assert_eq!(receipts.record_verified_execution_turn(
+            &f.plan,&f.chat,&f.turn,&id("g-",99),&f.revision,
+            f.step,&claim,&owner,1,&f.call,&f.profile,
+            &ledger,&revisions,&Sources(true),&scheduler,&Human
+        ),Err(DeliverableError::UnverifiedFreshStep));
+        // A structurally plausible task/effect pair with no E1-P15
+        // original user/chat singleton must NOT become a plan witness.
+        assert_eq!(receipts.record_verified_execution_turn(
+            &f.plan,&f.chat,&f.turn,&execution_turn,&f.revision,
+            f.step,&claim,&owner,1,&f.call,&f.profile,
+            &ledger,&revisions,&Sources(true),&scheduler,&Human
+        ),Err(DeliverableError::UnverifiedFreshStep));
+        TaskStore::open(&f.profile.join(format!(
+            "lu-reviewed-task-{execution_turn}.sqlite")))
+            .unwrap().bind_reviewed_human_turn(&f.chat,&execution_turn).unwrap();
+        assert_eq!(receipts.record_verified_execution_turn(
+            &f.plan,&f.chat,&f.turn,&execution_turn,&f.revision,
+            f.step,&claim,&owner,1,&f.call,&f.profile,
+            &ledger,&revisions,&Sources(true),&scheduler,&Human
+        ),Ok(ReceiptWrite::New));
+        assert_eq!(receipts.history(
+            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions,&Sources(true)
+        ).unwrap()[0].status,"VERIFIED_AT_OBSERVATION");
+        scheduler.acknowledge_historical_receipt(
+            &f.plan,&f.chat,&f.turn,&owner,1,&f.revision,f.step,&claim,
+            &f.profile,&ledger,&revisions,&receipts,&Sources(true)
+        ).unwrap();
+        // A second incompatible worker cannot overwrite original evidence.
+        assert_eq!(receipts.record_verified_execution_turn(
+            &f.plan,&f.chat,&f.turn,&execution_turn,&f.revision,
+            f.step,&claim,&owner,1,&f.call,&f.profile,
+            &ledger,&revisions,&Sources(true),&scheduler,&Human
+        ),Err(DeliverableError::UnverifiedFreshStep));
+        drop(scheduler);drop(receipts);drop(revisions);drop(ledger);
+        let (ledger,revisions,receipts)=stores(&f);
+        assert_eq!(receipts.history(
+            &f.plan,&f.chat,&f.turn,&f.profile,&ledger,&revisions,&Sources(true)
+        ).unwrap()[0].status,"VERIFIED_AT_OBSERVATION");
+        drop(receipts);drop(revisions);drop(ledger);
+        fs::remove_dir_all(f.profile).unwrap();
+    }
+    #[test]
+    fn older_deliverable_schema_migrates_without_inventing_worker_identity(){
+        let root=location();
+        let file=root.join("legacy-agent-plans.sqlite");
+        let db=Connection::open(&file).unwrap();
+        db.execute_batch(
+            "CREATE TABLE lu_agent_deliverable_receipts(
+              plan_id TEXT,revision_sha256 TEXT,step_index INTEGER,
+              deliverable_id TEXT,original_turn_id TEXT,effect_call_id TEXT,
+              tool_id TEXT,receipt_sha256 TEXT,independent_method TEXT,
+              observed_sha256 TEXT,recorded_at TEXT
+            );"
+        ).unwrap();
+        drop(db);
+        let store=AgentDeliverableReceipts::open(&file).unwrap();
+        drop(store);
+        let db=Connection::open(&file).unwrap();
+        let mut stmt=db.prepare("PRAGMA table_info(lu_agent_deliverable_receipts)").unwrap();
+        let columns=stmt.query_map([],|r|r.get::<_,String>(1)).unwrap()
+            .collect::<Result<Vec<_>,_>>().unwrap();
+        assert!(columns.iter().any(|c|c=="execution_turn_id"));
+        drop(stmt);drop(db);
+        fs::remove_dir_all(root).unwrap();
     }
     #[cfg(unix)]
     #[test]
