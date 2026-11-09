@@ -144,6 +144,7 @@ fn enumerate_target_threads(pid: u32) -> Result<Vec<u32>, SupervisorError> {
                 return Err(denied());
             }
             if threads.is_empty() { return Err(denied()); }
+            threads.sort_unstable(); // stable identity set, not snapshot order
             return Ok(threads);
         }
         if scanned + 1 == MAX_ENUMERATED_THREADS { return Err(denied()); }
