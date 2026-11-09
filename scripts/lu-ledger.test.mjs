@@ -26,25 +26,32 @@ test("update is idempotent; check rejects changed heads without overwriting manu
   try {
     const file = path.join(root, "ledger.md");
     const fixture = path.join(root, "prs.json");
+    const graph = path.join(root, "graph.json");
     fs.writeFileSync(file, "# Hand-curated notes\n\nKEEP THIS APPROVAL WORDING\n\n"
       + "<!-- LU_OPEN_PRS_START -->\nOld table\n<!-- LU_OPEN_PRS_END -->\n\n"
       + "## Human status\nNot tested\n");
     fs.writeFileSync(fixture, JSON.stringify([pr("a".repeat(40))]));
-    const flags = ["--file", file, "--fixture", fixture];
+    const flags = ["--file", file, "--fixture", fixture, "--graph", graph];
     assert.equal(invoke(["--update", ...flags]).status, 0);
     const saved = fs.readFileSync(file, "utf8");
     assert.match(saved, /KEEP THIS APPROVAL WORDING/);
     assert.match(saved, /Human status\nNot tested/);
     assert.match(saved, /lu\/file-reader/);
     assert.ok(saved.includes("File \\| Reader &lt;untrusted&gt;"));
+    const snapshot = JSON.parse(fs.readFileSync(graph, "utf8"));
+    assert.equal(snapshot.openCount, 1);
+    assert.deepEqual(snapshot.pullRequests[0].head, {ref: "lu/file-reader", sha: "a".repeat(40)});
+    assert.equal(snapshot.pullRequests[0].baseClassification, "main");
     assert.equal(invoke(["--check", ...flags]).status, 0);
     assert.equal(invoke(["--update", ...flags]).status, 0);
     assert.equal(fs.readFileSync(file, "utf8"), saved);
     fs.writeFileSync(fixture, JSON.stringify([pr("b".repeat(40))]));
     assert.equal(invoke(["--check", ...flags]).status, 1);
     assert.equal(fs.readFileSync(file, "utf8"), saved, "check is read-only");
+    assert.equal(JSON.parse(fs.readFileSync(graph, "utf8")).pullRequests[0].head.sha, "a".repeat(40));
     assert.equal(invoke(["--update", ...flags]).status, 0);
     assert.match(fs.readFileSync(file, "utf8"), /bbbbbbbbbbbb/);
+    assert.equal(JSON.parse(fs.readFileSync(graph, "utf8")).pullRequests[0].head.sha, "b".repeat(40));
   } finally {
     fs.rmSync(root, {recursive: true, force: true});
   }

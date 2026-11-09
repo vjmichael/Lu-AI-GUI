@@ -1,0 +1,2808 @@
+{
+  "schema": 1,
+  "repository": "vjmichael/Lu-AI-GUI",
+  "evidence": "open GitHub PR metadata only; no compilation, integration or acceptance implied",
+  "openCount": 175,
+  "pullRequests": [
+    {
+      "number": 3,
+      "title": "REPO-01: fail-closed source identity verifier and unit CI",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/repo01-source-identity-gate-20261103",
+        "sha": "45f4db62d1f47c1d070fddd6565612d61c6d2e56"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "afa5e903410b72ecaf5d42e576c5b1b7c148fdaa"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 4,
+      "title": "WIN-LOAD-01: host-side bounded model-load lifecycle diagnostics",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/win-load-01-host-trace-20261103",
+        "sha": "e794d9bb8dc2dc7180e6003753343c3697d8f3ab"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "afa5e903410b72ecaf5d42e576c5b1b7c148fdaa"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 5,
+      "title": "WRITE-01E: journaled existing-file edit, recovery and explicit rollback",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/write-01e-approved-edit-gate-20261103",
+        "sha": "2a9a135500b6e142564b7dec753f52f5184fd9bb"
+      },
+      "base": {
+        "ref": "lu/win-load-01-host-trace-20261103",
+        "sha": "e794d9bb8dc2dc7180e6003753343c3697d8f3ab"
+      },
+      "parentOpenPr": 4,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 6,
+      "title": "Lu/NVP source-only inference interop contract and Windows containment source blocker",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/nvp-independent-inference-contract-20261103",
+        "sha": "80c1a5aa33dac5839985f7e297ea860d6d3fa922"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "ac015280e4594b7cb5fb730a240b8d2a8a819975"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 10,
+      "title": "DLC-IPC-01: common Windows/Linux Workspace inference contract (source-only)",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/dlc-interop-01-cross-platform-contract-20261103",
+        "sha": "9cc0904904870c3860057f8130dda3872c0403d9"
+      },
+      "base": {
+        "ref": "lu/write-01e-approved-edit-gate-20261103",
+        "sha": "2a9a135500b6e142564b7dec753f52f5184fd9bb"
+      },
+      "parentOpenPr": 5,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 11,
+      "title": "DLC-API-00: generic first-party Lu Host Services RFC and typed bidirectional Protobuf contract",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/dlc-api-first-party-host-contract-20261103",
+        "sha": "5eca23b61f41a34b813d854577078b4fbe4d41c6"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "ac015280e4594b7cb5fb730a240b8d2a8a819975"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 12,
+      "title": "TOOLS-02: full original bounded MBRL JSON guard, recovery and desktop boundary checks",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-02-json-validation-20261103",
+        "sha": "383a30fae49092ebaaa150118e24885c7681a692"
+      },
+      "base": {
+        "ref": "lu/write-01e-approved-edit-gate-20261103",
+        "sha": "2a9a135500b6e142564b7dec753f52f5184fd9bb"
+      },
+      "parentOpenPr": 5,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 14,
+      "title": "TOOLS-03: basic read-only Git Core + original tool design; advanced gh reserved for IDE",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-03-git-inspection-20261104",
+        "sha": "b2c5e10ba7a3fbad095d9c86194bdf87ae298433"
+      },
+      "base": {
+        "ref": "lu/tools-02-json-validation-20261103",
+        "sha": "383a30fae49092ebaaa150118e24885c7681a692"
+      },
+      "parentOpenPr": 12,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 15,
+      "title": "TOOLS-04: original-first native ZIP manifest inspection (read-only)",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-04-archive-inspection-20261104",
+        "sha": "6e17793c52fd81dbaf8fbbbcd2d2f50cfe6e6ff5"
+      },
+      "base": {
+        "ref": "lu/tools-03-git-inspection-20261104",
+        "sha": "c66f8a804ce6eb8f4df621d344bdf665248ccf74"
+      },
+      "parentOpenPr": 14,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 16,
+      "title": "TOOLS-05: native offline JSON Schema validation (original Jan validate domain)",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-05-schema-validation-20261104",
+        "sha": "7a77bbdb8aed3bf46f4ed68f87e940761c240d67"
+      },
+      "base": {
+        "ref": "lu/tools-02-json-validation-20261103",
+        "sha": "383a30fae49092ebaaa150118e24885c7681a692"
+      },
+      "parentOpenPr": 12,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 17,
+      "title": "TOOLS-06: Jan §6A ambient environment discovery and scoped native check_env",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-06-environment-discovery-20261104",
+        "sha": "a3dca4b968cf72a4e699da3311d47035de5145d2"
+      },
+      "base": {
+        "ref": "lu/tools-02-json-validation-20261103",
+        "sha": "383a30fae49092ebaaa150118e24885c7681a692"
+      },
+      "parentOpenPr": 12,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 18,
+      "title": "TOOLS-07: original vision-first image read with internal Tesseract OCR fallback",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-07-ocr-fallback-20261104",
+        "sha": "ad7bf9f483713de1e94d51205041a9cd500ba606"
+      },
+      "base": {
+        "ref": "lu/tools-02-json-validation-20261103",
+        "sha": "383a30fae49092ebaaa150118e24885c7681a692"
+      },
+      "parentOpenPr": 12,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 19,
+      "title": "TOOLS-08: verified progress guard and streaming token-loop stop (no 8-call ceiling)",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-08-loop-guard-20261104",
+        "sha": "62992c9ac20bed96e815ba732c94ebf186899a1e"
+      },
+      "base": {
+        "ref": "lu/tools-02-json-validation-20261103",
+        "sha": "383a30fae49092ebaaa150118e24885c7681a692"
+      },
+      "parentOpenPr": 12,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 20,
+      "title": "BACKEND-CTRL-01: llama.cpp finish semantics and llama/vLLM control design",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/backend-control-cancellation-design-20261104",
+        "sha": "ed24da5d00047f846989d9fc54fd0c4939e980bd"
+      },
+      "base": {
+        "ref": "lu/tools-08-loop-guard-20261104",
+        "sha": "62992c9ac20bed96e815ba732c94ebf186899a1e"
+      },
+      "parentOpenPr": 19,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 21,
+      "title": "Lu ANSF: host-authorized Cognitum C06 retrieval via existing Rust FTS5",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/c06-c07-ansf-fts5-bridge-20261104",
+        "sha": "5afe669aa9a43dfe30cba11c583f1649f0a39ae3"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "ac015280e4594b7cb5fb730a240b8d2a8a819975"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 22,
+      "title": "CI-only replay: TOOLS-04 archive exact-head Windows/Linux acceptance",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-04-archive-ci-replay-20261104",
+        "sha": "cb04fe12b75fd75334049cd78f41bfbb135032cf"
+      },
+      "base": {
+        "ref": "lu/tools-03-git-inspection-20261104",
+        "sha": "c66f8a804ce6eb8f4df621d344bdf665248ccf74"
+      },
+      "parentOpenPr": 14,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 24,
+      "title": "TOOLS-09: extend existing scoped search with bounded recursion and suffix filters",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-09-recursive-search-20261104",
+        "sha": "3ceb00c7c60f29a56a9af4a709fb90892fb6ce3d"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "ac015280e4594b7cb5fb730a240b8d2a8a819975"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 26,
+      "title": "TOOLS-10A–E source implementation: verifiable research, browser worker and durable recovery",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-10-citation-integrity-20261104",
+        "sha": "19af8fe3e411e4a4175e285ce1c6c2130c36fe4d"
+      },
+      "base": {
+        "ref": "lu/tools-03-git-inspection-20261104",
+        "sha": "b2c5e10ba7a3fbad095d9c86194bdf87ae298433"
+      },
+      "parentOpenPr": 14,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 27,
+      "title": "TOOLS-11 + universal Reader: DOCX, XLSX/ODS, PPTX/ODP, basic PDF, paged selections",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-11-background-task-status-20261104",
+        "sha": "5fef956d6a81fb2c9843e116465847fa1251f690"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "ac015280e4594b7cb5fb730a240b8d2a8a819975"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 28,
+      "title": "LU-OPMEM-01A: durable operational resource memory and AI repo orientation",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/aiw-operational-memory-20261105",
+        "sha": "c67d5f7abdaa1427102d0c9ad8ae98f19cf0bc5a"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "6645f7939b60700c4012d3a2a18b7553480980a6"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 29,
+      "title": "LU-AIW-AUDIT-01: foundational AI-usability audit across Lu Core, desktop and draft PRs",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/aiw-foundational-audit-20261105",
+        "sha": "7d1f965d10b407851fa5ddec2f059b806a9d10df"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "6645f7939b60700c4012d3a2a18b7553480980a6"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 34,
+      "title": "LU-TOOLS-01–05: unify filesystem, ZIP archive, controlled execution, background and Reader in desktop",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-01-05-unified-integration-20261105",
+        "sha": "938c620a6b8b6469a47ddb78899d3e422533dd3b"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "713b58a886b8a4f85395e694ca8fe616b40fdcb1"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 35,
+      "title": "LU-IMAGE-WS-01: shared human/AI image workspace contract and edit intent guard",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/image-workspace-01-contract-20261105",
+        "sha": "d26b7175012bebde97f7fb715e918b5386e08f84"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "fb6b534b436b110238959ad398a46f62807f5bfe"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 36,
+      "title": "TOOLS-01F: host-owned no-clobber file copy/move and native regressions",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-01-safe-file-transfer-20261105",
+        "sha": "e8971cc01bd1ccb5a2d144a5889404c77b2881d1"
+      },
+      "base": {
+        "ref": "lu/tools-01-05-unified-integration-20261105",
+        "sha": "938c620a6b8b6469a47ddb78899d3e422533dd3b"
+      },
+      "parentOpenPr": 34,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 37,
+      "title": "TOOLS-04F: bounded host-owned ZIP creation with native regression tests",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-04-zip-create-20261105",
+        "sha": "2ed6cbe35ed9c5964c1116c4919c9d3af2d580b9"
+      },
+      "base": {
+        "ref": "lu/tools-01-05-unified-integration-20261105",
+        "sha": "938c620a6b8b6469a47ddb78899d3e422533dd3b"
+      },
+      "parentOpenPr": 34,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 38,
+      "title": "TOOLS-INTEGRATION-READ-01: authenticated multi-tool workspace model turn",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-read-workspace-turn-20261105",
+        "sha": "5dc2d68b7b7b5ca9b507b85c5b2257b632edaba1"
+      },
+      "base": {
+        "ref": "lu/tools-01-05-unified-integration-20261105",
+        "sha": "938c620a6b8b6469a47ddb78899d3e422533dd3b"
+      },
+      "parentOpenPr": 34,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 39,
+      "title": "TOOLS-WRITE-SPREADSHEET-01: native structured XLSX/CSV creation engine",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-spreadsheet-create-20261105",
+        "sha": "351326af6308645ca3912f0df82eff7e8772214b"
+      },
+      "base": {
+        "ref": "lu/tools-read-workspace-turn-20261105",
+        "sha": "5dc2d68b7b7b5ca9b507b85c5b2257b632edaba1"
+      },
+      "parentOpenPr": 38,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 40,
+      "title": "TOOLS-CONSOLIDATE-01: unified native filesystem, ZIP and spreadsheet implementation source",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-all-source-consolidation-20261105",
+        "sha": "d3f79a549c480bbb30fb427888f20cde1e1c1ed7"
+      },
+      "base": {
+        "ref": "lu/tools-spreadsheet-create-20261105",
+        "sha": "351326af6308645ca3912f0df82eff7e8772214b"
+      },
+      "parentOpenPr": 39,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 41,
+      "title": "TOOLS-ISO-01: native ISO9660 inspect and exact-approved single-file extraction",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-iso9660-inspect-extract-20261105",
+        "sha": "18d07296e5dc416e8b1ba98fdd6241778c8967ff"
+      },
+      "base": {
+        "ref": "lu/tools-all-source-consolidation-20261105",
+        "sha": "d3f79a549c480bbb30fb427888f20cde1e1c1ed7"
+      },
+      "parentOpenPr": 40,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 42,
+      "title": "TOOLS-LINUX-01: consolidate TAR/gzip/xz/bzip2/zstd source and native acceptance",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/tools-linux-archives-20261105",
+        "sha": "7a8d03f3e579559b6f42ae62e77c8d4eef06d4a6"
+      },
+      "base": {
+        "ref": "lu/tools-iso9660-inspect-extract-20261105",
+        "sha": "18d07296e5dc416e8b1ba98fdd6241778c8967ff"
+      },
+      "parentOpenPr": 41,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 43,
+      "title": "IDE Wave B2: revisioned unsaved buffer identity and draft source references",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/buffer-revision-20261105",
+        "sha": "3cb62b2d151945e40356884ac0e884c8e49edb64"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 44,
+      "title": "WAVE2-01: format-aware CSV edit and exact-approved ZIP extraction",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/wave2-file-archive-operations-20261105",
+        "sha": "d46948d68ef6fdef5827cad5799c82ff36ee1397"
+      },
+      "base": {
+        "ref": "lu/tools-linux-archives-20261105",
+        "sha": "7a8d03f3e579559b6f42ae62e77c8d4eef06d4a6"
+      },
+      "parentOpenPr": 42,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 45,
+      "title": "IDE acceptance: install NSIS on Windows and exercise Copy Draft Reference UI",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/buffer-installed-acceptance-20261105",
+        "sha": "21b1d88aaa8353e0f28020d6a7ec37bc135627b3"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 46,
+      "title": "IDE B3: bounded Find in Project with revision-aware navigation",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/project-search-20261105",
+        "sha": "a94c5d6af266f9a0940b4b9d03ce9d7671d98457"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 47,
+      "title": "IDE Wave C: read-only Git diff/history and exact resource probe",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-c-development-truth-20261105",
+        "sha": "efe731d874e11309f4646d150827a723ed9932f7"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 48,
+      "title": "IDE Wave C4: development evidence reconciliation without inferred acceptance",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-c4-evidence-reconciliation-20261105",
+        "sha": "ca606dfb378ce31945a768a23e9ab6a31cbe60e8"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 49,
+      "title": "IDE Wave C5: exact-head public GitHub Actions receipts and task evidence boundaries",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-c5-exact-ci-evidence-20261105",
+        "sha": "1dd4a58d84d6bc5f383f75e463b15f82baea6de8"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 50,
+      "title": "Lu IDE Wave C6: task evidence bound to development ledger and exact-head CI",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-c6-task-ledger-20261105",
+        "sha": "c403a8ba47d6ac1662b8627ce5ab34a9a16b591e"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 51,
+      "title": "Lu IDE Wave D1: durable job-intent review without execution authority",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-d1-execution-intent-20261105",
+        "sha": "ef623bfd22f8dfc8b1674a44911e98825be8ab53"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 52,
+      "title": "IDE Wave D2-W1: fixed Windows Job Object containment and descendant-kill probes",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-d2-windows-job-probe-20261105",
+        "sha": "c091fbe174b85a0c0f90c67933fdb2069000cd24"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 53,
+      "title": "IDE Wave D3: production supervisor control plane, one-shot grants and crash-safe receipts",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-d3-supervisor-core-20261105",
+        "sha": "272c6637b4e70851871484b0f8ffc1fd9477af7a"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 54,
+      "title": "IDE Wave D4: native Windows restricted-token and Linux cgroup-v2 admission probes",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-d4-native-rights-admission-20261105",
+        "sha": "32b208a76ed17910554b8ca6b7e8647577e6657a"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 55,
+      "title": "Lu IDE Wave D5: verified input snapshots and OS-contained Linux production worker",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-d5-production-worker-20261105",
+        "sha": "341b3ab5ea268770bb01fdcf32cbb8d06452b095"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 56,
+      "title": "Lu IDE Wave D6: Windows zero-capability AppContainer + Job Object admission fixture",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-d6-appcontainer-worker-20261105",
+        "sha": "c36858ca215fb26ab33224dadae7a324260e3ed8"
+      },
+      "base": {
+        "ref": "ide/workspace-development",
+        "sha": "7574b878ad08c7725c4b7a1c5e7a900f11cdf02e"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 57,
+      "title": "Wave 3: First normal-chat native tool turn (opt-in read-only workspace)",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/wave3-conversation-tools-20261105",
+        "sha": "da04f89b5379b0f810f903a62f69f1b9ce5cb349"
+      },
+      "base": {
+        "ref": "lu/wave2-file-archive-operations-20261105",
+        "sha": "a2628a50197a39f9a1cbbfe1a165320c05378078"
+      },
+      "parentOpenPr": 44,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 58,
+      "title": "Lu IDE Wave D7: feature-gated native Windows Cargo/AppContainer supervisor integration",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-d7-windows-native-worker-20261106",
+        "sha": "6923b43f52adfd1f0e59ddb82d7f2b3666298c97"
+      },
+      "base": {
+        "ref": "ide/wave-d6-appcontainer-worker-20261105",
+        "sha": "62986780b752f7add62f93c818a8cbac796660c8"
+      },
+      "parentOpenPr": 56,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 59,
+      "title": "Wave 4 contextual tools: Git, Background, Environment, Vision, Image Workspace, Browser/Research (draft)",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/wave4-contextual-tools-20261106",
+        "sha": "575149d35d7b287955dcb601695c537ad0142471"
+      },
+      "base": {
+        "ref": "lu/wave3-conversation-tools-20261105",
+        "sha": "da04f89b5379b0f810f903a62f69f1b9ce5cb349"
+      },
+      "parentOpenPr": 57,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 60,
+      "title": "Lu IDE D7B: pinned offline Windows SDK, hostile worker tests and independent OS crash witness",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-d7b-windows-acceptance-20261106",
+        "sha": "b172095a6a101bc9efb4250f0f2d35678fec9b12"
+      },
+      "base": {
+        "ref": "ide/wave-d7-windows-native-worker-20261106",
+        "sha": "02772a59bf9142ee85d398f034cc074f47f46d0d"
+      },
+      "parentOpenPr": 58,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 61,
+      "title": "Lu v1.0 Observe & Learn + Wave 4 tool integration (draft; native gates pending)",
+      "draft": true,
+      "workstream": "tools",
+      "head": {
+        "ref": "lu/v1-observe-learn-20261106",
+        "sha": "e13054c815f6b9abe3d0238dbd2caeed846148e7"
+      },
+      "base": {
+        "ref": "lu/wave4-contextual-tools-20261106",
+        "sha": "575149d35d7b287955dcb601695c537ad0142471"
+      },
+      "parentOpenPr": 59,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 62,
+      "title": "Lu IDE D7C: capability-rooted Windows staging, output publication and race acceptance",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-d7c-race-safe-native-worker-20261106",
+        "sha": "4c2b639c379dcfab3a16f17708b621047c099d30"
+      },
+      "base": {
+        "ref": "ide/wave-d7b-windows-acceptance-20261106",
+        "sha": "b172095a6a101bc9efb4250f0f2d35678fec9b12"
+      },
+      "parentOpenPr": 60,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 63,
+      "title": "Lu IDE D7D: restricted Windows recovery service, authenticated pipe and protected Job witness",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-d7d-protected-windows-recovery-service-20261106",
+        "sha": "988bf11a3607d627740088ea6335fcb19a9e3085"
+      },
+      "base": {
+        "ref": "ide/wave-d7c-race-safe-native-worker-20261106",
+        "sha": "4c2b639c379dcfab3a16f17708b621047c099d30"
+      },
+      "parentOpenPr": 62,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 64,
+      "title": "Lu IDE Wave E1: free language-server catalog and safe LSP framing",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-e1-lsp-catalog-transport-20261106",
+        "sha": "73b8a5bc8f779c309f8a7c2b2b27972dcd091afc"
+      },
+      "base": {
+        "ref": "ide/wave-d7d-protected-windows-recovery-service-20261106",
+        "sha": "988bf11a3607d627740088ea6335fcb19a9e3085"
+      },
+      "parentOpenPr": 63,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 65,
+      "title": "Lu IDE Wave E2: supervised LSP protocol, guarded editor features and license-aware bundle gate",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wave-e2-supervised-lsp-editor-20261106",
+        "sha": "bd39d01129f8e4a894edaf3e4a1734fb3dbd1867"
+      },
+      "base": {
+        "ref": "ide/wave-e1-lsp-catalog-transport-20261106",
+        "sha": "73b8a5bc8f779c309f8a7c2b2b27972dcd091afc"
+      },
+      "parentOpenPr": 64,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 66,
+      "title": "IMAGE-WS-PREVIEW-01: native volatile staged image preview (source only)",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/tool-completion-preview-20261106",
+        "sha": "6bf64976e992a69fbbcfbd3d1e22e23f60c7e375"
+      },
+      "base": {
+        "ref": "lu/tool-completion-waves-20261106",
+        "sha": "1759a872c53019ee5fc8edaf913aaddfdf128583"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 67,
+      "title": "Lu tools: P01 indexed discovery + P02 guarded task scheduler/host recovery closeout",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/reader-ocr-image-closeout-20261106",
+        "sha": "b69e19658b7cb1761180cdeb94aac7d9e7c3dc9d"
+      },
+      "base": {
+        "ref": "lu/tool-completion-preview-20261106",
+        "sha": "6bf64976e992a69fbbcfbd3d1e22e23f60c7e375"
+      },
+      "parentOpenPr": 66,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 68,
+      "title": "IDE WO4: fail-closed delegated Linux cgroup-v2 admission and recovery hardening",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wo4-linux-delegated-containment-20261106",
+        "sha": "91134704c308d98d196d0becc9302dde73754ce2"
+      },
+      "base": {
+        "ref": "ide/wave-e2-supervised-lsp-editor-20261106",
+        "sha": "bd39d01129f8e4a894edaf3e4a1734fb3dbd1867"
+      },
+      "parentOpenPr": 65,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 69,
+      "title": "IDE WO5: native protected language-server admission and real clangd repair",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wo5-protected-native-lsp-20261106",
+        "sha": "785ca287d74c39f525e0f0bfc4e6e30d65afd063"
+      },
+      "base": {
+        "ref": "ide/wo4-linux-delegated-containment-20261106",
+        "sha": "91134704c308d98d196d0becc9302dde73754ce2"
+      },
+      "parentOpenPr": 68,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 70,
+      "title": "IDE WO6: protected build/test control path and fail-closed DAP debugger foundation",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wo6-protected-build-test-debug-20261106",
+        "sha": "c0b83a304566d803e19082591d36debffe501698"
+      },
+      "base": {
+        "ref": "ide/wo5-protected-native-lsp-20261106",
+        "sha": "785ca287d74c39f525e0f0bfc4e6e30d65afd063"
+      },
+      "parentOpenPr": 69,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 71,
+      "title": "Lu P03 AI-OPS-01: scoped tool ranking, verified model inspection and provider metadata guard",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/p03-ai-ops-model-manager-20261106",
+        "sha": "f54fd82cccd5803b2912efe7d8be513b19b9b559"
+      },
+      "base": {
+        "ref": "lu/reader-ocr-image-closeout-20261106",
+        "sha": "b69e19658b7cb1761180cdeb94aac7d9e7c3dc9d"
+      },
+      "parentOpenPr": 67,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 72,
+      "title": "Lu P06 OBSERVE-PRIVACY-01: native provenance migration, bounded retention and reviewed forget",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/p06-observe-privacy-20261106",
+        "sha": "71a43284ca58237f3098bdde5570ece6567931e4"
+      },
+      "base": {
+        "ref": "lu/p03-ai-ops-model-manager-20261106",
+        "sha": "f54fd82cccd5803b2912efe7d8be513b19b9b559"
+      },
+      "parentOpenPr": 71,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 73,
+      "title": "IDE WO7: reviewed signed NSIS staging, restricted SCM lifecycle, installed witness and release gates",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wo7-signed-nsis-release-20261106",
+        "sha": "d42586345a8fce5713b3232669dbd2b7241440c0"
+      },
+      "base": {
+        "ref": "ide/wo6-protected-build-test-debug-20261106",
+        "sha": "c0b83a304566d803e19082591d36debffe501698"
+      },
+      "parentOpenPr": 70,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 74,
+      "title": "IDE WO8: repair native release tests; installed Win/Linux editing, external conflict and protected crash recovery",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wo8-installed-e2e-20261107",
+        "sha": "bd0f4f1280fb09c3ff0ba672d99dd47588537558"
+      },
+      "base": {
+        "ref": "ide/wo7-signed-nsis-release-20261106",
+        "sha": "b0bc69db66d84d2ed9425fb5c1b75ab83feeb045"
+      },
+      "parentOpenPr": 73,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 75,
+      "title": "IDE WO9: native Git/ZIP, durable protected DAG, installed OS acceptance and crash repair",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wo9-advanced-workflows-20261107",
+        "sha": "0d271606c8bcaeabe799cb970e0b6d4aefd25089"
+      },
+      "base": {
+        "ref": "ide/wo8-installed-e2e-20261107",
+        "sha": "c0d49d01dd4f2560c1cde01e303505cec0d19a5b"
+      },
+      "parentOpenPr": 74,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 76,
+      "title": "[POST–LU CORE v1.0 — DEFERRED / DO NOT MERGE] WO10 DLC interface experiment",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/wo10-optional-lu-bridge-20261107",
+        "sha": "8d59bce140d189cc798dc87a2a35eed61e88bc7b"
+      },
+      "base": {
+        "ref": "ide/wo9-advanced-workflows-20261107",
+        "sha": "0d271606c8bcaeabe799cb970e0b6d4aefd25089"
+      },
+      "parentOpenPr": 75,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 77,
+      "title": "Lu P07 RESEARCH-STYLE-01: evidence-corroborated scholarly citation profiles",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/p07-research-citation-styles-20261106",
+        "sha": "e018b1fba93d69b44243e0d3ff7f1e7b847b0ed6"
+      },
+      "base": {
+        "ref": "lu/p06-observe-privacy-20261106",
+        "sha": "71a43284ca58237f3098bdde5570ece6567931e4"
+      },
+      "parentOpenPr": 72,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 78,
+      "title": "[DRAFT / P01 COMPLETE] Lu IDE source RC consolidated on main — native acceptance open, WO10 excluded",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/release-closeout-p01-20261107",
+        "sha": "a8b0a8f0270856954acd1132e30477e387004c98"
+      },
+      "base": {
+        "ref": "main",
+        "sha": "88ab1f10e1b1a4d6c6187bfb5ad7c5d8a1606e39"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "main"
+    },
+    {
+      "number": 79,
+      "title": "[DRAFT / P02 IN PROGRESS] Lu IDE deterministic native build and GUI repair",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/release-closeout-p02-20261107",
+        "sha": "fab2c06e47454b37758c716b304d202e9af55f66"
+      },
+      "base": {
+        "ref": "ide/release-closeout-p01-20261107",
+        "sha": "a8b0a8f0270856954acd1132e30477e387004c98"
+      },
+      "parentOpenPr": 78,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 80,
+      "title": "[DRAFT / P03 IN PROGRESS] Lu IDE WO4–WO6 native security, DAP handshake and OS failure repair",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/release-closeout-p03-20261107",
+        "sha": "ed070647dde289f85340cdc25d8c8f8df33543fb"
+      },
+      "base": {
+        "ref": "ide/release-closeout-p02-20261107",
+        "sha": "fab2c06e47454b37758c716b304d202e9af55f66"
+      },
+      "parentOpenPr": 79,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 81,
+      "title": "P08 ARCHIVE-SPLIT-01 — native multipart split, staged resume, verified reassembly",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/p08-archive-split-20261107",
+        "sha": "d5be5c38b5d1bb89023c66d9da823ace53526066"
+      },
+      "base": {
+        "ref": "lu/p07-research-citation-styles-20261106",
+        "sha": "e018b1fba93d69b44243e0d3ff7f1e7b847b0ed6"
+      },
+      "parentOpenPr": 77,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 82,
+      "title": "P09 OFFICE-BOUNDARY-01 — bounded Office fidelity and safe read/edit disclosure",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/p09-office-boundary-20261107",
+        "sha": "d8bc94b2592555ddb31239b7dac60da77c2f21b5"
+      },
+      "base": {
+        "ref": "lu/p08-archive-split-20261107",
+        "sha": "d5be5c38b5d1bb89023c66d9da823ace53526066"
+      },
+      "parentOpenPr": 81,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 83,
+      "title": "P10 IMAGE-BASICS-01 — AI-first tool policy and bounded image correctness",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/p10-image-boundary-20261107",
+        "sha": "9ccb7e5ba893cd7c0845978775ae5ad3b3d7eaac"
+      },
+      "base": {
+        "ref": "lu/p09-office-boundary-20261107",
+        "sha": "d8bc94b2592555ddb31239b7dac60da77c2f21b5"
+      },
+      "parentOpenPr": 82,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 84,
+      "title": "Lu IDE P04 — installed release and signed reinstall closeout (draft, real OS gates pending)",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/release-closeout-p04-20261107",
+        "sha": "bc4fd78685c342675e4a80556970e934125a0e20"
+      },
+      "base": {
+        "ref": "ide/release-closeout-p03-20261107",
+        "sha": "a96560dca4c942bf5fc2a91830566ea5214d12af"
+      },
+      "parentOpenPr": 80,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 85,
+      "title": "P11 GIT-CORE-01 — bounded Git read/execute boundary and hostile-config regression",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/p11-git-core-boundary-20261107",
+        "sha": "7f2476d82a05be745ae4a514449072c3d5f15971"
+      },
+      "base": {
+        "ref": "lu/p10-image-boundary-20261107",
+        "sha": "9ccb7e5ba893cd7c0845978775ae5ad3b3d7eaac"
+      },
+      "parentOpenPr": 83,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 86,
+      "title": "Docs — Canonical AI Execution Layer f(K,I,A,F) philosophy and tool audit",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/ai-execution-philosophy-audit-20261107",
+        "sha": "58ab52dc8e52e0ebad89392dae7d1e0db1c0b6a8"
+      },
+      "base": {
+        "ref": "lu/p11-git-core-boundary-20261107",
+        "sha": "7f2476d82a05be745ae4a514449072c3d5f15971"
+      },
+      "parentOpenPr": 85,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 87,
+      "title": "AI Execution K/I/A/F — P01–P12 scoped recommendations and verified artifact interface",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/ai-execution-p01-p12-recommendations-20261107",
+        "sha": "1615f80bdeb505ef6d02560f87abed50ec51bb02"
+      },
+      "base": {
+        "ref": "lu/ai-execution-philosophy-audit-20261107",
+        "sha": "58ab52dc8e52e0ebad89392dae7d1e0db1c0b6a8"
+      },
+      "parentOpenPr": 86,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 88,
+      "title": "Docs — Human-centered Lu, clarification loop, and memory-first execution order",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/human-centered-memory-first-philosophy-20261107",
+        "sha": "fddc7b9510ac56f80bdb1001040e31e5a3216c3a"
+      },
+      "base": {
+        "ref": "lu/ai-execution-p01-p12-recommendations-20261107",
+        "sha": "1615f80bdeb505ef6d02560f87abed50ec51bb02"
+      },
+      "parentOpenPr": 87,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 89,
+      "title": "M1 — Audit live memory storage, prompt wiring, authority and recovery boundaries",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/m1-memory-evidence-authority-audit-20261107",
+        "sha": "40463c6a8a2439e392b6c5edb8fb9cfb5c1a4400"
+      },
+      "base": {
+        "ref": "lu/human-centered-memory-first-philosophy-20261107",
+        "sha": "fddc7b9510ac56f80bdb1001040e31e5a3216c3a"
+      },
+      "parentOpenPr": 88,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 90,
+      "title": "M2 — ANSF/SQLite goal memory and user clarification continuity",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/m2-ansf-goals-clarifications-20261107",
+        "sha": "667eb98a302752b4a9617461ecb6bfdfdad376d1"
+      },
+      "base": {
+        "ref": "lu/m1-memory-evidence-authority-audit-20261107",
+        "sha": "40463c6a8a2439e392b6c5edb8fb9cfb5c1a4400"
+      },
+      "parentOpenPr": 89,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 91,
+      "title": "Lu IDE P05 — source and CI reconciliation complete; native-gated cleanup retained (draft)",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/release-closeout-p05-20261107",
+        "sha": "a3c2038b087282f90d28f78170ccfe5fc9371144"
+      },
+      "base": {
+        "ref": "ide/release-closeout-p04-20261107",
+        "sha": "bc4fd78685c342675e4a80556970e934125a0e20"
+      },
+      "parentOpenPr": 84,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 92,
+      "title": "ANSF — Direct source IDs and external-only multimodal artifact references",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/ansf-direct-source-ids-artifact-references-20261107",
+        "sha": "cc75bb45aba45d58f49c69744dc86d7518b0e4dc"
+      },
+      "base": {
+        "ref": "lu/m2-ansf-goals-clarifications-20261107",
+        "sha": "667eb98a302752b4a9617461ecb6bfdfdad376d1"
+      },
+      "parentOpenPr": 90,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 93,
+      "title": "BENCH — Three-arm real GGUF baselines: none vs recent chat vs ANSF source IDs",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/ansf-three-arm-real-model-baselines-20261107",
+        "sha": "b4c98aa795bc50f26b2e1f17c90545e6db4b97fd"
+      },
+      "base": {
+        "ref": "lu/ansf-direct-source-ids-artifact-references-20261107",
+        "sha": "cc75bb45aba45d58f49c69744dc86d7518b0e4dc"
+      },
+      "parentOpenPr": 92,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 94,
+      "title": "M2 — Canonical ANSF SQLite conversation cutover, native goals and legacy migration",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/m2-ansf-canonical-conversation-20261107",
+        "sha": "4cfc7ddb0344bff594b1decbfaa88d62e7c52441"
+      },
+      "base": {
+        "ref": "lu/ansf-three-arm-real-model-baselines-20261107",
+        "sha": "b4c98aa795bc50f26b2e1f17c90545e6db4b97fd"
+      },
+      "parentOpenPr": 93,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 95,
+      "title": "[DRAFT / P06] IDE exact-head dependency provenance, full upstream notices, release matrix",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/release-closeout-p06-20261107",
+        "sha": "55f70b66bdbdfded57ee416011881eb9965904f6"
+      },
+      "base": {
+        "ref": "ide/release-closeout-p05-20261107",
+        "sha": "a3c2038b087282f90d28f78170ccfe5fc9371144"
+      },
+      "parentOpenPr": 91,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 96,
+      "title": "M3 — ANSF original history, hot scrolling, operational continuity and local semantic recall",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/m3-cross-chat-recall-source-ids-20261107",
+        "sha": "4f786086cd520a78ceda8902f93a3fa02202f9f0"
+      },
+      "base": {
+        "ref": "lu/m2-ansf-canonical-conversation-20261107",
+        "sha": "4cfc7ddb0344bff594b1decbfaa88d62e7c52441"
+      },
+      "parentOpenPr": 94,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 97,
+      "title": "Lu IDE P03/P04: repair native clangd parser, owned consent witness, rollback admission",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/p03-p04-native-closeout-20261107",
+        "sha": "dde157e82fa09376a0262e75bd70387c25f0cad2"
+      },
+      "base": {
+        "ref": "ide/release-closeout-p06-20261107",
+        "sha": "55f70b66bdbdfded57ee416011881eb9965904f6"
+      },
+      "parentOpenPr": 95,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 98,
+      "title": "Lu M4-P01 — verified procedural memory, correction safety and native tests",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/m4-verified-procedural-memory-20261107",
+        "sha": "dcf43f23b357bcd7da16f2313745af0848825895"
+      },
+      "base": {
+        "ref": "lu/m3-cross-chat-recall-source-ids-20261107",
+        "sha": "4f786086cd520a78ceda8902f93a3fa02202f9f0"
+      },
+      "parentOpenPr": 96,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 99,
+      "title": "Lu IDE P05 B2: session-only draft source references re-ported to E2 editor",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/p05-b2-draft-refs-20261107",
+        "sha": "8cad0dc96cfd409961fae79500a1f046f04520da"
+      },
+      "base": {
+        "ref": "ide/p03-p04-native-closeout-20261107",
+        "sha": "03082c0a96caa840db2d6830702053ceeaa7ce4f"
+      },
+      "parentOpenPr": 97,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 100,
+      "title": "Lu IDE P05 B3: bounded saved-project search port with revision-checked navigation",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/p05-b3-project-search-20261107",
+        "sha": "b8a8c36f570fc0659c9f279c68de0caf857ce083"
+      },
+      "base": {
+        "ref": "ide/p05-b2-draft-refs-20261107",
+        "sha": "f0e39ca16c4342c994a1fbdaf45eaa271319d644"
+      },
+      "parentOpenPr": 99,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 101,
+      "title": "M5: Real local-memory repeated-task replay and GGUF acceptance",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/m5-local-memory-e2e-20261107",
+        "sha": "96688241abc751cf5a31dd6664a59bc8d6a303e3"
+      },
+      "base": {
+        "ref": "lu/m4-verified-procedural-memory-20261107",
+        "sha": "dcf43f23b357bcd7da16f2313745af0848825895"
+      },
+      "parentOpenPr": 98,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 102,
+      "title": "Lu IDE P04: native Linux GTK chooser X11 keyboard-focus diagnostic",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/p04-linux-gtk-focused-20261108",
+        "sha": "af256f2b465c22e8e983303f39cf2f5ca0f71725"
+      },
+      "base": {
+        "ref": "ide/p03-p04-native-closeout-20261107",
+        "sha": "dde157e82fa09376a0262e75bd70387c25f0cad2"
+      },
+      "parentOpenPr": 97,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 103,
+      "title": "E1-P01: Host-reviewed app executable preflight with per-turn authority",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-reviewed-app-admission-20261107",
+        "sha": "df57e46328e4f4b54f12b91773530be83748426c"
+      },
+      "base": {
+        "ref": "lu/m5-local-memory-e2e-20261107",
+        "sha": "96688241abc751cf5a31dd6664a59bc8d6a303e3"
+      },
+      "parentOpenPr": 101,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 104,
+      "title": "Lu IDE P03: LLVM18 protected DAP launch compatibility and native acceptance",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/p03-native-dap-env18-20261107",
+        "sha": "6059a4fe6f9e2f164a2ad141ca304ab4c83b5653"
+      },
+      "base": {
+        "ref": "ide/p03-p04-native-closeout-20261107",
+        "sha": "dde157e82fa09376a0262e75bd70387c25f0cad2"
+      },
+      "parentOpenPr": 97,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 105,
+      "title": "E1-P03: Contained, durable execution of reviewed one-shot application worker",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p03-contained-app-worker-20261107",
+        "sha": "d4130340a403239049c0003bee5945d443a50ae3"
+      },
+      "base": {
+        "ref": "lu/e1-reviewed-app-admission-20261107",
+        "sha": "df57e46328e4f4b54f12b91773530be83748426c"
+      },
+      "parentOpenPr": 103,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 106,
+      "title": "E1-P04: Independent typed output oracle and durable semantic receipts",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p04-independent-outcome-oracles-20261107",
+        "sha": "08c1584fec025f79529bc70ce60b0f03c4210036"
+      },
+      "base": {
+        "ref": "lu/e1-p03-contained-app-worker-20261107",
+        "sha": "e489eb7c3ec77bb14df710b7e33e685cd3073670"
+      },
+      "parentOpenPr": 105,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 107,
+      "title": "E1-P04B: Native worker-to-Office artifact custody and semantic publication",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p04-artifact-custody-20261107",
+        "sha": "2468bd5000e65c6c7f4d1452ba771581ca0c443f"
+      },
+      "base": {
+        "ref": "lu/e1-p04-independent-outcome-oracles-20261107",
+        "sha": "e470bcd87fcc53fffb418926d55b2a1c70f233a7"
+      },
+      "parentOpenPr": 106,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 108,
+      "title": "Lu IDE P06-R1: live exact-head Windows/Linux native Actions evidence (read-only)",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/p06-live-native-receipts-20261107",
+        "sha": "4f21e93f4e590d3fda0dfd2e37a34caeda970a4d"
+      },
+      "base": {
+        "ref": "ide/release-closeout-p06-20261107",
+        "sha": "55f70b66bdbdfded57ee416011881eb9965904f6"
+      },
+      "parentOpenPr": 95,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 109,
+      "title": "E1-P05: Genuine Qwen, native utility and reviewed app three-arm benchmark",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p05-three-arm-benchmark-20261107",
+        "sha": "7b86e3f514fb005f92ec2f55ed59a5c1f6489a5b"
+      },
+      "base": {
+        "ref": "lu/e1-p04-artifact-custody-20261107",
+        "sha": "3070460fcc6b0b5aceb0e28848b8070d66c17cc4"
+      },
+      "parentOpenPr": 107,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 110,
+      "title": "E1-P05B: independent OOXML semantic benchmark witness and hostile fixtures",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p05b-independent-semantic-witness-20261107",
+        "sha": "3bf173ae56c02db33e5f7d289991423380b57c5d"
+      },
+      "base": {
+        "ref": "lu/e1-p05-three-arm-benchmark-20261107",
+        "sha": "dc2264cbc599ef90ed1301bfc2e3fc826c651c9c"
+      },
+      "parentOpenPr": 109,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 111,
+      "title": "Lu IDE P06-R2: bounded shipping-content inventory for final release review",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/p06-r2-shipping-content-inventory-20261108",
+        "sha": "455e51ebcb3a56302111de8c6e324079686051f4"
+      },
+      "base": {
+        "ref": "ide/p06-live-native-receipts-20261107",
+        "sha": "4f21e93f4e590d3fda0dfd2e37a34caeda970a4d"
+      },
+      "parentOpenPr": 108,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 112,
+      "title": "CI-QUEUE-01: safe superseded-run cleanup and selective PR workflow fanout",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/ci-queue-hygiene-20261107",
+        "sha": "ab19729eadd795ea78863ad4601cd38d386dc988"
+      },
+      "base": {
+        "ref": "lu/e1-p05b-independent-semantic-witness-20261107",
+        "sha": "3bf173ae56c02db33e5f7d289991423380b57c5d"
+      },
+      "parentOpenPr": 110,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 113,
+      "title": "E1-P05C: fix unfair DOCX native baseline and require two-format artifact parity",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p05c-native-docx-parity-20261107",
+        "sha": "a94622ea388b43791bd82ccf9ce28eb30ac0291c"
+      },
+      "base": {
+        "ref": "lu/e1-p05b-independent-semantic-witness-20261107",
+        "sha": "3bf173ae56c02db33e5f7d289991423380b57c5d"
+      },
+      "parentOpenPr": 110,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 114,
+      "title": "Lu IDE: blocker-first product readiness ledger and developer workflow task plan",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/product-readiness-blocker-ledger-20261108",
+        "sha": "00b46dcc5fb30f80edf8f0eb0c9fba178ea43d5d"
+      },
+      "base": {
+        "ref": "ide/p06-r2-shipping-content-inventory-20261108",
+        "sha": "3feeff48291857cd7ac68e3705eef448b369339e"
+      },
+      "parentOpenPr": 111,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 115,
+      "title": "E1-P06A: host-reviewed typed third-party version adapter admission",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p06-typed-thirdparty-adapters-20261107",
+        "sha": "7910351c6c4b06b85dd407d59b53d231652a0cc6"
+      },
+      "base": {
+        "ref": "lu/e1-p05c-native-docx-parity-20261107",
+        "sha": "d4a29cbeb1c46020b39b6809cea76052a2aaa89d"
+      },
+      "parentOpenPr": 113,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 116,
+      "title": "E1-P06B: real reviewed Git/Python process execution, bounded stdout and journal recovery",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p06b-genuine-thirdparty-supervision-20261107",
+        "sha": "0ffa5c1ce6fc4c44ce8afac41fbad23b6024ad69"
+      },
+      "base": {
+        "ref": "lu/e1-p06-typed-thirdparty-adapters-20261107",
+        "sha": "c21c24aec7e6c5fa2fd5985182ad8579203d736f"
+      },
+      "parentOpenPr": 115,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 117,
+      "title": "E1-P06C: typed external Git head/status operations; preserve unsandboxed Lu native host",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p06c-typed-git-ops-20261107",
+        "sha": "7f28bb6fc0ff128f5d910b4885466e033bcc0210"
+      },
+      "base": {
+        "ref": "lu/e1-p06b-genuine-thirdparty-supervision-20261107",
+        "sha": "92c4a3677f0c6bb17972994149a4c9f38fddbf77"
+      },
+      "parentOpenPr": 116,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 118,
+      "title": "E1-P06D: actual Git branch and history context through reviewed native app adapter",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p06d-typed-git-context-20261107",
+        "sha": "1e86fbbaf7c2af0beeaf6acdc2c4016c3403e886"
+      },
+      "base": {
+        "ref": "lu/e1-p06c-typed-git-ops-20261107",
+        "sha": "1a244c2a63aa9cc479270969448d0a511c2b2ad8"
+      },
+      "parentOpenPr": 117,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 119,
+      "title": "Lu IDE DEV-01.1: bounded Ctrl+P native project Quick Open",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev01-bounded-quick-open-20261108",
+        "sha": "1be2f74335c3519aec3bd28677934aca5bb58509"
+      },
+      "base": {
+        "ref": "ide/p03-p04-native-closeout-20261107",
+        "sha": "dde157e82fa09376a0262e75bd70387c25f0cad2"
+      },
+      "parentOpenPr": 97,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 120,
+      "title": "E1 acceptance: pin native CI to exact PR head, require real tests, repair P05 p95 and raw receipts",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-native-evidence-integrity-20261107",
+        "sha": "a6b48c93b06b13fa4749e22b8c21b6614b85edb0"
+      },
+      "base": {
+        "ref": "lu/e1-p06d-typed-git-context-20261107",
+        "sha": "038af878a272d7f2eba41775003d71b5db509347"
+      },
+      "parentOpenPr": 118,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 121,
+      "title": "Lu IDE DEV-01.2: native exclusive new file/folder and guarded UI",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev01-native-create-20261108",
+        "sha": "4a87f10cac26d157d0cd764fcfc7b7101faa35ed"
+      },
+      "base": {
+        "ref": "ide/dev01-bounded-quick-open-20261108",
+        "sha": "1be2f74335c3519aec3bd28677934aca5bb58509"
+      },
+      "parentOpenPr": 119,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 122,
+      "title": "E1-P06E: genuine FFprobe media facts via native reviewed application adapter",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p06e-ffprobe-typed-media-20261107",
+        "sha": "76fc4a90a1809bc69351dd8bc283099bea6a3485"
+      },
+      "base": {
+        "ref": "lu/e1-native-evidence-integrity-20261107",
+        "sha": "ad031b7091e5b3e437c386a4e0569c71b61c1f60"
+      },
+      "parentOpenPr": 120,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 123,
+      "title": "Lu IDE DEV-01.3: no-clobber file move, durable trash and restore",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev01-safe-file-operations-20261108",
+        "sha": "277d1c007e291eb678a0c4f722cf7c94ba8acefe"
+      },
+      "base": {
+        "ref": "ide/dev01-native-create-20261108",
+        "sha": "4a87f10cac26d157d0cd764fcfc7b7101faa35ed"
+      },
+      "parentOpenPr": 121,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 124,
+      "title": "Lu IDE DEV-01.4: native app-data persistent unsaved draft recovery",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev01-persistent-draft-recovery-20261108",
+        "sha": "9ef0d3af3d28855e7463e8b7cf9d5dc5efc1514d"
+      },
+      "base": {
+        "ref": "ide/dev01-safe-file-operations-20261108",
+        "sha": "277d1c007e291eb678a0c4f722cf7c94ba8acefe"
+      },
+      "parentOpenPr": 123,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 125,
+      "title": "Lu IDE DEV-01.5: side-by-side CodeMirror source editor panes",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev01-split-editor-panes-20261108",
+        "sha": "a23d09602af62e5fe53289d812c67dcd2a3abfca"
+      },
+      "base": {
+        "ref": "ide/dev01-persistent-draft-recovery-20261108",
+        "sha": "9ef0d3af3d28855e7463e8b7cf9d5dc5efc1514d"
+      },
+      "parentOpenPr": 124,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 126,
+      "title": "Lu IDE DEV-01.6: bounded native large-project Quick Open index and OS measurements",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev01-large-project-index-20261108",
+        "sha": "6bef0215046adb937d38cb8e30aece217620907e"
+      },
+      "base": {
+        "ref": "ide/dev01-split-editor-panes-20261108",
+        "sha": "a23d09602af62e5fe53289d812c67dcd2a3abfca"
+      },
+      "parentOpenPr": 125,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 127,
+      "title": "E1-P07: expose host-reviewed Git and FFprobe tools to live Lu model conversations and desktop",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p07-reviewed-app-model-tool-20261107",
+        "sha": "faa1cb9f3bc809d037843b794ef704a51b9c1f35"
+      },
+      "base": {
+        "ref": "lu/e1-p06e-ffprobe-typed-media-20261107",
+        "sha": "76fc4a90a1809bc69351dd8bc283099bea6a3485"
+      },
+      "parentOpenPr": 122,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 128,
+      "title": "Lu IDE DEV-01 integrated native installed Windows/Linux four-feature acceptance",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev01-installed-integration-20261108",
+        "sha": "803f8f337cedcab332720ed4ea99f49b23a11f38"
+      },
+      "base": {
+        "ref": "ide/dev01-large-project-index-20261108",
+        "sha": "6bef0215046adb937d38cb8e30aece217620907e"
+      },
+      "parentOpenPr": 126,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 129,
+      "title": "Lu IDE DEV-02.1: source-verified project Problems navigator",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev02-project-problems-20261108",
+        "sha": "4593a98269098c4d08ab87c2fd8ce964601b8dda"
+      },
+      "base": {
+        "ref": "ide/p03-p04-native-closeout-20261107",
+        "sha": "dde157e82fa09376a0262e75bd70387c25f0cad2"
+      },
+      "parentOpenPr": 97,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 130,
+      "title": "E1-P08: recover reviewed application task/effect journals after Lu restart",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p08-reviewed-turn-recovery-20261107",
+        "sha": "c5ae97fbb9720ef0140c696df3cf58bf7b9a47d0"
+      },
+      "base": {
+        "ref": "lu/e1-p07-reviewed-app-model-tool-20261107",
+        "sha": "faa1cb9f3bc809d037843b794ef704a51b9c1f35"
+      },
+      "parentOpenPr": 127,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 131,
+      "title": "Lu IDE DEV-02.2: protected Linux/Windows Rust, Ruff, clangd native LSP host and installed OS gates",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev02-protected-multilang-20261108",
+        "sha": "fceb969e85c0fd8da0191fa4294b1c98d77f5847"
+      },
+      "base": {
+        "ref": "ide/dev02-project-problems-20261108",
+        "sha": "4593a98269098c4d08ab87c2fd8ce964601b8dda"
+      },
+      "parentOpenPr": 129,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 132,
+      "title": "Lu IDE DEV-02.3: offline LSP provenance review packets and Python semantic provider assessment",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev02-python-provider-review-and-lsp-intake-20261108",
+        "sha": "6ae6ced5fbe8e68e4948d95f890ff8d8ca32dc23"
+      },
+      "base": {
+        "ref": "ide/dev02-protected-multilang-20261108",
+        "sha": "fceb969e85c0fd8da0191fa4294b1c98d77f5847"
+      },
+      "parentOpenPr": 131,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 133,
+      "title": "E1-P08C: delegated Linux cgroup-v2 custody and native SIGKILL/setsid proof",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p08c-delegated-cgroup-custody-20261108",
+        "sha": "ec88d4dba411b9c84091d7c77bd50eb52701858e"
+      },
+      "base": {
+        "ref": "lu/e1-p08-reviewed-turn-recovery-20261107",
+        "sha": "c5ae97fbb9720ef0140c696df3cf58bf7b9a47d0"
+      },
+      "parentOpenPr": 130,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 134,
+      "title": "Lu IDE DEV-02.4: real BasedPyright vs ty Python semantic LSP benchmark on Windows/Linux",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev02-python-semantic-native-evaluation-20261108",
+        "sha": "dc1c69ab47e402d07af633562b4ae19084800c3b"
+      },
+      "base": {
+        "ref": "ide/dev02-python-provider-review-and-lsp-intake-20261108",
+        "sha": "6ae6ced5fbe8e68e4948d95f890ff8d8ca32dc23"
+      },
+      "parentOpenPr": 132,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 135,
+      "title": "E1-P09: show authenticated reviewed-app journal evidence in Lu Tool activity",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p09-reviewed-app-evidence-panel-20261108",
+        "sha": "04221078523d7d4f593684659ffd1f66367fb419"
+      },
+      "base": {
+        "ref": "lu/e1-p08-reviewed-turn-recovery-20261107",
+        "sha": "c5ae97fbb9720ef0140c696df3cf58bf7b9a47d0"
+      },
+      "parentOpenPr": 130,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 136,
+      "title": "E1-P10: independently verify reviewed Git/WAV outcomes before model tool feedback",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p10-independent-operation-oracles-20261108",
+        "sha": "4ded8d6ddb418d4d07e874bc64f1d6defeac15e9"
+      },
+      "base": {
+        "ref": "lu/e1-p09-reviewed-app-evidence-panel-20261108",
+        "sha": "04221078523d7d4f593684659ffd1f66367fb419"
+      },
+      "parentOpenPr": 135,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 137,
+      "title": "Lu IDE DEV-02.5: real CI-only installed NSIS/Debian packages with SHA-pinned native LSP resources",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev02-test-only-installed-lsp-bundle-20261108",
+        "sha": "f2d66b9b8553b8d1beb996a972d6c5084e90133b"
+      },
+      "base": {
+        "ref": "ide/dev02-python-semantic-native-evaluation-20261108",
+        "sha": "27e865b28be2a96a96f2e325ee9afdc101201d0e"
+      },
+      "parentOpenPr": 134,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 138,
+      "title": "Lu IDE DEV-02.5: disposable native LSP payload and Windows/Linux hash-install verification",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev02-testonly-lsp-payload-20261108",
+        "sha": "a7c847eb8af8b1d17cd081ecc13e326360c112de"
+      },
+      "base": {
+        "ref": "ide/dev02-python-semantic-native-evaluation-20261108",
+        "sha": "dc1c69ab47e402d07af633562b4ae19084800c3b"
+      },
+      "parentOpenPr": 134,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 139,
+      "title": "E1-P11: independently verify Git reachable commit count through native loose-object DAG traversal",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p11-independent-git-history-20261108",
+        "sha": "5a869a77c2ee9c5683db35bb67efbd15bb22043d"
+      },
+      "base": {
+        "ref": "lu/e1-p10-independent-operation-oracles-20261108",
+        "sha": "4ded8d6ddb418d4d07e874bc64f1d6defeac15e9"
+      },
+      "parentOpenPr": 136,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 140,
+      "title": "Lu IDE DEV-02.6A: actual native LSP dependency audit and fixed-version Windows/Linux CI smoke",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev02-native-closure-smoke-20261108",
+        "sha": "a3b965d7f744b1087c5f0368b2d2107067b7487f"
+      },
+      "base": {
+        "ref": "ide/dev02-testonly-lsp-payload-20261108",
+        "sha": "a7c847eb8af8b1d17cd081ecc13e326360c112de"
+      },
+      "parentOpenPr": 138,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 141,
+      "title": "Lu IDE DEV-02.6B: complete original native LSP resources and real protected three-provider protocol acceptance",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev02-complete-native-bundle-protected-protocol-20261108",
+        "sha": "8af8a56b9ab896944af905be521db8014ebe6396"
+      },
+      "base": {
+        "ref": "ide/dev02-native-closure-smoke-20261108",
+        "sha": "86d32ce1820ae6e2467f3d5efa6e944cd9d059ca"
+      },
+      "parentOpenPr": 140,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 142,
+      "title": "E1-P12: independently verify Git tracked status, packed history and MP4 metadata",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p12-git-status-pack-mp4-20261108",
+        "sha": "de330493a434e7e64175b3d489ac152c3c50c27e"
+      },
+      "base": {
+        "ref": "lu/e1-p11-independent-git-history-20261108",
+        "sha": "5a869a77c2ee9c5683db35bb67efbd15bb22043d"
+      },
+      "parentOpenPr": 139,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 143,
+      "title": "Lu IDE B3: port bounded Find in Project to current Tauri/React stack",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/b3-saved-project-search-port-20261108",
+        "sha": "253aac9359b6cfa3584dc0da0255ce4a1c509aa6"
+      },
+      "base": {
+        "ref": "ide/dev02-complete-native-bundle-protected-protocol-20261108",
+        "sha": "cffb860af43ead177d606bd4fa659a9e8c1ec7fa"
+      },
+      "parentOpenPr": 141,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 144,
+      "title": "E1-P13: pin approved source revisions across reviewed Git and FFprobe worker execution",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p13-revision-custody-20261108",
+        "sha": "0a9c4cff81ac1bb52779c0ac75eaac874de7965d"
+      },
+      "base": {
+        "ref": "lu/e1-p12-git-status-pack-mp4-20261108",
+        "sha": "de330493a434e7e64175b3d489ac152c3c50c27e"
+      },
+      "parentOpenPr": 142,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 145,
+      "title": "Lu IDE B2: revisioned unsaved buffers and immutable private persistent draft references",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/b2-persistent-draft-recovery-20261108",
+        "sha": "97940239e1af4a6c8edbdfa3a176579d01ae5f18"
+      },
+      "base": {
+        "ref": "ide/b3-saved-project-search-port-20261108",
+        "sha": "253aac9359b6cfa3584dc0da0255ce4a1c509aa6"
+      },
+      "parentOpenPr": 143,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 146,
+      "title": "Lu IDE B4: project-scoped two-pane CodeMirror editor and focused Save",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/b4-split-editor-current-stack-20261108",
+        "sha": "93e8fad1fa48478e31ffebb62c89d6f1d0c3a2ed"
+      },
+      "base": {
+        "ref": "ide/b2-persistent-draft-recovery-20261108",
+        "sha": "97940239e1af4a6c8edbdfa3a176579d01ae5f18"
+      },
+      "parentOpenPr": 145,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 147,
+      "title": "Lu IDE B5: bound large-project working set, tab rendering and large-source parsing",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/b5-large-project-editor-working-set-20261108",
+        "sha": "029f5b131f5855494ed9e38af5d6956dc48abf8d"
+      },
+      "base": {
+        "ref": "ide/b4-split-editor-current-stack-20261108",
+        "sha": "93e8fad1fa48478e31ffebb62c89d6f1d0c3a2ed"
+      },
+      "parentOpenPr": 146,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 148,
+      "title": "E1-P14: explain verified, uncertain and rejected native tool outcomes to humans",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p14-human-readable-effect-feedback-20261108",
+        "sha": "07abadabf8ed806b4b26caafd173fb7761140b98"
+      },
+      "base": {
+        "ref": "lu/e1-p13-revision-custody-20261108",
+        "sha": "0a9c4cff81ac1bb52779c0ac75eaac874de7965d"
+      },
+      "parentOpenPr": 144,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 151,
+      "title": "E1-P15 (DRAFT): durable original-turn task recovery and read-only continuation evidence",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/e1-p15-conversation-continuity-candidate-20261108",
+        "sha": "2e4f15a56e036118785c47a25e95287fa55f3923"
+      },
+      "base": {
+        "ref": "lu/e1-p14-human-readable-effect-feedback-20261108",
+        "sha": "07abadabf8ed806b4b26caafd173fb7761140b98"
+      },
+      "parentOpenPr": 148,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 152,
+      "title": "AGENT-01A (DRAFT): durable human-scoped, non-executing multi-step plan ledger",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/agent01a-durable-plan-ledger-20261108",
+        "sha": "58ccfe2d9c17041749f4f49a442eedfa50e03216"
+      },
+      "base": {
+        "ref": "lu/e1-p14-human-readable-effect-feedback-20261108",
+        "sha": "07abadabf8ed806b4b26caafd173fb7761140b98"
+      },
+      "parentOpenPr": 148,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 153,
+      "title": "AGENT-01B (DRAFT): immutable goal, assumption and deliverable plan revisions",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/agent01b-immutable-goal-plan-revisions-20261108",
+        "sha": "bf69c9328e572225773fe2452871d602b575ce5f"
+      },
+      "base": {
+        "ref": "lu/agent01a-durable-plan-ledger-20261108",
+        "sha": "58ccfe2d9c17041749f4f49a442eedfa50e03216"
+      },
+      "parentOpenPr": 152,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 154,
+      "title": "AGENT-01C (DRAFT): immutable independently checked deliverable and execution receipts",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/agent01c-verified-deliverable-receipts-20261108",
+        "sha": "191695389b47f47ff8912e5e9cc0c6b8cb926829"
+      },
+      "base": {
+        "ref": "lu/agent01b-immutable-goal-plan-revisions-20261108",
+        "sha": "bf69c9328e572225773fe2452871d602b575ce5f"
+      },
+      "parentOpenPr": 153,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 155,
+      "title": "AGENT-01D (DRAFT): bounded host-fenced step scheduler, fresh human consent and fail-closed recovery",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/agent01d-fenced-host-scheduler-20261108",
+        "sha": "e9f8aadfc0d1e814fa75f279977cf8cead7141b5"
+      },
+      "base": {
+        "ref": "lu/agent01c-verified-deliverable-receipts-20261108",
+        "sha": "191695389b47f47ff8912e5e9cc0c6b8cb926829"
+      },
+      "parentOpenPr": 154,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 156,
+      "title": "AGENT-01E (DRAFT): reviewed broker claim binding and original-chat approval/recovery UI",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/agent01e-broker-progress-integration-20261108",
+        "sha": "854a18ab4140dc4889fa7484d9f9bd13145edd0c"
+      },
+      "base": {
+        "ref": "lu/agent01d-fenced-host-scheduler-20261108",
+        "sha": "e9f8aadfc0d1e814fa75f279977cf8cead7141b5"
+      },
+      "parentOpenPr": 155,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 157,
+      "title": "UX-CHAT01 (DRAFT): emoji reactions, copy/safe replay and per-chat background/bubble colors",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/ux-chat01-message-interactions-20261108",
+        "sha": "da9288cf8dac92f22ae89d9c0a62f6e991eb2f1d"
+      },
+      "base": {
+        "ref": "lu/agent01e-broker-progress-integration-20261108",
+        "sha": "854a18ab4140dc4889fa7484d9f9bd13145edd0c"
+      },
+      "parentOpenPr": 156,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 158,
+      "title": "UX-CHAT02 (DRAFT): immutable message edits, pinned human replies and version provenance",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/ux-chat02-revisions-replies-provenance-20261108",
+        "sha": "4e6ac21f915095e2d033cd297a1169c1a7a0240e"
+      },
+      "base": {
+        "ref": "lu/ux-chat01-message-interactions-20261108",
+        "sha": "da9288cf8dac92f22ae89d9c0a62f6e991eb2f1d"
+      },
+      "parentOpenPr": 157,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 159,
+      "title": "K/I/A/F active execution roadmap + AGENT-01F original-goal draft admission (DRAFT)",
+      "draft": true,
+      "workstream": "core-other",
+      "head": {
+        "ref": "lu/kiaf-execution-agent01f-20261108",
+        "sha": "7ac144c0d921f9d5143172f8f4d0a5cddf60dbcb"
+      },
+      "base": {
+        "ref": "lu/ux-chat02-revisions-replies-provenance-20261108",
+        "sha": "4e6ac21f915095e2d033cd297a1169c1a7a0240e"
+      },
+      "parentOpenPr": 158,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 160,
+      "title": "Lu IDE DEV-03.3B: bounded live stdout/stderr from protected workers",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev03b-protected-output-streams-20261108",
+        "sha": "b0d714d58424169aade5b1a798b0eab4c138c914"
+      },
+      "base": {
+        "ref": "ide/dev03-streamed-job-progress-20261108",
+        "sha": "f8590b5ee735d7d62cc7b027565395879012164b"
+      },
+      "parentOpenPr": null,
+      "baseClassification": "other-branch"
+    },
+    {
+      "number": 161,
+      "title": "Lu IDE DEV-03.4: bounded read-only native test discovery",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev03-4-bounded-test-discovery-20261108",
+        "sha": "77ea136b8fe7dbdf144f579abec64ae004425021"
+      },
+      "base": {
+        "ref": "ide/dev03b-protected-output-streams-20261108",
+        "sha": "b0d714d58424169aade5b1a798b0eab4c138c914"
+      },
+      "parentOpenPr": 160,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 162,
+      "title": "Lu IDE DEV-03.5: protected job lifecycle, cancellation identity and installed Jobs acceptance",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev03-5-protected-job-lifecycle-20261108",
+        "sha": "872c86fbd10f285f26700852014937f6a5f366ee"
+      },
+      "base": {
+        "ref": "ide/dev03-4-bounded-test-discovery-20261108",
+        "sha": "77ea136b8fe7dbdf144f579abec64ae004425021"
+      },
+      "parentOpenPr": 161,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 163,
+      "title": "Lu IDE DEV-04.1: review project debug target provenance without execution",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-1-debug-target-provenance-20261108",
+        "sha": "93915d93eaecac48ae6bb19dc30fc065d6a713d1"
+      },
+      "base": {
+        "ref": "ide/dev03-5-protected-job-lifecycle-20261108",
+        "sha": "872c86fbd10f285f26700852014937f6a5f366ee"
+      },
+      "parentOpenPr": 162,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 164,
+      "title": "Lu IDE DEV-04.2: native protected Cargo build receipt to independently hashed executable candidate",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-2-build-binary-provenance-20261108",
+        "sha": "69a56a42fedd514cd9abe78cb7f544ca3de5296b"
+      },
+      "base": {
+        "ref": "ide/dev04-1-debug-target-provenance-20261108",
+        "sha": "93915d93eaecac48ae6bb19dc30fc065d6a713d1"
+      },
+      "parentOpenPr": 163,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 165,
+      "title": "Lu IDE DEV-04.3: structural ELF/DWARF and PE/PDB debug-symbol identity for protected builds",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-3-executable-debug-symbols-20261108",
+        "sha": "cf2c91d6eb18ca855d83ccfaf428a22016791bad"
+      },
+      "base": {
+        "ref": "ide/dev04-2-build-binary-provenance-20261108",
+        "sha": "69a56a42fedd514cd9abe78cb7f544ca3de5296b"
+      },
+      "parentOpenPr": 164,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 166,
+      "title": "AGENT-01H — read-only next-step readiness and safe recovery preview",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/agent01h-next-step-preview-20261108",
+        "sha": "7f1bbbc10d483b4139296fc59361639daedd2307"
+      },
+      "base": {
+        "ref": "lu/kiaf-execution-agent01f-20261108",
+        "sha": "7ac144c0d921f9d5143172f8f4d0a5cddf60dbcb"
+      },
+      "parentOpenPr": 159,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 167,
+      "title": "Lu IDE DEV-04.4: native protected project debugger with exact build receipt / binary custody",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-4-protected-project-debug-20261108",
+        "sha": "111fd3cd80b1dae9d2270db83c07f0f18856c193"
+      },
+      "base": {
+        "ref": "ide/dev04-3-executable-debug-symbols-20261108",
+        "sha": "cf2c91d6eb18ca855d83ccfaf428a22016791bad"
+      },
+      "parentOpenPr": 165,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 168,
+      "title": "AGENT-01I (DRAFT): fresh authorized child-plan execution and real two-Qwen native acceptance gate",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/agent01i-fresh-continuation-20261108",
+        "sha": "31c12bfb7b4479ee8a4b32ac4b2d795d4d3ec8ed"
+      },
+      "base": {
+        "ref": "lu/agent01h-next-step-preview-20261108",
+        "sha": "7f1bbbc10d483b4139296fc59361639daedd2307"
+      },
+      "parentOpenPr": 166,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 169,
+      "title": "Lu IDE DEV-04.5: native failure repair and installed project-debugger acceptance",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-5-installed-project-debug-acceptance-20261108",
+        "sha": "ec9e0f301ba667f9bf1a266f005d8a0bbf12472b"
+      },
+      "base": {
+        "ref": "ide/dev04-4-protected-project-debug-20261108",
+        "sha": "111fd3cd80b1dae9d2270db83c07f0f18856c193"
+      },
+      "parentOpenPr": 167,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 170,
+      "title": "AGENT-01J (DRAFT): restart-safe child-plan lineage and conversation-visible reconciliation",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/agent01j-lineage-recovery-20261108",
+        "sha": "b394c2e57938aa8a375170c8c2927c7507386ba3"
+      },
+      "base": {
+        "ref": "lu/agent01i-fresh-continuation-20261108",
+        "sha": "31c12bfb7b4479ee8a4b32ac4b2d795d4d3ec8ed"
+      },
+      "parentOpenPr": 168,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 171,
+      "title": "Lu IDE DEV-04.5: native debugger failure repairs and installed default-denial acceptance",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-5-installed-debugger-repair-20261108",
+        "sha": "666f725c81c812b0e2b1b72c0bc8bbccfa691cf1"
+      },
+      "base": {
+        "ref": "ide/dev04-4-protected-project-debug-20261108",
+        "sha": "111fd3cd80b1dae9d2270db83c07f0f18856c193"
+      },
+      "parentOpenPr": 167,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 172,
+      "title": "AGENT-01K (DRAFT): independently verified recovery decisions, ancestor oracle and OS custody boundary",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/agent01k-recovery-decision-20261108",
+        "sha": "6446e6ca34948ebd53d1c6b711b8b7e72a8513da"
+      },
+      "base": {
+        "ref": "lu/agent01j-lineage-recovery-20261108",
+        "sha": "b394c2e57938aa8a375170c8c2927c7507386ba3"
+      },
+      "parentOpenPr": 170,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 173,
+      "title": "AGENT-01L (DRAFT): Windows kernel Job custody witness and strict child admission; Linux fail-closed",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/agent01l-native-custody-20261108",
+        "sha": "42017b8732356a160a62404f84d64ce86d2ecd52"
+      },
+      "base": {
+        "ref": "lu/agent01k-recovery-decision-20261108",
+        "sha": "6446e6ca34948ebd53d1c6b711b8b7e72a8513da"
+      },
+      "parentOpenPr": 172,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 174,
+      "title": "IDE DEV-04.5B: genuine protected project Cargo-to-LLDB native OS acceptance",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-5b-protected-project-debug-20261108",
+        "sha": "523cd04aae6dd896b2e7d916bc7d779d8db4bf5f"
+      },
+      "base": {
+        "ref": "ide/dev04-5-installed-debugger-repair-20261108",
+        "sha": "666f725c81c812b0e2b1b72c0bc8bbccfa691cf1"
+      },
+      "parentOpenPr": 171,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 175,
+      "title": "AGENT-01L Linux (DRAFT): crash-surviving cgroup-v2 custodian, escaped grandchild OS gate, Windows physical acceptance matrix",
+      "draft": true,
+      "workstream": "agent-e1",
+      "head": {
+        "ref": "lu/agent01l-linux-cgroup-v2-20261108",
+        "sha": "b9da21178f6a59df21ea599f7fc336fc3915ba96"
+      },
+      "base": {
+        "ref": "lu/agent01l-native-custody-20261108",
+        "sha": "42017b8732356a160a62404f84d64ce86d2ecd52"
+      },
+      "parentOpenPr": 173,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 176,
+      "title": "IDE DEV-04.5C: installed project LLDB bundle, UI, cancellation and restart gates",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-5c-reviewed-installed-debugger-20261108",
+        "sha": "6fbfe44705019171d024cab1a94309f723281a5b"
+      },
+      "base": {
+        "ref": "ide/dev04-5b-protected-project-debug-20261108",
+        "sha": "523cd04aae6dd896b2e7d916bc7d779d8db4bf5f"
+      },
+      "parentOpenPr": 174,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 177,
+      "title": "MEMORY-LOOP-01 (DRAFT): ANSF verified agent-plan handoff to GGUF context, zero inherited authority",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/memory-loop01-agent-handoff-20261108",
+        "sha": "783e8953f669c93ef6e2c6257a1b2611d0f02b6e"
+      },
+      "base": {
+        "ref": "lu/agent01l-linux-cgroup-v2-20261108",
+        "sha": "b9da21178f6a59df21ea599f7fc336fc3915ba96"
+      },
+      "parentOpenPr": 175,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 178,
+      "title": "MEMORY-LOOP-02 (DRAFT): independently verified outcome feedback for next Lu GGUF turn, no authority replay",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/memory-loop02-verified-feedback-20261108",
+        "sha": "08df965f00453e0cf383f78f6df14d2e1bcd6dbd"
+      },
+      "base": {
+        "ref": "lu/memory-loop01-agent-handoff-20261108",
+        "sha": "783e8953f669c93ef6e2c6257a1b2611d0f02b6e"
+      },
+      "parentOpenPr": 177,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 179,
+      "title": "IDE DEV-04.5D (DRAFT): correlated source-line review and exact native file digest",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-5d-source-line-preflight-20261108",
+        "sha": "6c9e7b1c756b990baecefcc2934200a6869f3b92"
+      },
+      "base": {
+        "ref": "ide/dev04-5c-reviewed-installed-debugger-20261108",
+        "sha": "6fbfe44705019171d024cab1a94309f723281a5b"
+      },
+      "parentOpenPr": 176,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 180,
+      "title": "IDE DEV-04.5D2: independent ELF/DWARF and PE/PDB stopped-PC line oracle (draft)",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-5d2-independent-dwarf-pdb-line-20261108",
+        "sha": "317c0eafcf9c7d988c6438c33f802ec8438f8d27"
+      },
+      "base": {
+        "ref": "ide/dev04-5d-source-line-preflight-20261108",
+        "sha": "6c9e7b1c756b990baecefcc2934200a6869f3b92"
+      },
+      "parentOpenPr": 179,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 181,
+      "title": "IDE DEV-04.5D3: real protected Linux cgroup stop, ELF load bias, LLVM line and durable receipts",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-5d3-kernel-loaded-image-receipts-20261108",
+        "sha": "00af45d486cf037e741874ec980091b63e972198"
+      },
+      "base": {
+        "ref": "ide/dev04-5d2-independent-dwarf-pdb-line-20261108",
+        "sha": "317c0eafcf9c7d988c6438c33f802ec8438f8d27"
+      },
+      "parentOpenPr": 180,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 182,
+      "title": "MEMORY-LOOP-02B (DRAFT): native host safe-recovery decisions independent of Qwen comprehension",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/memory-loop02b-host-safe-decision-20261108",
+        "sha": "13d1abe5d917f2909a308f90963d0766fd6b7db8"
+      },
+      "base": {
+        "ref": "lu/memory-loop02-verified-feedback-20261108",
+        "sha": "08df965f00453e0cf383f78f6df14d2e1bcd6dbd"
+      },
+      "parentOpenPr": 178,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 184,
+      "title": "IDE DEV-04.5D4 (draft): Windows SCM/Job loaded PE module and fsynced debugger receipts",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-5d4-windows-job-module-witness-20261108",
+        "sha": "828157023937f0f6bd28938bffefbd1ed8761862"
+      },
+      "base": {
+        "ref": "ide/dev04-5d3-kernel-loaded-image-receipts-20261108",
+        "sha": "00af45d486cf037e741874ec980091b63e972198"
+      },
+      "parentOpenPr": 181,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 185,
+      "title": "MEMORY-LOOP-02C (DRAFT): host-only original-source recovery provenance in Lu chat",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/memory-loop02c-operator-provenance-20261109",
+        "sha": "072770de5de0df291ba8f1cb815948002f9702d3"
+      },
+      "base": {
+        "ref": "lu/memory-loop02b-host-safe-decision-20261108",
+        "sha": "13d1abe5d917f2909a308f90963d0766fd6b7db8"
+      },
+      "parentOpenPr": 182,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 186,
+      "title": "IDE DEV-04.5D4B (draft): real Windows debug-event RIP/PDB oracle and protected Job thread sampling",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-5d4b-windows-stopped-pdb-20261109",
+        "sha": "733d97929349d5780f9db4c1b39104fa05986fb1"
+      },
+      "base": {
+        "ref": "ide/dev04-5d4-windows-job-module-witness-20261108",
+        "sha": "828157023937f0f6bd28938bffefbd1ed8761862"
+      },
+      "parentOpenPr": 184,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 187,
+      "title": "MEMORY-LOOP-03A (DRAFT): host goal/clarification and original recovery preflight for real Lu GGUF turns",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/memory-loop03-goal-recovery-preflight-20261109",
+        "sha": "a1a8700b1d467fead5b4be8664656f33e37777d2"
+      },
+      "base": {
+        "ref": "lu/memory-loop02c-operator-provenance-20261109",
+        "sha": "072770de5de0df291ba8f1cb815948002f9702d3"
+      },
+      "parentOpenPr": 185,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 188,
+      "title": "MEMORY-LOOP-03B (DRAFT): source-verified procedures, belief revision and CCM in Lu's GGUF reasoning turn",
+      "draft": true,
+      "workstream": "memory",
+      "head": {
+        "ref": "lu/memory-loop03b-procedural-belief-ccm-20261109",
+        "sha": "4c63e365122b52f8bac55c59964a400788f2642e"
+      },
+      "base": {
+        "ref": "lu/memory-loop03-goal-recovery-preflight-20261109",
+        "sha": "a1a8700b1d467fead5b4be8664656f33e37777d2"
+      },
+      "parentOpenPr": 187,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 189,
+      "title": "IDE DEV-04.5D4C: real protected LLDB Job RIP → independent PE/PDB source line → durable receipt (DRAFT)",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-5d4c-real-lldb-os-pdb-receipts-20261109",
+        "sha": "83b02c4948b0626a1830209a30f9639568fa41da"
+      },
+      "base": {
+        "ref": "ide/dev04-5d4b-windows-stopped-pdb-20261109",
+        "sha": "733d97929349d5780f9db4c1b39104fa05986fb1"
+      },
+      "parentOpenPr": 186,
+      "baseClassification": "open-pr-head"
+    },
+    {
+      "number": 190,
+      "title": "IDE DEV-04.5D4D: native Windows debug-port/owned-LLDB-parent proof; strict DEBUG_EVENT owner gate (draft)",
+      "draft": true,
+      "workstream": "ide",
+      "head": {
+        "ref": "ide/dev04-5d4d-win-debug-port-owner-gate-20261109",
+        "sha": "2e7269dad096ac83729791e85067929cf5f50d00"
+      },
+      "base": {
+        "ref": "ide/dev04-5d4c-real-lldb-os-pdb-receipts-20261109",
+        "sha": "83b02c4948b0626a1830209a30f9639568fa41da"
+      },
+      "parentOpenPr": 189,
+      "baseClassification": "open-pr-head"
+    }
+  ]
+}
