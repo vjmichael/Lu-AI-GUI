@@ -1886,7 +1886,7 @@ impl WindowsDapSession {
         original: &WindowsOwnerEventAccepted,
     ) -> Result<(WindowsOwnerEventAccepted, (String, String, String, String)), SupervisorError> {
         self.execute_one_protected_step_inner(
-            supervisor, job_id, plan, target, original, None,
+            supervisor, job_id, plan, target, original, None, None,
         )
     }
 
@@ -1901,9 +1901,11 @@ impl WindowsDapSession {
         target: &crate::project_debug_target::SealedProjectDebugTarget,
         original: &WindowsOwnerEventAccepted,
         approve: &mut dyn FnMut(&str) -> bool,
+        cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<(WindowsOwnerEventAccepted, (String, String, String, String)), SupervisorError> {
         self.execute_one_protected_step_inner(
             supervisor, job_id, plan, target, original, Some(approve),
+            Some(cancelled),
         )
     }
 
@@ -1913,6 +1915,7 @@ impl WindowsDapSession {
         target: &crate::project_debug_target::SealedProjectDebugTarget,
         original: &WindowsOwnerEventAccepted,
         approval: Option<&mut dyn FnMut(&str) -> bool>,
+        cancelled: Option<&std::sync::atomic::AtomicBool>,
     ) -> Result<(WindowsOwnerEventAccepted, (String, String, String, String)), SupervisorError> {
         use crate::{
             debug_action_receipts::{DebugActionApproval, NativeConsentMarker},
@@ -2013,8 +2016,30 @@ impl WindowsDapSession {
                 crate::now_ms()?, true,
             )
         };
+        if cancelled.is_some_and(|flag| flag.load(
+            std::sync::atomic::Ordering::SeqCst
+        )) {
+            let _ = action.revoke(crate::now_ms()?);
+            return Err(SupervisorError::Quarantined);
+        }
+        // The modal can remain open while a separate actor requests
+        // cancellation, loses SCM custody or starts OS cleanup.
+        let live_after_dialog = supervisor.inspect()?.into_iter()
+            .find(|job| job.job_id == job_id)
+            .ok_or(SupervisorError::NoSuchJob)?;
+        if live_after_dialog.phase != JobPhase::Running
+            || live_after_dialog.requires_reconciliation
+            || live_after_dialog.plan_sha256 != self.native_plan_sha256 {
+            return Err(SupervisorError::Quarantined);
+        }
         action.decide(marker, original.owner_sequence, crate::now_ms()?)
             .map_err(|_| SupervisorError::InvalidApproval)?;
+        if cancelled.is_some_and(|flag| flag.load(
+            std::sync::atomic::Ordering::SeqCst
+        )) {
+            let _ = action.revoke(crate::now_ms()?);
+            return Err(SupervisorError::Quarantined);
+        }
         let claim = action.consume_for_receipt_test(
             &preview.preview_sha256, original.owner_sequence, crate::now_ms()?,
         ).map_err(|_| SupervisorError::GrantConsumed)?;
@@ -2043,6 +2068,9 @@ impl WindowsDapSession {
         // The consumed claim is now held only in 'dispatched', which is
         // non-clonable and never returned to a caller/renderer. A failed
         // send leaves the journal at Consumed or ResultUncertain; NO retry.
+        if cancelled.is_some_and(|flag| flag.load(
+            std::sync::atomic::Ordering::SeqCst
+        )) { return Err(SupervisorError::Quarantined); }
         self.gateway.ci_send_step(dispatched.thread_id() as u64, ci_kind)?;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
         let mut saw_stop = false;
@@ -2051,6 +2079,9 @@ impl WindowsDapSession {
         let mut stack_received = false;
         let mut acknowledged = None;
         while std::time::Instant::now() < deadline && !(stack_received && acknowledged.is_some()) {
+            if cancelled.is_some_and(|flag| flag.load(
+                std::sync::atomic::Ordering::SeqCst
+            )) { return Err(SupervisorError::Quarantined); }
             let events = self.gateway.poll()?;
             if acknowledged.is_none() {
                 acknowledged = self.gateway.ci_take_observation();
@@ -2125,7 +2156,7 @@ impl WindowsDapSession {
         original: &WindowsOwnerEventAccepted,
     ) -> Result<(String, String, String, String), SupervisorError> {
         self.attempt_one_protected_breakpoint_inner(
-            supervisor, job_id, plan, target, original, None,
+            supervisor, job_id, plan, target, original, None, None,
         )
     }
 
@@ -2135,9 +2166,11 @@ impl WindowsDapSession {
         target: &crate::project_debug_target::SealedProjectDebugTarget,
         original: &WindowsOwnerEventAccepted,
         approve: &mut dyn FnMut(&str) -> bool,
+        cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<(String, String, String, String), SupervisorError> {
         self.attempt_one_protected_breakpoint_inner(
             supervisor, job_id, plan, target, original, Some(approve),
+            Some(cancelled),
         )
     }
 
@@ -2147,6 +2180,7 @@ impl WindowsDapSession {
         target: &crate::project_debug_target::SealedProjectDebugTarget,
         original: &WindowsOwnerEventAccepted,
         approval: Option<&mut dyn FnMut(&str) -> bool>,
+        cancelled: Option<&std::sync::atomic::AtomicBool>,
     ) -> Result<(String, String, String, String), SupervisorError> {
         use crate::{
             debug_action_receipts::{DebugActionApproval, NativeConsentMarker},
@@ -2242,8 +2276,30 @@ impl WindowsDapSession {
                 now, true,
             )
         };
+        if cancelled.is_some_and(|flag| flag.load(
+            std::sync::atomic::Ordering::SeqCst
+        )) {
+            let _ = action.revoke(crate::now_ms()?);
+            return Err(SupervisorError::Quarantined);
+        }
+        // The modal can remain open while a separate actor requests
+        // cancellation, loses SCM custody or starts OS cleanup.
+        let live_after_dialog = supervisor.inspect()?.into_iter()
+            .find(|job| job.job_id == job_id)
+            .ok_or(SupervisorError::NoSuchJob)?;
+        if live_after_dialog.phase != JobPhase::Running
+            || live_after_dialog.requires_reconciliation
+            || live_after_dialog.plan_sha256 != self.native_plan_sha256 {
+            return Err(SupervisorError::Quarantined);
+        }
         action.decide(marker, original.owner_sequence, crate::now_ms()?)
             .map_err(|_| SupervisorError::InvalidApproval)?;
+        if cancelled.is_some_and(|flag| flag.load(
+            std::sync::atomic::Ordering::SeqCst
+        )) {
+            let _ = action.revoke(crate::now_ms()?);
+            return Err(SupervisorError::Quarantined);
+        }
         let claim = action.consume_for_receipt_test(
             &preview.preview_sha256, original.owner_sequence, crate::now_ms()?,
         ).map_err(|_| SupervisorError::GrantConsumed)?;
@@ -2262,10 +2318,16 @@ impl WindowsDapSession {
         if at_send.seq != original.owner_sequence {
             return Err(SupervisorError::NoContainment);
         }
+        if cancelled.is_some_and(|flag| flag.load(
+            std::sync::atomic::Ordering::SeqCst
+        )) { return Err(SupervisorError::Quarantined); }
         self.gateway.ci_send_one_line_breakpoint()?;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         let mut ack = None;
         while std::time::Instant::now() < deadline && ack.is_none() {
+            if cancelled.is_some_and(|flag| flag.load(
+                std::sync::atomic::Ordering::SeqCst
+            )) { return Err(SupervisorError::Quarantined); }
             let _ = self.gateway.poll()?;
             ack = self.gateway.ci_take_observation();
             if ack.is_none() {

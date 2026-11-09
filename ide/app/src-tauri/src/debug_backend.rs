@@ -179,6 +179,36 @@ struct Active {
     job_id: Option<String>,
     cancellation: Arc<AtomicBool>,
 }
+/// The native OS dialog must not hold a protected stopped Job forever.
+/// A late callback has no receiver and can never produce a consent marker.
+/// Used for developer-only debugger actions; this is not a CI-simulated yes.
+#[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+fn bounded_native_debugger_consent(
+    app: &AppHandle, message: &str, cancel: &AtomicBool,
+) -> bool {
+    use std::sync::mpsc::{sync_channel, RecvTimeoutError};
+    if cancel.load(Ordering::SeqCst) { return false; }
+    let (sender, receiver) = sync_channel(1);
+    app.dialog()
+        .message(message.to_owned())
+        .title("Lu IDE · one debugger operation")
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Approve this single operation".into(), "Decline".into(),
+        ))
+        .show(move |confirmed| { let _ = sender.try_send(confirmed); });
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        if cancel.load(Ordering::SeqCst) { return false; }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() { return false; }
+        match receiver.recv_timeout(remaining.min(Duration::from_millis(100))) {
+            Ok(confirmed) => return confirmed && !cancel.load(Ordering::SeqCst),
+            Err(RecvTimeoutError::Timeout) => {},
+            Err(RecvTimeoutError::Disconnected) => return false,
+        }
+    }
+}
+
 pub struct NativeDebugRuntime {
     supervisor: Arc<Supervisor>,
     stage: PathBuf,
@@ -628,22 +658,13 @@ impl NativeDebugRuntime {
                 &self.supervisor, &prepared.job_id, &plan, target,
             ).map_err(|e| e.code().to_owned())?;
             let mut dialog = |trusted_message: &str| {
-                if cancel.load(Ordering::SeqCst) { return false; }
-                let accepted = app.dialog()
-                    .message(trusted_message)
-                    .title("Lu IDE · one debugger operation")
-                    .buttons(MessageDialogButtons::OkCancelCustom(
-                        "Approve this single operation".into(),
-                        "Decline".into(),
-                    ))
-                    .blocking_show();
-                accepted && !cancel.load(Ordering::SeqCst)
+                bounded_native_debugger_consent(app, trusted_message, cancel)
             };
             let (owner_seq, receipt, outcome) = match operation {
                 ReviewedNativeAction::StepOver => {
                     let (after, audit) = session.execute_one_protected_native_step(
                         &self.supervisor, &prepared.job_id, &plan,
-                        target, &original, &mut dialog,
+                        target, &original, &mut dialog, cancel,
                     ).map_err(|e| e.code().to_owned())?;
                     if audit.3 != "ResultVerified"
                         || after.owner_sequence != original.owner_sequence + 1 {
@@ -654,7 +675,7 @@ impl NativeDebugRuntime {
                 ReviewedNativeAction::SameLineBreakpoint => {
                     let audit = session.attempt_one_protected_native_breakpoint(
                         &self.supervisor, &prepared.job_id, &plan,
-                        target, &original, &mut dialog,
+                        target, &original, &mut dialog, cancel,
                     ).map_err(|e| e.code().to_owned())?;
                     if audit.3 != "ResultUncertain" {
                         return Err("DEV046D_BP_ACK_NOT_INDEPENDENT_PROOF".into());

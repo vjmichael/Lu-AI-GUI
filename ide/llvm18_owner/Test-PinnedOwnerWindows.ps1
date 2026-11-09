@@ -22,6 +22,14 @@ node --test ide/app/tests/dev046d_installed_debugger_boundary.test.mjs ide/app/t
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: native debugger action security contract tests failed' }
 cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features dev046d-native-dialog
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: developer-only Windows Tauri native-dialog bridge compile failed' }
+cargo check --manifest-path ide/supervisor/Cargo.toml --features $features --example dev046d_restart_receipt_audit
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: read-only native restart audit compiler failed' }
+# Syntax-only validation of manual human fixture: it must never be executed
+# on this headless CI runner or misrepresented as human approval.
+$tokens=$null
+$parseErrors=$null
+[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'ide/app/fixtures/Test-DEV046D-PhysicalHumanConsent.ps1').Path,[ref]$tokens,[ref]$parseErrors) | Out-Null
+if ($parseErrors.Count -ne 0) { throw 'DENIED: physical human acceptance fixture PowerShell syntax invalid' }
 cargo build --manifest-path ide/supervisor/Cargo.toml --features $features --bin windows_recovery_service --bin windows_null_service_bootstrap --example wo6_native_dap_acceptance
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: native Rust protected host compile failed' }
 $svc=(Resolve-Path 'ide/supervisor/target/debug/windows_recovery_service.exe').Path
