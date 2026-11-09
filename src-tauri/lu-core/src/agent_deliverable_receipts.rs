@@ -196,6 +196,13 @@
      })
  }
  impl AgentDeliverableReceipts{
+     /// AGENT-01K: historical oracle inspection must not migrate a journal.
+     /// Legacy schema with missing columns fails closed on history().
+     pub fn open_existing_readonly(path:&Path)->Result<Self,DeliverableError>{
+         let db=Connection::open_with_flags(path,
+             OpenFlags::SQLITE_OPEN_READ_ONLY|OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+         Ok(Self{db:Mutex::new(db)})
+     }
      /// The caller owns the plan database path. Existing revision plans are
      /// checked through production AGENT-01A/B APIs before any record is made.
      pub fn open(plan_db:&Path)->Result<Self,DeliverableError>{
