@@ -672,6 +672,31 @@ mod tests {
         assert_eq!(s.phase(), DapPhase::Terminated);
     }
     #[test]
+    fn only_native_sealed_project_path_can_form_project_launch_without_arguments(){
+        let mut session=DapSession::new();
+        session.phase=DapPhase::Ready;
+        for input in [
+            "/tmp/malicious","/debug-target/target/debug/../../etc/passwd",
+            "/debug-target/target/debug/other.so",
+            "/debug-target/target/debug/evil;sh",
+            "/workspace/target/debug/project",
+        ] {
+            assert_eq!(session.launch_verified_project(input).unwrap_err(),
+                DapError::InvalidMessage);
+        }
+        let wire=session.launch_verified_project(
+            "/debug-target/target/debug/fixture").unwrap();
+        let wire=String::from_utf8(wire).unwrap();
+        assert!(wire.contains("/debug-target/target/debug/fixture"));
+        assert!(wire.contains(r#""runInTerminal":false"#));
+        assert!(wire.contains(r#""disableSTDIO":true"#));
+        assert!(wire.contains(r#""disableASLR":false"#));
+        assert_eq!(session.phase(),DapPhase::Launching);
+        assert_eq!(session.launch_verified_project(
+            "/debug-target/target/debug/fixture").unwrap_err(),
+            DapError::InvalidPhase);
+    }
+    #[test]
     fn only_fixed_native_fixture_can_be_launched_and_response_is_correlated() {
         let mut session = DapSession::new();
         session.initialize().unwrap();
