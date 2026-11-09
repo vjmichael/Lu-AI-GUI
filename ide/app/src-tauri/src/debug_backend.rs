@@ -131,6 +131,10 @@ pub struct DebugWitness {
     pub installed_app_accepted: bool,
     pub target: &'static str,
     pub origin_build_job_id: Option<String>,
+    pub origin_build_plan_sha256: Option<String>,
+    pub origin_build_receipt_sha256: Option<String>,
+    pub binary_sha256: Option<String>,
+    pub symbol_sha256: Option<String>,
     pub target_binding_sha256: Option<String>,
 }
 #[derive(Clone, Serialize)]
@@ -570,6 +574,10 @@ impl NativeDebugRuntime {
                 "one_exact_private_project_build_in_protected_job"
             } else {"fixed_installer_selftest_only_not_project_debugger"},
             origin_build_job_id:target.map(|target|target.lineage.build_job_id.clone()),
+            origin_build_plan_sha256:target.map(|target|target.lineage.build_plan_sha256.clone()),
+            origin_build_receipt_sha256:target.map(|target|target.lineage.terminal_receipt_sha256.clone()),
+            binary_sha256:target.map(|target|target.binary.binary_sha256.clone()),
+            symbol_sha256:target.map(|target|target.symbols.symbols_sha256.clone()),
             target_binding_sha256:target.map(|target|target.binding_sha256.clone()),
         })
     }
