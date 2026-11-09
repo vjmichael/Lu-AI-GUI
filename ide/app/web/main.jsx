@@ -40,6 +40,7 @@ import { projectJobLifecycle } from './protected_job_lifecycle.js';
 import { safeDebugTargetReview } from './debug_target_review.js';
 import { safeDebugBinaryEvidence } from './debug_binary_evidence.js';
 import { safeDebugSymbolEvidence } from './debug_symbol_evidence.js';
+import { checkedProjectDebugWitness } from './project_debug_authority.js';
 import { acceptNativeOutput } from './native_build_output.js';
 
 const sections = [
@@ -1565,19 +1566,7 @@ function App() {
       // debugger args and authorizations are resolved by the native host.
       const result=await invoke('ide_debug_run_project',{projectId});
       if(activeProjectIdRef.current!==projectId)return;
-      if(!result||result.projectId!==projectId||
-         result.target!=='one_exact_private_project_build_in_protected_job'||
-         result.originBuildJobId!==witness.jobId||
-         result.originBuildPlanSha256!==witness.planSha||
-         result.originBuildReceiptSha256!==witness.terminalReceiptSha||
-         result.binarySha256!==witness.binarySha||
-         result.symbolSha256!==witness.symbolsSha||
-         !/^[a-f0-9]{64}$/.test(result.targetBindingSha256||'')||
-         result.installedAppAccepted!==false||
-         result.terminalPhase!=='completed'||
-         result.verifiedOsTreeReleaseByWorker!==true||
-         result.threadsResponseObserved!==true||
-         result.stackResponseObserved!==true)
+      if(!checkedProjectDebugWitness(result,buildResult,projectId))
         throw Error('DEV044_PROJECT_DEBUG_RECEIPT_DENIED');
       setDebugResult(result);
       setHint('Exact protected project debugger returned a native stop, stack and OS tree cleanup receipt.');
