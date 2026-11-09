@@ -65,3 +65,25 @@ test('installed desktop recovers OS evidence, still returns no tool authorizatio
   assert.match(core,/REVIEW_NEW_STEP_WITH_FRESH_AUTHORIZATION_ONLY/);
   assert.doesNotMatch(desktop,/NoIndependentCustodyProof/);
 });
+
+test('fresh child preparation checks parent OS custody before dialog and intent',()=>{
+  const prepare=readFileSync(new URL('../src-tauri/src/agent_plan_continuation_desktop.rs',import.meta.url),'utf8');
+  const n=(prepare.match(/require_parent_os_custody_for_fresh_plan\(/g)||[]).length;
+  assert.equal(n,2);
+  const first=prepare.indexOf('require_parent_os_custody_for_fresh_plan(');
+  const dialog=prepare.indexOf('.blocking_show()');
+  const second=prepare.lastIndexOf('require_parent_os_custody_for_fresh_plan(');
+  const intent=prepare.indexOf('stage_fresh_continuation(');
+  assert.ok(first<dialog && dialog<second && second<intent,
+    'No prior kernel custody: do not create a new child plan');
+});
+test('reviewed execution rechecks real OS custody before native picker and before host claim',()=>{
+  const broker=readFileSync(new URL('../src-tauri/src/reviewed_app_desktop.rs',import.meta.url),'utf8');
+  const checks=broker.match(/require_fresh_child_os_custody_before_worker\(/g)||[];
+  assert.equal(checks.length,2);
+  assert.match(broker,/require_fresh_child_os_custody_before_worker\([\s\S]*?Ok\(active\.original_human_turn_id\)/);
+  assert.match(broker,/require_fresh_child_os_custody_before_worker\([\s\S]*?let owner=next_id\("h-"\)/);
+  const recovery=readFileSync(new URL('../src-tauri/src/agent_recovery_desktop.rs',import.meta.url),'utf8');
+  assert.match(recovery,/status!="REVIEW_FIRST_STEP_ONLY"/);
+  assert.match(recovery,/status!="REVIEW_NEW_STEP_WITH_FRESH_AUTHORIZATION_ONLY"/);
+});
