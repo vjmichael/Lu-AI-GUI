@@ -153,6 +153,11 @@ fn ensure_schema(conn:&Connection)->Result<(),String>{
           projection_sha256 TEXT NOT NULL,
           created_unix INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS lu_reviewed_memory_recovery_audit(
+          call_id TEXT PRIMARY KEY,
+          recovery_status TEXT NOT NULL,
+          audited_unix INTEGER NOT NULL
+        );
     ").map_err(err)
 }
 fn require_published(conn:&Connection,call:&str)->Result<(),String>{
@@ -313,7 +318,7 @@ fn project_derived_only(
     }
     Ok(())
 }
-fn publish_projection(conn:&mut Connection,r:&Row)->Result<(),String>{
+fn publish_projection(conn:&mut Connection,r:&Row,reconstructed:bool)->Result<(),String>{
     let _=read_plan(conn,r)?;
     let published=SystemTime::now().duration_since(UNIX_EPOCH)
         .map_err(err)?.as_secs() as i64;
@@ -324,6 +329,18 @@ fn publish_projection(conn:&mut Connection,r:&Row)->Result<(),String>{
          (call_id,published_unix) VALUES (?1,?2)",
         params![r.call,published]
     ).map_err(err)?;
+    if reconstructed{
+        // The operator audit and publication are committed together: a
+        // second crash cannot hide an already reconstructed projection.
+        tx.execute(
+            "INSERT INTO lu_reviewed_memory_recovery_audit
+             (call_id,recovery_status,audited_unix) VALUES (?1,?2,?3)
+             ON CONFLICT(call_id) DO UPDATE SET
+               recovery_status=excluded.recovery_status,
+               audited_unix=excluded.audited_unix",
+            params![r.call,"RECONSTRUCTED_SOURCE_VERIFIED",published]
+        ).map_err(err)?;
+    }
     tx.commit().map_err(err)?;
     require_published(conn,&r.call)
 }
@@ -548,7 +565,7 @@ pub(crate) fn record_from_reviewed_turn(
             return Err("Original reviewed turn superseded before publication".into())
         }
         project_derived_only(chats,continuity,&root,&row,&plan)?;
-        publish_projection(&mut conn,&row)?;
+        publish_projection(&mut conn,&row,false)?;
         recorded+=1;
     }
     Ok(recorded)
@@ -632,7 +649,7 @@ fn reconcile_one_projection(
     project_derived_only(chats,continuity,root,r,&plan)?;
     // The exclusive owner still holds the profile lease. No worker, grant,
     // TaskStore resume, tool dispatch or external source update is invoked.
-    publish_projection(conn,r)
+    publish_projection(conn,r,true)
 }
 /// Call only AFTER acquiring DesktopOwner's exclusive profile OS lease
 /// and BEFORE exposing the native model/worker dispatcher. This operation
@@ -668,7 +685,6 @@ pub(crate) fn reconcile_incomplete_exclusive(
     if pending.len()>RECOVERY_LIMIT{
         return Err("Too many unfinished reviewed projections for bounded recovery".into())
     }
-    let mut out=Vec::with_capacity(pending.len());
     for row in &pending{
         let status=if let Err(reason)=read_plan(&conn,row){
             if reason.contains("Legacy"){"LEGACY_REVIEW_REQUIRED"}
@@ -678,9 +694,42 @@ pub(crate) fn reconcile_incomplete_exclusive(
         }else{
             "REVIEW_REQUIRED"
         };
-        out.push(recovery_view(row,status));
+        if status!="RECONSTRUCTED_SOURCE_VERIFIED"{
+            let now=SystemTime::now().duration_since(UNIX_EPOCH)
+                .map_err(err)?.as_secs() as i64;
+            conn.execute(
+                "INSERT INTO lu_reviewed_memory_recovery_audit
+                 (call_id,recovery_status,audited_unix) VALUES(?1,?2,?3)
+                 ON CONFLICT(call_id) DO UPDATE SET
+                   recovery_status=excluded.recovery_status,
+                   audited_unix=excluded.audited_unix",
+                params![row.call,status,now]
+            ).map_err(err)?;
+        }
     }
-    Ok(out)
+    // Durable read-only operator history across subsequent restarts.
+    // Audit classification never acts as proof of a new worker/permission.
+    let audited:Vec<(Row,String)>={
+        let mut stmt=conn.prepare(
+            "SELECT e.call_id,e.chat_id,e.user_turn_id,
+                    e.original_source_entry_id,e.original_source_sha256,
+                    e.checkpoint_id,e.project_id,e.task_id,e.tool_id,
+                    e.tool_version,e.application_version,e.receipt_sha256,
+                    e.verified_fact,a.recovery_status
+             FROM lu_reviewed_memory_recovery_audit a
+             JOIN lu_reviewed_memory_evidence e ON e.call_id=a.call_id
+             ORDER BY a.audited_unix DESC,e.rowid DESC LIMIT ?1"
+        ).map_err(err)?;
+        let rows=stmt.query_map([(RECOVERY_LIMIT+1) as i64],|r|{
+            let row=read_row(r)?;
+            let status:String=r.get(13)?;
+            Ok((row,status))
+        }).map_err(err)?;
+        let collected=rows.collect::<Result<Vec<_>,_>>().map_err(err)?;
+        collected
+    };
+    Ok(audited.into_iter().take(RECOVERY_LIMIT)
+        .map(|(r,status)|recovery_view(&r,&status)).collect())
 }
 
 /// Exact authenticated CURRENT-human selector only. The index supplies
