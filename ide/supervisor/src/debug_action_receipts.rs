@@ -591,6 +591,47 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
+    fn old_challenge_cannot_approve_another_operation_or_session() {
+        let (first, dir) = book();
+        let mut alternate_preview = preview();
+        alternate_preview.preview_sha256 = "9".repeat(64);
+        alternate_preview.intent = DebugReviewIntent::Breakpoint {
+            source: "src/main.rs".into(), line: 7,
+        };
+        let mut second = DebugActionApproval::prepare_native(
+            &dir, binding(), alternate_preview, 500,
+        ).unwrap();
+        let old_challenge = first.challenge_sha256().to_owned();
+        let second_preview_sha = second.preview.preview_sha256.clone();
+        assert_eq!(second.decide(
+            NativeConsentMarker::for_unit_test(
+                &second_preview_sha, &old_challenge, 7, 501, true,
+            ), 7, 501,
+        ), Err(ApprovalDenial::WrongStop));
+        assert_eq!(second.verify_reopened_audit().unwrap(), "Revoked");
+        assert_eq!(second.consume_for_receipt_test(
+            &second_preview_sha, 7, 502,
+        ), Err(ApprovalDenial::Cancelled));
+        drop(first);
+        clean(second, dir);
+    }
+    #[test]
+    fn a_stale_event_after_approval_cannot_consume_or_replay() {
+        let (mut a, dir) = book();
+        let preview = a.preview.preview_sha256.clone();
+        let challenge = a.challenge_sha256().to_owned();
+        a.decide(NativeConsentMarker::for_unit_test(
+            &preview, &challenge, 7, 501, true,
+        ), 7, 501).unwrap();
+        assert_eq!(a.consume_for_receipt_test(&preview, 8, 502),
+            Err(ApprovalDenial::WrongStop));
+        assert_eq!(a.verify_reopened_audit().unwrap(), "Revoked");
+        assert_eq!(a.consume_for_receipt_test(&preview, 7, 503),
+            Err(ApprovalDenial::Cancelled));
+        assert!(!a.has_live_dispatch_authority());
+        clean(a, dir);
+    }
+    #[test]
     fn no_consent_or_wrong_challenge_never_creates_authority() {
         let (mut a, dir) = book();
         let p = a.preview.preview_sha256.clone();
