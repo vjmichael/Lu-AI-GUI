@@ -587,6 +587,10 @@ mod tests{
         assert!(pinned.same_as(&q.inspect("saved-chat",&view.review_id).unwrap()));
         q.deny("saved-chat",&view.review_id).unwrap();
         assert!(q.inspect("saved-chat",&view.review_id).is_err());
+        // On Windows, pinned cap-std directory handles must be released
+        // before deleting their parent tree (ERROR_SHARING_VIOLATION).
+        drop(pinned);
+        drop(q);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

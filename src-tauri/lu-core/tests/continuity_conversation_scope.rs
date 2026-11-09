@@ -1,12 +1,14 @@
 //! CONTEXT-01: recovery is conversation-scoped, context is not authority.
 use lu_core::continuity::{ContinuityError, ContinuityStore, TaskCheckpoint};
-use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+use std::{fs, path::PathBuf, sync::atomic::{AtomicU64, Ordering}, time::{SystemTime, UNIX_EPOCH}};
+static NEXT_TEST_DB: AtomicU64 = AtomicU64::new(0);
 
 fn unique_path() -> PathBuf {
     std::env::temp_dir().join(format!(
-        "lu-continuity-scope-{}-{}.sqlite",
+        "lu-continuity-scope-{}-{}-{}.sqlite",
         std::process::id(),
         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+        NEXT_TEST_DB.fetch_add(1, Ordering::Relaxed),
     ))
 }
 

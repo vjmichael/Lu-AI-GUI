@@ -10,7 +10,7 @@ import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const bundle=resolve(import.meta.dirname,'../../out/lu-browser-candidate');
 const manifestPath=join(bundle,'manifest.json');
-const candidateTest=existsSync(manifestPath)?test:test.skip;
+const candidateTest=(existsSync(manifestPath)||process.env.LU_BROWSER_REQUIRE_CANDIDATE==='1')?test:test.skip;
 const manifest=existsSync(manifestPath)?JSON.parse(readFileSync(manifestPath,'utf8')):null;
 const browserPath=join(bundle,process.platform==='win32'?'chrome.exe':'chrome');
 const nodePath=join(bundle,process.platform==='win32'?'node.exe':'node');

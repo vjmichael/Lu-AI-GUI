@@ -11,7 +11,7 @@ const summaryPath=join(out,'candidate-summary.json');
 const digestPath=join(out,'manifest.sha256');
 // The dedicated browser-candidate workflow assembles the heavyweight bundle.
 // Universal UI tests must not require it; skip explicitly rather than fake it.
-const candidateTest=existsSync(manifestPath)?test:test.skip;
+const candidateTest=(existsSync(manifestPath)||process.env.LU_BROWSER_REQUIRE_CANDIDATE==='1')?test:test.skip;
 async function digest(path){
   const hash=createHash('sha256');
   for await(const chunk of createReadStream(path))hash.update(chunk);
