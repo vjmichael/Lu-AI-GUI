@@ -423,17 +423,16 @@ impl DebugActionApproval {
         self.state = State::Revoked;
         Ok(())
     }
-    /// After a consumed claim the host may record an independently verified
-    /// outcome or uncertainty; never infer success from a DAP acknowledgement.
-    pub(crate) fn record_result(
-        &mut self, independently_verified: bool, now_ms: u64,
+    /// There is NO D6C independently verified debugger outcome reader yet.
+    /// Never accept a caller's boolean or a DAP success message as proof.
+    /// The only legal terminal for today's consumed/no-dispatch claim is
+    /// ResultUncertain, which cannot restore or replay execution authority.
+    pub(crate) fn record_uncertain_result(
+        &mut self, now_ms: u64,
     ) -> Result<(), ApprovalDenial> {
         if self.state != State::Consumed { return Err(ApprovalDenial::Cancelled); }
-        self.write_event(
-            if independently_verified { "ResultVerified" } else { "ResultUncertain" },
-            if independently_verified { "independent_read_only_witness" }
-            else { "requires_reconciliation_no_replay" }, now_ms,
-        )?;
+        self.write_event("ResultUncertain",
+            "requires_independent_result_reconciliation_no_replay", now_ms)?;
         self.state = State::Revoked;
         Ok(())
     }
@@ -517,7 +516,7 @@ mod tests {
         assert!(hex64(&claim.consumed_receipt_sha256));
         assert_eq!(a.consume_for_receipt_test(&p, 7, 507),
             Err(ApprovalDenial::GrantConsumed));
-        a.record_result(false, 508).unwrap();
+        a.record_uncertain_result(508).unwrap();
         assert_eq!(a.verify_reopened_audit().unwrap(), "ResultUncertain");
         let audit = a.audit_reference("ResultUncertain").unwrap();
         verify_action_receipt_after_restart(&dir, &audit).unwrap();
@@ -528,11 +527,17 @@ mod tests {
     fn separate_intent_requires_new_nonce_new_approval_and_fresh_receipt() {
         let (a, dir) = book();
         let first = a.action_id_sha256.clone();
+        let mut different = preview();
+        different.preview_sha256 = "9".repeat(64);
+        different.intent = DebugReviewIntent::Breakpoint {
+            source: "src/main.rs".into(), line: 7,
+        };
         let second = DebugActionApproval::prepare_native(
-            &dir, binding(), preview(), 500,
+            &dir, binding(), different, 500,
         ).unwrap();
         assert_ne!(first, second.action_id_sha256);
         assert_ne!(a.challenge_sha256(), second.challenge_sha256());
+        assert_ne!(op_digest(&a.preview.intent), op_digest(&second.preview.intent));
         drop(second);
         drop(a);
         fs::remove_dir_all(dir).unwrap();
