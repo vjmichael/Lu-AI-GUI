@@ -20,10 +20,11 @@ pub mod browser_window;
 mod windows_owned {
 
 
-use std::{ffi::c_void, io, mem, os::windows::io::AsRawHandle, process::Child, ptr};
+use std::{ffi::c_void, io, mem, os::windows::io::AsRawHandle, process::Child, ptr, sync::atomic::{AtomicBool,Ordering}, time::{Duration,Instant}};
 
 type Handle = *mut c_void;
 const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS: i32 = 9;
+const JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION_CLASS:i32=1;
 const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x0000_2000;
 const JOB_OBJECT_LIMIT_JOB_MEMORY:u32=0x0000_0200;
 const TH32CS_SNAPTHREAD:u32=0x0000_0004;
@@ -95,6 +96,11 @@ unsafe extern "system" {
         info: *const c_void,
         length: u32,
     ) -> i32;
+    fn TerminateJobObject(job:Handle, exit_code:u32)->i32;
+    fn QueryInformationJobObject(
+        job:Handle,info_class:i32,info:*mut c_void,length:u32,
+        return_length:*mut u32
+    )->i32;
     fn AssignProcessToJobObject(job: Handle, process: Handle) -> i32;
     fn CloseHandle(handle: Handle) -> i32;
     fn CreateToolhelp32Snapshot(flags:u32,process_id:u32)->Handle;
@@ -106,7 +112,26 @@ unsafe extern "system" {
 
 /// Owns one kernel Job Object handle, not the child process handle itself.
 /// No clone is allowed: the final CloseHandle must terminate the job's tree.
-pub struct Job(Handle);
+/// A value impossible to construct outside this native Win32 crate. Its
+/// sole producer requires a real assigned Job, kernel termination, and an
+/// independent kernel BasicAccounting ActiveProcesses==0 query. This proves
+/// only that Job's process tree is empty at observation, not that arbitrary
+/// non-job processes elsewhere in the OS have ended.
+#[derive(Debug)]
+pub struct WindowsJobEmptyProof{_private:()}
+impl WindowsJobEmptyProof{
+    pub fn method(&self)->&'static str{"WINDOWS_JOB_ACTIVE_ZERO_V1"}
+}
+#[repr(C)]
+#[derive(Default)]
+struct JobBasicAccounting{
+    total_user_time:i64,total_kernel_time:i64,
+    period_user_time:i64,period_kernel_time:i64,
+    total_page_fault_count:u32,total_processes:u32,
+    active_processes:u32,total_terminated_processes:u32,
+}
+const _:()={assert!(mem::size_of::<JobBasicAccounting>()==48);};
+pub struct Job(Handle,AtomicBool);
 
 // A kernel handle can be closed on a different thread, and ownership of this
 // unique handle is never shared by this type.
@@ -119,7 +144,7 @@ impl Job {
         if handle.is_null() {
             return Err(io::Error::last_os_error());
         }
-        let job = Self(handle);
+        let job = Self(handle,AtomicBool::new(false));
         let mut info = ExtendedLimitInformation::default();
         info.basic_limit_information.limit_flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         // SAFETY: `info` is a repr(C), initialized value that remains alive for
@@ -214,7 +239,43 @@ impl Job {
         if result == 0 {
             return Err(io::Error::last_os_error());
         }
+        self.1.store(true,Ordering::Release);
         Ok(())
+    }
+    /// E1-P08/AGENT-01L: obtain an actual kernel observation while retaining
+    /// the original private handle, before any result may be marked complete.
+    /// Never accept a PID or Job handle from a saved SQLite record.
+    pub fn terminate_and_verify_empty(&self)->io::Result<WindowsJobEmptyProof>{
+        if !self.1.load(Ordering::Acquire){
+            return Err(io::Error::other("Job never admitted an owned worker"))
+        }
+        // Win32 TerminateJobObject targets the entire assigned job, including
+        // descendants; it does not depend on a guessed saved process ID.
+        if unsafe{TerminateJobObject(self.0,1)}==0{
+            return Err(io::Error::last_os_error())
+        }
+        let deadline=Instant::now()+Duration::from_secs(5);
+        loop{
+            let mut accounting=JobBasicAccounting::default();
+            let mut returned=0u32;
+            let ok=unsafe{QueryInformationJobObject(
+                self.0,JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION_CLASS,
+                &mut accounting as *mut _ as *mut c_void,
+                mem::size_of::<JobBasicAccounting>() as u32,
+                &mut returned
+            )};
+            if ok==0{return Err(io::Error::last_os_error())}
+            if returned!=mem::size_of::<JobBasicAccounting>() as u32{
+                return Err(io::Error::other("Invalid kernel job accounting size"))
+            }
+            if accounting.active_processes==0{
+                return Ok(WindowsJobEmptyProof{_private:()})
+            }
+            if Instant::now()>=deadline{
+                return Err(io::Error::other("Job still contains live descendants"))
+            }
+            std::thread::sleep(Duration::from_millis(15));
+        }
     }
 }
 
@@ -228,7 +289,7 @@ impl Drop for Job {
 
 }
 #[cfg(windows)]
-pub use windows_owned::Job;
+pub use windows_owned::{Job,WindowsJobEmptyProof};
 
 #[cfg(unix)]
 pub mod unix_owned {
