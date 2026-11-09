@@ -550,6 +550,13 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
             bytes:b"no OS child launched".to_vec()}
     }).unwrap();
     new_effects.mark_executing(uncertain_id).unwrap();
+    // The reviewed broker registers revocation listeners on the shared
+    // ConversationAuthority. Those callbacks retain Arc<BackgroundProcessSupervisor>
+    // and Arc<EffectJournal>, so dropping the sessions and local Arc variables
+    // alone still leaves SQLite handles open on Windows. Release the final
+    // authority owner only AFTER both real reviewed turns are revoked and
+    // completed, and BEFORE claiming an exclusive historical restart.
+    drop(authority);
     drop(audit);drop(new_supervisor);drop(new_tasks);drop(new_effects);
     drop(supervisor);drop(tasks);drop(effects);
     let reopened=EffectJournal::open(&new_effect_path).unwrap();

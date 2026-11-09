@@ -44,7 +44,9 @@ test('worker migrates into private cgroup before exec, never after untrusted cod
 test('one separately supervised custodian gets real host-only turn and profile',()=>{
   assert.match(host,/new_for_reviewed_host\(/);
   assert.match(host,/reviewed_human_origin\(\)/);
-  assert.match(host,/origin\.1!=plan\.workspace_id/);
+  // The production host destructures authenticated (chat, turn) and then
+  // rejects a different workspace before spawning the delegated worker.
+  assert.match(host,/reviewed_human_origin\(\)[\s\S]{0,400}if turn!=plan\.workspace_id/);
   assert.match(host,/LinuxCgroupCustodian::spawn_if_delegated\(/);
   assert.match(desktop,/new_for_reviewed_host\(/);
 });

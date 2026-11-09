@@ -39,3 +39,15 @@ test('operator-only recovery status is chat-scoped and nonauthorizing',()=>{
   assert.match(core,/pub fn reviewed_memory_projection_has_human_correction/);
   assert.match(explainMemoryProjectionRecovery({status:'LEGACY_REVIEW_REQUIRED'}).title,/human review/);
 });
+
+test('reviewed Windows restart fixture releases authority listener-owned journals before exclusive reopen',()=>{
+  const fixture=source('lu-desktop/src-tauri/src/memory_loop03c_reviewed_worker_tests.rs');
+  const session=fixture.indexOf('drop(fresh_session);');
+  const authority=fixture.indexOf('drop(authority);');
+  const reopen=fixture.indexOf('let reopened=EffectJournal::open(&new_effect_path)');
+  const cleanup=fixture.lastIndexOf('fs::remove_dir_all(root).unwrap();');
+  assert.ok(session>=0 && authority>session && reopen>authority && cleanup>reopen);
+  const broker=source('src-tauri/lu-core/src/native_app_typed_git.rs');
+  assert.match(broker,/authority\.on_task_revoked\(Arc::new\(move \|task_id\|/);
+  assert.match(broker,/let journal=Arc::clone\(&effects\)/);
+});

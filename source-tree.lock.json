@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "301b94726db8fb70939d108ab9fd8fc739481c71",
+  "sourceCommitBeforeLock": "3e8d78fa26f41f7ebdb7f0011a39d0e85d4589fa",
   "trackedFileCount": 840,
   "files": [
     {
@@ -561,7 +561,7 @@
     },
     {
       "path": "docs/LU_CORE_CONVERGENCE_PLAN_20261109.md",
-      "blob": "3d770033b31b0b262b1e67dea3cb2e77f549fadd"
+      "blob": "182ffaf628c32f64cb7c642a122abbe11451aba3"
     },
     {
       "path": "docs/LU_CORE_DIVERGENT_TIP_RESOLUTION_20261109.json",
@@ -669,7 +669,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "47e7aeb031fde75870770f3a4015604bd05bc216"
+      "blob": "553068b01f8c9f7361dd392e66e874499a81e33a"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -1221,7 +1221,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03c_reviewed_worker_tests.rs",
-      "blob": "ecb0116e4c4b64c437d75b3a0368aeedead53a7b"
+      "blob": "4ac3583adea64dd994e07b8c3226d653725796eb"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
@@ -1377,7 +1377,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs",
-      "blob": "e0bf2ba757669f608f92f0cb8ee29b9b7d396c5d"
+      "blob": "68fac50680c4123e757ae605155fca50a316d61a"
     },
     {
       "path": "lu-desktop/tests/agent01l-os-custody.test.mjs",
@@ -1533,7 +1533,7 @@
     },
     {
       "path": "lu-desktop/tests/memory-loop03e-crash-recovery.test.mjs",
-      "blob": "eefdc8f45db6186664dd65c60d688b5f0c05e04f"
+      "blob": "cd2dd7d46470fc6299e2f418e8ed74340c70a17b"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
