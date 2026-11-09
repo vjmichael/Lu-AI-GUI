@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','Dev035JobsReadOnly','B4SplitEditor','B5LargeProject')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','Dev035JobsReadOnly','Dev045ProjectDebuggerDenied','B4SplitEditor','B5LargeProject')][string]$Scenario='Shell',
   [string]$FixtureRoot='',
   [string]$MetricsFile=''
 )
@@ -823,6 +823,30 @@ try {
       }
       Write-Host 'DEV035_WINDOWS_INSTALLED_JOBS_DISCOVERY_NO_RUN=PASS'
       Write-Host 'DEV035_WINDOWS_INSTALLED_PROTECTED_WORKER=NOT_ACCEPTED'
+    }
+    if ($Scenario -eq 'Dev045ProjectDebuggerDenied') {
+      # Exact default unsigned installed application: prove the native OS
+      # exposes a disabled project-debug action, not a simulated debugger.
+      # No worker, SCM service, project source mutation or grant may occur.
+      $workerBefore=ProtectedWorkerCount
+      $sourceBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fixed 'main.rs')).Hash
+      if (Get-Service LuIdeRecoveryBroker -ErrorAction SilentlyContinue) {
+        Deny 'default_installer_unexpectedly_has_debugger_service'
+      }
+      Click 'Job requests'
+      Require 'Project debugger release feature and native adapter'
+      $debug=Find-Control 'Debug last verified project build' 'Button' 20
+      if ($debug.Current.IsEnabled) {
+        Deny 'default_unsigned_installer_exposed_project_execution'
+      }
+      if ((ProtectedWorkerCount) -ne $workerBefore) {
+        Deny 'default_installed_project_debug_review_spawned_process'
+      }
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fixed 'main.rs')).Hash -ne $sourceBefore) {
+        Deny 'default_installed_project_debug_review_modified_source'
+      }
+      Write-Host 'DEV045_DEFAULT_INSTALLED_NATIVE_DEBUGGER_DENIED=PASS'
+      Write-Host 'DEV045_SIGNED_PINNED_PROJECT_DEBUGGER=NOT_ACCEPTED'
     }
     if ($Scenario -eq 'ProtectedDebuggerCancellation') {
       $sign=Get-AuthenticodeSignature -LiteralPath $exe
