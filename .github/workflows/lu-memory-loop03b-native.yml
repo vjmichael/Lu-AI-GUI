@@ -1,0 +1,120 @@
+name: Lu MEMORY-LOOP-03B Source-Verified Procedure, Belief and CCM Native Acceptance
+on:
+  push:
+    branches: ['lu/memory-loop03b-procedural-belief-ccm-20261109']
+  pull_request:
+    paths:
+      - 'lu-desktop/src-tauri/src/memory_loop03b_policy.rs'
+      - 'lu-desktop/src-tauri/src/memory_loop03b_context.rs'
+      - 'lu-desktop/src-tauri/src/ansf_chat_store.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'src-tauri/lu-core/src/journal.rs'
+      - 'src-tauri/lu-core/src/ansf_verified_procedures.rs'
+      - 'src-tauri/lu-core/src/ansf_belief_revision.rs'
+      - 'src-tauri/lu-core/src/continuity.rs'
+      - 'lu-desktop/tests/memory-loop03b-source.test.mjs'
+      - '.github/workflows/lu-memory-loop03b-native.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-memory-loop03b-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-memory:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact head and frozen full Git source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p memory-loop03b-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs 2>&1 | tee memory-loop03b-evidence/source-lock.log
+          printf 'SOURCE_SHA=%s\nOS=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > memory-loop03b-evidence/source.txt
+      - name: Pure standalone host state classification (not Tauri acceptance)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/lu-memory-loop03b-host"
+          if test "$RUNNER_OS" = "Windows"; then bin="$bin.exe"; fi
+          rustc --edition=2021 --test lu-desktop/src-tauri/src/memory_loop03b_policy.rs -o "$bin" 2>&1 | tee memory-loop03b-evidence/policy-compile.log
+          "$bin" --nocapture 2>&1 | tee memory-loop03b-evidence/policy-tests.log
+          grep -Fq 'test result: ok. 7 passed; 0 failed;' memory-loop03b-evidence/policy-tests.log
+      - name: Historical-source contracts (not installed proof)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/memory-loop03b-source.test.mjs 2>&1 | tee memory-loop03b-evidence/source-contracts.log
+          grep -Fq '# pass 11' memory-loop03b-evidence/source-contracts.log
+          grep -Fq '# fail 0' memory-loop03b-evidence/source-contracts.log
+      - name: Real Linux Tauri dependency libraries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf
+      - name: Windows test-only nonengine runtime fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Real React bundle and static interaction checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
+      - name: Genuine lu-core independent receipt tampering tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib journal::independent_outcome_tests -- --nocapture 2>&1 | tee memory-loop03b-evidence/core-oracle-tests.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_verified_procedures::tests -- --nocapture 2>&1 | tee memory-loop03b-evidence/core-procedures.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_belief_revision::tests -- --nocapture 2>&1 | tee memory-loop03b-evidence/core-beliefs.log
+      - name: Real Tauri source-bound GGUF ingress, beliefs and CCM integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib memory_loop03b_policy::tests -- --nocapture 2>&1 | tee memory-loop03b-evidence/desktop-policy.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib memory_loop03b_context::tests -- --nocapture 2>&1 | tee memory-loop03b-evidence/desktop-context.log
+          grep -Fq 'test result: ok. 4 passed; 0 failed;' memory-loop03b-evidence/desktop-context.log
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | tee memory-loop03b-evidence/desktop-compile.log
+      - name: Unaccepted operational requirements
+        if: always()
+        shell: bash
+        run: |
+          echo '03B source and native checks do NOT demonstrate installed Lu, real loaded Qwen3.8 27B behavior, current Git/media source freshness, positive Win32 Job/Linux cgroup-v2 custody, automated replay or per-step effect authorization. Those are separate OPEN gates.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-memory-loop03b-native-${{ matrix.os }}
+          path: memory-loop03b-evidence/
+          if-no-files-found: warn
+          retention-days: 14
