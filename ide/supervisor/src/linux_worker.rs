@@ -8,7 +8,7 @@
 //! Missing prerequisites = denied. No unrestricted fallback.
 use crate::{
     snapshot::{verify_input, PublishedInput},
-    JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
+    live_output::LiveOutput, JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
 use sha2::{Digest, Sha256};
@@ -672,6 +672,8 @@ fn classify_native_output(first: &[u8]) -> &'static str {
 fn collect_limited<R: Read + Send + 'static>(
     mut source: R,
     max: usize,
+    live: Option<Arc<LiveOutput>>,
+    kind: &'static str,
 ) -> thread::JoinHandle<io::Result<Captured>> {
     thread::spawn(move || {
         let mut digest = Sha256::new();
@@ -687,6 +689,9 @@ fn collect_limited<R: Read + Send + 'static>(
             let prefix_left = 2048_usize.saturating_sub(diagnostic_prefix.len());
             diagnostic_prefix.extend_from_slice(&buffer[..n.min(prefix_left)]);
             let len = n.min(max.saturating_sub(kept));
+            if let Some(ref stream) = live {
+                stream.append(kind, &buffer[..len]);
+            }
             digest.update(&buffer[..len]);
             kept += len;
             if n > len {
@@ -773,6 +778,21 @@ pub fn execute_linux_worker(
     output_parent: &Path,
     cancellation: &RunCancellation,
 ) -> Result<ExecutionResult, SupervisorError> {
+    execute_linux_worker_with_output(supervisor, job_id, plan, input,
+        output_parent, cancellation, None)
+}
+
+/// Same already-protected cgroup/Bubblewrap worker; optional native-only
+/// bounded stream witness is not authority and cannot be provided by WebView.
+pub fn execute_linux_worker_with_output(
+    supervisor: &Supervisor,
+    job_id: &str,
+    plan: &JobPlan,
+    input: &PublishedInput,
+    output_parent: &Path,
+    cancellation: &RunCancellation,
+    live: Option<Arc<LiveOutput>>,
+) -> Result<ExecutionResult, SupervisorError> {
     verify_input(input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
     if plan.input_snapshot_sha256 != input.seal.source_sha256
         || plan.manifest_sha256 != input.seal.manifest_sha256
@@ -830,8 +850,8 @@ pub fn execute_linux_worker(
     let stdout = child.stdout.take().ok_or_else(denied)?;
     let stderr = child.stderr.take().ok_or_else(denied)?;
     let half = usize::try_from(plan.log_limit_bytes / 2).unwrap_or(0);
-    let out_reader = collect_limited(stdout, half);
-    let err_reader = collect_limited(stderr, half);
+    let out_reader = collect_limited(stdout, half, live.clone(), "stdout");
+    let err_reader = collect_limited(stderr, half, live, "stderr");
     let began = Instant::now();
     let mut timed_out = false;
     let mut was_cancelled = false;
