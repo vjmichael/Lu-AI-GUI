@@ -63,7 +63,8 @@ jobs:
           assert 'pub fn source_candidate' in dap
           assert 'runInTerminal' not in source
           assert 'setBreakpoints' not in source
-          assert 'evaluate' not in source.split('#[cfg(test)]')[0]
+          assert 'self.request("evaluate"' not in source
+          assert 'self.request("setExpression"' not in source
           print('DEV045D_NO_ADAPTER_EXECUTION_RIGHTS=PASS')
           PY
           echo 'DEV045D_SOURCE_LINE_REVIEW=SOURCE_ONLY_NOT_LLDB_OS_ACCEPTANCE'
