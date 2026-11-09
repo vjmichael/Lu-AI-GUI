@@ -12,6 +12,7 @@ on:
       - 'lu-desktop/src-tauri/src/agent_plan_admission.rs'
       - 'lu-desktop/tests/agent01f-model-plan-ingress.test.mjs'
       - 'lu-desktop/tests/agent01g-approved-step-integration.test.mjs'
+      - 'lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs'
       - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
@@ -32,6 +33,7 @@ on:
       - 'lu-desktop/src-tauri/src/agent_plan_admission.rs'
       - 'lu-desktop/tests/agent01f-model-plan-ingress.test.mjs'
       - 'lu-desktop/tests/agent01g-approved-step-integration.test.mjs'
+      - 'lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs'
       - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
       - 'lu-desktop/src-tauri/src/lib.rs'
       - 'lu-desktop/web/main.jsx'
@@ -92,6 +94,15 @@ jobs:
             2>&1 | tee agent01e-evidence/agent01g-ui-bridge.log
           grep -Fq '# pass 10' agent01e-evidence/agent01g-ui-bridge.log
           grep -Fq '# fail 0' agent01e-evidence/agent01g-ui-bridge.log
+      - name: AGENT-01G pinned Qwen3 fresh ANSF host-native proof source checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs \
+            2>&1 | tee agent01e-evidence/agent01g-real-model-chain-source.log
+          grep -Fq '# pass 5' agent01e-evidence/agent01g-real-model-chain-source.log
+          grep -Fq '# fail 0' agent01e-evidence/agent01g-real-model-chain-source.log
+          echo 'Source-contract assertions only. The separate Qwen3/native OS test must execute and pass.' >> "$GITHUB_STEP_SUMMARY"
       - name: AGENT-01G real local GGUF diagnostic receipts, SHA-256 only
         shell: bash
         run: |

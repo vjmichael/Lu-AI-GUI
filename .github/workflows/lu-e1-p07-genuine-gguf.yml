@@ -133,6 +133,20 @@ jobs:
           print("Qwen3 plan-quality sample completed; counts are observational, not an execution grant")
           PY
           echo 'Qwen3 AGENT-01G planning-quality probe records actual bounded model responses, but never approves a plan, calls Git/FFprobe, or certifies Lu host execution.' >> "$GITHUB_STEP_SUMMARY"
+      - name: AGENT-01G genuine Qwen3 - original ANSF, fresh step, reviewed Git, oracle, restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          grep -Fq 'test agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart ... ok' \
+            e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          echo 'AGENT-01G real loaded-GGUF host-native ANSF plan/fresh consent, reviewed Git OS effect, independent oracle, restart passed. Installed UI native picker remains separate.' >> "$GITHUB_STEP_SUMMARY"
       - name: GGUF independently selects Git and FFprobe in production Lu tool loop
         shell: bash
         run: |

@@ -924,3 +924,346 @@ async fn genuine_gguf_independently_selects_git_and_media_tools_and_survives_jou
         drop(effects);fs::remove_dir_all(dir).unwrap();
     }
 }
+
+
+/// AGENT-01G real-model acceptance: the *same* pinned Qwen3 GGUF used by
+/// E1-P07 must independently choose a reviewed Git operation AFTER the host
+/// verifies a persistent original ANSF user goal, distinct saved exact-plan
+/// review, distinct saved per-step human request, live AGENT-01D claim, and
+/// narrowly scoped ConversationAuthority. Native worker/oracle data are
+/// re-opened through AGENT-01C after process/session teardown. The typed
+/// human review and fresh step consent below are TEST-ONLY host stand-ins
+/// for Tauri's native OS confirmation dialogs; they are not a production UI
+/// acceptance result. No tool JSON, worker outcome or fake GGUF output is
+/// synthesized by the fixture.
+fn agent01g_id(prefix:&str,n:u64)->String{
+    format!("{prefix}{n:032x}")
+}
+struct Agent01gAnsfSource<'a>{
+    book:&'a AnsfStore,
+    chat:String,
+}
+impl lu_core::agent_plan_revisions::HostPlanReferenceVerifier for Agent01gAnsfSource<'_>{
+    fn goal_event_belongs_to_chat(
+        &self,chat:&str,goal:&str,event:&str,
+    )->bool{
+        chat==self.chat && self.book.goal_events(chat).ok().is_some_and(|events|
+            events.iter().any(|e|
+                e.goal_id==goal&&e.event_id==event
+                &&e.kind==lu_core::ansf_goals::GoalEventKind::SetGoal
+            )
+        )
+    }
+    fn goal_event_is_current(&self,chat:&str,goal:&str,event:&str)->bool{
+        if chat!=self.chat{return false}
+        let Ok(events)=self.book.goal_events(chat)else{return false};
+        let Ok(current)=lu_core::ansf_goals::project_goal_events(&events)else{
+            return false
+        };
+        current.goal_id.as_deref()==Some(goal)
+            &&current.revision_event_id.as_deref()==Some(event)
+            &&!current.questions.iter().any(|q|
+                matches!(q.status.as_str(),"pending"|"deferred"))
+    }
+    fn assumption_source_is_readable(&self,_chat:&str,_id:&str)->bool{
+        // This particular fixture does not introduce additional source
+        // assumptions; no unreviewed arbitrary string is trusted.
+        false
+    }
+}
+struct Agent01gReviewedByHuman{
+    chat:String,turn:String,plan:String,sha:String,
+}
+impl lu_core::agent_plan_revisions::HostPlanReviewVerifier for Agent01gReviewedByHuman{
+    fn has_exact_human_decision(
+        &self,chat:&str,turn:&str,plan:&str,sha:&str,
+        decision:lu_core::agent_plan_revisions::HumanDecision,
+    )->bool{
+        self.chat==chat&&self.turn==turn&&self.plan==plan
+            &&self.sha==sha
+            &&decision==lu_core::agent_plan_revisions::HumanDecision::Approve
+    }
+}
+struct Agent01gExactStep{
+    chat:String,turn:String,plan:String,revision:String,
+    index:u8,budget:lu_core::agent_host_scheduler::ScheduleBudget,
+}
+impl lu_core::agent_host_scheduler::HostFreshStepConsent for Agent01gExactStep{
+    fn explicitly_requested_step(
+        &self,chat:&str,turn:&str,plan:&str,revision:&str,
+        index:u8,budget:&lu_core::agent_host_scheduler::ScheduleBudget,
+    )->bool{
+        self.chat==chat&&self.turn==turn&&self.plan==plan
+            &&self.revision==revision&&self.index==index
+            &&self.budget==*budget
+    }
+}
+#[tokio::test]
+#[ignore="requires actual pinned GGUF on localhost, installed Git, native process and independent source oracle"]
+async fn agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart(){
+    use lu_core::{
+        ansf_goals::{GoalEvent,GoalEventKind},
+        agent_plan_ledger::{AgentPlanLedger,PlanStepSpec,PlanStepKind},
+        agent_plan_revisions::{
+            AgentPlanRevisionStore,RevisionProposal,RevisionStep,
+            RevisionReason,ExpectedDeliverable,HumanDecision,
+        },
+        agent_host_scheduler::{AgentHostScheduler,ScheduleBudget,ScheduleError},
+        agent_deliverable_receipts::AgentDeliverableReceipts,
+        agent_reviewed_broker_bridge::{
+            ReviewedBrokerOperation,link_verified_scheduled_worker_outcome,
+        },
+    };
+    let git=actual_binary("LU_E1_P07_GIT");
+    let root=temp();
+    fs::create_dir_all(&root).unwrap();
+    let repo=root.join("git-fixture");
+    fs::create_dir_all(&repo).unwrap();
+    assert!(Command::new(&git).arg("init").arg("-q").arg(&repo)
+        .status().unwrap().success());
+    fs::write(repo.join("approved-source.txt"),"Lu AGENT-01G user-selected fixture\n").unwrap();
+    checked_git(&git,&repo,&["add","approved-source.txt"]);
+    checked_git(&git,&repo,&[
+        "-c","user.name=Lu","-c","user.email=lu@example.test",
+        "commit","-q","-m","real model test witness"
+    ]);
+    let actual_head=checked_git(&git,&repo,&["rev-parse","HEAD"])
+        .trim().to_string();
+    assert_eq!(actual_head.len(),40);
+    let (chat,original,review_turn,fresh_turn,plan,owner,claim)=(
+        agent01g_id("c-",101),agent01g_id("g-",102),
+        agent01g_id("g-",103),agent01g_id("g-",104),
+        agent01g_id("p-",105),agent01g_id("h-",106),agent01g_id("q-",107)
+    );
+    let goal_id=agent01g_id("goal-",108);
+    let goal_event=agent01g_id("m-",109);
+    let book=AnsfStore::open(&root.join("ansf.sqlite")).unwrap();
+    book.create_session(&chat,&fresh_turn,"Reviewed AGENT-01G source").unwrap();
+    book.start_chapter(&chat,"Original human task and approvals").unwrap();
+    book.append_entry(&chat,&original,EntryRole::User,
+        "Original human goal","Verify the exact Git HEAD of my selected repository"
+    ).unwrap();
+    book.mirror_goal_event(&chat,&GoalEvent{
+        event_id:goal_event.clone(),goal_id:goal_id.clone(),
+        question_id:None,kind:GoalEventKind::SetGoal,
+        text:"Independently verify the approved local Git HEAD".into(),
+        choice:None,comment:None
+    }).unwrap();
+    let source=Agent01gAnsfSource{book:&book,chat:chat.clone()};
+    let human=Human(&book);
+    let db=root.join("lu-agent-plans.sqlite");
+    let ledger=AgentPlanLedger::open(&db).unwrap();
+    ledger.register(&plan,&chat,&original,&[
+        PlanStepSpec{kind:PlanStepKind::IndependentlyCheck,depends_on:None}
+    ],&human).unwrap();
+    let revisions=AgentPlanRevisionStore::open(&db).unwrap();
+    let proposal=RevisionProposal{
+        goal_id:goal_id.clone(),goal_event_id:goal_event.clone(),
+        assumption_sources:vec![],reason:RevisionReason::Initial,
+        steps:vec![RevisionStep{
+            kind:PlanStepKind::IndependentlyCheck,
+            depends_on:None,deliverable_id:agent01g_id("d-",110),
+            expected:ExpectedDeliverable::IndependentWitness
+        }]
+    };
+    let revision=revisions.append_proposal(
+        &plan,&chat,&original,&agent01g_id("v-",111),None,
+        &proposal,&human,&source
+    ).unwrap().revision_sha256;
+    // A plan's presence alone never creates native tool authority.
+    let forbidden_authority=ConversationAuthority::new();
+    let fresh_origin=BoundCallOrigin{
+        conversation_id:chat.clone(),user_turn_id:fresh_turn.clone(),
+        task_id:fresh_turn.clone(),
+    };
+    assert!(forbidden_authority.permitted_tool_ids(&fresh_origin).is_err());
+    let receipts=AgentDeliverableReceipts::open(&db).unwrap();
+    let scheduler=AgentHostScheduler::open(&db).unwrap();
+    let budget=ScheduleBudget{
+        max_claims:1,model_token_ceiling:1536,tool_call_ceiling:1,
+        wall_clock_ceiling_ms:60000,output_ceiling_bytes:65536
+    };
+    assert!(scheduler.claim_host(
+        &plan,&chat,&original,&owner,&revision,budget,
+        &ledger,&revisions,&source
+    ).is_err(),"Unreviewed model plan must never claim a host");
+    // The host persists a distinct human review turn and binds its
+    // test-confirmed native decision to the exact immutable SHA.
+    book.append_entry(&chat,&review_turn,EntryRole::User,
+        "Native confirmation fixture","Approve plan SHA only; no tool grant"
+    ).unwrap();
+    revisions.record_review(
+        &plan,&chat,&review_turn,&revision,HumanDecision::Approve,
+        &human,&Agent01gReviewedByHuman{
+            chat:chat.clone(),turn:review_turn.clone(),
+            plan:plan.clone(),sha:revision.clone()
+        },&source
+    ).unwrap();
+    scheduler.claim_host(&plan,&chat,&original,&owner,&revision,
+        budget,&ledger,&revisions,&source).unwrap();
+    let consent=Agent01gExactStep{
+        chat:chat.clone(),turn:fresh_turn.clone(),
+        plan:plan.clone(),revision:revision.clone(),index:0,budget
+    };
+    // The exact same scope without a second persisted human turn is denied.
+    assert_eq!(scheduler.propose_step(
+        &plan,&chat,&original,&owner,1,&revision,0,&claim,
+        &fresh_turn,budget,&ledger,&revisions,&source,
+        &human,&consent,&root,&receipts
+    ),Err(ScheduleError::NoFreshConsent));
+    book.append_entry(&chat,&fresh_turn,EntryRole::User,
+        "Explicit per-step confirmation fixture",
+        "Authorize only a read-only Git HEAD check for the selected local repository"
+    ).unwrap();
+    scheduler.propose_step(
+        &plan,&chat,&original,&owner,1,&revision,0,&claim,
+        &fresh_turn,budget,&ledger,&revisions,&source,
+        &human,&consent,&root,&receipts
+    ).unwrap();
+
+    // The actual selected Git binary and repository are host-owned.
+    let auth=ConversationAuthority::new();
+    auth.open_user_task(TaskAuthority{
+        conversation_id:chat.clone(),user_turn_id:fresh_turn.clone(),
+        task_id:fresh_turn.clone(),execution_scope_id:fresh_turn.clone(),
+        capabilities:vec![
+            AuthorizedCapability{
+                tool_id:"lu.reviewed.git.head".into(),
+                effect:ToolEffect::ExecuteCode
+            },
+            AuthorizedCapability{
+                tool_id:"lu.reviewed.git.repo-read".into(),
+                effect:ToolEffect::ReadWorkspace
+            },
+        ],expires_at:None,
+    },&human).unwrap();
+    let task_path=root.join(format!("lu-reviewed-task-{fresh_turn}.sqlite"));
+    let effect_path=root.join(format!("lu-reviewed-effects-{fresh_turn}.sqlite"));
+    let tasks=Arc::new(TaskStore::open(&task_path).unwrap());
+    tasks.bind_reviewed_human_turn(&chat,&fresh_turn).unwrap();
+    let effects=Arc::new(EffectJournal::open(&effect_path).unwrap());
+    let supervisor=Arc::new(BackgroundProcessSupervisor::new(Arc::clone(&tasks)));
+    let mut selected=git_config(&git,&repo);
+    selected.executable.workspace_id=fresh_turn.clone();
+    let mut session=ReviewedApplicationTurnSession::from_verified_host_task(
+        auth.clone(),fresh_origin.clone(),fresh_turn.clone(),
+        Arc::clone(&tasks),Arc::clone(&supervisor),Arc::clone(&effects),
+        Arc::new(Allow),vec![selected],None
+    ).unwrap();
+    let bound=session.preflight_scheduled_step(
+        &scheduler,&ledger,&revisions,&source,
+        &plan,&original,&owner,1,&revision,&claim,0,
+        ReviewedBrokerOperation::GitHead
+    ).unwrap();
+    assert_eq!(bound.reviewed_execute_id,"lu.reviewed.git.head");
+    assert_eq!(session.schemas().unwrap().len(),1);
+    let audit=ModelTurnJournal::open(&root.join("gguf-audit.sqlite")).unwrap();
+    let mut model=GenuineGgufStep{raw_replies:vec![]};
+    let report=session.run_journaled_observed(
+        "What is the exact HEAD commit SHA of my selected local Git repository?          The human approved a single read-only Git HEAD tool. Call it and do not guess.",
+        &mut model,&Cancellation::default(),&audit,&|_|{}
+    ).await.unwrap();
+    assert_eq!(report.host_routed_calls,0,
+        "host cannot choose Git instead of the real loaded GGUF model");
+    assert_eq!(report.tool_calls,1,
+        "a model requesting no tool or multiple tools cannot complete this plan");
+    assert!(report.model_generations>=2);
+    assert!(model.raw_replies.iter().any(|r|
+        r.contains("lu_reviewed_git_head")));
+    assert!(report.answer.contains(&actual_head),
+        "the real model must incorporate the independently observed Git HEAD");
+    let mut base_ids=Vec::new();
+    assert!(report.records.iter().any(|entry|{
+        if let NativeTurnRecord::ToolFeedback(value)=entry{
+            if value["name"]=="lu_reviewed_git_head"
+                &&value["response"]["result"]["headCommit"]==actual_head{
+                if let Some(call)=value["call_id"].as_str(){
+                    base_ids.push(call.to_string())
+                }
+                return true
+            }
+        }
+        false
+    }),"actual independent Git HEAD feedback missing");
+    assert_eq!(base_ids.len(),1,"ambiguous or duplicated Git effect");
+    let verified_call=format!("{}-gh",base_ids[0]);
+    let receipt=link_verified_scheduled_worker_outcome(
+        &scheduler,&ledger,&revisions,&receipts,&source,&human,
+        &root,&plan,&chat,&original,&owner,1,
+        &bound,&fresh_origin,&verified_call
+    ).unwrap();
+    assert_eq!(receipt.status,"VERIFIED_AT_OBSERVATION");
+    assert_eq!(receipt.tool_id,"lu.reviewed.git.head");
+    assert_eq!(receipt.continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
+    assert_eq!(auth.permitted_tool_ids(&fresh_origin).is_err(),true,
+        "completed model/worker must revoke the fresh one-step authority");
+    // Release only after the verified fact is saved in original conversation.
+    book.append_entry(&chat,&agent01g_id("g-",112),EntryRole::Assistant,
+        "Host-verified Git source result",&format!(
+            "Independently verified reviewed Git HEAD: {actual_head}"
+        )
+    ).unwrap();
+    scheduler.release_without_dispatch(&plan,&chat,&original,&owner,1).unwrap();
+    assert!(scheduler.check_live_claim(
+        &plan,&chat,&original,&owner,1,&revision,&claim,0,&fresh_turn
+    ).is_err());
+    drop(session);drop(audit);drop(supervisor);drop(tasks);drop(effects);
+    let reopened_audit=ModelTurnJournal::open(
+        &root.join("gguf-audit.sqlite")
+    ).unwrap();
+    let messages=reopened_audit.events_for(&chat,&fresh_turn).unwrap();
+    assert!(messages.iter().any(|e|e.kind==ModelAuditKind::ModelOutput
+        &&model.raw_replies.iter().any(|raw|raw==&e.payload)));
+    assert!(messages.iter().any(|e|e.kind==ModelAuditKind::ToolFeedback));
+    assert!(messages.iter().any(|e|e.kind==ModelAuditKind::FinalAnswer
+        &&e.payload==report.answer));
+    drop(reopened_audit);
+    drop(scheduler);drop(receipts);drop(revisions);drop(ledger);
+    // RESTART: a new process gets database history, not live owner identity.
+    let ledger=AgentPlanLedger::open(&db).unwrap();
+    let revisions=AgentPlanRevisionStore::open(&db).unwrap();
+    let receipts=AgentDeliverableReceipts::open(&db).unwrap();
+    let scheduler=AgentHostScheduler::open(&db).unwrap();
+    let view=scheduler.view(&plan,&chat,&original,&ledger)
+        .unwrap().unwrap();
+    assert_eq!(view.state,"RELEASED");
+    assert_eq!(view.claims.len(),1);
+    assert_eq!(view.claims[0].claim_state,"OBSERVED_VERIFIED_HISTORICAL");
+    let observed=receipts.history(
+        &plan,&chat,&original,&root,&ledger,&revisions,&source
+    ).unwrap();
+    assert_eq!(observed.len(),1);
+    assert_eq!(observed[0].status,"VERIFIED_AT_OBSERVATION");
+    // Independent oracle evidence disappearing after restart must never
+    // continue as a successful historical task. We do not synthesize
+    // replacements, retry Git, or treat the model response as evidence.
+    let withheld=root.join("quarantined-independent-effect-journal.sqlite");
+    fs::rename(&effect_path,&withheld).unwrap();
+    assert_eq!(receipts.history(
+        &plan,&chat,&original,&root,&ledger,&revisions,&source
+    ).unwrap()[0].status,"NEEDS_RECONCILIATION");
+    fs::rename(&withheld,&effect_path).unwrap();
+    assert_eq!(receipts.history(
+        &plan,&chat,&original,&root,&ledger,&revisions,&source
+    ).unwrap()[0].status,"VERIFIED_AT_OBSERVATION");
+    assert!(scheduler.claim_host(&plan,&chat,&original,
+        &agent01g_id("h-",113),&revision,budget,
+        &ledger,&revisions,&source
+    ).is_err(),"restarted host cannot reuse an approved plan");
+    assert!(auth.permitted_tool_ids(&fresh_origin).is_err());
+    // Goal source changes after verified history: historical evidence
+    // remains on disk but is no longer current authorization or a fresh
+    // verified dependency, and cannot cause an automatic second step.
+    book.mirror_goal_event(&chat,&GoalEvent{
+        event_id:agent01g_id("m-",114),goal_id:goal_id.clone(),
+        question_id:None,kind:GoalEventKind::SetGoal,
+        text:"A different task supersedes the original local Git inspection".into(),
+        choice:None,comment:None
+    }).unwrap();
+    assert_eq!(receipts.history(
+        &plan,&chat,&original,&root,&ledger,&revisions,&source
+    ).unwrap()[0].status,"NEEDS_RECONCILIATION");
+    drop(scheduler);drop(receipts);drop(revisions);drop(ledger);
+    drop(source);drop(human);drop(book);
+    fs::remove_dir_all(root).unwrap();
+}
