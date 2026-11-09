@@ -87,7 +87,6 @@ jobs:
           assert 'verify_independent_dwarf_line_for_ci' in k
           assert 'verify_project_source_line_for_ci' in t
           assert 'build_terminal_receipt_sha256' in t
-          assert 'DEBUGGER' not in k.upper().split('runInTerminal')[0] if False else True
           assert 'runInTerminal' not in k
           assert 'setBreakpoints' not in k
           assert 'setExpression' not in k
