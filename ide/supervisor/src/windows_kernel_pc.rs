@@ -22,19 +22,27 @@ use windows_sys::Win32::{
         ERROR_NO_MORE_FILES, WAIT_TIMEOUT,
     },
     System::{
-        Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Module32FirstW, Module32NextW,
-            MODULEENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32,
+        Diagnostics::{
+            Debug::{GetThreadContext, CONTEXT},
+            ToolHelp::{
+                CreateToolhelp32Snapshot, Module32FirstW, Module32NextW,
+                Thread32First, Thread32Next, MODULEENTRY32W, THREADENTRY32,
+                TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPTHREAD,
+            },
         },
         JobObjects::{QueryInformationJobObject, JobObjectBasicProcessIdList},
         Threading::{
-            OpenProcess, QueryFullProcessImageNameW, WaitForSingleObject,
-            PROCESS_QUERY_LIMITED_INFORMATION,
+            OpenProcess, OpenThread, QueryFullProcessImageNameW, WaitForSingleObject,
+            PROCESS_QUERY_LIMITED_INFORMATION, THREAD_GET_CONTEXT,
+            THREAD_QUERY_LIMITED_INFORMATION,
         },
     },
 };
 const MAX_JOB_PROCESSES: usize = 64;
 const MAX_MODULES: usize = 512;
+const MAX_TARGET_THREADS: usize = 64;
+const MAX_ENUMERATED_THREADS: usize = 65_536;
+const AMD64_CONTEXT_CONTROL: u32 = 0x0010_0001;
 const MAX_BINARY: u64 = 64 * 1024 * 1024;
 fn denied() -> SupervisorError { SupervisorError::NoContainment }
 
@@ -76,6 +84,109 @@ pub struct WindowsProtectedModuleLineage {
     pub source_line_mapping_verified: bool,
     pub stopped_thread_os_verified: bool,
     pub installed_app_accepted: bool,
+}
+
+/// One or more snapshots of thread state retrieved through query-only Win32
+/// handles, scoped to the real job-owned process. This is NOT independently
+/// certified as an OS debug-event stop; GetThreadContext on a running thread
+/// may return invalid results. Both bools remain false until the separate
+/// debug-event and PDB checks pass in the protected runtime.
+#[derive(Clone, Debug)]
+pub struct WindowsThreadRipSample {
+    pub process_id: u32,
+    pub thread_id: u32,
+    pub observed_rip: u64,
+    pub two_matching_samples: bool,
+    pub job_membership_rechecked: bool,
+    pub kernel_debug_event_independently_verified: bool,
+    pub pdb_line_independently_verified: bool,
+    pub debugger_control_authorized: bool,
+}
+
+#[repr(align(16))]
+struct AlignedContext(CONTEXT);
+fn read_thread_rip(thread_id: u32) -> Result<u64, SupervisorError> {
+    if thread_id == 0 { return Err(denied()); }
+    let handle = Owned::from_win32(unsafe {
+        OpenThread(THREAD_GET_CONTEXT | THREAD_QUERY_LIMITED_INFORMATION, 0, thread_id)
+    })?;
+    let mut aligned = AlignedContext(unsafe { std::mem::zeroed() });
+    aligned.0.ContextFlags = AMD64_CONTEXT_CONTROL;
+    if unsafe { GetThreadContext(handle.0, &mut aligned.0) } == 0 {
+        return Err(denied());
+    }
+    let rip = aligned.0.Rip;
+    if rip == 0 { return Err(denied()); }
+    Ok(rip)
+}
+fn enumerate_target_threads(pid: u32) -> Result<Vec<u32>, SupervisorError> {
+    let snapshot = Owned::from_win32(unsafe {
+        CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
+    })?;
+    let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
+    entry.dwSize = size_of::<THREADENTRY32>() as u32;
+    if unsafe { Thread32First(snapshot.0, &mut entry) } == 0 {
+        return Err(denied());
+    }
+    let mut threads = Vec::new();
+    let mut seen = BTreeSet::new();
+    for scanned in 0..MAX_ENUMERATED_THREADS {
+        if entry.th32OwnerProcessID == pid {
+            let id = entry.th32ThreadID;
+            if id == 0 || !seen.insert(id) || threads.len() >= MAX_TARGET_THREADS {
+                return Err(denied());
+            }
+            threads.push(id);
+        }
+        entry.dwSize = size_of::<THREADENTRY32>() as u32;
+        if unsafe { Thread32Next(snapshot.0, &mut entry) } == 0 {
+            if unsafe { GetLastError() } != ERROR_NO_MORE_FILES {
+                return Err(denied());
+            }
+            if threads.is_empty() { return Err(denied()); }
+            return Ok(threads);
+        }
+        if scanned + 1 == MAX_ENUMERATED_THREADS { return Err(denied()); }
+    }
+    Err(denied())
+}
+/// Query-only, bounded sampling while the DAP session claims to be stopped.
+/// Cannot infer a native debug event or independently authorize a source line.
+pub(crate) fn sample_job_thread_rip(
+    job: HANDLE, module: &WindowsLoadedModuleWitness,
+) -> Result<WindowsThreadRipSample, SupervisorError> {
+    if !module.job_member_verified || !module.process_exe_path_verified
+        || !module.os_loaded_pe_image_verified || module.observed_pc == 0
+        || !member_ids(job)?.contains(&module.pid) {
+        return Err(denied());
+    }
+    let original = enumerate_target_threads(module.pid)?;
+    let mut found: Option<(u32, u64)> = None;
+    for id in &original {
+        // Do not SuspendThread, DebugActiveProcess, write target memory,
+        // or attach a second debugger to LLDB's existing debug event.
+        let rip = read_thread_rip(*id)?;
+        if rip == module.observed_pc {
+            if found.replace((*id, rip)).is_some() { return Err(denied()); }
+        }
+    }
+    let (thread_id, rip) = found.ok_or_else(denied)?;
+    // A DAP continue, thread replacement or process exit invalidates this.
+    if enumerate_target_threads(module.pid)? != original
+        || read_thread_rip(thread_id)? != rip
+        || !member_ids(job)?.contains(&module.pid) {
+        return Err(denied());
+    }
+    Ok(WindowsThreadRipSample {
+        process_id: module.pid,
+        thread_id,
+        observed_rip: rip,
+        two_matching_samples: true,
+        job_membership_rechecked: true,
+        kernel_debug_event_independently_verified: false,
+        pdb_line_independently_verified: false,
+        debugger_control_authorized: false,
+    })
 }
 
 struct Owned(HANDLE);
@@ -312,6 +423,18 @@ mod tests {
         b[0x98..0x9a].copy_from_slice(&0x10bu16.to_le_bytes());
         assert_eq!(pe_preferred_image(&b), None);
         assert_eq!(pe_preferred_image(&[0; 64]), None);
+    }
+    #[test]
+    fn thread_context_sampling_is_never_a_debug_event_authorization() {
+        let mock = WindowsLoadedModuleWitness {
+            pid: 0, loaded_base: 0x140000000, loaded_size: 0x2000,
+            preferred_base: 0x140000000, preferred_pc: 0x140001000,
+            observed_pc: 0x140001000, binary_sha256: "a".repeat(64),
+            job_member_verified: true, process_exe_path_verified: true,
+            os_loaded_pe_image_verified: true, os_thread_context_ip_verified: false,
+            independent_pdb_line_verified: false, installed_app_accepted: false,
+        };
+        assert!(sample_job_thread_rip(ptr::null_mut(), &mock).is_err());
     }
     #[test]
     fn no_forged_path_or_pid_and_no_dap_supplied_module_base() {
