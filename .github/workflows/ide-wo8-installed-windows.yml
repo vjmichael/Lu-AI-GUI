@@ -144,6 +144,13 @@ jobs:
             if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash -ne $newSourceHash) {
               throw 'DENIED: installed Jobs inspection modified source'
             }
+            # DEV-04.5 negative installed acceptance: real disabled OS UIA
+            # project-debug control, zero spawned workers or SCM admission.
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario Dev045ProjectDebuggerDenied -FixtureRoot $fixture
+            if (!$?) { throw 'DENIED: default unsigned NSIS exposed project debugger execution' }
+            if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash -ne $newSourceHash) {
+              throw 'DENIED: installed project debugger denial mutated source'
+            }
             & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario PersistedRestart -FixtureRoot $fixture
             if (!$?) { throw 'DENIED: native project restart/persistence failed' }
             if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash -ne $newSourceHash) {
