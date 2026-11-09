@@ -4512,7 +4512,7 @@ async fn generate_internal(
                     // indexed records fail closed; never use an unverified
                     // fallback journal in that case.
                     let remembered_journal=state.catalog_path.parent()
-                        .ok_or("Current Lu profile unavailable").and_then(
+                        .ok_or_else(||"Current Lu profile unavailable".to_string()).and_then(
                             |profile|reviewed_memory_evidence::resolve_for_current_human(
                                 &state.chats,&state.continuity,profile,
                                 &chat_id,&gid,&prompt

@@ -265,7 +265,7 @@
              original_text:source.text,
              current_version:latest.version,current_sha256:latest.sha256,
              current_text:latest.text,editor:latest.editor,
-             versions,reply_to
+             versions:revisions,reply_to
          });
      }
      Ok(MessageRevisionPage{
@@ -366,7 +366,7 @@
          ))
      ).optional().map_err(|_|"Reply intent cannot be located")?;
      let Some((parent,version,sha,reply_sha,state,saved_seq))=prepared
-         else{return Err("No reviewed reply intent exists")};
+         else{return Err("No reviewed reply intent exists".into())};
      let Some((seq,text))=chats.original_user_turn_visible_seq(chat,turn)?
          else{return Ok(None)};
      if seq<=parent||hash(&text)!=reply_sha{

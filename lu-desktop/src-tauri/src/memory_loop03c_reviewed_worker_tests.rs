@@ -267,13 +267,13 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
     // journal and task owner binding; do not silently share a new grant.
     let effect_path=profile.join(format!("lu-reviewed-effects-{first_turn}.sqlite"));
     let effects=Arc::new(EffectJournal::open(&effect_path).unwrap());
-    let tasks=Arc::new(TaskStore::open(&root.join("tasks-first-turn.sqlite")).unwrap());
+    let tasks=Arc::new(TaskStore::open(&profile.join(format!("lu-reviewed-task-{first_turn}.sqlite"))).unwrap());
     tasks.bind_reviewed_human_turn(&chat,&first_turn).unwrap();
     let supervisor=Arc::new(BackgroundProcessSupervisor::new_for_reviewed_host(
         Arc::clone(&tasks),profile.clone()
     ));
     let authority=ConversationAuthority::new();
-    let scope="m03c-e1-owner-scope";
+    let scope=first_turn.as_str();
     let first_origin=origin(&chat,&first_turn);
     authority.open_user_task(TaskAuthority{
         conversation_id:chat.clone(),
@@ -336,7 +336,7 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
     );
     // A completed reviewed turn is revoked by the EXISTING broker; do not
     // interpret a historical success as extending its human permission.
-    assert!(authority.permitted_tool_ids(&first_origin).is_err());
+    assert!(authority.permitted_tool_ids(&first_origin).unwrap().is_empty());
     drop(session);
 
     let checkpoint="cp-m03c-reviewed-original";
@@ -427,11 +427,12 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
         capabilities:capabilities(false),expires_at:None,
     },&chats);
     assert!(denied.is_err(),"recalled model text cannot act as human consent");
-    assert!(authority.permitted_tool_ids(&first_origin).is_err());
+    assert!(authority.permitted_tool_ids(&first_origin).unwrap().is_empty());
 
     // A DIFFERENT authenticated current human message is necessary to
     // obtain a new native Git source observation. No old grant is copied.
     let second_turn=format!("g-{:032x}",2);
+    let scope=second_turn.as_str();
     let new_human="Please perform a NEW read-only reviewed Git HEAD check for the changed repository";
     chats.append_user_with_turn_id(&chat,&second_turn,new_human).unwrap();
     let changed_source=current_source(&chats,&chat,new_human);
@@ -443,7 +444,7 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
     },&chats).unwrap();
     // The next user turn has a DIFFERENT production-style worker journal,
     // not a new grant inside the old effect ledger. Both journals survive.
-    let new_task_path=root.join("tasks-second-turn.sqlite");
+    let new_task_path=profile.join(format!("lu-reviewed-task-{second_turn}.sqlite"));
     let new_effect_path=profile.join(format!("lu-reviewed-effects-{second_turn}.sqlite"));
     let new_tasks=Arc::new(TaskStore::open(&new_task_path).unwrap());
     new_tasks.bind_reviewed_human_turn(&chat,&second_turn).unwrap();
@@ -485,7 +486,7 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
     let (new_effect,new_sha)=host_verified(&new_effects,&new_tool_call,GIT_TOOL,"gh");
     assert_ne!(new_effect,git_effect);
     assert_ne!(new_sha,git_digest);
-    assert!(authority.permitted_tool_ids(&fresh_origin).is_err());
+    assert!(authority.permitted_tool_ids(&fresh_origin).unwrap().is_empty());
     drop(fresh_session);
 
     // Changed source is NOT silently corrected by an LLM. The host writes
@@ -586,7 +587,7 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
     let select_turn=format!("g-{:032x}",222);
     recalled.append_user_with_turn_id(&chat,&select_turn,lookup).unwrap();
     let historical=resolve_for_current_human(
-        &recalled,&profile,&chat,&select_turn,lookup
+        &recalled,&old_continuity,&profile,&chat,&select_turn,lookup
     ).unwrap().expect("actual reviewed journal indexed");
     let explicit=for_current_human_turn(
         &recalled,&old_continuity,&historical,&chat,&select_turn,lookup,

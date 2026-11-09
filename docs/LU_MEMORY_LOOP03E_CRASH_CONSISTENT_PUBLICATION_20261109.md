@@ -67,3 +67,14 @@ and FFmpeg. They exercise reviewed Git and WAV receipts, packed history,
 tracked state, MP4/AAC independent verification and a scripted reviewed
 model turn. Seven cases were filtered. This run did not exercise a loaded
 GGUF, the Tauri recovery suite, or Windows custody.
+
+The Linux desktop build subsequently compiled and ran against a local
+Ubuntu library sysroot. Repairs covered the generated PNG icon, memory
+lookup signatures, reply revision values and the no-proposal plan view.
+The recovery fixture now simulates loss of the whole derived store without
+bypassing its immutability trigger and verifies that the audit remains
+visible on a second startup. The G5 fixture uses production per-turn
+scope and task journal naming. Nine recovery tests, seven memory-context
+tests, one positive Git corpus test, five message revision tests, eight
+plan progress tests and the opt-in native G5 restart test passed. The
+three exported corpora passed the benchmark input validator.

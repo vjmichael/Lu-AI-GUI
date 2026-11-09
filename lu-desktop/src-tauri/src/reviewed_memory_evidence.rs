@@ -930,7 +930,7 @@ mod tests {
         let v=recalled(&chats,&continuity,&root,&chat,3,selector);
         assert_eq!(v["status"],"NO_CURRENTLY_REVALIDATED_VERIFIED_PROCEDURE");
         assert_eq!(v["historicallyVerifiedDataAvailable"],false);
-        assert!(v["humanReviewRequired"]);
+        assert_eq!(v["humanReviewRequired"],true);
         let belief="Recall belief project lu task review_git_head subject git predicate head version 0.1";
         let b=recalled(&chats,&continuity,&root,&chat,4,belief);
         assert_ne!(b["status"],"HISTORICAL_SOURCE_ORACLE_VERIFIED_BELIEF");
@@ -1063,13 +1063,10 @@ mod tests {
         assert_eq!(staged,1);
         index.execute("DELETE FROM lu_reviewed_memory_publication
                        WHERE call_id=?1",["reconstruct-gh"]).unwrap();
-        let cache=Connection::open(root.join("continuity.sqlite")).unwrap();
-        cache.execute("DELETE FROM continuity_verified_effects
-                       WHERE call_id=?1",["reconstruct-gh"]).unwrap();
-        let cp_id=format!("cp-03d-{}",digest(b"reconstruct-gh"));
-        cache.execute("DELETE FROM continuity_checkpoints
-                       WHERE checkpoint_id=?1",[cp_id]).unwrap();
-        drop(cache);drop(index);drop(continuity);drop(effect);drop(chats);
+        drop(index);drop(continuity);drop(effect);drop(chats);
+        // Replace the entire derived store. Its append-only triggers
+        // correctly refuse deletion of individual verified-effect rows.
+        fs::rename(root.join("continuity.sqlite"),root.join("lost-continuity.sqlite")).unwrap();
         let reopened=ChatStore::open(&root).unwrap();
         let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
         let output=reconcile_incomplete_exclusive(&reopened,&continuity,&root).unwrap();
@@ -1077,8 +1074,10 @@ mod tests {
         assert_eq!(output[0].status,"RECONSTRUCTED_SOURCE_VERIFIED");
         assert_eq!(output[0].execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
         assert!(!output[0].retry_allowed);
-        assert!(reconcile_incomplete_exclusive(&reopened,&continuity,&root)
-            .unwrap().is_empty());
+        let second_start=reconcile_incomplete_exclusive(&reopened,&continuity,&root).unwrap();
+        assert_eq!(second_start.len(),1);
+        assert_eq!(second_start[0].status,"RECONSTRUCTED_SOURCE_VERIFIED");
+        assert!(!second_start[0].retry_allowed);
         let selector="Recall procedure project lu task review_git_head tool lu.reviewed.git.head tool-version 1.0 application-version 0.1";
         let historical=recalled(&reopened,&continuity,&root,&chat,2,selector);
         assert_eq!(historical["status"],"HISTORICAL_SOURCE_ORACLE_VERIFIED_PROCEDURE");

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7f5f6b389c3a7605615de78661ba5a0e300a1687",
+  "sourceCommitBeforeLock": "ed305fd4c6dd05333b24c3a0ceef77ea54942c81",
   "trackedFileCount": 820,
   "files": [
     {
@@ -697,7 +697,7 @@
     },
     {
       "path": "docs/LU_MEMORY_LOOP03E_CRASH_CONSISTENT_PUBLICATION_20261109.md",
-      "blob": "ee11f209c5a12710b0ab458cc4c42907cec06a03"
+      "blob": "868a38cbb19cff4e3fbc27ad514995b0fe845004"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -905,7 +905,7 @@
     },
     {
       "path": "lu-desktop/.gitignore",
-      "blob": "afbc2132751dc444e65567fae4c3844975b7233d"
+      "blob": "364cc531cfb2f48921fa9f48c33752c4dbd7f041"
     },
     {
       "path": "lu-desktop/README.md",
@@ -985,7 +985,7 @@
     },
     {
       "path": "lu-desktop/scripts/make-icon.mjs",
-      "blob": "02a31945d3b518c64c6fe65eaa366682a7ec8f64"
+      "blob": "b1a6283632cb4a0c2d48e38d2d2c539d19c9cc66"
     },
     {
       "path": "lu-desktop/scripts/stage-browser-runtime.mjs",
@@ -1045,7 +1045,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_progress.rs",
-      "blob": "d5d6f91cdcb950b520721da284c632320c47461a"
+      "blob": "f35efdc9db9965853f34feaf43cbb5dfbc20898b"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_review.rs",
@@ -1101,7 +1101,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_message_revisions.rs",
-      "blob": "5e076508811a075e3dcae790685c97697309c60a"
+      "blob": "9b72bdcfa820134bdd4f1a3e038c8a6d7db163a7"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_store.rs",
@@ -1145,7 +1145,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "3aca71b5e2a94238f4a827cd597ebed660d50095"
+      "blob": "36d33525163e93f3b863b88cfa7c0203c11a686f"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1173,7 +1173,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03c_reviewed_worker_tests.rs",
-      "blob": "82e1489d6592b041b27958cc122d43aac5783ffb"
+      "blob": "0c1101e8e5b830897ef68afe164a3f60b577ccf9"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
@@ -1241,7 +1241,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_memory_evidence.rs",
-      "blob": "c67447a806d622cf3e6f2f6d675971fba7fc9ecc"
+      "blob": "d09b4ef16f140fc8515c683ae412de205d6b33ae"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_task_continuity.rs",
