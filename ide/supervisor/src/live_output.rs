@@ -46,23 +46,38 @@ impl LiveOutput {
             for part in source.chunks(CHUNK_BYTES) {
                 let mut text = String::from_utf8_lossy(part).into_owned();
                 // Prevent terminal escape/control sequences affecting UI or logs.
-                text = text.chars().map(|c| {
-                    if c == '\n' || c == '\r' || c == '\t' || !c.is_control() { c } else { '�' }
-                }).collect();
+                text = text
+                    .chars()
+                    .map(|c| {
+                        if c == '\n' || c == '\r' || c == '\t' || !c.is_control() {
+                            c
+                        } else {
+                            '�'
+                        }
+                    })
+                    .collect();
                 let size = text.len();
                 state.last_sequence = state.last_sequence.saturating_add(1);
                 let seq = state.last_sequence;
-                if size > MAX_TEXT_BYTES { state.truncated = true; continue; }
-                while state.bytes.saturating_add(size) > MAX_TEXT_BYTES ||
-                      state.chunks.len() >= MAX_EVENTS {
+                if size > MAX_TEXT_BYTES {
+                    state.truncated = true;
+                    continue;
+                }
+                while state.bytes.saturating_add(size) > MAX_TEXT_BYTES
+                    || state.chunks.len() >= MAX_EVENTS
+                {
                     if let Some(old) = state.chunks.pop_front() {
                         state.bytes -= old.text.len();
                         state.truncated = true;
-                    } else { break; }
+                    } else {
+                        break;
+                    }
                 }
                 state.bytes += size;
                 state.chunks.push_back(OutputChunk {
-                    sequence: seq, stream, text,
+                    sequence: seq,
+                    stream,
+                    text,
                 });
             }
         }
@@ -71,18 +86,27 @@ impl LiveOutput {
     pub fn page(&self, after: u64) -> OutputPage {
         match self.state.lock() {
             Ok(state) => OutputPage {
-                chunks: state.chunks.iter().filter(|item| item.sequence > after)
-                    .take(64).cloned().collect(),
+                chunks: state
+                    .chunks
+                    .iter()
+                    .filter(|item| item.sequence > after)
+                    .take(64)
+                    .cloned()
+                    .collect(),
                 last_sequence: state.last_sequence,
-                truncated: state.truncated ||
-                    state.chunks.front().is_some_and(|first| after > 0 &&
-                        after.saturating_add(1) < first.sequence),
+                truncated: state.truncated
+                    || state
+                        .chunks
+                        .front()
+                        .is_some_and(|first| after > 0 && after.saturating_add(1) < first.sequence),
                 live_unverified: true,
             },
             Err(_) => OutputPage {
-                chunks: Vec::new(), last_sequence: after, truncated: true,
+                chunks: Vec::new(),
+                last_sequence: after,
+                truncated: true,
                 live_unverified: true,
-            }
+            },
         }
     }
 }
