@@ -553,7 +553,7 @@ mod protected {
                     || evidence.installed_app_accepted
                     || evidence.observed_rip == 0
                     || evidence.source_line == 0
-                    || evidence.source_file_sha256.len() != 64
+                    || evidence.source_file_sha256 != original_source_sha
                     || evidence.debugger_job_id != debug_job.job_id
                     || evidence.debugger_plan_sha256 != debug_job.plan_sha256
                     || evidence.build_job_id != build_job.job_id
