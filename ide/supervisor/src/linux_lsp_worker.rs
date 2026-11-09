@@ -154,12 +154,14 @@ pub fn native_lsp_bundle_digest(root: &Path, recipe: &str) -> Result<String, Sup
         "lsp_ruff" => "ruff",
         #[cfg(feature = "dap-transport")]
         "dap_lldb_fixed" => "lldb-dap",
+        #[cfg(feature = "dap-transport")]
+        "dap_lldb_project" => "lldb-dap",
         _ => return Err(SupervisorError::InvalidPlan),
     };
     let bin = root.join("bin").join(filename);
     ensure_root_owned_tool(&bin)?;
     #[cfg(feature = "dap-transport")]
-    if recipe == "dap_lldb_fixed" {
+    if matches!(recipe,"dap_lldb_fixed"|"dap_lldb_project") {
         ensure_root_owned_tool(&root.join("debuggee/wo6-selftest"))?;
     }
     native_linux_lsp_trace("root_owned_clangd_binary_verified");
