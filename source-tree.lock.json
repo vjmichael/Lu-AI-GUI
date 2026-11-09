@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2170ddb018a6ff4f4832ba7127735d48ccba7b50",
+  "sourceCommitBeforeLock": "df3130e2c91838559f21529098115732056373a9",
   "trackedFileCount": 802,
   "files": [
     {
@@ -661,7 +661,7 @@
     },
     {
       "path": "docs/LU_MEMORY_LOOP03B_VERIFIED_PROCEDURES_BELIEF_CCM_20261109.md",
-      "blob": "0989e27a174a0334cb117913bbd0d10da2a4d9fc"
+      "blob": "0bcc6839022eea02beefb1858c716e18808682c6"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -1125,7 +1125,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03b_context.rs",
-      "blob": "b58c5e90c1632ebd5fe20a35696ca1e4b9723f6d"
+      "blob": "9bf799e3e068131539334e6f9cf128315f135959"
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03b_policy.rs",
@@ -1433,7 +1433,7 @@
     },
     {
       "path": "lu-desktop/tests/memory-loop03b-source.test.mjs",
-      "blob": "9287c76de2bfbb843b58dcc9a6e8525957b5bed1"
+      "blob": "f97ea74f42391b59352989dbebff56ab02645a7f"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
