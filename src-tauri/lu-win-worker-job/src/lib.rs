@@ -673,12 +673,16 @@ pub mod unix_owned {
     /// This is one atomic namespace transition; no hardlink/unlink gap.
     #[cfg(target_os="linux")]
     pub fn rename_noreplace(dir:&File,source:&str,target:&str)->io::Result<()>{
+        rename_between_noreplace(dir,source,dir,target)
+    }
+    #[cfg(target_os="linux")]
+    pub fn rename_between_noreplace(source_dir:&File,source:&str,target_dir:&File,target:&str)->io::Result<()>{
         let from=CString::new(source).map_err(|_|io::Error::other("invalid name"))?;
         let to=CString::new(target).map_err(|_|io::Error::other("invalid name"))?;
         // SAFETY: both open directory FDs live during this call; both
         // CStrings remain allocated and NUL-terminated for the syscall.
         let result=unsafe{renameat2(
-            dir.as_raw_fd(),from.as_ptr(),dir.as_raw_fd(),to.as_ptr(),1
+            source_dir.as_raw_fd(),from.as_ptr(),target_dir.as_raw_fd(),to.as_ptr(),1
         )};
         if result!=0{Err(io::Error::last_os_error())}else{Ok(())}
     }

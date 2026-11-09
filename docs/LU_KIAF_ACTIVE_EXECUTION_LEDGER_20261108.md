@@ -219,3 +219,15 @@ that lock, both the Linux custodian and the host crash fixture compiled.
 The native harness reported AGENT01L_CGROUP_DELEGATION_NOT_AVAILABLE on
 the read-only cgroup mount. Positive escaped-descendant custody remains
 open and requires a delegated Linux runner.
+
+### 2026-11-09 — R08/R09 Linux file and archive group
+
+The Linux file/workspace/archive integration group passed 46 tests at
+`e39d2c16f01fce3478d2d1b68abe583d0b427c2a`. The follow-up replaces the
+trash/restore hard-link then unlink sequence with an atomic no-clobber
+rename between opened directories, reusing the move identity and digest
+checks. A post-rename mismatch remains uncertain. Linux pathname
+substitution can still cause a different object to move, so independent
+identity reconciliation remains required. Cross-volume renames fail
+closed. The follow-up passed ten Linux transfer and authority integration
+tests. Windows ACL, reparse, and installed desktop checks remain open.

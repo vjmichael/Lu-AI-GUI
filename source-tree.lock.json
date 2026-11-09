@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4d694976a286ed5d9ffc2b6356c0e915e543c949",
+  "sourceCommitBeforeLock": "e39d2c16f01fce3478d2d1b68abe583d0b427c2a",
   "trackedFileCount": 821,
   "files": [
     {
@@ -621,7 +621,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "ccf90e0e61ed2632aece44965ecae4f7938892f1"
+      "blob": "c6b1ef5cf5dc61eec655b44945c2685f03be0f63"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -2421,7 +2421,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer.rs",
-      "blob": "79658eaf297b993409a57046328af4db68258c02"
+      "blob": "ac334a45dd986c3bf6b6d6b7d9664d95b77a4abe"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer_tool.rs",
@@ -3265,7 +3265,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "9e40e48558d46ec6f00aefb3e0b8d6e3dd43e5a0"
+      "blob": "544e45e56ee0154687b80b7ef1009ffb55fb5b58"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
