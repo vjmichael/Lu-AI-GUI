@@ -49,6 +49,30 @@ supervisor journal's native parent. The host rechecks that the same
 event has **not continued**, then tests the durable owner-event file
 against its hash after reopening the supervisor.
 
+### Strict native continuation and crash-handle tests
+
+The normal `--project-debug-owner` acceptance now sends only the
+existing fixed `disconnect` DAP request and **waits for the matching
+`CONTINUED` record from the actual LLDB owner thread** before the
+supervisor can mark the OS Job terminal successful. A failed
+`ContinueDebugEvent` Win32 return (wire status 2) is explicitly denied
+by the native parser and a negative unit test; it is never counted as
+successful revocation.
+
+The `--project-debug-owner-crash` acceptance uses the original
+native LLDB process HANDLE to terminate that *already approved* worker.
+It then explicitly requires **kernel pipe EOF** within three seconds,
+using the sideband receiver, so a leaked write handle in the inferior
+or a surviving worker cannot masquerade as cleanup. The old active stop
+proof must fail, and Drop must record CancelRequested→Cancelled and
+terminate all Job descendants. The separate owner-event receipt must
+still match after supervisor restart, but never grants resumed
+execution or a repeat approval.
+
+These are newly committed **test requirements**, not observed OS passes.
+The exact-head Windows builder must actually execute all three modes,
+and real logs must be examined before any acceptance closure.
+
 The actual protected Windows acceptance executable now has
 \`--project-debug-owner\` and \`--project-debug-owner-cancel\`, in
 addition to the older independent PDB modes. They run in the original
