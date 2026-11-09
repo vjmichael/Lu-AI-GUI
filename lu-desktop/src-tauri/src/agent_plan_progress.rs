@@ -80,11 +80,7 @@
          return make(None,"STOP_OWNER_CUSTODY_UNCERTAIN",
              "A host owns this plan; observe or independently reconcile it, never reassign.")
      }
-     if owner_state=="RELEASED"{
-         return make(None,"STOP_RELEASED_OWNER",
-             "The earlier owner is closed. Reusing its claim or review for a later step is prohibited.")
-     }
-     if owner_state!="NOT_CLAIMED"{
+     if owner_state!="NOT_CLAIMED" &&owner_state!="RELEASED"{
          return make(None,"STOP_UNRECOGNIZED_OWNER",
              "Unrecognized scheduler history cannot authorize anything.")
      }
@@ -131,6 +127,12 @@
              ||!previous.historical_witness_linked{
              return make(Some(next.step_index),"STOP_DEPENDENCY_UNVERIFIED",
                  "Earlier prerequisite lacks historical independent evidence.")
+         }
+         if owner_state=="RELEASED"
+             &&next.purpose=="INDEPENDENT_CHECK"
+             &&next.expected_deliverable=="INDEPENDENT_WITNESS"{
+             return make(Some(next.step_index),"PREPARE_NEW_CHILD_PLAN_ONLY",
+                 "A new human request may prepare a separately reviewed child plan. Original owner and grants cannot be reused. Native host must reverify every independent receipt.")
          }
          return make(Some(next.step_index),"PREVIEW_DEPENDENCY_RECHECK",
              "Historical receipts require fresh independent re-verification and a NEW human step request. No automatic continuation.")
