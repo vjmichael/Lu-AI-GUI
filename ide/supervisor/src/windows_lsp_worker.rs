@@ -598,6 +598,19 @@ struct WindowsLspProcess {
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
     #[cfg(feature = "dap-transport")]
+    fn corroborate_windows_debug_port(
+        &mut self,
+        module: &crate::windows_kernel_pc::WindowsLoadedModuleWitness,
+    ) -> Result<crate::windows_kernel_pc::WindowsDebugPortCorroboration, SupervisorError> {
+        if !self.lease.alive()
+            || unsafe { WaitForSingleObject(self.process.0, 0) } != WAIT_TIMEOUT {
+            return Err(SupervisorError::NoContainment);
+        }
+        crate::windows_kernel_pc::verify_debug_port_and_owned_parent(
+            self.job.handle.0, self.process.0, module,
+        )
+    }
+    #[cfg(feature = "dap-transport")]
     fn sample_windows_job_thread_rip(
         &mut self,
         module: &crate::windows_kernel_pc::WindowsLoadedModuleWitness,
@@ -1205,6 +1218,8 @@ pub struct WindowsProjectStopPdbEvidence {
     pub loaded_pe_base: u64,
     pub os_owned_thread_context_matches_lldb: bool,
     pub independent_pdb_source_line_verified: bool,
+    pub kernel_debug_port_present: bool,
+    pub debuggee_parent_is_native_lldb: bool,
     pub lldb_debug_event_owner_attested: bool,
     pub debugger_commands_authorized: bool,
     pub installed_app_accepted: bool,
@@ -1394,6 +1409,14 @@ impl WindowsDapSession {
         let native = self.verify_project_loaded_module(
             supervisor, job_id, plan, target,
         )?;
+        let origin = self.gateway.verify_windows_native_debug_port(&native.module)?;
+        if !origin.kernel_reports_debugger_attached
+            || !origin.debuggee_parent_is_owned_lldb
+            || !origin.job_membership_verified
+            || origin.actual_debug_event_owner_attested
+            || origin.debugger_control_authorized {
+            return Err(SupervisorError::NoContainment);
+        }
         let thread = self.gateway.sample_windows_stopped_thread_rip(
             &native.module,
         )?;
@@ -1415,6 +1438,14 @@ impl WindowsDapSession {
         // The native symbolizer is a separate CI worker. A stop can become
         // stale while it runs. Query the REAL Job-owned kernel thread again
         // and consume pending DAP input before accepting the receipt.
+        let after_origin = self.gateway.verify_windows_native_debug_port(&native.module)?;
+        if after_origin.debugger_pid != origin.debugger_pid
+            || after_origin.debuggee_pid != origin.debuggee_pid
+            || !after_origin.kernel_reports_debugger_attached
+            || !after_origin.debuggee_parent_is_owned_lldb
+            || after_origin.actual_debug_event_owner_attested {
+            return Err(SupervisorError::NoContainment);
+        }
         let second = self.gateway.sample_windows_stopped_thread_rip(
             &native.module,
         )?;
@@ -1491,6 +1522,8 @@ impl WindowsDapSession {
             loaded_pe_base: native.module.loaded_base,
             os_owned_thread_context_matches_lldb: true,
             independent_pdb_source_line_verified: true,
+            kernel_debug_port_present: origin.kernel_reports_debugger_attached,
+            debuggee_parent_is_native_lldb: origin.debuggee_parent_is_owned_lldb,
             // Only LLDB itself owns the kernel DEBUG_EVENT. Without an
             // independently authenticated owner callback this remains false.
             lldb_debug_event_owner_attested: false,
