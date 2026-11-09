@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f40938dbdd8ef950a8c5d339fb880614564ab9c8",
+  "sourceCommitBeforeLock": "9373767db61ae04bce3c526f11bd6d45f3721782",
   "trackedFileCount": 820,
   "files": [
     {
@@ -1241,7 +1241,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_memory_evidence.rs",
-      "blob": "2f595c89993c9f7ea81e8218c0bf0c777967dc2b"
+      "blob": "8340b4abd2310f646964e450202a178a46724e38"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_task_continuity.rs",

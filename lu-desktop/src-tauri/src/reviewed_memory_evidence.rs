@@ -954,6 +954,116 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+
+    #[test]
+    fn atomic_intent_reconstructs_lost_checkpoint_without_rerunning_original_worker(){
+        let root=tmp();fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        let original=turn(1);
+        chats.append_user_with_turn_id(&chat,&original,
+            "Original human reviewed Git verification").unwrap();
+        let effect=journal_with_git(&root,&chat,&original,
+            "reconstruct",&"a".repeat(40),true);
+        let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+        record_from_reviewed_turn(&chats,&continuity,&root,&chat,&original,
+            &effect,&reported("reconstruct",&"a".repeat(40))).unwrap();
+        // The index and its complete immutable projection intent survive;
+        // failure is injected before the independent continuity is durable.
+        let index=Connection::open(index_path(&root)).unwrap();
+        let staged:i64=index.query_row(
+            "SELECT COUNT(*) FROM lu_reviewed_memory_projection_intent
+             WHERE call_id=?1",["reconstruct-gh"],|r|r.get(0)).unwrap();
+        assert_eq!(staged,1);
+        index.execute("DELETE FROM lu_reviewed_memory_publication
+                       WHERE call_id=?1",["reconstruct-gh"]).unwrap();
+        let cache=Connection::open(root.join("continuity.sqlite")).unwrap();
+        cache.execute("DELETE FROM continuity_verified_effects
+                       WHERE call_id=?1",["reconstruct-gh"]).unwrap();
+        let cp_id=format!("cp-03d-{}",digest(b"reconstruct-gh"));
+        cache.execute("DELETE FROM continuity_checkpoints
+                       WHERE checkpoint_id=?1",[cp_id]).unwrap();
+        drop(cache);drop(index);drop(continuity);drop(effect);drop(chats);
+        let reopened=ChatStore::open(&root).unwrap();
+        let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+        let output=reconcile_incomplete_exclusive(&reopened,&continuity,&root).unwrap();
+        assert_eq!(output.len(),1);
+        assert_eq!(output[0].status,"RECONSTRUCTED_SOURCE_VERIFIED");
+        assert_eq!(output[0].execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
+        assert!(!output[0].retry_allowed);
+        assert!(reconcile_incomplete_exclusive(&reopened,&continuity,&root)
+            .unwrap().is_empty());
+        let selector="Recall procedure project lu task review_git_head tool lu.reviewed.git.head tool-version 1.0 application-version 0.1";
+        let historical=recalled(&reopened,&continuity,&root,&chat,2,selector);
+        assert_eq!(historical["status"],"HISTORICAL_SOURCE_ORACLE_VERIFIED_PROCEDURE");
+        drop(continuity);drop(reopened);fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn new_human_retraction_keeps_interrupted_projection_unpublished(){
+        let root=tmp();fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        let original=turn(1);
+        chats.append_user_with_turn_id(&chat,&original,
+            "First original reviewed Git request").unwrap();
+        let effect=journal_with_git(&root,&chat,&original,
+            "corrected",&"a".repeat(40),true);
+        let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+        record_from_reviewed_turn(&chats,&continuity,&root,&chat,&original,
+            &effect,&reported("corrected",&"a".repeat(40))).unwrap();
+        let index=Connection::open(index_path(&root)).unwrap();
+        index.execute("DELETE FROM lu_reviewed_memory_publication
+                       WHERE call_id=?1",["corrected-gh"]).unwrap();
+        let correction=turn(2);
+        chats.append_user_with_turn_id(&chat,&correction,
+            "I retract the earlier Git observation").unwrap();
+        let book=chats.require(&chat).unwrap();
+        let (_,source)=book.authenticated_chat_turn(&chat,&correction)
+            .unwrap().unwrap();
+        let claim=format!("claim-03d-{}",digest(b"corrected-gh"));
+        book.retract_reported_or_verified_claim(&claim,&chat,source,
+            "Human correction on an earlier claim").unwrap();
+        let result=reconcile_incomplete_exclusive(
+            &chats,&continuity,&root).unwrap();
+        assert_eq!(result.len(),1);
+        assert_eq!(result[0].status,"REVIEW_REQUIRED");
+        assert!(!result[0].retry_allowed);
+        let count:i64=index.query_row(
+            "SELECT COUNT(*) FROM lu_reviewed_memory_publication
+             WHERE call_id=?1",["corrected-gh"],|r|r.get(0)).unwrap();
+        assert_eq!(count,0);
+        drop(book);drop(index);drop(continuity);drop(effect);drop(chats);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_projection_without_atomic_intent_requires_human_review(){
+        let root=tmp();fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        let original=turn(1);
+        chats.append_user_with_turn_id(&chat,&original,
+            "Earlier source evidence").unwrap();
+        let effect=journal_with_git(&root,&chat,&original,
+            "legacy",&"a".repeat(40),true);
+        let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+        record_from_reviewed_turn(&chats,&continuity,&root,&chat,&original,
+            &effect,&reported("legacy",&"a".repeat(40))).unwrap();
+        let index=Connection::open(index_path(&root)).unwrap();
+        index.execute("DELETE FROM lu_reviewed_memory_publication
+                       WHERE call_id=?1",["legacy-gh"]).unwrap();
+        index.execute("DELETE FROM lu_reviewed_memory_projection_intent
+                       WHERE call_id=?1",["legacy-gh"]).unwrap();
+        let result=reconcile_incomplete_exclusive(
+            &chats,&continuity,&root).unwrap();
+        assert_eq!(result.len(),1);
+        assert_eq!(result[0].status,"LEGACY_REVIEW_REQUIRED");
+        assert_eq!(result[0].execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
+        drop(index);drop(continuity);drop(effect);drop(chats);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn a_model_like_result_without_oracle_cannot_be_recorded(){
         let root=tmp();fs::create_dir_all(&root).unwrap();
