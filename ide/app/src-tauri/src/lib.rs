@@ -906,6 +906,41 @@ async fn ide_inspect_package_managers(
     .await.map_err(|_| "IDE05_DISCOVERY_TASK_UNAVAILABLE".to_owned())?
 }
 
+/// IDE-05.2: statically review a *fixed typed* package intent bound to
+/// registered project manifest SHA evidence. Does NOT resolve or install.
+#[tauri::command]
+async fn ide_preview_package_operation(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    request: lu_ide_workspace::package_preview::PackagePreviewRequest,
+) -> Result<lu_ide_workspace::package_preview::PackageOperationPreview, String> {
+    let registry = Arc::clone(registry.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.preview_package_operation(&project_id, request)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "IDE052_PREVIEW_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// The host ALWAYS independently reopens every native manifest and lock.
+/// A matching digest means only "safe to review this exact intent again",
+/// not authorization. No Tauri command can apply the proposal.
+#[tauri::command]
+async fn ide_revalidate_package_operation(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    request: lu_ide_workspace::package_preview::PackagePreviewRequest,
+    expected_preview_sha256: String,
+    expected_evidence_fingerprint: String,
+) -> Result<lu_ide_workspace::package_preview::PackagePreviewRevalidation, String> {
+    let registry = Arc::clone(registry.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.revalidate_package_operation(
+            &project_id, request,
+            &expected_preview_sha256, &expected_evidence_fingerprint,
+        ).map_err(str::to_owned)
+    }).await.map_err(|_| "IDE052_REVALIDATION_TASK_UNAVAILABLE".to_owned())?
+}
+
 #[tauri::command]
 async fn ide_discover_project_run_profiles(
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
@@ -1605,6 +1640,8 @@ pub fn run() {
             ide_list_execution_intents,
             ide_discover_project_run_profiles,
             ide_inspect_package_managers,
+            ide_preview_package_operation,
+            ide_revalidate_package_operation,
             ide_discover_conventional_tests,
             ide_review_project_debug_target,
             ide_review_multilang_adapter,

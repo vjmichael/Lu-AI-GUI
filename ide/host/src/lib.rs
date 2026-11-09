@@ -27,6 +27,7 @@ pub mod lsp_session;
 pub mod project_search;
 pub mod project_run_profiles;
 pub mod package_manager;
+pub mod package_preview;
 pub mod conventional_tests;
 pub mod reviewed_adapters;
 pub mod debug_target_review;

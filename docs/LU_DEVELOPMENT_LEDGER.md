@@ -181,3 +181,22 @@ not per-file CI runs. Next suborders: static revision-bound plan review,
 protected fixed adapters, independent verification/recovery, and installed
 Windows/Linux OS tests. DEV-04.6D authentic Windows LLDB and human dialog
 verification is a **separate outstanding gate**, not promoted by this work.
+
+
+### 2026-11-09 — IDE-05.2 exact manifest/lock operation previews
+
+On the same standalone IDE-05 workstream, IDE-05.2 implemented *static
+review-only* typed manager/operation selection, exact source/lock
+SHA-256-bound proposal fingerprints, intended Add/Remove/Sync changes,
+explicit unverified resolver/hook/network risks, limited vcpkg JSON direct
+dependency checking, and a separate native full-evidence revalidation
+gate. Any changed manager, package, version or manifest/lock evidence
+rejects the old preview; matching evidence **still does not approve or
+execute** anything. IDE-05.2 adds no Apply endpoint, tool installation,
+package manager process or CI microjobs. Native Rust and Tauri compile,
+Windows/Linux acceptance and installed UI verification are OPEN. Next
+IDE-05.3 must connect a separately authorized, OS-contained worker,
+independent output verification, cancellation and restart quarantine.
+DEV-04.6D native LLDB debugger/physical approval acceptance remains
+separate and open. Details in
+`ide/docs/IDE_DEV052_PACKAGE_OPERATION_PREVIEW_20261109.md`.

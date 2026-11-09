@@ -89,6 +89,15 @@ function App() {
   const [packageInspection, setPackageInspection] = useState(null);
   const [packageInspectionBusy, setPackageInspectionBusy] = useState(false);
   const packageInspectionRequest = useRef(0);
+  // IDE-05.2: typed data-only operation proposal, not a manager execution.
+  const [packageManagerChoice, setPackageManagerChoice] = useState('uv');
+  const [packageOperation, setPackageOperation] = useState('add');
+  const [packageName, setPackageName] = useState('');
+  const [packageExactVersion, setPackageExactVersion] = useState('');
+  const [packagePreview, setPackagePreview] = useState(null);
+  const [packageRevalidated, setPackageRevalidated] = useState(null);
+  const [packagePreviewBusy, setPackagePreviewBusy] = useState(false);
+  const packagePreviewRequest = useRef(0);
   const workflowRequest = useRef(0);
 
   const [pending, setPending] = useState(false);
@@ -362,6 +371,10 @@ function App() {
     packageInspectionRequest.current += 1;
     setPackageInspection(null);
     setPackageInspectionBusy(false);
+    packagePreviewRequest.current += 1;
+    setPackagePreview(null);
+    setPackageRevalidated(null);
+    setPackagePreviewBusy(false);
     setAdapterReview(null);
     setAdapterReviewBusy(false);
     setBuildResult(null);
@@ -903,6 +916,7 @@ function App() {
     setPackageInspectionBusy(true);
     setProblem('');
     setPackageInspection(null);
+    invalidatePackagePreview();
     try {
       // No package name, manager, command, path or permission is sent.
       const result=await invoke('ide_inspect_package_managers',{projectId});
@@ -920,6 +934,9 @@ function App() {
         throw Error('IDE05_NONEXECUTING_NATIVE_INSPECTION_INVALID');
       }
       setPackageInspection(result);
+      const available=result.candidates.find(candidate =>
+        candidate.state==='candidate_needs_review');
+      if(available) setPackageManagerChoice(available.managerId);
     }catch(error){
       if(ticket===packageInspectionRequest.current &&
          activeProjectIdRef.current===projectId)
@@ -927,6 +944,101 @@ function App() {
     }finally{
       if(ticket===packageInspectionRequest.current)
         setPackageInspectionBusy(false);
+    }
+  }
+
+  function invalidatePackagePreview() {
+    packagePreviewRequest.current += 1;
+    setPackagePreview(null);
+    setPackageRevalidated(null);
+    setPackagePreviewBusy(false);
+  }
+
+  async function previewPackageOperation() {
+    const projectId=activeProject?.projectId;
+    if(!projectId || packageInspection?.projectId!==projectId)return;
+    const request={
+      managerId: packageManagerChoice,
+      operation: packageOperation,
+      packageName: packageOperation==='sync' ? null : packageName.trim(),
+      exactVersion: packageOperation==='add' ? packageExactVersion.trim() : null,
+    };
+    const ticket=++packagePreviewRequest.current;
+    setPackagePreviewBusy(true);
+    setProblem('');
+    setPackagePreview(null);
+    setPackageRevalidated(null);
+    try {
+      // Only fixed typed data, NOT a manager command, path or permission.
+      const result=await invoke('ide_preview_package_operation',{projectId,request});
+      if(ticket!==packagePreviewRequest.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(!result || result.projectId!==projectId ||
+         result.schemaVersion!==1 ||
+         result.request?.managerId!==request.managerId ||
+         result.request?.operation!==request.operation ||
+         result.evidenceFingerprint!==packageInspection.fingerprint ||
+         !Array.isArray(result.proposedChanges) ||
+         !Array.isArray(result.risks) ||
+         !/^[a-f0-9]{64}$/.test(result.previewSha256||'') ||
+         result.readyForApproval!==false ||
+         result.approvalIssued!==false ||
+         result.applySupported!==false ||
+         result.processStarted!==false ||
+         result.networkAccessed!==false ||
+         result.filesModified!==false) {
+        throw Error('IDE052_NOT_A_TRUSTED_NONEXECUTING_PREVIEW');
+      }
+      setPackagePreview(result);
+    }catch(error){
+      if(ticket===packagePreviewRequest.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Package operation preview blocked: '+String(error));
+    }finally{
+      if(ticket===packagePreviewRequest.current)
+        setPackagePreviewBusy(false);
+    }
+  }
+
+  async function revalidatePackageOperation() {
+    const projectId=activeProject?.projectId;
+    const preview=packagePreview;
+    if(!projectId || !preview || preview.projectId!==projectId)return;
+    const ticket=++packagePreviewRequest.current;
+    setPackagePreviewBusy(true);
+    setPackageRevalidated(null);
+    setProblem('');
+    try {
+      const result=await invoke('ide_revalidate_package_operation',{
+        projectId, request: preview.request,
+        expectedPreviewSha256: preview.previewSha256,
+        expectedEvidenceFingerprint: preview.evidenceFingerprint,
+      });
+      if(ticket!==packagePreviewRequest.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(!result || result.projectId!==projectId ||
+         result.schemaVersion!==1 ||
+         result.previewSha256!==preview.previewSha256 ||
+         result.evidenceFingerprint!==preview.evidenceFingerprint ||
+         result.matchedFreshNativeEvidence!==true ||
+         result.readyForApproval!==false ||
+         result.authorizationIssued!==false ||
+         result.processStarted!==false ||
+         result.filesModified!==false) {
+        throw Error('IDE052_REVALIDATION_REJECTED');
+      }
+      setPackageRevalidated(result);
+    }catch(error){
+      if(ticket===packagePreviewRequest.current &&
+         activeProjectIdRef.current===projectId) {
+        // A stale preview is not displayed as verified after failure.
+        setPackageRevalidated(null);
+        setPackagePreview(null);
+        setProblem('Package operation changed or revalidation denied; inspect again: '+String(error));
+      }
+    }finally{
+      if(ticket===packagePreviewRequest.current)
+        setPackagePreviewBusy(false);
     }
   }
 
@@ -4090,6 +4202,107 @@ function App() {
                     </article>)}
                 </div>}
             </div>
+              {packageInspection?.projectId===activeProject?.projectId &&
+                <section aria-label="IDE-05.2 verified package operation preview">
+                  <h3>Review a proposed dependency operation</h3>
+                  <p>The host fixes the recognized manager to this project and
+                    rechecks exact manifest/lock SHA-256 evidence. No packages
+                    are resolved, installed, upgraded or removed here.</p>
+                  <label htmlFor="ide052Manager">Detected manager</label>
+                  <select id="ide052Manager" value={packageManagerChoice}
+                    disabled={packagePreviewBusy}
+                    onChange={event=>{
+                      setPackageManagerChoice(event.target.value);
+                      invalidatePackagePreview();
+                    }}>
+                    {packageInspection.candidates.map(candidate=>
+                      <option key={candidate.managerId} value={candidate.managerId}
+                        disabled={candidate.state!=='candidate_needs_review'}>
+                        {candidate.managerId} · {candidate.state.replaceAll('_',' ')}
+                      </option>)}
+                  </select>
+                  <label htmlFor="ide052Operation">Proposed operation</label>
+                  <select id="ide052Operation" value={packageOperation}
+                    disabled={packagePreviewBusy}
+                    onChange={event=>{
+                      setPackageOperation(event.target.value);
+                      invalidatePackagePreview();
+                    }}>
+                    <option value="add">Add direct dependency</option>
+                    <option value="remove">Remove direct dependency</option>
+                    <option value="sync">Review environment synchronization</option>
+                  </select>
+                  {packageOperation!=='sync' && <>
+                    <label htmlFor="ide052Package">Dependency name (literal only)</label>
+                    <input id="ide052Package" type="text" value={packageName}
+                      maxLength={96} placeholder="example-lib"
+                      disabled={packagePreviewBusy}
+                      onChange={event=>{
+                        setPackageName(event.target.value);
+                        invalidatePackagePreview();
+                      }} />
+                  </>}
+                  {packageOperation==='add' && <>
+                    <label htmlFor="ide052Version">Requested exact version</label>
+                    <input id="ide052Version" type="text" value={packageExactVersion}
+                      maxLength={64} placeholder="1.2.3"
+                      disabled={packagePreviewBusy}
+                      onChange={event=>{
+                        setPackageExactVersion(event.target.value);
+                        invalidatePackagePreview();
+                      }} />
+                  </>}
+                  <button type="button" className="ghostBtn"
+                    disabled={packagePreviewBusy ||
+                      !packageInspection.candidates.some(candidate =>
+                        candidate.managerId===packageManagerChoice &&
+                        candidate.state==='candidate_needs_review') ||
+                      (packageOperation!=='sync'&&!packageName.trim()) ||
+                      (packageOperation==='add'&&!packageExactVersion.trim())}
+                    onClick={()=>void previewPackageOperation()}>
+                    {packagePreviewBusy?'Inspecting source evidence…':
+                      'Preview operation without executing'}
+                  </button>
+                  {packagePreview?.projectId===activeProject?.projectId &&
+                    <article className="continuityEvent">
+                      <strong>Static review — {packagePreview.request.managerId}
+                        {' · '}{packagePreview.request.operation}</strong>
+                      <p>Evidence: <code>{packagePreview.evidenceFingerprint}</code></p>
+                      <p>Review SHA: <code>{packagePreview.previewSha256}</code></p>
+                      <p>Dependency resolution: {packagePreview.dependencyResolution.replaceAll('_',' ')}.
+                        This is an intent preview, NOT an exact file diff.</p>
+                      <h4>Proposed changes (not applied)</h4>
+                      {packagePreview.proposedChanges.map((change,index)=>
+                        <p key={change.targetRelativePath+index}>
+                          <code>{change.targetRelativePath}</code> ·
+                          {' '}{change.intendedAction.replaceAll('_',' ')}
+                          {change.requestedDeclaration &&
+                            <> · <code>{change.requestedDeclaration}</code></>}
+                          {' '}· direct declaration:
+                          {' '}{change.observedDirectDeclaration.replaceAll('_',' ')}
+                          {change.currentlyObservedSha256 &&
+                            <> · observed SHA <code>{change.currentlyObservedSha256}</code></>}
+                          {' '}· final bytes/versions unknown
+                        </p>)}
+                      <h4>Risks and review blockers</h4>
+                      {packagePreview.risks.map(risk=>
+                        <p key={risk}>{risk.replaceAll('_',' ')}</p>)}
+                      {packagePreview.blockers.length>0 &&
+                        <p role="status">Blocked: {packagePreview.blockers.join(', ')}</p>}
+                      <button className="ghostBtn" type="button"
+                        disabled={packagePreviewBusy}
+                        onClick={()=>void revalidatePackageOperation()}>
+                        Reinspect native manifests and verify exact preview
+                      </button>
+                      {packageRevalidated?.previewSha256===packagePreview.previewSha256 &&
+                        <p role="status"><strong>Fresh native evidence matched.</strong>
+                          {' '}Approval is still disabled; this result is not an
+                          execution token and cannot bypass future OS consent.</p>}
+                      <p><strong>Install/Apply unavailable.</strong> Future worker
+                        admission must independently revalidate again,
+                        obtain a separate human approval and verify sandbox custody.</p>
+                    </article>}
+                </section>}
             <div className="sectionHeading">
               <h2>Multi-project release review</h2>
               <span>WO9 · Native Git and artifact inspection</span>

@@ -53,3 +53,25 @@ Refer to [IDE-05.1 implementation](IDE_DEV051_PACKAGE_MANAGER_DISCOVERY_20261109
 and protected manager worker -> independent result/restart reconciliation ->
 consolidated native Windows/Linux and installed approval acceptance. This
 source-only slice must not be credited as a functioning installer.
+
+
+## IDE-05.2 operation preview checkpoint (2026-11-09)
+
+A read-only, revision-bound static operation preview is implemented after
+IDE-05.1 discovery. One typed detected manager (`uv`, `vcpkg`, `conan2`)
+and one fixed Add/Remove/Sync intent are bound to **all** native manifest
+and lock SHA-256 observations. A deterministic preview digest is tied to
+manager, operation, requested exact literal package/version, ordered
+source evidence and risk classifications. The host independently reopens
+all evidence and recomputes the preview before showing a verification
+receipt. Any changed input, operation or manager forces fresh review.
+A `vcpkg.json` data-only parser also rejects malformed files and obvious
+duplicate Add / missing Remove intents.
+
+**This is an intended declaration projection, not actual resolution or a
+manifest/lockfile diff.** No package manager or network is called.
+`readyForApproval=false` and `authorizationIssued=false` remain
+enforced even when native evidence matches. See
+[IDE-05.2](IDE_DEV052_PACKAGE_OPERATION_PREVIEW_20261109.md). The later
+protected worker must repeat checks under an OS-owned one-use grant,
+independently verify output and reject untrusted scripts/hooks.
