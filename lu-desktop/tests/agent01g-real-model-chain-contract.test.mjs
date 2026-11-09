@@ -20,6 +20,9 @@ test('the pinned actual GGUF model is required, never scripted into success',()=
 test('real persisted human source and goal are distinct from approval and next step',()=>{
   assert.match(native,/AnsfStore::open/);
   assert.match(native,/book\.mirror_goal_event/);
+  assert.match(native,/let original_context=lu_core::ansf_goals::project_goal_events/);
+  assert.match(native,/let model_prompt=format!\(/);
+  assert.match(native,/session\.run_journaled_observed\(\s*&model_prompt/);
   assert.match(native,/book\.goal_events/);
   assert.match(native,/project_goal_events/);
   assert.match(native,/book\.append_entry\(&chat,&original,EntryRole::User/);

@@ -1158,10 +1158,28 @@ async fn agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_
     assert_eq!(bound.reviewed_execute_id,"lu.reviewed.git.head");
     assert_eq!(session.schemas().unwrap().len(),1);
     let audit=ModelTurnJournal::open(&root.join("gguf-audit.sqlite")).unwrap();
+    let original_context=lu_core::ansf_goals::project_goal_events(
+        &book.goal_events(&chat).unwrap()
+    ).unwrap();
+    assert_eq!(original_context.goal_id.as_deref(),Some(goal_id.as_str()));
+    assert_eq!(
+        original_context.revision_event_id.as_deref(),
+        Some(goal_event.as_str())
+    );
+    assert!(original_context.questions.iter().all(|q|
+        !matches!(q.status.as_str(),"pending"|"deferred")));
+    // The real GGUF input is built from the current saved human ANSF goal,
+    // never from model planner bytes or an unrelated hardcoded task.
+    let model_prompt=format!(
+        "Saved original human ANSF goal: {}. The human separately confirmed \
+         exactly one read-only native Git HEAD check for a selected repository. \
+         Choose only the advertised reviewed tool and report the exact commit \
+         SHA from its actual feedback; do not guess or supply a path.",
+        original_context.goal
+    );
     let mut model=GenuineGgufStep{raw_replies:vec![]};
     let report=session.run_journaled_observed(
-        "What is the exact HEAD commit SHA of my selected local Git repository?          The human approved a single read-only Git HEAD tool. Call it and do not guess.",
-        &mut model,&Cancellation::default(),&audit,&|_|{}
+        &model_prompt,&mut model,&Cancellation::default(),&audit,&|_|{}
     ).await.unwrap();
     assert_eq!(report.host_routed_calls,0,
         "host cannot choose Git instead of the real loaded GGUF model");
