@@ -553,7 +553,8 @@ async fn ide_debug_status(
     {
         let _ = (app, project_id);
         Ok(serde_json::json!({
-            "ready":false, "code":"DEBUG_PROTECTED_ADAPTER_NOT_INSTALLED",
+            "ready":false,"projectDebugSupported":false,
+            "code":"DEBUG_PROTECTED_ADAPTER_NOT_INSTALLED",
             "description":"Default IDE does not ship a native debugger.",
             "current":null, "last":null, "journal":[], "quarantined":[]
         }))
