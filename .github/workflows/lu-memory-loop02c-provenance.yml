@@ -1,0 +1,101 @@
+name: Lu MEMORY-LOOP-02C Operator Recovery Provenance Native Acceptance
+on:
+  push:
+    branches: ['lu/memory-loop02c-operator-provenance-20261109']
+  pull_request:
+    paths:
+      - 'lu-desktop/src-tauri/src/agent_recovery_provenance.rs'
+      - 'lu-desktop/src-tauri/src/reviewed_task_continuity.rs'
+      - 'lu-desktop/src-tauri/src/host_safe_continuation.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/web/styles.css'
+      - 'lu-desktop/tests/memory-loop02c-operator-provenance.test.mjs'
+      - '.github/workflows/lu-memory-loop02c-provenance.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-memory-loop02c-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  original-provenance:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source and frozen manifest
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p memory-loop02c-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs 2>&1 | tee memory-loop02c-evidence/source-lock.log
+          printf 'SOURCE_SHA=%s\nOS=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > memory-loop02c-evidence/source.txt
+      - name: Nonexecuting and source-bound UI tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/memory-loop02c-operator-provenance.test.mjs 2>&1 | tee memory-loop02c-evidence/ui-source-tests.log
+          grep -Fq '# pass 10' memory-loop02c-evidence/ui-source-tests.log
+          grep -Fq '# fail 0' memory-loop02c-evidence/ui-source-tests.log
+      - name: Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf
+      - name: Windows non-engine build fixture (not inference evidence)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Real desktop React bundle and type/static checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
+      - name: Actual native Tauri SQLite provenance tests and desktop compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib agent_recovery_provenance::tests -- --nocapture 2>&1 | tee memory-loop02c-evidence/native-provenance.log
+          grep -Fq 'test result: ok. 4 passed; 0 failed;' memory-loop02c-evidence/native-provenance.log
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | tee memory-loop02c-evidence/native-desktop-check.log
+      - name: Bound the positive claim
+        if: always()
+        shell: bash
+        run: |
+          echo 'MEMORY-LOOP-02C is a read-only historical UI/report. Exact-head CI results do not establish installed physical NSIS, Qwen 3.8 27B comprehension, fresh human authorization, current source freshness, or native Job/cgroup escaped descendant custody.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-memory-loop02c-native-${{ matrix.os }}
+          path: memory-loop02c-evidence/
+          if-no-files-found: warn
+          retention-days: 14

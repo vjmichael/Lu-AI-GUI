@@ -446,3 +446,14 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   color:inherit;background:#55422d}
 .messageRevisionEditor textarea:focus-visible,
 .messageReplyReference:focus-visible{outline:2px solid #a4d0ff;outline-offset:2px}
+
+/* MEMORY-LOOP-02C: neutral, read-only original evidence (never a success badge). */
+.recoveryProvenance{margin-top:12px;display:grid;gap:7px;padding:12px;border:1px solid #52667c;border-radius:9px;background:#1a2939;overflow-wrap:anywhere}
+.recoveryProvenance>strong{font-size:13px}
+.recoveryProvenance small{display:block;color:#b7c9da;line-height:1.55}
+.recoveryProvenanceTurn{display:grid;gap:5px;margin:6px 0;padding:11px;border:1px solid #41576e;border-radius:8px;background:#172536;min-width:0}
+.recoveryProvenanceTurn>strong{font-size:12px;overflow-wrap:anywhere}
+.recoveryProvenanceOperation{display:grid;gap:4px;padding:10px;border-left:2px solid #66839c;background:#192c40;border-radius:4px}
+.recoveryProvenanceOperation strong{font-size:12px}
+.recoveryProvenance .recoveryProvenanceWarning{color:#ffd0a3}
+.recoveryProvenance .recoveryProvenanceDigest{font:11px/1.5 Consolas,"Cascadia Code",monospace;overflow-wrap:anywhere;color:#b2cce3}
