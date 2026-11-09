@@ -85,6 +85,10 @@ function App() {
   const [workflowExport, setWorkflowExport] = useState(null);
   const [workflowBundleExport, setWorkflowBundleExport] = useState(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
+  // IDE-05.1: only data from host capability-scoped fixed manifest probes.
+  const [packageInspection, setPackageInspection] = useState(null);
+  const [packageInspectionBusy, setPackageInspectionBusy] = useState(false);
+  const packageInspectionRequest = useRef(0);
   const workflowRequest = useRef(0);
 
   const [pending, setPending] = useState(false);
@@ -355,6 +359,9 @@ function App() {
     adapterReviewRequest.current += 1;
     setProjectRunProfiles(null);
     setProfileDiscoveryBusy(false);
+    packageInspectionRequest.current += 1;
+    setPackageInspection(null);
+    setPackageInspectionBusy(false);
     setAdapterReview(null);
     setAdapterReviewBusy(false);
     setBuildResult(null);
@@ -884,6 +891,43 @@ function App() {
       }
     } catch (error) { setProblem(String(error)); }
     finally { setPending(false); }
+  }
+
+  async function inspectPackageManagers() {
+    const projectId=activeProject?.projectId;
+    if(!projectId) {
+      setPackageInspection(null);
+      return;
+    }
+    const ticket=++packageInspectionRequest.current;
+    setPackageInspectionBusy(true);
+    setProblem('');
+    setPackageInspection(null);
+    try {
+      // No package name, manager, command, path or permission is sent.
+      const result=await invoke('ide_inspect_package_managers',{projectId});
+      if(ticket !== packageInspectionRequest.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(!result || result.projectId!==projectId ||
+         result.schemaVersion!==1 ||
+         !Array.isArray(result.candidates) ||
+         result.networkAccessed!==false ||
+         result.processStarted!==false ||
+         result.filesModified!==false ||
+         result.resolutionSupported!==false ||
+         result.applySupported!==false ||
+         result.executionAuthorized!==false) {
+        throw Error('IDE05_NONEXECUTING_NATIVE_INSPECTION_INVALID');
+      }
+      setPackageInspection(result);
+    }catch(error){
+      if(ticket===packageInspectionRequest.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Package manager inspection unavailable: '+String(error));
+    }finally{
+      if(ticket===packageInspectionRequest.current)
+        setPackageInspectionBusy(false);
+    }
   }
 
   function chooseWorkflowProject(projectId, selected) {
@@ -3331,7 +3375,7 @@ function App() {
           <h1 aria-label={isJobs ? 'Execution requests' : undefined}>{isProjectSearch ? 'Find in project' : isJobs ? 'Execution requests' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
           <p>{isProjectSearch ? 'Saved-source search · Revision-checked hits · No writes' :
             isJobs ? 'Historical review intents · Protected native Run/Test · Explicit cancellation' :
-            isPackages ? 'Multi-project Git and artifact review · No release permission' :
+            isPackages ? 'Local package manager inspection · Multi-project release review · No install permission' :
             isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
             isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
             isCapabilities ? 'Host-published operations · Descriptions only · Never permission grants' :
@@ -3344,7 +3388,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isPackages ? (readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isPackages ? (inspectPackageManagers(), readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -4011,6 +4055,41 @@ function App() {
         </section>
         : isPackages
         ? <section className="workspaceContent continuityWorkspace" aria-label="Advanced packaging and multi-project workflows">
+            <div className="continuityDocument" aria-label="IDE-05.1 read-only package manager discovery">
+              <h2>Package managers &amp; lockfiles</h2>
+              <p>Inspect saved Python uv and C/C++ vcpkg/Conan manifests
+                inside the active OS-picked project. This is read-only:
+                no package tool is run, no network lookup or dependency install
+                occurs, and the digest is never an execution grant.</p>
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject || packageInspectionBusy}
+                onClick={() => void inspectPackageManagers()}>
+                {packageInspectionBusy ? 'Inspecting manifest evidence…' :
+                  'Inspect project package managers'}
+              </button>
+              {packageInspection?.projectId===activeProject?.projectId &&
+                <div role="status" className="continuityEvents">
+                  <p>Revision fingerprint: <code>{packageInspection.fingerprint}</code></p>
+                  <p>Snapshot: {packageInspection.snapshotConsistency.replaceAll('_',' ')}.
+                    Resolution and Apply: disabled. No process, network or file changes.</p>
+                  {packageInspection.blockers.length>0 &&
+                    <p>Blockers: <strong>{packageInspection.blockers.join(', ')}</strong></p>}
+                  {packageInspection.candidates.map(candidate=>
+                    <article className="continuityEvent" key={candidate.managerId}>
+                      <strong>{candidate.managerId} · {candidate.ecosystem}</strong>
+                      <p>Status: {candidate.state.replaceAll('_',' ')}.</p>
+                      {candidate.executableManifest &&
+                        <p>Conan Python recipes are untrusted executable code.
+                          They were NOT evaluated.</p>}
+                      {packageInspection.evidence.filter(f=>
+                        candidate.evidencePaths.includes(f.relativePath)).map(file=>
+                        <p key={file.relativePath}>
+                          <code>{file.relativePath}</code> · {file.state.replaceAll('_',' ')}
+                          {file.sha256 && <> · SHA-256 <code>{file.sha256}</code></>}
+                        </p>)}
+                    </article>)}
+                </div>}
+            </div>
             <div className="sectionHeading">
               <h2>Multi-project release review</h2>
               <span>WO9 · Native Git and artifact inspection</span>

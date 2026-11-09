@@ -37,3 +37,19 @@ Fixture matrix for Python uv, C/C++ vcpkg/Conan, Rust Cargo and JS/npm; detect w
 - https://learn.microsoft.com/en-us/vcpkg/consume/manifest-mode
 - https://docs.conan.io/2/reference/tools/cmake/cmaketoolchain.html
 - https://docs.npmjs.com/cli/commands/npm-ci/
+
+
+## IDE-05.1 source implementation checkpoint (2026-11-09)
+
+The first safe delivery slice is **read-only**, using the existing
+`IdeWorkspaceRegistry`, registered project IDs and capability-scoped
+`probe_project_resource`. It detects fixed Python uv / C++ vcpkg and Conan
+manifests and lock evidence; reports SHA-256 revisions, missing/incomplete
+or conflicting managers, and disallows all execution or network operations.
+No native package-manager runtime was bundled and no `apply` action exists.
+Refer to [IDE-05.1 implementation](IDE_DEV051_PACKAGE_MANAGER_DISCOVERY_20261109.md).
+
+**Gate sequence:** verified static plan preview -> independently authorized
+and protected manager worker -> independent result/restart reconciliation ->
+consolidated native Windows/Linux and installed approval acceptance. This
+source-only slice must not be credited as a functioning installer.

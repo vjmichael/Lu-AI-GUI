@@ -163,3 +163,21 @@ _This section is a GitHub metadata snapshot, not proof that an implementation is
 | 2026-11-05 | Began tool closeout 1–5: reconciled existing sources and added narrowly scoped PRs #30–#33; recorded exact Win/Linux gates and unresolved integration | See the new closeout table above. No v1.0 installed acceptance or version bump. |
 | 2026-11-05 | Consolidated reviewed fixes into existing development bases #15, #24 and #27; exact-head Windows+Ubuntu Core/host CI passed for scoped background/Reader and Windows-host archive lock | See verified branch-consolidation receipts above; no new main release, and physical installed acceptance remains open. |
 | 2026-11-05 | Built and source-locked unified filesystem/archive/controlled-execution/background/Reader development branch PR #34; exact SHA Core tests, source identity and Cargo lock audits passed | See TOOL-F5 receipt above; Windows Tauri/frontend and physical GGUF/NSIS acceptance still outstanding. |
+
+
+### 2026-11-09 — Standalone Lu IDE IDE-05 next task group (source-only)
+
+After DEV-04.6D debugger native-human-dialog code was committed at
+`2daaeea504f26394a02ef491b575569a8db1ffc4`, the next canonical
+standalone IDE implementation area is **IDE-05 — Master Package and Toolchain
+Manager**, staged on `ide/dev05-1-package-discovery-20261109`. Its initial
+IDE-05.1 slice adds a **nonexecuting** fixed-file native registry inspection
+for uv / vcpkg / Conan, exact manifest/lock hashes, conflicting-manager
+blockers, and an explicit read-only Packages UI. No new package installer,
+network lookup, script execution, manager toolchain, signed distribution or
+authorization is claimed. IDE-05.1 Rust/Node tests are authored but native
+acceptance remains OPEN; use one grouped test gate at the task-group boundary,
+not per-file CI runs. Next suborders: static revision-bound plan review,
+protected fixed adapters, independent verification/recovery, and installed
+Windows/Linux OS tests. DEV-04.6D authentic Windows LLDB and human dialog
+verification is a **separate outstanding gate**, not promoted by this work.

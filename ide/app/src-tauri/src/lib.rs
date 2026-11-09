@@ -890,6 +890,22 @@ async fn ide_discover_conventional_tests(
         .map_err(str::to_owned)
 }
 
+/// IDE-05.1 manager-of-managers read-only detection. The WebView supplies
+/// an opaque registered project ID ONLY; manager/tool/path selection is fixed
+/// inside the native host. No subprocess or network access is possible here.
+#[tauri::command]
+async fn ide_inspect_package_managers(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::package_manager::PackageManagerInspection, String> {
+    let registry = Arc::clone(registry.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_package_managers(&project_id)
+            .map_err(str::to_owned)
+    })
+    .await.map_err(|_| "IDE05_DISCOVERY_TASK_UNAVAILABLE".to_owned())?
+}
+
 #[tauri::command]
 async fn ide_discover_project_run_profiles(
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
@@ -1588,6 +1604,7 @@ pub fn run() {
             ide_decide_execution_intent,
             ide_list_execution_intents,
             ide_discover_project_run_profiles,
+            ide_inspect_package_managers,
             ide_discover_conventional_tests,
             ide_review_project_debug_target,
             ide_review_multilang_adapter,
