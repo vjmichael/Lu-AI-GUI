@@ -724,3 +724,8 @@ Outstanding DEV-03.2B.2/.3/.4: pinned offline runtime bundles, reviewed
 platform-specific contained worker execution, real cancellation/recovery,
 artifacts and installed OS acceptance. The original product readiness
 BLK-05/06 and Group C integration gates remain separate open failures.
+
+
+## DEV-03.2B.2 portable offline bundle hardening — November 8, 2026
+
+On `ide/dev03-multilang-offline-runtime-bundles-20261108`, packaged runtime trees now fail closed on Windows reserved device names (including qualified names such as CON.txt) and on Unicode-normalized/case-folded relative-path aliases that could turn distinct Linux archive entries into the same Windows destination. Tests include device-name, case and Unicode normalization fixtures, with filesystem-specific skips only where the host cannot create the invalid fixture. Existing tree-SHA, file count/size limits, symlink/reparse/hard-link rejection, expected-pin admission and candidate/approved separation remain unchanged. This is a source guard, **not** evidence of successful Windows/Linux native tests or authorized runtime execution. Exact-head candidate workflows and installed AppContainer/Job/SCM or Bubblewrap/cgroup-v2 acceptance are still OPEN. Python/Node/CMake execution remains opt-in and fail-closed until verified worker bindings, cancellation, durable recovery and genuine OS evidence pass.
