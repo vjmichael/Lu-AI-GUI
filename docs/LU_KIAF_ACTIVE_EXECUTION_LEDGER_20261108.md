@@ -268,3 +268,28 @@ scanner harness now has a Cargo lock and existing group workflows use it
 with --locked. Both native scanner harness checks passed, including a
 12 MiB fixture with measured progress and an independent digest.
 Installed-app lifecycle and full multi-chat capacity remain open.
+
+### 2026-11-09 — R12 and R14 Linux and source contracts
+
+R12 passed 44 native Observe/image/multimodal library cases and 56 Node
+contracts. A stale Node guard expected a retired automatic Observe branch
+trigger. It now requires the existing manual gate and continues to check
+the reviewer-session fences. Windows WGC, OS consent, and real MMProj
+semantic interpretation remain open.
+
+R14 passed 30 chat/queue/attachment UI contracts, ten Core cross-chat and
+saved-prompt integration tests, and 13 native desktop chat store/revision
+tests. Interactive accessibility, installed UI, and Windows recovery remain
+open. The Linux tests do not substitute for those gates.
+
+### 2026-11-09 — R15 real Qwen output protocol diagnostic
+
+The raw reports are in benchmarks/e1/evidence. The baseline was two
+repetitions, 72 generations and zero passes. The matched direct-answer
+trial used the same pinned Qwen3 0.6B GGUF, engine, fixtures and unchanged
+scorer, with an empty Qwen reasoning prefix in both arms and one repetition.
+It completed 36 generations. Source-only had 15 feedback overclaims and
+three format failures. Host-classified had 18 format failures. Both arms
+scored zero. This records a diagnostic, and the memory acceptance gate
+remains open. The benchmark still needs a no-context control and a
+verified structured-output run before comparing comprehension.

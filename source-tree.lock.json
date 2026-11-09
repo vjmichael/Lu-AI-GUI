@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2d2747bd247db29c0fa286ed84230942d1fbd543",
-  "trackedFileCount": 823,
+  "sourceCommitBeforeLock": "e33f271130715c00e50774e4ec8cc75f9de1dfae",
+  "trackedFileCount": 825,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -320,6 +320,14 @@
       "blob": "b655a718c5498509e7e24e0944cf14714f8e9a28"
     },
     {
+      "path": "benchmarks/e1/evidence/2026-11-09-qwen03c-baseline.json",
+      "blob": "2fd079f6520e6190c4bd22576b4c8b1230c1f1fc"
+    },
+    {
+      "path": "benchmarks/e1/evidence/2026-11-09-qwen03c-direct.json",
+      "blob": "764fab20612e7e87d24b2f4ae360bda6085f3678"
+    },
+    {
       "path": "benchmarks/e1/memory_loop02_genuine_qwen_feedback.py",
       "blob": "2e1a78119482c85d9caa348e682537ef833fb1f8"
     },
@@ -329,7 +337,7 @@
     },
     {
       "path": "benchmarks/e1/memory_loop03c_real_qwen_comprehension.py",
-      "blob": "6806b5972bef6831d3c8358a6429829258bf7427"
+      "blob": "8455899e79c7f7e59bc2ede4287b31126f122782"
     },
     {
       "path": "benchmarks/e1/memory_loop03c_reviewed_worker_cases.py",
@@ -361,7 +369,7 @@
     },
     {
       "path": "benchmarks/e1/test_memory_loop03c_real_qwen_comprehension.py",
-      "blob": "c53953e990128770e6d00d517635c83f6c23f458"
+      "blob": "17336d8cbc383b7687d3e012b2995b619a05e360"
     },
     {
       "path": "benchmarks/e1/test_memory_loop03c_reviewed_workers.py",
@@ -621,7 +629,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "27f02611be9db585499dfe9669f338a0365be64b"
+      "blob": "d3a1f20d6ce1b9cd0fc7207f8d0082f3c8352c8c"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -1537,7 +1545,7 @@
     },
     {
       "path": "lu-desktop/tests/p06-observe-privacy.test.mjs",
-      "blob": "641af0d674d7ff38b52f819502436b36826f0cc1"
+      "blob": "96f9e5fac50d567b83fc0d5136230fe48dfc5bbb"
     },
     {
       "path": "lu-desktop/tests/p07-research-styles.test.mjs",

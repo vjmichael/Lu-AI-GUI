@@ -128,6 +128,8 @@ class Memory03cBoundary(unittest.TestCase):
         a = m.model_payload(row, "source_only", 20261109)
         b = m.model_payload(row, "host_classified", 20261109)
         self.assertEqual(a["seed"], b["seed"])
+        for payload in (a, b):
+            self.assertTrue(payload["prompt"].endswith("<think>\n\n</think>\n\n"))
         self.assertNotIn('"status":"NO_CURRENTLY_REVALIDATED_VERIFIED_PROCEDURE"', a["prompt"])
         self.assertIn('"status":"NO_CURRENTLY_REVALIDATED_VERIFIED_PROCEDURE"', b["prompt"])
         self.assertNotIn('"reuseOldPermission":', a["prompt"])
