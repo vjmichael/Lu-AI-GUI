@@ -51,3 +51,19 @@ The scheduler and broker tests assert the denial actually reached by their
 fixtures. The media test restores the approved bytes before testing the
 unsupported container path, so it exercises format detection separately
 from the changed-source hash check.
+
+## Linux reviewed worker integration evidence
+
+The E1 reviewed-worker integration suite reproduced a real FFprobe failure.
+The Ubuntu FFprobe binary could not map ICU under the generic 256 MiB
+Linux address-space ceiling. The host-validated media probe now uses a
+bounded 512 MiB Linux ceiling. Worker admission, Windows Job limits,
+source verification, and tool authority are unaffected. The revocation
+test checks for an empty capability set, which is the authority API's
+denial representation for a known revoked turn.
+
+The six opt-in Linux integration cases passed with system Git, FFprobe
+and FFmpeg. They exercise reviewed Git and WAV receipts, packed history,
+tracked state, MP4/AAC independent verification and a scripted reviewed
+model turn. Seven cases were filtered. This run did not exercise a loaded
+GGUF, the Tauri recovery suite, or Windows custody.

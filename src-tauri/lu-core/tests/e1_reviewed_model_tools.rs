@@ -764,7 +764,7 @@ async fn scripted_model_enters_real_reviewed_turn_session_and_receives_os_feedba
     }));
     // A completed conversation revokes the short-lived grant: no later
     // assistant text or replay can authorize another third-party execution.
-    assert!(f.auth.permitted_tool_ids(&origin()).is_err());
+    assert!(f.auth.permitted_tool_ids(&origin()).unwrap().is_empty());
     drop(session);drop(audit);
     f.cleanup();
 }

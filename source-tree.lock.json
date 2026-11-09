@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "90d34350a90b60ad06db04ca8351c5b7cd0fc907",
+  "sourceCommitBeforeLock": "7f5f6b389c3a7605615de78661ba5a0e300a1687",
   "trackedFileCount": 820,
   "files": [
     {
@@ -697,7 +697,7 @@
     },
     {
       "path": "docs/LU_MEMORY_LOOP03E_CRASH_CONSISTENT_PUBLICATION_20261109.md",
-      "blob": "9bb2745da388bd294bea23f647c5d25b1fa5102f"
+      "blob": "ee11f209c5a12710b0ab458cc4c42907cec06a03"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -2357,7 +2357,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "dd5f528b86a802891c0b178521eab0f0efcda07d"
+      "blob": "0433c699b62691b558ce87475d9fb4b2145d9f51"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
@@ -2925,7 +2925,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "879380ae13717eba9dbe40e05f3ce2ccc4f4fb66"
+      "blob": "940312bceccb0473f370a5e6e0e953e82f4a2901"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",

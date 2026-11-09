@@ -340,7 +340,7 @@ impl BackgroundProcessSupervisor {
     /// No Tauri command or ModelToolCatalog invokes this API directly.
     pub fn start_host_approved(&self,plan:TrustedWorkerPlan)
         ->Result<(),BackgroundProcessError>{
-        self.start_host_approved_internal(plan,None)
+        self.start_host_approved_internal(plan,None,false)
     }
     /// Host-only external VERSION-ONLY observation. No generic executable
     /// stdout transport is available to tools or the WebView.
@@ -367,7 +367,7 @@ impl BackgroundProcessSupervisor {
                     |"print('Python '+('9'*8192))"))
         );
         if !version_only{return Err(BackgroundProcessError::InvalidPlan)}
-        self.start_host_approved_internal(plan,Some((output_limit,false)))
+        self.start_host_approved_internal(plan,Some((output_limit,false)),false)
     }
     /// Host-owned, bounded read-only Git operations; this does NOT sandbox
     /// Lu and it is NOT a generic CLI bridge. The repository root is provided
@@ -430,7 +430,7 @@ impl BackgroundProcessSupervisor {
         if !is_head&&!is_status&&!is_branch&&!is_count{
             return Err(BackgroundProcessError::InvalidPlan)
         }
-        self.start_host_approved_internal(plan,Some((output_limit,is_status||is_branch)))
+        self.start_host_approved_internal(plan,Some((output_limit,is_status||is_branch)),false)
     }
 
     /// E1-P06E: host-owned read-only FFprobe *single-file* inspection. This
@@ -470,10 +470,11 @@ impl BackgroundProcessSupervisor {
         if !correct_extension{return Err(BackgroundProcessError::InvalidPlan)}
         let observed=verified_media_input(input,reviewed_media_sha256)?;
         if observed==0{return Err(BackgroundProcessError::InvalidPlan)}
-        self.start_host_approved_internal(plan,Some((output_limit,false)))
+        self.start_host_approved_internal(plan,Some((output_limit,false)),true)
     }
     fn start_host_approved_internal(
-        &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>
+        &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>,
+        _linux_media_probe:bool
     )->Result<(),BackgroundProcessError>{
         if !valid_id(&plan.task_id)||!valid_id(&plan.workspace_id)
           ||plan.max_runtime_seconds.is_some_and(|n|n==0||n>86_400)
@@ -577,6 +578,9 @@ impl BackgroundProcessSupervisor {
                 Some("--lu-file-scan-worker")=>Some(1024*1024*1024u64),
                 Some("--lu-e1-version-one-shot")|
                 Some("--lu-e1-artifact-one-shot")=>Some(256*1024*1024u64),
+                // Linux RLIMIT_AS includes mapped shared libraries. The
+                // reviewed FFprobe path needs room for its codec libraries.
+                _ if _linux_media_probe=>Some(512*1024*1024u64),
                 _ if typed_capture.is_some()=>Some(256*1024*1024u64),
                 _=>None
             };
