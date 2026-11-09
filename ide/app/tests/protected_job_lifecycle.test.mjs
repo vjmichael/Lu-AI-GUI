@@ -71,3 +71,14 @@ test('rejects forged or unbounded responses',()=>{
  s.journal=Array(33).fill(record('completed'));
  assert.equal(projectJobLifecycle(s,id,null).kind,'unavailable');
 });
+
+test('frontend reads failed-job output only with native last identity and durable journal',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
+ const host=readFileSync(new URL('../src-tauri/src/build_backend.rs',import.meta.url),'utf8');
+ assert.ok(ui.includes('value.lastOutputJobId'));
+ assert.ok(ui.includes('entry.jobId === value.lastOutputJobId'));
+ assert.ok(ui.includes('entry.projectId === projectId'));
+ assert.ok(host.includes('last_output_job_id'));
+ assert.ok(host.includes('BUILD_OUTPUT_NOT_ACTIVE_OR_RECENT'));
+});
