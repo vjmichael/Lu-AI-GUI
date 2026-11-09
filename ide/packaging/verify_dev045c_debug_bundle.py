@@ -77,7 +77,8 @@ def normal_file(path: Path, outer: Path) -> os.stat_result:
     return leaf
 
 
-def audit(root: Path, lock: dict, source_sha: str, *, platform: str) -> dict:
+def audit(root: Path, lock: dict, source_sha: str, *, platform: str,
+          installer_sha: str, desktop_sha: str, service_sha: str) -> dict:
     if (not SHA40.fullmatch(source_sha)
             or not isinstance(lock, dict)
             or lock.get("schema") != SCHEMA
@@ -89,6 +90,17 @@ def audit(root: Path, lock: dict, source_sha: str, *, platform: str) -> dict:
             or lock.get("platform") != platform
             or platform not in ("windows-x86_64", "linux-x86_64")):
         raise Denied("wrong_source_scope_or_unapproved_candidate")
+    # The same source tree can produce several different signed candidates.
+    # Tie this technical candidate lock to the EXACT signed installer,
+    # desktop and SCM service already authenticated by the WO7 preflight.
+    candidate = {
+        "installerSha256": installer_sha,
+        "desktopSha256": desktop_sha,
+        "serviceSha256": service_sha,
+    }
+    if any(not isinstance(value, str) or SHA64.fullmatch(value) is None
+           or lock.get(key) != value for key, value in candidate.items()):
+        raise Denied("signed_candidate_binary_identity_mismatch")
     if not root.is_absolute() or not root.is_dir() or root.is_symlink():
         raise Denied("not_an_installed_absolute_root")
     bundle = root / BUNDLE
@@ -183,11 +195,17 @@ def main() -> int:
     parser.add_argument("--installed-root", type=Path, required=True)
     parser.add_argument("--lock", type=Path, required=True)
     parser.add_argument("--source-sha", required=True)
+    parser.add_argument("--installer-sha256", required=True)
+    parser.add_argument("--desktop-sha256", required=True)
+    parser.add_argument("--service-sha256", required=True)
     parser.add_argument("--platform", choices=["windows-x86_64", "linux-x86_64"], required=True)
     a = parser.parse_args()
     try:
         observed = audit(a.installed_root, json.loads(a.lock.read_text(encoding="utf-8")),
-                         a.source_sha, platform=a.platform)
+                         a.source_sha, platform=a.platform,
+                         installer_sha=a.installer_sha256,
+                         desktop_sha=a.desktop_sha256,
+                         service_sha=a.service_sha256)
     except (Denied, OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         reason = str(exc) if isinstance(exc, Denied) else "invalid_installed_debugger_candidate"
         print("DENIED: DEV045C_" + reason, file=sys.stderr)
