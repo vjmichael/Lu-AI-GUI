@@ -1568,6 +1568,10 @@ function App() {
       if(!result||result.projectId!==projectId||
          result.target!=='one_exact_private_project_build_in_protected_job'||
          result.originBuildJobId!==witness.jobId||
+         result.originBuildPlanSha256!==witness.planSha||
+         result.originBuildReceiptSha256!==witness.terminalReceiptSha||
+         result.binarySha256!==witness.binarySha||
+         result.symbolSha256!==witness.symbolsSha||
          !/^[a-f0-9]{64}$/.test(result.targetBindingSha256||'')||
          result.installedAppAccepted!==false||
          result.terminalPhase!=='completed'||
