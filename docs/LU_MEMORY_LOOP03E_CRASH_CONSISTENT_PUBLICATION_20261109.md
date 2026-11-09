@@ -16,3 +16,14 @@ The existing **manual** lu-memory-loop03b-native.yml Windows/Linux task-group ma
 ## 03E-R2 initial read-only task-origin attestation
 
 Before inspecting a historical source, 03E now calls Lu's **existing E1-P15 read-only reviewed-turn continuity inspector** on the fixed original task/effect journal pair. The inspector validates the TaskStore singleton original chat/turn binding independently of the effect receipt. Missing or mismatched task files, unsafe linked journals, and a forged different chat owner cause fail-closed unavailability, even if the original effect, oracle and checkpoint are intact. Native tests create real task journal identities for synthetic fixtures, then tamper a stored human origin and require denial. This is **read-only origin attestation**, not full operator-controlled reconstruction or permission to repair a previously unpublished projection. The unimplemented reconstruction remains explicitly OPEN.
+
+
+## 03E-R2 — atomic original intent and exclusive startup reconstruction
+
+**Source implementation candidate; native OS acceptance OPEN.** The original reviewed index entry and complete, deterministic projection intent (checkpoint, verified procedure, verified belief, original expiry, source and receipt identity) are serialized and durably inserted **in one SQLite transaction in the same index database**. The index does not have an executable permission or authorization field.
+
+The ANSF book and continuity checkpoint use **separate SQLite WAL databases**, so Lu cannot claim a cross-database ACID commit for the materializations. Instead, it applies the immutable intent idempotently in those databases and publishes the indexed history to normal model recall only after all projections succeed.
+
+While DesktopOwner owns the exclusive profile lease during startup, 03E-R2 scans at most 64 incomplete indexed intents. Every reconstructed source must match the original authenticated human turn and latest source revision, original TaskStore binding, APPLIED receipt, independent method-specific oracle, and unchanged checkpoint identity. The presence of any later authenticated human turn (including a correction), exact procedure invalidation or claim retraction, expiry, later checkpoint or untrusted/legacy intent **blocks reconstruction and requests human review**. No native tool, process, task resume, existing approval, or model call is executed. Older 03D records lacking the atomic intent are quarantined, not guessed.
+
+The operator can inspect these statuses within the existing **Native tool activity** panel. The status API authenticates the chat, is read-only, and surfaces recovery outcomes with explicit no-execution/no-retry policy. The pre-existing manual 03B/03C/03D Windows/Linux task-group gate now includes 03E source/UI contract checks and the same Rust test-module filter. Source-level implementation is not installed, GGUF, compiler, kernel-custody or actual independent Windows/Linux acceptance.

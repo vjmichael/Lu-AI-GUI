@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "bbd695b610febee935ca21ed3fd4540f047afb21",
-  "trackedFileCount": 818,
+  "sourceCommitBeforeLock": "f40938dbdd8ef950a8c5d339fb880614564ab9c8",
+  "trackedFileCount": 820,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -189,7 +189,7 @@
     },
     {
       "path": ".github/workflows/lu-memory-loop03b-native.yml",
-      "blob": "454158435637cf3987e7d355eea219fef27f9043"
+      "blob": "5ce9770eb61c8a4d45e526a72c36c1d44aef6091"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -621,7 +621,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "000b70b21f1805df794dbddc28226f35b6865c22"
+      "blob": "0b13892242d9f1ad0dd63fcfbcad75ce922c9c45"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -697,7 +697,7 @@
     },
     {
       "path": "docs/LU_MEMORY_LOOP03E_CRASH_CONSISTENT_PUBLICATION_20261109.md",
-      "blob": "25ae3da40ac284774fcbb66ed218279a73d4aeee"
+      "blob": "cde008d7cb9e122b924dff74d74ec34297691ea2"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -1241,7 +1241,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_memory_evidence.rs",
-      "blob": "a8c71b6a59a4af83130a6d0ff0f8ad006446be78"
+      "blob": "2f595c89993c9f7ea81e8218c0bf0c777967dc2b"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_task_continuity.rs",
@@ -1484,6 +1484,10 @@
       "blob": "f97ea74f42391b59352989dbebff56ab02645a7f"
     },
     {
+      "path": "lu-desktop/tests/memory-loop03e-crash-recovery.test.mjs",
+      "blob": "eefdc8f45db6186664dd65c60d688b5f0c05e04f"
+    },
+    {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
       "blob": "bed636bd5f57242fbffcb9e006de7a0a9234d52f"
     },
@@ -1689,7 +1693,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "0528e8b7a69aa733905a2276f3bcfd3a6d8e517c"
+      "blob": "b1cb96a7ad44f5d85d95fceac5cf3e6c3764652e"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1710,6 +1714,10 @@
     {
       "path": "lu-desktop/web/response_view.mjs",
       "blob": "fd2f9a2f0d9cc4593733656d5d1e7c3ffdbfaeb1"
+    },
+    {
+      "path": "lu-desktop/web/reviewed_memory_recovery.mjs",
+      "blob": "3aee1d12af339df20f957da18978451a19c5a63c"
     },
     {
       "path": "lu-desktop/web/reviewed_tool_feedback.mjs",

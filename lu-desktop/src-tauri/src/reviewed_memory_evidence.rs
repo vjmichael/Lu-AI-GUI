@@ -624,16 +624,19 @@ pub(crate) fn reconcile_incomplete_exclusive(
              WHERE p.call_id IS NULL OR p.published_unix<=0
              ORDER BY e.rowid ASC LIMIT ?1"
         ).map_err(err)?;
-        stmt.query_map([(RECOVERY_LIMIT+1) as i64],read_row)
-            .map_err(err)?.collect::<Result<Vec<_>,_>>().map_err(err)?
+        let rows=stmt.query_map([(RECOVERY_LIMIT+1) as i64],read_row)
+            .map_err(err)?;
+        let collected=rows.collect::<Result<Vec<_>,_>>().map_err(err)?;
+        collected
     };
     if pending.len()>RECOVERY_LIMIT{
         return Err("Too many unfinished reviewed projections for bounded recovery".into())
     }
     let mut out=Vec::with_capacity(pending.len());
     for row in &pending{
-        let status=if read_plan(&conn,row).is_err(){
-            "LEGACY_REVIEW_REQUIRED"
+        let status=if let Err(reason)=read_plan(&conn,row){
+            if reason.contains("Legacy"){"LEGACY_REVIEW_REQUIRED"}
+            else{"REVIEW_REQUIRED"}
         }else if reconcile_one_projection(chats,continuity,&root,&mut conn,row).is_ok(){
             "RECONSTRUCTED_SOURCE_VERIFIED"
         }else{

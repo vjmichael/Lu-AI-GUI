@@ -54,6 +54,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --test lu-desktop/tests/memory-loop03e-crash-recovery.test.mjs 2>&1 | tee memory-loop03b-evidence/memory03e-source-contracts.log
           node --test lu-desktop/tests/memory-loop03b-source.test.mjs 2>&1 | tee memory-loop03b-evidence/source-contracts.log
           grep -Fq '# pass 11' memory-loop03b-evidence/source-contracts.log
           grep -Fq '# fail 0' memory-loop03b-evidence/source-contracts.log
