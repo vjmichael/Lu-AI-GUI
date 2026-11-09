@@ -147,6 +147,22 @@ jobs:
           grep -Fq 'test result: ok. 1 passed; 0 failed;' \
             e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
           echo 'AGENT-01G real loaded-GGUF host-native ANSF plan/fresh consent, reviewed Git OS effect, independent oracle, restart passed. Installed UI native picker remains separate.' >> "$GITHUB_STEP_SUMMARY"
+      - name: AGENT-01I two genuine Qwen turns with separate plan grants, native Git, oracle and restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          grep -Fq 'test agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart ... ok' \
+            e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          grep -Fq 'AGENT01I_TWO_STEP_REAL_QWEN_AND_NATIVE_ORACLE_PASS' \
+            e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          echo 'Two distinct loaded-Qwen model tool choices, separately scoped parent and child native Git runs, individual oracle receipts and restart replay denial passed. Native OS dialog and physical installed Windows acceptance remain separate.' >> "$GITHUB_STEP_SUMMARY"
       - name: GGUF independently selects Git and FFprobe in production Lu tool loop
         shell: bash
         run: |
