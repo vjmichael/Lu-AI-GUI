@@ -26,7 +26,9 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: actual Win32 LLDB owner-event source/journal normal run failed' }
   & $hostExe --project-debug-owner-cancel
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: actual LLDB owner-event cancellation/restart failed' }
-  Write-Host 'DEV045D5_REAL_WINDOWS_OWNER_EVENT_NORMAL_CANCEL_REPLAY=PASS'
+  & $hostExe --project-debug-owner-crash
+  if ($LASTEXITCODE -ne 0) { throw 'DENIED: real LLDB owner-event crash/Job descendant reaping and fsynced restart recovery failed' }
+  Write-Host 'DEV045D5_REAL_WINDOWS_OWNER_EVENT_NORMAL_CANCEL_CRASH_REPLAY=PASS'
 } finally {
   if ($nulTouched) {
     & $bootstrap --revoke-fixed-service
