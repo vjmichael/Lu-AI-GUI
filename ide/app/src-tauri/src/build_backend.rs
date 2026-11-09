@@ -19,6 +19,7 @@ use lu_ide_execution_supervisor::{
     live_output::{LiveOutput, OutputPage},
     wo6_output_evidence::{audit_published_output, ArtifactEntry},
     debug_binary_witness::{audit_debug_binary_candidate, DebugBinaryWitness},
+    debug_symbol_verification::{verify_build_debug_symbols, DebugSymbolWitness},
     JobPlan, JobPhase, Supervisor,
 };
 use serde::Serialize;
@@ -227,6 +228,7 @@ pub struct BuildRunView {
     pub output_bytes: Option<u64>,
     pub terminal_receipt_sha256: String,
     pub debug_binary_candidate: Option<DebugBinaryWitness>,
+    pub debug_symbol_witness: Option<DebugSymbolWitness>,
     pub artifact_manifest_sha256: Option<String>,
     pub artifact_evidence_state: String,
     pub artifact_files: Vec<ArtifactEntry>,
@@ -661,6 +663,26 @@ impl NativeBuildRuntime {
             published.as_ref().and_then(|witness|
                 audit_debug_binary_candidate(&native.output_directory,witness).ok().flatten())
         } else { None };
+        // DEV-04.3: native-only bounded readback of *the same* protected
+        // completed Cargo output and its independently rehashed executable.
+        // No symbol path, PDB path, executable identity or approval is taken
+        // from the WebView. Missing/invalid/ambiguous debug data is None.
+        #[cfg(windows)]
+        let debug_symbol_witness = if completed_build {
+            published.as_ref().zip(debug_binary_candidate.as_ref())
+                .and_then(|(output, binary)| {
+                    verify_build_debug_symbols(&native.output_root, output, binary)
+                        .ok().flatten()
+                })
+        } else {None};
+        #[cfg(target_os = "linux")]
+        let debug_symbol_witness = if completed_build {
+            published.as_ref().zip(debug_binary_candidate.as_ref())
+                .and_then(|(output, binary)| {
+                    verify_build_debug_symbols(&native.output_directory, output, binary)
+                        .ok().flatten()
+                })
+        } else {None};
         let artifact_evidence_state = if published.is_some() {
             "read_only_post_termination_tree_hashed"
         } else {
@@ -692,6 +714,7 @@ impl NativeBuildRuntime {
             output_bytes,
             terminal_receipt_sha256: evidence.terminal_receipt_hash,
             debug_binary_candidate,
+            debug_symbol_witness,
             artifact_manifest_sha256,
             artifact_evidence_state: artifact_evidence_state.to_owned(),
             artifact_files,
