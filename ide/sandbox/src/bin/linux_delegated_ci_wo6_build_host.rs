@@ -19,10 +19,10 @@ fn run() -> Result<(), &'static str> {
     if args.next().is_some()
         || !matches!(
             first.to_str(),
-            Some("--check" | "--test" | "--build" | "--project-debug" | "--cancel")
+            Some("--check" | "--test" | "--build" | "--project-debug" | "--project-debug-cancel" | "--cancel")
         )
     {
-        return Err("only fixed check, test, build, project-debug and cancel modes");
+        return Err("only fixed check, test, build, project-debug, project-debug-cancel and cancel modes");
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let helper = root.join("target/debug/linux_cgroup_prepare");
