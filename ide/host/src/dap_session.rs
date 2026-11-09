@@ -696,6 +696,21 @@ mod tests {
             "/debug-target/target/debug/fixture").unwrap_err(),
             DapError::InvalidPhase);
     }
+    #[cfg(windows)]
+    #[test]
+    fn native_appcontainer_project_path_can_launch_but_foreign_windows_paths_cannot(){
+        let mut session=DapSession::new();
+        session.phase=DapPhase::Ready;
+        assert_eq!(session.launch_verified_project(
+            r"C:\\Windows\\System32\\cmd.exe").unwrap_err(),DapError::InvalidMessage);
+        assert_eq!(session.launch_verified_project(
+            r"C:\\Temp\\debug-target\\target\\debug\\..\\evil.exe").unwrap_err(),
+            DapError::InvalidMessage);
+        let frame=session.launch_verified_project(
+            r"C:\\Users\\runner\\AppData\\Local\\Packages\\debug-target\\target\\debug\\fixture.exe")
+            .unwrap();
+        assert!(String::from_utf8(frame).unwrap().contains("stopOnEntry"));
+    }
     #[test]
     fn only_fixed_native_fixture_can_be_launched_and_response_is_correlated() {
         let mut session = DapSession::new();
