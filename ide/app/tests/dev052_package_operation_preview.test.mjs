@@ -54,8 +54,8 @@ test('the native revalidation re-inspects current files and never becomes author
 test('Tauri has review/revalidation only: no package manager execution command',()=>{
   assert.match(tauri, /async fn ide_preview_package_operation\(/);
   assert.match(tauri, /async fn ide_revalidate_package_operation\(/);
-  assert.match(tauri, /registry\.preview_package_operation\(&project_id, request\)/);
-  assert.match(tauri, /registry\.revalidate_package_operation\(/);
+  assert.match(tauri, /registry\s*\.preview_package_operation\(&project_id, request\)/);
+  assert.match(tauri, /registry\s*\.revalidate_package_operation\(/);
   assert.match(tauri, /ide_preview_package_operation,\s*ide_revalidate_package_operation,/);
   assert.doesNotMatch(tauri, /async fn ide_(?:apply|install|execute)_package_operation\(/);
 });

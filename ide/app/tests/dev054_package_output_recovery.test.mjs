@@ -59,7 +59,7 @@ test('wheel origin and promotion are never fabricated from lockfile or installed
 });
 test('unsafe lock sources are rejected before human consent or worker process admission',()=>{
   assert.match(audit, /pub fn verify_offline_registry_lock/);
-  assert.match(backend, /verify_offline_registry_lock\(&input\.root,lock\)/);
+  assert.match(backend, /verify_offline_registry_lock\(&input\.root,\s*lock\)/);
   assert.match(backend, /IDE054_FROZEN_LOCK_SOURCE_POLICY_DENIED/);
   assert.match(linux, /"[^"]*--no-sources"/);
   assert.match(linux, /"--no-default-groups"/);
@@ -68,8 +68,8 @@ test('unsafe lock sources are rejected before human consent or worker process ad
   assert.match(backend, /sha256_private_staged_file\(&input\.root, "uv\.lock"\)/);
 });
 test('durable journal records prepared BEFORE supervisor admission and never grants re-execution',()=>{
-  assert.match(backend, /self\.package_lifecycle\.record_prepared\(/);
-  assert.match(backend, /self\.supervisor\.prepare\(plan\.clone\(\)\)/);
+  assert.match(backend, /self\s*\.package_lifecycle\s*\.record_prepared\(/);
+  assert.match(backend, /self\s*\.supervisor\s*\.prepare\(plan\.clone\(\)\)/);
   assert.match(ledger, /"package_prepared"/);
   assert.match(ledger, /"original_package_job_requires_native_reconciliation"/);
   assert.match(ledger, /may_execute_or_retry_worker:\s*false/);
@@ -80,14 +80,14 @@ test('durable journal records prepared BEFORE supervisor admission and never gra
 });
 test('postrun revalidation and original OS receipt join precede local audit publication',()=>{
   assert.match(backend, /let original_manifests_unchanged =/);
-  assert.match(backend, /registry\.revalidate_package_operation\(/);
+  assert.match(backend, /registry\s*\.revalidate_package_operation\(/);
   assert.match(backend, /verify_input\(&input\)\.is_ok\(\)/);
   assert.match(backend, /trusted_terminal/);
   assert.match(backend, /audit_uv_private_output\(/);
   assert.match(backend, /output\.tree_sha256 == proof\.output_tree_sha256/);
-  assert.match(backend, /self\.package_lifecycle\.record_audit\(/);
-  assert.match(backend, /original\.plan_sha256!=row\.plan_sha256/);
-  assert.match(backend, /self\.supervisor\.receipt_history\(&row\.job_id\)/);
+  assert.match(backend, /self\s*\.package_lifecycle\s*\.record_audit\(/);
+  assert.match(backend, /original\.plan_sha256\s*!=\s*row\.plan_sha256/);
+  assert.match(backend, /self\s*\.supervisor\s*\.receipt_history\(&row\.job_id\)/);
   assert.match(backend, /IDE054_AUDIT_TERMINAL_RECEIPT_UNVERIFIED/);
   assert.match(backend, /postrun_original_manifest_lock_unchanged/);
 });
@@ -103,10 +103,10 @@ test('discard never executes a package manager, never takes a user-chosen path a
   assert.match(backend, /MessageDialogButtons::OkCancelCustom/);
   assert.match(backend, /audit_published_output\(&output\)/);
   assert.match(backend, /IDE054_OUTPUT_CHANGED_NOT_REMOVED/);
-  assert.match(backend, /self\.package_lifecycle\.prepare_discard\(/);
-  assert.match(backend, /self\.package_lifecycle\.prepare_unverified_discard\(/);
+  assert.match(backend, /self\s*\.package_lifecycle\s*\.prepare_discard\(/);
+  assert.match(backend, /self\s*\.package_lifecycle\s*\.prepare_unverified_discard\(/);
   assert.match(backend, /fs::remove_dir_all\(&output\)/);
-  assert.match(backend, /self\.package_lifecycle\.verify_discard\(/);
+  assert.match(backend, /self\s*\.package_lifecycle\s*\.verify_discard\(/);
   assert.match(ledger, /"discard_prepared"/);
   assert.match(ledger, /"discard_verified"/);
   assert.match(ledger, /fn discard_prepare_survives_crash_and_remains_pending_until_verified/);

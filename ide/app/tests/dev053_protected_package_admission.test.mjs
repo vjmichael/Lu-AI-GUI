@@ -30,8 +30,8 @@ test('IDE053 package worker is strictly opted in and no default apply authority 
 });
 test('native launch binds one exact Sync to preview identity in the D3 JobPlan',()=>{
   assert.match(backend, /pub fn run_reviewed_uv_sync\(/);
-  assert.match(backend, /manager_id: "uv"\.into\(\), operation: PackageOperation::Sync/);
-  assert.match(backend, /registry\.revalidate_package_operation\(/);
+  assert.match(backend, /manager_id:\s*"uv"\.into\(\),\s*operation:\s*PackageOperation::Sync/);
+  assert.match(backend, /registry\s*\.revalidate_package_operation\(/);
   assert.match(backend, /sha256_private_staged_file\(&input\.root, "uv\.lock"\)/);
   assert.match(backend, /input\.seal\.manifest_sha256 != py/);
   assert.match(backend, /IDE053_FROZEN_SOURCE_DIFFERS_FROM_APPROVED_REVIEW/);
@@ -82,8 +82,8 @@ test('OS native human consent is fresh and bounded; historical review cannot gra
   assert.match(backend, /\.show\(move \|confirmed\|/);
   assert.match(backend, /Duration::from_secs\(45\)/);
   assert.match(backend, /requested\.load\(Ordering::SeqCst\)/);
-  assert.match(backend, /registry\.revalidate_package_operation\(/);
-  assert.match(backend, /self\.supervisor\.record_human_approval\(/);
+  assert.match(backend, /registry\s*\.revalidate_package_operation\(/);
+  assert.match(backend, /self\s*\.supervisor\s*\.record_human_approval\(/);
   assert.match(backend, /execute_linux_worker_with_output/);
   assert.match(backend, /execute_windows_worker_after_staging_approval_with_output/);
   assert.match(backend, /cancel_before_start\(&prepared\.job_id\)/);

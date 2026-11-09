@@ -15,16 +15,16 @@ test('IDE05 fixed native probe uses only registered project and existing read-on
   assert.match(host,/self\.source_capability\(project_id\)/);
   assert.match(host,/self\s*\.probe_project_resource\(project_id, path\)/);
   assert.doesNotMatch(host, /std::process::Command|Command::new|std::net::|ureq::|reqwest::/);
-  assert.match(host,/network_accessed: false, process_started: false/);
-  assert.match(host,/files_modified: false, resolution_supported: false/);
-  assert.match(host,/apply_supported: false, execution_authorized: false/);
+  assert.match(host,/network_accessed:\s*false,\s*process_started:\s*false/);
+  assert.match(host,/files_modified:\s*false,\s*resolution_supported:\s*false/);
+  assert.match(host,/apply_supported:\s*false,\s*execution_authorized:\s*false/);
 });
 test('Tauri command accepts only an opaque project id and never an install plan',()=>{
   const command=tauri.match(/async fn ide_inspect_package_managers\([\s\S]*?\n\}/)?.[0];
   assert.ok(command,'native read-only command must exist');
   assert.match(command,/project_id: String/);
   assert.doesNotMatch(command,/manager_id: String|package_name: String|command: String|path: String|grant: String|token: String/);
-  assert.match(command,/registry\.inspect_package_managers\(&project_id\)/);
+  assert.match(command,/registry\s*\.inspect_package_managers\(&project_id\)/);
   assert.match(tauri,/ide_discover_project_run_profiles,\s*ide_inspect_package_managers,/);
 });
 test('UI cannot claim successful package resolution or install',()=>{
