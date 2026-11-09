@@ -1,5 +1,5 @@
 $ErrorActionPreference='Stop'
-$features='dap-transport,protected-recovery-service,dev045d5-ci-event-owner'
+$features='dap-transport,protected-recovery-service,dev046c-ci-control'
 cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib windows_event_owner
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: event wire/sequence/revocation unit tests failed' }
 cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib windows_kernel_pc
@@ -28,7 +28,12 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: actual LLDB owner-event cancellation/restart failed' }
   & $hostExe --project-debug-owner-crash
   if ($LASTEXITCODE -ne 0) { throw 'DENIED: real LLDB owner-event crash/Job descendant reaping and fsynced restart recovery failed' }
-  Write-Host 'DEV045D5_REAL_WINDOWS_OWNER_EVENT_NORMAL_CANCEL_CRASH_REPLAY=PASS'
+  # D6C extends this SAME grouped real Windows native acceptance batch.
+  & $hostExe --project-debug-step
+  if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected CI step missing fresh independent OS Job/PDB source and durable ResultVerified receipt' }
+  & $hostExe --project-debug-breakpoint
+  if ($LASTEXITCODE -ne 0) { throw 'DENIED: source-only breakpoint was accepted without strict uncertain outcome' }
+  Write-Host 'DEV045D5_D6C_WINDOWS_OWNER_NORMAL_CANCEL_CRASH_STEP_BREAKPOINT=PASS'
 } finally {
   if ($nulTouched) {
     & $bootstrap --revoke-fixed-service
