@@ -49,6 +49,25 @@ jobs:
         run: |
           set -euo pipefail
           node --test ide/app/tests/debug_binary_evidence.test.mjs ide/app/tests/debug_symbol_evidence.test.mjs ide/app/tests/project_debug_authority.test.mjs
+      - name: Validate installed project debugger harness without claiming installed acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test ide/app/tests/dev045_installed_project_debug_contract.test.mjs
+      - name: Parse installed Windows UI Automation acceptance PowerShell without executing it
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $tokens=$null
+          $problems=$null
+          $path=(Resolve-Path 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1').Path
+          [void][System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$problems)
+          if ($problems.Count -ne 0) {
+            $problems | ForEach-Object { Write-Error $_.Message }
+            throw 'DEV045_INSTALLED_GUI_ACCEPTANCE_SCRIPT_SYNTAX_INVALID'
+          }
+          Write-Host 'DEV045_NATIVE_UI_AUTOMATION_SCRIPT_PARSE=PASS_NOT_INSTALLED_E2E'
       - name: DAP parser and sealed private target native unit tests
         shell: bash
         run: |
