@@ -36,6 +36,8 @@ struct OwnedWorker {
     deadline:Option<Instant>,
     #[cfg(windows)]
     job:Option<lu_win_worker_job::Job>,
+    #[cfg(windows)]
+    job_empty:Option<lu_win_worker_job::WindowsJobEmptyProof>,
     #[cfg(target_os="linux")]
     guardian:Option<lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian>,
 }
@@ -615,6 +617,8 @@ impl BackgroundProcessSupervisor {
             deadline:plan.max_runtime_seconds.map(|n|Instant::now()+Duration::from_secs(n)),
             #[cfg(windows)]
             job:Some(job),
+            #[cfg(windows)]
+            job_empty:None,
             #[cfg(target_os="linux")]
             guardian,
         };
@@ -653,7 +657,21 @@ impl BackgroundProcessSupervisor {
         let mut finished=Vec::new();
         for (id,worker) in workers.iter_mut(){
             match worker.child.try_wait(){
-                Ok(Some(status))=>finished.push((id.clone(),Some(status.success()))),
+                Ok(Some(status))=>{
+                    #[cfg(windows)]
+                    {
+                        // The owner still holds the original Job handle.
+                        // Query the KERNEL after terminating any surviving
+                        // descendants; a leader exit is not tree emptiness.
+                        let job=worker.job.as_ref()
+                            .ok_or(BackgroundProcessError::ProcessUncertain)?;
+                        worker.job_empty=Some(
+                            job.terminate_and_verify_empty()
+                                .map_err(|_|BackgroundProcessError::ProcessUncertain)?
+                        );
+                    }
+                    finished.push((id.clone(),Some(status.success())));
+                },
                 Ok(None)=>{
                     if worker.deadline.is_some_and(|deadline|Instant::now()>=deadline){
                         // Host deadline, never a model decision or an inferred
@@ -669,7 +687,9 @@ impl BackgroundProcessSupervisor {
         for (id,outcome) in finished{
             let mut owner=workers.remove(&id).expect("owned worker still registered");
             #[cfg(windows)]
-            drop(owner.job.take()); // Close Job and any inherited stdout handles.
+            let empty_job_witness=owner.job_empty.take();
+            #[cfg(windows)]
+            drop(owner.job.take()); // The kernel empty-job check preceded CloseHandle.
             // Shut down the Linux PGID anchor before joining pipes: a
             // descendant may have inherited worker stdout. A verified
             // guardian SIGKILL is required, not merely a leader exit.
@@ -698,6 +718,18 @@ impl BackgroundProcessSupervisor {
                 None=>self.store.timed_out(&id),
             };
             result.map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+            #[cfg(windows)]
+            if matches!(outcome,Some(true))&&had_version_reader&&version.is_some()
+                &&["-gh","-gs","-gb","-gc","-fm"]
+                    .iter().any(|suffix|id.ends_with(suffix)){
+                // Publish the OS witness only AFTER successful task terminal
+                // persistence. Any crash or mismatch leaves NO witness, so
+                // recovery remains blocked; never fabricate from APPLIED.
+                self.store.record_verified_windows_job_empty(
+                    &id,&workspace,empty_job_witness
+                        .ok_or(BackgroundProcessError::ProcessUncertain)?
+                ).map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+            }
             if matches!(outcome,Some(true)){
                 if let Some(version)=version{
                     let mut owned=self.version_outputs.lock()
@@ -848,8 +880,12 @@ fn terminate_owned(worker:&mut OwnedWorker)->Result<(),BackgroundProcessError>{
     }
     #[cfg(windows)]
     {
-        // Closing the Job first terminates all descendants, including those
-        // inheriting our stdout pipe. Only then can reader.join() be safe.
+        // A cancelled Job must also be empty before claiming that the OS
+        // stop completed. Cancellation does NOT create a reusable witness.
+        worker.job.as_ref()
+            .ok_or(BackgroundProcessError::ProcessUncertain)?
+            .terminate_and_verify_empty()
+            .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
         drop(worker.job.take());
     }
     worker.child.wait().map_err(|_|BackgroundProcessError::ProcessUncertain)?;
@@ -1071,6 +1107,88 @@ mod tests{
         assert!(store.get("video-1").unwrap().is_none());
         assert_eq!(manager.cancel_owned("video-1","media"),
             Err(BackgroundProcessError::NotOwned));
+    }
+    #[cfg(windows)]
+    #[test]
+    fn agent01l_real_git_job_attests_original_turn_and_reopens_without_replay(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        use std::process::Command;
+        let where_git=Command::new("where.exe").arg("git.exe").output().unwrap();
+        assert!(where_git.status.success(),"Windows Git must be installed");
+        let selected=String::from_utf8(where_git.stdout).unwrap()
+            .lines().next().expect("Missing Windows git path").trim().to_owned();
+        let binary=fs::canonicalize(selected).unwrap();
+        let root=std::env::temp_dir().join(format!(
+            "lu-agent01l-git-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let repo=root.join("approved-git-repo");
+        fs::create_dir_all(&repo).unwrap();
+        assert!(Command::new(&binary).args(["init","-q"])
+            .current_dir(&repo).status().unwrap().success());
+        assert!(Command::new(&binary).args([
+            "-c","user.name=Lu","-c","user.email=lu@example.test",
+            "commit","--allow-empty","-q","-m","AGENT-01L native witness"
+        ]).current_dir(&repo).status().unwrap().success());
+        let mut hasher=Sha256::new();
+        hasher.update(fs::read(&binary).unwrap());
+        let sha=format!("{:x}",hasher.finalize());
+        let chat=format!("c-{}","1".repeat(32));
+        let turn=format!("g-{}","2".repeat(32));
+        let call="agent01l-real-git-gh";
+        let db=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&db).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let manager=BackgroundProcessSupervisor::new(Arc::clone(&store));
+        manager.start_host_approved_git_read(TrustedWorkerPlan{
+            task_id:call.into(),workspace_id:turn.clone(),
+            executable:binary,expected_sha256:sha,
+            args:vec![
+                "-c".into(),"core.fsmonitor=false".into(),
+                "--no-optional-locks".into(),"-C".into(),repo.as_os_str().into(),
+                "rev-parse".into(),"--verify".into(),"HEAD".into(),
+            ],
+            progress_protocol:false,max_runtime_seconds:Some(15),
+        },16_384).unwrap();
+        let mut done=false;
+        for _ in 0..250{
+            manager.poll().unwrap();
+            if store.get(call).unwrap().unwrap().state==TaskState::Completed{
+                done=true;break
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(done,"Native Git did not produce a verified completed task");
+        let stdout=manager.take_local_version_stdout(call,&turn)
+            .unwrap().expect("Native Git stdout missing");
+        let observed=String::from_utf8_lossy(&stdout.bytes);
+        let observed=observed.trim();
+        assert_eq!(observed.len(),40);
+        assert!(observed.bytes().all(|b|b.is_ascii_hexdigit()));
+        drop(manager);drop(store);
+        let verifier=HostOriginalJobCustody::from_host_profile(&root);
+        assert!(verifier.worker_and_descendants_ended(&chat,&turn,call),
+            "Only a kernel-query-confirmed Windows Job can publish this proof");
+        assert!(!verifier.worker_and_descendants_ended(
+            &format!("c-{}","3".repeat(32)),&turn,call));
+        assert!(!verifier.worker_and_descendants_ended(&chat,
+            &format!("g-{}","4".repeat(32)),call));
+        assert!(!verifier.worker_and_descendants_ended(&chat,&turn,"other-call-gh"));
+        let reopen=rusqlite::Connection::open(&db).unwrap();
+        assert!(reopen.execute(
+            "DELETE FROM lu_task_windows_job_custody",[]
+        ).is_err(),"Kernel witness row must be immutable");
+        assert!(reopen.execute(
+            "UPDATE lu_task_windows_job_custody SET workspace_id=?1",
+            rusqlite::params![format!("g-{}","4".repeat(32))]
+        ).is_err(),"OS evidence turn cannot be rebound");
+        drop(reopen);
+        fs::remove_dir_all(root).unwrap();
     }
     #[cfg(windows)]
     #[test]

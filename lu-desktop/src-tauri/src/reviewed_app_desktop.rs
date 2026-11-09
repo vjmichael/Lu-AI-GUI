@@ -300,6 +300,9 @@ fn original_step_for_review(
     lu_core::agent_continuation_intent::reverify_child_before_execution(
         &path,root,plan,chat,&ledger,&revisions,&scheduler,&receipts,&sources
     )?;
+    crate::agent_recovery_desktop::require_fresh_child_os_custody_before_worker(
+        host,chat,plan,&active.original_human_turn_id
+    )?;
     Ok(active.original_human_turn_id)
 }
 /// Select a single *already independently verified* original inner worker
@@ -620,6 +623,9 @@ async fn reviewed_app_ask_internal(
                 lu_core::agent_continuation_intent::reverify_child_before_execution(
                     &planfile,profile,&target.plan_id,&chat_id,
                     &ledger,&revisions,&scheduler,&receipts,&sources
+                )?;
+                crate::agent_recovery_desktop::require_fresh_child_os_custody_before_worker(
+                    &host,&chat_id,&target.plan_id,&target.original_turn
                 )?;
                 let owner=next_id("h-");
                 let claim=next_id("q-");

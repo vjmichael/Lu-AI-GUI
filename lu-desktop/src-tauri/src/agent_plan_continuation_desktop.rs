@@ -69,6 +69,9 @@ pub(crate) async fn lu_agent_prepare_next_step(
             ||next.expected_deliverable!="INDEPENDENT_WITNESS"{
             return Err("Only one sequential independent witness can be prepared".into())
         }
+        crate::agent_recovery_desktop::require_parent_os_custody_for_fresh_plan(
+            &host,&chat_id,&plan_id,&progress.original_human_turn_id
+        )?;
         let prompt=format!(
             "Prepare a NEW separately reviewed plan for original plan {} \
              revision {} step {}?\n\nThis will NOT execute the step. \
@@ -108,6 +111,9 @@ pub(crate) async fn lu_agent_prepare_next_step(
             plan:plan_id.clone(),sha:revision_sha.clone(),
             step:step_index,budget,
         };
+        crate::agent_recovery_desktop::require_parent_os_custody_for_fresh_plan(
+            &host,&chat_id,&plan_id,&progress.original_human_turn_id
+        )?;
         stage_fresh_continuation(
             &path,root,&plan_id,&chat_id,&progress.original_human_turn_id,
             &revision_sha,step_index,&turn,budget,
