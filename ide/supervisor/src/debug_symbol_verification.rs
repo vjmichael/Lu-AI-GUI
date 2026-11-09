@@ -437,3 +437,154 @@ pub fn verify_build_debug_symbols(
         installed_app_accepted:false,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn put16(b:&mut [u8],p:usize,v:u16){b[p..p+2].copy_from_slice(&v.to_le_bytes());}
+    fn put32(b:&mut [u8],p:usize,v:u32){b[p..p+4].copy_from_slice(&v.to_le_bytes());}
+    fn put64(b:&mut [u8],p:usize,v:u64){b[p..p+8].copy_from_slice(&v.to_le_bytes());}
+    #[cfg(target_os="linux")]
+    fn minimal_dwarf_elf()->Vec<u8>{
+        let mut b=vec![0;0x400];
+        b[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
+        put16(&mut b,16,2);put16(&mut b,18,62);put32(&mut b,20,1);
+        put64(&mut b,24,0x400100);put64(&mut b,32,0x40);
+        put64(&mut b,40,0x200);put16(&mut b,52,64);
+        put16(&mut b,54,56);put16(&mut b,56,1);
+        put16(&mut b,58,64);put16(&mut b,60,5);put16(&mut b,62,1);
+        put32(&mut b,0x40,1);put32(&mut b,0x44,5);
+        let names=b"\0.shstrtab\0.debug_info\0.debug_abbrev\0.debug_line\0";
+        b[0x100..0x100+names.len()].copy_from_slice(names);
+        let mut add_section=|index:usize,name:&[u8],kind:u32,offset:u64,size:u64|{
+            let name_offset=names.windows(name.len()).position(|v|v==name).unwrap() as u32;
+            let at=0x200+index*64;
+            put32(&mut b,at,name_offset);
+            put32(&mut b,at+4,kind);
+            put64(&mut b,at+24,offset);
+            put64(&mut b,at+32,size);
+        };
+        add_section(1,b".shstrtab",3,0x100,names.len() as u64);
+        add_section(2,b".debug_info",1,0x140,12);
+        add_section(3,b".debug_abbrev",1,0x160,12);
+        add_section(4,b".debug_line",1,0x180,12);
+        put32(&mut b,0x140,8);put16(&mut b,0x144,4);
+        put32(&mut b,0x146,0);b[0x14a]=8;
+        b[0x160]=1;
+        put32(&mut b,0x180,8);put16(&mut b,0x184,4);
+        b
+    }
+    #[cfg(target_os="linux")]
+    #[test]
+    fn structural_elf_dwarf_requires_real_section_tables_units_and_exec_segment(){
+        let source=minimal_dwarf_elf();
+        assert!(elf64_dwarf_sections(&source).is_some());
+        let mut missing=source.clone();
+        put16(&mut missing,60,0);
+        assert!(elf64_dwarf_sections(&missing).is_none());
+        let mut no_compile=source.clone();
+        put16(&mut no_compile,0x144,0);
+        assert!(elf64_dwarf_sections(&no_compile).is_none());
+        let mut wrong_arch=source.clone();
+        put16(&mut wrong_arch,18,3);
+        assert!(elf64_dwarf_sections(&wrong_arch).is_none());
+    }
+    #[cfg(target_os="linux")]
+    #[test]
+    fn actual_output_hash_recheck_and_missing_symbols_denied(){
+        use crate::{debug_binary_witness::audit_debug_binary_candidate,
+            wo6_output_evidence::audit_published_output};
+        use std::os::unix::fs::PermissionsExt;
+        let root=std::env::temp_dir().join(format!("lu-dev043-{:032x}",rand::random::<u128>()));
+        fs::create_dir_all(root.join("target/debug")).unwrap();
+        let file=root.join("target/debug/fixture");
+        fs::write(&file,minimal_dwarf_elf()).unwrap();
+        fs::set_permissions(&file,fs::Permissions::from_mode(0o700)).unwrap();
+        let output=audit_published_output(&root).unwrap();
+        let binary=audit_debug_binary_candidate(&root,&output).unwrap().unwrap();
+        let attested=verify_build_debug_symbols(&root,&output,&binary).unwrap().unwrap();
+        assert_eq!(attested.binary_sha256,binary.binary_sha256);
+        assert!(attested.debug_symbols_attested);
+        assert!(!attested.source_line_mapping_verified);
+        assert!(!attested.debugger_execution_authorized);
+        let mut stripped=minimal_dwarf_elf();
+        put16(&mut stripped,60,0);
+        fs::write(&file,stripped).unwrap();
+        assert!(verify_build_debug_symbols(&root,&output,&binary).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(windows)]
+    fn minimal_pe()->Vec<u8>{
+        let mut data=vec![0;0x800];
+        data[..2].copy_from_slice(b"MZ");
+        put32(&mut data,0x3c,0x80);
+        data[0x80..0x84].copy_from_slice(b"PE\0\0");
+        put16(&mut data,0x84,0x8664);
+        put16(&mut data,0x86,2);
+        put16(&mut data,0x94,0xf0);
+        put16(&mut data,0x96,0x0002);
+        let opt=0x98;
+        put16(&mut data,opt,0x20b);
+        put32(&mut data,opt+16,0x1000);
+        put32(&mut data,opt+108,16);
+        put32(&mut data,opt+160,0x2000);
+        put32(&mut data,opt+164,28);
+        let sec=opt+0xf0;
+        data[sec..sec+5].copy_from_slice(b".text");
+        put32(&mut data,sec+8,0x100);put32(&mut data,sec+12,0x1000);
+        put32(&mut data,sec+16,0x100);put32(&mut data,sec+20,0x300);
+        put32(&mut data,sec+36,0x6000_0020);
+        let sec2=sec+40;
+        data[sec2..sec2+6].copy_from_slice(b".rdata");
+        put32(&mut data,sec2+8,0x200);
+        put32(&mut data,sec2+12,0x2000);
+        put32(&mut data,sec2+16,0x200);put32(&mut data,sec2+20,0x400);
+        put32(&mut data,sec2+36,0x4000_0040);
+        put32(&mut data,0x400+12,2);
+        put32(&mut data,0x400+16,36);
+        put32(&mut data,0x400+24,0x450);
+        data[0x450..0x454].copy_from_slice(b"RSDS");
+        data[0x454..0x464].copy_from_slice(&[1u8;16]);
+        put32(&mut data,0x464,1);
+        data[0x468..0x474].copy_from_slice(b"fixture.pdb\0");
+        data
+    }
+    #[cfg(windows)]
+    fn minimal_matching_pdb()->Vec<u8>{
+        let mut pdb=vec![0;512*8];
+        pdb[..32].copy_from_slice(b"Microsoft C/C++ MSF 7.00\r\n\x1aDS\0\0\0");
+        put32(&mut pdb,32,512);put32(&mut pdb,40,8);
+        put32(&mut pdb,44,4+4*4+2*4);put32(&mut pdb,52,3);
+        put32(&mut pdb,3*512,4);
+        let dir=4*512;
+        put32(&mut pdb,dir,4);
+        put32(&mut pdb,dir+4,0);put32(&mut pdb,dir+8,28);
+        put32(&mut pdb,dir+12,0);put32(&mut pdb,dir+16,64);
+        put32(&mut pdb,dir+20,5);put32(&mut pdb,dir+24,6);
+        let info=5*512;
+        put32(&mut pdb,info,20000404);put32(&mut pdb,info+8,1);
+        pdb[info+12..info+28].copy_from_slice(&[1u8;16]);
+        let dbi=6*512;
+        put32(&mut pdb,dbi,0xffff_ffff);
+        put32(&mut pdb,dbi+8,1);put16(&mut pdb,dbi+58,0x8664);
+        pdb
+    }
+    #[cfg(windows)]
+    #[test]
+    fn pe_rsds_and_pdb_msf_guid_age_dbi_machine_are_required(){
+        let pe=minimal_pe();
+        let rsds=pe32plus_rsds(&pe).unwrap();
+        assert_eq!(rsds.name,"fixture.pdb");
+        let pdb=minimal_matching_pdb();
+        assert!(pdb_info_dbi(&pdb,&rsds));
+        let mut wrong=pdb.clone();
+        put32(&mut wrong,5*512+8,2);
+        assert!(!pdb_info_dbi(&wrong,&rsds));
+        wrong=pdb.clone();
+        put16(&mut wrong,6*512+58,0x014c);
+        assert!(!pdb_info_dbi(&wrong,&rsds));
+        let mut bogus=pe.clone();
+        bogus[0x450..0x454].copy_from_slice(b"NB10");
+        assert!(pe32plus_rsds(&bogus).is_none());
+    }
+}
