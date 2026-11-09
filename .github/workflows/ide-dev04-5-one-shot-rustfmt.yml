@@ -3,10 +3,6 @@ name: IDE DEV04.5 one-shot native formatting repair
 on:
   push:
     branches: [ide/dev04-5-installed-debugger-repair-20261108]
-    paths:
-      - 'ide/supervisor/**'
-      - 'ide/sandbox/**'
-      - '.github/workflows/ide-dev04-5-one-shot-rustfmt.yml'
 permissions:
   contents: write
 concurrency:
