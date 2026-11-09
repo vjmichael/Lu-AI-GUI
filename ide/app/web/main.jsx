@@ -3691,7 +3691,7 @@ function App() {
                 a sealed protected build and an independently pinned installed LLDB.
                 Arbitrary attach, debugger scripts and terminal commands remain denied.</p>
               <p>Debugger: <strong>{debugStatus?.ready
-                ? 'Signed fixture bundle verified; OS containment checked per run'
+                ? 'Pinned debugger bundle observed; OS containment checked per run'
                 : (debugStatus?.code || 'Checking approved debugger assets…')}</strong></p>
               <p>{debugStatus?.description || 'An unpinned adapter cannot execute.'}</p>
               <button type="button" className="ghostBtn"
@@ -3734,7 +3734,18 @@ function App() {
                   <p>Journal entries are not simulated debugger results or release acceptance.</p>
                 </section>}
               {belongsToSelectedProject(activeProject, debugResult) && <div role="status">
-                <p>Native LLDB self-test: <strong>{debugResult.terminalPhase}</strong></p>
+                <p>{debugResult.target==='one_exact_private_project_build_in_protected_job'
+                  ? 'Protected project LLDB session' : 'Native LLDB self-test'}:
+                  <strong> {debugResult.terminalPhase}</strong></p>
+                {debugResult.target==='one_exact_private_project_build_in_protected_job' &&
+                  <>
+                    <p>Originating protected build:
+                      {' '}<code>{debugResult.originBuildJobId}</code></p>
+                    <p>Exact build terminal receipt:
+                      {' '}<code>{debugResult.originBuildReceiptSha256}</code></p>
+                    <p>Project debugger D3 target binding:
+                      {' '}<code>{debugResult.targetBindingSha256}</code></p>
+                  </>}
                 <p>Stopped thread: {debugResult.stoppedThread ?? 'none'} · Thread inspection:
                   {debugResult.threadsResponseObserved ? 'observed' : 'not proven'} · Stack:
                   {debugResult.stackResponseObserved ? 'observed' : 'not proven'}</p>
