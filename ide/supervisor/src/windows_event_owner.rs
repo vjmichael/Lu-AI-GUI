@@ -202,12 +202,17 @@ pub(crate) fn start_owner_pipe_reader(
             }
             unsafe { CloseHandle(handle); }
         })
-        .map_err(|_| denied())?;
+        .map_err(|_| {
+            // The caller relinquishes the raw handle before starting this
+            // thread; failed creation must still close it exactly once.
+            unsafe { CloseHandle(raw as HANDLE); }
+            denied()
+        })?;
     Ok(OwnerSideband { receiver: rx, ledger: OwnerEventLedger::default() })
 }
 impl OwnerSideband {
     fn drain(&mut self, first_wait: bool) -> Result<(), SupervisorError> {
-        use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
+        use std::sync::mpsc::TryRecvError;
         if first_wait {
             match self.receiver.recv_timeout(std::time::Duration::from_millis(750)) {
                 Ok(Ok(record)) => self.ledger.observe(record)?,

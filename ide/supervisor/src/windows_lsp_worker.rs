@@ -483,7 +483,7 @@ fn spawn_contained_stdio(
         return Err(denied());
     }
     let mut child_handles = vec![child_stdin.0, child_stdout.0, stderr.0];
-    if let Some((_, ref event_write, _)) = event_pipe {
+    if let Some((_, event_write, _)) = event_pipe.as_ref() {
         child_handles.push(event_write.0);
     }
     if !matches!(child_handles.len(), 3 | 4)
@@ -1230,7 +1230,14 @@ fn start_windows_dap_inner(
         // The bounded native reader exclusively owns this kernel handle
         // from now on; it closes it on EOF, invalid wire or queue pressure.
         std::mem::forget(reader);
-        Some(crate::windows_event_owner::start_owner_pipe_reader(raw, nonce)?)
+        match crate::windows_event_owner::start_owner_pipe_reader(raw, nonce) {
+            Ok(reader) => Some(reader),
+            Err(_) => {
+                let _ = job.kill_and_verify();
+                let _ = supervisor.native_quarantine_after_error(job_id);
+                return Err(SupervisorError::Quarantined);
+            }
+        }
     } else { None };
     let actor = WindowsLspProcess {
         _profile: profile,
