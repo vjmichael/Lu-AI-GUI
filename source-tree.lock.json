@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6f4b4ef54ce61d9500127fd4a920455841b8bce7",
+  "sourceCommitBeforeLock": "98c93d52ae4a38f50927beab9493f131987e1de8",
   "trackedFileCount": 785,
   "files": [
     {
@@ -169,7 +169,7 @@
     },
     {
       "path": ".github/workflows/lu-memory-loop02-real-qwen.yml",
-      "blob": "3f3eb36c6bfeda2c65f49b9ea0d03d6ceefacd95"
+      "blob": "c1393d1fe88c38a058fbe931de3a4b3be050a49d"
     },
     {
       "path": ".github/workflows/lu-memory-loop02-verified-feedback.yml",
