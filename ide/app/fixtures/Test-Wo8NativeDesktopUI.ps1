@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','Dev035JobsReadOnly','B4SplitEditor','B5LargeProject')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','Dev045ProjectDebug','Dev045ProjectRestartDenied','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','Dev035JobsReadOnly','B4SplitEditor','B5LargeProject')][string]$Scenario='Shell',
   [string]$FixtureRoot='',
   [string]$MetricsFile=''
 )
@@ -917,6 +917,68 @@ try {
           Write-Host 'WO8_INSTALLED_PROTECTED_SCM_CRASH_RESTART_AND_DURABLE_RECEIPT=PASS'
         }
       }
+    }
+    if ($Scenario -eq 'Dev045ProjectDebug') {
+      # Actual installed GUI only. No hidden JavaScript, shell commands,
+      # fabricated DAP responses, direct native IPC or bypassed OS dialogs.
+      # This is distinct from the older fixed-debuggee WO8 smoke.
+      [void](VerifiedInstalledService)
+      $source=Join-Path $fixed 'src/main.rs'
+      $before=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
+      Click 'Job requests'
+      Require 'Protected Run / Test'
+      $recipe=Find-Control 'Recipe' 'ComboBox' 25
+      if (!$recipe.Current.IsKeyboardFocusable) { Deny 'dev045_recipe_selector_not_accessible' }
+      $recipe.SetFocus()
+      # Fixed reviewed options: host tests, rust_check, rust_build, rust_tests.
+      [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{DOWN}{ENTER}')
+      $build=Find-Control 'Request protected Run / Test' 'Button' 30
+      if (!$build.Current.IsEnabled) { Deny 'dev045_pinned_native_build_unavailable' }
+      Click 'Request protected Run / Test'
+      Confirm-NativeOneUseDialog 'Allow one protected build/test job' 'Run this exact job'
+      [void](Find-Control 'Last worker result:' '' 360)
+      Require 'Native exit: 0'
+      Require 'Reconciliation: not indicated'
+      Require 'DEV-04.2'
+      Require 'DEV-04.3'
+      Require 'Native build-to-binary provenance'
+      Require 'Debug-symbol verification'
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne $before) {
+        Deny 'dev045_protected_build_mutated_project_source'
+      }
+      $baseline=(ProtectedWorkerCount)
+      $debug=Find-Control 'Debug last verified project build' 'Button' 30
+      if (!$debug.Current.IsEnabled) { Deny 'dev045_no_private_verified_executable' }
+      Click 'Debug last verified project build'
+      Confirm-NativeOneUseDialog 'Approve one protected project debugger' 'Debug this exact project build'
+      [void](Find-Control 'Protected project LLDB session' '' 240)
+      Require 'Originating protected build:'
+      Require 'Exact build terminal receipt:'
+      Require 'Project debugger D3 target binding:'
+      Require 'Thread inspection: observed'
+      Require 'Stack: observed'
+      Require 'Kernel tree cleanup: reported by protected supervisor'
+      Require 'Installed/debugger project release acceptance:'
+      Wait-WorkerReturnToBaseline $baseline
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne $before) {
+        Deny 'dev045_debugger_modified_original_source'
+      }
+      Write-Host 'DEV045_INSTALLED_WINDOWS_PROJECT_CARGO_TO_LLDB_STOP_STACK_AND_CLEANUP=PASS'
+      Write-Host 'DEV045_RESTART_REPLAY_AND_DEBUGGER_CANCEL=SEPARATE_GATES'
+    }
+    if ($Scenario -eq 'Dev045ProjectRestartDenied') {
+      # New installed desktop process must not recover an executable,
+      # pending OS grant, native target path or debugger result from journal.
+      [void](VerifiedInstalledService)
+      Click 'Job requests'
+      Require 'Protected debugger (LLDB-DAP)'
+      $debug=Find-Control 'Debug last verified project build' 'Button' 30
+      if ($debug.Current.IsEnabled) {
+        Deny 'dev045_stale_project_binary_or_grant_reauthorized_after_restart'
+      }
+      Require 'Durable debugger jobs (survive restart)'
+      Require 'Journal entries are not simulated debugger results'
+      Write-Host 'DEV045_INSTALLED_WINDOWS_RESTART_REJECTS_PRIOR_PROJECT_DEBUG_AUTHORITY=PASS'
     }
     if ($Scenario -eq 'ProtectedBuildDebug') {
       # Only on explicitly selected real signed WO7 candidate on native Windows.

@@ -1,0 +1,138 @@
+name: IDE DEV04.5 signed installed project debugger end-to-end (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact reviewed DEV-04.5 candidate head
+        required: true
+        type: string
+      candidate_run_id:
+        description: Existing signed WO7 candidate workflow run with reviewed LLDB bundle
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  installed-project-debug:
+    runs-on: windows-2022
+    environment: lu-ide-native-e2e
+    timeout-minutes: 120
+    steps:
+      - name: Check exact release candidate identifiers
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run_id }}
+        run: |
+          if ($env:SOURCE_SHA -cnotmatch '^[a-f0-9]{40}$' -or
+              $env:CANDIDATE_RUN -notmatch '^[0-9]{1,20}$') {
+            throw 'DEV045_DENIED: exact SHA and numeric signed artifact run required'
+          }
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: lu-ide-wo7-candidate
+          path: candidate
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+      - name: Require signed exact release candidate AND explicitly audited project debug feature
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-StrictMode -Version Latest
+          $head=(git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $head -cne $env:SOURCE_SHA) {
+            throw 'DEV045_DENIED: checked out source SHA does not match reviewed candidate'
+          }
+          python ide/packaging/verify_wo7_candidate.py --manifest candidate/wo7-release.manifest.json --artifact-root candidate --source-sha $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) {
+            throw 'DEV045_DENIED: signed candidate authenticity/licensing/identity failed'
+          }
+          $manifest=Get-Content candidate/wo7-release.manifest.json -Raw | ConvertFrom-Json
+          $entry=$manifest.PSObject.Properties['nativeProjectDebugger']
+          if ($null -eq $entry -or $null -eq $entry.Value) {
+            throw 'DEV045_DENIED: signed candidate lacks reviewed native-project-debug asset/feature manifest'
+          }
+          $feature=$entry.Value
+          if ($feature.enabled -ne $true -or
+              $feature.featureName -cne 'native-project-debug' -or
+              $feature.adapterBundleSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+              $feature.installedAcceptance -ne $false) {
+            throw 'DEV045_DENIED: project debugger bundle not independently pinned or acceptance preclaimed'
+          }
+          Write-Host 'DEV045_SIGNED_REVIEWED_PROJECT_DEBUG_CANDIDATE=PASS'
+          Write-Host 'DEV045_SOURCE_ONLY_OR_DEFAULT_NSIS_CANNOT_PASS_THIS_LANE=true'
+      - name: Install real signed NSIS and require native GUI build/debug/restart evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-StrictMode -Version Latest
+          $manifest=Get-Content candidate/wo7-release.manifest.json -Raw | ConvertFrom-Json
+          $installer=Join-Path (Resolve-Path candidate).Path $manifest.installer.path
+          $root=Join-Path $env:ProgramFiles 'Lu IDE'
+          $exe=Join-Path $root 'lu-ide-desktop.exe'
+          if ((Test-Path -LiteralPath $root) -or
+              (Get-Service LuIdeRecoveryBroker -ErrorAction SilentlyContinue)) {
+            throw 'DEV045_DENIED: installed app or recovery service already present'
+          }
+          $installed=$false
+          $uninstalled=$false
+          try {
+            $install=Start-Process -FilePath $installer -ArgumentList '/S' -PassThru -Wait
+            if ($install.ExitCode -ne 0) { throw 'DEV045_DENIED: signed NSIS install failed' }
+            $installed=$true
+            if (!(Test-Path -LiteralPath $exe -PathType Leaf) -or
+                (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash -ine
+                  $manifest.desktop.sha256) {
+              throw 'DEV045_DENIED: installed executable not exact signed candidate'
+            }
+            $fixture=Join-Path $env:RUNNER_TEMP ('dev045-project-'+$env:GITHUB_RUN_ID)
+            New-Item -ItemType Directory (Join-Path $fixture 'src') -Force | Out-Null
+            [IO.File]::WriteAllText((Join-Path $fixture 'Cargo.toml'),
+              "[package]`nname = `"dev045_installed_debug`"`nversion = `"0.1.0`"`nedition = `"2021`"`n")
+            [IO.File]::WriteAllText((Join-Path $fixture 'src/main.rs'),
+              "fn main() { let signal=2+3; println!(`"{}`",signal); }`n")
+            Copy-Item (Join-Path $fixture 'src/main.rs') (Join-Path $fixture 'main.rs')
+            & cargo generate-lockfile --manifest-path (Join-Path $fixture 'Cargo.toml') --offline
+            if ($LASTEXITCODE -ne 0) { throw 'DEV045_DENIED: offline cargo lock failed' }
+            & git -C $fixture init | Out-Null
+            & git -C $fixture -c user.name='DEV045 fixed fixture' -c user.email='dev045@localhost.invalid' add .
+            if ($LASTEXITCODE -ne 0) { throw 'DEV045_DENIED: native Git add failed' }
+            & git -C $fixture -c user.name='DEV045 fixed fixture' -c user.email='dev045@localhost.invalid' commit -m 'fixed offline project debug fixture' | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'DEV045_DENIED: native Git commit failed' }
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $manifest.desktop.sha256 -Scenario Dev045ProjectDebug -FixtureRoot $fixture
+            if (!$?) { throw 'DEV045_DENIED: real installed native project LLDB acceptance missing' }
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $manifest.desktop.sha256 -Scenario Dev045ProjectRestartDenied -FixtureRoot $fixture
+            if (!$?) { throw 'DEV045_DENIED: restart reused prior project debugger authority' }
+            $removers=@(Get-ChildItem -LiteralPath $root -File -Filter '*uninstall*.exe')
+            if ($removers.Count -ne 1) { throw 'DEV045_DENIED: no unique installed NSIS uninstaller' }
+            $uninstall=Start-Process -FilePath $removers[0].FullName -ArgumentList '/S' -PassThru -Wait
+            if ($uninstall.ExitCode -ne 0 -or (Test-Path -LiteralPath $exe) -or
+                (Get-Service LuIdeRecoveryBroker -ErrorAction SilentlyContinue)) {
+              throw 'DEV045_DENIED: verified process/service/app uninstall not complete'
+            }
+            $uninstalled=$true
+            Write-Host 'DEV045_SIGNED_INSTALLED_WINDOWS_CARGO_TO_PROJECT_LLDB_RESTART_UNINSTALL=PASS'
+            Write-Host 'DEV045_WINDOWS_CANCEL_AND_CRASH_INJECTION=NOT_TESTED_BY_THIS_RUN'
+          } finally {
+            if ($installed -and !$uninstalled) {
+              Write-Warning 'DEV045 installed application not accepted; cleanup/recovery requires independent inspection'
+            }
+          }
+      - name: Evidence boundaries
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host 'DEV045_SIGNED_INSTALLED_ACCEPTANCE=ONLY_IF_ALL_PREVIOUS_STEPS_PASS'
+          Write-Host 'DEV045_NATIVE_LINUX_INSTALLED_RELEASE=SEPARATE_GATE'
+          Write-Host 'DEV045_PROJECT_DEBUGGER_CRASH_CANCEL_HARDLINK_RACE=SEPARATE_GATES'
+          Write-Host 'DEV045_SIGNING_LEGAL_RELEASE_APPROVAL=SEPARATE_REVIEW'

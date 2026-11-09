@@ -126,7 +126,9 @@ test('frontend inspection and comparison are always explicit, read-only native p
   assert.match(ui,/summarizeExternalDifference\(/);
   assert.match(ui,/const ticket=beginExplorerIo\(\)/);
   const start=ui.indexOf('async function inspectOpenTabDiskRevisions()');
-  const end=ui.indexOf('function closeCleanBackgroundTabs()',start);
+  // Only inspect() is read-only; the later separately approved merge action
+  // intentionally changes in-memory editor buffers without a disk write.
+  const end=ui.indexOf('async function compareEditorWithDisk(tab)',start);
   assert.ok(start>=0 && end>start);
   const code=ui.slice(start,end);
   assert.match(code,/invoke\('ide_preview_source_file'/);
