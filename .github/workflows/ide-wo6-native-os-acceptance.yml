@@ -20,6 +20,15 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact reviewed commit before native kernel tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045B_NATIVE_EXACT_HEAD=VERIFIED'
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
@@ -110,6 +119,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed loader probe unit tests failed' }
           python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: copied adapter cannot initialize outside AppContainer; no native containment claim' }
+      - name: Prepare exact offline MSVC and SDK for DEV-04.5B project build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/New-PinnedWindowsToolchain.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'dev045b-offline-msvc') -LockPath (Join-Path $env:RUNNER_TEMP 'dev045b-observed-toolchain.json') -RustVersion '1.99.1' -SdkVersion '10.0.26100.0' -VsVersionPrefix '17.14.' -MsvcVersionPrefix '14.44.'
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: reviewed native Windows compiler bundle could not be staged' }
+          $lock=Get-Content (Join-Path $env:RUNNER_TEMP 'dev045b-observed-toolchain.json') -Raw | ConvertFrom-Json
+          if ($lock.windowsSdk -ne '10.0.26100.0' -or $lock.target -ne 'x86_64-pc-windows-msvc' -or $lock.reviewedPinMatched -or $lock.bundleSha256.Length -ne 64) {
+            throw 'DENIED: measured Windows SDK/LLVM Cargo bundle lock invalid'
+          }
+          Write-Host 'DEV045B_WINDOWS_OFFLINE_TOOLCHAIN=CI_ONLY_SELF_MEASURED'
       - name: Verify actual AppContainer debuggee normal/cancel with independent SCM
         shell: pwsh
         run: |
@@ -134,6 +154,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected native debugger normal acceptance failed' }
             & $hostExe --cancel
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected native debugger cancellation/restart failed' }
+            # One and only verified project-DAP case: a genuine separately
+            # approved protected Cargo build → PE/PDB seal → SCM/AppContainer
+            # LLDB stop/threads/stack → durable restart + one-use replay denial.
+            & $hostExe --project-debug
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: real protected Cargo to project LLDB failed' }
           } finally {
             if ($nulTouched) {
               & $bootstrap --revoke-fixed-service
@@ -145,6 +170,13 @@ jobs:
             }
             $global:LASTEXITCODE=0
           }
+      - name: Upload CI-only observed compiler identity
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev045b-windows-observed-msvc-lock
+          path: ${{ runner.temp }}/dev045b-observed-toolchain.json
+          if-no-files-found: ignore
       - name: Label evidence
         if: always()
         run: echo "Test-only independently measured binaries; NOT license/signing/installed debugger release approval."
@@ -153,6 +185,15 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact reviewed commit before native kernel tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045B_NATIVE_EXACT_HEAD=VERIFIED'
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
@@ -237,6 +278,15 @@ jobs:
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact reviewed commit before native kernel tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045B_NATIVE_EXACT_HEAD=VERIFIED'
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {checkedProjectDebugWitness} from '../web/project_debug_authority.js';
 const h=c=>c.repeat(64);
 const project='ide-'+'a'.repeat(32);
@@ -76,4 +77,23 @@ test('missing native build/symbol evidence cannot authorize a debug session',()=
  const {build,debug}=values();
  build.debugSymbolWitness.sourceLineMappingVerified=true;
  assert.equal(checkedProjectDebugWitness(debug,build,project),null);
+});
+
+test('Windows AppContainer project PE/PDB stage belongs only to the protected DAP owner',()=>{
+ const rust=readFileSync(new URL('../../supervisor/src/windows_lsp_worker.rs',import.meta.url),'utf8');
+ const lsp=rust.indexOf('pub fn start_windows_lsp');
+ const dap=rust.indexOf('fn start_windows_dap_inner');
+ assert.ok(lsp>=0&&dap>lsp,'exact native entrypoints must exist');
+ const generic=rust.slice(lsp,dap);
+ const protectedProject=rust.slice(dap);
+ assert.doesNotMatch(generic,/project_debuggee|let project_debuggee = if let Some\(target\) = project_target/,
+   'ordinary language-server startup may not stage runnable project debug targets');
+ assert.match(protectedProject,/let project_debuggee = if let Some\(target\) = project_target/);
+ assert.match(protectedProject,/publish_into_native_parent\(\s*&target\.root,/);
+ assert.match(protectedProject,/audit_published_output\(&stage_root\)/);
+ assert.match(protectedProject,/verify_build_debug_symbols\(/);
+ assert.match(protectedProject,/supervisor\.consume_grant_after_attestation/);
+ assert.match(protectedProject,/BrokerLease::begin/);
+ assert.match(protectedProject,/spawn_contained_stdio/);
+ assert.match(protectedProject,/project_debuggee,/);
 });

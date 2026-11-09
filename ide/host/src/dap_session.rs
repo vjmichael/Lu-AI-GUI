@@ -421,6 +421,11 @@ impl DapSession {
                             .get("threads")
                             .and_then(Value::as_array)
                             .ok_or(DapError::InvalidMessage)?;
+                        // A successful but EMPTY response is not evidence
+                        // that the protected LLDB adapter observed a thread.
+                        if threads.is_empty() {
+                            return Err(DapError::InvalidMessage);
+                        }
                         if threads.len() > 64
                             || threads
                                 .iter()
@@ -436,6 +441,11 @@ impl DapSession {
                             .and_then(|body| body.get("stackFrames"))
                             .and_then(Value::as_array)
                             .ok_or(DapError::InvalidMessage)?;
+                        // DEV-04.5B requires at least one actual stack
+                        // frame; a zero-length DAP success is not a stop.
+                        if frames.is_empty() {
+                            return Err(DapError::InvalidMessage);
+                        }
                         if frames.len() > 16
                             || frames.iter().any(|f| {
                                 f.get("id").and_then(Value::as_u64).is_none()
@@ -670,6 +680,36 @@ mod tests {
             vec![DapEvent::Disconnected]
         );
         assert_eq!(s.phase(), DapPhase::Terminated);
+    }
+    #[test]
+    fn empty_native_dap_threads_and_stack_are_not_runtime_evidence() {
+        // Native OS execution must not be accepted on a successful DAP
+        // response that contains no real thread or no real stack frame.
+        let mut threads = DapSession::new();
+        threads.phase = DapPhase::Stopped;
+        threads.pending.insert(1, "threads");
+        assert_eq!(
+            threads.receive(&framed(json!({
+                "seq": 2, "type": "response", "request_seq": 1,
+                "command": "threads", "success": true,
+                "body": {"threads": []}
+            }))).unwrap_err(),
+            DapError::InvalidMessage
+        );
+        assert_eq!(threads.phase(), DapPhase::Quarantined);
+
+        let mut stack = DapSession::new();
+        stack.phase = DapPhase::Stopped;
+        stack.pending.insert(1, "stackTrace");
+        assert_eq!(
+            stack.receive(&framed(json!({
+                "seq": 3, "type": "response", "request_seq": 1,
+                "command": "stackTrace", "success": true,
+                "body": {"stackFrames": []}
+            }))).unwrap_err(),
+            DapError::InvalidMessage
+        );
+        assert_eq!(stack.phase(), DapPhase::Quarantined);
     }
     #[test]
     fn only_native_sealed_project_path_can_form_project_launch_without_arguments(){
