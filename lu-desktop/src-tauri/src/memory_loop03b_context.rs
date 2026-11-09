@@ -277,8 +277,8 @@ mod tests{
         assert!(original.contains("NOT_AUTHORIZED_FOR_EXECUTION"));
         assert!(original.contains("NOT_RECHECKED"));
         assert!(original.contains("ORIGINAL_OS_DESCENDANT_RECONCILIATION_REQUIRED"));
-        assert!(original.contains("\\"currentTaskReviewBlockedByPreflight\\":true"));
-        assert!(original.contains("\\"humanReviewRequired\\":true"));
+        assert!(original.contains("\"currentTaskReviewBlockedByPreflight\":true"));
+        assert!(original.contains("\"humanReviewRequired\":true"));
         assert!(for_current_human_turn(&chats,&continuity,&journal,&chat,
             &format!("g-{}","b".repeat(32)),prompt,"READY","NOT_RECHECKED"
         ).is_err());
