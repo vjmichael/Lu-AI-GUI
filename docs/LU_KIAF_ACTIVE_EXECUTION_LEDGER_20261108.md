@@ -201,3 +201,21 @@ In ordinary lib.rs normal-Send, explicit current-human M4 selectors can read the
 ### 2026-11-09 — 03E-R2 atomic projection intent and exclusive-profile source reconciliation
 
 The reviewed index row and full deterministic memory projection plan now share ONE index-SQLite transaction. Derived ANSF and continuity remain separate WAL databases and are idempotent materializations behind a publication fence; we explicitly **do not** claim cross-file ACID semantics. During exclusive DesktopOwner startup, incomplete intents are revalidated against original authenticated source and revision, original task journal origin, independent effect oracle, changed human turns/corrections, claim expiry and later checkpoint. Safe projections are materialized and published without worker replay; ambiguous, expired or legacy items require human review. The Native tool activity pane exposes the per-chat recovery outcome, with no execution/ retry control. Rust regressions and Node source contracts run only as part of the existing manual consolidated gate. **Source submitted; real native, installed GGUF and descendant-custody gates OPEN.**
+
+### 2026-11-09 — Linux task-group execution evidence
+
+PR #198 compiled on Linux with the generated desktop PNG and fixed memory,
+reply and plan view wiring. Core library tests passed (525, with 17 ignored),
+as did six opt-in real Git/FFprobe/FFmpeg integration cases. Desktop recovery
+passed nine tests and the opt-in G5 restart test produced the source-verified
+native corpus using real reviewed Git/FFprobe workers and scripted model
+selections. The full desktop suite had 194 passes, two ignored and one
+Observe process-identity failure on the sandbox's mismatched procfs PID
+namespace. Desktop cargo check passed. See the 03E technical record for
+the scope of each check. Windows acceptance remains open.
+
+The standalone AGENT-01L locked build required its own Cargo.lock. With
+that lock, both the Linux custodian and the host crash fixture compiled.
+The native harness reported AGENT01L_CGROUP_DELEGATION_NOT_AVAILABLE on
+the read-only cgroup mount. Positive escaped-descendant custody remains
+open and requires a delegated Linux runner.

@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ed305fd4c6dd05333b24c3a0ceef77ea54942c81",
-  "trackedFileCount": 820,
+  "sourceCommitBeforeLock": "847401fbc2c667d2f6b8c8024dea09ea5091fee0",
+  "trackedFileCount": 821,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -621,7 +621,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "0b13892242d9f1ad0dd63fcfbcad75ce922c9c45"
+      "blob": "ccf90e0e61ed2632aece44965ecae4f7938892f1"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -3230,6 +3230,10 @@
     {
       "path": "src-tauri/lu-observe-capture-worker/src/main.rs",
       "blob": "31efe51c462cd13d3dd003947b8817772de41ee6"
+    },
+    {
+      "path": "src-tauri/lu-win-worker-job/Cargo.lock",
+      "blob": "58a8670b4e23d3d918df608d1a73f285bf6da8da"
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
