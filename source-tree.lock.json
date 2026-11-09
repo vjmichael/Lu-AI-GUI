@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d43a5aeae0c6046da38a6efa7548cd5e98831163",
-  "trackedFileCount": 773,
+  "sourceCommitBeforeLock": "a19602782e4f31fe2d6ade5f063e826713e16fc4",
+  "trackedFileCount": 776,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -561,7 +561,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "f02d46a37026de956cb07906c01cd31e680cdaf1"
+      "blob": "c8055521776c36bb9f15db05539b75b3f06cee46"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -602,6 +602,10 @@
     {
       "path": "docs/LU_M5_LOCAL_MEMORY_END_TO_END_20261107.md",
       "blob": "1d94a9238a653347b9e75cd0670b44f05721d8ee"
+    },
+    {
+      "path": "docs/LU_MEMORY_LOOP01_AGENT_HANDOFF_20261108.md",
+      "blob": "bc7eebff3ddaff39df9b305ad3151e746f88a362"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -932,6 +936,10 @@
       "blob": "8d41a727200fdc4b0daf4eb65368e4658da04ef5"
     },
     {
+      "path": "lu-desktop/src-tauri/src/agent_memory_handoff.rs",
+      "blob": "30cc1dea2e4347ca68b15226b66af863baf7874b"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/agent_plan_admission.rs",
       "blob": "98d86faf7d5f8b2b9c9e6593941811969b9d9807"
     },
@@ -1029,7 +1037,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "a2c79af62b8e7b8c5ee5db3ea0c384c8a901d9b9"
+      "blob": "9a13b1d9f8e2279386f0de56ea95253feaeba605"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1318,6 +1326,10 @@
     {
       "path": "lu-desktop/tests/m5-workorders-contract.test.mjs",
       "blob": "3b6f4e07d55622538c11f4468f71fe55bd477861"
+    },
+    {
+      "path": "lu-desktop/tests/memory-loop01-agent-handoff.test.mjs",
+      "blob": "2012b5878eb76d0625e5b410ea6836f61273095c"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
