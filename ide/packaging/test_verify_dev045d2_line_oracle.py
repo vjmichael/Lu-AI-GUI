@@ -228,6 +228,123 @@ int main(void) {
             with self.assertRaisesRegex(Denied, "SYMBOL_LINE_MISMATCH"):
                 verify_claim(root, wrong, llvm, digest(llvm))
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux ptrace kernel gate")
+    def test_external_ptrace_observes_exact_stopped_instruction_and_elf_mapping(self):
+        """Separate native parent observes real kernel SIGTRAP RIP, executable
+        inode/path, RX mapping and loaded NOP; independent LLVM checks DWARF.
+        Test-only fixture: not an installed Lu delegated-cgroup debug job.
+        """
+        compiler, llvm = tool("clang"), tool("llvm-symbolizer")
+        self.assertIsNotNone(compiler)
+        self.assertIsNotNone(llvm)
+        with tempfile.TemporaryDirectory(prefix="dev045d2-ptrace-") as tmp:
+            root = Path(tmp)
+            source = root / "fixture.c"
+            source.write_text(
+                '__attribute__((noinline)) void stopped_probe(void) {\n'
+                '    __asm__ __volatile__("int3; nop");\n'
+                '}\n'
+                'int main(void) { stopped_probe(); return 0; }\n',
+                encoding="utf-8",
+            )
+            target = root / "fixture"
+            observer_source = root / "observer.c"
+            observer_source.write_text("""#define _GNU_SOURCE
+#include <sys/ptrace.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/user.h>
+#include <unistd.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <limits.h>
+#include <stdint.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 20;
+    pid_t pid = fork();
+    if (pid < 0) return 21;
+    if (pid == 0) {
+        if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) _exit(22);
+        execl(argv[1], argv[1], (char *)0);
+        _exit(23);
+    }
+    int status = 0;
+    if (waitpid(pid, &status, 0) != pid || !WIFSTOPPED(status)) goto fail;
+    if (ptrace(PTRACE_CONT, pid, 0, 0) < 0) goto fail;
+    if (waitpid(pid, &status, 0) != pid || !WIFSTOPPED(status)
+        || WSTOPSIG(status) != SIGTRAP) goto fail;
+    struct user_regs_struct registers;
+    if (ptrace(PTRACE_GETREGS, pid, 0, &registers) < 0) goto fail;
+    char proc[64], observed[PATH_MAX], expected[PATH_MAX];
+    snprintf(proc, sizeof(proc), "/proc/%d/exe", (int)pid);
+    ssize_t size = readlink(proc, observed, sizeof(observed)-1);
+    if (size < 0 || !realpath(argv[1], expected)) goto fail;
+    observed[size] = 0;
+    if (strcmp(observed, expected)) goto fail;
+    snprintf(proc, sizeof(proc), "/proc/%d/maps", (int)pid);
+    FILE *maps = fopen(proc, "r");
+    if (!maps) goto fail;
+    char line[4096], perms[5], mapped[PATH_MAX];
+    unsigned long start, end;
+    int matched = 0;
+    while (fgets(line, sizeof(line), maps)) {
+        mapped[0] = 0;
+        if (sscanf(line, "%lx-%lx %4s %*s %*s %*s %4095s",
+                   &start, &end, perms, mapped) == 4
+            && start <= registers.rip && registers.rip < end
+            && perms[2] == 'x' && !strcmp(mapped, expected)) {
+            matched = 1;
+            break;
+        }
+    }
+    fclose(maps);
+    if (!matched) goto fail;
+    errno = 0;
+    long opcode = ptrace(PTRACE_PEEKDATA, pid, (void *)registers.rip, 0);
+    if (errno || (opcode & 255) != 0x90) goto fail;
+    if (ptrace(PTRACE_KILL, pid, 0, 0) < 0) goto fail;
+    if (waitpid(pid, &status, 0) != pid || !WIFSIGNALED(status)) return 30;
+    printf("OS_TRACED_STOP_PC=0x%llx\\n",
+           (unsigned long long)registers.rip);
+    printf("OS_PROCESS_EXE_MATCH=PASS\\nOS_RX_MAP_MATCH=PASS\\nOS_NEXT_OPCODE_NOP=PASS\\n");
+    return 0;
+fail:
+    kill(pid, SIGKILL);
+    waitpid(pid, &status, 0);
+    return 31;
+}
+""", encoding="utf-8")
+            observer = root / "observer"
+            for command in [
+                [compiler, "-g", "-O0", "-fno-pie", "-no-pie",
+                 str(source), "-o", str(target)],
+                [compiler, "-O0", str(observer_source), "-o", str(observer)],
+            ]:
+                subprocess.run(command, check=True, capture_output=True, timeout=45)
+            actual = subprocess.run([str(observer), str(target)],
+                                    check=True, capture_output=True,
+                                    text=True, timeout=10)
+            match = re.fullmatch(
+                r"OS_TRACED_STOP_PC=(0x[0-9a-fA-F]+)\n"
+                r"OS_PROCESS_EXE_MATCH=PASS\n"
+                r"OS_RX_MAP_MATCH=PASS\n"
+                r"OS_NEXT_OPCODE_NOP=PASS\n",
+                actual.stdout,
+            )
+            self.assertIsNotNone(match, "kernel independent stop proof missing")
+            claim = claim_for(root, "linux-elf64", 2, int(match[1], 16))
+            verified = verify_claim(root, claim, llvm, digest(llvm))
+            self.assertTrue(verified["independentSymbolLineAddressMatch"])
+            self.assertFalse(verified["stoppedPcKernelAttested"],
+                             "Lu cgroup/LLDB provenance was NOT verified here")
+            self.assertFalse(verified["breakpointsSteppingVariablesEnabled"])
+            wrong = dict(claim, sourceLine=3)
+            with self.assertRaisesRegex(Denied, "SYMBOL_LINE_MISMATCH"):
+                verify_claim(root, wrong, llvm, digest(llvm))
+
     def test_real_compiler_line_table_not_adapters_reported_line(self):
         # Explicitly fail rather than skip in the exact-head native CI gate.
         llvm = tool("llvm-symbolizer")
