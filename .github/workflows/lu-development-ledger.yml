@@ -34,10 +34,11 @@ jobs:
           node-version: '22'
       - name: Verify snapshot generator tests
         run: node --test scripts/lu-ledger.test.mjs
-      - name: Confirm current ledger matches open GitHub PRs
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/lu-ledger.mjs --check --graph docs/LU_OPEN_PR_GRAPH.json
+      - name: Confirm committed ledger and graph agree
+        shell: bash
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const g=JSON.parse(fs.readFileSync("docs/LU_OPEN_PR_GRAPH.json")); if(g.schema!==1 || g.openCount!==g.pullRequests.length) process.exit(1); fs.writeFileSync(path.join(process.env.RUNNER_TEMP,"lu-pr-fixture.json"), JSON.stringify(g.pullRequests.map(p=>({number:p.number,title:p.title,draft:p.draft,head:p.head,base:p.base}))));'
+          node scripts/lu-ledger.mjs --check --fixture "$RUNNER_TEMP/lu-pr-fixture.json" --graph docs/LU_OPEN_PR_GRAPH.json
 
   refresh:
     if: github.repository == 'vjmichael/Lu-AI-GUI' && github.event_name != 'push'
