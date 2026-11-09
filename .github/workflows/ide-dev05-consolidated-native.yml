@@ -190,6 +190,10 @@ jobs:
             --python-license /usr/share/doc/python3.12/copyright \
             | sed -n 's/^LU_IDE05_LINUX_UV_SHA256=//p')"
           test "${#pin}" = 64
+          test "$(stat -c %u /opt/lu-ide/runtimes/uv_sync_offline)" = 0
+          test "$(stat -c %a /opt/lu-ide/runtimes/uv_sync_offline)" = 755
+          test ! -L /opt/lu-ide/runtimes/uv_sync_offline
+          echo "IDE055_RUNTIME_ROOT_OWNER_MODE=PASS"
           echo "LU_IDE05_LINUX_UV_SHA256=$pin" >> "$GITHUB_ENV"
           echo "IDE055_CI_SELF_MEASURED_NOT_RELEASE_PIN=$pin"
       - name: Require real Linux namespace and delegated cgroup (never disable AppArmor)

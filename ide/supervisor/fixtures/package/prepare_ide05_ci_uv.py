@@ -17,6 +17,16 @@ import struct
 
 
 def digest_tree(root: Path) -> tuple[str, int]:
+    # Keep the Python staging preflight aligned with the native Rust verifier.
+    # An unsafe root could previously produce a fingerprint that native code
+    # would correctly refuse, hiding the actual packaging error.
+    root_meta = root.lstat()
+    if (not stat.S_ISDIR(root_meta.st_mode)
+            or root_meta.st_uid != 0
+            or root_meta.st_mode & 0o022
+            or root_meta.st_nlink == 0
+            or root.resolve(strict=True) != root):
+        raise ValueError("untrusted native runtime root")
     hasher = hashlib.sha256(b"lu-ide-runtime-tree-v1\0")
     entries = []
     for file in root.rglob("*"):
@@ -72,8 +82,15 @@ def main() -> None:
         raise ValueError("only fixed installer-style sandbox runtime path")
     if root.exists():
         raise FileExistsError("refuse to overwrite a preexisting runtime pin")
-    (root / "bin").mkdir(parents=True, mode=0o755)
+    # Python's implicit parents=True directory creation uses a different mode
+    # from the final component. The Rust native verifier rejects a writable
+    # runtime *root*, not just writable files underneath it.
+    root.mkdir(parents=True, mode=0o755)
+    root.chmod(0o755)
+    (root / "bin").mkdir(mode=0o755)
     (root / "LICENSES").mkdir(mode=0o755)
+    if root.lstat().st_uid != 0 or (root.lstat().st_mode & 0o022):
+        raise PermissionError("CI native runtime root must be root-owned and nonwritable")
     for source, destination, executable in (
         (args.uv_exe, root / "bin/uv", True),
         (args.python_exe, root / "bin/python3", True),

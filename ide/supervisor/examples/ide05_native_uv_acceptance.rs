@@ -95,8 +95,12 @@ wheels = [
     );
     verify_offline_registry_lock(&input.root, &lock_sha)
         .map_err(|_| "IDE055_FIXED_LOCK_SOURCE_POLICY_DENIED")?;
-    let uv_digest = installed_multilang_toolchain_digest("uv_sync_offline")
-        .map_err(|_| "IDE055_PINNED_ROOT_OWNED_UV_RUNTIME_ABSENT")?;
+    let uv_digest = installed_multilang_toolchain_digest("uv_sync_offline").map_err(|error| {
+        // CI-only diagnostic: distinguish invalid immutable runtime/pin from
+        // absent kernel containment without exposing a user path or a grant.
+        eprintln!("IDE055_NATIVE_UV_RUNTIME_GATE_DENIED={}", error.code());
+        "IDE055_PINNED_ROOT_OWNED_UV_RUNTIME_ABSENT"
+    })?;
     let plan = JobPlan {
         project_id: format!("ide-{}", "5".repeat(32)),
         recipe_id: "uv_sync_offline".into(),
