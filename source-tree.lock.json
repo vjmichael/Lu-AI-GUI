@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f10bf810f3d4c356ab8f320038cd9624dc9b7366",
-  "trackedFileCount": 730,
+  "sourceCommitBeforeLock": "ccb472e96168db26d5a1e34c0344b08f01e72762",
+  "trackedFileCount": 736,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-agent01e-broker-progress.yml",
-      "blob": "13db6516fe776af46caaeb3edadbfad523211a65"
+      "blob": "2c051dc8e35f674e5416f0cfdd0676274da6c5ba"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -349,7 +349,7 @@
     },
     {
       "path": "docs/LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md",
-      "blob": "e747d7c279163afe3ed97d75afcca9d9558ce13a"
+      "blob": "a67b569aa17a9abeeac6163707ddcc4161a41f64"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -493,7 +493,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "c552139fac8efba5620a0676825cd05f80fc5975"
+      "blob": "7c970a80905e6fc428280803b8b9e343366c1468"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -625,7 +625,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "316d7bba23f6fb7603cd8191465b130ad790171c"
+      "blob": "37b70154c45b9dd82aa91175b2cd492822a5916a"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -714,6 +714,26 @@
     {
       "path": "docs/reference/Jan-Mod-Design-Document.md",
       "blob": "209fbfb903b2320037f3d440db45b93245a5cef7"
+    },
+    {
+      "path": "evidence/agent-01g/qwen2p5-local-cpu-20261108/README.md",
+      "blob": "dfc2f8b79cd7da9186cf74a35a922f0499c2d7b8"
+    },
+    {
+      "path": "evidence/agent-01g/qwen2p5-local-cpu-20261108/lu_engine_smoke_receipt.json",
+      "blob": "319cdc7a72a1ddd102b50ef9c275334194c3ce73"
+    },
+    {
+      "path": "evidence/agent-01g/qwen2p5-local-cpu-20261108/lu_native_gguf_git_diagnostic_first_attempt.json",
+      "blob": "9f2d5b0e3cf946e43ad709145b4f12558acd886a"
+    },
+    {
+      "path": "evidence/agent-01g/qwen2p5-local-cpu-20261108/lu_native_gguf_git_diagnostic_receipt.json",
+      "blob": "293fd144001fa5439e48f66e03ac77e536f5c21f"
+    },
+    {
+      "path": "evidence/agent-01g/qwen2p5-local-cpu-20261108/manifest.json",
+      "blob": "b9a4edf3918af832fa34012614026ae8246287e6"
     },
     {
       "path": "lu-desktop/.gitignore",
@@ -1462,6 +1482,10 @@
     {
       "path": "scripts/stage-research-windows.ps1",
       "blob": "d207eba4ea560a02718753d91f20f1ffa805988c"
+    },
+    {
+      "path": "scripts/verify-agent01g-local-evidence.mjs",
+      "blob": "1db6fe05a373fae66b250d53311dc69f2abe772f"
     },
     {
       "path": "scripts/verify-observe-installed-windows.ps1",
