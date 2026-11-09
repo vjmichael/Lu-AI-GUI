@@ -123,7 +123,7 @@ fn pid_mapping(
         let (a, b) = parts[0].split_once('-').ok_or_else(denied)?;
         let low = u64::from_str_radix(a, 16).map_err(|_| denied())?;
         let high = u64::from_str_radix(b, 16).map_err(|_| denied())?;
-        if pc < low || pc >= high || !parts[1].contains('x') { continue; }
+        if pc < low || pc >= high || !parts[1].starts_with("r-x") { continue; }
         let offset = u64::from_str_radix(parts[2], 16).map_err(|_| denied())?;
         let (dev_major, dev_minor) = parts[3].split_once(':').ok_or_else(denied)?;
         let mapped_major = u64::from_str_radix(dev_major, 16).map_err(|_| denied())?;
