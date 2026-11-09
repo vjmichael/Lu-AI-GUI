@@ -304,4 +304,87 @@ mod tests{
         assert!(!encoded.contains("historicalSteps"));
         assert!(encoded.contains("NOT_AUTHORIZED_FOR_EXECUTION"));
     }
+    #[test]
+    fn memory_loop03c_actual_original_ansf_host_capsule_corpus() {
+        // This is a real ChatStore/ANSF+SQLite+Continuity+EffectJournal read.
+        // The injected 03A gate names are test inputs, NOT a live Job/cgroup
+        // or an independently verified external Git/FFprobe source oracle.
+        use std::{fs, time::{SystemTime,UNIX_EPOCH}};
+        let dir=std::env::temp_dir().join(format!(
+            "lu-03c-host-corpus-{}-{}",std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let chat_store=ChatStore::open(&dir).unwrap();
+        let chat=chat_store.create_chat().unwrap().chat_id;
+        let continuity=ContinuityStore::open(&dir.join("continuity.sqlite")).unwrap();
+        let journal=EffectJournal::open(&dir.join("effects.sqlite")).unwrap();
+        let scenarios=[
+            (
+                "procedure_no_oracle_os_unknown",
+                "Recall procedure project lu task review tool lu.reviewed.git.head tool-version 1.0 application-version 0.1",
+                "CURRENT_GOAL_REVIEWABLE_ONLY",
+                "ORIGINAL_OS_DESCENDANT_RECONCILIATION_REQUIRED",
+                "NO_CURRENTLY_REVALIDATED_VERIFIED_PROCEDURE",true
+            ),
+            (
+                "belief_no_source",
+                "Recall belief project lu task review subject source predicate backend version 0.1",
+                "CURRENT_GOAL_REVIEWABLE_ONLY",
+                "NO_REVIEWED_EFFECTS_IN_BOUNDED_WINDOW",
+                "NO_SOURCE_BACKED_BELIEF_RECORDS",false
+            ),
+            (
+                "context_no_comparison",
+                "Resume project lu task review",
+                "CURRENT_GOAL_REVIEWABLE_ONLY",
+                "NO_REVIEWED_EFFECTS_IN_BOUNDED_WINDOW",
+                "NO_COMPARABLE_ORIGINAL_CHECKPOINTS",false
+            ),
+            (
+                "clarification_blocks_historical_memory",
+                "Recall procedure project lu task review tool lu.reviewed.git.head tool-version 1.0 application-version 0.1",
+                "CURRENT_GOAL_CLARIFICATION_PENDING",
+                "NO_REVIEWED_EFFECTS_IN_BOUNDED_WINDOW",
+                "NO_CURRENTLY_REVALIDATED_VERIFIED_PROCEDURE",true
+            )
+        ];
+        let mut rows=Vec::new();
+        for (idx,(id,prompt,goal,recovery,status,blocked)) in scenarios.iter().enumerate() {
+            let turn=format!("g-{:032x}",idx+1);
+            chat_store.append_user_with_turn_id(&chat,&turn,prompt).unwrap();
+            let raw=for_current_human_turn(
+                &chat_store,&continuity,&journal,
+                &chat,&turn,prompt,goal,recovery
+            ).unwrap().unwrap();
+            let capsule:Value=serde_json::from_str(&raw).unwrap();
+            assert_eq!(capsule["status"].as_str(),Some(*status));
+            assert_eq!(capsule["currentTaskReviewBlockedByPreflight"].as_bool(),Some(*blocked));
+            assert_eq!(capsule["humanReviewRequired"].as_bool(),Some(true));
+            assert_eq!(capsule["executionAuthority"],"NOT_AUTHORIZED_FOR_EXECUTION");
+            assert_eq!(capsule["priorGrantReusable"],false);
+            assert_eq!(capsule["automaticRetryAllowed"],false);
+            assert_eq!(capsule["currentSourceFreshness"],"NOT_RECHECKED");
+            rows.push(json!({
+                "caseId":id,"originalHumanPrompt":prompt,
+                "originalHumanTurnId":turn,"expectedStatus":status,
+                "expectedPreflightBlocked":blocked,"capsule":capsule
+            }));
+        }
+        let fixture=json!({
+            "schema":"lu-memory-loop03c-original-ansf-host-corpus-v1",
+            "producer":"lu-desktop::memory_loop03b_context::tests",
+            "provenance":"ACTUAL_AUTHENTICATED_ANSF_SQLITE_READ_WITH_TEST_INJECTED_03A_GATES_NOT_LIVE_OS",
+            "nativeEffectExecution":"NONE",
+            "positiveIndependentOracleCasesIncluded":false,
+            "cases":rows
+        });
+        if let Some(dest)=std::env::var_os("LU_MEMORY_LOOP03C_NATIVE_FIXTURE_PATH") {
+            let path=std::path::PathBuf::from(dest);
+            fs::write(path,serde_json::to_vec_pretty(&fixture).unwrap()).unwrap();
+        }
+        drop(journal);drop(continuity);drop(chat_store);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
 }
