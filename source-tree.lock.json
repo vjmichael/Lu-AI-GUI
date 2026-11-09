@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0b943b9028a11034047dcb7630892a616c6b08f1",
+  "sourceCommitBeforeLock": "f10bf810f3d4c356ab8f320038cd9624dc9b7366",
   "trackedFileCount": 730,
   "files": [
     {
@@ -349,7 +349,7 @@
     },
     {
       "path": "docs/LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md",
-      "blob": "a852f3475346fc7339bcd787e6c651bbf129ddac"
+      "blob": "e747d7c279163afe3ed97d75afcca9d9558ce13a"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -493,7 +493,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "21d2417c85944f40e6ebb15e86b0ce0dd9d3f112"
+      "blob": "c552139fac8efba5620a0676825cd05f80fc5975"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -625,7 +625,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "60788b683e08abd8f8814ab2c9aaf5999185fd4a"
+      "blob": "316d7bba23f6fb7603cd8191465b130ad790171c"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1581,7 +1581,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_revisions.rs",
-      "blob": "43bc7b53cc92ad29a093db0f1cda5bcb038b9fbf"
+      "blob": "686703218f4e3c03bfca2ace4e179eeab4a719ab"
     },
     {
       "path": "src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs",
