@@ -228,6 +228,28 @@ impl OwnerSideband {
             }
         }
     }
+    /// Original LLDB DebuggerThread sends CONTINUED on the *same* bounded
+    /// pipe immediately after actual Win32 ContinueDebugEvent. No generic
+    /// DAP continue command, model-selected PID or writable process access.
+    pub(crate) fn wait_exact_native_continue(
+        &mut self, sequence: u64,
+    ) -> Result<(), SupervisorError> {
+        use std::sync::mpsc::RecvTimeoutError;
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            if self.ledger.revoked && self.ledger.next_sequence == sequence
+                && self.ledger.active.is_none() {
+                return Ok(());
+            }
+            let left = until.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() { return Err(denied()); }
+            match self.receiver.recv_timeout(left) {
+                Ok(Ok(event)) => self.ledger.observe(event)?,
+                Ok(Err(())) | Err(RecvTimeoutError::Disconnected)
+                    | Err(RecvTimeoutError::Timeout) => return Err(denied()),
+            }
+        }
+    }
     pub(crate) fn current(&mut self, pid: u32, tid: u32, rip: u64)
         -> Result<OwnerEvent, SupervisorError>
     {
