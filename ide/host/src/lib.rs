@@ -11,6 +11,7 @@ pub mod browser;
 pub mod capabilities;
 pub mod continuity;
 pub mod dap_session;
+pub mod dap_source_lines;
 pub mod editor;
 pub mod draft_vault;
 pub mod execution_intents;
