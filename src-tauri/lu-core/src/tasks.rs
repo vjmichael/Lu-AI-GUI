@@ -370,7 +370,7 @@ impl TaskStore {
     #[cfg(windows)]
     pub(crate) fn record_verified_windows_job_empty(
         &self,task_id:&str,workspace_id:&str,
-        proof:&lu_win_worker_job::WindowsJobEmptyProof,
+        proof:lu_win_worker_job::WindowsJobEmptyProof,
     )->Result<(),TaskStoreError>{
         let trusted=|v:&str,p:&str|
             v.len()==p.len()+32&&v.starts_with(p)
