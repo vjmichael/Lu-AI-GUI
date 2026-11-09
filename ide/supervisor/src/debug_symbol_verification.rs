@@ -273,7 +273,7 @@ fn pe32plus_rsds(data:&[u8])->Option<Rsds> {
     if !x_section {return None;}
     let rva_to_raw=|rva:u32,length:u32|->Option<usize>{
         for &(start,virtual_length,raw,raw_length) in &spans {
-            let offset=rva.checked_sub(start)?;
+            let Some(offset)=rva.checked_sub(start) else{continue;};
             if offset<virtual_length && offset.checked_add(length)?<=raw_length {
                 return usize::try_from(raw.checked_add(offset)?).ok();
             }
@@ -308,7 +308,7 @@ fn pe32plus_rsds(data:&[u8])->Option<Rsds> {
 }
 #[cfg(windows)]
 fn pdb_info_dbi(data:&[u8],rsds:&Rsds)->bool{
-    const MAGIC:&[u8]=b"Microsoft C / C++ MSF 7.00\r\n\x1aDS\0\0\0";
+    const MAGIC:&[u8]=b"Microsoft C/C++ MSF 7.00\r\n\x1aDS\0\0\0";
     if take(data,0,32)!=Some(MAGIC) {return false;}
     let Some(block_size)=u32le(data,32).map(|v|v as usize) else{return false;};
     if ![512,1024,2048,4096].contains(&block_size){return false;}
