@@ -11,10 +11,11 @@ use crate::windows_broker::BrokerLease;
 #[cfg(feature = "protected-recovery-service")]
 use crate::windows_service_client::ServiceLease as BrokerLease;
 use crate::{
+    live_output::LiveOutput,
     snapshot::{verify_input, PublishedInput},
     windows_broker::TrustedBroker,
     windows_cap_tree::{audit_tree, digest_tree, live_output_quota, publish_into_native_parent},
-    live_output::LiveOutput, JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
+    JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
 use std::{
@@ -196,7 +197,12 @@ pub fn trusted_offline_toolchain_digest(bundle: &Path) -> Result<String, Supervi
     digest_tree(bundle, None, MAX_BUNDLE_FILES, MAX_BUNDLE_BYTES)
 }
 
-fn stage_toolchain(bundle: &Path, dest: &Path, expected: &str, recipe_id: &str) -> Result<(), SupervisorError> {
+fn stage_toolchain(
+    bundle: &Path,
+    dest: &Path,
+    expected: &str,
+    recipe_id: &str,
+) -> Result<(), SupervisorError> {
     if !expected.bytes().all(|x| x.is_ascii_hexdigit()) || expected.len() != 64 {
         return Err(SupervisorError::InvalidPlan);
     }
@@ -213,7 +219,8 @@ fn stage_toolchain(bundle: &Path, dest: &Path, expected: &str, recipe_id: &str) 
             }
         }
         if !clean_meta(&bundle.join("lib"))?.is_dir()
-            || !clean_meta(&bundle.join("cargo-home"))?.is_dir() {
+            || !clean_meta(&bundle.join("cargo-home"))?.is_dir()
+        {
             return Err(denied());
         }
     }
@@ -701,7 +708,10 @@ fn bootstrap_environment(
 /// Runtime-only AppContainer bootstrap, no inherited Python/Node/CMake,
 /// shell, PATH, HOME or registry build settings from the desktop user.
 fn bootstrap_multilang_environment(
-    local: &Path, workspace: &Path, output: &Path, tools: &Path,
+    local: &Path,
+    workspace: &Path,
+    output: &Path,
+    tools: &Path,
 ) -> Result<Vec<u16>, SupervisorError> {
     let system = std::env::var_os("SystemRoot").ok_or_else(denied)?;
     if !Path::new(&system).is_absolute()
@@ -718,8 +728,7 @@ fn bootstrap_multilang_environment(
         os_system32.display(),system.to_string_lossy(),local.display(),
         local.display()
     ).replace("\\0","\0");
-    if env.encode_utf16().count()>32767
-        || env.chars().any(|ch|ch=='\u{0001}') {
+    if env.encode_utf16().count() > 32767 || env.chars().any(|ch| ch == '\u{0001}') {
         return Err(denied());
     }
     Ok(env.encode_utf16().collect())
@@ -733,33 +742,45 @@ fn command_for(
 ) -> Result<(PathBuf, Vec<u16>), SupervisorError> {
     if cfg!(feature = "multilang-worker") {
         let (binary, manifest, args) = match plan.recipe_id.as_str() {
-            "python_pytest" => ("bin/python.exe", "pyproject.toml",
-                "-I -m pytest -q -p no:cacheprovider".to_owned()),
-            "js_tests" => ("bin/node.exe", "package.json",
-                "--test --test-reporter=tap".to_owned()),
-            "cpp_cmake_build" => ("bin/cmake.exe", "CMakeLists.txt",
+            "python_pytest" => (
+                "bin/python.exe",
+                "pyproject.toml",
+                "-I -m pytest -q -p no:cacheprovider".to_owned(),
+            ),
+            "js_tests" => (
+                "bin/node.exe",
+                "package.json",
+                "--test --test-reporter=tap".to_owned(),
+            ),
+            "cpp_cmake_build" => (
+                "bin/cmake.exe",
+                "CMakeLists.txt",
                 format!(
                     "-DLU_IDE_WORKSPACE=\"{}\" -DLU_IDE_OUTPUT=\"{}\" -P \"{}\"",
-                    workspace.display(),output.display(),
+                    workspace.display(),
+                    output.display(),
                     tools.join("drivers/dev03-cmake.cmake").display(),
-                )),
+                ),
+            ),
             _ => ("", "", String::new()),
         };
         if !binary.is_empty() {
-            let executable=tools.join(binary);
+            let executable = tools.join(binary);
             if !clean_meta(&executable)?.is_file()
-                || !clean_meta(&workspace.join(manifest))?.is_file() {
+                || !clean_meta(&workspace.join(manifest))?.is_file()
+            {
                 return Err(denied());
             }
             // All paths are host-created AppContainer directories, not a
             // project path, command string or environment from the WebView.
-            let command=format!("\"{}\" {}",executable.display(),args);
-            if command.contains('\n') || command.contains('\r')
-                || command.contains('\"')
-                    && executable.to_string_lossy().contains('\"') {
+            let command = format!("\"{}\" {}", executable.display(), args);
+            if command.contains('\n')
+                || command.contains('\r')
+                || command.contains('\"') && executable.to_string_lossy().contains('\"')
+            {
                 return Err(denied());
             }
-            return Ok((executable,wstr(&command)));
+            return Ok((executable, wstr(&command)));
         }
     }
     let (subcommand, manifest) = match plan.recipe_id.as_str() {
@@ -816,8 +837,11 @@ fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle, Handle), Super
         return Err(denied());
     }
     let nul = Handle::new(nul)?;
-    fn create_stream(output: &Path, name: &str, sec: &mut SECURITY_ATTRIBUTES)
-        -> Result<Handle, SupervisorError> {
+    fn create_stream(
+        output: &Path,
+        name: &str,
+        sec: &mut SECURITY_ATTRIBUTES,
+    ) -> Result<Handle, SupervisorError> {
         let path = output.join(name);
         let value = unsafe {
             CreateFileW(
@@ -851,7 +875,9 @@ fn stream_windows_output(
     stderr_offset: &mut u64,
     live: Option<&Arc<LiveOutput>>,
 ) -> Result<(), SupervisorError> {
-    let Some(live) = live else { return Ok(()); };
+    let Some(live) = live else {
+        return Ok(());
+    };
     for (name, stream, offset) in [
         ("cargo-stdout.log", "stdout", stdout_offset),
         ("cargo-diagnostics.log", "stderr", stderr_offset),
@@ -864,12 +890,17 @@ fn stream_windows_output(
         // Open the reparse point itself (never its target). A malicious
         // contained worker must not make the trusted host follow an escaped
         // symlink/junction during a metadata-to-open race.
-        let mut file = fs::OpenOptions::new().read(true)
+        let mut file = fs::OpenOptions::new()
+            .read(true)
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT_VALUE)
-            .open(&path).map_err(io_denied)?;
+            .open(&path)
+            .map_err(io_denied)?;
         let opened = file.metadata().map_err(io_denied)?;
-        if !opened.is_file() || opened.file_attributes() & 0x400 != 0 ||
-            opened.len() < *offset || opened.len() > MAX_OUTPUT_FILE_BYTES {
+        if !opened.is_file()
+            || opened.file_attributes() & 0x400 != 0
+            || opened.len() < *offset
+            || opened.len() > MAX_OUTPUT_FILE_BYTES
+        {
             return Err(denied());
         }
         file.seek(SeekFrom::Start(*offset)).map_err(io_denied)?;
@@ -1077,9 +1108,17 @@ where
     F: FnOnce() -> Result<(), SupervisorError>,
 {
     execute_windows_worker_after_staging_approval_with_output(
-        supervisor, job_id, plan, current_host_observed_head, input,
-        trusted_offline_toolchain_root, trusted_native_output_parent,
-        trusted_broker, cancel, approve_after_staging, None,
+        supervisor,
+        job_id,
+        plan,
+        current_host_observed_head,
+        input,
+        trusted_offline_toolchain_root,
+        trusted_native_output_parent,
+        trusted_broker,
+        cancel,
+        approve_after_staging,
+        None,
     )
 }
 
@@ -1188,7 +1227,10 @@ where
     verify_input(&final_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
     if multilang {
         crate::runtime_bundles::verify_runtime_bundle(
-            &plan.recipe_id, &toolchain, &plan.toolchain_sha256)?;
+            &plan.recipe_id,
+            &toolchain,
+            &plan.toolchain_sha256,
+        )?;
     } else if trusted_offline_toolchain_digest(&toolchain)? != plan.toolchain_sha256 {
         return Err(SupervisorError::WrongProjectOrSource);
     }
@@ -1283,8 +1325,14 @@ where
     let exit_code = loop {
         // Output is advisory, but a structural violation quarantines the job
         // rather than silently trusting mutated worker files.
-        if stream_windows_output(&output, &mut stdout_offset,
-            &mut stderr_offset, live.as_ref()).is_err() {
+        if stream_windows_output(
+            &output,
+            &mut stdout_offset,
+            &mut stderr_offset,
+            live.as_ref(),
+        )
+        .is_err()
+        {
             let _ = job.kill_and_verify();
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(SupervisorError::Quarantined);
@@ -1362,8 +1410,14 @@ where
         }
     };
     // Capture any final buffered diagnostics before the output seal.
-    if stream_windows_output(&output, &mut stdout_offset,
-            &mut stderr_offset, live.as_ref()).is_err() {
+    if stream_windows_output(
+        &output,
+        &mut stdout_offset,
+        &mut stderr_offset,
+        live.as_ref(),
+    )
+    .is_err()
+    {
         let _ = job.kill_and_verify();
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(SupervisorError::Quarantined);
@@ -1558,9 +1612,12 @@ mod tests {
         stream_windows_output(&root, &mut out, &mut err, Some(&sink)).unwrap();
         assert_eq!(sink.page(0).chunks.len(), 2);
         use std::io::Write;
-        fs::OpenOptions::new().append(true)
-            .open(root.join("cargo-stdout.log")).unwrap()
-            .write_all(b"next").unwrap();
+        fs::OpenOptions::new()
+            .append(true)
+            .open(root.join("cargo-stdout.log"))
+            .unwrap()
+            .write_all(b"next")
+            .unwrap();
         stream_windows_output(&root, &mut out, &mut err, Some(&sink)).unwrap();
         assert_eq!(sink.page(2).chunks.len(), 1);
         assert_eq!(sink.page(2).chunks[0].stream, "stdout");
@@ -1737,7 +1794,9 @@ mod tests {
         let base = std::env::temp_dir().join(format!("lu-ide-d7-fixture-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
-        assert!(stage_toolchain(&base, &base.join("stage"), &"a".repeat(64), "rust_check").is_err());
+        assert!(
+            stage_toolchain(&base, &base.join("stage"), &"a".repeat(64), "rust_check").is_err()
+        );
         let _ = fs::remove_dir_all(base);
     }
 }
