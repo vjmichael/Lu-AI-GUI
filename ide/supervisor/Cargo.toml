@@ -38,6 +38,8 @@ multilang-worker = []
 # multilang immutable bundle, existing SCM/cgroup admission and journal.
 # No generic manager command, networked resolver or Add/Remove.
 package-uv-worker = ["multilang-worker", "dep:toml", "dep:base64"]
+# Disposable CI-only exact wheelhouse fixture. Never linked into installed Tauri.
+ide055-ci-wheelhouse = ["package-uv-worker"]
 # Explicit compile-time opt-in for disposable native CI ONLY. This is not a
 # production worker feature and must not be inherited by Tauri/NSIS builds.
 ci-native-null-lease = ["windows-worker"]

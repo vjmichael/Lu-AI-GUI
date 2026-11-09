@@ -77,17 +77,17 @@ def stage_fixed_ci_wheel(wheelhouse: Path) -> str:
     wheelhouse.mkdir(mode=0o755)
     prefix = "ide05_demo-1.0.0.dist-info"
     members = {
-        "ide05_demo/__init__.py": b"VALUE = 42\\n",
+        "ide05_demo/__init__.py": b"VALUE = 42\n",
         prefix + "/WHEEL": (
-            b"Wheel-Version: 1.0\\nGenerator: lu-ide-ci-fixed\\n"
-            b"Root-Is-Purelib: true\\nTag: py3-none-any\\n"
+            b"Wheel-Version: 1.0\nGenerator: lu-ide-ci-fixed\n"
+            b"Root-Is-Purelib: true\nTag: py3-none-any\n"
         ),
         prefix + "/METADATA": (
-            b"Metadata-Version: 2.4\\nName: ide05-demo\\nVersion: 1.0.0\\n"
-            b"License-Expression: MIT\\nLicense-File: LICENSE.txt\\n"
+            b"Metadata-Version: 2.4\nName: ide05-demo\nVersion: 1.0.0\n"
+            b"License-Expression: MIT\nLicense-File: LICENSE.txt\n"
         ),
         prefix + "/licenses/LICENSE.txt": (
-            b"MIT License\\nCI-only first-party synthetic fixture; no upstream claim.\\n"
+            b"MIT License\nCI-only first-party synthetic fixture; no upstream claim.\n"
         ),
     }
     records = []
@@ -96,7 +96,7 @@ def stage_fixed_ci_wheel(wheelhouse: Path) -> str:
         records.append([relative, "sha256=" + sha, str(len(content))])
     records.append([prefix + "/RECORD", "", ""])
     record_bytes = io.StringIO(newline="")
-    csv.writer(record_bytes, lineterminator="\\n").writerows(records)
+    csv.writer(record_bytes, lineterminator="\n").writerows(records)
     members[prefix + "/RECORD"] = record_bytes.getvalue().encode("utf-8")
     archive = wheelhouse / "ide05_demo-1.0.0-py3-none-any.whl"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as output:

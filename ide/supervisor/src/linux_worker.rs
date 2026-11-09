@@ -651,6 +651,14 @@ fn command_for(
             if !input.root.join("uv.lock").is_file() {
                 return Err(SupervisorError::WrongProjectOrSource);
             }
+            // Only the dedicated, non-release CI binary may read the
+            // separately root-owned, tree-pinned synthetic wheelhouse.
+            // All ordinary package workers retain registry-only lock policy.
+            if cfg!(feature = "ide055-ci-wheelhouse") {
+                cmd.arg("--setenv")
+                    .arg("UV_NO_INDEX")
+                    .arg("1");
+            }
             cmd.arg("/runtime/bin/uv").args([
                 "sync",
                 "--offline",
@@ -667,6 +675,9 @@ fn command_for(
                 "--python",
                 "/runtime/bin/python3",
             ]);
+            if cfg!(feature = "ide055-ci-wheelhouse") {
+                cmd.args(["--no-index", "--find-links", "/runtime/wheelhouse"]);
+            }
         }
         "python_pytest" if runtime.is_some() => {
             cmd.arg("/runtime/bin/python3").args([
