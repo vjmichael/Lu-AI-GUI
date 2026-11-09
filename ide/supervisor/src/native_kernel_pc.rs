@@ -100,7 +100,8 @@ fn tracing_stop(pid: u32) -> Result<bool, SupervisorError> {
     let data = fs::read_to_string(format!("/proc/{pid}/status")).map_err(|_| denied())?;
     let state = data.lines().find_map(|line| line.strip_prefix("State:"))
         .ok_or_else(denied)?.trim_start();
-    Ok(state.starts_with("t ") || state.starts_with("T "))
+    // Only a kernel ptrace tracing stop, never a generic SIGSTOP.
+    Ok(state.starts_with("t "))
 }
 fn member(dir: &Path, pid: u32) -> Result<bool, SupervisorError> {
     let data = fs::read_to_string(dir.join("cgroup.procs")).map_err(|_| denied())?;
@@ -297,8 +298,27 @@ mod tests {
     use super::*;
     #[test]
     fn independent_elf_program_header_slide_is_bounded_and_not_dap_supplied() {
-        let exe = fs::read("/proc/self/exe").unwrap();
-        assert!(executable_slide(&exe, 0, 0).is_none());
+        let mut elf = vec![0_u8; 0x100];
+        elf[..4].copy_from_slice(b"\\x7fELF");
+        elf[4] = 2; // ELF64
+        elf[5] = 1; // little endian
+        elf[16..18].copy_from_slice(&3u16.to_le_bytes()); // ET_DYN
+        elf[32..40].copy_from_slice(&64u64.to_le_bytes()); // e_phoff
+        elf[54..56].copy_from_slice(&56u16.to_le_bytes()); // e_phentsize
+        elf[56..58].copy_from_slice(&1u16.to_le_bytes()); // e_phnum
+        elf[64..68].copy_from_slice(&1u32.to_le_bytes()); // PT_LOAD
+        elf[68..72].copy_from_slice(&5u32.to_le_bytes()); // read + execute
+        elf[72..80].copy_from_slice(&0x1000u64.to_le_bytes()); // file offset
+        elf[80..88].copy_from_slice(&0x1000u64.to_le_bytes()); // p_vaddr
+        assert_eq!(
+            executable_slide(&elf, 0x7f00_0000_1000, 0x1000),
+            Some(0x7f00_0000_0000)
+        );
+        assert_eq!(executable_slide(&elf, 0x7f00_0000_1000, 0), None);
+        elf[16..18].copy_from_slice(&2u16.to_le_bytes()); // ET_EXEC
+        assert_eq!(executable_slide(&elf, 0x401000, 0x1000), None);
+        elf[80..88].copy_from_slice(&0x401000u64.to_le_bytes());
+        assert_eq!(executable_slide(&elf, 0x401000, 0x1000), Some(0));
         assert!(executable_slide(&[0; 64], 0x400000, 0).is_none());
     }
     #[test]
