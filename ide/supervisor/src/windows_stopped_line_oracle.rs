@@ -48,12 +48,24 @@ fn normalized(path: &str) -> Option<String> {
     }
     Some(s.to_owned())
 }
-fn exact_native_source(actual: &Path, adapter: &str) -> Result<(), SupervisorError> {
-    let expected = normalized(actual.to_str().ok_or_else(denied)?).ok_or_else(denied)?;
-    if normalized(adapter).as_deref() != Some(expected.as_str()) {
+/// The compiler's private workspace path may no longer exist when the
+/// protected Cargo worker has exited. Independently compare the DAP source
+/// path to the PDB's compiler source path, and anchor their *exact* trusted
+/// relative component to a separately rehashed immutable source snapshot.
+/// Never trust a basename-only match or accept a user-provided alias.
+fn compiled_source_identity(path: &str, original: &Path) -> Result<String, SupervisorError> {
+    let canonical = normalized(path).ok_or_else(denied)?;
+    let bytes = canonical.as_bytes();
+    if bytes.len() < 16 || !bytes[0].is_ascii_alphabetic()
+        || bytes[1] != b':' || bytes[2] != b'\\'
+        || !canonical.ends_with("\\src\\main.rs")
+        || original.file_name().and_then(|name| name.to_str()) != Some("main.rs")
+        || original.parent().and_then(|parent| parent.file_name())
+            .and_then(|name| name.to_str()) != Some("src")
+    {
         return Err(denied());
     }
-    Ok(())
+    Ok(canonical)
 }
 fn bounded_sha(path: &Path, ceiling: u64) -> Result<String, SupervisorError> {
     if !path.is_absolute() { return Err(denied()); }
@@ -160,6 +172,7 @@ pub(crate) struct IndependentPdbLine {
 
 fn equal_mapped_line(
     json: &Value, pc: u64, original_source: &Path,
+    compiled_path_from_dap: &str,
     exact_binary: &Path, expected_line: u32,
 ) -> Result<(), SupervisorError> {
     let items = json.as_array().ok_or_else(denied)?;
@@ -180,7 +193,9 @@ fn equal_mapped_line(
         .ok_or_else(denied)?;
     if symbols.len() != 1 { return Err(denied()); }
     let name = symbols[0].get("FileName").and_then(Value::as_str).ok_or_else(denied)?;
-    exact_native_source(original_source, name)?;
+    let from_pdb = compiled_source_identity(name, original_source)?;
+    let from_dap = compiled_source_identity(compiled_path_from_dap, original_source)?;
+    if from_pdb != from_dap { return Err(denied()); }
     let line = symbols[0].get("Line").and_then(Value::as_u64).ok_or_else(denied)?;
     if line != u64::from(expected_line) || line == 0 { return Err(denied()); }
     Ok(())
@@ -225,7 +240,7 @@ pub(crate) fn independently_verify_pdb_line_for_ci(
     // project index, never guess a basename from an adapter response.
     let source_rel = "src/main.rs";
     let original_source = native_source_root.join(source_rel);
-    exact_native_source(&original_source, &candidate.adapter_path)?;
+    compiled_source_identity(&candidate.adapter_path, &original_source)?;
     let source_sha256 = bounded_sha(&original_source, MAX_SOURCE_BYTES)?;
     let content = fs::read(&original_source).map_err(|_| denied())?;
     if candidate.line as usize > content.split(|b| *b == b'\n').count() {
@@ -252,7 +267,8 @@ pub(crate) fn independently_verify_pdb_line_for_ci(
         &tool, &pe, module.loaded_base - module.preferred_base,
         thread.observed_rip, staged_dap_bundle,
     )?;
-    equal_mapped_line(&json, thread.observed_rip, &original_source, &pe, candidate.line)?;
+    equal_mapped_line(&json, thread.observed_rip, &original_source,
+        &candidate.adapter_path, &pe, candidate.line)?;
     // Any mutation during the lookup is a denial, not an achieved mapping.
     target.verify()?;
     if bounded_sha(&original_source, MAX_SOURCE_BYTES)? != source_sha256
@@ -287,14 +303,21 @@ mod tests {
         let source = Path::new(r"C:\reviewed\src\main.rs");
         let good = json!([{"Address": "0x140001123", "ModuleName": "app.exe",
             "Symbol": [{"FileName": r"C:\reviewed\src\main.rs", "Line": 2}]}]);
-        assert!(equal_mapped_line(&good, 0x140001123, source, pe, 2).is_ok());
-        assert!(equal_mapped_line(&good, 0x140001124, source, pe, 2).is_err());
-        assert!(equal_mapped_line(&good, 0x140001123, source, pe, 3).is_err());
+        assert!(equal_mapped_line(&good, 0x140001123, source,
+            r"C:\reviewed\src\main.rs", pe, 2).is_ok());
         assert!(equal_mapped_line(&good, 0x140001123,
-            Path::new(r"C:\elsewhere\src\main.rs"), pe, 2).is_err());
+            Path::new(r"C:\approved\src\main.rs"),
+            r"C:\reviewed\src\main.rs", pe, 2).is_ok());
+        assert!(equal_mapped_line(&good, 0x140001124, source,
+            r"C:\reviewed\src\main.rs", pe, 2).is_err());
+        assert!(equal_mapped_line(&good, 0x140001123, source,
+            r"C:\reviewed\src\main.rs", pe, 3).is_err());
+        assert!(equal_mapped_line(&good, 0x140001123, source,
+            r"C:\forged\src\main.rs", pe, 2).is_err());
         let swapped = json!([{"Address": "0x140001123", "ModuleName": "foreign.exe",
             "Symbol": [{"FileName": r"C:\reviewed\src\main.rs", "Line": 2}]}]);
-        assert!(equal_mapped_line(&swapped, 0x140001123, source, pe, 2).is_err());
+        assert!(equal_mapped_line(&swapped, 0x140001123, source,
+            r"C:\reviewed\src\main.rs", pe, 2).is_err());
     }
     #[test]
     fn source_identity_denies_unc_traversal_and_relative_paths() {
@@ -303,7 +326,7 @@ mod tests {
                      r"\\server\share\src\main.rs",
                      r"C:src\main.rs",
                      ""] {
-            assert!(exact_native_source(path, fake).is_err());
+            assert!(compiled_source_identity(fake, path).is_err());
         }
     }
 }
