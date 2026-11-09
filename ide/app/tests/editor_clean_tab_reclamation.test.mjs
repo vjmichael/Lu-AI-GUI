@@ -95,5 +95,7 @@ test('UI explicitly opts in and snapshots actual CodeMirror state before closure
   const end=source.indexOf('function closeTab(key)',beginning);
   assert.ok(beginning>=0 && end>beginning);
   const handler=source.slice(beginning,end);
-  assert.doesNotMatch(handler,/invoke\(|ide_save_source_file|await /);
+  // Examine executable code, not the comment explaining that there is no await.
+  const executable=handler.replace(/\/\/[^\n]*/g,'');
+  assert.doesNotMatch(executable,/invoke\(|ide_save_source_file|\bawait\b/);
 });
