@@ -537,6 +537,7 @@ impl NativeBuildRuntime {
             input_snapshot_sha256: input.seal.source_sha256.clone(),
             manifest_sha256: input.seal.manifest_sha256.clone(),
             toolchain_sha256: installed.toolchain_sha256.clone(),
+            debug_target_binding_sha256: None,
             runtime_limit_ms: MAX_RUNTIME_MS,
             memory_limit_bytes: 512 * 1024 * 1024,
             process_limit: 8,
