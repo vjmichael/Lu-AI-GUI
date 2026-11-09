@@ -298,7 +298,35 @@ pub fn reverify_child_before_execution(
          AND name='lu_agent_continuation_children'",
         [],|r|r.get(0)
     ).optional().map_err(|e|e.to_string())?;
-    if present.is_none(){return Ok(false)}
+    if present.is_none(){
+        // A crash can happen between a new child DRAFT and linking it.
+        // Even before the children table exists, a human-turn reservation
+        // in the intent ledger makes that child unsafe to execute as a
+        // standalone first plan.
+        let has_intents:Option<String>=db.query_row(
+            "SELECT name FROM sqlite_master WHERE type='table'
+             AND name='lu_agent_continuation_intents'",
+            [],|r|r.get(0)
+        ).optional().map_err(|e|e.to_string())?;
+        if has_intents.is_some(){
+            let child_turn:Option<String>=db.query_row(
+                "SELECT human_turn_id FROM lu_agent_plans
+                 WHERE plan_id=?1 AND conversation_id=?2",
+                params![child_plan,chat],|r|r.get(0)
+            ).optional().map_err(|e|e.to_string())?;
+            if let Some(turn)=child_turn{
+                let reserved:i64=db.query_row(
+                    "SELECT COUNT(*) FROM lu_agent_continuation_intents
+                     WHERE fresh_human_turn_id=?1",
+                    params![turn],|r|r.get(0)
+                ).map_err(|e|e.to_string())?;
+                if reserved!=0{
+                    return Err("Unlinked continuation draft requires reconciliation".into())
+                }
+            }
+        }
+        return Ok(false)
+    }
     let link:Option<(String,String,u8,String)>=db.query_row(
         "SELECT parent_plan_id,revision_sha256,step_index,fresh_human_turn_id
          FROM lu_agent_continuation_children WHERE child_plan_id=?1",
