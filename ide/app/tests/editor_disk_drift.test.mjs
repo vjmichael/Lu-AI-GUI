@@ -126,7 +126,7 @@ test('frontend inspection and comparison are always explicit, read-only native p
   assert.match(ui,/summarizeExternalDifference\(/);
   assert.match(ui,/const ticket=beginExplorerIo\(\)/);
   const start=ui.indexOf('async function inspectOpenTabDiskRevisions()');
-  const end=ui.indexOf('function closeCleanBackgroundTabs()',start);
+  const end=ui.indexOf('async function compareEditorWithDisk(',start);
   assert.ok(start>=0 && end>start);
   const code=ui.slice(start,end);
   assert.match(code,/invoke\('ide_preview_source_file'/);
@@ -134,6 +134,8 @@ test('frontend inspection and comparison are always explicit, read-only native p
   assert.doesNotMatch(code,/invoke\('ide_draft_load'/);
   assert.doesNotMatch(code,/setTabs\(/);
   assert.doesNotMatch(code,/resetBufferIdentity\(/);
+  // The adjacent B11 reviewed-merge apply action may update tabs, but this
+  // B10 read-only audit must never do so. Keep the function scope exact.
   assert.match(code,/explorerIoTicket\.current!==ticket/);
   assert.match(code,/activeProjectIdRef\.current!==projectId/);
 });
