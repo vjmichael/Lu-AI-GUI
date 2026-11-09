@@ -76,6 +76,17 @@ jobs:
               agent01l-evidence/original-turn-custody.log
             grep -Fq 'test result: ok. 3 passed; 0 failed;' agent01l-evidence/original-turn-custody.log
           fi
+      - name: Linux kernel negative control — group escape must not create custody proof
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile benchmarks/e1/e1_p08_setsid_escape_probe.py
+          python3 benchmarks/e1/e1_p08_setsid_escape_probe.py \
+            2>&1 | tee agent01l-evidence/linux-setsid-escape-negative-control.log
+          grep -Fq 'E1_P08_GROUP_ESCAPE_PROVEN=1' \
+            agent01l-evidence/linux-setsid-escape-negative-control.log
+          echo 'An escaped process survived kernel killpg. AGENT-01L correctly refuses Linux full descendant custody without an authorized delegated cgroup-v2 guardian.' >> "$GITHUB_STEP_SUMMARY"
       - name: Real Windows Win32 nested process Job Object and kernel emptiness
         if: runner.os == 'Windows'
         shell: bash
