@@ -70,7 +70,7 @@ fn checked_dir(path:&Path)->Result<(),SupervisorError>{
 /// Read from the fixed native-owned published output, never a caller path.
 /// Check *each* parent component, reject symlinks/reparse and Unix hard links,
 /// use no-follow flags, compare opened inode/size and independent manifest SHA.
-fn read_attested(root:&Path, entry:&ArtifactEntry)->Result<Vec<u8>,SupervisorError>{
+pub(crate) fn read_attested(root:&Path, entry:&ArtifactEntry)->Result<Vec<u8>,SupervisorError>{
     if !root.is_absolute() || entry.bytes<4 || entry.bytes>MAX_FILE {
         return Err(denied());
     }
