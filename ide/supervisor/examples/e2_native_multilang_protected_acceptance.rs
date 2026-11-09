@@ -236,6 +236,7 @@ mod enabled {
             input_snapshot_sha256: snapshot.seal.source_sha256.clone(),
             manifest_sha256: snapshot.seal.manifest_sha256.clone(),
             toolchain_sha256: measured,
+            debug_target_binding_sha256: None,
             runtime_limit_ms: 180_000,
             memory_limit_bytes: 1024 * 1024 * 1024,
             process_limit: 32,
