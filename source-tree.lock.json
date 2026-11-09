@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "76a7a5f88672dbe02cb6651c9cf5ceef1d6c57b8",
-  "trackedFileCount": 817,
+  "sourceCommitBeforeLock": "68d0e242550c52968e23b9f508b4bee1cf347aa3",
+  "trackedFileCount": 818,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -621,7 +621,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "f53aaed136957f45bda4ca9469c85064c6c03970"
+      "blob": "000b70b21f1805df794dbddc28226f35b6865c22"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -694,6 +694,10 @@
     {
       "path": "docs/LU_MEMORY_LOOP03C_REAL_MODEL_COMPREHENSION_20261109.md",
       "blob": "5154f33e1e14f17a38a8de878441b6391dbc9c98"
+    },
+    {
+      "path": "docs/LU_MEMORY_LOOP03E_CRASH_CONSISTENT_PUBLICATION_20261109.md",
+      "blob": "3509f7941db8c948696d4b8d4c87a725608f5c80"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -1141,7 +1145,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "e90ae93ccea9d6529a23c793c837ea76da76a955"
+      "blob": "750c931e27ac35ca7f46586c809565eace489e67"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1237,7 +1241,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_memory_evidence.rs",
-      "blob": "853c45d57ce1c65cf5d04a01c1a91d241193508a"
+      "blob": "edd7fc5072a3a3165a00ff37e5809b9c88178005"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_task_continuity.rs",

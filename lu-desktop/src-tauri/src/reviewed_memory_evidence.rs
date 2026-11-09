@@ -1,4 +1,4 @@
-//! MEMORY-LOOP-03D: host-only, original-turn -> reviewed-effect journal index.
+//! MEMORY-LOOP-03D/03E: reviewed original-turn index with crash-publication fence.
 //!
 //! This does NOT migrate/copy APPLIED effects into the general chat journal.
 //! Every historical read reopens the exact real per-turn SQLite journal,
@@ -109,7 +109,23 @@ fn ensure_schema(conn:&Connection)->Result<(),String>{
         CREATE INDEX IF NOT EXISTS lu_reviewed_memory_lookup
           ON lu_reviewed_memory_evidence(
             chat_id,project_id,task_id,tool_id,registered_unix DESC);
+        -- A verified receipt locator alone is not a completed ANSF projection.
+        -- Legacy/crash-interrupted rows have no publication marker.
+        CREATE TABLE IF NOT EXISTS lu_reviewed_memory_publication(
+          call_id TEXT PRIMARY KEY,
+          published_unix INTEGER NOT NULL
+        );
     ").map_err(err)
+}
+fn require_published(conn:&Connection,call:&str)->Result<(),String>{
+    let mark:Option<i64>=conn.query_row(
+        "SELECT published_unix FROM lu_reviewed_memory_publication WHERE call_id=?1",
+        [call],|r|r.get(0)
+    ).optional().map_err(err)?;
+    if mark.is_none_or(|v|v<=0){
+        return Err("Reviewed evidence projection incomplete; operator reconciliation required".into())
+    }
+    Ok(())
 }
 struct Row {
     call:String,chat:String,turn:String,source_id:i64,
@@ -124,7 +140,7 @@ fn read_row(r:&rusqlite::Row<'_>)->rusqlite::Result<Row>{
         tool:r.get(8)?,version:r.get(9)?,app:r.get(10)?,
         receipt_sha:r.get(11)?,fact:r.get(12)?})
 }
-fn verify_row(chats:&ChatStore,root:&Path,r:&Row)->Result<EffectJournal,String>{
+fn verify_row(chats:&ChatStore,continuity:&ContinuityStore,root:&Path,r:&Row)->Result<EffectJournal,String>{
     if !safe_id(&r.call)||!safe_id(&r.chat)||!turn_id(&r.turn)
        ||!safe_id(&r.checkpoint)||r.source_id<=0
        ||!hex_sha(&r.source_sha)||!hex_sha(&r.receipt_sha)
@@ -164,6 +180,12 @@ fn verify_row(chats:&ChatStore,root:&Path,r:&Row)->Result<EffectJournal,String>{
             .ok_or("Reviewed media duration receipt malformed")?.to_string()
     };
     if observed!=r.fact{return Err("Indexed reviewed source fact mismatch".into())}
+    let linked=continuity.verified_effects_for_checkpoint(&r.checkpoint,&journal)
+        .map_err(err)?;
+    if !linked.iter().any(|e|e.call_id==r.call&&e.tool_id==r.tool
+        &&e.receipt_sha256==r.receipt_sha){
+        return Err("Indexed checkpoint lacks the original verified effect".into())
+    }
     Ok(journal)
 }
 /// Only the host records a reviewed operation *after* real worker execution,
@@ -249,8 +271,11 @@ pub(crate) fn record_from_reviewed_turn(
                 ||indexed.receipt_sha!=receipt_sha{
                 return Err("Previously indexed reviewed evidence was rebound".into())
             }
-            let valid=verify_row(chats,&root,&indexed)?;
+            let valid=verify_row(chats,continuity,&root,&indexed)?;
             drop(valid);
+            // Do not auto-republish an interrupted or old 03D row;
+            // that could resurrect a later human correction.
+            require_published(&conn,&indexed.call)?;
             recorded+=1;
             continue
         }
@@ -344,6 +369,16 @@ pub(crate) fn record_from_reviewed_turn(
                     &e.call_id,&e.tool_id,&e.receipt_sha256
                 ).unwrap_or(false)).map_err(err)?;
         }
+        // Publish only after checkpoint, independent effect link and every
+        // required M4 procedure and belief projection have committed.
+        let published=SystemTime::now().duration_since(UNIX_EPOCH)
+            .map_err(err)?.as_secs() as i64;
+        conn.execute(
+            "INSERT OR IGNORE INTO lu_reviewed_memory_publication
+             (call_id,published_unix) VALUES (?1,?2)",
+            params![inner,published]
+        ).map_err(err)?;
+        require_published(&conn,&inner)?;
         recorded+=1;
     }
     Ok(recorded)
@@ -352,7 +387,8 @@ pub(crate) fn record_from_reviewed_turn(
 /// a turn, not a caller/model-selected path. It never opens the wrong chat
 /// and never falls back to a global journal after a recorded lookup fails.
 pub(crate) fn resolve_for_current_human(
-    chats:&ChatStore,profile:&Path,chat:&str,current_turn:&str,prompt:&str
+    chats:&ChatStore,continuity:&ContinuityStore,profile:&Path,
+    chat:&str,current_turn:&str,prompt:&str
 )->Result<Option<EffectJournal>,String>{
     if !safe_id(chat)||!turn_id(current_turn)
         ||chats.latest_authenticated_user_turn_id(chat).as_deref()!=Some(current_turn)
@@ -389,7 +425,9 @@ pub(crate) fn resolve_for_current_human(
     if row.chat!=chat||row.project!=PROJECT||row.task!=op.task{
         return Err("Cross-chat reviewed evidence access refused".into())
     }
-    verify_row(chats,&root,&row).map(Some)
+    // The newest selected record must itself be published: no fallback.
+    require_published(&conn,&row.call)?;
+    verify_row(chats,continuity,&root,&row).map(Some)
 }
 
 
@@ -454,7 +492,7 @@ mod tests {
         root:&Path,chat:&str,i:u32,prompt:&str)->Value{
         let t=turn(i);
         chats.append_user_with_turn_id(chat,&t,prompt).unwrap();
-        let original=resolve_for_current_human(chats,root,chat,&t,prompt)
+        let original=resolve_for_current_human(chats,continuity,root,chat,&t,prompt)
             .unwrap().expect("read source selected from registered original turn");
         let raw=for_current_human_turn(chats,continuity,&original,
             chat,&t,prompt,"CURRENT_GOAL_REVIEWABLE_ONLY",
@@ -503,9 +541,9 @@ mod tests {
         let other=again.create_chat().unwrap().chat_id;
         again.append_user_with_turn_id(&other,&turn(99),select).unwrap();
         assert!(resolve_for_current_human(
-            &again,&root,&other,&turn(99),select).unwrap().is_none());
+            &again,&cp,&root,&other,&turn(99),select).unwrap().is_none());
         assert!(resolve_for_current_human(
-            &again,&root,&chat,&turn(888),select).is_err());
+            &again,&cp,&root,&chat,&turn(888),select).is_err());
         drop(cp);drop(again);
         fs::remove_dir_all(root).unwrap();
     }
@@ -564,19 +602,64 @@ mod tests {
         conn.execute("UPDATE lu_reviewed_memory_evidence SET receipt_sha256=?1",
             ["f".repeat(64)]).unwrap();
         assert!(resolve_for_current_human(
-            &chats,&root,&chat,&turn(2),selector).is_err());
+            &chats,&cp,&root,&chat,&turn(2),selector).is_err());
         conn.execute("UPDATE lu_reviewed_memory_evidence SET receipt_sha256=?1",
             [digest(j.get("case-corrupt-gh").unwrap().unwrap().receipt.as_deref().unwrap())]
         ).unwrap();
         assert!(resolve_for_current_human(
-            &chats,&root,&chat,&turn(2),selector).unwrap().is_some());
+            &chats,&cp,&root,&chat,&turn(2),selector).unwrap().is_some());
         drop(conn);drop(j);
         // The path is fixed by the host original turn: no fallback to a
         // different journal or an on-disk APPLIED copy is permitted.
         fs::remove_file(journal_path(&root,&t1).unwrap()).unwrap();
         assert!(resolve_for_current_human(
-            &chats,&root,&chat,&turn(2),selector).is_err());
+            &chats,&cp,&root,&chat,&turn(2),selector).is_err());
         drop(cp);drop(chats);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+
+    #[test]
+    fn interrupted_projection_and_forged_checkpoint_cannot_reach_chat(){
+        let root=tmp();fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        let original=turn(1);
+        chats.append_user_with_turn_id(&chat,&original,
+            "Original human approved Git source read").unwrap();
+        let journal=journal_with_git(&root,&original,"crash-proof",&"a".repeat(40),true);
+        let cp=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+        let report=reported("crash-proof",&"a".repeat(40));
+        record_from_reviewed_turn(&chats,&cp,&root,&chat,&original,&journal,&report)
+            .unwrap();
+        let current=turn(2);
+        let selector="Recall procedure project lu task review_git_head tool lu.reviewed.git.head tool-version 1.0 application-version 0.1";
+        chats.append_user_with_turn_id(&chat,&current,selector).unwrap();
+        let index=Connection::open(index_path(&root)).unwrap();
+        index.execute("DELETE FROM lu_reviewed_memory_publication WHERE call_id=?1",
+            ["crash-proof-gh"]).unwrap();
+        let unavailable=resolve_for_current_human(
+            &chats,&cp,&root,&chat,&current,selector
+        ).err().expect("unpublished original must fail");
+        assert!(unavailable.contains("projection incomplete"));
+        // Replaying the old report is not a fresh authorization or repair.
+        assert!(record_from_reviewed_turn(
+            &chats,&cp,&root,&chat,&original,&journal,&report
+        ).is_err());
+        // Even a fabricated marker cannot substitute for the original
+        // checkpoint-to-independent-effect witness.
+        index.execute(
+            "INSERT INTO lu_reviewed_memory_publication(call_id,published_unix)
+             VALUES(?1,?2)",params!["crash-proof-gh",1i64]
+        ).unwrap();
+        index.execute(
+            "UPDATE lu_reviewed_memory_evidence SET checkpoint_id=?1 WHERE call_id=?2",
+            params!["cp-03d-wrong","crash-proof-gh"]
+        ).unwrap();
+        assert!(resolve_for_current_human(
+            &chats,&cp,&root,&chat,&current,selector
+        ).is_err());
+        drop(index);drop(journal);drop(cp);drop(chats);
         fs::remove_dir_all(root).unwrap();
     }
 
