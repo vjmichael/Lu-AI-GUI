@@ -476,7 +476,7 @@ impl Supervisor {
         }
         let text = std::str::from_utf8(&content)
             .map_err(|_| SupervisorError::JournalCorrupt)?;
-        if !text.starts_with(&format!("lu-owner-v1\\n{job_id}\\n")) {
+        if !text.starts_with(&format!("lu-owner-v1\n{job_id}\n")) {
             return Err(SupervisorError::JournalCorrupt);
         }
         Ok(())
