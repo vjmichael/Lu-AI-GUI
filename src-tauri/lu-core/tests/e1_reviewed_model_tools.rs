@@ -1773,7 +1773,7 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
         &ledger,&revisions,&scheduler,&receipts,&source,&NoIndependentCustodyProof
     ).unwrap();
     assert_eq!(parent_recovery.status,"STOP_DESCENDANT_CUSTODY_UNPROVEN");
-    assert_eq!(child_recovery.status,"STOP_DESCENDANT_CUSTODY_UNPROVEN");
+    assert_eq!(child_recovery.status,"STOP_ANCESTOR_CUSTODY_UNPROVEN");
     assert_eq!(parent_recovery.independently_observed_steps,1);
     assert_eq!(child_recovery.independently_observed_steps,1);
     assert_eq!(child_recovery.linked_generations,1);
