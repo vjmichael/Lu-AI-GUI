@@ -1941,9 +1941,10 @@ impl WindowsDapSession {
         // This marker is explicitly CI_SIMULATED and NEVER equivalent to
         // genuine installed human consent. The sealed test-only debuggee
         // is the sole executable target in this experimental acceptance.
+        let challenge = action.challenge_sha256().to_owned();
         action.decide(
             NativeConsentMarker::for_native_ci_fixture(
-                &preview.preview_sha256, action.challenge_sha256(),
+                &preview.preview_sha256, &challenge,
                 original.owner_sequence, now, true,
             ), original.owner_sequence, now,
         ).map_err(|_| SupervisorError::InvalidApproval)?;
@@ -2081,9 +2082,10 @@ impl WindowsDapSession {
             &supervisor.native_owner_receipt_root()?, binding,
             preview.clone(), now,
         ).map_err(|_| SupervisorError::JournalUnavailable)?;
+        let challenge = action.challenge_sha256().to_owned();
         action.decide(
             NativeConsentMarker::for_native_ci_fixture(
-                &preview.preview_sha256, action.challenge_sha256(),
+                &preview.preview_sha256, &challenge,
                 original.owner_sequence, now, true,
             ), original.owner_sequence, now,
         ).map_err(|_| SupervisorError::InvalidApproval)?;

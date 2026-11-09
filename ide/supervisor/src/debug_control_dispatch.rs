@@ -136,9 +136,9 @@ impl CiControlSlot {
     }
     pub(crate) fn take_step(&mut self) -> Result<CiStepDispatch, ControlDenial> {
         let claim = self.claim.take().ok_or(ControlDenial::AlreadyConsumed)?;
-        let kind = match claim.operation {
+        let kind = match &claim.operation {
             DebugReviewIntent::Step { kind, thread_id }
-                if thread_id == self.current.thread_id => kind,
+                if *thread_id == self.current.thread_id => *kind,
             _ => return Err(ControlDenial::WrongOperation),
         };
         Ok(CiStepDispatch { claim, from: self.current.clone(), kind })
