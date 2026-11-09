@@ -101,6 +101,20 @@ impl DapGateway {
         let process = self.process.as_mut().ok_or(SupervisorError::NoContainment)?;
         process.observe_windows_job_module(expected_binary, sha, pc)
     }
+    /// Exact kernel DebuggerThread sideband from a separately allowlisted
+    /// pipe, not DAP stdout; this has no public Tauri/WebView action.
+    #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+    pub(crate) fn verify_lldb_kernel_event_owner(
+        &mut self, pid: u32, tid: u32, rip: u64,
+    ) -> Result<crate::windows_event_owner::OwnerEvent, SupervisorError> {
+        if self.session.phase() != DapPhase::Stopped
+            || self.session.source_candidate()
+                .and_then(|f| f.instruction_address) != Some(rip) {
+            return Err(SupervisorError::NoContainment);
+        }
+        self.process.as_mut().ok_or(SupervisorError::NoContainment)?
+            .verify_lldb_kernel_event_owner(pid, tid, rip)
+    }
     #[cfg(windows)]
     pub(crate) fn verify_windows_native_debug_port(
         &mut self,

@@ -62,6 +62,12 @@ const MAX_TOTAL_IO: usize = 32 * 1024 * 1024;
 /// pipes and the real kernel containment handle. No blanket std::process::Child
 /// or WebView-provided fd is accepted here.
 pub(crate) trait RestrictedLspProcess: Send {
+    #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+    fn verify_lldb_kernel_event_owner(
+        &mut self, _pid: u32, _tid: u32, _rip: u64,
+    ) -> Result<crate::windows_event_owner::OwnerEvent, SupervisorError> {
+        Err(SupervisorError::NoContainment)
+    }
     #[cfg(all(windows, feature = "dap-transport"))]
     fn corroborate_windows_debug_port(
         &mut self,

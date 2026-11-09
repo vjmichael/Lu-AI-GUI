@@ -631,6 +631,23 @@ struct WindowsLspProcess {
 // concurrently and each pipe read/write occurs on one serialized worker actor.
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    fn verify_lldb_kernel_event_owner(
+        &mut self, pid: u32, tid: u32, rip: u64,
+    ) -> Result<crate::windows_event_owner::OwnerEvent, SupervisorError> {
+        if !self.lease.alive()
+            || unsafe { WaitForSingleObject(self.process.0, 0) } != WAIT_TIMEOUT
+            || !crate::windows_kernel_pc::job_has_member(self.job.handle.0, pid)? {
+            return Err(SupervisorError::NoContainment);
+        }
+        let event = self.event_sideband.as_mut()
+            .ok_or(SupervisorError::NoContainment)?
+            .current(pid, tid, rip)?;
+        crate::windows_kernel_pc::verify_lldb_event_owner_thread(
+            self.process.0, event.owner_tid,
+        )?;
+        Ok(event)
+    }
     #[cfg(feature = "dap-transport")]
     fn corroborate_windows_debug_port(
         &mut self,
