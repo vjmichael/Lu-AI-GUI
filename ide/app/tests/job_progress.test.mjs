@@ -22,10 +22,17 @@ test('different project or malicious text never appears', () => {
   assert.deepEqual(events.map(x=>x.jobId),['safe']);
   assert.deepEqual(visibleJobProgress(events,'ide-'+'b'.repeat(32)),[]);
 });
-test('quarantine remains visible, without declaring recovery complete', () => {
+test('quarantine-only records lacking recipe are not fabricated as progress', () => {
   const entries=ingestJobProgress([],projectId,
-    status(null,[],[job('job-x','recovery_required')]));
-  assert.equal(entries[0].phase,'recovery_required');
+    status(null,[],[{projectId,jobId:'job-x',phase:'recovery_required'}]));
+  assert.deepEqual(entries,[]);
+});
+test('active status without a reported phase projects running or cancellation', () => {
+  const active={projectId,jobId:'job-active',recipeId:'rust_tests',cancellationRequested:false};
+  let a=ingestJobProgress([],projectId,status(active));
+  assert.equal(a[0].phase,'running');
+  a=ingestJobProgress(a,projectId,status({...active,cancellationRequested:true}));
+  assert.equal(a[1].phase,'cancel_requested');
 });
 test('bounded adversarial status and history', () => {
   let history=[];
