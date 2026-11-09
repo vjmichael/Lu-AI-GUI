@@ -62,7 +62,7 @@ impl Supervisor {
         let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?;
         if !matches!(
             job.plan.recipe_id.as_str(),
-            "rust_check" | "rust_tests" | "lu_ide_host_tests"
+            "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
         ) || job.plan.effect_class != "test_build_isolated"
         {
             return Err(SupervisorError::InvalidPlan);
