@@ -8,6 +8,8 @@
 //! the trusted host and one-use D3 authorization, not to these messages.
 use std::collections::BTreeMap;
 
+use crate::dap_source_lines::{candidate_from_dap_frame, SourceLineCandidate};
+
 use serde_json::{json, Value};
 
 const MAX_FRAME: usize = 64 * 1024;
@@ -76,6 +78,8 @@ pub struct DapSession {
     initialized_event: bool,
     launch_sent: bool,
     configuration_done_sent: bool,
+    // Ephemeral, untrusted adapter coordinates; NEVER a symbol-line proof.
+    last_source_candidate: Option<SourceLineCandidate>,
 }
 impl Default for DapSession {
     fn default() -> Self {
@@ -92,15 +96,22 @@ impl DapSession {
             initialized_event: false,
             launch_sent: false,
             configuration_done_sent: false,
+            last_source_candidate: None,
         }
     }
     pub fn phase(&self) -> DapPhase {
         self.phase
     }
+    /// Native-only, read-only review input from a CORRELATED stackTrace.
+    /// Never offer this to WebView or use it as executable debugger authority.
+    pub fn source_candidate(&self) -> Option<&SourceLineCandidate> {
+        self.last_source_candidate.as_ref()
+    }
     fn fail(&mut self, why: DapError) -> DapError {
         self.phase = DapPhase::Quarantined;
         self.input.clear();
         self.pending.clear();
+        self.last_source_candidate = None;
         why
     }
     fn request(&mut self, name: &'static str, args: Value) -> Result<Vec<u8>, DapError> {
@@ -247,6 +258,8 @@ impl DapSession {
         if self.phase != DapPhase::Stopped || thread_id == 0 || thread_id > MAX_SEQ {
             return Err(DapError::InvalidPhase);
         }
+        // A new, independently correlated stack invalidates prior coordinates.
+        self.last_source_candidate = None;
         self.request(
             "stackTrace",
             json!({"threadId":thread_id, "startFrame":0, "levels":16}),
@@ -454,10 +467,22 @@ impl DapSession {
                         {
                             return Err(DapError::ExcessiveData);
                         }
+                        // Only after a successful, correlated and bounded native
+                        // stack reply may a source-coordinate review begin.
+                        // The original source and symbol hashes still require
+                        // independent native verification before any line claim.
+                        self.last_source_candidate = frames
+                            .iter()
+                            .map(candidate_from_dap_frame)
+                            .collect::<Result<Vec<_>, _>>()?
+                            .into_iter()
+                            .flatten()
+                            .next();
                         Ok(Some(DapEvent::StackTraceReceived))
                     }
                     "disconnect" if self.phase == DapPhase::Closing => {
                         self.phase = DapPhase::Terminated;
+                        self.last_source_candidate = None;
                         Ok(Some(DapEvent::Disconnected))
                     }
                     _ => Err(DapError::InvalidPhase),
@@ -496,6 +521,7 @@ impl DapSession {
                     }
                     "continued" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
                         self.phase = DapPhase::Ready;
+                        self.last_source_candidate = None;
                         Ok(Some(DapEvent::Continued))
                     }
                     "terminated" | "exited"
@@ -503,6 +529,7 @@ impl DapSession {
                     {
                         self.phase = DapPhase::Terminated;
                         self.pending.clear();
+                        self.last_source_candidate = None;
                         Ok(Some(DapEvent::Terminated))
                     }
                     // Outputs and capabilities can contain hostile text/paths.
@@ -1080,5 +1107,67 @@ mod tests {
         let msg = framed(json!({"seq":9,"type":"event","event":"someUnsafeExtension"}));
         assert_eq!(s.receive(&msg).unwrap_err(), DapError::InvalidMessage);
         assert_eq!(s.phase(), DapPhase::Quarantined);
+    }
+
+    #[test]
+    fn dev045d_only_correlated_stack_can_supply_bounded_source_candidate() {
+        let mut s = DapSession::new();
+        s.phase = DapPhase::Stopped;
+        s.pending.insert(1, "stackTrace");
+        assert!(s.source_candidate().is_none());
+        assert_eq!(
+            s.receive(&framed(json!({
+                "seq": 3, "type": "response", "request_seq": 1,
+                "command": "stackTrace", "success": true,
+                "body": {"stackFrames": [{
+                    "id": 7, "line": 2, "column": 4,
+                    "source": {"path": "/trusted/src/main.rs", "sourceReference": 0}
+                }]}
+            }))).unwrap(),
+            vec![DapEvent::StackTraceReceived]
+        );
+        let candidate = s.source_candidate().unwrap();
+        assert_eq!(candidate.frame_id, 7);
+        assert_eq!(candidate.line, 2);
+        assert_eq!(candidate.column, Some(4));
+        assert_eq!(candidate.adapter_path, "/trusted/src/main.rs");
+        s.stack_trace(1).unwrap();
+        assert!(s.source_candidate().is_none(), "new query must revoke old location");
+    }
+
+    #[test]
+    fn dev045d_unmapped_frame_never_becomes_source_line_evidence() {
+        let mut s = DapSession::new();
+        s.phase = DapPhase::Stopped;
+        s.pending.insert(1, "stackTrace");
+        assert_eq!(
+            s.receive(&framed(json!({
+                "seq": 2, "type": "response", "request_seq": 1,
+                "command": "stackTrace", "success": true,
+                "body": {"stackFrames": [{"id": 9, "line": 3}]}
+            }))).unwrap(),
+            vec![DapEvent::StackTraceReceived]
+        );
+        assert!(s.source_candidate().is_none());
+    }
+
+    #[test]
+    fn dev045d_invalid_adapter_source_quarantines_no_executable_authority() {
+        let mut s = DapSession::new();
+        s.phase = DapPhase::Stopped;
+        s.pending.insert(1, "stackTrace");
+        assert_eq!(
+            s.receive(&framed(json!({
+                "seq": 2, "type": "response", "request_seq": 1,
+                "command": "stackTrace", "success": true,
+                "body": {"stackFrames": [{
+                    "id": 9, "line": 1,
+                    "source": {"path": "/trusted/../other.rs", "sourceReference": 0}
+                }]}
+            }))).unwrap_err(),
+            DapError::InvalidMessage
+        );
+        assert_eq!(s.phase(), DapPhase::Quarantined);
+        assert!(s.source_candidate().is_none());
     }
 }
