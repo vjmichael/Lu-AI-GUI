@@ -10,7 +10,7 @@ const END = "<!-- LU_OPEN_PRS_END -->";
 const tick = String.fromCharCode(96);
 
 function usage() {
-  throw new Error("usage: node scripts/lu-ledger.mjs (--check|--update) [--file PATH] [--fixture PATH]");
+  throw new Error("usage: node scripts/lu-ledger.mjs (--check|--update) [--file PATH] [--fixture PATH] [--graph PATH]");
 }
 function valueAfter(args, flag, fallback) {
   const i = args.indexOf(flag);
@@ -58,6 +58,32 @@ function render(prs, repo) {
     END
   ].join("\n");
 }
+function workstream(ref) {
+  if (ref.startsWith("ide/")) return "ide";
+  if (ref.startsWith("lu/memory-") || ref.startsWith("lu/ansf-") || ref.startsWith("lu/m2-") || ref.startsWith("lu/m3-") || ref.startsWith("lu/m4-") || ref.startsWith("lu/m5-")) return "memory";
+  if (ref.startsWith("lu/agent") || ref.startsWith("lu/e1-")) return "agent-e1";
+  if (ref.startsWith("lu/tools-") || ref.startsWith("lu/wave") || ref.startsWith("lu/v1-observe")) return "tools";
+  return "core-other";
+}
+function graph(prs, repo) {
+  const heads = new Map(prs.map(pr => [pr.head.ref, pr.number]));
+  return {
+    schema: 1,
+    repository: repo,
+    evidence: "open GitHub PR metadata only; no compilation, integration or acceptance implied",
+    openCount: prs.length,
+    pullRequests: prs.map(validatePr).sort((a, b) => a.number - b.number).map(pr => ({
+      number: pr.number,
+      title: pr.title,
+      draft: Boolean(pr.draft),
+      workstream: workstream(pr.head.ref),
+      head: {ref: pr.head.ref, sha: pr.head.sha},
+      base: {ref: pr.base.ref, sha: pr.base.sha ?? null},
+      parentOpenPr: heads.get(pr.base.ref) ?? null,
+      baseClassification: pr.base.ref === "main" ? "main" : heads.has(pr.base.ref) ? "open-pr-head" : "other-branch"
+    }))
+  };
+}
 async function getGithubPrs(repo) {
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
   const headers = {
@@ -87,9 +113,11 @@ export async function run(argv = process.argv.slice(2)) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("Invalid repository slug");
   const file = path.resolve(valueAfter(argv, "--file", "docs/LU_DEVELOPMENT_LEDGER.md"));
   const fixture = valueAfter(argv, "--fixture", null);
+  const graphFile = valueAfter(argv, "--graph", null);
   const prs = fixture ? JSON.parse(await fs.readFile(fixture, "utf8")) : await getGithubPrs(repo);
   if (!Array.isArray(prs)) throw new Error("PR fixture must be an array");
   if (new Set(prs.map(p => p.number)).size !== prs.length) throw new Error("Duplicate PR numbers");
+  const graphText = graphFile ? JSON.stringify(graph(prs, repo), null, 2) + "\n" : null;
   const original = await fs.readFile(file, "utf8");
   const first = original.indexOf(START);
   const last = original.indexOf(END, first + START.length);
@@ -99,7 +127,11 @@ export async function run(argv = process.argv.slice(2)) {
   }
   const generated = render(prs, repo);
   const next = original.slice(0, first) + generated + original.slice(last + END.length);
-  if (next === original) {
+  const priorGraph = graphFile ? await fs.readFile(graphFile, "utf8").catch(error => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }) : null;
+  if (next === original && (!graphFile || priorGraph === graphText)) {
     console.log("Lu ledger PR inventory is current (" + prs.length + " open PRs).");
     return;
   }
@@ -109,6 +141,7 @@ export async function run(argv = process.argv.slice(2)) {
     return;
   }
   await fs.writeFile(file, next, "utf8");
+  if (graphFile) await fs.writeFile(graphFile, graphText, "utf8");
   console.log("Updated Lu ledger PR metadata (" + prs.length + " open PRs); manually curated status untouched.");
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

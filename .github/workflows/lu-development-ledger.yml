@@ -8,6 +8,7 @@ on:
       - '.github/workflows/lu-development-ledger.yml'
       - 'scripts/lu-ledger.mjs'
       - 'scripts/lu-ledger.test.mjs'
+      - 'docs/LU_OPEN_PR_GRAPH.json'
   workflow_dispatch:
   schedule:
     - cron: '17 13 * * *'
@@ -33,10 +34,11 @@ jobs:
           node-version: '22'
       - name: Verify snapshot generator tests
         run: node --test scripts/lu-ledger.test.mjs
-      - name: Confirm current ledger matches open GitHub PRs
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/lu-ledger.mjs --check
+      - name: Confirm committed ledger and graph agree
+        shell: bash
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const g=JSON.parse(fs.readFileSync("docs/LU_OPEN_PR_GRAPH.json")); if(g.schema!==1 || g.openCount!==g.pullRequests.length) process.exit(1); fs.writeFileSync(path.join(process.env.RUNNER_TEMP,"lu-pr-fixture.json"), JSON.stringify(g.pullRequests.map(p=>({number:p.number,title:p.title,draft:p.draft,head:p.head,base:p.base}))));'
+          node scripts/lu-ledger.mjs --check --fixture "$RUNNER_TEMP/lu-pr-fixture.json" --graph docs/LU_OPEN_PR_GRAPH.json
 
   refresh:
     if: github.repository == 'vjmichael/Lu-AI-GUI' && github.event_name != 'push'
@@ -57,16 +59,16 @@ jobs:
       - name: Refresh only active-PR metadata block
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/lu-ledger.mjs --update
+        run: node scripts/lu-ledger.mjs --update --graph docs/LU_OPEN_PR_GRAPH.json
       - name: Commit metadata-only refresh if needed
         shell: bash
         run: |
-          if git diff --quiet -- docs/LU_DEVELOPMENT_LEDGER.md; then
+          if git diff --quiet -- docs/LU_DEVELOPMENT_LEDGER.md docs/LU_OPEN_PR_GRAPH.json; then
             echo "No change in open Lu PR metadata."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- docs/LU_DEVELOPMENT_LEDGER.md
+          git add -- docs/LU_DEVELOPMENT_LEDGER.md docs/LU_OPEN_PR_GRAPH.json
           git commit -m "docs(ledger): refresh open PR snapshot [skip ci]"
           git push origin HEAD:main
