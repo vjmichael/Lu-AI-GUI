@@ -79,3 +79,14 @@ inspected rather than inferred from this UI source work.
 
 No Docker, uncontained fallback, new grant authority, log-derived success
 receipt or silent protected-job restart is allowed.
+
+### Failed-job output visibility
+The native build status now includes only `lastOutputJobId`, restricted to
+its registered project and existing in-memory last-job window. The Jobs UI
+selects that ID only when an exact project + job + plan digest exists in the
+native durable journal. The native read command still rechecks active/last
+runtime identity and has no path argument. Thus a denied, failed, cancelled
+or quarantined worker's bounded advisory text can remain inspectable in the
+same process after the active worker disappears. After restart this pointer
+and all buffered text are gone; only durable receipts survive. Neither output
+nor its presence permits rerun or implies successful cleanup.
