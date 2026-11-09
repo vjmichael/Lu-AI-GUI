@@ -468,15 +468,6 @@ pub fn start_linux_lsp(
         .arg("--setenv")
         .arg("LANG")
         .arg("C");
-    if let Some(target) = project_target {
-        // The project binary is mounted read-only in the already isolated
-        // mount/PID/network namespace, never as a host executable launch.
-        target.verify()?;
-        command
-            .arg("--ro-bind")
-            .arg(&target.root)
-            .arg("/debug-target");
-    }
     command
         .arg("--chdir")
         .arg("/workspace")
@@ -709,7 +700,18 @@ fn start_linux_dap_inner(
         .arg("/ls/bin:/usr/bin:/bin")
         .arg("--setenv")
         .arg("LANG")
-        .arg("C")
+        .arg("C");
+    if let Some(target) = project_target {
+        // Executable is supplied ONLY by the previously sealed completed
+        // Cargo build. It is read-only in the same cgroup/Bwrap custody as
+        // the pinned LLDB adapter; never add an uncontained fallback.
+        target.verify()?;
+        command
+            .arg("--ro-bind")
+            .arg(&target.root)
+            .arg("/debug-target");
+    }
+    command
         .arg("--chdir")
         .arg("/workspace")
         .arg("--")
