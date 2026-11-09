@@ -1110,6 +1110,85 @@ mod tests{
     }
     #[cfg(windows)]
     #[test]
+    fn agent01l_real_git_job_attests_original_turn_and_reopens_without_replay(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        use std::process::Command;
+        let where_git=Command::new("where.exe").arg("git.exe").output().unwrap();
+        assert!(where_git.status.success(),"Windows Git must be installed");
+        let selected=String::from_utf8(where_git.stdout).unwrap()
+            .lines().next().expect("Missing Windows git path").trim().to_owned();
+        let binary=fs::canonicalize(selected).unwrap();
+        let root=std::env::temp_dir().join(format!(
+            "lu-agent01l-git-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let repo=root.join("approved-git-repo");
+        fs::create_dir_all(&repo).unwrap();
+        assert!(Command::new(&binary).args(["init","-q"])
+            .current_dir(&repo).status().unwrap().success());
+        assert!(Command::new(&binary).args([
+            "-c","user.name=Lu","-c","user.email=lu@example.test",
+            "commit","--allow-empty","-q","-m","AGENT-01L native witness"
+        ]).current_dir(&repo).status().unwrap().success());
+        let mut hasher=Sha256::new();
+        hasher.update(fs::read(&binary).unwrap());
+        let sha=format!("{:x}",hasher.finalize());
+        let chat=format!("c-{}","1".repeat(32));
+        let turn=format!("g-{}","2".repeat(32));
+        let call="agent01l-real-git-gh";
+        let db=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&db).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let manager=BackgroundProcessSupervisor::new(Arc::clone(&store));
+        manager.start_host_approved_git_read(TrustedWorkerPlan{
+            task_id:call.into(),workspace_id:turn.clone(),
+            executable:binary,expected_sha256:sha,
+            args:vec![
+                "-c".into(),"core.fsmonitor=false".into(),
+                "--no-optional-locks".into(),"-C".into(),repo.as_os_str().into(),
+                "rev-parse".into(),"--verify".into(),"HEAD".into(),
+            ],
+            progress_protocol:false,max_runtime_seconds:Some(15),
+        },16_384).unwrap();
+        let mut done=false;
+        for _ in 0..250{
+            manager.poll().unwrap();
+            if store.get(call).unwrap().unwrap().state==TaskState::Completed{
+                done=true;break
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(done,"Native Git did not produce a verified completed task");
+        let stdout=manager.take_local_version_stdout(call,&turn)
+            .unwrap().expect("Native Git stdout missing");
+        assert_eq!(stdout.bytes.len(),41);
+        drop(manager);drop(store);
+        let verifier=HostOriginalJobCustody::from_host_profile(&root);
+        assert!(verifier.worker_and_descendants_ended(&chat,&turn,call),
+            "Only a kernel-query-confirmed Windows Job can publish this proof");
+        assert!(!verifier.worker_and_descendants_ended(
+            &format!("c-{}","3".repeat(32)),&turn,call));
+        assert!(!verifier.worker_and_descendants_ended(&chat,
+            &format!("g-{}","4".repeat(32)),call));
+        assert!(!verifier.worker_and_descendants_ended(&chat,&turn,"other-call-gh"));
+        let reopen=rusqlite::Connection::open(&db).unwrap();
+        assert!(reopen.execute(
+            "DELETE FROM lu_task_windows_job_custody",[]
+        ).is_err(),"Kernel witness row must be immutable");
+        assert!(reopen.execute(
+            "UPDATE lu_task_windows_job_custody SET workspace_id=?1",
+            rusqlite::params![format!("g-{}","4".repeat(32))]
+        ).is_err(),"OS evidence turn cannot be rebound");
+        drop(reopen);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(windows)]
+    #[test]
     fn windows_owned_job_is_contained_and_reaped_on_cancellation(){
         // An ordinary Windows system binary stands in for a reviewed worker.
         // Cmd starts a child ping process, exercising the Job object tree.
