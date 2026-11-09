@@ -63,6 +63,13 @@ const MAX_TOTAL_IO: usize = 32 * 1024 * 1024;
 /// or WebView-provided fd is accepted here.
 pub(crate) trait RestrictedLspProcess: Send {
     #[cfg(all(windows, feature = "dap-transport"))]
+    fn sample_windows_job_thread_rip(
+        &mut self,
+        _module: &crate::windows_kernel_pc::WindowsLoadedModuleWitness,
+    ) -> Result<crate::windows_kernel_pc::WindowsThreadRipSample, SupervisorError> {
+        Err(SupervisorError::NoContainment)
+    }
+    #[cfg(all(windows, feature = "dap-transport"))]
     fn observe_windows_job_module(
         &mut self,
         _expected_binary: &Path,

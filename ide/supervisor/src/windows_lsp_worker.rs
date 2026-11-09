@@ -598,6 +598,17 @@ struct WindowsLspProcess {
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
     #[cfg(feature = "dap-transport")]
+    fn sample_windows_job_thread_rip(
+        &mut self,
+        module: &crate::windows_kernel_pc::WindowsLoadedModuleWitness,
+    ) -> Result<crate::windows_kernel_pc::WindowsThreadRipSample, SupervisorError> {
+        if !self.lease.alive()
+            || unsafe { WaitForSingleObject(self.process.0, 0) } != WAIT_TIMEOUT {
+            return Err(SupervisorError::NoContainment);
+        }
+        crate::windows_kernel_pc::sample_job_thread_rip(self.job.handle.0, module)
+    }
+    #[cfg(feature = "dap-transport")]
     fn observe_windows_job_module(
         &mut self, expected_binary: &Path, expected_sha256: &str, pc: u64,
     ) -> Result<crate::windows_kernel_pc::WindowsLoadedModuleWitness, SupervisorError> {
@@ -1320,6 +1331,28 @@ impl WindowsDapSession {
             stopped_thread_os_verified: false,
             installed_app_accepted: false,
         })
+    }
+    /// Independent GetThreadContext samples are useful but not equivalent
+    /// to a Windows DEBUG_EVENT owned by LLDB. Both stronger gates remain
+    /// false; this never authorizes a DAP mutation or debugger command.
+    pub fn sample_stopped_project_thread_for_ci(
+        &mut self,
+        supervisor: &Supervisor,
+        job_id: &str,
+        plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+    ) -> Result<crate::windows_kernel_pc::WindowsThreadRipSample, SupervisorError> {
+        let witness = self.verify_project_loaded_module(
+            supervisor, job_id, plan, target,
+        )?;
+        if witness.source_line_mapping_verified
+            || witness.stopped_thread_os_verified
+            || witness.module.os_thread_context_ip_verified
+            || witness.module.independent_pdb_line_verified
+            || witness.installed_app_accepted {
+            return Err(SupervisorError::NoContainment);
+        }
+        self.gateway.sample_windows_stopped_thread_rip(&witness.module)
     }
     pub fn close(self) -> Result<(), SupervisorError> {
         self.gateway.close()

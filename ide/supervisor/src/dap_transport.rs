@@ -101,6 +101,20 @@ impl DapGateway {
         let process = self.process.as_mut().ok_or(SupervisorError::NoContainment)?;
         process.observe_windows_job_module(expected_binary, sha, pc)
     }
+    #[cfg(windows)]
+    pub(crate) fn sample_windows_stopped_thread_rip(
+        &mut self,
+        module: &crate::windows_kernel_pc::WindowsLoadedModuleWitness,
+    ) -> Result<crate::windows_kernel_pc::WindowsThreadRipSample, SupervisorError> {
+        if self.session.phase() != DapPhase::Stopped
+            || self.session.source_candidate()
+                .and_then(|f| f.instruction_address) != Some(module.observed_pc)
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        let process = self.process.as_mut().ok_or(SupervisorError::NoContainment)?;
+        process.sample_windows_job_thread_rip(module)
+    }
     fn send(&mut self, bytes: &[u8]) -> Result<(), SupervisorError> {
         if bytes.is_empty()
             || bytes.len() > MAX_WRITE
