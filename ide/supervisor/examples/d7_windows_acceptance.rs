@@ -43,16 +43,16 @@ fn require_independent_broker_release(
 #[cfg(all(windows, feature = "windows-worker"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use lu_ide_execution_supervisor::{
-        snapshot::publish_input,
-        wo6_output_evidence::audit_published_output,
         debug_binary_witness::audit_debug_binary_candidate,
         debug_symbol_verification::verify_build_debug_symbols,
         live_output::LiveOutput,
+        snapshot::publish_input,
         windows_broker::TrustedBroker,
         windows_worker::{
-            execute_windows_worker_after_staging_approval_with_output, trusted_offline_toolchain_digest,
-            WindowsCancellation,
+            execute_windows_worker_after_staging_approval_with_output,
+            trusted_offline_toolchain_digest, WindowsCancellation,
         },
+        wo6_output_evidence::audit_published_output,
         JobPhase, JobPlan, Supervisor,
     };
     use sha2::{Digest, Sha256};
@@ -135,7 +135,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "fn main() { println!(\"hello isolated worker\"); }\n",
     )?;
 
-    let recipe=if build_mode {"rust_build"} else {"rust_check"};
+    let recipe = if build_mode {
+        "rust_build"
+    } else {
+        "rust_check"
+    };
     let input = publish_input(&project, &stage_parent, recipe)
         .map_err(|e| format!("DENIED: snapshot publication: {}", e.code()))?;
     let supervisor = Supervisor::open(root.join("supervisor-receipts.jsonl"))
@@ -192,13 +196,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .map_err(|e| format!("DENIED: OS worker: {}", e.code()))?;
     if !cancel_mode && result.summary.phase == JobPhase::Completed {
         let page = live.page(0);
-        if page.chunks.is_empty() || !page.live_unverified ||
-           !page.chunks.iter().all(|item| matches!(item.stream, "stdout" | "stderr")) ||
-            page.chunks.iter().map(|item| item.text.len()).sum::<usize>() > 65536 {
+        if page.chunks.is_empty()
+            || !page.live_unverified
+            || !page
+                .chunks
+                .iter()
+                .all(|item| matches!(item.stream, "stdout" | "stderr"))
+            || page
+                .chunks
+                .iter()
+                .map(|item| item.text.len())
+                .sum::<usize>()
+                > 65536
+        {
             return Err("DENIED: genuine AppContainer Cargo stdout/stderr readback failed".into());
         }
-        eprintln!("DEV03B_WINDOWS_REAL_JOBOBJECT_STDIO=PASS chunks={} truncated={}",
-            page.chunks.len(), page.truncated);
+        eprintln!(
+            "DEV03B_WINDOWS_REAL_JOBOBJECT_STDIO=PASS chunks={} truncated={}",
+            page.chunks.len(),
+            page.truncated
+        );
     }
     // D7C test mode can only audit its same-user journal as diagnostic data.
     // D7D protected mode cannot read the service's ACL-isolated journal:
@@ -284,36 +301,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if build_mode {
         // Genuine AppContainer Job Object + independent service/broker must
         // have completed before host-side binary readback.
-        let output_witness=audit_published_output(&result.output_root)
-            .map_err(|_|"DENIED: actual completed Windows Cargo output witness failed")?;
-        let candidate=audit_debug_binary_candidate(&result.output_root,&output_witness)
-            .map_err(|_|"DENIED: actual Windows Cargo binary was modified")?
+        let output_witness = audit_published_output(&result.output_root)
+            .map_err(|_| "DENIED: actual completed Windows Cargo output witness failed")?;
+        let candidate = audit_debug_binary_candidate(&result.output_root, &output_witness)
+            .map_err(|_| "DENIED: actual Windows Cargo binary was modified")?
             .ok_or("DENIED: Windows Cargo build produced no single verified exe")?;
-        let evidence=supervisor.review_build_test_evidence(
-            &prepared.job_id,&plan.project_id,&prepared.plan_sha256,&plan.source_head)
-            .map_err(|_|"DENIED: actual Windows rust_build receipt review failed")?;
-        if evidence.recipe_id!="rust_build" || evidence.requires_reconciliation ||
-           evidence.terminal_receipt_hash.len()!=64 ||
-           candidate.output_tree_sha256!=output_witness.tree_sha256 ||
-           candidate.debugger_execution_authorized {
+        let evidence = supervisor
+            .review_build_test_evidence(
+                &prepared.job_id,
+                &plan.project_id,
+                &prepared.plan_sha256,
+                &plan.source_head,
+            )
+            .map_err(|_| "DENIED: actual Windows rust_build receipt review failed")?;
+        if evidence.recipe_id != "rust_build"
+            || evidence.requires_reconciliation
+            || evidence.terminal_receipt_hash.len() != 64
+            || candidate.output_tree_sha256 != output_witness.tree_sha256
+            || candidate.debugger_execution_authorized
+        {
             return Err("DENIED: Windows executable not bound to completed native job".into());
         }
-        eprintln!("DEV042_WINDOWS_APPCONTAINER_REAL_BUILD_BINARY=PASS hash={} receipt={}",
-            candidate.binary_sha256,evidence.terminal_receipt_hash);
-        let symbols=verify_build_debug_symbols(&result.output_root,
-            &output_witness,&candidate)
-            .map_err(|_|"DENIED: real native Windows PE/PDB bytes changed")?
+        eprintln!(
+            "DEV042_WINDOWS_APPCONTAINER_REAL_BUILD_BINARY=PASS hash={} receipt={}",
+            candidate.binary_sha256, evidence.terminal_receipt_hash
+        );
+        let symbols = verify_build_debug_symbols(&result.output_root, &output_witness, &candidate)
+            .map_err(|_| "DENIED: real native Windows PE/PDB bytes changed")?
             .ok_or("DENIED: actual Windows Cargo executable lacked matching PE/RSDS/PDB")?;
-        if !symbols.debug_symbols_attested ||
-            symbols.symbols_kind!="external_pdb_guid_age_dbi_match" ||
-            symbols.debugger_execution_authorized ||
-            symbols.source_line_mapping_verified ||
-            symbols.binary_sha256!=candidate.binary_sha256 ||
-            symbols.output_tree_sha256!=output_witness.tree_sha256 {
+        if !symbols.debug_symbols_attested
+            || symbols.symbols_kind != "external_pdb_guid_age_dbi_match"
+            || symbols.debugger_execution_authorized
+            || symbols.source_line_mapping_verified
+            || symbols.binary_sha256 != candidate.binary_sha256
+            || symbols.output_tree_sha256 != output_witness.tree_sha256
+        {
             return Err("DENIED: actual Windows PDB GUID/age not bound".into());
         }
-        eprintln!("DEV043_WINDOWS_REAL_PE_PDB=PASS pdb_sha={}",
-            symbols.symbols_sha256);
+        eprintln!(
+            "DEV043_WINDOWS_REAL_PE_PDB=PASS pdb_sha={}",
+            symbols.symbols_sha256
+        );
     }
     let last = supervisor
         .receipt_history(&prepared.job_id)
