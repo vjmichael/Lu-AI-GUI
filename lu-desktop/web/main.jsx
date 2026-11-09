@@ -827,6 +827,7 @@ function App() {
   const [toolActivityOpen,setToolActivityOpen]=useState(false);
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
   const [agentProgressByChat,setAgentProgressByChat]=useState({});
+  const [agentRecoveryByPlan,setAgentRecoveryByPlan]=useState({});
   const [agentReviewBusy,setAgentReviewBusy]=useState(false);
   const [agentStepOpByKey,setAgentStepOpByKey]=useState({});
   const [toolProgressByChat,setToolProgressByChat]=useState({});
@@ -2572,6 +2573,32 @@ function App() {
       if(acted)await refreshToolActivity(chatId);
     }catch(error){
       setError('Plan review not recorded: '+String(error));
+    }finally{setAgentReviewBusy(false)}
+  }
+  async function inspectAgentRecovery(plan){
+    if(!chatId||!plan?.planId)return;
+    const targetChat=chatId;
+    const key=targetChat+':'+plan.planId;
+    setAgentReviewBusy(true);
+    // Never continue showing a previous successful observation while a
+    // new independent read is still pending or has failed.
+    setAgentRecoveryByPlan(old=>({...old,[key]:null}));
+    try{
+      const inspected=await invoke('lu_agent_reconcile_recovery',{
+        chatId:targetChat,planId:plan.planId
+      });
+      if(!inspected||inspected.executionAuthority!=='NOT_AUTHORIZED_FOR_EXECUTION'){
+        throw Error('Untrusted recovery authority response');
+      }
+      setAgentRecoveryByPlan(old=>({...old,[key]:inspected}));
+      if(currentChat.current===targetChat){
+        setActivity('Recovery evidence inspected only. No tool, restart or model continuation was authorized.');
+      }
+    }catch(error){
+      if(currentChat.current===targetChat){
+        setError('Independent agent recovery inspection incomplete: '+String(error)+
+          '. Do not infer worker termination or retry a step.');
+      }
     }finally{setAgentReviewBusy(false)}
   }
   async function prepareFreshAgentContinuation(plan,step){
@@ -4592,6 +4619,32 @@ function App() {
                   {' '+plan.revisionReview.replaceAll('_',' ')} · Supervisor:
                   {' '+plan.supervisorState.replaceAll('_',' ')}</small>
                 <small>Original saved human turn: {plan.originalHumanTurnId}</small>
+                <div className="settingsActions">
+                  <button type="button" className="subtleButton"
+                    disabled={agentReviewBusy}
+                    title="Read original plan, task, effect and independent-oracle journals. Never repair or replay."
+                    onClick={()=>void inspectAgentRecovery(plan)}>
+                    Review independent recovery evidence
+                  </button>
+                </div>
+                {agentRecoveryByPlan[chatId+':'+plan.planId]&&
+                  <section className="readProposalCard"
+                    aria-label="Independent agent recovery decision">
+                    <strong>Recovery inspection (historical, read-only)</strong>
+                    <small>Status: {agentRecoveryByPlan[chatId+':'+plan.planId].status}</small>
+                    <small>Independently checked task/effect results:
+                      {' '+agentRecoveryByPlan[chatId+':'+plan.planId].independentlyObservedSteps}
+                      {' '}· Ancestor generations:
+                      {' '+agentRecoveryByPlan[chatId+':'+plan.planId].linkedGenerations}</small>
+                    {(agentRecoveryByPlan[chatId+':'+plan.planId].steps||[]).map(step=>
+                      <small key={step.stepIndex}>Step {step.stepIndex+1}:
+                        {' '+step.evidenceStatus}; descendant custody:
+                        {' '+step.descendantCustody}</small>
+                    )}
+                    <small>{agentRecoveryByPlan[chatId+':'+plan.planId].nextAction}</small>
+                    <small>No execution authority was granted. This snapshot
+                      cannot be used to resume a model or replay an OS effect.</small>
+                  </section>}
                 {plan.pendingSourceChecks>0 &&
                   <small>Assumptions requiring independent authorized source review:
                     {' '+plan.pendingSourceChecks}. Approval remains unavailable.</small>}

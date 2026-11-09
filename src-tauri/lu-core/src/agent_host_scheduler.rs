@@ -6,7 +6,7 @@
 //! independently accepted E1 gates. An abandoned session is quarantined,
 //! NOT timed-out into a new owner and NOT silently replayed.
 use std::{collections::BTreeSet,path::Path,sync::Mutex};
-use rusqlite::{params,Connection,OptionalExtension,TransactionBehavior};
+use rusqlite::{params,Connection,OpenFlags,OptionalExtension,TransactionBehavior};
 use crate::{
     agent_plan_ledger::{AgentPlanLedger,PlanSnapshot},
     agent_plan_revisions::{AgentPlanRevisionStore,RevisionSnapshot,HostPlanReferenceVerifier},
@@ -223,6 +223,13 @@ fn owned(tx:&rusqlite::Transaction<'_>,plan:&str,owner:&str,epoch:u64)
     })
 }
 impl AgentHostScheduler{
+    /// AGENT-01K: observe durable host fences without opening an owner or
+    /// creating tables. The process-local live owners set stays empty.
+    pub fn open_existing_readonly(path:&Path)->Result<Self,ScheduleError>{
+        let db=Connection::open_with_flags(path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY|OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        Ok(Self{db:Mutex::new(db),live_owners:Mutex::new(BTreeSet::new())})
+    }
     /// Same host-owned plan SQLite file as AGENT-01A/B/C. WAL FULL ensures
     /// the schedule intent is durable; it does NOT atomically cover external
     /// OS effects or the per-human-turn TaskStore and EffectJournal databases.
