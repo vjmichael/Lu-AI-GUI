@@ -1295,6 +1295,30 @@ pub struct WindowsProjectStopPdbEvidence {
     pub debugger_commands_authorized: bool,
     pub installed_app_accepted: bool,
 }
+/// Native-only evidence from the *actual* pinned LLVM debugger owner
+/// event loop, a separate private inherited pipe, the Job OS witness,
+/// original PE/PDB source line and durable one-use receipts. This is not a
+/// new permission to set a breakpoint, step, evaluate or inspect variables.
+#[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+#[derive(Debug, Clone)]
+pub struct WindowsOwnerEventAccepted {
+    pub debugger_job_id: String,
+    pub debugger_plan_sha256: String,
+    pub build_terminal_receipt_sha256: String,
+    pub debug_running_receipt_sha256: String,
+    pub native_owner_receipt_sha256: String,
+    pub owner_sequence: u64,
+    pub debuggee_pid: u32,
+    pub debuggee_thread_id: u32,
+    pub lldb_owner_thread_id: u32,
+    pub stopped_rip: u64,
+    pub verified_source_line: u32,
+    pub lldb_event_loop_owner_attested: bool,
+    pub protected_pe_pdb_verified: bool,
+    pub durable_receipt_verified: bool,
+    pub debugger_commands_authorized: bool,
+    pub installed_app_accepted: bool,
+}
 #[cfg(feature = "dap-transport")]
 pub struct WindowsDapSession {
     gateway: crate::dap_transport::DapGateway,
@@ -1598,6 +1622,112 @@ impl WindowsDapSession {
             // Only LLDB itself owns the kernel DEBUG_EVENT. Without an
             // independently authenticated owner callback this remains false.
             lldb_debug_event_owner_attested: false,
+            debugger_commands_authorized: false,
+            installed_app_accepted: false,
+        })
+    }
+    /// D5 native acceptance: the exact Windows kernel event, received and
+    /// still owned on the original debugger thread, is proven independently
+    /// of the LLDB-DAP JSON and bound to both fsynced supervisor journals.
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    pub fn verify_real_lldb_event_owner_for_ci(
+        &mut self, supervisor: &Supervisor, job_id: &str,
+        plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+    ) -> Result<WindowsOwnerEventAccepted, SupervisorError> {
+        use crate::windows_event_owner::persist_native_owner_receipt;
+        // First independently verify the actual protected Cargo->LLDB
+        // Job-owned OS RIP, compiler-generated PE/PDB line and source bytes.
+        let line = self.verify_project_os_thread_pdb_receipts_for_ci(
+            supervisor, job_id, plan, target,
+        )?;
+        if !line.os_owned_thread_context_matches_lldb
+            || !line.independent_pdb_source_line_verified
+            || !line.kernel_debug_port_present
+            || !line.debuggee_parent_is_native_lldb
+            || line.lldb_debug_event_owner_attested
+            || line.debugger_commands_authorized
+            || line.installed_app_accepted {
+            return Err(SupervisorError::NoContainment);
+        }
+        // The DAP frame isn't allowed to specify a PID or event owner.
+        // Recover actual Job-owned process and unique OS thread separately.
+        let target_module = self.verify_project_loaded_module(
+            supervisor, job_id, plan, target,
+        )?;
+        let sample = self.gateway.sample_windows_stopped_thread_rip(
+            &target_module.module,
+        )?;
+        if !sample.two_matching_samples || !sample.job_membership_rechecked
+            || sample.observed_rip != line.observed_rip {
+            return Err(SupervisorError::NoContainment);
+        }
+        let owner = self.gateway.verify_lldb_kernel_event_owner(
+            sample.process_id, sample.thread_id, sample.observed_rip,
+        )?;
+        if owner.kind != 1
+            || !matches!(owner.exception_code, 0x8000_0003 | 0x8000_0004)
+            || owner.first_chance != 1
+            || owner.pid != sample.process_id || owner.tid != sample.thread_id
+            || owner.rip != sample.observed_rip
+            || owner.exception_address < target_module.module.loaded_base
+            || owner.exception_address >= target_module.module.loaded_base
+                .checked_add(target_module.module.loaded_size)
+                .ok_or(SupervisorError::NoContainment)?
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        let root = supervisor.native_owner_receipt_root()?;
+        let hash = persist_native_owner_receipt(
+            &root, job_id, &self.native_plan_sha256,
+            &line.debug_running_receipt_sha256, &owner,
+        )?;
+        // An event CONTINUED while the receipt was being synced invalidates
+        // the stop. The native event loop sends CONTINUED on the SAME pipe
+        // before the job can be marked ready for any future debugger action.
+        let still = self.gateway.verify_lldb_kernel_event_owner(
+            sample.process_id, sample.thread_id, sample.observed_rip,
+        )?;
+        if still != owner
+            || !self.gateway.poll()?.is_empty()
+            || self.gateway.phase() != lu_ide_workspace::dap_session::DapPhase::Stopped
+            || self.gateway.source_candidate()
+                .and_then(|f| f.instruction_address) != Some(sample.observed_rip)
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let debug = supervisor.receipt_history(job_id)?;
+        if debug.last().is_none_or(|r| r.body.phase != JobPhase::Running
+            || r.body.plan_sha256 != self.native_plan_sha256
+            || r.entry_hash != line.debug_running_receipt_sha256)
+            || !debug.iter().any(|r| r.body.phase == JobPhase::Authorized
+                && r.body.plan_sha256 == self.native_plan_sha256) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        let build = supervisor.receipt_history(&target.lineage.build_job_id)?;
+        if build.last().is_none_or(|r| r.body.phase != JobPhase::Completed
+            || r.entry_hash != line.build_terminal_receipt_sha256
+            || r.body.plan_sha256 != target.lineage.build_plan_sha256) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        Ok(WindowsOwnerEventAccepted {
+            debugger_job_id: job_id.to_owned(),
+            debugger_plan_sha256: self.native_plan_sha256.clone(),
+            build_terminal_receipt_sha256: line.build_terminal_receipt_sha256,
+            debug_running_receipt_sha256: line.debug_running_receipt_sha256,
+            native_owner_receipt_sha256: hash,
+            owner_sequence: owner.seq,
+            debuggee_pid: owner.pid,
+            debuggee_thread_id: owner.tid,
+            lldb_owner_thread_id: owner.owner_tid,
+            stopped_rip: owner.rip,
+            verified_source_line: line.source_line,
+            lldb_event_loop_owner_attested: true,
+            protected_pe_pdb_verified: true,
+            durable_receipt_verified: true,
             debugger_commands_authorized: false,
             installed_app_accepted: false,
         })
