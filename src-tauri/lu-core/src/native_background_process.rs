@@ -726,7 +726,7 @@ impl BackgroundProcessSupervisor {
                 // persistence. Any crash or mismatch leaves NO witness, so
                 // recovery remains blocked; never fabricate from APPLIED.
                 self.store.record_verified_windows_job_empty(
-                    &id,&workspace,empty_job_witness.as_ref()
+                    &id,&workspace,empty_job_witness
                         .ok_or(BackgroundProcessError::ProcessUncertain)?
                 ).map_err(|_|BackgroundProcessError::StoreUnavailable)?;
             }
