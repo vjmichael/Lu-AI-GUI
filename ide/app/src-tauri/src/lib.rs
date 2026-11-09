@@ -769,6 +769,15 @@ async fn ide_review_multilang_adapter(
 /// DEV-03.1: enumerate fixed registered-project build/test profiles and
 /// conventional test-name hints. This read-only command grants no execution.
 #[tauri::command]
+async fn ide_discover_conventional_tests(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::conventional_tests::TestDiscovery, String> {
+    registry.discover_conventional_test_files(&project_id)
+        .map_err(str::to_owned)
+}
+
+#[tauri::command]
 async fn ide_discover_project_run_profiles(
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
     project_id: String,
@@ -1466,6 +1475,7 @@ pub fn run() {
             ide_decide_execution_intent,
             ide_list_execution_intents,
             ide_discover_project_run_profiles,
+            ide_discover_conventional_tests,
             ide_review_multilang_adapter,
             ide_build_status,
             ide_build_read_output,
