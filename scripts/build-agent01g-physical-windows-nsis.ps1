@@ -32,7 +32,7 @@ try{
     throw 'Upstream exact commit verification failed'
   }
   $engineBuild=Join-Path $env:RUNNER_TEMP 'lu-01g-llama-build'
-  & cmake -S $vendor -B $engineBuild -G 'Visual Studio 17 2022' -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON
+  & cmake -S $vendor -B $engineBuild -G 'Visual Studio 17 2022' -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_APP=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON
   if($LASTEXITCODE -ne 0){throw 'Pinned CPU llama.cpp CMake configure failed'}
   & cmake --build $engineBuild --config Release --target llama-server --parallel 4
   if($LASTEXITCODE -ne 0){throw 'Pinned CPU llama.cpp build failed'}
