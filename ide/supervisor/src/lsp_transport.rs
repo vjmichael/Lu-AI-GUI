@@ -62,7 +62,7 @@ const MAX_TOTAL_IO: usize = 32 * 1024 * 1024;
 /// pipes and the real kernel containment handle. No blanket std::process::Child
 /// or WebView-provided fd is accepted here.
 pub(crate) trait RestrictedLspProcess: Send {
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "dap-transport"))]
     fn observe_windows_job_module(
         &mut self,
         _expected_binary: &Path,

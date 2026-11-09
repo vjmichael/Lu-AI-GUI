@@ -597,6 +597,7 @@ struct WindowsLspProcess {
 // concurrently and each pipe read/write occurs on one serialized worker actor.
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
+    #[cfg(feature = "dap-transport")]
     fn observe_windows_job_module(
         &mut self, expected_binary: &Path, expected_sha256: &str, pc: u64,
     ) -> Result<crate::windows_kernel_pc::WindowsLoadedModuleWitness, SupervisorError> {
