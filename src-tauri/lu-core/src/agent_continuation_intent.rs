@@ -74,13 +74,18 @@ pub fn stage_fresh_continuation(
         ||!consent.explicitly_requested_step(chat,fresh_turn,plan,revision_sha,step,&budget){
         return Err("A separate authenticated human step request is required".into())
     }
-    ledger.snapshot(plan,chat,origin_turn)
+    let original=ledger.snapshot(plan,chat,origin_turn)
         .map_err(|e|format!("Cannot verify original plan: {e:?}"))?
         .ok_or("Original plan missing")?;
+    if matches!(original.state.as_str(),"NEEDS_REVIEW"|"CANCEL_REQUESTED") {
+        return Err("Original task was interrupted or needs a new review".into())
+    }
     let revision=revisions.latest(plan,chat)
         .map_err(|e|format!("Cannot inspect revision: {e:?}"))?
         .ok_or("Immutable plan revision missing")?;
     if revision.revision_sha256!=revision_sha
+        ||!sources.goal_event_is_current(chat,&revision.goal_id,&revision.goal_event_id)
+        ||revision.assumption_sources.iter().any(|a|!sources.assumption_source_is_readable(chat,a))
         ||revision.review_state!="APPROVED_PLAN_ONLY"
         ||fresh_turn==revision.source_human_turn_id
         ||revision.review_turn_id.as_deref()==Some(fresh_turn) {
@@ -113,8 +118,9 @@ pub fn stage_fresh_continuation(
     let history=receipts.history(
         plan,chat,origin_turn,profile,ledger,revisions,sources
     ).map_err(|e|format!("Independent evidence recheck failed: {e:?}"))?;
-    if !history.iter().any(|row|row.revision_sha256==revision_sha
-        &&row.step_index==parent&&row.status=="VERIFIED_AT_OBSERVATION"){
+    if !(0..=parent).all(|index|history.iter().any(|row|
+        row.revision_sha256==revision_sha &&row.step_index==index
+        &&row.status=="VERIFIED_AT_OBSERVATION")){
         return Err("Predecessor has no current independent history witness".into())
     }
     let mut db=Connection::open(file).map_err(|e|e.to_string())?;
@@ -123,6 +129,34 @@ pub fn stage_fresh_continuation(
     schema(&db)?;
     let tx=db.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e|e.to_string())?;
+    // Recheck source identity and the immutable scheduler fence *inside* the
+    // same SQLite write transaction. External oracle/ANSF may still change,
+    // which is why this record never confers dispatch permission.
+    let original_row:(String,String,String)=tx.query_row(
+        "SELECT conversation_id,human_turn_id,state FROM lu_agent_plans WHERE plan_id=?1",
+        params![plan],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))
+    ).map_err(|e|e.to_string())?;
+    if original_row.0!=chat||original_row.1!=origin_turn
+        ||matches!(original_row.2.as_str(),"CANCEL_REQUESTED"|"NEEDS_REVIEW") {
+        return Err("Original plan changed during continuation staging".into())
+    }
+    let owner_row:(String,String)=tx.query_row(
+        "SELECT state,revision_sha256 FROM lu_agent_schedule_owners WHERE plan_id=?1",
+        params![plan],|r|Ok((r.get(0)?,r.get(1)?))
+    ).map_err(|e|e.to_string())?;
+    if owner_row.0!="RELEASED"||owner_row.1!=revision_sha {
+        return Err("Host fence changed during continuation staging".into())
+    }
+    let latest:String=tx.query_row(
+        "SELECT revision_sha256 FROM lu_agent_plan_revisions WHERE plan_id=?1 ORDER BY revision_index DESC LIMIT 1",
+        params![plan],|r|r.get(0)
+    ).map_err(|e|e.to_string())?;
+    if latest!=revision_sha {return Err("Plan revision changed during staging".into())}
+    let verified:i64=tx.query_row(
+        "SELECT COUNT(*) FROM lu_agent_schedule_proposals WHERE plan_id=?1 AND revision_sha256=?2 AND step_index<?3 AND state='OBSERVED_VERIFIED_HISTORICAL'",
+        params![plan,revision_sha,step],|r|r.get(0)
+    ).map_err(|e|e.to_string())?;
+    if verified!=i64::from(step) {return Err("Historical sequence changed".into())}
     let existing:Option<String>=tx.query_row(
         "SELECT fresh_human_turn_id FROM lu_agent_continuation_intents
          WHERE plan_id=?1 AND revision_sha256=?2 AND step_index=?3",
