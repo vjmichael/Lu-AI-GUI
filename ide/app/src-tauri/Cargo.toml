@@ -25,6 +25,9 @@ native-multilang = ["native-build", "lu-ide-execution-supervisor/multilang-worke
 # WO6 opt-in native LLDB-DAP self-test. Reviewed adapter and fixed debuggee
 # must be embedded in an installer-pinned bundle; no PATH debugger allowed.
 native-debug = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/dap-transport", "lu-ide-execution-supervisor/linux-worker", "lu-ide-execution-supervisor/protected-recovery-service"]
+# DEV-04.4: separate, explicit opt-in for a source/receipt-bound user project.
+# Default release and the fixed LLDB self-test do not acquire this ability.
+native-project-debug = ["native-debug", "native-build"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
