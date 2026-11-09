@@ -597,6 +597,19 @@ struct WindowsLspProcess {
 // concurrently and each pipe read/write occurs on one serialized worker actor.
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
+    #[cfg(feature = "dap-transport")]
+    fn observe_windows_job_module(
+        &mut self, expected_binary: &Path, expected_sha256: &str, pc: u64,
+    ) -> Result<crate::windows_kernel_pc::WindowsLoadedModuleWitness, SupervisorError> {
+        if !self.lease.alive()
+            || unsafe { WaitForSingleObject(self.process.0, 0) } != WAIT_TIMEOUT
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        crate::windows_kernel_pc::observe_job_module(
+            self.job.handle.0, expected_binary, expected_sha256, pc,
+        )
+    }
     fn trace_native_fault(&mut self, stage: &'static str) {
         native_lsp_trace(stage);
         native_lsp_exit_code(self.process.0);
@@ -1149,6 +1162,12 @@ fn start_windows_dap_inner(
     Ok(WindowsDapSession {
         gateway,
         project_debuggee,
+        native_job_id: job_id.to_owned(),
+        native_plan_sha256: plan_hash,
+        source_input: PublishedInput {
+            root: input.root.clone(),
+            seal: input.seal.clone(),
+        },
         fixed_debuggee: bundle
             .join("debuggee/wo6-selftest.exe")
             .to_string_lossy()
@@ -1161,6 +1180,9 @@ pub struct WindowsDapSession {
     gateway: crate::dap_transport::DapGateway,
     fixed_debuggee: String,
     project_debuggee: Option<String>,
+    native_job_id: String,
+    native_plan_sha256: String,
+    source_input: PublishedInput,
 }
 #[cfg(feature = "dap-transport")]
 impl WindowsDapSession {
@@ -1203,6 +1225,101 @@ impl WindowsDapSession {
         &self,
     ) -> Option<lu_ide_workspace::dap_source_lines::SourceLineCandidate> {
         self.gateway.source_candidate()
+    }
+    /// Observes only the OS loaded PE image in the REAL protected Job. A
+    /// claimed DAP PC inside that module does NOT prove that a thread stopped
+    /// there or that the PE/PDB maps the PC to the claimed source line.
+    /// No renderer route and no debugger permission is minted.
+    pub fn verify_project_loaded_module(
+        &mut self,
+        supervisor: &Supervisor,
+        job_id: &str,
+        plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+    ) -> Result<crate::windows_kernel_pc::WindowsProtectedModuleLineage, SupervisorError> {
+        use crate::windows_kernel_pc::WindowsProtectedModuleLineage;
+        if self.native_job_id != job_id
+            || plan.recipe_id != "dap_lldb_project"
+            || plan.debug_target_binding_sha256.as_deref()
+                != Some(target.binding_sha256.as_str())
+            || target.lineage.project_id != plan.project_id
+            || target.lineage.source_head != plan.source_head
+            || target.lineage.source_snapshot_sha256 != plan.input_snapshot_sha256
+            || target.lineage.manifest_sha256 != plan.manifest_sha256
+            || self.source_input.seal.source_sha256 != plan.input_snapshot_sha256
+            || self.source_input.seal.manifest_sha256 != plan.manifest_sha256
+        {
+            return Err(SupervisorError::WrongProjectOrSource);
+        }
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let pending = supervisor.inspect()?.into_iter()
+            .find(|job| job.job_id == job_id)
+            .ok_or(SupervisorError::NoSuchJob)?;
+        if pending.project_id != plan.project_id
+            || pending.plan_sha256 != self.native_plan_sha256
+            || pending.phase != JobPhase::Running
+            || pending.requires_reconciliation {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        let debug = supervisor.receipt_history(job_id)?;
+        if !debug.iter().any(|r| r.body.phase == JobPhase::Authorized
+                && r.body.plan_sha256 == self.native_plan_sha256)
+            || debug.last().is_none_or(|r| r.body.phase != JobPhase::Running
+                || r.body.plan_sha256 != self.native_plan_sha256) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        let build = supervisor.receipt_history(&target.lineage.build_job_id)?;
+        if build.last().is_none_or(|r| {
+            r.body.phase != JobPhase::Completed
+                || r.entry_hash != target.lineage.terminal_receipt_sha256
+                || r.body.plan_sha256 != target.lineage.build_plan_sha256
+        }) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        let source_claim = self.gateway.source_candidate()
+            .ok_or(SupervisorError::NoContainment)?;
+        let pc = source_claim.instruction_address
+            .ok_or(SupervisorError::NoContainment)?;
+        if source_claim.line == 0 { return Err(SupervisorError::NoContainment); }
+        let stage = self.project_debuggee.as_deref()
+            .ok_or(SupervisorError::InvalidPlan)?;
+        let module = self.gateway.observe_windows_project_module(
+            Path::new(stage), &target.binary.binary_sha256, pc,
+        )?;
+        if module.binary_sha256 != target.binary.binary_sha256
+            || !module.job_member_verified
+            || !module.process_exe_path_verified
+            || !module.os_loaded_pe_image_verified
+            || module.os_thread_context_ip_verified
+            || module.independent_pdb_line_verified {
+            return Err(SupervisorError::NoContainment);
+        }
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        if !supervisor.inspect()?.into_iter().any(|job| {
+            job.job_id == job_id && job.plan_sha256 == self.native_plan_sha256
+                && job.phase == JobPhase::Running && !job.requires_reconciliation
+        }) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        Ok(WindowsProtectedModuleLineage {
+            module,
+            debugger_job_id: job_id.to_owned(),
+            debugger_plan_sha256: self.native_plan_sha256.clone(),
+            debug_running_receipt_sha256: debug.last().unwrap().entry_hash.clone(),
+            build_job_id: target.lineage.build_job_id.clone(),
+            build_terminal_receipt_sha256: target.lineage.terminal_receipt_sha256.clone(),
+            source_snapshot_sha256: target.lineage.source_snapshot_sha256.clone(),
+            target_binding_sha256: target.binding_sha256.clone(),
+            dap_claimed_source_line: source_claim.line,
+            source_snapshot_integrity_verified: true,
+            source_line_mapping_verified: false,
+            stopped_thread_os_verified: false,
+            installed_app_accepted: false,
+        })
     }
     pub fn close(self) -> Result<(), SupervisorError> {
         self.gateway.close()
