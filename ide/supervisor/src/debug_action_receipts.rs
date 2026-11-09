@@ -217,6 +217,17 @@ pub(crate) struct ConsumedControlClaim {
     pub(crate) owner_sequence: u64,
     pub(crate) ci_fixture_only: bool,
     pub(crate) execution_authorized: bool,
+    pub(crate) job_id: String,
+    pub(crate) plan_sha256: String,
+    pub(crate) owner_event_sha256: String,
+    pub(crate) source_snapshot_sha256: String,
+    pub(crate) preview_sha256: String,
+    pub(crate) stopped_rip: u64,
+    pub(crate) process_id: u32,
+    pub(crate) thread_id: u32,
+    pub(crate) source_line: u32,
+    pub(crate) relative_source: String,
+    pub(crate) operation: DebugReviewIntent,
 }
 pub(crate) struct DebugActionApproval {
     binding: NativeReviewBinding,
@@ -253,6 +264,10 @@ impl DebugActionApproval {
             || preview.owner_event_sha256 != binding.owner_event_sha256
             || preview.owner_sequence != binding.owner_sequence
             || preview.source_snapshot_sha256 != binding.source_snapshot_sha256
+            || preview.stopped_rip != binding.stopped_rip
+            || binding.process_id == 0 || binding.thread_id == 0
+            || binding.source_line == 0
+            || !binding.relative_source.starts_with("src/")
             || preview.executable_authority || preview.installed_app_accepted {
             return Err(ApprovalDenial::WrongStop);
         }
@@ -408,6 +423,17 @@ impl DebugActionApproval {
             owner_sequence: self.binding.owner_sequence,
             ci_fixture_only: true,
             execution_authorized: false,
+            job_id: self.binding.job_id.clone(),
+            plan_sha256: self.binding.plan_sha256.clone(),
+            owner_event_sha256: self.binding.owner_event_sha256.clone(),
+            source_snapshot_sha256: self.binding.source_snapshot_sha256.clone(),
+            preview_sha256: self.preview.preview_sha256.clone(),
+            stopped_rip: self.binding.stopped_rip,
+            process_id: self.binding.process_id,
+            thread_id: self.binding.thread_id,
+            source_line: self.binding.source_line,
+            relative_source: self.binding.relative_source.clone(),
+            operation: self.preview.intent.clone(),
         })
     }
     /// An active approval is revoked on continuation/cancel/timeout/Job loss.
@@ -488,6 +514,11 @@ mod tests {
             owner_event_sha256: "b".repeat(64),
             source_snapshot_sha256: "c".repeat(64),
             owner_sequence: 7,
+            process_id: 22,
+            thread_id: 11,
+            stopped_rip: 0x140001000,
+            source_line: 7,
+            relative_source: "src/main.rs".into(),
         }
     }
     fn book() -> (DebugActionApproval, PathBuf) {

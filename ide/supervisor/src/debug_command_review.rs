@@ -132,6 +132,11 @@ pub(crate) struct NativeReviewBinding {
     pub(crate) owner_event_sha256: String,
     pub(crate) source_snapshot_sha256: String,
     pub(crate) owner_sequence: u64,
+    pub(crate) process_id: u32,
+    pub(crate) thread_id: u32,
+    pub(crate) stopped_rip: u64,
+    pub(crate) source_line: u32,
+    pub(crate) relative_source: String,
 }
 
 pub struct DebugReviewSession {
@@ -236,6 +241,11 @@ impl DebugReviewSession {
             owner_event_sha256: self.stop.owner_event_sha.clone(),
             source_snapshot_sha256: self.stop.source_snapshot_sha.clone(),
             owner_sequence: self.stop.event_sequence,
+            process_id: self.stop.process_id,
+            thread_id: self.stop.thread_id,
+            stopped_rip: self.stop.rip,
+            source_line: self.stop.line,
+            relative_source: self.stop.source.clone(),
         })
     }
     /// There is deliberately no approve/dispatch method in D6A.
