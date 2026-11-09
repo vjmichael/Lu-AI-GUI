@@ -52,8 +52,10 @@ fn windows_original_job_empty(
     if !bounded_journal(&file,false){return false}
     for suffix in ["-wal","-shm","-journal"]{
         let side=PathBuf::from(format!("{}{}",file.display(),suffix));
-        if fs::symlink_metadata(&side).is_ok()&&!bounded_journal(&side,true){
-            return false
+        match fs::symlink_metadata(&side){
+            Ok(_) if !bounded_journal(&side,true)=>return false,
+            Err(e) if e.kind()!=std::io::ErrorKind::NotFound=>return false,
+            _=>{},
         }
     }
     let Ok(db)=Connection::open_with_flags(
