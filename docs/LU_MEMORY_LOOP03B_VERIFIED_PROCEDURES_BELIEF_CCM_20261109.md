@@ -41,6 +41,7 @@ Each selector has explicit strict bounded identifiers; returned original data is
 - `executionAuthority="NOT_AUTHORIZED_FOR_EXECUTION"`; `currentSourceFreshness="NOT_RECHECKED"`; `priorGrantReusable=false`; `automaticRetryAllowed=false`; `modelMayOverrideHostDecision=false`.
 - A source has to be correct at observation **and** pass the separate independent second witness to be called historical verified. The OS descendant witness is a **different** gate, not inferred from a valid SHA.
 - Invalid/missing verifier, conflicting beliefs, omitted evidence or changed/unknown original source never becomes a success claim. The underlying AGENT-01F/G per-turn native approval and worker/oracle execution paths remain unchanged.
+- **03A dominates 03B:** even if an old procedure or claim was independently verified, 03B sets `currentTaskReviewBlockedByPreflight=true` and `humanReviewRequired=true` whenever the current saved-goal/clarification gate or historical original source/OS-custody gate is not reviewable. Missing or unknown 03A labels fail closed; a historical memory snapshot never overrides host recovery.
 
 ## Source and native acceptance ledger
 
