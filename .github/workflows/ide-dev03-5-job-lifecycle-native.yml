@@ -63,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$RUNNER_OS" = "Windows" ]; then
-            pwsh -NoProfile -Command '\$tokens=\$null;\$errors=\$null;[void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").Path,[ref]\$tokens,[ref]\$errors); if (\$errors.Count) {throw \$errors[0]}'
+            pwsh -NoProfile -Command '$tokens=$null;$errors=$null;[void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1").Path,[ref]$tokens,[ref]$errors); if ($errors.Count) {throw $errors[0]}'
           else
             python3 -m py_compile ide/app/fixtures/dev035_jobs_installed_atspi.py
           fi
