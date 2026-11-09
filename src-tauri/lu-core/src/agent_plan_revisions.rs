@@ -5,7 +5,7 @@
 //! Approval is a separate, exact-hash human review; it does not authorize any
 //! native tool, replay an effect, resume a worker, or prove output correctness.
 use std::{collections::BTreeSet,path::Path,sync::Mutex};
-use rusqlite::{params,Connection,OptionalExtension,TransactionBehavior};
+use rusqlite::{params,Connection,OpenFlags,OptionalExtension,TransactionBehavior};
 use sha2::{Digest,Sha256};
 use crate::{
     agent_plan_ledger::PlanStepKind,
@@ -404,6 +404,12 @@ fn read_history(db:&Connection,plan:&str)->Result<Vec<RevisionSnapshot>,Revision
     Ok(revisions)
 }
 impl AgentPlanRevisionStore{
+    /// AGENT-01K: no SQLite schema updates when reading original revisions.
+    pub fn open_existing_readonly(path:&Path)->Result<Self,RevisionError>{
+        let db=Connection::open_with_flags(path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY|OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        Ok(Self{db:Mutex::new(db)})
+    }
     /// Open the same host-owned SQLite file as AGENT-01A. This does not
     /// create a plan or a trusted human turn if either is absent.
     pub fn open(path:&Path)->Result<Self,RevisionError>{
