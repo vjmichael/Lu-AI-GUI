@@ -1793,3 +1793,10 @@ mod memory_loop03c_positive_oracle_tests {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+// MEMORY-LOOP-03C-G5 uses the production ChatStore private original-source
+// reader together with real reviewed Git/FFprobe workers in a separate test
+// module. No production tool, model or permission is added by this import.
+#[cfg(test)]
+#[path = "memory_loop03c_reviewed_worker_tests.rs"]
+mod memory_loop03c_reviewed_worker_tests;

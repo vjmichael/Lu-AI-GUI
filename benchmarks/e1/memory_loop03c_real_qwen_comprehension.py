@@ -19,6 +19,7 @@ import time
 import urllib.request
 from typing import Any
 from memory_loop03c_positive_oracle_cases import validate_positive_corpus, PROVENANCE as POSITIVE_PROVENANCE
+from memory_loop03c_reviewed_worker_cases import validate_reviewed_worker_corpus, PROVENANCE as REVIEWED_PROVENANCE
 
 MODEL_SHA256 = "7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d"
 ENGINE_SOURCE_COMMIT = "2bc46baa9207d098d03741ac394e7faaf1a955b6"
@@ -238,6 +239,22 @@ def run(args: argparse.Namespace) -> int:
                 r["caseId"] == "historical_git_procedure" for r in positive_rows
             )
             report["actualReviewedLuWorkerProven"] = False
+        reviewed_path = getattr(args, "reviewed_fixture", None)
+        if reviewed_path is not None:
+            # A real Lu reviewed Git/FFprobe + ANSF native integration test
+            # must have produced the JSON on the SAME pinned CI group head.
+            # This Python parser does not itself attest an OS process or grant.
+            reviewed_raw = reviewed_path.read_bytes()
+            reviewed_rows = validate_reviewed_worker_corpus(json.loads(reviewed_raw))
+            rows.extend(reviewed_rows)
+            report["reviewedFixtureSha256"] = hashlib.sha256(reviewed_raw).hexdigest()
+            report["reviewedFixtureDeclaredProvenance"] = REVIEWED_PROVENANCE
+            report["reviewedWorkerFixtureAttached"] = True
+            report["reviewedWorkerExecutionAttestedByPython"] = False
+            report["historicalPermissionGrantedByModel"] = False
+            report["installedLu"] = False
+            report["realOsCustodyProven"] = False
+            report["liveExternalSourceFreshnessProven"] = False
         if args.validate_fixture_only:
             report["fixtureValidatedOnly"] = True
             return 0
@@ -340,6 +357,8 @@ def main() -> int:
     parser.add_argument("--fixture", type=pathlib.Path, required=True)
     parser.add_argument("--positive-fixture", type=pathlib.Path,
                         help="Optional real native test-only Git/ANSF witness corpus")
+    parser.add_argument("--reviewed-fixture", type=pathlib.Path,
+                        help="Optional real supervised Git/FFprobe and ANSF worker fixture")
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--port", type=int, default=18983)
     parser.add_argument("--repetitions", type=int, default=2)
