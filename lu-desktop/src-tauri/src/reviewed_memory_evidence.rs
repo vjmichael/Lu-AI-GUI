@@ -67,6 +67,31 @@ fn regular_file(path:&Path)->Result<(),String>{
     }
     Ok(())
 }
+fn checked_database_sidecars(path:&Path)->Result<(),String>{
+    for suffix in ["-wal","-shm","-journal"]{
+        let mut sidecar=path.as_os_str().to_os_string();
+        sidecar.push(suffix);
+        let file=PathBuf::from(sidecar);
+        match fs::symlink_metadata(&file){
+            Ok(meta)=>{
+                if !meta.is_file()||meta.file_type().is_symlink()||
+                    meta.len()>MAX_DB_BYTES{
+                    return Err("Reviewed SQLite sidecar is unsafe".into())
+                }
+                #[cfg(windows)]
+                {
+                    use std::os::windows::fs::MetadataExt;
+                    if meta.file_attributes()&0x400!=0{
+                        return Err("Reviewed SQLite sidecar reparse point refused".into())
+                    }
+                }
+            },
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},
+            Err(_)=>return Err("Reviewed SQLite sidecar inaccessible".into())
+        }
+    }
+    Ok(())
+}
 fn profile_root(root:&Path)->Result<PathBuf,String>{
     let canonical=fs::canonicalize(root).map_err(err)?;
     if !fs::symlink_metadata(root).map_err(err)?.is_dir()
@@ -83,6 +108,7 @@ fn journal_path(root:&Path,turn:&str)->Result<PathBuf,String>{
 fn read_real_journal(root:&Path,turn:&str)->Result<EffectJournal,String>{
     let path=journal_path(root,turn)?;
     regular_file(&path)?;
+    checked_database_sidecars(&path)?;
     // The host never accepts a file path from the user/model; SQLite is the
     // ORIGINAL per-turn journal and must already exist before a read.
     EffectJournal::open(&path).map_err(err)
@@ -381,6 +407,7 @@ pub(crate) fn record_from_reviewed_turn(
             return Err("Reviewed memory index is not a safe local database".into())
         }
     }
+    checked_database_sidecars(&index)?;
     let mut conn=Connection::open(&index).map_err(err)?;
     ensure_schema(&conn)?;
     let mut recorded=0;
@@ -610,6 +637,7 @@ pub(crate) fn reconcile_incomplete_exclusive(
     let path=index_path(&root);
     if !path.exists(){return Ok(Vec::new())}
     regular_file(&path)?;
+    checked_database_sidecars(&path)?;
     let mut conn=Connection::open(&path).map_err(err)?;
     ensure_schema(&conn)?;
     let pending:Vec<Row>={
@@ -621,7 +649,8 @@ pub(crate) fn reconcile_incomplete_exclusive(
                     e.verified_fact
              FROM lu_reviewed_memory_evidence e
              LEFT JOIN lu_reviewed_memory_publication p ON p.call_id=e.call_id
-             WHERE p.call_id IS NULL OR p.published_unix<=0
+             LEFT JOIN lu_reviewed_memory_projection_intent i ON i.call_id=e.call_id
+             WHERE p.call_id IS NULL OR p.published_unix<=0 OR i.call_id IS NULL
              ORDER BY e.rowid ASC LIMIT ?1"
         ).map_err(err)?;
         let rows=stmt.query_map([(RECOVERY_LIMIT+1) as i64],read_row)
@@ -673,6 +702,7 @@ pub(crate) fn resolve_for_current_human(
     let path=index_path(&root);
     if !path.exists(){return Ok(None)}
     regular_file(&path)?;
+    checked_database_sidecars(&path)?;
     let conn=Connection::open_with_flags(&path,OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(err)?;
     let row:Option<Row>=conn.query_row(
