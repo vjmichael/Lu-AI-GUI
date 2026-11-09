@@ -844,6 +844,13 @@ impl LinuxDapSession {
     pub fn stack_trace(&mut self, thread_id: u64) -> Result<(), SupervisorError> {
         self.gateway.stack_trace(thread_id)
     }
+    /// This does NOT validate a module/PC. Native offline symbol verification
+    /// must independently map the returned instruction address.
+    pub fn source_candidate(
+        &self,
+    ) -> Option<lu_ide_workspace::dap_source_lines::SourceLineCandidate> {
+        self.gateway.source_candidate()
+    }
     pub fn close(self) -> Result<(), SupervisorError> {
         self.gateway.close()
     }

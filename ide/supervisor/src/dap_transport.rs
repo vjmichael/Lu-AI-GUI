@@ -76,6 +76,13 @@ impl DapGateway {
     pub(crate) fn phase(&self) -> DapPhase {
         self.session.phase()
     }
+    /// Read-only native inspection after a correlated stackTrace; adapter
+    /// supplied coordinates are untrusted until an independent symbol oracle.
+    pub(crate) fn source_candidate(
+        &self,
+    ) -> Option<lu_ide_workspace::dap_source_lines::SourceLineCandidate> {
+        self.session.source_candidate().cloned()
+    }
     fn send(&mut self, bytes: &[u8]) -> Result<(), SupervisorError> {
         if bytes.is_empty()
             || bytes.len() > MAX_WRITE

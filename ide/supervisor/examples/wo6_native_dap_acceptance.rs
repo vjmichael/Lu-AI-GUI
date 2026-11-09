@@ -466,6 +466,21 @@ mod protected {
         if stopped.is_none() || !threads || !stack {
             return Err("DENIED: native Windows project LLDB stop/threads/stack absent".into());
         }
+        // Adapter-only stopped PC candidate. This cannot attest the loaded
+        // PE base, process identity or PDB line table without independent
+        // SCM/Job kernel module mapping and a separate symbol parser.
+        if let Some(candidate) = dap.source_candidate() {
+            if let Some(pc) = candidate.instruction_address {
+                println!(
+                    "DEV045D2_WINDOWS_REAL_DAP_STOP_PC_CLAIM=0x{:x};line={};os_module_slide_verified=false;binary_sha={}",
+                    pc, candidate.line, target.binary.binary_sha256
+                );
+            } else {
+                println!("DEV045D2_WINDOWS_REAL_DAP_STOP_PC_CLAIM=absent");
+            }
+        } else {
+            println!("DEV045D2_WINDOWS_REAL_DAP_SOURCE_CLAIM=unavailable");
+        }
         if cancel_project {
             // The debugger reached a real stopped Cargo-built project and
             // returned actual nonempty thread/stack evidence. Dropping the

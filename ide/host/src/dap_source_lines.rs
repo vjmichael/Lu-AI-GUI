@@ -25,6 +25,9 @@ pub struct SourceLineCandidate {
     pub column: Option<u32>,
     // Never print or forward to WebView: this path is adapter-controlled.
     pub adapter_path: String,
+    // This is the adapter's *claimed* runtime PC. It is not independently
+    // load-bias/module-identity verified and cannot confer debugger authority.
+    pub instruction_address: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,11 +100,31 @@ pub fn candidate_from_dap_frame(
     if column.is_some_and(|value| value == 0 || value > 4096) {
         return Err(DapError::InvalidMessage);
     }
+    let instruction_address = match frame.get("instructionPointerReference") {
+        None => None,
+        Some(Value::String(v)) => {
+            let hex = v.strip_prefix("0x").ok_or(DapError::InvalidMessage)?;
+            if hex.is_empty() || hex.len() > 16
+                || !hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+            {
+                return Err(DapError::InvalidMessage);
+            }
+            Some(
+                u64::from_str_radix(hex, 16)
+                    .map_err(|_| DapError::InvalidMessage)?
+            )
+        }
+        Some(_) => return Err(DapError::InvalidMessage),
+    };
+    if instruction_address == Some(0) {
+        return Err(DapError::InvalidMessage);
+    }
     Ok(Some(SourceLineCandidate {
         frame_id,
         line: line as u32,
         column,
         adapter_path: path.to_owned(),
+        instruction_address,
     }))
 }
 
@@ -264,6 +287,7 @@ mod tests {
         let candidate = SourceLineCandidate {
             frame_id: 8, line: 2, column: Some(3),
             adapter_path: file.to_str().unwrap().to_owned(),
+            instruction_address: Some(0x401110),
         };
         let reviewed = review_native_source_line(&root, "src/main.rs", &hash, &candidate)
             .unwrap();
@@ -297,9 +321,37 @@ mod tests {
         let candidate = SourceLineCandidate {
             frame_id: 1, line: 1, column: None,
             adapter_path: root.join("src/main.rs").display().to_string(),
+            instruction_address: Some(0x401110),
         };
         let hash = format!("{:x}", Sha256::digest(b"fn main() {}\n"));
         assert!(review_native_source_line(&root, "src/main.rs", &hash, &candidate).is_err());
         fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn stopped_instruction_pointer_claim_is_strictly_hex_or_absent() {
+        let frame = |value: Value| {
+            serde_json::json!({"id": 11, "line": 2,
+                "source": {"path": "/project/src/main.rs", "sourceReference": 0},
+                "instructionPointerReference": value})
+        };
+        assert_eq!(
+            candidate_from_dap_frame(&frame(serde_json::json!("0x401110")))
+                .unwrap().unwrap().instruction_address,
+            Some(0x401110)
+        );
+        for bad in ["0", "401110", "0x0", "0x", "0xg", "0x12345678901234567",
+                    "0x123\n45", "0x../src"] {
+            assert_eq!(
+                candidate_from_dap_frame(&frame(serde_json::json!(bad))),
+                Err(DapError::InvalidMessage)
+            );
+        }
+        assert_eq!(
+            candidate_from_dap_frame(&frame(serde_json::json!(123))),
+            Err(DapError::InvalidMessage)
+        );
+        assert!(candidate_from_dap_frame(&serde_json::json!({
+            "id": 1, "line": 1, "source": {"path": "/project/src/main.rs"}
+        })).unwrap().unwrap().instruction_address.is_none());
     }
 }
