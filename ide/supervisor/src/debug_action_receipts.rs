@@ -158,7 +158,7 @@ fn verify_events(raw: &[u8], action: &str, preview: &str)
 
 /// A one-time claim is not a debugger operation. There is deliberately no
 /// adapter request bytes or dispatch method in this object.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ConsumedControlClaim {
     pub(crate) action_id_sha256: String,
     pub(crate) approved_receipt_sha256: String,
@@ -384,7 +384,7 @@ impl DebugActionApproval {
             || meta.len() > MAX_LOG_BYTES {
             return Err(ApprovalDenial::JournalCorrupt);
         }
-        let mut input = File::open(&self.path)
+        let input = File::open(&self.path)
             .map_err(|_| ApprovalDenial::JournalUnavailable)?;
         let mut data = Vec::new();
         input.take(MAX_LOG_BYTES + 1).read_to_end(&mut data)
@@ -467,9 +467,9 @@ mod tests {
         ).unwrap();
         assert_ne!(first, second.action_id_sha256);
         assert_ne!(a.challenge_sha256(), second.challenge_sha256());
-        clean(second, dir.clone());
+        drop(second);
         drop(a);
-        // The two independent journal names have both been removed with dir.
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn wrong_owner_or_preview_revokes_and_never_grants() {
