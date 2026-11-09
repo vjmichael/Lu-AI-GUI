@@ -60,9 +60,9 @@ test('desktop Build still requires clean Git HEAD, frozen snapshot, one human ap
   const code=desktop();
   assert.match(code,/const VALID_RECIPES: \[&str; 4\]/);
   assert.match(code,/if !VALID_RECIPES\.contains\(&recipe_id\)/);
-  assert.match(code,/registry\.trusted_native_worker_root\(project_id\)/);
+  assert.match(code,/registry\s*\.trusted_native_worker_root\(project_id\)/);
   assert.match(code,/inspection\.worktree != "clean"/);
-  assert.match(code,/publish_input\(&source_root, &self\.staged, recipe_id\)/);
+  assert.match(code,/publish_input\(&source_root,\s*&self\.staged,\s*recipe_id\)/);
   assert.match(code,/verify_input\(&input\)/);
   assert.match(code,/app\.dialog\(\)/);
   assert.match(code,/record_human_approval/);

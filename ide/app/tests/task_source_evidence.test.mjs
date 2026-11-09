@@ -105,7 +105,7 @@ test('native request is explicit, backend verifies source, no CI status supplied
   assert.match(tauri,/async fn ide_link_task_source\(/);
   assert.match(tauri,/expected_task_update_event_id: String/);
   assert.match(tauri,/ide_link_task_source,/);
-  assert.match(host,/registry\.preview_source_file\(project_id, relative_path\)/);
+  assert.match(host,/registry\s*\.preview_source_file\(project_id,\s*relative_path\)/);
   assert.match(host,/preview\.revision != expected_saved_revision/);
   assert.match(host,/before\.update_event_id != expected_task_update_event_id/);
   const begin=ui.indexOf('async function linkActiveSourceToTask(tab)');

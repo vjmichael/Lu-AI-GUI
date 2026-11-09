@@ -31,8 +31,8 @@ test('E2 real server launch still requires a separately verified D7D native work
   assert.match(host, /LU_IDE_E2_RUST_ANALYZER_BUNDLE_SHA256/);
   assert.match(host, /LU_IDE_E2_RUFF_BUNDLE_SHA256/);
   assert.match(host, /language_server_for_path/);
-  assert.match(host, /active.source.language_id!=request.language_id/);
-  assert.match(host, /active.source.language_id=="python"/);
+  assert.match(host, /active\.source\.language_id\s*!=\s*request\.language_id/);
+  assert.match(host, /active\.source\.language_id\s*==\s*"python"/);
   assert.match(editor, /supportedLanguages/);
   assert.doesNotMatch(host, /std::process::Command|Command::new|\.spawn\(/);
   assert.doesNotMatch(supervisor, /std::process::Command|Command::new|\.spawn\(/);

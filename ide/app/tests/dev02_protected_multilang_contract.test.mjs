@@ -39,7 +39,7 @@ test('Linux and Windows use same reviewed native LSP permission boundary, not PA
   assert.ok(backend.includes('linux_worker::lsp_native::{'));
   assert.ok(backend.includes('windows_worker::lsp_native::{'));
   for(const name of ['start_linux_lsp(', 'start_windows_lsp(',
-    'native_lsp_bundle_digest(&bundle,recipe)',
+    'native_lsp_bundle_digest(&bundle, recipe)',
     'record_human_approval(', 'validated_registered_text(',
     'publish_lsp_input(', 'LSP_FILE_CHANGED_ON_DISK',
     'LSP_SOURCE_SCOPE_MISMATCH', 'LSP_METHOD_DENIED',

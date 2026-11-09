@@ -122,7 +122,7 @@ test('no automatically opened files or source writes in frontend command wiring'
   assert.match(ui,/const ticket=beginExplorerIo\(\)/);
   assert.match(native,/ide_workspace_layout_save,/);
   assert.match(native,/ide_workspace_layout_read,/);
-  assert.match(host,/registry\.preview_source_file\(/);
+  assert.match(host,/registry\s*\.preview_source_file\(/);
   assert.match(host,/source\.revision != file\.saved_revision/);
   assert.match(host,/options\.write\(true\)\.create_new\(true\)/);
   const effect=ui.slice(ui.indexOf("void invoke('ide_workspace_layout_read'"),

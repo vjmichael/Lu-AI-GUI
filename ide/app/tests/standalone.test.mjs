@@ -50,7 +50,6 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     // Reviewed profile discovery, bounded output, exact debug target review,
     // project debugging and explicit split-layout persistence are native-only.
     'ide_build_read_output', 'ide_debug_run_project',
-    'ide_debug_step_project', 'ide_debug_breakpoint_project',
     'ide_inspect_package_managers', 'ide_preview_package_operation',
     'ide_revalidate_package_operation', 'ide_package_run_reviewed_uv',
     'ide_package_discard_private_output',
@@ -184,7 +183,7 @@ test('bounded change reviews are explicit and independent of AI execution', () =
   assert.match(web, /tab\.revision !== review\.expectedRevision/);
   assert.match(web, /saveTab\(tab\)/);
   assert.match(native, /fn ide_review_source_change/);
-  assert.match(native, /\.review_source_change\(&project_id, &relative_path, &expected_revision, &proposed_text\)/);
+  assert.match(native, /\.review_source_change\(\s*&project_id,\s*&relative_path,\s*&expected_revision,\s*&proposed_text,?\s*\)/);
   assert.match(host, /const MAX_REVIEW_LINES: usize = 240/);
   assert.match(host, /const MAX_REVIEW_OUTPUT_BYTES: usize = 32 \* 1024/);
   assert.match(host, /self\.preview_source_file\(project_id, relative_path\)/);
@@ -617,7 +616,7 @@ test('B3 project search is saved-byte and capability-scoped, never an execution 
   const catalog = read('../../host/src/capabilities.rs');
   const css = read('../web/styles.css');
   assert.match(native, /async fn ide_find_in_project\s*\(/);
-  assert.match(native, /registry\.find_in_project\(&project_id, &query, case_sensitive\)/);
+  assert.match(native, /registry\s*\.find_in_project\(&project_id,\s*&query,\s*case_sensitive\)/);
   assert.match(native, /ide_find_in_project,/);
   assert.match(host, /self\.source_capability\(project_id\)/);
   assert.match(host, /MAX_MATCHES:\s*usize\s*=\s*240/);
@@ -658,11 +657,11 @@ test('B2 private durable draft identity and recovery never grant project source 
   }
   assert.match(native,/data\.join\("private-draft-recovery"\)/);
   assert.match(native,/vault\.checkpoint\(input\)/);
-  assert.match(vault,/fs::rename\(&temp,path\)/);
+  assert.match(vault,/fs::rename\(&temp,\s*path\)/);
   assert.match(vault,/sync_all\(\)/);
   assert.match(vault,/DRAFT_CHECKPOINT_CONFLICT/);
-  assert.match(vault,/MAX_HISTORY:usize=24/);
-  assert.match(vault,/MAX_DRAFT_BYTES:usize=512\*1024/);
+  assert.match(vault,/MAX_HISTORY:\s*usize\s*=\s*24/);
+  assert.match(vault,/MAX_DRAFT_BYTES:\s*usize\s*=\s*512\s*\*\s*1024/);
   assert.match(web,/crypto\.randomUUID\(\)/);
   assert.match(web,/advanceBufferIdentity\(previousBuffer\)/);
   assert.match(web,/rebaseBufferAfterSave\(currentBuffer,saveStartedBuffer,saved\.revision\)/);

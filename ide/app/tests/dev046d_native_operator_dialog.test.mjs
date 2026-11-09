@@ -27,14 +27,14 @@ test('native callback requires verified LLDB owner and one fresh per-action OS d
   assert.match(worker, /live_after_dialog\.phase != JobPhase::Running/);
   assert.match(worker, /cancelled\.is_some_and/);
   const backend=read('../src-tauri/src/debug_backend.rs');
-  assert.match(backend, /session\.verify_real_lldb_event_owner_for_ci\(/);
+  assert.match(backend, /session\s*\.verify_real_lldb_event_owner_for_ci\(/);
   assert.match(backend, /app\.dialog\(\)/);
   assert.match(backend, /\.show\(move \|confirmed\|/);
   assert.match(backend, /receiver\.recv_timeout\(/);
   assert.match(backend, /Duration::from_secs\(30\)/);
   assert.match(backend, /confirmed && !cancel\.load\(Ordering::SeqCst\)/);
   assert.match(backend, /bounded_native_debugger_consent/);
-  assert.match(backend, /session\.close_with_real_owner_continue_for_ci/);
+  assert.match(backend, /session\s*\.close_with_real_owner_continue_for_ci/);
 });
 test('CI simulated consent and real modal consent remain distinct in audit', () => {
   const receipts=read('../../supervisor/src/debug_action_receipts.rs');

@@ -154,7 +154,7 @@ test('source uses registered browser and clean HEAD, never a WebView path',()=>{
   assert.match(host,/self\.source_capability\(project_id\)/);
   assert.match(host,/self\.registered_git_root\(project_id\)/);
   assert.match(host,/self\.inspect_git_worktree\(project_id\)/);
-  assert.match(host,/self\.preview_source_file\(project_id, adapter\.manifest_path\)/);
+  assert.match(host,/self\s*\.preview_source_file\(project_id,\s*adapter\.manifest_path\)/);
   assert.match(host,/after\.local_head != before\.local_head/);
   assert.match(host,/native_worker_state: "no_reviewed_platform_adapter"/);
   assert.doesNotMatch(host,/Command::new|std::process::Command|tokio::process/);
