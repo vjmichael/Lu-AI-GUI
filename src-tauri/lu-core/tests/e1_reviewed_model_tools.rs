@@ -1758,6 +1758,27 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     ).unwrap();
     assert_eq!(child_history.len(),1);
     assert_eq!(child_history[0].status,"VERIFIED_AT_OBSERVATION");
+    // AGENT-01K is the independent, READ-ONLY recovery review. Both genuine
+    // Qwen-selected native worker calls are historically verified, but
+    // descendant custody is not asserted merely from their effect journals.
+    use lu_core::agent_recovery_decision::{
+        reconcile_recovery,NoIndependentCustodyProof,
+    };
+    let parent_recovery=reconcile_recovery(
+        &db,&root,&chat,&plan,&original,
+        &ledger,&revisions,&scheduler,&receipts,&source,&NoIndependentCustodyProof
+    ).unwrap();
+    let child_recovery=reconcile_recovery(
+        &db,&root,&chat,&child_plan,&preparation,
+        &ledger,&revisions,&scheduler,&receipts,&source,&NoIndependentCustodyProof
+    ).unwrap();
+    assert_eq!(parent_recovery.status,"STOP_DESCENDANT_CUSTODY_UNPROVEN");
+    assert_eq!(child_recovery.status,"STOP_DESCENDANT_CUSTODY_UNPROVEN");
+    assert_eq!(parent_recovery.independently_observed_steps,1);
+    assert_eq!(child_recovery.independently_observed_steps,1);
+    assert_eq!(child_recovery.linked_generations,1);
+    assert_eq!(child_recovery.execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
+
 
     assert_eq!(view.claims.len(),1);
     assert_eq!(view.claims[0].claim_state,"OBSERVED_VERIFIED_HISTORICAL");
@@ -1771,6 +1792,15 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     // replacements, retry Git, or treat the model response as evidence.
     let withheld=root.join("quarantined-independent-effect-journal.sqlite");
     fs::rename(&effect_path,&withheld).unwrap();
+    assert_eq!(reconcile_recovery(
+        &db,&root,&chat,&plan,&original,
+        &ledger,&revisions,&scheduler,&receipts,&source,&NoIndependentCustodyProof
+    ).unwrap().status,"STOP_UNVERIFIED_WORKER_ORACLE");
+    assert_eq!(reconcile_recovery(
+        &db,&root,&chat,&child_plan,&preparation,
+        &ledger,&revisions,&scheduler,&receipts,&source,&NoIndependentCustodyProof
+    ).unwrap().status,"STOP_ANCESTOR_ORACLE_UNVERIFIED");
+
     assert_eq!(receipts.history(
         &plan,&chat,&original,&root,&ledger,&revisions,&source
     ).unwrap()[0].status,"NEEDS_RECONCILIATION");
@@ -1795,6 +1825,11 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     assert_eq!(receipts.history(
         &plan,&chat,&original,&root,&ledger,&revisions,&source
     ).unwrap()[0].status,"NEEDS_RECONCILIATION");
+    assert_eq!(reconcile_recovery(
+        &db,&root,&chat,&child_plan,&preparation,
+        &ledger,&revisions,&scheduler,&receipts,&source,&NoIndependentCustodyProof
+    ).unwrap().status,"STOP_GOAL_OR_SOURCE_CHANGED");
+
     drop(scheduler);drop(receipts);drop(revisions);drop(ledger);
     drop(source);drop(human);drop(book);
     fs::remove_dir_all(root).unwrap();
