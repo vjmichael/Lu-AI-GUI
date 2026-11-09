@@ -18,6 +18,7 @@ use lu_ide_execution_supervisor::{
     snapshot::{publish_input, verify_input},
     live_output::{LiveOutput, OutputPage},
     wo6_output_evidence::{audit_published_output, ArtifactEntry},
+    debug_binary_witness::{audit_debug_binary_candidate, DebugBinaryWitness},
     JobPlan, JobPhase, Supervisor,
 };
 use serde::Serialize;
@@ -224,6 +225,8 @@ pub struct BuildRunView {
     pub native_error_category: Option<String>,
     pub output_sha256: Option<String>,
     pub output_bytes: Option<u64>,
+    pub terminal_receipt_sha256: String,
+    pub debug_binary_candidate: Option<DebugBinaryWitness>,
     pub artifact_manifest_sha256: Option<String>,
     pub artifact_evidence_state: String,
     pub artifact_files: Vec<ArtifactEntry>,
@@ -641,6 +644,23 @@ impl NativeBuildRuntime {
         } else {
             None
         };
+        // DEV-04.2: host-only exact worker output root, never a WebView path.
+        // Post-completion candidate requires native zero exit, unquarantined
+        // exact plan receipt and the independently hashed output witness.
+        let completed_build = recipe_id == "rust_build"
+            && native.summary.phase == JobPhase::Completed
+            && !evidence.requires_reconciliation
+            && exit_code == Some(0);
+        #[cfg(windows)]
+        let debug_binary_candidate = if completed_build {
+            published.as_ref().and_then(|witness|
+                audit_debug_binary_candidate(&native.output_root,witness).ok().flatten())
+        } else { None };
+        #[cfg(target_os = "linux")]
+        let debug_binary_candidate = if completed_build {
+            published.as_ref().and_then(|witness|
+                audit_debug_binary_candidate(&native.output_directory,witness).ok().flatten())
+        } else { None };
         let artifact_evidence_state = if published.is_some() {
             "read_only_post_termination_tree_hashed"
         } else {
@@ -670,6 +690,8 @@ impl NativeBuildRuntime {
             native_error_category,
             output_sha256,
             output_bytes,
+            terminal_receipt_sha256: evidence.terminal_receipt_hash,
+            debug_binary_candidate,
             artifact_manifest_sha256,
             artifact_evidence_state: artifact_evidence_state.to_owned(),
             artifact_files,
