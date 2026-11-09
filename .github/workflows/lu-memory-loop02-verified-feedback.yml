@@ -72,6 +72,15 @@ jobs:
           foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
             Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
           }
+      - name: Build real React desktop prerequisites for Tauri library tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
       - name: Build and run real local ANSF SQLite and independent effect feedback tests
         shell: bash
         run: |
