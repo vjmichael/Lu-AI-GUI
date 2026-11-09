@@ -566,7 +566,7 @@ pub mod unix_owned {
     )->io::Result<()>{
         use std::os::{unix::{ffi::OsStrExt,process::CommandExt},raw::c_void};
         unsafe extern "C"{
-            fn open(path:*const std::os::raw::c_char,flags:i32)->i32;
+            fn open(path:*const std::os::raw::c_char,flags:i32,...)->i32;
             fn write(fd:i32,buf:*const c_void,size:usize)->isize;
             fn close(fd:i32)->i32;
         }
@@ -588,7 +588,7 @@ pub mod unix_owned {
                 return Err(io::Error::last_os_error())
             }
             Ok(())
-        })}
+        });}
         Ok(())
     }
     #[cfg(target_os="linux")]

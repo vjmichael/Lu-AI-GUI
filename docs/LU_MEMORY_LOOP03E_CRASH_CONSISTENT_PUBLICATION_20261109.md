@@ -32,3 +32,14 @@ The operator can inspect these statuses within the existing **Native tool activi
 ### Durable operator audit
 
 The exclusive reconciler now saves a bounded audit decision per original reviewed effect. A successfully reconstructed record writes the recovery decision in the **same SQLite transaction as its publication marker**. A refused or legacy record stores only a review-required audit status, not a new permission or proof. On subsequent startups the Native tool activity pane can still show the last 64 reviewed decisions; all statuses describe historical recovery at the recorded time, never current source freshness.
+
+## Work Mode gate repairs
+
+Local execution found a stale Rust test count in the Node guard and a benchmark
+assertion that confused a historical nested denial with the top-level host
+decision. The comparison now checks the parsed JSON at the correct level and
+requires both arms to carry identical historical evidence. Node passed 14/14,
+Python passed 31/31, standalone Rust policy passed 7/7, and the desktop bundle
+and its 59 checks passed. The Linux worker helper also required a variadic C
+`open` declaration and a unit-valued `pre_exec` registration block. Desktop
+native recovery remains open pending system dependencies and the grouped run.
