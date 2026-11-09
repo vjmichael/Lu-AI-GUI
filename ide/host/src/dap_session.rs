@@ -72,7 +72,11 @@ pub enum DapEvent {
 /// These are DAP *protocol* coordinates and are NOT executable authority.
 #[cfg(feature = "dev046c-ci-control")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CiStepKind { Over, Into, Out }
+pub enum CiStepKind {
+    Over,
+    Into,
+    Out,
+}
 
 #[cfg(feature = "dev046c-ci-control")]
 #[derive(Debug, Clone)]
@@ -225,37 +229,52 @@ impl DapSession {
     /// A caller cannot select any other path, process, arguments or env.
     /// This builds DAP bytes ONLY; actual authority resides in the D3 plan
     /// with an exact sealed build target digest and native OS containment.
-    pub fn launch_verified_project(&mut self,program:&str)->Result<Vec<u8>,DapError>{
-        if self.phase!=DapPhase::Ready{return Err(DapError::InvalidPhase);}
-        let linux=program.strip_prefix("/debug-target/target/debug/")
-            .is_some_and(|file|!file.is_empty() && file.len()<=200 &&
-                !file.contains('.') && file.bytes().all(|b|
-                b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_')));
-        let windows=if program.len()<=1024 {
-            let normalized=program.replace('/',"\\");
-            let pieces:Vec<_>=normalized.split('\\').collect();
-            pieces.len()>4 && pieces.iter().any(|part|*part=="debug-target")
+    pub fn launch_verified_project(&mut self, program: &str) -> Result<Vec<u8>, DapError> {
+        if self.phase != DapPhase::Ready {
+            return Err(DapError::InvalidPhase);
+        }
+        let linux = program
+            .strip_prefix("/debug-target/target/debug/")
+            .is_some_and(|file| {
+                !file.is_empty()
+                    && file.len() <= 200
+                    && !file.contains('.')
+                    && file
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+            });
+        let windows = if program.len() <= 1024 {
+            let normalized = program.replace('/', "\\");
+            let pieces: Vec<_> = normalized.split('\\').collect();
+            pieces.len() > 4
+                && pieces.iter().any(|part| *part == "debug-target")
                 && normalized.contains("\\debug-target\\target\\debug\\")
                 && normalized.to_ascii_lowercase().ends_with(".exe")
-                && pieces.last().is_some_and(|name|{
-                    let base=name.strip_suffix(".exe").unwrap_or("");
-                    !base.is_empty() && base.len()<=196 &&
-                    base.bytes().all(|b|
-                        b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'))
+                && pieces.last().is_some_and(|name| {
+                    let base = name.strip_suffix(".exe").unwrap_or("");
+                    !base.is_empty()
+                        && base.len() <= 196
+                        && base
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
                 })
                 && std::path::Path::new(program).is_absolute()
-        } else {false};
-        if !(linux||windows)||program.contains("..")||
-           program.chars().any(char::is_control) {
+        } else {
+            false
+        };
+        if !(linux || windows) || program.contains("..") || program.chars().any(char::is_control) {
             return Err(DapError::InvalidMessage);
         }
-        let frame=self.request("launch",json!({
-            "program":program,"stopOnEntry":true,"noDebug":false,
-            "disableASLR":false,"disableSTDIO":true,
-            "args":[],"env":{},"runInTerminal":false
-        }))?;
-        self.launch_sent=true;
-        self.phase=DapPhase::Launching;
+        let frame = self.request(
+            "launch",
+            json!({
+                "program":program,"stopOnEntry":true,"noDebug":false,
+                "disableASLR":false,"disableSTDIO":true,
+                "args":[],"env":{},"runInTerminal":false
+            }),
+        )?;
+        self.launch_sent = true;
+        self.phase = DapPhase::Launching;
         Ok(frame)
     }
 
@@ -307,10 +326,13 @@ impl DapSession {
     /// A DAP ACK alone is not an independently verified result.
     #[cfg(feature = "dev046c-ci-control")]
     pub fn ci_step(&mut self, thread_id: u64, kind: CiStepKind) -> Result<Vec<u8>, DapError> {
-        if self.phase != DapPhase::Stopped || thread_id == 0
+        if self.phase != DapPhase::Stopped
+            || thread_id == 0
             || self.last_stopped_thread != Some(thread_id)
             || self.last_source_candidate.is_none()
-            || self.ci_control.is_some() || !self.pending.is_empty() {
+            || self.ci_control.is_some()
+            || !self.pending.is_empty()
+        {
             return Err(DapError::InvalidPhase);
         }
         let command = match kind {
@@ -318,13 +340,19 @@ impl DapSession {
             CiStepKind::Into => "stepIn",
             CiStepKind::Out => "stepOut",
         };
-        let wire = self.request(command, json!({
-            "threadId": thread_id, "singleThread": true,
-            "granularity": "line"
-        }))?;
+        let wire = self.request(
+            command,
+            json!({
+                "threadId": thread_id, "singleThread": true,
+                "granularity": "line"
+            }),
+        )?;
         self.ci_control = Some(CiControlPending {
-            name: command, thread_id, expected_line: None,
-            response_ack: false, new_stop: false,
+            name: command,
+            thread_id,
+            expected_line: None,
+            response_ack: false,
+            new_stop: false,
         });
         // Stale original source coordinates must not be used after resume.
         self.last_source_candidate = None;
@@ -337,26 +365,40 @@ impl DapSession {
     /// Adapter "verified" is recorded as acknowledgement ONLY.
     #[cfg(feature = "dev046c-ci-control")]
     pub fn ci_set_breakpoint(
-        &mut self, compiled_source: &str, line: u32,
+        &mut self,
+        compiled_source: &str,
+        line: u32,
     ) -> Result<Vec<u8>, DapError> {
-        if self.phase != DapPhase::Stopped || line == 0 || line > 1_000_000
+        if self.phase != DapPhase::Stopped
+            || line == 0
+            || line > 1_000_000
             || self.last_stopped_thread.is_none()
-            || self.ci_control.is_some() || !self.pending.is_empty()
-            || self.last_source_candidate.as_ref().is_none_or(|candidate|
-                candidate.adapter_path != compiled_source || candidate.line != line)
-            || compiled_source.len() > 1024 || compiled_source.contains("..")
-            || compiled_source.chars().any(char::is_control) {
+            || self.ci_control.is_some()
+            || !self.pending.is_empty()
+            || self.last_source_candidate.as_ref().is_none_or(|candidate| {
+                candidate.adapter_path != compiled_source || candidate.line != line
+            })
+            || compiled_source.len() > 1024
+            || compiled_source.contains("..")
+            || compiled_source.chars().any(char::is_control)
+        {
             return Err(DapError::InvalidPhase);
         }
-        let wire = self.request("setBreakpoints", json!({
-            "source": { "path": compiled_source },
-            "breakpoints": [{"line": line}],
-            "lines": [line],
-            "sourceModified": false
-        }))?;
+        let wire = self.request(
+            "setBreakpoints",
+            json!({
+                "source": { "path": compiled_source },
+                "breakpoints": [{"line": line}],
+                "lines": [line],
+                "sourceModified": false
+            }),
+        )?;
         self.ci_control = Some(CiControlPending {
-            name: "setBreakpoints", thread_id: self.last_stopped_thread.unwrap_or(0),
-            expected_line: Some(line), response_ack: false, new_stop: false,
+            name: "setBreakpoints",
+            thread_id: self.last_stopped_thread.unwrap_or(0),
+            expected_line: Some(line),
+            response_ack: false,
+            new_stop: false,
         });
         Ok(wire)
     }
@@ -597,10 +639,11 @@ impl DapSession {
                     "next" | "stepIn" | "stepOut"
                         if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) =>
                     {
-                        let active = self.ci_control.as_mut()
-                            .ok_or(DapError::InvalidPhase)?;
-                        if active.name != expected || active.expected_line.is_some()
-                            || active.response_ack {
+                        let active = self.ci_control.as_mut().ok_or(DapError::InvalidPhase)?;
+                        if active.name != expected
+                            || active.expected_line.is_some()
+                            || active.response_ack
+                        {
                             return Err(DapError::InvalidMessage);
                         }
                         active.response_ack = true;
@@ -608,11 +651,10 @@ impl DapSession {
                     }
                     #[cfg(feature = "dev046c-ci-control")]
                     "setBreakpoints" if self.phase == DapPhase::Stopped => {
-                        let active = self.ci_control.as_mut()
-                            .ok_or(DapError::InvalidPhase)?;
-                        let expected_line = active.expected_line
-                            .ok_or(DapError::InvalidPhase)?;
-                        let reported = obj.get("body")
+                        let active = self.ci_control.as_mut().ok_or(DapError::InvalidPhase)?;
+                        let expected_line = active.expected_line.ok_or(DapError::InvalidPhase)?;
+                        let reported = obj
+                            .get("body")
                             .and_then(|v| v.get("breakpoints"))
                             .and_then(Value::as_array)
                             .ok_or(DapError::InvalidMessage)?;
@@ -620,7 +662,9 @@ impl DapSession {
                             || reported[0].get("verified") != Some(&Value::Bool(true))
                             || reported[0].get("line").and_then(Value::as_u64)
                                 != Some(u64::from(expected_line))
-                            || active.name != "setBreakpoints" || active.response_ack {
+                            || active.name != "setBreakpoints"
+                            || active.response_ack
+                        {
                             return Err(DapError::InvalidMessage);
                         }
                         active.response_ack = true;
@@ -667,12 +711,14 @@ impl DapSession {
                         {
                             if let Some(control) = self.ci_control.as_mut() {
                                 if control.expected_line.is_none() {
-                                    let reason = obj.get("body")
+                                    let reason = obj
+                                        .get("body")
                                         .and_then(|b| b.get("reason"))
                                         .and_then(Value::as_str);
                                     if control.thread_id != thread_id
                                         || reason != Some("step")
-                                        || control.new_stop {
+                                        || control.new_stop
+                                    {
                                         return Err(DapError::InvalidMessage);
                                     }
                                     control.new_stop = true;
@@ -687,7 +733,9 @@ impl DapSession {
                         self.phase = DapPhase::Ready;
                         self.last_source_candidate = None;
                         #[cfg(feature = "dev046c-ci-control")]
-                        { self.last_stopped_thread = None; }
+                        {
+                            self.last_stopped_thread = None;
+                        }
                         Ok(Some(DapEvent::Continued))
                     }
                     "terminated" | "exited"
@@ -697,7 +745,10 @@ impl DapSession {
                         self.pending.clear();
                         self.last_source_candidate = None;
                         #[cfg(feature = "dev046c-ci-control")]
-                        { self.ci_control = None; self.last_stopped_thread = None; }
+                        {
+                            self.ci_control = None;
+                            self.last_stopped_thread = None;
+                        }
                         Ok(Some(DapEvent::Terminated))
                     }
                     // Outputs and capabilities can contain hostile text/paths.
@@ -884,11 +935,13 @@ mod tests {
         threads.phase = DapPhase::Stopped;
         threads.pending.insert(1, "threads");
         assert_eq!(
-            threads.receive(&framed(json!({
-                "seq": 2, "type": "response", "request_seq": 1,
-                "command": "threads", "success": true,
-                "body": {"threads": []}
-            }))).unwrap_err(),
+            threads
+                .receive(&framed(json!({
+                    "seq": 2, "type": "response", "request_seq": 1,
+                    "command": "threads", "success": true,
+                    "body": {"threads": []}
+                })))
+                .unwrap_err(),
             DapError::InvalidMessage
         );
         assert_eq!(threads.phase(), DapPhase::Quarantined);
@@ -897,52 +950,70 @@ mod tests {
         stack.phase = DapPhase::Stopped;
         stack.pending.insert(1, "stackTrace");
         assert_eq!(
-            stack.receive(&framed(json!({
-                "seq": 3, "type": "response", "request_seq": 1,
-                "command": "stackTrace", "success": true,
-                "body": {"stackFrames": []}
-            }))).unwrap_err(),
+            stack
+                .receive(&framed(json!({
+                    "seq": 3, "type": "response", "request_seq": 1,
+                    "command": "stackTrace", "success": true,
+                    "body": {"stackFrames": []}
+                })))
+                .unwrap_err(),
             DapError::InvalidMessage
         );
         assert_eq!(stack.phase(), DapPhase::Quarantined);
     }
     #[test]
-    fn only_native_sealed_project_path_can_form_project_launch_without_arguments(){
-        let mut session=DapSession::new();
-        session.phase=DapPhase::Ready;
+    fn only_native_sealed_project_path_can_form_project_launch_without_arguments() {
+        let mut session = DapSession::new();
+        session.phase = DapPhase::Ready;
         for input in [
-            "/tmp/malicious","/debug-target/target/debug/../../etc/passwd",
+            "/tmp/malicious",
+            "/debug-target/target/debug/../../etc/passwd",
             "/debug-target/target/debug/other.so",
             "/debug-target/target/debug/evil;sh",
             "/workspace/target/debug/project",
         ] {
-            assert_eq!(session.launch_verified_project(input).unwrap_err(),
-                DapError::InvalidMessage);
+            assert_eq!(
+                session.launch_verified_project(input).unwrap_err(),
+                DapError::InvalidMessage
+            );
         }
-        let wire=session.launch_verified_project(
-            "/debug-target/target/debug/fixture").unwrap();
-        let wire=String::from_utf8(wire).unwrap();
+        let wire = session
+            .launch_verified_project("/debug-target/target/debug/fixture")
+            .unwrap();
+        let wire = String::from_utf8(wire).unwrap();
         assert!(wire.contains("/debug-target/target/debug/fixture"));
         assert!(wire.contains(r#""runInTerminal":false"#));
         assert!(wire.contains(r#""disableSTDIO":true"#));
         assert!(wire.contains(r#""disableASLR":false"#));
-        assert_eq!(session.phase(),DapPhase::Launching);
-        assert_eq!(session.launch_verified_project(
-            "/debug-target/target/debug/fixture").unwrap_err(),
-            DapError::InvalidPhase);
+        assert_eq!(session.phase(), DapPhase::Launching);
+        assert_eq!(
+            session
+                .launch_verified_project("/debug-target/target/debug/fixture")
+                .unwrap_err(),
+            DapError::InvalidPhase
+        );
     }
     #[cfg(windows)]
     #[test]
-    fn native_appcontainer_project_path_can_launch_but_foreign_windows_paths_cannot(){
-        let mut session=DapSession::new();
-        session.phase=DapPhase::Ready;
-        assert_eq!(session.launch_verified_project(
-            r"C:\Windows\System32\cmd.exe").unwrap_err(),DapError::InvalidMessage);
-        assert_eq!(session.launch_verified_project(
-            r"C:\Temp\debug-target\target\debug\..\evil.exe").unwrap_err(),
-            DapError::InvalidMessage);
-        let frame=session.launch_verified_project(
-            r"C:\Users\runner\AppData\Local\Packages\debug-target\target\debug\fixture.exe")
+    fn native_appcontainer_project_path_can_launch_but_foreign_windows_paths_cannot() {
+        let mut session = DapSession::new();
+        session.phase = DapPhase::Ready;
+        assert_eq!(
+            session
+                .launch_verified_project(r"C:\Windows\System32\cmd.exe")
+                .unwrap_err(),
+            DapError::InvalidMessage
+        );
+        assert_eq!(
+            session
+                .launch_verified_project(r"C:\Temp\debug-target\target\debug\..\evil.exe")
+                .unwrap_err(),
+            DapError::InvalidMessage
+        );
+        let frame = session
+            .launch_verified_project(
+                r"C:\Users\runner\AppData\Local\Packages\debug-target\target\debug\fixture.exe",
+            )
             .unwrap();
         assert!(String::from_utf8(frame).unwrap().contains("stopOnEntry"));
     }
@@ -1285,7 +1356,9 @@ mod tests {
         session.phase = DapPhase::Stopped;
         session.last_stopped_thread = Some(7);
         assert!(session.ci_step(7, CiStepKind::Over).is_err());
-        assert!(session.ci_set_breakpoint(r"C:\reviewed\src\main.rs", 5).is_err());
+        assert!(session
+            .ci_set_breakpoint(r"C:\reviewed\src\main.rs", 5)
+            .is_err());
         assert!(session.ci_take_control_observation().is_none());
     }
     #[cfg(feature = "dev046c-ci-control")]
@@ -1294,25 +1367,33 @@ mod tests {
         let mut session = DapSession::new();
         session.phase = DapPhase::Stopped;
         session.last_stopped_thread = Some(7);
-        session.last_source_candidate = Some(candidate_from_dap_frame(&json!({
-            "id": 1, "line": 5, "column": 1,
-            "instructionPointerReference": "0x140001010",
-            "source": {"path": r"C:\reviewed\src\main.rs"}
-        })).unwrap().unwrap());
+        session.last_source_candidate = Some(
+            candidate_from_dap_frame(&json!({
+                "id": 1, "line": 5, "column": 1,
+                "instructionPointerReference": "0x140001010",
+                "source": {"path": r"C:\reviewed\src\main.rs"}
+            }))
+            .unwrap()
+            .unwrap(),
+        );
         let wire = session.ci_step(7, CiStepKind::Over).unwrap();
         assert!(wire.windows(4).any(|w| w == b"next"));
         assert!(session.ci_take_control_observation().is_none());
         // A correlated adapter ACK cannot establish an OS step outcome.
         let seq = session.seq - 1;
-        session.receive(&framed(json!({
-            "seq": 99, "type": "response", "request_seq": seq,
-            "command": "next", "success": true
-        }))).unwrap();
+        session
+            .receive(&framed(json!({
+                "seq": 99, "type": "response", "request_seq": seq,
+                "command": "next", "success": true
+            })))
+            .unwrap();
         assert!(session.ci_take_control_observation().is_none());
-        session.receive(&framed(json!({
-            "seq": 100, "type": "event", "event": "stopped",
-            "body": {"threadId": 7, "reason": "step"}
-        }))).unwrap();
+        session
+            .receive(&framed(json!({
+                "seq": 100, "type": "event", "event": "stopped",
+                "body": {"threadId": 7, "reason": "step"}
+            })))
+            .unwrap();
         let obs = session.ci_take_control_observation().unwrap();
         assert!(obs.response_acknowledged && obs.new_stop_observed && obs.is_step);
         assert!(session.ci_take_control_observation().is_none());
@@ -1324,11 +1405,15 @@ mod tests {
             let mut s = DapSession::new();
             s.phase = DapPhase::Stopped;
             s.last_stopped_thread = Some(7);
-            s.last_source_candidate = Some(candidate_from_dap_frame(&json!({
-                "id": 1, "line": 5, "column": 1,
-                "instructionPointerReference": "0x140001010",
-                "source": {"path": r"C:\reviewed\src\main.rs"}
-            })).unwrap().unwrap());
+            s.last_source_candidate = Some(
+                candidate_from_dap_frame(&json!({
+                    "id": 1, "line": 5, "column": 1,
+                    "instructionPointerReference": "0x140001010",
+                    "source": {"path": r"C:\reviewed\src\main.rs"}
+                }))
+                .unwrap()
+                .unwrap(),
+            );
             s.ci_step(7, CiStepKind::Over).unwrap();
             let bad = framed(json!({
                 "seq": 33, "type": "event", "event": "stopped",
@@ -1353,7 +1438,8 @@ mod tests {
                     "id": 7, "line": 2, "column": 4,
                     "source": {"path": "/trusted/src/main.rs", "sourceReference": 0}
                 }]}
-            }))).unwrap(),
+            })))
+            .unwrap(),
             vec![DapEvent::StackTraceReceived]
         );
         let candidate = s.source_candidate().unwrap();
@@ -1362,7 +1448,10 @@ mod tests {
         assert_eq!(candidate.column, Some(4));
         assert_eq!(candidate.adapter_path, "/trusted/src/main.rs");
         s.stack_trace(1).unwrap();
-        assert!(s.source_candidate().is_none(), "new query must revoke old location");
+        assert!(
+            s.source_candidate().is_none(),
+            "new query must revoke old location"
+        );
     }
 
     #[test]
@@ -1375,7 +1464,8 @@ mod tests {
                 "seq": 2, "type": "response", "request_seq": 1,
                 "command": "stackTrace", "success": true,
                 "body": {"stackFrames": [{"id": 9, "line": 3}]}
-            }))).unwrap(),
+            })))
+            .unwrap(),
             vec![DapEvent::StackTraceReceived]
         );
         assert!(s.source_candidate().is_none());
@@ -1394,7 +1484,8 @@ mod tests {
                     "id": 9, "line": 1,
                     "source": {"path": "/trusted/../other.rs", "sourceReference": 0}
                 }]}
-            }))).unwrap_err(),
+            })))
+            .unwrap_err(),
             DapError::InvalidMessage
         );
         assert_eq!(s.phase(), DapPhase::Quarantined);

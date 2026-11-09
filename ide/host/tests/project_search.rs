@@ -1,8 +1,5 @@
 use lu_ide_workspace::{IdeError, IdeWorkspaceRegistry, NativeDirectoryPicker};
-use std::{
-    fs,
-    path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
 struct Picker(Option<PathBuf>);
 impl NativeDirectoryPicker for Picker {

@@ -49,7 +49,7 @@ test('CI simulated consent and real modal consent remain distinct in audit', () 
 });
 test('breakpoint acknowledgement is not independently verified installation', () => {
   const worker=read('../../supervisor/src/windows_lsp_worker.rs');
-  assert.match(worker, /action\.record_uncertain_result\(/);
+  assert.match(worker, /action\s*\.record_uncertain_result\(/);
   const backend=read('../src-tauri/src/debug_backend.rs');
   assert.match(backend, /audit\.3 != "ResultUncertain"/);
   assert.match(backend, /native_dialog_bp_uncertain/);

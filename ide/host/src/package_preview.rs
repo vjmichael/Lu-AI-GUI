@@ -88,7 +88,9 @@ fn valid_atom(text: &str, max_bytes: usize, first_digit_allowed: bool) -> bool {
     if !(first.is_ascii_alphabetic() || (first_digit_allowed && first.is_ascii_digit())) {
         return false;
     }
-    bytes.iter().all(|b| b.is_ascii_alphanumeric() || matches!(*b, b'-' | b'_' | b'.' | b'+'))
+    bytes
+        .iter()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(*b, b'-' | b'_' | b'.' | b'+'))
         && !text.contains("..")
         && !text.starts_with('-')
         && !text.ends_with('.')
@@ -103,16 +105,22 @@ fn validate(request: &PackagePreviewRequest) -> Result<(), &'static str> {
     }
     match request.operation {
         PackageOperation::Add => {
-            let name = request.package_name.as_deref()
+            let name = request
+                .package_name
+                .as_deref()
                 .ok_or("IDE052_PACKAGE_NAME_REQUIRED")?;
-            let version = request.exact_version.as_deref()
+            let version = request
+                .exact_version
+                .as_deref()
                 .ok_or("IDE052_EXACT_VERSION_REQUIRED")?;
             if !valid_atom(name, 96, true) || !valid_atom(version, 64, true) {
                 return Err("IDE052_PACKAGE_OR_VERSION_UNSAFE");
             }
         }
         PackageOperation::Remove => {
-            let name = request.package_name.as_deref()
+            let name = request
+                .package_name
+                .as_deref()
                 .ok_or("IDE052_PACKAGE_NAME_REQUIRED")?;
             if !valid_atom(name, 96, true) || request.exact_version.is_some() {
                 return Err("IDE052_REMOVE_REQUIREMENT_INVALID");
@@ -126,20 +134,18 @@ fn validate(request: &PackagePreviewRequest) -> Result<(), &'static str> {
     }
     Ok(())
 }
-fn path<'a>(inspection: &'a PackageManagerInspection, name: &str)
-    -> &'a PackageFileEvidence {
-    inspection.evidence.iter()
+fn path<'a>(inspection: &'a PackageManagerInspection, name: &str) -> &'a PackageFileEvidence {
+    inspection
+        .evidence
+        .iter()
         .find(|e| e.relative_path == name)
         .expect("IDE05 fixed evidence path must be present")
 }
-fn selected_manifest(
-    inspection: &PackageManagerInspection, manager: &str,
-) -> &'static str {
+fn selected_manifest(inspection: &PackageManagerInspection, manager: &str) -> &'static str {
     match manager {
         "uv" => "pyproject.toml",
         "vcpkg" => "vcpkg.json",
-        "conan2" if path(inspection, "conanfile.py").sha256.is_some()
-            => "conanfile.py",
+        "conan2" if path(inspection, "conanfile.py").sha256.is_some() => "conanfile.py",
         "conan2" => "conanfile.txt",
         _ => unreachable!("validated manager"),
     }
@@ -159,8 +165,10 @@ fn version_requirement(request: &PackagePreviewRequest) -> Option<String> {
             request.package_name.as_deref().unwrap_or_default(),
             request.exact_version.as_deref().unwrap_or_default(),
         )),
-        PackageOperation::Remove =>
-            request.package_name.as_ref().map(|name| format!("remove:{name}")),
+        PackageOperation::Remove => request
+            .package_name
+            .as_ref()
+            .map(|name| format!("remove:{name}")),
         PackageOperation::Sync => None,
     }
 }
@@ -168,48 +176,64 @@ fn version_requirement(request: &PackagePreviewRequest) -> Option<String> {
 /// version resolver and does not infer the registry baseline or hooks.
 /// The file must still match the SHA from the native registered-root probe.
 fn inspect_vcpkg_direct_declaration(
-    registry: &IdeWorkspaceRegistry, project_id: &str,
-    expected_sha: &str, name: &str,
+    registry: &IdeWorkspaceRegistry,
+    project_id: &str,
+    expected_sha: &str,
+    name: &str,
 ) -> Result<&'static str, &'static str> {
-    let snapshot = registry.preview_source_file(project_id, "vcpkg.json")
+    let snapshot = registry
+        .preview_source_file(project_id, "vcpkg.json")
         .map_err(|_| "IDE052_VCPKG_MANIFEST_UNREADABLE")?;
     if snapshot.project_id != project_id
         || snapshot.relative_path != "vcpkg.json"
-        || snapshot.revision != expected_sha {
+        || snapshot.revision != expected_sha
+    {
         return Err("IDE052_VCPKG_CHANGED_DURING_PREVIEW");
     }
-    let json: serde_json::Value = serde_json::from_str(&snapshot.text)
-        .map_err(|_| "IDE052_VCPKG_JSON_INVALID")?;
-    let object = json.as_object()
-        .ok_or("IDE052_VCPKG_JSON_INVALID")?;
+    let json: serde_json::Value =
+        serde_json::from_str(&snapshot.text).map_err(|_| "IDE052_VCPKG_JSON_INVALID")?;
+    let object = json.as_object().ok_or("IDE052_VCPKG_JSON_INVALID")?;
     let mut found = false;
     if let Some(deps) = object.get("dependencies") {
-        let array = deps.as_array()
+        let array = deps
+            .as_array()
             .ok_or("IDE052_VCPKG_DEPENDENCIES_UNSUPPORTED")?;
-        if array.len() > 4096 { return Err("IDE052_VCPKG_DEPENDENCIES_OVER_LIMIT"); }
+        if array.len() > 4096 {
+            return Err("IDE052_VCPKG_DEPENDENCIES_OVER_LIMIT");
+        }
         for dep in array {
             let declared = if let Some(text) = dep.as_str() {
                 text
             } else if let Some(obj) = dep.as_object() {
-                obj.get("name").and_then(serde_json::Value::as_str)
+                obj.get("name")
+                    .and_then(serde_json::Value::as_str)
                     .ok_or("IDE052_VCPKG_DEPENDENCIES_UNSUPPORTED")?
             } else {
                 return Err("IDE052_VCPKG_DEPENDENCIES_UNSUPPORTED");
             };
             // Treat package identity as literal; no normalization, guessing
             // or fallback to another manager's matching package name.
-            if declared == name { found = true; }
+            if declared == name {
+                found = true;
+            }
         }
     }
-    Ok(if found { "observed_declared" } else { "observed_absent" })
+    Ok(if found {
+        "observed_declared"
+    } else {
+        "observed_absent"
+    })
 }
 fn create_preview(
     registry: &IdeWorkspaceRegistry,
-    project_id: &str, request: PackagePreviewRequest,
+    project_id: &str,
+    request: PackagePreviewRequest,
     inspection: PackageManagerInspection,
 ) -> Result<PackageOperationPreview, &'static str> {
     validate(&request)?;
-    let candidate = inspection.candidates.iter()
+    let candidate = inspection
+        .candidates
+        .iter()
         .find(|c| c.manager_id == request.manager_id)
         .ok_or("IDE052_MANAGER_NOT_SUPPORTED")?;
     // A UI-provided manager ID can SELECT a compatible candidate, not
@@ -252,21 +276,31 @@ fn create_preview(
     let observed_direct_declaration = if request.manager_id == "vcpkg" {
         if let Some(name) = request.package_name.as_deref() {
             inspect_vcpkg_direct_declaration(
-                registry, project_id,
-                manifest.sha256.as_deref().ok_or("IDE052_MANIFEST_NOT_VERIFIED")?,
+                registry,
+                project_id,
+                manifest
+                    .sha256
+                    .as_deref()
+                    .ok_or("IDE052_MANIFEST_NOT_VERIFIED")?,
                 name,
             )?
-        } else { "not_applicable_to_sync" }
-    } else { "not_parsed_by_static_preview" };
+        } else {
+            "not_applicable_to_sync"
+        }
+    } else {
+        "not_parsed_by_static_preview"
+    };
     if request.manager_id != "vcpkg" {
         risks.push("manifest_direct_declaration_not_parsed");
     } else {
         if request.operation == PackageOperation::Add
-            && observed_direct_declaration == "observed_declared" {
+            && observed_direct_declaration == "observed_declared"
+        {
             return Err("IDE052_DEPENDENCY_ALREADY_DECLARED");
         }
         if request.operation == PackageOperation::Remove
-            && observed_direct_declaration == "observed_absent" {
+            && observed_direct_declaration == "observed_absent"
+        {
             return Err("IDE052_DEPENDENCY_NOT_DECLARED");
         }
     }
@@ -303,14 +337,11 @@ fn create_preview(
     hash.update(b"\n");
     hash.update(inspection.fingerprint.as_bytes());
     hash.update(b"\n");
-    hash.update(serde_json::to_vec(&request)
-        .map_err(|_| "IDE052_PREVIEW_SERIALIZATION_FAILED")?);
+    hash.update(serde_json::to_vec(&request).map_err(|_| "IDE052_PREVIEW_SERIALIZATION_FAILED")?);
     hash.update(b"\n");
-    hash.update(serde_json::to_vec(&proposed)
-        .map_err(|_| "IDE052_PREVIEW_SERIALIZATION_FAILED")?);
+    hash.update(serde_json::to_vec(&proposed).map_err(|_| "IDE052_PREVIEW_SERIALIZATION_FAILED")?);
     hash.update(b"\n");
-    hash.update(serde_json::to_vec(&risks)
-        .map_err(|_| "IDE052_PREVIEW_SERIALIZATION_FAILED")?);
+    hash.update(serde_json::to_vec(&risks).map_err(|_| "IDE052_PREVIEW_SERIALIZATION_FAILED")?);
     Ok(PackageOperationPreview {
         schema_version: 1,
         project_id: project_id.to_owned(),
@@ -336,7 +367,9 @@ fn create_preview(
 impl IdeWorkspaceRegistry {
     /// A static preview never creates a grant, even after valid file hashes.
     pub fn preview_package_operation(
-        &self, project_id: &str, request: PackagePreviewRequest,
+        &self,
+        project_id: &str,
+        request: PackagePreviewRequest,
     ) -> Result<PackageOperationPreview, &'static str> {
         validate(&request)?;
         let inspection = self.inspect_package_managers(project_id)?;
@@ -348,15 +381,19 @@ impl IdeWorkspaceRegistry {
     /// The caller cannot claim revalidation by supplying an old inspection.
     /// Matching review evidence still never creates execution authority.
     pub fn revalidate_package_operation(
-        &self, project_id: &str, request: PackagePreviewRequest,
-        expected_preview_sha256: &str, expected_evidence_fingerprint: &str,
+        &self,
+        project_id: &str,
+        request: PackagePreviewRequest,
+        expected_preview_sha256: &str,
+        expected_evidence_fingerprint: &str,
     ) -> Result<PackagePreviewRevalidation, &'static str> {
         if !hex64(expected_preview_sha256) || !hex64(expected_evidence_fingerprint) {
             return Err("IDE052_REVALIDATION_DIGEST_INVALID");
         }
         let fresh = self.preview_package_operation(project_id, request)?;
         if fresh.preview_sha256 != expected_preview_sha256
-            || fresh.evidence_fingerprint != expected_evidence_fingerprint {
+            || fresh.evidence_fingerprint != expected_evidence_fingerprint
+        {
             return Err("IDE052_PREVIEW_STALE_REVIEW_AGAIN");
         }
         Ok(PackagePreviewRevalidation {
@@ -374,7 +411,9 @@ impl IdeWorkspaceRegistry {
     }
 }
 fn hex64(s: &str) -> bool {
-    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 #[cfg(test)]
@@ -390,15 +429,20 @@ mod tests {
     }
     struct Temp(PathBuf);
     impl Drop for Temp {
-        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
     fn fixture() -> (Temp, IdeWorkspaceRegistry, String, PathBuf) {
         let root = std::env::temp_dir().join(format!("ide052-{}", rand::random::<u128>()));
         let project = root.join("picked_project");
         fs::create_dir_all(&project).unwrap();
         let registry = IdeWorkspaceRegistry::open(root.join("catalog.json")).unwrap();
-        let id = registry.register_from_native_picker(&mut Picker(project.clone()))
-            .unwrap().unwrap().project_id;
+        let id = registry
+            .register_from_native_picker(&mut Picker(project.clone()))
+            .unwrap()
+            .unwrap()
+            .project_id;
         (Temp(root), registry, id, project)
     }
     fn request(manager: &str, operation: PackageOperation) -> PackagePreviewRequest {
@@ -408,11 +452,17 @@ mod tests {
             package_name: Some("example-lib".into()),
             exact_version: if operation == PackageOperation::Add {
                 Some("1.2.3".into())
-            } else { None },
+            } else {
+                None
+            },
         }
     }
     fn uv_files(project: &std::path::Path) {
-        fs::write(project.join("pyproject.toml"), b"[project]\nname = 'test'\n").unwrap();
+        fs::write(
+            project.join("pyproject.toml"),
+            b"[project]\nname = 'test'\n",
+        )
+        .unwrap();
         fs::write(project.join("uv.lock"), b"version = 1\n").unwrap();
     }
     #[test]
@@ -424,15 +474,30 @@ mod tests {
         let second = registry.preview_package_operation(&id, r.clone()).unwrap();
         assert_eq!(first.preview_sha256, second.preview_sha256);
         assert_eq!(first.proposed_changes.len(), 2);
-        assert_eq!(first.proposed_changes[0].requested_declaration.as_deref(),
-            Some("example-lib (requested exact version 1.2.3; manifest syntax not computed)"));
-        assert!(!first.ready_for_approval && !first.approval_issued
-            && !first.apply_supported && !first.files_modified);
-        assert!(first.proposed_changes.iter().all(|c| !c.actual_diff_computed
-            && c.expected_result_sha256.is_none() && c.requires_protected_resolver));
-        let verified = registry.revalidate_package_operation(
-            &id, r, &first.preview_sha256, &first.evidence_fingerprint,
-        ).unwrap();
+        assert_eq!(
+            first.proposed_changes[0].requested_declaration.as_deref(),
+            Some("example-lib (requested exact version 1.2.3; manifest syntax not computed)")
+        );
+        assert!(
+            !first.ready_for_approval
+                && !first.approval_issued
+                && !first.apply_supported
+                && !first.files_modified
+        );
+        assert!(first
+            .proposed_changes
+            .iter()
+            .all(|c| !c.actual_diff_computed
+                && c.expected_result_sha256.is_none()
+                && c.requires_protected_resolver));
+        let verified = registry
+            .revalidate_package_operation(
+                &id,
+                r,
+                &first.preview_sha256,
+                &first.evidence_fingerprint,
+            )
+            .unwrap();
         assert!(verified.matched_fresh_native_evidence);
         assert!(!verified.authorization_issued && !verified.ready_for_approval);
     }
@@ -443,32 +508,56 @@ mod tests {
         let r = request("uv", PackageOperation::Add);
         let first = registry.preview_package_operation(&id, r.clone()).unwrap();
         fs::write(path.join("uv.lock"), b"version = 2\n").unwrap();
-        assert!(matches!(registry.revalidate_package_operation(
-            &id, r.clone(), &first.preview_sha256, &first.evidence_fingerprint,
-        ), Err("IDE052_PREVIEW_STALE_REVIEW_AGAIN")));
+        assert!(matches!(
+            registry.revalidate_package_operation(
+                &id,
+                r.clone(),
+                &first.preview_sha256,
+                &first.evidence_fingerprint,
+            ),
+            Err("IDE052_PREVIEW_STALE_REVIEW_AGAIN")
+        ));
         let second = registry.preview_package_operation(&id, r.clone()).unwrap();
         fs::write(path.join("pyproject.toml"), b"[project]\nname='changed'\n").unwrap();
-        assert!(registry.revalidate_package_operation(
-            &id, r, &second.preview_sha256, &second.evidence_fingerprint,
-        ).is_err());
+        assert!(registry
+            .revalidate_package_operation(
+                &id,
+                r,
+                &second.preview_sha256,
+                &second.evidence_fingerprint,
+            )
+            .is_err());
     }
     #[test]
     fn manager_choice_cannot_override_detected_conflict() {
         let (_t, registry, id, path) = fixture();
         fs::write(path.join("vcpkg.json"), b"{\"dependencies\":[]}").unwrap();
-        fs::write(path.join("conanfile.py"), b"raise Exception('execute forbidden')").unwrap();
+        fs::write(
+            path.join("conanfile.py"),
+            b"raise Exception('execute forbidden')",
+        )
+        .unwrap();
         for manager in ["vcpkg", "conan2"] {
-            assert!(matches!(registry.preview_package_operation(
-                &id, request(manager, PackageOperation::Add)
-            ), Err("IDE052_MANAGER_NOT_DETECTED_OR_AMBIGUOUS")));
+            assert!(matches!(
+                registry.preview_package_operation(&id, request(manager, PackageOperation::Add)),
+                Err("IDE052_MANAGER_NOT_DETECTED_OR_AMBIGUOUS")
+            ));
         }
-        assert!(registry.preview_package_operation(
-            &id, request("npm", PackageOperation::Add)).is_err());
+        assert!(registry
+            .preview_package_operation(&id, request("npm", PackageOperation::Add))
+            .is_err());
     }
     #[test]
     fn injection_and_ambiguous_arguments_are_denied() {
-        for name in ["../../ssh", "--help", "foo/bar", "name;rm -rf", "name@evil",
-            "name space", "http://registry"] {
+        for name in [
+            "../../ssh",
+            "--help",
+            "foo/bar",
+            "name;rm -rf",
+            "name@evil",
+            "name space",
+            "http://registry",
+        ] {
             let mut r = request("uv", PackageOperation::Add);
             r.package_name = Some(name.to_owned());
             assert!(validate(&r).is_err(), "{name}");
@@ -493,95 +582,138 @@ mod tests {
     fn operation_changes_identity_and_cannot_be_reused() {
         let (_t, registry, id, path) = fixture();
         uv_files(&path);
-        let added = registry.preview_package_operation(
-            &id, request("uv", PackageOperation::Add)).unwrap();
+        let added = registry
+            .preview_package_operation(&id, request("uv", PackageOperation::Add))
+            .unwrap();
         let removed = request("uv", PackageOperation::Remove);
-        assert!(registry.revalidate_package_operation(
-            &id, removed, &added.preview_sha256, &added.evidence_fingerprint,
-        ).is_err());
+        assert!(registry
+            .revalidate_package_operation(
+                &id,
+                removed,
+                &added.preview_sha256,
+                &added.evidence_fingerprint,
+            )
+            .is_err());
         let mut bad = request("uv", PackageOperation::Add);
         bad.exact_version = Some("2.0".into());
-        assert!(registry.revalidate_package_operation(
-            &id, bad, &added.preview_sha256, &added.evidence_fingerprint,
-        ).is_err());
+        assert!(registry
+            .revalidate_package_operation(
+                &id,
+                bad,
+                &added.preview_sha256,
+                &added.evidence_fingerprint,
+            )
+            .is_err());
     }
     #[test]
     fn manager_binds_only_to_registered_project() {
         let (_t, registry, id, path) = fixture();
         uv_files(&path);
-        assert!(registry.preview_package_operation(
-            "ide-00000000000000000000000000000000",
-            request("uv", PackageOperation::Add),
-        ).is_err());
-        let first=registry.preview_package_operation(
-            &id, request("uv", PackageOperation::Add)).unwrap();
-        assert!(registry.revalidate_package_operation(
-            "ide-00000000000000000000000000000000",
-            request("uv", PackageOperation::Add),
-            &first.preview_sha256, &first.evidence_fingerprint
-        ).is_err());
+        assert!(registry
+            .preview_package_operation(
+                "ide-00000000000000000000000000000000",
+                request("uv", PackageOperation::Add),
+            )
+            .is_err());
+        let first = registry
+            .preview_package_operation(&id, request("uv", PackageOperation::Add))
+            .unwrap();
+        assert!(registry
+            .revalidate_package_operation(
+                "ide-00000000000000000000000000000000",
+                request("uv", PackageOperation::Add),
+                &first.preview_sha256,
+                &first.evidence_fingerprint
+            )
+            .is_err());
     }
 
     #[test]
     fn vcpkg_json_exact_declaration_is_observed_but_no_install_is_approved() {
         let (_t, registry, id, dir) = fixture();
-        fs::write(dir.join("vcpkg.json"),
-            br#"{"name":"test","dependencies":["fmt",{"name":"zlib","features":["core"]}]}"#
-        ).unwrap();
-        let found = registry.preview_package_operation(
-            &id, PackagePreviewRequest {
-                manager_id: "vcpkg".into(), operation: PackageOperation::Remove,
-                package_name: Some("fmt".into()), exact_version: None,
-            },
-        ).unwrap();
-        assert_eq!(found.proposed_changes[0].observed_direct_declaration,
-            "observed_declared");
+        fs::write(
+            dir.join("vcpkg.json"),
+            br#"{"name":"test","dependencies":["fmt",{"name":"zlib","features":["core"]}]}"#,
+        )
+        .unwrap();
+        let found = registry
+            .preview_package_operation(
+                &id,
+                PackagePreviewRequest {
+                    manager_id: "vcpkg".into(),
+                    operation: PackageOperation::Remove,
+                    package_name: Some("fmt".into()),
+                    exact_version: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            found.proposed_changes[0].observed_direct_declaration,
+            "observed_declared"
+        );
         assert!(!found.ready_for_approval);
-        let absent = registry.preview_package_operation(
-            &id, request("vcpkg", PackageOperation::Add),
-        ).unwrap();
-        assert_eq!(absent.proposed_changes[0].observed_direct_declaration,
-            "observed_absent");
+        let absent = registry
+            .preview_package_operation(&id, request("vcpkg", PackageOperation::Add))
+            .unwrap();
+        assert_eq!(
+            absent.proposed_changes[0].observed_direct_declaration,
+            "observed_absent"
+        );
         assert_eq!(absent.proposed_changes[0].expected_result_sha256, None);
     }
 
     #[test]
     fn vcpkg_duplicate_add_and_absent_removal_fail_closed() {
         let (_t, registry, id, dir) = fixture();
-        fs::write(dir.join("vcpkg.json"),
-            br#"{"dependencies":["example-lib"]}"#).unwrap();
-        assert!(matches!(registry.preview_package_operation(
-            &id, request("vcpkg", PackageOperation::Add)
-        ), Err("IDE052_DEPENDENCY_ALREADY_DECLARED")));
+        fs::write(
+            dir.join("vcpkg.json"),
+            br#"{"dependencies":["example-lib"]}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            registry.preview_package_operation(&id, request("vcpkg", PackageOperation::Add)),
+            Err("IDE052_DEPENDENCY_ALREADY_DECLARED")
+        ));
         let mut absent = request("vcpkg", PackageOperation::Remove);
         absent.package_name = Some("unlisted".into());
-        assert!(matches!(registry.preview_package_operation(
-            &id, absent
-        ), Err("IDE052_DEPENDENCY_NOT_DECLARED")));
+        assert!(matches!(
+            registry.preview_package_operation(&id, absent),
+            Err("IDE052_DEPENDENCY_NOT_DECLARED")
+        ));
     }
     #[test]
     fn malformed_vcpkg_fails_closed_without_forged_diff() {
         let (_t, registry, id, dir) = fixture();
         fs::write(dir.join("vcpkg.json"), b"{invalid").unwrap();
-        assert!(matches!(registry.preview_package_operation(
-            &id, request("vcpkg", PackageOperation::Add)),
-            Err("IDE052_VCPKG_JSON_INVALID")));
-        fs::write(dir.join("vcpkg.json"),
-            br#"{"dependencies":["fmt",7]}"#).unwrap();
-        assert!(matches!(registry.preview_package_operation(
-            &id, request("vcpkg", PackageOperation::Add)),
-            Err("IDE052_VCPKG_DEPENDENCIES_UNSUPPORTED")));
+        assert!(matches!(
+            registry.preview_package_operation(&id, request("vcpkg", PackageOperation::Add)),
+            Err("IDE052_VCPKG_JSON_INVALID")
+        ));
+        fs::write(dir.join("vcpkg.json"), br#"{"dependencies":["fmt",7]}"#).unwrap();
+        assert!(matches!(
+            registry.preview_package_operation(&id, request("vcpkg", PackageOperation::Add)),
+            Err("IDE052_VCPKG_DEPENDENCIES_UNSUPPORTED")
+        ));
     }
     #[test]
     fn conan_python_recipe_is_data_only() {
         let (_t, registry, id, path) = fixture();
-        fs::write(path.join("conanfile.py"), b"raise RuntimeError('must_not_run')").unwrap();
+        fs::write(
+            path.join("conanfile.py"),
+            b"raise RuntimeError('must_not_run')",
+        )
+        .unwrap();
         let before = fs::read(path.join("conanfile.py")).unwrap();
-        let preview = registry.preview_package_operation(
-            &id, request("conan2", PackageOperation::Add),
-        ).unwrap();
-        assert!(preview.risks.contains(&"conan_recipe_or_dependencies_may_execute_code"));
-        assert_eq!(preview.proposed_changes[0].target_relative_path, "conanfile.py");
+        let preview = registry
+            .preview_package_operation(&id, request("conan2", PackageOperation::Add))
+            .unwrap();
+        assert!(preview
+            .risks
+            .contains(&"conan_recipe_or_dependencies_may_execute_code"));
+        assert_eq!(
+            preview.proposed_changes[0].target_relative_path,
+            "conanfile.py"
+        );
         assert!(!preview.process_started && !preview.apply_supported);
         assert_eq!(before, fs::read(path.join("conanfile.py")).unwrap());
     }
@@ -597,8 +729,13 @@ mod tests {
         let outside = path.parent().unwrap().join("outside.lock");
         fs::write(&outside, b"secret").unwrap();
         symlink(outside, path.join("uv.lock")).unwrap();
-        assert!(registry.revalidate_package_operation(
-            &id, r, &original.preview_sha256, &original.evidence_fingerprint,
-        ).is_err());
+        assert!(registry
+            .revalidate_package_operation(
+                &id,
+                r,
+                &original.preview_sha256,
+                &original.evidence_fingerprint,
+            )
+            .is_err());
     }
 }

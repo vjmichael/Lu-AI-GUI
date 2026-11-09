@@ -584,8 +584,10 @@ mod tests {
     fn fixed_cargo_build_human_intent_never_grants_worker_authority() {
         let build = recipe("rust_build").unwrap();
         assert_eq!(build.manifest, "Cargo.toml");
-        assert_eq!(build.proposed_action,
-            "cargo build --locked --offline --manifest-path Cargo.toml");
+        assert_eq!(
+            build.proposed_action,
+            "cargo build --locked --offline --manifest-path Cargo.toml"
+        );
         assert!(recipe("npm test").is_none());
         assert!(recipe("cmake --build .").is_none());
     }

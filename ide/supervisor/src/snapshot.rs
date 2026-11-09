@@ -510,7 +510,7 @@ mod tests {
         // pyproject.toml. Without the feature, the recipe is denied.
         let python_result = publish_input(&project, &stage, "python_pytest");
         if cfg!(feature = "multilang-worker") {
-            assert!(matches!(python_result, Err(SnapshotError::Io)));
+            assert!(matches!(python_result, Err(SnapshotError::InvalidSnapshot)));
         } else {
             assert!(matches!(python_result, Err(SnapshotError::InvalidName)));
         }

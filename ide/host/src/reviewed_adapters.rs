@@ -47,8 +47,15 @@ const CMAKE_STEPS: [AdapterStep; 3] = [
     AdapterStep {
         step_id: "cmake_configure_fixed",
         tool_id: "reviewed_cmake_and_ninja_bundle",
-        fixed_args: &["-S", "/workspace", "-B", "/output/build", "-G", "Ninja",
-            "-DCMAKE_BUILD_TYPE=Debug"],
+        fixed_args: &[
+            "-S",
+            "/workspace",
+            "-B",
+            "/output/build",
+            "-G",
+            "Ninja",
+            "-DCMAKE_BUILD_TYPE=Debug",
+        ],
         input_origin: "sealed_workspace_only",
         authority: "contract_only_not_executable",
     },
@@ -120,7 +127,9 @@ pub struct ReviewedAdapterContract {
 
 fn valid_sha256(value: &str) -> bool {
     value.len() == 64
-        && value.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 fn valid_git_head(value: &str) -> bool {
     value.len() == 40 && value.bytes().all(|b| b.is_ascii_hexdigit())
@@ -162,7 +171,8 @@ impl IdeWorkspaceRegistry {
         {
             return Err("DEV03_ADAPTER_REQUIRES_CLEAN_GIT_HEAD");
         }
-        let manifest = self.preview_source_file(project_id, adapter.manifest_path)
+        let manifest = self
+            .preview_source_file(project_id, adapter.manifest_path)
             .map_err(|_| "DEV03_ADAPTER_MANIFEST_UNAVAILABLE")?;
         if manifest.project_id != project_id
             || manifest.relative_path != adapter.manifest_path
@@ -175,12 +185,16 @@ impl IdeWorkspaceRegistry {
         // the one inspected. A later worker would STILL have to seal and recheck
         // its own entire source tree before independent authorization.
         let after = self.inspect_git_worktree(project_id);
-        let rechecked = self.preview_source_file(project_id, adapter.manifest_path)
+        let rechecked = self
+            .preview_source_file(project_id, adapter.manifest_path)
             .map_err(|_| "DEV03_ADAPTER_SOURCE_CHANGED")?;
-        if after.state != before.state || after.worktree != "clean"
+        if after.state != before.state
+            || after.worktree != "clean"
             || after.local_head != before.local_head
-            || after.modified_or_staged_count != 0 || after.untracked_count != 0
-            || after.truncated || rechecked.revision != manifest.revision
+            || after.modified_or_staged_count != 0
+            || after.untracked_count != 0
+            || after.truncated
+            || rechecked.revision != manifest.revision
             || rechecked.project_id != project_id
             || rechecked.relative_path != adapter.manifest_path
         {
@@ -197,7 +211,8 @@ impl IdeWorkspaceRegistry {
             &head,
             adapter.bundle_id,
             adapter.steps,
-        )).map_err(|_| "DEV03_ADAPTER_REVIEW_UNAVAILABLE")?;
+        ))
+        .map_err(|_| "DEV03_ADAPTER_REVIEW_UNAVAILABLE")?;
         let fingerprint = format!("{:x}", Sha256::digest(digest_input));
         Ok(ReviewedAdapterContract {
             schema_version: 1,
@@ -229,18 +244,23 @@ mod tests {
     fn only_three_fixed_restricted_adapter_contracts() {
         assert_eq!(ADAPTERS.len(), 3);
         for adapter in ADAPTERS.iter() {
-            assert!(matches!(adapter.profile_id,
-                "python_pytest" | "js_tests" | "cpp_cmake_build"));
+            assert!(matches!(
+                adapter.profile_id,
+                "python_pytest" | "js_tests" | "cpp_cmake_build"
+            ));
             assert!(!adapter.steps.is_empty());
-            assert!(adapter.steps.iter().all(|step|
-                step.authority == "contract_only_not_executable"));
+            assert!(adapter
+                .steps
+                .iter()
+                .all(|step| step.authority == "contract_only_not_executable"));
         }
         assert!(fixed_adapter("rust_build").is_none());
         assert!(fixed_adapter("npm run build").is_none());
         assert!(fixed_adapter("../../outside").is_none());
         assert!(!PYTHON_STEPS[0].fixed_args.contains(&"-c"));
         assert!(!NODE_STEPS[0].fixed_args.contains(&"-e"));
-        assert!(CMAKE_STEPS.iter().all(|step|
-            !step.fixed_args.contains(&"--install")));
+        assert!(CMAKE_STEPS
+            .iter()
+            .all(|step| !step.fixed_args.contains(&"--install")));
     }
 }

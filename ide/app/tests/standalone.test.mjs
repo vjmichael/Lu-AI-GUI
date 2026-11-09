@@ -50,6 +50,10 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     // Reviewed profile discovery, bounded output, exact debug target review,
     // project debugging and explicit split-layout persistence are native-only.
     'ide_build_read_output', 'ide_debug_run_project',
+    'ide_debug_step_project', 'ide_debug_breakpoint_project',
+    'ide_inspect_package_managers', 'ide_preview_package_operation',
+    'ide_revalidate_package_operation', 'ide_package_run_reviewed_uv',
+    'ide_package_discard_private_output',
     'ide_discover_conventional_tests', 'ide_discover_project_run_profiles',
     'ide_link_task_source', 'ide_review_multilang_adapter',
     'ide_review_project_debug_target', 'ide_workspace_layout_clear',
@@ -322,7 +326,8 @@ test('Wave A2 registry advertises actual host operations without granting execut
     nativeBuildCommands.slice().sort());
   const nativeDebugCommands = [
     'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_run_project',
-    'ide_debug_cancel', 'ide_debug_reconcile'
+    'ide_debug_cancel', 'ide_debug_reconcile',
+    'ide_debug_step_project', 'ide_debug_breakpoint_project'
   ];
   assert.deepEqual(registered.filter(value => value.startsWith('ide_debug_')).sort(),
     nativeDebugCommands.slice().sort());
@@ -332,8 +337,17 @@ test('Wave A2 registry advertises actual host operations without granting execut
   const nativeUiOnlyCommands = [
     'ide_discover_conventional_tests', 'ide_review_project_debug_target',
     'ide_workspace_layout_clear', 'ide_workspace_layout_read',
-    'ide_workspace_layout_save'
+    'ide_workspace_layout_save',
+    // IDE-05.1/05.2 package inspection is UI-only, not Lu capability authority.
+    'ide_inspect_package_managers', 'ide_preview_package_operation',
+    'ide_revalidate_package_operation'
   ];
+  const nativePackageCommands = [
+    // Optional OS-owned package actions are still NOT general Lu capabilities.
+    'ide_package_run_reviewed_uv', 'ide_package_discard_private_output'
+  ];
+  assert.deepEqual(registered.filter(value => nativePackageCommands.includes(value)).sort(),
+    nativePackageCommands.slice().sort());
   assert.deepEqual(
     registered.filter(value => nativeUiOnlyCommands.includes(value)).sort(),
     nativeUiOnlyCommands.slice().sort());
@@ -361,7 +375,8 @@ test('Wave A2 registry advertises actual host operations without granting execut
     value !== 'ide_workflow_verify_native_receipt' &&
     !nativeLspCommands.includes(value) &&
     !nativeBuildCommands.includes(value) && !nativeDebugCommands.includes(value) &&
-    !nativeUiOnlyCommands.includes(value));
+    !nativeUiOnlyCommands.includes(value) &&
+    !nativePackageCommands.includes(value));
   assert.deepEqual(commands.slice().sort(), declared.slice().sort());
   assert.ok(commands.includes('ide_list_language_servers'));
   assert.match(registry, /descriptions_only: true/);

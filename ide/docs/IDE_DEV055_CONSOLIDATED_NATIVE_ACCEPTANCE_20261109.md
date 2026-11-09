@@ -142,3 +142,34 @@ Exact head `0819e880ba184db98d95b3c6af4994128c7033f6`:
 The consolidated current group is the only new intended acceptance
 batch; all still-pending positive protected `uv`, original package
 provenance, human consent, installed-app and Windows ACL gates remain open.
+
+## Native exact-head evidence from run 42709673086 (repair checkpoint)
+
+The first IDE-05.5 task-group repair `ad47cd1` was actually compiled and
+tested on Windows 2022 and Ubuntu 24.04 native GitHub runners in
+https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42709673086 .
+Both runners completed the `native-package-uv` Tauri Cargo compile
+**successfully** after the frontend build prerequisite was fixed.
+The Node focused IDE-05 suite passed; the complete existing frontend
+suite surfaced four stale baseline assertions for recently added
+IDE-05/DEV-04.6D commands and formatting. Host tests uncovered one
+incorrect assumption that an optional `ide/host/Cargo.toml` must
+exist in every project. The protected supervisor unit suite passed 85
+and failed one snapshot fixture expectation: when multilang is
+enabled, a fixed Python recipe is recognized but a project lacking
+pyproject produces `InvalidSnapshot`, not the old assertion's `Io`.
+Cargo fmt's other remaining findings were preexisting host formatting
+drift, not native build failures.
+
+Those concrete issues are repaired in the next exact-head checkpoint;
+the source profile fixture explicitly distinguishes `not_found` and
+no SHA for an absent optional manifest, the supervisor test asserts
+the actual missing-manifest error, the full frontend command catalog
+reflects feature-gated package/LLDB routes **outside Lu capability
+authority**, and the host receives rustfmt-only corrections derived
+from the real native runner diff.
+
+**No Linux protected uv process was run in 42709673086:** its gate
+was skipped because other prerequisite jobs failed. Therefore physical
+human approval, installed package acceptance, recovery, wheel-origin
+attestation and Windows workspace ACLs remain open.

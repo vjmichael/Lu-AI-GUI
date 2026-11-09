@@ -32,8 +32,10 @@ pub struct DebugTargetReview {
 }
 
 fn valid_sha(value: &str, count: usize) -> bool {
-    value.len() == count && value.bytes().all(|byte| byte.is_ascii_hexdigit()
-        && !byte.is_ascii_uppercase())
+    value.len() == count
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 impl IdeWorkspaceRegistry {
     /// Native registered project + exact saved manifest CAS + clean Git.
@@ -53,49 +55,76 @@ impl IdeWorkspaceRegistry {
             .map_err(|_| "DEV041_PROJECT_NOT_ACTIVE")?;
         let before = self.inspect_git_worktree(project_id);
         if before.state != "local_repository_inspected"
-            || before.worktree != "clean" || before.truncated
+            || before.worktree != "clean"
+            || before.truncated
             || before.modified_or_staged_count != 0
             || before.untracked_count != 0
-            || !before.local_head.as_deref().is_some_and(|sha| valid_sha(sha, 40))
+            || !before
+                .local_head
+                .as_deref()
+                .is_some_and(|sha| valid_sha(sha, 40))
         {
             return Err("DEV041_CLEAN_GIT_REQUIRED");
         }
-        let saved = self.preview_source_file(project_id, MANIFEST)
+        let saved = self
+            .preview_source_file(project_id, MANIFEST)
             .map_err(|_| "DEV041_MANIFEST_UNREADABLE")?;
-        if saved.project_id != project_id || saved.relative_path != MANIFEST ||
-            saved.revision != expected_manifest_sha256 {
+        if saved.project_id != project_id
+            || saved.relative_path != MANIFEST
+            || saved.revision != expected_manifest_sha256
+        {
             return Err("DEV041_STALE_MANIFEST");
         }
         let after = self.inspect_git_worktree(project_id);
-        let manifest = self.preview_source_file(project_id, MANIFEST)
+        let manifest = self
+            .preview_source_file(project_id, MANIFEST)
             .map_err(|_| "DEV041_STALE_MANIFEST")?;
-        if after.state != before.state || after.worktree != "clean"
-            || after.local_head != before.local_head || after.truncated
-            || after.modified_or_staged_count != 0 || after.untracked_count != 0
-            || manifest.project_id != project_id || manifest.relative_path != MANIFEST
-            || manifest.revision != saved.revision {
+        if after.state != before.state
+            || after.worktree != "clean"
+            || after.local_head != before.local_head
+            || after.truncated
+            || after.modified_or_staged_count != 0
+            || after.untracked_count != 0
+            || manifest.project_id != project_id
+            || manifest.relative_path != MANIFEST
+            || manifest.revision != saved.revision
+        {
             return Err("DEV041_SOURCE_CHANGED");
         }
         let head = before.local_head.ok_or("DEV041_SOURCE_CHANGED")?;
-        let fingerprint = format!("{:x}",Sha256::digest(
-            serde_json::to_vec(&(
-                "lu.ide.dev04.1.debug_review.v1",
-                project_id, DEBUG_PROFILE, MANIFEST, &saved.revision, &head,
-            )).map_err(|_| "DEV041_REVIEW_UNAVAILABLE")?
-        ));
+        let fingerprint = format!(
+            "{:x}",
+            Sha256::digest(
+                serde_json::to_vec(&(
+                    "lu.ide.dev04.1.debug_review.v1",
+                    project_id,
+                    DEBUG_PROFILE,
+                    MANIFEST,
+                    &saved.revision,
+                    &head,
+                ))
+                .map_err(|_| "DEV041_REVIEW_UNAVAILABLE")?
+            )
+        );
         Ok(DebugTargetReview {
-            schema_version: 1, project_id: project_id.to_owned(),
-            profile_id: DEBUG_PROFILE, manifest_relative_path: MANIFEST,
-            manifest_sha256: saved.revision, clean_git_head: head,
+            schema_version: 1,
+            project_id: project_id.to_owned(),
+            profile_id: DEBUG_PROFILE,
+            manifest_relative_path: MANIFEST,
+            manifest_sha256: saved.revision,
+            clean_git_head: head,
             review_fingerprint: fingerprint,
             source_snapshot_state: "not_sealed",
             build_receipt_state: "no_completed_native_build_bound",
             binary_identity_state: "no_binary_sha_or_provenance",
             debug_symbols_state: "not_attested",
             debugger_adapter_state: "fixed_self_test_only_no_project_target",
-            target_executable: None, source_text_exported: false,
-            binary_executed: false, worker_grant_issued: false,
-            debugger_authorized: false, installed_app_accepted: false,
+            target_executable: None,
+            source_text_exported: false,
+            binary_executed: false,
+            worker_grant_issued: false,
+            debugger_authorized: false,
+            installed_app_accepted: false,
         })
     }
 }

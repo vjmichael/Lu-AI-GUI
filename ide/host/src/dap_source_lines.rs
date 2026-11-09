@@ -45,26 +45,24 @@ pub struct SourceLineReview {
 }
 
 fn valid_absolute_source_path(path: &str) -> bool {
-    if path.is_empty() || path.len() > MAX_PATH_BYTES
-        || path.chars().any(char::is_control)
-    {
+    if path.is_empty() || path.len() > MAX_PATH_BYTES || path.chars().any(char::is_control) {
         return false;
     }
     let bytes = path.as_bytes();
     let unix = path.starts_with('/') && !path.starts_with("//");
-    let windows = bytes.len() >= 4 && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':' && bytes[2] == b'\\';
+    let windows =
+        bytes.len() >= 4 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'\\';
     if !(unix || windows) || path.starts_with("\\\\") {
         return false;
     }
-    !path.split(['/', '\\']).any(|component| component == "." || component == "..")
+    !path
+        .split(['/', '\\'])
+        .any(|component| component == "." || component == "..")
 }
 
 /// Extract only a nonvirtual, local coordinate from an already-correlated
 /// stackTrace frame. No untrusted sourceReference requests are permitted.
-pub fn candidate_from_dap_frame(
-    frame: &Value,
-) -> Result<Option<SourceLineCandidate>, DapError> {
+pub fn candidate_from_dap_frame(frame: &Value) -> Result<Option<SourceLineCandidate>, DapError> {
     let source = match frame.get("source") {
         Some(Value::Object(v)) => v,
         None => return Ok(None),
@@ -84,16 +82,20 @@ pub fn candidate_from_dap_frame(
     if !valid_absolute_source_path(path) {
         return Err(DapError::InvalidMessage);
     }
-    let frame_id = frame.get("id").and_then(Value::as_u64)
+    let frame_id = frame
+        .get("id")
+        .and_then(Value::as_u64)
         .filter(|n| *n > 0 && *n <= MAX_FRAME_ID)
         .ok_or(DapError::InvalidMessage)?;
-    let line = frame.get("line").and_then(Value::as_u64)
+    let line = frame
+        .get("line")
+        .and_then(Value::as_u64)
         .filter(|n| *n > 0 && *n <= MAX_SOURCE_LINE)
         .ok_or(DapError::InvalidMessage)?;
     let column = match frame.get("column") {
         Some(v) => Some(
             u32::try_from(v.as_u64().ok_or(DapError::InvalidMessage)?)
-                .map_err(|_| DapError::InvalidMessage)?
+                .map_err(|_| DapError::InvalidMessage)?,
         ),
         None => None,
     };
@@ -104,15 +106,11 @@ pub fn candidate_from_dap_frame(
         None => None,
         Some(Value::String(v)) => {
             let hex = v.strip_prefix("0x").ok_or(DapError::InvalidMessage)?;
-            if hex.is_empty() || hex.len() > 16
-                || !hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+            if hex.is_empty() || hex.len() > 16 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit())
             {
                 return Err(DapError::InvalidMessage);
             }
-            Some(
-                u64::from_str_radix(hex, 16)
-                    .map_err(|_| DapError::InvalidMessage)?
-            )
+            Some(u64::from_str_radix(hex, 16).map_err(|_| DapError::InvalidMessage)?)
         }
         Some(_) => return Err(DapError::InvalidMessage),
     };
@@ -171,12 +169,17 @@ pub fn review_native_source_line(
         || relative_source.contains('\\')
         || !relative_source.bytes().all(|b| b.is_ascii_graphic())
         || pinned_file_sha256.len() != 64
-        || !pinned_file_sha256.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        || !pinned_file_sha256
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     {
         return Err(DapError::InvalidMessage);
     }
     let relative = Path::new(relative_source);
-    if !relative.components().all(|c| matches!(c, Component::Normal(_))) {
+    if !relative
+        .components()
+        .all(|c| matches!(c, Component::Normal(_)))
+    {
         return Err(DapError::InvalidMessage);
     }
     let mut parent = root.to_path_buf();
@@ -186,8 +189,7 @@ pub fn review_native_source_line(
                 return Err(DapError::InvalidMessage);
             };
             parent.push(part);
-            if !regular_dir(&fs::symlink_metadata(&parent)
-                .map_err(|_| DapError::InvalidMessage)?) {
+            if !regular_dir(&fs::symlink_metadata(&parent).map_err(|_| DapError::InvalidMessage)?) {
                 return Err(DapError::InvalidMessage);
             }
         }
@@ -222,8 +224,7 @@ pub fn review_native_source_line(
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if before.dev() != after.dev() || before.ino() != after.ino()
-            || after.nlink() != 1 {
+        if before.dev() != after.dev() || before.ino() != after.ino() || after.nlink() != 1 {
             return Err(DapError::InvalidMessage);
         }
     }
@@ -260,37 +261,46 @@ mod tests {
         assert_eq!(candidate_from_dap_frame(&valid).unwrap().unwrap().line, 3);
         assert!(candidate_from_dap_frame(
             &json!({"id": 7, "line": 3, "source": {"sourceReference": 99}})
-        ).unwrap().is_none());
-        assert!(candidate_from_dap_frame(
-            &json!({"id": 7, "line": 3})
-        ).unwrap().is_none());
-        for path in ["/project/../private.rs", "//server/source.rs", "src/main.rs",
-                     "/tmp/./main.rs", "/tmp/secret\u{0}name.rs",
-                     r"C:\project\..\other.rs"] {
+        )
+        .unwrap()
+        .is_none());
+        assert!(candidate_from_dap_frame(&json!({"id": 7, "line": 3}))
+            .unwrap()
+            .is_none());
+        for path in [
+            "/project/../private.rs",
+            "//server/source.rs",
+            "src/main.rs",
+            "/tmp/./main.rs",
+            "/tmp/secret\u{0}name.rs",
+            r"C:\project\..\other.rs",
+        ] {
             let forged = json!({"id": 7, "line": 3,
                 "source": {"path": path, "sourceReference": 0}});
-            assert_eq!(candidate_from_dap_frame(&forged),
-                Err(DapError::InvalidMessage));
+            assert_eq!(
+                candidate_from_dap_frame(&forged),
+                Err(DapError::InvalidMessage)
+            );
         }
     }
 
     #[test]
     fn read_only_native_source_digest_and_line_bound_are_both_required() {
-        let root = std::env::temp_dir().join(format!(
-            "dev045d-source-{:032x}", rand::random::<u128>()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("dev045d-source-{:032x}", rand::random::<u128>()));
         fs::create_dir_all(root.join("src")).unwrap();
         let file = root.join("src/main.rs");
         let text = b"fn main() {\n  println!(\"hello\");\n}\n";
         fs::write(&file, text).unwrap();
         let hash = format!("{:x}", Sha256::digest(text));
         let candidate = SourceLineCandidate {
-            frame_id: 8, line: 2, column: Some(3),
+            frame_id: 8,
+            line: 2,
+            column: Some(3),
             adapter_path: file.to_str().unwrap().to_owned(),
             instruction_address: Some(0x401110),
         };
-        let reviewed = review_native_source_line(&root, "src/main.rs", &hash, &candidate)
-            .unwrap();
+        let reviewed = review_native_source_line(&root, "src/main.rs", &hash, &candidate).unwrap();
         assert_eq!(reviewed.relative_source, "src/main.rs");
         assert_eq!(reviewed.line, 2);
         assert!(!reviewed.debug_symbol_line_table_verified);
@@ -302,7 +312,9 @@ mod tests {
         forged.adapter_path = root.join("src/other.rs").display().to_string();
         assert!(review_native_source_line(&root, "src/main.rs", &hash, &forged).is_err());
         assert!(review_native_source_line(&root, "../src/main.rs", &hash, &candidate).is_err());
-        assert!(review_native_source_line(&root, "src/main.rs", &"0".repeat(64), &candidate).is_err());
+        assert!(
+            review_native_source_line(&root, "src/main.rs", &"0".repeat(64), &candidate).is_err()
+        );
         fs::write(&file, b"fn main() { changed }\n").unwrap();
         assert!(review_native_source_line(&root, "src/main.rs", &hash, &candidate).is_err());
         fs::remove_dir_all(root).unwrap();
@@ -312,14 +324,15 @@ mod tests {
     #[test]
     fn symlink_source_is_denied_even_if_both_files_have_identical_bytes() {
         use std::os::unix::fs::symlink;
-        let root = std::env::temp_dir().join(format!(
-            "dev045d-link-{:032x}", rand::random::<u128>()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("dev045d-link-{:032x}", rand::random::<u128>()));
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(root.join("real.rs"), b"fn main() {}\n").unwrap();
         symlink("../real.rs", root.join("src/main.rs")).unwrap();
         let candidate = SourceLineCandidate {
-            frame_id: 1, line: 1, column: None,
+            frame_id: 1,
+            line: 1,
+            column: None,
             adapter_path: root.join("src/main.rs").display().to_string(),
             instruction_address: Some(0x401110),
         };
@@ -336,11 +349,21 @@ mod tests {
         };
         assert_eq!(
             candidate_from_dap_frame(&frame(serde_json::json!("0x401110")))
-                .unwrap().unwrap().instruction_address,
+                .unwrap()
+                .unwrap()
+                .instruction_address,
             Some(0x401110)
         );
-        for bad in ["0", "401110", "0x0", "0x", "0xg", "0x12345678901234567",
-                    "0x123\n45", "0x../src"] {
+        for bad in [
+            "0",
+            "401110",
+            "0x0",
+            "0x",
+            "0xg",
+            "0x12345678901234567",
+            "0x123\n45",
+            "0x../src",
+        ] {
             assert_eq!(
                 candidate_from_dap_frame(&frame(serde_json::json!(bad))),
                 Err(DapError::InvalidMessage)
@@ -352,6 +375,10 @@ mod tests {
         );
         assert!(candidate_from_dap_frame(&serde_json::json!({
             "id": 1, "line": 1, "source": {"path": "/project/src/main.rs"}
-        })).unwrap().unwrap().instruction_address.is_none());
+        }))
+        .unwrap()
+        .unwrap()
+        .instruction_address
+        .is_none());
     }
 }

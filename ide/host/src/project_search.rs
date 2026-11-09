@@ -72,7 +72,9 @@ fn literal_offsets(line: &str, query: &str, case_sensitive: bool) -> Vec<(usize,
         .match_indices(normalized_query.as_str())
         .filter_map(|(start, found)| {
             let end = start + found.len();
-            let first = boundaries.binary_search_by_key(&start, |pair| pair.0).ok()?;
+            let first = boundaries
+                .binary_search_by_key(&start, |pair| pair.0)
+                .ok()?;
             let last = boundaries.binary_search_by_key(&end, |pair| pair.0).ok()?;
             Some((boundaries[first].1, boundaries[last].1))
         })
@@ -262,9 +264,7 @@ impl IdeWorkspaceRegistry {
                             revision: revision.clone(),
                             line: index + 1,
                             column_utf16: line[..found_start].encode_utf16().count() + 1,
-                            match_length_utf16: line[found_start..found_end]
-                                .encode_utf16()
-                                .count(),
+                            match_length_utf16: line[found_start..found_end].encode_utf16().count(),
                             from_byte: (line_start_byte + found_start) as u64,
                             to_byte: (line_start_byte + found_end) as u64,
                             preview: excerpt(line, found_start, found_end),

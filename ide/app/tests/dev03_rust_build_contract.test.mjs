@@ -19,7 +19,9 @@ test('new Cargo build recipe is a fixed exact plan, never arbitrary command',()=
   assert.match(host,/value\.memory_limit_bytes <= MAX_MEMORY_BYTES/);
   assert.match(host,/value\.runtime_limit_ms <= MAX_RUNTIME_MS/);
   assert.match(host,/build\.recipe_id = "cargo build --release"/);
-  assert.match(host,/build\.recipe_id = "python_pytest"/);
+  assert.match(host,/for recipe in \["python_pytest", "js_tests", "cpp_cmake_build"\]/);
+  assert.match(host,/validate_plan\(&build\), cfg!\(feature = "multilang-worker"\)/);
+  assert.match(host,/build\.recipe_id = "sh -c echo bad"/);
 });
 
 test('new build freezes project source via same sealed manifest snapshot',()=>{

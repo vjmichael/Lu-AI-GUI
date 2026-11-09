@@ -40,8 +40,10 @@ pub struct WorkspaceLayout {
 }
 
 fn checked_layout(layout: &WorkspaceLayout) -> Result<()> {
-    if layout.schema_version != SCHEMA || !wire::valid_project_id(&layout.project_id)
-        || layout.files.is_empty() || layout.files.len() > MAX_FILES
+    if layout.schema_version != SCHEMA
+        || !wire::valid_project_id(&layout.project_id)
+        || layout.files.is_empty()
+        || layout.files.len() > MAX_FILES
         || layout.tab_window_start >= MAX_FILES
     {
         return Err("B9_INVALID_LAYOUT");
@@ -51,7 +53,10 @@ fn checked_layout(layout: &WorkspaceLayout) -> Result<()> {
         if file.relative_path.len() > MAX_PATH
             || validate_relative(&file.relative_path, false).is_err()
             || file.saved_revision.len() != 64
-            || !file.saved_revision.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            || !file
+                .saved_revision
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
             || !paths.insert(file.relative_path.as_str())
         {
             return Err("B9_INVALID_FILE_IDENTITY");
@@ -118,8 +123,7 @@ fn private_dir(path: &Path) -> Result<()> {
 fn safe_record(path: &Path) -> Result<Option<u64>> {
     match fs::symlink_metadata(path) {
         Ok(meta) => {
-            if !meta.is_file() || meta.file_type().is_symlink()
-                || meta.len() > MAX_RECORD_BYTES {
+            if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > MAX_RECORD_BYTES {
                 return Err("B9_UNTRUSTED_RECORD");
             }
             #[cfg(windows)]
@@ -144,7 +148,10 @@ pub struct WorkspaceLayoutStore {
 impl WorkspaceLayoutStore {
     pub fn open(root: PathBuf) -> Result<Self> {
         private_dir(&root)?;
-        Ok(Self { root, lock: Mutex::new(()) })
+        Ok(Self {
+            root,
+            lock: Mutex::new(()),
+        })
     }
 
     fn file(&self, project_id: &str) -> Result<PathBuf> {
@@ -155,12 +162,15 @@ impl WorkspaceLayoutStore {
         Ok(self.root.join(format!("{project_id}.json")))
     }
 
-    pub fn read(&self, registry: &IdeWorkspaceRegistry, project_id: &str)
-        -> Result<Option<WorkspaceLayout>>
-    {
+    pub fn read(
+        &self,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+    ) -> Result<Option<WorkspaceLayout>> {
         // A stored project ID is merely a hint: the native registered catalog
         // must still show it as actively open before we reveal navigation.
-        registry.source_capability(project_id)
+        registry
+            .source_capability(project_id)
             .map_err(|_| "B9_PROJECT_NOT_OPEN")?;
         let _gate = self.lock.lock().map_err(|_| "B9_STORAGE_UNAVAILABLE")?;
         let path = self.file(project_id)?;
@@ -168,9 +178,11 @@ impl WorkspaceLayoutStore {
             return Ok(None);
         }
         let mut bytes = Vec::new();
-        File::open(&path).map_err(|_| "B9_STORAGE_UNAVAILABLE")?
+        File::open(&path)
+            .map_err(|_| "B9_STORAGE_UNAVAILABLE")?
             .take(MAX_RECORD_BYTES + 1)
-            .read_to_end(&mut bytes).map_err(|_| "B9_STORAGE_UNAVAILABLE")?;
+            .read_to_end(&mut bytes)
+            .map_err(|_| "B9_STORAGE_UNAVAILABLE")?;
         let layout: WorkspaceLayout =
             serde_json::from_slice(&bytes).map_err(|_| "B9_UNTRUSTED_RECORD")?;
         checked_layout(&layout).map_err(|_| "B9_UNTRUSTED_RECORD")?;
@@ -180,15 +192,17 @@ impl WorkspaceLayoutStore {
         Ok(Some(layout))
     }
 
-    pub fn save(&self, registry: &IdeWorkspaceRegistry,
-        layout: WorkspaceLayout) -> Result<WorkspaceLayout>
-    {
+    pub fn save(
+        &self,
+        registry: &IdeWorkspaceRegistry,
+        layout: WorkspaceLayout,
+    ) -> Result<WorkspaceLayout> {
         checked_layout(&layout)?;
         // Verify each saved revision using the host's existing cap-std source
         // browser. Paths never become arbitrary OS paths or new permissions.
         for file in &layout.files {
-            let source = registry.preview_source_file(
-                &layout.project_id, &file.relative_path)
+            let source = registry
+                .preview_source_file(&layout.project_id, &file.relative_path)
                 .map_err(|_| "B9_SOURCE_UNAVAILABLE")?;
             if source.revision != file.saved_revision {
                 return Err("B9_SOURCE_CHANGED");
@@ -203,7 +217,9 @@ impl WorkspaceLayoutStore {
         safe_record(&path)?;
         let mut random = OsRng;
         let nonce = random.next_u64();
-        let temp = self.root.join(format!(".b9-{}-{nonce:016x}.tmp", std::process::id()));
+        let temp = self
+            .root
+            .join(format!(".b9-{}-{nonce:016x}.tmp", std::process::id()));
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -221,7 +237,8 @@ impl WorkspaceLayoutStore {
             safe_record(&path)?;
             fs::rename(&temp, &path).map_err(|_| "B9_WRITE_FAILED")?;
             #[cfg(unix)]
-            File::open(&self.root).and_then(|dir| dir.sync_all())
+            File::open(&self.root)
+                .and_then(|dir| dir.sync_all())
                 .map_err(|_| "B9_WRITE_FAILED")?;
             Ok(())
         })();
@@ -240,15 +257,15 @@ impl WorkspaceLayoutStore {
         }
         fs::remove_file(&path).map_err(|_| "B9_STORAGE_UNAVAILABLE")?;
         #[cfg(unix)]
-        File::open(&self.root).and_then(|dir| dir.sync_all())
+        File::open(&self.root)
+            .and_then(|dir| dir.sync_all())
             .map_err(|_| "B9_STORAGE_UNAVAILABLE")?;
         Ok(true)
     }
 
-    pub fn clear(&self, registry: &IdeWorkspaceRegistry, project_id: &str)
-        -> Result<bool>
-    {
-        registry.source_capability(project_id)
+    pub fn clear(&self, registry: &IdeWorkspaceRegistry, project_id: &str) -> Result<bool> {
+        registry
+            .source_capability(project_id)
             .map_err(|_| "B9_PROJECT_NOT_OPEN")?;
         self.remove_record(project_id)
     }
@@ -256,12 +273,17 @@ impl WorkspaceLayoutStore {
     /// Called only by the native unregister command BEFORE removing a
     /// known catalog entry. Closed registered projects are eligible too.
     /// Never touch their source folders or the separate B2 draft vault.
-    pub fn purge_for_unregister(&self, registry: &IdeWorkspaceRegistry,
-        project_id: &str) -> Result<bool>
-    {
+    pub fn purge_for_unregister(
+        &self,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+    ) -> Result<bool> {
         if !wire::valid_project_id(project_id)
-            || !registry.projects().map_err(|_| "B9_PROJECT_NOT_REGISTERED")?
-                .iter().any(|item| item.project_id == project_id)
+            || !registry
+                .projects()
+                .map_err(|_| "B9_PROJECT_NOT_REGISTERED")?
+                .iter()
+                .any(|item| item.project_id == project_id)
         {
             return Err("B9_PROJECT_NOT_REGISTERED");
         }
@@ -314,10 +336,13 @@ mod tests {
     #[test]
     fn tab_budget_and_untrusted_extra_fields_denied() {
         let mut value = sample();
-        value.files = (0..49).map(|i| RememberedSource {
-            relative_path: format!("src/file{i}.rs"),
-            saved_revision: "b".repeat(64), was_dirty: false,
-        }).collect();
+        value.files = (0..49)
+            .map(|i| RememberedSource {
+                relative_path: format!("src/file{i}.rs"),
+                saved_revision: "b".repeat(64),
+                was_dirty: false,
+            })
+            .collect();
         assert!(checked_layout(&value).is_err());
         let mut json = serde_json::to_value(sample()).unwrap();
         json["sourceText"] = serde_json::json!("sensitive");
