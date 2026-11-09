@@ -820,6 +820,32 @@ async fn ide_package_run_reviewed_uv(
     }
 }
 
+/// IDE-05.4: user-confirmed discard ONLY of private, completed package
+/// output under the native fixed app-profile root. No project paths,
+/// deletion flags, or worker grants are accepted. Prepared-only cleanup
+/// receipts remain pending on host crash, never auto-replayed.
+#[tauri::command]
+async fn ide_package_discard_private_output(
+    app: AppHandle,
+    project_id: String,
+    job_id: String,
+) -> Result<String, String> {
+    #[cfg(all(feature = "native-package-uv", any(windows, target_os = "linux")))]
+    {
+        let runtime=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("IDE054_PACKAGE_LIFECYCLE_HOST_UNAVAILABLE")?;
+        let runtime=Arc::clone(runtime.inner());
+        return tauri::async_runtime::spawn_blocking(move || {
+            runtime.discard_package_private_output(&app,&project_id,&job_id)
+        }).await.map_err(|_|"IDE054_PRIVATE_DISCARD_TASK_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(feature = "native-package-uv", any(windows, target_os = "linux"))))]
+    {
+        let _=(app,project_id,job_id);
+        Err("IDE054_PRIVATE_PACKAGE_DISCARD_NOT_INSTALLED".into())
+    }
+}
+
 #[tauri::command]
 async fn ide_build_start(
     app: AppHandle,
@@ -1685,6 +1711,7 @@ pub fn run() {
             ide_build_read_output,
             ide_build_start,
             ide_package_run_reviewed_uv,
+            ide_package_discard_private_output,
             ide_build_cancel,
             ide_build_reconcile,
             ide_debug_status,

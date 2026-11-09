@@ -225,3 +225,35 @@ human approval, crash/recovery and installed tests remain OPEN.
 No mini-CI jobs dispatched; consolidate after IDE-05.4/05.5.
 See `ide/docs/IDE_DEV053_PROTECTED_PACKAGE_ADMISSION_20261109.md`.
 DEV-04.6D debugger native acceptance is a separate open gate.
+
+
+### 2026-11-09 — IDE-05.4 private package artifacts, origin boundaries and durable cleanup
+
+IDE-05 workstream adds a separate feature-gated native read-only
+PEP 376 RECORD / METADATA / WHEEL / License-File verifier for the
+full private uv output tree, with exact per-file SHA-256/base64,
+size, `uv.lock` package version and license evidence, source
+manifest/lock revalidation before/after protected execution and
+a mandatory **pre-execution locked registry-wheel source-policy
+check**. No actual wheel archive or registry provenance is certified;
+local RECORD evidence is independent local integrity only, not
+upstream authenticity. `approvedForProjectPromotion=false` always.
+General Add/Remove/Conan/vcpkg/networked workers remain disabled.
+
+A separate fsynced, hash-chained package lifecycle journal is prepared
+BEFORE D3 worker admission, records a native-joined local-audit or
+blocked result, and preserves pending cleanup across restarts. The
+native human-approved scoped discard checks original D3 terminal
+OS reconciliation and complete private output hash before cleanup.
+No package can be re-executed from historical review or a cleanup
+receipt; the registered project is never a package write target.
+Normal virtualenv symlinks and unsupported license metadata are
+currently conservatively denied, not silently accepted.
+
+Rust fixture/negative tests and Node source-boundary tests are
+authored, **not executed**. Native Linux uv, Windows ACL, real
+wheel-origin SHA, fail-injection, compiler/runtime and installed
+acceptance are OPEN. No per-file CI dispatch; consolidate tests
+at end of IDE-05 task group. Refer to
+`ide/docs/IDE_DEV054_PACKAGE_OUTPUT_PROVENANCE_RECOVERY_20261109.md`.
+DEV-04.6D native LLDB installed acceptance remains separately open.

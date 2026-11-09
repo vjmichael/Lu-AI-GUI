@@ -6,7 +6,7 @@ use crate::SupervisorError;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
-    fs::{self, File},
+    fs::{self, OpenOptions},
     io::Read,
     path::{Component, Path},
 };
@@ -79,7 +79,17 @@ fn hash_regular_file(path: &Path, expected_size: u64) -> Result<String, Supervis
     if before.len() != expected_size {
         return Err(denied());
     }
-    let mut reader = File::open(path).map_err(|_| denied())?;
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(0x20000); // O_NOFOLLOW
+    }
+    #[cfg(windows)] {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    let mut reader = options.open(path).map_err(|_| denied())?;
     let opened = reader.metadata().map_err(|_| denied())?;
     if !opened.is_file() || opened.len() != expected_size {
         return Err(denied());
@@ -107,6 +117,19 @@ fn hash_regular_file(path: &Path, expected_size: u64) -> Result<String, Supervis
 /// directory AFTER verified kernel descendant cleanup and terminal receipt.
 /// This is a bounded, advisory host readback; not an OS sandbox witness.
 pub fn audit_published_output(root: &Path) -> Result<OutputWitness, SupervisorError> {
+    audit_output_internal(root, false)
+}
+
+/// Private native-only exact inventory for a post-termination dependency
+/// verifier. Never serialize its unbounded list into WebView. Identical
+/// checked hash/path/budget rules as the existing advisory 96-file view.
+#[cfg(feature = "package-uv-worker")]
+pub(crate) fn audit_complete_package_output(root: &Path)
+    -> Result<OutputWitness, SupervisorError> {
+    audit_output_internal(root, true)
+}
+fn audit_output_internal(root: &Path, retain_all: bool)
+    -> Result<OutputWitness, SupervisorError> {
     if !root.is_absolute() {
         return Err(denied());
     }
@@ -179,8 +202,8 @@ pub fn audit_published_output(root: &Path) -> Result<OutputWitness, SupervisorEr
         hasher.update([0]);
     }
     let count = files.len();
-    let truncated = count > MAX_VISIBLE;
-    files.truncate(MAX_VISIBLE);
+    let truncated = !retain_all && count > MAX_VISIBLE;
+    if !retain_all { files.truncate(MAX_VISIBLE); }
     Ok(OutputWitness {
         tree_sha256: format!("{:x}", hasher.finalize()),
         file_count: count,

@@ -1996,6 +1996,7 @@ dependencies = [
 name = "lu-ide-execution-supervisor"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "cap-fs-ext",
  "cap-std 4.0.3",
  "libc",
@@ -2004,6 +2005,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "toml 0.8.2",
  "windows-sys 0.61.2",
 ]
 

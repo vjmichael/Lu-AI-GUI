@@ -756,7 +756,7 @@ fn command_for(
                 "bin/uv.exe",
                 "pyproject.toml",
                 format!(
-                    "sync --offline --locked --no-build --no-install-workspace --no-dev --no-config --no-python-downloads --python \"{}\"",
+                    "sync --offline --locked --no-build --no-install-workspace --no-default-groups --no-dev --no-sources --link-mode copy --no-config --no-python-downloads --python \"{}\"",
                     tools.join("bin/python.exe").display(),
                 ),
             ),

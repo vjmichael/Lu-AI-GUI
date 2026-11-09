@@ -648,7 +648,8 @@ fn command_for(
             }
             cmd.arg("/runtime/bin/uv").args([
                 "sync", "--offline", "--locked", "--no-build",
-                "--no-install-workspace", "--no-dev", "--no-config",
+                "--no-install-workspace", "--no-default-groups", "--no-dev",
+                "--no-sources", "--link-mode", "copy", "--no-config",
                 "--no-python-downloads", "--python", "/runtime/bin/python3",
             ]);
         }

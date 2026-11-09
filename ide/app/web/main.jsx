@@ -1087,13 +1087,46 @@ function App() {
       setPackageRunResult(result);
       // Completed Job is not proof packages are in the registered project:
       // the entire private /output artifact remains separately auditable.
-      setHint(result.phase==='completed' && result.nativeExitCode===0 &&
-        result.artifactManifestSha256 && !result.requiresReconciliation ?
-        'Protected offline uv Sync finished with a native terminal receipt and private output evidence. No registered project environment was installed.' :
-        'Protected package run did not establish an accepted environment. Inspect the terminal and OS recovery receipts.');
+      setHint(result.packageOutputAudit?.recordHashesVerified === true &&
+        result.packageOutputAudit?.licenseFilesVerified === true &&
+        result.packageOutputAudit?.packageVersionsMatchLock === true &&
+        result.packageOutputAudit?.approvedForProjectPromotion === false ?
+        'Private Python artifact bytes, RECORD hashes, license files and locked versions were audited. Wheel origin and deployment remain unverified.' :
+        'Package artifacts are unverified or blocked. Check the original native journal and private-output cleanup status; no project deployment occurred.');
     }catch(error){
       if(activeProjectIdRef.current===projectId)
         setProblem('Offline package operation denied or interrupted: '+String(error));
+    }finally{
+      setPackageRunBusy(false);
+      if(activeProjectIdRef.current===projectId)
+        await refreshProtectedBuildStatus();
+    }
+  }
+
+  async function discardProtectedPackageOutput(entry) {
+    const projectId=activeProject?.projectId;
+    if(!projectId || entry?.projectId!==projectId ||
+       !entry?.jobId || packageRunBusy || buildBusy ||
+       buildStatus?.current ||
+       !['verified_local_bytes_private_not_promoted',
+         'original_package_job_requires_native_reconciliation',
+         'private_output_cleanup_pending'].includes(entry.state))return;
+    setPackageRunBusy(true);
+    setProblem('');
+    try {
+      // Only the original native job ID is passed. No disk path, file
+      // pattern, grant or manager argument crosses the WebView boundary.
+      const result=await invoke('ide_package_discard_private_output',{
+        projectId,jobId:entry.jobId,
+      });
+      if(activeProjectIdRef.current===projectId &&
+         result==='IDE054_PRIVATE_PACKAGE_OUTPUT_DISCARDED_NO_PROJECT_MUTATION') {
+        setHint('Private package environment discarded with an append-only cleanup receipt. Original project unchanged; no package manager was relaunched.');
+        setPackageRunResult(null);
+      }
+    }catch(error){
+      if(activeProjectIdRef.current===projectId)
+        setProblem('Private package cleanup denied or remains pending: '+String(error));
     }finally{
       setPackageRunBusy(false);
       if(activeProjectIdRef.current===projectId)
@@ -4421,9 +4454,73 @@ function App() {
                   <p>Private artifact evidence:
                     {' '}{packageRunResult.artifactEvidenceState.replaceAll('_',' ')}
                     · Digest: {packageRunResult.artifactManifestSha256 || 'Unverified'}</p>
+                  <p>IDE-05.4 package audit:
+                    {' '}{packageRunResult.packageAuditState?.replaceAll('_',' ') || 'not available'}</p>
+                  <p>Original project manifest/lock unchanged after worker:
+                    {' '}{String(packageRunResult.postrunOriginalManifestLockUnchanged===true)}
+                    {' '}· Project package deployment: not performed</p>
+                  {packageRunResult.packageOutputAudit &&
+                    <div className="continuityDocument">
+                      <p>Local RECORD bytes verified:
+                        {' '}{String(packageRunResult.packageOutputAudit.recordHashesVerified)}
+                        {' '}· License files verified:
+                        {' '}{String(packageRunResult.packageOutputAudit.licenseFilesVerified)}
+                        {' '}· Locked package versions:
+                        {' '}{String(packageRunResult.packageOutputAudit.packageVersionsMatchLock)}</p>
+                      <p>Wheel-archive origin verified:
+                        {' '}{String(packageRunResult.packageOutputAudit.wheelArchivesVerifiedAgainstLock)}
+                        {' '}· Project promotion permitted:
+                        {' '}{String(packageRunResult.packageOutputAudit.approvedForProjectPromotion)}</p>
+                      <p>Evidence digest:
+                        {' '}<code>{packageRunResult.packageOutputAudit.digestSha256}</code></p>
+                      {packageRunResult.packageOutputAudit.installed.map(dist=>
+                        <article className="continuityEvent" key={dist.name}>
+                          <strong>{dist.name} · {dist.version}</strong>
+                          <p>License declaration: {dist.licenseExpression}
+                            {' '}· Hashed license files: {dist.verifiedLicenseFileCount}
+                            {' '}· Manifest-listed files: {dist.recordedFileCount}</p>
+                          <p>Origin declaration wheel hashes: {dist.lockRegistryWheelHashCount}
+                            {' '}· Actual wheel archive verified:
+                            {' '}{String(dist.actualWheelArchiveSha256Verified)}</p>
+                        </article>)}
+                    </div>}
                   <p>No packages were installed into the registered project;
                     a completed worker is not signed installed acceptance.</p>
                 </article>}
+              {Array.isArray(buildStatus?.packageAudits) &&
+                buildStatus.packageAudits.filter(row=>
+                  row.projectId===activeProject?.projectId).map(row=>
+                  <article className="continuityEvent" key={row.jobId}
+                    aria-label="Durable package audit and disposal receipt">
+                    <strong>Durable private package status:
+                      {' '}{row.state.replaceAll('_',' ')}</strong>
+                    <p>Job: <code>{row.jobId}</code> · Plan:
+                      {' '}<code>{row.planSha256}</code></p>
+                    <p>Original terminal:
+                      {' '}<code>{row.terminalReceiptSha256}</code></p>
+                    <p>Private tree SHA-256:
+                      {' '}<code>{row.outputTreeSha256}</code></p>
+                    {row.auditSha256 && <p>Local artifact audit:
+                      {' '}<code>{row.auditSha256}</code></p>}
+                    <p>May reexecute: {String(row.mayExecuteOrRetryWorker)}
+                      {' '}· Installed into project: {String(row.installedIntoProject)}</p>
+                    {['verified_local_bytes_private_not_promoted',
+                      'original_package_job_requires_native_reconciliation',
+                      'private_output_cleanup_pending'].includes(row.state) &&
+                      <button className="ghostBtn" type="button"
+                        disabled={packageRunBusy || buildBusy || !!buildStatus?.current}
+                        onClick={()=>void discardProtectedPackageOutput(row)}>
+                        {row.requiresExplicitPrivateCleanup ?
+                          'Resume verified private cleanup with fresh OS consent' :
+                          row.state==='original_package_job_requires_native_reconciliation' ?
+                            'After OS terminal verification, discard unverified private output' :
+                            'Request OS approval to discard this private environment'}
+                      </button>}
+                    {row.state==='private_output_audit_blocked' &&
+                      <p role="status">Private output blocked: no promotion or
+                        automatic destructive recovery. Inspect protected
+                        native evidence before OS-managed disposal.</p>}
+                  </article>)}
             <div className="sectionHeading">
               <h2>Multi-project release review</h2>
               <span>WO9 · Native Git and artifact inspection</span>

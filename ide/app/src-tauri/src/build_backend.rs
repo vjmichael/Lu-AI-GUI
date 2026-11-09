@@ -14,6 +14,13 @@ use std::{
     },
 };
 use lu_ide_workspace::IdeWorkspaceRegistry;
+#[cfg(feature = "native-package-uv")]
+use lu_ide_execution_supervisor::{
+    package_output_evidence::{
+        audit_uv_private_output, verify_offline_registry_lock, PackageOutputAudit,
+    },
+    package_lifecycle::{PackageLifecycleLedger, PackageLifecycleStatus},
+};
 use lu_ide_execution_supervisor::{
     snapshot::{publish_input, verify_input},
     live_output::{LiveOutput, OutputPage},
@@ -340,6 +347,12 @@ pub struct BuildRunView {
     pub timed_out: bool,
     pub requires_reconciliation: bool,
     pub installed_app_accepted: bool,
+    #[cfg(feature = "native-package-uv")]
+    pub package_output_audit: Option<PackageOutputAudit>,
+    #[cfg(feature = "native-package-uv")]
+    pub package_audit_state: &'static str,
+    #[cfg(feature = "native-package-uv")]
+    pub postrun_original_manifest_lock_unchanged: bool,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -363,6 +376,8 @@ pub struct BuildStatus {
     // Persisted supervisor journal; unlike recent, survives a host restart.
     journal: Vec<RecoveryView>,
     quarantined: Vec<RecoveryView>,
+    #[cfg(feature = "native-package-uv")]
+    package_audits: Vec<PackageLifecycleStatus>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -392,6 +407,8 @@ pub struct NativeBuildRuntime {
     staged: PathBuf,
     outputs: PathBuf,
     debug_targets: PathBuf,
+    #[cfg(feature = "native-package-uv")]
+    package_lifecycle: PackageLifecycleLedger,
     store: Mutex<Store>,
 }
 impl NativeBuildRuntime {
@@ -411,11 +428,16 @@ impl NativeBuildRuntime {
         }
         let supervisor = Supervisor::open(data.join("build-job-receipts.jsonl"))
             .map_err(|e| e.code().to_owned())?;
+        #[cfg(feature = "native-package-uv")]
+        let package_lifecycle = PackageLifecycleLedger::open(data.clone())
+            .map_err(|e| e.code().to_owned())?;
         Ok(Self {
             supervisor: Arc::new(supervisor),
             staged,
             outputs,
             debug_targets,
+            #[cfg(feature = "native-package-uv")]
+            package_lifecycle,
             store: Mutex::new(Store {
                 current: None,
                 recent: BTreeMap::new(),
@@ -491,6 +513,33 @@ impl NativeBuildRuntime {
                 requires_reconciliation: job.requires_reconciliation,
             }).collect();
         journal.reverse();
+        #[cfg(feature = "native-package-uv")]
+        let package_audits:Vec<PackageLifecycleStatus> = self.package_lifecycle.statuses()
+            .map_err(|e| e.code().to_owned())?
+            .into_iter().filter(|row| row.project_id == project_id).collect();
+        #[cfg(feature = "native-package-uv")]
+        for row in &package_audits {
+            // Never project a separate audit log as native OS success by
+            // itself. Join to the independently replayed D3 supervisor
+            // journal using exact project, job, plan and terminal receipt.
+            let original=self.supervisor.inspect()
+                .map_err(|e| e.code().to_owned())?
+                .into_iter().find(|job|job.job_id==row.job_id)
+                .ok_or("IDE054_ORIGINAL_D3_JOB_MISSING")?;
+            if original.project_id!=row.project_id ||
+                original.plan_sha256!=row.plan_sha256 {
+                return Err("IDE054_AUDIT_JOURNAL_SCOPE_MISMATCH".into());
+            }
+            let history=self.supervisor.receipt_history(&row.job_id)
+                .map_err(|e| e.code().to_owned())?;
+            if row.state!="original_package_job_requires_native_reconciliation"
+                && !history.iter().any(|entry|
+                    entry.entry_hash == row.terminal_receipt_sha256 &&
+                    entry.body.project_id == row.project_id &&
+                    entry.body.plan_sha256 == row.plan_sha256) {
+                return Err("IDE054_AUDIT_TERMINAL_RECEIPT_UNVERIFIED".into());
+            }
+        }
         Ok(BuildStatus {
             ready: availability.is_ok(),
             multilang_ready,
@@ -505,6 +554,8 @@ impl NativeBuildRuntime {
             recent,
             journal,
             quarantined,
+            #[cfg(feature = "native-package-uv")]
+            package_audits,
         })
     }
     /// Read only the existing protected WO6 supervisor's durable OS journal.
@@ -748,6 +799,11 @@ impl NativeBuildRuntime {
                 || sha256_private_staged_file(&input.root, "uv.lock")? != lock {
                 return Err("IDE053_FROZEN_SOURCE_DIFFERS_FROM_APPROVED_REVIEW".into());
             }
+            // IDE-05.4: preflight all frozen uv.lock package entries BEFORE
+            // worker admission. A postrun provenance audit is not enough
+            // if editable/Git/path sources can run their build backend.
+            verify_offline_registry_lock(&input.root,lock)
+                .map_err(|_|"IDE054_FROZEN_LOCK_SOURCE_POLICY_DENIED")?;
         }
         let plan = JobPlan {
             project_id: project_id.to_owned(),
@@ -775,6 +831,15 @@ impl NativeBuildRuntime {
         };
         let prepared = self.supervisor.prepare(plan.clone())
             .map_err(|e| e.code().to_owned())?;
+        #[cfg(feature = "native-package-uv")]
+        if recipe_id == "uv_sync_offline" {
+            // Persist this identity before possible human approval, OS job
+            // creation or worker launch. Restart shows unresolved prep if
+            // postrun audit was interrupted, never auto-retry.
+            self.package_lifecycle.record_prepared(
+                project_id, &prepared.job_id, &prepared.plan_sha256,
+            ).map_err(|e|e.code().to_owned())?;
+        }
         {
             let mut state = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
             let active = state.current.as_mut().ok_or("BUILD_HOST_UNAVAILABLE")?;
@@ -963,6 +1028,63 @@ impl NativeBuildRuntime {
         } else {
             None
         };
+        // IDE-05.4: a separate local-artifact audit is performed only
+        // AFTER the original supervisor has a terminal receipt and its OS
+        // process tree has been verified gone. A signed-off wheel origin
+        // is intentionally NOT inferred from metadata/lock declarations.
+        #[cfg(feature = "native-package-uv")]
+        let (package_output_audit, package_audit_state,
+            postrun_original_manifest_lock_unchanged) =
+            if recipe_id == "uv_sync_offline" {
+                let reviewed = native_package_review.as_ref();
+                let lock_sha = reviewed.and_then(|review| review.evidence.iter()
+                    .find(|row| row.relative_path == "uv.lock"))
+                    .and_then(|row| row.sha256.as_deref());
+                #[cfg(windows)]
+                let package_output_root = &native.output_root;
+                #[cfg(target_os = "linux")]
+                let package_output_root = &native.output_directory;
+                let original_manifests_unchanged =
+                    reviewed.is_some_and(|value|
+                        registry.revalidate_package_operation(
+                            project_id, value.request.clone(),
+                            &value.preview_sha256, &value.evidence_fingerprint,
+                        ).is_ok())
+                    && verify_input(&input).is_ok();
+                let trusted_terminal =
+                    native.summary.phase == JobPhase::Completed
+                    && !evidence.requires_reconciliation
+                    && exit_code == Some(0)
+                    && published.is_some();
+                let audit = if trusted_terminal
+                    && original_manifests_unchanged
+                {
+                    lock_sha.and_then(|lock| {
+                        audit_uv_private_output(
+                            package_output_root, &input.root,
+                            &input.seal.manifest_sha256, lock,
+                        ).ok()
+                    }).filter(|proof| published.as_ref().is_some_and(|output|
+                        output.tree_sha256 == proof.output_tree_sha256))
+                } else { None };
+                let lifecycle_tree = published.as_ref().map(|value|
+                    value.tree_sha256.as_str()).unwrap_or(
+                        "0000000000000000000000000000000000000000000000000000000000000000");
+                // The append-only audit event is fsynced before returning a
+                // successful host result. A corrupt or unavailable journal
+                // can never silently certify private package contents.
+                self.package_lifecycle.record_audit(
+                    project_id, &prepared.job_id, &prepared.plan_sha256,
+                    &evidence.terminal_receipt_hash,
+                    lifecycle_tree, audit.as_ref().map(|proof|proof.digest_sha256.as_str()),
+                ).map_err(|e|e.code().to_owned())?;
+                let state = if audit.is_some() {
+                    "verified_local_bytes_origin_unproven_private_only"
+                } else {
+                    "private_output_blocked_no_promotion"
+                };
+                (audit, state, original_manifests_unchanged)
+            } else { (None,"not_a_package_job",false) };
         // DEV-04.2: host-only exact worker output root, never a WebView path.
         // Post-completion candidate requires native zero exit, unquarantined
         // exact plan receipt and the independently hashed output witness.
@@ -1069,8 +1191,199 @@ impl NativeBuildRuntime {
             // A native worker reply is NOT independently installed-app
             // acceptance, especially on a WO4/WO5 stacked unaccepted branch.
             installed_app_accepted: false,
+            #[cfg(feature = "native-package-uv")]
+            package_output_audit,
+            #[cfg(feature = "native-package-uv")]
+            package_audit_state,
+            #[cfg(feature = "native-package-uv")]
+            postrun_original_manifest_lock_unchanged,
         })
     }
+    /// IDE-05.4: rollback means destroying ONLY the private, quarantinable
+    /// package output, never changing the original project. Both a terminal
+    /// D3 OS receipt and a durable local audit record must match the exact
+    /// Job/plan. A crash after discard_prepared leaves pending cleanup.
+    /// Reopening never retries work or erases files automatically.
+    #[cfg(feature = "native-package-uv")]
+    pub fn discard_package_private_output(
+        &self, app:&AppHandle, project_id:&str, job_id:&str,
+    ) -> Result<String,String> {
+        if self.store.lock().map_err(|_|"IDE054_HOST_UNAVAILABLE")?
+            .current.is_some() {
+            return Err("IDE054_JOB_ACTIVE_CANNOT_DISCARD".into());
+        }
+        if job_id.len()!=36 || !job_id.starts_with("job-")
+            || !job_id[4..].bytes().all(|b|b.is_ascii_hexdigit()) {
+            return Err("IDE054_JOB_ID_INVALID".into());
+        }
+        let statuses=self.package_lifecycle.statuses()
+            .map_err(|e|e.code().to_owned())?;
+        let previous=statuses.iter().find(|row|
+            row.job_id==job_id && row.project_id==project_id
+        ).ok_or("IDE054_PACKAGE_RECEIPT_MISSING")?;
+        if !matches!(previous.state,
+            "verified_local_bytes_private_not_promoted"|
+            "original_package_job_requires_native_reconciliation"|
+            "private_output_cleanup_pending") {
+            return Err("IDE054_CLEANUP_NOT_VERIFIABLE".into());
+        }
+        let expected_plan=previous.plan_sha256.clone();
+        let verify_terminal=||->Result<(),String>{
+            let receipt=self.supervisor.inspect()
+                .map_err(|e|e.code().to_owned())?
+                .into_iter().find(|job|job.job_id==job_id)
+                .ok_or("IDE054_ORIGINAL_SUPERVISOR_JOB_MISSING")?;
+            if receipt.project_id!=project_id ||
+                receipt.plan_sha256!=expected_plan ||
+                receipt.requires_reconciliation ||
+                !(if previous.audit_sha256.is_some() {
+                    receipt.phase == JobPhase::Completed
+                } else {
+                    matches!(receipt.phase,
+                        JobPhase::Completed|JobPhase::Failed|JobPhase::Cancelled)
+                }) {
+                return Err("IDE054_OS_CLEANUP_NOT_VERIFIED".into());
+            }
+            Ok(())
+        };
+        verify_terminal()?;
+        let confirmed=app.dialog()
+            .message(format!(
+                "Permanently discard ONLY the private offline uv environment \
+                for job {job_id}?\n\nOriginal project: {project_id}\n\
+                Plan SHA-256: {expected_plan}\n\
+                This does not remove or install packages in the project. \
+                No package manager is relaunched.\n\
+                A durable cleanup-intent record is written first; incomplete \
+                removal remains pending after restart."
+            ))
+            .title("Discard one protected package output")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Discard this private output".into(),"Leave private output".into(),
+            )).blocking_show();
+        if !confirmed {return Err("IDE054_PRIVATE_DISCARD_DECLINED".into());}
+        verify_terminal()?;
+        let fresh=self.package_lifecycle.statuses()
+            .map_err(|e|e.code().to_owned())?
+            .into_iter().find(|row|
+                row.job_id==job_id && row.project_id==project_id &&
+                row.plan_sha256==expected_plan
+            ).ok_or("IDE054_PRIVATE_DISCARD_RECEIPT_CHANGED")?;
+        let pending=fresh.state=="private_output_cleanup_pending";
+        let unresolved=fresh.state=="original_package_job_requires_native_reconciliation";
+        if !pending && !unresolved
+            && fresh.state!="verified_local_bytes_private_not_promoted" {
+            return Err("IDE054_PRIVATE_DISCARD_TRANSITION_DENIED".into());
+        }
+        // Do not canonicalize an attacker-swapped output-parent symlink
+        // and then accidentally delete under its external destination.
+        let original_parent=fs::symlink_metadata(&self.outputs)
+            .map_err(|_|"IDE054_PRIVATE_OUTPUT_PARENT_UNAVAILABLE")?;
+        if !original_parent.is_dir() ||
+            original_parent.file_type().is_symlink() {
+            return Err("IDE054_PRIVATE_OUTPUT_PARENT_UNSAFE".into());
+        }
+        #[cfg(windows)]{
+            use std::os::windows::fs::MetadataExt;
+            if original_parent.file_attributes() & 0x400 != 0 {
+                return Err("IDE054_PRIVATE_OUTPUT_PARENT_UNSAFE".into());
+            }
+        }
+        let parent=fs::canonicalize(&self.outputs)
+            .map_err(|_|"IDE054_PRIVATE_OUTPUT_PARENT_UNAVAILABLE")?;
+        let meta=fs::symlink_metadata(&parent)
+            .map_err(|_|"IDE054_PRIVATE_OUTPUT_PARENT_UNAVAILABLE")?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            return Err("IDE054_PRIVATE_OUTPUT_PARENT_UNSAFE".into());
+        }
+        #[cfg(windows)]{
+            use std::os::windows::fs::MetadataExt;
+            if meta.file_attributes() & 0x400 != 0 {
+                return Err("IDE054_PRIVATE_OUTPUT_PARENT_UNSAFE".into());
+            }
+        }
+        let output=parent.join(job_id);
+        let present=match fs::symlink_metadata(&output){
+            Ok(meta)=>{
+                if !meta.is_dir()||meta.file_type().is_symlink(){
+                    return Err("IDE054_PRIVATE_OUTPUT_NOT_DIRECTORY".into());
+                }
+                #[cfg(windows)]{
+                    use std::os::windows::fs::MetadataExt;
+                    if meta.file_attributes() & 0x400 != 0 {
+                        return Err("IDE054_PRIVATE_OUTPUT_REPARSE_DENIED".into());
+                    }
+                }
+                true
+            }
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>false,
+            Err(_)=>return Err("IDE054_PRIVATE_OUTPUT_UNREADABLE".into()),
+        };
+        if !present && !pending && !unresolved {
+            return Err("IDE054_OUTPUT_MISSING_BEFORE_PREPARE".into());
+        }
+        let mut observed_tree =
+            "0000000000000000000000000000000000000000000000000000000000000000"
+                .to_owned();
+        if present {
+            let canonical=fs::canonicalize(&output)
+                .map_err(|_|"IDE054_PRIVATE_OUTPUT_UNREADABLE")?;
+            if canonical.parent()!=Some(parent.as_path()){
+                return Err("IDE054_PRIVATE_OUTPUT_SCOPE_MISMATCH".into());
+            }
+            let manifest=audit_published_output(&output)
+                .map_err(|_|"IDE054_UNSAFE_PRIVATE_TREE_NOT_REMOVED")?;
+            observed_tree=manifest.tree_sha256;
+            if !unresolved && observed_tree!=fresh.output_tree_sha256 {
+                return Err("IDE054_OUTPUT_CHANGED_NOT_REMOVED".into());
+            }
+        }
+        if unresolved {
+            // A host crash before postrun audit cannot promote the output.
+            // It MAY be cleaned after independent D3 terminal verification,
+            // a fresh human consent, and bounded native private-tree scan.
+            let history=self.supervisor.receipt_history(job_id)
+                .map_err(|e|e.code().to_owned())?;
+            let terminal=history.last().ok_or("IDE054_D3_TERMINAL_MISSING")?;
+            if terminal.body.project_id!=project_id ||
+                terminal.body.plan_sha256!=expected_plan ||
+                !matches!(terminal.body.phase,
+                    JobPhase::Completed|JobPhase::Failed|JobPhase::Cancelled) {
+                return Err("IDE054_D3_TERMINAL_NOT_VERIFIED".into());
+            }
+            self.package_lifecycle.prepare_unverified_discard(
+                &fresh,&terminal.entry_hash,&observed_tree,
+            ).map_err(|e|e.code().to_owned())?;
+        } else if !pending {
+            self.package_lifecycle.prepare_discard(&fresh)
+                .map_err(|e|e.code().to_owned())?;
+        }
+        // If a crash occurs here, a new human-approved attempt checks the
+        // *same* OS job, journal and remaining private directory. A partially
+        // removed directory with changed hash remains blocked: no success
+        // claim and no untrusted recursive traversal workaround.
+        if present {
+            fs::remove_dir_all(&output)
+                .map_err(|_|"IDE054_REMOVE_FAILED_CLEANUP_PENDING")?;
+        }
+        if fs::symlink_metadata(&output).is_ok(){
+            return Err("IDE054_OUTPUT_STILL_PRESENT_CLEANUP_PENDING".into());
+        }
+        #[cfg(unix)]{
+            File::open(&parent)
+                .and_then(|file|file.sync_all())
+                .map_err(|_|"IDE054_PARENT_FSYNC_FAILED_CLEANUP_PENDING")?;
+        }
+        let pending_identity=self.package_lifecycle.statuses()
+            .map_err(|e|e.code().to_owned())?.into_iter()
+            .find(|row|row.job_id==job_id && row.project_id==project_id
+                && row.state=="private_output_cleanup_pending")
+            .ok_or("IDE054_PENDING_DISCARD_RECEIPT_MISSING")?;
+        self.package_lifecycle.verify_discard(&pending_identity)
+            .map_err(|e|e.code().to_owned())?;
+        Ok("IDE054_PRIVATE_PACKAGE_OUTPUT_DISCARDED_NO_PROJECT_MUTATION".into())
+    }
+
     /// Never automatically resumes a crashed job. The user must explicitly
     /// request kernel cleanup with an authenticated native service/cgroup.
     pub fn reconcile(

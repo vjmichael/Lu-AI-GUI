@@ -95,3 +95,25 @@ an automatically applied package environment. See
 Next: IDE-05.4 independent installed-output checking, license and
 source provenance, effect diff, fail-closed rollback/recovery, then
 one consolidated Windows/Linux and installed validation group.
+
+
+## IDE-05.4 local artifact evidence and durable private rollback (2026-11-09)
+
+The fixed uv Sync worker now has a second independent, **read-only**
+output verifier: full bounded tree hashes, installed PEP 376 RECORD
+sha256/size checks, exact `uv.lock` name/version match, actual hashed
+PEP 639 license files and verified original source/lock effects.
+Its pre-admission frozen lock check denies Git/path/editable/direct
+sources and missing registry wheel hashes. A registry URL or RECORD
+claim does NOT prove a wheel's upstream origin; all project-promote
+and actual wheel-archive provenance fields remain **false**.
+
+A separate hash-chained, fsynced `package_prepared ->
+audit_local_complete|audit_blocked -> discard_prepared ->
+discard_verified` lifecycle records unresolved work BEFORE OS
+launch, survives restart and supports fresh human-approved private-only
+output disposal after independent D3 terminal/cgroup/Job evidence.
+Incomplete cleanup remains pending, never automatically resumed.
+Windows package execution is still denied; no user project environment
+is installed. This is source-complete pending native acceptance.
+See [IDE-05.4](IDE_DEV054_PACKAGE_OUTPUT_PROVENANCE_RECOVERY_20261109.md).
