@@ -26,6 +26,7 @@ mod windows_cap_tree;
 mod windows_null_device;
 pub mod wo6_build_test_evidence;
 pub mod wo6_output_evidence;
+pub mod debug_binary_witness;
 // The SCM-only recovery service must never compile into a plain D7C
 // windows-worker build: its per-job NUL lease requires a separately
 // installed and authenticated protected service identity.
