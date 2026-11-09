@@ -12,6 +12,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         linux_worker::{execute_linux_worker_with_output, installed_toolchain_digest, RunCancellation},
         live_output::LiveOutput,
         snapshot::publish_input,
+        debug_binary_witness::audit_debug_binary_candidate,
+        wo6_output_evidence::audit_published_output,
         JobPhase, JobPlan, Supervisor,
     };
     use std::os::unix::fs::PermissionsExt;
@@ -27,8 +29,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (recipe, cancel) = match mode {
         [one] if one == "--check" => ("rust_check", false),
         [one] if one == "--test" => ("rust_tests", false),
+        [one] if one == "--build" => ("rust_build", false),
         [one] if one == "--cancel" => ("rust_tests", true),
-        _ => return Err("DENIED: only fixed --check / --test / --cancel allowed".into()),
+        _ => return Err("DENIED: only fixed --check / --test / --build / --cancel allowed".into()),
     };
     let root = env::temp_dir().join(format!(
         "lu-ide-wo6-cargo-{}-{}",
@@ -145,6 +148,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if !cancel && actual.exit_code != Some(0) {
         return Err("DENIED: native contained Cargo recipe returned failed result".into());
+    }
+    if !cancel && recipe == "rust_build" {
+        // This is a real kernel-confined, offline Cargo build, not a mocked
+        // file or an arbitrary project-supplied executable selector.
+        let output_witness=audit_published_output(&actual.output_directory)
+            .map_err(|_|"DENIED: real completed Cargo output audit failed")?;
+        let candidate=audit_debug_binary_candidate(&actual.output_directory,&output_witness)
+            .map_err(|_|"DENIED: real completed Cargo binary readback changed")?
+            .ok_or("DENIED: real Cargo build had no unique executable")?;
+        let receipt=supervisor.review_build_test_evidence(
+            &prepared.job_id,&plan.project_id,&prepared.plan_sha256,&plan.source_head)
+            .map_err(|_|"DENIED: completed rust_build receipt review rejected")?;
+        if receipt.recipe_id!="rust_build" || receipt.requires_reconciliation ||
+           receipt.terminal_receipt_hash.len()!=64 ||
+           candidate.output_tree_sha256!=output_witness.tree_sha256 ||
+           candidate.debugger_execution_authorized {
+            return Err("DENIED: real Cargo binary not bound to terminal supervisor".into());
+        }
+        eprintln!("DEV042_LINUX_CGROUP_REAL_BUILD_BINARY=PASS hash={} receipt={}",
+            candidate.binary_sha256,receipt.terminal_receipt_hash);
     }
     if cancel && actual.summary.phase != JobPhase::Cancelled {
         return Err("DENIED: requested native process-tree kill missing".into());
