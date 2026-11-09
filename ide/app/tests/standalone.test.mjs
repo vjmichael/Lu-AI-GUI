@@ -455,9 +455,12 @@ test('Wave A2 typed request keys match actual Rust Tauri argument names', () => 
     const signature = native.match(new RegExp('async fn ' + command + '\\(([\\s\\S]*?)\\) ->'));
     assert.ok(signature, id + ': missing native function');
     const parameters = signature[1].split(/\r?\n/)
-      .map(line => line.match(/^\s*([a-z_][a-z0-9_]*):\s*.+/))
-      .filter(Boolean).map(match => match[1])
-      .filter(name => !['app', 'state', 'registry', 'coordinator', 'inbox', 'ledger', 'snapshots', 'intents', 'vault'].includes(name))
+      .map(line => line.match(/^\s*([a-z_][a-z0-9_]*):\s*(.+?),?\s*$/))
+      .filter(Boolean)
+      // Injected Rust State and AppHandle are host resources, not WebView
+      // request fields. Determine this by native TYPE, not a stale name list.
+      .filter(match => match[1] !== 'app' && !match[2].startsWith('State<'))
+      .map(match => match[1])
       .map(name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()))
       .sort();
     const typed = Object.keys(schemas.operations[id].request.properties).sort();
