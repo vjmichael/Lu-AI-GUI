@@ -23,11 +23,11 @@ function validNativeResult(r, projectId, record) {
     r.jobId === record.jobId && r.planSha256 === record.planSha256 &&
     r.phase === record.phase && terminal.has(r.phase) &&
     r.requiresReconciliation === false &&
-    RECIPES.has(r.recipeId) && SHA.test(r.sourceHead) === false &&
+    RECIPES.has(r.recipeId) &&
     // Source HEAD is exactly a Git SHA-1 (40 hex); do not accept 64 hex.
     /^[a-f0-9]{40}$/.test(r.sourceHead) &&
     r.installedAppAccepted === false &&
-    Number.isInteger(r.nativeExitCode ?? 0));
+    (r.nativeExitCode === null || Number.isInteger(r.nativeExitCode)));
 }
 
 /**
