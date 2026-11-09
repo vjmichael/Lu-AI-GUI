@@ -1,0 +1,69 @@
+name: IDE DEV03B protected job output streaming
+on:
+  push:
+    branches: [ide/dev03b-protected-output-streams-20261108]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-dev03b-output-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-compile-and-regressions:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Native Linux Tauri headers
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Exact-head phase and streamed output shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node --test ide/app/tests/job_progress.test.mjs ide/app/tests/native_build_output.test.mjs
+      - name: Native host and supervisor
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --all-targets --locked
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cargo test --manifest-path ide/supervisor/Cargo.toml --features windows-worker,protected-recovery-service,multilang-worker --all-targets --locked
+          else
+            cargo test --manifest-path ide/supervisor/Cargo.toml --features linux-worker,multilang-worker --all-targets --locked
+          fi
+      - name: Tauri native protected build command contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --all-targets --locked
+          echo DEV03B_INSTALLED_PROTECTED_GUI_E2E=OPEN
+      - name: Explicit evidence limitations
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .dev03b-evidence
+          printf 'sha=%s\nos=%s\nrun=%s\nreal_job_stream_e2e=OPEN\nprocess_tree_cancel_e2e=OPEN\ninstalled_gui_e2e=OPEN\n' "$GITHUB_SHA" "$RUNNER_OS" "$GITHUB_RUN_ID" > .dev03b-evidence/receipt.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-dev03b-source-native-${{ matrix.os }}
+          path: .dev03b-evidence/receipt.txt
+          if-no-files-found: error
+          retention-days: 14
