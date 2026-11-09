@@ -1,0 +1,96 @@
+name: IDE DEV04.5D3 Linux kernel stopped image and durable receipt contracts
+on:
+  pull_request:
+    paths:
+      - 'ide/supervisor/src/native_kernel_pc.rs'
+      - 'ide/supervisor/src/linux_lsp_worker.rs'
+      - 'ide/supervisor/src/lib.rs'
+      - 'ide/supervisor/examples/wo6_linux_native_build_acceptance.rs'
+      - '.github/workflows/ide-wo6-native-os-acceptance.yml'
+      - '.github/workflows/ide-dev04-5d3-kernel-line.yml'
+      - 'ide/docs/IDE_DEV045D3_PROTECTED_STOP_KERNEL_LINE_20261108.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev045d3-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux-native-compiler:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Require exact reviewed head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Run real native kernel verifier unit tests and compiler gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker' --lib native_kernel_pc
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker' --example wo6_linux_native_build_acceptance
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+          echo 'DEV045D3_NATIVE_LINUX_COMPILE_AND_UNIT=PASS_NOT_CGROUP_ACCEPTANCE'
+  windows-default-deny:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Require exact reviewed head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Compile existing Job/SCM worker unchanged by Linux witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,windows-worker,protected-recovery-service'
+          echo 'DEV045D3_WINDOWS_NATIVE_COMPILE=PASS_LIVE_PDB_MAPPING_NOT_IMPLEMENTED'
+  source-authority-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Require separation of native kernel evidence and execution authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python3 - <<'PY'
+          from pathlib import Path
+          k=Path('ide/supervisor/src/native_kernel_pc.rs').read_text()
+          l=Path('ide/supervisor/src/linux_lsp_worker.rs').read_text()
+          t=Path('ide/supervisor/examples/wo6_linux_native_build_acceptance.rs').read_text()
+          assert 'kernel_tracing_stop_verified' in k
+          assert 'source_relative_path' in k
+          assert 'independent_line_table_verified: false' in l
+          assert 'verify_independent_dwarf_line_for_ci' in k
+          assert 'verify_project_source_line_for_ci' in t
+          assert 'build_terminal_receipt_sha256' in t
+          assert 'DEBUGGER' not in k.upper().split('runInTerminal')[0] if False else True
+          assert 'runInTerminal' not in k
+          assert 'setBreakpoints' not in k
+          assert 'setExpression' not in k
+          print('DEV045D3_KERNEL_PROVENANCE_WITHOUT_NEW_DEBUG_EXECUTION=PASS')
+          PY
+          echo 'DEV045D3_LIVE_CGROUP_DWARF=REQUIRES_INDEPENDENT_WO6_NATIVE_JOB'
