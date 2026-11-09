@@ -35,6 +35,7 @@ import { languageServiceCapabilities, languageMethodAvailable } from './lsp_lang
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 import { belongsToSelectedProject } from './job_render_guard.js';
 import { ingestJobProgress, visibleJobProgress } from './job_progress.js';
+import { acceptNativeOutput } from './native_build_output.js';
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
@@ -179,6 +180,10 @@ function App() {
   const [buildCancelBusy, setBuildCancelBusy] = useState(false);
   const [buildResult, setBuildResult] = useState(null);
   const [jobProgressEvents, setJobProgressEvents] = useState([]);
+  const [nativeJobOutput,setNativeJobOutput] = useState(null);
+  const nativeOutputCursor = useRef({projectId:null,jobId:null,sequence:0});
+  const nativeOutputPending = useRef(false);
+  const nativeJobOutputRef = useRef(null);
   const buildStatusRequest = useRef(0);
   const [debugStatus, setDebugStatus] = useState(null);
   const [debugBusy, setDebugBusy] = useState(false);
@@ -497,6 +502,41 @@ function App() {
             setBuildStatus(value);
             setJobProgressEvents(previous =>
               ingestJobProgress(previous, projectId, value));
+            // A job ID originates only in the native broker status.
+            // Never pass a path, stream label or executable from the WebView.
+            const jobId = value.current?.projectId === projectId
+              ? value.current?.jobId : null;
+            if (jobId && !nativeOutputPending.current) {
+              const cursor=nativeOutputCursor.current;
+              const after=cursor.projectId===projectId &&
+                cursor.jobId===jobId ? cursor.sequence : 0;
+              nativeOutputPending.current=true;
+              try {
+                const page=await invoke('ide_build_read_output',
+                  {projectId,jobId,after});
+                if (alive && activeProjectIdRef.current===projectId) {
+                  const latest=nativeOutputCursor.current;
+                  if (latest.projectId!==projectId ||
+                      latest.jobId!==jobId || latest.sequence===after) {
+                    const next=acceptNativeOutput(
+                      latest.projectId===projectId && latest.jobId===jobId
+                        ? nativeJobOutputRef.current : null,
+                      projectId,jobId,page);
+                    if (next) {
+                      nativeOutputCursor.current={projectId,jobId,
+                        sequence:next.lastSequence};
+                      nativeJobOutputRef.current=next;
+                      setNativeJobOutput(next);
+                    }
+                  }
+                }
+              } catch {
+                // Status and cancellation remain authoritative even when
+                // live output transport is temporarily unavailable.
+              } finally {
+                nativeOutputPending.current=false;
+              }
+            }
           }
       } catch {
         if (alive && activeProjectIdRef.current === projectId)
@@ -3253,6 +3293,28 @@ function App() {
                   {buildCancelBusy ? 'Requesting cancellation…' : 'Cancel and verify process-tree termination'}
                 </button>
               </>}
+              <section className="continuityDocument"
+                aria-label="Protected worker live stdout and stderr">
+                <h4>DEV-03.3B · Live protected worker output</h4>
+                <p>Bounded untrusted process text from the native worker.
+                  Linux preserves stdout/stderr identity; Windows currently
+                  provides a combined diagnostics stream. Live output is not
+                  a completed-job receipt or proof of kernel cleanup.</p>
+                {nativeJobOutput?.projectId===activeProject?.projectId &&
+                  nativeJobOutput.chunks.length > 0
+                  ? <>
+                    {nativeJobOutput.truncated &&
+                      <p role="status">Earlier output truncated to the bounded
+                        in-memory window.</p>}
+                    <pre aria-label="Untrusted worker output"
+                      style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+                        maxHeight:'20rem',overflow:'auto'}}>
+                      {nativeJobOutput.chunks.map(chunk=>
+                        '['+chunk.stream+'] '+chunk.text).join('')}
+                    </pre>
+                  </>
+                  : <p>No native worker output has been observed for this project.</p>}
+              </section>
               <section aria-label="DEV-03.3 live native job phase timeline"
                 className="continuityDocument">
                 <h4>DEV-03.3 · Live protected job progress</h4>
