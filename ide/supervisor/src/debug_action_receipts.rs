@@ -578,8 +578,55 @@ mod tests {
         a.decide(NativeConsentMarker::for_unit_test(&p, &c, 7, 503, true),
             7, 503).unwrap();
         assert_eq!(a.verify_reopened_audit().unwrap(), "Approved");
-        fs::write(a.journal_path_for_audit(), b"tampered\n").unwrap();
-        assert_eq!(a.verify_reopened_audit(), Err(ApprovalDenial::JournalCorrupt));
+        let path = a.journal_path_for_audit().to_path_buf();
+        let audit = a.audit_reference("Approved").unwrap();
+        assert!(!a.has_live_dispatch_authority());
+        drop(a);
+        // Close the original file HANDLE before modifying, so this tests
+        // portable Windows restart/tamper detection without file-sharing
+        // behavior masquerading as an integrity failure.
+        fs::write(&path, b"tampered\n").unwrap();
+        assert_eq!(verify_action_receipt_after_restart(&dir, &audit),
+            Err(ApprovalDenial::JournalCorrupt));
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn no_consent_or_wrong_challenge_never_creates_authority() {
+        let (mut a, dir) = book();
+        let p = a.preview.preview_sha256.clone();
+        assert_eq!(a.consume_for_receipt_test(&p, 7, 501),
+            Err(ApprovalDenial::Cancelled));
+        assert_eq!(a.decide(
+            NativeConsentMarker::for_unit_test(&p, &"9".repeat(64), 7, 502, true),
+            7, 502,
+        ), Err(ApprovalDenial::WrongStop));
+        assert_eq!(a.verify_reopened_audit().unwrap(), "Revoked");
+        assert_eq!(a.consume_for_receipt_test(&p, 7, 503),
+            Err(ApprovalDenial::Cancelled));
+        clean(a, dir);
+    }
+    #[test]
+    fn invalid_stop_binding_and_replayed_human_decision_denied() {
+        let dir = std::env::temp_dir().join(format!(
+            "lu-debug-bad-binding-{}", rand::random::<u128>()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let mut invalid = binding();
+        invalid.source_snapshot_sha256 = "0".repeat(64);
+        assert!(matches!(DebugActionApproval::prepare_native(
+            &dir, invalid, preview(), 500,
+        ), Err(ApprovalDenial::WrongStop)));
+        let mut a = DebugActionApproval::prepare_native(
+            &dir, binding(), preview(), 500,
+        ).unwrap();
+        let p = a.preview.preview_sha256.clone();
+        let c = a.challenge_sha256().to_owned();
+        a.decide(NativeConsentMarker::for_unit_test(&p, &c, 7, 505, true),
+            7, 505).unwrap();
+        assert_eq!(a.decide(
+            NativeConsentMarker::for_unit_test(&p, &c, 7, 506, true),
+            7, 506,
+        ), Err(ApprovalDenial::AlreadyDecided));
         assert!(!a.has_live_dispatch_authority());
         clean(a, dir);
     }
