@@ -118,6 +118,10 @@
          return make(None,"HISTORICAL_ONLY",
              "All steps are historical; this does not confer new execution authority.")
      };
+     if owner_state=="RELEASED" &&next.depends_on.is_none(){
+         return make(None,"STOP_RELEASED_OWNER",
+             "A closed host cannot run a new initial step; request a different human plan.")
+     }
      if let Some(parent)=next.depends_on{
          if parent>=next.step_index{
              return make(None,"STOP_INVALID_DEPENDENCY",
@@ -531,12 +535,16 @@ mod tests{
         let state=read_chat_progress(&root,&chat,&chats).unwrap();
         assert_eq!(state[0].steps.len(),2);
         assert_eq!(state[0].steps[0].schedule_state,"HISTORICAL_WITNESS_RECORDED");
-        assert_eq!(state[0].continuation_preview.status,"STOP_RELEASED_OWNER");
-        assert_eq!(state[0].continuation_preview.candidate_step_index,None);
+        assert_eq!(state[0].continuation_preview.status,"PREPARE_NEW_CHILD_PLAN_ONLY");
+        assert_eq!(state[0].continuation_preview.candidate_step_index,Some(1));
+        assert_eq!(state[0].continuation_preview.execution_authority,
+            "NOT_AUTHORIZED_FOR_EXECUTION");
         drop(chats);
         let reopened=ChatStore::open(&root).unwrap();
         let replay=read_chat_progress(&root,&chat,&reopened).unwrap();
-        assert_eq!(replay[0].continuation_preview.status,"STOP_RELEASED_OWNER");
+        assert_eq!(replay[0].continuation_preview.status,"PREPARE_NEW_CHILD_PLAN_ONLY");
+        assert_eq!(replay[0].continuation_preview.execution_authority,
+            "NOT_AUTHORIZED_FOR_EXECUTION");
         assert!(!replay[0].continuation_preview.live_source_reverified);
         drop(reopened);fs::remove_dir_all(root).unwrap();
     }
