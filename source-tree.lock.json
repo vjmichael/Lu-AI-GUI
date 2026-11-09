@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "596a31fe44f8994a86dffb8fd02614dd8d0e8510",
+  "sourceCommitBeforeLock": "3e680752f4e04a9b37e82512125aa052205d79fa",
   "trackedFileCount": 818,
   "files": [
     {
@@ -1241,7 +1241,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_memory_evidence.rs",
-      "blob": "2d4ccf373d296abacb9a11cdd62d2d2597ab101c"
+      "blob": "366b6c85038b05499dafb8b8f140a3a56b9da0d0"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_task_continuity.rs",
@@ -1949,7 +1949,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_belief_revision.rs",
-      "blob": "02e5594293f02bd47e1b5d3053f64710dd4e8a94"
+      "blob": "46f652dc9bd7f2b20f4aac2510a07d7c191bb37d"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_embedding_worker.rs",
@@ -1993,7 +1993,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_verified_procedures.rs",
-      "blob": "e216ba84c9431f72926747cf5cd07962928923fc"
+      "blob": "31d2ab7b55e5817e2bb92434ce75b9c366b933c5"
     },
     {
       "path": "src-tauri/lu-core/src/benchmark_contract.rs",
@@ -2093,7 +2093,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/continuity.rs",
-      "blob": "4f20dd977403e0fa1056d18c27dcbf9bf36303ff"
+      "blob": "01e07f35c83ea87ea1bbc6fc03efbe5c18833335"
     },
     {
       "path": "src-tauri/lu-core/src/contracts.rs",

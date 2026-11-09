@@ -16,6 +16,7 @@ use lu_core::{
 use rusqlite::{params,Connection,OpenFlags,OptionalExtension,TransactionBehavior};
 use sha2::{Digest,Sha256};
 use serde_json::Value;
+use serde::{Serialize,Deserialize};
 use std::{fs,path::{Path,PathBuf},time::{SystemTime,UNIX_EPOCH}};
 
 const INDEX_NAME:&str="lu-reviewed-memory-evidence.sqlite";
@@ -115,6 +116,17 @@ fn ensure_schema(conn:&Connection)->Result<(),String>{
           call_id TEXT PRIMARY KEY,
           published_unix INTEGER NOT NULL
         );
+        -- Index and the full immutable derived projection plan are committed
+        -- in ONE SQLite transaction, never as two separately committed facts.
+        -- ANSF/continuity are separate WAL databases and are materialized
+        -- idempotently, then the read-side publication fence is committed.
+        CREATE TABLE IF NOT EXISTS lu_reviewed_memory_projection_intent(
+          call_id TEXT PRIMARY KEY
+            REFERENCES lu_reviewed_memory_evidence(call_id),
+          projection_json TEXT NOT NULL,
+          projection_sha256 TEXT NOT NULL,
+          created_unix INTEGER NOT NULL
+        );
     ").map_err(err)
 }
 fn require_published(conn:&Connection,call:&str)->Result<(),String>{
@@ -140,7 +152,150 @@ fn read_row(r:&rusqlite::Row<'_>)->rusqlite::Result<Row>{
         tool:r.get(8)?,version:r.get(9)?,app:r.get(10)?,
         receipt_sha:r.get(11)?,fact:r.get(12)?})
 }
-fn verify_row(chats:&ChatStore,continuity:&ContinuityStore,root:&Path,r:&Row)->Result<EffectJournal,String>{
+
+#[derive(Debug,Clone,Serialize,Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectionPlan{
+    checkpoint:TaskCheckpoint,
+    procedure:Option<ProcedureCandidate>,
+    claim:Option<Claim>,
+    receipt_sha256:String,
+    source_changed:bool,
+}
+fn make_plan(r:&Row,source_changed:bool,now:u64)->ProjectionPlan{
+    let checkpoint=TaskCheckpoint{
+        checkpoint_id:r.checkpoint.clone(),project_id:PROJECT.into(),
+        task_id:r.task.clone(),conversation_id:r.chat.clone(),
+        source_entry_ids:vec![r.source_id],
+        completed_work:format!("Independent reviewed {} fact at observation",r.tool),
+        next_action:if source_changed{
+            "Human review of changed original source required".into()
+        }else{
+            "Historical source evidence only; fresh execution requires approval".into()
+        },
+        blockers:if source_changed{
+            vec!["Reviewed source fact differs from prior observation".into()]
+        }else{vec![]}
+    };
+    let procedure=(!source_changed).then(||ProcedureCandidate{
+        procedure_id:format!("proc-03d-{}",digest(r.call.as_bytes())),
+        project_id:PROJECT.into(),task_id:r.task.clone(),
+        session_id:r.chat.clone(),source_entry_id:r.source_id,
+        checkpoint_id:r.checkpoint.clone(),call_id:r.call.clone(),
+        tool_id:r.tool.clone(),tool_version:TOOL_VERSION.into(),
+        application_version:APP_VERSION.into(),
+        title:format!("Review historical {} observation",r.tool),
+        prerequisites:vec!["Current source and fresh human grant required".into()],
+        steps:vec!["Read historical result without executing any worker".into()],
+        failure_conditions:vec!["Source or tool changed; request review".into()],
+        replaces_id:None
+    });
+    let op=op_for_target(&r.task,Some(&r.tool),None,None)
+        .expect("row constructed from closed reviewed operation registry");
+    let claim=(!source_changed).then(||Claim{
+        claim_id:format!("claim-03d-{}",digest(r.call.as_bytes())),
+        session_id:r.chat.clone(),source_entry_id:r.source_id,
+        project_id:PROJECT.into(),task_id:r.task.clone(),
+        subject_key:op.subject.into(),predicate_key:op.predicate.into(),
+        value:r.fact.clone(),application_version:APP_VERSION.into(),
+        expires_unix:now.saturating_add(86_400),supersedes_id:None
+    });
+    ProjectionPlan{checkpoint,procedure,claim,
+        receipt_sha256:r.receipt_sha.clone(),source_changed}
+}
+fn check_plan(r:&Row,p:&ProjectionPlan)->Result<(),String>{
+    let valid=p.receipt_sha256==r.receipt_sha
+        &&p.checkpoint.checkpoint_id==r.checkpoint
+        &&p.checkpoint.project_id==PROJECT
+        &&p.checkpoint.task_id==r.task
+        &&p.checkpoint.conversation_id==r.chat
+        &&p.checkpoint.source_entry_ids==vec![r.source_id]
+        &&p.checkpoint.blockers.is_empty()==!p.source_changed
+        &&p.procedure.is_some()==!p.source_changed
+        &&p.claim.is_some()==!p.source_changed;
+    if !valid{return Err("Reviewed projection plan identity mismatch".into())}
+    if let Some(proc)=&p.procedure{
+        if proc.procedure_id!=format!("proc-03d-{}",digest(r.call.as_bytes()))
+            ||proc.session_id!=r.chat||proc.source_entry_id!=r.source_id
+            ||proc.checkpoint_id!=r.checkpoint||proc.call_id!=r.call
+            ||proc.tool_id!=r.tool||proc.tool_version!=r.version
+            ||proc.application_version!=r.app||proc.replaces_id.is_some(){
+            return Err("Reviewed projection procedure was rebound".into())
+        }
+    }
+    if let Some(claim)=&p.claim{
+        if claim.claim_id!=format!("claim-03d-{}",digest(r.call.as_bytes()))
+            ||claim.session_id!=r.chat||claim.source_entry_id!=r.source_id
+            ||claim.project_id!=r.project||claim.task_id!=r.task
+            ||claim.value!=r.fact||claim.application_version!=r.app
+            ||claim.supersedes_id.is_some(){
+            return Err("Reviewed projection belief was rebound".into())
+        }
+    }
+    Ok(())
+}
+fn read_plan(conn:&Connection,r:&Row)->Result<ProjectionPlan,String>{
+    let stored:Option<(String,String)>=conn.query_row(
+        "SELECT projection_json,projection_sha256
+         FROM lu_reviewed_memory_projection_intent WHERE call_id=?1",
+        [&r.call],|row|Ok((row.get(0)?,row.get(1)?))
+    ).optional().map_err(err)?;
+    let (data,sha)=stored.ok_or("Legacy or incomplete reviewed projection plan")?;
+    if data.len()>8192||!hex_sha(&sha)||digest(data.as_bytes())!=sha{
+        return Err("Damaged immutable reviewed projection intent".into())
+    }
+    let plan:ProjectionPlan=serde_json::from_str(&data).map_err(err)?;
+    check_plan(r,&plan)?;
+    Ok(plan)
+}
+fn project_derived_only(
+    chats:&ChatStore,continuity:&ContinuityStore,root:&Path,
+    r:&Row,plan:&ProjectionPlan
+)->Result<(),String>{
+    check_plan(r,plan)?;
+    // Never materialize from an index row alone: original task ownership,
+    // original APPLIED bytes, independent oracle and source are all checked.
+    let actual=verify_row(chats,continuity,root,r,false)?;
+    let book=chats.require(&r.chat)?;
+    continuity.append_verified(&plan.checkpoint,&book).map_err(err)?;
+    let linked=continuity.link_verified_effect(&r.checkpoint,&r.call,&actual)
+        .map_err(err)?;
+    if linked.receipt_sha256!=r.receipt_sha{
+        return Err("Original checkpoint and journal have different receipts".into())
+    }
+    let verify=|e:&VerifiedEffectEvidence|actual.independent_verified_receipt(
+        &e.call_id,&e.tool_id,&e.receipt_sha256).unwrap_or(false);
+    if let Some(proc)=&plan.procedure{
+        book.promote_verified_procedure(proc,continuity,&actual,verify)
+            .map_err(err)?;
+    }
+    if let Some(claim)=&plan.claim{
+        book.record_verified_claim(claim,ClaimReceipt{
+            checkpoint_id:r.checkpoint.clone(),
+            call_id:r.call.clone(),tool_id:r.tool.clone()
+        },continuity,&actual,|e:&VerifiedEffectEvidence|
+            actual.independent_verified_receipt(
+                &e.call_id,&e.tool_id,&e.receipt_sha256).unwrap_or(false)
+        ).map_err(err)?;
+    }
+    Ok(())
+}
+fn publish_projection(conn:&mut Connection,r:&Row)->Result<(),String>{
+    let _=read_plan(conn,r)?;
+    let published=SystemTime::now().duration_since(UNIX_EPOCH)
+        .map_err(err)?.as_secs() as i64;
+    let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(err)?;
+    tx.execute(
+        "INSERT OR IGNORE INTO lu_reviewed_memory_publication
+         (call_id,published_unix) VALUES (?1,?2)",
+        params![r.call,published]
+    ).map_err(err)?;
+    tx.commit().map_err(err)?;
+    require_published(conn,&r.call)
+}
+
+fn verify_row(chats:&ChatStore,continuity:&ContinuityStore,root:&Path,r:&Row,require_checkpoint:bool)->Result<EffectJournal,String>{
     if !safe_id(&r.call)||!safe_id(&r.chat)||!turn_id(&r.turn)
        ||!safe_id(&r.checkpoint)||r.source_id<=0
        ||!hex_sha(&r.source_sha)||!hex_sha(&r.receipt_sha)
@@ -189,11 +344,13 @@ fn verify_row(chats:&ChatStore,continuity:&ContinuityStore,root:&Path,r:&Row)->R
             .ok_or("Reviewed media duration receipt malformed")?.to_string()
     };
     if observed!=r.fact{return Err("Indexed reviewed source fact mismatch".into())}
-    let linked=continuity.verified_effects_for_checkpoint(&r.checkpoint,&journal)
-        .map_err(err)?;
-    if !linked.iter().any(|e|e.call_id==r.call&&e.tool_id==r.tool
-        &&e.receipt_sha256==r.receipt_sha){
-        return Err("Indexed checkpoint lacks the original verified effect".into())
+    if require_checkpoint{
+        let linked=continuity.verified_effects_for_checkpoint(&r.checkpoint,&journal)
+            .map_err(err)?;
+        if !linked.iter().any(|e|e.call_id==r.call&&e.tool_id==r.tool
+            &&e.receipt_sha256==r.receipt_sha){
+            return Err("Indexed checkpoint lacks the original verified effect".into())
+        }
     }
     Ok(journal)
 }
@@ -280,11 +437,12 @@ pub(crate) fn record_from_reviewed_turn(
                 ||indexed.receipt_sha!=receipt_sha{
                 return Err("Previously indexed reviewed evidence was rebound".into())
             }
-            let valid=verify_row(chats,continuity,&root,&indexed)?;
+            let valid=verify_row(chats,continuity,&root,&indexed,true)?;
             drop(valid);
             // Do not auto-republish an interrupted or old 03D row;
             // that could resurrect a later human correction.
             require_published(&conn,&indexed.call)?;
+            let _=read_plan(&conn,&indexed)?;
             recorded+=1;
             continue
         }
@@ -297,27 +455,19 @@ pub(crate) fn record_from_reviewed_turn(
         let source_changed=previous.as_ref().is_some_and(|old|old!=&fact);
         let cp=format!("cp-03d-{}",digest(inner.as_bytes()));
         let source_sha=digest(original_text.as_bytes());
-        let evidence=TaskCheckpoint{
-            checkpoint_id:cp.clone(),project_id:PROJECT.into(),task_id:op.task.into(),
-            conversation_id:chat.to_owned(),source_entry_ids:vec![source_id],
-            completed_work:format!("Independent reviewed {} fact at observation",op.tool),
-            next_action:if source_changed{
-                "Human review of changed original source required".into()
-            }else{
-                "Historical source evidence only; fresh execution requires approval".into()
-            },
-            blockers:if source_changed{
-                vec!["Reviewed source fact differs from prior observation".into()]
-            }else{vec![]}
-        };
-        continuity.append_verified(&evidence,&book).map_err(err)?;
-        let linked=continuity.link_verified_effect(&cp,&inner,&actual)
-            .map_err(err)?;
-        if linked.receipt_sha256!=receipt_sha{
-            return Err("Original checkpoint and journal have different receipts".into())
-        }
         let now=SystemTime::now().duration_since(UNIX_EPOCH)
             .map_err(err)?.as_secs();
+        let row=Row{
+            call:inner.clone(),chat:chat.into(),turn:turn.into(),
+            source_id,source_sha,checkpoint:cp,project:PROJECT.into(),
+            task:op.task.into(),tool:op.tool.into(),version:TOOL_VERSION.into(),
+            app:APP_VERSION.into(),receipt_sha,fact
+        };
+        let plan=make_plan(&row,source_changed,now);
+        let encoded=serde_json::to_string(&plan).map_err(err)?;
+        if encoded.len()>8192{return Err("Reviewed projection intent too large".into())}
+        // The durable index and all data required to reconstruct its
+        // derived checkpoint/procedure/belief commit atomically HERE.
         let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(err)?;
         tx.execute(
@@ -326,68 +476,40 @@ pub(crate) fn record_from_reviewed_turn(
               original_source_sha256,checkpoint_id,project_id,task_id,
               tool_id,tool_version,application_version,receipt_sha256,
               verified_fact,registered_unix)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
-            params![inner,chat,turn,source_id,source_sha,cp,
-                PROJECT,op.task,op.tool,TOOL_VERSION,APP_VERSION,
-                receipt_sha,fact,now as i64]
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+            params![row.call,row.chat,row.turn,row.source_id,row.source_sha,
+                row.checkpoint,row.project,row.task,row.tool,row.version,
+                row.app,row.receipt_sha,row.fact,now as i64]
         ).map_err(err)?;
-        let indexed:Row=tx.query_row(
+        tx.execute(
+            "INSERT OR IGNORE INTO lu_reviewed_memory_projection_intent
+             (call_id,projection_json,projection_sha256,created_unix)
+             VALUES(?1,?2,?3,?4)",
+            params![row.call,encoded,digest(encoded.as_bytes()),now as i64]
+        ).map_err(err)?;
+        let stored:Row=tx.query_row(
             "SELECT call_id,chat_id,user_turn_id,original_source_entry_id,
                     original_source_sha256,checkpoint_id,project_id,task_id,
                     tool_id,tool_version,application_version,receipt_sha256,
                     verified_fact FROM lu_reviewed_memory_evidence WHERE call_id=?1",
-            [&inner],read_row
+            [&row.call],read_row
         ).map_err(err)?;
-        if indexed.chat!=chat||indexed.turn!=turn||indexed.source_id!=source_id||
-            indexed.source_sha!=source_sha||indexed.checkpoint!=cp||
-            indexed.call!=inner||indexed.tool!=op.tool||indexed.fact!=fact||
-            indexed.receipt_sha!=receipt_sha{
-            return Err("Reviewed evidence index already bound to different source".into())
+        if stored.call!=row.call||stored.chat!=row.chat||stored.turn!=row.turn
+            ||stored.source_id!=row.source_id||stored.source_sha!=row.source_sha
+            ||stored.checkpoint!=row.checkpoint||stored.project!=row.project
+            ||stored.task!=row.task||stored.tool!=row.tool
+            ||stored.version!=row.version||stored.app!=row.app
+            ||stored.receipt_sha!=row.receipt_sha||stored.fact!=row.fact{
+            return Err("Reviewed index source changed during atomic staging".into())
         }
+        let _=read_plan(&tx,&stored)?;
         tx.commit().map_err(err)?;
-        // Source-backed derived projection; old permissions are NOT stored.
-        // A changed value is intentionally blocked until human review and
-        // never silently supersedes the old human-understood procedure.
-        if !source_changed{
-            let verify=|e:&VerifiedEffectEvidence|actual
-                .independent_verified_receipt(
-                    &e.call_id,&e.tool_id,&e.receipt_sha256).unwrap_or(false);
-            book.promote_verified_procedure(&ProcedureCandidate{
-                procedure_id:format!("proc-03d-{}",digest(inner.as_bytes())),
-                project_id:PROJECT.into(),task_id:op.task.into(),session_id:chat.into(),
-                source_entry_id:source_id,checkpoint_id:cp.clone(),
-                call_id:inner.clone(),tool_id:op.tool.into(),
-                tool_version:TOOL_VERSION.into(),application_version:APP_VERSION.into(),
-                title:format!("Review historical {} observation",op.tool),
-                prerequisites:vec!["Current source and fresh human grant required".into()],
-                steps:vec!["Read historical result without executing any worker".into()],
-                failure_conditions:vec!["Source or tool changed; request review".into()],
-                replaces_id:None
-            },continuity,&actual,verify).map_err(err)?;
-            book.record_verified_claim(&Claim{
-                claim_id:format!("claim-03d-{}",digest(inner.as_bytes())),
-                session_id:chat.into(),source_entry_id:source_id,
-                project_id:PROJECT.into(),task_id:op.task.into(),
-                subject_key:op.subject.into(),predicate_key:op.predicate.into(),
-                value:fact,application_version:APP_VERSION.into(),
-                expires_unix:now+86_400,supersedes_id:None,
-            },ClaimReceipt{
-                checkpoint_id:cp,call_id:inner,tool_id:op.tool.into()
-            },continuity,&actual,|e:&VerifiedEffectEvidence|actual
-                .independent_verified_receipt(
-                    &e.call_id,&e.tool_id,&e.receipt_sha256
-                ).unwrap_or(false)).map_err(err)?;
-        }
-        // Publish only after checkpoint, independent effect link and every
-        // required M4 procedure and belief projection have committed.
-        let published=SystemTime::now().duration_since(UNIX_EPOCH)
-            .map_err(err)?.as_secs() as i64;
-        conn.execute(
-            "INSERT OR IGNORE INTO lu_reviewed_memory_publication
-             (call_id,published_unix) VALUES (?1,?2)",
-            params![inner,published]
-        ).map_err(err)?;
-        require_published(&conn,&inner)?;
+        // ANSF and Continuity are different WAL SQLite databases; their
+        // materializations are idempotent and recovery-gated, NOT one
+        // cross-database ACID transaction. Nothing is visible to chat until
+        // all materializations finish and publication is committed.
+        project_derived_only(chats,continuity,&root,&row,&plan)?;
+        publish_projection(&mut conn,&row)?;
         recorded+=1;
     }
     Ok(recorded)
@@ -436,7 +558,8 @@ pub(crate) fn resolve_for_current_human(
     }
     // The newest selected record must itself be published: no fallback.
     require_published(&conn,&row.call)?;
-    verify_row(chats,continuity,&root,&row).map(Some)
+    let _=read_plan(&conn,&row)?;
+    verify_row(chats,continuity,&root,&row,true).map(Some)
 }
 
 

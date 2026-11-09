@@ -20,7 +20,7 @@ fn now()->Result<u64,AnsfError>{
     Ok(SystemTime::now().duration_since(UNIX_EPOCH)
        .map_err(|_|AnsfError::InvalidInput)?.as_secs())
 }
-#[derive(Debug,Clone,PartialEq,Eq)]
+#[derive(Debug,Clone,PartialEq,Eq,serde::Serialize,serde::Deserialize)]
 pub struct Claim{
     pub claim_id:String,
     pub session_id:String,
