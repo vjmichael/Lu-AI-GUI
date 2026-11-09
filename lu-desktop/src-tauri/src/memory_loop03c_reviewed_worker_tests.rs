@@ -619,6 +619,10 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
     if let Some(dest)=std::env::var_os("LU_MEMORY_LOOP03C_REVIEWED_FIXTURE_PATH"){
         fs::write(dest,serde_json::to_vec_pretty(&result).unwrap()).unwrap();
     }
+    // Windows prohibits removing an open SQLite database. The normal-Send
+    // historic selector above returns a separate owned EffectJournal; close
+    // it before deleting its per-turn profile journal and WAL sidecars.
+    drop(historical);
     drop(recalled);drop(old_continuity);drop(old_reopened);drop(reopened);
     fs::remove_dir_all(root).unwrap();
 }

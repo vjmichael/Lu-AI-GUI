@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8781a87152f56834a5735ea3f72e7302d4ba91c9",
+  "sourceCommitBeforeLock": "430521265fa2bf0bf4ab5423ac76a230db469da6",
   "trackedFileCount": 836,
   "files": [
     {
@@ -553,7 +553,7 @@
     },
     {
       "path": "docs/LU_CORE_CONVERGENCE_PLAN_20261109.md",
-      "blob": "02b70a2d315d9a6e74b38168ad2dde5649f6347c"
+      "blob": "7a67682646f33c197a9a509799433394601dc9ca"
     },
     {
       "path": "docs/LU_CORE_OPEN_PR_STACK_20261109.json",
@@ -657,7 +657,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "366e5d030e3853558c412b32aab41480e8d831b9"
+      "blob": "97b42d5c306157b4f4352ebdcb29627de2a1e16f"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -1209,7 +1209,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03c_reviewed_worker_tests.rs",
-      "blob": "0c1101e8e5b830897ef68afe164a3f60b577ccf9"
+      "blob": "ecb0116e4c4b64c437d75b3a0368aeedead53a7b"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
