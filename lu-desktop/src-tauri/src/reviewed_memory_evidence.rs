@@ -179,7 +179,7 @@ fn read_row(r:&rusqlite::Row<'_>)->rusqlite::Result<Row>{
         receipt_sha:r.get(11)?,fact:r.get(12)?})
 }
 
-#[derive(Debug,Clone,Serialize,Deserialize)]
+#[derive(Debug,Clone,PartialEq,Eq,Serialize,Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ProjectionPlan{
     checkpoint:TaskCheckpoint,
@@ -261,17 +261,24 @@ fn check_plan(r:&Row,p:&ProjectionPlan)->Result<(),String>{
     Ok(())
 }
 fn read_plan(conn:&Connection,r:&Row)->Result<ProjectionPlan,String>{
-    let stored:Option<(String,String)>=conn.query_row(
-        "SELECT projection_json,projection_sha256
+    let stored:Option<(String,String,i64)>=conn.query_row(
+        "SELECT projection_json,projection_sha256,created_unix
          FROM lu_reviewed_memory_projection_intent WHERE call_id=?1",
-        [&r.call],|row|Ok((row.get(0)?,row.get(1)?))
+        [&r.call],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))
     ).optional().map_err(err)?;
-    let (data,sha)=stored.ok_or("Legacy or incomplete reviewed projection plan")?;
-    if data.len()>8192||!hex_sha(&sha)||digest(data.as_bytes())!=sha{
+    let (data,sha,created)=stored.ok_or("Legacy or incomplete reviewed projection plan")?;
+    if data.len()>8192||!hex_sha(&sha)||digest(data.as_bytes())!=sha||
+        created<=0{
         return Err("Damaged immutable reviewed projection intent".into())
     }
     let plan:ProjectionPlan=serde_json::from_str(&data).map_err(err)?;
     check_plan(r,&plan)?;
+    // Even a malicious local rewrite with a newly computed SHA cannot
+    // introduce model-instruction text or extend a verified belief expiry.
+    // Every stored projection field must match its closed host template.
+    if plan!=make_plan(r,plan.source_changed,created as u64){
+        return Err("Reviewed projection differs from deterministic host template".into())
+    }
     Ok(plan)
 }
 fn project_derived_only(
