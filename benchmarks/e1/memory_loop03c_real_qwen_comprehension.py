@@ -18,6 +18,7 @@ import sys
 import time
 import urllib.request
 from typing import Any
+from memory_loop03c_positive_oracle_cases import validate_positive_corpus, PROVENANCE as POSITIVE_PROVENANCE
 
 MODEL_SHA256 = "7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d"
 ENGINE_SOURCE_COMMIT = "2bc46baa9207d098d03741ac394e7faaf1a955b6"
@@ -217,6 +218,26 @@ def run(args: argparse.Namespace) -> int:
         fixture_raw = args.fixture.read_bytes()
         rows = validate_native_fixture(json.loads(fixture_raw))
         report["nativeFixtureSha256"] = hashlib.sha256(fixture_raw).hexdigest()
+        positive_path = getattr(args, "positive_fixture", None)
+        if positive_path is not None:
+            # A separate native Rust test creates the actual two-command Git
+            # observation and historical ANSF/journal source-checked capsules.
+            # Reading its JSON does NOT independently prove real Lu worker,
+            # current external source freshness or OS process custody.
+            positive_raw = positive_path.read_bytes()
+            positive_rows = validate_positive_corpus(json.loads(positive_raw))
+            rows.extend(positive_rows)
+            report["positiveFixtureSha256"] = hashlib.sha256(positive_raw).hexdigest()
+            report["positiveFixtureProvenance"] = POSITIVE_PROVENANCE
+            report["positiveNativeTestOnly"] = True
+            # The old field is reserved for a fully authorized reviewed
+            # Lu-worker positive receipt. This test-only Git fixture cannot
+            # close that stronger gate.
+            report["hasVerifiedPositiveProcedureCase"] = False
+            report["hasTestOnlyIndependentGitObservation"] = any(
+                r["caseId"] == "historical_git_procedure" for r in positive_rows
+            )
+            report["actualReviewedLuWorkerProven"] = False
         if args.validate_fixture_only:
             report["fixtureValidatedOnly"] = True
             return 0
@@ -317,6 +338,8 @@ def main() -> int:
     parser.add_argument("--engine", type=pathlib.Path)
     parser.add_argument("--model", type=pathlib.Path)
     parser.add_argument("--fixture", type=pathlib.Path, required=True)
+    parser.add_argument("--positive-fixture", type=pathlib.Path,
+                        help="Optional real native test-only Git/ANSF witness corpus")
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--port", type=int, default=18983)
     parser.add_argument("--repetitions", type=int, default=2)

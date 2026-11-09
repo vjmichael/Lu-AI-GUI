@@ -105,13 +105,23 @@ jobs:
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib memory_loop03c_actual_original_ansf_host_capsule_corpus -- --nocapture \
             2>&1 | tee memory-loop03b-evidence/memory03c-native-corpus-test.log
           test -s memory-loop03b-evidence/memory03c-native-corpus.json
+          # G4: Native Git observation is a test-only OS subprocess, not a Lu
+          # approved worker; the actual ANSF, continuity and journal paths run.
+          export LU_MEMORY_LOOP03C_POSITIVE_FIXTURE_PATH="$GITHUB_WORKSPACE/memory-loop03b-evidence/memory03c-positive-git-corpus.json"
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib \
+            memory_loop03c_positive_direct_git_ansf_journal_and_correction_corpus -- --nocapture \
+            2>&1 | tee memory-loop03b-evidence/memory03c-positive-native-git-test.log
+          test -s memory-loop03b-evidence/memory03c-positive-git-corpus.json
           python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_real_qwen_comprehension.py -v \
             2>&1 | tee memory-loop03b-evidence/memory03c-grader-tests.log
+          python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_positive_git.py -v \
+            2>&1 | tee memory-loop03b-evidence/memory03c-positive-grader-tests.log
           python3 benchmarks/e1/memory_loop03c_real_qwen_comprehension.py \
             --fixture memory-loop03b-evidence/memory03c-native-corpus.json \
+            --positive-fixture memory-loop03b-evidence/memory03c-positive-git-corpus.json \
             --output memory-loop03b-evidence/memory03c-fixture-validation-only.json \
             --validate-fixture-only
-          echo '03C native fixture and grader do NOT certify genuine model comprehension, independent positive source/oracle results or live OS custody.' >> "$GITHUB_STEP_SUMMARY"
+          echo '03C negative + direct native Git/ANSF/SQLite positive fixture tests do NOT prove reviewed Lu worker execution, current source freshness, kernel custody, or actual model comprehension.' >> "$GITHUB_STEP_SUMMARY"
       - name: MEMORY-LOOP-03C optional pinned real Qwen source-only vs host-classified benchmark
         if: runner.os == 'Linux' && inputs.run_real_qwen
         shell: bash
@@ -132,10 +142,11 @@ jobs:
             --engine "$RUNNER_TEMP/memory03c-llama-build/bin/llama-server" \
             --model "$RUNNER_TEMP/memory03c-qwen.gguf" \
             --fixture memory-loop03b-evidence/memory03c-native-corpus.json \
+            --positive-fixture memory-loop03b-evidence/memory03c-positive-git-corpus.json \
             --output memory-loop03b-evidence/memory03c-real-qwen-comparison.json \
             --repetitions 2 \
             2>&1 | tee memory-loop03b-evidence/memory03c-real-qwen-comparison.log
-          echo '03C Qwen comparison uses a genuine pinned sub-1B GGUF, not target Qwen3.8 27B, and currently covers host-native negative memory cases only.' >> "$GITHUB_STEP_SUMMARY"
+          echo '03C Qwen comparison uses a genuine pinned sub-1B GGUF, not target Qwen3.8 27B, and includes test-only positive Git observations; actual reviewed Lu worker and live OS custody remain OPEN.' >> "$GITHUB_STEP_SUMMARY"
       - name: Unaccepted operational requirements
         if: always()
         shell: bash

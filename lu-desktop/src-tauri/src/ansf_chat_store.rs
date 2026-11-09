@@ -1582,3 +1582,214 @@ mod tests{
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+
+// MEMORY-LOOP-03C-G4: production ANSF, Continuity, EffectJournal and model-facing
+// ChatStore readers exercised against TWO actual OS Git HEAD observations.
+// This is a TEST-ONLY Git command, NOT a Lu-reviewed tool worker or OS custody.
+#[cfg(test)]
+mod memory_loop03c_positive_oracle_tests {
+    use super::*;
+    use crate::memory_loop03b_context::for_current_human_turn;
+    use lu_core::{
+        ansf::EntryRole,
+        ansf_belief_revision::{Claim,ClaimReceipt},
+        ansf_verified_procedures::ProcedureCandidate,
+        continuity::{ContinuityStore,TaskCheckpoint},
+        contracts::{ProtoPayload,ToolInvocation},
+        journal::{EffectJournal,IndependentOutcomeVerdict},
+    };
+    use sha2::{Digest,Sha256};
+    use serde_json::{json,Value};
+    use std::{
+        fs,process::Command,
+        path::Path,
+        time::{SystemTime,UNIX_EPOCH},
+    };
+
+    fn git(repo:&Path,args:&[&str])->String{
+        let out=Command::new("git").arg("-C").arg(repo)
+            .args(args).output().expect("native Git unavailable");
+        assert!(out.status.success(),
+            "native Git command failed: {:?}",String::from_utf8_lossy(&out.stderr));
+        String::from_utf8(out.stdout).expect("Git UTF-8").trim().to_string()
+    }
+
+    #[test]
+    fn memory_loop03c_positive_direct_git_ansf_journal_and_correction_corpus(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-03c-positive-{}-{}",std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let repo=root.join("git-work");
+        fs::create_dir_all(&repo).unwrap();
+        git(&repo,&["init","--quiet"]);
+        fs::write(repo.join("original.txt"),b"Lu native observed source\n").unwrap();
+        git(&repo,&["add","original.txt"]);
+        git(&repo,&["-c","user.name=LuNativeFixture",
+            "-c","user.email=lu-native-fixture@example.invalid",
+            "commit","--quiet","-m","original observed source"]);
+        // Two independent Git process invocations against the same local
+        // repository; no fake oracle SHA, no model-produced verdict.
+        let observed_first=git(&repo,&["rev-parse","HEAD"]);
+        let observed_second=git(&repo,&["rev-parse","HEAD"]);
+        assert_eq!(observed_first,observed_second);
+        assert_eq!(observed_second.len(),40);
+        assert!(observed_second.bytes().all(|b|b.is_ascii_hexdigit()));
+        let observed_sha=format!("{:x}",Sha256::digest(observed_second.as_bytes()));
+
+        let chats=ChatStore::open(&root.join("profile")).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        let book=chats.require(&chat).unwrap();
+        let source=book.append_entry(
+            &chat,"m03c-original-source",EntryRole::User,"Original approved task",
+            "Inspect the reviewed Git HEAD and retain the observed evidence only"
+        ).unwrap();
+        let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
+        let journal=EffectJournal::open(&root.join("effects.sqlite")).unwrap();
+        continuity.append_verified(&TaskCheckpoint{
+            checkpoint_id:"cp-m03c-positive".into(),
+            project_id:"lu".into(),task_id:"review".into(),
+            conversation_id:chat.clone(),source_entry_ids:vec![source],
+            completed_work:"Two Git HEAD observations agreed at the time".into(),
+            next_action:"Ask human to review current source and authority".into(),
+            blockers:vec![],
+        },&book).unwrap();
+        let receipt=observed_first.as_bytes();
+        journal.prepare(&ToolInvocation{
+            call_id:"call-m03c-direct-git".into(),
+            tool_id:"lu.reviewed.git.head".into(),
+            workspace_id:Some("lu-desktop-local-profile".into()),
+            input:ProtoPayload{type_url:"lu.memory03c.NativeTestGitHead".into(),
+                bytes:b"test-only-native-Git-observation".to_vec()},
+        }).unwrap();
+        journal.mark_executing("call-m03c-direct-git").unwrap();
+        // APPLIED is a test fixture record, not evidence of the production
+        // Lu worker executing. The separate OS command was actually run above.
+        journal.mark_applied("call-m03c-direct-git",receipt).unwrap();
+        continuity.link_verified_effect(
+            "cp-m03c-positive","call-m03c-direct-git",&journal
+        ).unwrap();
+        journal.record_independent_outcome(
+            "call-m03c-direct-git",receipt,IndependentOutcomeVerdict::Verified,
+            "GIT_HEAD_DIRECT_V1",Some(&observed_sha)
+        ).unwrap();
+
+        let witnessed=|e:&lu_core::continuity::VerifiedEffectEvidence|
+            journal.independent_verified_receipt(
+                &e.call_id,&e.tool_id,&e.receipt_sha256).unwrap_or(false);
+        let candidate=ProcedureCandidate{
+            procedure_id:"proc-m03c-git-head".into(),
+            project_id:"lu".into(),task_id:"review".into(),
+            session_id:chat.clone(),source_entry_id:source,
+            checkpoint_id:"cp-m03c-positive".into(),
+            call_id:"call-m03c-direct-git".into(),
+            tool_id:"lu.reviewed.git.head".into(),
+            tool_version:"1.0".into(),application_version:"0.1".into(),
+            title:"Review historical Git HEAD".into(),
+            prerequisites:vec!["Original source and selected repository must be checked".into()],
+            steps:vec!["Review the earlier Git HEAD observation, do not replay".into()],
+            failure_conditions:vec!["Original Git source or tool version changed".into()],
+            replaces_id:None,
+        };
+        book.promote_verified_procedure(
+            &candidate,&continuity,&journal,witnessed
+        ).unwrap();
+        let claim=Claim{
+            claim_id:"claim-m03c-head".into(),
+            session_id:chat.clone(),source_entry_id:source,
+            project_id:"lu".into(),task_id:"review".into(),
+            subject_key:"source".into(),predicate_key:"head".into(),
+            value:observed_first.clone(),application_version:"0.1".into(),
+            expires_unix:SystemTime::now().duration_since(UNIX_EPOCH)
+                .unwrap().as_secs()+3600,
+            supersedes_id:None,
+        };
+        book.record_verified_claim(
+            &claim,ClaimReceipt{
+                checkpoint_id:"cp-m03c-positive".into(),
+                call_id:"call-m03c-direct-git".into(),
+                tool_id:"lu.reviewed.git.head".into(),
+            },&continuity,&journal,witnessed
+        ).unwrap();
+
+        let mut rows=Vec::<Value>::new();
+        let mut emit=|case_id:&str,prompt:&str,goal:&str,
+                expected:&str,blocked:bool,review:bool,verified:bool|{
+            let turn=format!("g-{:032x}",rows.len()+101);
+            chats.append_user_with_turn_id(&chat,&turn,prompt).unwrap();
+            let raw=for_current_human_turn(
+                &chats,&continuity,&journal,&chat,&turn,prompt,
+                goal,"NO_REVIEWED_EFFECTS_IN_BOUNDED_WINDOW"
+            ).unwrap().unwrap();
+            let capsule:Value=serde_json::from_str(&raw).unwrap();
+            assert_eq!(capsule["status"],expected, "case={case_id}");
+            assert_eq!(capsule["currentTaskReviewBlockedByPreflight"],blocked);
+            assert_eq!(capsule["humanReviewRequired"],review);
+            assert_eq!(capsule["historicallyVerifiedDataAvailable"],verified);
+            assert_eq!(capsule["executionAuthority"],"NOT_AUTHORIZED_FOR_EXECUTION");
+            assert_eq!(capsule["priorGrantReusable"],false);
+            assert_eq!(capsule["automaticRetryAllowed"],false);
+            assert_eq!(capsule["currentSourceFreshness"],"NOT_RECHECKED");
+            assert_eq!(capsule["oldOsCustodyNotImplied"],true);
+            rows.push(json!({
+                "caseId":case_id,"originalHumanPrompt":prompt,
+                "originalHumanTurnId":turn,"expectedStatus":expected,
+                "expectedPreflightBlocked":blocked,
+                "expectedHumanReview":review,
+                "expectedHistoricalVerified":verified,
+                "capsule":capsule
+            }));
+        };
+        let procedure="Recall procedure project lu task review tool lu.reviewed.git.head tool-version 1.0 application-version 0.1";
+        let belief="Recall belief project lu task review subject source predicate head version 0.1";
+        emit("historical_git_procedure",procedure,
+            "CURRENT_GOAL_REVIEWABLE_ONLY",
+            "HISTORICAL_SOURCE_ORACLE_VERIFIED_PROCEDURE",false,false,true);
+        emit("historical_git_belief",belief,
+            "CURRENT_GOAL_REVIEWABLE_ONLY",
+            "HISTORICAL_SOURCE_ORACLE_VERIFIED_BELIEF",false,false,true);
+        emit("goal_blocks_historical_git",procedure,
+            "CURRENT_GOAL_CLARIFICATION_PENDING",
+            "HISTORICAL_SOURCE_ORACLE_VERIFIED_PROCEDURE",true,true,true);
+        emit("git_tool_version_mismatch",
+            "Recall procedure project lu task review tool lu.reviewed.git.head tool-version 2.0 application-version 0.1",
+            "CURRENT_GOAL_REVIEWABLE_ONLY",
+            "NO_CURRENTLY_REVALIDATED_VERIFIED_PROCEDURE",false,true,false);
+
+        let correction=book.append_entry(
+            &chat,"m03c-human-correction",EntryRole::User,
+            "Correction","Do not reuse the original Git procedure or HEAD claim"
+        ).unwrap();
+        book.invalidate_verified_procedure(
+            "proc-m03c-git-head",&chat,correction,"Human revoked old procedure"
+        ).unwrap();
+        book.retract_reported_or_verified_claim(
+            "claim-m03c-head",&chat,correction,"Human retracted observed claim"
+        ).unwrap();
+        emit("human_invalidated_git_procedure",procedure,
+            "CURRENT_GOAL_REVIEWABLE_ONLY",
+            "NO_CURRENTLY_REVALIDATED_VERIFIED_PROCEDURE",false,true,false);
+        emit("human_retracted_git_belief",belief,
+            "CURRENT_GOAL_REVIEWABLE_ONLY",
+            "RETRACTED_OR_SUPERSEDED_BELIEF",false,true,false);
+        drop(emit);
+        let corpus=json!({
+            "schema":"lu-memory-loop03c-positive-direct-git-corpus-v1",
+            "producer":"lu-desktop::ansf_chat_store::memory_loop03c_positive_oracle_tests",
+            "provenance":"TWO_NATIVE_GIT_HEAD_OS_OBSERVATIONS_WITH_ANSF_SQLITE_JOURNAL_TEST_ONLY",
+            "nativeEffectExecution":"TEST_ONLY_GIT_COMMAND_NOT_A_REVIEWED_LU_WORKER",
+            "positiveIndependentOracleCasesIncluded":true,
+            "realSourceAtObservationSha256":observed_sha,
+            "observedGitHead":observed_second,
+            "currentSourceFreshnessProven":false,
+            "osDescendantCustodyProven":false,
+            "cases":rows
+        });
+        if let Some(dest)=std::env::var_os("LU_MEMORY_LOOP03C_POSITIVE_FIXTURE_PATH"){
+            fs::write(dest,serde_json::to_vec_pretty(&corpus).unwrap()).unwrap();
+        }
+        drop(book);drop(journal);drop(continuity);drop(chats);
+        fs::remove_dir_all(root).unwrap();
+    }
+}

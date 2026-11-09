@@ -1,6 +1,6 @@
 # MEMORY-LOOP-03C — Native ANSF fixture and real-GGUF comprehension
 
-**Date:** 2026-11-09. **Status:** source candidate only. Native Windows/Linux, genuine GGUF, independently verified positive cases, installed Lu, and owner physical-PC/7B+ gates remain OPEN.
+**Date:** 2026-11-09. **Status:** 03C-G4 direct-Git positive test-source candidate added; actual Windows/Linux native, genuine GGUF, reviewed Lu-worker acceptance, installed Lu, and owner physical-PC/7B+ gates remain OPEN.
 
 **Parent:** MEMORY-LOOP-03B #188 via grouped-CI PR #193.
 
@@ -19,10 +19,27 @@ The existing manual `lu-memory-loop03b-native.yml` adds genuine Rust corpus expo
 | 03C-G1 | Exact-head Rust real ANSF/SQLite native corpus, desktop tests and restart/cross-chat denial | OPEN |
 | 03C-G2 | Exact-head Windows/Linux Python adversarial and source-lock/React/Tauri checks | OPEN |
 | 03C-G3 | Genuine pinned sub-1B Qwen3 completions, two-arm report and original model-output hashes | OPEN |
-| 03C-G4 | Genuine positive independent Git/FFprobe receipt → procedure/claim, stale/conflict/retraction/CCM change | OPEN; **future work** |
+| 03C-G4 | Two actual native Git HEAD OS reads + historical ANSF/SQLite/Journals; positive procedure/claim; version mismatch, human invalidation/retraction and overriding clarification | SOURCE IMPLEMENTED; native OS execution, true reviewed Lu worker/FFprobe/CCM divergence still OPEN |
 | 03C-G5 | Real installed Lu current-user model turn, restart/model switch, no permission inheritance | OPEN |
 | 03C-G6 | 7B+ and target Qwen3.8 27B physical owner evaluation | DEFERRED, not passed |
 
 The first native corpus is intentionally *negative-only*. It cannot prove a comprehensive improvement in small-model reasoning or current-world accuracy. The source-only control lacks host status and must not be mislabeled a model failure merely for missing that information. Cognitum remains deferred.
 
 **Execution:** One manual 03B/03C task-group acceptance batch at exact source head, **not** per source edit. No real GGUF, source, or OS pass may be asserted before the native workflow and its artifacts finish.
+
+
+## MEMORY-LOOP-03C-G4 — real test-only Git oracle / positive memory corpus (source candidate)
+
+The new native ansf_chat_store::memory_loop03c_positive_oracle_tests runs **two independent direct OS Git HEAD commands** on an actual temporary Git repository, recording the first observation as a test APPLIED receipt and the second as the separately hashed GIT_HEAD_DIRECT_V1 outcome in Lu's **real EffectJournal**. It then constructs the original human AnsfStore source and ContinuityStore checkpoint, promotes a version-matched verified procedure and a source-linked Claim, and feeds current authenticated human selections through the **actual 03B model-facing host reader**. Six source cases are independently asserted in native Rust:
+
+- Historical observed Git procedure and belief: HISTORICAL_SOURCE_ORACLE_VERIFIED_* at observation only, no current source check or inherited grant.
+- Pending goal clarification dominates a historically verified procedure; human review required.
+- Version 2.0 cannot recover version 1.0 tool procedures.
+- A later original human correction invalidates the historical procedure.
+- An original human retraction marks the independently observed Git belief retracted, not current.
+
+A separate memory03c-positive-git-corpus.json can be exported through LU_MEMORY_LOOP03C_POSITIVE_FIXTURE_PATH. Its schema **explicitly labels the witness as test-only direct Git OS commands**, not a production reviewed application worker; it records the original 40-character Git commit and independently observed SHA-256. The parser in benchmarks/e1/memory_loop03c_positive_oracle_cases.py rejects wrong provenance, mismatched source digest, duplicated/missing cases, transformed host statuses, missing verified receipt, claimed OS custody/current source freshness or old-grant reuse. Its new negative tests only validate the parser; **synthetic parser fixtures are not model or native acceptance**.
+
+The original real-Qwen 03C comparison now accepts an **optional positive fixture** alongside the four negative ANSF host cases. If included, it reports test-only positive fixture provenance/hashes and preserves the original source-only vs host-classified same-seed comparison, raw completions, independent source-status truth and graded K/I/A/F attribution. Missing real model or invalid evidence still cannot generate a real-model pass. The existing **manually dispatched task-group** workflow has been extended to generate both Rust corpora, execute both Python negative suites, and optionally run the pinned real small Qwen model **once after the group finishes**.
+
+**Evidence levels (do not collapse):** source code + standalone static source inspection are not native Windows/Linux Git, ANSF or Tauri acceptance. A direct Git command observed twice is not an independently verified Lu-reviewed process, authenticated fresh user execution approval or kernel custody. This group does not add any new production tool or grant. Follow-up G4 work needs genuine reviewed Lu Git/FFprobe worker, real source revisions, contradictory independent oracle, and CCM persistence; installed and target 7B+ owner tests remain deferred.
