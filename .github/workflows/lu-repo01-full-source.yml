@@ -19,7 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # PR merge refs change whenever main's metadata-only ledger advances.
+          # Verify the immutable reviewed branch head, not a moving merge.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Assert exact reviewed source commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -49,7 +57,7 @@ jobs:
     # The trigger must be a transition from no exact-head marker to an
     # exact-head marker in the user-reviewable draft PR #200 description.
     needs: verify-source
-    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, 'LU_R00_NATIVE_GATE_SHA=') && !contains(github.event.changes.body.from, 'LU_R00_NATIVE_GATE_SHA=') }}
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_NATIVE_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_NATIVE_GATE_SHA={0}', github.event.pull_request.head.sha)) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3e8d78fa26f41f7ebdb7f0011a39d0e85d4589fa",
+  "sourceCommitBeforeLock": "8ee33e39699556fcfcd1e84bf0bfd3db4556d60f",
   "trackedFileCount": 840,
   "files": [
     {
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "9d5af44e9c07e7178eca3c466e3d02cc418a6fc0"
+      "blob": "bdbd0092eb065bbf65d248a6d082756a39eb1851"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -561,7 +561,7 @@
     },
     {
       "path": "docs/LU_CORE_CONVERGENCE_PLAN_20261109.md",
-      "blob": "182ffaf628c32f64cb7c642a122abbe11451aba3"
+      "blob": "854f86c673e72d6754118767be37471c38c017de"
     },
     {
       "path": "docs/LU_CORE_DIVERGENT_TIP_RESOLUTION_20261109.json",
@@ -669,7 +669,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "553068b01f8c9f7361dd392e66e874499a81e33a"
+      "blob": "f53ff635272ea31ef8d96a69103d9d55cac15fce"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
