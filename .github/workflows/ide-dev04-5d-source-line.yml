@@ -37,6 +37,10 @@ jobs:
         run: |
           set -euo pipefail
           rustup toolchain install 1.88.0 --profile minimal
+          rustup component add rustfmt --toolchain 1.88.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Compile and run all host protocol/native review tests
         shell: bash
         run: |
@@ -51,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          python - <<'PY'
           from pathlib import Path
           source=Path('ide/host/src/dap_source_lines.rs').read_text()
           dap=Path('ide/host/src/dap_session.rs').read_text()
