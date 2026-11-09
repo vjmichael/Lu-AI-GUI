@@ -1,0 +1,299 @@
+//! DEV-04.5D4 stage A: native, read-only Windows Job/SCM process and
+//! loaded PE module witness. This is NOT a stopped-thread RIP witness, PDB
+//! source-line verification, breakpoint authorization or installed acceptance.
+//!
+//! Only the owned kernel Job HANDLE of an admitted WindowsLspProcess may be
+//! supplied. No PID, PE base, module name or executable path comes from DAP.
+#![cfg(windows)]
+use crate::SupervisorError;
+use sha2::{Digest, Sha256};
+use std::{
+    collections::BTreeSet,
+    fs::{self, File},
+    io::Read,
+    mem::size_of,
+    os::windows::fs::MetadataExt,
+    path::Path,
+    ptr,
+};
+use windows_sys::Win32::{
+    Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT},
+    System::{
+        Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Module32FirstW, Module32NextW,
+            MODULEENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32,
+        },
+        JobObjects::{QueryInformationJobObject, JobObjectBasicProcessIdList},
+        Threading::{
+            OpenProcess, QueryFullProcessImageNameW, WaitForSingleObject,
+            PROCESS_QUERY_LIMITED_INFORMATION,
+        },
+    },
+};
+const MAX_JOB_PROCESSES: usize = 64;
+const MAX_MODULES: usize = 512;
+const MAX_BINARY: u64 = 64 * 1024 * 1024;
+fn denied() -> SupervisorError { SupervisorError::NoContainment }
+
+#[derive(Debug, Clone)]
+pub struct WindowsLoadedModuleWitness {
+    // Native-only; no WebView serialization, process control or user grant.
+    pub pid: u32,
+    pub loaded_base: u64,
+    pub loaded_size: u64,
+    pub preferred_base: u64,
+    pub preferred_pc: u64,
+    pub observed_pc: u64,
+    pub binary_sha256: String,
+    pub job_member_verified: bool,
+    pub process_exe_path_verified: bool,
+    pub module_rx_image_verified: bool,
+    // A ToolHelp module image covers a claimed PC; it DOES NOT attest
+    // the actual stopped x64 thread-context RIP, or a PDB line record.
+    pub os_thread_context_ip_verified: bool,
+    pub independent_pdb_line_verified: bool,
+    pub installed_app_accepted: bool,
+}
+
+struct Owned(HANDLE);
+impl Owned {
+    fn from_win32(raw: HANDLE) -> Result<Self, SupervisorError> {
+        if raw.is_null() || raw == INVALID_HANDLE_VALUE {
+            Err(denied())
+        } else {
+            Ok(Self(raw))
+        }
+    }
+}
+impl Drop for Owned {
+    fn drop(&mut self) {
+        if !self.0.is_null() && self.0 != INVALID_HANDLE_VALUE {
+            unsafe { CloseHandle(self.0); }
+        }
+    }
+}
+#[repr(C)]
+struct Pids {
+    assigned: u32,
+    listed: u32,
+    ids: [usize; MAX_JOB_PROCESSES],
+}
+fn member_ids(job: HANDLE) -> Result<Vec<u32>, SupervisorError> {
+    if job.is_null() || job == INVALID_HANDLE_VALUE { return Err(denied()); }
+    let mut buffer = Pids {
+        assigned: 0, listed: 0, ids: [0; MAX_JOB_PROCESSES],
+    };
+    let ok = unsafe {
+        QueryInformationJobObject(
+            job, JobObjectBasicProcessIdList,
+            (&raw mut buffer).cast(), size_of::<Pids>() as u32,
+            ptr::null_mut(),
+        )
+    };
+    if ok == 0
+        || buffer.assigned < 2
+        || buffer.assigned as usize > MAX_JOB_PROCESSES
+        || buffer.listed != buffer.assigned
+    {
+        return Err(denied());
+    }
+    let mut ids = Vec::new();
+    let mut seen = BTreeSet::new();
+    for value in buffer.ids.iter().take(buffer.listed as usize) {
+        let pid = u32::try_from(*value).map_err(|_| denied())?;
+        if pid == 0 || !seen.insert(pid) { return Err(denied()); }
+        ids.push(pid);
+    }
+    Ok(ids)
+}
+fn normalized_path(text: &str) -> Result<String, SupervisorError> {
+    if text.len() < 4 || text.len() > 2048
+        || text.chars().any(char::is_control) {
+        return Err(denied());
+    }
+    let stripped = text.strip_prefix(r"\\?\").unwrap_or(text);
+    if stripped.starts_with(r"\\") || stripped.contains("/../")
+        || stripped.contains(r"\..\")
+        || stripped.contains(r"\.\") {
+        return Err(denied());
+    }
+    Ok(stripped.replace('/', r"\").to_lowercase())
+}
+fn native_path(path: &Path) -> Result<String, SupervisorError> {
+    normalized_path(path.to_str().ok_or_else(denied)?)
+}
+fn from_wide(buffer: &[u16]) -> Result<String, SupervisorError> {
+    let end = buffer.iter().position(|c| *c == 0).ok_or_else(denied)?;
+    String::from_utf16(&buffer[..end]).map_err(|_| denied())
+}
+fn query_executable(pid: u32) -> Result<(Owned, String), SupervisorError> {
+    let process = Owned::from_win32(unsafe {
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)
+    })?;
+    if unsafe { WaitForSingleObject(process.0, 0) } != WAIT_TIMEOUT {
+        return Err(denied());
+    }
+    let mut data = [0u16; 2048];
+    let mut len = data.len() as u32;
+    if unsafe {
+        QueryFullProcessImageNameW(process.0, 0, data.as_mut_ptr(), &mut len)
+    } == 0 || len == 0 || len as usize >= data.len() {
+        return Err(denied());
+    }
+    let path = String::from_utf16(&data[..len as usize]).map_err(|_| denied())?;
+    Ok((process, normalized_path(&path)?))
+}
+fn sha_file(path: &Path) -> Result<String, SupervisorError> {
+    let m = fs::symlink_metadata(path).map_err(|_| denied())?;
+    if m.file_type().is_symlink()
+        || m.file_attributes() & 0x400 != 0
+        || !m.is_file() || m.len() == 0 || m.len() > MAX_BINARY {
+        return Err(denied());
+    }
+    let mut file = File::open(path).map_err(|_| denied())?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    let mut n = 0u64;
+    loop {
+        let k = file.read(&mut buf).map_err(|_| denied())?;
+        if k == 0 { break; }
+        n = n.checked_add(k as u64).ok_or_else(denied)?;
+        if n > MAX_BINARY { return Err(denied()); }
+        hasher.update(&buf[..k]);
+    }
+    if n != m.len() { return Err(denied()); }
+    let after = fs::symlink_metadata(path).map_err(|_| denied())?;
+    if after.len() != m.len() || after.modified().ok() != m.modified().ok() {
+        return Err(denied());
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+fn u16_at(data: &[u8], at: usize) -> Option<u16> {
+    Some(u16::from_le_bytes(data.get(at..at.checked_add(2)?)?.try_into().ok()?))
+}
+fn u32_at(data: &[u8], at: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(data.get(at..at.checked_add(4)?)?.try_into().ok()?))
+}
+fn u64_at(data: &[u8], at: usize) -> Option<u64> {
+    Some(u64::from_le_bytes(data.get(at..at.checked_add(8)?)?.try_into().ok()?))
+}
+fn pe_preferred_image(data: &[u8]) -> Option<(u64, u64)> {
+    if data.get(..2)? != b"MZ" { return None; }
+    let pe = usize::try_from(u32_at(data, 0x3c)?).ok()?;
+    if data.get(pe..pe.checked_add(4)?)? != b"PE\0\0" { return None; }
+    let optional = pe.checked_add(24)?;
+    if u16_at(data, optional)? != 0x20b { return None; }
+    let size = u64::from(u32_at(data, optional.checked_add(56)?)?);
+    let preferred = u64_at(data, optional.checked_add(24)?)?;
+    if preferred < 0x10000 || size < 4096 || size > 512 * 1024 * 1024 {
+        return None;
+    }
+    Some((preferred, size))
+}
+fn module_at(pid: u32, expected: &str, pc: u64, pe_size: u64)
+    -> Result<Option<(u64, u64)>, SupervisorError>
+{
+    let snapshot = Owned::from_win32(unsafe {
+        CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid)
+    })?;
+    let mut entry = MODULEENTRY32W::default();
+    entry.dwSize = size_of::<MODULEENTRY32W>() as u32;
+    if unsafe { Module32FirstW(snapshot.0, &mut entry) } == 0 {
+        return Err(denied());
+    }
+    let mut hits = Vec::new();
+    for index in 0..MAX_MODULES {
+        if entry.th32ProcessID != pid { return Err(denied()); }
+        let module_path = normalized_path(&from_wide(&entry.szExePath)?)?;
+        let base = entry.modBaseAddr as usize as u64;
+        let size = u64::from(entry.modBaseSize);
+        if module_path == expected && size == pe_size
+            && base <= pc && pc < base.checked_add(size).ok_or_else(denied)? {
+            hits.push((base, size));
+        }
+        entry.dwSize = size_of::<MODULEENTRY32W>() as u32;
+        if unsafe { Module32NextW(snapshot.0, &mut entry) } == 0 {
+            if hits.len() > 1 { return Err(denied()); }
+            return Ok(hits.pop());
+        }
+        if index + 1 == MAX_MODULES { return Err(denied()); }
+    }
+    Err(denied())
+}
+/// Read-only, kernel Job-bound review of a *claimed* DAP address. A true
+/// stopped-thread PC still requires independent GetThreadContext evidence.
+/// Windows event/LLDB state is NEVER inferred from a module-list hit.
+pub(crate) fn observe_job_module(
+    job: HANDLE, expected_binary: &Path, expected_sha: &str, pc: u64,
+) -> Result<WindowsLoadedModuleWitness, SupervisorError> {
+    if !expected_binary.is_absolute() || pc == 0
+        || expected_sha.len() != 64
+        || !expected_sha.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        || sha_file(expected_binary)? != expected_sha {
+        return Err(denied());
+    }
+    let bytes = fs::read(expected_binary).map_err(|_| denied())?;
+    if bytes.len() as u64 > MAX_BINARY { return Err(denied()); }
+    let (preferred_base, size) = pe_preferred_image(&bytes).ok_or_else(denied)?;
+    let expected_path = native_path(expected_binary)?;
+    let prior_members = member_ids(job)?;
+    let mut result = None;
+    for pid in &prior_members {
+        let (process, image_path) = query_executable(*pid)?;
+        if image_path != expected_path { continue; }
+        let loaded = module_at(*pid, &expected_path, pc, size)?;
+        let Some((loaded_base, loaded_size)) = loaded else { continue; };
+        let preferred_pc = preferred_base
+            .checked_add(pc.checked_sub(loaded_base).ok_or_else(denied)?)
+            .ok_or_else(denied)?;
+        if result.is_some() { return Err(denied()); }
+        // A changed/retired process is not a valid live debugger witness.
+        if unsafe { WaitForSingleObject(process.0, 0) } != WAIT_TIMEOUT {
+            return Err(denied());
+        }
+        result = Some(WindowsLoadedModuleWitness {
+            pid: *pid, loaded_base, loaded_size, preferred_base,
+            preferred_pc, observed_pc: pc, binary_sha256: expected_sha.to_owned(),
+            job_member_verified: true, process_exe_path_verified: true,
+            module_rx_image_verified: true,
+            os_thread_context_ip_verified: false,
+            independent_pdb_line_verified: false,
+            installed_app_accepted: false,
+        });
+    }
+    let result = result.ok_or_else(denied)?;
+    if prior_members != member_ids(job)? || sha_file(expected_binary)? != expected_sha {
+        return Err(denied());
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn pe_image_header_and_preferred_pc_are_bounded() {
+        let mut b = vec![0_u8; 512];
+        b[..2].copy_from_slice(b"MZ");
+        b[0x3c..0x40].copy_from_slice(&0x80u32.to_le_bytes());
+        b[0x80..0x84].copy_from_slice(b"PE\0\0");
+        b[0x98..0x9a].copy_from_slice(&0x20bu16.to_le_bytes());
+        b[0xb0..0xb8].copy_from_slice(&0x140000000u64.to_le_bytes());
+        b[0xd0..0xd4].copy_from_slice(&0x2000u32.to_le_bytes());
+        assert_eq!(pe_preferred_image(&b), Some((0x140000000, 0x2000)));
+        b[0x98..0x9a].copy_from_slice(&0x10bu16.to_le_bytes());
+        assert_eq!(pe_preferred_image(&b), None);
+        assert_eq!(pe_preferred_image(&[0; 64]), None);
+    }
+    #[test]
+    fn no_forged_path_or_pid_and_no_dap_supplied_module_base() {
+        assert!(normalized_path(r"C:\private\app\debug-target\test.exe").is_ok());
+        assert!(normalized_path(r"C:\private\..\other.exe").is_err());
+        assert!(normalized_path(r"\\server\share\test.exe").is_err());
+        assert!(member_ids(ptr::null_mut()).is_err());
+        assert!(observe_job_module(
+            ptr::null_mut(), Path::new(r"C:\not-installed.exe"),
+            &"a".repeat(64), 0x140001000
+        ).is_err());
+    }
+}
