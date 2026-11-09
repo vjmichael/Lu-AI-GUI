@@ -378,6 +378,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if retired_stage.exists() {
                 return Err("DENIED: old private Linux debug target stage retained".into());
             }
+            // Reopening the journal creates a new owner/session; replayed
+            // build/debug approval is still denied, not silently restored.
+            let independently_restarted =
+                Supervisor::open(journal.clone()).map_err(|e| e.code())?;
+            if independently_restarted
+                .record_human_approval(
+                    &prepared.job_id, &prepared.plan_sha256, &plan.source_head, true,
+                )
+                .is_ok()
+                || independently_restarted
+                    .record_human_approval(
+                        &debug_job.job_id, &debug_job.plan_sha256, &debugger_plan.source_head, true,
+                    )
+                    .is_ok()
+            {
+                return Err("DENIED: old build/debug approval replayed after Linux restart".into());
+            }
             eprintln!("DEV045B_LINUX_DISTINCT_APPROVAL_REPLAY_AND_STAGE_CLEANUP=PASS");
         }
     }
