@@ -23,17 +23,20 @@ use windows_sys::Win32::{
     },
     System::{
         Diagnostics::{
-            Debug::{GetThreadContext, CONTEXT},
+            Debug::{CheckRemoteDebuggerPresent, GetThreadContext, CONTEXT},
             ToolHelp::{
                 CreateToolhelp32Snapshot, Module32FirstW, Module32NextW,
-                Thread32First, Thread32Next, MODULEENTRY32W, THREADENTRY32,
-                TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPTHREAD,
+                Process32FirstW, Process32NextW, Thread32First, Thread32Next,
+                MODULEENTRY32W, PROCESSENTRY32W, THREADENTRY32,
+                TH32CS_SNAPPROCESS, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32,
+                TH32CS_SNAPTHREAD,
             },
         },
         JobObjects::{QueryInformationJobObject, JobObjectBasicProcessIdList},
         Threading::{
-            GetProcessIdOfThread, OpenProcess, OpenThread, QueryFullProcessImageNameW,
-            WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
+            GetProcessId, GetProcessIdOfThread, OpenProcess, OpenThread,
+            QueryFullProcessImageNameW, WaitForSingleObject,
+            PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
             THREAD_GET_CONTEXT, THREAD_QUERY_LIMITED_INFORMATION,
         },
     },
@@ -198,6 +201,96 @@ pub(crate) fn sample_job_thread_rip(
         job_membership_rechecked: true,
         kernel_debug_event_independently_verified: false,
         pdb_line_independently_verified: false,
+        debugger_control_authorized: false,
+    })
+}
+
+/// A stronger OS-origin corroboration than LLDB-DAP's own messages:
+/// the exact Job member is debugged and its kernel process-table parent is
+/// the *native host-owned* admitted LLDB process. This does not expose the
+/// kernel DEBUG_EVENT object or prove which LLDB thread received it.
+#[derive(Clone, Debug)]
+pub struct WindowsDebugPortCorroboration {
+    pub(crate) debugger_pid: u32,
+    pub(crate) debuggee_pid: u32,
+    pub(crate) kernel_reports_debugger_attached: bool,
+    pub(crate) debuggee_parent_is_owned_lldb: bool,
+    pub(crate) job_membership_verified: bool,
+    pub(crate) actual_debug_event_owner_attested: bool,
+    pub(crate) debugger_control_authorized: bool,
+}
+fn kernel_parent_pid(pid: u32) -> Result<u32, SupervisorError> {
+    let snapshot = Owned::from_win32(unsafe {
+        CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    })?;
+    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
+    if unsafe { Process32FirstW(snapshot.0, &mut entry) } == 0 { return Err(denied()); }
+    let mut seen = false;
+    let mut parent = 0;
+    for index in 0..MAX_ENUMERATED_THREADS {
+        if entry.th32ProcessID == pid {
+            if seen { return Err(denied()); }
+            seen = true;
+            parent = entry.th32ParentProcessID;
+        }
+        entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
+        if unsafe { Process32NextW(snapshot.0, &mut entry) } == 0 {
+            if unsafe { GetLastError() } != ERROR_NO_MORE_FILES
+                || !seen || parent == 0 { return Err(denied()); }
+            return Ok(parent);
+        }
+        if index + 1 == MAX_ENUMERATED_THREADS { return Err(denied()); }
+    }
+    Err(denied())
+}
+/// Read-only independent OS checks. The debugger handle originates from
+/// WindowsLspProcess, not the DAP frame/renderer. The Job handle is the one
+/// created by the original SCM-admitted worker. No debug attach or privileged
+/// target mutation is performed here.
+pub(crate) fn verify_debug_port_and_owned_parent(
+    job: HANDLE, debugger_process: HANDLE,
+    module: &WindowsLoadedModuleWitness,
+) -> Result<WindowsDebugPortCorroboration, SupervisorError> {
+    if debugger_process.is_null() || debugger_process == INVALID_HANDLE_VALUE
+        || !module.job_member_verified || !module.process_exe_path_verified
+        || !module.os_loaded_pe_image_verified {
+        return Err(denied());
+    }
+    let owner_pid = unsafe { GetProcessId(debugger_process) };
+    if owner_pid == 0 || owner_pid == module.pid { return Err(denied()); }
+    let initial_members = member_ids(job)?;
+    if !initial_members.contains(&module.pid)
+        || !initial_members.contains(&owner_pid)
+        || unsafe { WaitForSingleObject(debugger_process, 0) } != WAIT_TIMEOUT {
+        return Err(denied());
+    }
+    let target = Owned::from_win32(unsafe {
+        OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION, 0, module.pid)
+    })?;
+    let mut attached: i32 = 0;
+    if unsafe { CheckRemoteDebuggerPresent(target.0, &mut attached) } == 0
+        || attached == 0
+        || kernel_parent_pid(module.pid)? != owner_pid {
+        return Err(denied());
+    }
+    // A resumed, detached or replaced process invalidates the corroboration.
+    let mut still_attached: i32 = 0;
+    if unsafe { CheckRemoteDebuggerPresent(target.0, &mut still_attached) } == 0
+        || still_attached == 0
+        || kernel_parent_pid(module.pid)? != owner_pid
+        || member_ids(job)? != initial_members
+        || unsafe { WaitForSingleObject(target.0, 0) } != WAIT_TIMEOUT
+        || unsafe { WaitForSingleObject(debugger_process, 0) } != WAIT_TIMEOUT {
+        return Err(denied());
+    }
+    Ok(WindowsDebugPortCorroboration {
+        debugger_pid: owner_pid,
+        debuggee_pid: module.pid,
+        kernel_reports_debugger_attached: true,
+        debuggee_parent_is_owned_lldb: true,
+        job_membership_verified: true,
+        actual_debug_event_owner_attested: false,
         debugger_control_authorized: false,
     })
 }
@@ -423,6 +516,20 @@ pub(crate) fn observe_job_module(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_real_lldb_handle_can_never_attest_event_owner() {
+        let fake = WindowsLoadedModuleWitness {
+            pid: 1, loaded_base: 0x140000000, loaded_size: 0x2000,
+            preferred_base: 0x140000000, preferred_pc: 0x140001000,
+            observed_pc: 0x140001000, binary_sha256: "a".repeat(64),
+            job_member_verified: true, process_exe_path_verified: true,
+            os_loaded_pe_image_verified: true, os_thread_context_ip_verified: false,
+            independent_pdb_line_verified: false, installed_app_accepted: false,
+        };
+        assert!(verify_debug_port_and_owned_parent(
+            ptr::null_mut(), ptr::null_mut(), &fake,
+        ).is_err());
+    }
     #[test]
     fn pe_image_header_and_preferred_pc_are_bounded() {
         let mut b = vec![0_u8; 512];
