@@ -41,6 +41,16 @@ def apply(root: Path) -> None:
     )
     content = replace_one(
         content,
+        "      m_is_shutting_down(false) {\n"
+        "  m_debugging_ended_event = ::CreateEvent(nullptr, TRUE, FALSE, nullptr);",
+        "      m_is_shutting_down(false) {\n"
+        "  // Clear owner-pipe inheritance *before* ProcessLauncherWindows can\n"
+        "  // create the inferior; first-event initialization is too late.\n"
+        "  lu_ide_owner::Owner::Instance();\n"
+        "  m_debugging_ended_event = ::CreateEvent(nullptr, TRUE, FALSE, nullptr);",
+    )
+    content = replace_one(
+        content,
         "    if (wait_result) {\n      DWORD continue_status = DBG_CONTINUE;",
         "    if (wait_result) {\n"
         "      // Actual OS event from *this* debugger-owner thread, while\n"
