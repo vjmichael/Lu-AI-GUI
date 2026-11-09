@@ -205,6 +205,30 @@ pub(crate) fn sample_job_thread_rip(
     })
 }
 
+/// The owner TID comes ONLY from the first-party kernel event sideband,
+/// already verified against an inherited pipe nonce and monotonic sequence.
+/// Independently ensure this real Win32 thread belongs to Lu's original
+/// protected LLDB process HANDLE. A DAP or model-supplied TID is not accepted.
+#[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+pub(crate) fn verify_lldb_event_owner_thread(
+    ll_process: HANDLE, owner_tid: u32,
+) -> Result<(), SupervisorError> {
+    if ll_process.is_null() || ll_process == INVALID_HANDLE_VALUE
+        || owner_tid == 0 { return Err(denied()); }
+    let pid = unsafe { GetProcessId(ll_process) };
+    if pid == 0 || unsafe { WaitForSingleObject(ll_process, 0) } != WAIT_TIMEOUT {
+        return Err(denied());
+    }
+    let thread = Owned::from_win32(unsafe {
+        OpenThread(THREAD_QUERY_LIMITED_INFORMATION, 0, owner_tid)
+    })?;
+    if unsafe { GetProcessIdOfThread(thread.0) } != pid
+        || unsafe { WaitForSingleObject(ll_process, 0) } != WAIT_TIMEOUT {
+        return Err(denied());
+    }
+    Ok(())
+}
+
 /// A stronger OS-origin corroboration than LLDB-DAP's own messages:
 /// the exact Job member is debugged and its kernel process-table parent is
 /// the *native host-owned* admitted LLDB process. This does not expose the
