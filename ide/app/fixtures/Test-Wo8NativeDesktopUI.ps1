@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','B4SplitEditor','B5LargeProject')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','Dev035JobsReadOnly','B4SplitEditor','B5LargeProject')][string]$Scenario='Shell',
   [string]$FixtureRoot='',
   [string]$MetricsFile=''
 )
@@ -798,6 +798,31 @@ try {
         Deny 'wo9_git_commit_changed_unreviewed_files'
       }
       Write-Host 'WO9_INSTALLED_ONE_FILE_GIT_STAGE_COMMIT_NO_HOOKS_OR_PUSH=PASS'
+    }
+    if ($Scenario -eq 'Dev035JobsReadOnly') {
+      # Installed unsigned application: only read-only Jobs UX can pass.
+      # Requiring a genuine signed protected worker is a DIFFERENT gate.
+      $before=ProtectedWorkerCount
+      $sourceBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fixed 'main.rs')).Hash
+      Click 'Job requests'
+      Require 'DEV-03.4 · Conventional test files'
+      Require 'DEV-03.3B · Live protected worker output'
+      Require 'DEV-03.5 · Protected job lifecycle'
+      Require 'No matching protected job journal entries observed'
+      Click 'Discover test files'
+      [void](Find-Control 'discovery incomplete by design' '' 20)
+      $start=Find-Control 'Request protected Run / Test' 'Button' 15
+      if ($start.Current.IsEnabled) {
+        Deny 'unsigned_installed_job_unexpectedly_executable'
+      }
+      if ((ProtectedWorkerCount) -ne $before) {
+        Deny 'read_only_test_discovery_spawned_a_worker'
+      }
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fixed 'main.rs')).Hash -ne $sourceBefore) {
+        Deny 'read_only_jobs_workflow_modified_source'
+      }
+      Write-Host 'DEV035_WINDOWS_INSTALLED_JOBS_DISCOVERY_NO_RUN=PASS'
+      Write-Host 'DEV035_WINDOWS_INSTALLED_PROTECTED_WORKER=NOT_ACCEPTED'
     }
     if ($Scenario -eq 'ProtectedDebuggerCancellation') {
       $sign=Get-AuthenticodeSignature -LiteralPath $exe
