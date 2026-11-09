@@ -13,6 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         live_output::LiveOutput,
         snapshot::publish_input,
         debug_binary_witness::audit_debug_binary_candidate,
+        debug_symbol_verification::verify_build_debug_symbols,
         wo6_output_evidence::audit_published_output,
         JobPhase, JobPlan, Supervisor,
     };
@@ -168,6 +169,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         eprintln!("DEV042_LINUX_CGROUP_REAL_BUILD_BINARY=PASS hash={} receipt={}",
             candidate.binary_sha256,receipt.terminal_receipt_hash);
+        let symbols=verify_build_debug_symbols(&actual.output_directory,
+            &output_witness,&candidate)
+            .map_err(|_|"DENIED: real contained Linux debug sections were altered")?
+            .ok_or("DENIED: real contained Linux executable lacked valid DWARF")?;
+        if !symbols.debug_symbols_attested || symbols.source_line_mapping_verified ||
+            symbols.debugger_execution_authorized ||
+            symbols.binary_sha256!=candidate.binary_sha256 ||
+            symbols.output_tree_sha256!=output_witness.tree_sha256 {
+            return Err("DENIED: real Linux ELF/DWARF identity not bound".into());
+        }
+        eprintln!("DEV043_LINUX_REAL_ELF_DWARF=PASS symbols_sha={}",
+            symbols.symbols_sha256);
     }
     if cancel && actual.summary.phase != JobPhase::Cancelled {
         return Err("DENIED: requested native process-tree kill missing".into());
