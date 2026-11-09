@@ -121,6 +121,31 @@ pub fn m4_explicit_belief_target(
     Some((w[3].into(),w[5].into(),w[7].into(),w[9].into(),w[11].into()))
 }
 
+/// An exact CURRENT-human request for version-pinned historical procedure
+/// inspection. Tool version and application version MUST be provided; never
+/// choose them from the stored procedure, a model guess or an old message.
+pub fn m4_explicit_procedure_target(
+    prompt:&str
+)->Option<(String,String,String,String,String)>{
+    if prompt.len()>512||prompt.contains('\0')||
+        prompt.contains('\n')||prompt.contains('\r'){return None}
+    let w=prompt.split_ascii_whitespace().collect::<Vec<_>>();
+    if w.len()!=12||!w[0].eq_ignore_ascii_case("Recall")||
+        !w[1].eq_ignore_ascii_case("procedure")||
+        !w[2].eq_ignore_ascii_case("project")||
+        !w[4].eq_ignore_ascii_case("task")||
+        !w[6].eq_ignore_ascii_case("tool")||
+        !w[8].eq_ignore_ascii_case("tool-version")||
+        !w[10].eq_ignore_ascii_case("application-version"){return None}
+    let safe=|s:&str|!s.is_empty()&&s.len()<=128&&
+        s.bytes().all(|b|b.is_ascii_alphanumeric()||
+            matches!(b,b'.'|b'_'|b'-'));
+    if ![w[3],w[5],w[7],w[9],w[11]].iter().all(|v|safe(v)){
+        return None
+    }
+    Some((w[3].into(),w[5].into(),w[7].into(),w[9].into(),w[11].into()))
+}
+
 pub fn m3_explicit_resume_target(prompt:&str)->Option<(String,String)>{
     if prompt.len()>256||prompt.contains('\0'){return None}
     let words=prompt.split_whitespace().collect::<Vec<_>>();
@@ -1071,10 +1096,23 @@ impl ChatStore {
         continuity:&ContinuityStore,journal:&lu_core::journal::EffectJournal
     )->Result<Vec<serde_json::Value>,String>{
         let book=self.require(chat_id)?;
+        // Genuine historical VERIFIED status requires the stored receipt,
+        // independently checked tool-specific oracle and current source/
+        // checkpoint validation. A claimed APPLIED receipt alone fails.
+        let verification_failed=std::cell::Cell::new(false);
         let assessed:Vec<AssessedClaim>=book.assess_claims(
             chat_id,project_id,task_id,subject,predicate,
-            application_version,continuity,journal,|_|false
+            application_version,continuity,journal,|e|{
+                match journal.independent_verified_receipt(
+                    &e.call_id,&e.tool_id,&e.receipt_sha256){
+                    Ok(value)=>value,
+                    Err(_)=>{verification_failed.set(true);false}
+                }
+            }
         ).map_err(to_err)?;
+        if verification_failed.get(){
+            return Err("Independent source-oracle journal unavailable".into())
+        }
         if assessed.len()>24{
             return Err("Too many conflicting beliefs; request human review".into())
         }
@@ -1097,6 +1135,63 @@ impl ChatStore {
                 "version":a.claim.application_version,
                 "expiresUnix":a.claim.expires_unix,
                 "notToolAuthorization":true
+            }))
+        }).collect::<Result<Vec<_>,String>>()
+    }
+
+    /// Source-current, exact-version procedure recall from this profile's
+    /// actual ANSF book. The candidate's stored steps are DATA, not executable
+    /// instructions; historical receipt validation is not live OS custody.
+    pub fn m4_procedure_context(
+        &self,chat_id:&str,project_id:&str,task_id:&str,tool_id:&str,
+        tool_version:&str,application_version:&str,
+        continuity:&ContinuityStore,journal:&lu_core::journal::EffectJournal
+    )->Result<Vec<serde_json::Value>,String>{
+        let book=self.require(chat_id)?;
+        let verification_failed=std::cell::Cell::new(false);
+        let records=book.reusable_verified_procedures(
+            chat_id,project_id,task_id,tool_id,tool_version,
+            application_version,8,continuity,journal,|e|{
+                match journal.independent_verified_receipt(
+                    &e.call_id,&e.tool_id,&e.receipt_sha256){
+                    Ok(value)=>value,
+                    Err(_)=>{verification_failed.set(true);false}
+                }
+            }
+        ).map_err(to_err)?;
+        if verification_failed.get(){
+            return Err("Procedure independent source-oracle unavailable".into())
+        }
+        records.into_iter().map(|p|{
+            let c=p.candidate;
+            let original=AnsfSourceId::new(
+                chat_id.to_owned(),c.source_entry_id
+            ).map_err(to_err)?.encode();
+            // Bound the model-facing context, even though the underlying
+            // validated historic procedural record may be much longer.
+            let short=|text:&str|text.chars().take(300).collect::<String>();
+            Ok(serde_json::json!({
+                "procedureId":c.procedure_id,
+                "originalSourceId":original,
+                "sourceSha256":p.source_sha256,
+                "historicReceiptSha256":p.receipt_sha256,
+                "checkpointId":c.checkpoint_id,
+                "toolId":c.tool_id,
+                "toolVersion":c.tool_version,
+                "applicationVersion":c.application_version,
+                "title":short(&c.title),
+                "prerequisites":c.prerequisites.iter().take(4)
+                    .map(|x|short(x)).collect::<Vec<_>>(),
+                "historicalSteps":c.steps.iter().take(5)
+                    .map(|x|short(x)).collect::<Vec<_>>(),
+                "failureConditions":c.failure_conditions.iter().take(4)
+                    .map(|x|short(x)).collect::<Vec<_>>(),
+                "moreRecordedStepsNotRead":c.steps.len()>5,
+                "historicEvidence":"INDEPENDENTLY_VERIFIED_AT_OBSERVATION",
+                "currentSourceFreshness":"NOT_RECHECKED",
+                "osDescendantCustody":"NOT_ASSERTED_BY_THIS_MEMORY_READ",
+                "priorGrantReusable":false,
+                "mayExecuteOrReplay":false
             }))
         }).collect::<Result<Vec<_>,String>>()
     }
