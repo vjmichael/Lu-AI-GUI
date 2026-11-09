@@ -1,0 +1,120 @@
+name: Lu AGENT-01K Independent Recovery Decision Native Acceptance
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/agent_recovery_decision.rs'
+      - 'src-tauri/lu-core/src/agent_deliverable_receipts.rs'
+      - 'src-tauri/lu-core/src/agent_host_scheduler.rs'
+      - 'src-tauri/lu-core/src/agent_plan_ledger.rs'
+      - 'src-tauri/lu-core/src/agent_plan_revisions.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'lu-desktop/src-tauri/src/agent_recovery_desktop.rs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/tests/agent01k-independent-recovery.test.mjs'
+      - '.github/workflows/lu-agent01k-independent-recovery.yml'
+      - 'source-tree.lock.json'
+  push:
+    branches: ['lu/agent01k-recovery-decision-20261108']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-agent01k-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-evidence-reconciliation:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source lock and commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p agent01k-evidence
+          printf 'SOURCE_SHA=%s\nOS=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > agent01k-evidence/provenance.txt
+      - name: Assert read-only auth, custody and UI source boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01k-independent-recovery.test.mjs \
+            2>&1 | tee agent01k-evidence/source-contracts.log
+          grep -Fq '# pass 8' agent01k-evidence/source-contracts.log
+          grep -Fq '# fail 0' agent01k-evidence/source-contracts.log
+      - name: Compile and exercise actual Lu Core recovery decision cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_recovery_decision::tests -- --nocapture \
+            2>&1 | tee agent01k-evidence/recovery-decision-native.log
+          for case in \
+            untrusted_os_exit_never_allows_a_new_step \
+            independent_custody_still_requires_new_human_authorization \
+            missing_or_rebound_original_effect_never_becomes_success \
+            old_owner_cancel_and_unknown_host_are_all_fenced; do
+            grep -Fq "test agent_recovery_decision::tests::$case ... ok" \
+              agent01k-evidence/recovery-decision-native.log
+          done
+          grep -Fq 'test result: ok. 4 passed; 0 failed;' \
+            agent01k-evidence/recovery-decision-native.log
+      - name: Actual task/effect SQLite reopen, withheld oracle and denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_deliverable_receipts::tests::agent01k_real_sqlite_reopen_reconciles_worker_oracle_without_claiming_os_custody \
+            -- --nocapture 2>&1 | tee agent01k-evidence/actual-sqlite-recovery.log
+          grep -Fq 'test agent_deliverable_receipts::tests::agent01k_real_sqlite_reopen_reconciles_worker_oracle_without_claiming_os_custody ... ok' \
+            agent01k-evidence/actual-sqlite-recovery.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            agent01k-evidence/actual-sqlite-recovery.log
+      - name: Windows-only actual original desktop type check
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+          Push-Location lu-desktop
+          if(Test-Path package-lock.json){npm ci}else{npm install --no-audit --no-fund}
+          if($LASTEXITCODE -ne 0){throw 'npm dependencies failed'}
+          npm run build
+          if($LASTEXITCODE -ne 0){throw 'React build failed'}
+          npm run check
+          if($LASTEXITCODE -ne 0){throw 'Frontend checks failed'}
+          Pop-Location
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | Tee-Object -FilePath agent01k-evidence/native-desktop-check.log
+          if($LASTEXITCODE -ne 0){throw 'Real Windows Tauri compile failed'}
+      - name: Acceptance boundaries
+        shell: bash
+        run: |
+          echo 'AGENT-01K tests source and native SQLite reconstruction, NOT completed OS descendant custody, genuine loaded Qwen, physical NSIS, or permission to auto-continue. NoIndependentCustodyProof stays installed by default.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01k-recovery-${{ matrix.os }}
+          path: agent01k-evidence/
+          retention-days: 14
+          if-no-files-found: warn
