@@ -111,6 +111,10 @@
              "A historical step lacks a witness link; never infer that work succeeded.")
      }
      let Some(next)=steps.iter().find(|s|s.schedule_state=="NOT_SCHEDULED")else{
+         if owner_state=="RELEASED"{
+             return make(None,"STOP_RELEASED_OWNER",
+                 "All historical steps are closed. An old owner or permission cannot be reused.")
+         }
          return make(None,"HISTORICAL_ONLY",
              "All steps are historical; this does not confer new execution authority.")
      };
