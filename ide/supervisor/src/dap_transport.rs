@@ -102,6 +102,19 @@ impl DapGateway {
         process.observe_windows_job_module(expected_binary, sha, pc)
     }
     #[cfg(windows)]
+    pub(crate) fn verify_windows_native_debug_port(
+        &mut self,
+        module: &crate::windows_kernel_pc::WindowsLoadedModuleWitness,
+    ) -> Result<crate::windows_kernel_pc::WindowsDebugPortCorroboration, SupervisorError> {
+        if self.session.phase() != DapPhase::Stopped
+            || self.session.source_candidate()
+                .and_then(|f| f.instruction_address) != Some(module.observed_pc) {
+            return Err(SupervisorError::NoContainment);
+        }
+        let process = self.process.as_mut().ok_or(SupervisorError::NoContainment)?;
+        process.corroborate_windows_debug_port(module)
+    }
+    #[cfg(windows)]
     pub(crate) fn sample_windows_stopped_thread_rip(
         &mut self,
         module: &crate::windows_kernel_pc::WindowsLoadedModuleWitness,
