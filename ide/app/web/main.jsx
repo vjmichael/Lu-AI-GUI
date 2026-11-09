@@ -98,6 +98,8 @@ function App() {
   const [packageRevalidated, setPackageRevalidated] = useState(null);
   const [packagePreviewBusy, setPackagePreviewBusy] = useState(false);
   const packagePreviewRequest = useRef(0);
+  const [packageRunBusy, setPackageRunBusy] = useState(false);
+  const [packageRunResult, setPackageRunResult] = useState(null);
   const workflowRequest = useRef(0);
 
   const [pending, setPending] = useState(false);
@@ -375,6 +377,8 @@ function App() {
     setPackagePreview(null);
     setPackageRevalidated(null);
     setPackagePreviewBusy(false);
+    setPackageRunBusy(false);
+    setPackageRunResult(null);
     setAdapterReview(null);
     setAdapterReviewBusy(false);
     setBuildResult(null);
@@ -509,7 +513,7 @@ function App() {
   const isJobs = section === 'tasks';
   useEffect(() => {
     const projectId = activeProject?.projectId;
-    if (!isJobs || !projectId) return;
+    if ((section !== 'tasks' && section !== 'packages') || !projectId) return;
     let alive = true;
     async function update() {
       try {
@@ -593,7 +597,7 @@ function App() {
     void update();
     const poll = window.setInterval(() => { void update(); }, 1000);
     return () => { alive = false; window.clearInterval(poll); };
-  }, [isJobs, activeProject?.projectId]);
+  }, [section, activeProject?.projectId]);
   // Advisory only: derives labels from two existing, separately observed native responses.
   const evidenceReconciliation = activeProject?.projectId &&
     projectContext?.projectId === activeProject.projectId &&
@@ -951,6 +955,7 @@ function App() {
     packagePreviewRequest.current += 1;
     setPackagePreview(null);
     setPackageRevalidated(null);
+    setPackageRunResult(null);
     setPackagePreviewBusy(false);
   }
 
@@ -1039,6 +1044,60 @@ function App() {
     }finally{
       if(ticket===packagePreviewRequest.current)
         setPackagePreviewBusy(false);
+    }
+  }
+
+  async function runProtectedOfflineUvSync() {
+    const projectId=activeProject?.projectId;
+    const preview=packagePreview;
+    const confirmed=packageRevalidated;
+    const runtime=buildStatus?.multilangReady?.find(
+      entry=>entry.profileId==='uv_sync_offline'
+    );
+    if(!projectId || preview?.projectId!==projectId ||
+       preview.request?.managerId!=='uv' ||
+       preview.request?.operation!=='sync' ||
+       preview.readyForApproval!==false ||
+       confirmed?.previewSha256!==preview.previewSha256 ||
+       confirmed?.evidenceFingerprint!==preview.evidenceFingerprint ||
+       confirmed?.matchedFreshNativeEvidence!==true ||
+       confirmed?.authorizationIssued!==false ||
+       !runtime?.ready ||
+       buildStatus?.current || packageRunBusy || buildBusy)return;
+    setPackageRunBusy(true);
+    setPackageRunResult(null);
+    setProblem('');
+    try {
+      // No package names, executable paths, flags or grants cross IPC.
+      // Rust derives a NEW uv Sync request, sealed target and OS consent.
+      const result=await invoke('ide_package_run_reviewed_uv',{
+        projectId,
+        expectedPreviewSha256:preview.previewSha256,
+        expectedEvidenceFingerprint:preview.evidenceFingerprint,
+      });
+      if(activeProjectIdRef.current!==projectId)return;
+      if(!result || result.projectId!==projectId ||
+         result.recipeId!=='uv_sync_offline' ||
+         !/^[a-f0-9]{64}$/.test(result.planSha256||'') ||
+         !/^[a-f0-9]{64}$/.test(result.terminalReceiptSha256||'') ||
+         result.installedAppAccepted!==false) {
+        throw Error('IDE053_UNVERIFIED_PACKAGE_JOB_RESULT');
+      }
+      invalidatePackagePreview();
+      setPackageRunResult(result);
+      // Completed Job is not proof packages are in the registered project:
+      // the entire private /output artifact remains separately auditable.
+      setHint(result.phase==='completed' && result.nativeExitCode===0 &&
+        result.artifactManifestSha256 && !result.requiresReconciliation ?
+        'Protected offline uv Sync finished with a native terminal receipt and private output evidence. No registered project environment was installed.' :
+        'Protected package run did not establish an accepted environment. Inspect the terminal and OS recovery receipts.');
+    }catch(error){
+      if(activeProjectIdRef.current===projectId)
+        setProblem('Offline package operation denied or interrupted: '+String(error));
+    }finally{
+      setPackageRunBusy(false);
+      if(activeProjectIdRef.current===projectId)
+        await refreshProtectedBuildStatus();
     }
   }
 
@@ -4298,11 +4357,73 @@ function App() {
                         <p role="status"><strong>Fresh native evidence matched.</strong>
                           {' '}Approval is still disabled; this result is not an
                           execution token and cannot bypass future OS consent.</p>}
-                      <p><strong>Install/Apply unavailable.</strong> Future worker
-                        admission must independently revalidate again,
-                        obtain a separate human approval and verify sandbox custody.</p>
+                      <p><strong>General Install/Apply unavailable.</strong> This
+                        review is not authority. A fixed offline uv Sync
+                        is separately feature-gated and still requires native
+                        revalidation, new approval and verified OS custody.</p>
+                      {packagePreview.request.managerId==='uv' &&
+                        packagePreview.request.operation==='sync' &&
+                        <div className="continuityDocument"
+                          aria-label="IDE-05.3 native approved offline package Sync">
+                          <h4>Optional protected offline uv Sync</h4>
+                          <p>The hash-pinned uv and Python runtime, protected OS
+                            Job/cgroup, no-network sandbox and private output
+                            must be verified. A <strong>new native human
+                            approval</strong> is mandatory for each execution.
+                            Add/Remove, Conan, vcpkg and online resolution remain disabled.</p>
+                          <p>Native uv runtime: {buildStatus?.multilangReady?.find(
+                            entry=>entry.profileId==='uv_sync_offline')?.ready ?
+                            'Verified in this installed runtime' :
+                            'Unavailable or not release-pinned'}</p>
+                          <button className="primaryBtn" type="button"
+                            disabled={packageRunBusy || buildBusy || buildStatus?.current ||
+                              packageRevalidated?.previewSha256!==packagePreview.previewSha256 ||
+                              packageRevalidated?.authorizationIssued!==false ||
+                              !buildStatus?.multilangReady?.some(
+                                entry=>entry.profileId==='uv_sync_offline' && entry.ready)}
+                            onClick={()=>void runProtectedOfflineUvSync()}>
+                            {packageRunBusy?'Native worker running…':
+                              'Request fresh OS approval for sealed offline Sync'}
+                          </button>
+                        </div>}
+
                     </article>}
                 </section>}
+              {buildStatus?.current?.projectId===activeProject?.projectId &&
+                buildStatus.current.recipeId==='uv_sync_offline' &&
+                <article className="continuityEvent" role="status">
+                  <strong>Active protected offline uv Sync</strong>
+                  <p>Native job: <code>{buildStatus.current.jobId || 'Preparing sealed job'}</code></p>
+                  <button type="button" className="ghostBtn"
+                    disabled={buildCancelBusy}
+                    onClick={()=>void cancelProtectedBuild()}>
+                    Request cancellation and verified OS-tree cleanup
+                  </button>
+                </article>}
+              {buildStatus?.quarantined?.filter(job=>job.projectId===activeProject?.projectId)
+                .map(job=><article className="continuityEvent" key={job.jobId}>
+                  <strong>Interrupted protected job — OS cleanup required</strong>
+                  <p>Job: <code>{job.jobId}</code>. No automatic replay or
+                    package retry after restart.</p>
+                  <button type="button" className="ghostBtn" disabled={buildBusy}
+                    onClick={()=>void reconcileProtectedBuild(job)}>
+                    Ask for separate native OS recovery approval
+                  </button>
+                </article>)}
+              {packageRunResult?.projectId===activeProject?.projectId &&
+                <article className="continuityEvent" role="status">
+                  <strong>Last protected uv Sync</strong>
+                  <p>Job: <code>{packageRunResult.jobId}</code> ·
+                    Phase: {packageRunResult.phase} · Native exit:
+                    {String(packageRunResult.nativeExitCode)}</p>
+                  <p>Terminal receipt:
+                    {' '}<code>{packageRunResult.terminalReceiptSha256}</code></p>
+                  <p>Private artifact evidence:
+                    {' '}{packageRunResult.artifactEvidenceState.replaceAll('_',' ')}
+                    · Digest: {packageRunResult.artifactManifestSha256 || 'Unverified'}</p>
+                  <p>No packages were installed into the registered project;
+                    a completed worker is not signed installed acceptance.</p>
+                </article>}
             <div className="sectionHeading">
               <h2>Multi-project release review</h2>
               <span>WO9 · Native Git and artifact inspection</span>

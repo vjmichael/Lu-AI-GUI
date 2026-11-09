@@ -784,6 +784,42 @@ async fn ide_build_read_output(
     }
 }
 
+/// IDE-05.3: fixed offline uv Sync ONLY. The renderer can submit only
+/// opaque project identity and two prior review digests. Native code derives
+/// operation=Sync, manager=uv, exact worktree/manifest, pinned runtime, OS
+/// containment, per-job human modal and private output location. This never
+/// uses historical preview revalidation as an execution grant.
+#[tauri::command]
+async fn ide_package_run_reviewed_uv(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    expected_preview_sha256: String,
+    expected_evidence_fingerprint: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(feature = "native-package-uv", any(windows, target_os = "linux")))]
+    {
+        let runtime = app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("IDE053_PROTECTED_PACKAGE_HOST_UNAVAILABLE")?;
+        let runtime = Arc::clone(runtime.inner());
+        let registry = Arc::clone(registry.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            runtime.run_reviewed_uv_sync(
+                &app, &registry, &project_id,
+                &expected_preview_sha256, &expected_evidence_fingerprint,
+            )
+        }).await.map_err(|_| "IDE053_PACKAGE_WORKER_TASK_UNAVAILABLE")??;
+        return serde_json::to_value(result)
+            .map_err(|_| "IDE053_PACKAGE_RESULT_SERIALIZE_FAILED".into());
+    }
+    #[cfg(not(all(feature = "native-package-uv", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, registry, project_id, expected_preview_sha256,
+            expected_evidence_fingerprint);
+        Err("IDE053_PROTECTED_PACKAGE_RUNTIME_NOT_APPROVED".into())
+    }
+}
+
 #[tauri::command]
 async fn ide_build_start(
     app: AppHandle,
@@ -1648,6 +1684,7 @@ pub fn run() {
             ide_build_status,
             ide_build_read_output,
             ide_build_start,
+            ide_package_run_reviewed_uv,
             ide_build_cancel,
             ide_build_reconcile,
             ide_debug_status,

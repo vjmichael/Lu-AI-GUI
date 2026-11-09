@@ -55,18 +55,56 @@ impl Supervisor {
         expected_plan_sha256: &str,
         expected_source_head: &str,
     ) -> Result<BuildTestEvidence, SupervisorError> {
+        self.review_exact_receipt_for_operation(
+            job_id, expected_project_id, expected_plan_sha256,
+            expected_source_head, false,
+        )
+    }
+
+    /// IDE-05.3 package receipts are *not* Cargo build receipts. This never
+    /// converts completion to package-install or installed-app acceptance.
+    #[cfg(feature = "package-uv-worker")]
+    pub fn review_protected_package_evidence(
+        &self,
+        job_id: &str,
+        expected_project_id: &str,
+        expected_plan_sha256: &str,
+        expected_source_head: &str,
+    ) -> Result<BuildTestEvidence, SupervisorError> {
+        self.review_exact_receipt_for_operation(
+            job_id, expected_project_id, expected_plan_sha256,
+            expected_source_head, true,
+        )
+    }
+
+    fn review_exact_receipt_for_operation(
+        &self,
+        job_id: &str,
+        expected_project_id: &str,
+        expected_plan_sha256: &str,
+        expected_source_head: &str,
+        package_worker: bool,
+    ) -> Result<BuildTestEvidence, SupervisorError> {
         let state = self
             .state
             .lock()
             .map_err(|_| SupervisorError::JournalUnavailable)?;
         let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?;
-        if !matches!(
-            job.plan.recipe_id.as_str(),
-            "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
-        ) || job.plan.effect_class != "test_build_isolated"
-        {
-            return Err(SupervisorError::InvalidPlan);
-        }
+        let matches_operation = if package_worker {
+            cfg!(feature = "package-uv-worker")
+                && job.plan.recipe_id == "uv_sync_offline"
+                && job.plan.effect_class
+                    .strip_prefix("package_uv_sync_offline:")
+                    .is_some_and(|hash|
+                        hash.len() == 64 && hash.bytes()
+                            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()))
+        } else {
+            matches!(
+                job.plan.recipe_id.as_str(),
+                "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
+            ) && job.plan.effect_class == "test_build_isolated"
+        };
+        if !matches_operation { return Err(SupervisorError::InvalidPlan); }
         if job.plan.project_id != expected_project_id
             || job.plan.source_head != expected_source_head
             || job.plan_hash != expected_plan_sha256

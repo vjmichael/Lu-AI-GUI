@@ -75,3 +75,23 @@ enforced even when native evidence matches. See
 [IDE-05.2](IDE_DEV052_PACKAGE_OPERATION_PREVIEW_20261109.md). The later
 protected worker must repeat checks under an OS-owned one-use grant,
 independently verify output and reject untrusted scripts/hooks.
+
+
+## IDE-05.3 protected offline uv Sync pilot (November 9, 2026)
+
+A new, **opt-in** `native-package-uv` feature connects the revision-bound
+uv Sync review to **the existing** protected WO6 runtime. No generic
+package execution API is exposed: only a fresh native OS dialog and
+one-use supervisor grant after exact source/preview/runtime checks can
+admit the fixed `uv_sync_offline` JobPlan. Linux uses an unnetworked
+Bubblewrap/cgroup worker with `/workspace` read-only and a private
+`/output` virtual environment; Windows explicitly denies the recipe
+until immutable staged-source ACLs are independently proven.
+Add/Remove, Conan, vcpkg and networked package management still require
+new reviewed adapters and OS evidence. A private worker output is not
+an automatically applied package environment. See
+[IDE-05.3](IDE_DEV053_PROTECTED_PACKAGE_ADMISSION_20261109.md).
+
+Next: IDE-05.4 independent installed-output checking, license and
+source provenance, effect diff, fail-closed rollback/recovery, then
+one consolidated Windows/Linux and installed validation group.

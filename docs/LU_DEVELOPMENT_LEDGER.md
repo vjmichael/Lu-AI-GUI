@@ -200,3 +200,28 @@ independent output verification, cancellation and restart quarantine.
 DEV-04.6D native LLDB debugger/physical approval acceptance remains
 separate and open. Details in
 `ide/docs/IDE_DEV052_PACKAGE_OPERATION_PREVIEW_20261109.md`.
+
+
+### 2026-11-09 — IDE-05.3 narrow protected package-worker integration
+
+The Lu standalone IDE's manager-of-managers advanced from IDE-05.2
+static review to an **explicitly opt-in, offline and locked uv Sync**
+protected native job using the *existing* WO6/D3 supervisor (not a
+new process launcher). The native Tauri command takes a registered
+project ID and exact preview/evidence SHA only; the host reconstructs
+uv Sync, revalidates all manifest/lock observations before/after a fresh
+45-second, cancellation-aware OS-native human dialog, seals an
+immutable source tree, checks exact approved uv + Python runtime pins,
+and binds the preview SHA into the one-use D3 JobPlan effect class.
+Linux's existing delegated cgroup/Bubblewrap worker has no network,
+read-only source and privately writable environment/cache. The Windows
+worker currently **DENIES uv Sync** before native launch, since
+immutable workspace ACLs are not yet proven; earlier Windows
+AppContainer evidence alone does not suffice. Existing cancellation,
+kernel descendant cleanup, journal quarantine and OS-only recovery are
+reused. Add/Remove, Conan, vcpkg and online dependency resolution are
+**NOT implemented for execution**. All native Windows/Linux compile,
+human approval, crash/recovery and installed tests remain OPEN.
+No mini-CI jobs dispatched; consolidate after IDE-05.4/05.5.
+See `ide/docs/IDE_DEV053_PROTECTED_PACKAGE_ADMISSION_20261109.md`.
+DEV-04.6D debugger native acceptance is a separate open gate.

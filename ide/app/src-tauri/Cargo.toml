@@ -22,6 +22,9 @@ native-build = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/
 # offline reviewed runtime resources, exact compile-time hashes and native
 # protected-worker acceptance on both OSes.
 native-multilang = ["native-build", "lu-ide-execution-supervisor/multilang-worker"]
+# IDE-05.3: opt-in fixed offline uv sync. Default remains no package execution.
+# Requires reviewed bundled runtime + exact installer hashes + OS containment.
+native-package-uv = ["native-multilang", "lu-ide-execution-supervisor/package-uv-worker"]
 # WO6 opt-in native LLDB-DAP self-test. Reviewed adapter and fixed debuggee
 # must be embedded in an installer-pinned bundle; no PATH debugger allowed.
 native-debug = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/dap-transport", "lu-ide-execution-supervisor/linux-worker", "lu-ide-execution-supervisor/protected-recovery-service"]

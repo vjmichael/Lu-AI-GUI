@@ -47,9 +47,11 @@ const BWRAP: &str = "/usr/bin/bwrap";
 const DEV03_PYTHON_ROOT: &str = "/opt/lu-ide/runtimes/python_pytest";
 const DEV03_NODE_ROOT: &str = "/opt/lu-ide/runtimes/js_tests";
 const DEV03_CMAKE_ROOT: &str = "/opt/lu-ide/runtimes/cpp_cmake_build";
+const IDE05_UV_ROOT: &str = "/opt/lu-ide/runtimes/uv_sync_offline";
 const DEV03_PYTHON_PIN: Option<&str> = option_env!("LU_IDE_DEV03_LINUX_PYTHON_SHA256");
 const DEV03_NODE_PIN: Option<&str> = option_env!("LU_IDE_DEV03_LINUX_NODE_SHA256");
 const DEV03_CMAKE_PIN: Option<&str> = option_env!("LU_IDE_DEV03_LINUX_CMAKE_SHA256");
+const IDE05_UV_PIN: Option<&str> = option_env!("LU_IDE05_LINUX_UV_SHA256");
 
 /// Native-only release-pinned runtime. Executable authority remains with
 /// the existing supervisor OS-cgroup worker and its one-use approval.
@@ -63,6 +65,8 @@ fn reviewed_multilang_bundle(
         "python_pytest" => (DEV03_PYTHON_ROOT, DEV03_PYTHON_PIN),
         "js_tests" => (DEV03_NODE_ROOT, DEV03_NODE_PIN),
         "cpp_cmake_build" => (DEV03_CMAKE_ROOT, DEV03_CMAKE_PIN),
+        "uv_sync_offline" if cfg!(feature = "package-uv-worker") =>
+            (IDE05_UV_ROOT, IDE05_UV_PIN),
         _ => return Err(SupervisorError::InvalidPlan),
     };
     let expected = pin.ok_or(SupervisorError::NoContainment)?;
@@ -506,6 +510,8 @@ fn command_for(
         "lu_ide_host_tests" => "/workspace/ide/host/Cargo.toml",
         "rust_tests" | "rust_check" | "rust_build" => "/workspace/Cargo.toml",
         "python_pytest" if runtime.is_some() => "/workspace/pyproject.toml",
+        "uv_sync_offline" if cfg!(feature = "package-uv-worker")
+            && runtime.is_some() => "/workspace/pyproject.toml",
         "js_tests" if runtime.is_some() => "/workspace/package.json",
         "cpp_cmake_build" if runtime.is_some() => "/workspace/CMakeLists.txt",
         _ => return Err(SupervisorError::InvalidPlan),
@@ -603,6 +609,24 @@ fn command_for(
             .arg("TMPDIR")
             .arg("/tmp");
     }
+    if plan.recipe_id == "uv_sync_offline" {
+        // Source tree and lock are immutable at /workspace; all writable
+        // environment/cache bytes are confined to the private /output mount.
+        // --no-build alone does not suppress first-party build backends;
+        // --no-install-workspace is independently necessary.
+        cmd.arg("--setenv").arg("UV_PROJECT_ENVIRONMENT")
+            .arg("/output/.venv")
+            .arg("--setenv").arg("UV_CACHE_DIR")
+            .arg("/output/uv-cache")
+            .arg("--setenv").arg("UV_NO_BUILD")
+            .arg("1")
+            .arg("--setenv").arg("UV_PYTHON_DOWNLOADS")
+            .arg("never")
+            .arg("--setenv").arg("UV_NO_PROGRESS")
+            .arg("1")
+            .arg("--setenv").arg("UV_NO_CONFIG")
+            .arg("1");
+    }
     cmd.arg("--");
     match plan.recipe_id.as_str() {
         "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests" if runtime.is_none() => {
@@ -616,6 +640,17 @@ fn command_for(
             .arg("--offline")
             .arg("--manifest-path")
             .arg(manifest);
+        }
+        "uv_sync_offline" if cfg!(feature = "package-uv-worker")
+            && runtime.is_some() => {
+            if !input.root.join("uv.lock").is_file() {
+                return Err(SupervisorError::WrongProjectOrSource);
+            }
+            cmd.arg("/runtime/bin/uv").args([
+                "sync", "--offline", "--locked", "--no-build",
+                "--no-install-workspace", "--no-dev", "--no-config",
+                "--no-python-downloads", "--python", "/runtime/bin/python3",
+            ]);
         }
         "python_pytest" if runtime.is_some() => {
             cmd.arg("/runtime/bin/python3").args([

@@ -712,6 +712,7 @@ fn bootstrap_multilang_environment(
     workspace: &Path,
     output: &Path,
     tools: &Path,
+    recipe_id: &str,
 ) -> Result<Vec<u16>, SupervisorError> {
     let system = std::env::var_os("SystemRoot").ok_or_else(denied)?;
     if !Path::new(&system).is_absolute()
@@ -722,11 +723,20 @@ fn bootstrap_multilang_environment(
         return Err(denied());
     }
     let os_system32 = Path::new(&system).join("System32");
+    let uv_variables = if recipe_id == "uv_sync_offline" {
+        if !cfg!(feature = "package-uv-worker") {
+            return Err(SupervisorError::InvalidPlan);
+        }
+        format!(
+            "UV_PROJECT_ENVIRONMENT={}\0UV_CACHE_DIR={}\0UV_NO_BUILD=1\0UV_NO_CONFIG=1\0UV_PYTHON_DOWNLOADS=never\0UV_NO_PROGRESS=1\0",
+            output.join(".venv").display(), output.join("uv-cache").display(),
+        ).replace("\\0", "\0")
+    } else { String::new() };
     let env=format!(
-        "HOME={}\\0LOCALAPPDATA={}\\0PATH={};{}\\0PYTHONDONTWRITEBYTECODE=1\\0SystemRoot={}\\0TEMP={}\\0TMP={}\\0\\0",
+        "HOME={}\0LOCALAPPDATA={}\0PATH={};{}\0PYTHONDONTWRITEBYTECODE=1\0SystemRoot={}\0TEMP={}\0TMP={}\0{}\0",
         local.display(),local.display(),tools.join("bin").display(),
         os_system32.display(),system.to_string_lossy(),local.display(),
-        local.display()
+        local.display(),uv_variables,
     ).replace("\\0","\0");
     if env.encode_utf16().count() > 32767 || env.chars().any(|ch| ch == '\u{0001}') {
         return Err(denied());
@@ -742,6 +752,14 @@ fn command_for(
 ) -> Result<(PathBuf, Vec<u16>), SupervisorError> {
     if cfg!(feature = "multilang-worker") {
         let (binary, manifest, args) = match plan.recipe_id.as_str() {
+            "uv_sync_offline" if cfg!(feature = "package-uv-worker") => (
+                "bin/uv.exe",
+                "pyproject.toml",
+                format!(
+                    "sync --offline --locked --no-build --no-install-workspace --no-dev --no-config --no-python-downloads --python \"{}\"",
+                    tools.join("bin/python.exe").display(),
+                ),
+            ),
             "python_pytest" => (
                 "bin/python.exe",
                 "pyproject.toml",
@@ -768,6 +786,8 @@ fn command_for(
             let executable = tools.join(binary);
             if !clean_meta(&executable)?.is_file()
                 || !clean_meta(&workspace.join(manifest))?.is_file()
+                || (plan.recipe_id == "uv_sync_offline"
+                    && !clean_meta(&workspace.join("uv.lock"))?.is_file())
             {
                 return Err(denied());
             }
@@ -1148,6 +1168,15 @@ where
         return Err(SupervisorError::WrongProjectOrSource);
     }
     verify_input(input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+    // IDE-05.3 Windows release gate: the AppContainer has zero network
+    // capabilities, but workspace under LocalState has not yet established
+    // immutable source ACLs against the child. A copied source tree alone
+    // is NOT readonly containment. Refuse before OS profile creation,
+    // user approval, grant consumption or package execution. Linux's
+    // root-owned Bubblewrap --ro-bind implementation is separately gated.
+    if plan.recipe_id == "uv_sync_offline" {
+        return Err(SupervisorError::NoContainment);
+    }
     acceptance_trace("input_seal_verified");
     // A normal installed Windows IDE must NOT silently launch real Cargo
     // into an AppContainer whose nested Stdio::Null cannot open NUL. Until a
@@ -1196,7 +1225,7 @@ where
     let multilang = cfg!(feature = "multilang-worker")
         && crate::runtime_bundles::RuntimeProfile::for_id(&plan.recipe_id).is_some();
     let env = if multilang {
-        bootstrap_multilang_environment(&local, &workspace, &output, &toolchain)?
+        bootstrap_multilang_environment(&local, &workspace, &output, &toolchain, &plan.recipe_id)?
     } else {
         bootstrap_environment(&local, &workspace, &output, &toolchain)?
     };

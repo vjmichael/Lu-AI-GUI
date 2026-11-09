@@ -20,6 +20,7 @@ pub enum RuntimeProfile {
     PythonPytest,
     NodeTests,
     CmakeCTest,
+    UvSyncOffline,
 }
 impl RuntimeProfile {
     pub fn for_id(id: &str) -> Option<Self> {
@@ -27,6 +28,8 @@ impl RuntimeProfile {
             "python_pytest" => Some(Self::PythonPytest),
             "js_tests" => Some(Self::NodeTests),
             "cpp_cmake_build" => Some(Self::CmakeCTest),
+            "uv_sync_offline" if cfg!(feature = "package-uv-worker") =>
+                Some(Self::UvSyncOffline),
             _ => None,
         }
     }
@@ -35,12 +38,21 @@ impl RuntimeProfile {
             Self::PythonPytest => "python_pytest",
             Self::NodeTests => "js_tests",
             Self::CmakeCTest => "cpp_cmake_build",
+            Self::UvSyncOffline => "uv_sync_offline",
         }
     }
     /// Paths are fixed at build time. A candidate tree that lacks these
     /// prerequisites is denied even when its hash is syntactically valid.
     pub fn required(self, windows: bool) -> &'static [&'static str] {
         match (self, windows) {
+            (Self::UvSyncOffline, true) => &[
+                "bin/uv.exe", "bin/python.exe", "LICENSES/uv.txt",
+                "LICENSES/python.txt",
+            ],
+            (Self::UvSyncOffline, false) => &[
+                "bin/uv", "bin/python3", "LICENSES/uv.txt",
+                "LICENSES/python.txt",
+            ],
             (Self::PythonPytest, true) => &[
                 "bin/python.exe",
                 "Lib/site-packages/pytest/__init__.py",

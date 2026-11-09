@@ -142,7 +142,9 @@ fn validate_plan(value: &JobPlan) -> bool {
         && (matches!(
             value.recipe_id.as_str(),
             "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
-        ) || (cfg!(feature = "multilang-worker")
+        ) || (cfg!(feature = "package-uv-worker")
+            && value.recipe_id == "uv_sync_offline")
+            || (cfg!(feature = "multilang-worker")
             && matches!(
                 value.recipe_id.as_str(),
                 "python_pytest" | "js_tests" | "cpp_cmake_build"
@@ -200,6 +202,15 @@ fn validate_plan(value: &JobPlan) -> bool {
                 // Still bounded by MAX_PIDS=16 with exact OS cgroup/Job proof.
                 && value.process_limit <= 16
                 && value.log_limit_bytes <= 64 * 1024
+        } else if value.recipe_id == "uv_sync_offline" {
+            cfg!(feature = "package-uv-worker")
+                && value.effect_class
+                    .strip_prefix("package_uv_sync_offline:")
+                    .is_some_and(|hash| hex_sha(hash, 64)
+                        && hash.bytes().all(|b| !b.is_ascii_uppercase()))
+                && value.runtime_limit_ms <= 3 * 60_000
+                && value.process_limit <= 8
+                && value.log_limit_bytes <= 128 * 1024
         } else {
             value.effect_class == "test_build_isolated"
         }
@@ -1380,6 +1391,47 @@ mod tests {
             effect_class: "test_build_isolated".into(),
         }
     }
+    #[cfg(feature = "package-uv-worker")]
+    #[test]
+    fn ide053_uv_recipe_binds_one_review_hash_and_strict_offline_limits() {
+        let mut reviewed = plan();
+        reviewed.recipe_id = "uv_sync_offline".into();
+        reviewed.effect_class = format!("package_uv_sync_offline:{}", "a".repeat(64));
+        reviewed.runtime_limit_ms = 180_000;
+        reviewed.process_limit = 8;
+        reviewed.log_limit_bytes = 128 * 1024;
+        assert!(validate_plan(&reviewed));
+        let original = fingerprint(&reviewed).unwrap();
+        reviewed.effect_class = format!("package_uv_sync_offline:{}", "b".repeat(64));
+        assert!(validate_plan(&reviewed));
+        assert_ne!(original, fingerprint(&reviewed).unwrap());
+        reviewed.effect_class = "test_build_isolated".into();
+        assert!(!validate_plan(&reviewed));
+        reviewed.effect_class = format!("package_uv_sync_offline:{}", "a".repeat(64));
+        reviewed.runtime_limit_ms = 300_000;
+        assert!(!validate_plan(&reviewed));
+        reviewed.runtime_limit_ms = 180_000;
+        reviewed.process_limit = 9;
+        assert!(!validate_plan(&reviewed));
+        reviewed.process_limit = 8;
+        reviewed.effect_class = format!("package_uv_sync_offline:{}", "A".repeat(64));
+        assert!(!validate_plan(&reviewed));
+        reviewed.effect_class = format!("package_uv_sync_offline:{}", "a".repeat(64));
+        reviewed.debug_target_binding_sha256 = Some("d".repeat(64));
+        assert!(!validate_plan(&reviewed));
+    }
+    #[test]
+    fn ide053_package_recipe_never_inherits_an_unrelated_build_grant() {
+        let mut unrelated = plan();
+        assert!(validate_plan(&unrelated));
+        unrelated.recipe_id = "uv_sync_offline".into();
+        unrelated.effect_class = "test_build_isolated".into();
+        assert!(!validate_plan(&unrelated));
+        let mut harmless = plan();
+        harmless.effect_class = format!("package_uv_sync_offline:{}", "a".repeat(64));
+        assert!(!validate_plan(&harmless));
+    }
+
     #[test]
     fn reviewed_rust_build_is_a_fixed_isolated_recipe_not_generic_command() {
         let mut build = plan();

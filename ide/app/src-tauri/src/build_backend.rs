@@ -43,7 +43,105 @@ use lu_ide_execution_supervisor::linux_worker::{
 };
 
 const VALID_RECIPES: [&str; 4] = ["rust_check", "rust_build", "rust_tests", "lu_ide_host_tests"];
-const MULTILANG_RECIPES: [&str; 3] = ["python_pytest", "js_tests", "cpp_cmake_build"];
+const MULTILANG_RECIPES: [&str; 4] =
+    ["python_pytest", "js_tests", "cpp_cmake_build", "uv_sync_offline"];
+
+/// Audit the exact frozen copy, not just live-source SHA evidence.
+/// The worker may not receive a manifest or lock swapped between the
+/// preview and publish_input. Snapshot bounds each file at 64 MiB.
+#[cfg(feature = "native-package-uv")]
+fn sha256_private_staged_file(root: &Path, name: &'static str)
+    -> Result<String, String> {
+    let file = root.join(name);
+    let before = fs::symlink_metadata(&file)
+        .map_err(|_| "IDE053_STAGED_PACKAGE_FILE_MISSING")?;
+    if !before.is_file() || before.file_type().is_symlink()
+        || before.len() > 64 * 1024 * 1024 {
+        return Err("IDE053_STAGED_PACKAGE_FILE_UNTRUSTED".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if before.file_attributes() & 0x400 != 0 {
+            return Err("IDE053_STAGED_PACKAGE_FILE_UNTRUSTED".into());
+        }
+    }
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(0x20000); // Linux O_NOFOLLOW.
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT.
+    }
+    let mut input = options.open(&file)
+        .map_err(|_| "IDE053_STAGED_PACKAGE_FILE_UNAVAILABLE")?;
+    let opened = input.metadata()
+        .map_err(|_| "IDE053_STAGED_PACKAGE_FILE_UNAVAILABLE")?;
+    if !opened.is_file() || opened.len() != before.len() {
+        return Err("IDE053_STAGED_PACKAGE_CHANGED_BEFORE_READ".into());
+    }
+    let mut sha = Sha256::new();
+    let mut chunk = [0_u8; 64 * 1024];
+    let mut count = 0u64;
+    loop {
+        let read = input.read(&mut chunk)
+            .map_err(|_| "IDE053_STAGED_PACKAGE_READ_FAILED")?;
+        if read == 0 { break; }
+        count = count.saturating_add(read as u64);
+        if count > before.len() || count > 64 * 1024 * 1024 {
+            return Err("IDE053_STAGED_PACKAGE_CHANGED_DURING_READ".into());
+        }
+        sha.update(&chunk[..read]);
+    }
+    let after = fs::symlink_metadata(&file)
+        .map_err(|_| "IDE053_STAGED_PACKAGE_RECHECK_UNAVAILABLE")?;
+    if count != before.len() || after.len() != before.len()
+        || !after.is_file() || after.file_type().is_symlink()
+        || before.modified().ok() != after.modified().ok() {
+        return Err("IDE053_STAGED_PACKAGE_CHANGED_DURING_READ".into());
+    }
+    Ok(format!("{:x}", sha.finalize()))
+}
+#[derive(Clone)]
+struct ReviewedPackageSync {
+    request: lu_ide_workspace::package_preview::PackagePreviewRequest,
+    preview_sha256: String,
+    evidence_fingerprint: String,
+}
+
+#[cfg(feature = "native-package-uv")]
+fn native_package_consent(
+    app: &AppHandle, message: String, requested: &AtomicBool,
+) -> bool {
+    use std::{sync::mpsc::{sync_channel, RecvTimeoutError}, time::{Duration, Instant}};
+    let (send, receive) = sync_channel(1);
+    if requested.load(Ordering::SeqCst) { return false; }
+    app.dialog().message(message)
+        .title("Lu IDE · approve one protected offline uv sync")
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Approve this one sealed uv sync".into(), "Decline".into(),
+        ))
+        .show(move |confirmed| { let _ = send.try_send(confirmed); });
+    // The OS dialog is not an authority while the host is cancelled or timed
+    // out. A late click only talks to a disconnected private channel.
+    let deadline = Instant::now() + Duration::from_secs(45);
+    loop {
+        if requested.load(Ordering::SeqCst) { return false; }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() { return false; }
+        match receive.recv_timeout(remaining.min(Duration::from_millis(100))) {
+            Ok(confirmed) =>
+                return confirmed && !requested.load(Ordering::SeqCst),
+            Err(RecvTimeoutError::Timeout) => {},
+            Err(RecvTimeoutError::Disconnected) => return false,
+        }
+    }
+}
 
 #[cfg(feature = "native-multilang")]
 fn multilang_release_pin(recipe_id: &str) -> Option<&'static str> {
@@ -52,6 +150,8 @@ fn multilang_release_pin(recipe_id: &str) -> Option<&'static str> {
         "python_pytest" => option_env!("LU_IDE_DEV03_WINDOWS_PYTHON_SHA256"),
         "js_tests" => option_env!("LU_IDE_DEV03_WINDOWS_NODE_SHA256"),
         "cpp_cmake_build" => option_env!("LU_IDE_DEV03_WINDOWS_CMAKE_SHA256"),
+        "uv_sync_offline" if cfg!(feature = "native-package-uv") =>
+            option_env!("LU_IDE05_WINDOWS_UV_SHA256"),
         _ => None,
     }}
     #[cfg(target_os = "linux")]
@@ -59,6 +159,8 @@ fn multilang_release_pin(recipe_id: &str) -> Option<&'static str> {
         "python_pytest" => option_env!("LU_IDE_DEV03_LINUX_PYTHON_SHA256"),
         "js_tests" => option_env!("LU_IDE_DEV03_LINUX_NODE_SHA256"),
         "cpp_cmake_build" => option_env!("LU_IDE_DEV03_LINUX_CMAKE_SHA256"),
+        "uv_sync_offline" if cfg!(feature = "native-package-uv") =>
+            option_env!("LU_IDE05_LINUX_UV_SHA256"),
         _ => None,
     }}
 }
@@ -327,12 +429,21 @@ impl NativeBuildRuntime {
         let multilang_ready:Vec<MultilangProfileReadiness>=MULTILANG_RECIPES.iter()
             .map(|&profile_id| {
                 #[cfg(feature = "native-multilang")]
-                let result=installation_multilang(app,profile_id).map(|_|());
+                let result = if profile_id == "uv_sync_offline" && cfg!(windows) {
+                    // The runtime hash alone cannot certify a read-only
+                    // AppContainer workspace. The executor denies Windows
+                    // package jobs until exact source ACL OS tests pass.
+                    Err("IDE053_WINDOWS_WORKSPACE_ACL_NOT_ACCEPTED".into())
+                } else {
+                    installation_multilang(app,profile_id).map(|_|())
+                };
                 #[cfg(not(feature = "native-multilang"))]
                 let result:Result<(),String>=Err("DEV03_OPTIN_FEATURE_DISABLED".into());
                 MultilangProfileReadiness {
                     profile_id,ready:result.is_ok(),
-                    code:if result.is_ok() {
+                    code:if profile_id == "uv_sync_offline" && cfg!(windows) {
+                        "IDE053_WINDOWS_WORKSPACE_ACL_NOT_ACCEPTED"
+                    } else if result.is_ok() {
                         "DEV03_RUNTIME_PIN_VERIFIED_NATIVE_ADMISSION_PER_JOB"
                     } else { "DEV03_RUNTIME_NOT_READY" },
                 }
@@ -486,8 +597,50 @@ impl NativeBuildRuntime {
     ) -> Result<BuildRunView, String> {
         if !VALID_RECIPES.contains(&recipe_id)
             && !(cfg!(feature = "native-multilang")
-                && MULTILANG_RECIPES.contains(&recipe_id)) {
+                && MULTILANG_RECIPES.contains(&recipe_id)
+                && recipe_id != "uv_sync_offline") {
             return Err("BUILD_RECIPE_DENIED".into());
+        }
+        self.run_with_review(app, registry, project_id, recipe_id, None)
+    }
+
+    /// Only the separately named native package entrypoint can choose the
+    /// uv recipe. A generic build request may NEVER inherit package writes.
+    #[cfg(feature = "native-package-uv")]
+    pub fn run_reviewed_uv_sync(
+        &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
+        project_id: &str, expected_preview_sha256: &str,
+        expected_evidence_fingerprint: &str,
+    ) -> Result<BuildRunView, String> {
+        use lu_ide_workspace::package_preview::{PackageOperation, PackagePreviewRequest};
+        let request = PackagePreviewRequest {
+            manager_id: "uv".into(), operation: PackageOperation::Sync,
+            package_name: None, exact_version: None,
+        };
+        registry.revalidate_package_operation(
+            project_id, request.clone(),
+            expected_preview_sha256, expected_evidence_fingerprint,
+        ).map_err(str::to_owned)?;
+        self.run_with_review(
+            app, registry, project_id, "uv_sync_offline",
+            Some(ReviewedPackageSync {
+                request,
+                preview_sha256: expected_preview_sha256.to_owned(),
+                evidence_fingerprint: expected_evidence_fingerprint.to_owned(),
+            }),
+        )
+    }
+
+    fn run_with_review(
+        &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
+        project_id: &str, recipe_id: &str,
+        reviewed: Option<ReviewedPackageSync>,
+    ) -> Result<BuildRunView, String> {
+        if recipe_id == "uv_sync_offline" {
+            #[cfg(feature = "native-package-uv")]
+            if reviewed.is_none() { return Err("IDE053_PACKAGE_REVIEW_REQUIRED".into()); }
+            #[cfg(not(feature = "native-package-uv"))]
+            return Err("IDE053_PACKAGE_WORKER_NOT_COMPILED".into());
         }
         let cancel = Arc::new(NativeCancel::default());
         let requested = Arc::new(AtomicBool::new(false));
@@ -515,6 +668,7 @@ impl NativeBuildRuntime {
         }
         let result = self.run_inner(
             app, registry, project_id, recipe_id, &cancel, &requested, &output,
+            reviewed.as_ref(),
         );
         let mut locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
         let finished_output = locked.current.as_ref().and_then(|active|
@@ -541,6 +695,7 @@ impl NativeBuildRuntime {
         cancel: &Arc<NativeCancel>,
         requested: &Arc<AtomicBool>,
         output: &Arc<LiveOutput>,
+        reviewed: Option<&ReviewedPackageSync>,
     ) -> Result<BuildRunView, String> {
         #[cfg(feature = "native-multilang")]
         let installed = if MULTILANG_RECIPES.contains(&recipe_id) {
@@ -564,9 +719,36 @@ impl NativeBuildRuntime {
         if requested.load(Ordering::SeqCst) {
             return Err("BUILD_CANCELLED_BEFORE_AUTHORIZATION".into());
         }
+        #[cfg(feature = "native-package-uv")]
+        let native_package_review = if recipe_id == "uv_sync_offline" {
+            let reviewed = reviewed.ok_or("IDE053_PACKAGE_REVIEW_REQUIRED")?;
+            let current = registry.preview_package_operation(
+                project_id, reviewed.request.clone(),
+            ).map_err(str::to_owned)?;
+            if current.preview_sha256 != reviewed.preview_sha256
+                || current.evidence_fingerprint != reviewed.evidence_fingerprint {
+                return Err("IDE053_SOURCE_CHANGED_BEFORE_FREEZE".into());
+            }
+            Some(current)
+        } else { None };
         let input = publish_input(&source_root, &self.staged, recipe_id)
             .map_err(|e| e.code().to_owned())?;
         verify_input(&input).map_err(|e| e.code().to_owned())?;
+        #[cfg(feature = "native-package-uv")]
+        if let Some(review) = native_package_review.as_ref() {
+            let py = review.evidence.iter().find(|e|
+                e.relative_path == "pyproject.toml"
+            ).and_then(|e| e.sha256.as_deref())
+                .ok_or("IDE053_REVIEWED_MANIFEST_SHA_MISSING")?;
+            let lock = review.evidence.iter().find(|e|
+                e.relative_path == "uv.lock"
+            ).and_then(|e| e.sha256.as_deref())
+                .ok_or("IDE053_REVIEWED_LOCK_SHA_MISSING")?;
+            if input.seal.manifest_sha256 != py
+                || sha256_private_staged_file(&input.root, "uv.lock")? != lock {
+                return Err("IDE053_FROZEN_SOURCE_DIFFERS_FROM_APPROVED_REVIEW".into());
+            }
+        }
         let plan = JobPlan {
             project_id: project_id.to_owned(),
             recipe_id: recipe_id.to_owned(),
@@ -575,11 +757,21 @@ impl NativeBuildRuntime {
             manifest_sha256: input.seal.manifest_sha256.clone(),
             toolchain_sha256: installed.toolchain_sha256.clone(),
             debug_target_binding_sha256: None,
-            runtime_limit_ms: MAX_RUNTIME_MS,
+            runtime_limit_ms: if recipe_id == "uv_sync_offline" {
+                3 * 60_000
+            } else { MAX_RUNTIME_MS },
             memory_limit_bytes: 512 * 1024 * 1024,
             process_limit: 8,
             log_limit_bytes: 128 * 1024,
-            effect_class: "test_build_isolated".into(),
+            effect_class: {
+                #[cfg(feature = "native-package-uv")]
+                if recipe_id == "uv_sync_offline" {
+                    format!("package_uv_sync_offline:{}",
+                        reviewed.ok_or("IDE053_PACKAGE_REVIEW_REQUIRED")?.preview_sha256)
+                } else { "test_build_isolated".into() }
+                #[cfg(not(feature = "native-package-uv"))]
+                { "test_build_isolated".into() }
+            },
         };
         let prepared = self.supervisor.prepare(plan.clone())
             .map_err(|e| e.code().to_owned())?;
@@ -592,6 +784,11 @@ impl NativeBuildRuntime {
             active.job_id = Some(prepared.job_id.clone());
         }
         if requested.load(Ordering::SeqCst) {
+            #[cfg(feature = "native-package-uv")]
+            if recipe_id == "uv_sync_offline" {
+                self.supervisor.cancel_before_start(&prepared.job_id)
+                    .map_err(|e| e.code().to_owned())?;
+            }
             return Err("BUILD_CANCELLED_BEFORE_AUTHORIZATION".into());
         }
         let approve = || -> Result<(), lu_ide_execution_supervisor::SupervisorError> {
@@ -599,6 +796,42 @@ impl NativeBuildRuntime {
             if requested.load(Ordering::SeqCst) {
                 return Err(SupervisorError::InvalidApproval);
             }
+            #[cfg(feature = "native-package-uv")]
+            let choice = if recipe_id == "uv_sync_offline" {
+                let reviewed = reviewed.ok_or(SupervisorError::InvalidApproval)?;
+                native_package_consent(
+                    app, format!(
+                        "Approve one OFFLINE LOCKED uv Sync in an OS-protected worker?\n\n\
+                        Project: {project_id}\nExact source HEAD: {head}\n\
+                        Manifest + lock evidence: {}\nReviewed operation: {}\n\
+                        Frozen source tree: {}\nPinned uv runtime: {}\n\n\
+                        Source /workspace is read only; writable environment is in \
+                        disposable private /output. No network namespace or AppContainer \
+                        network capabilities; builds, editable workspace installs, and \
+                        arbitrary package manager arguments are disabled.\n\
+                        Dependency output will be independently audited. Deny if source changed.",
+                        reviewed.evidence_fingerprint, reviewed.preview_sha256,
+                        plan.input_snapshot_sha256, plan.toolchain_sha256,
+                    ), requested,
+                )
+            } else {
+                app.dialog()
+                    .message(format!(
+                        "Run an exact restricted offline project build/test job?\n\n\
+                        Project: {project_id}\nRecipe: {recipe_id}\nSource HEAD: {head}\n\
+                        Frozen source SHA-256: {}\nToolchain SHA-256: {}\n\n\
+                        The OS worker will execute code from the sealed copy. No project files \
+                        are writable from that worker. Cancellation requests require proven \
+                        kernel process-tree termination.",
+                        plan.input_snapshot_sha256, plan.toolchain_sha256,
+                    ))
+                    .title("Allow one protected build/test job")
+                    .buttons(MessageDialogButtons::OkCancelCustom(
+                        "Run this exact job".into(), "Cancel".into(),
+                    ))
+                    .blocking_show()
+            };
+            #[cfg(not(feature = "native-package-uv"))]
             let choice = app.dialog()
                 .message(format!(
                     "Run an exact restricted offline project build/test job?\n\n\
@@ -626,27 +859,73 @@ impl NativeBuildRuntime {
             {
                 return Err(SupervisorError::WrongProjectOrSource);
             }
+            // Last native refresh after the real human dialog and after
+            // sealed worker staging on Windows. No cached WebView approval.
+            #[cfg(feature = "native-package-uv")]
+            if recipe_id == "uv_sync_offline" {
+                let reviewed = reviewed.ok_or(SupervisorError::InvalidApproval)?;
+                registry.revalidate_package_operation(
+                    project_id, reviewed.request.clone(),
+                    &reviewed.preview_sha256, &reviewed.evidence_fingerprint,
+                ).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+            }
+            if requested.load(Ordering::SeqCst) {
+                return Err(SupervisorError::InvalidApproval);
+            }
             self.supervisor.record_human_approval(
                 &prepared.job_id, &prepared.plan_sha256, &head, true,
             )?;
             Ok(())
         };
         #[cfg(windows)]
-        let native = {
-            execute_windows_worker_after_staging_approval_with_output(
-                &self.supervisor, &prepared.job_id, &plan, &head, &input,
-                &installed.toolchain, &self.outputs, &installed.broker, cancel, approve,
-                Some(Arc::clone(output)),
-            ).map_err(|e| e.code().to_owned())?
-        };
+        let native_attempt = execute_windows_worker_after_staging_approval_with_output(
+            &self.supervisor, &prepared.job_id, &plan, &head, &input,
+            &installed.toolchain, &self.outputs, &installed.broker, cancel, approve,
+            Some(Arc::clone(output)),
+        );
         #[cfg(target_os = "linux")]
-        let native = {
-            approve().map_err(|e| e.code().to_owned())?;
+        let native_attempt = (|| {
+            approve()?;
             execute_linux_worker_with_output(
                 &self.supervisor, &prepared.job_id, &plan, &input,
                 &self.outputs, cancel, Some(Arc::clone(output)),
-            ).map_err(|e| e.code().to_owned())?
+            )
+        })();
+        let native = match native_attempt {
+            Ok(receipt) => receipt,
+            Err(reason) => {
+                // Only a Job that NEVER reached OS admission can receive a
+                // before-start terminal receipt. Running or uncertain jobs
+                // MUST remain under OS cleanup/quarantine, never be labelled
+                // harmlessly cancelled by a rejected dialog.
+                #[cfg(feature = "native-package-uv")]
+                if recipe_id == "uv_sync_offline" {
+                    let phase = self.supervisor.inspect()
+                        .map_err(|e| e.code().to_owned())?
+                        .into_iter()
+                        .find(|job| job.job_id == prepared.job_id)
+                        .ok_or("IDE053_PACKAGE_JOB_RECEIPT_MISSING")?.phase;
+                    if matches!(phase, JobPhase::Prepared | JobPhase::Authorized) {
+                        self.supervisor.cancel_before_start(&prepared.job_id)
+                            .map_err(|e| e.code().to_owned())?;
+                    }
+                }
+                return Err(reason.code().to_owned());
+            }
         };
+        // A package job requires a distinct original receipt check; the
+        // Cargo build reviewer must NEVER silently accept its effect class.
+        #[cfg(feature = "native-package-uv")]
+        let evidence = if recipe_id == "uv_sync_offline" {
+            self.supervisor.review_protected_package_evidence(
+                &prepared.job_id, project_id, &prepared.plan_sha256, &head,
+            )
+        } else {
+            self.supervisor.review_build_test_evidence(
+                &prepared.job_id, project_id, &prepared.plan_sha256, &head,
+            )
+        }.map_err(|e| e.code().to_owned())?;
+        #[cfg(not(feature = "native-package-uv"))]
         let evidence = self.supervisor.review_build_test_evidence(
             &prepared.job_id, project_id, &prepared.plan_sha256, &head,
         ).map_err(|e| e.code().to_owned())?;
@@ -845,6 +1124,14 @@ impl NativeBuildRuntime {
 mod dev035_native_lifecycle_tests {
     use super::*;
 
+    #[test]
+    fn ide053_package_worker_requires_separate_fixed_entrypoint() {
+        assert!(MULTILANG_RECIPES.contains(&"uv_sync_offline"));
+        assert!(!VALID_RECIPES.contains(&"uv_sync_offline"));
+        assert!(VALID_RECIPES.contains(&"rust_check"));
+        // Generic ide_build_start still cannot reach the new recipe:
+        // run() explicitly refuses uv_sync_offline.
+    }
     #[test]
     fn cancellation_and_recovery_phase_names_match_durable_supervisor_schema() {
         assert_eq!(native_phase_label(JobPhase::CancelRequested), "cancel_requested");
