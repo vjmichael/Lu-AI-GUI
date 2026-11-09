@@ -1157,6 +1157,78 @@ mod tests{
         assert_eq!(manager.cancel_owned("video-1","media"),
             Err(BackgroundProcessError::NotOwned));
     }
+    /// Actual Linux cgroup-v2 positive acceptance. Not a synthetic PGID
+    /// assertion: the test intentionally fails as NOT_AVAILABLE if the
+    /// runner has not delegated writable cgroup-v2 ancestry to this process.
+    /// CI must run it explicitly with --ignored after staging the helper.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="requires genuine delegated cgroup v2 and staged first-party helper"]
+    fn agent01l_linux_real_git_cgroup_custody_after_restart(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        use std::process::Command;
+        let binary=fs::canonicalize("/usr/bin/git")
+            .expect("Real native Git required");
+        let root=std::env::temp_dir().join(format!(
+            "lu-agent01l-linux-git-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let repo=root.join("approved-repo");
+        fs::create_dir_all(&repo).unwrap();
+        assert!(Command::new(&binary).args(["init","-q"])
+            .current_dir(&repo).status().unwrap().success());
+        assert!(Command::new(&binary).args([
+            "-c","user.name=Lu","-c","user.email=lu@example.test",
+            "commit","--allow-empty","-q","-m","Native OS cgroup witness"
+        ]).current_dir(&repo).status().unwrap().success());
+        let sha=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let chat=format!("c-{}","3".repeat(32));
+        let turn=format!("g-{}","4".repeat(32));
+        let call="agent01l-real-linux-gh";
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let supervisor=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),root.clone()
+        );
+        supervisor.start_host_approved_git_read(TrustedWorkerPlan{
+            task_id:call.into(),workspace_id:turn.clone(),
+            executable:binary,expected_sha256:sha,
+            args:vec!["-c".into(),"core.fsmonitor=false".into(),
+                "--no-optional-locks".into(),"-C".into(),repo.as_os_str().into(),
+                "rev-parse".into(),"--verify".into(),"HEAD".into()],
+            progress_protocol:false,max_runtime_seconds:Some(15),
+        },16_384).unwrap();
+        let mut completed=false;
+        for _ in 0..250{
+            supervisor.poll().unwrap();
+            if store.get(call).unwrap().unwrap().state==TaskState::Completed{
+                completed=true;break
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(completed,"Real Git worker must complete under native supervisor");
+        let stdout=supervisor.take_local_version_stdout(call,&turn)
+            .unwrap().expect("Reviewed Git stdout unavailable");
+        let commit=String::from_utf8_lossy(&stdout.bytes);
+        assert_eq!(commit.trim().len(),40);
+        assert!(commit.trim().bytes().all(|b|b.is_ascii_hexdigit()));
+        drop(supervisor);drop(store);
+        let witness=HostOriginalJobCustody::from_host_profile(&root);
+        assert!(witness.worker_and_descendants_ended(&chat,&turn,call),
+            "NOT_AVAILABLE: independently delegated cgroup-v2 populated-zero receipt required; PGID does not count");
+        assert!(!witness.worker_and_descendants_ended(
+            &format!("c-{}","5".repeat(32)),&turn,call));
+        assert!(!witness.worker_and_descendants_ended(
+            &chat,&format!("g-{}","6".repeat(32)),call));
+        assert!(!witness.worker_and_descendants_ended(&chat,&turn,"other-gh"));
+        fs::remove_dir_all(root).unwrap();
+    }
     #[cfg(windows)]
     #[test]
     fn agent01l_real_git_job_attests_original_turn_and_reopens_without_replay(){
