@@ -173,6 +173,44 @@ impl DapSession {
         Ok(frame)
     }
 
+    /// DEV-04.4: accept ONLY a native staged, OS-owned debug target.
+    /// A caller cannot select any other path, process, arguments or env.
+    /// This builds DAP bytes ONLY; actual authority resides in the D3 plan
+    /// with an exact sealed build target digest and native OS containment.
+    pub fn launch_verified_project(&mut self,program:&str)->Result<Vec<u8>,DapError>{
+        if self.phase!=DapPhase::Ready{return Err(DapError::InvalidPhase);}
+        let linux=program.strip_prefix("/debug-target/target/debug/")
+            .is_some_and(|file|!file.is_empty() && file.len()<=200 &&
+                !file.contains('.') && file.bytes().all(|b|
+                b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_')));
+        let windows=if program.len()<=1024 {
+            let normalized=program.replace('/',"\\");
+            let pieces:Vec<_>=normalized.split('\\').collect();
+            pieces.len()>4 && pieces.iter().any(|part|*part=="debug-target")
+                && normalized.contains("\\debug-target\\target\\debug\\")
+                && normalized.to_ascii_lowercase().ends_with(".exe")
+                && pieces.last().is_some_and(|name|{
+                    let base=name.strip_suffix(".exe").unwrap_or("");
+                    !base.is_empty() && base.len()<=196 &&
+                    base.bytes().all(|b|
+                        b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'))
+                })
+                && std::path::Path::new(program).is_absolute()
+        } else {false};
+        if !(linux||windows)||program.contains("..")||
+           program.chars().any(char::is_control) {
+            return Err(DapError::InvalidMessage);
+        }
+        let frame=self.request("launch",json!({
+            "program":program,"stopOnEntry":true,"noDebug":false,
+            "disableASLR":false,"disableSTDIO":true,
+            "args":[],"env":{},"runInTerminal":false
+        }))?;
+        self.launch_sent=true;
+        self.phase=DapPhase::Launching;
+        Ok(frame)
+    }
+
     /// Read-only pending signal for adapters that emit initialized immediately
     /// after the response (even before the fixed launch is sent). The trusted
     /// native host may examine this after launch; no DAP instruction is sent.
