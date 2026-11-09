@@ -1,5 +1,5 @@
 $ErrorActionPreference='Stop'
-$features='dap-transport,protected-recovery-service,dev046c-ci-control'
+$features='dap-transport,protected-recovery-service,dev046c-ci-control,dev046d-native-dialog'
 cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib windows_event_owner
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: event wire/sequence/revocation unit tests failed' }
 cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib windows_kernel_pc
@@ -15,6 +15,13 @@ cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: consolidated supervisor rustfmt contract failed' }
 cargo fmt --manifest-path ide/host/Cargo.toml -- --check
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: consolidated host DAP rustfmt contract failed' }
+# The real human modal cannot be simulated in CI: this phase only
+# checks that the Windows developer-build bridge compiles and that the
+# browser has no arbitrary debugger authority.
+node --test ide/app/tests/dev046d_installed_debugger_boundary.test.mjs ide/app/tests/dev046d_native_operator_dialog.test.mjs
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: native debugger action security contract tests failed' }
+cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features dev046d-native-dialog
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: developer-only Windows Tauri native-dialog bridge compile failed' }
 cargo build --manifest-path ide/supervisor/Cargo.toml --features $features --bin windows_recovery_service --bin windows_null_service_bootstrap --example wo6_native_dap_acceptance
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: native Rust protected host compile failed' }
 $svc=(Resolve-Path 'ide/supervisor/target/debug/windows_recovery_service.exe').Path

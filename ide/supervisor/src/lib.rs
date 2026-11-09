@@ -523,7 +523,20 @@ impl Supervisor {
             ) {
                 return Err(SupervisorError::JournalCorrupt);
             }
-            if action.requires_native_os_cleanup {
+            // A previously consumed/approved action remains *audit-only*
+            // forever; if the native Job has independently reached a
+            // reconciled terminal with OS descendants verified gone, it
+            // cannot require a second OS-tree kill or restore old consent.
+            // A genuinely interrupted Job still blocks the next session.
+            let native = jobs.iter().find(|job|
+                job.job_id == action.job_id && job.plan_sha256 == action.plan_sha256
+            ).ok_or(SupervisorError::JournalCorrupt)?;
+            if action.requires_native_os_cleanup &&
+                (native.requires_reconciliation ||
+                    !matches!(native.phase,
+                        JobPhase::Completed | JobPhase::Cancelled | JobPhase::Denied |
+                        JobPhase::Failed))
+            {
                 cleanup.push(action.job_id);
             }
         }

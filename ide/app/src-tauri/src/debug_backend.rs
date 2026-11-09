@@ -136,6 +136,8 @@ pub struct DebugWitness {
     pub binary_sha256: Option<String>,
     pub symbol_sha256: Option<String>,
     pub target_binding_sha256: Option<String>,
+    pub operation_outcome_code: Option<&'static str>,
+    pub operation_receipt_sha256: Option<String>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -166,6 +168,11 @@ pub struct DebugInterrupted {
     plan_sha256: String,
     phase: String,
     requires_reconciliation: bool,
+}
+#[derive(Clone, Copy, Debug)]
+pub enum ReviewedNativeAction {
+    StepOver,
+    SameLineBreakpoint,
 }
 struct Active {
     project_id: String,
@@ -206,6 +213,12 @@ impl NativeDebugRuntime {
             .as_ref().filter(|v| v.project_id == project_id).cloned();
         let durable = self.supervisor.inspect()
             .map_err(|e| e.code().to_owned())?;
+        #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+        let dangling_action_jobs = self.supervisor
+            .native_debug_action_cleanup_jobs_after_restart()
+            .map_err(|e| e.code().to_owned())?;
+        #[cfg(not(all(windows, debug_assertions, feature="dev046d-native-dialog")))]
+        let dangling_action_jobs: Vec<String> = Vec::new();
         // Security decision uses every outstanding job, not the bounded UI list.
         let quarantined: Vec<DebugInterrupted> = durable.iter()
             .filter(|job| job.project_id == project_id && job.requires_reconciliation)
@@ -250,13 +263,26 @@ impl NativeDebugRuntime {
             }).collect();
         journal.reverse();
         Ok(DebugStatus {
-            ready: available.is_ok() && quarantined.is_empty(),
+            ready: available.is_ok() && quarantined.is_empty() &&
+                dangling_action_jobs.is_empty(),
             project_debug_supported: cfg!(feature="native-project-debug") &&
-                available.is_ok() && quarantined.is_empty(),
+                available.is_ok() && quarantined.is_empty() &&
+                dangling_action_jobs.is_empty(),
             // Test-only D6C permission never becomes installed action authority.
-            operation_control_supported: false,
-            operation_control_code: "DEV046D_NATIVE_HUMAN_ACTION_APPROVAL_NOT_ACCEPTED",
+            operation_control_supported: cfg!(all(
+                windows, debug_assertions, feature = "dev046d-native-dialog"
+            )) && available.is_ok() && quarantined.is_empty() &&
+                dangling_action_jobs.is_empty(),
+            operation_control_code: if cfg!(all(
+                windows, debug_assertions, feature = "dev046d-native-dialog"
+            )) {
+                "DEV046D_NATIVE_DIALOG_DEV_ONLY_NOT_RELEASE_ACCEPTED"
+            } else {
+                "DEV046D_NATIVE_HUMAN_ACTION_APPROVAL_NOT_ACCEPTED"
+            },
             code: match available {
+                Ok(()) if !dangling_action_jobs.is_empty() =>
+                    "DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED".into(),
                 Ok(()) => "DEBUG_FIXTURE_BUNDLE_VERIFIED_OS_ADMISSION_PER_RUN".into(),
                 Err(code) => code,
             },
@@ -264,7 +290,13 @@ impl NativeDebugRuntime {
             last,
             journal,
             quarantined,
-            description: "Fixed LLDB self-test and separately approved sealed project launch are feature-gated. Installed step/breakpoint control remains disabled.",
+            description: if cfg!(all(
+                windows, debug_assertions, feature = "dev046d-native-dialog"
+            )) {
+                "Developer-only native modal for a verified LLDB stop. A fresh build, launch approval and per-action consent are mandatory; this is NOT signed installed acceptance."
+            } else {
+                "Fixed LLDB self-test and separately approved sealed project launch are feature-gated. Installed step/breakpoint control remains disabled."
+            },
         })
     }
     /// A separately approved OS-only cleanup, never a debugger resume.
@@ -327,23 +359,37 @@ impl NativeDebugRuntime {
     pub fn run_fixture(
         &self, app: &AppHandle, registry: &IdeWorkspaceRegistry, project_id: &str,
     ) -> Result<DebugWitness, String> {
-        self.run_bound(app,registry,project_id,None)
+        self.run_bound(app,registry,project_id,None,None)
     }
     #[cfg(feature="native-project-debug")]
     pub fn run_project(
         &self,app:&AppHandle,registry:&IdeWorkspaceRegistry,project_id:&str,
         target:Arc<SealedProjectDebugTarget>,
     )->Result<DebugWitness,String>{
-        self.run_bound(app,registry,project_id,Some(target))
+        self.run_bound(app,registry,project_id,Some(target),None)
+    }
+    #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+    pub fn run_project_native_action(
+        &self, app:&AppHandle, registry:&IdeWorkspaceRegistry,
+        project_id:&str, target:Arc<SealedProjectDebugTarget>,
+        operation:ReviewedNativeAction,
+    )->Result<DebugWitness,String>{
+        self.run_bound(app,registry,project_id,Some(target),Some(operation))
     }
     fn run_bound(
         &self,app:&AppHandle,registry:&IdeWorkspaceRegistry,project_id:&str,
         target:Option<Arc<SealedProjectDebugTarget>>,
+        operation:Option<ReviewedNativeAction>,
     )->Result<DebugWitness,String>{
         if self.supervisor.inspect().map_err(|e| e.code().to_owned())?
             .iter().any(|job| job.requires_reconciliation)
         {
             return Err("DEBUG_KERNEL_RECOVERY_REQUIRED_BEFORE_ANY_NEW_RUN".into());
+        }
+        #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+        if !self.supervisor.native_debug_action_cleanup_jobs_after_restart()
+            .map_err(|e| e.code().to_owned())?.is_empty() {
+            return Err("DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED".into());
         }
         let cancellation = Arc::new(AtomicBool::new(false));
         {
@@ -358,7 +404,7 @@ impl NativeDebugRuntime {
             });
         }
         let result = self.run_inner(app, registry, project_id,
-            &cancellation,target.as_deref());
+            &cancellation,target.as_deref(),operation);
         *self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")? = None;
         if let Ok(ref witness) = result {
             *self.last.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")? = Some(witness.clone());
@@ -369,7 +415,16 @@ impl NativeDebugRuntime {
         &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
         project_id: &str, cancel: &AtomicBool,
         target:Option<&SealedProjectDebugTarget>,
+        operation:Option<ReviewedNativeAction>,
     ) -> Result<DebugWitness, String> {
+        if operation.is_some() && !cfg!(all(
+            windows, debug_assertions, feature = "dev046d-native-dialog"
+        )) {
+            return Err("DEV046D_NATIVE_DIALOG_FEATURE_DISABLED".into());
+        }
+        if operation.is_some() && target.is_none() {
+            return Err("DEV046D_REQUIRES_VERIFIED_PROJECT_TARGET".into());
+        }
         let install = installation(app)?;
         let root = registry.trusted_native_worker_root(project_id)
             .map_err(|_| "DEBUG_PROJECT_NOT_ACTIVE")?;
@@ -559,7 +614,72 @@ impl NativeDebugRuntime {
         }
         // The session is never exposed to the browser. Close demands Job/
         // cgroup emptiness, independent service release and a terminal receipt.
-        session.close().map_err(|e| e.code().to_owned())?;
+        // D6D: developer-only Windows native approval after an actual
+        // first-party LLDB kernel event, Job/RIP, PDB and immutable Cargo seal.
+        // No WebView DAP command, PID, path or approval token is accepted.
+        #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+        let mut native_action_receipt: Option<(u64, String, &'static str)> = None;
+        #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+        if let (Some(target), Some(operation)) = (target, operation) {
+            if cancel.load(Ordering::SeqCst) {
+                return Err("DEV046D_CANCELLED_BEFORE_STOP_APPROVAL".into());
+            }
+            let original = session.verify_real_lldb_event_owner_for_ci(
+                &self.supervisor, &prepared.job_id, &plan, target,
+            ).map_err(|e| e.code().to_owned())?;
+            let mut dialog = |trusted_message: &str| {
+                if cancel.load(Ordering::SeqCst) { return false; }
+                let accepted = app.dialog()
+                    .message(trusted_message)
+                    .title("Lu IDE · one debugger operation")
+                    .buttons(MessageDialogButtons::OkCancelCustom(
+                        "Approve this single operation".into(),
+                        "Decline".into(),
+                    ))
+                    .blocking_show();
+                accepted && !cancel.load(Ordering::SeqCst)
+            };
+            let (owner_seq, receipt, outcome) = match operation {
+                ReviewedNativeAction::StepOver => {
+                    let (after, audit) = session.execute_one_protected_native_step(
+                        &self.supervisor, &prepared.job_id, &plan,
+                        target, &original, &mut dialog,
+                    ).map_err(|e| e.code().to_owned())?;
+                    if audit.3 != "ResultVerified"
+                        || after.owner_sequence != original.owner_sequence + 1 {
+                        return Err("DEV046D_STEP_MISSING_INDEPENDENT_STOP".into());
+                    }
+                    (after.owner_sequence, audit.2, "native_dialog_step_verified")
+                }
+                ReviewedNativeAction::SameLineBreakpoint => {
+                    let audit = session.attempt_one_protected_native_breakpoint(
+                        &self.supervisor, &prepared.job_id, &plan,
+                        target, &original, &mut dialog,
+                    ).map_err(|e| e.code().to_owned())?;
+                    if audit.3 != "ResultUncertain" {
+                        return Err("DEV046D_BP_ACK_NOT_INDEPENDENT_PROOF".into());
+                    }
+                    (original.owner_sequence, audit.2, "native_dialog_bp_uncertain")
+                }
+            };
+            native_action_receipt = Some((owner_seq, receipt, outcome));
+        }
+        #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+        let (operation_outcome_code, operation_receipt_sha256) =
+            if let Some((owner_seq, receipt, outcome)) = native_action_receipt {
+                session.close_with_real_owner_continue_for_ci(owner_seq)
+                    .map_err(|e| e.code().to_owned())?;
+                (Some(outcome), Some(receipt))
+            } else {
+                session.close().map_err(|e| e.code().to_owned())?;
+                (None, None)
+            };
+        #[cfg(not(all(windows, debug_assertions, feature="dev046d-native-dialog")))]
+        let (operation_outcome_code, operation_receipt_sha256) = {
+            session.close().map_err(|e| e.code().to_owned())?;
+            (None, None)
+        };
+
         let state = self.supervisor.inspect().map_err(|e| e.code().to_owned())?
             .into_iter().find(|job| job.job_id == prepared.job_id)
             .ok_or("DEBUG_JOURNAL_RECEIPT_MISSING")?;
@@ -584,6 +704,8 @@ impl NativeDebugRuntime {
             binary_sha256:target.map(|target|target.binary.binary_sha256.clone()),
             symbol_sha256:target.map(|target|target.symbols.symbols_sha256.clone()),
             target_binding_sha256:target.map(|target|target.binding_sha256.clone()),
+            operation_outcome_code,
+            operation_receipt_sha256,
         })
     }
 }

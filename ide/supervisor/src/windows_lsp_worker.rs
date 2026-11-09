@@ -1881,11 +1881,38 @@ impl WindowsDapSession {
     /// fsynced BEFORE a single bounded DAP step is transmitted.
     #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
     pub fn execute_one_protected_ci_step(
-        &mut self,
-        supervisor: &Supervisor,
-        job_id: &str, plan: &JobPlan,
+        &mut self, supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
         target: &crate::project_debug_target::SealedProjectDebugTarget,
         original: &WindowsOwnerEventAccepted,
+    ) -> Result<(WindowsOwnerEventAccepted, (String, String, String, String)), SupervisorError> {
+        self.execute_one_protected_step_inner(
+            supervisor, job_id, plan, target, original, None,
+        )
+    }
+
+
+    /// D6D real native UI bridge for a *single* verified Windows LLDB stop.
+    /// The callback is owned by the desktop Rust host (Tauri OS-native dialog),
+    /// not the WebView, model, adapter, or historic consent. The original
+    /// one-use claim must be fsynced before sending any bounded DAP action.
+    #[cfg(all(debug_assertions, feature = "dev046d-native-dialog"))]
+    pub fn execute_one_protected_native_step(
+        &mut self, supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+        original: &WindowsOwnerEventAccepted,
+        approve: &mut dyn FnMut(&str) -> bool,
+    ) -> Result<(WindowsOwnerEventAccepted, (String, String, String, String)), SupervisorError> {
+        self.execute_one_protected_step_inner(
+            supervisor, job_id, plan, target, original, Some(approve),
+        )
+    }
+
+    #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+    fn execute_one_protected_step_inner(
+        &mut self, supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+        original: &WindowsOwnerEventAccepted,
+        approval: Option<&mut dyn FnMut(&str) -> bool>,
     ) -> Result<(WindowsOwnerEventAccepted, (String, String, String, String)), SupervisorError> {
         use crate::{
             debug_action_receipts::{DebugActionApproval, NativeConsentMarker},
@@ -1937,17 +1964,57 @@ impl WindowsDapSession {
             &supervisor.native_owner_receipt_root()?, binding,
             preview.clone(), crate::now_ms()?,
         ).map_err(|_| SupervisorError::JournalUnavailable)?;
-        let now = crate::now_ms()?;
-        // This marker is explicitly CI_SIMULATED and NEVER equivalent to
-        // genuine installed human consent. The sealed test-only debuggee
-        // is the sole executable target in this experimental acceptance.
         let challenge = action.challenge_sha256().to_owned();
-        action.decide(
+        let marker = if let Some(ask_native_operator) = approval {
+            #[cfg(all(debug_assertions, feature = "dev046d-native-dialog"))]
+            {
+                let message = format!(
+                    "Approve ONE native LLDB Step Over?\n\n\
+                    Protected Job: {job_id}\n\
+                    Original Cargo source: src/main.rs:{}\n\
+                    Verified OS thread: {}\n\
+                    Native owner event: {}\n\
+                    Source snapshot: {}\n\
+                    One-use review: {}\n\
+                    One-use challenge: {}\n\n\
+                    No evaluate, memory writes, terminal, arbitrary attach or reusable approval.\n\
+                    This operation will be consumed before a debugger command is sent.",
+                    original.verified_source_line, original.debuggee_thread_id,
+                    original.owner_sequence, original.source_snapshot_sha256,
+                    preview.preview_sha256, challenge,
+                );
+                let confirmed = ask_native_operator(&message);
+                // The modal may have blocked while the OS stop continued,
+                // the source changed or the host was cancelled. Re-prove
+                // the same kernel owner, Job/source and immutable target.
+                if self.gateway.phase() != DapPhase::Stopped
+                    || self.gateway.verify_lldb_kernel_event_owner(
+                        original.debuggee_pid, original.debuggee_thread_id,
+                        original.stopped_rip,
+                    ).map(|event| event.seq).ok() != Some(original.owner_sequence)
+                    || target.verify().is_err() || verify_input(&self.source_input).is_err()
+                {
+                    let _ = action.revoke(crate::now_ms()?);
+                    return Err(SupervisorError::NoContainment);
+                }
+                NativeConsentMarker::for_trusted_modal(
+                    &preview.preview_sha256, &challenge, original.owner_sequence,
+                    crate::now_ms()?, confirmed,
+                )
+            }
+            #[cfg(not(all(debug_assertions, feature = "dev046d-native-dialog")))]
+            {
+                let _ = ask_native_operator;
+                return Err(SupervisorError::InvalidApproval);
+            }
+        } else {
             NativeConsentMarker::for_native_ci_fixture(
-                &preview.preview_sha256, &challenge,
-                original.owner_sequence, now, true,
-            ), original.owner_sequence, now,
-        ).map_err(|_| SupervisorError::InvalidApproval)?;
+                &preview.preview_sha256, &challenge, original.owner_sequence,
+                crate::now_ms()?, true,
+            )
+        };
+        action.decide(marker, original.owner_sequence, crate::now_ms()?)
+            .map_err(|_| SupervisorError::InvalidApproval)?;
         let claim = action.consume_for_receipt_test(
             &preview.preview_sha256, original.owner_sequence, crate::now_ms()?,
         ).map_err(|_| SupervisorError::GrantConsumed)?;
@@ -2053,10 +2120,33 @@ impl WindowsDapSession {
     /// response is NEVER sufficient to mark installation successful.
     #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
     pub fn attempt_one_protected_ci_breakpoint(
-        &mut self,
-        supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
+        &mut self, supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
         target: &crate::project_debug_target::SealedProjectDebugTarget,
         original: &WindowsOwnerEventAccepted,
+    ) -> Result<(String, String, String, String), SupervisorError> {
+        self.attempt_one_protected_breakpoint_inner(
+            supervisor, job_id, plan, target, original, None,
+        )
+    }
+
+    #[cfg(all(debug_assertions, feature = "dev046d-native-dialog"))]
+    pub fn attempt_one_protected_native_breakpoint(
+        &mut self, supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+        original: &WindowsOwnerEventAccepted,
+        approve: &mut dyn FnMut(&str) -> bool,
+    ) -> Result<(String, String, String, String), SupervisorError> {
+        self.attempt_one_protected_breakpoint_inner(
+            supervisor, job_id, plan, target, original, Some(approve),
+        )
+    }
+
+    #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+    fn attempt_one_protected_breakpoint_inner(
+        &mut self, supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+        original: &WindowsOwnerEventAccepted,
+        approval: Option<&mut dyn FnMut(&str) -> bool>,
     ) -> Result<(String, String, String, String), SupervisorError> {
         use crate::{
             debug_action_receipts::{DebugActionApproval, NativeConsentMarker},
@@ -2107,12 +2197,53 @@ impl WindowsDapSession {
             preview.clone(), now,
         ).map_err(|_| SupervisorError::JournalUnavailable)?;
         let challenge = action.challenge_sha256().to_owned();
-        action.decide(
+        let marker = if let Some(ask_native_operator) = approval {
+            #[cfg(all(debug_assertions, feature = "dev046d-native-dialog"))]
+            {
+                let message = format!(
+                    "Approve ONE native LLDB source breakpoint?\n\n\
+                    Protected Job: {job_id}\n\
+                    Verified original source: src/main.rs:{}\n\
+                    Verified OS thread: {}\n\
+                    Native owner event: {}\n\
+                    Source snapshot: {}\n\
+                    One-use review: {}\n\
+                    One-use challenge: {}\n\n\
+                    LLDB breakpoint ACK is NOT an independently verified hit.\n\
+                    The result will remain uncertain. No condition, shell or evaluate.",
+                    original.verified_source_line, original.debuggee_thread_id,
+                    original.owner_sequence, original.source_snapshot_sha256,
+                    preview.preview_sha256, challenge,
+                );
+                let confirmed = ask_native_operator(&message);
+                if self.gateway.phase() != DapPhase::Stopped
+                    || self.gateway.verify_lldb_kernel_event_owner(
+                        original.debuggee_pid, original.debuggee_thread_id,
+                        original.stopped_rip,
+                    ).map(|event| event.seq).ok() != Some(original.owner_sequence)
+                    || target.verify().is_err() || verify_input(&self.source_input).is_err()
+                {
+                    let _ = action.revoke(crate::now_ms()?);
+                    return Err(SupervisorError::NoContainment);
+                }
+                NativeConsentMarker::for_trusted_modal(
+                    &preview.preview_sha256, &challenge, original.owner_sequence,
+                    crate::now_ms()?, confirmed,
+                )
+            }
+            #[cfg(not(all(debug_assertions, feature = "dev046d-native-dialog")))]
+            {
+                let _ = ask_native_operator;
+                return Err(SupervisorError::InvalidApproval);
+            }
+        } else {
             NativeConsentMarker::for_native_ci_fixture(
-                &preview.preview_sha256, &challenge,
-                original.owner_sequence, now, true,
-            ), original.owner_sequence, now,
-        ).map_err(|_| SupervisorError::InvalidApproval)?;
+                &preview.preview_sha256, &challenge, original.owner_sequence,
+                now, true,
+            )
+        };
+        action.decide(marker, original.owner_sequence, crate::now_ms()?)
+            .map_err(|_| SupervisorError::InvalidApproval)?;
         let claim = action.consume_for_receipt_test(
             &preview.preview_sha256, original.owner_sequence, crate::now_ms()?,
         ).map_err(|_| SupervisorError::GrantConsumed)?;

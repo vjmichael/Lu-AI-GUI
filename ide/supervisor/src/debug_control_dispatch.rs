@@ -111,7 +111,14 @@ impl CiControlSlot {
     pub(crate) fn admit(
         claim: ConsumedControlClaim, current: NativeControlStop,
     ) -> Result<Self, ControlDenial> {
-        if !claim.ci_fixture_only || claim.execution_authorized
+        // D6D permits a *real native OS dialog* receipt in an explicit
+        // debug-only Tauri build. This still never grants general executable
+        // authority: the same one-shot Job/owner/DAP binding is mandatory.
+        let trusted_native_dialog = cfg!(all(
+            windows, debug_assertions, feature = "dev046d-native-dialog"
+        ));
+        if (!claim.ci_fixture_only && !trusted_native_dialog)
+            || claim.execution_authorized
             || !hash64(&claim.approved_receipt_sha256)
             || !hash64(&claim.consumed_receipt_sha256)
             || claim.approved_receipt_sha256 == claim.consumed_receipt_sha256

@@ -46,6 +46,9 @@ dev045d5-ci-event-owner = ["dev045d4c-ci-oracle"]
 # Real protected D6C step/breakpoint CI acceptance is never compiled into
 # release/installed Lu; requires the original D5 Job/LLDB owner gate.
 dev046c-ci-control = ["dev045d5-ci-event-owner", "lu-ide-workspace/dev046c-ci-control"]
+# D6D DEV-ONLY Windows Tauri dialog integration, never a signed release path.
+# Uses the genuine pinned D5 kernel owner and existing bounded D6C dispatcher.
+dev046d-native-dialog = ["dev046c-ci-control"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

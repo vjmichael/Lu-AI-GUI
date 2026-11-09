@@ -52,6 +52,22 @@ pub(crate) struct NativeConsentMarker {
     ci_fixture_only: bool,
 }
 impl NativeConsentMarker {
+    /// Call only from the trusted native Windows host's blocking OS dialog
+    /// callback, after deriving the challenge from the authentic D5 owner.
+    /// No renderer command can construct this non-CI marker.
+    #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
+    pub(crate) fn for_trusted_modal(
+        preview: &str, challenge: &str, sequence: u64, now: u64, confirmed: bool,
+    ) -> Self {
+        Self {
+            preview_sha256: preview.to_owned(),
+            challenge_sha256: challenge.to_owned(),
+            native_owner_sequence: sequence,
+            observed_unix_ms: now,
+            confirmed,
+            ci_fixture_only: false,
+        }
+    }
     #[cfg(test)]
     fn for_unit_test(preview: &str, challenge: &str, sequence: u64, now: u64, yes: bool) -> Self {
         Self {
@@ -174,12 +190,14 @@ fn verify_events(raw: &[u8], action: &str, preview: &str)
                 | "expired_before_consumption" | "stop_or_operator_revoked"),
             "ResultUncertain" =>
                 e.outcome_code == "requires_independent_result_reconciliation_no_replay",
-            "ResultVerified" => e.outcome_code.starts_with("ci_independent_os_step:"),
+            "ResultVerified" => e.outcome_code.starts_with("ci_independent_os_step:")
+                || e.outcome_code.starts_with("native_dialog_independent_os_step:"),
             _ => false,
         };
         if !known_outcome { return Err(ApprovalDenial::JournalCorrupt); }
         if e.phase == "ResultVerified" {
             let Some(hash) = e.outcome_code.strip_prefix("ci_independent_os_step:")
+                .or_else(|| e.outcome_code.strip_prefix("native_dialog_independent_os_step:"))
             else { return Err(ApprovalDenial::JournalCorrupt); };
             if !hex64(hash) { return Err(ApprovalDenial::JournalCorrupt); }
         }
@@ -357,6 +375,7 @@ pub(crate) struct DebugActionApproval {
     seq: u64,
     prior: String,
     approved_sha: Option<String>,
+    consent_ci_only: bool,
     state: State,
 }
 impl DebugActionApproval {
@@ -413,7 +432,7 @@ impl DebugActionApproval {
             binding, preview, path, file, action_id_sha256,
             challenge_sha256, nonce_sha256, deadline_ms, seq: 0,
             prior: "0".repeat(64), approved_sha: None,
-            state: State::AwaitingConsent,
+            consent_ci_only: true, state: State::AwaitingConsent,
         };
         this.write_event("Prepared", "awaiting_fresh_native_operator", now_ms)?;
         Ok(this)
@@ -502,6 +521,7 @@ impl DebugActionApproval {
             now_ms,
         )?;
         self.approved_sha = Some(sha);
+        self.consent_ci_only = marker.ci_fixture_only;
         self.state = State::Approved;
         Ok(())
     }
@@ -538,7 +558,7 @@ impl DebugActionApproval {
             consumed_receipt_sha256: consumed_sha,
             operation_sha256: op_digest(&self.preview.intent),
             owner_sequence: self.binding.owner_sequence,
-            ci_fixture_only: true,
+            ci_fixture_only: self.consent_ci_only,
             execution_authorized: false,
             job_id: self.binding.job_id.clone(),
             plan_sha256: self.binding.plan_sha256.clone(),
@@ -583,7 +603,12 @@ impl DebugActionApproval {
             || !proof.matches_consumption(&self.action_id_sha256, &self.prior) {
             return Err(ApprovalDenial::WrongStop);
         }
-        let outcome = format!("ci_independent_os_step:{}", proof.evidence_sha256());
+        let label = if self.consent_ci_only {
+            "ci_independent_os_step"
+        } else {
+            "native_dialog_independent_os_step"
+        };
+        let outcome = format!("{label}:{}", proof.evidence_sha256());
         self.write_event("ResultVerified", &outcome, now_ms)?;
         self.state = State::Revoked;
         Ok(())

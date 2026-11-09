@@ -1580,6 +1580,48 @@ function App() {
     }
   }
 
+  // Fixed-choice request only: Rust independently picks the immutable target,
+  // authenticates LLDB's native stop and asks via a separate OS-native dialog.
+  // A WebView action here is NOT human consent and carries no DAP arguments.
+  async function runNativeDebuggerAction(kind) {
+    const projectId=activeProject?.projectId;
+    const witness=safeDebugSymbolEvidence(buildResult,projectId);
+    if(!projectId || !witness || !debugStatus?.projectDebugSupported ||
+       !debugStatus?.operationControlSupported ||
+       !!debugStatus.current || debugBusy || buildBusy)return;
+    const command=kind==='stepOver'?'ide_debug_step_project':
+      kind==='sameLineBreakpoint'?'ide_debug_breakpoint_project':null;
+    if(!command)return;
+    setDebugBusy(true);
+    setProblem('');
+    setDebugResult(null);
+    try {
+      const result=await invoke(command,{projectId});
+      if(activeProjectIdRef.current!==projectId)return;
+      if(!checkedProjectDebugWitness(result,buildResult,projectId))
+        throw Error('DEV046D_PROJECT_RECEIPT_DENIED');
+      if(kind==='stepOver' &&
+         (result.operationOutcomeCode!=='native_dialog_step_verified' ||
+          !/^[a-f0-9]{64}$/i.test(result.operationReceiptSha256||'')))
+        throw Error('DEV046D_STEP_REQUIRES_NATIVE_VERIFIED_RESULT');
+      if(kind==='sameLineBreakpoint' &&
+         (result.operationOutcomeCode!=='native_dialog_bp_uncertain' ||
+          !/^[a-f0-9]{64}$/i.test(result.operationReceiptSha256||'')))
+        throw Error('DEV046D_BREAKPOINT_RESULT_MUST_BE_UNCERTAIN');
+      setDebugResult(result);
+      setHint(kind==='stepOver'?
+        'Native dialog approved exactly one step; independent OS/PDB stop and terminal journal were verified in this development build. Not signed installed acceptance.':
+        'Native dialog approved a same-source-line breakpoint; adapter acknowledgment is not an independently verified breakpoint hit. Result remains uncertain.');
+    }catch(error){
+      if(activeProjectIdRef.current===projectId)
+        setProblem('Native debugger action denied or failed: '+String(error));
+    }finally{
+      setDebugBusy(false);
+      if(activeProjectIdRef.current===projectId)
+        invoke('ide_debug_status',{projectId}).then(setDebugStatus).catch(()=>{});
+    }
+  }
+
   async function runProtectedDebuggerFixture() {
     const projectId = activeProject?.projectId;
     if (!projectId || !debugStatus?.ready || !!debugStatus.current || debugBusy) return;
@@ -3685,6 +3727,29 @@ function App() {
                   <p>Project debugger release feature and native adapter
                     are not independently installed/approved on this desktop.
                     The default build remains nonexecuting.</p>}
+                {debugStatus?.operationControlSupported &&
+                  <div className="jobOperationControls" aria-label="Developer-only native debugger action approval">
+                    <p><strong>DEV-04.6D development mode only.</strong> Each action creates
+                      a new sealed, OS-protected debugging session with separate launch
+                      approval and a second native modal bound to the verified stop.
+                      It is not signed installed release acceptance.</p>
+                    <button type="button" className="ghostBtn"
+                      disabled={!activeProject||!debugStatus?.projectDebugSupported||
+                        !!debugStatus.current||debugBusy||buildBusy||
+                        !safeDebugSymbolEvidence(buildResult,activeProject?.projectId)}
+                      onClick={()=>void runNativeDebuggerAction('stepOver')}>
+                      Step over verified source line (native approval)
+                    </button>
+                    <button type="button" className="ghostBtn"
+                      disabled={!activeProject||!debugStatus?.projectDebugSupported||
+                        !!debugStatus.current||debugBusy||buildBusy||
+                        !safeDebugSymbolEvidence(buildResult,activeProject?.projectId)}
+                      onClick={()=>void runNativeDebuggerAction('sameLineBreakpoint')}>
+                      Request verified-line breakpoint (native approval)
+                    </button>
+                    <p>Breakpoint acknowledgement remains uncertain; variables,
+                      evaluate, attach and arbitrary paths are unavailable.</p>
+                  </div>}
               </section>
               <p>The fixed self-test remains available separately. Project debugging
                 requires the distinct opt-in native-project-debug feature,

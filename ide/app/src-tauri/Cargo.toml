@@ -28,6 +28,9 @@ native-debug = ["dep:lu-ide-execution-supervisor", "lu-ide-execution-supervisor/
 # DEV-04.4: separate, explicit opt-in for a source/receipt-bound user project.
 # Default release and the fixed LLDB self-test do not acquire this ability.
 native-project-debug = ["native-debug", "native-build"]
+# D6D native human-dialog bridge for Windows DEV BUILDS ONLY.
+# This intentionally cannot be compiled into a release/signed installer yet.
+dev046d-native-dialog = ["native-project-debug", "lu-ide-execution-supervisor/dev046d-native-dialog"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }

@@ -1,6 +1,13 @@
 //! Standalone IDE desktop. All project directories originate in the OS picker,
 //! not from JavaScript, model output, or a Lu IPC call.
 #![forbid(unsafe_code)]
+// D6D is deliberately impossible to package as a release or on Linux.
+// The first-party LLDB owner/PE/PDB route still requires native OS acceptance.
+#[cfg(all(feature = "dev046d-native-dialog", not(debug_assertions)))]
+compile_error!("DEV-04.6D native dialog must not ship in release or signed NSIS builds");
+#[cfg(all(feature = "dev046d-native-dialog", not(windows)))]
+compile_error!("DEV-04.6D native dialog is Windows only");
+
 #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
 mod lsp_backend;
 #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
@@ -614,6 +621,67 @@ async fn ide_debug_run_project(
     {
         let _=(app,registry,project_id);
         Err("DEV044_PROJECT_DEBUG_FEATURE_NOT_INSTALLED".into())
+    }
+}
+
+/// Only fixed operations can be proposed by the renderer; no DAP request,
+/// source path, thread ID or approval can be supplied to the native host.
+#[tauri::command]
+async fn ide_debug_step_project(
+    app:AppHandle, registry:State<'_,Arc<IdeWorkspaceRegistry>>, project_id:String,
+)->Result<serde_json::Value,String>{
+    #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+    {
+        let debug=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("DEV046D_PROTECTED_DEBUGGER_MISSING")?;
+        let builds=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("DEV046D_PROTECTED_BUILD_HOST_MISSING")?;
+        let debug=Arc::clone(debug.inner());
+        let builds=Arc::clone(builds.inner());
+        let registry=Arc::clone(registry.inner());
+        let result=tauri::async_runtime::spawn_blocking(move||{
+            let target=builds.native_project_debug_target(&project_id)?;
+            debug.run_project_native_action(
+                &app,&registry,&project_id,target,
+                debug_backend::ReviewedNativeAction::StepOver,
+            )
+        }).await.map_err(|_|"DEV046D_STEP_TASK_UNAVAILABLE")??;
+        return serde_json::to_value(result)
+            .map_err(|_|"DEV046D_STEP_SERIALIZE_FAILED".into());
+    }
+    #[cfg(not(all(windows, debug_assertions, feature="dev046d-native-dialog")))]
+    {
+        let _=(app,registry,project_id);
+        Err("DEV046D_NATIVE_ACTIONS_NOT_INSTALLED".into())
+    }
+}
+#[tauri::command]
+async fn ide_debug_breakpoint_project(
+    app:AppHandle, registry:State<'_,Arc<IdeWorkspaceRegistry>>, project_id:String,
+)->Result<serde_json::Value,String>{
+    #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+    {
+        let debug=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("DEV046D_PROTECTED_DEBUGGER_MISSING")?;
+        let builds=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("DEV046D_PROTECTED_BUILD_HOST_MISSING")?;
+        let debug=Arc::clone(debug.inner());
+        let builds=Arc::clone(builds.inner());
+        let registry=Arc::clone(registry.inner());
+        let result=tauri::async_runtime::spawn_blocking(move||{
+            let target=builds.native_project_debug_target(&project_id)?;
+            debug.run_project_native_action(
+                &app,&registry,&project_id,target,
+                debug_backend::ReviewedNativeAction::SameLineBreakpoint,
+            )
+        }).await.map_err(|_|"DEV046D_BREAKPOINT_TASK_UNAVAILABLE")??;
+        return serde_json::to_value(result)
+            .map_err(|_|"DEV046D_BREAKPOINT_SERIALIZE_FAILED".into());
+    }
+    #[cfg(not(all(windows, debug_assertions, feature="dev046d-native-dialog")))]
+    {
+        let _=(app,registry,project_id);
+        Err("DEV046D_NATIVE_ACTIONS_NOT_INSTALLED".into())
     }
 }
 
@@ -1531,6 +1599,8 @@ pub fn run() {
             ide_debug_status,
             ide_debug_run_fixture,
             ide_debug_run_project,
+            ide_debug_step_project,
+            ide_debug_breakpoint_project,
             ide_debug_cancel,
             ide_debug_reconcile,
             ide_read_project_context,
