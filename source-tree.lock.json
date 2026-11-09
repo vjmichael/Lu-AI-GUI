@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6257dc07ef9144c8ea9d63b4cd727ba4387a2d17",
-  "trackedFileCount": 739,
+  "sourceCommitBeforeLock": "b3f3dfabd7bc1c72279476e82684dd05c91278fd",
+  "trackedFileCount": 746,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -22,6 +22,10 @@
     {
       "path": ".github/workflows/lu-agent01e-broker-progress.yml",
       "blob": "4d0d6cdeae4ec25ee45767d4c0f2f40b600d82cb"
+    },
+    {
+      "path": ".github/workflows/lu-agent01g-physical-windows-nsis.yml",
+      "blob": "ba94edd1a950a7c46bfc29d71ac5e18c44fc6d46"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -356,8 +360,12 @@
       "blob": "ae72f1d2398eb75d3cbd283926b3235accf8cb7f"
     },
     {
+      "path": "docs/LU_AGENT01G_PHYSICAL_WINDOWS_NSIS_TEST_BUILD_20261108.md",
+      "blob": "50a70eac9033274ed0be2457b28850e113c9a084"
+    },
+    {
       "path": "docs/LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md",
-      "blob": "b13a9424c47ab9b03c130d7c78232d8a306bf8b7"
+      "blob": "bb48b702a8d90989fdbcd902301a9682fc05176b"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -409,7 +417,7 @@
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
-      "blob": "a13795ea59d786d24a03801fb8d5d303a55a74e6"
+      "blob": "025cce921d4f47570f3746d007a3d9914b14c1bc"
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
@@ -501,7 +509,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "ebd6662d1b8e581b83d8fd4bc176882619d2ede6"
+      "blob": "e0d784ac007bd2efe685b61b7ff79d7ce2f3e26e"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -633,7 +641,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "3137badb830ae897e5535ed8ee550cfd15eeef0c"
+      "blob": "aecaf50d2971d0932dd95538f4c615bdd90c03f5"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -690,6 +698,10 @@
     {
       "path": "docs/WRITE_01E_EXACT_EDIT_APPROVAL_20261103.md",
       "blob": "059141c168eff1d3296c4477f256c8e4d5d86b5a"
+    },
+    {
+      "path": "docs/acceptance/LU_AGENT01G_PHYSICAL_WINDOWS_CPU_TEST_20261108.json.template",
+      "blob": "971afade9b71ee3b725eca2a4fde1ad153e48afc"
     },
     {
       "path": "docs/acceptance/LU_M3_WINDOWS_NATIVE_ACCEPTANCE_20261107.md",
@@ -776,8 +788,16 @@
       "blob": "801cc5fd27a5a7b7b683eb2ef2caa51ddf21957d"
     },
     {
+      "path": "lu-desktop/packaging/NSIS_AGENT01G_PHYSICAL_WINDOWS_CPU_TEST.nsi",
+      "blob": "38eb331e4e4e8efd7f2d83ec38eed2c5d38549c9"
+    },
+    {
       "path": "lu-desktop/packaging/NSIS_DEV_EVAL_NOT_ALPHA.nsi",
       "blob": "5c76758a30ad342269a7f9608b7372618fc1f718"
+    },
+    {
+      "path": "lu-desktop/packaging/README_AGENT01G_PHYSICAL_WINDOWS_CPU_TEST.txt",
+      "blob": "e6345a8e93d1b228117e64877f36db40b284c160"
     },
     {
       "path": "lu-desktop/packaging/README_NOT_ALPHA.txt",
@@ -833,7 +853,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.toml",
-      "blob": "f10bf44c2b6ac5d0170f72e77a94d921789f004c"
+      "blob": "f3b557abfe9621f290dfde7e575cd716b4d08ee7"
     },
     {
       "path": "lu-desktop/src-tauri/build.rs",
@@ -949,7 +969,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "69314958c8ecfa51d8bd7aa8dd9982eebb0c76ea"
+      "blob": "2be3c555fd42909ad062c672988954b6270f481f"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1086,6 +1106,10 @@
     {
       "path": "lu-desktop/tests/agent01g-approved-step-integration.test.mjs",
       "blob": "36f0d6e3812e8ddd59473a5771c4e68ed2d1b747"
+    },
+    {
+      "path": "lu-desktop/tests/agent01g-physical-installer-contract.test.mjs",
+      "blob": "13d464a310dc169dff681e7a7873e6f882e86000"
     },
     {
       "path": "lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs",
@@ -1446,6 +1470,10 @@
     {
       "path": "lu-desktop/web/styles.css",
       "blob": "2dea7827b9c584a27d89ee95380161421c6cdc54"
+    },
+    {
+      "path": "scripts/build-agent01g-physical-windows-nsis.ps1",
+      "blob": "df84a695fc7e4d88a700fec1c28ec9273178ae6d"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
