@@ -7,8 +7,9 @@
 //! membership established in pre_exec BEFORE that launcher executes.
 //! Missing prerequisites = denied. No unrestricted fallback.
 use crate::{
+    live_output::LiveOutput,
     snapshot::{verify_input, PublishedInput},
-    live_output::LiveOutput, JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
+    JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
 use sha2::{Digest, Sha256};
@@ -42,7 +43,7 @@ fn native_linux_cgroup_trace(stage: &'static str) {
 
 const BWRAP: &str = "/usr/bin/bwrap";
 // Linux multi-language bundles are provisioned by the privileged installer.
- // No runtime path or digest may originate in the WebView, project or PATH.
+// No runtime path or digest may originate in the WebView, project or PATH.
 const DEV03_PYTHON_ROOT: &str = "/opt/lu-ide/runtimes/python_pytest";
 const DEV03_NODE_ROOT: &str = "/opt/lu-ide/runtimes/js_tests";
 const DEV03_CMAKE_ROOT: &str = "/opt/lu-ide/runtimes/cpp_cmake_build";
@@ -58,21 +59,20 @@ fn reviewed_multilang_bundle(
     if !cfg!(feature = "multilang-worker") {
         return Err(SupervisorError::InvalidPlan);
     }
-    let (root,pin) = match recipe_id {
-        "python_pytest" => (DEV03_PYTHON_ROOT,DEV03_PYTHON_PIN),
-        "js_tests" => (DEV03_NODE_ROOT,DEV03_NODE_PIN),
-        "cpp_cmake_build" => (DEV03_CMAKE_ROOT,DEV03_CMAKE_PIN),
+    let (root, pin) = match recipe_id {
+        "python_pytest" => (DEV03_PYTHON_ROOT, DEV03_PYTHON_PIN),
+        "js_tests" => (DEV03_NODE_ROOT, DEV03_NODE_PIN),
+        "cpp_cmake_build" => (DEV03_CMAKE_ROOT, DEV03_CMAKE_PIN),
         _ => return Err(SupervisorError::InvalidPlan),
     };
-    let expected=pin.ok_or(SupervisorError::NoContainment)?;
-    crate::runtime_bundles::verify_runtime_bundle(recipe_id, Path::new(root),expected)
+    let expected = pin.ok_or(SupervisorError::NoContainment)?;
+    crate::runtime_bundles::verify_runtime_bundle(recipe_id, Path::new(root), expected)
 }
 
 /// Read-only native host readiness. It NEVER issues a grant or starts code.
-pub fn installed_multilang_toolchain_digest(recipe_id:&str)
-    -> Result<String,SupervisorError> {
+pub fn installed_multilang_toolchain_digest(recipe_id: &str) -> Result<String, SupervisorError> {
     ensure_root_owned_tool(Path::new(BWRAP))?;
-    let bundle=reviewed_multilang_bundle(recipe_id)?;
+    let bundle = reviewed_multilang_bundle(recipe_id)?;
     Ok(bundle.tree_sha256)
 }
 
@@ -584,41 +584,58 @@ fn command_for(
         .arg("--chdir")
         .arg("/workspace");
     if let Some(bundle) = runtime {
-        if bundle.profile.id() != plan.recipe_id
-            || bundle.tree_sha256 != plan.toolchain_sha256 {
+        if bundle.profile.id() != plan.recipe_id || bundle.tree_sha256 != plan.toolchain_sha256 {
             return Err(SupervisorError::WrongProjectOrSource);
         }
-        cmd.arg("--ro-bind").arg(&bundle.root).arg("/runtime")
-            .arg("--setenv").arg("PATH").arg("/runtime/bin:/usr/bin:/bin")
-            .arg("--setenv").arg("PYTHONDONTWRITEBYTECODE").arg("1")
-            .arg("--setenv").arg("NODE_REPL_HISTORY").arg("/tmp/node-history")
-            .arg("--setenv").arg("TMPDIR").arg("/tmp");
+        cmd.arg("--ro-bind")
+            .arg(&bundle.root)
+            .arg("/runtime")
+            .arg("--setenv")
+            .arg("PATH")
+            .arg("/runtime/bin:/usr/bin:/bin")
+            .arg("--setenv")
+            .arg("PYTHONDONTWRITEBYTECODE")
+            .arg("1")
+            .arg("--setenv")
+            .arg("NODE_REPL_HISTORY")
+            .arg("/tmp/node-history")
+            .arg("--setenv")
+            .arg("TMPDIR")
+            .arg("/tmp");
     }
     cmd.arg("--");
     match plan.recipe_id.as_str() {
-        "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
-            if runtime.is_none() => {
+        "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests" if runtime.is_none() => {
             cmd.arg(CARGO);
             cmd.arg(match plan.recipe_id.as_str() {
                 "rust_check" => "check",
                 "rust_build" => "build",
                 _ => "test",
             })
-            .arg("--locked").arg("--offline").arg("--manifest-path").arg(manifest);
+            .arg("--locked")
+            .arg("--offline")
+            .arg("--manifest-path")
+            .arg(manifest);
         }
         "python_pytest" if runtime.is_some() => {
-            cmd.arg("/runtime/bin/python3")
-                .args(["-I","-m","pytest","-q","-p","no:cacheprovider"]);
+            cmd.arg("/runtime/bin/python3").args([
+                "-I",
+                "-m",
+                "pytest",
+                "-q",
+                "-p",
+                "no:cacheprovider",
+            ]);
         }
         "js_tests" if runtime.is_some() => {
             cmd.arg("/runtime/bin/node")
-                .args(["--test","--test-reporter=tap"]);
+                .args(["--test", "--test-reporter=tap"]);
         }
         "cpp_cmake_build" if runtime.is_some() => {
             cmd.arg("/runtime/bin/cmake")
                 .arg("-DLU_IDE_WORKSPACE=/workspace")
                 .arg("-DLU_IDE_OUTPUT=/output")
-                .args(["-P","/runtime/drivers/dev03-cmake.cmake"]);
+                .args(["-P", "/runtime/drivers/dev03-cmake.cmake"]);
         }
         _ => return Err(SupervisorError::InvalidPlan),
     }
@@ -778,8 +795,15 @@ pub fn execute_linux_worker(
     output_parent: &Path,
     cancellation: &RunCancellation,
 ) -> Result<ExecutionResult, SupervisorError> {
-    execute_linux_worker_with_output(supervisor, job_id, plan, input,
-        output_parent, cancellation, None)
+    execute_linux_worker_with_output(
+        supervisor,
+        job_id,
+        plan,
+        input,
+        output_parent,
+        cancellation,
+        None,
+    )
 }
 
 /// Same already-protected cgroup/Bubblewrap worker; optional native-only
@@ -820,8 +844,7 @@ pub fn execute_linux_worker_with_output(
     }
     let group = make_cgroup(job_id, plan)?;
     let output = make_output_root(output_parent, job_id)?;
-    let (mut command, proc_file) =
-        command_for(plan, input, &output, &group, runtime.as_ref())?;
+    let (mut command, proc_file) = command_for(plan, input, &output, &group, runtime.as_ref())?;
     let current_proof = proof_for(&group);
     if !current_proof.complete() {
         return Err(denied());
@@ -987,19 +1010,22 @@ mod tests {
     fn actual_pipe_drain_emits_bounded_distinct_streams() {
         let sink = Arc::new(LiveOutput::default());
         let stdout = collect_limited(
-            std::io::Cursor::new(b"ok\n".to_vec()), 4096,
-            Some(Arc::clone(&sink)), "stdout",
+            std::io::Cursor::new(b"ok\n".to_vec()),
+            4096,
+            Some(Arc::clone(&sink)),
+            "stdout",
         );
         let stderr = collect_limited(
-            std::io::Cursor::new(b"warning\n".to_vec()), 4096,
-            Some(Arc::clone(&sink)), "stderr",
+            std::io::Cursor::new(b"warning\n".to_vec()),
+            4096,
+            Some(Arc::clone(&sink)),
+            "stderr",
         );
         assert_eq!(stdout.join().unwrap().unwrap().bytes, 3);
         assert_eq!(stderr.join().unwrap().unwrap().bytes, 8);
         let page = sink.page(0);
         assert_eq!(page.chunks.len(), 2);
-        let kinds: std::collections::HashSet<_> =
-            page.chunks.iter().map(|c| c.stream).collect();
+        let kinds: std::collections::HashSet<_> = page.chunks.iter().map(|c| c.stream).collect();
         assert!(kinds.contains("stdout"));
         assert!(kinds.contains("stderr"));
         assert!(page.live_unverified);
