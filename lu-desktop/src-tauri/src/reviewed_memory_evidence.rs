@@ -156,6 +156,15 @@ fn verify_row(chats:&ChatStore,continuity:&ContinuityStore,root:&Path,r:&Row)->R
     if src!=r.source_id||digest(text.as_bytes())!=r.source_sha{
         return Err("Original human source revision does not match".into())
     }
+    // E1-P15's existing read-only journal inspector independently binds
+    // this per-turn task/effect pair to the exact original human chat.
+    // A valid standalone receipt cannot launder another task's identity.
+    let origin=crate::reviewed_task_continuity::reviewed_turn_continuity(
+        root,&r.chat,&r.turn
+    )?.ok_or("Original task/effect journal pair missing")?;
+    if !origin.origin_bound{
+        return Err("Original reviewed human task origin is unbound".into())
+    }
     let journal=read_real_journal(root,&r.turn)?;
     let record=journal.get(&r.call).map_err(err)?
         .ok_or("Original worker effect missing")?;
@@ -448,8 +457,12 @@ mod tests {
         ))
     }
     fn turn(i:u32)->String{format!("g-{i:032x}")}
-    fn journal_with_git(root:&Path,t:&str,outer:&str,head:&str,independent:bool)
+    fn journal_with_git(root:&Path,chat:&str,t:&str,outer:&str,head:&str,independent:bool)
         ->EffectJournal{
+        let task=lu_core::tasks::TaskStore::open(
+            &root.join(format!("lu-reviewed-task-{t}.sqlite"))
+        ).unwrap();
+        task.bind_reviewed_human_turn(chat,t).unwrap();
         let path=journal_path(root,t).unwrap();
         let journal=EffectJournal::open(&path).unwrap();
         let call=format!("{outer}-gh");
@@ -516,7 +529,7 @@ mod tests {
         let original=turn(1);
         chats.append_user_with_turn_id(&chat,&original,
             "Authorize reviewed Git HEAD observation").unwrap();
-        let journal=journal_with_git(&root,&original,"case-one",&"a".repeat(40),true);
+        let journal=journal_with_git(&root,&chat,&original,"case-one",&"a".repeat(40),true);
         let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
         let report=reported("case-one",&"a".repeat(40));
         assert_eq!(record_from_reviewed_turn(
@@ -555,7 +568,7 @@ mod tests {
         let chat=chats.create_chat().unwrap().chat_id;
         let t1=turn(1);
         chats.append_user_with_turn_id(&chat,&t1,"First original Git request").unwrap();
-        let first=journal_with_git(&root,&t1,"earlier",&"a".repeat(40),true);
+        let first=journal_with_git(&root,&chat,&t1,"earlier",&"a".repeat(40),true);
         let continuity=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
         assert_eq!(record_from_reviewed_turn(
             &chats,&continuity,&root,&chat,&t1,&first,&reported("earlier",&"a".repeat(40))
@@ -563,7 +576,7 @@ mod tests {
         let t2=turn(2);
         chats.append_user_with_turn_id(&chat,&t2,
             "Human authorized a separate reviewed Git operation").unwrap();
-        let newer=journal_with_git(&root,&t2,"later",&"b".repeat(40),true);
+        let newer=journal_with_git(&root,&chat,&t2,"later",&"b".repeat(40),true);
         assert_eq!(record_from_reviewed_turn(
             &chats,&continuity,&root,&chat,&t2,&newer,&reported("later",&"b".repeat(40))
         ).unwrap(),1);
@@ -591,7 +604,7 @@ mod tests {
         let chat=chats.create_chat().unwrap().chat_id;
         let t1=turn(1);
         chats.append_user_with_turn_id(&chat,&t1,"Host approved Git source").unwrap();
-        let j=journal_with_git(&root,&t1,"case-corrupt",&"a".repeat(40),true);
+        let j=journal_with_git(&root,&chat,&t1,"case-corrupt",&"a".repeat(40),true);
         let cp=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
         record_from_reviewed_turn(
             &chats,&cp,&root,&chat,&t1,&j,&reported("case-corrupt",&"a".repeat(40))
@@ -627,7 +640,7 @@ mod tests {
         let original=turn(1);
         chats.append_user_with_turn_id(&chat,&original,
             "Original human approved Git source read").unwrap();
-        let journal=journal_with_git(&root,&original,"crash-proof",&"a".repeat(40),true);
+        let journal=journal_with_git(&root,&chat,&original,"crash-proof",&"a".repeat(40),true);
         let cp=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
         let report=reported("crash-proof",&"a".repeat(40));
         record_from_reviewed_turn(&chats,&cp,&root,&chat,&original,&journal,&report)
@@ -659,6 +672,28 @@ mod tests {
         assert!(resolve_for_current_human(
             &chats,&cp,&root,&chat,&current,selector
         ).is_err());
+        // Restore the original continuity link, then tamper only the host
+        // TaskStore origin. The receipt and checkpoint still match, but
+        // this historical source must not become available to another chat.
+        let real_checkpoint=format!("cp-03d-{}",digest(b"crash-proof-gh"));
+        index.execute(
+            "UPDATE lu_reviewed_memory_evidence SET checkpoint_id=?1 WHERE call_id=?2",
+            params![real_checkpoint,"crash-proof-gh"]
+        ).unwrap();
+        assert!(resolve_for_current_human(
+            &chats,&cp,&root,&chat,&current,selector
+        ).unwrap().is_some());
+        let tasks=Connection::open(root.join(format!(
+            "lu-reviewed-task-{original}.sqlite"
+        ))).unwrap();
+        tasks.execute(
+            "UPDATE lu_reviewed_turn_origin SET conversation_id=?1",
+            [format!("c-{}","f".repeat(32))]
+        ).unwrap();
+        assert!(resolve_for_current_human(
+            &chats,&cp,&root,&chat,&current,selector
+        ).is_err());
+        drop(tasks);
         drop(index);drop(journal);drop(cp);drop(chats);
         fs::remove_dir_all(root).unwrap();
     }
@@ -670,7 +705,7 @@ mod tests {
         let chat=chats.create_chat().unwrap().chat_id;
         let t1=turn(1);
         chats.append_user_with_turn_id(&chat,&t1,"Reviewed Git consent").unwrap();
-        let j=journal_with_git(&root,&t1,"no-oracle",&"a".repeat(40),false);
+        let j=journal_with_git(&root,&chat,&t1,"no-oracle",&"a".repeat(40),false);
         let cp=ContinuityStore::open(&root.join("continuity.sqlite")).unwrap();
         assert!(record_from_reviewed_turn(
             &chats,&cp,&root,&chat,&t1,&j,&reported("no-oracle",&"a".repeat(40))

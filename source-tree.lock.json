@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "68d0e242550c52968e23b9f508b4bee1cf347aa3",
+  "sourceCommitBeforeLock": "596a31fe44f8994a86dffb8fd02614dd8d0e8510",
   "trackedFileCount": 818,
   "files": [
     {
@@ -697,7 +697,7 @@
     },
     {
       "path": "docs/LU_MEMORY_LOOP03E_CRASH_CONSISTENT_PUBLICATION_20261109.md",
-      "blob": "3509f7941db8c948696d4b8d4c87a725608f5c80"
+      "blob": "25ae3da40ac284774fcbb66ed218279a73d4aeee"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -1241,7 +1241,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_memory_evidence.rs",
-      "blob": "edd7fc5072a3a3165a00ff37e5809b9c88178005"
+      "blob": "2d4ccf373d296abacb9a11cdd62d2d2597ab101c"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_task_continuity.rs",
