@@ -191,6 +191,7 @@ mod enabled {
             input_snapshot_sha256: input.seal.source_sha256.clone(),
             manifest_sha256: input.seal.manifest_sha256.clone(),
             toolchain_sha256: bundle_sha,
+            debug_target_binding_sha256: None,
             runtime_limit_ms: 60_000,
             memory_limit_bytes: 512 * 1024 * 1024,
             process_limit: 16, // Kernel cgroup counts clangd threads; still globally capped.
