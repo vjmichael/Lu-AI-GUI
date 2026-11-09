@@ -125,8 +125,12 @@ def main():
             leader_cgroup=pathlib.Path(f"/proc/{leader}/cgroup").read_text()
             escaped_cgroup=pathlib.Path(
                 f"/proc/{escaped_pid}/cgroup").read_text()
-            if leader_cgroup!=escaped_cgroup:
-                raise RuntimeError("Session escape also escaped cgroup custody")
+            expected_nested=leader_cgroup.strip()+"/lu-nested-host-test"
+            if escaped_cgroup.strip()!=expected_nested:
+                raise RuntimeError("Nested setsid child did not remain inside trusted subtree")
+            nested=cgroup/"lu-nested-host-test"
+            if not nested.is_dir():
+                raise RuntimeError("Nested child cgroup was not actually created")
             # Control is outside the killed group; proves that this is not an
             # indiscriminate kill of all processes owned by the user.
             control=subprocess.Popen(
@@ -165,10 +169,10 @@ def main():
             require_os_termination(escaped_pid,escaped_fd,end)
             if not running(control.pid):
                 raise RuntimeError("Unrelated control process was killed")
-            # The helper may have removed the now-empty kernel cgroup.
-            if cgroup.exists() and "populated 0" not in cgroup.joinpath(
-                "cgroup.events").read_text(encoding="ascii"):
-                raise RuntimeError("Kernel cgroup.events still populated")
+            # Strong P08C parity: nested child and owner leaf must both be
+            # removed after cgroup.kill and recursive populated=0.
+            if nested.exists() or cgroup.exists():
+                raise RuntimeError("Custodian did not remove its empty nested cgroup tree")
             print("AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1 "
                 "Lu_SIGKILL=1 setsid_escape=1 "
                 "cgroup_kill=1 recursive_populated_zero=1 "

@@ -100,6 +100,39 @@ mod linux{
             std::thread::sleep(Duration::from_millis(15));
         }
     }
+    /// Reconcile P08C nested-cgroup hygiene without trusting a process PID,
+    /// cgroup path from a model, or an unbounded recursive filesystem walk.
+    /// cgroup.kill is recursive; deletion only follows verified empty kernel
+    /// child directories beneath this custodian-created leaf.
+    fn remove_owned_empty_subtree(path:&Path,depth:usize,remaining:&mut usize)
+        ->io::Result<()>{
+        if depth>16||*remaining==0{
+            return Err(io::Error::other("bounded cgroup subtree cleanup limit"))
+        }
+        *remaining-=1;
+        let metadata=fs::symlink_metadata(path)?;
+        if !metadata.is_dir()||metadata.file_type().is_symlink(){
+            return Err(io::Error::other("unsafe cgroup subtree member"))
+        }
+        if !populated_zero(path)?{
+            return Err(io::Error::other("cgroup subtree still populated"))
+        }
+        let mut nested=Vec::new();
+        for row in fs::read_dir(path)?{
+            let row=row?;
+            let kind=row.file_type()?;
+            if kind.is_symlink()||(!kind.is_dir()&&!kind.is_file()){
+                return Err(io::Error::other("unsafe cgroup subtree entry"))
+            }
+            if kind.is_dir(){nested.push(row.path())}
+        }
+        for child in nested{
+            remove_owned_empty_subtree(&child,depth+1,remaining)?;
+        }
+        // Do not unlink virtual kernel attribute files. Only rmdir a
+        // cgroup confirmed recursively empty by cgroup.events.
+        fs::remove_dir(path)
+    }
     fn try_run()->io::Result<()>{
         let args:Vec<String>=env::args().collect();
         if args.len()!=5{return Err(io::Error::other("expected host profile/chat/turn/call"))}
@@ -174,10 +207,12 @@ mod linux{
             }
         }
         end_owned_subtree(&group)?;
+        let mut cleanup_budget=1024;
+        remove_owned_empty_subtree(&group,0,&mut cleanup_budget)?;
+        // Only after OS reports recursive emptiness AND bounded cleanup can
+        // a surviving custodian publish this historical proof. Never replay
+        // an operation or grant authority from this receipt.
         save_receipt(&profile,chat,turn,call_id,&nonce)?;
-        // Empty cgroups can usually be removed. Nested cgroups may prevent
-        // rmdir; the kernel emptiness witness still remains valid.
-        let _=fs::remove_dir(&group);
         Ok(())
     }
     unsafe extern "C"{fn geteuid()->u32;}

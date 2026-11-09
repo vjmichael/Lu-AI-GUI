@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3d776460bfbf6c29ae4a9d6927e53dd00d6b7185",
+  "sourceCommitBeforeLock": "d8723309959613aa6c7fb8f352b0164d1da1f301",
   "trackedFileCount": 837,
   "files": [
     {
@@ -313,7 +313,7 @@
     },
     {
       "path": "benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py",
-      "blob": "729acb59742d2dbae73e515f36bc0111aaf67e05"
+      "blob": "1da46adbdba72096e1dbb0d8d79ead14dedbf2a1"
     },
     {
       "path": "benchmarks/e1/e1_p05_real_three_arm.py",
@@ -557,7 +557,7 @@
     },
     {
       "path": "docs/LU_CORE_CONVERGENCE_PLAN_20261109.md",
-      "blob": "3702f608aaa9e09d0ac3d278732bb33732941511"
+      "blob": "f8e08a50bda403e406de23e061623b210cd9e5e6"
     },
     {
       "path": "docs/LU_CORE_OPEN_PR_STACK_20261109.json",
@@ -661,7 +661,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "a3a58e2781899a0df7c51ce91971fd30425f53b3"
+      "blob": "97da80edc0d5069f90bb928c350d88a2164e3110"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -3305,7 +3305,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs",
-      "blob": "8689978309f75d19bcb5d204cd883b73242e1b33"
+      "blob": "1f2cc74315c5d80f99fc9932a80ba849a968e44d"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-crash-parent.rs",
@@ -3313,7 +3313,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs",
-      "blob": "3210d231e55289bb65fd6543aa50db225a4e7e61"
+      "blob": "28f6d487a58bb403edb85b35ddbb9987542fba2a"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-group-guard.rs",

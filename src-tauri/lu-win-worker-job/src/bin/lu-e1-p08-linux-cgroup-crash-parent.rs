@@ -29,10 +29,19 @@ fn main(){
             std::process::exit(93)
         }
     };
-    let py=r#"import subprocess,sys
+    // Positive custody must survive BOTH setsid() and a descendant that
+    // creates a nested cgroup inside this custodian's owned leaf.
+    let py=r#"import subprocess,sys,pathlib
+raw=pathlib.Path('/proc/self/cgroup').read_text().splitlines()
+path=[row[3:] for row in raw if row.startswith('0::')]
+if len(path)!=1: raise RuntimeError('untrusted cgroup membership')
+root=pathlib.Path('/sys/fs/cgroup')/path[0].lstrip('/')
+nested=root/'lu-nested-host-test'
+nested.mkdir()
 child=subprocess.Popen(['/bin/sleep','90'],start_new_session=True,
     stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL)
+(nested/'cgroup.procs').write_text(str(child.pid))
 print(child.pid,flush=True)
 child.wait()
 "#;
@@ -57,8 +66,11 @@ child.wait()
     let escaped_cgroup=fs::read_to_string(
         format!("/proc/{escaped}/cgroup")
     ).expect("escaped descendant cgroup");
-    if owner_cgroup!=escaped_cgroup{
-        panic!("setsid descendant unexpectedly left the reviewed cgroup")
+    // A different nested cgroup is allowed; leaving the custodian's
+    // private subtree is not. Both identities come from procfs.
+    let expected_nested=format!("{}/lu-nested-host-test",owner_cgroup.trim_end());
+    if escaped_cgroup.trim_end()!=expected_nested{
+        panic!("setsid descendant did not join the expected nested cgroup")
     }
     let pgid=fs::read_to_string(
         format!("/proc/{escaped}/stat")
