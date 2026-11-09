@@ -159,6 +159,8 @@ jobs:
             # LLDB stop/threads/stack → durable restart + one-use replay denial.
             & $hostExe --project-debug
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: real protected Cargo to project LLDB failed' }
+            & $hostExe --project-debug-cancel
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: real protected project LLDB cancellation, SCM Job reaping or durable receipts failed' }
           } finally {
             if ($nulTouched) {
               & $bootstrap --revoke-fixed-service
@@ -333,7 +335,7 @@ jobs:
         run: |
           set -euo pipefail
           host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_wo6_build_host)"
-          for mode in --check --test --build --project-debug --cancel; do
+          for mode in --check --test --build --project-debug --project-debug-cancel --cancel; do
             rc=0
             sudo /usr/bin/systemd-run --wait --collect --pipe \
               --unit=lu-ide-delegated \
