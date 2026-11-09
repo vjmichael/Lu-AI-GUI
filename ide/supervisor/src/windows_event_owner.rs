@@ -151,6 +151,86 @@ pub(crate) fn persist_native_owner_receipt(
     Ok(hash)
 }
 
+/// The read endpoint is moved exactly once into a native reader thread.
+/// It is not passed to AppContainer or the debuggee. A full queue closes the
+/// pipe, forcing the pinned LLDB hook to fail closed rather than blocking
+/// the UI actor or accepting dropped event evidence.
+pub(crate) struct OwnerSideband {
+    pub(crate) receiver: std::sync::mpsc::Receiver<Result<OwnerEvent, ()>>,
+    pub(crate) ledger: OwnerEventLedger,
+}
+pub(crate) fn start_owner_pipe_reader(
+    raw: usize, nonce: [u8; 16],
+) -> Result<OwnerSideband, SupervisorError> {
+    use std::{sync::mpsc, thread};
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
+        Storage::FileSystem::ReadFile,
+    };
+    let handle = raw as HANDLE;
+    if handle.is_null() || handle == INVALID_HANDLE_VALUE { return Err(denied()); }
+    let (tx, rx) = mpsc::sync_channel(256);
+    thread::Builder::new().name("lu-lldb-owner-receipts".into())
+        .spawn(move || {
+            // Single owner of the raw anonymous pipe; no other thread reads.
+            let handle = raw as HANDLE;
+            let mut count = 0u32;
+            loop {
+                let mut wire = [0u8; SIZE];
+                let mut have = 0usize;
+                while have < SIZE {
+                    let mut n = 0u32;
+                    let ok = unsafe {
+                        ReadFile(handle, wire[have..].as_mut_ptr(),
+                                 (SIZE - have) as u32, &mut n,
+                                 std::ptr::null_mut())
+                    };
+                    if ok == 0 || n == 0 {
+                        if have != 0 { let _ = tx.try_send(Err(())); }
+                        unsafe { CloseHandle(handle); }
+                        return;
+                    }
+                    have += n as usize;
+                }
+                count += 1;
+                if count > 8192 {
+                    let _ = tx.try_send(Err(()));
+                    break;
+                }
+                let parsed = decode(&wire, &nonce).map_err(|_| ());
+                if tx.try_send(parsed).is_err() { break; }
+            }
+            unsafe { CloseHandle(handle); }
+        })
+        .map_err(|_| denied())?;
+    Ok(OwnerSideband { receiver: rx, ledger: OwnerEventLedger::default() })
+}
+impl OwnerSideband {
+    fn drain(&mut self, first_wait: bool) -> Result<(), SupervisorError> {
+        use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
+        if first_wait {
+            match self.receiver.recv_timeout(std::time::Duration::from_millis(750)) {
+                Ok(Ok(record)) => self.ledger.observe(record)?,
+                _ => return Err(denied()),
+            }
+        }
+        loop {
+            match self.receiver.try_recv() {
+                Ok(Ok(event)) => self.ledger.observe(event)?,
+                Ok(Err(())) => return Err(denied()),
+                Err(TryRecvError::Empty) => return Ok(()),
+                Err(TryRecvError::Disconnected) => return Err(denied()),
+            }
+        }
+    }
+    pub(crate) fn current(&mut self, pid: u32, tid: u32, rip: u64)
+        -> Result<OwnerEvent, SupervisorError>
+    {
+        self.drain(self.ledger.active.is_none())?;
+        self.ledger.matching_stop(pid, tid, rip)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
