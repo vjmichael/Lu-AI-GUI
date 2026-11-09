@@ -97,7 +97,9 @@ test('large or missing source cannot silently create verified memory',()=>{
  assert.match(context,/ORIGINAL_MEMORY_CONTEXT_TRUNCATED_REVIEW_REQUIRED/);
  assert.match(context,/SourceRead::Unavailable/);
  assert.match(context,/additionalHistoricalDetailsNotDisplayed/);
- assert.match(context,/humanReviewRequired":verdict\.human_review_required\|\|unshown/);
+ assert.match(context,/humanReviewRequired":\s*verdict\.human_review_required\|\|unshown\|\|preflight_requires_review/);
+ assert.match(context,/currentTaskReviewBlockedByPreflight/);
+ assert.match(context,/goal_gate!="CURRENT_GOAL_REVIEWABLE_ONLY"/);
  assert.match(context,/historicallyRevalidatedProcedures/);
  assert.match(context,/historicalAssessedClaims/);
 });
