@@ -1166,7 +1166,10 @@ mod tests{
         assert!(done,"Native Git did not produce a verified completed task");
         let stdout=manager.take_local_version_stdout(call,&turn)
             .unwrap().expect("Native Git stdout missing");
-        assert_eq!(stdout.bytes.len(),41);
+        let observed=String::from_utf8_lossy(&stdout.bytes);
+        let observed=observed.trim();
+        assert_eq!(observed.len(),40);
+        assert!(observed.bytes().all(|b|b.is_ascii_hexdigit()));
         drop(manager);drop(store);
         let verifier=HostOriginalJobCustody::from_host_profile(&root);
         assert!(verifier.worker_and_descendants_ended(&chat,&turn,call),
