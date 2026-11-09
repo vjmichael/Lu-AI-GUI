@@ -1,0 +1,11 @@
+# MEMORY-LOOP-01 — read-only source-anchored agent task handoff
+
+**Priority:** P0 IMP-02 MEMORY-LOOP, next independent workgroup after AGENT-01L source implementation. **Source candidate, not native acceptance.**
+
+A human can explicitly type `Review agent plan p-<32 lowercase hex>` or `Inspect agent plan p-<32 lowercase hex>` into the existing Lu model conversation. The host reads the **current authenticated ANSF user turn** and rejects stale/assistant/attachment/tool-origin prompts. It looks up the plan only inside that same authenticated conversation and reopens original plan and immutable revision, scheduler owner, independent worker result/oracle evidence and actual Windows Job or Linux delegated-cgroup witness via existing AGENT-01K. It emits a 4 KiB maximum JSON data-only snapshot for the already-loaded model's ordinary Send. No new model runtime, model-generated file path or native tool is introduced.
+
+Fields include original human turn/plan ID, plan/review/owner/lineage statuses, at most eight steps, independently observed step counts, OS custody classifications, recovery block reason and explicit `executionAuthority=NOT_AUTHORIZED_FOR_EXECUTION`, `priorGrantReusable=false`, `automaticRetryAllowed=false`. Historic plan links cannot be treated as current independent success. No original message content or untrusted worker text is copied into the handoff, so old prompt instructions cannot be promoted to active user/system authority. No worker, scheduler claim or effect journal is written.
+
+**Failure semantics:** wrong chat, missing/unreadable source, incomplete journals, changed ANSF sources, unverified oracle/OS custody, or stale revision produces a blocked status or generic unavailable context. The assistant can explain why a manual review is needed, but an actual next operation still requires the native resource picker, current plan review, separate fresh human execution turn, independent authority and host-supervised OS execution. No automatic continuation.
+
+**Tests proposed:** strict parser negative cases, original native ChatStore read-only/nonmutation test, seven Node architecture guards and later genuine GGUF comprehension, Windows/Linux compiler and installed UI acceptance. Existing AGENT-01L cgroup/Job and NSIS CI are queued; no new acceptance claims are made by this source commit.
