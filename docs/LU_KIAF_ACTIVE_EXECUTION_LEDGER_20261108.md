@@ -231,3 +231,29 @@ substitution can still cause a different object to move, so independent
 identity reconciliation remains required. Cross-volume renames fail
 closed. The follow-up passed ten Linux transfer and authority integration
 tests. Windows ACL, reparse, and installed desktop checks remain open.
+
+### 2026-11-09 — R10 Reader and scanned PDF OCR, R11 citation evidence
+
+Linux Reader/OCR passed 46 Reader unit tests, four OCR unit tests, twelve
+desktop source contracts and one opt-in native test with two scanned pages.
+Poppler interpreted the explicit output dash as a literal filename. Omit
+the output prefix so the PNG goes through the bounded stdout pipe.
+The native test verifies the original PDF digest, distinct page raster
+digests, exact English text and its digest, cancellation, and human review.
+The scan fixture was an image-only, two-page PDF made from 1000×480 white
+Pillow RGB images with black DejaVu Sans 62px text at (55,110): ALPHA SOURCE
+PAGE and BRAVO SOURCE PAGE, saved as PDF at 144 dpi. The run pinned the
+system Poppler and Tesseract binaries and English data by SHA-256.
+Windows packaging, multilingual accuracy, and installed UI remain open.
+
+The existing Linux R11 research group passed six tests for citation/source
+binding, false citation denial, restart after CAPTCHA state, and source
+counting. The headed-browser test returned early without its X11 launch
+fixture. This run did not prove Chromium lifecycle or external origins.
+
+The original small-Qwen benchmark produced 72 real generations, with
+zero of 36 passing in each arm. All failures were scored as output format.
+The original report SHA-256 is
+`966b71650113dbf37de4522ec5d78f61909d3fe31eca37014aab6fedc3dd2feb`.
+This is evidence of a response format failure, not a measured difference
+in source comprehension. A separate direct-answer protocol trial is pending.

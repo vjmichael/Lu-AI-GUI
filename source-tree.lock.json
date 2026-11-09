@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e39d2c16f01fce3478d2d1b68abe583d0b427c2a",
-  "trackedFileCount": 821,
+  "sourceCommitBeforeLock": "1c1680202715c82266726a3e7afaa64d8f8d32a8",
+  "trackedFileCount": 822,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -621,7 +621,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "c6b1ef5cf5dc61eec655b44945c2685f03be0f63"
+      "blob": "c8822da6e4e728dde14b9b566bda09b6b531a191"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -2493,7 +2493,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_ocr.rs",
-      "blob": "03f390b44ff2b0a2898957daf7ed9c0e09c694e4"
+      "blob": "0d1259e14176be6d97863f6ab322b1b5bd7ac7b2"
     },
     {
       "path": "src-tauri/lu-core/src/native_office_batch_tool.rs",
@@ -3098,6 +3098,10 @@
     {
       "path": "src-tauri/lu-core/tests/native_pptx_tool_authority.rs",
       "blob": "9b3c7d5ce1c8462089fd252c10906ebee953b325"
+    },
+    {
+      "path": "src-tauri/lu-core/tests/native_reader_ocr_acceptance.rs",
+      "blob": "cb289f1e22112a0cdfb1f9dccd8b21147bb1bf68"
     },
     {
       "path": "src-tauri/lu-core/tests/native_rpm.rs",
