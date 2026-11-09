@@ -442,12 +442,10 @@ impl NativeBuildRuntime {
             app, registry, project_id, recipe_id, &cancel, &requested, &output,
         );
         let mut locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
-        if let Some(ref active) = locked.current {
-            if let Some(ref job_id) = active.job_id {
-                locked.last_output = Some((active.project_id.clone(),
-                    job_id.clone(), Arc::clone(&active.output)));
-            }
-        }
+        let finished_output = locked.current.as_ref().and_then(|active|
+            active.job_id.as_ref().map(|job_id|
+                (active.project_id.clone(), job_id.clone(), Arc::clone(&active.output))));
+        locked.last_output = finished_output;
         locked.current = None;
         if let Ok(ref view) = result {
             locked.recent.insert(view.job_id.clone(), view.clone());
