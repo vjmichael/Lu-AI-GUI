@@ -43,6 +43,7 @@ mod agent_recovery_desktop;
 mod agent_memory_handoff;
 mod agent_verified_feedback;
 mod host_safe_continuation;
+mod agent_recovery_provenance;
 mod chat_message_interactions;
 mod chat_message_revisions;
 mod archive_desktop;
@@ -7878,6 +7879,7 @@ pub fn run() {
             lu_agent_plan_progress,
             lu_agent_review_plan,
             agent_recovery_desktop::lu_agent_reconcile_recovery,
+            agent_recovery_provenance::lu_agent_recovery_provenance,
             agent_plan_continuation_desktop::lu_agent_prepare_next_step,
             lu_agent_cancel_plan,
             lu_message_decorations,
