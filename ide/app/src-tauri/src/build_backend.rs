@@ -724,3 +724,17 @@ impl NativeBuildRuntime {
         Ok("BUILD_KERNEL_TREE_RECONCILED_NO_REEXECUTION".into())
     }
 }
+
+#[cfg(test)]
+mod dev035_native_lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn cancellation_and_recovery_phase_names_match_durable_supervisor_schema() {
+        assert_eq!(native_phase_label(JobPhase::CancelRequested), "cancel_requested");
+        assert_eq!(native_phase_label(JobPhase::ReleasePending), "release_pending");
+        assert_eq!(native_phase_label(JobPhase::RecoveryRequired), "recovery_required");
+        assert_eq!(native_phase_label(JobPhase::Cancelled), "cancelled");
+        assert_eq!(native_phase_label(JobPhase::Completed), "completed");
+    }
+}
