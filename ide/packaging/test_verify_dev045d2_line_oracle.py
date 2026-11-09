@@ -301,6 +301,34 @@ int main(void) {
             bad = dict(claim, sourceLine=1 if os.name == "nt" else 6)
             with self.assertRaisesRegex(Denied, "SYMBOL_LINE_MISMATCH"):
                 verify_claim(root, bad, llvm, digest(llvm))
+            if os.name == "nt":
+                # Alter PDB Info AGE and deliberately repin the modified file.
+                # A hash alone must never let an unrelated PDB attest PE lines.
+                untouched = pdb.read_bytes()
+                forged_pdb = bytearray(untouched)
+                block_size = struct.unpack_from("<I", forged_pdb, 32)[0]
+                directory_size = struct.unpack_from("<I", forged_pdb, 44)[0]
+                directory_map = struct.unpack_from("<I", forged_pdb, 52)[0]
+                count = (directory_size + block_size - 1) // block_size
+                blocks = struct.unpack_from("<" + "I" * count, forged_pdb,
+                                            directory_map * block_size)
+                directory = b"".join(
+                    forged_pdb[b * block_size:(b + 1) * block_size]
+                    for b in blocks
+                )[:directory_size]
+                nstreams = struct.unpack_from("<I", directory, 0)[0]
+                sizes = struct.unpack_from("<" + "I" * nstreams, directory, 4)
+                offset = 4 + 4 * nstreams
+                offset += 4 * ((sizes[0] + block_size - 1) // block_size)
+                info_block = struct.unpack_from("<I", directory, offset)[0]
+                age_at = info_block * block_size + 8
+                struct.pack_into("<I", forged_pdb, age_at,
+                                 struct.unpack_from("<I", forged_pdb, age_at)[0] + 1)
+                pdb.write_bytes(forged_pdb)
+                fake_claim = dict(claim, pdbSha256=digest(pdb))
+                with self.assertRaisesRegex(Denied, "PE_PDB_GUID_AGE_MISMATCH"):
+                    verify_claim(root, fake_claim, llvm, digest(llvm))
+                pdb.write_bytes(untouched)
             source.write_text(source.read_text() + "/* changed */\n")
             with self.assertRaisesRegex(Denied, "INDEPENDENT_DIGEST_MISMATCH"):
                 verify_claim(root, claim, llvm, digest(llvm))
