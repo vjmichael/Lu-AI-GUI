@@ -86,7 +86,7 @@ pub(crate) fn for_current_human_turn(
             match chats.m4_procedure_context(
                 chat,&project,&task,&tool,&version,&app,continuity,journal){
                 Ok(rows)=>{
-                    let omitted=rows.len()>2 ||
+                    let omitted=rows.len()>=8 ||rows.len()>2 ||
                         rows.iter().any(|r|r["moreRecordedStepsNotRead"]==true);
                     let observed=rows.len();
                     (SourceRead::Procedure{
@@ -134,7 +134,8 @@ pub(crate) fn for_current_human_turn(
                                 source_changed:change.source_evidence_changed,
                                 has_blockers:!change.added_blockers.is_empty()
                                     ||!change.cleared_blockers.is_empty()
-                                    ||!saved.blockers.is_empty(),
+                                    ||!saved.blockers.is_empty()
+                                    ||saved.original_source_ids.len()>8,
                             };
                             (facts,json!({
                                 "originalCheckpointId":saved.checkpoint_id,
@@ -142,7 +143,7 @@ pub(crate) fn for_current_human_turn(
                                     .take(8).cloned().collect::<Vec<_>>(),
                                 "sourceIdsTruncated":saved.original_source_ids.len()>8,
                                 "contextChange":change
-                            }),false)
+                            }),saved.original_source_ids.len()>8)
                         },
                         Ok(None)=>(
                             SourceRead::ContextChange{
