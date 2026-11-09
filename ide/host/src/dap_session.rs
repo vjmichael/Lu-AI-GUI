@@ -662,17 +662,24 @@ impl DapSession {
                             .and_then(Value::as_u64)
                             .filter(|v| *v > 0 && *v <= MAX_SEQ)
                             .ok_or(DapError::InvalidMessage)?;
-                        self.phase = DapPhase::Stopped;
                         #[cfg(feature = "dev046c-ci-control")]
                         {
-                            self.last_stopped_thread = Some(thread_id);
                             if let Some(control) = self.ci_control.as_mut() {
-                                if control.expected_line.is_none()
-                                    && control.thread_id == thread_id {
+                                if control.expected_line.is_none() {
+                                    let reason = obj.get("body")
+                                        .and_then(|b| b.get("reason"))
+                                        .and_then(Value::as_str);
+                                    if control.thread_id != thread_id
+                                        || reason != Some("step")
+                                        || control.new_stop {
+                                        return Err(DapError::InvalidMessage);
+                                    }
                                     control.new_stop = true;
                                 }
                             }
+                            self.last_stopped_thread = Some(thread_id);
                         }
+                        self.phase = DapPhase::Stopped;
                         Ok(Some(DapEvent::Stopped { thread_id }))
                     }
                     "continued" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
@@ -1308,6 +1315,28 @@ mod tests {
         let obs = session.ci_take_control_observation().unwrap();
         assert!(obs.response_acknowledged && obs.new_stop_observed && obs.is_step);
         assert!(session.ci_take_control_observation().is_none());
+    }
+    #[cfg(feature = "dev046c-ci-control")]
+    #[test]
+    fn ci_step_breakpoint_or_foreign_thread_stop_cannot_verify_step() {
+        for (thread, reason) in [(7, "breakpoint"), (8, "step")] {
+            let mut s = DapSession::new();
+            s.phase = DapPhase::Stopped;
+            s.last_stopped_thread = Some(7);
+            s.last_source_candidate = Some(candidate_from_dap_frame(&json!({
+                "id": 1, "line": 5, "column": 1,
+                "instructionPointerReference": "0x140001010",
+                "source": {"path": r"C:\reviewed\src\main.rs"}
+            })).unwrap().unwrap());
+            s.ci_step(7, CiStepKind::Over).unwrap();
+            let bad = framed(json!({
+                "seq": 33, "type": "event", "event": "stopped",
+                "body": {"threadId": thread, "reason": reason}
+            }));
+            assert_eq!(s.receive(&bad).unwrap_err(), DapError::InvalidMessage);
+            assert_eq!(s.phase(), DapPhase::Quarantined);
+            assert!(s.ci_take_control_observation().is_none());
+        }
     }
     #[test]
     fn dev045d_only_correlated_stack_can_supply_bounded_source_candidate() {

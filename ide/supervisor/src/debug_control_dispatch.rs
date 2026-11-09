@@ -194,7 +194,8 @@ pub(crate) fn verify_independent_step_result(
     if !valid_stop(after) || !same_fixed_job(&dispatched.from, after)
         || after.owner_sequence != dispatched.from.owner_sequence.checked_add(1)
             .ok_or(ControlDenial::NoIndependentStop)?
-        || after.owner_receipt_sha256 == dispatched.from.owner_receipt_sha256 {
+        || after.owner_receipt_sha256 == dispatched.from.owner_receipt_sha256
+        || after.rip == dispatched.from.rip {
         return Err(ControlDenial::NoIndependentStop);
     }
     let fingerprint = format!(
@@ -233,8 +234,9 @@ mod tests {
             running_receipt_sha256: "d".repeat(64),
             owner_receipt_sha256: format!("{:064x}", seq),
             source_snapshot_sha256: "e".repeat(64),
-            process_id: 11, thread_id: 22, rip: 0x140001000,
-            line: 7, owner_sequence: seq,
+            process_id: 11, thread_id: 22,
+            rip: if seq > 1 { 0x140001004 } else { 0x140001000 },
+            line: if seq > 1 { 8 } else { 7 }, owner_sequence: seq,
             has_independent_pdb: true, has_kernel_owner: true,
             has_durable_receipts: true,
         }
@@ -298,6 +300,17 @@ mod tests {
             &dispatched.claim.consumed_receipt_sha256,
         ));
         assert_eq!(result.evidence_sha256().len(), 64);
+    }
+    #[test]
+    fn new_event_at_original_instruction_does_not_verify_forward_step() {
+        let mut slot = CiControlSlot::admit(claim(), stop(1)).unwrap();
+        let sent = slot.take_step().unwrap();
+        let mut next = stop(2);
+        next.rip = sent.from.rip;
+        assert!(matches!(
+            verify_independent_step_result(&sent, &next, ack()),
+            Err(ControlDenial::NoIndependentStop)
+        ));
     }
     #[test]
     fn foreign_job_thread_source_or_missing_kernel_evidence_denied() {
