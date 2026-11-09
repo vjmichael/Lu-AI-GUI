@@ -14,13 +14,13 @@ use crate::{
     snapshot::{verify_input, PublishedInput},
     windows_broker::TrustedBroker,
     windows_cap_tree::{audit_tree, digest_tree, live_output_quota, publish_into_native_parent},
-    JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
+    live_output::LiveOutput, JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
 use std::{
     ffi::OsStr,
     fs::{self},
-    io,
+    io::{self, Read, Seek, SeekFrom},
     mem::size_of,
     os::windows::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
@@ -817,7 +817,7 @@ fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle), SupervisorErr
         CreateFileW(
             wide(file.as_os_str()).as_ptr(),
             GENERIC_WRITE_ACCESS,
-            0,
+            FILE_SHARE_READ_VALUE,
             &mut sec,
             CREATE_NEW,
             FILE_ATTRIBUTE_NORMAL_VALUE,
@@ -828,6 +828,31 @@ fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle), SupervisorErr
         return Err(denied());
     }
     Ok((nul, Handle::new(diagnostics)?))
+}
+
+/// Read only the already-contained fixed diagnostics file. Windows currently
+/// directs both OS standard handles into this SAME file; never mislabel it
+/// as separately ordered stdout or stderr.
+fn stream_combined_diagnostics(
+    output: &Path,
+    offset: &mut u64,
+    live: Option<&Arc<LiveOutput>>,
+) -> Result<(), SupervisorError> {
+    let Some(live) = live else { return Ok(()); };
+    let path = output.join("cargo-diagnostics.log");
+    let meta = clean_meta(&path)?;
+    if !meta.is_file() || meta.len() > MAX_OUTPUT_FILE_BYTES || meta.len() < *offset {
+        return Err(denied());
+    }
+    let mut file = fs::File::open(path).map_err(io_denied)?;
+    file.seek(SeekFrom::Start(*offset)).map_err(io_denied)?;
+    let mut data = [0u8; 8192];
+    let n = file.read(&mut data).map_err(io_denied)?;
+    if n > 0 {
+        live.append("combined", &data[..n]);
+        *offset += n as u64;
+    }
+    Ok(())
 }
 
 fn launch_appcontainer(
@@ -1023,6 +1048,31 @@ pub fn execute_windows_worker_after_staging_approval<F>(
 where
     F: FnOnce() -> Result<(), SupervisorError>,
 {
+    execute_windows_worker_after_staging_approval_with_output(
+        supervisor, job_id, plan, current_host_observed_head, input,
+        trusted_offline_toolchain_root, trusted_native_output_parent,
+        trusted_broker, cancel, approve_after_staging, None,
+    )
+}
+
+/// Alternate native-only entry, preserving the exact existing admission,
+/// cancellation and terminal-receipt path.
+pub fn execute_windows_worker_after_staging_approval_with_output<F>(
+    supervisor: &Supervisor,
+    job_id: &str,
+    plan: &JobPlan,
+    current_host_observed_head: &str,
+    input: &PublishedInput,
+    trusted_offline_toolchain_root: &Path,
+    trusted_native_output_parent: &Path,
+    trusted_broker: &TrustedBroker,
+    cancel: &WindowsCancellation,
+    approve_after_staging: F,
+    live: Option<Arc<LiveOutput>>,
+) -> Result<WindowsExecutionResult, SupervisorError>
+where
+    F: FnOnce() -> Result<(), SupervisorError>,
+{
     if !valid_job_id(job_id)
         || plan.source_head != current_host_observed_head
         || plan.input_snapshot_sha256 != input.seal.source_sha256
@@ -1200,7 +1250,15 @@ where
     // OS process/job liveness and cancellation are polled every 40 ms.
     // A metadata-only directory walk need not run on *every* wait tick.
     let mut last_live_output_scan = Instant::now() - LIVE_OUTPUT_SCAN_INTERVAL;
+    let mut diagnostics_offset = 0u64;
     let exit_code = loop {
+        // Output is advisory, but a structural violation quarantines the job
+        // rather than silently trusting mutated worker files.
+        if stream_combined_diagnostics(&output, &mut diagnostics_offset, live.as_ref()).is_err() {
+            let _ = job.kill_and_verify();
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(SupervisorError::Quarantined);
+        }
         let waited = unsafe { WaitForSingleObject(process.0, LOOP_DELAY.as_millis() as u32) };
         if waited == WAIT_OBJECT_0 {
             let mut code = 1_u32;
@@ -1273,6 +1331,12 @@ where
             break None;
         }
     };
+    // Capture any final buffered diagnostics before the output seal.
+    if stream_combined_diagnostics(&output, &mut diagnostics_offset, live.as_ref()).is_err() {
+        let _ = job.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(SupervisorError::Quarantined);
+    }
     // All descendants must exit or be killed, including after the Cargo
     // parent process exits. Job Object handle remains open through receipt.
     let naturally_empty = job.await_empty(REAP_LIMIT);
