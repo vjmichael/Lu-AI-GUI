@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a3697a4bd32411d834ed2481793e45cb3878834f",
+  "sourceCommitBeforeLock": "2ab7a6fa61f269345d6e33bbd3a664432c4fed3d",
   "trackedFileCount": 825,
   "files": [
     {
@@ -189,7 +189,7 @@
     },
     {
       "path": ".github/workflows/lu-memory-loop03b-native.yml",
-      "blob": "4ed4c622d3a9afe7ee19b2946c893b563d00a3be"
+      "blob": "5ce9770eb61c8a4d45e526a72c36c1d44aef6091"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -629,7 +629,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "d3a1f20d6ce1b9cd0fc7207f8d0082f3c8352c8c"
+      "blob": "9d09e47437b34f78e6ad259a5d41411174ff2ec6"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -705,7 +705,7 @@
     },
     {
       "path": "docs/LU_MEMORY_LOOP03E_CRASH_CONSISTENT_PUBLICATION_20261109.md",
-      "blob": "868a38cbb19cff4e3fbc27ad514995b0fe845004"
+      "blob": "df0e0462221ac01397582232b74fb985a175f290"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",

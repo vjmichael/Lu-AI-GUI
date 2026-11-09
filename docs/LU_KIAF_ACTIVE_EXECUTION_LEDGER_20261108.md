@@ -293,3 +293,9 @@ three format failures. Host-classified had 18 format failures. Both arms
 scored zero. This records a diagnostic, and the memory acceptance gate
 remains open. The benchmark still needs a no-context control and a
 verified structured-output run before comparing comprehension.
+
+### 2026-11-09 — PR #198 grouped native gate dispatch and demonstrated REPO-01 policy failure
+
+The *single grouped* Windows/Linux native-memory acceptance run was dispatched as Actions #42701772029 on exact head `2ab7a6fa61f269345d6e33bbd3a664432c4fed3d`. Both `native-memory` matrix jobs were still QUEUED at inspection: there were no actual native compiler, runtime, or artifact results to accept or repair. Separately, REPO-01 source run #42701783858 **failed** at `Audit grouped-CI trigger policy and queue cleanup safety`: seven of eight policy tests passed, but the checked-in heavy memory workflow's temporary one-shot push event was classified `HEAVY_WORKFLOW_AUTOMATIC_FANOUT`. The frozen source-tree audit passed (`tracked=825`, Actions PR merge SHA `cf9d197f59867d5dac4073a69e79e6b81b2e7fd3`), but a source check is not native acceptance.
+
+**Repair:** restore the existing `lu-memory-loop03b-native.yml` to manual `workflow_dispatch` only, preserve the source-policy test unmodified, and update `source-tree.lock.json` without altering any native implementation. The earlier run remains useful **for its original SHA only**; after this policy repair, its Windows/Linux results cannot promote the new PR head. A new **single consolidated manual exact-head** task-group dispatch is required when runner access is available. Never reintroduce permanent heavy auto-trigger or treat queued/cancelled jobs as passes. PR #198 remains DRAFT.

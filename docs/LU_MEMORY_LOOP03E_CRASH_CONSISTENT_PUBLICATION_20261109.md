@@ -78,3 +78,7 @@ scope and task journal naming. Nine recovery tests, seven memory-context
 tests, one positive Git corpus test, five message revision tests, eight
 plan progress tests and the opt-in native G5 restart test passed. The
 three exported corpora passed the benchmark input validator.
+
+## Real Actions policy failure and repair (2026-11-09)
+
+PR #198 exact-head REPO-01 run [42701783858](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42701783858) failed its actual grouped-CI policy test: the narrowly scoped temporary `push` trigger on the heavy memory acceptance workflow still violated `HEAVY_WORKFLOW_AUTOMATIC_FANOUT`. Frozen source verification passed, but the policy test's failure is genuine. The fix restores **manual workflow_dispatch only**, rather than weakening tests or allowing automatic native fanout. Native matrix [42701772029](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42701772029) had both jobs queued at inspection; it is pinned to its old head `2ab7a6fa...`. No Windows/Linux compiler failures can be claimed without actual job logs. This repair changes the branch SHA; the existing queued native run cannot establish native acceptance for the repaired head. A fresh **single** manual exact-head dispatch, native logs, and independent artifacts are mandatory before PR promotion.

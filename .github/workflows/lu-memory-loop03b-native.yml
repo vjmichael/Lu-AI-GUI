@@ -1,13 +1,5 @@
 name: Lu MEMORY-LOOP-03B Source-Verified Procedure, Belief and CCM Native Acceptance
 on:
-  # One grouped native acceptance dispatch for PR #198. Only edits to this
-  # workflow file on this exact branch start the Windows/Linux matrix; normal
-  # source-fix pushes do not queue a new run.
-  push:
-    branches:
-      - lu/memory-loop03e-crash-publication-20261109
-    paths:
-      - .github/workflows/lu-memory-loop03b-native.yml
   workflow_dispatch:
     inputs:
       run_real_qwen:
