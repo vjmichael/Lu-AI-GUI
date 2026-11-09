@@ -1875,6 +1875,257 @@ impl WindowsDapSession {
             audit.last_receipt_sha256, audit.final_phase,
         ))
     }
+    /// DEV-04.6C: actual *disposable Windows CI* one-step native execution.
+    /// Never exposed to the desktop, model or release; no original debugger
+    /// launch approval is reused. The fresh D6B action is consumed and
+    /// fsynced BEFORE a single bounded DAP step is transmitted.
+    #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+    pub fn execute_one_protected_ci_step(
+        &mut self,
+        supervisor: &Supervisor,
+        job_id: &str, plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+        original: &WindowsOwnerEventAccepted,
+    ) -> Result<(WindowsOwnerEventAccepted, (String, String, String, String)), SupervisorError> {
+        use crate::{
+            debug_action_receipts::{DebugActionApproval, NativeConsentMarker},
+            debug_command_review::{
+                review_from_verified_native_owner_for_ci, DebugReviewIntent, StepKind,
+            },
+            debug_control_dispatch::{
+                native_control_stop_from_owner, verify_independent_step_result,
+                CiControlSlot, NativeStepAck,
+            },
+        };
+        use lu_ide_workspace::dap_session::{CiStepKind, DapEvent, DapPhase};
+        if self.gateway.phase() != DapPhase::Stopped
+            || original.debugger_job_id != job_id
+            || original.debugger_plan_sha256 != self.native_plan_sha256
+            || original.source_snapshot_sha256 != self.source_input.seal.source_sha256
+            || !original.lldb_event_loop_owner_attested
+            || original.debugger_commands_authorized
+            || original.installed_app_accepted {
+            return Err(SupervisorError::NoContainment);
+        }
+        // Independent read-only job, source and original owner checks
+        // immediately before minting a *new* D6C action challenge.
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let running = supervisor.inspect()?.into_iter()
+            .find(|x| x.job_id == job_id).ok_or(SupervisorError::NoSuchJob)?;
+        if running.phase != JobPhase::Running || running.requires_reconciliation
+            || running.plan_sha256 != self.native_plan_sha256 {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        let current = self.gateway.verify_lldb_kernel_event_owner(
+            original.debuggee_pid, original.debuggee_thread_id, original.stopped_rip,
+        )?;
+        if current.seq != original.owner_sequence {
+            return Err(SupervisorError::NoContainment);
+        }
+        let mut review = review_from_verified_native_owner_for_ci(
+            original, &self.source_input.seal.source_sha256,
+        ).map_err(|_| SupervisorError::NoContainment)?;
+        let preview = review.preview(DebugReviewIntent::Step {
+            kind: StepKind::Over, thread_id: original.debuggee_thread_id,
+        }, original.owner_sequence).map_err(|_| SupervisorError::NoContainment)?;
+        let binding = review.pending_native_binding(
+            &preview.preview_sha256, original.owner_sequence,
+        ).map_err(|_| SupervisorError::NoContainment)?;
+        let mut action = DebugActionApproval::prepare_native(
+            &supervisor.native_owner_receipt_root()?, binding,
+            preview.clone(), crate::now_ms()?,
+        ).map_err(|_| SupervisorError::JournalUnavailable)?;
+        let now = crate::now_ms()?;
+        // This marker is explicitly CI_SIMULATED and NEVER equivalent to
+        // genuine installed human consent. The sealed test-only debuggee
+        // is the sole executable target in this experimental acceptance.
+        action.decide(
+            NativeConsentMarker::for_native_ci_fixture(
+                &preview.preview_sha256, action.challenge_sha256(),
+                original.owner_sequence, now, true,
+            ), original.owner_sequence, now,
+        ).map_err(|_| SupervisorError::InvalidApproval)?;
+        let claim = action.consume_for_receipt_test(
+            &preview.preview_sha256, original.owner_sequence, crate::now_ms()?,
+        ).map_err(|_| SupervisorError::GrantConsumed)?;
+        let mut slot = CiControlSlot::admit(
+            claim, native_control_stop_from_owner(original)
+                .map_err(|_| SupervisorError::NoContainment)?,
+        ).map_err(|_| SupervisorError::NoContainment)?;
+        let dispatched = slot.take_step().map_err(|_| SupervisorError::GrantConsumed)?;
+        if slot.has_unconsumed_slot() {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        let ci_kind = match dispatched.kind() {
+            StepKind::Over => CiStepKind::Over,
+            StepKind::Into => CiStepKind::Into,
+            StepKind::Out => CiStepKind::Out,
+        };
+        // The consumed claim is now held only in 'dispatched', which is
+        // non-clonable and never returned to a caller/renderer. A failed
+        // send leaves the journal at Consumed or ResultUncertain; NO retry.
+        self.gateway.ci_send_step(dispatched.thread_id() as u64, ci_kind)?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
+        let mut saw_stop = false;
+        let mut requested_threads = false;
+        let mut requested_stack = false;
+        let mut stack_received = false;
+        let mut acknowledged = None;
+        while std::time::Instant::now() < deadline && !(stack_received && acknowledged.is_some()) {
+            let events = self.gateway.poll()?;
+            if acknowledged.is_none() {
+                acknowledged = self.gateway.ci_take_observation();
+            }
+            for event in events {
+                match event {
+                    DapEvent::Stopped { thread_id }
+                        if thread_id == u64::from(dispatched.thread_id()) && !saw_stop =>
+                    {
+                        saw_stop = true;
+                        self.gateway.threads()?;
+                        requested_threads = true;
+                    }
+                    DapEvent::ThreadsReceived if requested_threads && !requested_stack => {
+                        self.gateway.stack_trace(dispatched.thread_id() as u64)?;
+                        requested_stack = true;
+                    }
+                    DapEvent::StackTraceReceived if requested_stack => {
+                        stack_received = true;
+                    }
+                    DapEvent::Terminated | DapEvent::Disconnected => {
+                        return Err(SupervisorError::NoContainment);
+                    }
+                    _ => {}
+                }
+            }
+            if !(stack_received && acknowledged.is_some()) {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        let observed = acknowledged.ok_or(SupervisorError::NoContainment)?;
+        if !stack_received || !saw_stop || !observed.response_acknowledged
+            || !observed.new_stop_observed || !observed.is_step
+            || observed.thread_id != u64::from(dispatched.thread_id())
+            || self.gateway.phase() != DapPhase::Stopped {
+            return Err(SupervisorError::NoContainment);
+        }
+        // New compiler source and OS RIP must be independently verified by
+        // EXACTLY the old D5 protected Job/PE/PDB/owner-receipt mechanism.
+        // The adapter's positive ACK is not a successful step outcome.
+        let after = self.verify_real_lldb_event_owner_for_ci(
+            supervisor, job_id, plan, target,
+        )?;
+        let new_stop = native_control_stop_from_owner(&after)
+            .map_err(|_| SupervisorError::NoContainment)?;
+        let proof = verify_independent_step_result(
+            &dispatched, &new_stop, NativeStepAck {
+                correlated_response: observed.response_acknowledged,
+                new_dap_stop: observed.new_stop_observed,
+                thread_id: observed.thread_id as u32,
+            },
+        ).map_err(|_| SupervisorError::NoContainment)?;
+        action.record_independent_ci_step_result(&proof, crate::now_ms()?)
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let audit = action.audit_reference("ResultVerified")
+            .map_err(|_| SupervisorError::JournalCorrupt)?;
+        review.invalidate();
+        Ok((
+            after,
+            (audit.action_id_sha256, audit.preview_sha256,
+             audit.last_receipt_sha256, audit.final_phase),
+        ))
+    }
+
+    /// A breakpoint may be transmitted only to the same independently
+    /// reviewed source location in disposable CI; a DAP verified=true
+    /// response is NEVER sufficient to mark installation successful.
+    #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
+    pub fn attempt_one_protected_ci_breakpoint(
+        &mut self,
+        supervisor: &Supervisor,
+        original: &WindowsOwnerEventAccepted,
+    ) -> Result<(String, String, String, String), SupervisorError> {
+        use crate::{
+            debug_action_receipts::{DebugActionApproval, NativeConsentMarker},
+            debug_command_review::{
+                review_from_verified_native_owner_for_ci, DebugReviewIntent,
+            },
+            debug_control_dispatch::{native_control_stop_from_owner, CiControlSlot},
+        };
+        use lu_ide_workspace::dap_session::DapPhase;
+        if self.gateway.phase() != DapPhase::Stopped
+            || original.debugger_job_id != self.native_job_id
+            || original.debugger_plan_sha256 != self.native_plan_sha256
+            || original.source_snapshot_sha256 != self.source_input.seal.source_sha256 {
+            return Err(SupervisorError::NoContainment);
+        }
+        let current = self.gateway.verify_lldb_kernel_event_owner(
+            original.debuggee_pid, original.debuggee_thread_id, original.stopped_rip,
+        )?;
+        if current.seq != original.owner_sequence {
+            return Err(SupervisorError::NoContainment);
+        }
+        let mut review = review_from_verified_native_owner_for_ci(
+            original, &self.source_input.seal.source_sha256,
+        ).map_err(|_| SupervisorError::NoContainment)?;
+        let preview = review.preview(DebugReviewIntent::Breakpoint {
+            source: "src/main.rs".into(), line: original.verified_source_line,
+        }, original.owner_sequence).map_err(|_| SupervisorError::NoContainment)?;
+        let binding = review.pending_native_binding(
+            &preview.preview_sha256, original.owner_sequence,
+        ).map_err(|_| SupervisorError::NoContainment)?;
+        let now = crate::now_ms()?;
+        let mut action = DebugActionApproval::prepare_native(
+            &supervisor.native_owner_receipt_root()?, binding,
+            preview.clone(), now,
+        ).map_err(|_| SupervisorError::JournalUnavailable)?;
+        action.decide(
+            NativeConsentMarker::for_native_ci_fixture(
+                &preview.preview_sha256, action.challenge_sha256(),
+                original.owner_sequence, now, true,
+            ), original.owner_sequence, now,
+        ).map_err(|_| SupervisorError::InvalidApproval)?;
+        let claim = action.consume_for_receipt_test(
+            &preview.preview_sha256, original.owner_sequence, crate::now_ms()?,
+        ).map_err(|_| SupervisorError::GrantConsumed)?;
+        let mut slot = CiControlSlot::admit(
+            claim, native_control_stop_from_owner(original)
+                .map_err(|_| SupervisorError::NoContainment)?,
+        ).map_err(|_| SupervisorError::NoContainment)?;
+        let submitted = slot.take_breakpoint().map_err(|_| SupervisorError::GrantConsumed)?;
+        if submitted.independently_installed() || slot.has_unconsumed_slot()
+            || submitted.source_line() != original.verified_source_line {
+            return Err(SupervisorError::NoContainment);
+        }
+        self.gateway.ci_send_one_line_breakpoint()?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut ack = None;
+        while std::time::Instant::now() < deadline && ack.is_none() {
+            let _ = self.gateway.poll()?;
+            ack = self.gateway.ci_take_observation();
+            if ack.is_none() {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        let ack = ack.ok_or(SupervisorError::NoContainment)?;
+        if !ack.response_acknowledged || ack.is_step
+            || self.gateway.phase() != DapPhase::Stopped {
+            return Err(SupervisorError::NoContainment);
+        }
+        // Independent breakpoint *hit* or process memory proof does not yet
+        // exist, so record uncertainty even when LLDB acknowledged the write.
+        action.record_uncertain_result(crate::now_ms()?)
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let audit = action.audit_reference("ResultUncertain")
+            .map_err(|_| SupervisorError::JournalCorrupt)?;
+        review.invalidate();
+        Ok((
+            audit.action_id_sha256, audit.preview_sha256,
+            audit.last_receipt_sha256, audit.final_phase,
+        ))
+    }
     #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
     pub fn crash_real_lldb_after_owner_receipt_for_ci(
         &mut self,
