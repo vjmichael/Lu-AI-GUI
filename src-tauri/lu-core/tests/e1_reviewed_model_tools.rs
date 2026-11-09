@@ -1710,6 +1710,20 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     eprintln!("AGENT01I_TWO_STEP_REAL_QWEN_AND_NATIVE_ORACLE_PASS");
 
     drop(session);drop(audit);drop(supervisor);drop(tasks);drop(effects);
+    // A historical receipt is not timeless permission: if the actual
+    // independent parent effect journal disappears, even the approved child
+    // cannot reverify its source lineage after a process restart.
+    let hidden_parent=root.join("agent01i-withheld-parent-oracle.sqlite");
+    fs::rename(&effect_path,&hidden_parent).unwrap();
+    assert!(lu_core::agent_continuation_intent::reverify_child_before_execution(
+        &db,&root,&child_plan,&chat,
+        &ledger,&revisions,&scheduler,&receipts,&source
+    ).is_err(),"Child lineage must fail if real parent oracle disappears");
+    fs::rename(&hidden_parent,&effect_path).unwrap();
+    assert_eq!(lu_core::agent_continuation_intent::reverify_child_before_execution(
+        &db,&root,&child_plan,&chat,
+        &ledger,&revisions,&scheduler,&receipts,&source
+    ).unwrap(),true);
     let reopened_audit=ModelTurnJournal::open(
         &root.join("gguf-audit.sqlite")
     ).unwrap();
