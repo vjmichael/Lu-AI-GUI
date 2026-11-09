@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a87065598ae7d7dfca4219f2b487a1c619012b5f",
+  "sourceCommitBeforeLock": "6257dc07ef9144c8ea9d63b4cd727ba4387a2d17",
   "trackedFileCount": 739,
   "files": [
     {
@@ -357,7 +357,7 @@
     },
     {
       "path": "docs/LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md",
-      "blob": "59e44983759d63cd4b8aa0842bba7e270e0e974e"
+      "blob": "b13a9424c47ab9b03c130d7c78232d8a306bf8b7"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -501,7 +501,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "3f7c4a0ed718cf463d3e2ff9ce1ec1f705d1bbfc"
+      "blob": "ebd6662d1b8e581b83d8fd4bc176882619d2ede6"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -1089,7 +1089,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs",
-      "blob": "20763c32af6ecfb9b8ccfba15e6a4ca6deac8384"
+      "blob": "ce9e2b9087e6517966ec2a1edbd01215a966c67f"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
@@ -2609,7 +2609,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "d7751f376710bb396cbb0f166ab5aa2517cb8463"
+      "blob": "01891c8b670af0198d872ccfd7ff16360c00aab8"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
