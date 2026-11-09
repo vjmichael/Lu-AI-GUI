@@ -46,6 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         snapshot::publish_input,
         wo6_output_evidence::audit_published_output,
         debug_binary_witness::audit_debug_binary_candidate,
+        debug_symbol_verification::verify_build_debug_symbols,
         live_output::LiveOutput,
         windows_broker::TrustedBroker,
         windows_worker::{
@@ -298,6 +299,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         eprintln!("DEV042_WINDOWS_APPCONTAINER_REAL_BUILD_BINARY=PASS hash={} receipt={}",
             candidate.binary_sha256,evidence.terminal_receipt_hash);
+        let symbols=verify_build_debug_symbols(&result.output_root,
+            &output_witness,&candidate)
+            .map_err(|_|"DENIED: real native Windows PE/PDB bytes changed")?
+            .ok_or("DENIED: actual Windows Cargo executable lacked matching PE/RSDS/PDB")?;
+        if !symbols.debug_symbols_attested ||
+            symbols.symbols_kind!="external_pdb_guid_age_dbi_match" ||
+            symbols.debugger_execution_authorized ||
+            symbols.source_line_mapping_verified ||
+            symbols.binary_sha256!=candidate.binary_sha256 ||
+            symbols.output_tree_sha256!=output_witness.tree_sha256 {
+            return Err("DENIED: actual Windows PDB GUID/age not bound".into());
+        }
+        eprintln!("DEV043_WINDOWS_REAL_PE_PDB=PASS pdb_sha={}",
+            symbols.symbols_sha256);
     }
     let last = supervisor
         .receipt_history(&prepared.job_id)
