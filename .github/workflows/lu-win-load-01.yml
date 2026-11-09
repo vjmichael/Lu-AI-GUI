@@ -1,14 +1,6 @@
 name: Lu WIN-LOAD-01 host trace tests
 on:
-  push:
-    branches:
-      - 'lu/win-load-01-host-trace-*'
-  pull_request:
-    paths:
-      - 'lu-desktop/src-tauri/src/load_trace.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'src-tauri/lu-core/src/persistent_llama_backend.rs'
-      - '.github/workflows/lu-win-load-01.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

@@ -1,38 +1,5 @@
 name: Lu Browser and Research Native Acceptance Candidates
 on:
-  pull_request:
-    paths:
-      - 'lu-desktop/scripts/assemble-browser-ci-candidate.mjs'
-      - 'lu-desktop/scripts/stage-browser-runtime.mjs'
-      - 'scripts/stage-research-windows.ps1'
-      - 'lu-desktop/src-tauri/src/research_desktop.rs'
-      - 'lu-desktop/tests/research-source-route.test.mjs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'src-tauri/lu-core/src/web_research_evidence.rs'
-      - 'lu-desktop/tests/browser-model-read.test.mjs'
-      - 'lu-desktop/tests/browser-research-evidence.test.mjs'
-      - 'lu-desktop/tests/research-citation-enforcement.test.mjs'
-      - 'lu-desktop/tests/research-roadmap-acceptance.test.mjs'
-      - 'src-tauri/lu-core/src/web_research_document.rs'
-      - 'src-tauri/lu-core/src/web_research_report.rs'
-      - 'src-tauri/lu-core/tests/web_research_roadmap_acceptance.rs'
-      - 'src-tauri/lu-core/src/web_research_citation.rs'
-      - 'src-tauri/lu-core/tests/web_research_citation_acceptance.rs'
-      - 'src-tauri/lu-core/src/web_research_evidence.rs'
-      - 'lu-desktop/src-tauri/src/browser_model_desktop.rs'
-      - 'src-tauri/lu-core/src/inference_host.rs'
-      - 'src-tauri/lu-core/src/inference_bridge.rs'
-      - 'src-tauri/lu-core/src/inference_supervisor.rs'
-      - 'src-tauri/lu-core/src/persistent_llama_backend.rs'
-      - 'src-tauri/lu-core/src/multimodal_http.rs'
-      - 'lu-desktop/tests/browser-ci-candidate.test.mjs'
-      - 'lu-desktop/tests/browser-ci-executable.test.mjs'
-      - 'src-tauri/lu-core/workers/lu_browser_worker.mjs'
-      - 'src-tauri/lu-core/src/native_web_research.rs'
-      - 'src-tauri/lu-core/src/web_*'
-      - '.github/workflows/lu-browser-research-acceptance.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

@@ -1,11 +1,5 @@
 name: Lu Wave 2 Format-Aware Files and Archives
 on:
-  pull_request:
-    paths:
-      - 'src-tauri/**'
-      - 'lu-desktop/**'
-      - '.github/workflows/lu-wave2-files.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

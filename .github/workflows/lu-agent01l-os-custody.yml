@@ -1,21 +1,5 @@
 name: Lu AGENT-01L Native OS Custody Witness Acceptance
 on:
-  push:
-    branches: ['lu/agent01l-native-custody-20261108']
-  pull_request:
-    paths:
-      - 'src-tauri/lu-win-worker-job/src/lib.rs'
-      - 'src-tauri/lu-core/src/agent_os_custody.rs'
-      - 'src-tauri/lu-core/src/native_background_process.rs'
-      - 'src-tauri/lu-core/src/tasks.rs'
-      - 'src-tauri/lu-core/src/lib.rs'
-      - 'lu-desktop/src-tauri/src/agent_recovery_desktop.rs'
-      - 'lu-desktop/src-tauri/src/agent_plan_continuation_desktop.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
-      - 'lu-desktop/tests/agent01l-os-custody.test.mjs'
-      - 'lu-desktop/tests/agent01k-independent-recovery.test.mjs'
-      - '.github/workflows/lu-agent01l-os-custody.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

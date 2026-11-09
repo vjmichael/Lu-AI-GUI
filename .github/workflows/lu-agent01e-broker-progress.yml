@@ -1,50 +1,5 @@
 name: Lu AGENT-01E Planned Broker Binding and Conversation Recovery
 on:
-  push:
-    branches: ['lu/agent01e-broker-progress-integration-20261108']
-    paths:
-      - 'src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs'
-      - 'src-tauri/lu-core/src/agent_host_scheduler.rs'
-      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
-      - 'src-tauri/lu-core/src/lib.rs'
-      - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
-      - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
-      - 'lu-desktop/src-tauri/src/agent_plan_admission.rs'
-      - 'lu-desktop/tests/agent01f-model-plan-ingress.test.mjs'
-      - 'lu-desktop/tests/agent01g-approved-step-integration.test.mjs'
-      - 'lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs'
-      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/tests/native-chat/src/lib.rs'
-      - 'lu-desktop/tests/agent01e-progress-ui.test.mjs'
-      - 'lu-desktop/tests/agent01h-next-step-preview.test.mjs'
-      - '.github/workflows/lu-agent01e-broker-progress.yml'
-      - 'source-tree.lock.json'
-      - 'evidence/agent-01g/qwen2p5-local-cpu-20261108/**'
-      - 'scripts/verify-agent01g-local-evidence.mjs'
-  pull_request:
-    paths:
-      - 'src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs'
-      - 'src-tauri/lu-core/src/agent_host_scheduler.rs'
-      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
-      - 'src-tauri/lu-core/src/lib.rs'
-      - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
-      - 'lu-desktop/src-tauri/src/agent_plan_review.rs'
-      - 'lu-desktop/src-tauri/src/agent_plan_admission.rs'
-      - 'lu-desktop/tests/agent01f-model-plan-ingress.test.mjs'
-      - 'lu-desktop/tests/agent01g-approved-step-integration.test.mjs'
-      - 'lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs'
-      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/tests/native-chat/src/lib.rs'
-      - 'lu-desktop/tests/agent01e-progress-ui.test.mjs'
-      - 'lu-desktop/tests/agent01h-next-step-preview.test.mjs'
-      - '.github/workflows/lu-agent01e-broker-progress.yml'
-      - 'source-tree.lock.json'
-      - 'evidence/agent-01g/qwen2p5-local-cpu-20261108/**'
-      - 'scripts/verify-agent01g-local-evidence.mjs'
   workflow_dispatch:
 permissions:
   contents: read

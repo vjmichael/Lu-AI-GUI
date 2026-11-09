@@ -1,16 +1,6 @@
 name: Lu ANSF Three-Arm Real-Model Baseline
 on:
-  push:
-    branches:
-      - lu/ansf-three-arm-real-model-baselines-20261107
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'benchmarks/memory/**'
-      - 'src-tauri/lu-core/examples/ansf_memory_baseline.rs'
-      - 'src-tauri/lu-core/src/ansf*.rs'
-      - '.github/workflows/lu-ansf-three-arm-benchmark.yml'
-      - 'source-tree.lock.json'
 permissions:
   contents: read
 concurrency:

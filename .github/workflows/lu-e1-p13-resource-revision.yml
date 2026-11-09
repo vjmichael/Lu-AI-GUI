@@ -1,24 +1,5 @@
 name: Lu E1-P13 Approved Source Revision Custody
 on:
-  push:
-    branches: ['lu/e1-p13-revision-custody-20261108']
-    paths:
-      - 'src-tauri/lu-core/src/reviewed_source_guard.rs'
-      - 'src-tauri/lu-core/src/independent_git_status.rs'
-      - 'src-tauri/lu-core/src/reviewed_outcome_oracle.rs'
-      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
-      - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
-      - '.github/workflows/lu-e1-p13-resource-revision.yml'
-      - 'source-tree.lock.json'
-  pull_request:
-    paths:
-      - 'src-tauri/lu-core/src/reviewed_source_guard.rs'
-      - 'src-tauri/lu-core/src/independent_git_status.rs'
-      - 'src-tauri/lu-core/src/reviewed_outcome_oracle.rs'
-      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
-      - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
-      - '.github/workflows/lu-e1-p13-resource-revision.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

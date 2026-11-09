@@ -1,32 +1,5 @@
 name: Lu E1-P10 Independent Reviewed Outcomes
 on:
-  push:
-    branches: ['lu/e1-p10-independent-operation-oracles-20261108']
-    paths:
-      - 'src-tauri/lu-core/src/reviewed_outcome_oracle.rs'
-      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
-      - 'src-tauri/lu-core/src/journal.rs'
-      - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_app_audit.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/tests/native-reviewed-recovery/**'
-      - 'lu-desktop/tests/reviewed-app-desktop.test.mjs'
-      - '.github/workflows/lu-e1-p10-independent-outcomes.yml'
-      - 'source-tree.lock.json'
-  pull_request:
-    paths:
-      - 'src-tauri/lu-core/src/reviewed_outcome_oracle.rs'
-      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
-      - 'src-tauri/lu-core/src/journal.rs'
-      - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_app_audit.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/tests/native-reviewed-recovery/**'
-      - 'lu-desktop/tests/reviewed-app-desktop.test.mjs'
-      - '.github/workflows/lu-e1-p10-independent-outcomes.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

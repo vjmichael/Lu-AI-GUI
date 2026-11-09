@@ -1,18 +1,5 @@
 name: Lu AGENT-01C Independent Deliverable Receipt Native Candidate
 on:
-  push:
-    branches: ['lu/agent01c-verified-deliverable-receipts-20261108']
-    paths:
-      - 'src-tauri/lu-core/src/agent_deliverable_receipts.rs'
-      - 'src-tauri/lu-core/src/lib.rs'
-      - '.github/workflows/lu-agent01c-deliverable-receipts.yml'
-      - 'source-tree.lock.json'
-  pull_request:
-    paths:
-      - 'src-tauri/lu-core/src/agent_deliverable_receipts.rs'
-      - 'src-tauri/lu-core/src/lib.rs'
-      - '.github/workflows/lu-agent01c-deliverable-receipts.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

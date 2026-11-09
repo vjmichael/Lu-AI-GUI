@@ -1,20 +1,5 @@
 name: Lu MEMORY-LOOP-03B Source-Verified Procedure, Belief and CCM Native Acceptance
 on:
-  push:
-    branches: ['lu/memory-loop03b-procedural-belief-ccm-20261109']
-  pull_request:
-    paths:
-      - 'lu-desktop/src-tauri/src/memory_loop03b_policy.rs'
-      - 'lu-desktop/src-tauri/src/memory_loop03b_context.rs'
-      - 'lu-desktop/src-tauri/src/ansf_chat_store.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'src-tauri/lu-core/src/journal.rs'
-      - 'src-tauri/lu-core/src/ansf_verified_procedures.rs'
-      - 'src-tauri/lu-core/src/ansf_belief_revision.rs'
-      - 'src-tauri/lu-core/src/continuity.rs'
-      - 'lu-desktop/tests/memory-loop03b-source.test.mjs'
-      - '.github/workflows/lu-memory-loop03b-native.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

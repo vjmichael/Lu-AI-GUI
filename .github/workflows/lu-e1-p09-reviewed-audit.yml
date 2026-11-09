@@ -1,24 +1,5 @@
 name: Lu E1-P09 Reviewed App Evidence UI
 on:
-  push:
-    branches: ['lu/e1-p09-reviewed-app-evidence-panel-20261108']
-    paths:
-      - 'lu-desktop/src-tauri/src/reviewed_app_audit.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/tests/native-reviewed-recovery/**'
-      - 'lu-desktop/tests/reviewed-app-desktop.test.mjs'
-      - '.github/workflows/lu-e1-p09-reviewed-audit.yml'
-      - 'source-tree.lock.json'
-  pull_request:
-    paths:
-      - 'lu-desktop/src-tauri/src/reviewed_app_audit.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/tests/native-reviewed-recovery/**'
-      - 'lu-desktop/tests/reviewed-app-desktop.test.mjs'
-      - '.github/workflows/lu-e1-p09-reviewed-audit.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

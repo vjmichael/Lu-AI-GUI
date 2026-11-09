@@ -1,24 +1,5 @@
 name: Lu M5 Repeated-Task Memory E2E Candidates
 on:
-  push:
-    branches: ['lu/m5-local-memory-e2e-20261107']
-    paths:
-      - 'lu-desktop/tests/native-chat/**'
-      - 'lu-desktop/tests/m5-*.test.mjs'
-      - 'src-tauri/lu-core/tests/m5_*.rs'
-      - 'scripts/m5-*.ps1'
-      - 'benchmarks/memory/m5_**'
-      - '.github/workflows/lu-m5-memory-replay.yml'
-      - 'source-tree.lock.json'
-  pull_request:
-    paths:
-      - 'lu-desktop/tests/native-chat/**'
-      - 'lu-desktop/tests/m5-*.test.mjs'
-      - 'src-tauri/lu-core/tests/m5_*.rs'
-      - 'scripts/m5-*.ps1'
-      - 'benchmarks/memory/m5_**'
-      - '.github/workflows/lu-m5-memory-replay.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

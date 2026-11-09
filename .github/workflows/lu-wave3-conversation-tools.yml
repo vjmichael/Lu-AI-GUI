@@ -1,12 +1,5 @@
 name: Lu Wave 3 Normal Conversation Native Tools
 on:
-  pull_request:
-    paths:
-      - 'src-tauri/**'
-      - 'lu-desktop/**'
-      - 'docs/TOOLS_WAVE3_NORMAL_CONVERSATION.md'
-      - '.github/workflows/lu-wave3-conversation-tools.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

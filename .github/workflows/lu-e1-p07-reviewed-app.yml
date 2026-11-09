@@ -1,20 +1,5 @@
 name: Lu E1-P07 Reviewed App Model Tool and Desktop
 on:
-  push:
-    branches: ['lu/e1-p07-reviewed-app-model-tool-20261107']
-    paths:
-      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
-      - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
-      - 'lu-desktop/web/main.jsx'
-      - '.github/workflows/lu-e1-p07-reviewed-app.yml'
-  pull_request:
-    paths:
-      - 'src-tauri/lu-core/src/native_reviewed_app_tool.rs'
-      - 'src-tauri/lu-core/tests/e1_reviewed_model_tools.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
-      - 'lu-desktop/web/main.jsx'
-      - '.github/workflows/lu-e1-p07-reviewed-app.yml'
   workflow_dispatch:
 permissions:
   contents: read

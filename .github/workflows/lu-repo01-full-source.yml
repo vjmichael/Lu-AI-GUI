@@ -24,6 +24,11 @@ jobs:
           node-version: '22'
       - name: Verify exact tracked-source snapshot
         run: node scripts/verify-source-tree.mjs
+      - name: Audit grouped-CI trigger policy and queue cleanup safety
+        if: hashFiles('scripts/lu-ci-group-policy.mjs') != ''
+        run: |
+          node --test scripts/lu-ci-group-policy.test.mjs scripts/lu-ci-superseded-queue.test.mjs
+          node scripts/lu-ci-group-policy.mjs
       - name: Run REPO-01 malicious-edit fixtures
         run: node --test tests/source-identity.test.mjs
       - name: Record immutable build identity
