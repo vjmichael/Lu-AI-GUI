@@ -243,11 +243,14 @@ mod tests {
         }
     }
     fn claim() -> ConsumedControlClaim {
+        let operation = DebugReviewIntent::Step {
+            kind: StepKind::Over, thread_id: 22,
+        };
         ConsumedControlClaim {
             action_id_sha256: "f".repeat(64),
             approved_receipt_sha256: "1".repeat(64),
             consumed_receipt_sha256: "2".repeat(64),
-            operation_sha256: "3".repeat(64),
+            operation_sha256: op_digest(&operation),
             owner_sequence: 1, ci_fixture_only: true,
             execution_authorized: false,
             job_id: format!("job-{}", "a".repeat(32)),
@@ -257,15 +260,20 @@ mod tests {
             preview_sha256: "4".repeat(64),
             stopped_rip: 0x140001000, process_id: 11, thread_id: 22,
             source_line: 7, relative_source: "src/main.rs".into(),
-            operation: DebugReviewIntent::Step {
-                kind: StepKind::Over, thread_id: 22,
-            },
+            operation,
         }
     }
     fn ack() -> NativeStepAck {
         NativeStepAck {
             correlated_response: true, new_dap_stop: true, thread_id: 22,
         }
+    }
+    #[test]
+    fn tampered_consumed_operation_digest_cannot_dispatch() {
+        let mut altered = claim();
+        altered.operation_sha256 = "3".repeat(64);
+        assert!(matches!(CiControlSlot::admit(altered, stop(1)),
+            Err(ControlDenial::Unreviewed)));
     }
     #[test]
     fn same_exact_native_step_claim_moves_only_once() {
@@ -345,6 +353,7 @@ mod tests {
         c.operation = DebugReviewIntent::Breakpoint {
             source: "src/main.rs".into(), line: 7,
         };
+        c.operation_sha256 = op_digest(&c.operation);
         let mut slot = CiControlSlot::admit(c, stop(1)).unwrap();
         let bp = slot.take_breakpoint().unwrap();
         assert_eq!(bp.source_line(), 7);
