@@ -153,6 +153,31 @@ mod tests {
         assert!(!candidate(&ArtifactEntry{relative_path:"target/debug/something.d".into(),bytes:4,sha256:"a".repeat(64)}));
         assert!(!candidate(&ArtifactEntry{relative_path:"target/release/project".into(),bytes:4,sha256:"a".repeat(64)}));
     }
+    #[test]
+    fn absent_or_ambiguous_output_is_never_promoted() {
+        let entry=|name:&str| ArtifactEntry {
+            relative_path:format!("target/debug/{name}"),
+            bytes:12,sha256:"a".repeat(64),
+        };
+        let mut witness=OutputWitness {
+            tree_sha256:"b".repeat(64),file_count:0,
+            total_bytes:0,files:Vec::new(),truncated:false,
+            role:"advisory_post_termination_output_metadata_not_os_acceptance",
+        };
+        let root=std::env::temp_dir();
+        assert!(audit_debug_binary_candidate(&root,&witness).unwrap().is_none());
+        #[cfg(windows)]
+        let entries=vec![entry("first.exe"),entry("second.exe")];
+        #[cfg(not(windows))]
+        let entries=vec![entry("first"),entry("second")];
+        witness.files=entries;
+        witness.file_count=2;
+        // Even when a hostile OS output tree has two plausible binaries,
+        // no caller may select one by name.
+        assert!(audit_debug_binary_candidate(&root,&witness).unwrap().is_none());
+        witness.truncated=true;
+        assert!(audit_debug_binary_candidate(&root,&witness).unwrap().is_none());
+    }
     #[cfg(unix)]
     #[test]
     fn actual_elf_bytes_rehashed_and_modified_binary_denied() {
