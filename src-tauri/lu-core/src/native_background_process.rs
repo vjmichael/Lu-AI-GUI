@@ -40,9 +40,14 @@ struct OwnedWorker {
     job_empty:Option<lu_win_worker_job::WindowsJobEmptyProof>,
     #[cfg(target_os="linux")]
     guardian:Option<lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian>,
+    #[cfg(target_os="linux")]
+    cgroup:Option<lu_win_worker_job::unix_owned::LinuxCgroupCustodian>,
 }
 pub struct BackgroundProcessSupervisor {
     store:Arc<TaskStore>,
+    /// Host-owned profile only; never WebView/model supplied. None preserves
+    /// legacy lower-assurance PGID operation with no positive OS custody.
+    profile:Option<PathBuf>,
     owned:Mutex<BTreeMap<String,OwnedWorker>>,
     // In-memory, one-use private WGC pixel transport. Never TaskStore,
     // WebView, disk, network or model tool output. Drop scrubs raw BGRA.
@@ -316,11 +321,19 @@ fn read_worker_progress(
 impl BackgroundProcessSupervisor {
     pub fn new(store:Arc<TaskStore>)->Self{
         Self{
-            store,owned:Mutex::new(BTreeMap::new()),
+            store,profile:None,owned:Mutex::new(BTreeMap::new()),
             observe_frames:Mutex::new(BTreeMap::new()),
             output_artifacts:Mutex::new(BTreeMap::new()),
             version_outputs:Mutex::new(BTreeMap::new()),
         }
+    }
+    /// Reviewed app execution captures the exact authenticated host profile
+    /// for the independent crash-surviving cgroup custodian's receipt.
+    /// The profile is selected only by the native Lu host, never by the model.
+    pub fn new_for_reviewed_host(store:Arc<TaskStore>,profile:PathBuf)->Self{
+        let mut supervisor=Self::new(store);
+        supervisor.profile=Some(profile);
+        supervisor
     }
     /// Host-only admission. The caller must obtain the user's task grant
     /// independently and build this plan from a trusted executable catalog.
@@ -499,12 +512,30 @@ impl BackgroundProcessSupervisor {
         }
         self.store.create(&plan.task_id,Some(&plan.workspace_id),None)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
-        // A native Linux group guardian is an additional *first-party*
-        // lifetime witness: its own PGID remains alive until the host ends
-        // the worker, or its Lu-owned pipe closes after an abnormal exit.
-        // Only reviewed typed Git/FFprobe operations need this new gate.
+        // Prefer a delegated kernel cgroup subtree for reviewed typed tools.
+        // The independent helper lives outside it and kills the entire
+        // subtree on EOF even if Lu is SIGKILLed. When OS delegation is
+        // unavailable the reviewed tool may retain its existing PGID
+        // guardian, but AGENT-01K/01L REFUSE full descendant custody.
         #[cfg(target_os="linux")]
-        let guardian=if typed_capture.is_some(){
+        let cgroup=if typed_capture.is_some(){
+            if let Some(profile)=self.profile.as_deref(){
+                let origin=self.store.reviewed_human_origin()
+                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?
+                    .ok_or(BackgroundProcessError::InvalidPlan)?;
+                if origin.1!=plan.workspace_id{
+                    return Err(BackgroundProcessError::WrongWorkspace)
+                }
+                lu_win_worker_job::unix_owned::LinuxCgroupCustodian::spawn_if_delegated(
+                    profile,&origin.0,&origin.1,&plan.task_id
+                ).map_err(|_|{
+                    let _=self.store.fail_pending(&plan.task_id);
+                    BackgroundProcessError::SpawnFailed
+                })?
+            }else{None}
+        }else{None};
+        #[cfg(target_os="linux")]
+        let guardian=if typed_capture.is_some()&&cgroup.is_none(){
             lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian::spawn_if_available()
                 .map_err(|_|{
                     let _=self.store.fail_pending(&plan.task_id);
@@ -534,6 +565,14 @@ impl BackgroundProcessSupervisor {
         }
         #[cfg(target_os="linux")]
         {
+            if let Some(ref guard)=cgroup{
+                lu_win_worker_job::unix_owned::bind_worker_to_cgroup_before_exec(
+                    &mut command,guard
+                ).map_err(|_|{
+                    let _=self.store.fail_pending(&plan.task_id);
+                    BackgroundProcessError::SpawnFailed
+                })?;
+            }
             let quota=match plan.args.first().and_then(|s|s.to_str()){
                 Some("--lu-file-scan-worker")=>Some(1024*1024*1024u64),
                 Some("--lu-e1-version-one-shot")|
@@ -621,6 +660,8 @@ impl BackgroundProcessSupervisor {
             job_empty:None,
             #[cfg(target_os="linux")]
             guardian,
+            #[cfg(target_os="linux")]
+            cgroup,
         };
         workers.insert(plan.task_id.clone(),owner);
         if self.store.start(&plan.task_id).is_err(){
@@ -693,6 +734,11 @@ impl BackgroundProcessSupervisor {
             // Shut down the Linux PGID anchor before joining pipes: a
             // descendant may have inherited worker stdout. A verified
             // guardian SIGKILL is required, not merely a leader exit.
+            #[cfg(target_os="linux")]
+            if let Some(guard)=owner.cgroup.as_mut(){
+                guard.stop_and_verify()
+                    .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+            }
             #[cfg(target_os="linux")]
             if let Some(guardian)=owner.guardian.as_mut(){
                 guardian.stop_and_verify_signal()
@@ -862,7 +908,10 @@ impl BackgroundProcessSupervisor {
 fn terminate_owned(worker:&mut OwnedWorker)->Result<(),BackgroundProcessError>{
     #[cfg(target_os="linux")]
     {
-        if let Some(guardian)=worker.guardian.as_mut(){
+        if let Some(guard)=worker.cgroup.as_mut(){
+            guard.stop_and_verify()
+                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+        }else if let Some(guardian)=worker.guardian.as_mut(){
             // The guardian is an independently-running PGID anchor. Closing
             // its Lu-owned pipe makes it SIGKILL its own group. We require
             // the exact kernel SIGKILL termination as an acknowledgement.
