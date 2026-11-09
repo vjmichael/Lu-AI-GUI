@@ -681,8 +681,9 @@ async fn reviewed_app_ask_internal(
             let effects=Arc::new(EffectJournal::open(&effect_root)
                 .map_err(|_|"Cannot open reviewed effect journal")?);
             let supervisor=Arc::new(
-                lu_core::native_background_process::BackgroundProcessSupervisor::new(
-                    Arc::clone(&tasks)
+                lu_core::native_background_process::BackgroundProcessSupervisor::new_for_reviewed_host(
+                    Arc::clone(&tasks),
+                    host.catalog_path.parent().ok_or("Host profile missing")?.to_path_buf()
                 )
             );
             let policy:Arc<dyn ToolAuthorizer>=Arc::new(
