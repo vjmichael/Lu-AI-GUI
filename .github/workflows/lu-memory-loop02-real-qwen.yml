@@ -1,0 +1,169 @@
+name: Lu MEMORY-LOOP-02 Genuine Qwen3 Evidence Calibration
+on:
+  push:
+    branches: ['lu/memory-loop02-verified-feedback-20261108']
+  pull_request:
+    paths:
+      - 'lu-desktop/src-tauri/src/agent_verified_feedback.rs'
+      - 'lu-desktop/src-tauri/src/reviewed_task_continuity.rs'
+      - 'src-tauri/lu-core/src/ansf_live_chat.rs'
+      - 'benchmarks/e1/memory_loop02_genuine_qwen_feedback.py'
+      - 'benchmarks/e1/test_memory_loop02_qwen_feedback.py'
+      - '.github/workflows/lu-memory-loop02-real-qwen.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-memory-loop02-real-qwen-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  real-loaded-model-feedback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 160
+    env:
+      LU_MEMORY_LOOP02_QWEN_FIXTURE_OUTPUT: ${{ runner.temp }}/memory-loop02-native-feedback.json
+      MODEL_SHA256: 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact head, source lock and original repository Git
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p memory-loop02-real-qwen-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          command -v git
+          git --version | tee memory-loop02-real-qwen-evidence/native-git-version.txt
+          printf 'SOURCE_COMMIT=%s\n' "$EXPECTED_HEAD" > memory-loop02-real-qwen-evidence/original-source.txt
+      - name: Prove benchmark grader fails forged outcomes and missing genuine model
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile benchmarks/e1/memory_loop02_genuine_qwen_feedback.py \
+            benchmarks/e1/test_memory_loop02_qwen_feedback.py
+          python3 -m unittest discover -s benchmarks/e1 \
+            -p test_memory_loop02_qwen_feedback.py -v \
+            2>&1 | tee memory-loop02-real-qwen-evidence/strict-grader-unit-tests.log
+          grep -Fq 'Ran 10 tests' memory-loop02-real-qwen-evidence/strict-grader-unit-tests.log
+          grep -Fq 'OK' memory-loop02-real-qwen-evidence/strict-grader-unit-tests.log
+      - name: Install actual native Tauri source fixture dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev libssl-dev patchelf cmake
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
+      - name: Produce EXACT native ANSF/SQLite, independently observed REAL Git oracle feedback after restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib memory_loop02_real_git_oracle_feedback_qwen_fixture_export \
+            -- --ignored --nocapture \
+            2>&1 | tee memory-loop02-real-qwen-evidence/native-actual-oracle-feedback.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            memory-loop02-real-qwen-evidence/native-actual-oracle-feedback.log
+          grep -Fq 'MEMORY_LOOP02_NATIVE_GIT_ORACLE_SOURCE_FIXTURES_CREATED=3' \
+            memory-loop02-real-qwen-evidence/native-actual-oracle-feedback.log
+          test -s "$LU_MEMORY_LOOP02_QWEN_FIXTURE_OUTPUT"
+          cp "$LU_MEMORY_LOOP02_QWEN_FIXTURE_OUTPUT" memory-loop02-real-qwen-evidence/native-original-feedback.json
+          PYTHONPATH=benchmarks/e1 python3 - <<'PY'
+          import json,os,pathlib
+          from memory_loop02_genuine_qwen_feedback import validate_native_fixture
+          path=pathlib.Path(os.environ['LU_MEMORY_LOOP02_QWEN_FIXTURE_OUTPUT'])
+          rows=validate_native_fixture(json.loads(path.read_text()))
+          assert len(rows)==3
+          print("Actual Lu ANSF, TaskStore, EffectJournal, independent on-disk Git oracle and SQLite restart fixture verified")
+          PY
+      - name: Build actual SHA-pinned llama.cpp CPU llama-server from original source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch b12143 \
+            https://github.com/ggml-org/llama.cpp.git \
+            "$RUNNER_TEMP/memory-loop02-llama-cpp"
+          actual="$(git -C "$RUNNER_TEMP/memory-loop02-llama-cpp" rev-parse HEAD)"
+          test "$actual" = 2bc46baa9207d098d03741ac394e7faaf1a955b6
+          cmake -S "$RUNNER_TEMP/memory-loop02-llama-cpp" \
+            -B "$RUNNER_TEMP/memory-loop02-llama-build" \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF \
+            -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/memory-loop02-llama-build" \
+            --target llama-server --parallel 3 \
+            2>&1 | tee memory-loop02-real-qwen-evidence/real-llama-compiler.log
+          sha256sum "$RUNNER_TEMP/memory-loop02-llama-build/bin/llama-server" \
+            | tee memory-loop02-real-qwen-evidence/built-engine-sha256.txt
+          printf 'LLAMA_CPP_SOURCE_SHA=%s\n' "$actual" >> memory-loop02-real-qwen-evidence/original-source.txt
+      - name: Download and verify actual pinned Qwen3-0.6B GGUF
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 5 --connect-timeout 30 \
+            https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf \
+            -o "$RUNNER_TEMP/memory-loop02-Qwen3-0.6B.Q4_K_M.gguf"
+          printf '%s  %s\n' "$MODEL_SHA256" \
+            "$RUNNER_TEMP/memory-loop02-Qwen3-0.6B.Q4_K_M.gguf" | sha256sum -c -
+          sha256sum "$RUNNER_TEMP/memory-loop02-Qwen3-0.6B.Q4_K_M.gguf" \
+            | tee memory-loop02-real-qwen-evidence/loaded-model-sha256.txt
+      - name: GENUINE model inference — verified, conflicting and uncertain feedback with fresh authority denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/e1/memory_loop02_genuine_qwen_feedback.py \
+            --engine "$RUNNER_TEMP/memory-loop02-llama-build/bin/llama-server" \
+            --model "$RUNNER_TEMP/memory-loop02-Qwen3-0.6B.Q4_K_M.gguf" \
+            --fixture "$LU_MEMORY_LOOP02_QWEN_FIXTURE_OUTPUT" \
+            --output memory-loop02-real-qwen-evidence/real-qwen-feedback-report.json \
+            --port 18982 --repetitions 3 \
+            2>&1 | tee memory-loop02-real-qwen-evidence/real-model-scoring.log
+          python3 - <<'PY'
+          import json
+          p="memory-loop02-real-qwen-evidence/real-qwen-feedback-report.json"
+          r=json.load(open(p))
+          assert r["model_started_and_healthy"] is True
+          assert r["observed_actual_model_generations"]==9
+          assert r["overall_pass"] is True
+          for name in ["source_verified","independent_conflict","interrupted_effect"]:
+              assert r["per_case"][name]["full_passes"]>=2
+              assert r["per_case"][name]["authority_violations"]==0
+          print("MEMORY_LOOP02_REAL_QWEN_EVIDENCE_AUTHORITY_COMPREHENSION_PASS=1")
+          PY
+      - name: Distinguish genuine inference failure from missing native acceptance
+        if: failure()
+        shell: bash
+        run: |
+          if test -f memory-loop02-real-qwen-evidence/real-qwen-feedback-report.json; then
+            echo 'Actual pinned Qwen GGUF feedback samples were attempted; inspect all raw model generations, independent grader statuses, oracle fixture and source SHAs. A failed acceptance gate is NOT a source-only PASS.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Genuine Qwen inference was NOT reached. Check exact compiler, native Git/ANSF fixture, pinned model download and model SHA; DO NOT claim the model passed.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Limit scope of positive Qwen acceptance
+        if: success()
+        shell: bash
+        run: |
+          echo 'An actual pinned Qwen3-0.6B GGUF interpreted 9 locally produced completions from REAL Lu ANSF/TaskStore/EffectJournal source and independently observed Git oracle feedback after SQLite restart. This is NOT the installed Lu WebView, Qwen 27B, actual AGENT multi-step authorization, or physical Windows GPU and cgroup descendant recovery acceptance.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-memory-loop02-real-qwen3-native-feedback
+          path: memory-loop02-real-qwen-evidence/
+          if-no-files-found: warn
+          retention-days: 14
