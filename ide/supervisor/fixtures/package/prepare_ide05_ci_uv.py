@@ -14,6 +14,10 @@ from pathlib import Path
 import shutil
 import stat
 import struct
+import base64
+import io
+import csv
+import zipfile
 
 
 def digest_tree(root: Path) -> tuple[str, int]:
@@ -67,6 +71,42 @@ def require_regular_file(path: Path) -> Path:
     return source
 
 
+
+def stage_fixed_ci_wheel(wheelhouse: Path) -> str:
+    """Deterministic synthetic wheel; CI source evidence only, NOT an upstream release."""
+    wheelhouse.mkdir(mode=0o755)
+    prefix = "ide05_demo-1.0.0.dist-info"
+    members = {
+        "ide05_demo/__init__.py": b"VALUE = 42\\n",
+        prefix + "/WHEEL": (
+            b"Wheel-Version: 1.0\\nGenerator: lu-ide-ci-fixed\\n"
+            b"Root-Is-Purelib: true\\nTag: py3-none-any\\n"
+        ),
+        prefix + "/METADATA": (
+            b"Metadata-Version: 2.4\\nName: ide05-demo\\nVersion: 1.0.0\\n"
+            b"License-Expression: MIT\\nLicense-File: LICENSE.txt\\n"
+        ),
+        prefix + "/licenses/LICENSE.txt": (
+            b"MIT License\\nCI-only first-party synthetic fixture; no upstream claim.\\n"
+        ),
+    }
+    records = []
+    for relative, content in sorted(members.items()):
+        sha = base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b"=").decode("ascii")
+        records.append([relative, "sha256=" + sha, str(len(content))])
+    records.append([prefix + "/RECORD", "", ""])
+    record_bytes = io.StringIO(newline="")
+    csv.writer(record_bytes, lineterminator="\\n").writerows(records)
+    members[prefix + "/RECORD"] = record_bytes.getvalue().encode("utf-8")
+    archive = wheelhouse / "ide05_demo-1.0.0-py3-none-any.whl"
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as output:
+        for relative, content in sorted(members.items()):
+            info = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
+            info.external_attr = (0o100644 << 16)
+            output.writestr(info, content)
+    archive.chmod(0o644)
+    return hashlib.sha256(archive.read_bytes()).hexdigest()
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-root", required=True)
@@ -99,15 +139,20 @@ def main() -> None:
     ):
         shutil.copyfile(require_regular_file(Path(source)), destination)
         destination.chmod(0o755 if executable else 0o644)
-    # No unexpected OS package, user-controlled wheelhouse or cached grants
-    # enter this pin. Original licensing remains a separate external review.
+    # This wheel is CI-constructed deterministic first-party test data. Its
+    # entire byte tree is covered by the same root-owned native runtime pin.
+    wheel_sha = stage_fixed_ci_wheel(root / "wheelhouse")
+    # No project-provided archives, PATH tools or preauthorized grants.
+    # Real upstream license/source validation is still a separate gate.
     sha, count = digest_tree(root)
     print("IDE055_RUNTIME_SCOPE=CI_ONLY_SELF_MEASURED_NOT_RELEASE_APPROVED")
     print("IDE055_RUNTIME_FILES=" + str(count))
     print("LU_IDE05_LINUX_UV_SHA256=" + sha)
+    print("LU_IDE05_CI_WHEEL_SHA256=" + wheel_sha)
     print(json.dumps({
         "schema": "ide055-ci-runtime-candidate-v1",
         "bundleSha256": sha,
+        "ciWheelSha256": wheel_sha,
         "fileCount": count,
         "releaseApproved": False,
         "humanApproved": False,
