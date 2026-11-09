@@ -26,6 +26,10 @@ debugger. The manual signed-candidate workflow requires the lock at
 - `schema`: `lu.ide.dev045c.installed-project-debug-bundle.v1`
 - `scope`: `technical-installed-test-only`
 - `sourceSha`: exact lowercase 40-character candidate commit
+- `installerSha256`, `desktopSha256`, `serviceSha256`: exact 64-hex
+  SHA-256 pins of the **same signed WO7 candidate** independently authenticated
+  by `verify_wo7_candidate.py`. Matching source commits alone cannot bind
+  a runtime lock to a specific installer/service binary.
 - `platform`: `windows-x86_64` or `linux-x86_64`
 - `releaseApproved`, `redistributionApproved`,
   `userSelectedExecutable`: **false**
