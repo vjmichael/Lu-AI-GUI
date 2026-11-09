@@ -785,10 +785,10 @@ fn command_for(
     }
     Ok((exe, wstr(&command)))
 }
-/// Fixed NUL stdin and one write-only diagnostic log, located strictly
-/// inside the worker's already-contained output. Kernel HANDLE_LIST blocks
-/// every unrelated native host handle, including journal and credentials.
-fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle), SupervisorError> {
+/// NUL stdin and two independent write-only handles in the already-contained
+/// worker output. This preserves stdout/stderr identity without exposing
+/// host credentials, journal or any handle outside the explicit HANDLE_LIST.
+fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle, Handle), SupervisorError> {
     if !clean_meta(output)?.is_dir() {
         return Err(denied());
     }
@@ -812,45 +812,59 @@ fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle), SupervisorErr
         return Err(denied());
     }
     let nul = Handle::new(nul)?;
-    let file = output.join("cargo-diagnostics.log");
-    let diagnostics = unsafe {
-        CreateFileW(
-            wide(file.as_os_str()).as_ptr(),
-            GENERIC_WRITE_ACCESS,
-            FILE_SHARE_READ_VALUE,
-            &mut sec,
-            CREATE_NEW,
-            FILE_ATTRIBUTE_NORMAL_VALUE,
-            ptr::null_mut(),
-        )
-    };
-    if diagnostics.is_null() || diagnostics == INVALID_HANDLE_VALUE {
-        return Err(denied());
+    fn create_stream(output: &Path, name: &str, sec: &mut SECURITY_ATTRIBUTES)
+        -> Result<Handle, SupervisorError> {
+        let path = output.join(name);
+        let value = unsafe {
+            CreateFileW(
+                wide(path.as_os_str()).as_ptr(),
+                GENERIC_WRITE_ACCESS,
+                FILE_SHARE_READ_VALUE,
+                sec,
+                CREATE_NEW,
+                FILE_ATTRIBUTE_NORMAL_VALUE,
+                ptr::null_mut(),
+            )
+        };
+        if value.is_null() || value == INVALID_HANDLE_VALUE {
+            return Err(denied());
+        }
+        Handle::new(value)
     }
-    Ok((nul, Handle::new(diagnostics)?))
+    let stdout = create_stream(output, "cargo-stdout.log", &mut sec)?;
+    // Keep the original diagnostics filename for stderr and legacy artifact
+    // evidence; it is no longer incorrectly merged with stdout.
+    let stderr = create_stream(output, "cargo-diagnostics.log", &mut sec)?;
+    Ok((nul, stdout, stderr))
 }
 
-/// Read only the already-contained fixed diagnostics file. Windows currently
-/// directs both OS standard handles into this SAME file; never mislabel it
-/// as separately ordered stdout or stderr.
-fn stream_combined_diagnostics(
+/// Bounded read-only observation of native fixed worker output files. The
+/// kernel Job Object, source seal and supervisor still govern execution.
+/// No caller-controlled path, file name, handle or output grant is accepted.
+fn stream_windows_output(
     output: &Path,
-    offset: &mut u64,
+    stdout_offset: &mut u64,
+    stderr_offset: &mut u64,
     live: Option<&Arc<LiveOutput>>,
 ) -> Result<(), SupervisorError> {
     let Some(live) = live else { return Ok(()); };
-    let path = output.join("cargo-diagnostics.log");
-    let meta = clean_meta(&path)?;
-    if !meta.is_file() || meta.len() > MAX_OUTPUT_FILE_BYTES || meta.len() < *offset {
-        return Err(denied());
-    }
-    let mut file = fs::File::open(path).map_err(io_denied)?;
-    file.seek(SeekFrom::Start(*offset)).map_err(io_denied)?;
-    let mut data = [0u8; 8192];
-    let n = file.read(&mut data).map_err(io_denied)?;
-    if n > 0 {
-        live.append("combined", &data[..n]);
-        *offset += n as u64;
+    for (name, stream, offset) in [
+        ("cargo-stdout.log", "stdout", stdout_offset),
+        ("cargo-diagnostics.log", "stderr", stderr_offset),
+    ] {
+        let path = output.join(name);
+        let meta = clean_meta(&path)?;
+        if !meta.is_file() || meta.len() > MAX_OUTPUT_FILE_BYTES || meta.len() < *offset {
+            return Err(denied());
+        }
+        let mut file = fs::File::open(path).map_err(io_denied)?;
+        file.seek(SeekFrom::Start(*offset)).map_err(io_denied)?;
+        let mut data = [0u8; 8192];
+        let n = file.read(&mut data).map_err(io_denied)?;
+        if n > 0 {
+            live.append(stream, &data[..n]);
+            *offset += n as u64;
+        }
     }
     Ok(())
 }
@@ -901,15 +915,15 @@ fn launch_appcontainer(
     {
         return Err(denied());
     }
-    let (stdin_nul, diagnostic_log) = isolated_cargo_stdio(output)?;
-    let inherited = [stdin_nul.0, diagnostic_log.0];
+    let (stdin_nul, stdout_log, stderr_log) = isolated_cargo_stdio(output)?;
+    let inherited = [stdin_nul.0, stdout_log.0, stderr_log.0];
     if unsafe {
         UpdateProcThreadAttribute(
             attrs.raw(),
             0,
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST_VALUE,
             inherited.as_ptr().cast(),
-            size_of::<[HANDLE; 2]>(),
+            size_of::<[HANDLE; 3]>(),
             ptr::null_mut(),
             ptr::null(),
         )
@@ -921,8 +935,8 @@ fn launch_appcontainer(
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
     startup.StartupInfo.hStdInput = stdin_nul.0;
-    startup.StartupInfo.hStdOutput = diagnostic_log.0;
-    startup.StartupInfo.hStdError = diagnostic_log.0;
+    startup.StartupInfo.hStdOutput = stdout_log.0;
+    startup.StartupInfo.hStdError = stderr_log.0;
     startup.lpAttributeList = attrs.raw();
     let mut proc = PROCESS_INFORMATION::default();
     let exe_wide = wide(executable.as_os_str());
@@ -1250,11 +1264,13 @@ where
     // OS process/job liveness and cancellation are polled every 40 ms.
     // A metadata-only directory walk need not run on *every* wait tick.
     let mut last_live_output_scan = Instant::now() - LIVE_OUTPUT_SCAN_INTERVAL;
-    let mut diagnostics_offset = 0u64;
+    let mut stdout_offset = 0u64;
+    let mut stderr_offset = 0u64;
     let exit_code = loop {
         // Output is advisory, but a structural violation quarantines the job
         // rather than silently trusting mutated worker files.
-        if stream_combined_diagnostics(&output, &mut diagnostics_offset, live.as_ref()).is_err() {
+        if stream_windows_output(&output, &mut stdout_offset,
+            &mut stderr_offset, live.as_ref()).is_err() {
             let _ = job.kill_and_verify();
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(SupervisorError::Quarantined);
@@ -1332,7 +1348,8 @@ where
         }
     };
     // Capture any final buffered diagnostics before the output seal.
-    if stream_combined_diagnostics(&output, &mut diagnostics_offset, live.as_ref()).is_err() {
+    if stream_windows_output(&output, &mut stdout_offset,
+            &mut stderr_offset, live.as_ref()).is_err() {
         let _ = job.kill_and_verify();
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(SupervisorError::Quarantined);
