@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "847401fbc2c667d2f6b8c8024dea09ea5091fee0",
+  "sourceCommitBeforeLock": "4d694976a286ed5d9ffc2b6356c0e915e543c949",
   "trackedFileCount": 821,
   "files": [
     {
@@ -2357,7 +2357,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "0433c699b62691b558ce87475d9fb4b2145d9f51"
+      "blob": "728a637074593a63a200a0761bf14f402b8c9799"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
