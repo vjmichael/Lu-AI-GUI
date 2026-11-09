@@ -245,7 +245,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bubblewrap rustc cargo apparmor-profiles apparmor-utils
+          sudo apt-get install -y --no-install-recommends bubblewrap rustc cargo clang-18 lldb-18 apparmor-profiles apparmor-utils
           profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
           test -r "$profile" || { echo 'DENIED: reviewed distribution Bubblewrap profile unavailable'; exit 1; }
           sudo install -o root -g root -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
@@ -258,18 +258,32 @@ jobs:
             test "$(stat -c %u "$file")" = 0
           done
           test -x /usr/bin/systemd-run
+      - name: Provision root-owned test-only LLDB-DAP and fixed self-test identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          adapter=''
+          for file in /usr/bin/lldb-dap-18 /usr/bin/lldb-dap; do
+            if test -x "$file"; then adapter="$file"; break; fi
+          done
+          test -n "$adapter" || { echo 'DENIED: native LLDB-DAP unavailable'; exit 1; }
+          clang-18 -g -O0 -o "$RUNNER_TEMP/wo6-selftest" ide/supervisor/fixtures/debug/wo6_selftest.c
+          sudo install -d -o root -g root -m 755 /opt/lu-ide-wo6-dap-test/bin
+          sudo install -d -o root -g root -m 755 /opt/lu-ide-wo6-dap-test/debuggee
+          sudo install -o root -g root -m 755 "$adapter" /opt/lu-ide-wo6-dap-test/bin/lldb-dap
+          sudo install -o root -g root -m 755 "$RUNNER_TEMP/wo6-selftest" /opt/lu-ide-wo6-dap-test/debuggee/wo6-selftest
       - name: Compile actual delegated cgroup helper and Cargo acceptance fixture
         shell: bash
         run: |
           set -euo pipefail
           cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_delegated_ci_wo6_build_host
-          cargo build --manifest-path ide/supervisor/Cargo.toml --features linux-worker --example wo6_linux_native_build_acceptance
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features linux-worker,dap-transport --example wo6_linux_native_build_acceptance
       - name: Real isolated Cargo check, test and cancellation with kernel receipts
         shell: bash
         run: |
           set -euo pipefail
           host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_wo6_build_host)"
-          for mode in --check --test --build --cancel; do
+          for mode in --check --test --build --project-debug --cancel; do
             rc=0
             sudo /usr/bin/systemd-run --wait --collect --pipe \
               --unit=lu-ide-delegated \
