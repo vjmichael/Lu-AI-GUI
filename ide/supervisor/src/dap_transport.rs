@@ -101,6 +101,22 @@ impl DapGateway {
         let process = self.process.as_mut().ok_or(SupervisorError::NoContainment)?;
         process.observe_windows_job_module(expected_binary, sha, pc)
     }
+    /// The only permitted test-only continue is the existing fixed DAP
+    /// disconnect, never arbitrary step/continue. The original LLDB
+    /// event-owner thread must emit CONTINUED before terminal success.
+    #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+    pub(crate) fn close_with_actual_owner_continue_for_ci(
+        mut self, seq: u64,
+    ) -> Result<(), SupervisorError> {
+        if self.session.phase() != DapPhase::Stopped || seq == 0 {
+            return Err(SupervisorError::NoContainment);
+        }
+        let disconnect = self.session.disconnect().map_err(protocol_denied)?;
+        self.send(&disconnect)?;
+        self.process.as_mut().ok_or(SupervisorError::NoContainment)?
+            .wait_owner_continued_for_ci(seq)?;
+        self.close()
+    }
     /// Fixed CI-only worker failure injection: native process handle only;
     /// Drop of DapGateway must still journal cancellation and kill Job tree.
     #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]

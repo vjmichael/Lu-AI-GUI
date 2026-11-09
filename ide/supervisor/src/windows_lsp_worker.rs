@@ -632,6 +632,14 @@ struct WindowsLspProcess {
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
     #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    fn wait_owner_continued_for_ci(
+        &mut self, seq: u64,
+    ) -> Result<(), SupervisorError> {
+        if !self.lease.alive() { return Err(SupervisorError::NoContainment); }
+        self.event_sideband.as_mut().ok_or(SupervisorError::NoContainment)?
+            .wait_exact_native_continue(seq)
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
     fn crash_owned_lldb_for_ci(&mut self) -> Result<(), SupervisorError> {
         if !self.lease.alive()
             || unsafe { WaitForSingleObject(self.process.0, 0) } != WAIT_TIMEOUT {
@@ -1756,6 +1764,12 @@ impl WindowsDapSession {
         &mut self,
     ) -> Result<(), SupervisorError> {
         self.gateway.crash_protected_lldb_for_ci()
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    pub fn close_with_real_owner_continue_for_ci(
+        self, sequence: u64,
+    ) -> Result<(), SupervisorError> {
+        self.gateway.close_with_actual_owner_continue_for_ci(sequence)
     }
     pub fn close(self) -> Result<(), SupervisorError> {
         self.gateway.close()
