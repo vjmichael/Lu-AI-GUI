@@ -101,6 +101,17 @@ impl DapGateway {
         let process = self.process.as_mut().ok_or(SupervisorError::NoContainment)?;
         process.observe_windows_job_module(expected_binary, sha, pc)
     }
+    /// Fixed CI-only worker failure injection: native process handle only;
+    /// Drop of DapGateway must still journal cancellation and kill Job tree.
+    #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+    pub(crate) fn crash_protected_lldb_for_ci(&mut self) -> Result<(), SupervisorError> {
+        if self.session.phase() != DapPhase::Stopped
+            || self.session.source_candidate().is_none() {
+            return Err(SupervisorError::NoContainment);
+        }
+        self.process.as_mut().ok_or(SupervisorError::NoContainment)?
+            .crash_owned_lldb_for_ci()
+    }
     /// Exact kernel DebuggerThread sideband from a separately allowlisted
     /// pipe, not DAP stdout; this has no public Tauri/WebView action.
     #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]

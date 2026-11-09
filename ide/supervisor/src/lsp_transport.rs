@@ -62,6 +62,12 @@ const MAX_TOTAL_IO: usize = 32 * 1024 * 1024;
 /// pipes and the real kernel containment handle. No blanket std::process::Child
 /// or WebView-provided fd is accepted here.
 pub(crate) trait RestrictedLspProcess: Send {
+    /// CI-only fixed fault injection on the *already owned* LLDB HANDLE.
+    /// It is never a model-selected PID/process or general termination tool.
+    #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+    fn crash_owned_lldb_for_ci(&mut self) -> Result<(), SupervisorError> {
+        Err(SupervisorError::NoContainment)
+    }
     #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
     fn verify_lldb_kernel_event_owner(
         &mut self, _pid: u32, _tid: u32, _rip: u64,
