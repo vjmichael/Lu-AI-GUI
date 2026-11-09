@@ -343,11 +343,22 @@ test('Wave A2 registry advertises actual host operations without granting execut
   assert.match(debugBackend, /DEBUG_KERNEL_RECOVERY_REQUIRED_BEFORE_ANY_NEW_RUN/);
   // OS-backed native receipt verification is a reviewed host route, not a
   // general-purpose Lu capability with permission to execute project code.
+  // These five native GUI-only commands are intentionally not advertised
+  // to Lu as generally discoverable capabilities; keep the exclusion exact.
+  const guiOnly = [
+    'ide_discover_conventional_tests','ide_review_project_debug_target',
+    'ide_workspace_layout_read','ide_workspace_layout_save',
+    'ide_workspace_layout_clear'
+  ];
+  assert.deepEqual(registered.filter(value=>guiOnly.includes(value)).sort(),
+    guiOnly.slice().sort());
+  assert.ok(guiOnly.every(cmd=>!commands.includes(cmd)));
   const declared = registered.filter(value =>
     value !== 'ide_list_capabilities' && value !== 'ide_workflow_run_step' &&
     value !== 'ide_workflow_verify_native_receipt' &&
     !nativeLspCommands.includes(value) &&
-    !nativeBuildCommands.includes(value) && !nativeDebugCommands.includes(value));
+    !nativeBuildCommands.includes(value) && !nativeDebugCommands.includes(value) &&
+    !guiOnly.includes(value));
   assert.deepEqual(commands.slice().sort(), declared.slice().sort());
   assert.ok(commands.includes('ide_list_language_servers'));
   assert.match(registry, /descriptions_only: true/);
@@ -441,7 +452,7 @@ test('Wave A2 typed request keys match actual Rust Tauri argument names', () => 
     const signature = native.match(new RegExp('async fn ' + command + '\\(([\\s\\S]*?)\\) ->'));
     assert.ok(signature, id + ': missing native function');
     const parameters = [...signature[1].matchAll(/^\s*([a-z_0-9]+):\s*(.+?),?\s*$/gm)]
-      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'coordinator', 'inbox', 'ledger', 'snapshots', 'intents', 'vault'].includes(name))
+      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'coordinator', 'inbox', 'ledger', 'snapshots', 'intents', 'vault', 'layouts'].includes(name))
       .map(name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()))
       .sort();
     const typed = Object.keys(schemas.operations[id].request.properties).sort();
