@@ -19,15 +19,15 @@ const MAX_MAPPINGS: usize = 16_384;
 fn denied() -> SupervisorError { SupervisorError::NoContainment }
 
 #[derive(Debug, Clone)]
-pub(crate) struct KernelLoadedImage {
+pub struct KernelLoadedImage {
     // Kept exclusively in the native host; never serialized into WebView.
-    pub(crate) pid: u32,
-    pub(crate) instruction_address: u64,
-    pub(crate) load_bias: u64,
-    pub(crate) binary_sha256: String,
-    pub(crate) kernel_exe_inode_verified: bool,
-    pub(crate) kernel_rx_vma_verified: bool,
-    pub(crate) kernel_tracing_stop_verified: bool,
+    pub pid: u32,
+    pub instruction_address: u64,
+    pub load_bias: u64,
+    pub binary_sha256: String,
+    pub kernel_exe_inode_verified: bool,
+    pub kernel_rx_vma_verified: bool,
+    pub kernel_tracing_stop_verified: bool,
 }
 
 /// The mapped executable's current on-disk bytes must still match the
@@ -169,20 +169,20 @@ fn verify_pid(pid: u32, expected_binary: &Path, sha: &str, pc: u64)
 /// new DAP command: host-only source snapshot, kernel cgroup mapping and
 /// separately fsynced original build/one-use debug job receipts.
 #[derive(Debug, Clone)]
-pub(crate) struct ProtectedStopLineage {
-    pub(crate) kernel: KernelLoadedImage,
-    pub(crate) debugger_job_id: String,
-    pub(crate) debugger_plan_sha256: String,
-    pub(crate) debug_running_receipt_sha256: String,
-    pub(crate) build_job_id: String,
-    pub(crate) build_terminal_receipt_sha256: String,
-    pub(crate) source_snapshot_sha256: String,
-    pub(crate) target_binding_sha256: String,
-    pub(crate) source_file_sha256: String,
-    pub(crate) source_relative_path: String,
-    pub(crate) source_line: u32,
-    pub(crate) independent_line_table_verified: bool,
-    pub(crate) installed_app_accepted: bool,
+pub struct ProtectedStopLineage {
+    pub kernel: KernelLoadedImage,
+    pub debugger_job_id: String,
+    pub debugger_plan_sha256: String,
+    pub debug_running_receipt_sha256: String,
+    pub build_job_id: String,
+    pub build_terminal_receipt_sha256: String,
+    pub source_snapshot_sha256: String,
+    pub target_binding_sha256: String,
+    pub source_file_sha256: String,
+    pub source_relative_path: String,
+    pub source_line: u32,
+    pub independent_line_table_verified: bool,
+    pub installed_app_accepted: bool,
 }
 
 /// A true native witness must remain scoped to the real delegated cgroup,
@@ -225,6 +225,73 @@ pub(crate) fn observe_linux_project_pc(
     }
     Ok(witness)
 }
+/// A separately authenticated, fixed-purpose LLVM reader. Strictly a
+/// debug/CI-only native oracle, never launched from an AI/WebView command.
+/// A production signed app must provide a reviewed offline resource and
+/// a separate OS policy admission before enabling a comparable reader.
+#[cfg(debug_assertions)]
+pub(crate) fn verify_independent_dwarf_line_for_ci(
+    witness: &mut ProtectedStopLineage,
+    target: &crate::project_debug_target::SealedProjectDebugTarget,
+) -> Result<(), SupervisorError> {
+    use std::{os::unix::fs::{MetadataExt, PermissionsExt}, process::Command};
+    const TOOL: &str = "/usr/lib/llvm-18/bin/llvm-symbolizer";
+    const PIN: Option<&str> = option_env!("LU_IDE_D3_LINUX_SYMBOLIZER_SHA256");
+    let pin = PIN.ok_or_else(denied)?;
+    let tool = Path::new(TOOL);
+    let meta = fs::symlink_metadata(tool).map_err(|_| denied())?;
+    if !meta.is_file() || meta.file_type().is_symlink()
+        || meta.uid() != 0 || meta.permissions().mode() & 0o022 != 0
+        || hash_bounded(tool)? != pin {
+        return Err(denied());
+    }
+    target.verify()?;
+    if witness.kernel.binary_sha256 != target.binary.binary_sha256
+        || witness.target_binding_sha256 != target.binding_sha256
+        || !witness.kernel.kernel_exe_inode_verified
+        || !witness.kernel.kernel_rx_vma_verified
+        || !witness.kernel.kernel_tracing_stop_verified
+        || witness.source_line == 0
+    {
+        return Err(denied());
+    }
+    let binary = target.root.join(target.confined_relative_binary());
+    let pc = format!("0x{:x}", witness.kernel.instruction_address);
+    let slide = format!("--adjust-vma=0x{:x}", witness.kernel.load_bias);
+    let response = Command::new(tool)
+        .arg(format!("--obj={}", binary.display()))
+        .arg("--output-style=JSON")
+        .arg("--functions=none")
+        .arg("--no-inlines")
+        .arg(slide)
+        .arg(&pc)
+        .env_clear()
+        .output().map_err(|_| denied())?;
+    if !response.status.success() || response.stdout.len() > 8192
+        || response.stderr.len() > 8192 {
+        return Err(denied());
+    }
+    let parsed: serde_json::Value = serde_json::from_slice(&response.stdout)
+        .map_err(|_| denied())?;
+    let entries = parsed.as_array().ok_or_else(denied)?;
+    if entries.len() != 1 || entries[0].get("Address").and_then(|v| v.as_str()) != Some(pc.as_str())
+        || entries[0].get("ModuleName").and_then(|v| v.as_str()) != binary.to_str()
+    {
+        return Err(denied());
+    }
+    let lines = entries[0].get("Symbol").and_then(|v| v.as_array()).ok_or_else(denied)?;
+    if lines.len() != 1 { return Err(denied()); }
+    let expected_source = format!("/workspace/{}", witness.source_relative_path);
+    if lines[0].get("FileName").and_then(|v| v.as_str()) != Some(expected_source.as_str())
+        || lines[0].get("Line").and_then(|v| v.as_u64())
+            != Some(u64::from(witness.source_line))
+    {
+        return Err(denied());
+    }
+    witness.independent_line_table_verified = true;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
