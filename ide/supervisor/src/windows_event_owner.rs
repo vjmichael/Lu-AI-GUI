@@ -232,6 +232,27 @@ impl OwnerSideband {
             }
         }
     }
+    /// After forcibly terminating the *actual* protected debugger process,
+    /// the host-owned anonymous event pipe must reach kernel EOF. This
+    /// independently detects leaked inherited write handles in the inferior
+    /// or a surviving descendant writer; absence of an owner IPC proof is
+    /// not by itself enough to establish OS handle cleanup.
+    pub(crate) fn expect_pipe_eof_after_lldb_crash(
+        &mut self,
+    ) -> Result<(), SupervisorError> {
+        use std::sync::mpsc::RecvTimeoutError;
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let remaining = until.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() { return Err(denied()); }
+            match self.receiver.recv_timeout(remaining) {
+                Ok(Ok(record)) => self.ledger.observe(record)?,
+                Ok(Err(())) => return Err(denied()),
+                Err(RecvTimeoutError::Disconnected) => return Ok(()),
+                Err(RecvTimeoutError::Timeout) => return Err(denied()),
+            }
+        }
+    }
     /// Original LLDB DebuggerThread sends CONTINUED on the *same* bounded
     /// pipe immediately after actual Win32 ContinueDebugEvent. No generic
     /// DAP continue command, model-selected PID or writable process access.
