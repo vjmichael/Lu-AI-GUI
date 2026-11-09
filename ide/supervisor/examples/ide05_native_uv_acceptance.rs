@@ -81,7 +81,7 @@ name = "unavailable-ide05-fixture"
 version = "9999.0.0"
 source = {{ registry = "https://pypi.org/simple" }}
 wheels = [
-    {{ url = "https://files.pythonhosted.org/packages/ide05/unavailable-ide05-fixture-9999.0.0-py3-none-any.whl", hash = "sha256:{}" }},
+    {{ url = "https://files.pythonhosted.org/packages/ide05/unavailable_ide05_fixture-9999.0.0-py3-none-any.whl", hash = "sha256:{}" }},
 ]
 "#,
         "a".repeat(64)

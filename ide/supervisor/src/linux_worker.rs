@@ -785,7 +785,50 @@ fn make_output_root(parent: &Path, job_id: &str) -> Result<PathBuf, SupervisorEr
     fs::set_permissions(&output, fs::Permissions::from_mode(0o700)).map_err(|_| denied())?;
     Ok(output)
 }
+// Bounds private bytes only, never proves that a package install is safe.
+// uv creates interpreter aliases even for failed offline sync. These exact,
+// inert aliases are not followed and remain INELIGIBLE for artifact promotion.
+fn uv_virtualenv_alias_bytes(root: &Path, link: &Path) -> Option<u64> {
+    let relative = link.strip_prefix(root).ok()?.to_str()?;
+    let target = fs::read_link(link).ok()?;
+    let value = target.to_str()?;
+    if value.is_empty() || value.len() > 128 {
+        return None;
+    }
+    let system_python = ["/usr/bin/python3", "/runtime/bin/python3"]
+        .iter()
+        .any(|prefix| {
+            value.strip_prefix(prefix).is_some_and(|suffix| {
+                suffix.is_empty()
+                    || suffix
+                        .strip_prefix('.')
+                        .is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
+            })
+        });
+    let accepted = if relative == ".venv/lib64" {
+        value == "lib"
+    } else if relative == ".venv/bin/python" {
+        system_python
+    } else if relative == ".venv/bin/python3" {
+        value == "python"
+    } else if let Some(version) = relative.strip_prefix(".venv/bin/python3.") {
+        !version.is_empty()
+            && version.bytes().all(|b| b.is_ascii_digit())
+            && value == "python"
+    } else {
+        false
+    };
+    accepted.then_some(value.len() as u64)
+}
+
 fn scan_output_budget(root: &Path) -> Result<(), SupervisorError> {
+    scan_output_budget_for_recipe(root, false)
+}
+
+fn scan_output_budget_for_recipe(
+    root: &Path,
+    allow_uv_aliases: bool,
+) -> Result<(), SupervisorError> {
     let mut pending = vec![(root.to_path_buf(), 0_usize)];
     let mut files = 0_usize;
     let mut bytes = 0_u64;
@@ -795,22 +838,27 @@ fn scan_output_budget(root: &Path) -> Result<(), SupervisorError> {
         }
         for entry in fs::read_dir(dir).map_err(|_| denied())? {
             let entry = entry.map_err(|_| denied())?;
-            let meta = fs::symlink_metadata(entry.path()).map_err(|_| denied())?;
-            if meta.file_type().is_symlink() {
-                return Err(denied());
-            }
-            if meta.is_dir() {
-                pending.push((entry.path(), depth + 1));
-            } else if meta.is_file() {
-                files += 1;
-                bytes = bytes.checked_add(meta.len()).ok_or_else(denied)?;
-                if files > MAX_OUTPUT_FILES
-                    || bytes > MAX_ARTIFACT_BYTES
-                    || meta.len() > MAX_SINGLE_ARTIFACT_BYTES
-                {
+            let path = entry.path();
+            let meta = fs::symlink_metadata(&path).map_err(|_| denied())?;
+            let entry_bytes = if meta.file_type().is_symlink() {
+                if !allow_uv_aliases {
                     return Err(denied());
                 }
+                uv_virtualenv_alias_bytes(root, &path).ok_or_else(denied)?
+            } else if meta.is_dir() {
+                pending.push((path, depth + 1));
+                continue;
+            } else if meta.is_file() {
+                meta.len()
             } else {
+                return Err(denied());
+            };
+            files += 1;
+            bytes = bytes.checked_add(entry_bytes).ok_or_else(denied)?;
+            if files > MAX_OUTPUT_FILES
+                || bytes > MAX_ARTIFACT_BYTES
+                || entry_bytes > MAX_SINGLE_ARTIFACT_BYTES
+            {
                 return Err(denied());
             }
         }
@@ -933,7 +981,7 @@ pub fn execute_linux_worker_with_output(
     let mut last_output_check = Instant::now();
     let status = loop {
         if last_output_check.elapsed() >= OUTPUT_CHECK_INTERVAL {
-            if scan_output_budget(&output).is_err() {
+            if scan_output_budget_for_recipe(&output, plan.recipe_id == "uv_sync_offline").is_err() {
                 output_limit_hit = true;
             }
             last_output_check = Instant::now();
@@ -980,7 +1028,14 @@ pub fn execute_linux_worker_with_output(
         .map_err(|_| SupervisorError::JournalUnavailable)?
         .map_err(|_| SupervisorError::JournalUnavailable)?;
     let empty = group.await_empty(REAP_LIMIT);
-    let final_output_bounded = scan_output_budget(&output).is_ok();
+    let final_output_bounded =
+        scan_output_budget_for_recipe(&output, plan.recipe_id == "uv_sync_offline").is_ok();
+    if cfg!(debug_assertions) && plan.recipe_id == "uv_sync_offline" {
+        eprintln!(
+            "IDE055_UV_OS_TERMINAL_FACTS=tree_reaped:{empty},output_bounded:{final_output_bounded},exit:{:?}",
+            status.code()
+        );
+    }
     let summary = if was_cancelled {
         supervisor
             .inspect()?
@@ -1147,6 +1202,30 @@ mod tests {
         use std::os::unix::fs::symlink;
         symlink("/etc/passwd", root.join("link")).unwrap();
         assert!(scan_output_budget(&root).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn uv_budget_accepts_only_inert_private_venv_aliases() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!(
+            "ide-uv-private-output-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join(".venv/bin")).unwrap();
+        fs::create_dir_all(root.join(".venv/lib")).unwrap();
+        symlink("/usr/bin/python3", root.join(".venv/bin/python")).unwrap();
+        symlink("python", root.join(".venv/bin/python3")).unwrap();
+        symlink("python", root.join(".venv/bin/python3.12")).unwrap();
+        symlink("lib", root.join(".venv/lib64")).unwrap();
+        assert!(scan_output_budget(&root).is_err());
+        assert!(scan_output_budget_for_recipe(&root, true).is_ok());
+        symlink("/etc/passwd", root.join(".venv/bin/untrusted")).unwrap();
+        assert!(scan_output_budget_for_recipe(&root, true).is_err());
+        fs::remove_file(root.join(".venv/bin/untrusted")).unwrap();
+        symlink("../../../../etc/passwd", root.join(".venv/bin/python3.13")).unwrap();
+        assert!(scan_output_budget_for_recipe(&root, true).is_err());
         fs::remove_dir_all(&root).unwrap();
     }
 
