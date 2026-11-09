@@ -108,7 +108,7 @@ jobs:
         run: npm run build
         working-directory: lu-desktop
       - name: Build actual production scanner acceptance worker
-        run: cargo build --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
+        run: cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml
       - name: P01 verify frontend workspace discovery and authority contracts
         run: node --test lu-desktop/tests/filesystem-discovery.test.mjs lu-desktop/tests/workspace-desktop.test.mjs
       - name: Run UI regressions

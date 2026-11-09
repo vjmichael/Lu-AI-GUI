@@ -51,7 +51,7 @@ jobs:
       - run: npm run check
       - name: Build actual production scanner acceptance worker
         working-directory: lu-desktop
-        run: cargo build --manifest-path tests/native-file-scan/Cargo.toml
+        run: cargo build --locked --manifest-path tests/native-file-scan/Cargo.toml
       - run: npm run test:ui
   chat-journal-portable:
     name: Portable native chat journal security tests

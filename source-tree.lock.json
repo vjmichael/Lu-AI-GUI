@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "1c1680202715c82266726a3e7afaa64d8f8d32a8",
-  "trackedFileCount": 822,
+  "sourceCommitBeforeLock": "2d2747bd247db29c0fa286ed84230942d1fbd543",
+  "trackedFileCount": 823,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -61,7 +61,7 @@
     },
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "fc62ac0ebd97c64c261dd81b58534e0cba4625bd"
+      "blob": "7aa4ecd6cc5ca55de9b9e4b412a09d01635ac7a7"
     },
     {
       "path": ".github/workflows/lu-e1-app-admission.yml",
@@ -225,7 +225,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
-      "blob": "c7574c6ea0a9f66082d65066de3f6da1375106d7"
+      "blob": "4e36e816ea9a40397a7a3d77a3aac08ac25a239e"
     },
     {
       "path": ".github/workflows/lu-tools-02-json-boundary.yml",
@@ -241,7 +241,7 @@
     },
     {
       "path": ".github/workflows/lu-tools-11-background.yml",
-      "blob": "9e7a0912cb1741ce159534de79f2b81fc32973d6"
+      "blob": "7aa99d66c0360fbe49d2fd2896e972c17379e87d"
     },
     {
       "path": ".github/workflows/lu-ux-chat01-message-interactions.yml",
@@ -621,7 +621,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "c8822da6e4e728dde14b9b566bda09b6b531a191"
+      "blob": "27f02611be9db585499dfe9669f338a0365be64b"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -1345,7 +1345,7 @@
     },
     {
       "path": "lu-desktop/tests/background-worker-e2e.test.mjs",
-      "blob": "cceaa2f55313631970dec5883f17af8b21b73025"
+      "blob": "f2e31592d287e6ae8c017d7d7c71f67cdf533a79"
     },
     {
       "path": "lu-desktop/tests/browser-ci-candidate.test.mjs",
@@ -1512,6 +1512,10 @@
       "blob": "c719361d9176e77dad7643cbc57bda4384686f67"
     },
     {
+      "path": "lu-desktop/tests/native-file-scan/Cargo.lock",
+      "blob": "d9b51395a94bf06686bc30e41c4670e596b5a564"
+    },
+    {
       "path": "lu-desktop/tests/native-file-scan/Cargo.toml",
       "blob": "3464097266e93409990f3e170e2269e1341cca90"
     },
@@ -1597,7 +1601,7 @@
     },
     {
       "path": "lu-desktop/tests/reviewed-task-continuity.test.mjs",
-      "blob": "0e4267089e42cc4a09d97036b69b16ca35aa6407"
+      "blob": "6dcc495aa2ddc03a820d4252d826272996d9d4fb"
     },
     {
       "path": "lu-desktop/tests/reviewed-tool-feedback.test.mjs",

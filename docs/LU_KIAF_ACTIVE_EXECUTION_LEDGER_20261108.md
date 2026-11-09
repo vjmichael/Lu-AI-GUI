@@ -257,3 +257,14 @@ The original report SHA-256 is
 `966b71650113dbf37de4522ec5d78f61909d3fe31eca37014aab6fedc3dd2feb`.
 This is evidence of a response format failure, not a measured difference
 in source comprehension. A separate direct-answer protocol trial is pending.
+
+### 2026-11-09 — R13 Linux background and recovery group
+
+Seven Linux Core integration cases passed across task checkpoints, startup
+and owner recovery, and task effect fencing. The 21 background/recovery
+Node contracts passed after correcting a source assertion that treated a
+documentation mention of TaskStore::resume as a call. The standalone
+scanner harness now has a Cargo lock and existing group workflows use it
+with --locked. Both native scanner harness checks passed, including a
+12 MiB fixture with measured progress and an independent digest.
+Installed-app lifecycle and full multi-chat capacity remain open.

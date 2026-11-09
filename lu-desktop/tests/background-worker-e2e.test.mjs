@@ -17,7 +17,7 @@ function launch(args){
   return result;
 }
 
-test('real installed-app executable worker reads media-sized file and returns measured digest',()=>{
+test('production scanner harness reads media-sized file and returns measured digest',()=>{
   const dir=mkdtempSync(join(tmpdir(),'lu-scanner-e2e-'));
   try{
     const source=join(dir,'sample-video.mp4');

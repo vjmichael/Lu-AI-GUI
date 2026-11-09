@@ -31,7 +31,7 @@ test('P15-B: recovery joins task/checkpoint, actual reviewed worker and second i
   assert.match(projection,/outer_ok&&task_complete&&receipt_ok/);
   assert.match(projection,/VERIFIED_AT_OBSERVATION/);
   assert.doesNotMatch(projection,/pub.*fn.*(?:launch|execute|replay|resume)/);
-  assert.doesNotMatch(projection,/Command::new|\.spawn\(|TaskStore::resume/);
+  assert.doesNotMatch(projection,/Command::new|\.spawn\(|TaskStore::resume\s*\(/);
 });
 
 test('P15-C: continuation text never grants replay or confuses historical proof with current custody',()=>{
