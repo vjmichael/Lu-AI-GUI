@@ -408,8 +408,11 @@ fn spawn_contained_stdio(
     executable: &Path,
     command: &mut Vec<u16>,
     cwd: &Path,
-    env: &[u16],
-) -> Result<(Handle, Handle, Handle, Handle, Option<Handle>), SupervisorError> {
+    env: &mut Vec<u16>,
+    owner_event_channel: bool,
+) -> Result<(
+    Handle, Handle, Handle, Handle, Option<Handle>, Option<(Handle, [u8; 16])>
+), SupervisorError> {
     let (child_stdin, host_stdin) = inheritable_pipe()?;
     let (host_stdout, child_stdout) = inheritable_pipe()?;
     uninheritable(host_stdin.0)?;
@@ -424,6 +427,27 @@ fn spawn_contained_stdio(
     } else {
         (nul_stderr()?, None)
     };
+    // The fourth handle is *only* a test-only reviewed LLDB event channel.
+    // Normal LSP, ordinary DAP and all release processes inherit exactly 3.
+    let event_pipe = if owner_event_channel
+        && cfg!(all(debug_assertions, feature = "dev045d5-ci-event-owner")) {
+        let (host_read, child_write) = inheritable_pipe()?;
+        uninheritable(host_read.0)?;
+        let nonce = rand::random::<u128>().to_le_bytes();
+        let nonce_hex: String = nonce.iter().map(|v| format!("{v:02x}")).collect();
+        let extra = format!(
+            "LU_IDE_OWNER_PIPE_HANDLE={:x}\0LU_IDE_OWNER_NONCE={}\0\0",
+            child_write.0 as usize, nonce_hex,
+        );
+        if env.len() < 2 || env[env.len() - 1] != 0
+            || env[env.len() - 2] != 0 {
+            return Err(denied());
+        }
+        env.pop();
+        env.extend(extra.encode_utf16());
+        if env.len() > 32767 { return Err(denied()); }
+        Some((host_read, child_write, nonce))
+    } else { None };
     let mut capabilities = SECURITY_CAPABILITIES::default();
     capabilities.AppContainerSid = profile.sid;
     capabilities.Capabilities = ptr::null_mut();
@@ -458,14 +482,21 @@ fn spawn_contained_stdio(
     {
         return Err(denied());
     }
-    let child_handles = [child_stdin.0, child_stdout.0, stderr.0];
+    let mut child_handles = vec![child_stdin.0, child_stdout.0, stderr.0];
+    if let Some((_, ref event_write, _)) = event_pipe {
+        child_handles.push(event_write.0);
+    }
+    if !matches!(child_handles.len(), 3 | 4)
+        || (child_handles.len() == 4 && !owner_event_channel) {
+        return Err(denied());
+    }
     if unsafe {
         UpdateProcThreadAttribute(
             attributes.raw(),
             0,
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST_VALUE,
             child_handles.as_ptr().cast(),
-            size_of::<[HANDLE; 3]>(),
+            child_handles.len() * size_of::<HANDLE>(),
             ptr::null_mut(),
             ptr::null(),
         )
@@ -484,7 +515,7 @@ fn spawn_contained_stdio(
     let cwd_wide = wide(cwd.as_os_str());
     let mut child = PROCESS_INFORMATION::default();
     // InheritHandles=TRUE is safe here ONLY because the kernel handle list
-    // restricts inheritance to the three explicitly selected pipe ends.
+    // restricts inheritance to 3 normal or 4 explicit CI-only pipe ends.
     if unsafe {
         CreateProcessW(
             exe_wide.as_ptr(),
@@ -516,9 +547,10 @@ fn spawn_contained_stdio(
         }
         return Err(denied());
     }
-    // child_stdin/stdout/stderr handles close here in the trusted host;
-    // parent holds only stdin-write and stdout-read.
-    Ok((process, thread, host_stdin, host_stdout, debug_stderr))
+    // Only the native host retains the owner-event read end. The extra
+    // write end closes here and cannot leak through normal launch paths.
+    let owner_read = event_pipe.map(|(host_read, _write, nonce)| (host_read, nonce));
+    Ok((process, thread, host_stdin, host_stdout, debug_stderr, owner_read))
 }
 
 struct BoundedWrite {
@@ -591,6 +623,8 @@ struct WindowsLspProcess {
     writer_thread: Option<JoinHandle<()>>,
     stdout_read: Handle,
     debug_stderr: Option<Handle>,
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    event_sideband: Option<crate::windows_event_owner::OwnerSideband>,
     released: bool,
 }
 // Process and handle ownership are exclusive; no native HANDLE is shared
@@ -806,7 +840,7 @@ pub fn start_windows_lsp(
     if !clean_meta(&executable)?.is_file() {
         return Err(denied());
     }
-    let env = min_environment(&local, &bundle)?;
+    let mut env = min_environment(&local, &bundle)?;
     let command_text = format!(
         "\"{}\"{}",
         executable.display(),
@@ -848,8 +882,11 @@ pub fn start_windows_lsp(
     }
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
-    let (process, child_thread, stdin_write, stdout_read, debug_stderr) =
-        match spawn_contained_stdio(&profile, &job, &executable, &mut command, &workspace, &env) {
+    let (process, child_thread, stdin_write, stdout_read, debug_stderr, _event_pipe) =
+        match spawn_contained_stdio(
+            &profile, &job, &executable, &mut command, &workspace,
+            &mut env, false,
+        ) {
             Ok(value) => {
                 native_lsp_trace("suspended_child_attested");
                 value
@@ -906,6 +943,8 @@ pub fn start_windows_lsp(
         writer_thread: Some(writer_thread),
         stdout_read,
         debug_stderr,
+        #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+        event_sideband: None,
         released: false,
     };
     let gateway = LspGateway::attach_native(
@@ -1076,7 +1115,7 @@ fn start_windows_dap_inner(
     if !clean_meta(&executable)?.is_file() {
         return Err(denied());
     }
-    let env = min_environment(&local, &bundle)?;
+    let mut env = min_environment(&local, &bundle)?;
     let command_text = format!(
         "\"{}\"{}",
         executable.display(),
@@ -1115,8 +1154,13 @@ fn start_windows_dap_inner(
     native_lsp_trace("scm_exact_nul_lease_fsynced");
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
-    let (process, child_thread, stdin_write, stdout_read, debug_stderr) =
-        match spawn_contained_stdio(&profile, &job, &executable, &mut command, &workspace, &env) {
+    let (process, child_thread, stdin_write, stdout_read, debug_stderr, owner_pipe) =
+        match spawn_contained_stdio(
+            &profile, &job, &executable, &mut command, &workspace,
+            &mut env,
+            plan.recipe_id == "dap_lldb_project"
+                && cfg!(all(debug_assertions, feature = "dev045d5-ci-event-owner")),
+        ) {
             Ok(value) => {
                 native_lsp_trace("suspended_child_attested");
                 value
@@ -1163,6 +1207,14 @@ fn start_windows_dap_inner(
         }
     };
     native_lsp_trace("writer_ready");
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    let event_sideband = if let Some((reader, nonce)) = owner_pipe {
+        let raw = reader.0 as usize;
+        // The bounded native reader exclusively owns this kernel handle
+        // from now on; it closes it on EOF, invalid wire or queue pressure.
+        std::mem::forget(reader);
+        Some(crate::windows_event_owner::start_owner_pipe_reader(raw, nonce)?)
+    } else { None };
     let actor = WindowsLspProcess {
         _profile: profile,
         lease,
@@ -1173,6 +1225,8 @@ fn start_windows_dap_inner(
         writer_thread: Some(writer_thread),
         stdout_read,
         debug_stderr,
+        #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+        event_sideband,
         released: false,
     };
     let gateway = crate::dap_transport::DapGateway::attach_native(
