@@ -5,7 +5,7 @@
 //! result, an OS process completion, a reaping receipt, or a permission grant.
 //! This module has no worker spawn, tool registry, automatic retry or resume.
 use std::{path::Path,sync::Mutex};
-use rusqlite::{params,Connection,OptionalExtension,TransactionBehavior};
+use rusqlite::{params,Connection,OpenFlags,OptionalExtension,TransactionBehavior};
 use crate::conversation_authority::TrustedUserTurnVerifier;
 
 const MAX_STEPS:usize=32;
@@ -114,6 +114,13 @@ fn valid_steps(steps:&[PlanStepSpec])->bool{
             step.depends_on.is_none_or(|parent|(parent as usize)<index))
 }
 impl AgentPlanLedger{
+    /// AGENT-01K: never create or migrate SQLite in a recovery inspection.
+    /// The returned store is only for snapshot(); mutating calls fail.
+    pub fn open_existing_readonly(path:&Path)->Result<Self,PlanLedgerError>{
+        let db=Connection::open_with_flags(path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY|OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        Ok(Self{db:Mutex::new(db)})
+    }
     pub fn open(path:&Path)->Result<Self,PlanLedgerError>{
         let db=Connection::open(path)?;
         db.pragma_update(None,"journal_mode","WAL")?;
