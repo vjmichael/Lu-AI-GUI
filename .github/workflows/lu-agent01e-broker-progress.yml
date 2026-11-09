@@ -18,6 +18,7 @@ on:
       - 'lu-desktop/web/main.jsx'
       - 'lu-desktop/tests/native-chat/src/lib.rs'
       - 'lu-desktop/tests/agent01e-progress-ui.test.mjs'
+      - 'lu-desktop/tests/agent01h-next-step-preview.test.mjs'
       - '.github/workflows/lu-agent01e-broker-progress.yml'
       - 'source-tree.lock.json'
       - 'evidence/agent-01g/qwen2p5-local-cpu-20261108/**'
@@ -39,6 +40,7 @@ on:
       - 'lu-desktop/web/main.jsx'
       - 'lu-desktop/tests/native-chat/src/lib.rs'
       - 'lu-desktop/tests/agent01e-progress-ui.test.mjs'
+      - 'lu-desktop/tests/agent01h-next-step-preview.test.mjs'
       - '.github/workflows/lu-agent01e-broker-progress.yml'
       - 'source-tree.lock.json'
       - 'evidence/agent-01g/qwen2p5-local-cpu-20261108/**'
@@ -79,6 +81,15 @@ jobs:
             2>&1 | tee agent01e-evidence/ui-bridge-node.log
           grep -Fq '# pass 6' agent01e-evidence/ui-bridge-node.log
           grep -Fq '# fail 0' agent01e-evidence/ui-bridge-node.log
+      - name: AGENT-01H read-only continuation and recovery source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01h-next-step-preview.test.mjs \
+            2>&1 | tee agent01e-evidence/agent01h-readiness-source.log
+          grep -Fq '# pass 6' agent01e-evidence/agent01h-readiness-source.log
+          grep -Fq '# fail 0' agent01e-evidence/agent01h-readiness-source.log
+          echo 'AGENT-01H is a read-only preview; it does not execute a worker or authorize a next step.' >> "$GITHUB_STEP_SUMMARY"
       - name: AGENT-01F real loaded model ingress source contract
         shell: bash
         run: |
@@ -167,16 +178,20 @@ jobs:
           for name in \
             genuine_saved_human_turn_scopes_read_only_plan_and_pending_review \
             recorded_human_approval_and_interruption_never_mark_worker_proven \
-            inconsistent_schema_is_error_not_fabricated_empty_history; do
+            inconsistent_schema_is_error_not_fabricated_empty_history \
+            real_approved_first_step_is_advisory_not_an_execution_grant \
+            released_owner_never_becomes_a_reusable_step_grant_after_restart \
+            historical_witness_link_cannot_override_uncertain_scheduler_custody \
+            cached_dependency_or_unsupported_step_never_authorizes_next_worker; do
             grep -Fq "test agent_plan_progress::tests::$name ... ok" \
               agent01e-evidence/real-chat-progress.log
           done
           if [[ "$RUNNER_OS" == Linux ]]; then
             grep -Fq 'test agent_plan_progress::tests::symlinked_plan_database_is_rejected ... ok' \
               agent01e-evidence/real-chat-progress.log
-            count=4
+            count=8
           else
-            count=3
+            count=7
           fi
           grep -Fq "test result: ok. $count passed; 0 failed;" \
             agent01e-evidence/real-chat-progress.log

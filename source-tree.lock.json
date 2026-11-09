@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4d536c4fba7ab24f25bcf2a4ea0876d2430c5b42",
-  "trackedFileCount": 746,
+  "sourceCommitBeforeLock": "75b19341bd90622284be4790a7ca6334403e3dc8",
+  "trackedFileCount": 748,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-agent01e-broker-progress.yml",
-      "blob": "4d0d6cdeae4ec25ee45767d4c0f2f40b600d82cb"
+      "blob": "ee69bcfe2ebe8eca083bf61f7a012469c8f65503"
     },
     {
       "path": ".github/workflows/lu-agent01g-physical-windows-nsis.yml",
@@ -365,7 +365,11 @@
     },
     {
       "path": "docs/LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md",
-      "blob": "bb48b702a8d90989fdbcd902301a9682fc05176b"
+      "blob": "035f6b2314f8a55a47117e0727d91c6e93e84d1b"
+    },
+    {
+      "path": "docs/LU_AGENT01H_READ_ONLY_CONTINUATION_PREVIEW_20261108.md",
+      "blob": "f7ff57298a62242b51a273f06392aef0445c5d00"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -417,7 +421,7 @@
     },
     {
       "path": "docs/LU_CENTRAL_DESIGN.md",
-      "blob": "025cce921d4f47570f3746d007a3d9914b14c1bc"
+      "blob": "0536adf6fb9bd696f600ed31051ad6082e603edd"
     },
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
@@ -509,7 +513,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "e0d784ac007bd2efe685b61b7ff79d7ce2f3e26e"
+      "blob": "f02d46a37026de956cb07906c01cd31e680cdaf1"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -641,7 +645,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "aecaf50d2971d0932dd95538f4c615bdd90c03f5"
+      "blob": "bc03071a64e945383bd123ff1fec1e2578a549ed"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -885,7 +889,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_progress.rs",
-      "blob": "fdd5a20080cf7c6921229532380acade24b4ba69"
+      "blob": "aac8c17734d7ef278e2aa75f2f19a3540a96dc4a"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_review.rs",
@@ -1114,6 +1118,10 @@
     {
       "path": "lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs",
       "blob": "ce9e2b9087e6517966ec2a1edbd01215a966c67f"
+    },
+    {
+      "path": "lu-desktop/tests/agent01h-next-step-preview.test.mjs",
+      "blob": "aaa21cdf036423f706036e8281582648152b5907"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
@@ -1441,7 +1449,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "868b2d3359559f75cd9606cb0a53f41b2307256d"
+      "blob": "1107fb51a05b56031afc8727db71c306638f1b75"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
