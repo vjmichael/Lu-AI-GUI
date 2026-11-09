@@ -5,6 +5,31 @@
 //! No project executable, PID, path, arguments, expression, conditional
 //! breakpoint, adapter reverse request, or terminal command reaches this API.
 #![cfg(all(feature = "native-debug", any(windows, target_os = "linux")))]
+#[cfg(target_os = "linux")]
+use lu_ide_execution_supervisor::linux_worker::lsp_native::{
+    native_lsp_bundle_digest, start_linux_dap, start_linux_project_dap,
+    LinuxDapSession as NativeDapSession,
+};
+#[cfg(target_os = "linux")]
+use lu_ide_execution_supervisor::linux_worker::reconcile_linux_interrupted;
+use lu_ide_execution_supervisor::{
+    project_debug_target::SealedProjectDebugTarget, snapshot::publish_input, JobPhase, JobPlan,
+    Supervisor,
+};
+#[cfg(windows)]
+use lu_ide_execution_supervisor::{
+    windows_broker::TrustedBroker,
+    windows_worker::lsp_native::{
+        native_lsp_bundle_digest, start_windows_dap, start_windows_project_dap,
+        WindowsDapSession as NativeDapSession,
+    },
+    windows_worker::reconcile_windows_interrupted_via_service,
+};
+use lu_ide_workspace::{
+    dap_session::{DapEvent, DapPhase},
+    IdeWorkspaceRegistry,
+};
+use serde::Serialize;
 use std::{
     fs,
     path::PathBuf,
@@ -15,34 +40,8 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
-use lu_ide_workspace::{
-    dap_session::{DapEvent, DapPhase},
-    IdeWorkspaceRegistry,
-};
-use lu_ide_execution_supervisor::{
-    snapshot::publish_input,
-    project_debug_target::SealedProjectDebugTarget,
-    JobPhase, JobPlan, Supervisor,
-};
-#[cfg(windows)]
-use lu_ide_execution_supervisor::{
-    windows_broker::TrustedBroker,
-    windows_worker::reconcile_windows_interrupted_via_service,
-    windows_worker::lsp_native::{
-        native_lsp_bundle_digest, start_windows_dap, start_windows_project_dap,
-        WindowsDapSession as NativeDapSession,
-    },
-};
-#[cfg(target_os = "linux")]
-use lu_ide_execution_supervisor::linux_worker::lsp_native::{
-    native_lsp_bundle_digest, start_linux_dap, start_linux_project_dap,
-    LinuxDapSession as NativeDapSession,
-};
-#[cfg(target_os = "linux")]
-use lu_ide_execution_supervisor::linux_worker::reconcile_linux_interrupted;
 
 #[cfg(windows)]
 const BUNDLE_PIN: Option<&str> = option_env!("LU_IDE_WO6_WINDOWS_LLDB_DAP_SHA256");
@@ -65,14 +64,18 @@ struct Installation {
 }
 #[cfg(windows)]
 fn digest_file(path: &std::path::Path) -> Result<String, String> {
-    use std::{fs::File, io::Read};
     use sha2::{Digest, Sha256};
+    use std::{fs::File, io::Read};
     let mut reader = File::open(path).map_err(|_| "DEBUG_SERVICE_MISSING")?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
-        let n = reader.read(&mut buf).map_err(|_| "DEBUG_SERVICE_UNREADABLE")?;
-        if n == 0 { break; }
+        let n = reader
+            .read(&mut buf)
+            .map_err(|_| "DEBUG_SERVICE_UNREADABLE")?;
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
     }
     Ok(format!("{:x}", hasher.finalize()))
@@ -81,7 +84,10 @@ fn installation(app: &AppHandle) -> Result<Installation, String> {
     let approved = pin(BUNDLE_PIN)?;
     #[cfg(windows)]
     {
-        let root = app.path().resource_dir().map_err(|_| "DEBUG_RESOURCE_MISSING")?;
+        let root = app
+            .path()
+            .resource_dir()
+            .map_err(|_| "DEBUG_RESOURCE_MISSING")?;
         let bundle = root.join("debug-adapters").join("lldb-dap");
         let observed = native_lsp_bundle_digest(&bundle, "dap_lldb_fixed")
             .map_err(|_| "DEBUG_BUNDLE_UNTRUSTED")?;
@@ -94,7 +100,8 @@ fn installation(app: &AppHandle) -> Result<Installation, String> {
             return Err("DEBUG_SERVICE_PIN_MISMATCH".into());
         }
         Ok(Installation {
-            bundle, digest: observed,
+            bundle,
+            digest: observed,
             broker: TrustedBroker {
                 executable: service,
                 expected_sha256: sha.to_owned(),
@@ -111,7 +118,10 @@ fn installation(app: &AppHandle) -> Result<Installation, String> {
         if observed != approved {
             return Err("DEBUG_BUNDLE_PIN_MISMATCH".into());
         }
-        Ok(Installation { bundle, digest: observed })
+        Ok(Installation {
+            bundle,
+            digest: observed,
+        })
     }
 }
 
@@ -182,28 +192,35 @@ struct Active {
 /// The native OS dialog must not hold a protected stopped Job forever.
 /// A late callback has no receiver and can never produce a consent marker.
 /// Used for developer-only debugger actions; this is not a CI-simulated yes.
-#[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
-fn bounded_native_debugger_consent(
-    app: &AppHandle, message: &str, cancel: &AtomicBool,
-) -> bool {
+#[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
+fn bounded_native_debugger_consent(app: &AppHandle, message: &str, cancel: &AtomicBool) -> bool {
     use std::sync::mpsc::{sync_channel, RecvTimeoutError};
-    if cancel.load(Ordering::SeqCst) { return false; }
+    if cancel.load(Ordering::SeqCst) {
+        return false;
+    }
     let (sender, receiver) = sync_channel(1);
     app.dialog()
         .message(message.to_owned())
         .title("Lu IDE · one debugger operation")
         .buttons(MessageDialogButtons::OkCancelCustom(
-            "Approve this single operation".into(), "Decline".into(),
+            "Approve this single operation".into(),
+            "Decline".into(),
         ))
-        .show(move |confirmed| { let _ = sender.try_send(confirmed); });
+        .show(move |confirmed| {
+            let _ = sender.try_send(confirmed);
+        });
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
-        if cancel.load(Ordering::SeqCst) { return false; }
+        if cancel.load(Ordering::SeqCst) {
+            return false;
+        }
         let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() { return false; }
+        if remaining.is_zero() {
+            return false;
+        }
         match receiver.recv_timeout(remaining.min(Duration::from_millis(100))) {
             Ok(confirmed) => return confirmed && !cancel.load(Ordering::SeqCst),
-            Err(RecvTimeoutError::Timeout) => {},
+            Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return false,
         }
     }
@@ -217,7 +234,10 @@ pub struct NativeDebugRuntime {
 }
 impl NativeDebugRuntime {
     pub fn new(app: &AppHandle) -> Result<Self, String> {
-        let data = app.path().app_data_dir().map_err(|_| "DEBUG_PROFILE_MISSING")?;
+        let data = app
+            .path()
+            .app_data_dir()
+            .map_err(|_| "DEBUG_PROFILE_MISSING")?;
         fs::create_dir_all(&data).map_err(|_| "DEBUG_PROFILE_UNAVAILABLE")?;
         let stage = data.join("debug-fixture-snapshots");
         fs::create_dir_all(&stage).map_err(|_| "DEBUG_PROFILE_UNAVAILABLE")?;
@@ -232,46 +252,63 @@ impl NativeDebugRuntime {
     }
     pub fn status(&self, app: &AppHandle, project_id: &str) -> Result<DebugStatus, String> {
         let available = installation(app).map(|_| ());
-        let current = self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
-            .as_ref().filter(|v| v.project_id == project_id)
+        let current = self
+            .active
+            .lock()
+            .map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
+            .as_ref()
+            .filter(|v| v.project_id == project_id)
             .map(|v| DebugActive {
                 project_id: v.project_id.clone(),
                 job_id: v.job_id.clone(),
                 cancellation_requested: v.cancellation.load(Ordering::SeqCst),
             });
-        let last = self.last.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
-            .as_ref().filter(|v| v.project_id == project_id).cloned();
-        let durable = self.supervisor.inspect()
-            .map_err(|e| e.code().to_owned())?;
-        #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
-        let dangling_action_jobs = self.supervisor
+        let last = self
+            .last
+            .lock()
+            .map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
+            .as_ref()
+            .filter(|v| v.project_id == project_id)
+            .cloned();
+        let durable = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
+        #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
+        let dangling_action_jobs = self
+            .supervisor
             .native_debug_action_cleanup_jobs_after_restart()
             .map_err(|e| e.code().to_owned())?;
-        #[cfg(not(all(windows, debug_assertions, feature="dev046d-native-dialog")))]
+        #[cfg(not(all(windows, debug_assertions, feature = "dev046d-native-dialog")))]
         let dangling_action_jobs: Vec<String> = Vec::new();
         // Security decision uses every outstanding job, not the bounded UI list.
-        let quarantined: Vec<DebugInterrupted> = durable.iter()
+        let quarantined: Vec<DebugInterrupted> = durable
+            .iter()
             .filter(|job| job.project_id == project_id && job.requires_reconciliation)
             .map(|job| DebugInterrupted {
                 project_id: job.project_id.clone(),
                 job_id: job.job_id.clone(),
                 plan_sha256: job.plan_sha256.clone(),
                 phase: match job.phase {
-                    JobPhase::CancelRequested=>"cancel_requested",
-                    JobPhase::RecoveryRequired=>"recovery_required",
-                    JobPhase::AdmissionPending=>"admission_pending",
-                    JobPhase::ReleasePending=>"release_pending",
-                    JobPhase::Uncertain=>"uncertain",
-                    JobPhase::Completed=>"completed",JobPhase::Cancelled=>"cancelled",
-                    JobPhase::Failed=>"failed",JobPhase::Denied=>"denied",
-                    JobPhase::Running=>"running",JobPhase::Prepared=>"prepared",
-                    JobPhase::Authorized=>"authorized",
-                }.to_owned(),
+                    JobPhase::CancelRequested => "cancel_requested",
+                    JobPhase::RecoveryRequired => "recovery_required",
+                    JobPhase::AdmissionPending => "admission_pending",
+                    JobPhase::ReleasePending => "release_pending",
+                    JobPhase::Uncertain => "uncertain",
+                    JobPhase::Completed => "completed",
+                    JobPhase::Cancelled => "cancelled",
+                    JobPhase::Failed => "failed",
+                    JobPhase::Denied => "denied",
+                    JobPhase::Running => "running",
+                    JobPhase::Prepared => "prepared",
+                    JobPhase::Authorized => "authorized",
+                }
+                .to_owned(),
                 requires_reconciliation: true,
-            }).collect();
+            })
+            .collect();
         // Last successful DAP result is session-only; never fabricate it after
         // restart. Display the newest persisted job IDs as journal metadata.
-        let mut journal: Vec<DebugInterrupted> = durable.into_iter().rev()
+        let mut journal: Vec<DebugInterrupted> = durable
+            .into_iter()
+            .rev()
             .filter(|job| job.project_id == project_id)
             .take(32)
             .map(|job| DebugInterrupted {
@@ -279,40 +316,51 @@ impl NativeDebugRuntime {
                 job_id: job.job_id,
                 plan_sha256: job.plan_sha256,
                 phase: match job.phase {
-                    JobPhase::CancelRequested=>"cancel_requested",
-                    JobPhase::RecoveryRequired=>"recovery_required",
-                    JobPhase::AdmissionPending=>"admission_pending",
-                    JobPhase::ReleasePending=>"release_pending",
-                    JobPhase::Uncertain=>"uncertain",
-                    JobPhase::Completed=>"completed",JobPhase::Cancelled=>"cancelled",
-                    JobPhase::Failed=>"failed",JobPhase::Denied=>"denied",
-                    JobPhase::Running=>"running",JobPhase::Prepared=>"prepared",
-                    JobPhase::Authorized=>"authorized",
-                }.to_owned(),
+                    JobPhase::CancelRequested => "cancel_requested",
+                    JobPhase::RecoveryRequired => "recovery_required",
+                    JobPhase::AdmissionPending => "admission_pending",
+                    JobPhase::ReleasePending => "release_pending",
+                    JobPhase::Uncertain => "uncertain",
+                    JobPhase::Completed => "completed",
+                    JobPhase::Cancelled => "cancelled",
+                    JobPhase::Failed => "failed",
+                    JobPhase::Denied => "denied",
+                    JobPhase::Running => "running",
+                    JobPhase::Prepared => "prepared",
+                    JobPhase::Authorized => "authorized",
+                }
+                .to_owned(),
                 requires_reconciliation: job.requires_reconciliation,
-            }).collect();
+            })
+            .collect();
         journal.reverse();
         Ok(DebugStatus {
-            ready: available.is_ok() && quarantined.is_empty() &&
-                dangling_action_jobs.is_empty(),
-            project_debug_supported: cfg!(feature="native-project-debug") &&
-                available.is_ok() && quarantined.is_empty() &&
-                dangling_action_jobs.is_empty(),
+            ready: available.is_ok() && quarantined.is_empty() && dangling_action_jobs.is_empty(),
+            project_debug_supported: cfg!(feature = "native-project-debug")
+                && available.is_ok()
+                && quarantined.is_empty()
+                && dangling_action_jobs.is_empty(),
             // Test-only D6C permission never becomes installed action authority.
             operation_control_supported: cfg!(all(
-                windows, debug_assertions, feature = "dev046d-native-dialog"
-            )) && available.is_ok() && quarantined.is_empty() &&
-                dangling_action_jobs.is_empty(),
+                windows,
+                debug_assertions,
+                feature = "dev046d-native-dialog"
+            )) && available.is_ok()
+                && quarantined.is_empty()
+                && dangling_action_jobs.is_empty(),
             operation_control_code: if cfg!(all(
-                windows, debug_assertions, feature = "dev046d-native-dialog"
+                windows,
+                debug_assertions,
+                feature = "dev046d-native-dialog"
             )) {
                 "DEV046D_NATIVE_DIALOG_DEV_ONLY_NOT_RELEASE_ACCEPTED"
             } else {
                 "DEV046D_NATIVE_HUMAN_ACTION_APPROVAL_NOT_ACCEPTED"
             },
             code: match available {
-                Ok(()) if !dangling_action_jobs.is_empty() =>
-                    "DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED".into(),
+                Ok(()) if !dangling_action_jobs.is_empty() => {
+                    "DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED".into()
+                }
                 Ok(()) => "DEBUG_FIXTURE_BUNDLE_VERIFIED_OS_ADMISSION_PER_RUN".into(),
                 Err(code) => code,
             },
@@ -321,7 +369,9 @@ impl NativeDebugRuntime {
             journal,
             quarantined,
             description: if cfg!(all(
-                windows, debug_assertions, feature = "dev046d-native-dialog"
+                windows,
+                debug_assertions,
+                feature = "dev046d-native-dialog"
             )) {
                 "Developer-only native modal for a verified LLDB stop. A fresh build, launch approval and per-action consent are mandatory; this is NOT signed installed acceptance."
             } else {
@@ -332,19 +382,32 @@ impl NativeDebugRuntime {
     /// A separately approved OS-only cleanup, never a debugger resume.
     /// Missing/stale project receipts remain quarantined across restarts.
     pub fn reconcile(
-        &self, app: &AppHandle, project_id: &str, job_id: &str,
+        &self,
+        app: &AppHandle,
+        project_id: &str,
+        job_id: &str,
     ) -> Result<&'static str, String> {
-        if self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?.is_some() {
+        if self
+            .active
+            .lock()
+            .map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
+            .is_some()
+        {
             return Err("DEBUG_ACTIVE_SESSION_PREVENTS_RECOVERY".into());
         }
-        let interrupted = self.supervisor.inspect().map_err(|e| e.code().to_owned())?
-            .into_iter().find(|job| job.job_id == job_id)
+        let interrupted = self
+            .supervisor
+            .inspect()
+            .map_err(|e| e.code().to_owned())?
+            .into_iter()
+            .find(|job| job.job_id == job_id)
             .ok_or("DEBUG_RECOVERY_JOB_NOT_FOUND")?;
         if interrupted.project_id != project_id || !interrupted.requires_reconciliation {
             return Err("DEBUG_RECOVERY_SCOPE_DENIED".into());
         }
         let install = installation(app)?;
-        let confirmed = app.dialog()
+        let confirmed = app
+            .dialog()
             .message(format!(
                 "Verify native OS-only termination of interrupted debugger job {job_id}?\n\n\
                  No debugger or project executable will be restarted. The protected broker must \
@@ -352,14 +415,17 @@ impl NativeDebugRuntime {
             ))
             .title("Reconcile interrupted protected debugger")
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "Verify OS cleanup".into(), "Leave quarantined".into(),
+                "Verify OS cleanup".into(),
+                "Leave quarantined".into(),
             ))
             .blocking_show();
-        if !confirmed { return Err("DEBUG_RECOVERY_NOT_APPROVED".into()); }
+        if !confirmed {
+            return Err("DEBUG_RECOVERY_NOT_APPROVED".into());
+        }
         #[cfg(windows)]
-        let summary = reconcile_windows_interrupted_via_service(
-            &self.supervisor, job_id, &install.broker,
-        ).map_err(|e| e.code().to_owned())?;
+        let summary =
+            reconcile_windows_interrupted_via_service(&self.supervisor, job_id, &install.broker)
+                .map_err(|e| e.code().to_owned())?;
         #[cfg(target_os = "linux")]
         let summary = {
             let _ = install;
@@ -375,11 +441,13 @@ impl NativeDebugRuntime {
     pub fn cancel(&self, project_id: &str, job_id: Option<&str>) -> Result<&'static str, String> {
         let locked = self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?;
         let active = locked.as_ref().ok_or("DEBUG_NO_ACTIVE_SESSION")?;
-        if active.project_id != project_id{return Err("DEBUG_SESSION_SCOPE_MISMATCH".into());}
-        match (active.job_id.as_deref(),job_id) {
-            (Some(current),Some(expected)) if current==expected=>{}
-            (None,None)=>{}
-            _=>return Err("DEBUG_EXACT_JOB_ID_REQUIRED".into())
+        if active.project_id != project_id {
+            return Err("DEBUG_SESSION_SCOPE_MISMATCH".into());
+        }
+        match (active.job_id.as_deref(), job_id) {
+            (Some(current), Some(expected)) if current == expected => {}
+            (None, None) => {}
+            _ => return Err("DEBUG_EXACT_JOB_ID_REQUIRED".into()),
         }
         if active.cancellation.swap(true, Ordering::SeqCst) {
             return Err("DEBUG_CANCEL_ALREADY_REQUESTED".into());
@@ -387,38 +455,58 @@ impl NativeDebugRuntime {
         Ok("DEBUG_CANCEL_REQUESTED_OS_TERMINATION_PENDING")
     }
     pub fn run_fixture(
-        &self, app: &AppHandle, registry: &IdeWorkspaceRegistry, project_id: &str,
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
     ) -> Result<DebugWitness, String> {
-        self.run_bound(app,registry,project_id,None,None)
+        self.run_bound(app, registry, project_id, None, None)
     }
-    #[cfg(feature="native-project-debug")]
+    #[cfg(feature = "native-project-debug")]
     pub fn run_project(
-        &self,app:&AppHandle,registry:&IdeWorkspaceRegistry,project_id:&str,
-        target:Arc<SealedProjectDebugTarget>,
-    )->Result<DebugWitness,String>{
-        self.run_bound(app,registry,project_id,Some(target),None)
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+        target: Arc<SealedProjectDebugTarget>,
+    ) -> Result<DebugWitness, String> {
+        self.run_bound(app, registry, project_id, Some(target), None)
     }
-    #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+    #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
     pub fn run_project_native_action(
-        &self, app:&AppHandle, registry:&IdeWorkspaceRegistry,
-        project_id:&str, target:Arc<SealedProjectDebugTarget>,
-        operation:ReviewedNativeAction,
-    )->Result<DebugWitness,String>{
-        self.run_bound(app,registry,project_id,Some(target),Some(operation))
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+        target: Arc<SealedProjectDebugTarget>,
+        operation: ReviewedNativeAction,
+    ) -> Result<DebugWitness, String> {
+        self.run_bound(app, registry, project_id, Some(target), Some(operation))
     }
     fn run_bound(
-        &self,app:&AppHandle,registry:&IdeWorkspaceRegistry,project_id:&str,
-        target:Option<Arc<SealedProjectDebugTarget>>,
-        operation:Option<ReviewedNativeAction>,
-    )->Result<DebugWitness,String>{
-        if self.supervisor.inspect().map_err(|e| e.code().to_owned())?
-            .iter().any(|job| job.requires_reconciliation)
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+        target: Option<Arc<SealedProjectDebugTarget>>,
+        operation: Option<ReviewedNativeAction>,
+    ) -> Result<DebugWitness, String> {
+        if self
+            .supervisor
+            .inspect()
+            .map_err(|e| e.code().to_owned())?
+            .iter()
+            .any(|job| job.requires_reconciliation)
         {
             return Err("DEBUG_KERNEL_RECOVERY_REQUIRED_BEFORE_ANY_NEW_RUN".into());
         }
-        #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
-        if !self.supervisor.native_debug_action_cleanup_jobs_after_restart()
-            .map_err(|e| e.code().to_owned())?.is_empty() {
+        #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
+        if !self
+            .supervisor
+            .native_debug_action_cleanup_jobs_after_restart()
+            .map_err(|e| e.code().to_owned())?
+            .is_empty()
+        {
             return Err("DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED".into());
         }
         let cancellation = Arc::new(AtomicBool::new(false));
@@ -433,8 +521,14 @@ impl NativeDebugRuntime {
                 cancellation: Arc::clone(&cancellation),
             });
         }
-        let result = self.run_inner(app, registry, project_id,
-            &cancellation,target.as_deref(),operation);
+        let result = self.run_inner(
+            app,
+            registry,
+            project_id,
+            &cancellation,
+            target.as_deref(),
+            operation,
+        );
         *self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")? = None;
         if let Ok(ref witness) = result {
             *self.last.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")? = Some(witness.clone());
@@ -442,21 +536,29 @@ impl NativeDebugRuntime {
         result
     }
     fn run_inner(
-        &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
-        project_id: &str, cancel: &AtomicBool,
-        target:Option<&SealedProjectDebugTarget>,
-        operation:Option<ReviewedNativeAction>,
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+        cancel: &AtomicBool,
+        target: Option<&SealedProjectDebugTarget>,
+        operation: Option<ReviewedNativeAction>,
     ) -> Result<DebugWitness, String> {
-        if operation.is_some() && !cfg!(all(
-            windows, debug_assertions, feature = "dev046d-native-dialog"
-        )) {
+        if operation.is_some()
+            && !cfg!(all(
+                windows,
+                debug_assertions,
+                feature = "dev046d-native-dialog"
+            ))
+        {
             return Err("DEV046D_NATIVE_DIALOG_FEATURE_DISABLED".into());
         }
         if operation.is_some() && target.is_none() {
             return Err("DEV046D_REQUIRES_VERIFIED_PROJECT_TARGET".into());
         }
         let install = installation(app)?;
-        let root = registry.trusted_native_worker_root(project_id)
+        let root = registry
+            .trusted_native_worker_root(project_id)
             .map_err(|_| "DEBUG_PROJECT_NOT_ACTIVE")?;
         let git = registry.inspect_git_worktree(project_id);
         if git.state != "local_repository_inspected" || git.worktree != "clean" || git.truncated {
@@ -466,34 +568,47 @@ impl NativeDebugRuntime {
         if head.len() != 40 || !head.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("DEBUG_SOURCE_HEAD_INVALID".into());
         }
-        let input = publish_input(&root, &self.stage, "rust_check")
-            .map_err(|e| e.code().to_owned())?;
-        if let Some(target)=target {
-            if target.lineage.project_id!=project_id ||
-               target.lineage.source_head!=head ||
-               target.lineage.source_snapshot_sha256!=input.seal.source_sha256 ||
-               target.lineage.manifest_sha256!=input.seal.manifest_sha256 ||
-               target.lineage.requires_reconciliation {
+        let input =
+            publish_input(&root, &self.stage, "rust_check").map_err(|e| e.code().to_owned())?;
+        if let Some(target) = target {
+            if target.lineage.project_id != project_id
+                || target.lineage.source_head != head
+                || target.lineage.source_snapshot_sha256 != input.seal.source_sha256
+                || target.lineage.manifest_sha256 != input.seal.manifest_sha256
+                || target.lineage.requires_reconciliation
+            {
                 return Err("DEV044_BUILD_SOURCE_OR_RECEIPT_MISMATCH".into());
             }
-            target.verify().map_err(|_|"DEV044_PROJECT_BINARY_OR_SYMBOLS_CHANGED")?;
+            target
+                .verify()
+                .map_err(|_| "DEV044_PROJECT_BINARY_OR_SYMBOLS_CHANGED")?;
         }
         if cancel.load(Ordering::SeqCst) {
             return Err("DEBUG_CANCELLED_BEFORE_NATIVE_AUTHORIZATION".into());
         }
         let plan = JobPlan {
             project_id: project_id.to_owned(),
-            recipe_id:if target.is_some(){"dap_lldb_project"}else{"dap_lldb_fixed"}.into(),
+            recipe_id: if target.is_some() {
+                "dap_lldb_project"
+            } else {
+                "dap_lldb_fixed"
+            }
+            .into(),
             source_head: head.clone(),
             input_snapshot_sha256: input.seal.source_sha256.clone(),
             manifest_sha256: input.seal.manifest_sha256.clone(),
             toolchain_sha256: install.digest.clone(),
-            debug_target_binding_sha256:target.map(|target|target.binding_sha256.clone()),
-            runtime_limit_ms: 3 * 60_000, memory_limit_bytes: 512 * 1024 * 1024,
-            process_limit: 16, log_limit_bytes: 64 * 1024,
+            debug_target_binding_sha256: target.map(|target| target.binding_sha256.clone()),
+            runtime_limit_ms: 3 * 60_000,
+            memory_limit_bytes: 512 * 1024 * 1024,
+            process_limit: 16,
+            log_limit_bytes: 64 * 1024,
             effect_class: "debug_inspection_isolated".into(),
         };
-        let prepared = self.supervisor.prepare(plan.clone()).map_err(|e| e.code().to_owned())?;
+        let prepared = self
+            .supervisor
+            .prepare(plan.clone())
+            .map_err(|e| e.code().to_owned())?;
         {
             let mut active = self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?;
             let current = active.as_mut().ok_or("DEBUG_HOST_UNAVAILABLE")?;
@@ -505,8 +620,10 @@ impl NativeDebugRuntime {
         if cancel.load(Ordering::SeqCst) {
             return Err("DEBUG_CANCELLED_BEFORE_NATIVE_AUTHORIZATION".into());
         }
-        let (dialog_title,dialog_message,button)=if let Some(target)=target {
-            target.verify().map_err(|_|"DEV044_PRIVATE_BINARY_CHANGED_BEFORE_APPROVAL")?;
+        let (dialog_title, dialog_message, button) = if let Some(target) = target {
+            target
+                .verify()
+                .map_err(|_| "DEV044_PRIVATE_BINARY_CHANGED_BEFORE_APPROVAL")?;
             (
                 "Approve one protected project debugger",
                 format!(
@@ -530,23 +647,28 @@ impl NativeDebugRuntime {
                 format!(
                     "Run the reviewed fixed LLDB-DAP debugger self-test?\nProject: {project_id}\n\
                      Source HEAD: {head}\nFrozen input SHA-256: {}\nAdapter SHA-256: {}",
-                    plan.input_snapshot_sha256,install.digest
+                    plan.input_snapshot_sha256, install.digest
                 ),
-                "Run fixed debugger self-test"
+                "Run fixed debugger self-test",
             )
         };
-        let decision = app.dialog()
-            .message(dialog_message);
+        let decision = app.dialog().message(dialog_message);
         let decision = decision
             .title(dialog_title)
             .buttons(MessageDialogButtons::OkCancelCustom(
-                button.into(), "Cancel".into(),
-            )).blocking_show();
+                button.into(),
+                "Cancel".into(),
+            ))
+            .blocking_show();
         if !decision || cancel.load(Ordering::SeqCst) {
             return Err("DEBUG_HUMAN_APPROVAL_DENIED".into());
         }
         let fresh = registry.inspect_git_worktree(project_id);
-        if registry.trusted_native_worker_root(project_id).ok().as_ref() != Some(&root)
+        if registry
+            .trusted_native_worker_root(project_id)
+            .ok()
+            .as_ref()
+            != Some(&root)
             || fresh.state != "local_repository_inspected"
             || fresh.worktree != "clean"
             || fresh.local_head.as_deref() != Some(head.as_str())
@@ -554,29 +676,60 @@ impl NativeDebugRuntime {
         {
             return Err("DEBUG_SOURCE_CHANGED_DURING_APPROVAL".into());
         }
-        if let Some(target)=target {
-            target.verify().map_err(|_|"DEV044_PRIVATE_TARGET_CHANGED_DURING_APPROVAL")?;
+        if let Some(target) = target {
+            target
+                .verify()
+                .map_err(|_| "DEV044_PRIVATE_TARGET_CHANGED_DURING_APPROVAL")?;
         }
-        self.supervisor.record_human_approval(
-            &prepared.job_id, &prepared.plan_sha256, &head, true
-        ).map_err(|e| e.code().to_owned())?;
+        self.supervisor
+            .record_human_approval(&prepared.job_id, &prepared.plan_sha256, &head, true)
+            .map_err(|e| e.code().to_owned())?;
         #[cfg(windows)]
-        let mut session: NativeDapSession = if let Some(target)=target {
-            start_windows_project_dap(Arc::clone(&self.supervisor),
-                &prepared.job_id,&plan,&head,&input,&install.bundle,
-                &install.broker,target)
+        let mut session: NativeDapSession = if let Some(target) = target {
+            start_windows_project_dap(
+                Arc::clone(&self.supervisor),
+                &prepared.job_id,
+                &plan,
+                &head,
+                &input,
+                &install.bundle,
+                &install.broker,
+                target,
+            )
         } else {
-            start_windows_dap(Arc::clone(&self.supervisor), &prepared.job_id,
-                &plan, &head, &input, &install.bundle, &install.broker)
-        }.map_err(|e| e.code().to_owned())?;
+            start_windows_dap(
+                Arc::clone(&self.supervisor),
+                &prepared.job_id,
+                &plan,
+                &head,
+                &input,
+                &install.bundle,
+                &install.broker,
+            )
+        }
+        .map_err(|e| e.code().to_owned())?;
         #[cfg(target_os = "linux")]
-        let mut session: NativeDapSession = if let Some(target)=target {
-            start_linux_project_dap(Arc::clone(&self.supervisor),
-                &prepared.job_id,&plan,&head,&input,&install.bundle,target)
+        let mut session: NativeDapSession = if let Some(target) = target {
+            start_linux_project_dap(
+                Arc::clone(&self.supervisor),
+                &prepared.job_id,
+                &plan,
+                &head,
+                &input,
+                &install.bundle,
+                target,
+            )
         } else {
-            start_linux_dap(Arc::clone(&self.supervisor), &prepared.job_id,
-                &plan,&head,&input,&install.bundle)
-        }.map_err(|e|e.code().to_owned())?;
+            start_linux_dap(
+                Arc::clone(&self.supervisor),
+                &prepared.job_id,
+                &plan,
+                &head,
+                &input,
+                &install.bundle,
+            )
+        }
+        .map_err(|e| e.code().to_owned())?;
         session.initialize().map_err(|e| e.code().to_owned())?;
         let init_at = Instant::now();
         while session.phase() != DapPhase::Ready && init_at.elapsed() < Duration::from_secs(15) {
@@ -589,16 +742,24 @@ impl NativeDebugRuntime {
         if session.phase() != DapPhase::Ready {
             return Err("DEBUG_INITIALIZE_TIMEOUT".into());
         }
-        if let Some(target)=target {
-            target.verify().map_err(|_|"DEV044_BINARY_CHANGED_BEFORE_LAUNCH")?;
-            session.launch_project_target().map_err(|e|e.code().to_owned())?;
+        if let Some(target) = target {
+            target
+                .verify()
+                .map_err(|_| "DEV044_BINARY_CHANGED_BEFORE_LAUNCH")?;
+            session
+                .launch_project_target()
+                .map_err(|e| e.code().to_owned())?;
         } else {
-            session.launch_fixed_fixture().map_err(|e| e.code().to_owned())?;
+            session
+                .launch_fixed_fixture()
+                .map_err(|e| e.code().to_owned())?;
         }
         // Handle a valid initialized event already consumed during the
         // initialize response read. Never issue configuration before launch.
         if session.configuration_needed() {
-            session.configuration_done().map_err(|e| e.code().to_owned())?;
+            session
+                .configuration_done()
+                .map_err(|e| e.code().to_owned())?;
         }
         let began = Instant::now();
         let mut stopped_thread = None;
@@ -616,27 +777,32 @@ impl NativeDebugRuntime {
                         // LLDB may send initialized AFTER the pinned native launch.
                         // Complete only empty configuration; do not accept an
                         // arbitrary source, terminal or debugger command.
-                        session.configuration_done().map_err(|e| e.code().to_owned())?;
+                        session
+                            .configuration_done()
+                            .map_err(|e| e.code().to_owned())?;
                     }
                     DapEvent::Stopped { thread_id } => stopped_thread = Some(thread_id),
                     DapEvent::ThreadsReceived => threads_response = true,
                     DapEvent::StackTraceReceived => stack_response = true,
-                    DapEvent::Terminated => return Err("DEBUG_FIXED_DEBUGGEE_EXITED_BEFORE_INSPECTION".into()),
+                    DapEvent::Terminated => {
+                        return Err("DEBUG_FIXED_DEBUGGEE_EXITED_BEFORE_INSPECTION".into())
+                    }
                     _ => {}
                 }
             }
-            if stopped_thread.is_some() && !queried_thread
-                && session.phase() == DapPhase::Stopped
-            {
+            if stopped_thread.is_some() && !queried_thread && session.phase() == DapPhase::Stopped {
                 session.threads().map_err(|e| e.code().to_owned())?;
                 queried_thread = true;
             }
             if threads_response && !queried_stack {
-                session.stack_trace(stopped_thread.ok_or("DEBUG_NO_STOPPED_THREAD")?)
+                session
+                    .stack_trace(stopped_thread.ok_or("DEBUG_NO_STOPPED_THREAD")?)
                     .map_err(|e| e.code().to_owned())?;
                 queried_stack = true;
             }
-            if stack_response { break; }
+            if stack_response {
+                break;
+            }
             thread::sleep(Duration::from_millis(30));
         }
         if !stack_response {
@@ -647,84 +813,119 @@ impl NativeDebugRuntime {
         // D6D: developer-only Windows native approval after an actual
         // first-party LLDB kernel event, Job/RIP, PDB and immutable Cargo seal.
         // No WebView DAP command, PID, path or approval token is accepted.
-        #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+        #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
         let mut native_action_receipt: Option<(u64, String, &'static str)> = None;
-        #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+        #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
         if let (Some(target), Some(operation)) = (target, operation) {
             if cancel.load(Ordering::SeqCst) {
                 return Err("DEV046D_CANCELLED_BEFORE_STOP_APPROVAL".into());
             }
-            let original = session.verify_real_lldb_event_owner_for_ci(
-                &self.supervisor, &prepared.job_id, &plan, target,
-            ).map_err(|e| e.code().to_owned())?;
+            let original = session
+                .verify_real_lldb_event_owner_for_ci(
+                    &self.supervisor,
+                    &prepared.job_id,
+                    &plan,
+                    target,
+                )
+                .map_err(|e| e.code().to_owned())?;
             let mut dialog = |trusted_message: &str| {
                 bounded_native_debugger_consent(app, trusted_message, cancel)
             };
             let (owner_seq, receipt, outcome) = match operation {
                 ReviewedNativeAction::StepOver => {
-                    let (after, audit) = session.execute_one_protected_native_step(
-                        &self.supervisor, &prepared.job_id, &plan,
-                        target, &original, &mut dialog, cancel,
-                    ).map_err(|e| e.code().to_owned())?;
+                    let (after, audit) = session
+                        .execute_one_protected_native_step(
+                            &self.supervisor,
+                            &prepared.job_id,
+                            &plan,
+                            target,
+                            &original,
+                            &mut dialog,
+                            cancel,
+                        )
+                        .map_err(|e| e.code().to_owned())?;
                     if audit.3 != "ResultVerified"
-                        || after.owner_sequence != original.owner_sequence + 1 {
+                        || after.owner_sequence != original.owner_sequence + 1
+                    {
                         return Err("DEV046D_STEP_MISSING_INDEPENDENT_STOP".into());
                     }
                     (after.owner_sequence, audit.2, "native_dialog_step_verified")
                 }
                 ReviewedNativeAction::SameLineBreakpoint => {
-                    let audit = session.attempt_one_protected_native_breakpoint(
-                        &self.supervisor, &prepared.job_id, &plan,
-                        target, &original, &mut dialog, cancel,
-                    ).map_err(|e| e.code().to_owned())?;
+                    let audit = session
+                        .attempt_one_protected_native_breakpoint(
+                            &self.supervisor,
+                            &prepared.job_id,
+                            &plan,
+                            target,
+                            &original,
+                            &mut dialog,
+                            cancel,
+                        )
+                        .map_err(|e| e.code().to_owned())?;
                     if audit.3 != "ResultUncertain" {
                         return Err("DEV046D_BP_ACK_NOT_INDEPENDENT_PROOF".into());
                     }
-                    (original.owner_sequence, audit.2, "native_dialog_bp_uncertain")
+                    (
+                        original.owner_sequence,
+                        audit.2,
+                        "native_dialog_bp_uncertain",
+                    )
                 }
             };
             native_action_receipt = Some((owner_seq, receipt, outcome));
         }
-        #[cfg(all(windows, debug_assertions, feature="dev046d-native-dialog"))]
+        #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
         let (operation_outcome_code, operation_receipt_sha256) =
             if let Some((owner_seq, receipt, outcome)) = native_action_receipt {
-                session.close_with_real_owner_continue_for_ci(owner_seq)
+                session
+                    .close_with_real_owner_continue_for_ci(owner_seq)
                     .map_err(|e| e.code().to_owned())?;
                 (Some(outcome), Some(receipt))
             } else {
                 session.close().map_err(|e| e.code().to_owned())?;
                 (None, None)
             };
-        #[cfg(not(all(windows, debug_assertions, feature="dev046d-native-dialog")))]
+        #[cfg(not(all(windows, debug_assertions, feature = "dev046d-native-dialog")))]
         let (operation_outcome_code, operation_receipt_sha256) = {
             session.close().map_err(|e| e.code().to_owned())?;
             (None, None)
         };
 
-        let state = self.supervisor.inspect().map_err(|e| e.code().to_owned())?
-            .into_iter().find(|job| job.job_id == prepared.job_id)
+        let state = self
+            .supervisor
+            .inspect()
+            .map_err(|e| e.code().to_owned())?
+            .into_iter()
+            .find(|job| job.job_id == prepared.job_id)
             .ok_or("DEBUG_JOURNAL_RECEIPT_MISSING")?;
         if state.phase != JobPhase::Completed || state.requires_reconciliation {
             return Err("DEBUG_TERMINAL_OS_CLEANUP_NOT_VERIFIED".into());
         }
         Ok(DebugWitness {
-            job_id: prepared.job_id, project_id: project_id.to_owned(),
-            source_head: head, plan_sha256: prepared.plan_sha256,
-            bundle_sha256: plan.toolchain_sha256, stopped_thread,
+            job_id: prepared.job_id,
+            project_id: project_id.to_owned(),
+            source_head: head,
+            plan_sha256: prepared.plan_sha256,
+            bundle_sha256: plan.toolchain_sha256,
+            stopped_thread,
             threads_response_observed: threads_response,
             stack_response_observed: stack_response,
             terminal_phase: "completed".into(),
             verified_os_tree_release_by_worker: true,
             installed_app_accepted: false,
-            target:if target.is_some(){
+            target: if target.is_some() {
                 "one_exact_private_project_build_in_protected_job"
-            } else {"fixed_installer_selftest_only_not_project_debugger"},
-            origin_build_job_id:target.map(|target|target.lineage.build_job_id.clone()),
-            origin_build_plan_sha256:target.map(|target|target.lineage.build_plan_sha256.clone()),
-            origin_build_receipt_sha256:target.map(|target|target.lineage.terminal_receipt_sha256.clone()),
-            binary_sha256:target.map(|target|target.binary.binary_sha256.clone()),
-            symbol_sha256:target.map(|target|target.symbols.symbols_sha256.clone()),
-            target_binding_sha256:target.map(|target|target.binding_sha256.clone()),
+            } else {
+                "fixed_installer_selftest_only_not_project_debugger"
+            },
+            origin_build_job_id: target.map(|target| target.lineage.build_job_id.clone()),
+            origin_build_plan_sha256: target.map(|target| target.lineage.build_plan_sha256.clone()),
+            origin_build_receipt_sha256: target
+                .map(|target| target.lineage.terminal_receipt_sha256.clone()),
+            binary_sha256: target.map(|target| target.binary.binary_sha256.clone()),
+            symbol_sha256: target.map(|target| target.symbols.symbols_sha256.clone()),
+            target_binding_sha256: target.map(|target| target.binding_sha256.clone()),
             operation_outcome_code,
             operation_receipt_sha256,
         })

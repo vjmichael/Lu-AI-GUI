@@ -13,7 +13,7 @@ test('IDE05 fixed native probe uses only registered project and existing read-on
                      'conanfile.py','conanfile.txt','conan.lock'])
     assert.ok(host.includes('"'+path+'"'));
   assert.match(host,/self\.source_capability\(project_id\)/);
-  assert.match(host,/self\.probe_project_resource\(project_id, path\)/);
+  assert.match(host,/self\s*\.probe_project_resource\(project_id, path\)/);
   assert.doesNotMatch(host, /std::process::Command|Command::new|std::net::|ureq::|reqwest::/);
   assert.match(host,/network_accessed: false, process_started: false/);
   assert.match(host,/files_modified: false, resolution_supported: false/);

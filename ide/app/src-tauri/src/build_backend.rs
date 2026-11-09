@@ -3,6 +3,27 @@
 //! Only the platform's existing D3 restricted Cargo worker may run. Each real
 //! run requires an exact reviewed release toolchain and FRESH native OS dialog.
 #![cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
+use lu_ide_execution_supervisor::{
+    debug_binary_witness::{audit_debug_binary_candidate, DebugBinaryWitness},
+    debug_symbol_verification::{verify_build_debug_symbols, DebugSymbolWitness},
+    live_output::{LiveOutput, OutputPage},
+    project_debug_target::{
+        seal_project_debug_target, CompletedBuildLineage, SealedProjectDebugTarget,
+    },
+    snapshot::{publish_input, verify_input},
+    wo6_output_evidence::{audit_published_output, ArtifactEntry},
+    JobPhase, JobPlan, Supervisor,
+};
+#[cfg(feature = "native-package-uv")]
+use lu_ide_execution_supervisor::{
+    package_lifecycle::{PackageLifecycleLedger, PackageLifecycleStatus},
+    package_output_evidence::{
+        audit_uv_private_output, verify_offline_registry_lock, PackageOutputAudit,
+    },
+};
+use lu_ide_workspace::IdeWorkspaceRegistry;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs::{self, File},
@@ -13,57 +34,45 @@ use std::{
         Arc, Mutex,
     },
 };
-use lu_ide_workspace::IdeWorkspaceRegistry;
-#[cfg(feature = "native-package-uv")]
-use lu_ide_execution_supervisor::{
-    package_output_evidence::{
-        audit_uv_private_output, verify_offline_registry_lock, PackageOutputAudit,
-    },
-    package_lifecycle::{PackageLifecycleLedger, PackageLifecycleStatus},
-};
-use lu_ide_execution_supervisor::{
-    snapshot::{publish_input, verify_input},
-    live_output::{LiveOutput, OutputPage},
-    wo6_output_evidence::{audit_published_output, ArtifactEntry},
-    debug_binary_witness::{audit_debug_binary_candidate, DebugBinaryWitness},
-    debug_symbol_verification::{verify_build_debug_symbols, DebugSymbolWitness},
-    project_debug_target::{seal_project_debug_target,CompletedBuildLineage,SealedProjectDebugTarget},
-    JobPlan, JobPhase, Supervisor,
-};
-use serde::Serialize;
-use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
-#[cfg(windows)]
-use lu_ide_execution_supervisor::{
-    windows_broker::TrustedBroker,
-    windows_worker::{
-        execute_windows_worker_after_staging_approval_with_output, trusted_offline_toolchain_digest,
-        reconcile_windows_interrupted_via_service, WindowsCancellation as NativeCancel,
-    },
-};
 #[cfg(target_os = "linux")]
 use lu_ide_execution_supervisor::linux_worker::{
     execute_linux_worker_with_output, installed_toolchain_digest, reconcile_linux_interrupted,
     RunCancellation as NativeCancel,
 };
+#[cfg(windows)]
+use lu_ide_execution_supervisor::{
+    windows_broker::TrustedBroker,
+    windows_worker::{
+        execute_windows_worker_after_staging_approval_with_output,
+        reconcile_windows_interrupted_via_service, trusted_offline_toolchain_digest,
+        WindowsCancellation as NativeCancel,
+    },
+};
 
-const VALID_RECIPES: [&str; 4] = ["rust_check", "rust_build", "rust_tests", "lu_ide_host_tests"];
-const MULTILANG_RECIPES: [&str; 4] =
-    ["python_pytest", "js_tests", "cpp_cmake_build", "uv_sync_offline"];
+const VALID_RECIPES: [&str; 4] = [
+    "rust_check",
+    "rust_build",
+    "rust_tests",
+    "lu_ide_host_tests",
+];
+const MULTILANG_RECIPES: [&str; 4] = [
+    "python_pytest",
+    "js_tests",
+    "cpp_cmake_build",
+    "uv_sync_offline",
+];
 
 /// Audit the exact frozen copy, not just live-source SHA evidence.
 /// The worker may not receive a manifest or lock swapped between the
 /// preview and publish_input. Snapshot bounds each file at 64 MiB.
 #[cfg(feature = "native-package-uv")]
-fn sha256_private_staged_file(root: &Path, name: &'static str)
-    -> Result<String, String> {
+fn sha256_private_staged_file(root: &Path, name: &'static str) -> Result<String, String> {
     let file = root.join(name);
-    let before = fs::symlink_metadata(&file)
-        .map_err(|_| "IDE053_STAGED_PACKAGE_FILE_MISSING")?;
-    if !before.is_file() || before.file_type().is_symlink()
-        || before.len() > 64 * 1024 * 1024 {
+    let before = fs::symlink_metadata(&file).map_err(|_| "IDE053_STAGED_PACKAGE_FILE_MISSING")?;
+    if !before.is_file() || before.file_type().is_symlink() || before.len() > 64 * 1024 * 1024 {
         return Err("IDE053_STAGED_PACKAGE_FILE_UNTRUSTED".into());
     }
     #[cfg(windows)]
@@ -85,9 +94,11 @@ fn sha256_private_staged_file(root: &Path, name: &'static str)
         use std::os::windows::fs::OpenOptionsExt;
         options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT.
     }
-    let mut input = options.open(&file)
+    let mut input = options
+        .open(&file)
         .map_err(|_| "IDE053_STAGED_PACKAGE_FILE_UNAVAILABLE")?;
-    let opened = input.metadata()
+    let opened = input
+        .metadata()
         .map_err(|_| "IDE053_STAGED_PACKAGE_FILE_UNAVAILABLE")?;
     if !opened.is_file() || opened.len() != before.len() {
         return Err("IDE053_STAGED_PACKAGE_CHANGED_BEFORE_READ".into());
@@ -96,20 +107,26 @@ fn sha256_private_staged_file(root: &Path, name: &'static str)
     let mut chunk = [0_u8; 64 * 1024];
     let mut count = 0u64;
     loop {
-        let read = input.read(&mut chunk)
+        let read = input
+            .read(&mut chunk)
             .map_err(|_| "IDE053_STAGED_PACKAGE_READ_FAILED")?;
-        if read == 0 { break; }
+        if read == 0 {
+            break;
+        }
         count = count.saturating_add(read as u64);
         if count > before.len() || count > 64 * 1024 * 1024 {
             return Err("IDE053_STAGED_PACKAGE_CHANGED_DURING_READ".into());
         }
         sha.update(&chunk[..read]);
     }
-    let after = fs::symlink_metadata(&file)
-        .map_err(|_| "IDE053_STAGED_PACKAGE_RECHECK_UNAVAILABLE")?;
-    if count != before.len() || after.len() != before.len()
-        || !after.is_file() || after.file_type().is_symlink()
-        || before.modified().ok() != after.modified().ok() {
+    let after =
+        fs::symlink_metadata(&file).map_err(|_| "IDE053_STAGED_PACKAGE_RECHECK_UNAVAILABLE")?;
+    if count != before.len()
+        || after.len() != before.len()
+        || !after.is_file()
+        || after.file_type().is_symlink()
+        || before.modified().ok() != after.modified().ok()
+    {
         return Err("IDE053_STAGED_PACKAGE_CHANGED_DURING_READ".into());
     }
     Ok(format!("{:x}", sha.finalize()))
@@ -122,29 +139,39 @@ struct ReviewedPackageSync {
 }
 
 #[cfg(feature = "native-package-uv")]
-fn native_package_consent(
-    app: &AppHandle, message: String, requested: &AtomicBool,
-) -> bool {
-    use std::{sync::mpsc::{sync_channel, RecvTimeoutError}, time::{Duration, Instant}};
+fn native_package_consent(app: &AppHandle, message: String, requested: &AtomicBool) -> bool {
+    use std::{
+        sync::mpsc::{sync_channel, RecvTimeoutError},
+        time::{Duration, Instant},
+    };
     let (send, receive) = sync_channel(1);
-    if requested.load(Ordering::SeqCst) { return false; }
-    app.dialog().message(message)
+    if requested.load(Ordering::SeqCst) {
+        return false;
+    }
+    app.dialog()
+        .message(message)
         .title("Lu IDE · approve one protected offline uv sync")
         .buttons(MessageDialogButtons::OkCancelCustom(
-            "Approve this one sealed uv sync".into(), "Decline".into(),
+            "Approve this one sealed uv sync".into(),
+            "Decline".into(),
         ))
-        .show(move |confirmed| { let _ = send.try_send(confirmed); });
+        .show(move |confirmed| {
+            let _ = send.try_send(confirmed);
+        });
     // The OS dialog is not an authority while the host is cancelled or timed
     // out. A late click only talks to a disconnected private channel.
     let deadline = Instant::now() + Duration::from_secs(45);
     loop {
-        if requested.load(Ordering::SeqCst) { return false; }
+        if requested.load(Ordering::SeqCst) {
+            return false;
+        }
         let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() { return false; }
+        if remaining.is_zero() {
+            return false;
+        }
         match receive.recv_timeout(remaining.min(Duration::from_millis(100))) {
-            Ok(confirmed) =>
-                return confirmed && !requested.load(Ordering::SeqCst),
-            Err(RecvTimeoutError::Timeout) => {},
+            Ok(confirmed) => return confirmed && !requested.load(Ordering::SeqCst),
+            Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return false,
         }
     }
@@ -153,23 +180,29 @@ fn native_package_consent(
 #[cfg(feature = "native-multilang")]
 fn multilang_release_pin(recipe_id: &str) -> Option<&'static str> {
     #[cfg(windows)]
-    { match recipe_id {
-        "python_pytest" => option_env!("LU_IDE_DEV03_WINDOWS_PYTHON_SHA256"),
-        "js_tests" => option_env!("LU_IDE_DEV03_WINDOWS_NODE_SHA256"),
-        "cpp_cmake_build" => option_env!("LU_IDE_DEV03_WINDOWS_CMAKE_SHA256"),
-        "uv_sync_offline" if cfg!(feature = "native-package-uv") =>
-            option_env!("LU_IDE05_WINDOWS_UV_SHA256"),
-        _ => None,
-    }}
+    {
+        match recipe_id {
+            "python_pytest" => option_env!("LU_IDE_DEV03_WINDOWS_PYTHON_SHA256"),
+            "js_tests" => option_env!("LU_IDE_DEV03_WINDOWS_NODE_SHA256"),
+            "cpp_cmake_build" => option_env!("LU_IDE_DEV03_WINDOWS_CMAKE_SHA256"),
+            "uv_sync_offline" if cfg!(feature = "native-package-uv") => {
+                option_env!("LU_IDE05_WINDOWS_UV_SHA256")
+            }
+            _ => None,
+        }
+    }
     #[cfg(target_os = "linux")]
-    { match recipe_id {
-        "python_pytest" => option_env!("LU_IDE_DEV03_LINUX_PYTHON_SHA256"),
-        "js_tests" => option_env!("LU_IDE_DEV03_LINUX_NODE_SHA256"),
-        "cpp_cmake_build" => option_env!("LU_IDE_DEV03_LINUX_CMAKE_SHA256"),
-        "uv_sync_offline" if cfg!(feature = "native-package-uv") =>
-            option_env!("LU_IDE05_LINUX_UV_SHA256"),
-        _ => None,
-    }}
+    {
+        match recipe_id {
+            "python_pytest" => option_env!("LU_IDE_DEV03_LINUX_PYTHON_SHA256"),
+            "js_tests" => option_env!("LU_IDE_DEV03_LINUX_NODE_SHA256"),
+            "cpp_cmake_build" => option_env!("LU_IDE_DEV03_LINUX_CMAKE_SHA256"),
+            "uv_sync_offline" if cfg!(feature = "native-package-uv") => {
+                option_env!("LU_IDE05_LINUX_UV_SHA256")
+            }
+            _ => None,
+        }
+    }
 }
 
 // The supervisor serializes JobPhase with snake_case. Debug-lowercasing
@@ -215,7 +248,9 @@ fn digest_file(path: &Path) -> Result<String, String> {
     let mut sha = Sha256::new();
     let mut data = [0u8; 64 * 1024];
     loop {
-        let size = file.read(&mut data).map_err(|_| "BUILD_SERVICE_UNREADABLE")?;
+        let size = file
+            .read(&mut data)
+            .map_err(|_| "BUILD_SERVICE_UNREADABLE")?;
         if size == 0 {
             break;
         }
@@ -234,14 +269,19 @@ fn installation(app: &AppHandle) -> Result<Installation, String> {
     let expected = approved_pin(PINNED_CARGO)?;
     #[cfg(windows)]
     {
-        let resource = app.path().resource_dir().map_err(|_| "BUILD_RESOURCE_ROOT_MISSING")?;
+        let resource = app
+            .path()
+            .resource_dir()
+            .map_err(|_| "BUILD_RESOURCE_ROOT_MISSING")?;
         let toolchain = resource.join("build-tools").join("windows-rust-offline");
         let sha = trusted_offline_toolchain_digest(&toolchain)
             .map_err(|_| "BUILD_TOOLCHAIN_UNTRUSTED")?;
         if sha != expected {
             return Err("BUILD_TOOLCHAIN_PIN_MISMATCH".into());
         }
-        let service = resource.join("recovery").join("windows_recovery_service.exe");
+        let service = resource
+            .join("recovery")
+            .join("windows_recovery_service.exe");
         let service_sha = approved_pin(PINNED_SERVICE)?;
         if digest_file(&service)? != service_sha {
             return Err("BUILD_SERVICE_PIN_MISMATCH".into());
@@ -280,43 +320,57 @@ pub struct MultilangProfileReadiness {
 }
 
 #[cfg(feature = "native-multilang")]
-fn installation_multilang(app: &AppHandle, recipe_id: &str)
-    -> Result<Installation, String> {
+fn installation_multilang(app: &AppHandle, recipe_id: &str) -> Result<Installation, String> {
     if !MULTILANG_RECIPES.contains(&recipe_id) {
         return Err("DEV03_RECIPE_DENIED".into());
     }
-    let expected=approved_pin(multilang_release_pin(recipe_id))?;
+    let expected = approved_pin(multilang_release_pin(recipe_id))?;
     #[cfg(windows)]
     {
-        let resource=app.path().resource_dir().map_err(|_|"DEV03_RESOURCE_ROOT_MISSING")?;
-        let toolchain=resource.join("build-tools").join("windows-runtimes").join(recipe_id);
-        let attested=lu_ide_execution_supervisor::runtime_bundles::verify_runtime_bundle(
-            recipe_id, &toolchain,expected)
-            .map_err(|_|"DEV03_RUNTIME_UNTRUSTED")?;
-        let service=resource.join("recovery").join("windows_recovery_service.exe");
-        let service_sha=approved_pin(PINNED_SERVICE)?;
+        let resource = app
+            .path()
+            .resource_dir()
+            .map_err(|_| "DEV03_RESOURCE_ROOT_MISSING")?;
+        let toolchain = resource
+            .join("build-tools")
+            .join("windows-runtimes")
+            .join(recipe_id);
+        let attested = lu_ide_execution_supervisor::runtime_bundles::verify_runtime_bundle(
+            recipe_id, &toolchain, expected,
+        )
+        .map_err(|_| "DEV03_RUNTIME_UNTRUSTED")?;
+        let service = resource
+            .join("recovery")
+            .join("windows_recovery_service.exe");
+        let service_sha = approved_pin(PINNED_SERVICE)?;
         if digest_file(&service)? != service_sha {
             return Err("DEV03_RECOVERY_SERVICE_PIN_MISMATCH".into());
         }
-        let broker=TrustedBroker {
-            executable:service,
-            expected_sha256:service_sha.to_owned(),
-            private_witness_directory:resource.join("recovery"),
+        let broker = TrustedBroker {
+            executable: service,
+            expected_sha256: service_sha.to_owned(),
+            private_witness_directory: resource.join("recovery"),
         };
         Ok(Installation {
-            toolchain_sha256:attested.tree_sha256,toolchain,broker,
+            toolchain_sha256: attested.tree_sha256,
+            toolchain,
+            broker,
         })
     }
     #[cfg(target_os = "linux")]
     {
-        let _=app;
-        let actual=lu_ide_execution_supervisor::linux_worker
-            ::installed_multilang_toolchain_digest(recipe_id)
-            .map_err(|_|"DEV03_RUNTIME_UNTRUSTED")?;
-        if actual!=expected {
+        let _ = app;
+        let actual =
+            lu_ide_execution_supervisor::linux_worker::installed_multilang_toolchain_digest(
+                recipe_id,
+            )
+            .map_err(|_| "DEV03_RUNTIME_UNTRUSTED")?;
+        if actual != expected {
             return Err("DEV03_RUNTIME_PIN_MISMATCH".into());
         }
-        Ok(Installation {toolchain_sha256:actual})
+        Ok(Installation {
+            toolchain_sha256: actual,
+        })
     }
 }
 
@@ -413,7 +467,10 @@ pub struct NativeBuildRuntime {
 }
 impl NativeBuildRuntime {
     pub fn new(app: &AppHandle) -> Result<Self, String> {
-        let data = app.path().app_data_dir().map_err(|_| "BUILD_PROFILE_MISSING")?;
+        let data = app
+            .path()
+            .app_data_dir()
+            .map_err(|_| "BUILD_PROFILE_MISSING")?;
         fs::create_dir_all(&data).map_err(|_| "BUILD_PROFILE_UNAVAILABLE")?;
         let staged = data.join("build-snapshots");
         let outputs = data.join("build-outputs");
@@ -421,16 +478,17 @@ impl NativeBuildRuntime {
         fs::create_dir_all(&staged).map_err(|_| "BUILD_PROFILE_UNAVAILABLE")?;
         fs::create_dir_all(&outputs).map_err(|_| "BUILD_PROFILE_UNAVAILABLE")?;
         fs::create_dir_all(&debug_targets).map_err(|_| "BUILD_PROFILE_UNAVAILABLE")?;
-        #[cfg(unix)] {
+        #[cfg(unix)]
+        {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&debug_targets,fs::Permissions::from_mode(0o700))
-                .map_err(|_|"BUILD_PRIVATE_DEBUG_STORAGE_DENIED")?;
+            fs::set_permissions(&debug_targets, fs::Permissions::from_mode(0o700))
+                .map_err(|_| "BUILD_PRIVATE_DEBUG_STORAGE_DENIED")?;
         }
         let supervisor = Supervisor::open(data.join("build-job-receipts.jsonl"))
             .map_err(|e| e.code().to_owned())?;
         #[cfg(feature = "native-package-uv")]
-        let package_lifecycle = PackageLifecycleLedger::open(data.clone())
-            .map_err(|e| e.code().to_owned())?;
+        let package_lifecycle =
+            PackageLifecycleLedger::open(data.clone()).map_err(|e| e.code().to_owned())?;
         Ok(Self {
             supervisor: Arc::new(supervisor),
             staged,
@@ -448,7 +506,8 @@ impl NativeBuildRuntime {
     }
     pub fn status(&self, app: &AppHandle, project_id: &str) -> Result<BuildStatus, String> {
         let availability = installation(app).map(|_| ());
-        let multilang_ready:Vec<MultilangProfileReadiness>=MULTILANG_RECIPES.iter()
+        let multilang_ready: Vec<MultilangProfileReadiness> = MULTILANG_RECIPES
+            .iter()
             .map(|&profile_id| {
                 #[cfg(feature = "native-multilang")]
                 let result = if profile_id == "uv_sync_offline" && cfg!(windows) {
@@ -457,32 +516,45 @@ impl NativeBuildRuntime {
                     // package jobs until exact source ACL OS tests pass.
                     Err("IDE053_WINDOWS_WORKSPACE_ACL_NOT_ACCEPTED".into())
                 } else {
-                    installation_multilang(app,profile_id).map(|_|())
+                    installation_multilang(app, profile_id).map(|_| ())
                 };
                 #[cfg(not(feature = "native-multilang"))]
-                let result:Result<(),String>=Err("DEV03_OPTIN_FEATURE_DISABLED".into());
+                let result: Result<(), String> = Err("DEV03_OPTIN_FEATURE_DISABLED".into());
                 MultilangProfileReadiness {
-                    profile_id,ready:result.is_ok(),
-                    code:if profile_id == "uv_sync_offline" && cfg!(windows) {
+                    profile_id,
+                    ready: result.is_ok(),
+                    code: if profile_id == "uv_sync_offline" && cfg!(windows) {
                         "IDE053_WINDOWS_WORKSPACE_ACL_NOT_ACCEPTED"
                     } else if result.is_ok() {
                         "DEV03_RUNTIME_PIN_VERIFIED_NATIVE_ADMISSION_PER_JOB"
-                    } else { "DEV03_RUNTIME_NOT_READY" },
+                    } else {
+                        "DEV03_RUNTIME_NOT_READY"
+                    },
                 }
-            }).collect();
+            })
+            .collect();
         let locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
-        let current = locked.current.as_ref().filter(|job| job.project_id == project_id)
+        let current = locked
+            .current
+            .as_ref()
+            .filter(|job| job.project_id == project_id)
             .map(|job| ActiveView {
                 project_id: job.project_id.clone(),
                 job_id: job.job_id.clone(),
                 recipe_id: job.recipe_id.clone(),
                 cancellation_requested: job.requested.load(Ordering::SeqCst),
             });
-        let last_output_job_id = locked.last_output.as_ref()
+        let last_output_job_id = locked
+            .last_output
+            .as_ref()
             .filter(|(project, _, _)| project == project_id)
             .map(|(_, job_id, _)| job_id.clone());
-        let recent = locked.recent.values()
-            .filter(|job| job.project_id == project_id).cloned().collect();
+        let recent = locked
+            .recent
+            .values()
+            .filter(|job| job.project_id == project_id)
+            .cloned()
+            .collect();
         drop(locked);
         let durable = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
         // Serialize only exact project-scoped immutable journal identifiers.
@@ -490,7 +562,8 @@ impl NativeBuildRuntime {
         // code after restart: the original runtime receipt is authoritative.
         // Never truncate quarantine state. Every blocked job is still visible
         // and eligible for exact native OS-only reconciliation.
-        let quarantined: Vec<RecoveryView> = durable.iter()
+        let quarantined: Vec<RecoveryView> = durable
+            .iter()
             .filter(|job| job.project_id == project_id && job.requires_reconciliation)
             .map(|job| RecoveryView {
                 project_id: job.project_id.clone(),
@@ -502,7 +575,9 @@ impl NativeBuildRuntime {
             .collect();
         // The UI displays a bounded most-recent subset, not all secrets or
         // unbounded durable history. The security quarantine above is full.
-        let mut journal: Vec<RecoveryView> = durable.into_iter().rev()
+        let mut journal: Vec<RecoveryView> = durable
+            .into_iter()
+            .rev()
             .filter(|job| job.project_id == project_id)
             .take(32)
             .map(|job| RecoveryView {
@@ -511,32 +586,43 @@ impl NativeBuildRuntime {
                 plan_sha256: job.plan_sha256,
                 phase: native_phase_label(job.phase).to_owned(),
                 requires_reconciliation: job.requires_reconciliation,
-            }).collect();
+            })
+            .collect();
         journal.reverse();
         #[cfg(feature = "native-package-uv")]
-        let package_audits:Vec<PackageLifecycleStatus> = self.package_lifecycle.statuses()
+        let package_audits: Vec<PackageLifecycleStatus> = self
+            .package_lifecycle
+            .statuses()
             .map_err(|e| e.code().to_owned())?
-            .into_iter().filter(|row| row.project_id == project_id).collect();
+            .into_iter()
+            .filter(|row| row.project_id == project_id)
+            .collect();
         #[cfg(feature = "native-package-uv")]
         for row in &package_audits {
             // Never project a separate audit log as native OS success by
             // itself. Join to the independently replayed D3 supervisor
             // journal using exact project, job, plan and terminal receipt.
-            let original=self.supervisor.inspect()
+            let original = self
+                .supervisor
+                .inspect()
                 .map_err(|e| e.code().to_owned())?
-                .into_iter().find(|job|job.job_id==row.job_id)
+                .into_iter()
+                .find(|job| job.job_id == row.job_id)
                 .ok_or("IDE054_ORIGINAL_D3_JOB_MISSING")?;
-            if original.project_id!=row.project_id ||
-                original.plan_sha256!=row.plan_sha256 {
+            if original.project_id != row.project_id || original.plan_sha256 != row.plan_sha256 {
                 return Err("IDE054_AUDIT_JOURNAL_SCOPE_MISMATCH".into());
             }
-            let history=self.supervisor.receipt_history(&row.job_id)
+            let history = self
+                .supervisor
+                .receipt_history(&row.job_id)
                 .map_err(|e| e.code().to_owned())?;
-            if row.state!="original_package_job_requires_native_reconciliation"
-                && !history.iter().any(|entry|
-                    entry.entry_hash == row.terminal_receipt_sha256 &&
-                    entry.body.project_id == row.project_id &&
-                    entry.body.plan_sha256 == row.plan_sha256) {
+            if row.state != "original_package_job_requires_native_reconciliation"
+                && !history.iter().any(|entry| {
+                    entry.entry_hash == row.terminal_receipt_sha256
+                        && entry.body.project_id == row.project_id
+                        && entry.body.plan_sha256 == row.plan_sha256
+                })
+            {
                 return Err("IDE054_AUDIT_TERMINAL_RECEIPT_UNVERIFIED".into());
             }
         }
@@ -562,14 +648,23 @@ impl NativeBuildRuntime {
     /// A user-writable WO9 graph file can never self-certify a successful
     /// native step after host restart. This does not launch or re-run code.
     pub fn verify_replayed_completed_job(
-        &self, project_id: &str, job_id: &str, plan_sha: &str,
+        &self,
+        project_id: &str,
+        job_id: &str,
+        plan_sha: &str,
     ) -> Result<(), String> {
-        if job_id.is_empty() || plan_sha.len() != 64
-            || !plan_sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if job_id.is_empty()
+            || plan_sha.len() != 64
+            || !plan_sha.bytes().all(|b| b.is_ascii_hexdigit())
+        {
             return Err("WO9_NATIVE_REPLAY_IDENTITY_INVALID".into());
         }
-        let job = self.supervisor.inspect().map_err(|e| e.code().to_owned())?
-            .into_iter().find(|job| job.job_id == job_id)
+        let job = self
+            .supervisor
+            .inspect()
+            .map_err(|e| e.code().to_owned())?
+            .into_iter()
+            .find(|job| job.job_id == job_id)
             .ok_or("WO9_NATIVE_REPLAY_JOB_ABSENT")?;
         if job.project_id != project_id || job.plan_sha256 != plan_sha {
             return Err("WO9_NATIVE_REPLAY_PROJECT_OR_PLAN_MISMATCH".into());
@@ -583,20 +678,32 @@ impl NativeBuildRuntime {
     /// No WebView path or artifact selector. This returns only the newest
     /// same-process, complete, exact-job sealed native Cargo output.
     pub fn native_project_debug_target(
-        &self,project_id:&str,
-    )->Result<Arc<SealedProjectDebugTarget>,String>{
-        let target={
-            let locked=self.store.lock().map_err(|_|"DEV044_BUILD_STATE_UNAVAILABLE")?;
-            if locked.current.is_some(){return Err("DEV044_BUILD_IN_PROGRESS".into());}
-            locked.debug_target.as_ref()
-                .filter(|x|x.lineage.project_id==project_id)
-                .cloned().ok_or("DEV044_NO_SEALED_BUILD_TARGET")?
+        &self,
+        project_id: &str,
+    ) -> Result<Arc<SealedProjectDebugTarget>, String> {
+        let target = {
+            let locked = self
+                .store
+                .lock()
+                .map_err(|_| "DEV044_BUILD_STATE_UNAVAILABLE")?;
+            if locked.current.is_some() {
+                return Err("DEV044_BUILD_IN_PROGRESS".into());
+            }
+            locked
+                .debug_target
+                .as_ref()
+                .filter(|x| x.lineage.project_id == project_id)
+                .cloned()
+                .ok_or("DEV044_NO_SEALED_BUILD_TARGET")?
         };
         self.verify_replayed_completed_job(
-            project_id,&target.lineage.build_job_id,
-            &target.lineage.build_plan_sha256
+            project_id,
+            &target.lineage.build_job_id,
+            &target.lineage.build_plan_sha256,
         )?;
-        target.verify().map_err(|_|"DEV044_PRIVATE_TARGET_CHANGED".to_owned())?;
+        target
+            .verify()
+            .map_err(|_| "DEV044_PRIVATE_TARGET_CHANGED".to_owned())?;
         Ok(target)
     }
     pub fn cancel(&self, project_id: &str, job_id: Option<&str>) -> Result<&'static str, String> {
@@ -622,13 +729,18 @@ impl NativeBuildRuntime {
     }
     /// Only current native job or most recently finished in this process.
     /// No disk path is accepted, no journal is upgraded to log authority.
-    pub fn read_output(&self, project_id: &str, job_id: &str, after: u64)
-        -> Result<OutputPage, String> {
-        if after > 1_000_000 { return Err("BUILD_OUTPUT_CURSOR_INVALID".into()); }
+    pub fn read_output(
+        &self,
+        project_id: &str,
+        job_id: &str,
+        after: u64,
+    ) -> Result<OutputPage, String> {
+        if after > 1_000_000 {
+            return Err("BUILD_OUTPUT_CURSOR_INVALID".into());
+        }
         let state = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
         if let Some(current) = state.current.as_ref() {
-            if current.project_id == project_id &&
-               current.job_id.as_deref() == Some(job_id) {
+            if current.project_id == project_id && current.job_id.as_deref() == Some(job_id) {
                 return Ok(current.output.page(after));
             }
         }
@@ -649,7 +761,8 @@ impl NativeBuildRuntime {
         if !VALID_RECIPES.contains(&recipe_id)
             && !(cfg!(feature = "native-multilang")
                 && MULTILANG_RECIPES.contains(&recipe_id)
-                && recipe_id != "uv_sync_offline") {
+                && recipe_id != "uv_sync_offline")
+        {
             return Err("BUILD_RECIPE_DENIED".into());
         }
         self.run_with_review(app, registry, project_id, recipe_id, None)
@@ -659,21 +772,33 @@ impl NativeBuildRuntime {
     /// uv recipe. A generic build request may NEVER inherit package writes.
     #[cfg(feature = "native-package-uv")]
     pub fn run_reviewed_uv_sync(
-        &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
-        project_id: &str, expected_preview_sha256: &str,
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+        expected_preview_sha256: &str,
         expected_evidence_fingerprint: &str,
     ) -> Result<BuildRunView, String> {
         use lu_ide_workspace::package_preview::{PackageOperation, PackagePreviewRequest};
         let request = PackagePreviewRequest {
-            manager_id: "uv".into(), operation: PackageOperation::Sync,
-            package_name: None, exact_version: None,
+            manager_id: "uv".into(),
+            operation: PackageOperation::Sync,
+            package_name: None,
+            exact_version: None,
         };
-        registry.revalidate_package_operation(
-            project_id, request.clone(),
-            expected_preview_sha256, expected_evidence_fingerprint,
-        ).map_err(str::to_owned)?;
+        registry
+            .revalidate_package_operation(
+                project_id,
+                request.clone(),
+                expected_preview_sha256,
+                expected_evidence_fingerprint,
+            )
+            .map_err(str::to_owned)?;
         self.run_with_review(
-            app, registry, project_id, "uv_sync_offline",
+            app,
+            registry,
+            project_id,
+            "uv_sync_offline",
             Some(ReviewedPackageSync {
                 request,
                 preview_sha256: expected_preview_sha256.to_owned(),
@@ -683,13 +808,18 @@ impl NativeBuildRuntime {
     }
 
     fn run_with_review(
-        &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
-        project_id: &str, recipe_id: &str,
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+        recipe_id: &str,
         reviewed: Option<ReviewedPackageSync>,
     ) -> Result<BuildRunView, String> {
         if recipe_id == "uv_sync_offline" {
             #[cfg(feature = "native-package-uv")]
-            if reviewed.is_none() { return Err("IDE053_PACKAGE_REVIEW_REQUIRED".into()); }
+            if reviewed.is_none() {
+                return Err("IDE053_PACKAGE_REVIEW_REQUIRED".into());
+            }
             #[cfg(not(feature = "native-package-uv"))]
             return Err("IDE053_PACKAGE_WORKER_NOT_COMPILED".into());
         }
@@ -714,17 +844,29 @@ impl NativeBuildRuntime {
         {
             // Never allow a superseded project's build to be used by a
             // fresh debugger request, even if the new build is denied.
-            let mut store=self.store.lock().map_err(|_|"BUILD_HOST_UNAVAILABLE")?;
-            store.debug_target=None;
+            let mut store = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
+            store.debug_target = None;
         }
         let result = self.run_inner(
-            app, registry, project_id, recipe_id, &cancel, &requested, &output,
+            app,
+            registry,
+            project_id,
+            recipe_id,
+            &cancel,
+            &requested,
+            &output,
             reviewed.as_ref(),
         );
         let mut locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
-        let finished_output = locked.current.as_ref().and_then(|active|
-            active.job_id.as_ref().map(|job_id|
-                (active.project_id.clone(), job_id.clone(), Arc::clone(&active.output))));
+        let finished_output = locked.current.as_ref().and_then(|active| {
+            active.job_id.as_ref().map(|job_id| {
+                (
+                    active.project_id.clone(),
+                    job_id.clone(),
+                    Arc::clone(&active.output),
+                )
+            })
+        });
         locked.last_output = finished_output;
         locked.current = None;
         if let Ok(ref view) = result {
@@ -750,11 +892,14 @@ impl NativeBuildRuntime {
     ) -> Result<BuildRunView, String> {
         #[cfg(feature = "native-multilang")]
         let installed = if MULTILANG_RECIPES.contains(&recipe_id) {
-            installation_multilang(app,recipe_id)?
-        } else { installation(app)? };
+            installation_multilang(app, recipe_id)?
+        } else {
+            installation(app)?
+        };
         #[cfg(not(feature = "native-multilang"))]
         let installed = installation(app)?;
-        let source_root = registry.trusted_native_worker_root(project_id)
+        let source_root = registry
+            .trusted_native_worker_root(project_id)
             .map_err(|_| "BUILD_PROJECT_NOT_ACTIVE")?;
         let inspection = registry.inspect_git_worktree(project_id);
         if inspection.state != "local_repository_inspected"
@@ -773,37 +918,45 @@ impl NativeBuildRuntime {
         #[cfg(feature = "native-package-uv")]
         let native_package_review = if recipe_id == "uv_sync_offline" {
             let reviewed = reviewed.ok_or("IDE053_PACKAGE_REVIEW_REQUIRED")?;
-            let current = registry.preview_package_operation(
-                project_id, reviewed.request.clone(),
-            ).map_err(str::to_owned)?;
+            let current = registry
+                .preview_package_operation(project_id, reviewed.request.clone())
+                .map_err(str::to_owned)?;
             if current.preview_sha256 != reviewed.preview_sha256
-                || current.evidence_fingerprint != reviewed.evidence_fingerprint {
+                || current.evidence_fingerprint != reviewed.evidence_fingerprint
+            {
                 return Err("IDE053_SOURCE_CHANGED_BEFORE_FREEZE".into());
             }
             Some(current)
-        } else { None };
+        } else {
+            None
+        };
         let input = publish_input(&source_root, &self.staged, recipe_id)
             .map_err(|e| e.code().to_owned())?;
         verify_input(&input).map_err(|e| e.code().to_owned())?;
         #[cfg(feature = "native-package-uv")]
         if let Some(review) = native_package_review.as_ref() {
-            let py = review.evidence.iter().find(|e|
-                e.relative_path == "pyproject.toml"
-            ).and_then(|e| e.sha256.as_deref())
+            let py = review
+                .evidence
+                .iter()
+                .find(|e| e.relative_path == "pyproject.toml")
+                .and_then(|e| e.sha256.as_deref())
                 .ok_or("IDE053_REVIEWED_MANIFEST_SHA_MISSING")?;
-            let lock = review.evidence.iter().find(|e|
-                e.relative_path == "uv.lock"
-            ).and_then(|e| e.sha256.as_deref())
+            let lock = review
+                .evidence
+                .iter()
+                .find(|e| e.relative_path == "uv.lock")
+                .and_then(|e| e.sha256.as_deref())
                 .ok_or("IDE053_REVIEWED_LOCK_SHA_MISSING")?;
             if input.seal.manifest_sha256 != py
-                || sha256_private_staged_file(&input.root, "uv.lock")? != lock {
+                || sha256_private_staged_file(&input.root, "uv.lock")? != lock
+            {
                 return Err("IDE053_FROZEN_SOURCE_DIFFERS_FROM_APPROVED_REVIEW".into());
             }
             // IDE-05.4: preflight all frozen uv.lock package entries BEFORE
             // worker admission. A postrun provenance audit is not enough
             // if editable/Git/path sources can run their build backend.
-            verify_offline_registry_lock(&input.root,lock)
-                .map_err(|_|"IDE054_FROZEN_LOCK_SOURCE_POLICY_DENIED")?;
+            verify_offline_registry_lock(&input.root, lock)
+                .map_err(|_| "IDE054_FROZEN_LOCK_SOURCE_POLICY_DENIED")?;
         }
         let plan = JobPlan {
             project_id: project_id.to_owned(),
@@ -815,30 +968,42 @@ impl NativeBuildRuntime {
             debug_target_binding_sha256: None,
             runtime_limit_ms: if recipe_id == "uv_sync_offline" {
                 3 * 60_000
-            } else { MAX_RUNTIME_MS },
+            } else {
+                MAX_RUNTIME_MS
+            },
             memory_limit_bytes: 512 * 1024 * 1024,
             process_limit: 8,
             log_limit_bytes: 128 * 1024,
             effect_class: {
                 #[cfg(feature = "native-package-uv")]
                 if recipe_id == "uv_sync_offline" {
-                    format!("package_uv_sync_offline:{}",
-                        reviewed.ok_or("IDE053_PACKAGE_REVIEW_REQUIRED")?.preview_sha256)
-                } else { "test_build_isolated".into() }
+                    format!(
+                        "package_uv_sync_offline:{}",
+                        reviewed
+                            .ok_or("IDE053_PACKAGE_REVIEW_REQUIRED")?
+                            .preview_sha256
+                    )
+                } else {
+                    "test_build_isolated".into()
+                }
                 #[cfg(not(feature = "native-package-uv"))]
-                { "test_build_isolated".into() }
+                {
+                    "test_build_isolated".into()
+                }
             },
         };
-        let prepared = self.supervisor.prepare(plan.clone())
+        let prepared = self
+            .supervisor
+            .prepare(plan.clone())
             .map_err(|e| e.code().to_owned())?;
         #[cfg(feature = "native-package-uv")]
         if recipe_id == "uv_sync_offline" {
             // Persist this identity before possible human approval, OS job
             // creation or worker launch. Restart shows unresolved prep if
             // postrun audit was interrupted, never auto-retry.
-            self.package_lifecycle.record_prepared(
-                project_id, &prepared.job_id, &prepared.plan_sha256,
-            ).map_err(|e|e.code().to_owned())?;
+            self.package_lifecycle
+                .record_prepared(project_id, &prepared.job_id, &prepared.plan_sha256)
+                .map_err(|e| e.code().to_owned())?;
         }
         {
             let mut state = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
@@ -851,7 +1016,8 @@ impl NativeBuildRuntime {
         if requested.load(Ordering::SeqCst) {
             #[cfg(feature = "native-package-uv")]
             if recipe_id == "uv_sync_offline" {
-                self.supervisor.cancel_before_start(&prepared.job_id)
+                self.supervisor
+                    .cancel_before_start(&prepared.job_id)
                     .map_err(|e| e.code().to_owned())?;
             }
             return Err("BUILD_CANCELLED_BEFORE_AUTHORIZATION".into());
@@ -865,7 +1031,8 @@ impl NativeBuildRuntime {
             let choice = if recipe_id == "uv_sync_offline" {
                 let reviewed = reviewed.ok_or(SupervisorError::InvalidApproval)?;
                 native_package_consent(
-                    app, format!(
+                    app,
+                    format!(
                         "Approve one OFFLINE LOCKED uv Sync in an OS-protected worker?\n\n\
                         Project: {project_id}\nExact source HEAD: {head}\n\
                         Manifest + lock evidence: {}\nReviewed operation: {}\n\
@@ -875,9 +1042,12 @@ impl NativeBuildRuntime {
                         network capabilities; builds, editable workspace installs, and \
                         arbitrary package manager arguments are disabled.\n\
                         Dependency output will be independently audited. Deny if source changed.",
-                        reviewed.evidence_fingerprint, reviewed.preview_sha256,
-                        plan.input_snapshot_sha256, plan.toolchain_sha256,
-                    ), requested,
+                        reviewed.evidence_fingerprint,
+                        reviewed.preview_sha256,
+                        plan.input_snapshot_sha256,
+                        plan.toolchain_sha256,
+                    ),
+                    requested,
                 )
             } else {
                 app.dialog()
@@ -892,12 +1062,14 @@ impl NativeBuildRuntime {
                     ))
                     .title("Allow one protected build/test job")
                     .buttons(MessageDialogButtons::OkCancelCustom(
-                        "Run this exact job".into(), "Cancel".into(),
+                        "Run this exact job".into(),
+                        "Cancel".into(),
                     ))
                     .blocking_show()
             };
             #[cfg(not(feature = "native-package-uv"))]
-            let choice = app.dialog()
+            let choice = app
+                .dialog()
                 .message(format!(
                     "Run an exact restricted offline project build/test job?\n\n\
                     Project: {project_id}\nRecipe: {recipe_id}\nSource HEAD: {head}\n\
@@ -909,17 +1081,21 @@ impl NativeBuildRuntime {
                 ))
                 .title("Allow one protected build/test job")
                 .buttons(MessageDialogButtons::OkCancelCustom(
-                    "Run this exact job".into(), "Cancel".into(),
+                    "Run this exact job".into(),
+                    "Cancel".into(),
                 ))
                 .blocking_show();
             if !choice || requested.load(Ordering::SeqCst) {
                 return Err(SupervisorError::InvalidApproval);
             }
-            let current_root = registry.trusted_native_worker_root(project_id)
+            let current_root = registry
+                .trusted_native_worker_root(project_id)
                 .map_err(|_| SupervisorError::WrongProjectOrSource)?;
             let fresh = registry.inspect_git_worktree(project_id);
-            if current_root != source_root || fresh.local_head.as_deref() != Some(head.as_str())
-                || fresh.worktree != "clean" || fresh.state != "local_repository_inspected"
+            if current_root != source_root
+                || fresh.local_head.as_deref() != Some(head.as_str())
+                || fresh.worktree != "clean"
+                || fresh.state != "local_repository_inspected"
                 || fresh.truncated
             {
                 return Err(SupervisorError::WrongProjectOrSource);
@@ -929,31 +1105,51 @@ impl NativeBuildRuntime {
             #[cfg(feature = "native-package-uv")]
             if recipe_id == "uv_sync_offline" {
                 let reviewed = reviewed.ok_or(SupervisorError::InvalidApproval)?;
-                registry.revalidate_package_operation(
-                    project_id, reviewed.request.clone(),
-                    &reviewed.preview_sha256, &reviewed.evidence_fingerprint,
-                ).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+                registry
+                    .revalidate_package_operation(
+                        project_id,
+                        reviewed.request.clone(),
+                        &reviewed.preview_sha256,
+                        &reviewed.evidence_fingerprint,
+                    )
+                    .map_err(|_| SupervisorError::WrongProjectOrSource)?;
             }
             if requested.load(Ordering::SeqCst) {
                 return Err(SupervisorError::InvalidApproval);
             }
             self.supervisor.record_human_approval(
-                &prepared.job_id, &prepared.plan_sha256, &head, true,
+                &prepared.job_id,
+                &prepared.plan_sha256,
+                &head,
+                true,
             )?;
             Ok(())
         };
         #[cfg(windows)]
         let native_attempt = execute_windows_worker_after_staging_approval_with_output(
-            &self.supervisor, &prepared.job_id, &plan, &head, &input,
-            &installed.toolchain, &self.outputs, &installed.broker, cancel, approve,
+            &self.supervisor,
+            &prepared.job_id,
+            &plan,
+            &head,
+            &input,
+            &installed.toolchain,
+            &self.outputs,
+            &installed.broker,
+            cancel,
+            approve,
             Some(Arc::clone(output)),
         );
         #[cfg(target_os = "linux")]
         let native_attempt = (|| {
             approve()?;
             execute_linux_worker_with_output(
-                &self.supervisor, &prepared.job_id, &plan, &input,
-                &self.outputs, cancel, Some(Arc::clone(output)),
+                &self.supervisor,
+                &prepared.job_id,
+                &plan,
+                &input,
+                &self.outputs,
+                cancel,
+                Some(Arc::clone(output)),
             )
         })();
         let native = match native_attempt {
@@ -965,13 +1161,17 @@ impl NativeBuildRuntime {
                 // harmlessly cancelled by a rejected dialog.
                 #[cfg(feature = "native-package-uv")]
                 if recipe_id == "uv_sync_offline" {
-                    let phase = self.supervisor.inspect()
+                    let phase = self
+                        .supervisor
+                        .inspect()
                         .map_err(|e| e.code().to_owned())?
                         .into_iter()
                         .find(|job| job.job_id == prepared.job_id)
-                        .ok_or("IDE053_PACKAGE_JOB_RECEIPT_MISSING")?.phase;
+                        .ok_or("IDE053_PACKAGE_JOB_RECEIPT_MISSING")?
+                        .phase;
                     if matches!(phase, JobPhase::Prepared | JobPhase::Authorized) {
-                        self.supervisor.cancel_before_start(&prepared.job_id)
+                        self.supervisor
+                            .cancel_before_start(&prepared.job_id)
                             .map_err(|e| e.code().to_owned())?;
                     }
                 }
@@ -983,17 +1183,25 @@ impl NativeBuildRuntime {
         #[cfg(feature = "native-package-uv")]
         let evidence = if recipe_id == "uv_sync_offline" {
             self.supervisor.review_protected_package_evidence(
-                &prepared.job_id, project_id, &prepared.plan_sha256, &head,
+                &prepared.job_id,
+                project_id,
+                &prepared.plan_sha256,
+                &head,
             )
         } else {
             self.supervisor.review_build_test_evidence(
-                &prepared.job_id, project_id, &prepared.plan_sha256, &head,
+                &prepared.job_id,
+                project_id,
+                &prepared.plan_sha256,
+                &head,
             )
-        }.map_err(|e| e.code().to_owned())?;
+        }
+        .map_err(|e| e.code().to_owned())?;
         #[cfg(not(feature = "native-package-uv"))]
-        let evidence = self.supervisor.review_build_test_evidence(
-            &prepared.job_id, project_id, &prepared.plan_sha256, &head,
-        ).map_err(|e| e.code().to_owned())?;
+        let evidence = self
+            .supervisor
+            .review_build_test_evidence(&prepared.job_id, project_id, &prepared.plan_sha256, &head)
+            .map_err(|e| e.code().to_owned())?;
         #[cfg(windows)]
         let native_error_category: Option<String> = None;
         #[cfg(target_os = "linux")]
@@ -1001,7 +1209,11 @@ impl NativeBuildRuntime {
         #[cfg(windows)]
         let (exit_code, output_sha256, output_bytes) = (
             native.exit_code.map(i64::from),
-            if native.output_sha256.is_empty() { None } else { Some(native.output_sha256) },
+            if native.output_sha256.is_empty() {
+                None
+            } else {
+                Some(native.output_sha256)
+            },
             Some(native.output_bytes),
         );
         #[cfg(target_os = "linux")]
@@ -1009,7 +1221,8 @@ impl NativeBuildRuntime {
             native.exit_code.map(i64::from),
             // Linux captures independent stdout/stderr hashes; a combined
             // artifact digest requires a separately reviewed output audit.
-            None, None,
+            None,
+            None,
         );
         // Only attempt a read-only publication witness after the exact
         // native supervisor has recorded Completed. Failed/quarantined or
@@ -1033,58 +1246,80 @@ impl NativeBuildRuntime {
         // process tree has been verified gone. A signed-off wheel origin
         // is intentionally NOT inferred from metadata/lock declarations.
         #[cfg(feature = "native-package-uv")]
-        let (package_output_audit, package_audit_state,
-            postrun_original_manifest_lock_unchanged) =
+        let (package_output_audit, package_audit_state, postrun_original_manifest_lock_unchanged) =
             if recipe_id == "uv_sync_offline" {
                 let reviewed = native_package_review.as_ref();
-                let lock_sha = reviewed.and_then(|review| review.evidence.iter()
-                    .find(|row| row.relative_path == "uv.lock"))
+                let lock_sha = reviewed
+                    .and_then(|review| {
+                        review
+                            .evidence
+                            .iter()
+                            .find(|row| row.relative_path == "uv.lock")
+                    })
                     .and_then(|row| row.sha256.as_deref());
                 #[cfg(windows)]
                 let package_output_root = &native.output_root;
                 #[cfg(target_os = "linux")]
                 let package_output_root = &native.output_directory;
-                let original_manifests_unchanged =
-                    reviewed.is_some_and(|value|
-                        registry.revalidate_package_operation(
-                            project_id, value.request.clone(),
-                            &value.preview_sha256, &value.evidence_fingerprint,
-                        ).is_ok())
-                    && verify_input(&input).is_ok();
-                let trusted_terminal =
-                    native.summary.phase == JobPhase::Completed
+                let original_manifests_unchanged = reviewed.is_some_and(|value| {
+                    registry
+                        .revalidate_package_operation(
+                            project_id,
+                            value.request.clone(),
+                            &value.preview_sha256,
+                            &value.evidence_fingerprint,
+                        )
+                        .is_ok()
+                }) && verify_input(&input).is_ok();
+                let trusted_terminal = native.summary.phase == JobPhase::Completed
                     && !evidence.requires_reconciliation
                     && exit_code == Some(0)
                     && published.is_some();
-                let audit = if trusted_terminal
-                    && original_manifests_unchanged
-                {
-                    lock_sha.and_then(|lock| {
-                        audit_uv_private_output(
-                            package_output_root, &input.root,
-                            &input.seal.manifest_sha256, lock,
-                        ).ok()
-                    }).filter(|proof| published.as_ref().is_some_and(|output|
-                        output.tree_sha256 == proof.output_tree_sha256))
-                } else { None };
-                let lifecycle_tree = published.as_ref().map(|value|
-                    value.tree_sha256.as_str()).unwrap_or(
-                        "0000000000000000000000000000000000000000000000000000000000000000");
+                let audit = if trusted_terminal && original_manifests_unchanged {
+                    lock_sha
+                        .and_then(|lock| {
+                            audit_uv_private_output(
+                                package_output_root,
+                                &input.root,
+                                &input.seal.manifest_sha256,
+                                lock,
+                            )
+                            .ok()
+                        })
+                        .filter(|proof| {
+                            published.as_ref().is_some_and(|output| {
+                                output.tree_sha256 == proof.output_tree_sha256
+                            })
+                        })
+                } else {
+                    None
+                };
+                let lifecycle_tree = published
+                    .as_ref()
+                    .map(|value| value.tree_sha256.as_str())
+                    .unwrap_or("0000000000000000000000000000000000000000000000000000000000000000");
                 // The append-only audit event is fsynced before returning a
                 // successful host result. A corrupt or unavailable journal
                 // can never silently certify private package contents.
-                self.package_lifecycle.record_audit(
-                    project_id, &prepared.job_id, &prepared.plan_sha256,
-                    &evidence.terminal_receipt_hash,
-                    lifecycle_tree, audit.as_ref().map(|proof|proof.digest_sha256.as_str()),
-                ).map_err(|e|e.code().to_owned())?;
+                self.package_lifecycle
+                    .record_audit(
+                        project_id,
+                        &prepared.job_id,
+                        &prepared.plan_sha256,
+                        &evidence.terminal_receipt_hash,
+                        lifecycle_tree,
+                        audit.as_ref().map(|proof| proof.digest_sha256.as_str()),
+                    )
+                    .map_err(|e| e.code().to_owned())?;
                 let state = if audit.is_some() {
                     "verified_local_bytes_origin_unproven_private_only"
                 } else {
                     "private_output_blocked_no_promotion"
                 };
                 (audit, state, original_manifests_unchanged)
-            } else { (None,"not_a_package_job",false) };
+            } else {
+                (None, "not_a_package_job", false)
+            };
         // DEV-04.2: host-only exact worker output root, never a WebView path.
         // Post-completion candidate requires native zero exit, unquarantined
         // exact plan receipt and the independently hashed output witness.
@@ -1094,61 +1329,96 @@ impl NativeBuildRuntime {
             && exit_code == Some(0);
         #[cfg(windows)]
         let debug_binary_candidate = if completed_build {
-            published.as_ref().and_then(|witness|
-                audit_debug_binary_candidate(&native.output_root,witness).ok().flatten())
-        } else { None };
+            published.as_ref().and_then(|witness| {
+                audit_debug_binary_candidate(&native.output_root, witness)
+                    .ok()
+                    .flatten()
+            })
+        } else {
+            None
+        };
         #[cfg(target_os = "linux")]
         let debug_binary_candidate = if completed_build {
-            published.as_ref().and_then(|witness|
-                audit_debug_binary_candidate(&native.output_directory,witness).ok().flatten())
-        } else { None };
+            published.as_ref().and_then(|witness| {
+                audit_debug_binary_candidate(&native.output_directory, witness)
+                    .ok()
+                    .flatten()
+            })
+        } else {
+            None
+        };
         // DEV-04.3: native-only bounded readback of *the same* protected
         // completed Cargo output and its independently rehashed executable.
         // No symbol path, PDB path, executable identity or approval is taken
         // from the WebView. Missing/invalid/ambiguous debug data is None.
         #[cfg(windows)]
         let debug_symbol_witness = if completed_build {
-            published.as_ref().zip(debug_binary_candidate.as_ref())
+            published
+                .as_ref()
+                .zip(debug_binary_candidate.as_ref())
                 .and_then(|(output, binary)| {
                     verify_build_debug_symbols(&native.output_root, output, binary)
-                        .ok().flatten()
+                        .ok()
+                        .flatten()
                 })
-        } else {None};
+        } else {
+            None
+        };
         #[cfg(target_os = "linux")]
         let debug_symbol_witness = if completed_build {
-            published.as_ref().zip(debug_binary_candidate.as_ref())
+            published
+                .as_ref()
+                .zip(debug_binary_candidate.as_ref())
                 .and_then(|(output, binary)| {
                     verify_build_debug_symbols(&native.output_directory, output, binary)
-                        .ok().flatten()
+                        .ok()
+                        .flatten()
                 })
-        } else {None};
-        let binding_lineage=CompletedBuildLineage {
-            project_id:project_id.to_owned(),
-            build_job_id:prepared.job_id.clone(),
-            build_plan_sha256:prepared.plan_sha256.clone(),
-            terminal_receipt_sha256:evidence.terminal_receipt_hash.clone(),
-            source_head:head.clone(),
-            source_snapshot_sha256:plan.input_snapshot_sha256.clone(),
-            manifest_sha256:plan.manifest_sha256.clone(),
-            build_toolchain_sha256:plan.toolchain_sha256.clone(),
-            output_tree_sha256:published.as_ref().map(|w|w.tree_sha256.clone())
+        } else {
+            None
+        };
+        let binding_lineage = CompletedBuildLineage {
+            project_id: project_id.to_owned(),
+            build_job_id: prepared.job_id.clone(),
+            build_plan_sha256: prepared.plan_sha256.clone(),
+            terminal_receipt_sha256: evidence.terminal_receipt_hash.clone(),
+            source_head: head.clone(),
+            source_snapshot_sha256: plan.input_snapshot_sha256.clone(),
+            manifest_sha256: plan.manifest_sha256.clone(),
+            build_toolchain_sha256: plan.toolchain_sha256.clone(),
+            output_tree_sha256: published
+                .as_ref()
+                .map(|w| w.tree_sha256.clone())
                 .unwrap_or_default(),
-            build_successfully_completed:completed_build,
-            requires_reconciliation:evidence.requires_reconciliation,
+            build_successfully_completed: completed_build,
+            requires_reconciliation: evidence.requires_reconciliation,
         };
         #[cfg(windows)]
-        let native_artifacts_root=&native.output_root;
-        #[cfg(target_os="linux")]
-        let native_artifacts_root=&native.output_directory;
-        let private_debug_target=if completed_build {
-            debug_binary_candidate.as_ref().zip(debug_symbol_witness.as_ref())
-                .and_then(|(binary,symbols)|
-                    seal_project_debug_target(native_artifacts_root,&self.debug_targets,
-                       binding_lineage,binary,symbols).ok()
-                ).map(Arc::new)
-        } else {None};
-        self.store.lock().map_err(|_|"BUILD_HOST_UNAVAILABLE")?
-            .debug_target=private_debug_target;
+        let native_artifacts_root = &native.output_root;
+        #[cfg(target_os = "linux")]
+        let native_artifacts_root = &native.output_directory;
+        let private_debug_target = if completed_build {
+            debug_binary_candidate
+                .as_ref()
+                .zip(debug_symbol_witness.as_ref())
+                .and_then(|(binary, symbols)| {
+                    seal_project_debug_target(
+                        native_artifacts_root,
+                        &self.debug_targets,
+                        binding_lineage,
+                        binary,
+                        symbols,
+                    )
+                    .ok()
+                })
+                .map(Arc::new)
+        } else {
+            None
+        };
+        self.store
+            .lock()
+            .map_err(|_| "BUILD_HOST_UNAVAILABLE")?
+            .debug_target = private_debug_target;
         let artifact_evidence_state = if published.is_some() {
             "read_only_post_termination_tree_hashed"
         } else {
@@ -1206,48 +1476,70 @@ impl NativeBuildRuntime {
     /// Reopening never retries work or erases files automatically.
     #[cfg(feature = "native-package-uv")]
     pub fn discard_package_private_output(
-        &self, app:&AppHandle, project_id:&str, job_id:&str,
-    ) -> Result<String,String> {
-        if self.store.lock().map_err(|_|"IDE054_HOST_UNAVAILABLE")?
-            .current.is_some() {
+        &self,
+        app: &AppHandle,
+        project_id: &str,
+        job_id: &str,
+    ) -> Result<String, String> {
+        if self
+            .store
+            .lock()
+            .map_err(|_| "IDE054_HOST_UNAVAILABLE")?
+            .current
+            .is_some()
+        {
             return Err("IDE054_JOB_ACTIVE_CANNOT_DISCARD".into());
         }
-        if job_id.len()!=36 || !job_id.starts_with("job-")
-            || !job_id[4..].bytes().all(|b|b.is_ascii_hexdigit()) {
+        if job_id.len() != 36
+            || !job_id.starts_with("job-")
+            || !job_id[4..].bytes().all(|b| b.is_ascii_hexdigit())
+        {
             return Err("IDE054_JOB_ID_INVALID".into());
         }
-        let statuses=self.package_lifecycle.statuses()
-            .map_err(|e|e.code().to_owned())?;
-        let previous=statuses.iter().find(|row|
-            row.job_id==job_id && row.project_id==project_id
-        ).ok_or("IDE054_PACKAGE_RECEIPT_MISSING")?;
-        if !matches!(previous.state,
-            "verified_local_bytes_private_not_promoted"|
-            "original_package_job_requires_native_reconciliation"|
-            "private_output_cleanup_pending") {
+        let statuses = self
+            .package_lifecycle
+            .statuses()
+            .map_err(|e| e.code().to_owned())?;
+        let previous = statuses
+            .iter()
+            .find(|row| row.job_id == job_id && row.project_id == project_id)
+            .ok_or("IDE054_PACKAGE_RECEIPT_MISSING")?;
+        if !matches!(
+            previous.state,
+            "verified_local_bytes_private_not_promoted"
+                | "original_package_job_requires_native_reconciliation"
+                | "private_output_cleanup_pending"
+        ) {
             return Err("IDE054_CLEANUP_NOT_VERIFIABLE".into());
         }
-        let expected_plan=previous.plan_sha256.clone();
-        let verify_terminal=||->Result<(),String>{
-            let receipt=self.supervisor.inspect()
-                .map_err(|e|e.code().to_owned())?
-                .into_iter().find(|job|job.job_id==job_id)
+        let expected_plan = previous.plan_sha256.clone();
+        let verify_terminal = || -> Result<(), String> {
+            let receipt = self
+                .supervisor
+                .inspect()
+                .map_err(|e| e.code().to_owned())?
+                .into_iter()
+                .find(|job| job.job_id == job_id)
                 .ok_or("IDE054_ORIGINAL_SUPERVISOR_JOB_MISSING")?;
-            if receipt.project_id!=project_id ||
-                receipt.plan_sha256!=expected_plan ||
-                receipt.requires_reconciliation ||
-                !(if previous.audit_sha256.is_some() {
+            if receipt.project_id != project_id
+                || receipt.plan_sha256 != expected_plan
+                || receipt.requires_reconciliation
+                || !(if previous.audit_sha256.is_some() {
                     receipt.phase == JobPhase::Completed
                 } else {
-                    matches!(receipt.phase,
-                        JobPhase::Completed|JobPhase::Failed|JobPhase::Cancelled)
-                }) {
+                    matches!(
+                        receipt.phase,
+                        JobPhase::Completed | JobPhase::Failed | JobPhase::Cancelled
+                    )
+                })
+            {
                 return Err("IDE054_OS_CLEANUP_NOT_VERIFIED".into());
             }
             Ok(())
         };
         verify_terminal()?;
-        let confirmed=app.dialog()
+        let confirmed = app
+            .dialog()
             .message(format!(
                 "Permanently discard ONLY the private offline uv environment \
                 for job {job_id}?\n\nOriginal project: {project_id}\n\
@@ -1259,56 +1551,66 @@ impl NativeBuildRuntime {
             ))
             .title("Discard one protected package output")
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "Discard this private output".into(),"Leave private output".into(),
-            )).blocking_show();
-        if !confirmed {return Err("IDE054_PRIVATE_DISCARD_DECLINED".into());}
+                "Discard this private output".into(),
+                "Leave private output".into(),
+            ))
+            .blocking_show();
+        if !confirmed {
+            return Err("IDE054_PRIVATE_DISCARD_DECLINED".into());
+        }
         verify_terminal()?;
-        let fresh=self.package_lifecycle.statuses()
-            .map_err(|e|e.code().to_owned())?
-            .into_iter().find(|row|
-                row.job_id==job_id && row.project_id==project_id &&
-                row.plan_sha256==expected_plan
-            ).ok_or("IDE054_PRIVATE_DISCARD_RECEIPT_CHANGED")?;
-        let pending=fresh.state=="private_output_cleanup_pending";
-        let unresolved=fresh.state=="original_package_job_requires_native_reconciliation";
-        if !pending && !unresolved
-            && fresh.state!="verified_local_bytes_private_not_promoted" {
+        let fresh = self
+            .package_lifecycle
+            .statuses()
+            .map_err(|e| e.code().to_owned())?
+            .into_iter()
+            .find(|row| {
+                row.job_id == job_id
+                    && row.project_id == project_id
+                    && row.plan_sha256 == expected_plan
+            })
+            .ok_or("IDE054_PRIVATE_DISCARD_RECEIPT_CHANGED")?;
+        let pending = fresh.state == "private_output_cleanup_pending";
+        let unresolved = fresh.state == "original_package_job_requires_native_reconciliation";
+        if !pending && !unresolved && fresh.state != "verified_local_bytes_private_not_promoted" {
             return Err("IDE054_PRIVATE_DISCARD_TRANSITION_DENIED".into());
         }
         // Do not canonicalize an attacker-swapped output-parent symlink
         // and then accidentally delete under its external destination.
-        let original_parent=fs::symlink_metadata(&self.outputs)
-            .map_err(|_|"IDE054_PRIVATE_OUTPUT_PARENT_UNAVAILABLE")?;
-        if !original_parent.is_dir() ||
-            original_parent.file_type().is_symlink() {
+        let original_parent = fs::symlink_metadata(&self.outputs)
+            .map_err(|_| "IDE054_PRIVATE_OUTPUT_PARENT_UNAVAILABLE")?;
+        if !original_parent.is_dir() || original_parent.file_type().is_symlink() {
             return Err("IDE054_PRIVATE_OUTPUT_PARENT_UNSAFE".into());
         }
-        #[cfg(windows)]{
+        #[cfg(windows)]
+        {
             use std::os::windows::fs::MetadataExt;
             if original_parent.file_attributes() & 0x400 != 0 {
                 return Err("IDE054_PRIVATE_OUTPUT_PARENT_UNSAFE".into());
             }
         }
-        let parent=fs::canonicalize(&self.outputs)
-            .map_err(|_|"IDE054_PRIVATE_OUTPUT_PARENT_UNAVAILABLE")?;
-        let meta=fs::symlink_metadata(&parent)
-            .map_err(|_|"IDE054_PRIVATE_OUTPUT_PARENT_UNAVAILABLE")?;
+        let parent = fs::canonicalize(&self.outputs)
+            .map_err(|_| "IDE054_PRIVATE_OUTPUT_PARENT_UNAVAILABLE")?;
+        let meta = fs::symlink_metadata(&parent)
+            .map_err(|_| "IDE054_PRIVATE_OUTPUT_PARENT_UNAVAILABLE")?;
         if !meta.is_dir() || meta.file_type().is_symlink() {
             return Err("IDE054_PRIVATE_OUTPUT_PARENT_UNSAFE".into());
         }
-        #[cfg(windows)]{
+        #[cfg(windows)]
+        {
             use std::os::windows::fs::MetadataExt;
             if meta.file_attributes() & 0x400 != 0 {
                 return Err("IDE054_PRIVATE_OUTPUT_PARENT_UNSAFE".into());
             }
         }
-        let output=parent.join(job_id);
-        let present=match fs::symlink_metadata(&output){
-            Ok(meta)=>{
-                if !meta.is_dir()||meta.file_type().is_symlink(){
+        let output = parent.join(job_id);
+        let present = match fs::symlink_metadata(&output) {
+            Ok(meta) => {
+                if !meta.is_dir() || meta.file_type().is_symlink() {
                     return Err("IDE054_PRIVATE_OUTPUT_NOT_DIRECTORY".into());
                 }
-                #[cfg(windows)]{
+                #[cfg(windows)]
+                {
                     use std::os::windows::fs::MetadataExt;
                     if meta.file_attributes() & 0x400 != 0 {
                         return Err("IDE054_PRIVATE_OUTPUT_REPARSE_DENIED".into());
@@ -1316,25 +1618,24 @@ impl NativeBuildRuntime {
                 }
                 true
             }
-            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>false,
-            Err(_)=>return Err("IDE054_PRIVATE_OUTPUT_UNREADABLE".into()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(_) => return Err("IDE054_PRIVATE_OUTPUT_UNREADABLE".into()),
         };
         if !present && !pending && !unresolved {
             return Err("IDE054_OUTPUT_MISSING_BEFORE_PREPARE".into());
         }
         let mut observed_tree =
-            "0000000000000000000000000000000000000000000000000000000000000000"
-                .to_owned();
+            "0000000000000000000000000000000000000000000000000000000000000000".to_owned();
         if present {
-            let canonical=fs::canonicalize(&output)
-                .map_err(|_|"IDE054_PRIVATE_OUTPUT_UNREADABLE")?;
-            if canonical.parent()!=Some(parent.as_path()){
+            let canonical =
+                fs::canonicalize(&output).map_err(|_| "IDE054_PRIVATE_OUTPUT_UNREADABLE")?;
+            if canonical.parent() != Some(parent.as_path()) {
                 return Err("IDE054_PRIVATE_OUTPUT_SCOPE_MISMATCH".into());
             }
-            let manifest=audit_published_output(&output)
-                .map_err(|_|"IDE054_UNSAFE_PRIVATE_TREE_NOT_REMOVED")?;
-            observed_tree=manifest.tree_sha256;
-            if !unresolved && observed_tree!=fresh.output_tree_sha256 {
+            let manifest = audit_published_output(&output)
+                .map_err(|_| "IDE054_UNSAFE_PRIVATE_TREE_NOT_REMOVED")?;
+            observed_tree = manifest.tree_sha256;
+            if !unresolved && observed_tree != fresh.output_tree_sha256 {
                 return Err("IDE054_OUTPUT_CHANGED_NOT_REMOVED".into());
             }
         }
@@ -1342,45 +1643,58 @@ impl NativeBuildRuntime {
             // A host crash before postrun audit cannot promote the output.
             // It MAY be cleaned after independent D3 terminal verification,
             // a fresh human consent, and bounded native private-tree scan.
-            let history=self.supervisor.receipt_history(job_id)
-                .map_err(|e|e.code().to_owned())?;
-            let terminal=history.last().ok_or("IDE054_D3_TERMINAL_MISSING")?;
-            if terminal.body.project_id!=project_id ||
-                terminal.body.plan_sha256!=expected_plan ||
-                !matches!(terminal.body.phase,
-                    JobPhase::Completed|JobPhase::Failed|JobPhase::Cancelled) {
+            let history = self
+                .supervisor
+                .receipt_history(job_id)
+                .map_err(|e| e.code().to_owned())?;
+            let terminal = history.last().ok_or("IDE054_D3_TERMINAL_MISSING")?;
+            if terminal.body.project_id != project_id
+                || terminal.body.plan_sha256 != expected_plan
+                || !matches!(
+                    terminal.body.phase,
+                    JobPhase::Completed | JobPhase::Failed | JobPhase::Cancelled
+                )
+            {
                 return Err("IDE054_D3_TERMINAL_NOT_VERIFIED".into());
             }
-            self.package_lifecycle.prepare_unverified_discard(
-                &fresh,&terminal.entry_hash,&observed_tree,
-            ).map_err(|e|e.code().to_owned())?;
+            self.package_lifecycle
+                .prepare_unverified_discard(&fresh, &terminal.entry_hash, &observed_tree)
+                .map_err(|e| e.code().to_owned())?;
         } else if !pending {
-            self.package_lifecycle.prepare_discard(&fresh)
-                .map_err(|e|e.code().to_owned())?;
+            self.package_lifecycle
+                .prepare_discard(&fresh)
+                .map_err(|e| e.code().to_owned())?;
         }
         // If a crash occurs here, a new human-approved attempt checks the
         // *same* OS job, journal and remaining private directory. A partially
         // removed directory with changed hash remains blocked: no success
         // claim and no untrusted recursive traversal workaround.
         if present {
-            fs::remove_dir_all(&output)
-                .map_err(|_|"IDE054_REMOVE_FAILED_CLEANUP_PENDING")?;
+            fs::remove_dir_all(&output).map_err(|_| "IDE054_REMOVE_FAILED_CLEANUP_PENDING")?;
         }
-        if fs::symlink_metadata(&output).is_ok(){
+        if fs::symlink_metadata(&output).is_ok() {
             return Err("IDE054_OUTPUT_STILL_PRESENT_CLEANUP_PENDING".into());
         }
-        #[cfg(unix)]{
+        #[cfg(unix)]
+        {
             File::open(&parent)
-                .and_then(|file|file.sync_all())
-                .map_err(|_|"IDE054_PARENT_FSYNC_FAILED_CLEANUP_PENDING")?;
+                .and_then(|file| file.sync_all())
+                .map_err(|_| "IDE054_PARENT_FSYNC_FAILED_CLEANUP_PENDING")?;
         }
-        let pending_identity=self.package_lifecycle.statuses()
-            .map_err(|e|e.code().to_owned())?.into_iter()
-            .find(|row|row.job_id==job_id && row.project_id==project_id
-                && row.state=="private_output_cleanup_pending")
+        let pending_identity = self
+            .package_lifecycle
+            .statuses()
+            .map_err(|e| e.code().to_owned())?
+            .into_iter()
+            .find(|row| {
+                row.job_id == job_id
+                    && row.project_id == project_id
+                    && row.state == "private_output_cleanup_pending"
+            })
             .ok_or("IDE054_PENDING_DISCARD_RECEIPT_MISSING")?;
-        self.package_lifecycle.verify_discard(&pending_identity)
-            .map_err(|e|e.code().to_owned())?;
+        self.package_lifecycle
+            .verify_discard(&pending_identity)
+            .map_err(|e| e.code().to_owned())?;
         Ok("IDE054_PRIVATE_PACKAGE_OUTPUT_DISCARDED_NO_PROJECT_MUTATION".into())
     }
 
@@ -1392,17 +1706,28 @@ impl NativeBuildRuntime {
         project_id: &str,
         job_id: &str,
     ) -> Result<String, String> {
-        if self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?.current.is_some() {
+        if self
+            .store
+            .lock()
+            .map_err(|_| "BUILD_HOST_UNAVAILABLE")?
+            .current
+            .is_some()
+        {
             return Err("BUILD_JOB_ACTIVE".into());
         }
-        let entry = self.supervisor.inspect().map_err(|e| e.code().to_owned())?
-            .into_iter().find(|job| job.job_id == job_id)
+        let entry = self
+            .supervisor
+            .inspect()
+            .map_err(|e| e.code().to_owned())?
+            .into_iter()
+            .find(|job| job.job_id == job_id)
             .ok_or("BUILD_JOB_NOT_FOUND")?;
         if entry.project_id != project_id || !entry.requires_reconciliation {
             return Err("BUILD_RECOVERY_SCOPE_DENIED".into());
         }
         let install = installation(app)?;
-        let choice = app.dialog()
+        let choice = app
+            .dialog()
             .message(format!(
                 "Attempt OS-only cleanup of interrupted job {job_id}?\n\n\
                 This will not rebuild or restart the project. It only attempts \
@@ -1411,15 +1736,17 @@ impl NativeBuildRuntime {
             ))
             .title("Reconcile interrupted protected job")
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "Verify and clean up".into(), "Leave quarantined".into(),
-            )).blocking_show();
+                "Verify and clean up".into(),
+                "Leave quarantined".into(),
+            ))
+            .blocking_show();
         if !choice {
             return Err("BUILD_RECOVERY_NOT_APPROVED".into());
         }
         #[cfg(windows)]
-        let summary = reconcile_windows_interrupted_via_service(
-            &self.supervisor, job_id, &install.broker,
-        ).map_err(|e| e.code().to_owned())?;
+        let summary =
+            reconcile_windows_interrupted_via_service(&self.supervisor, job_id, &install.broker)
+                .map_err(|e| e.code().to_owned())?;
         #[cfg(target_os = "linux")]
         let summary = {
             let _ = install;
@@ -1447,9 +1774,18 @@ mod dev035_native_lifecycle_tests {
     }
     #[test]
     fn cancellation_and_recovery_phase_names_match_durable_supervisor_schema() {
-        assert_eq!(native_phase_label(JobPhase::CancelRequested), "cancel_requested");
-        assert_eq!(native_phase_label(JobPhase::ReleasePending), "release_pending");
-        assert_eq!(native_phase_label(JobPhase::RecoveryRequired), "recovery_required");
+        assert_eq!(
+            native_phase_label(JobPhase::CancelRequested),
+            "cancel_requested"
+        );
+        assert_eq!(
+            native_phase_label(JobPhase::ReleasePending),
+            "release_pending"
+        );
+        assert_eq!(
+            native_phase_label(JobPhase::RecoveryRequired),
+            "recovery_required"
+        );
         assert_eq!(native_phase_label(JobPhase::Cancelled), "cancelled");
         assert_eq!(native_phase_label(JobPhase::Completed), "completed");
     }

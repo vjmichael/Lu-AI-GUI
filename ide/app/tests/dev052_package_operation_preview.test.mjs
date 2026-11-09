@@ -31,7 +31,7 @@ test('native preview is SHA-bound, rejects ambiguous managers and never grants a
   assert.match(host, /requires_protected_resolver: true/);
 });
 test('the vcpkg direct-declaration check parses saved JSON and binds source revision',()=>{
-  assert.match(host, /registry\.preview_source_file\(project_id, "vcpkg\.json"\)/);
+  assert.match(host, /registry\s*\.preview_source_file\(project_id, "vcpkg\.json"\)/);
   assert.match(host, /snapshot\.revision != expected_sha/);
   assert.match(host, /serde_json::from_str\(&snapshot\.text\)/);
   assert.match(host, /IDE052_DEPENDENCY_ALREADY_DECLARED/);
