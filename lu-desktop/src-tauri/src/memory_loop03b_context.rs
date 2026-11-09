@@ -174,6 +174,13 @@ pub(crate) fn for_current_human_turn(
         },
     };
     let verdict=memory_loop03b_policy::classify(kind,facts);
+    // 03B historical validation is never a clearance of the earlier 03A
+    // current goal/clarification/recovery preflight. Unknown host labels
+    // default to review, not model-selected permission.
+    let preflight_requires_review=goal_gate!="CURRENT_GOAL_REVIEWABLE_ONLY"
+        ||!matches!(recovery_gate,
+            "HISTORICALLY_VERIFIED_FRESH_REVIEW_STILL_REQUIRED"|
+            "NO_REVIEWED_EFFECTS_IN_BOUNDED_WINDOW");
     let kind_label=match kind {
         MemoryKind::Procedure=>"VERSION_PINNED_PROCEDURAL_MEMORY",
         MemoryKind::Belief=>"ORIGINAL_SOURCE_BELIEF_REVISION",
@@ -191,7 +198,9 @@ pub(crate) fn for_current_human_turn(
         "additionalHistoricalDetailsNotDisplayed":unshown,
         "historicallyVerifiedDataAvailable":
             verdict.historically_verified_data_available,
-        "humanReviewRequired":verdict.human_review_required||unshown,
+        "humanReviewRequired":
+            verdict.human_review_required||unshown||preflight_requires_review,
+        "currentTaskReviewBlockedByPreflight":preflight_requires_review,
         "executionAuthority":verdict.execution_authority,
         "priorGrantReusable":verdict.prior_grant_reusable,
         "automaticRetryAllowed":verdict.automatic_retry_allowed,
@@ -268,6 +277,8 @@ mod tests{
         assert!(original.contains("NOT_AUTHORIZED_FOR_EXECUTION"));
         assert!(original.contains("NOT_RECHECKED"));
         assert!(original.contains("ORIGINAL_OS_DESCENDANT_RECONCILIATION_REQUIRED"));
+        assert!(original.contains("\\"currentTaskReviewBlockedByPreflight\\":true"));
+        assert!(original.contains("\\"humanReviewRequired\\":true"));
         assert!(for_current_human_turn(&chats,&continuity,&journal,&chat,
             &format!("g-{}","b".repeat(32)),prompt,"READY","NOT_RECHECKED"
         ).is_err());
