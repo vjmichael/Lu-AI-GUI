@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b3f3dfabd7bc1c72279476e82684dd05c91278fd",
+  "sourceCommitBeforeLock": "4d536c4fba7ab24f25bcf2a4ea0876d2430c5b42",
   "trackedFileCount": 746,
   "files": [
     {
@@ -1473,7 +1473,7 @@
     },
     {
       "path": "scripts/build-agent01g-physical-windows-nsis.ps1",
-      "blob": "df84a695fc7e4d88a700fec1c28ec9273178ae6d"
+      "blob": "43f56dd45d32b01640b8145f355b6aad6b1a41fe"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
