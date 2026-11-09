@@ -7,6 +7,12 @@ publish = false
 license = "Apache-2.0"
 description = "Standalone Lu IDE workspace project registry"
 
+[features]
+default = []
+# Source-only, disposable protected Windows native acceptance. No Tauri
+# control route or released debugger execution rights.
+dev046c-ci-control = []
+
 [dependencies]
 prost = "0.14"
 serde = { version = "1", features = ["derive"] }

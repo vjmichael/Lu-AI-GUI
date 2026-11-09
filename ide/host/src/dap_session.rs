@@ -68,6 +68,30 @@ pub enum DapEvent {
     Disconnected,
 }
 
+/// Only available to the explicitly gated disposable native D6C test.
+/// These are DAP *protocol* coordinates and are NOT executable authority.
+#[cfg(feature = "dev046c-ci-control")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CiStepKind { Over, Into, Out }
+
+#[cfg(feature = "dev046c-ci-control")]
+#[derive(Debug, Clone)]
+struct CiControlPending {
+    name: &'static str,
+    thread_id: u64,
+    expected_line: Option<u32>,
+    response_ack: bool,
+    new_stop: bool,
+}
+#[cfg(feature = "dev046c-ci-control")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CiControlObservation {
+    pub response_acknowledged: bool,
+    pub new_stop_observed: bool,
+    pub thread_id: u64,
+    pub is_step: bool,
+}
+
 /// This object holds NO authorization. It only checks frames from a debugger
 /// already launched by an independently authenticated native supervisor.
 pub struct DapSession {
@@ -80,6 +104,10 @@ pub struct DapSession {
     configuration_done_sent: bool,
     // Ephemeral, untrusted adapter coordinates; NEVER a symbol-line proof.
     last_source_candidate: Option<SourceLineCandidate>,
+    #[cfg(feature = "dev046c-ci-control")]
+    ci_control: Option<CiControlPending>,
+    #[cfg(feature = "dev046c-ci-control")]
+    last_stopped_thread: Option<u64>,
 }
 impl Default for DapSession {
     fn default() -> Self {
@@ -97,6 +125,10 @@ impl DapSession {
             launch_sent: false,
             configuration_done_sent: false,
             last_source_candidate: None,
+            #[cfg(feature = "dev046c-ci-control")]
+            ci_control: None,
+            #[cfg(feature = "dev046c-ci-control")]
+            last_stopped_thread: None,
         }
     }
     pub fn phase(&self) -> DapPhase {
@@ -112,6 +144,11 @@ impl DapSession {
         self.input.clear();
         self.pending.clear();
         self.last_source_candidate = None;
+        #[cfg(feature = "dev046c-ci-control")]
+        {
+            self.ci_control = None;
+            self.last_stopped_thread = None;
+        }
         why
     }
     fn request(&mut self, name: &'static str, args: Value) -> Result<Vec<u8>, DapError> {
@@ -264,6 +301,81 @@ impl DapSession {
             "stackTrace",
             json!({"threadId":thread_id, "startFrame":0, "levels":16}),
         )
+    }
+    /// Build one fixed, previously native-authorized step DAP frame for a
+    /// *sealed* debuggee. The host protocol never accepts raw user commands.
+    /// A DAP ACK alone is not an independently verified result.
+    #[cfg(feature = "dev046c-ci-control")]
+    pub fn ci_step(&mut self, thread_id: u64, kind: CiStepKind) -> Result<Vec<u8>, DapError> {
+        if self.phase != DapPhase::Stopped || thread_id == 0
+            || self.last_stopped_thread != Some(thread_id)
+            || self.last_source_candidate.is_none()
+            || self.ci_control.is_some() || !self.pending.is_empty() {
+            return Err(DapError::InvalidPhase);
+        }
+        let command = match kind {
+            CiStepKind::Over => "next",
+            CiStepKind::Into => "stepIn",
+            CiStepKind::Out => "stepOut",
+        };
+        let wire = self.request(command, json!({
+            "threadId": thread_id, "singleThread": true,
+            "granularity": "line"
+        }))?;
+        self.ci_control = Some(CiControlPending {
+            name: command, thread_id, expected_line: None,
+            response_ack: false, new_stop: false,
+        });
+        // Stale original source coordinates must not be used after resume.
+        self.last_source_candidate = None;
+        self.last_stopped_thread = None;
+        self.phase = DapPhase::Ready;
+        Ok(wire)
+    }
+    /// A single already-reviewed compiler source location, with NO
+    /// conditions, log messages, sourceReference, expressions or hit counts.
+    /// Adapter "verified" is recorded as acknowledgement ONLY.
+    #[cfg(feature = "dev046c-ci-control")]
+    pub fn ci_set_breakpoint(
+        &mut self, compiled_source: &str, line: u32,
+    ) -> Result<Vec<u8>, DapError> {
+        if self.phase != DapPhase::Stopped || line == 0 || line > 1_000_000
+            || self.ci_control.is_some() || !self.pending.is_empty()
+            || self.last_source_candidate.as_ref().is_none_or(|candidate|
+                candidate.adapter_path != compiled_source || candidate.line != line)
+            || compiled_source.len() > 1024 || compiled_source.contains("..")
+            || compiled_source.chars().any(char::is_control) {
+            return Err(DapError::InvalidPhase);
+        }
+        let wire = self.request("setBreakpoints", json!({
+            "source": { "path": compiled_source },
+            "breakpoints": [{"line": line}],
+            "lines": [line],
+            "sourceModified": false
+        }))?;
+        self.ci_control = Some(CiControlPending {
+            name: "setBreakpoints", thread_id: self.last_stopped_thread.unwrap_or(0),
+            expected_line: Some(line), response_ack: false, new_stop: false,
+        });
+        Ok(wire)
+    }
+    /// Host must join this adapter observation to an entirely independent
+    /// kernel owner event and OS RIP/PE/PDB/source witness. This does NOT
+    /// yield success on an adapter response alone.
+    #[cfg(feature = "dev046c-ci-control")]
+    pub fn ci_take_control_observation(&mut self) -> Option<CiControlObservation> {
+        let pending = self.ci_control.as_ref()?;
+        let is_step = pending.expected_line.is_none();
+        if !pending.response_ack || (is_step && !pending.new_stop) {
+            return None;
+        }
+        let pending = self.ci_control.take()?;
+        Some(CiControlObservation {
+            response_acknowledged: pending.response_ack,
+            new_stop_observed: pending.new_stop,
+            thread_id: pending.thread_id,
+            is_step,
+        })
     }
     /// Disconnect does not promise process-tree termination. The OS supervisor
     /// must kill and independently verify all descendants before journaling
@@ -480,6 +592,40 @@ impl DapSession {
                             .next();
                         Ok(Some(DapEvent::StackTraceReceived))
                     }
+                    #[cfg(feature = "dev046c-ci-control")]
+                    "next" | "stepIn" | "stepOut"
+                        if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) =>
+                    {
+                        let active = self.ci_control.as_mut()
+                            .ok_or(DapError::InvalidPhase)?;
+                        if active.name != expected || active.expected_line.is_some()
+                            || active.response_ack {
+                            return Err(DapError::InvalidMessage);
+                        }
+                        active.response_ack = true;
+                        Ok(None)
+                    }
+                    #[cfg(feature = "dev046c-ci-control")]
+                    "setBreakpoints" if self.phase == DapPhase::Stopped => {
+                        let active = self.ci_control.as_mut()
+                            .ok_or(DapError::InvalidPhase)?;
+                        let expected_line = active.expected_line
+                            .ok_or(DapError::InvalidPhase)?;
+                        let reported = obj.get("body")
+                            .and_then(|v| v.get("breakpoints"))
+                            .and_then(Value::as_array)
+                            .ok_or(DapError::InvalidMessage)?;
+                        if reported.len() != 1
+                            || reported[0].get("verified") != Some(&Value::Bool(true))
+                            || reported[0].get("line").and_then(Value::as_u64)
+                                != Some(u64::from(expected_line))
+                            || active.name != "setBreakpoints" || active.response_ack {
+                            return Err(DapError::InvalidMessage);
+                        }
+                        active.response_ack = true;
+                        // This is still only LLDB's claim, not a memory/hit proof.
+                        Ok(None)
+                    }
                     "disconnect" if self.phase == DapPhase::Closing => {
                         self.phase = DapPhase::Terminated;
                         self.last_source_candidate = None;
@@ -517,11 +663,23 @@ impl DapSession {
                             .filter(|v| *v > 0 && *v <= MAX_SEQ)
                             .ok_or(DapError::InvalidMessage)?;
                         self.phase = DapPhase::Stopped;
+                        #[cfg(feature = "dev046c-ci-control")]
+                        {
+                            self.last_stopped_thread = Some(thread_id);
+                            if let Some(control) = self.ci_control.as_mut() {
+                                if control.expected_line.is_none()
+                                    && control.thread_id == thread_id {
+                                    control.new_stop = true;
+                                }
+                            }
+                        }
                         Ok(Some(DapEvent::Stopped { thread_id }))
                     }
                     "continued" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
                         self.phase = DapPhase::Ready;
                         self.last_source_candidate = None;
+                        #[cfg(feature = "dev046c-ci-control")]
+                        { self.last_stopped_thread = None; }
                         Ok(Some(DapEvent::Continued))
                     }
                     "terminated" | "exited"
@@ -530,6 +688,8 @@ impl DapSession {
                         self.phase = DapPhase::Terminated;
                         self.pending.clear();
                         self.last_source_candidate = None;
+                        #[cfg(feature = "dev046c-ci-control")]
+                        { self.ci_control = None; self.last_stopped_thread = None; }
                         Ok(Some(DapEvent::Terminated))
                     }
                     // Outputs and capabilities can contain hostile text/paths.
@@ -1109,6 +1269,46 @@ mod tests {
         assert_eq!(s.phase(), DapPhase::Quarantined);
     }
 
+    #[cfg(feature = "dev046c-ci-control")]
+    #[test]
+    fn ci_control_denies_unstopped_or_unmapped_threads_without_wire() {
+        let mut session = DapSession::new();
+        assert!(session.ci_step(7, CiStepKind::Over).is_err());
+        session.phase = DapPhase::Stopped;
+        session.last_stopped_thread = Some(7);
+        assert!(session.ci_step(7, CiStepKind::Over).is_err());
+        assert!(session.ci_set_breakpoint(r"C:\reviewed\src\main.rs", 5).is_err());
+        assert!(session.ci_take_control_observation().is_none());
+    }
+    #[cfg(feature = "dev046c-ci-control")]
+    #[test]
+    fn ci_step_response_is_not_a_result_without_new_stop() {
+        let mut session = DapSession::new();
+        session.phase = DapPhase::Stopped;
+        session.last_stopped_thread = Some(7);
+        session.last_source_candidate = Some(candidate_from_dap_frame(&json!({
+            "id": 1, "line": 5, "column": 1,
+            "instructionPointerReference": "0x140001010",
+            "source": {"path": r"C:\reviewed\src\main.rs"}
+        })).unwrap().unwrap());
+        let wire = session.ci_step(7, CiStepKind::Over).unwrap();
+        assert!(wire.windows(4).any(|w| w == b"next"));
+        assert!(session.ci_take_control_observation().is_none());
+        // A correlated adapter ACK cannot establish an OS step outcome.
+        let seq = session.seq - 1;
+        session.receive(&framed(json!({
+            "seq": 99, "type": "response", "request_seq": seq,
+            "command": "next", "success": true
+        }))).unwrap();
+        assert!(session.ci_take_control_observation().is_none());
+        session.receive(&framed(json!({
+            "seq": 100, "type": "event", "event": "stopped",
+            "body": {"threadId": 7, "reason": "step"}
+        }))).unwrap();
+        let obs = session.ci_take_control_observation().unwrap();
+        assert!(obs.response_acknowledged && obs.new_stop_observed && obs.is_step);
+        assert!(session.ci_take_control_observation().is_none());
+    }
     #[test]
     fn dev045d_only_correlated_stack_can_supply_bounded_source_candidate() {
         let mut s = DapSession::new();

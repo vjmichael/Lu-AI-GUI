@@ -43,6 +43,9 @@ dev045d4c-ci-oracle = ["dap-transport", "protected-recovery-service"]
 # A reviewed, patched LLVM 18 debugger owner-event sideband under one-use
 # Job/SCM custody, NEVER a default Windows release capability.
 dev045d5-ci-event-owner = ["dev045d4c-ci-oracle"]
+# Real protected D6C step/breakpoint CI acceptance is never compiled into
+# release/installed Lu; requires the original D5 Job/LLDB owner gate.
+dev046c-ci-control = ["dev045d5-ci-event-owner", "lu-ide-workspace/dev046c-ci-control"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
