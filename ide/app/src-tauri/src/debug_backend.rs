@@ -336,6 +336,7 @@ impl NativeDebugRuntime {
             input_snapshot_sha256: input.seal.source_sha256.clone(),
             manifest_sha256: input.seal.manifest_sha256.clone(),
             toolchain_sha256: install.digest.clone(),
+            debug_target_binding_sha256: None,
             runtime_limit_ms: 3 * 60_000, memory_limit_bytes: 512 * 1024 * 1024,
             process_limit: 16, log_limit_bytes: 64 * 1024,
             effect_class: "debug_inspection_isolated".into(),
