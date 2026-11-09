@@ -10,6 +10,8 @@ on:
       - 'src-tauri/lu-core/src/tasks.rs'
       - 'src-tauri/lu-core/src/lib.rs'
       - 'lu-desktop/src-tauri/src/agent_recovery_desktop.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_continuation_desktop.rs'
+      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
       - 'lu-desktop/tests/agent01l-os-custody.test.mjs'
       - 'lu-desktop/tests/agent01k-independent-recovery.test.mjs'
       - '.github/workflows/lu-agent01l-os-custody.yml'
@@ -55,7 +57,7 @@ jobs:
           set -euo pipefail
           node --test lu-desktop/tests/agent01l-os-custody.test.mjs \
             2>&1 | tee agent01l-evidence/source-contracts.log
-          grep -Fq '# pass 8' agent01l-evidence/source-contracts.log
+          grep -Fq '# pass 10' agent01l-evidence/source-contracts.log
           grep -Fq '# fail 0' agent01l-evidence/source-contracts.log
           node --test lu-desktop/tests/agent01k-independent-recovery.test.mjs \
             2>&1 | tee agent01l-evidence/agent01k-regression.log
