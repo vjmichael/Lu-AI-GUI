@@ -977,10 +977,9 @@ impl LinuxDapSession {
             installed_app_accepted: false,
         })
     }
-    /// Explicit test-only gate: additionally run a digest-pinned root-owned
-    /// independent LLVM line oracle *after* the real cgroup and journal
-    /// verification. Never a default installed app execution API.
-    #[cfg(debug_assertions)]
+    /// Explicit CI-only gate: no independent host process is started
+    /// unless built with the dedicated disposable-test feature and debug
+    /// assertions. Production builds always refuse this operation.
     pub fn verify_project_source_line_for_ci(
         &self,
         supervisor: &Supervisor,
@@ -988,13 +987,21 @@ impl LinuxDapSession {
         plan: &JobPlan,
         target: &crate::project_debug_target::SealedProjectDebugTarget,
     ) -> Result<crate::native_kernel_pc::ProtectedStopLineage, SupervisorError> {
-        let mut witness = self.verify_stopped_project_image(
-            supervisor, job_id, plan, target,
-        )?;
-        crate::native_kernel_pc::verify_independent_dwarf_line_for_ci(
-            &mut witness, target,
-        )?;
-        Ok(witness)
+        #[cfg(not(all(debug_assertions, feature = "dev045d3-ci-oracle")))]
+        {
+            let _ = (supervisor, job_id, plan, target);
+            Err(SupervisorError::NoContainment)
+        }
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        {
+            let mut witness = self.verify_stopped_project_image(
+                supervisor, job_id, plan, target,
+            )?;
+            crate::native_kernel_pc::verify_independent_dwarf_line_for_ci(
+                &mut witness, target,
+            )?;
+            Ok(witness)
+        }
     }
     pub fn close(self) -> Result<(), SupervisorError> {
         self.gateway.close()

@@ -38,7 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker' --lib native_kernel_pc
-          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker' --example wo6_linux_native_build_acceptance
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker,dev045d3-ci-oracle' --example wo6_linux_native_build_acceptance
           cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
           echo 'DEV045D3_NATIVE_LINUX_COMPILE_AND_UNIT=PASS_NOT_CGROUP_ACCEPTANCE'
   windows-default-deny:

@@ -230,7 +230,7 @@ pub(crate) fn observe_linux_project_pc(
 /// debug/CI-only native oracle, never launched from an AI/WebView command.
 /// A production signed app must provide a reviewed offline resource and
 /// a separate OS policy admission before enabling a comparable reader.
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
 pub(crate) fn verify_independent_dwarf_line_for_ci(
     witness: &mut ProtectedStopLineage,
     target: &crate::project_debug_target::SealedProjectDebugTarget,
