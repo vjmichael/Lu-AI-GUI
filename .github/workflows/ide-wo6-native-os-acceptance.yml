@@ -20,6 +20,15 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact reviewed commit before native kernel tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045B_NATIVE_EXACT_HEAD=VERIFIED'
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
@@ -176,6 +185,15 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact reviewed commit before native kernel tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045B_NATIVE_EXACT_HEAD=VERIFIED'
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
@@ -260,6 +278,15 @@ jobs:
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact reviewed commit before native kernel tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045B_NATIVE_EXACT_HEAD=VERIFIED'
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
