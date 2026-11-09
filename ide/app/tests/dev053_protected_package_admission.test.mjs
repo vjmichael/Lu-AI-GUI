@@ -37,9 +37,9 @@ test('native launch binds one exact Sync to preview identity in the D3 JobPlan',
   assert.match(backend, /IDE053_FROZEN_SOURCE_DIFFERS_FROM_APPROVED_REVIEW/);
   assert.match(backend, /options\.custom_flags\(0x20000\)/);
   assert.match(backend, /options\.custom_flags\(0x00200000\)/);
-  assert.match(backend, /run_with_review\(\s*app, registry, project_id, "uv_sync_offline"/);
+  assert.match(backend, /run_with_review\(\s*app,\s*registry,\s*project_id,\s*"uv_sync_offline"/);
   assert.match(backend, /recipe_id != "uv_sync_offline"/);
-  assert.match(backend, /format!\("package_uv_sync_offline:\{\}"/);
+  assert.match(backend, /format!\(\s*"package_uv_sync_offline:\{\}"/);
   assert.match(supervisor, /strip_prefix\("package_uv_sync_offline:"\)/);
   assert.match(supervisor, /value\.runtime_limit_ms <= 3 \* 60_000/);
   assert.match(supervisor, /value\.process_limit <= 8/);
