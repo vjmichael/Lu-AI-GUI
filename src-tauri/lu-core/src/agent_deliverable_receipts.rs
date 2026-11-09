@@ -31,6 +31,8 @@
  #[derive(Clone,Debug,PartialEq,Eq)]
  pub struct HistoricalDeliverable{
      pub revision_sha256:String,
+     /// Exact persisted human execution turn; no inference from model text.
+     pub execution_turn_id:String,
      pub step_index:u8,
      pub deliverable_id:String,
      pub tool_id:String,
@@ -457,7 +459,8 @@
                  }
              };
              history.push(HistoricalDeliverable{
-                 revision_sha256:rev,step_index:index as u8,
+                 revision_sha256:rev,execution_turn_id:actual_turn.to_owned(),
+                 step_index:index as u8,
                  deliverable_id:deliverable,tool_id:tool,effect_call_id:call,
                  receipt_sha256:receipt,independent_method:method,
                  observed_sha256:observed,status,
