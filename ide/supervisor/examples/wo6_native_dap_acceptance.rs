@@ -653,6 +653,17 @@ mod protected {
                 return Err("DENIED: project LLDB cancel receipts not fsynced before tree kill".into());
             }
             println!("DEV045C_WINDOWS_PROJECT_LLDB_CANCEL_JOB_TREE_AND_RECEIPTS=PASS");
+        } else if verify_owner_event {
+            #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+            {
+                let seq = owner_receipt.as_ref()
+                    .ok_or("DENIED: owner event receipt disappeared before DAP disconnect")?.0;
+                dap.close_with_real_owner_continue_for_ci(seq)
+                    .map_err(|_| "DENIED: original LLDB ContinueDebugEvent revocation missing before Job terminal")?;
+                println!("DEV045D5_NATIVE_LLDB_EVENT_CONTINUED_AND_REVOKED=PASS");
+            }
+            #[cfg(not(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner")))]
+            return Err("DENIED: unreviewed source cannot continue owner event".into());
         } else {
             dap.close().map_err(|e| e.code())?;
         }
