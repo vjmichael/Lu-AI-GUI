@@ -44,6 +44,8 @@ fn require_independent_broker_release(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use lu_ide_execution_supervisor::{
         snapshot::publish_input,
+        wo6_output_evidence::audit_published_output,
+        debug_binary_witness::audit_debug_binary_candidate,
         live_output::LiveOutput,
         windows_broker::TrustedBroker,
         windows_worker::{
@@ -59,7 +61,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // arguments, environment, source or toolchain plan can be injected.
     let args: Vec<String> = env::args().skip(1).collect();
     let cancel_mode = args.len() == 1 && args[0] == "--cancel-native-worker";
-    if !args.is_empty() && !cancel_mode {
+    let build_mode = args.len() == 1 && args[0] == "--build-native-worker";
+    if !args.is_empty() && !cancel_mode && !build_mode {
         return Err("DENIED: unsupported native worker acceptance mode".into());
     }
     let bundle = PathBuf::from(
@@ -131,13 +134,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "fn main() { println!(\"hello isolated worker\"); }\n",
     )?;
 
-    let input = publish_input(&project, &stage_parent, "rust_check")
+    let recipe=if build_mode {"rust_build"} else {"rust_check"};
+    let input = publish_input(&project, &stage_parent, recipe)
         .map_err(|e| format!("DENIED: snapshot publication: {}", e.code()))?;
     let supervisor = Supervisor::open(root.join("supervisor-receipts.jsonl"))
         .map_err(|e| format!("DENIED: supervisor journal: {}", e.code()))?;
     let plan = JobPlan {
         project_id: format!("ide-{}", "7".repeat(32)),
-        recipe_id: "rust_check".into(),
+        recipe_id: recipe.into(),
         source_head: "a".repeat(40),
         input_snapshot_sha256: input.seal.source_sha256.clone(),
         manifest_sha256: input.seal.manifest_sha256.clone(),
@@ -274,6 +278,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             result.summary.phase
         )
         .into());
+    }
+    if build_mode {
+        // Genuine AppContainer Job Object + independent service/broker must
+        // have completed before host-side binary readback.
+        let output_witness=audit_published_output(&result.output_root)
+            .map_err(|_|"DENIED: actual completed Windows Cargo output witness failed")?;
+        let candidate=audit_debug_binary_candidate(&result.output_root,&output_witness)
+            .map_err(|_|"DENIED: actual Windows Cargo binary was modified")?
+            .ok_or("DENIED: Windows Cargo build produced no single verified exe")?;
+        let evidence=supervisor.review_build_test_evidence(
+            &prepared.job_id,&plan.project_id,&prepared.plan_sha256,&plan.source_head)
+            .map_err(|_|"DENIED: actual Windows rust_build receipt review failed")?;
+        if evidence.recipe_id!="rust_build" || evidence.requires_reconciliation ||
+           evidence.terminal_receipt_hash.len()!=64 ||
+           candidate.output_tree_sha256!=output_witness.tree_sha256 ||
+           candidate.debugger_execution_authorized {
+            return Err("DENIED: Windows executable not bound to completed native job".into());
+        }
+        eprintln!("DEV042_WINDOWS_APPCONTAINER_REAL_BUILD_BINARY=PASS hash={} receipt={}",
+            candidate.binary_sha256,evidence.terminal_receipt_hash);
     }
     let last = supervisor
         .receipt_history(&prepared.job_id)

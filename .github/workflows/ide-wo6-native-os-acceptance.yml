@@ -269,7 +269,7 @@ jobs:
         run: |
           set -euo pipefail
           host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_wo6_build_host)"
-          for mode in --check --test --cancel; do
+          for mode in --check --test --build --cancel; do
             rc=0
             sudo /usr/bin/systemd-run --wait --collect --pipe \
               --unit=lu-ide-delegated \

@@ -95,6 +95,13 @@ jobs:
         run: |
           cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker,ci-native-null-lease
           if ($LASTEXITCODE -ne 0) { throw 'Native AppContainer Cargo fixture denied or failed' }
+      - name: Verify genuine protected Cargo build emits a receipt-bound native executable
+        shell: pwsh
+        env:
+          LU_IDE_NATIVE_ACCEPTANCE_TRACE: '1'
+        run: |
+          cargo run --manifest-path ide/supervisor/Cargo.toml --example d7_windows_acceptance --features windows-worker,ci-native-null-lease -- --build-native-worker
+          if ($LASTEXITCODE -ne 0) { throw 'Real AppContainer Cargo build executable provenance failed' }
       - name: Inject native cancellation and verify ordered durable receipts
         shell: pwsh
         run: |
