@@ -63,6 +63,9 @@ jobs:
         run: |
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund
+          # Build frontend first, even when a source assertion fails; Tauri's
+          # generate_context macro needs a real ../dist directory.
+          npm run build
           node --test tests/dev05_package_manager_inspection.test.mjs \
             tests/dev052_package_operation_preview.test.mjs \
             tests/dev053_protected_package_admission.test.mjs \

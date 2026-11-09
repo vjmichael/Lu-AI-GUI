@@ -505,10 +505,15 @@ mod tests {
         assert_eq!(frozen.seal.manifest_relative_path, "Cargo.toml");
         assert_eq!(frozen.seal.file_count, 3);
         assert!(verify_input(&frozen).is_ok());
-        assert!(matches!(
-            publish_input(&project, &stage, "python_pytest"),
-            Err(SnapshotError::InvalidName)
-        ));
+        // Native multilang builds legitimately recognize this fixed
+        // recipe, but an unregistered Cargo-only project still has no
+        // pyproject.toml. Without the feature, the recipe is denied.
+        let python_result = publish_input(&project, &stage, "python_pytest");
+        if cfg!(feature = "multilang-worker") {
+            assert!(matches!(python_result, Err(SnapshotError::Io)));
+        } else {
+            assert!(matches!(python_result, Err(SnapshotError::InvalidName)));
+        }
         assert!(matches!(
             publish_input(&project, &stage, "cargo build --manifest-path ../outside"),
             Err(SnapshotError::InvalidName)

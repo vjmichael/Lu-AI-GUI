@@ -143,7 +143,9 @@ fn read_events(path: &Path) -> Result<Vec<PackageLifecycleEvent>, SupervisorErro
         use std::os::windows::fs::OpenOptionsExt;
         options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
     }
-    let mut file = options.open(path).map_err(|_| SupervisorError::JournalUnavailable)?;
+    let mut file = options
+        .open(path)
+        .map_err(|_| SupervisorError::JournalUnavailable)?;
     let opened = file.metadata().map_err(|_| denied())?;
     if !opened.is_file() || opened.len() != meta.len() {
         return Err(denied());
@@ -302,37 +304,48 @@ impl PackageLifecycleLedger {
             ) {
                 return Err(SupervisorError::InvalidTransition);
             }
-        }else if body.stage!="package_prepared"{
+        } else if body.stage != "package_prepared" {
             return Err(SupervisorError::InvalidTransition);
         }
-        let prior=events.last().map(|e|e.entry_sha256.as_str()).unwrap_or(GENESIS);
-        let e=PackageLifecycleEvent{
-            entry_sha256:digest(prior,&body)?,
-            prior_sha256:prior.to_owned(),body,
+        let prior = events
+            .last()
+            .map(|e| e.entry_sha256.as_str())
+            .unwrap_or(GENESIS);
+        let e = PackageLifecycleEvent {
+            entry_sha256: digest(prior, &body)?,
+            prior_sha256: prior.to_owned(),
+            body,
         };
-        let mut bytes=serde_json::to_vec(&e).map_err(|_|denied())?;
+        let mut bytes = serde_json::to_vec(&e).map_err(|_| denied())?;
         bytes.push(b'\n');
-        if bytes.len()+fs::metadata(&self.path).map(|m|m.len() as usize).unwrap_or(0)>MAX_BYTES{
+        if bytes.len()
+            + fs::metadata(&self.path)
+                .map(|m| m.len() as usize)
+                .unwrap_or(0)
+            > MAX_BYTES
+        {
             return Err(SupervisorError::Capacity);
         }
-        let mut options=OpenOptions::new();
+        let mut options = OpenOptions::new();
         options.append(true).create(true);
         match fs::symlink_metadata(&self.path) {
-            Ok(meta)=>{
+            Ok(meta) => {
                 if !meta.is_file() || meta.file_type().is_symlink() {
                     return Err(denied());
                 }
-                #[cfg(windows)] {
+                #[cfg(windows)]
+                {
                     use std::os::windows::fs::MetadataExt;
                     if meta.file_attributes() & 0x400 != 0 {
                         return Err(denied());
                     }
                 }
             }
-            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},
-            Err(_)=>return Err(SupervisorError::JournalUnavailable),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(SupervisorError::JournalUnavailable),
         }
-        #[cfg(unix)]{
+        #[cfg(unix)]
+        {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600).custom_flags(0x20000);
         }

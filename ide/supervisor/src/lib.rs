@@ -1477,11 +1477,15 @@ mod tests {
         build.effect_class = "test_build_isolated".into();
         build.recipe_id = "cargo build --release".into();
         assert!(!validate_plan(&build));
-        build.recipe_id = "python_pytest".into();
-        assert!(!validate_plan(&build));
-        build.recipe_id = "js_tests".into();
-        assert!(!validate_plan(&build));
-        build.recipe_id = "cpp_cmake_build".into();
+        // These are separately bounded, typed native runtime recipes
+        // when multilang-worker is enabled, not free-form command strings.
+        for recipe in ["python_pytest", "js_tests", "cpp_cmake_build"] {
+            build.recipe_id = recipe.into();
+            assert_eq!(validate_plan(&build), cfg!(feature = "multilang-worker"));
+        }
+        build.recipe_id = "uv_sync_offline".into();
+        assert!(!validate_plan(&build)); // package effect and approval required
+        build.recipe_id = "sh -c echo bad".into();
         assert!(!validate_plan(&build));
     }
 

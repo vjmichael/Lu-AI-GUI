@@ -63,7 +63,7 @@ test('unsafe lock sources are rejected before human consent or worker process ad
   assert.match(backend, /IDE054_FROZEN_LOCK_SOURCE_POLICY_DENIED/);
   assert.match(linux, /"[^"]*--no-sources"/);
   assert.match(linux, /"--no-default-groups"/);
-  assert.match(linux, /"--link-mode", "copy"/);
+  assert.match(linux, /"--link-mode",\s*"copy"/);
   assert.match(windows, /--no-sources --link-mode copy/);
   assert.match(backend, /sha256_private_staged_file\(&input\.root, "uv\.lock"\)/);
 });

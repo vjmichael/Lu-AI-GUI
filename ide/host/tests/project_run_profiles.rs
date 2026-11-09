@@ -100,7 +100,7 @@ fn bounded_conventional_test_hints_never_claim_complete_discovery() {
     fs::remove_dir_all(root).unwrap();
 }
 #[test]
-fn closed_and unknown_project_are_denied() {
+fn closed_and_unknown_project_are_denied() {
     let(root,registry,id)=fixture();
     assert!(registry.discover_project_run_profiles("ide-ffffffffffffffffffffffffffffffff").is_err());
     registry.close(&id).unwrap();
