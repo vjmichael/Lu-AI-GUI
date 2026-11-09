@@ -39,6 +39,7 @@ import { safeConventionalTestDiscovery } from './conventional_tests.js';
 import { projectJobLifecycle } from './protected_job_lifecycle.js';
 import { safeDebugTargetReview } from './debug_target_review.js';
 import { safeDebugBinaryEvidence } from './debug_binary_evidence.js';
+import { safeDebugSymbolEvidence } from './debug_symbol_evidence.js';
 import { acceptNativeOutput } from './native_build_output.js';
 
 const sections = [
@@ -3521,6 +3522,35 @@ function App() {
                       buildResult,activeProject?.projectId).terminalReceiptSha}</code></p>
                     <p><strong>Debug execution: not authorized.</strong></p>
                   </section>}
+                {safeDebugSymbolEvidence(buildResult,activeProject?.projectId) &&
+                  <section aria-label="DEV-04.3 structurally matched debug symbols">
+                    <h4>DEV-04.3 · Debug-symbol verification</h4>
+                    <p>Native structural verification bound to the completed
+                      protected build's executable SHA-256, output tree and
+                      terminal receipt. Debugger execution and source-line
+                      mapping are not yet authorized or independently proven.</p>
+                    <p>Executable format:
+                      {' '}{safeDebugSymbolEvidence(buildResult,
+                        activeProject?.projectId).format}</p>
+                    <p>Debug information:
+                      {' '}{safeDebugSymbolEvidence(buildResult,
+                        activeProject?.projectId).kind}</p>
+                    {safeDebugSymbolEvidence(buildResult,
+                      activeProject?.projectId).symbolsPath &&
+                      <p>Matching symbol artifact: <code>{
+                        safeDebugSymbolEvidence(buildResult,
+                          activeProject?.projectId).symbolsPath}</code></p>}
+                    <p>Symbol bytes SHA-256: <code>{safeDebugSymbolEvidence(
+                      buildResult,activeProject?.projectId).symbolsSha}</code></p>
+                    <p><strong>Structural checks only. No full DWARF DIE/CodeView
+                      source mapping or project debugger launch.</strong></p>
+                  </section>}
+                {buildResult.recipeId==='rust_build' &&
+                  safeDebugBinaryEvidence(buildResult,activeProject?.projectId) &&
+                  !safeDebugSymbolEvidence(buildResult,activeProject?.projectId) &&
+                  <p>DEV-04.3: No structurally matching debug information
+                    was verified for this executable. Project debugging
+                    remains unavailable.</p>}
                 {buildResult.recipeId==='rust_build' &&
                   !safeDebugBinaryEvidence(buildResult,activeProject?.projectId) &&
                   <p>DEV-04.2: no uniquely attested executable from this build.
