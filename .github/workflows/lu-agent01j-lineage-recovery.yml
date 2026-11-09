@@ -1,0 +1,90 @@
+name: Lu AGENT-01J Read-Only Lineage Recovery Native Acceptance
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/lu-core/src/agent_lineage_recovery.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'lu-desktop/src-tauri/src/agent_plan_progress.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'lu-desktop/tests/agent01j-lineage-recovery.test.mjs'
+      - '.github/workflows/lu-agent01j-lineage-recovery.yml'
+      - 'source-tree.lock.json'
+  push:
+    branches: ['lu/agent01j-lineage-recovery-20261108']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-agent01j-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  read-only-lineage-native:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact revision and frozen source manifest
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p agent01j-evidence
+          printf 'SHA=%s\nOS=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > agent01j-evidence/source.txt
+      - name: Assert read-only source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01j-lineage-recovery.test.mjs \
+            2>&1 | tee agent01j-evidence/source-contracts.log
+          grep -Fq '# pass 6' agent01j-evidence/source-contracts.log
+          grep -Fq '# fail 0' agent01j-evidence/source-contracts.log
+      - name: Execute actual native SQLite restart and corrupt lineage tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_lineage_recovery::tests -- --nocapture \
+            2>&1 | tee agent01j-evidence/native-lineage.log
+          for case in \
+            root_and_two_generation_lineage_remain_review_only \
+            orphan_and_cross_chat_child_are_blocked \
+            cycle_and_corrupt_revision_do_not_become_recovery \
+            real_sqlite_reopen_keeps_orphan_blocked_and_never_mints_authority; do
+            grep -Fq "test agent_lineage_recovery::tests::$case ... ok" \
+              agent01j-evidence/native-lineage.log
+          done
+          grep -Fq 'test result: ok. 4 passed; 0 failed;' \
+            agent01j-evidence/native-lineage.log
+      - name: Compile actual Lu desktop Tauri integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            2>&1 | tee agent01j-evidence/native-desktop-check.log
+      - name: Disclose unproven boundary
+        shell: bash
+        run: |
+          echo 'AGENT-01J only projects historic lineage and fail-closed recovery. No current oracle, OS descendant kill, genuine GGUF model, installed NSIS or automatic continuation is proven here.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01j-readonly-lineage-${{ matrix.os }}
+          path: agent01j-evidence/
+          retention-days: 14
+          if-no-files-found: warn

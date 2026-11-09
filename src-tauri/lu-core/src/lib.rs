@@ -18,6 +18,7 @@ pub mod agent_plan_revisions;
 pub mod agent_deliverable_receipts;
 pub mod agent_host_scheduler;
 pub mod agent_continuation_intent;
+pub mod agent_lineage_recovery;
 pub mod agent_reviewed_broker_bridge;
 pub mod ai_operations;
 pub mod ansf;

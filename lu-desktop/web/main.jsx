@@ -4684,6 +4684,11 @@ function App() {
                   <section className="readProposalCard"
                     aria-label="Agent next-step preparation and recovery preview">
                     <strong>Next-step preparation (read-only)</strong>
+                    <small>Continuation ancestry: {plan.lineageStatus||'not evaluated'}
+                      {' '}· {Number.isSafeInteger(plan.lineageGenerations)?plan.lineageGenerations:0} child generations.
+                      {plan.lineageParentId?' Parent plan: '+plan.lineageParentId:''}</small>
+                    {plan.lineageStatus?.startsWith('STOP_')&&
+                      <small>Lineage requires manual reconciliation; no new worker or reused authority.</small>}
                     <small>{plan.continuationPreview.requiredAction}</small>
                     {Number.isSafeInteger(plan.continuationPreview.candidateStepIndex)&&
                       <small>Plan step {plan.continuationPreview.candidateStepIndex+1}

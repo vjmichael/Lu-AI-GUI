@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0787cec2869b85902f7993a52e31ec5283623fda",
-  "trackedFileCount": 753,
+  "sourceCommitBeforeLock": "c2660aabfe0ce6232fac0f0dc8a97198a718b2d7",
+  "trackedFileCount": 757,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -30,6 +30,10 @@
     {
       "path": ".github/workflows/lu-agent01i-fresh-continuation.yml",
       "blob": "f80f242c4a2a34efaff59cb75b5d795d78ec318e"
+    },
+    {
+      "path": ".github/workflows/lu-agent01j-lineage-recovery.yml",
+      "blob": "a361b467e7be9aa93a68fef67563dc27b44996f8"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -378,6 +382,10 @@
     {
       "path": "docs/LU_AGENT01I_FRESH_CONTINUATION_20261108.md",
       "blob": "60e4a5a6ff15c6a1179d532381cd5730db49f375"
+    },
+    {
+      "path": "docs/LU_AGENT01J_LINEAGE_RECOVERY_20261108.md",
+      "blob": "0ec11f603976f3bb0af1f7a02eb77b727d26ae66"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -901,7 +909,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_progress.rs",
-      "blob": "97367cac40c75d79a0745b38dca1ffd9a6293937"
+      "blob": "d5d6f91cdcb950b520721da284c632320c47461a"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_review.rs",
@@ -1138,6 +1146,10 @@
     {
       "path": "lu-desktop/tests/agent01i-fresh-continuation.test.mjs",
       "blob": "ff3223985c47098a701ba2518a3fbb48f68acafe"
+    },
+    {
+      "path": "lu-desktop/tests/agent01j-lineage-recovery.test.mjs",
+      "blob": "cdd4f2e6377442dbc58fce48a1141d8b476f1d42"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
@@ -1465,7 +1477,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "8c4c200ad178533eeb8c722981ed0f9c1a0cce69"
+      "blob": "483a696c11bcad64dc29faa619b905fe53349a2a"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1666,6 +1678,10 @@
     {
       "path": "src-tauri/lu-core/src/agent_host_scheduler.rs",
       "blob": "187a4594ed8fdc358a6120a72304abb53a4e7e43"
+    },
+    {
+      "path": "src-tauri/lu-core/src/agent_lineage_recovery.rs",
+      "blob": "046082707c88e071fed196651fb886bec952e838"
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_ledger.rs",
@@ -1961,7 +1977,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "2f79670d89a6727e7378d9a4ed80f4fe48e9f5fa"
+      "blob": "7324b1d5f67917cc5568fa013967bf336484d05f"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
