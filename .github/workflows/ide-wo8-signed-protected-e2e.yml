@@ -55,6 +55,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native Authenticode signed candidate verification failed' }
       - name: Install signed app and exercise real protected UI consent and native workers
         shell: pwsh
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           $ErrorActionPreference='Stop'
           Set-StrictMode -Version Latest
@@ -66,6 +68,13 @@ jobs:
           if ((Test-Path $root) -or (Get-Service LuIdeRecoveryBroker -ErrorAction SilentlyContinue)) {
             throw 'DENIED: protected installed test requires clean native host'
           }
+          # Observe only the fixed native processes, before installation,
+          # so uninstall cannot be accepted with a leaked project LLDB.
+          $nativeNames=@('lldb-dap','cargo','rustc','windows_recovery_service')
+          $processBaseline=@{}
+          foreach ($nativeName in $nativeNames) {
+            $processBaseline[$nativeName]=@(Get-Process -Name $nativeName -ErrorAction SilentlyContinue).Count
+          }
           $installed=$false
           $uninstalled=$false
           try {
@@ -76,6 +85,22 @@ jobs:
             if ((Get-FileHash -Algorithm SHA256 $exe).Hash -ine $manifest.desktop.sha256) {
               throw 'DENIED: installed native desktop not identical to pinned candidate'
             }
+            # DEV-04.5C technical-only intake: the exact LLDB adapter,
+            # transitive DLLs, fixed probe and original notice MUST match the
+            # separately reviewed candidate lock. No self-generated pin and
+            # no unsigned/unlisted runtime material is admitted.
+            $debugLock=Join-Path $base 'dev045c-project-debug-bundle.lock.json'
+            if (!(Test-Path -LiteralPath $debugLock -PathType Leaf)) {
+              throw 'DENIED: reviewed project LLDB candidate lock missing'
+            }
+            $installerSha=([string]$manifest.installer.sha256).ToLowerInvariant()
+            $desktopSha=([string]$manifest.desktop.sha256).ToLowerInvariant()
+            $serviceSha=([string]$manifest.service.sha256).ToLowerInvariant()
+            python ide/packaging/verify_dev045c_debug_bundle.py --installed-root $root --lock $debugLock --source-sha $env:SOURCE_SHA --platform windows-x86_64 --installer-sha256 $installerSha --desktop-sha256 $desktopSha --service-sha256 $serviceSha
+            if ($LASTEXITCODE -ne 0) {
+              throw 'DENIED: installed LLDB or dependencies differ from reviewed candidate'
+            }
+            Write-Host 'DEV045C_INSTALLED_LLDB_CANDIDATE_BYTES_AND_NOTICES=TECHNICAL_INTEGRITY_ONLY'
             $fixture=Join-Path $env:RUNNER_TEMP ('wo8-protected-'+$env:GITHUB_RUN_ID)
             New-Item -ItemType Directory (Join-Path $fixture 'src') -Force | Out-Null
             Set-Content -LiteralPath (Join-Path $fixture 'Cargo.toml') -Encoding utf8 -Value @(
@@ -93,15 +118,31 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixture git commit failed' }
             & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $manifest.desktop.sha256 -Scenario ProtectedBuildDebug -FixtureRoot $fixture
             if (!$?) { throw 'DENIED: actual GUI consent and protected OS receipts incomplete' }
+            # Unlike the preceding fixed-debuggee smoke, this flow debugs
+            # the exact Cargo executable built inside the installed worker.
+            # Both real native dialogs and the verified PE/PDB bridge are
+            # required. The separately launched second desktop must deny
+            # automatic reuse of the old protected debugger approval.
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $manifest.desktop.sha256 -Scenario Dev045CInstalledProjectDebugger -FixtureRoot $fixture
+            if (!$?) { throw 'DENIED: installed protected PROJECT debugger execution failed' }
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $manifest.desktop.sha256 -Scenario Dev045CInstalledProjectRestartDenied -FixtureRoot $fixture
+            if (!$?) { throw 'DENIED: restarted installed debugger replay not denied' }
             $remover=@(Get-ChildItem $root -File -Filter '*uninstall*.exe')
             if ($remover.Count -ne 1) { throw 'DENIED: no single installed uninstaller' }
             $uninstall=Start-Process $remover[0].FullName -ArgumentList '/S' -PassThru -Wait
             if ($uninstall.ExitCode -ne 0 -or (Get-Service LuIdeRecoveryBroker -ErrorAction SilentlyContinue) -or (Test-Path $exe)) {
               throw 'DENIED: protected service/process uninstall unverified'
             }
+            foreach ($nativeName in $nativeNames) {
+              if (@(Get-Process -Name $nativeName -ErrorAction SilentlyContinue).Count -gt $processBaseline[$nativeName]) {
+                throw 'DENIED: protected project debugger left native descendants after uninstall'
+              }
+            }
             $uninstalled=$true
-            Write-Host 'WO8_SIGNED_INSTALLED_PROTECTED_CARGO_AND_LLDB_UI=PASS'
-            Write-Host 'WO8_CRASH_CANCEL_AND_RECONCILIATION=NOT_TESTED'
+            Write-Host 'WO8_SIGNED_INSTALLED_PROTECTED_CARGO_AND_FIXED_LLDB_UI=PASS'
+            Write-Host 'DEV045C_SIGNED_INSTALLED_CARGO_TO_PROJECT_LLDB_RESTART_UNINSTALL=PASS'
+            Write-Host 'DEV045C_PROJECT_DEBUGGER_CANCEL_CRASH=NOT_TESTED'
+            Write-Host 'DEV045C_RELEASE_APPROVAL=NOT_ESTABLISHED'
           } finally {
             if ($installed -and !$uninstalled) {
               Write-Warning 'WO8 native protected acceptance did not finish; release cannot be approved'
@@ -110,5 +151,5 @@ jobs:
       - name: Evidence limits
         shell: pwsh
         run: |
-          Write-Host 'This run verifies real signed installed GUI consent/build/debug and uninstall only.'
-          Write-Host 'Source swaps, cancellation races, host/service crash recovery and release approval remain separate gates.'
+          Write-Host 'This manual gate requires independently pinned installed LLDB runtime and real project Cargo-to-DAP UI execution.'
+          Write-Host 'Project-specific cancel, host/service crash, source swaps, and release signing/legal approval remain separate gates.'

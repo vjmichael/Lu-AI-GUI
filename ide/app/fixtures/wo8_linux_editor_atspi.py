@@ -264,7 +264,10 @@ def _native_picker_confirm(attempt=0):
             role = (obj.getRoleName() or "").casefold()
             if name not in priority or "button" not in role or not _native_dialog_ancestor(obj):
                 continue
-            if not obj.getState().contains(pyatspi.STATE_ENABLED):
+            states = obj.getState()
+            if not (states.contains(pyatspi.STATE_ENABLED)
+                    and states.contains(pyatspi.STATE_SHOWING)
+                    and states.contains(pyatspi.STATE_VISIBLE)):
                 continue
             try:
                 rect = obj.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
@@ -338,6 +341,58 @@ def _native_chooser_still_open():
         except Exception:
             continue
     return False
+
+
+def _native_chooser_diagnostics():
+    """Bounded, category-only evidence for the visible native OS chooser.
+
+    Never print raw accessible names, filesystem paths, full window titles,
+    keyboard contents or screenshots. A diagnostic is not an approval.
+    """
+    chooser_count = 0
+    chooser_rect_valid = 0
+    dialog_buttons = 0
+    enabled_visible_buttons = 0
+    explicit_folder_actions = 0
+    generic_open_actions = 0
+    other_actions = 0
+    for node in elements():
+        try:
+            role = (node.getRoleName() or "").casefold()
+            state = node.getState()
+            visible = (state.contains(pyatspi.STATE_SHOWING)
+                       and state.contains(pyatspi.STATE_VISIBLE))
+            if "file chooser" in role and visible:
+                chooser_count += 1
+                try:
+                    rect = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+                    if rect.width >= 320 and rect.height >= 180:
+                        chooser_rect_valid += 1
+                except Exception:
+                    pass
+            if "button" not in role or not _native_dialog_ancestor(node):
+                continue
+            dialog_buttons += 1
+            if not visible or not state.contains(pyatspi.STATE_ENABLED):
+                continue
+            enabled_visible_buttons += 1
+            caption = (node.name or "").strip().casefold()
+            if caption in {"select folder", "choose folder", "select", "open folder"}:
+                explicit_folder_actions += 1
+            elif caption == "open":
+                generic_open_actions += 1
+            else:
+                other_actions += 1
+        except Exception:
+            continue
+    print("P04_GTK_NATIVE_CHOOSER_INVENTORY="
+          "visible_choosers:" + str(min(chooser_count, 16)) +
+          ";sized_choosers:" + str(min(chooser_rect_valid, 16)) +
+          ";dialog_buttons:" + str(min(dialog_buttons, 256)) +
+          ";enabled_visible_buttons:" + str(min(enabled_visible_buttons, 256)) +
+          ";explicit_confirmations:" + str(min(explicit_folder_actions, 256)) +
+          ";generic_open:" + str(min(generic_open_actions, 256)) +
+          ";other_buttons:" + str(min(other_actions, 256)), flush=True)
 
 
 def _registered_native_project_is_exposed():
@@ -444,6 +499,7 @@ def select_native_folder():
         attempts += 1
         time.sleep(0.7)
     if _native_chooser_still_open():
+        _native_chooser_diagnostics()
         print("P04_NATIVE_GTK_FOLDER_ACCEPT=visible_dialog_still_open_after_bounded_real_actions;"
               "attempts=" + str(attempts),flush=True)
         deny("native_folder_chooser_not_accepted")

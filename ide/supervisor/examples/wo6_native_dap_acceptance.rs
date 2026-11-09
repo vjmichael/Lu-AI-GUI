@@ -222,7 +222,7 @@ mod protected {
     // approval after an independently verified PE/PDB and durable build receipt.
     // Test-only native SCM acceptance; never a user grant or release approval.
     #[cfg(windows)]
-    fn run_windows_project_debug() -> Result<(), Box<dyn std::error::Error>> {
+    fn run_windows_project_debug(cancel_project: bool) -> Result<(), Box<dyn std::error::Error>> {
         use lu_ide_execution_supervisor::{
             debug_binary_witness::audit_debug_binary_candidate,
             debug_symbol_verification::verify_build_debug_symbols,
@@ -466,7 +466,25 @@ mod protected {
         if stopped.is_none() || !threads || !stack {
             return Err("DENIED: native Windows project LLDB stop/threads/stack absent".into());
         }
-        dap.close().map_err(|e| e.code())?;
+        if cancel_project {
+            // The debugger reached a real stopped Cargo-built project and
+            // returned actual nonempty thread/stack evidence. Dropping the
+            // native gateway must journal CancelRequested BEFORE the Job
+            // termination and verify the entire kernel descendant tree.
+            drop(dap);
+            let history = supervisor
+                .receipt_history(&debug_job.job_id)
+                .map_err(|e| e.code())?;
+            if !history.windows(2).any(|pair| {
+                pair[0].body.phase == JobPhase::CancelRequested
+                    && pair[1].body.phase == JobPhase::Cancelled
+            }) {
+                return Err("DENIED: project LLDB cancel receipts not fsynced before tree kill".into());
+            }
+            println!("DEV045C_WINDOWS_PROJECT_LLDB_CANCEL_JOB_TREE_AND_RECEIPTS=PASS");
+        } else {
+            dap.close().map_err(|e| e.code())?;
+        }
         if supervisor.record_human_approval(
             &debug_job.job_id, &debug_job.plan_sha256, &debug_plan.source_head, true,
         ).is_ok() {
@@ -475,9 +493,15 @@ mod protected {
         if sha(&source_file)? != original_source_sha {
             return Err("DENIED: debugger changed original project source".into());
         }
+        let expected_debug = if cancel_project { JobPhase::Cancelled } else { JobPhase::Completed };
         let jobs = supervisor.inspect().map_err(|e| e.code())?;
         if jobs.len() != 2 || jobs.iter().any(|j| {
-            j.phase != JobPhase::Completed || j.requires_reconciliation
+            j.requires_reconciliation
+                || j.phase != (if j.job_id == debug_job.job_id {
+                    expected_debug
+                } else {
+                    JobPhase::Completed
+                })
         }) {
             return Err("DENIED: native protected build/debug terminals incomplete".into());
         }
@@ -490,7 +514,12 @@ mod protected {
         let replay = Supervisor::open(journal).map_err(|e| e.code())?;
         let jobs = replay.inspect().map_err(|e| e.code())?;
         if jobs.len() != 2 || jobs.iter().any(|j| {
-            j.phase != JobPhase::Completed || j.requires_reconciliation
+            j.requires_reconciliation
+                || j.phase != (if j.job_id == debug_job.job_id {
+                    expected_debug
+                } else {
+                    JobPhase::Completed
+                })
         }) {
             return Err("DENIED: native SCM debug receipts failed journal restart".into());
         }
@@ -512,7 +541,11 @@ mod protected {
         let args: Vec<String> = env::args().skip(1).collect();
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug"] {
-            return run_windows_project_debug();
+            return run_windows_project_debug(false);
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-cancel"] {
+            return run_windows_project_debug(true);
         }
         let cancel = args.as_slice() == ["--cancel"];
         #[cfg(target_os = "linux")]
