@@ -115,10 +115,10 @@ test('UI clears potentially stale success before reading and refuses a malformed
 test('screen states limits and says historical evidence is not live or an authorization',()=>{
   for(const phrase of [
     'Original source bound:',
-    'Additional original effect operations were not read',
     'Older authenticated',
     'NOT RECHECKED',
     'Historical grants cannot be reused',
     'No native operation or model continuation was authorized'
   ]) assert.ok(web.includes(phrase),phrase);
+  assert.match(web,/Additional\s+original effect operations were not read/);
 });
