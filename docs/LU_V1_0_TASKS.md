@@ -16,8 +16,8 @@
 |---|---|---|
 | IMP-01 AGENT-01F | P0 | Explicit real loaded-GGUF plan proposal through normal chat + current ANSF goal/memory into host-owned review-only DRAFT SOURCE CANDIDATE; complete model/OS proof, host concurrency and an approved fresh-step broker+oracle execution loop; no model-origin permission |
 | IMP-02 MEMORY-LOOP | P0 | ANSF original-source/procedural memory, belief revision, context-change detection and clarification integration in genuine model and resumed task turns |
-| IMP-03 EXEC-INTERFACE | P0 | Actual GGUF-selected installed Git/FFprobe/application operations through existing reviewed broker, not replacement app features |
-| IMP-04 EXEC-AUTH | P0 | Fresh per-step human/host scope, effect/resource/egress control, broker-to-agent live admission without claiming preflight already dispatches |
+| IMP-03 EXEC-INTERFACE | P0 | One exact human-approved independent-witness reviewed Git/FFprobe step is now wired to the actual GGUF model/tool loop as SOURCE CANDIDATE; genuine selected-model/OS results and more operations are still open, no replacement apps |
+| IMP-04 EXEC-AUTH | P0 | AGENT-01G source now combines fresh native-selected resource+step confirmation, saved ANSF original turn, host-owned scheduler claim, reviewed broker preflight and real worker invocation; native/installed authority/lifecycle acceptance, multi-step continuation and broader scope remain open |
 | IMP-05 EXEC-LIFECYCLE | P0 | OS worker start/cancel/reap/restart, Linux cgroup-v2 escape custody, Windows Job Object evidence and uncertain-effect recovery |
 | IMP-06 EXEC-FEEDBACK | P0 | Independent semantic output/source validation, typed model feedback, source revision checks and honest VERIFIED/UNSUPPORTED/CONFLICT reporting |
 | IMP-07 TASK-LOOP | P0 | Source-goal/clarify → plan/review → authorized worker → independent outcome → user-visible feedback → safe continuation/recovery |
@@ -32,7 +32,7 @@
 | GATE-01 | Exact-head REPO-01 source, Windows/Linux Rust/SQLite/ANSF and React/Tauri compilation and regression results |
 | GATE-02 | E1-P03–P07 genuine supervised application, authorization, model tool choice and inner/outer journal results |
 | GATE-03 | E1-P08C–P13 real Windows/Linux process custody, independent Git/MP4/FFprobe oracles, source revision/uncertain outcomes |
-| GATE-04 | E1-P15/AGENT-01A–F real plan, goal, review, host ownership, restart and eventual live execution acceptance |
+| GATE-04 | E1-P15/AGENT-01A–G real plan, goal, review, one-step live reviewed Git/FFprobe/selected-GGUF, host OS custody and restart/uncertainty acceptance |
 | GATE-05 | UX-CHAT01/02 original-history, edit/reply/provenance native CI and later installed GUI |
 | GATE-06 | M2–M5 ANSF/memory migration, persistent retrieval and genuine-model benchmarks |
 | GATE-07 | Same-model KIAF plan-only vs reviewed execution vs limited utilities measurable evidence |
@@ -70,6 +70,8 @@
 | RELEASE-01 | P0 | Signed NSIS installer, upgrade and independent v1.0 E2E | DEFERRED | Near-v1.0 Win10/11 acceptance |
 
 **AGENT-01F stage 2 and 3 (November 8):** Source now routes an explicit text-only model plan turn through the existing loaded GGUF backend, strict no-tool JSON step parser, original human turn/current ANSF goal checks, inert durable plan draft and review UI. The reviewed broker checks step kind/expected output but still does **not** dispatch from this plan. AGENT-01C/01D now have a source-level fresh-human execution turn vs original plan turn receipt reconciliation path, checking the actual E1-P15 task origin singleton, inner/outer journals, independent verified outcome and broker claim before marking historical evidence. It is **not live execution**. Native CI, genuine model results, user-approved step dispatch and independently verified result/restart evidence are **OPEN**. See [AGENT-01F details](LU_AGENT01F_MODEL_PLAN_INGRESS_20261108.md).
+
+**AGENT-01G (November 8):** The reviewed-agent step handoff is now source implemented in `lu_agent_run_reviewed_step`: native file/folder picker + second exact step/plan/revision OS confirmation; freshly recorded original human step turn; actual `AgentHostScheduler::claim_host/propose_step` and `ReviewedApplicationTurnSession::preflight_scheduled_step/run_journaled_observed` with one reviewed operation; independently witnessed AGENT-01C/01D result linkage and host-authored conversation feedback. **No native/GGUF acceptance has been observed**. Host claims are still one-per-plan and may require explicit reconciliation; full multi-step continuation, Linux/Windows descendant custody and physical installed-app gates remain open. [AGENT-01G details](LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md).
 
 ## Change tracking convention
 Each change records task ID, commit SHA, tests (command/platform/results), CI run URL, failures, and deferred manual scenario. `DONE` means evidence exists for the stated scope only. Never treat mock/source-string tests as physical Windows evidence.

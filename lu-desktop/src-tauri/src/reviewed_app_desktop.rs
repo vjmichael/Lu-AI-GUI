@@ -13,6 +13,11 @@ use lu_core::{
     inference_host::Cancellation,
     journal::EffectJournal,
     model_turn_journal::ModelTurnJournal,
+    agent_reviewed_broker_bridge::{ReviewedBrokerOperation,ScheduledBrokerBinding},
+    agent_host_scheduler::{AgentHostScheduler,ScheduleBudget,HostFreshStepConsent},
+    agent_plan_ledger::{AgentPlanLedger,PlanStepKind},
+    agent_plan_revisions::{AgentPlanRevisionStore,ExpectedDeliverable},
+    agent_deliverable_receipts::AgentDeliverableReceipts,
     native_app_admission::HostReviewedExecutable,
     native_app_typed_git::{HostReviewedGitRead,GitReadOperation},
     native_app_typed_ffprobe::{HostReviewedMediaProbe,ReviewedContainer},
@@ -157,12 +162,198 @@ fn reviewed_media_record(
         stdout_limit:16_384,timeout_seconds:15,
     }
 }
-/// A single explicit button/next-Send choice. This is not a generic run
-/// command or a freeform executable chooser: only reviewed Git or FFprobe.
+/// The WebView supplies only the selected immutable plan identity and one
+/// named reviewed operation. This is a request for a NATIVE dialog, not a
+/// source of approval, selected path, command, executable or privilege.
+#[derive(Clone)]
+struct ApprovedStepTarget{
+    plan_id:String,
+    original_turn:String,
+    revision_sha:String,
+    step_index:u8,
+    operation:ReviewedBrokerOperation,
+}
+fn reviewed_step_operation(name:&str)->Option<(ReviewedBrokerOperation,&'static str,&'static str)>{
+    match name{
+        "git_head"=>Some((ReviewedBrokerOperation::GitHead,"git","read HEAD")),
+        "git_status"=>Some((ReviewedBrokerOperation::GitStatus,"git","inspect tracked status")),
+        "git_branch"=>Some((ReviewedBrokerOperation::GitBranch,"git","read current branch")),
+        "git_history"=>Some((ReviewedBrokerOperation::GitHistory,"git","count commit history")),
+        "media_facts"=>Some((ReviewedBrokerOperation::MediaFacts,"media","inspect media facts")),
+        _=>None
+    }
+}
+struct NativeScheduledStepConsent{
+    chat:String,turn:String,plan:String,revision:String,step:u8,budget:ScheduleBudget,
+}
+impl HostFreshStepConsent for NativeScheduledStepConsent{
+    fn explicitly_requested_step(
+        &self,chat:&str,turn:&str,plan:&str,revision:&str,step:u8,
+        budget:&ScheduleBudget,
+    )->bool{
+        self.chat==chat&&self.turn==turn&&self.plan==plan
+            &&self.revision==revision&&self.step==step&&self.budget==*budget
+    }
+}
+fn schedule_budget()->ScheduleBudget{
+    ScheduleBudget{
+        max_claims:1,model_token_ceiling:1536,tool_call_ceiling:1,
+        wall_clock_ceiling_ms:60_000,output_ceiling_bytes:65_536,
+    }
+}
+fn current_step_clarifications_resolved(host:&DesktopState,chat:&str)
+    ->Result<(),String>{
+    let state=host.goal_memory.as_ref()
+        .map_err(|_|"Current ANSF goal memory unavailable")?
+        .snapshot(&host.chats,chat)?;
+    if state.goal_id.is_none()||state.revision_event_id.is_none()
+        ||state.questions.iter().any(|q|
+            matches!(q.status.as_str(),"pending"|"deferred")){
+        return Err("Saved goal has open or deferred clarification; no planned worker may run".into())
+    }
+    Ok(())
+}
+fn original_step_for_review(
+    host:&DesktopState,chat:&str,plan:&str,revision:&str,step:u8,
+)->Result<String,String>{
+    current_step_clarifications_resolved(host,chat)?;
+    let root=host.catalog_path.parent().ok_or("Host profile unavailable")?;
+    let active=crate::agent_plan_progress::read_chat_progress(root,chat,&host.chats)?
+        .into_iter().find(|p|p.plan_id==plan)
+        .ok_or("Plan is not linked to this original conversation")?;
+    if active.revision_sha256.as_deref()!=Some(revision)
+        ||active.revision_review!="APPROVED_PLAN_ONLY"
+        ||active.plan_state=="CANCEL_REQUESTED"
+        ||active.plan_state=="NEEDS_REVIEW"
+        ||active.supervisor_state!="NOT_CLAIMED"{
+        return Err("An approved, unclaimed current plan revision is required".into())
+    }
+    let path=crate::agent_plan_review::existing_plan_file(root)?;
+    let revisions=AgentPlanRevisionStore::open(&path)
+        .map_err(|e|format!("Cannot inspect plan revision: {e:?}"))?;
+    let live=revisions.latest(plan,chat)
+        .map_err(|_|"Saved plan revision unavailable")?
+        .ok_or("Saved plan revision not found")?;
+    let selected=live.steps.get(step as usize).ok_or("Unknown step index")?;
+    // Refuse an obviously unresolved dependency BEFORE selecting a file or
+    // presenting a native approval. The scheduler later rechecks the actual
+    // independent journal; display state alone NEVER suffices for authority.
+    if let Some(parent)=selected.depends_on{
+        if active.steps.get(parent as usize)
+            .is_none_or(|p|p.schedule_state!="HISTORICAL_WITNESS_RECORDED"){
+            return Err("The preceding plan step lacks verified historical evidence".into())
+        }
+    }
+    if live.revision_sha256!=revision||live.review_state!="APPROVED_PLAN_ONLY"
+        ||selected.kind!=PlanStepKind::IndependentlyCheck
+        ||selected.expected!=ExpectedDeliverable::IndependentWitness{
+        return Err("Only an approved independent-witness plan step is supported by this reviewed broker".into())
+    }
+    Ok(active.original_human_turn_id)
+}
+/// Select a single *already independently verified* original inner worker
+/// call in the exact fresh human turn's own journal. This does NOT certify
+/// results; AGENT-01C independently re-opens all worker/task/oracle records.
+fn unique_independent_reviewed_call(
+    profile:&Path,turn:&str,tool:&str,
+)->Result<String,String>{
+    let suffix=match tool{
+        "lu.reviewed.git.head"=>"-gh",
+        "lu.reviewed.git.status"=>"-gs",
+        "lu.reviewed.git.branch"=>"-gb",
+        "lu.reviewed.git.history"=>"-gc",
+        "lu.reviewed.media.facts"=>"-fm",
+        _=>return Err("Unsupported exact reviewed application tool".into())
+    };
+    if turn.len()!=34||!turn.starts_with("g-")
+        ||!turn[2..].bytes().all(|b|b.is_ascii_hexdigit()&&!b.is_ascii_uppercase()){
+        return Err("Invalid original human execution turn".into())
+    }
+    let file=profile.join(format!("lu-reviewed-effects-{turn}.sqlite"));
+    let meta=fs::symlink_metadata(&file)
+        .map_err(|_|"No current reviewed worker journal for step")?;
+    if !meta.is_file()||meta.file_type().is_symlink()
+        ||meta.len()>64*1024*1024{
+        return Err("Reviewed worker evidence file is not trustworthy".into())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes()&0x400!=0{
+            return Err("Linked reviewed worker journal refused".into())
+        }
+    }
+    let db=rusqlite::Connection::open_with_flags(
+        &file,rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY|
+        rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
+    ).map_err(|_|"Cannot read independently observed worker evidence")?;
+    let mut query=db.prepare(
+        "SELECT e.call_id FROM lu_effects e
+         INNER JOIN lu_independent_outcomes w ON e.call_id=w.call_id
+         WHERE e.tool_id=?1 AND e.state='APPLIED'
+           AND w.verdict='VERIFIED'
+         ORDER BY e.call_id LIMIT 3"
+    ).map_err(|_|"Independent worker evidence table unavailable")?;
+    let calls=query.query_map(rusqlite::params![tool],|r|r.get::<_,String>(0))
+        .map_err(|_|"Cannot list independent worker receipts")?;
+    let mut found=Vec::new();
+    for call in calls{
+        let value=call.map_err(|_|"Damaged reviewed worker receipt identity")?;
+        if value.ends_with(suffix)&&value.len()>suffix.len()&&value.len()<=128{
+            found.push(value)
+        }
+    }
+    if found.len()!=1{
+        return Err("Expected exactly one verified reviewed worker call; reconcile before retrying".into())
+    }
+    Ok(found.remove(0))
+}
+/// A model-selected plan step still requires NEW explicit human confirmation,
+/// a fresh original ChatStore turn, a selected local resource and a *single*
+/// exact reviewed app capability. Only the installed Lu host may dispatch it.
+#[tauri::command]
+pub(crate) async fn lu_agent_run_reviewed_step(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    session_id:String,chat_id:String,plan_id:String,
+    revision_sha:String,step_index:u8,operation:String,
+)->Result<Option<String>,String>{
+    let (reviewed_op,mode,description)=reviewed_step_operation(&operation)
+        .ok_or("Unreviewed step operation")?;
+    let host=Arc::clone(state.inner());
+    let original_turn=original_step_for_review(
+        &host,&chat_id,&plan_id,&revision_sha,step_index
+    )?;
+    // The human needs to approve the actual operation and resource in a
+    // second native dialog. This text is host-assembled, never model-provided.
+    let prompt=format!(
+        "Native user-approved plan step {}: {} for plan {} revision {}. \
+         Inspect only the newly selected reviewed local source; report \
+         what its independently checked facts actually support.",
+        step_index+1,description,plan_id,revision_sha
+    );
+    reviewed_app_ask_internal(
+        app,host,session_id,chat_id,prompt,mode.into(),
+        Some(ApprovedStepTarget{
+            plan_id,original_turn,revision_sha,step_index,
+            operation:reviewed_op
+        })
+    ).await
+}
+/// Existing ordinary reviewed-app asks remain separate and unrestricted by
+/// an AGENT plan; they still require their own one-turn native picker.
 #[tauri::command]
 pub(crate) async fn lu_reviewed_app_ask(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,
     session_id:String,chat_id:String,prompt:String,mode:String,
+)->Result<Option<String>,String>{
+    reviewed_app_ask_internal(
+        app,Arc::clone(state.inner()),session_id,chat_id,prompt,mode,None
+    ).await
+}
+async fn reviewed_app_ask_internal(
+    app:AppHandle,host:Arc<DesktopState>,
+    session_id:String,chat_id:String,prompt:String,mode:String,
+    scheduled:Option<ApprovedStepTarget>,
 )->Result<Option<String>,String>{
     if !matches!(mode.as_str(),"git"|"media"){
         return Err("Unsupported reviewed application operation".into())
@@ -170,7 +361,6 @@ pub(crate) async fn lu_reviewed_app_ask(
     if prompt.is_empty()||prompt.len()>8192{
         return Err("Reviewed app prompt must contain 1–8192 bytes".into())
     }
-    let host=Arc::clone(state.inner());
     host.chats.history(&chat_id)?;
     let status=host.supervisor.status().map_err(|e|format!("Model status: {e:?}"))?;
     if status.session_id.as_deref()!=Some(session_id.as_str()){
@@ -217,6 +407,38 @@ pub(crate) async fn lu_reviewed_app_ask(
         }else{return Err("Only WAV and MP4 can be inspected in this mode".into())};
         (Some(hash_file(&selected,256*1024*1024)?),Some(container))
     };
+    if let Some(target)=scheduled.as_ref(){
+        // Stale or superseded plans are refused even after the OS picker.
+        let actual=original_step_for_review(&host,&chat_id,
+            &target.plan_id,&target.revision_sha,target.step_index)?;
+        if actual!=target.original_turn{
+            return Err("Original plan changed while selecting local source".into())
+        }
+        let (tool_id,read_id)=target.operation.native_ids();
+        let explanation=format!(
+            "Execute ONE reviewed read-only task step?\n\n\
+             Plan: {}\nRevision: {}\nStep: {}\n\
+             Reviewed execute: {}\nApproved read: {}\n\
+             Selected source: {}\nProgram: {}\nProgram SHA-256: {}\n\
+             Source SHA-256 (media only): {}\n\n\
+             This authorizes only the selected source and operation in ONE \
+             new original human turn. The model cannot grant its own \
+             permission. Independent verification may fail, and no \
+             uncertain operation will be automatically retried.",
+            target.plan_id,target.revision_sha,target.step_index+1,
+            tool_id,read_id,selected.display(),executable.display(),
+            exe_sha,media_sha.as_deref().unwrap_or("Git source guarded per operation")
+        );
+        let chooser=app.clone();
+        let confirmed=tauri::async_runtime::spawn_blocking(move||{
+            chooser.dialog().message(explanation)
+                .title("Lu — Authorize one reviewed agent step")
+                .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                    "Authorize one step".into(),"Cancel".into()
+                )).blocking_show()
+        }).await.map_err(|_|"Fresh native step confirmation unavailable")?;
+        if !confirmed{return Ok(None)}
+    }
     let gid=next_id("g-");
     let (ticket,position)=host.generation_queue
         .enqueue(&session_id,&chat_id,&gid)?;
@@ -272,6 +494,17 @@ pub(crate) async fn lu_reviewed_app_ask(
             let git=if git_mode{
                 let mut records=Vec::new();
                 for op in operations{
+                    if let Some(ref target)=scheduled{
+                        let expected=match target.operation{
+                            ReviewedBrokerOperation::GitHead=>GitReadOperation::HeadCommit,
+                            ReviewedBrokerOperation::GitStatus=>GitReadOperation::TrackedStatus,
+                            ReviewedBrokerOperation::GitBranch=>GitReadOperation::CurrentBranch,
+                            ReviewedBrokerOperation::GitHistory=>GitReadOperation::HistoryCount,
+                            ReviewedBrokerOperation::MediaFacts=>
+                                return Err("Wrong reviewed resource for plan step".into()),
+                        };
+                        if op!=expected{continue}
+                    }
                     let record=reviewed_git_record(
                         op,&selected,&executable,&exe_sha,&gid_run
                     );
@@ -308,6 +541,50 @@ pub(crate) async fn lu_reviewed_app_ask(
             let deadline=SystemTime::now()
                 .checked_add(Duration::from_secs(300))
                 .ok_or("Cannot schedule reviewed app grant")?;
+            if scheduled.is_some(){
+                current_step_clarifications_resolved(&host,&chat_id)?;
+            }
+            // AGENT-01G: a persisted plan approval never starts a worker.
+            // This fresh human turn, native exact-resource confirmation and
+            // independent live in-process host fence create only the bounded
+            // exact-step proposal; the reviewed per-turn broker still owns
+            // every real tool invocation.
+            let schedule=if let Some(target)=scheduled.as_ref(){
+                let profile=host.catalog_path.parent()
+                    .ok_or("Host plan profile unavailable")?;
+                let planfile=crate::agent_plan_review::existing_plan_file(profile)?;
+                let sources=crate::agent_plan_review::OriginalChatGoalSources{
+                    chats:&host.chats
+                };
+                let ledger=AgentPlanLedger::open(&planfile)
+                    .map_err(|e|format!("Original plan unavailable: {e:?}"))?;
+                let revisions=AgentPlanRevisionStore::open(&planfile)
+                    .map_err(|e|format!("Original revision unavailable: {e:?}"))?;
+                let receipts=AgentDeliverableReceipts::open(&planfile)
+                    .map_err(|e|format!("Independent result ledger unavailable: {e:?}"))?;
+                let scheduler=AgentHostScheduler::open(&planfile)
+                    .map_err(|e|format!("Host scheduler unavailable: {e:?}"))?;
+                let owner=next_id("h-");
+                let claim=next_id("q-");
+                let budget=schedule_budget();
+                scheduler.claim_host(
+                    &target.plan_id,&chat_id,&target.original_turn,
+                    &owner,&target.revision_sha,budget,
+                    &ledger,&revisions,&sources
+                ).map_err(|e|format!("Original plan host claim refused: {e:?}"))?;
+                let consent=NativeScheduledStepConsent{
+                    chat:chat_id.clone(),turn:gid_run.clone(),
+                    plan:target.plan_id.clone(),revision:target.revision_sha.clone(),
+                    step:target.step_index,budget
+                };
+                scheduler.propose_step(
+                    &target.plan_id,&chat_id,&target.original_turn,
+                    &owner,1,&target.revision_sha,target.step_index,
+                    &claim,&gid_run,budget,&ledger,&revisions,&sources,
+                    &verifier,&consent,profile,&receipts
+                ).map_err(|e|format!("Exact fresh human step refused: {e:?}"))?;
+                Some((ledger,revisions,receipts,scheduler,owner,claim))
+            }else{None};
             authority.open_user_task(TaskAuthority{
                 conversation_id:chat_id.clone(),
                 user_turn_id:gid_run.clone(),task_id:gid_run.clone(),
@@ -343,6 +620,18 @@ pub(crate) async fn lu_reviewed_app_ask(
                 authority,origin,gid_run.clone(),tasks,supervisor,effects,
                 policy,git,media
             ).map_err(|e|format!("Reviewed app could not be admitted: {e}"))?;
+            let binding:Option<ScheduledBrokerBinding>=
+                if let (Some(target),Some((ledger,revisions,_,scheduler,owner,claim)))=
+                    (scheduled.as_ref(),schedule.as_ref()){
+                    let sources=crate::agent_plan_review::OriginalChatGoalSources{
+                        chats:&host.chats
+                    };
+                    Some(reviewed.preflight_scheduled_step(
+                        scheduler,ledger,revisions,&sources,
+                        &target.plan_id,&target.original_turn,owner,1,
+                        &target.revision_sha,claim,target.step_index,target.operation
+                    )?)
+                }else{None};
             let available=reviewed.capabilities()
                 .map_err(|e|format!("Reviewed capabilities unavailable: {e}"))?;
             if available.is_empty()||available.iter().any(|item|
@@ -376,7 +665,32 @@ pub(crate) async fn lu_reviewed_app_ask(
                 chat_id:chat_id.clone(),generation_id:gid_run.clone(),
                 phase:"running",position:0,
             });
-            let model_prompt=if git_mode{
+            let model_prompt=if let Some(target)=scheduled.as_ref(){
+                let saved=host.goal_memory.as_ref()
+                    .map_err(|_|"Current source-backed ANSF memory unavailable")?
+                    .snapshot(&host.chats,&chat_id)?;
+                let remembered=memory_desktop::model_context(&saved);
+                let (tool,read)=target.operation.native_ids();
+                let mode_text=if git_mode{
+                    "one host-selected Git repository"
+                }else{"one host-selected WAV/MP4 source"};
+                let bounded=format!(
+                    "LU FRESH NATIVE-APP STEP: The user confirmed exact plan {} \
+                     revision {} step {} in the host OS dialog, with {}. \
+                     The ONLY authorized operation is {} and its host-only \
+                     read pair {}. Select that ONE available model tool, \
+                     do not invent arguments, paths, binaries, scopes or \
+                     new tool calls; report uncertain/unsupported outcomes \
+                     accurately. This does not authorize the next step. \
+                     User's newly confirmed request: {} {}",
+                    target.plan_id,target.revision_sha,target.step_index,
+                    mode_text,tool,read,prompt,remembered
+                );
+                if bounded.len()>12_288{
+                    return Err("Scheduled GGUF model context limit exceeded".into())
+                }
+                bounded
+            }else if git_mode{
                 format!(
                     "The human explicitly selected ONE local Git repository \
                      using the native folder picker. You may choose ONLY \
@@ -421,9 +735,73 @@ pub(crate) async fn lu_reviewed_app_ask(
             if answer.tool_calls==0{
                 return Err("Model did not use the approved reviewed app tool".into())
             }
-            host.chats.append_progress(&chat_id,&gid_run,&answer.answer)?;
+            if scheduled.is_some(){
+                // Refuse a successful plan witness if a clarification
+                // changed during the supervised model/worker operation.
+                // The historical effect remains in the worker journals.
+                current_step_clarifications_resolved(&host,&chat_id)?;
+            }
+            // Exactly one independently checked operation is accepted as a
+            // *completed* plan step. More model calls may have run read-only
+            // but cannot be silently cherry-picked as successful work.
+            let mut host_verified_note=String::new();
+            let mut verified_event=None;
+            if let (Some(target),Some(binding),Some((
+                ledger,revisions,receipts,scheduler,owner,_claim
+            )))=(scheduled.as_ref(),binding.as_ref(),schedule.as_ref()){
+                if answer.tool_calls!=1{
+                    return Err("Plan step produced an ambiguous number of tool calls; review receipts before retrying".into())
+                }
+                let profile=host.catalog_path.parent()
+                    .ok_or("Original plan profile unavailable")?;
+                let call_id=unique_independent_reviewed_call(
+                    profile,&gid_run,binding.reviewed_execute_id
+                )?;
+                // Cancellation after the external operation may leave
+                // an APPLIED effect, but cannot publish an unreviewed plan
+                // continuation or fabricate a successful task response.
+                if cancellation.is_cancelled()||ticket.cancelled(){
+                    return Err("Cancelled after supervised worker; inspect historical evidence before retry".into())
+                }
+                let sources=crate::agent_plan_review::OriginalChatGoalSources{
+                    chats:&host.chats
+                };
+                let worker_origin=BoundCallOrigin{
+                    conversation_id:chat_id.clone(),
+                    user_turn_id:gid_run.clone(),task_id:gid_run.clone()
+                };
+                let witness=lu_core::agent_reviewed_broker_bridge::
+                    link_verified_scheduled_worker_outcome(
+                        scheduler,ledger,revisions,receipts,&sources,
+                        &verifier,profile,&target.plan_id,&chat_id,
+                        &target.original_turn,owner,1,binding,
+                        &worker_origin,&call_id
+                    ).map_err(|e|format!(
+                        "A worker ran but its independent planned outcome is not verified: {e:?}"
+                    ))?;
+                host_verified_note=format!(
+                    "\n\n[Lu host independent source observation: {} by {}. \
+                     This verifies the reviewed source method for step {}, NOT \
+                     the model's entire explanation or current process custody. \
+                     Another step requires fresh human authorization.]",
+                    witness.status,witness.independent_method,target.step_index+1
+                );
+                verified_event=Some(serde_json::json!({
+                    "chatId":chat_id,"planId":target.plan_id,
+                    "revisionSha256":target.revision_sha,
+                    "stepIndex":target.step_index,
+                    "status":witness.status,
+                    "method":witness.independent_method,
+                    "executionAuthority":"NOT_AUTHORIZED_FOR_NEXT_STEP"
+                }));
+            }
+            let answer_text=format!("{}{}",answer.answer,host_verified_note);
+            host.chats.append_progress(&chat_id,&gid_run,&answer_text)?;
             host.chats.complete(&chat_id,&gid_run)?;
-            Ok(answer.answer)
+            if let Some(event)=verified_event{
+                let _=emitted.emit("lu-agent-step-verified",event);
+            }
+            Ok(answer_text)
         })();
         // A failed native/model turn must never disappear from the user's
         // history. Status is deliberately host-authored and contains no
@@ -458,6 +836,54 @@ pub(crate) async fn lu_reviewed_app_ask(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn approved_step_selection_does_not_admit_unreviewed_operations(){
+        for op in ["git_head","git_status","git_branch","git_history","media_facts"]{
+            let (kind,mode,_)=reviewed_step_operation(op).unwrap();
+            let (execute,read)=kind.native_ids();
+            assert!(execute.starts_with("lu.reviewed."));
+            assert!(read.starts_with("lu.reviewed."));
+            assert!(matches!(mode,"git"|"media"));
+        }
+        for raw in ["shell","git_push","write","ffmpeg","../../git","Git_head",""]{
+            assert!(reviewed_step_operation(raw).is_none());
+        }
+    }
+    #[test]
+    fn fresh_step_consent_is_bound_to_exact_new_human_turn_and_budget(){
+        let budget=schedule_budget();
+        let consent=NativeScheduledStepConsent{
+            chat:"c-a".into(),turn:"g-new".into(),plan:"p-a".into(),
+            revision:"original-sha".into(),step:0,budget
+        };
+        assert!(consent.explicitly_requested_step(
+            "c-a","g-new","p-a","original-sha",0,&budget));
+        assert!(!consent.explicitly_requested_step(
+            "c-a","g-old","p-a","original-sha",0,&budget));
+        assert!(!consent.explicitly_requested_step(
+            "c-a","g-new","p-a","original-sha",1,&budget));
+        let mut expanded=budget;
+        expanded.tool_call_ceiling=2;
+        assert!(!consent.explicitly_requested_step(
+            "c-a","g-new","p-a","original-sha",0,&expanded));
+    }
+    #[test]
+    fn reviewed_worker_call_lookup_never_invents_missing_journals(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-agent01g-{}-{}",std::process::id(),
+            SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        assert!(unique_independent_reviewed_call(
+            &root,&format!("g-{}","a".repeat(32)),
+            "lu.reviewed.git.head"
+        ).is_err());
+        assert!(unique_independent_reviewed_call(
+            &root,"g-../../bad","lu.reviewed.git.head"
+        ).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn reviewed_desktop_opt_in_accepts_only_exact_binary_mode(){
         assert!(matches!("git","git"|"media"));

@@ -246,6 +246,10 @@
              "The goal/plan changed. Review a fresh plan revision before new work."
          }else if review!="APPROVED_PLAN_ONLY"{
              "Review the current plan proposal. Approval alone never authorizes tools."
+         }else if owner_state=="OWNED"{
+             "One exact reviewed step has been claimed by a host. It may be running or interrupted: check the original task/effect journals and independent source evidence. Never retry automatically."
+         }else if owner_state=="RELEASED"{
+             "Earlier host ownership is released; no new execution follows without explicit current human review and fresh authority."
          }else{
              "A fresh human request, source validation, reviewed broker grant and verified OS custody are still required."
          };

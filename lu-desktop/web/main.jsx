@@ -828,6 +828,7 @@ function App() {
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
   const [agentProgressByChat,setAgentProgressByChat]=useState({});
   const [agentReviewBusy,setAgentReviewBusy]=useState(false);
+  const [agentStepOpByKey,setAgentStepOpByKey]=useState({});
   const [toolProgressByChat,setToolProgressByChat]=useState({});
   const [turnCapabilitiesByChat,setTurnCapabilitiesByChat]=useState({});
   const [toolHistoryBusy,setToolHistoryBusy]=useState(false);
@@ -2151,7 +2152,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {}, stopBrowserChallenge = () => {}, stopPlanAdmission = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {}, stopBrowserChallenge = () => {}, stopPlanAdmission = () => {}, stopAgentWitness = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -2222,6 +2223,15 @@ function App() {
         setError('No plan was admitted: '+String(result.reason||'Invalid model plan'));
       }
     }).then(fn=>{if(alive)stopPlanAdmission=fn;else fn();});
+    listen('lu-agent-step-verified',e=>{
+      const result=e.payload;
+      if(!alive||!result?.chatId||!result?.planId)return;
+      if(currentChat.current===result.chatId){
+        setActivity('Step '+(result.stepIndex+1)+' recorded an independently checked '+
+          result.status+' witness ('+result.method+'). Another step needs new authorization.');
+        void refreshToolActivity(result.chatId);
+      }
+    }).then(fn=>{if(alive)stopAgentWitness=fn;else fn();});
     listen('lu-generation-finish', e=>{
       if (!alive || !e.payload?.chatId)return;
       const {chatId:finishedChat,generationId}=e.payload;
@@ -2250,7 +2260,7 @@ function App() {
       setBackgroundTerminalNotice(e.payload);
       if (backgroundPaneOpen) void refreshBackgroundTasks();
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); stopPlanAdmission(); };
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); stopPlanAdmission(); stopAgentWitness(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -2562,6 +2572,35 @@ function App() {
       if(acted)await refreshToolActivity(chatId);
     }catch(error){
       setError('Plan review not recorded: '+String(error));
+    }finally{setAgentReviewBusy(false)}
+  }
+  async function runReviewedAgentStep(plan,step){
+    if(!chatId||!runtime.sessionId||!plan?.revisionSha256||
+       !Number.isSafeInteger(step?.stepIndex))return;
+    const targetChat=chatId;
+    const key=plan.planId+':'+step.stepIndex;
+    const operation=agentStepOpByKey[key]||'git_head';
+    setAgentReviewBusy(true);
+    try{
+      const answer=await invoke('lu_agent_run_reviewed_step',{
+        sessionId:runtime.sessionId,chatId:targetChat,
+        planId:plan.planId,revisionSha:plan.revisionSha256,
+        stepIndex:step.stepIndex,operation
+      });
+      if(answer===null)return; // Native picker or exact consent cancelled.
+      if(typeof answer!=='string')throw Error('Invalid reviewed step response');
+      await refreshToolActivity(targetChat);
+      if(currentChat.current===targetChat){
+        const latest=await loadLatestUiHistory(targetChat).catch(()=>null);
+        if(latest)setHistory(latest);
+        setActivity('Lu checked one independent step result. New authority is required for another step.');
+      }
+    }catch(error){
+      if(currentChat.current===targetChat){
+        setError('Reviewed step not accepted as independently verified: '+String(error)+
+          '. If a worker ran, inspect its receipts before retrying.');
+      }
+      await refreshToolActivity(targetChat).catch(()=>{});
     }finally{setAgentReviewBusy(false)}
   }
   async function cancelAgentPlan(plan){
@@ -4566,6 +4605,38 @@ function App() {
                     {step.historicalWitnessLinked&&
                       <small>Independent witness reference was recorded.
                         Live source, process custody and receipt must be rechecked.</small>}
+                    {plan.revisionReview==='APPROVED_PLAN_ONLY'&&
+                      plan.supervisorState==='NOT_CLAIMED'&&
+                      plan.planState!=='CANCEL_REQUESTED'&&
+                      plan.planState!=='NEEDS_REVIEW'&&
+                      (step.dependsOn===null||
+                        plan.steps[step.dependsOn]?.scheduleState==='HISTORICAL_WITNESS_RECORDED')&&
+                      step.purpose==='INDEPENDENT_CHECK'&&
+                      step.expectedDeliverable==='INDEPENDENT_WITNESS'&&
+                      step.scheduleState==='NOT_SCHEDULED'&&
+                      <div className="settingsActions">
+                        <label>Reviewed source operation
+                          <select value={agentStepOpByKey[plan.planId+':'+step.stepIndex]||'git_head'}
+                            onChange={e=>setAgentStepOpByKey(prev=>({
+                              ...prev,[plan.planId+':'+step.stepIndex]:e.target.value
+                            }))}>
+                            <option value="git_head">Git HEAD</option>
+                            <option value="git_status">Git tracked status</option>
+                            <option value="git_branch">Git current branch</option>
+                            <option value="git_history">Git history count</option>
+                            <option value="media_facts">FFprobe media facts</option>
+                          </select>
+                        </label>
+                        <button type="button" className="subtleButton"
+                          disabled={!loaded||working||chatBusy||agentReviewBusy}
+                          title="OS-select a resource and explicitly authorize exactly one inspected plan step. The loaded model uses one existing reviewed Git/FFprobe tool; Lu checks the worker's actual independent outcome."
+                          onClick={()=>void runReviewedAgentStep(plan,step)}>
+                          Review and run one step
+                        </button>
+                        <small>A new native permission dialog and selected local source are required.
+                          No old plan approval grants execution. Unsupported or uncertain
+                          results never complete a step automatically.</small>
+                      </div>}
                   </div>
                 )}
                 <small>Next safe action: {plan.nextSafeAction}</small>
