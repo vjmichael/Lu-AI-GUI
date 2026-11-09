@@ -1,4 +1,4 @@
-# AGENT-01L — OS-verified descendant custody (Windows candidate, Linux fail-closed)
+# AGENT-01L — OS-verified descendant custody (Windows candidate; delegated Linux cgroup candidate)
 
 ## Purpose and scope
 
@@ -18,15 +18,15 @@ AGENT-01L is not an unattended execution loop. Neither a kernel witness nor a su
 
 ## Linux safety boundary
 
-The current first-party `lu-linux-group-guard` can attest that its private PGID was signalled with SIGKILL, **not** that a deliberately detached `setsid()` descendant left the OS. A process group cannot prove escape-capable descendant custody and an OS child may remain alive. For this reason, `HostOriginalJobCustody` deliberately always returns false on non-Windows platforms. The genuine Linux kernel negative-control `benchmarks/e1/e1_p08_setsid_escape_probe.py` is required in AGENT-01L CI.
+The current first-party `lu-linux-group-guard` can attest that its private PGID was signalled with SIGKILL, **not** that a deliberately detached `setsid()` descendant left the OS. A process group cannot prove escape-capable descendant custody and an OS child may remain alive. For this reason, the existing process-group signal never counts as full-tree proof. The newer `lu-linux-cgroup-guard` candidate provides a conditional positive witness ONLY after a delegated private cgroup, a crash-surviving helper, kernel `cgroup.kill`, recursive `populated 0` and a scoped durable receipt are independently checked. Without delegation the provider still returns false. The genuine Linux kernel negative-control `benchmarks/e1/e1_p08_setsid_escape_probe.py` is required in AGENT-01L CI.
 
-**Open AGENT-01L Linux gate:** obtain a legitimately delegated per-operation cgroup-v2 subtree and an independently supervised custodian that can survive abnormal Lu termination. The custodian must issue scoped `cgroup.kill`, independently read recursive `cgroup.events populated 0`, and persist an exact task/turn/source-bound receipt. It must not use root escalation, assume writable global cgroups, trust model-selected cgroup paths or treat the host's death as permission to replay the operation. Complete native escape-capable tests before enabling any Linux positive witness. See `docs/LU_E1_P08_CGROUP_V2_ESCAPE_DECISION_20261108.md`.
+**Open AGENT-01L Linux acceptance:** source now includes a delegated per-operation cgroup-v2 subtree and separate EOF custodian, but the actual native kernel escape/crash CI and independently supervised systemd unit lifetime have NOT passed. The custodian must issue scoped `cgroup.kill`, independently read recursive `cgroup.events populated 0`, and persist an exact task/turn/source-bound receipt. It must not use root escalation, assume writable global cgroups, trust model-selected cgroup paths or treat the host's death as permission to replay the operation. Complete native escape-capable tests before enabling any Linux positive witness. See `docs/LU_E1_P08_CGROUP_V2_ESCAPE_DECISION_20261108.md`.
 
 ## Tests submitted / evidence still outstanding
 
 1. On Windows: actual Win32 Job Object with frozen `cmd.exe` creating a descendant; verify kernel `ActiveProcesses == 0` after Job termination. An unassigned empty Job must never create a proof.
 2. On Windows: genuine reviewed native Git HEAD through `BackgroundProcessSupervisor`, OS Job verification, immutable task-bound witness in SQLite, drop/reopen, exact-chat/turn/call cross-binding rejection and rejection of updates/deletes.
-3. Both platforms: original-journal proof missing, unreadable or mismatched must fail. Linux returns no proof and a real `setsid()` escape negative control must survive killpg.
+3. Both platforms: original-journal proof missing, unreadable or mismatched must fail. Linux's PGID-only result returns no proof; a truly delegated cgroup-v2 helper may return a positive historical observation only after `cgroup.kill` and `populated 0`. A real `setsid()` negative control must survive killpg, and a new positive host-crash/escaped descendant test must pass independently.
 4. Windows: actual React/Tauri compile with *clearly labelled inert* engine placeholders; not an installer or real GGUF claim.
 5. Exact-head Windows 2025/Ubuntu 24.04 GitHub workflow `lu-agent01l-os-custody.yml` with immutable source-tree lock and evidence artifacts.
 
@@ -35,7 +35,7 @@ The current first-party `lu-linux-group-guard` can attest that its private PGID 
 ## Remaining AGENT-01L milestones
 
 - **01L-WIN:** Native Windows exact-head compiler, nested Job and reviewed Git witness, restart/replay rejection; repair actual failures.
-- **01L-LNX:** Delegated cgroup-v2 kernel custody and out-of-process guardian, proven after Linux host crash with escaped grandchild.
+- **01L-LNX:** Delegated cgroup-v2 kernel custody and out-of-process custodian are committed in a stacked source candidate; actual crash/escaped-grandchild native acceptance, systemd independent scope lifetime, and Linux installed app packaging are OPEN.
 - **01L-QWEN:** Actual loaded-Qwen two independently approved native steps, independent Git/FFprobe oracles, restored per-turn Job/cgroup custody, OS/crash restart and no replay.
 - **01L-INSTALL:** Exact installed NSIS and Linux distribution acceptance. Signing/legal approval remain separate release decisions.
 
