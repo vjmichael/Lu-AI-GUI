@@ -35,6 +35,7 @@ import { languageServiceCapabilities, languageMethodAvailable } from './lsp_lang
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 import { belongsToSelectedProject } from './job_render_guard.js';
 import { ingestJobProgress, visibleJobProgress } from './job_progress.js';
+import { safeConventionalTestDiscovery } from './conventional_tests.js';
 import { acceptNativeOutput } from './native_build_output.js';
 
 const sections = [
@@ -169,6 +170,9 @@ function App() {
   // DEV-03.1: per-project read-only profile discovery. The only effect of
   // choosing a profile is selecting an existing approved Cargo recipe ID.
   const [projectRunProfiles,setProjectRunProfiles] = useState(null);
+  const [testDiscovery,setTestDiscovery] = useState(null);
+  const [testDiscoveryBusy,setTestDiscoveryBusy] = useState(false);
+  const testDiscoveryTicket=useRef(0);
   const [profileDiscoveryBusy,setProfileDiscoveryBusy] = useState(false);
   const profileDiscoveryRequest=useRef(0);
   // DEV-03.2B: nonexecuting review of three native fixed interpreter
@@ -1273,6 +1277,32 @@ function App() {
         setProblem('Could not update job intent: ' + String(error));
     } finally {
       if (request === intentRequest.current) setIntentBusy(false);
+    }
+  }
+
+  async function inspectConventionalTests() {
+    const projectId=activeProjectIdRef.current;
+    if(!projectId || testDiscoveryBusy || buildBusy ||
+       explorerIoTicket.current || workspaceLayoutOp.current) return;
+    const ticket=++testDiscoveryTicket.current;
+    setTestDiscoveryBusy(true);
+    setProblem('');
+    try {
+      const raw=await invoke('ide_discover_conventional_tests',{projectId});
+      if(ticket!==testDiscoveryTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      const result=safeConventionalTestDiscovery(raw,projectId);
+      setTestDiscovery(result);
+      setHint('Inspected '+result.files.length+
+        ' conventional test filenames without executing project code.');
+    } catch(error) {
+      if(ticket===testDiscoveryTicket.current &&
+         activeProjectIdRef.current===projectId){
+        setTestDiscovery(null);
+        setProblem('Test discovery unavailable: '+String(error));
+      }
+    } finally {
+      if(ticket===testDiscoveryTicket.current)setTestDiscoveryBusy(false);
     }
   }
 
@@ -3297,6 +3327,38 @@ function App() {
               <p>The existing protected Cargo runner still independently
                 verifies its own source snapshot, toolchain and OS admission.
                 Selecting a recipe here never starts work.</p>
+            </section>
+            <section className="continuityDocument" aria-label="DEV-03.4 bounded test discovery">
+              <div className="capabilityHeading">
+                <h3>DEV-03.4 · Conventional test files</h3>
+                <button type="button" className="ghostBtn"
+                  disabled={!activeProject||testDiscoveryBusy||buildBusy}
+                  onClick={()=>void inspectConventionalTests()}>
+                  {testDiscoveryBusy?'Inspecting…':'Discover test files'}
+                </button>
+              </div>
+              <p>Native fixed-directory metadata inspection only. Filename
+                matches are hints, not individual runnable tests. Nested,
+                generated and framework-discovered tests may be omitted.
+                Nothing here grants execution or runs a project script.</p>
+              {testDiscovery?.projectId===activeProject?.projectId &&
+                <>
+                  <p role="status">
+                    {testDiscovery.files.length} filenames found
+                    {testDiscovery.truncated?' · results truncated':''}
+                    {' · discovery incomplete by design'}
+                  </p>
+                  {testDiscovery.files.length>0 &&
+                    <ul>{testDiscovery.files.map(file=>
+                      <li key={file.path}>
+                        <code>{file.path}</code> · {file.language}
+                        {file.recipe?' · Candidate '+file.recipe:' · No approved adapter'}
+                        {' · Not executable from discovery'}
+                      </li>)}</ul>}
+                  {testDiscovery.files.length===0 &&
+                    <p>No conventional test filenames found in the fixed
+                      scan; this does not prove that the project has no tests.</p>}
+                </>}
             </section>
             <div className="continuityDocument jobIntentComposer" aria-label="Protected native build and test">
               <h3>Protected Run / Test</h3>
