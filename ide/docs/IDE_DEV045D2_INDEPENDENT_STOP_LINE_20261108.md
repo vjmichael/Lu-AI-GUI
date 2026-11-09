@@ -27,3 +27,58 @@ Stacked on DEV-04.5D1 PR #179 and upstream DEV-04.5C PR #176. All new CI must ru
 3. Independently verify the source instruction/address record against the actual `rust_build` terminal journal, immutable target digest, one-use debugger grant, kernel cleanup and post-restart replay denial.
 4. Only after explicit B/C protected OS and signed-installed acceptance, create separately host-authorized `setBreakpoints`, bounded step/resume and safe read-only variables/scopes. Keep `evaluate`, `setExpression`, `runInTerminal` and arbitrary attach/launch denied.
 5. Do not broaden the worker's OS filesystem/network/process rights to make a diagnostic test green. Produce an OS-authenticated cross-platform witness or leave the feature disabled.
+
+
+## Independent local technical evidence (2026-11-09 UTC)
+
+These observations were made using real native compilers and LLVM tool
+executables in an isolated disposable Linux working directory, **not**
+with Lu's released or installed protected-debugging service:
+
+- Actual non-PIE Clang `-g` ELF/DWARF: address `0x401121`
+  independently resolves to `fixture.c:2`; file/executable hashes recorded.
+- Actual PE32+ + MSF7 PDB compiled through `clang-cl /Zi` and
+  `lld-link /DEBUG` (without executing Windows code): PE image-base +
+  entry RVA `0x140001020` independently resolves to
+  `fixture_pdb.c:5` using LLVM symbolizer.
+- PE RSDS GUID and age separately matched MSF PDB Info stream (GUID:
+  `24d0f1294264cbf84c4c44205044422e`, age 1).
+  A modified, freshly rehashed PDB Info age does **not** match the unchanged
+  PE RSDS record and is rejected.
+- An actual Linux `SIGTRAP` handler captured runtime instruction
+  pointer `0x401185`; independent DWARF mapped it to source line 18,
+  the actual `int3; nop` instruction.
+- A separate ptrace observer then captured a fixed Linux child at
+  SIGTRAP via kernel `PTRACE_GETREGS`, verified its `/proc/PID/exe`
+  identity, and independently mapped stopped RIP `0x401115`
+  to the exact `int3; nop` source on `ptrace_target.c:2`.
+  The reviewed CI fixture additionally requires an RX VMA and the
+  expected next loaded instruction byte before reporting its proof.
+
+These are **genuine native technical trials**, but the independent
+ptrace fixture is not the Lu cgroup-v2/SCM worker, and PE/PDB is a
+compiled Windows-format static trial rather than Windows kernel stopped
+process evidence. Do NOT promote this section to a full installed
+Lu debugger, a valid per-turn approval, a signed test bundle,
+a verified native `rust_build` receipt or source-line DAP authority.
+
+### Current D2 implementation receipts
+
+- `dap_source_lines.rs` strict optional stopped-PC decode, read-only
+  source-candidate invalidation and protected transport getters.
+- CI-only independent ELF and PDB symbol oracle with exact file SHA,
+  PE CodeView RSDS/MSF7 PDB GUID-age match, explicit relocation slide,
+  file/line mismatch denials and no target/LLDB/shell launch.
+- Hostile negative tests plus actual compiler and Linux kernel SIGTRAP
+  (same-process and independent ptrace observer) tests.
+- Native first-party protected Cargo→LLDB examples print *only*
+  candidate PC and source line with `os_module_slide_verified=false`;
+  no path, project source or authority is forwarded to WebView.
+
+**Still open:** exact-head GitHub Windows/Linux test results and any
+compiler/runtime fixes they reveal; for live Lu debugger completion,
+independently observe the actual protected stopped debuggee's OS module
+mapping and relocation, then bind that PC to the sealed executable,
+original snapshot, one-use grant, journal and independent symbol record
+on each OS. Source-line breakpoints, stepping and variables remain
+disabled until those gates pass.
