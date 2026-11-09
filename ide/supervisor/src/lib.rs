@@ -430,6 +430,21 @@ pub struct Supervisor {
     state: Mutex<Store>,
 }
 impl Supervisor {
+    /// The only permitted owner-event receipt destination is the already
+    /// approved native journal's private parent. Never a workspace, model
+    /// path or WebView-supplied folder. CI only.
+    #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    pub(crate) fn native_owner_receipt_root(&self) -> Result<PathBuf, SupervisorError> {
+        use std::os::windows::fs::MetadataExt;
+        let root = self.journal_path.parent().ok_or(SupervisorError::JournalUnavailable)?;
+        let metadata = fs::symlink_metadata(root).map_err(|_| SupervisorError::JournalUnavailable)?;
+        if !root.is_absolute() || !metadata.is_dir()
+            || metadata.file_type().is_symlink()
+            || metadata.file_attributes() & 0x400 != 0 {
+            return Err(SupervisorError::JournalUnavailable);
+        }
+        Ok(root.to_path_buf())
+    }
     /// Path must be supplied by trusted application profile management.
     /// Do not point this at a repository or user-selected project file.
     pub fn open(journal_path: PathBuf) -> Result<Self, SupervisorError> {
