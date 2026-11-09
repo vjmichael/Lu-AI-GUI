@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4a99e046c59a869f536801ab958e5a979dda6ba5",
-  "trackedFileCount": 738,
+  "sourceCommitBeforeLock": "a87065598ae7d7dfca4219f2b487a1c619012b5f",
+  "trackedFileCount": 739,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-agent01e-broker-progress.yml",
-      "blob": "2c051dc8e35f674e5416f0cfdd0676274da6c5ba"
+      "blob": "4d0d6cdeae4ec25ee45767d4c0f2f40b600d82cb"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -81,7 +81,7 @@
     },
     {
       "path": ".github/workflows/lu-e1-p07-genuine-gguf.yml",
-      "blob": "dd7416267595ea75f272b2140ceb18e61975d568"
+      "blob": "a95006244747a1e789f4a5d0374687e73667686e"
     },
     {
       "path": ".github/workflows/lu-e1-p07-reviewed-app.yml",
@@ -357,7 +357,7 @@
     },
     {
       "path": "docs/LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md",
-      "blob": "cc9f7afcc1a8ff0989263b70d02ef7bab2ca0ecf"
+      "blob": "59e44983759d63cd4b8aa0842bba7e270e0e974e"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -501,7 +501,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "2b755688bebb4129debece289ba52862c085d4ad"
+      "blob": "3f7c4a0ed718cf463d3e2ff9ce1ec1f705d1bbfc"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -633,7 +633,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "37b70154c45b9dd82aa91175b2cd492822a5916a"
+      "blob": "3137badb830ae897e5535ed8ee550cfd15eeef0c"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -1086,6 +1086,10 @@
     {
       "path": "lu-desktop/tests/agent01g-approved-step-integration.test.mjs",
       "blob": "36f0d6e3812e8ddd59473a5771c4e68ed2d1b747"
+    },
+    {
+      "path": "lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs",
+      "blob": "20763c32af6ecfb9b8ccfba15e6a4ca6deac8384"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
@@ -2605,7 +2609,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "80d30a94d8137b7bb344856a5e654dca927b44b9"
+      "blob": "d7751f376710bb396cbb0f166ab5aa2517cb8463"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
