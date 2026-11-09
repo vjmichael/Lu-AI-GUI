@@ -40,14 +40,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let args: Vec<String> = env::args().skip(1).collect();
     let mode = args.as_slice();
-    let project_debug = mode == ["--project-debug"];
+    let debug_cancel = mode == ["--project-debug-cancel"];
+    let project_debug = mode == ["--project-debug"] || debug_cancel;
     let (recipe, cancel) = match mode {
         [one] if one == "--check" => ("rust_check", false),
         [one] if one == "--test" => ("rust_tests", false),
         [one] if one == "--build" => ("rust_build", false),
-        [one] if one == "--project-debug" => ("rust_build", false),
+        [one] if one == "--project-debug" || one == "--project-debug-cancel" => {
+            ("rust_build", false)
+        },
         [one] if one == "--cancel" => ("rust_tests", true),
-        _ => return Err("DENIED: only fixed check/test/build/project-debug/cancel modes".into()),
+        _ => return Err("DENIED: only fixed check/test/build/project-debug/project-debug-cancel/cancel modes".into()),
     };
     let root = env::temp_dir().join(format!(
         "lu-ide-wo6-cargo-{}-{}",
@@ -137,6 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         JobPhase::Completed
     };
+    let mut project_debug_job_id: Option<String> = None;
     eprintln!(
         "WO6_NATIVE_CARGO_FIXED_RESULT phase={:?} exit={:?} stderr_class={} timed_out={} output_limit={} truncated={}",
         actual.summary.phase, actual.exit_code, actual.stderr_category,
@@ -343,15 +347,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if stopped.is_none() || !threads || !stack {
                 return Err("DENIED: real project debug stop/stack absent".into());
             }
-            dap.close().map_err(|e| e.code())?;
+            if debug_cancel {
+                // A real project, not the fixed debuggee, is stopped under
+                // cgroup custody before native Drop cancels and reaps it.
+                drop(dap);
+                project_debug_job_id = Some(debug_job.job_id.clone());
+            } else {
+                dap.close().map_err(|e| e.code())?;
+            }
             let summary = supervisor
                 .inspect()
                 .map_err(|e| e.code())?
                 .into_iter()
                 .find(|j| j.job_id == debug_job.job_id)
                 .ok_or("DENIED: project debug terminal receipt absent")?;
-            if summary.phase != JobPhase::Completed || summary.requires_reconciliation {
+            let debug_expected = if debug_cancel {
+                JobPhase::Cancelled
+            } else {
+                JobPhase::Completed
+            };
+            if summary.phase != debug_expected || summary.requires_reconciliation {
                 return Err("DENIED: project debug kernel descendants not reconciled".into());
+            }
+            if debug_cancel {
+                let entries = supervisor
+                    .receipt_history(&debug_job.job_id)
+                    .map_err(|e| e.code())?;
+                if !entries.windows(2).any(|pair| {
+                    pair[0].body.phase == JobPhase::CancelRequested
+                        && pair[1].body.phase == JobPhase::Cancelled
+                }) {
+                    return Err("DENIED: real project LLDB cancellation not durable before kernel kill".into());
+                }
+                eprintln!("DEV045C_LINUX_REAL_PROJECT_LLDB_CANCEL_AND_CGROUP_REAP=PASS");
             }
             // A completed Cargo approval cannot authorize a second debugger;
             // neither the build grant nor the distinct DAP grant survives
@@ -416,9 +444,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let replay = Supervisor::open(journal).map_err(|e| e.code())?;
     let jobs = replay.inspect().map_err(|e| e.code())?;
     if jobs.len() != (if project_debug { 2 } else { 1 })
-        || jobs
-            .iter()
-            .any(|job| job.phase != expected || job.requires_reconciliation)
+        || jobs.iter().any(|job| {
+            let phase = if project_debug_job_id.as_deref() == Some(job.job_id.as_str()) {
+                JobPhase::Cancelled
+            } else {
+                expected
+            };
+            job.phase != phase || job.requires_reconciliation
+        })
     {
         return Err("DENIED: native Cargo journal restart/reconciliation invalid".into());
     }
