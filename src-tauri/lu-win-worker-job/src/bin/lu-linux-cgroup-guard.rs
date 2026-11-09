@@ -140,6 +140,10 @@ mod linux{
         // contain these kernel files. Never fall back to killpg as proof.
         if !group.join("cgroup.kill").exists()
             ||!group.join("cgroup.procs").exists()
+            ||OpenOptions::new().write(true)
+                .open(group.join("cgroup.kill")).is_err()
+            ||OpenOptions::new().write(true)
+                .open(group.join("cgroup.procs")).is_err()
             ||!matches!(populated_zero(&group),Ok(true)){
             let _=fs::remove_dir(&group);
             io::stdout().write_all(b"UNAVAILABLE\n")?;
