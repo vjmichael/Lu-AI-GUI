@@ -161,6 +161,73 @@ class HostileMappingTests(unittest.TestCase):
 
 
 class RealNativeDebugLineTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux SIGTRAP fixture")
+    def test_real_kernel_sigtrap_instruction_pointer_maps_to_dwarf(self):
+        """Actual SIGTRAP ucontext RIP, not a fabricated or static symbol IP.
+
+        Deliberately a fixed disposable CI program, not a Lu protected worker
+        and NOT a proof of LLDB stopped process or cgroup module provenance.
+        """
+        compiler = tool("clang")
+        llvm = tool("llvm-symbolizer")
+        self.assertIsNotNone(compiler)
+        self.assertIsNotNone(llvm)
+        with tempfile.TemporaryDirectory(prefix="dev045d2-trap-") as tmp:
+            root = Path(tmp)
+            source = root / "fixture.c"
+            code = """#define _GNU_SOURCE
+#include <signal.h>
+#include <ucontext.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+static void real_stop(int signal, siginfo_t *info, void *ctx) {
+    ucontext_t *u = (ucontext_t *)ctx;
+#if defined(__x86_64__)
+    printf("kernel_sigtrap_ip=0x%llx\\n", (unsigned long long)u->uc_mcontext.gregs[REG_RIP]);
+#else
+#error x86_64 required
+#endif
+    fflush(stdout);
+    _Exit(0);
+}
+__attribute__((noinline)) void stopped_probe(void) {
+    __asm__ __volatile__("int3; nop");
+}
+int main(void) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = real_stop;
+    sa.sa_flags = SA_SIGINFO;
+    sigemptyset(&sa.sa_mask);
+    if (sigaction(SIGTRAP, &sa, NULL)) return 2;
+    stopped_probe();
+    return 3;
+}
+"""
+            source.write_text(code, encoding="utf-8")
+            executable = root / "fixture"
+            subprocess.run([compiler, "-g", "-O0", "-fno-pie", "-no-pie",
+                            str(source), "-o", str(executable)],
+                           check=True, capture_output=True, timeout=45)
+            result = subprocess.run([str(executable)], check=True,
+                                    text=True, capture_output=True, timeout=8)
+            address = re.fullmatch(r"kernel_sigtrap_ip=(0x[0-9a-fA-F]+)\s*",
+                                   result.stdout)
+            self.assertIsNotNone(address, "real kernel SIGTRAP IP missing")
+            line = next(i for i, text in enumerate(code.splitlines(), 1)
+                        if 'int3; nop' in text)
+            claim = claim_for(root, "linux-elf64", line, int(address[1], 16))
+            proof = verify_claim(root, claim, llvm, digest(llvm))
+            self.assertTrue(proof["independentSymbolLineAddressMatch"])
+            # This is genuine kernel SIGTRAP frame provenance, but not a
+            # separate OS process custodian, DAP or cgroup acceptance.
+            self.assertFalse(proof["stoppedPcKernelAttested"])
+            self.assertFalse(proof["installedAppAccepted"])
+            wrong = dict(claim, sourceLine=line + 1)
+            with self.assertRaisesRegex(Denied, "SYMBOL_LINE_MISMATCH"):
+                verify_claim(root, wrong, llvm, digest(llvm))
+
     def test_real_compiler_line_table_not_adapters_reported_line(self):
         # Explicitly fail rather than skip in the exact-head native CI gate.
         llvm = tool("llvm-symbolizer")
