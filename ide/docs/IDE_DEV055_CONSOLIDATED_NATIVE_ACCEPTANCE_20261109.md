@@ -1,0 +1,106 @@
+# IDE-05.5 — One consolidated Windows/Linux native acceptance gate
+
+**Initiated November 9, 2026.** Workstream:
+`ide/dev05-1-package-discovery-20261109`, stacked on IDE-05.4
+`6379bc112cf871ae00c960f1b3ca01816552c30d`.
+All results described below must be tied to their **actual exact-head SHA**
+and GitHub Actions job/log/artifact ID, not source-only assertions.
+
+## Acceptance policy
+
+One **group** workflow, `.github/workflows/ide-dev05-consolidated-native.yml`,
+is triggered on this named IDE-05 branch at the group boundary and can be
+re-dispatched manually when the native runner queue is healthy. The
+two older push-triggered standalone micro-workflows
+`ide-supervisor-core.yml` and `ide-d7-windows-worker.yml` now keep
+only PR/manual triggers. Other existing jobs may continue queuing and
+the previous runs are not implicitly cancelled by changing those YAMLs.
+
+The consolidated matrix checks the genuine Windows 2022 and Ubuntu
+24.04 runner compilers for the exact repo head:
+- locked npm install with scripts disabled; IDE-05.1–.4 Node source-boundary
+  tests and frontend build;
+- real native Rust host tests for registered project and revision-bound
+  preview/revalidation;
+- real native supervisor compilation and all-target unit/hostile tests
+  with **package-uv-worker** enabled and correct Windows/Linux OS features;
+- opt-in **native Tauri** compilation with `native-package-uv`, using the
+  exact committed `Cargo.lock` (not installed GUI proof);
+- Cargo rustfmt and source lockfile immutability; retain per-OS SHA/run IDs
+  in CI artifacts even on failures.
+
+A separate **genuine Linux OS child** job depends on both compiler jobs.
+The runner constructs a **CI-only self-measured candidate**, `uv==0.9.9`
+plus system Python and observed license-source files in a fixed root-owned
+tree under `/opt/lu-ide/runtimes/uv_sync_offline`. It embeds the
+observed tree hash at compile time. This is *not* an upstream-attested
+or production-approved runtime pin. The test verifies that the real
+Bubblewrap binary can create namespace isolation under the
+distribution-reviewed AppArmor profile. It then uses **systemd's exact
+delegated cpu/memory/pids cgroup**, the original D3 supervisor,
+the fixed `uv_sync_offline` recipe and a real `uv` binary:
+
+1. `--offline-miss`: Require an unavailable locked registry wheel to
+   terminate **Failed**, with genuine stderr showing offline/cache
+   failure, independently observed native terminal/child cleanup,
+   unchanged frozen source and restart replay that grants no authority.
+2. `--cancel`: Pre-request real native cancellation for the exact
+   fixed recipe, require actual Cancelled and non-quarantined kernel
+   process-tree cleanup, then independently reopen the durable journal.
+   This is a **CI synthetic approval**, never human dialog evidence;
+   it is not a proof that a real operator canceled a running uv job.
+
+The OS worker still cannot run arbitrary commands, use networking,
+build sdists, load project scripts or write into the original workspace.
+If user namespaces, real cgroups, exact runtime hashes, trusted Python,
+the actual uv invocation, the real failure cause or native OS cleanup
+cannot be proven, **FAIL** the corresponding gate. No fake success
+marker or uncontained process substitutes for the native job.
+
+## Installed application and real-dependency gates remain OPEN
+
+The Windows feature-gated package worker still **rejects** execution
+`NoContainment` before child launch because its AppContainer staged
+workspace lacks independently approved read-only ACLs. Thus no CI can
+truthfully show a successful Windows protected package Sync. The
+`ide/app/fixtures/Test-IDE055-PhysicalWindowsPackageDenial.ps1`
+physical interactive operator witness tests only **Windows fail-closed
+behavior**, requiring one real visible installed executable and unchanged
+D3/package journal hashes. It forbids GitHub Actions and never fabricates
+an approval or an installed dependency result. It requires actual human
+physical-PC execution to generate the evidence JSON; its existence is
+not acceptance.
+
+A successful **offline wheel** install is also NOT established by the
+Linux negative fixtures. The current worker's output cache is initially
+empty, and the conservative installed-artifact verifier rejects many
+normal interpreter symlinks and metadata formats. These are not bypassed.
+To promote IDE-05 fully, add and independently verify an exact
+release-approved offline wheel bundle/source manifest, demonstrate
+native OS-contained positive installs with correct local
+`.dist-info/RECORD`, original license and wheel-origin archive hashes,
+and prove no untrusted links/writes/credentials escape.
+
+The installed desktop must then be run by a real human on the actual
+Windows and Linux hosts: fresh approve, decline, timeout, cancellation,
+worker crash, restart, OS cleanup, private rollback/discard and source
+preservation with exact pinned binaries and durable receipts. The Linux
+CI service's synthetic `record_human_approval(true)` fixture may **not**
+satisfy the human acceptance criterion. A signed/NSIS release remains
+a separate release/installation gate.
+
+## Queue and confidence at implementation checkpoint
+
+At initial inspection on Nov 9 the repository had **104 queued workflow
+runs**, including exact-head runs 42677505364 and 42677505507 for
+`6379bc1`. Those jobs were `queued` with no steps/logs and
+therefore could not prove Windows/Linux native compilation or runtime.
+A newly created task-group workflow will also remain **unaccepted**
+until GitHub actually provides a runner and its real job logs/artifacts
+are inspected and any genuine failures repaired.
+
+**Do not mark IDE-05.5 accepted from the workflow YAML itself.**
+No native Windows/Linux compiler, actual protected package process,
+human dialog, installed application or real-wheel acceptance is claimed
+without genuine post-dispatch evidence. The separate DEV-04.6D debugger
+human-modal acceptance stays open.

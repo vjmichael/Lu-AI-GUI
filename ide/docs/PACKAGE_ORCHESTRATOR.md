@@ -117,3 +117,18 @@ Incomplete cleanup remains pending, never automatically resumed.
 Windows package execution is still denied; no user project environment
 is installed. This is source-complete pending native acceptance.
 See [IDE-05.4](IDE_DEV054_PACKAGE_OUTPUT_PROVENANCE_RECOVERY_20261109.md).
+
+
+## IDE-05.5 consolidated native group gate (2026-11-09)
+
+The acceptance matrix is authored at
+[IDE-05.5](IDE_DEV055_CONSOLIDATED_NATIVE_ACCEPTANCE_20261109.md).
+It has genuine Windows/Linux Cargo/Tauri/Node compile/test jobs and a
+real Linux delegated-cgroup, unnetworked Bubblewrap, root-owned
+candidate uv binary **negative/cancel** job. The runner must actually
+execute before any native result is credited. This is NOT a real
+successful wheel installation, wheel-origin proof or human consent.
+Windows package execution remains fail-closed until staged ACL evidence;
+physical installed-app approval is a separate human gate. Legacy
+per-commit supervisor micro-workflow push triggers are disabled;
+PR/manual triggers remain. Queue remains blocked.

@@ -6,10 +6,8 @@ on:
     paths:
       - 'ide/supervisor/**'
       - '.github/workflows/ide-d7-windows-worker.yml'
-  push:
-    paths:
-      - 'ide/supervisor/**'
-      - '.github/workflows/ide-d7-windows-worker.yml'
+  # No push micro-jobs on active IDE feature branches. The IDE-05 grouped
+  # native matrix runs at the task-group boundary. Keep PR/manual legacy gates.
 
 permissions:
   contents: read

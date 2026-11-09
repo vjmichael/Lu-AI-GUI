@@ -257,3 +257,34 @@ acceptance are OPEN. No per-file CI dispatch; consolidate tests
 at end of IDE-05 task group. Refer to
 `ide/docs/IDE_DEV054_PACKAGE_OUTPUT_PROVENANCE_RECOVERY_20261109.md`.
 DEV-04.6D native LLDB installed acceptance remains separately open.
+
+
+### 2026-11-09 — IDE-05.5 grouped native platform and installed acceptance preparation
+
+At IDE-05 task-group boundary, created one exact-head
+`ide-dev05-consolidated-native.yml` Windows 2022/Ubuntu 24.04
+matrix for real Cargo host/supervisor/Tauri compilation, Node app tests,
+adversarial uv package fixtures, format and pinned locks. It also
+runs, **only after compiler matrix succeeds**, a genuine Linux
+systemd delegated-cgroup/Bubblewrap native fixed uv OS binary with an
+intentional offline missing-wheel denial and a separate native
+pre-requested cancellation and replay test. Its runtime pin is
+CI-only/self-measured and its D3 fixture consent is **synthetic**, never
+physical human approval. Staged original project cannot be mutated.
+
+Removed automatic push micro-CI triggering from two legacy
+production supervisor/D7 workflows (PR/manual retained) to honor the
+owner's one-acceptance-gate-per-task-group rule. Added a physical
+Windows *fail-closed* installed-app witness that refuses headless CI,
+but it cannot test a working Windows package Sync while read-only
+AppContainer ACLs remain unproven.
+
+No results have been claimed: initial head `6379bc1` jobs
+42677505364/42677505507 were QUEUED, and GitHub showed 104
+queued workflow runs with no live native logs. The new group run
+remains OPEN until actual Windows/Linux runner results, demonstrated
+failures and repaired exact head evidence are available. Genuine
+positive offline wheel install, wheel-origin attestations, physical
+human approval/refusal, Windows ACL worker, installed app and signed
+release are separately OPEN. See
+`ide/docs/IDE_DEV055_CONSOLIDATED_NATIVE_ACCEPTANCE_20261109.md`.

@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs::{self, OpenOptions},
-    io::Write,
+    io::{Read,Write},
     path::{Path,PathBuf},
     sync::Mutex,
 };
@@ -106,7 +106,27 @@ fn read_events(path:&Path)->Result<Vec<PackageLifecycleEvent>,SupervisorError>{
         use std::os::windows::fs::MetadataExt;
         if meta.file_attributes() & 0x400 != 0 {return Err(denied());}
     }
-    let bytes=fs::read(path).map_err(|_|SupervisorError::JournalUnavailable)?;
+    let mut options=OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(0x20000); // Linux O_NOFOLLOW
+    }
+    #[cfg(windows)] {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    let mut file=options.open(path).map_err(|_|SupervisorError::JournalUnavailable)?;
+    let opened=file.metadata().map_err(|_|denied())?;
+    if !opened.is_file() || opened.len()!=meta.len() {return Err(denied());}
+    let mut bytes=Vec::new();
+    file.take((MAX_BYTES+1) as u64).read_to_end(&mut bytes)
+        .map_err(|_|SupervisorError::JournalUnavailable)?;
+    let after=fs::symlink_metadata(path).map_err(|_|denied())?;
+    if after.len()!=meta.len() || after.modified().ok()!=meta.modified().ok()
+        || after.file_type().is_symlink() || !after.is_file(){
+        return Err(denied());
+    }
     if bytes.len()>MAX_BYTES||(!bytes.is_empty()&&*bytes.last().unwrap()!=b'\n'){
         return Err(denied());
     }
@@ -228,6 +248,21 @@ impl PackageLifecycleLedger {
         }
         let mut options=OpenOptions::new();
         options.append(true).create(true);
+        match fs::symlink_metadata(&self.path) {
+            Ok(meta)=>{
+                if !meta.is_file() || meta.file_type().is_symlink() {
+                    return Err(denied());
+                }
+                #[cfg(windows)] {
+                    use std::os::windows::fs::MetadataExt;
+                    if meta.file_attributes() & 0x400 != 0 {
+                        return Err(denied());
+                    }
+                }
+            }
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},
+            Err(_)=>return Err(SupervisorError::JournalUnavailable),
+        }
         #[cfg(unix)]{
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600).custom_flags(0x20000);
