@@ -4609,6 +4609,8 @@ function App() {
                       plan.supervisorState==='NOT_CLAIMED'&&
                       plan.planState!=='CANCEL_REQUESTED'&&
                       plan.planState!=='NEEDS_REVIEW'&&
+                      plan.continuationPreview?.status==='MANUAL_ONE_STEP_REVIEW_ONLY'&&
+                      plan.continuationPreview?.candidateStepIndex===step.stepIndex&&
                       (step.dependsOn===null||
                         plan.steps[step.dependsOn]?.scheduleState==='HISTORICAL_WITNESS_RECORDED')&&
                       step.purpose==='INDEPENDENT_CHECK'&&
@@ -4640,6 +4642,19 @@ function App() {
                   </div>
                 )}
                 <small>Next safe action: {plan.nextSafeAction}</small>
+                {plan.continuationPreview&&
+                  <section className="readProposalCard"
+                    aria-label="Agent next-step preparation and recovery preview">
+                    <strong>Next-step preparation (read-only)</strong>
+                    <small>{plan.continuationPreview.requiredAction}</small>
+                    {Number.isSafeInteger(plan.continuationPreview.candidateStepIndex)&&
+                      <small>Plan step {plan.continuationPreview.candidateStepIndex+1}
+                        {' '}is a candidate for review, not an execution instruction.</small>}
+                    <small>Current source independently reverified: no.
+                      A historic witness link is not current source correctness.</small>
+                    <small>No new host owner, worker, tool permission or automatic next turn
+                      is created from this preview.</small>
+                  </section>}
                 <small>Execution authority: none. No automatic retry or
                   continuation is available from this history view.</small>
               </div>

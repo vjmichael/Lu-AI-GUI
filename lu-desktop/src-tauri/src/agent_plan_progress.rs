@@ -21,6 +21,17 @@
      pub schedule_state:String,
      pub historical_witness_linked:bool,
  }
+ /// AGENT-01H: read-only, bounded review of the next step and blockers.
+ /// A historical link is NOT live verification or executable authority.
+ #[derive(Clone,Debug,Serialize)]
+ #[serde(rename_all="camelCase")]
+ pub struct AgentContinuationPreview{
+     pub candidate_step_index:Option<u8>,
+     pub status:&'static str,
+     pub required_action:&'static str,
+     pub live_source_reverified:bool,
+     pub execution_authority:&'static str,
+ }
  #[derive(Clone,Debug,Serialize)]
  #[serde(rename_all="camelCase")]
  pub struct AgentPlanProgress{
@@ -39,7 +50,98 @@
      pub step_count:u8,
      pub steps:Vec<AgentStepProgress>,
      pub next_safe_action:&'static str,
+     pub continuation_preview:AgentContinuationPreview,
      pub execution_authority:&'static str,
+ }
+ // This is a pure read-only state classification, not a model or OS action.
+ // Even the "manual review" branch must recheck current ANSF goal, prior
+ // independent worker/oracle evidence, exact resource and a NEW human turn
+ // in the native broker. Previous ownership is never reused after restart.
+ fn continuation_preview(
+     plan_state:&str,review:&str,owner_state:&str,
+     pending_sources:u8,steps:&[AgentStepProgress],
+ )->AgentContinuationPreview{
+     let make=|candidate_step_index,status,required_action|
+         AgentContinuationPreview{
+             candidate_step_index,status,required_action,
+             live_source_reverified:false,
+             execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION",
+         };
+     if matches!(plan_state,"CANCEL_REQUESTED"|"NEEDS_REVIEW")
+         ||matches!(owner_state,"CANCEL_REQUESTED"|"RECOVERY_REQUIRED"){
+         return make(None,"STOP_RECOVERY_REQUIRED",
+             "Inspect task, effect, independent oracle and OS custody. Never automatically replay.")
+     }
+     if owner_state=="STALE_PLAN_REVISION"{
+         return make(None,"STOP_STALE_REVISION",
+             "The plan or goal changed. Request a fresh source-backed human plan review.")
+     }
+     if owner_state=="OWNED"{
+         return make(None,"STOP_OWNER_CUSTODY_UNCERTAIN",
+             "A host owns this plan; observe or independently reconcile it, never reassign.")
+     }
+     if owner_state=="RELEASED"{
+         return make(None,"STOP_RELEASED_OWNER",
+             "The earlier owner is closed. Reusing its claim or review for a later step is prohibited.")
+     }
+     if owner_state!="NOT_CLAIMED"{
+         return make(None,"STOP_UNRECOGNIZED_OWNER",
+             "Unrecognized scheduler history cannot authorize anything.")
+     }
+     if review!="APPROVED_PLAN_ONLY"{
+         return make(None,"STOP_PLAN_REVIEW",
+             "Review the exact immutable plan first. Plan approval alone does not authorize a tool.")
+     }
+     if pending_sources>0{
+         return make(None,"STOP_SOURCE_RECHECK",
+             "Source assumptions require independent review before any step.")
+     }
+     if steps.is_empty(){
+         return make(None,"STOP_NO_STEPS",
+             "There is no independently reviewable plan step.")
+     }
+     if steps.iter().any(|s|matches!(s.schedule_state.as_str(),
+         "INTERRUPTED_NEEDS_RECONCILIATION"|"CANCELLED_NEEDS_RECONCILIATION")){
+         return make(None,"STOP_UNCERTAIN_STEP",
+             "An earlier step is uncertain. Inspect real journals before another grant.")
+     }
+     if steps.iter().any(|s|s.schedule_state=="WAITING_FOR_BROKER_ACCEPTANCE"){
+         return make(None,"STOP_OUTSTANDING_STEP",
+             "A prior step has no independently accepted result; no subsequent consent.")
+     }
+     if steps.iter().any(|s|s.schedule_state=="HISTORICAL_WITNESS_RECORDED"
+         &&!s.historical_witness_linked){
+         return make(None,"STOP_MISSING_WITNESS",
+             "A historical step lacks a witness link; never infer that work succeeded.")
+     }
+     let Some(next)=steps.iter().find(|s|s.schedule_state=="NOT_SCHEDULED")else{
+         return make(None,"HISTORICAL_ONLY",
+             "All steps are historical; this does not confer new execution authority.")
+     };
+     if let Some(parent)=next.depends_on{
+         if parent>=next.step_index{
+             return make(None,"STOP_INVALID_DEPENDENCY",
+                 "Invalid graph requires a fresh reviewed plan revision.")
+         }
+         let Some(previous)=steps.get(parent as usize)else{
+             return make(None,"STOP_INVALID_DEPENDENCY",
+                 "Missing dependency requires a fresh reviewed plan revision.")
+         };
+         if previous.schedule_state!="HISTORICAL_WITNESS_RECORDED"
+             ||!previous.historical_witness_linked{
+             return make(Some(next.step_index),"STOP_DEPENDENCY_UNVERIFIED",
+                 "Earlier prerequisite lacks historical independent evidence.")
+         }
+         return make(Some(next.step_index),"PREVIEW_DEPENDENCY_RECHECK",
+             "Historical receipts require fresh independent re-verification and a NEW human step request. No automatic continuation.")
+     }
+     if next.purpose=="INDEPENDENT_CHECK"
+         &&next.expected_deliverable=="INDEPENDENT_WITNESS"{
+         return make(Some(next.step_index),"MANUAL_ONE_STEP_REVIEW_ONLY",
+             "A FIRST independent check may ask for a separate native picker and fresh human step confirmation. The host still verifies the goal and broker.")
+     }
+     make(Some(next.step_index),"STOP_UNSUPPORTED_STEP_TYPE",
+         "Current reviewed Git/FFprobe does not implement this step type. Never substitute a different tool.")
  }
  fn valid(id:&str,prefix:&str)->bool{
      id.len()==prefix.len()+32&&id.starts_with(prefix)
@@ -142,6 +244,9 @@
                  revision_review:"NO_PROPOSAL".into(),pending_source_checks:0,
                  supervisor_state:"NOT_CLAIMED".into(),step_count:0,
                  steps:Vec::new(),
+                 continuation_preview:continuation_preview(
+                     &state,"NO_PROPOSAL","NOT_CLAIMED",0,&[]
+                 ),
                  next_safe_action:"Prepare a plan proposal for human review. Do not execute.",
                  execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION",
              });continue
@@ -253,6 +358,9 @@
          }else{
              "A fresh human request, source validation, reviewed broker grant and verified OS custody are still required."
          };
+         let preview=continuation_preview(
+             &state,review,owner_state,count as u8,&steps
+         );
          plans.push(AgentPlanProgress{
              plan_id:plan,original_human_turn_id:turn,plan_state:state,
              latest_revision:revision_number as u8,
@@ -261,7 +369,7 @@
              pending_source_checks:count as u8,
              supervisor_state:owner_state.into(),
              step_count:steps.len() as u8,steps,
-             next_safe_action:next,
+             next_safe_action:next,continuation_preview:preview,
              execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION",
          });
      }
@@ -368,6 +476,128 @@ mod tests{
         assert!(result[0].next_safe_action.contains("no automatic replay"));
         assert_eq!(result[0].execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
         drop(chats);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn real_approved_first_step_is_advisory_not_an_execution_grant(){
+        let (root,chats,chat,_,plan)=fixture();
+        let db=Connection::open(root.join("lu-agent-plans.sqlite")).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_plan_revision_reviews VALUES(?1,1,'APPROVE_PLAN_ONLY')",
+            params![plan]
+        ).unwrap();
+        drop(db);
+        let plan_view=read_chat_progress(&root,&chat,&chats).unwrap();
+        let next=&plan_view[0].continuation_preview;
+        assert_eq!(next.status,"MANUAL_ONE_STEP_REVIEW_ONLY");
+        assert_eq!(next.candidate_step_index,Some(0));
+        assert!(!next.live_source_reverified);
+        assert_eq!(next.execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
+        drop(chats);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn released_owner_never_becomes_a_reusable_step_grant_after_restart(){
+        let (root,chats,chat,_,plan)=fixture();
+        let path=root.join("lu-agent-plans.sqlite");
+        let db=Connection::open(&path).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_plan_revision_reviews VALUES(?1,1,'APPROVE_PLAN_ONLY')",
+            params![plan]
+        ).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_plan_revision_steps VALUES(
+                ?1,1,1,'INDEPENDENT_CHECK',0,'INDEPENDENT_WITNESS')",
+            params![plan]
+        ).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_schedule_owners VALUES(?1,?2,'RELEASED')",
+            params![plan,"a".repeat(64)]
+        ).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_schedule_proposals VALUES(
+                ?1,?2,0,'OBSERVED_VERIFIED_HISTORICAL')",
+            params![plan,"a".repeat(64)]
+        ).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_deliverable_receipts VALUES(?1,?2,0)",
+            params![plan,"a".repeat(64)]
+        ).unwrap();
+        drop(db);
+        let state=read_chat_progress(&root,&chat,&chats).unwrap();
+        assert_eq!(state[0].steps.len(),2);
+        assert_eq!(state[0].steps[0].schedule_state,"HISTORICAL_WITNESS_RECORDED");
+        assert_eq!(state[0].continuation_preview.status,"STOP_RELEASED_OWNER");
+        assert_eq!(state[0].continuation_preview.candidate_step_index,None);
+        drop(chats);
+        let reopened=ChatStore::open(&root).unwrap();
+        let replay=read_chat_progress(&root,&chat,&reopened).unwrap();
+        assert_eq!(replay[0].continuation_preview.status,"STOP_RELEASED_OWNER");
+        assert!(!replay[0].continuation_preview.live_source_reverified);
+        drop(reopened);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn historical_witness_link_cannot_override_uncertain_scheduler_custody(){
+        let (root,chats,chat,_,plan)=fixture();
+        let db=Connection::open(root.join("lu-agent-plans.sqlite")).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_plan_revision_reviews VALUES(?1,1,'APPROVE_PLAN_ONLY')",
+            params![plan]
+        ).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_schedule_owners VALUES(?1,?2,'RECOVERY_REQUIRED')",
+            params![plan,"a".repeat(64)]
+        ).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_schedule_proposals VALUES(
+                ?1,?2,0,'ABANDONED_UNCERTAIN')",
+            params![plan,"a".repeat(64)]
+        ).unwrap();
+        db.execute(
+            "INSERT INTO lu_agent_deliverable_receipts VALUES(?1,?2,0)",
+            params![plan,"a".repeat(64)]
+        ).unwrap();
+        drop(db);
+        let view=read_chat_progress(&root,&chat,&chats).unwrap();
+        assert_eq!(view[0].continuation_preview.status,"STOP_RECOVERY_REQUIRED");
+        assert_eq!(view[0].continuation_preview.candidate_step_index,None);
+        assert_eq!(view[0].continuation_preview.execution_authority,
+            "NOT_AUTHORIZED_FOR_EXECUTION");
+        drop(chats);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn cached_dependency_or_unsupported_step_never_authorizes_next_worker(){
+        let prior=AgentStepProgress{
+            step_index:0,purpose:"INDEPENDENT_CHECK".into(),
+            expected_deliverable:"INDEPENDENT_WITNESS".into(),
+            depends_on:None,schedule_state:"HISTORICAL_WITNESS_RECORDED".into(),
+            historical_witness_linked:true,
+        };
+        let next=AgentStepProgress{
+            step_index:1,purpose:"INDEPENDENT_CHECK".into(),
+            expected_deliverable:"INDEPENDENT_WITNESS".into(),
+            depends_on:Some(0),schedule_state:"NOT_SCHEDULED".into(),
+            historical_witness_linked:false,
+        };
+        let preview=continuation_preview(
+            "DRAFT","APPROVED_PLAN_ONLY","NOT_CLAIMED",0,&[prior.clone(),next]
+        );
+        assert_eq!(preview.status,"PREVIEW_DEPENDENCY_RECHECK");
+        assert_eq!(preview.candidate_step_index,Some(1));
+        assert!(!preview.live_source_reverified);
+        assert_eq!(preview.execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
+        let no_witness=continuation_preview(
+            "DRAFT","APPROVED_PLAN_ONLY","NOT_CLAIMED",0,
+            &[AgentStepProgress{historical_witness_linked:false,..prior}]
+        );
+        assert_eq!(no_witness.status,"STOP_MISSING_WITNESS");
+        let unsupported=continuation_preview(
+            "DRAFT","APPROVED_PLAN_ONLY","NOT_CLAIMED",0,
+            &[AgentStepProgress{
+                step_index:0,purpose:"PRESENT".into(),
+                expected_deliverable:"EXPLANATION".into(),depends_on:None,
+                schedule_state:"NOT_SCHEDULED".into(),historical_witness_linked:false,
+            }]
+        );
+        assert_eq!(unsupported.status,"STOP_UNSUPPORTED_STEP_TYPE");
     }
     #[test]
     fn inconsistent_schema_is_error_not_fabricated_empty_history(){
