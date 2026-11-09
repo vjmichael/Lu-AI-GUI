@@ -456,6 +456,7 @@ struct DesktopState {
     chats: ChatStore,
     operational_assets: lu_core::operational_asset_ledger::OperationalAssetLedger,
     continuity: lu_core::continuity::ContinuityStore,
+    reviewed_memory_recovery: Vec<reviewed_memory_evidence::ReviewedMemoryRecoveryView>,
     embedding: Mutex<Option<lu_core::ansf_embedding_worker::LocalEmbeddingWorker>>,
     // Failures of optional memory indexing do not prevent basic alpha chat.
     goal_memory: Result<memory_desktop::GoalMemoryDesktop,String>,
@@ -759,6 +760,20 @@ impl DesktopState {
         // creating the first external-tool SQLite journal. Query the bounded
         // ANSF visible index, not the full conversation transcript.
         reported+=chats.mark_unfinished_reviewed_queues()?;
+        // 03E-R2: the DesktopOwner lease was acquired above. Rebuild only
+        // durable derived ANSF/continuity state from original verified
+        // journals and exact atomic index intents; never run any OS worker.
+        let continuity=lu_core::continuity::ContinuityStore::open(
+            &root.join("lu-context-continuity.sqlite")
+        ).map_err(|e|format!("Continuity unavailable during recovery: {e:?}"))?;
+        let reviewed_memory_recovery=
+            reviewed_memory_evidence::reconcile_incomplete_exclusive(
+                &chats,&continuity,&root
+            )?;
+        for item in &reviewed_memory_recovery{
+            eprintln!("LU_MEMORY_03E_RECONCILIATION state={} operation={}",
+                item.status,item.operation);
+        }
         if reported>0||unlinked>0{
             eprintln!(
                 "LU_E1_P08_REVIEWED_CHAT_RECOVERY notified={} unlinked={}",
@@ -949,9 +964,8 @@ impl DesktopState {
             operational_assets:lu_core::operational_asset_ledger::OperationalAssetLedger::open(
                 &root.join("lu-operational-assets.sqlite")
             ).map_err(|e|format!("Operational asset ledger unavailable: {e:?}"))?,
-            continuity:lu_core::continuity::ContinuityStore::open(
-                &root.join("lu-context-continuity.sqlite")
-            ).map_err(|e|format!("Continuity store unavailable: {e:?}"))?,
+            continuity,
+            reviewed_memory_recovery,
             embedding:Mutex::new(None),
             goal_memory: memory_desktop::GoalMemoryDesktop::open(&root),
             read_proposals: read_proposal::ReadApprovalQueue::default(),
@@ -6744,6 +6758,17 @@ fn lu_deny_file_restore(
     Ok(())
 }
 
+/// Host-only startup reconciliation summary for this authenticated chat.
+/// Display never publishes a projection, grants authority or retries a tool.
+#[tauri::command]
+fn lu_reviewed_memory_recovery_status(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<reviewed_memory_evidence::ReviewedMemoryRecoveryView>,String>{
+    state.chats.original_history_page(&chat_id,&chat_id,None,1)?;
+    Ok(state.reviewed_memory_recovery.iter()
+        .filter(|item|item.chat_id==chat_id).cloned().collect())
+}
+
 /// Chat-scoped read-only durable recovery evidence for native Wave 2 file,
 /// Office and archive operations. This cannot resume, replay or grant an effect.
 #[tauri::command]
@@ -8033,6 +8058,7 @@ pub fn run() {
             lu_approve_read_proposal,
             lu_accept_native_action_proposal,
             lu_tool_turn_history,
+            lu_reviewed_memory_recovery_status,
             lu_agent_plan_progress,
             lu_agent_review_plan,
             agent_recovery_desktop::lu_agent_reconcile_recovery,

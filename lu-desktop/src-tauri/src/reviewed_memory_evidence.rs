@@ -508,12 +508,142 @@ pub(crate) fn record_from_reviewed_turn(
         // materializations are idempotent and recovery-gated, NOT one
         // cross-database ACID transaction. Nothing is visible to chat until
         // all materializations finish and publication is committed.
+        // A later original user interaction is not implicit consent to
+        // publish a previously completed worker result.
+        if chats.latest_authenticated_user_turn_id(chat).as_deref()!=Some(turn){
+            return Err("Original reviewed turn superseded before publication".into())
+        }
         project_derived_only(chats,continuity,&root,&row,&plan)?;
         publish_projection(&mut conn,&row)?;
         recorded+=1;
     }
     Ok(recorded)
 }
+
+const RECOVERY_LIMIT:usize=64;
+#[derive(Clone,Debug,Serialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct ReviewedMemoryRecoveryView{
+    pub chat_id:String,
+    pub original_turn_id:String,
+    pub operation:String,
+    pub status:String,
+    pub explanation:String,
+    pub execution_authority:&'static str,
+    pub retry_allowed:bool,
+}
+fn recovery_view(r:&Row,status:&str)->ReviewedMemoryRecoveryView{
+    ReviewedMemoryRecoveryView{
+        chat_id:r.chat.clone(),original_turn_id:r.turn.clone(),
+        operation:r.tool.clone(),status:status.into(),
+        explanation:match status{
+            "RECONSTRUCTED_SOURCE_VERIFIED"=>
+                "Derived ANSF memory was reconstructed from immutable original receipts; source freshness and OS custody are NOT rechecked. No worker was restarted.",
+            "LEGACY_REVIEW_REQUIRED"=>
+                "Older index entry lacks one atomic projection intent. It remains unavailable until an original human reviews it.",
+            _=>
+                "Original source, correction, receipt, or projection state is ambiguous. This memory remains unpublished and requires an original human review."
+        }.into(),
+        execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION",
+        retry_allowed:false
+    }
+}
+fn reconcile_one_projection(
+    chats:&ChatStore,continuity:&ContinuityStore,root:&Path,
+    conn:&mut Connection,r:&Row
+)->Result<(),String>{
+    let plan=read_plan(conn,r)?;
+    let book=chats.require(&r.chat)?;
+    let original=book.authenticated_chat_turn(&r.chat,&r.turn)
+        .map_err(err)?.ok_or("Recovery original user turn unavailable")?;
+    if original.1!=r.source_id||digest(original.0.as_bytes())!=r.source_sha{
+        return Err("Original source changed before recovery".into())
+    }
+    let source=book.read_entry(&r.chat,r.source_id)
+        .map_err(err)?.ok_or("Original source entry missing")?;
+    let head=book.current_message(&r.chat,&source.message_id)
+        .map_err(err)?.ok_or("Original source revision unavailable")?;
+    if head.entry.id!=r.source_id || head.entry.content!=original.0{
+        return Err("Original human message was revised; review required".into())
+    }
+    // Stronger than correction-table absence: absolutely no newer
+    // authenticated human source may be silently interpreted as consent
+    // to restore the older memory. A later clarification, invalidation or
+    // retraction always requires a human decision.
+    let latest=book.latest_authenticated_chat_turn(&r.chat).map_err(err)?;
+    if latest.as_ref().map(|(turn,_)|turn.as_str())!=Some(r.turn.as_str()){
+        return Err("Newer human turn requires review before projection recovery".into())
+    }
+    let proc_id=format!("proc-03d-{}",digest(r.call.as_bytes()));
+    let claim_id=format!("claim-03d-{}",digest(r.call.as_bytes()));
+    if book.reviewed_memory_projection_has_human_correction(&proc_id,&claim_id)
+        .map_err(err)?{
+        return Err("Human invalidation or retraction blocks recovery".into())
+    }
+    if plan.claim.as_ref().is_some_and(|c|
+        SystemTime::now().duration_since(UNIX_EPOCH).ok()
+            .is_none_or(|t|c.expires_unix<=t.as_secs())){
+        return Err("Original source-backed belief expired".into())
+    }
+    // A later checkpoint for the same chat/task cannot be overwritten by
+    // reconstruction of an older incomplete observation.
+    if let Some(current)=continuity.latest_for_conversation(
+        &r.project,&r.task,&r.chat
+    ).map_err(err)?{
+        if current.checkpoint_id!=r.checkpoint &&
+            current.source_entry_ids.iter().any(|id|*id>=r.source_id){
+            return Err("Later continuity checkpoint prevents old projection".into())
+        }
+    }
+    project_derived_only(chats,continuity,root,r,&plan)?;
+    // The exclusive owner still holds the profile lease. No worker, grant,
+    // TaskStore resume, tool dispatch or external source update is invoked.
+    publish_projection(conn,r)
+}
+/// Call only AFTER acquiring DesktopOwner's exclusive profile OS lease
+/// and BEFORE exposing the native model/worker dispatcher. This operation
+/// may rebuild *derived ANSF records only*, never an OS effect or task.
+pub(crate) fn reconcile_incomplete_exclusive(
+    chats:&ChatStore,continuity:&ContinuityStore,profile:&Path
+)->Result<Vec<ReviewedMemoryRecoveryView>,String>{
+    let root=profile_root(profile)?;
+    let path=index_path(&root);
+    if !path.exists(){return Ok(Vec::new())}
+    regular_file(&path)?;
+    let mut conn=Connection::open(&path).map_err(err)?;
+    ensure_schema(&conn)?;
+    let pending:Vec<Row>={
+        let mut stmt=conn.prepare(
+            "SELECT e.call_id,e.chat_id,e.user_turn_id,
+                    e.original_source_entry_id,e.original_source_sha256,
+                    e.checkpoint_id,e.project_id,e.task_id,e.tool_id,
+                    e.tool_version,e.application_version,e.receipt_sha256,
+                    e.verified_fact
+             FROM lu_reviewed_memory_evidence e
+             LEFT JOIN lu_reviewed_memory_publication p ON p.call_id=e.call_id
+             WHERE p.call_id IS NULL OR p.published_unix<=0
+             ORDER BY e.rowid ASC LIMIT ?1"
+        ).map_err(err)?;
+        stmt.query_map([(RECOVERY_LIMIT+1) as i64],read_row)
+            .map_err(err)?.collect::<Result<Vec<_>,_>>().map_err(err)?
+    };
+    if pending.len()>RECOVERY_LIMIT{
+        return Err("Too many unfinished reviewed projections for bounded recovery".into())
+    }
+    let mut out=Vec::with_capacity(pending.len());
+    for row in &pending{
+        let status=if read_plan(&conn,row).is_err(){
+            "LEGACY_REVIEW_REQUIRED"
+        }else if reconcile_one_projection(chats,continuity,&root,&mut conn,row).is_ok(){
+            "RECONSTRUCTED_SOURCE_VERIFIED"
+        }else{
+            "REVIEW_REQUIRED"
+        };
+        out.push(recovery_view(row,status));
+    }
+    Ok(out)
+}
+
 /// Exact authenticated CURRENT-human selector only. The index supplies
 /// a turn, not a caller/model-selected path. It never opens the wrong chat
 /// and never falls back to a global journal after a recorded lookup fails.
