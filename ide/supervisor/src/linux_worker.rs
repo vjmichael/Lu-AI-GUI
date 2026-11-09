@@ -812,9 +812,7 @@ fn uv_virtualenv_alias_bytes(root: &Path, link: &Path) -> Option<u64> {
     } else if relative == ".venv/bin/python3" {
         value == "python"
     } else if let Some(version) = relative.strip_prefix(".venv/bin/python3.") {
-        !version.is_empty()
-            && version.bytes().all(|b| b.is_ascii_digit())
-            && value == "python"
+        !version.is_empty() && version.bytes().all(|b| b.is_ascii_digit()) && value == "python"
     } else {
         false
     };
@@ -981,7 +979,8 @@ pub fn execute_linux_worker_with_output(
     let mut last_output_check = Instant::now();
     let status = loop {
         if last_output_check.elapsed() >= OUTPUT_CHECK_INTERVAL {
-            if scan_output_budget_for_recipe(&output, plan.recipe_id == "uv_sync_offline").is_err() {
+            if scan_output_budget_for_recipe(&output, plan.recipe_id == "uv_sync_offline").is_err()
+            {
                 output_limit_hit = true;
             }
             last_output_check = Instant::now();
@@ -1208,10 +1207,8 @@ mod tests {
     #[test]
     fn uv_budget_accepts_only_inert_private_venv_aliases() {
         use std::os::unix::fs::symlink;
-        let root = std::env::temp_dir().join(format!(
-            "ide-uv-private-output-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("ide-uv-private-output-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join(".venv/bin")).unwrap();
         fs::create_dir_all(root.join(".venv/lib")).unwrap();
