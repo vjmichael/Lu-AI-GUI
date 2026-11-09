@@ -4,7 +4,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$InstalledExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','Dev035JobsReadOnly','Dev045ProjectDebuggerDenied','B4SplitEditor','B5LargeProject')][string]$Scenario='Shell',
+  [ValidateSet('Shell','ProjectReadOnly','EditorPersistence','PersistedRestart','P04ReinstalledProject','ExternalConflict','ProtectedBuildDebug','ProtectedCancellation','ProtectedHostCrash','ProtectedServiceCrash','ProtectedTamperDenial','ProtectedDebuggerCancellation','Wo9WorkflowPortfolio','Wo9ReviewedGit','Wo9ProtectedGraph','Wo9ProtectedGraphCancel','Wo9ProtectedGraphHostCrash','Dev02ProtectedLsp','Dev035JobsReadOnly','Dev045ProjectDebuggerDenied','Dev045CInstalledProjectDebugger','Dev045CInstalledProjectRestartDenied','B4SplitEditor','B5LargeProject')][string]$Scenario='Shell',
   [string]$FixtureRoot='',
   [string]$MetricsFile=''
 )
@@ -459,7 +459,7 @@ try {
   Click 'Projects'
   Require 'Workspace projects'
   $stage='picker'
-  if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
+  if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject','Dev045CInstalledProjectRestartDenied')) {
     # Native folder chooser must be opened through UI, never by trusting input path.
     Click '+ Open folder'
     Start-Sleep -Seconds 2
@@ -479,7 +479,7 @@ try {
         !(Test-Path -LiteralPath (Join-Path $fixed 'main.rs'))) {
       Deny 'non_disposable_or_missing_fixture'
     }
-    if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject')) {
+    if ($Scenario -notin @('PersistedRestart','P04ReinstalledProject','Dev045CInstalledProjectRestartDenied')) {
       # Native chooser name is not an IDE project registration.
       [System.Windows.Forms.SendKeys]::SendWait('^l')
       if ($fixed -match '[+^%~(){}\[\]]') { Deny 'native_picker_path_contains_keyboard_metacharacters' }
@@ -823,6 +823,86 @@ try {
       }
       Write-Host 'DEV035_WINDOWS_INSTALLED_JOBS_DISCOVERY_NO_RUN=PASS'
       Write-Host 'DEV035_WINDOWS_INSTALLED_PROTECTED_WORKER=NOT_ACCEPTED'
+    }
+    if ($Scenario -eq 'Dev045CInstalledProjectDebugger') {
+      # Separate from the WO8 fixed-debuggee self-test. This installed
+      # scenario must run against a reviewed, signed feature-enabled build,
+      # with a pinned Cargo bundle, pinned project LLDB bundle and a genuine
+      # SCM recovery service. No test IPC or alternate execution entrypoint.
+      $signed=Get-AuthenticodeSignature -LiteralPath $exe
+      if ($signed.Status -ne 'Valid' -or !$signed.SignerCertificate) {
+        Deny 'dev045c_installed_desktop_not_signed'
+      }
+      [void](VerifiedInstalledService)
+      $source=Join-Path $fixed 'main.rs'
+      $sourceBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
+      $cargoSource=Join-Path $fixed 'src\main.rs'
+      if (!(Test-Path -LiteralPath $cargoSource -PathType Leaf)) {
+        Deny 'dev045c_real_cargo_project_source_missing'
+      }
+      $cargoBefore=(Get-FileHash -Algorithm SHA256 -LiteralPath $cargoSource).Hash
+      $workersBefore=ProtectedWorkerCount
+      Click 'Job requests'
+      Require 'Protected Run / Test'
+      $recipe=Find-Control 'Recipe' 'ComboBox' 25
+      if (!$recipe.Current.IsKeyboardFocusable) {
+        Deny 'dev045c_native_cargo_recipe_selector_unavailable'
+      }
+      $recipe.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{ENTER}')
+      $build=Find-Control 'Request protected Run / Test' 'Button' 25
+      if (!$build.Current.IsEnabled) {
+        Deny 'dev045c_installed_protected_cargo_unavailable'
+      }
+      Click 'Request protected Run / Test'
+      Confirm-NativeOneUseDialog 'Allow one protected build/test job' 'Run this exact job'
+      [void](Find-Control 'Last worker result:' '' 360)
+      Require 'Native exit: 0'
+      Require 'Reconciliation: not indicated'
+      Require 'Worker output seal:'
+      $target=Find-Control 'Debug last verified project build' 'Button' 35
+      if (!$target.Current.IsEnabled) {
+        Deny 'dev045c_verified_project_binary_not_ready_for_debug'
+      }
+      Click 'Debug last verified project build'
+      # This is a SECOND, wholly separate actual OS dialog. The preceding
+      # Cargo consent is never an LLDB grant and may not be replayed.
+      Confirm-NativeOneUseDialog 'Approve one protected project debugger' 'Debug this exact project build'
+      [void](Find-Control 'Protected project LLDB session' '' 240)
+      Require 'Originating protected build:'
+      Require 'Exact build terminal receipt:'
+      Require 'Project debugger D3 target binding:'
+      Require 'Thread inspection: observed'
+      Require 'Stack: observed'
+      Require 'Kernel tree cleanup: reported by protected supervisor'
+      Require 'Installed/debugger project release acceptance:'
+      [void](Find-Control 'Durable debugger jobs' '' 45)
+      Wait-WorkerReturnToBaseline $workersBefore
+      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne $sourceBefore -or
+          (Get-FileHash -Algorithm SHA256 -LiteralPath $cargoSource).Hash -ne $cargoBefore) {
+        Deny 'dev045c_project_debugger_mutated_original_sources'
+      }
+      Write-Host 'DEV045C_SIGNED_INSTALLED_REAL_CARGO_TO_PROJECT_LLDB_UI=PASS'
+      Write-Host 'DEV045C_TWO_ACTUAL_NATIVE_ONE_USE_CONSENTS=PASS'
+      Write-Host 'DEV045C_REAL_PROJECT_STOP_STACK_AND_WORKER_REAP=PASS'
+      Write-Host 'DEV045C_CRASH_AND_PROJECT_DEBUG_CANCEL=NOT_TESTED'
+    }
+    if ($Scenario -eq 'Dev045CInstalledProjectRestartDenied') {
+      # Second, separately launched actual installed desktop. The build
+      # runtime's most recent sealed executable was process-private; a
+      # journal record cannot reauthorize it after a restart.
+      [void](VerifiedInstalledService)
+      $before=ProtectedWorkerCount
+      Click 'Job requests'
+      Require 'Durable debugger jobs'
+      $replay=Find-Control 'Debug last verified project build' 'Button' 35
+      if ($replay.Current.IsEnabled) {
+        Deny 'dev045c_stale_project_debug_target_reused_after_restart'
+      }
+      if ((ProtectedWorkerCount) -ne $before) {
+        Deny 'dev045c_reopen_spontaneously_started_debugger'
+      }
+      Write-Host 'DEV045C_INSTALLED_RESTART_NO_AUTOREPLAY_OF_PROJECT_DEBUGGER=PASS'
     }
     if ($Scenario -eq 'Dev045ProjectDebuggerDenied') {
       # Exact default unsigned installed application: prove the native OS
