@@ -14,7 +14,7 @@ use crate::{
     windows_kernel_pc::{WindowsLoadedModuleWitness, WindowsThreadRipSample},
     SupervisorError,
 };
-use lu_ide_workspace::dap_source_lines::SourceLineCandidate;
+use lu_ide_workspace::dap_source_lines::{review_native_source_line, SourceLineCandidate};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
@@ -242,8 +242,17 @@ pub(crate) fn independently_verify_pdb_line_for_ci(
     let original_source = native_source_root.join(source_rel);
     compiled_source_identity(&candidate.adapter_path, &original_source)?;
     let source_sha256 = bounded_sha(&original_source, MAX_SOURCE_BYTES)?;
-    let content = fs::read(&original_source).map_err(|_| denied())?;
-    if candidate.line as usize > content.split(|b| *b == b'\n').count() {
+    // The DAP/PDB compiler path is a historical private workspace path,
+    // not authority to open that path. Rebind it to the exact native source
+    // snapshot only AFTER independent compiler-path agreement, then reuse
+    // the host's reviewed traversal/reparse/line-length/digest verifier.
+    let mut native_candidate = candidate.clone();
+    native_candidate.adapter_path = original_source.to_str()
+        .ok_or_else(denied)?.to_owned();
+    let source_review = review_native_source_line(
+        native_source_root, source_rel, &source_sha256, &native_candidate,
+    ).map_err(|_| denied())?;
+    if source_review.line != candidate.line || source_review.file_sha256 != source_sha256 {
         return Err(denied());
     }
     if module.loaded_base < module.preferred_base
