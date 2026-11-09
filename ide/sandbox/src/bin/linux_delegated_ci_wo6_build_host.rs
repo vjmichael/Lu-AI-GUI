@@ -16,7 +16,12 @@ fn run() -> Result<(), &'static str> {
     use std::{env, fs, path::Path, process::Command};
     let mut args = env::args_os().skip(1);
     let first = args.next().ok_or("missing fixed acceptance mode")?;
-    if args.next().is_some() || !matches!(first.to_str(), Some("--check" | "--test" | "--build" | "--project-debug" | "--cancel")) {
+    if args.next().is_some()
+        || !matches!(
+            first.to_str(),
+            Some("--check" | "--test" | "--build" | "--project-debug" | "--cancel")
+        )
+    {
         return Err("only fixed check, test, build, project-debug and cancel modes");
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));

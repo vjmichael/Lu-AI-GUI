@@ -46,7 +46,14 @@ test('WebView exposes only project lifecycle, source browse and explicit save co
     'ide_workflow_run_step', 'ide_workflow_verify_native_receipt',
     // B3 read-only project search plus B2 native-private draft vault lifecycle.
     'ide_find_in_project', 'ide_draft_checkpoint', 'ide_draft_latest',
-    'ide_draft_load', 'ide_draft_discard'
+    'ide_draft_load', 'ide_draft_discard',
+    // Reviewed profile discovery, bounded output, exact debug target review,
+    // project debugging and explicit split-layout persistence are native-only.
+    'ide_build_read_output', 'ide_debug_run_project',
+    'ide_discover_conventional_tests', 'ide_discover_project_run_profiles',
+    'ide_link_task_source', 'ide_review_multilang_adapter',
+    'ide_review_project_debug_target', 'ide_workspace_layout_clear',
+    'ide_workspace_layout_read', 'ide_workspace_layout_save'
   ].sort());
   // E2's dynamic method string is restricted to the two inspected options.
   assert.match(web, /kind === 'diagnostics' \? 'ide_lsp_read_diagnostics' : 'ide_lsp_feature'/);
@@ -298,7 +305,7 @@ test('Wave A2 registry advertises actual host operations without granting execut
   const commands = [...registry.matchAll(/capability!\(\s*"[^"]+"\s*,\s*"(ide_[a-z_]+)"/g)]
     .map(match => match[1]);
   const registered = [...tauri.matchAll(/^\s+(ide_[a-z_]+),?$/gm)].map(match => match[1]);
-  assert.equal(commands.length, 46, 'native capability catalog preserves prior 42 operations and adds four private recovery operations');
+  assert.equal(commands.length, 49, 'native capability catalog must match the 49 explicitly typed operations');
   assert.equal(new Set(commands).size, commands.length);
   const nativeLspCommands = [
     'ide_lsp_worker_status', 'ide_lsp_start_session',
@@ -308,15 +315,30 @@ test('Wave A2 registry advertises actual host operations without granting execut
   assert.deepEqual(registered.filter(value => value.startsWith('ide_lsp_')).sort(),
     nativeLspCommands.slice().sort());
   const nativeBuildCommands = [
-    'ide_build_status', 'ide_build_start', 'ide_build_cancel', 'ide_build_reconcile'
+    'ide_build_status', 'ide_build_start', 'ide_build_cancel', 'ide_build_reconcile',
+    'ide_build_read_output'
   ];
   assert.deepEqual(registered.filter(value => value.startsWith('ide_build_')).sort(),
     nativeBuildCommands.slice().sort());
   const nativeDebugCommands = [
-    'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_cancel', 'ide_debug_reconcile'
+    'ide_debug_status', 'ide_debug_run_fixture', 'ide_debug_run_project',
+    'ide_debug_cancel', 'ide_debug_reconcile'
   ];
   assert.deepEqual(registered.filter(value => value.startsWith('ide_debug_')).sort(),
     nativeDebugCommands.slice().sort());
+  // Native UI-only inspection and layout actions remain outside the general
+  // Lu capability registry. Require their exact Tauri registrations without
+  // accidentally granting them capability-catalog status.
+  const nativeUiOnlyCommands = [
+    'ide_discover_conventional_tests', 'ide_review_project_debug_target',
+    'ide_workspace_layout_clear', 'ide_workspace_layout_read',
+    'ide_workspace_layout_save'
+  ];
+  assert.deepEqual(
+    registered.filter(value => nativeUiOnlyCommands.includes(value)).sort(),
+    nativeUiOnlyCommands.slice().sort());
+  assert.ok(nativeUiOnlyCommands.every(value => !commands.includes(value)),
+    'UI-only commands must never appear in the Lu capability directory');
   // Build/test/debug execution is privileged and intentionally NOT a general
   // Lu capability. Each requires a signed/pinned OS-restricted release feature.
   const buildBackend = read('../src-tauri/src/build_backend.rs');
@@ -338,7 +360,8 @@ test('Wave A2 registry advertises actual host operations without granting execut
     value !== 'ide_list_capabilities' && value !== 'ide_workflow_run_step' &&
     value !== 'ide_workflow_verify_native_receipt' &&
     !nativeLspCommands.includes(value) &&
-    !nativeBuildCommands.includes(value) && !nativeDebugCommands.includes(value));
+    !nativeBuildCommands.includes(value) && !nativeDebugCommands.includes(value) &&
+    !nativeUiOnlyCommands.includes(value));
   assert.deepEqual(commands.slice().sort(), declared.slice().sort());
   assert.ok(commands.includes('ide_list_language_servers'));
   assert.match(registry, /descriptions_only: true/);
@@ -357,7 +380,7 @@ test('Wave A2 exposes typed request/result/error schemas rather than loose field
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
   const web = read('../web/main.jsx');
   assert.equal(schemas.schemaVersion, 2);
-  assert.equal(Object.keys(schemas.operations).length, 46);
+  assert.equal(Object.keys(schemas.operations).length, 49);
   for (const [id, shapes] of Object.entries(schemas.operations)) {
     assert.equal(shapes.request.type, 'object', id);
     assert.equal(shapes.request.additionalProperties, false, id);
@@ -431,8 +454,13 @@ test('Wave A2 typed request keys match actual Rust Tauri argument names', () => 
   for (const { id, command } of capabilities) {
     const signature = native.match(new RegExp('async fn ' + command + '\\(([\\s\\S]*?)\\) ->'));
     assert.ok(signature, id + ': missing native function');
-    const parameters = [...signature[1].matchAll(/^\s*([a-z_]+):\s*(.+?),?\s*$/gm)]
-      .map(match => match[1]).filter(name => !['app', 'state', 'registry', 'coordinator', 'inbox', 'ledger', 'snapshots', 'intents', 'vault'].includes(name))
+    const parameters = signature[1].split(/\r?\n/)
+      .map(line => line.match(/^\s*([a-z_][a-z0-9_]*):\s*(.+?),?\s*$/))
+      .filter(Boolean)
+      // Injected Rust State and AppHandle are host resources, not WebView
+      // request fields. Determine this by native TYPE, not a stale name list.
+      .filter(match => match[1] !== 'app' && !match[2].startsWith('State<'))
+      .map(match => match[1])
       .map(name => name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()))
       .sort();
     const typed = Object.keys(schemas.operations[id].request.properties).sort();
