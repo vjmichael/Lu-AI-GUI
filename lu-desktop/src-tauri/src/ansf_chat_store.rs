@@ -600,6 +600,19 @@ impl ChatStore {
         self.require(chat_id).ok()?.authenticated_chat_turn(chat_id,user_turn_id)
             .ok().flatten().map(|(text,_)|text)
     }
+    /// Host-only, bounded original ANSF source index for the feedback loop.
+    /// This lookup cannot authenticate imported/Reader/model turns.
+    pub fn prior_authenticated_turn_ids(
+        &self,chat_id:&str,current_turn:&str,limit:usize
+    )->Result<Vec<String>,String>{
+        if self.latest_authenticated_user_turn_id(chat_id).as_deref()
+            !=Some(current_turn){
+            return Err("Current human turn changed before feedback lookup".into())
+        }
+        self.require(chat_id)?
+            .recent_authenticated_turns_before(chat_id,current_turn,limit)
+            .map_err(to_err)
+    }
     /// Source of truth for a linked reply: a host-authenticated turn's
     /// ORIGINAL visible ANSF sequence, not a mutable display revision.
     pub fn original_user_turn_visible_seq(

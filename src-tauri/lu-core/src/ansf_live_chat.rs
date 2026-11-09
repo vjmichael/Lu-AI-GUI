@@ -579,6 +579,39 @@ impl AnsfStore{
     }
     /// Indexed latest human-origin authenticated user turn. No imported,
     /// unauthenticated or Reader event ever appears in this result.
+    /// MEMORY-LOOP-02: select only earlier host-authenticated human turns
+    /// from the ORIGINAL ANSF conversation by indexed source event seq.
+    /// Imported user text, Reader turns and assistant text never participate.
+    /// A caller cannot scan or choose a different conversation with a file
+    /// path, and the current authenticated turn is strictly excluded.
+    pub fn recent_authenticated_turns_before(
+        &self,session_id:&str,current_turn:&str,limit:usize
+    )->Result<Vec<String>,AnsfError>{
+        if !valid_session(session_id)||!opaque(current_turn,"g-")
+            ||limit==0||limit>16{return Err(AnsfError::InvalidInput)}
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        let cursor:Option<i64>=conn.query_row(
+            "SELECT seq FROM ansf_live_chat_events
+             WHERE session_id=?1 AND kind='user' AND origin='host'
+               AND user_turn_id=?2 AND source_entry_id IS NOT NULL",
+            params![session_id,current_turn],|r|r.get(0)
+        ).optional()?;
+        let Some(before_seq)=cursor else{return Err(AnsfError::InvalidInput)};
+        let mut stmt=conn.prepare(
+            "SELECT user_turn_id FROM ansf_live_chat_events
+             WHERE session_id=?1 AND seq<?2 AND kind='user'
+               AND origin='host' AND user_turn_id IS NOT NULL
+               AND source_entry_id IS NOT NULL
+             ORDER BY seq DESC LIMIT ?3"
+        )?;
+        let rows=stmt.query_map(params![session_id,before_seq,limit as i64],
+            |r|r.get::<_,String>(0))?;
+        let result=rows.collect::<Result<Vec<_>,_>>()?;
+        if result.iter().any(|id|!opaque(id,"g-")){
+            return Err(AnsfError::InvalidInput)
+        }
+        Ok(result)
+    }
     pub fn latest_authenticated_chat_turn(&self,session_id:&str)
         ->Result<Option<(String,String)>,AnsfError>{
         if !valid_session(session_id){return Err(AnsfError::InvalidInput)}

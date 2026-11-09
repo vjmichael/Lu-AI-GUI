@@ -16,6 +16,14 @@ const MAX_RECEIPT:i64=32*1024;
 #[serde(rename_all="camelCase")]
 pub(crate) struct ReviewedOperationContinuity{
     pub operation:&'static str,
+    /// Internal, original-journal call scope only. Never serialized to UI
+    /// or copied to the model as a capability/command.
+    #[serde(skip_serializing)]
+    pub(crate) call_id:String,
+    /// Independently checked *historical* observed-data digest, not current
+    /// source freshness or an effect receipt to reuse.
+    #[serde(skip_serializing)]
+    pub(crate) independently_observed_sha256:Option<String>,
     pub process_state:String,
     pub outcome:&'static str,
     pub last_checkpoint:Option<u8>,
@@ -134,9 +142,9 @@ fn expected_method(tool:&str,method:&str)->bool{
     }
 }
 fn outcome_for(effect:&Connection,call_id:&str,tool:&str,receipt:Option<&[u8]>)
-    ->Result<&'static str,String>{
+    ->Result<(&'static str,Option<String>),String>{
     if !table_exists(effect,"lu_independent_outcomes")?{
-        return Ok("NOT_INDEPENDENTLY_CHECKED")
+        return Ok(("NOT_INDEPENDENTLY_CHECKED",None))
     }
     let row:Option<(String,String,String,Option<String>)>=effect.query_row(
         "SELECT verdict,receipt_sha256,method,observed_sha256
@@ -146,11 +154,11 @@ fn outcome_for(effect:&Connection,call_id:&str,tool:&str,receipt:Option<&[u8]>)
         ))
     ).optional().map_err(|_|"Independent outcome lookup unavailable")?;
     let Some((verdict,digest,method,observed))=row else{
-        return Ok("NOT_INDEPENDENTLY_CHECKED")
+        return Ok(("NOT_INDEPENDENTLY_CHECKED",None))
     };
-    let Some(receipt)=receipt else{return Ok("RECEIPT_MISMATCH")};
+    let Some(receipt)=receipt else{return Ok(("RECEIPT_MISMATCH",None))};
     if digest!=format!("{:x}",Sha256::digest(receipt)){
-        return Ok("RECEIPT_MISMATCH")
+        return Ok(("RECEIPT_MISMATCH",None))
     }
     match verdict.as_str(){
         "VERIFIED"=>{
@@ -158,12 +166,12 @@ fn outcome_for(effect:&Connection,call_id:&str,tool:&str,receipt:Option<&[u8]>)
                 sha.len()==64 && sha.bytes().all(|b|b.is_ascii_hexdigit()
                     &&!b.is_ascii_uppercase()));
             if !valid_observed || !expected_method(tool,&method){
-                return Ok("OUTCOME_INCONSISTENT")
+                return Ok(("OUTCOME_INCONSISTENT",None))
             }
-            Ok("VERIFIED_AT_OBSERVATION")
+            Ok(("VERIFIED_AT_OBSERVATION",observed))
         },
-        "UNSUPPORTED"=>Ok("UNSUPPORTED"),
-        "CONFLICT"=>Ok("CONFLICT"),
+        "UNSUPPORTED"=>Ok(("UNSUPPORTED",None)),
+        "CONFLICT"=>Ok(("CONFLICT",None)),
         _=>Err("Unknown independent outcome verdict".into())
     }
 }
@@ -242,16 +250,18 @@ pub(crate) fn reviewed_turn_continuity(
         let (task_complete,progress,events)=checkpoint(&task,&call,turn)?;
         let receipt_ok=size.is_some_and(|len|len>0&&len<=MAX_RECEIPT)
             &&receipt.as_deref().is_some_and(|v|v.len() as i64==size.unwrap_or(0));
-        let outcome=if state=="APPLIED" &&receipt_ok{
+        let (outcome,observed_digest)=if state=="APPLIED" &&receipt_ok{
             outcome_for(&effect,&call,&tool,receipt.as_deref())?
         }else if state=="APPLIED"{
-            "RECEIPT_MISMATCH"
-        }else{"NOT_INDEPENDENTLY_CHECKED"};
+            ("RECEIPT_MISMATCH",None)
+        }else{("NOT_INDEPENDENTLY_CHECKED",None)};
         let passed=outer_ok&&task_complete&&receipt_ok
             &&outcome=="VERIFIED_AT_OBSERVATION";
         if !passed{needs_review=true;}
         operations.push(ReviewedOperationContinuity{
-            operation:label,process_state:state,outcome,
+            operation:label,call_id:call,
+            independently_observed_sha256:observed_digest,
+            process_state:state,outcome,
             last_checkpoint:progress,checkpoint_events:events,
             original_model_call_linked:outer_ok,worker_task_linked:task_complete,
         });
