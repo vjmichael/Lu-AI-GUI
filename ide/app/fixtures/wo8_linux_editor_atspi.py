@@ -221,9 +221,11 @@ def _atspi_bounded_chooser_mouse(attempt):
                     or rect.x + rect.width > screen_w
                     or rect.y + rect.height > screen_h):
                 continue
-            # GTK action row occupies the bottom-right portion. Both attempts
-            # stay entirely within the actual visible native chooser widget.
-            margin = 95 if attempt % 2 == 0 else 55
+            # Retry genuinely distinct right-hand action-row positions only
+            # inside the OS-verified visible chooser, never the main WebView.
+            # Attempt 1 checks the rightmost confirmation region; attempt 3
+            # checks the adjacent region if the dialog remains visible.
+            margin = 55 if attempt < 2 else 95
             px = int(rect.x + rect.width - margin)
             py = int(rect.y + rect.height - 32)
             if not (rect.x + 8 < px < rect.x + rect.width - 8
@@ -299,10 +301,24 @@ def _native_picker_confirm(attempt=0):
     if attempt > 0 and not ranked:
         print("P04_GTK_RETRY_POLICY=generic_open_suppressed;"
               "attempt=" + str(attempt), flush=True)
-    if _x11_dialog_activation(attempt):
-        return
-    if _atspi_bounded_chooser_mouse(attempt):
-        return
+    # The real Ubuntu 26.04 run proved that successfully SENDING a keyboard
+    # key does not imply a folder was selected: four keystroke deliveries
+    # all left the dialog open. Previously this unconditional early return
+    # made the independently bounded native chooser click unreachable.
+    # Alternate mechanisms after the caller verifies the dialog remains
+    # showing. Every spatial attempt is inside an actual visible AT-SPI
+    # file-chooser rectangle; a close without exact project registration
+    # still fails the acceptance test.
+    if attempt in (1, 3):
+        if _atspi_bounded_chooser_mouse(attempt):
+            return
+        if _x11_dialog_activation(attempt):
+            return
+    else:
+        if _x11_dialog_activation(attempt):
+            return
+        if _atspi_bounded_chooser_mouse(attempt):
+            return
     print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=missing_real_chooser_button;"
           "matching_dialog_buttons=" + str(len(ranked)), flush=True)
     deny("native_dialog_confirmation_not_found")
