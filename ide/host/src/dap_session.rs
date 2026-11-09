@@ -702,12 +702,12 @@ mod tests {
         let mut session=DapSession::new();
         session.phase=DapPhase::Ready;
         assert_eq!(session.launch_verified_project(
-            r"C:\\Windows\\System32\\cmd.exe").unwrap_err(),DapError::InvalidMessage);
+            r"C:\Windows\System32\cmd.exe").unwrap_err(),DapError::InvalidMessage);
         assert_eq!(session.launch_verified_project(
-            r"C:\\Temp\\debug-target\\target\\debug\\..\\evil.exe").unwrap_err(),
+            r"C:\Temp\debug-target\target\debug\..\evil.exe").unwrap_err(),
             DapError::InvalidMessage);
         let frame=session.launch_verified_project(
-            r"C:\\Users\\runner\\AppData\\Local\\Packages\\debug-target\\target\\debug\\fixture.exe")
+            r"C:\Users\runner\AppData\Local\Packages\debug-target\target\debug\fixture.exe")
             .unwrap();
         assert!(String::from_utf8(frame).unwrap().contains("stopOnEntry"));
     }
