@@ -161,6 +161,50 @@ mod tests{
         assert_eq!(read(&db,&other,&b).unwrap().status,"STOP_CROSS_CHAT_ORIGIN");
     }
     #[test]
+    fn real_sqlite_reopen_keeps_orphan_blocked_and_never_mints_authority(){
+        use std::time::{SystemTime,UNIX_EPOCH};
+        let file=std::env::temp_dir().join(format!(
+            "lu-agent01j-{}-{}.sqlite",std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let chat=id("c-",1);
+        let parent=id("p-",2);
+        let child=id("p-",3);
+        let (original,fresh)=(id("g-",4),id("g-",5));
+        {
+            let db=Connection::open(&file).unwrap();
+            db.execute_batch("CREATE TABLE lu_agent_plans(
+                plan_id TEXT PRIMARY KEY,conversation_id TEXT,human_turn_id TEXT);
+                CREATE TABLE lu_agent_continuation_intents(
+                plan_id TEXT,revision_sha256 TEXT,step_index INTEGER,
+                fresh_human_turn_id TEXT,state TEXT);
+                CREATE TABLE lu_agent_continuation_children(
+                parent_plan_id TEXT,revision_sha256 TEXT,step_index INTEGER,
+                fresh_human_turn_id TEXT,child_plan_id TEXT UNIQUE);").unwrap();
+            plan(&db,&parent,&chat,&original);
+            plan(&db,&child,&chat,&fresh);
+            db.execute("INSERT INTO lu_agent_continuation_intents VALUES(
+                ?1,?2,1,?3,'AWAITING_NEW_HOST_REVIEW')",
+                params![parent,"a".repeat(64),fresh]).unwrap();
+        }
+        let orphan=inspect_continuation_lineage(&file,&chat,&child).unwrap();
+        assert_eq!(orphan.status,"STOP_ORPHAN_CONTINUATION");
+        assert_eq!(orphan.execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
+        {
+            let db=Connection::open(&file).unwrap();
+            link_child_only(&db,&parent,&child,&fresh);
+        }
+        let intact=inspect_continuation_lineage(&file,&chat,&child).unwrap();
+        assert_eq!(intact.status,"LINEAGE_RECORDED_REVIEW_ONLY");
+        assert_eq!(intact.generations,1);
+        assert_eq!(intact.execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
+        std::fs::remove_file(&file).unwrap();
+    }
+    fn link_child_only(db:&Connection,parent:&str,child:&str,turn:&str){
+        db.execute("INSERT INTO lu_agent_continuation_children VALUES(
+            ?1,?2,1,?3,?4)",params![parent,"a".repeat(64),turn,child]).unwrap();
+    }
+    #[test]
     fn cycle_and_corrupt_revision_do_not_become_recovery(){
         let db=fixture();let chat=id("c-",1);
         let (a,b)=(id("p-",2),id("p-",3));
