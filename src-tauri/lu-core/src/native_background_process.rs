@@ -719,7 +719,7 @@ impl BackgroundProcessSupervisor {
             };
             result.map_err(|_|BackgroundProcessError::StoreUnavailable)?;
             #[cfg(windows)]
-            if matches!(outcome,Some(true))
+            if matches!(outcome,Some(true))&&had_version_reader&&version.is_some()
                 &&["-gh","-gs","-gb","-gc","-fm"]
                     .iter().any(|suffix|id.ends_with(suffix)){
                 // Publish the OS witness only AFTER successful task terminal
