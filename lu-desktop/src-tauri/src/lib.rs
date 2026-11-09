@@ -39,6 +39,7 @@ mod agent_plan_progress;
 mod agent_plan_review;
 mod agent_plan_admission;
 mod agent_plan_continuation_desktop;
+mod agent_recovery_desktop;
 mod chat_message_interactions;
 mod chat_message_revisions;
 mod archive_desktop;
@@ -7816,6 +7817,7 @@ pub fn run() {
             lu_tool_turn_history,
             lu_agent_plan_progress,
             lu_agent_review_plan,
+            agent_recovery_desktop::lu_agent_reconcile_recovery,
             agent_plan_continuation_desktop::lu_agent_prepare_next_step,
             lu_agent_cancel_plan,
             lu_message_decorations,
