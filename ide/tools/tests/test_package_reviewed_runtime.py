@@ -114,22 +114,27 @@ class RuntimePackageTests(unittest.TestCase):
             self.assertFalse(module.safe_part(part), part)
         self.assertTrue(module.safe_part("console.txt"))
         reserved = self.root / "bin" / "CON.txt"
-        reserved.write_bytes(b"not portable")
+        try:
+            reserved.write_bytes(b"not portable")
+        except OSError:
+            self.skipTest("Windows filesystem refuses reserved device filename")
         with self.assertRaises(module.Refused):
             self.package("reserved.zip")
         self.assertFalse((Path(self.tmp.name) / "reserved.zip").exists())
 
     def test_case_and_unicode_aliases_are_refused(self):
         path = self.root / "bin" / "Node"
+        if path.exists():
+            self.skipTest("case-insensitive filesystem refuses case alias")
         path.write_bytes(b"alias")
         with self.assertRaises(module.Refused):
             self.package("case.zip")
         path.unlink()
         composed = self.root / "bin" / "caf\\u00e9"
         decomposed = self.root / "bin" / "cafe\\u0301"
-        if composed == decomposed:
-            self.skipTest("filesystem normalizes unicode filenames")
         composed.write_bytes(b"composed")
+        if decomposed.exists():
+            self.skipTest("filesystem normalizes unicode filenames")
         decomposed.write_bytes(b"decomposed")
         with self.assertRaises(module.Refused):
             self.package("unicode.zip")
