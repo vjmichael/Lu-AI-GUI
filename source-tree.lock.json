@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ccb472e96168db26d5a1e34c0344b08f01e72762",
-  "trackedFileCount": 736,
+  "sourceCommitBeforeLock": "4a99e046c59a869f536801ab958e5a979dda6ba5",
+  "trackedFileCount": 738,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -81,7 +81,7 @@
     },
     {
       "path": ".github/workflows/lu-e1-p07-genuine-gguf.yml",
-      "blob": "cbb0dd67347501ee63c817c727b76840b9880079"
+      "blob": "dd7416267595ea75f272b2140ceb18e61975d568"
     },
     {
       "path": ".github/workflows/lu-e1-p07-reviewed-app.yml",
@@ -244,6 +244,10 @@
       "blob": "9b7273500c9a16717e9ed6fb388cfa0377c31348"
     },
     {
+      "path": "benchmarks/e1/agent01g_qwen_plan_probe.py",
+      "blob": "dcd40b41de2fab1649d2305f2d105ce3515b06f2"
+    },
+    {
       "path": "benchmarks/e1/e1_p05_real_three_arm.py",
       "blob": "8a1e5dadd0135b08678902e850cd8576b5bc238d"
     },
@@ -262,6 +266,10 @@
     {
       "path": "benchmarks/e1/e1_p08_setsid_escape_probe.py",
       "blob": "b655a718c5498509e7e24e0944cf14714f8e9a28"
+    },
+    {
+      "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
+      "blob": "83d07a6930624a375f8ded7a1c826a2d454813c6"
     },
     {
       "path": "benchmarks/e1/test_e1_p05_raw_receipt.py",
@@ -349,7 +357,7 @@
     },
     {
       "path": "docs/LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md",
-      "blob": "a67b569aa17a9abeeac6163707ddcc4161a41f64"
+      "blob": "cc9f7afcc1a8ff0989263b70d02ef7bab2ca0ecf"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -493,7 +501,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "7c970a80905e6fc428280803b8b9e343366c1468"
+      "blob": "2b755688bebb4129debece289ba52862c085d4ad"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
