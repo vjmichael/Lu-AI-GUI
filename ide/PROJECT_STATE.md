@@ -1,5 +1,30 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## DEV-04.6C — protected CI debugger command and independent result (Nov 9, 2026)
+
+Working branch `ide/dev04-6a-debug-control-admission-20261109` stacked
+on draft D5 PR #192. Added explicitly opt-in `dev046c-ci-control` for
+sealed native Windows test use only; no release or Tauri route. The
+protected gateway can now send an operation-specific, fsynced-before-
+dispatch one-use `next`/step request for the exact D5-owned OS thread
+or one single-line `setBreakpoints` request for the reviewed compiler
+source, never arbitrary DAP. The step can receive `ResultVerified`
+**only** after a correlated DAP step stop plus a fresh first-party
+owner-event sequence, independently advanced OS RIP/PE/PDB/source line,
+same Job/plan/original build/Running/source receipts and new durable
+owner receipt. LLDB response alone never proves success.
+
+Single-source breakpoint ACK remains `ResultUncertain`; variables
+remain denied; all action claims consumed once with no restart replay.
+New native fixture modes `--project-debug-step` and
+`--project-debug-breakpoint` are added to the *existing* consolidated
+Windows SCM/Job batch. No new PR/CI run. **No exact-head D6C native
+compilation, OS step or installed consent has been accepted.**
+See `ide/docs/IDE_DEV046C_NATIVE_CONTROL_DISPATCH_20261109.md`.
+D5 Windows event-loop sequencing and all D6 installed human-approval
+gates remain open.
+
+
 ## DEV-04.6B — one-use debugger control receipts and operator-consent contract (Nov 9, 2026)
 
 On working branch `ide/dev04-6a-debug-control-admission-20261109`,

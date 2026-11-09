@@ -39,3 +39,15 @@ All source tests remain UNVERIFIED against a native Rust compiler at this head. 
 Following the owner's explicit decision on Nov 9, 2026, **do not create small workflow jobs or submit a new draft PR after each subtask**. Finish the D6 control/authority task group on the present working branch, then run one grouped exact-head Windows/Linux matrix for native compilation, hostile source tests, pinned LLVM owner-event stop/continue, Job/cgroup custody, cancellation/crash, journal recovery and installed consent (where implemented). Do not disable required acceptance to save CI time; all old and new native/installed gates remain open until real results pass.
 
 **Nonclaim:** Breakpoints, stepping, variable inspection, evaluate, arbitrary attach and shell remain disabled. D6B stores admission/revocation receipts but *cannot* send a debugger command. A source commit, a test declaration and a queued workflow are not native OS acceptance.
+
+## D6C follow-on (same branch, not an upgrade of old consent)
+
+D6C now has a **separate, CI-only, executable test slot**, minted after
+a new D6B simulated operator challenge is consumed and fsynced. The
+older D6B review exercise still records `ResultUncertain` because it
+never dispatched a command. D6C's step test can record
+`ResultVerified` only if the original native D5 OS/PE/PDB inspector
+establishes a *new owner event* at a new RIP on the same protected
+thread. A breakpoint acknowledgement is still `ResultUncertain`.
+There is still no production human approval constructor.
+See `IDE_DEV046C_NATIVE_CONTROL_DISPATCH_20261109.md`.

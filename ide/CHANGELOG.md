@@ -1,5 +1,15 @@
 # Lu IDE — Development changelog
 
+- **DEV-04.6C protected native CI control + independent step result (Nov 9):**
+  Scoped one-use, fsynced-before-send step for actual D5-owned thread,
+  new DAP reason=step + correlated response, independent fresh Windows
+  Job/RIP/PDB/LLDB owner-event proof required for `ResultVerified`.
+  Fixed exact source-line breakpoint request is recorded
+  `ResultUncertain` until independent memory/hit evidence exists.
+  No production DAP command or human UI capability; no new CI workflow,
+  current source still awaits grouped Windows/Linux native acceptance.
+
+
 - **DEV-04.6B one-use debugger action receipts (Nov 9):** Native-CI-only
   operation-bound challenge, explicit simulated consent label,
   separate Approved/Denied/Consumed/Revoked/ResultUncertain hash-chain
