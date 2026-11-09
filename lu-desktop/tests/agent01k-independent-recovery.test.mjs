@@ -47,7 +47,7 @@ test('stale receipts, active owner and cancelled jobs block continuation',()=>{
     'STOP_UNVERIFIED_WORKER_ORACLE','STOP_DESCENDANT_CUSTODY_UNPROVEN',
     'STOP_CANCEL_UNCERTAIN','STOP_ABANDONED_HOST_CUSTODY',
     'STOP_GOAL_OR_SOURCE_CHANGED','STOP_ANCESTOR_ORACLE_UNVERIFIED',
-    'STOP_LINEAGE_RECONCILIATION'
+    'STOP_LINEAGE_RECONCILIATION','STOP_ANCESTOR_CUSTODY_UNPROVEN'
   ])assert.ok(core.includes(name),name);
 });
 test('no provenance of descendant termination means deny, even with verified Git effect',()=>{
@@ -80,5 +80,6 @@ test('real Qwen two-step integration must reject missing original oracle after r
   assert.match(real,/let child_recovery=reconcile_recovery\(/);
   assert.match(real,/STOP_ANCESTOR_ORACLE_UNVERIFIED/);
   assert.match(real,/STOP_DESCENDANT_CUSTODY_UNPROVEN/);
+  assert.match(real,/STOP_ANCESTOR_CUSTODY_UNPROVEN/);
   assert.match(real,/NoIndependentCustodyProof/);
 });
