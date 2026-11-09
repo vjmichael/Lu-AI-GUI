@@ -14,6 +14,7 @@ use lu_core::{
     agent_recovery_decision::IndependentProcessCustody,
 };
 use crate::{
+    host_safe_continuation::{HostReviewedEvidence,HostSafeNext},
     chat_store::ChatStore,
     reviewed_task_continuity::{
         reviewed_turn_continuity,ReviewedOperationContinuity,
@@ -22,7 +23,9 @@ use crate::{
 
 const MAX_PRIOR_HUMAN_TURNS:usize=12;
 const MAX_FEEDBACK_TURNS:usize=2;
-const MAX_OPERATIONS_PER_TURN:usize=3;
+// Unread operations are explicitly marked and force a reconciliation gate;
+ // bounded context must never silently promote an incomplete turn.
+const MAX_OPERATIONS_PER_TURN:usize=2;
 const MAX_FEEDBACK_BYTES:usize=3400;
 
 fn operation_feedback(
@@ -87,12 +90,19 @@ pub(crate) fn for_next_human_turn(
     )?;
     let custody=HostOriginalJobCustody::from_host_profile(profile);
     let mut history=Vec::new();
+    // A model may describe the host decision, but cannot choose, weaken, or
+    // override it. Every historical row only increases recovery severity.
+    let mut safe_next=HostSafeNext::RecheckSourceWithFreshHumanAuthorization;
     for turn in older{
         let Some(view)=reviewed_turn_continuity(profile,chat,&turn)? else{
             continue
         };
         let valid_origin=view.origin_bound;
         let fully_checked=view.journal_state=="VERIFIED_PAST_OPERATIONS";
+        let omitted_history=view.operations.len()>MAX_OPERATIONS_PER_TURN;
+        let mut turn_safe_next=HostSafeNext::for_turn_without_complete_effects(
+            valid_origin,fully_checked,omitted_history,!view.operations.is_empty()
+        );
         let mut custody_unverified=false;
         let ops=if valid_origin{
             view.operations.iter().take(MAX_OPERATIONS_PER_TURN).map(|op|{
@@ -104,21 +114,35 @@ pub(crate) fn for_next_human_turn(
                     )
                 }else{false};
                 if !kernel_empty{custody_unverified=true}
+                let decision=HostSafeNext::for_evidence(HostReviewedEvidence{
+                    origin_bound:valid_origin,
+                    full_journal_verified:fully_checked,
+                    omitted_history,
+                    effect_applied:op.process_state=="APPLIED",
+                    independent_oracle:op.outcome,
+                    original_model_call_linked:op.original_model_call_linked,
+                    reviewed_worker_completed:op.worker_task_linked,
+                    independent_observed_digest_present:
+                        op.independently_observed_sha256.is_some(),
+                    full_descendant_custody_attested:kernel_empty,
+                });
+                turn_safe_next=turn_safe_next.restrict(decision);
                 operation_feedback(op,fully_checked,kernel_empty)
             }).collect::<Vec<_>>()
         }else{Vec::new()};
+        safe_next=safe_next.restrict(turn_safe_next);
         history.push(json!({
             "originalHumanTurnId":turn,
+            "hostSafeNextAction":turn_safe_next.code(),
             "journalStatus":if valid_origin{
                 view.journal_state
             }else{"ORIGIN_UNVERIFIED_RECONCILIATION_REQUIRED"},
             "independentOutcomeCount":ops.len(),
-            "additionalOperationsNotRead":
-                view.operations.len()>MAX_OPERATIONS_PER_TURN,
+            "additionalOperationsNotRead":omitted_history,
             "operations":ops,
             "needsHumanReconciliation":
                 !valid_origin||!fully_checked||custody_unverified||
-                view.operations.len()>MAX_OPERATIONS_PER_TURN
+                omitted_history
         }));
         if history.len()==MAX_FEEDBACK_TURNS{break}
     }
@@ -136,7 +160,12 @@ pub(crate) fn for_next_human_turn(
         "executionAuthority":"NOT_AUTHORIZED_FOR_EXECUTION",
         "automaticRetryAllowed":false,
         "currentSourceFreshness":"NOT_RECHECKED",
-        "nextOperation":"Requires a NEW current human resource review, fresh authority, source/goal verification, independent effect oracle and OS process custody."
+        // This is the HOST'S own safe follow-up classification, not an
+        // instruction synthesized by the AI or a reusable permission.
+        "hostSafeNextAction":safe_next.code(),
+        "hostSafeNextActionExplanation":safe_next.explanation(),
+        "modelMayOverrideHostSafeDecision":false,
+        "nextOperation":"Only the native Lu host may review any NEW effect; historical model output is not an execution grant."
     });
     let encoded=serde_json::to_string(&envelope)
         .map_err(|_|"Cannot serialize historical independent feedback")?;
@@ -244,6 +273,11 @@ mod tests{
             "VERIFIED_AT_OBSERVATION");
         assert_eq!(operation["feedbackStatus"],
             "SOURCE_VERIFIED_OS_CUSTODY_UNPROVEN");
+        assert_eq!(document["hostSafeNextAction"],
+            "RECONCILE_OS_THEN_RECHECK_SOURCE_AND_REQUEST_FRESH_AUTHORIZATION");
+        assert_eq!(document["historyMostRecentFirst"][0]["hostSafeNextAction"],
+            "RECONCILE_OS_THEN_RECHECK_SOURCE_AND_REQUEST_FRESH_AUTHORIZATION");
+        assert_eq!(document["modelMayOverrideHostSafeDecision"],false);
         assert_eq!(operation["independentObservedSha256"],observed);
         assert_eq!(document["executionAuthority"],"NOT_AUTHORIZED_FOR_EXECUTION");
         assert_eq!(document["automaticRetryAllowed"],false);
@@ -270,6 +304,9 @@ mod tests{
             damaged["historyMostRecentFirst"][0]["operations"][0]["feedbackStatus"],
             "UNCERTAIN_OR_UNVERIFIED"
         );
+        assert_eq!(damaged["hostSafeNextAction"],
+            "MANUAL_RECONCILIATION_BEFORE_NEW_ACTION");
+        assert_eq!(damaged["modelMayOverrideHostSafeDecision"],false);
         assert!(damaged["historyMostRecentFirst"][0]["operations"][0]
             ["independentObservedSha256"].is_null());
         drop(chats);fs::remove_dir_all(root).unwrap();
@@ -387,6 +424,13 @@ mod tests{
                 _=>"UNCERTAIN_OR_UNVERIFIED"
             };
             assert_eq!(item["feedbackStatus"],baseline);
+            let expected_host_action=match name.as_str(){
+                "source_verified"=>
+                    "RECONCILE_OS_THEN_RECHECK_SOURCE_AND_REQUEST_FRESH_AUTHORIZATION",
+                _=>"MANUAL_RECONCILIATION_BEFORE_NEW_ACTION"
+            };
+            assert_eq!(projection["hostSafeNextAction"],expected_host_action);
+            assert_eq!(projection["modelMayOverrideHostSafeDecision"],false);
             samples.push(serde_json::json!({
                 "case":name,
                 "currentHumanPrompt":prompt,

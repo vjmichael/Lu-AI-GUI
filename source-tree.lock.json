@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "98c93d52ae4a38f50927beab9493f131987e1de8",
-  "trackedFileCount": 785,
+  "sourceCommitBeforeLock": "e002e9b6ea58d687afd22e5c85f05ff7b89f0339",
+  "trackedFileCount": 789,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -174,6 +174,10 @@
     {
       "path": ".github/workflows/lu-memory-loop02-verified-feedback.yml",
       "blob": "b9633db51c1e0b2b6bcc3d84864656167fee92ae"
+    },
+    {
+      "path": ".github/workflows/lu-memory-loop02b-safe-decision.yml",
+      "blob": "7694ecb4bfad12bcd9b5b42e6191b5aa439728fd"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -577,7 +581,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "6672bf3037f1501eafaf27709b8e0f9aee5703ac"
+      "blob": "f9ad0a467d794dfb23f45f1751a67189622b489f"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -622,6 +626,10 @@
     {
       "path": "docs/LU_MEMORY_LOOP01_AGENT_HANDOFF_20261108.md",
       "blob": "bc7eebff3ddaff39df9b305ad3151e746f88a362"
+    },
+    {
+      "path": "docs/LU_MEMORY_LOOP02B_HOST_SAFE_DECISION_20261108.md",
+      "blob": "0916b18fb379395b9ddff95ae3867eea4a7f399f"
     },
     {
       "path": "docs/LU_MEMORY_LOOP02_REAL_QWEN_ACCEPTANCE_20261108.md",
@@ -985,7 +993,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_verified_feedback.rs",
-      "blob": "648d92ae3cdf32eaceff6c2f700efe64e4811ed9"
+      "blob": "9434a4ac84e00be81ecb0745aaa3d3ceb90aedcd"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
@@ -1060,12 +1068,16 @@
       "blob": "525d4316c9b1aa98f21ce5d3ef1c92cf001e5269"
     },
     {
+      "path": "lu-desktop/src-tauri/src/host_safe_continuation.rs",
+      "blob": "1d15ccf4c0a4c78cf2811d8553e96937f20e289d"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/image_workspace_desktop.rs",
       "blob": "97ea8758f1f78e4743b9f49571a38fd2291647b2"
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "8f39f5743e70eb967e0a5ade1f152fcb46250264"
+      "blob": "52149ce92b92973710a960744bb810ca0198f47d"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1366,6 +1378,10 @@
     {
       "path": "lu-desktop/tests/memory-loop02-verified-feedback.test.mjs",
       "blob": "7aed2ab0694b961c36ce054b931eacc4cc63c4dd"
+    },
+    {
+      "path": "lu-desktop/tests/memory-loop02b-host-safe-decision.test.mjs",
+      "blob": "bd819a0b4328e97a581ce93b404d1bf86193a7c3"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
