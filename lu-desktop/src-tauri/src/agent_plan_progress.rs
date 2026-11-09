@@ -80,11 +80,7 @@
          return make(None,"STOP_OWNER_CUSTODY_UNCERTAIN",
              "A host owns this plan; observe or independently reconcile it, never reassign.")
      }
-     if owner_state=="RELEASED"{
-         return make(None,"STOP_RELEASED_OWNER",
-             "The earlier owner is closed. Reusing its claim or review for a later step is prohibited.")
-     }
-     if owner_state!="NOT_CLAIMED"{
+     if owner_state!="NOT_CLAIMED" &&owner_state!="RELEASED"{
          return make(None,"STOP_UNRECOGNIZED_OWNER",
              "Unrecognized scheduler history cannot authorize anything.")
      }
@@ -115,9 +111,17 @@
              "A historical step lacks a witness link; never infer that work succeeded.")
      }
      let Some(next)=steps.iter().find(|s|s.schedule_state=="NOT_SCHEDULED")else{
+         if owner_state=="RELEASED"{
+             return make(None,"STOP_RELEASED_OWNER",
+                 "All historical steps are closed. An old owner or permission cannot be reused.")
+         }
          return make(None,"HISTORICAL_ONLY",
              "All steps are historical; this does not confer new execution authority.")
      };
+     if owner_state=="RELEASED" &&next.depends_on.is_none(){
+         return make(None,"STOP_RELEASED_OWNER",
+             "A closed host cannot run a new initial step; request a different human plan.")
+     }
      if let Some(parent)=next.depends_on{
          if parent>=next.step_index{
              return make(None,"STOP_INVALID_DEPENDENCY",
@@ -131,6 +135,12 @@
              ||!previous.historical_witness_linked{
              return make(Some(next.step_index),"STOP_DEPENDENCY_UNVERIFIED",
                  "Earlier prerequisite lacks historical independent evidence.")
+         }
+         if owner_state=="RELEASED"
+             &&next.purpose=="INDEPENDENT_CHECK"
+             &&next.expected_deliverable=="INDEPENDENT_WITNESS"{
+             return make(Some(next.step_index),"PREPARE_NEW_CHILD_PLAN_ONLY",
+                 "A new human request may prepare a separately reviewed child plan. Original owner and grants cannot be reused. Native host must reverify every independent receipt.")
          }
          return make(Some(next.step_index),"PREVIEW_DEPENDENCY_RECHECK",
              "Historical receipts require fresh independent re-verification and a NEW human step request. No automatic continuation.")
@@ -525,12 +535,16 @@ mod tests{
         let state=read_chat_progress(&root,&chat,&chats).unwrap();
         assert_eq!(state[0].steps.len(),2);
         assert_eq!(state[0].steps[0].schedule_state,"HISTORICAL_WITNESS_RECORDED");
-        assert_eq!(state[0].continuation_preview.status,"STOP_RELEASED_OWNER");
-        assert_eq!(state[0].continuation_preview.candidate_step_index,None);
+        assert_eq!(state[0].continuation_preview.status,"PREPARE_NEW_CHILD_PLAN_ONLY");
+        assert_eq!(state[0].continuation_preview.candidate_step_index,Some(1));
+        assert_eq!(state[0].continuation_preview.execution_authority,
+            "NOT_AUTHORIZED_FOR_EXECUTION");
         drop(chats);
         let reopened=ChatStore::open(&root).unwrap();
         let replay=read_chat_progress(&root,&chat,&reopened).unwrap();
-        assert_eq!(replay[0].continuation_preview.status,"STOP_RELEASED_OWNER");
+        assert_eq!(replay[0].continuation_preview.status,"PREPARE_NEW_CHILD_PLAN_ONLY");
+        assert_eq!(replay[0].continuation_preview.execution_authority,
+            "NOT_AUTHORIZED_FOR_EXECUTION");
         assert!(!replay[0].continuation_preview.live_source_reverified);
         drop(reopened);fs::remove_dir_all(root).unwrap();
     }

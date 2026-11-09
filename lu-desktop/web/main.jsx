@@ -2574,6 +2574,31 @@ function App() {
       setError('Plan review not recorded: '+String(error));
     }finally{setAgentReviewBusy(false)}
   }
+  async function prepareFreshAgentContinuation(plan,step){
+    if(!chatId||!plan?.revisionSha256||
+       !Number.isSafeInteger(step?.stepIndex))return;
+    const targetChat=chatId;
+    setAgentReviewBusy(true);
+    try{
+      const child=await invoke('lu_agent_prepare_next_step',{
+        chatId:targetChat,planId:plan.planId,
+        revisionSha:plan.revisionSha256,stepIndex:step.stepIndex
+      });
+      if(child===null)return;
+      if(typeof child!=='string'||!child.startsWith('p-')){
+        throw Error('Invalid fresh child-plan reference');
+      }
+      await refreshToolActivity(targetChat);
+      if(currentChat.current===targetChat){
+        setActivity('Fresh child plan '+child+' prepared. Review its separate plan revision, then authorize its one reviewed operation. No old permission was reused.');
+      }
+    }catch(error){
+      if(currentChat.current===targetChat){
+        setError('Fresh continuation was not prepared: '+String(error));
+      }
+      await refreshToolActivity(targetChat).catch(()=>{});
+    }finally{setAgentReviewBusy(false)}
+  }
   async function runReviewedAgentStep(plan,step){
     if(!chatId||!runtime.sessionId||!plan?.revisionSha256||
        !Number.isSafeInteger(step?.stepIndex))return;
@@ -4605,6 +4630,19 @@ function App() {
                     {step.historicalWitnessLinked&&
                       <small>Independent witness reference was recorded.
                         Live source, process custody and receipt must be rechecked.</small>}
+                    {plan.continuationPreview?.status==='PREPARE_NEW_CHILD_PLAN_ONLY'&&
+                      plan.continuationPreview?.candidateStepIndex===step.stepIndex&&
+                      plan.supervisorState==='RELEASED'&&
+                      step.scheduleState==='NOT_SCHEDULED'&&
+                      <div className="settingsActions">
+                        <button type="button" className="subtleButton"
+                          disabled={agentReviewBusy||working||chatBusy}
+                          title="Native confirmation prepares a new immutable child plan only; another human plan review and separate per-tool native authorization are still required."
+                          onClick={()=>void prepareFreshAgentContinuation(plan,step)}>
+                          Prepare separate next-step plan
+                        </button>
+                        <small>Rechecks original ANSF and independent evidence. This does not execute a worker, revive the old owner or reuse a model grant.</small>
+                      </div>}
                     {plan.revisionReview==='APPROVED_PLAN_ONLY'&&
                       plan.supervisorState==='NOT_CLAIMED'&&
                       plan.planState!=='CANCEL_REQUESTED'&&

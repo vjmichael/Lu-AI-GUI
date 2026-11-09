@@ -288,6 +288,18 @@ fn original_step_for_review(
         ||selected.expected!=ExpectedDeliverable::IndependentWitness{
         return Err("Only an approved independent-witness plan step is supported by this reviewed broker".into())
     }
+    // AGENT-01I: a distinct child plan cannot use a stale parent witness
+    // just because its own immutable plan review is still recorded.
+    let ledger=AgentPlanLedger::open(&path)
+        .map_err(|e|format!("Cannot inspect original plan lineage: {e:?}"))?;
+    let receipts=AgentDeliverableReceipts::open(&path)
+        .map_err(|e|format!("Cannot reopen source-oracle history: {e:?}"))?;
+    let scheduler=AgentHostScheduler::open(&path)
+        .map_err(|e|format!("Cannot reopen original host custody: {e:?}"))?;
+    let sources=crate::agent_plan_review::OriginalChatGoalSources{chats:&host.chats};
+    lu_core::agent_continuation_intent::reverify_child_before_execution(
+        &path,root,plan,chat,&ledger,&revisions,&scheduler,&receipts,&sources
+    )?;
     Ok(active.original_human_turn_id)
 }
 /// Select a single *already independently verified* original inner worker
@@ -603,6 +615,12 @@ async fn reviewed_app_ask_internal(
                     .map_err(|e|format!("Independent result ledger unavailable: {e:?}"))?;
                 let scheduler=AgentHostScheduler::open(&planfile)
                     .map_err(|e|format!("Host scheduler unavailable: {e:?}"))?;
+                // Reopen original-parent independent evidence immediately
+                // before the new child host claim; no inherited authority.
+                lu_core::agent_continuation_intent::reverify_child_before_execution(
+                    &planfile,profile,&target.plan_id,&chat_id,
+                    &ledger,&revisions,&scheduler,&receipts,&sources
+                )?;
                 let owner=next_id("h-");
                 let claim=next_id("q-");
                 let budget=schedule_budget();
