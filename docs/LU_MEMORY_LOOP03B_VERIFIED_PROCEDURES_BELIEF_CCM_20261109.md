@@ -46,7 +46,7 @@ Each selector has explicit strict bounded identifiers; returned original data is
 
 **Submitted:**
 - Genuine Lu Core SQLite journal test: verifies absent witness, APPLIED-only refusal, valid method+receipt+observed digest, reopen, tampered receipt digest, wrong tool, and wrong method.
-- Reused genuine source M4 procedure and belief-revision native tests; plus new 7 pure native Rust host policy and 4 desktop context unit tests.
+- Reused genuine source M4 procedure and belief-revision native tests; plus new 7 pure native Rust host policy and 6 desktop context unit tests.
 - 11 Node source-contract cases covering integration in the normal `lu_generate` path, source binding, closed policy, exact versions, contradiction/CCM/truncation and non-grant.
 - Targeted Windows 2025/Ubuntu 24.04 workflow runs pure Rust, real Core ANSF/journal/receipt tests, desktop Rust, React UI build/check, and frozen source verification. Source-contract assertion bodies evaluated locally before freeze: 11/11 passed. **These do not substitute for actual OS job logs.**
 
