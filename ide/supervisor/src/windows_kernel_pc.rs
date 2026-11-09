@@ -32,9 +32,9 @@ use windows_sys::Win32::{
         },
         JobObjects::{QueryInformationJobObject, JobObjectBasicProcessIdList},
         Threading::{
-            OpenProcess, OpenThread, QueryFullProcessImageNameW, WaitForSingleObject,
-            PROCESS_QUERY_LIMITED_INFORMATION, THREAD_GET_CONTEXT,
-            THREAD_QUERY_LIMITED_INFORMATION,
+            GetProcessIdOfThread, OpenProcess, OpenThread, QueryFullProcessImageNameW,
+            WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
+            THREAD_GET_CONTEXT, THREAD_QUERY_LIMITED_INFORMATION,
         },
     },
 };
@@ -105,18 +105,25 @@ pub struct WindowsThreadRipSample {
 
 #[repr(align(16))]
 struct AlignedContext(CONTEXT);
-fn read_thread_rip(thread_id: u32) -> Result<u64, SupervisorError> {
-    if thread_id == 0 { return Err(denied()); }
+fn read_thread_rip(process_id: u32, thread_id: u32) -> Result<u64, SupervisorError> {
+    if process_id == 0 || thread_id == 0 { return Err(denied()); }
     let handle = Owned::from_win32(unsafe {
         OpenThread(THREAD_GET_CONTEXT | THREAD_QUERY_LIMITED_INFORMATION, 0, thread_id)
     })?;
+    // A ToolHelp ID can be reused between enumeration and opening; the
+    // real thread HANDLE must still belong to this trusted Job member.
+    if unsafe { GetProcessIdOfThread(handle.0) } != process_id {
+        return Err(denied());
+    }
     let mut aligned = AlignedContext(unsafe { std::mem::zeroed() });
     aligned.0.ContextFlags = AMD64_CONTEXT_CONTROL;
     if unsafe { GetThreadContext(handle.0, &mut aligned.0) } == 0 {
         return Err(denied());
     }
     let rip = aligned.0.Rip;
-    if rip == 0 { return Err(denied()); }
+    if rip == 0 || unsafe { GetProcessIdOfThread(handle.0) } != process_id {
+        return Err(denied());
+    }
     Ok(rip)
 }
 fn enumerate_target_threads(pid: u32) -> Result<Vec<u32>, SupervisorError> {
@@ -166,7 +173,12 @@ pub(crate) fn sample_job_thread_rip(
     for id in &original {
         // Do not SuspendThread, DebugActiveProcess, write target memory,
         // or attach a second debugger to LLDB's existing debug event.
-        let rip = read_thread_rip(*id)?;
+        // Other threads may still be running, so unreadable/nonmatching
+        // contexts are not source-level evidence; one unique match is required.
+        let rip = match read_thread_rip(module.pid, *id) {
+            Ok(rip) => rip,
+            Err(_) => continue,
+        };
         if rip == module.observed_pc {
             if found.replace((*id, rip)).is_some() { return Err(denied()); }
         }
@@ -174,7 +186,7 @@ pub(crate) fn sample_job_thread_rip(
     let (thread_id, rip) = found.ok_or_else(denied)?;
     // A DAP continue, thread replacement or process exit invalidates this.
     if enumerate_target_threads(module.pid)? != original
-        || read_thread_rip(thread_id)? != rip
+        || read_thread_rip(module.pid, thread_id)? != rip
         || !member_ids(job)?.contains(&module.pid) {
         return Err(denied());
     }
@@ -424,6 +436,12 @@ mod tests {
         b[0x98..0x9a].copy_from_slice(&0x10bu16.to_le_bytes());
         assert_eq!(pe_preferred_image(&b), None);
         assert_eq!(pe_preferred_image(&[0; 64]), None);
+    }
+    #[test]
+    fn thread_handle_without_expected_process_is_denied() {
+        assert!(read_thread_rip(0, 0).is_err());
+        assert!(read_thread_rip(0, 1).is_err());
+        assert!(read_thread_rip(1, 0).is_err());
     }
     #[test]
     fn thread_context_sampling_is_never_a_debug_event_authorization() {

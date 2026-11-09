@@ -83,7 +83,9 @@ jobs:
           os_source=Path('ide/supervisor/src/windows_kernel_pc.rs').read_text()
           fixture=Path('ide/supervisor/examples/wo6_native_dap_acceptance.rs').read_text()
           assert 'GetThreadContext' in os_source
+          assert 'GetProcessIdOfThread' in os_source
           assert 'TH32CS_SNAPTHREAD' in os_source
+          assert 'read_thread_rip(module.pid, thread_id)' in os_source
           assert 'kernel_debug_event_independently_verified: false' in os_source
           assert 'pdb_line_independently_verified: false' in os_source
           assert 'debugger_control_authorized: false' in os_source

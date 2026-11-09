@@ -40,7 +40,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service' --bin windows_recovery_service --bin windows_null_service_bootstrap --example wo6_native_dap_acceptance
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service,dev045d4c-ci-oracle' --bin windows_recovery_service --bin windows_null_service_bootstrap --example wo6_native_dap_acceptance
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native debugger test compilation failed' }
       - name: Stage test-only self-measured LLDB-DAP and fixed debuggee
         shell: pwsh
@@ -52,11 +52,18 @@ jobs:
           $origin=Split-Path $lldb -Parent
           $clang=Join-Path $origin 'clang.exe'
           if (!(Test-Path -LiteralPath $clang)) { throw 'DENIED: matching Clang unavailable' }
+          $symbolizer=Join-Path $origin 'llvm-symbolizer.exe'
+          if (!(Test-Path -LiteralPath $symbolizer -PathType Leaf)) {
+            throw 'DENIED: independent LLVM PDB reader missing from same reviewed native toolchain'
+          }
           $bundle=Join-Path $env:RUNNER_TEMP 'wo6-dap-bundle'
           New-Item -Force -ItemType Directory (Join-Path $bundle 'bin') | Out-Null
           New-Item -Force -ItemType Directory (Join-Path $bundle 'debuggee') | Out-Null
           Copy-Item -LiteralPath $lldb -Destination (Join-Path $bundle 'bin\lldb-dap.exe')
+          Copy-Item -LiteralPath $symbolizer -Destination (Join-Path $bundle 'bin\llvm-symbolizer.exe')
           Get-ChildItem -LiteralPath $origin -Filter '*.dll' -File | Copy-Item -Destination (Join-Path $bundle 'bin')
+          Write-Host "DEV045D4C_INDEPENDENT_LLVM_PDB_READER_SHA256=$((Get-FileHash $symbolizer -Algorithm SHA256).Hash)"
+          Write-Host 'DEV045D4C_LLVM_READER_SCOPE=CI_ONLY_BUNDLE_BOUND'
           # Actual PE audit on run 42391111210 identified precisely this DLL.
           # No unpinned PATH search, arbitrary binary or general OS rights grant.
           $python=(Get-Command python.exe -ErrorAction Stop).Source
@@ -168,6 +175,14 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: live Job-scoped PE base and original durable build/debug receipts not independently verified' }
             & $hostExe --project-debug-thread
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: real SCM Job scoped read-only thread context unavailable; no inferred PDB acceptance' }
+            & $hostExe --project-debug-line
+            if ($LASTEXITCODE -ne 0) {
+              throw 'DENIED: REAL protected LLDB Job/RIP, independent sealed PE/PDB line and two fsynced receipt chains did not all agree'
+            }
+            & $hostExe --project-debug-line-cancel
+            if ($LASTEXITCODE -ne 0) {
+              throw 'DENIED: REAL protected LLDB/PDB stop did not produce fsynced cancellation, full Job-tree termination and replay denial'
+            }
           } finally {
             if ($nulTouched) {
               & $bootstrap --revoke-fixed-service

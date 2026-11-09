@@ -37,6 +37,9 @@ ci-native-null-lease = ["windows-worker"]
 # CI-only ELF oracle outside the child cgroup, never packaged into a desktop.
 # Without this precise opt-in the native method fails closed at runtime.
 dev045d3-ci-oracle = ["dap-transport", "linux-worker"]
+# D4C runs a pinned, native first-party LLVM PE/PDB reader only in
+# disposable debug CI; not a Lu release, Tauri command or general tool.
+dev045d4c-ci-oracle = ["dap-transport", "protected-recovery-service"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

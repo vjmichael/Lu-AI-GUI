@@ -1,0 +1,102 @@
+name: IDE DEV04.5D4C real protected LLDB Job/OS RIP/PDB receipts
+on:
+  pull_request:
+    paths:
+      - 'ide/supervisor/src/windows_stopped_line_oracle.rs'
+      - 'ide/supervisor/src/windows_lsp_worker.rs'
+      - 'ide/supervisor/src/windows_kernel_pc.rs'
+      - 'ide/supervisor/src/lib.rs'
+      - 'ide/supervisor/Cargo.toml'
+      - 'ide/supervisor/examples/wo6_native_dap_acceptance.rs'
+      - '.github/workflows/ide-wo6-native-os-acceptance.yml'
+      - '.github/workflows/ide-dev04-5d4c-real-lldb-line.yml'
+      - 'ide/docs/IDE_DEV045D4C_REAL_LLDB_STOP_PDB_20261109.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev045d4c-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-code-contract-and-native-compile:
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Exact source commit under review
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045D4C_EXACT_REVIEWED_HEAD=PASS'
+      - name: Compile true native Windows source-line and hostile contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service,dev045d4c-ci-oracle' --lib windows_stopped_line_oracle
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service,dev045d4c-ci-oracle' --lib windows_kernel_pc
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service,dev045d4c-ci-oracle' --example wo6_native_dap_acceptance
+          echo 'DEV045D4C_NATIVE_SOURCE_CONTRACT=PASS_NOT_OS_LIVE_ACCEPTANCE'
+      - name: Ensure release/default Windows build cannot invoke independent process
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service'
+          cargo check --release --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service'
+          echo 'DEV045D4C_DEFAULT_RELEASE_NO_ORACLE_ACCESS=COMPILER_PASS'
+      - name: Enforce Rustfmt and strict CI-only no-evaluate policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+          python - <<'PY'
+          from pathlib import Path
+          cargo=Path('ide/supervisor/Cargo.toml').read_text()
+          native=Path('ide/supervisor/src/windows_stopped_line_oracle.rs').read_text()
+          host=Path('ide/supervisor/src/windows_lsp_worker.rs').read_text()
+          fixture=Path('ide/supervisor/examples/wo6_native_dap_acceptance.rs').read_text()
+          workflow=Path('.github/workflows/ide-wo6-native-os-acceptance.yml').read_text()
+          assert 'dev045d4c-ci-oracle = ["dap-transport", "protected-recovery-service"]' in cargo
+          assert 'cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))' in native
+          assert 'verify_project_os_thread_pdb_receipts_for_ci' in host
+          assert 'dev045d4c-ci-oracle' in workflow
+          assert '& $hostExe --project-debug-line' in workflow
+          assert 'source_file_sha256 != original_source_sha' in fixture
+          assert 'original_bundle_sha256' in native
+          assert 'native_lsp_bundle_digest' in native
+          assert 'target.verify()' in native
+          assert 'target.symbols.source_line_mapping_verified' in native
+          assert 'source_line_mapping_verified: true' not in native
+          assert 'lldb_owned_kernel_debug_event_attested: false' in native
+          assert 'debugger_commands_authorized: false' in native
+          for forbidden in ('setBreakpoints', 'setExpression', 'runInTerminal',
+                            'DebugActiveProcess', 'SuspendThread', 'WriteProcessMemory'):
+              assert forbidden not in native, forbidden
+          print('DEV045D4C_NO_NEW_PRODUCTION_DEBUG_AUTHORITY=PASS')
+          PY
+          echo 'DEV045D4C_LIVE_LLDB_ACCEPTANCE=ONLY_WO6_SCM_JOB_KERNEL_RUN'
+  linux-does-not-inherit-windows-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Verify exact head and existing cgroup-protected LLDB source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker'
+          echo 'DEV045D4C_LINUX_CGROUP_REGRESSION=COMPILE_ONLY'
