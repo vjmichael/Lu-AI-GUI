@@ -1,5 +1,37 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+
+## DEV-04.5D4C — Real Lu LLDB-owned stop → OS thread RIP → PDB → receipts (2026-11-09)
+
+Stacked on D4B draft PR #186. **Committed test implementation, native OS acceptance
+not yet established.** The D4B read-only Windows Job thread sampler now verifies
+the opened Win32 thread handle belongs to the expected process, preventing a
+ToolHelp thread-ID recycling substitution.
+
+A new CI-only native Windows DAP method runs during the **real separately
+approved Cargo `rust_build` → immutable PE/PDB → SCM/AppContainer Job
+`dap_lldb_project` → actual LLDB-DAP `Stopped` + `threads` +
+correlated `stackTrace`** acceptance, not the disposable debug-event fixture.
+It must recheck the Job-owned thread's OS RIP against DAP, independently
+decode that relocated address from the original sealed PDB with a fixed,
+SHA/plan-bound test-only LLVM symbolizer, match the compiler source path
+against LLDB's source path and the exact approved `src/main.rs` source
+snapshot/digest, and revalidate both distinct durable job journals before
+and after the lookup. `--project-debug-line` requires another fsynced terminal
+receipt retaining the previous Running receipt and original Cargo Completed
+receipt, with one-use grant replay denial after reopening.
+
+Only the explicit `dev045d4c-ci-oracle` + debug assertions can run this
+fixed-purpose native reader. No renderer/AI launch path, new tool permission,
+general shell/attach, breakpoint, stepping, variable or evaluate authority.
+Release/default builds omit it and the stable IDE remains unchanged.
+**Crucial limit:** independent Windows thread context and PDB equality still
+do not separately authenticate LLDB's own internal `DEBUG_EVENT` ownership.
+The result deliberately records `lldb_debug_event_owner_attested=false`.
+Windows exact-head native results, protected installed workflow and signed
+publisher acceptance remain open. See
+`ide/docs/IDE_DEV045D4C_REAL_LLDB_STOP_PDB_20261109.md`.
+
 ## DEV-04.5D4B Windows stopped RIP and independent PDB line — November 9, 2026
 
 Draft PR #186 stacked on D4 #184. The Windows protected SCM/Job
