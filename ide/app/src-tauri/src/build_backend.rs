@@ -20,6 +20,7 @@ use lu_ide_execution_supervisor::{
     wo6_output_evidence::{audit_published_output, ArtifactEntry},
     debug_binary_witness::{audit_debug_binary_candidate, DebugBinaryWitness},
     debug_symbol_verification::{verify_build_debug_symbols, DebugSymbolWitness},
+    project_debug_target::{seal_project_debug_target,CompletedBuildLineage,SealedProjectDebugTarget},
     JobPlan, JobPhase, Supervisor,
 };
 use serde::Serialize;
@@ -282,11 +283,13 @@ struct Store {
     current: Option<Running>,
     recent: BTreeMap<String, BuildRunView>,
     last_output: Option<(String, String, Arc<LiveOutput>)>,
+    debug_target: Option<Arc<SealedProjectDebugTarget>>,
 }
 pub struct NativeBuildRuntime {
     supervisor: Arc<Supervisor>,
     staged: PathBuf,
     outputs: PathBuf,
+    debug_targets: PathBuf,
     store: Mutex<Store>,
 }
 impl NativeBuildRuntime {
@@ -295,18 +298,27 @@ impl NativeBuildRuntime {
         fs::create_dir_all(&data).map_err(|_| "BUILD_PROFILE_UNAVAILABLE")?;
         let staged = data.join("build-snapshots");
         let outputs = data.join("build-outputs");
+        let debug_targets = data.join("sealed-debug-targets");
         fs::create_dir_all(&staged).map_err(|_| "BUILD_PROFILE_UNAVAILABLE")?;
         fs::create_dir_all(&outputs).map_err(|_| "BUILD_PROFILE_UNAVAILABLE")?;
+        fs::create_dir_all(&debug_targets).map_err(|_| "BUILD_PROFILE_UNAVAILABLE")?;
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&debug_targets,fs::Permissions::from_mode(0o700))
+                .map_err(|_|"BUILD_PRIVATE_DEBUG_STORAGE_DENIED")?;
+        }
         let supervisor = Supervisor::open(data.join("build-job-receipts.jsonl"))
             .map_err(|e| e.code().to_owned())?;
         Ok(Self {
             supervisor: Arc::new(supervisor),
             staged,
             outputs,
+            debug_targets,
             store: Mutex::new(Store {
                 current: None,
                 recent: BTreeMap::new(),
                 last_output: None,
+                debug_target: None,
             }),
         })
     }
@@ -406,6 +418,25 @@ impl NativeBuildRuntime {
         Ok(())
     }
 
+    /// No WebView path or artifact selector. This returns only the newest
+    /// same-process, complete, exact-job sealed native Cargo output.
+    pub fn native_project_debug_target(
+        &self,project_id:&str,
+    )->Result<Arc<SealedProjectDebugTarget>,String>{
+        let target={
+            let locked=self.store.lock().map_err(|_|"DEV044_BUILD_STATE_UNAVAILABLE")?;
+            if locked.current.is_some(){return Err("DEV044_BUILD_IN_PROGRESS".into());}
+            locked.debug_target.as_ref()
+                .filter(|x|x.lineage.project_id==project_id)
+                .cloned().ok_or("DEV044_NO_SEALED_BUILD_TARGET")?
+        };
+        self.verify_replayed_completed_job(
+            project_id,&target.lineage.build_job_id,
+            &target.lineage.build_plan_sha256
+        )?;
+        target.verify().map_err(|_|"DEV044_PRIVATE_TARGET_CHANGED".to_owned())?;
+        Ok(target)
+    }
     pub fn cancel(&self, project_id: &str, job_id: Option<&str>) -> Result<&'static str, String> {
         let locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
         let active = locked.current.as_ref().ok_or("BUILD_NO_ACTIVE_JOB")?;
@@ -475,6 +506,12 @@ impl NativeBuildRuntime {
                 requested: Arc::clone(&requested),
                 output: Arc::clone(&output),
             });
+        }
+        {
+            // Never allow a superseded project's build to be used by a
+            // fresh debugger request, even if the new build is denied.
+            let mut store=self.store.lock().map_err(|_|"BUILD_HOST_UNAVAILABLE")?;
+            store.debug_target=None;
         }
         let result = self.run_inner(
             app, registry, project_id, recipe_id, &cancel, &requested, &output,
@@ -684,6 +721,33 @@ impl NativeBuildRuntime {
                         .ok().flatten()
                 })
         } else {None};
+        let binding_lineage=CompletedBuildLineage {
+            project_id:project_id.to_owned(),
+            build_job_id:prepared.job_id.clone(),
+            build_plan_sha256:prepared.plan_sha256.clone(),
+            terminal_receipt_sha256:evidence.terminal_receipt_hash.clone(),
+            source_head:head.clone(),
+            source_snapshot_sha256:plan.input_snapshot_sha256.clone(),
+            manifest_sha256:plan.manifest_sha256.clone(),
+            build_toolchain_sha256:plan.toolchain_sha256.clone(),
+            output_tree_sha256:published.as_ref().map(|w|w.tree_sha256.clone())
+                .unwrap_or_default(),
+            build_successfully_completed:completed_build,
+            requires_reconciliation:evidence.requires_reconciliation,
+        };
+        #[cfg(windows)]
+        let native_artifacts_root=&native.output_root;
+        #[cfg(target_os="linux")]
+        let native_artifacts_root=&native.output_directory;
+        let private_debug_target=if completed_build {
+            debug_binary_candidate.as_ref().zip(debug_symbol_witness.as_ref())
+                .and_then(|(binary,symbols)|
+                    seal_project_debug_target(native_artifacts_root,&self.debug_targets,
+                       binding_lineage,binary,symbols).ok()
+                ).map(Arc::new)
+        } else {None};
+        self.store.lock().map_err(|_|"BUILD_HOST_UNAVAILABLE")?
+            .debug_target=private_debug_target;
         let artifact_evidence_state = if published.is_some() {
             "read_only_post_termination_tree_hashed"
         } else {
