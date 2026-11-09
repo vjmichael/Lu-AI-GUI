@@ -484,6 +484,25 @@ impl Supervisor {
         }
         Ok(())
     }
+    /// Reopen an individual source-debug action journal after a real Job
+    /// completes/crashes. Only validates its fsynced hash-chain and terminal
+    /// denial/consumed/uncertain phase: NEVER recreates a consent or dispatch
+    /// token. Accepts opaque hash coordinates, not a user-controlled path.
+    #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    pub fn verify_native_debug_action_after_restart(
+        &self, action_id_sha256: &str, preview_sha256: &str,
+        last_receipt_sha256: &str, final_phase: &str,
+    ) -> Result<(), SupervisorError> {
+        let audit = crate::debug_action_receipts::DebugActionAuditRef {
+            action_id_sha256: action_id_sha256.to_owned(),
+            preview_sha256: preview_sha256.to_owned(),
+            last_receipt_sha256: last_receipt_sha256.to_owned(),
+            final_phase: final_phase.to_owned(),
+        };
+        crate::debug_action_receipts::verify_action_receipt_after_restart(
+            &self.native_owner_receipt_root()?, &audit,
+        ).map_err(|_| SupervisorError::JournalCorrupt)
+    }
     /// Path must be supplied by trusted application profile management.
     /// Do not point this at a repository or user-selected project file.
     pub fn open(journal_path: PathBuf) -> Result<Self, SupervisorError> {
