@@ -1399,6 +1399,29 @@ function App() {
           outcome.recipeId !== intentRecipe || !/^[a-f0-9]{64}$/.test(outcome.planSha256))
         throw Error('BUILD_RESULT_SCOPE_DENIED');
       setBuildResult(outcome);
+      // One final drain after the native terminal receipt; this never
+      // substitutes output text for completed/cancelled state.
+      try {
+        const cursor=nativeOutputCursor.current;
+        const after=cursor.projectId===projectId &&
+          cursor.jobId===outcome.jobId ? cursor.sequence : 0;
+        const page=await invoke('ide_build_read_output',
+          {projectId,jobId:outcome.jobId,after});
+        if (activeProjectIdRef.current===projectId) {
+          const next=acceptNativeOutput(
+            cursor.projectId===projectId && cursor.jobId===outcome.jobId
+              ? nativeJobOutputRef.current : null,
+            projectId,outcome.jobId,page);
+          if(next) {
+            nativeJobOutputRef.current=next;
+            nativeOutputCursor.current={projectId,jobId:outcome.jobId,
+              sequence:next.lastSequence};
+            setNativeJobOutput(next);
+          }
+        }
+      } catch {
+        // Terminal receipt remains authoritative if the advisory log fails.
+      }
       setHint('Protected worker returned a durable result. Native and installed acceptance are separate gates.');
     } catch (error) {
       if (activeProjectIdRef.current === projectId)
