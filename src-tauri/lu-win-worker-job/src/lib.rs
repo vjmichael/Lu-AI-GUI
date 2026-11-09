@@ -400,6 +400,197 @@ pub mod unix_owned {
             if !self.stopped{let _=self.stop_and_verify_signal();}
         }
     }
+    /// AGENT-01L Linux cgroup-v2 custodian, independent of Lu's process
+    /// lifetime and OUTSIDE its killable worker subtree. The OS scopes are
+    /// acquired from the helper's actual /proc/self/cgroup, never user/model
+    /// supplied PID or cgroup path.
+    #[cfg(target_os="linux")]
+    pub struct LinuxCgroupCustodian{
+        child:Child,
+        stdin:Option<std::process::ChildStdin>,
+        subtree:std::path::PathBuf,
+        receipt:std::path::PathBuf,
+        stopped:bool,
+    }
+    #[cfg(target_os="linux")]
+    impl LinuxCgroupCustodian{
+        pub fn spawn_if_delegated(
+            profile:&std::path::Path,chat:&str,turn:&str,call:&str,
+        )->io::Result<Option<Self>>{
+            use std::{io::{BufRead,BufReader,Read},os::unix::fs::PermissionsExt,
+                process::{Command,Stdio}};
+            let valid=|v:&str,p:&str|
+                v.len()==p.len()+32&&v.starts_with(p)
+                    &&v[p.len()..].bytes().all(|b|
+                        b.is_ascii_hexdigit()&&!b.is_ascii_uppercase());
+            if !valid(chat,"c-")||!valid(turn,"g-")
+                ||call.is_empty()||call.len()>128
+                ||!call.bytes().all(|b|b.is_ascii_alphanumeric()
+                    ||b==b'-'||b==b'_')
+                ||!["-gh","-gs","-gb","-gc","-fm"]
+                    .iter().any(|x|call.ends_with(x))
+                ||!profile.is_absolute(){
+                return Err(io::Error::other("Invalid original native cgroup scope"))
+            }
+            let executable=std::env::current_exe()?
+                .parent().ok_or_else(||io::Error::other("No installed Lu helper directory"))?
+                .join("lu-linux-cgroup-guard");
+            let image=if cfg!(debug_assertions){
+                std::env::var_os("LU_AGENT01L_TEST_CGROUP_GUARD")
+                    .map(std::path::PathBuf::from).unwrap_or(executable)
+            }else{executable};
+            let meta=match std::fs::symlink_metadata(&image){
+                Ok(meta)=>meta,
+                Err(e) if e.kind()==io::ErrorKind::NotFound
+                    &&cfg!(debug_assertions)
+                    &&std::env::var_os("LU_AGENT01L_TEST_CGROUP_GUARD").is_none()=>
+                    return Ok(None),
+                Err(e)=>return Err(e),
+            };
+            if !meta.is_file()||meta.file_type().is_symlink()
+                ||meta.permissions().mode()&0o111==0
+                ||meta.permissions().mode()&0o022!=0{
+                return Err(io::Error::other("Untrusted first-party cgroup helper"))
+            }
+            let receipt=profile.join(format!("lu-cgroup-os-{turn}-{call}.receipt"));
+            if std::fs::symlink_metadata(&receipt).is_ok(){
+                return Err(io::Error::other("Cannot replay prior Linux OS receipt"))
+            }
+            let mut cmd=Command::new(&image);
+            cmd.env_clear().args([profile.as_os_str(),
+                std::ffi::OsStr::new(chat),std::ffi::OsStr::new(turn),
+                std::ffi::OsStr::new(call)])
+                .stdin(Stdio::piped()).stdout(Stdio::piped())
+                .stderr(Stdio::null());
+            // Unlike the worker, this custodian has no PDEATHSIG and stays
+            // in Lu's existing parent cgroup, outside the new subgroup.
+            let mut child=cmd.spawn()?;
+            let mut banner=String::new();
+            let raw=child.stdout.take()
+                .ok_or_else(||io::Error::other("Custodian handshake missing"))?;
+            let mut reader=BufReader::new(raw.take(1024));
+            let status=reader.read_line(&mut banner);
+            if status.is_err()||banner.len()>1000{
+                let _=child.kill();let _=child.wait();
+                return Err(io::Error::other("Invalid cgroup helper handshake"))
+            }
+            if banner=="UNAVAILABLE\n"{
+                let status=child.wait()?;
+                if !status.success(){
+                    return Err(io::Error::other("Delegation detection failed"))
+                }
+                return Ok(None)
+            }
+            let Some(encoded)=banner.strip_prefix("READY\t")
+                .and_then(|x|x.strip_suffix('\n')) else{
+                let _=child.kill();let _=child.wait();
+                return Err(io::Error::other("Unrecognized OS cgroup handshake"))
+            };
+            let group=std::path::PathBuf::from(encoded);
+            if !group.is_absolute()||!group.join("cgroup.procs").exists()
+                ||!group.join("cgroup.kill").exists()
+                ||group.file_name().and_then(|x|x.to_str())
+                    .is_none_or(|x|!x.starts_with("lu-review-")
+                        ||x.len()!=42
+                        ||!x[10..].bytes().all(|b|
+                            b.is_ascii_digit()||(b'a'..=b'f').contains(&b))){
+                let _=child.kill();let _=child.wait();
+                return Err(io::Error::other("Invalid private cgroup identity"))
+            }
+            let current=std::fs::read_to_string("/proc/self/cgroup")?;
+            let own:Vec<&str>=current.lines()
+                .filter_map(|s|s.strip_prefix("0::")).collect();
+            if own.len()!=1||!own[0].starts_with('/')||
+                group.parent()!=Some(std::path::Path::new("/sys/fs/cgroup")
+                    .join(own[0].trim_start_matches('/')).as_path()){
+                let _=child.kill();let _=child.wait();
+                return Err(io::Error::other("Cgroup helper left Lu's delegated root"))
+            }
+            let stdin=child.stdin.take().ok_or_else(||{
+                io::Error::other("Lifetime pipe missing")
+            })?;
+            if child.try_wait()?.is_some(){
+                return Err(io::Error::other("Custodian exited before admission"))
+            }
+            Ok(Some(Self{child,stdin:Some(stdin),subtree:group,receipt,stopped:false}))
+        }
+        pub fn subtree(&self)->&std::path::Path{&self.subtree}
+        /// Close the exact lifetime pipe. The separate custodian performs
+        /// cgroup.kill, checks recursive cgroup.events populated 0 and writes
+        /// a durable receipt. Lu waits for its completion; a missing ack is
+        /// uncertainty, NOT success or a fresh authority grant.
+        pub fn stop_and_verify(&mut self)->io::Result<()>{
+            use std::time::{Duration,Instant};
+            if self.stopped{return Ok(())}
+            if self.child.try_wait()?.is_some(){
+                return Err(io::Error::other("Linux custodian died before OS cleanup"))
+            }
+            drop(self.stdin.take());
+            let deadline=Instant::now()+Duration::from_secs(12);
+            loop{
+                if let Some(status)=self.child.try_wait()?{
+                    self.stopped=true;
+                    if !status.success(){
+                        return Err(io::Error::other("Kernel cgroup closure not verified"))
+                    }
+                    let record=std::fs::read_to_string(&self.receipt)?;
+                    if !record.starts_with("LU_CGROUP_V2_EMPTY_V1\n")
+                        ||!record.contains("\nPOPULATED=0\n")
+                        ||record.len()>4096{
+                        return Err(io::Error::other("Cgroup witness missing or corrupt"))
+                    }
+                    return Ok(())
+                }
+                if Instant::now()>=deadline{
+                    let _=self.child.kill();let _=self.child.wait();
+                    self.stopped=true;
+                    return Err(io::Error::other("Cgroup custodian cleanup timed out"))
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+    #[cfg(target_os="linux")]
+    impl Drop for LinuxCgroupCustodian{
+        fn drop(&mut self){
+            if !self.stopped{let _=self.stop_and_verify();}
+        }
+    }
+    /// Enter the kernel-created private subgroup in the child pre_exec.
+    /// This occurs BEFORE exec of the reviewed binary: even a malicious
+    /// executable cannot fork or setsid before the cgroup membership exists.
+    /// The host-only original /proc delegation checks happen beforehand.
+    #[cfg(target_os="linux")]
+    pub fn bind_worker_to_cgroup_before_exec(
+        cmd:&mut std::process::Command,group:&LinuxCgroupCustodian
+    )->io::Result<()>{
+        use std::os::{unix::{ffi::OsStrExt,process::CommandExt},raw::c_void};
+        unsafe extern "C"{
+            fn open(path:*const std::os::raw::c_char,flags:i32)->i32;
+            fn write(fd:i32,buf:*const c_void,size:usize)->isize;
+            fn close(fd:i32)->i32;
+        }
+        const O_WRONLY:i32=1;
+        const O_CLOEXEC:i32=0o2000000;
+        const O_NOFOLLOW:i32=0o400000;
+        let path=group.subtree.join("cgroup.procs");
+        let name=CString::new(path.as_os_str().as_bytes())
+            .map_err(|_|io::Error::other("Invalid trusted cgroup.procs path"))?;
+        // SAFETY: child pre_exec uses only raw syscalls and a preallocated
+        // immutable CString. "0" is the kernel's current-process selector,
+        // never a model-selected PID. If migration fails, exec is refused.
+        unsafe{cmd.pre_exec(move||{
+            let fd=open(name.as_ptr(),O_WRONLY|O_CLOEXEC|O_NOFOLLOW);
+            if fd<0{return Err(io::Error::last_os_error())}
+            let actual=write(fd,b"0".as_ptr().cast(),1);
+            let closed=close(fd);
+            if actual!=1||closed!=0{
+                return Err(io::Error::last_os_error())
+            }
+            Ok(())
+        })}
+        Ok(())
+    }
     #[cfg(target_os="linux")]
     unsafe extern "C"{
         fn renameat2(oldfd:i32,old:*const std::ffi::c_char,

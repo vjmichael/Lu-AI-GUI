@@ -1,0 +1,191 @@
+name: Lu AGENT-01L Linux Cgroup-v2 Crash-Surviving Custodian
+on:
+  push:
+    branches: ['lu/agent01l-linux-cgroup-v2-20261108']
+  pull_request:
+    paths:
+      - 'src-tauri/lu-win-worker-job/src/lib.rs'
+      - 'src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs'
+      - 'src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs'
+      - 'src-tauri/lu-win-worker-job/Cargo.toml'
+      - 'src-tauri/lu-core/src/native_background_process.rs'
+      - 'src-tauri/lu-core/src/agent_os_custody.rs'
+      - 'src-tauri/lu-core/src/tasks.rs'
+      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
+      - 'benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py'
+      - 'lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs'
+      - 'lu-desktop/tests/agent01l-os-custody.test.mjs'
+      - '.github/workflows/lu-agent01l-linux-cgroup-v2.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-agent01l-cgroup-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  portable-compile-and-contracts:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify immutable source and OS
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p agent01l-cgroup-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          printf 'HEAD=%s\nRUNNER=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > agent01l-cgroup-evidence/source.txt
+      - name: Ten source security contracts and Linux-specific cgroup contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01l-os-custody.test.mjs \
+            2>&1 | tee agent01l-cgroup-evidence/agent01l-os-source.log
+          grep -Fq '# pass 10' agent01l-cgroup-evidence/agent01l-os-source.log
+          grep -Fq '# fail 0' agent01l-cgroup-evidence/agent01l-os-source.log
+          node --test lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs \
+            2>&1 | tee agent01l-cgroup-evidence/linux-cgroup-contract.log
+          grep -Fq '# pass 9' agent01l-cgroup-evidence/linux-cgroup-contract.log
+          grep -Fq '# fail 0' agent01l-cgroup-evidence/linux-cgroup-contract.log
+      - name: Compile native host / independently verified reader and test missing OS custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_os_custody::tests -- --nocapture \
+            2>&1 | tee agent01l-cgroup-evidence/native-custody-test.log
+          cargo check --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            2>&1 | tee agent01l-cgroup-evidence/native-core-check.log
+      - name: Linux first-party helper and test-only crash host compile
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --features e1-p08-crash-fixture \
+            --bin lu-linux-cgroup-guard \
+            --bin lu-e1-p08-linux-cgroup-crash-parent \
+            2>&1 | tee agent01l-cgroup-evidence/linux-helper-build.log
+          for name in lu-linux-cgroup-guard lu-e1-p08-linux-cgroup-crash-parent; do
+            test -x "src-tauri/lu-win-worker-job/target/debug/$name"
+          done
+      - name: Linux no-delegation negative baseline
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/e1/e1_p08_setsid_escape_probe.py \
+            2>&1 | tee agent01l-cgroup-evidence/ordinary-pgid-escape.log
+          grep -Fq 'E1_P08_GROUP_ESCAPE_PROVEN=1' \
+            agent01l-cgroup-evidence/ordinary-pgid-escape.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent01l-cgroup-source-native-${{ matrix.os }}
+          path: agent01l-cgroup-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+  linux-kernel-crash-and-escaped-descendant:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    # NO continue-on-error: a kernel mount without delegation is NOT proof.
+    # The failure artifact must display NOT_AVAILABLE, not a passing test.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact branch and native cgroup v2 kernel interface
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p agent01l-real-kernel-evidence
+          test "$(uname -s)" = Linux
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          test -f /sys/fs/cgroup/cgroup.controllers
+          cat /proc/self/cgroup > agent01l-real-kernel-evidence/original-cgroup.txt
+          cat /proc/self/mountinfo | grep -F ' - cgroup2 ' > agent01l-real-kernel-evidence/kernel-cgroup-mount.txt
+      - name: Build genuine first-party independent custodian and destructive CI-only host
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --features e1-p08-crash-fixture \
+            --bin lu-linux-cgroup-guard --bin lu-e1-p08-linux-cgroup-crash-parent \
+            2>&1 | tee agent01l-real-kernel-evidence/compiler.log
+          sha256sum src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard \
+            src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent \
+            > agent01l-real-kernel-evidence/binaries-sha256.txt
+      - name: KILL Lu parent, prove out-of-process cgroup kill and escaped setsid child death
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py
+          python3 benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py \
+            --guard "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard" \
+            --parent "$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent" \
+            2>&1 | tee agent01l-real-kernel-evidence/real-host-crash-escaped-child.log
+          grep -Fq 'AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1' \
+            agent01l-real-kernel-evidence/real-host-crash-escaped-child.log
+      - name: Execute actual reviewed Git under delegated cgroup and verify journal after restart
+        shell: bash
+        env:
+          LU_AGENT01L_TEST_CGROUP_GUARD: ${{ github.workspace }}/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard
+        run: |
+          set -euo pipefail
+          command -v git
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_background_process::tests::agent01l_linux_real_git_cgroup_custody_after_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee agent01l-real-kernel-evidence/native-reviewed-git-cgroup.log
+          grep -Fq 'agent01l_linux_real_git_cgroup_custody_after_restart ... ok' \
+            agent01l-real-kernel-evidence/native-reviewed-git-cgroup.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            agent01l-real-kernel-evidence/native-reviewed-git-cgroup.log
+      - name: Report kernel-only acceptance, never automatic tool permission
+        shell: bash
+        run: |
+          echo 'Actual delegated cgroup-v2 host SIGKILL, escaped setsid descendant cleanup, kernel populated-zero receipt and real reviewed Git verified at this exact SHA. This is a host-verified historical receipt only, no automatic continuation or Linux desktop package acceptance.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Explain failure as NOT_AVAILABLE / UNVERIFIED, never PASS
+        if: failure()
+        shell: bash
+        run: |
+          if grep -Fq 'AGENT01L_CGROUP_DELEGATION_NOT_AVAILABLE=1' agent01l-real-kernel-evidence/real-host-crash-escaped-child.log 2>/dev/null; then
+            echo 'Cgroup-v2 delegation NOT AVAILABLE on this runner. Kernel crash-surviving positive acceptance remains OPEN; do not call this a passed test.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Native Linux cgroup kernel acceptance FAILED or was not executed. Inspect exact compiler and OS logs before accepting descendant custody.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent01l-cgroup-real-kernel-escape-and-git
+          path: agent01l-real-kernel-evidence/
+          if-no-files-found: warn
+          retention-days: 14

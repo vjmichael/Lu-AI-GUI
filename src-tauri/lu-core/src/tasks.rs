@@ -399,6 +399,17 @@ impl TaskStore {
         tx.commit()?;
         Ok(())
     }
+    /// Read the exact sealed human origin for a reviewed native worker.
+    /// The cgroup custodian never receives a model or caller-supplied chat.
+    pub fn reviewed_human_origin(
+        &self
+    )->Result<Option<(String,String)>,TaskStoreError>{
+        let db=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        db.query_row(
+            "SELECT conversation_id,user_turn_id FROM lu_reviewed_turn_origin
+             WHERE singleton=1",[],|r|Ok((r.get(0)?,r.get(1)?))
+        ).optional().map_err(TaskStoreError::from)
+    }
     pub fn start(&self, task_id: &str) -> Result<(), TaskStoreError> {
         self.transition(task_id, "PENDING", TaskState::Running)
     }

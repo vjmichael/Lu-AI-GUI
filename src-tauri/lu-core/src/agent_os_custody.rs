@@ -2,14 +2,18 @@
 //!
 //! Windows evidence is written only after the live, assigned Win32 Job
 //! handle itself successfully observes BasicAccounting.ActiveProcesses=0.
-//! Linux process-group SIGKILL is NOT sufficient against setsid()/cgroup
-//! escape, and therefore has no successful provider in this module.
+//! Linux process-group SIGKILL alone is NOT sufficient against setsid().
+//! Linux only accepts the separately supervised delegated-cgroup-v2
+//! custodian's exact original-turn recursive populated-zero receipt; absence
+//! of genuine delegation or OS proof remains unverified.
 //!
 //! This is an historical kernel observation, not proof of a running process's
 //! current state, a portable cgroup guarantee, a secret signature, or a grant.
 use crate::agent_recovery_decision::IndependentProcessCustody;
 use std::{fs,path::{Path,PathBuf}};
-#[cfg(windows)]
+#[cfg(target_os="linux")]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(any(windows,target_os="linux"))]
 use rusqlite::{params,Connection,OpenFlags,OptionalExtension};
 
 pub struct HostOriginalJobCustody<'a>{
@@ -79,6 +83,69 @@ fn windows_original_job_empty(
         if state=="COMPLETED"&&workspace==turn&&saved_chat==chat
            &&saved_turn==turn&&method=="WINDOWS_JOB_ACTIVE_ZERO_V1")
 }
+/// Kernel-custodian receipt is written from an out-of-process first-party
+/// executable on EOF after cgroup.kill and recursive cgroup.events populated0.
+/// It remains historical data only: AGENT-01K separately rechecks the actual
+/// task, effect, independent oracle, current ANSF and released host owner.
+#[cfg(target_os="linux")]
+fn linux_original_cgroup_empty(
+    profile:&Path,chat:&str,turn:&str,call:&str,
+)->bool{
+    if !exact_id(chat,"c-")||!exact_id(turn,"g-")
+        ||call.len()>128||call.is_empty()||!call.bytes().all(|b|
+            b.is_ascii_alphanumeric()||b==b'-'||b==b'_')
+        ||!["-gh","-gs","-gb","-gc","-fm"]
+            .iter().any(|s|call.ends_with(s)){
+        return false
+    }
+    let task=profile.join(format!("lu-reviewed-task-{turn}.sqlite"));
+    if !bounded_journal(&task,false){return false}
+    for suffix in ["-wal","-shm","-journal"]{
+        let side=PathBuf::from(format!("{}{}",task.display(),suffix));
+        match fs::symlink_metadata(&side){
+            Ok(_) if !bounded_journal(&side,true)=>return false,
+            Err(e) if e.kind()!=std::io::ErrorKind::NotFound=>return false,
+            _=>{},
+        }
+    }
+    let Ok(db)=Connection::open_with_flags(&task,
+        OpenFlags::SQLITE_OPEN_READ_ONLY|OpenFlags::SQLITE_OPEN_NO_MUTEX
+    )else{return false};
+    let row:Result<Option<(String,String,String,String)>,_>=db.query_row(
+        "SELECT t.state,t.workspace_id,o.conversation_id,o.user_turn_id
+         FROM lu_tasks t JOIN lu_reviewed_turn_origin o ON o.singleton=1
+         WHERE t.task_id=?1 AND t.workspace_id=?2",
+        params![call,turn],
+        |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))
+    ).optional();
+    if !matches!(row,Ok(Some((state,workspace,saved_chat,saved_turn)))
+        if state=="COMPLETED"&&workspace==turn&&saved_chat==chat
+            &&saved_turn==turn){
+        return false
+    }
+    let receipt=profile.join(format!("lu-cgroup-os-{turn}-{call}.receipt"));
+    let Ok(meta)=fs::symlink_metadata(&receipt)else{return false};
+    if !meta.is_file()||meta.file_type().is_symlink()
+        ||meta.len()==0||meta.len()>4096
+        ||meta.permissions().mode()&0o077!=0{
+        return false
+    }
+    let Ok(data)=fs::read_to_string(&receipt)else{return false};
+    // Strictly one proof per exact task and human turn. No model-supplied
+    // path, arbitrary PID or mutation of the old TaskStore is consulted.
+    let lines=data.lines().collect::<Vec<_>>();
+    if lines.len()!=6
+        ||lines[0]!="LU_CGROUP_V2_EMPTY_V1"
+        ||lines[1]!=format!("CHAT={chat}")
+        ||lines[2]!=format!("TURN={turn}")
+        ||lines[3]!=format!("CALL={call}")
+        ||lines[5]!="POPULATED=0"{
+        return false
+    }
+    let Some(nonce)=lines[4].strip_prefix("NONCE=")else{return false};
+    nonce.len()==32&&nonce.bytes().all(|b|
+        b.is_ascii_digit()||(b'a'..=b'f').contains(&b))
+}
 impl IndependentProcessCustody for HostOriginalJobCustody<'_>{
     fn worker_and_descendants_ended(
         &self,chat:&str,execution_turn:&str,effect_call:&str
@@ -87,10 +154,14 @@ impl IndependentProcessCustody for HostOriginalJobCustody<'_>{
         {return windows_original_job_empty(
             self.profile,chat,execution_turn,effect_call
         )}
-        #[cfg(not(windows))]
+        #[cfg(target_os="linux")]
+        {return linux_original_cgroup_empty(
+            self.profile,chat,execution_turn,effect_call
+        )}
+        #[cfg(all(not(windows),not(target_os="linux")))]
         {
             let _=(&self.profile,chat,execution_turn,effect_call);
-            false // No delegated cgroup-v2 custody, no full-tree claim.
+            false // Unsupported OS: no independent full-tree witness.
         }
     }
 }
