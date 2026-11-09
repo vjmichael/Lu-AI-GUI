@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e4b06e0e4411efb57780f981e574ce1bd8a7589d",
-  "trackedFileCount": 793,
+  "sourceCommitBeforeLock": "f8a3d675a5d38c8e95e463e70f2ece02f3282be7",
+  "trackedFileCount": 797,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -182,6 +182,10 @@
     {
       "path": ".github/workflows/lu-memory-loop02c-provenance.yml",
       "blob": "2559986708f1c8b4025300969d9ccbd23b681b47"
+    },
+    {
+      "path": ".github/workflows/lu-memory-loop03a-goal-recovery.yml",
+      "blob": "a29942c51a3005f0f65306c2a55cc8fe7f17a671"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -585,7 +589,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "f27f9e4270204c19e7271faceab73c3db4e4035c"
+      "blob": "e62286f3c8a076e865191da5ddaa8c13929b4632"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -646,6 +650,10 @@
     {
       "path": "docs/LU_MEMORY_LOOP02_VERIFIED_FEEDBACK_20261108.md",
       "blob": "21990113d09779d6e975c105c191f3d8c572d511"
+    },
+    {
+      "path": "docs/LU_MEMORY_LOOP03A_GOAL_RECOVERY_PREFLIGHT_20261109.md",
+      "blob": "afed0f1b8d99effdc82055f1d16c5e4096077c7e"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -1089,7 +1097,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "d5d48d0c61009ae300be03576821308ac725a93a"
+      "blob": "51fcc22ae100f294c3261139ff0ab003e5eac31d"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1102,6 +1110,10 @@
     {
       "path": "lu-desktop/src-tauri/src/memory_desktop.rs",
       "blob": "a16394dbde3ea35253eb546ca3caaefccc686c05"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/memory_loop03_goal_gate.rs",
+      "blob": "6f13a656270c3514d8e376babe2a2963822cea24"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
@@ -1398,6 +1410,10 @@
     {
       "path": "lu-desktop/tests/memory-loop02c-operator-provenance.test.mjs",
       "blob": "1c50a3936356f78058daeb18a7ecfb24cd774ead"
+    },
+    {
+      "path": "lu-desktop/tests/memory-loop03a-goal-recovery.test.mjs",
+      "blob": "222de98f2e5491cb40a994bdec1b24e7d08c1c25"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
