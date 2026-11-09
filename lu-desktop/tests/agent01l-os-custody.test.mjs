@@ -46,9 +46,11 @@ test('persisted witness reopened only from host profile and bound chat, turn, ca
   assert.match(custody,/saved_turn==turn/);
   assert.match(custody,/bounded_journal\(&file,false\)/);
 });
-test('Linux without delegated cgroup has no positive full descendant proof',()=>{
-  assert.match(custody,/#\[cfg\(not\(windows\)\)\]/);
-  assert.match(custody,/false \/\/ No delegated cgroup-v2 custody/);
+test('Linux proof requires original scoped cgroup populated-zero receipt; PGID alone is insufficient',()=>{
+  assert.match(custody,/#\[cfg\(target_os="linux"\)\]/);
+  assert.match(custody,/linux_original_cgroup_empty\(/);
+  assert.match(custody,/LU_CGROUP_V2_EMPTY_V1/);
+  assert.match(custody,/POPULATED=0/);
   assert.match(custody,/linux_pgid_guardian_never_claims_escaped_descendant_custody/);
   assert.match(core,/STOP_ANCESTOR_CUSTODY_UNPROVEN/);
 });
