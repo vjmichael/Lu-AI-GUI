@@ -496,3 +496,43 @@ pub mod unix_owned {
         Ok(())
     }
 }
+
+#[cfg(all(windows,test))]
+mod agent01l_kernel_job_tests{
+    use super::Job;
+    use std::{process::{Command,Stdio},time::Duration,
+        os::windows::process::CommandExt};
+    #[test]
+    fn unassigned_job_cannot_forge_an_empty_process_tree(){
+        let job=Job::new().unwrap();
+        assert!(job.terminate_and_verify_empty().is_err(),
+            "An empty never-assigned Job is not an OS worker custody witness");
+    }
+    #[test]
+    fn native_job_terminates_descendant_cmd_tree_and_queries_kernel_empty(){
+        let shell=std::env::var_os("ComSpec").unwrap_or(
+            std::ffi::OsString::from(r"C:\Windows\System32\cmd.exe")
+        );
+        // Launch frozen and bind before first instruction. cmd starts ping
+        // as a separate descendant; only the live Job handle can attest its
+        // kernel-observed empty process count. No model PID is selected.
+        let mut child=Command::new(shell)
+            .args(["/D","/C","ping -n 20 127.0.0.1 >NUL"])
+            .creation_flags(0x0800_0000|0x0000_0004)
+            .stdin(Stdio::null()).stdout(Stdio::null())
+            .stderr(Stdio::null()).spawn().unwrap();
+        let job=Job::new().unwrap();
+        if let Err(e)=job.assign_and_resume_suspended(&child){
+            let _=child.kill();let _=child.wait();
+            panic!("Reviewed worker Job admission failed: {e}");
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        let proof=job.terminate_and_verify_empty().unwrap();
+        assert_eq!(proof.method(),"WINDOWS_JOB_ACTIVE_ZERO_V1");
+        let _=child.wait().unwrap();
+        // A second observation must remain possible while owning the same
+        // now-empty kernel Job, but cannot be transferred to another Job.
+        assert_eq!(job.terminate_and_verify_empty().unwrap().method(),
+            "WINDOWS_JOB_ACTIVE_ZERO_V1");
+    }
+}
