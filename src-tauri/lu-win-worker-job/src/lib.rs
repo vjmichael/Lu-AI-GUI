@@ -417,7 +417,7 @@ pub mod unix_owned {
         pub fn spawn_if_delegated(
             profile:&std::path::Path,chat:&str,turn:&str,call:&str,
         )->io::Result<Option<Self>>{
-            use std::{io::{BufRead,BufReader},os::unix::fs::PermissionsExt,
+            use std::{io::{BufRead,BufReader,Read},os::unix::fs::PermissionsExt,
                 process::{Command,Stdio}};
             let valid=|v:&str,p:&str|
                 v.len()==p.len()+32&&v.starts_with(p)
