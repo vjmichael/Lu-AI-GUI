@@ -109,6 +109,31 @@ class RuntimePackageTests(unittest.TestCase):
         with self.assertRaises(module.Refused):
             self.package()
 
+    def test_windows_reserved_paths_denied_on_linux_too(self):
+        for part in ("CON", "con.txt", "Lpt1.log", "NUL", "AUX.dat", "com9"):
+            self.assertFalse(module.safe_part(part), part)
+        self.assertTrue(module.safe_part("console.txt"))
+        reserved = self.root / "bin" / "CON.txt"
+        reserved.write_bytes(b"not portable")
+        with self.assertRaises(module.Refused):
+            self.package("reserved.zip")
+        self.assertFalse((Path(self.tmp.name) / "reserved.zip").exists())
+
+    def test_case_and_unicode_aliases_are_refused(self):
+        path = self.root / "bin" / "Node"
+        path.write_bytes(b"alias")
+        with self.assertRaises(module.Refused):
+            self.package("case.zip")
+        path.unlink()
+        composed = self.root / "bin" / "caf\\u00e9"
+        decomposed = self.root / "bin" / "cafe\\u0301"
+        if composed == decomposed:
+            self.skipTest("filesystem normalizes unicode filenames")
+        composed.write_bytes(b"composed")
+        decomposed.write_bytes(b"decomposed")
+        with self.assertRaises(module.Refused):
+            self.package("unicode.zip")
+
     def test_does_not_overwrite_archive_or_partial(self):
         self.package()
         with self.assertRaises(module.Refused):
