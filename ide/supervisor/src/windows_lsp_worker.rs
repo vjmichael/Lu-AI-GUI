@@ -649,6 +649,12 @@ impl RestrictedLspProcess for WindowsLspProcess {
             || unsafe { WaitForSingleObject(self.process.0, 3_000) } != WAIT_OBJECT_0 {
             return Err(SupervisorError::NoContainment);
         }
+        // A surviving debuggee must NOT retain our private attestation
+        // writer. Native kernel pipe EOF is mandatory after LLDB dies;
+        // timeout means an inherited handle leaked or a worker survived.
+        self.event_sideband.as_mut()
+            .ok_or(SupervisorError::NoContainment)?
+            .expect_pipe_eof_after_lldb_crash()?;
         Ok(())
     }
     #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
