@@ -1528,6 +1528,31 @@ pub fn reconcile_windows_interrupted_via_service(
 mod tests {
     use super::*;
     #[test]
+    fn two_windows_streams_preserve_identity_and_offsets() {
+        let root = test_tree();
+        fs::write(root.join("cargo-stdout.log"), b"output-one").unwrap();
+        fs::write(root.join("cargo-diagnostics.log"), b"error-one").unwrap();
+        let sink = Arc::new(LiveOutput::default());
+        let mut out = 0u64;
+        let mut err = 0u64;
+        stream_windows_output(&root, &mut out, &mut err, Some(&sink)).unwrap();
+        assert_eq!((out, err), (10, 9));
+        let page = sink.page(0);
+        assert_eq!(page.chunks.len(), 2);
+        assert_eq!(page.chunks[0].stream, "stdout");
+        assert_eq!(page.chunks[1].stream, "stderr");
+        stream_windows_output(&root, &mut out, &mut err, Some(&sink)).unwrap();
+        assert_eq!(sink.page(0).chunks.len(), 2);
+        use std::io::Write;
+        fs::OpenOptions::new().append(true)
+            .open(root.join("cargo-stdout.log")).unwrap()
+            .write_all(b"next").unwrap();
+        stream_windows_output(&root, &mut out, &mut err, Some(&sink)).unwrap();
+        assert_eq!(sink.page(2).chunks.len(), 1);
+        assert_eq!(sink.page(2).chunks[0].stream, "stdout");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn exact_job_names_and_fixed_cpu_rate() {
         assert!(job_name(&format!("job-{}", "a".repeat(32)), &"b".repeat(64)).is_ok());
         assert!(job_name("user-command", &"b".repeat(64)).is_err());
