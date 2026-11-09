@@ -297,7 +297,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bubblewrap rustc cargo clang-18 lldb-18 apparmor-profiles apparmor-utils
+          sudo apt-get install -y --no-install-recommends bubblewrap rustc cargo clang-18 lldb-18 llvm-18 apparmor-profiles apparmor-utils
           profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
           test -r "$profile" || { echo 'DENIED: reviewed distribution Bubblewrap profile unavailable'; exit 1; }
           sudo install -o root -g root -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
@@ -328,6 +328,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Test-only independent LLVM reader. Compiler embeds the measured
+          # SHA at build time; no runtime environment can replace the pin.
+          test -f /usr/lib/llvm-18/bin/llvm-symbolizer
+          test "$(stat -c %u /usr/lib/llvm-18/bin/llvm-symbolizer)" = 0
+          export LU_IDE_D3_LINUX_SYMBOLIZER_SHA256="$(sha256sum /usr/lib/llvm-18/bin/llvm-symbolizer | cut -d' ' -f1)"
+          test "${#LU_IDE_D3_LINUX_SYMBOLIZER_SHA256}" = 64
           cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_delegated_ci_wo6_build_host
           cargo build --manifest-path ide/supervisor/Cargo.toml --features linux-worker,dap-transport --example wo6_linux_native_build_acceptance
       - name: Real isolated Cargo check, test and cancellation with kernel receipts

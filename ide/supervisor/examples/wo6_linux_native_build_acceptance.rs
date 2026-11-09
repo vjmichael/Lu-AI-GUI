@@ -347,22 +347,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if stopped.is_none() || !threads || !stack {
                 return Err("DENIED: real project debug stop/stack absent".into());
             }
-            // Only a *candidate* instruction address from a real protected
-            // LLDB stop. The actual Linux process image slide must be
-            // independently corroborated from cgroup + kernel /proc maps.
-            // This diagnostic NEVER certifies a DWARF line mapping.
-            if let Some(candidate) = dap.source_candidate() {
-                if let Some(pc) = candidate.instruction_address {
-                    eprintln!(
-                        "DEV045D2_LINUX_REAL_DAP_STOP_PC_CLAIM=0x{:x};line={};os_module_slide_verified=false;binary_sha={}",
-                        pc, candidate.line, target.binary.binary_sha256
-                    );
-                } else {
-                    eprintln!("DEV045D2_LINUX_REAL_DAP_STOP_PC_CLAIM=absent");
-                }
-            } else {
-                eprintln!("DEV045D2_LINUX_REAL_DAP_SOURCE_CLAIM=unavailable");
+            // Unlike D2's adapter-only PC claim, this requires a genuine
+            // traced-stop task in this exact dedicated cgroup, its /proc/PID
+            // executable inode and RX VMA, ELF PT_LOAD relocation, the exact
+            // native source snapshot and BOTH independently fsynced journals.
+            // A *second*, fixed, compile-pinned LLVM oracle must then agree
+            // with the stopped instruction's original source line.
+            let stopped_witness = dap.verify_project_source_line_for_ci(
+                &supervisor, &debug_job.job_id, &debugger_plan, &target,
+            ).map_err(|_| "DENIED: protected Linux stopped-PC, cgroup, build/debug receipts or independent DWARF line mapping failed")?;
+            if !stopped_witness.independent_line_table_verified
+                || stopped_witness.installed_app_accepted
+                || stopped_witness.debugger_job_id != debug_job.job_id
+                || stopped_witness.debugger_plan_sha256 != debug_job.plan_sha256
+                || stopped_witness.build_job_id != prepared.job_id
+                || stopped_witness.build_terminal_receipt_sha256 != receipt.terminal_receipt_hash
+                || stopped_witness.source_snapshot_sha256 != input.seal.source_sha256
+                || stopped_witness.target_binding_sha256 != target.binding_sha256
+            {
+                return Err("DENIED: independent live stop lost its verified build lineage".into());
             }
+            eprintln!(
+                "DEV045D3_LINUX_CGROUP_REAL_STOP_ELF_DWARF=PASS;load_bias=0x{:x};source_line={};build_receipt=bound;debug_running_receipt=bound",
+                stopped_witness.kernel.load_bias, stopped_witness.source_line,
+            );
             if debug_cancel {
                 // A real project, not the fixed debuggee, is stopped under
                 // cgroup custody before native Drop cancels and reaps it.
