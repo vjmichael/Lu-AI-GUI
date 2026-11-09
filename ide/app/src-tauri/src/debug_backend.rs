@@ -23,19 +23,23 @@ use lu_ide_workspace::{
     IdeWorkspaceRegistry,
 };
 use lu_ide_execution_supervisor::{
-    snapshot::publish_input, JobPhase, JobPlan, Supervisor,
+    snapshot::publish_input,
+    project_debug_target::SealedProjectDebugTarget,
+    JobPhase, JobPlan, Supervisor,
 };
 #[cfg(windows)]
 use lu_ide_execution_supervisor::{
     windows_broker::TrustedBroker,
     windows_worker::reconcile_windows_interrupted_via_service,
     windows_worker::lsp_native::{
-        native_lsp_bundle_digest, start_windows_dap, WindowsDapSession as NativeDapSession,
+        native_lsp_bundle_digest, start_windows_dap, start_windows_project_dap,
+        WindowsDapSession as NativeDapSession,
     },
 };
 #[cfg(target_os = "linux")]
 use lu_ide_execution_supervisor::linux_worker::lsp_native::{
-    native_lsp_bundle_digest, start_linux_dap, LinuxDapSession as NativeDapSession,
+    native_lsp_bundle_digest, start_linux_dap, start_linux_project_dap,
+    LinuxDapSession as NativeDapSession,
 };
 #[cfg(target_os = "linux")]
 use lu_ide_execution_supervisor::linux_worker::reconcile_linux_interrupted;
@@ -126,6 +130,8 @@ pub struct DebugWitness {
     pub verified_os_tree_release_by_worker: bool,
     pub installed_app_accepted: bool,
     pub target: &'static str,
+    pub origin_build_job_id: Option<String>,
+    pub target_binding_sha256: Option<String>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,6 +144,7 @@ pub struct DebugActive {
 #[serde(rename_all = "camelCase")]
 pub struct DebugStatus {
     ready: bool,
+    project_debug_supported: bool,
     code: String,
     current: Option<DebugActive>,
     last: Option<DebugWitness>,
@@ -200,7 +207,17 @@ impl NativeDebugRuntime {
                 project_id: job.project_id.clone(),
                 job_id: job.job_id.clone(),
                 plan_sha256: job.plan_sha256.clone(),
-                phase: format!("{:?}", job.phase).to_lowercase(),
+                phase: match job.phase {
+                    JobPhase::CancelRequested=>"cancel_requested",
+                    JobPhase::RecoveryRequired=>"recovery_required",
+                    JobPhase::AdmissionPending=>"admission_pending",
+                    JobPhase::ReleasePending=>"release_pending",
+                    JobPhase::Uncertain=>"uncertain",
+                    JobPhase::Completed=>"completed",JobPhase::Cancelled=>"cancelled",
+                    JobPhase::Failed=>"failed",JobPhase::Denied=>"denied",
+                    JobPhase::Running=>"running",JobPhase::Prepared=>"prepared",
+                    JobPhase::Authorized=>"authorized",
+                }.to_owned(),
                 requires_reconciliation: true,
             }).collect();
         // Last successful DAP result is session-only; never fabricate it after
@@ -212,12 +229,24 @@ impl NativeDebugRuntime {
                 project_id: job.project_id,
                 job_id: job.job_id,
                 plan_sha256: job.plan_sha256,
-                phase: format!("{:?}", job.phase).to_lowercase(),
+                phase: match job.phase {
+                    JobPhase::CancelRequested=>"cancel_requested",
+                    JobPhase::RecoveryRequired=>"recovery_required",
+                    JobPhase::AdmissionPending=>"admission_pending",
+                    JobPhase::ReleasePending=>"release_pending",
+                    JobPhase::Uncertain=>"uncertain",
+                    JobPhase::Completed=>"completed",JobPhase::Cancelled=>"cancelled",
+                    JobPhase::Failed=>"failed",JobPhase::Denied=>"denied",
+                    JobPhase::Running=>"running",JobPhase::Prepared=>"prepared",
+                    JobPhase::Authorized=>"authorized",
+                }.to_owned(),
                 requires_reconciliation: job.requires_reconciliation,
             }).collect();
         journal.reverse();
         Ok(DebugStatus {
             ready: available.is_ok() && quarantined.is_empty(),
+            project_debug_supported: cfg!(feature="native-project-debug") &&
+                available.is_ok() && quarantined.is_empty(),
             code: match available {
                 Ok(()) => "DEBUG_FIXTURE_BUNDLE_VERIFIED_OS_ADMISSION_PER_RUN".into(),
                 Err(code) => code,
@@ -275,12 +304,15 @@ impl NativeDebugRuntime {
     pub fn cancel(&self, project_id: &str, job_id: Option<&str>) -> Result<&'static str, String> {
         let locked = self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?;
         let active = locked.as_ref().ok_or("DEBUG_NO_ACTIVE_SESSION")?;
-        if active.project_id != project_id
-            || job_id.is_some_and(|id| active.job_id.as_deref() != Some(id))
-        {
-            return Err("DEBUG_SESSION_SCOPE_MISMATCH".into());
+        if active.project_id != project_id{return Err("DEBUG_SESSION_SCOPE_MISMATCH".into());}
+        match (active.job_id.as_deref(),job_id) {
+            (Some(current),Some(expected)) if current==expected=>{}
+            (None,None)=>{}
+            _=>return Err("DEBUG_EXACT_JOB_ID_REQUIRED".into())
         }
-        active.cancellation.store(true, Ordering::SeqCst);
+        if active.cancellation.swap(true, Ordering::SeqCst) {
+            return Err("DEBUG_CANCEL_ALREADY_REQUESTED".into());
+        }
         Ok("DEBUG_CANCEL_REQUESTED_OS_TERMINATION_PENDING")
     }
     pub fn run_fixture(
