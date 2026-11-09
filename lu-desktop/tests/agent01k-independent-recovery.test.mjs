@@ -24,7 +24,7 @@ test('native host checks saved original human chat and obtains fixed host profil
   assert.match(desktop,/host\.catalog_path\.parent\(\)/);
   assert.match(desktop,/existing_plan_file\(profile\)/);
   assert.match(desktop,/original_human_turn_id/);
-  assert.match(desktop,/NoIndependentCustodyProof/);
+  assert.match(desktop,/HostOriginalJobCustody/);
   assert.match(lib,/agent_recovery_desktop::lu_agent_reconcile_recovery/);
 });
 test('all original SQLite stores are opened existing READ ONLY for recovery',()=>{
@@ -53,7 +53,7 @@ test('stale receipts, active owner and cancelled jobs block continuation',()=>{
 test('no provenance of descendant termination means deny, even with verified Git effect',()=>{
   assert.match(core,/pub struct NoIndependentCustodyProof/);
   assert.match(core,/bool\{false\}/);
-  assert.match(desktop,/&NoIndependentCustodyProof/);
+  assert.match(desktop,/&HostOriginalJobCustody::from_host_profile\(profile\)/);
   assert.match(core,/REVIEW_NEW_STEP_WITH_FRESH_AUTHORIZATION_ONLY/);
   assert.match(core,/execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION"/);
 });
