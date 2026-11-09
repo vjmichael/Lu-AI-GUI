@@ -193,6 +193,21 @@ pub(crate) fn read_original_recovery(
     Ok(report(status,reviewed,window_incomplete,worst))
 }
 
+
+#[tauri::command]
+pub(crate) async fn lu_agent_recovery_provenance(
+    state:tauri::State<'_,std::sync::Arc<crate::DesktopState>>,
+    chat_id:String,
+)->Result<HistoricalRecoveryProvenance,String>{
+    let host=std::sync::Arc::clone(state.inner());
+    host.chats.history_window(&chat_id,None,"older",1)?;
+    tauri::async_runtime::spawn_blocking(move||{
+        let profile=host.catalog_path.parent()
+            .ok_or("Native provenance profile directory unavailable")?;
+        read_original_recovery(profile,&chat_id,&host.chats)
+    }).await.map_err(|_|"Native provenance inspection failed")?
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
