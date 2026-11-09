@@ -47,11 +47,31 @@ pub struct WindowsLoadedModuleWitness {
     pub binary_sha256: String,
     pub job_member_verified: bool,
     pub process_exe_path_verified: bool,
-    pub module_rx_image_verified: bool,
+    pub os_loaded_pe_image_verified: bool,
     // A ToolHelp module image covers a claimed PC; it DOES NOT attest
     // the actual stopped x64 thread-context RIP, or a PDB line record.
     pub os_thread_context_ip_verified: bool,
     pub independent_pdb_line_verified: bool,
+    pub installed_app_accepted: bool,
+}
+
+/// A native-only, proof-carrying but **not yet accepted** DAP stop
+/// candidate. The real Windows thread context and independent PDB line are
+/// both still required before any verified source-line assertion.
+#[derive(Debug, Clone)]
+pub struct WindowsProtectedModuleLineage {
+    pub module: WindowsLoadedModuleWitness,
+    pub debugger_job_id: String,
+    pub debugger_plan_sha256: String,
+    pub debug_running_receipt_sha256: String,
+    pub build_job_id: String,
+    pub build_terminal_receipt_sha256: String,
+    pub source_snapshot_sha256: String,
+    pub target_binding_sha256: String,
+    pub dap_claimed_source_line: u32,
+    pub source_snapshot_integrity_verified: bool,
+    pub source_line_mapping_verified: bool,
+    pub stopped_thread_os_verified: bool,
     pub installed_app_accepted: bool,
 }
 
@@ -255,7 +275,7 @@ pub(crate) fn observe_job_module(
             pid: *pid, loaded_base, loaded_size, preferred_base,
             preferred_pc, observed_pc: pc, binary_sha256: expected_sha.to_owned(),
             job_member_verified: true, process_exe_path_verified: true,
-            module_rx_image_verified: true,
+            os_loaded_pe_image_verified: true,
             os_thread_context_ip_verified: false,
             independent_pdb_line_verified: false,
             installed_app_accepted: false,
