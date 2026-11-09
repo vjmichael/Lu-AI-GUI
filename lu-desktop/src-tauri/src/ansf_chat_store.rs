@@ -127,8 +127,8 @@ pub fn m4_explicit_belief_target(
 pub fn m4_explicit_procedure_target(
     prompt:&str
 )->Option<(String,String,String,String,String)>{
-    if prompt.len()>512||prompt.contains('\\0')||
-        prompt.contains('\\n')||prompt.contains('\\r'){return None}
+    if prompt.len()>512||prompt.contains('\0')||
+        prompt.contains('\n')||prompt.contains('\r'){return None}
     let w=prompt.split_ascii_whitespace().collect::<Vec<_>>();
     if w.len()!=12||!w[0].eq_ignore_ascii_case("Recall")||
         !w[1].eq_ignore_ascii_case("procedure")||
