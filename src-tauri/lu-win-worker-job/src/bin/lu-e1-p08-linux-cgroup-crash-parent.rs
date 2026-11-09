@@ -11,8 +11,8 @@ fn main(){
         eprintln!("Usage: trusted-fixture <host-profile> <evidence-file>");
         std::process::exit(92)
     }
-    let profile=PathBuf::from(&args[1]);
-    let output=PathBuf::from(&args[2]);
+    let profile=PathBuf::from(args[1].clone());
+    let output=PathBuf::from(args[2].clone());
     let chat=format!("c-{}","1".repeat(32));
     let turn=format!("g-{}","2".repeat(32));
     let call="agent01l-cgroup-escaped-gh";
