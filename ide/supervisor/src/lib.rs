@@ -505,6 +505,32 @@ impl Supervisor {
             &self.native_owner_receipt_root()?, &audit,
         ).map_err(|_| SupervisorError::JournalCorrupt)
     }
+
+    /// D6D: joined, read-only action inventory. Never recreates consumed
+    /// approval. In-flight actions require separate verified native OS cleanup.
+    #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    pub fn native_debug_action_cleanup_jobs_after_restart(
+        &self,
+    ) -> Result<Vec<String>, SupervisorError> {
+        let records = crate::debug_action_receipts::inspect_action_receipts_after_restart(
+            &self.native_owner_receipt_root()?,
+        ).map_err(|_| SupervisorError::JournalCorrupt)?;
+        let jobs = self.inspect()?;
+        let mut cleanup = Vec::new();
+        for action in records {
+            if !jobs.iter().any(|job|
+                job.job_id == action.job_id && job.plan_sha256 == action.plan_sha256
+            ) {
+                return Err(SupervisorError::JournalCorrupt);
+            }
+            if action.requires_native_os_cleanup {
+                cleanup.push(action.job_id);
+            }
+        }
+        cleanup.sort();
+        cleanup.dedup();
+        Ok(cleanup)
+    }
     /// Path must be supplied by trusted application profile management.
     /// Do not point this at a repository or user-selected project file.
     pub fn open(journal_path: PathBuf) -> Result<Self, SupervisorError> {

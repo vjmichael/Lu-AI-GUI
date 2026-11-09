@@ -4,9 +4,9 @@ cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib 
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: event wire/sequence/revocation unit tests failed' }
 cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib windows_kernel_pc
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: native Job OS owner tests failed' }
-# One consolidated D6A/B/C hostile protocol/receipt/dispatch test group.
+# One consolidated D6A/B/C/D hostile protocol/receipt/dispatch and restart test group.
 cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib debug_action_receipts
-if ($LASTEXITCODE -ne 0) { throw 'DENIED: one-use debugger receipt/replay tests failed' }
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: one-use debugger receipt/replay/restart inventory tests failed' }
 cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib debug_control_dispatch
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: independent new stop step outcome tests failed' }
 cargo test --manifest-path ide/host/Cargo.toml --features 'dev046c-ci-control' --lib dap_session

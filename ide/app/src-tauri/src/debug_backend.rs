@@ -149,6 +149,8 @@ pub struct DebugActive {
 pub struct DebugStatus {
     ready: bool,
     project_debug_supported: bool,
+    operation_control_supported: bool,
+    operation_control_code: &'static str,
     code: String,
     current: Option<DebugActive>,
     last: Option<DebugWitness>,
@@ -251,6 +253,9 @@ impl NativeDebugRuntime {
             ready: available.is_ok() && quarantined.is_empty(),
             project_debug_supported: cfg!(feature="native-project-debug") &&
                 available.is_ok() && quarantined.is_empty(),
+            // Test-only D6C permission never becomes installed action authority.
+            operation_control_supported: false,
+            operation_control_code: "DEV046D_NATIVE_HUMAN_ACTION_APPROVAL_NOT_ACCEPTED",
             code: match available {
                 Ok(()) => "DEBUG_FIXTURE_BUNDLE_VERIFIED_OS_ADMISSION_PER_RUN".into(),
                 Err(code) => code,
@@ -259,7 +264,7 @@ impl NativeDebugRuntime {
             last,
             journal,
             quarantined,
-            description: "Only fixed LLDB-DAP self-test debuggee. Project debug launches remain disabled.",
+            description: "Fixed LLDB self-test and separately approved sealed project launch are feature-gated. Installed step/breakpoint control remains disabled.",
         })
     }
     /// A separately approved OS-only cleanup, never a debugger resume.

@@ -18,6 +18,17 @@ use std::{
 const MAX_LOG_BYTES: u64 = 32 * 1024;
 const MAX_EVENTS: u64 = 12;
 const MAX_TTL_MS: u64 = 30_000;
+const MAX_ACTIONS_PER_RESTART: usize = 4096;
+
+fn unsafe_link(meta: &fs::Metadata) -> bool {
+    if meta.file_type().is_symlink() { return true; }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes() & 0x400 != 0 { return true; }
+    }
+    false
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ApprovalDenial {
@@ -122,6 +133,8 @@ fn verify_events(raw: &[u8], action: &str, preview: &str)
     let mut prior = "0".repeat(64);
     let mut sequence = 0u64;
     let mut phase = "";
+    let mut original: Option<(String, String, String, String, u64)> = None;
+    let mut last_timestamp: Option<u64> = None;
     for line in raw.split(|b| *b == b'\n').filter(|line| !line.is_empty()) {
         let e: ActionEvent = serde_json::from_slice(line)
             .map_err(|_| ApprovalDenial::JournalCorrupt)?;
@@ -134,6 +147,37 @@ fn verify_events(raw: &[u8], action: &str, preview: &str)
             || e.owner_sequence == 0 {
             return Err(ApprovalDenial::JournalCorrupt);
         }
+        // Event-by-event hashing is insufficient if a later entry can
+        // silently change the original Job, plan, operation or OS owner.
+        let identity = (
+            e.operation_sha256.clone(), e.job_id.clone(),
+            e.plan_sha256.clone(), e.owner_event_sha256.clone(),
+            e.owner_sequence,
+        );
+        if let Some(origin) = &original {
+            if origin != &identity { return Err(ApprovalDenial::JournalCorrupt); }
+        } else {
+            original = Some(identity);
+        }
+        if last_timestamp.is_some_and(|prior| e.observed_unix_ms < prior) {
+            return Err(ApprovalDenial::JournalCorrupt);
+        }
+        last_timestamp = Some(e.observed_unix_ms);
+        let known_outcome = match e.phase.as_str() {
+            "Prepared" => e.outcome_code == "awaiting_fresh_native_operator",
+            "Approved" => matches!(e.outcome_code.as_str(),
+                "ci_only_not_installed_consent" | "native_human_confirmed"),
+            "Denied" => e.outcome_code == "native_operator_declined",
+            "Consumed" => e.outcome_code == "one_use_slot_consumed_before_dispatch",
+            "Revoked" => matches!(e.outcome_code.as_str(),
+                "wrong_owner_or_review" | "expired" | "stale_owner_or_preview"
+                | "expired_before_consumption" | "stop_or_operator_revoked"),
+            "ResultUncertain" =>
+                e.outcome_code == "requires_independent_result_reconciliation_no_replay",
+            "ResultVerified" => e.outcome_code.starts_with("ci_independent_os_step:"),
+            _ => false,
+        };
+        if !known_outcome { return Err(ApprovalDenial::JournalCorrupt); }
         if e.phase == "ResultVerified" {
             let Some(hash) = e.outcome_code.strip_prefix("ci_independent_os_step:")
             else { return Err(ApprovalDenial::JournalCorrupt); };
@@ -161,6 +205,73 @@ fn verify_events(raw: &[u8], action: &str, preview: &str)
     Ok((sequence, prior, phase.to_owned()))
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RestartActionRecord {
+    pub(crate) action_id_sha256: String,
+    pub(crate) job_id: String,
+    pub(crate) plan_sha256: String,
+    pub(crate) phase: String,
+    pub(crate) last_receipt_sha256: String,
+    pub(crate) requires_native_os_cleanup: bool,
+}
+
+/// DEV-04.6D read-only restart inventory. No claim can be recovered, issued
+/// or sent to DAP here. Every in-flight approval requires OS-only cleanup.
+pub(crate) fn inspect_action_receipts_after_restart(
+    trusted_root: &Path,
+) -> Result<Vec<RestartActionRecord>, ApprovalDenial> {
+    let root = fs::symlink_metadata(trusted_root)
+        .map_err(|_| ApprovalDenial::JournalUnavailable)?;
+    if !trusted_root.is_absolute() || !root.is_dir() || unsafe_link(&root) {
+        return Err(ApprovalDenial::JournalCorrupt);
+    }
+    let mut result = Vec::new();
+    let entries = fs::read_dir(trusted_root)
+        .map_err(|_| ApprovalDenial::JournalUnavailable)?;
+    for entry in entries {
+        let entry = entry.map_err(|_| ApprovalDenial::JournalUnavailable)?;
+        let name = entry.file_name();
+        let name = name.to_str().ok_or(ApprovalDenial::JournalCorrupt)?;
+        if !name.starts_with("lu-debug-action-") { continue; }
+        let action = name.strip_prefix("lu-debug-action-")
+            .and_then(|s| s.strip_suffix(".ndjson"))
+            .ok_or(ApprovalDenial::JournalCorrupt)?;
+        if !hex64(action) || result.len() >= MAX_ACTIONS_PER_RESTART {
+            return Err(ApprovalDenial::JournalCorrupt);
+        }
+        let meta = fs::symlink_metadata(entry.path())
+            .map_err(|_| ApprovalDenial::JournalUnavailable)?;
+        if !meta.is_file() || unsafe_link(&meta)
+            || meta.len() == 0 || meta.len() > MAX_LOG_BYTES {
+            return Err(ApprovalDenial::JournalCorrupt);
+        }
+        let mut bytes = Vec::new();
+        File::open(entry.path()).map_err(|_| ApprovalDenial::JournalUnavailable)?
+            .take(MAX_LOG_BYTES + 1).read_to_end(&mut bytes)
+            .map_err(|_| ApprovalDenial::JournalUnavailable)?;
+        let first_line = bytes.split(|b| *b == b'\n').next()
+            .ok_or(ApprovalDenial::JournalCorrupt)?;
+        let first: ActionEvent = serde_json::from_slice(first_line)
+            .map_err(|_| ApprovalDenial::JournalCorrupt)?;
+        let (_, last_hash, phase) = verify_events(
+            &bytes, action, &first.preview_sha256,
+        )?;
+        result.push(RestartActionRecord {
+            action_id_sha256: action.to_owned(),
+            job_id: first.job_id,
+            plan_sha256: first.plan_sha256,
+            requires_native_os_cleanup: matches!(
+                phase.as_str(), "Prepared" | "Approved" | "Consumed"
+            ),
+            phase,
+            last_receipt_sha256: last_hash,
+        });
+    }
+    result.sort_by(|a, b| a.action_id_sha256.cmp(&b.action_id_sha256));
+    Ok(result)
+}
+
 /// Audit identity only. Possession of this value cannot recreate a
 /// consumed in-memory grant or invoke the DAP gateway.
 #[derive(Debug, Clone)]
@@ -184,7 +295,7 @@ pub(crate) fn verify_action_receipt_after_restart(
     }
     let root = fs::symlink_metadata(trusted_root)
         .map_err(|_| ApprovalDenial::JournalUnavailable)?;
-    if !root.is_dir() || root.file_type().is_symlink() {
+    if !root.is_dir() || unsafe_link(&root) {
         return Err(ApprovalDenial::JournalCorrupt);
     }
     let path = trusted_root.join(format!(
@@ -192,7 +303,7 @@ pub(crate) fn verify_action_receipt_after_restart(
     ));
     let meta = fs::symlink_metadata(&path)
         .map_err(|_| ApprovalDenial::JournalUnavailable)?;
-    if !meta.is_file() || meta.file_type().is_symlink()
+    if !meta.is_file() || unsafe_link(&meta)
         || meta.len() > MAX_LOG_BYTES || meta.len() == 0 {
         return Err(ApprovalDenial::JournalCorrupt);
     }
@@ -493,7 +604,7 @@ impl DebugActionApproval {
     ) -> Result<String, ApprovalDenial> {
         let meta = fs::symlink_metadata(&self.path)
             .map_err(|_| ApprovalDenial::JournalUnavailable)?;
-        if !meta.is_file() || meta.file_type().is_symlink()
+        if !meta.is_file() || unsafe_link(&meta)
             || meta.len() > MAX_LOG_BYTES {
             return Err(ApprovalDenial::JournalCorrupt);
         }
@@ -715,6 +826,82 @@ mod tests {
         assert_eq!(a.consume_for_receipt_test(&p, 7, 503),
             Err(ApprovalDenial::Cancelled));
         clean(a, dir);
+    }
+
+    #[test]
+    fn d6d_restart_quarantines_prepared_and_approved_actions() {
+        let (a, dir) = book();
+        let first = a.action_id_sha256.clone();
+        let mut other = preview();
+        other.preview_sha256 = "9".repeat(64);
+        let mut b = DebugActionApproval::prepare_native(
+            &dir, binding(), other, 500,
+        ).unwrap();
+        let challenge = b.challenge_sha256().to_owned();
+        b.decide(NativeConsentMarker::for_unit_test(
+            &b.preview.preview_sha256, &challenge, 7, 501, true,
+        ), 7, 501).unwrap();
+        drop(a);
+        drop(b);
+        let inventory = inspect_action_receipts_after_restart(&dir).unwrap();
+        assert_eq!(inventory.len(), 2);
+        assert!(inventory.iter().any(|x| x.action_id_sha256 == first
+            && x.phase == "Prepared" && x.requires_native_os_cleanup));
+        assert!(inventory.iter().any(|x| x.phase == "Approved"
+            && x.requires_native_os_cleanup));
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn d6d_uncertain_terminal_is_audit_only() {
+        let (mut a, dir) = book();
+        let p = a.preview.preview_sha256.clone();
+        let c = a.challenge_sha256().to_owned();
+        a.decide(NativeConsentMarker::for_unit_test(&p, &c, 7, 501, true),
+            7, 501).unwrap();
+        a.consume_for_receipt_test(&p, 7, 502).unwrap();
+        a.record_uncertain_result(503).unwrap();
+        drop(a);
+        let inventory = inspect_action_receipts_after_restart(&dir).unwrap();
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(inventory[0].phase, "ResultUncertain");
+        assert!(!inventory[0].requires_native_os_cleanup);
+        assert!(hex64(&inventory[0].last_receipt_sha256));
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn d6d_rehashed_job_substitution_still_fails() {
+        let (mut a, dir) = book();
+        let p = a.preview.preview_sha256.clone();
+        let c = a.challenge_sha256().to_owned();
+        a.decide(NativeConsentMarker::for_unit_test(&p, &c, 7, 501, true),
+            7, 501).unwrap();
+        let path = a.journal_path_for_audit().to_path_buf();
+        drop(a);
+        let data = fs::read_to_string(&path).unwrap();
+        let mut events: Vec<ActionEvent> = data.lines()
+            .map(|line| serde_json::from_str(line).unwrap()).collect();
+        events[1].job_id = format!("job-{}", "0".repeat(32));
+        events[1].entry_hash = event_hash(&events[1]).unwrap();
+        let forged = events.iter()
+            .map(|e| format!("{}\n", serde_json::to_string(e).unwrap()))
+            .collect::<String>();
+        fs::write(&path, forged).unwrap();
+        assert!(matches!(inspect_action_receipts_after_restart(&dir),
+            Err(ApprovalDenial::JournalCorrupt)));
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn d6d_symlinked_action_journal_denied() {
+        use std::os::unix::fs::symlink;
+        let (a, dir) = book();
+        let source = a.journal_path_for_audit().to_path_buf();
+        drop(a);
+        let fake = dir.join(format!("lu-debug-action-{}.ndjson", "9".repeat(64)));
+        symlink(&source, &fake).unwrap();
+        assert!(matches!(inspect_action_receipts_after_restart(&dir),
+            Err(ApprovalDenial::JournalCorrupt)));
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn invalid_stop_binding_and_replayed_human_decision_denied() {

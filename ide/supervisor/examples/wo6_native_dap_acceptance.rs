@@ -641,8 +641,8 @@ mod protected {
                 println!("DEV046B_NATIVE_OWNER_ACTION_ONE_USE=PASS;human_consent=CI_SIMULATED_ONLY;consumed_before_dispatch=true;no_dap_control=true;result=UNCERTAIN");
                 println!("DEV046A_NATIVE_REVIEW_BOUND_TO_REAL_OWNER=PASS;breakpoint=preview_only;step=preview_only;variables=denied;control_authorized=false");
                 bound_line_receipts = Some((
-                    owner.debug_running_receipt_sha256,
-                    owner.build_terminal_receipt_sha256,
+                    owner.debug_running_receipt_sha256.clone(),
+                    owner.build_terminal_receipt_sha256.clone(),
                 ));
                 owner_receipt = Some((
                     owner.owner_sequence, owner.native_owner_receipt_sha256,
@@ -808,6 +808,15 @@ mod protected {
                 })
         }) {
             return Err("DENIED: native SCM debug receipts failed journal restart".into());
+        }
+        #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+        {
+            let orphan_jobs = replay.native_debug_action_cleanup_jobs_after_restart()
+                .map_err(|_| "DENIED: D6D restart action inventory foreign or corrupt")?;
+            if !orphan_jobs.is_empty() {
+                return Err("DENIED: D6D orphan operator approval requires separate OS-only cleanup".into());
+            }
+            println!("DEV046D_ACTION_RESTART_INVENTORY=PASS;orphan_grants=0;new_authority=false");
         }
         #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
         if let Some((sequence, owner_sha)) = owner_receipt {
