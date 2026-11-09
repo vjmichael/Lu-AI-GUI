@@ -18,7 +18,7 @@ CI-simulated operator confirmation, one-use consumption, repeat denial
 and audit after restart; `ci_only_not_installed_consent` is preserved.
 **Actual OS human-approval UI, actual breakpoint/step/variable DAP
 commands, independently verified operation results and signed installed
-acceptance remain NOT IMPLEMENTED / OPEN.** Seven added adversarial
+acceptance remain NOT IMPLEMENTED / OPEN.** Nine added adversarial
 source tests, native compiler and OS tests not yet executed. By owner
 policy, no tiny CI or draft PR was created; retain this work for one
 consolidated native acceptance batch after the cohesive D6 group.

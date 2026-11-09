@@ -5,7 +5,7 @@
   separate Approved/Denied/Consumed/Revoked/ResultUncertain hash-chain
   events, fsync-before-consume and read-only audit after restart.
   No real installed human approval, DAP control or claimed operation
-  success. Seven hostile tests added; native acceptance OPEN.
+  success. Nine hostile tests added; native acceptance OPEN.
   Grouped CI policy retained, no new workflow or draft PR.
 
 

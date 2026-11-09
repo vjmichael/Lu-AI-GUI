@@ -30,7 +30,7 @@ The real Windows protected D5 acceptance fixture calls the new operation admissi
 
 ## Adversarial source tests
 
-Seven self-contained Rust tests cover distinct operation/nonce receipts, no consent, wrong challenge, wrong owner sequence, wrong source/review binding, expiry, explicit denial, duplicate decision, duplicate claim, tampering, reopen-only audit, and the fact that an approval receipt cannot provide execution authority.
+Nine self-contained Rust tests cover distinct operation/nonce receipts, no consent, wrong challenge, wrong owner sequence, wrong source/review binding, expiry, explicit denial, duplicate decision, duplicate claim, cross-operation challenge substitution, stale-event post-approval consumption, tampering, reopen-only audit, and the fact that an approval receipt cannot provide execution authority.
 
 All source tests remain UNVERIFIED against a native Rust compiler at this head. No Windows or Linux run was triggered in this subgroup.
 
