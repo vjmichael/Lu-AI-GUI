@@ -43,3 +43,11 @@ Python passed 31/31, standalone Rust policy passed 7/7, and the desktop bundle
 and its 59 checks passed. The Linux worker helper also required a variadic C
 `open` declaration and a unit-valued `pre_exec` registration block. Desktop
 native recovery remains open pending system dependencies and the grouped run.
+
+The full Linux Core library suite also exposed invalid observation event
+labels in the plan ledger. The writer now uses the event names allowed by
+the existing SQLite schema, preserving compatibility with existing profiles.
+The scheduler and broker tests assert the denial actually reached by their
+fixtures. The media test restores the approved bytes before testing the
+unsupported container path, so it exercises format detection separately
+from the changed-source hash check.

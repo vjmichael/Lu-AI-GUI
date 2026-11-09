@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "fb1d892e39cfb93ca3aa462faaca9b220d0a9f50",
+  "sourceCommitBeforeLock": "90d34350a90b60ad06db04ca8351c5b7cd0fc907",
   "trackedFileCount": 820,
   "files": [
     {
@@ -697,7 +697,7 @@
     },
     {
       "path": "docs/LU_MEMORY_LOOP03E_CRASH_CONSISTENT_PUBLICATION_20261109.md",
-      "blob": "cb24637838b912de3c3b2e9e0d3f90e6e71470a6"
+      "blob": "9bb2745da388bd294bea23f647c5d25b1fa5102f"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -1913,7 +1913,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_host_scheduler.rs",
-      "blob": "98d0fcd9b4e4626f8b5e50b1ac30fa6caf8cdadf"
+      "blob": "83a0c878451bb9272e8d387f45caad96b5afc60c"
     },
     {
       "path": "src-tauri/lu-core/src/agent_lineage_recovery.rs",
@@ -1925,7 +1925,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_ledger.rs",
-      "blob": "b7a26fd59e455e0446bb897f05f216695c94e70c"
+      "blob": "f58722edfce7bad23ae0692f46c143b6426447b1"
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_revisions.rs",
@@ -1937,7 +1937,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs",
-      "blob": "73a1317b1756265a8c8844686aa230f0656c3698"
+      "blob": "1d77918bbd3ad27ed95f00696e4fbd6f065613b0"
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
@@ -2661,7 +2661,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/reviewed_outcome_oracle.rs",
-      "blob": "d362e73e486790d52553d54820688322d281c8fd"
+      "blob": "b7dac21a9934e3f4510c392799a2163e4557831d"
     },
     {
       "path": "src-tauri/lu-core/src/reviewed_source_guard.rs",

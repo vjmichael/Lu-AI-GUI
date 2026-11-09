@@ -370,7 +370,7 @@
                 conversation_id:chat.clone(),
                 user_turn_id:ident("g-",99),task_id:ident("g-",99)
             },ReviewedBrokerOperation::GitHead
-        ),Err(BridgeError::WrongHumanTurn));
+        ),Err(BridgeError::NotHostOwned));
         // A fresh scheduler object has the same SQLite row but no live
         // original-owner fence. It cannot bind a broker after restart.
         let reopened=AgentHostScheduler::open(&file).unwrap();
