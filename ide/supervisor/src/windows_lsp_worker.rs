@@ -1770,8 +1770,12 @@ impl WindowsDapSession {
     /// Only this existing native worker can see the authenticated sideband.
     #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
     pub fn verify_bounded_debug_reviews_for_ci(
-        &mut self, owner: &WindowsOwnerEventAccepted, snapshot_sha256: &str,
-    ) -> Result<(), SupervisorError> {
+        &mut self, supervisor: &Supervisor, owner: &WindowsOwnerEventAccepted,
+        snapshot_sha256: &str,
+    ) -> Result<(String, String, String, String), SupervisorError> {
+        use crate::debug_action_receipts::{
+            DebugActionApproval, NativeConsentMarker, ApprovalDenial,
+        };
         use crate::debug_command_review::{
             review_from_verified_native_owner_for_ci, DebugReviewDenial,
             DebugReviewIntent, StepKind,
@@ -1806,6 +1810,48 @@ impl WindowsDapSession {
         if step.executable_authority || step.preview_sha256 == breakpoint.preview_sha256 {
             return Err(SupervisorError::NoContainment);
         }
+        // Only the disposable native CI harness synthesizes an operator
+        // gesture here. The persisted receipt explicitly says CI_ONLY;
+        // it is NOT a claim that installed native human consent exists.
+        let binding = review.pending_native_binding(
+            &step.preview_sha256, owner.owner_sequence,
+        ).map_err(|_| SupervisorError::NoContainment)?;
+        let root = supervisor.native_owner_receipt_root()?;
+        let now = crate::now_ms()?;
+        let mut action = DebugActionApproval::prepare_native(
+            &root, binding, step.clone(), now,
+        ).map_err(|_| SupervisorError::JournalUnavailable)?;
+        let native = NativeConsentMarker::for_native_ci_fixture(
+            &step.preview_sha256, action.challenge_sha256(),
+            owner.owner_sequence, now, true,
+        );
+        action.decide(native, owner.owner_sequence, now)
+            .map_err(|_| SupervisorError::InvalidApproval)?;
+        let current = self.gateway.verify_lldb_kernel_event_owner(
+            owner.debuggee_pid, owner.debuggee_thread_id, owner.stopped_rip,
+        )?;
+        if current.seq != owner.owner_sequence {
+            return Err(SupervisorError::NoContainment);
+        }
+        let consumed = action.consume_for_receipt_test(
+            &step.preview_sha256, current.seq, now,
+        ).map_err(|_| SupervisorError::GrantConsumed)?;
+        if consumed.execution_authorized || !consumed.ci_fixture_only
+            || consumed.owner_sequence != owner.owner_sequence
+            || consumed.consumed_receipt_sha256 == consumed.approved_receipt_sha256
+            || action.consume_for_receipt_test(
+                &step.preview_sha256, current.seq, now,
+            ) != Err(ApprovalDenial::GrantConsumed)
+        {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        // Until D6C supplies an independently verified *actual* operation
+        // result, the committed outcome MUST remain uncertain. Never
+        // invent a debugger command, DAP reply or success witness.
+        action.record_result(false, now)
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let audit = action.audit_reference("ResultUncertain")
+            .map_err(|_| SupervisorError::JournalCorrupt)?;
         review.decline(&step.preview_sha256)
             .map_err(|_| SupervisorError::NoContainment)?;
         if review.preview(DebugReviewIntent::InspectVariables {
@@ -1822,7 +1868,10 @@ impl WindowsDapSession {
             || review.has_executable_authority() {
             return Err(SupervisorError::NoContainment);
         }
-        Ok(())
+        Ok((
+            audit.action_id_sha256, audit.preview_sha256,
+            audit.last_receipt_sha256, audit.final_phase,
+        ))
     }
     #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
     pub fn crash_real_lldb_after_owner_receipt_for_ci(
