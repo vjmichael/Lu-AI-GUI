@@ -8,12 +8,22 @@ const MAX_SOURCE_PATH: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DebugReviewDenial {
-    BadStop, BadOperation, WrongSource, WrongThread, UnverifiedFrame,
-    ReviewAlreadyPending, StaleOrRevoked, TooManyReviews,
+    BadStop,
+    BadOperation,
+    WrongSource,
+    WrongThread,
+    UnverifiedFrame,
+    ReviewAlreadyPending,
+    StaleOrRevoked,
+    TooManyReviews,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StepKind { Over, Into, Out }
+pub enum StepKind {
+    Over,
+    Into,
+    Out,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DebugReviewIntent {
@@ -45,23 +55,37 @@ fn is_sha(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit())
 }
 fn is_source(path: &str) -> bool {
-    if path.is_empty() || path.len() > MAX_SOURCE_PATH
-        || path.starts_with('/') || path.starts_with('\\')
-        || path.contains(':') || path.contains('\\')
-        || path.chars().any(char::is_control) { return false; }
+    if path.is_empty()
+        || path.len() > MAX_SOURCE_PATH
+        || path.starts_with('/')
+        || path.starts_with('\\')
+        || path.contains(':')
+        || path.contains('\\')
+        || path.chars().any(char::is_control)
+    {
+        return false;
+    }
     let mut count = 0;
     for p in path.split('/') {
-        if p.is_empty() || p == "." || p == ".." || p.starts_with('.')
-            || p.ends_with(' ') || !p.bytes().all(|c|
-                c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.')
-            ) { return false; }
+        if p.is_empty()
+            || p == "."
+            || p == ".."
+            || p.starts_with('.')
+            || p.ends_with(' ')
+            || !p
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
+        {
+            return false;
+        }
         count += 1;
     }
     (2..=12).contains(&count)
 }
 impl NativeStop {
     fn validate(&self) -> Result<(), DebugReviewDenial> {
-        if !self.job_id.starts_with("job-") || self.job_id.len() != 36
+        if !self.job_id.starts_with("job-")
+            || self.job_id.len() != 36
             || !self.job_id[4..].bytes().all(|b| b.is_ascii_hexdigit())
             || !is_sha(&self.debug_plan_sha)
             || !is_sha(&self.build_completed_sha)
@@ -69,10 +93,16 @@ impl NativeStop {
             || !is_sha(&self.owner_event_sha)
             || !is_sha(&self.source_snapshot_sha)
             || !is_source(&self.source)
-            || self.line == 0 || self.line > 1_000_000
-            || self.process_id == 0 || self.thread_id == 0
-            || self.rip == 0 || self.event_sequence == 0
-            || self.event_sequence > 4096 { return Err(DebugReviewDenial::BadStop); }
+            || self.line == 0
+            || self.line > 1_000_000
+            || self.process_id == 0
+            || self.thread_id == 0
+            || self.rip == 0
+            || self.event_sequence == 0
+            || self.event_sequence > 4096
+        {
+            return Err(DebugReviewDenial::BadStop);
+        }
         Ok(())
     }
 }
@@ -88,7 +118,10 @@ pub(crate) fn review_from_verified_native_owner_for_ci(
         || !witness.protected_pe_pdb_verified
         || !witness.durable_receipt_verified
         || witness.debugger_commands_authorized
-        || witness.installed_app_accepted { return Err(DebugReviewDenial::BadStop); }
+        || witness.installed_app_accepted
+    {
+        return Err(DebugReviewDenial::BadStop);
+    }
     DebugReviewSession::from_stop(NativeStop {
         job_id: witness.debugger_job_id.clone(),
         debug_plan_sha: witness.debugger_plan_sha256.clone(),
@@ -148,7 +181,12 @@ pub struct DebugReviewSession {
 impl DebugReviewSession {
     fn from_stop(stop: NativeStop) -> Result<Self, DebugReviewDenial> {
         stop.validate()?;
-        Ok(Self { stop, live: true, reviewed: 0, pending: None })
+        Ok(Self {
+            stop,
+            live: true,
+            reviewed: 0,
+            pending: None,
+        })
     }
     /// Called on continued event, cancellation, crash, source mutation, Job
     /// custody loss or restart. A disk receipt CANNOT reanimate this state.
@@ -157,17 +195,25 @@ impl DebugReviewSession {
         self.pending = None;
     }
     pub fn preview(
-        &mut self, intent: DebugReviewIntent, current_owner_sequence: u64,
+        &mut self,
+        intent: DebugReviewIntent,
+        current_owner_sequence: u64,
     ) -> Result<DebugReviewPreview, DebugReviewDenial> {
         if !self.live || current_owner_sequence != self.stop.event_sequence {
             self.invalidate();
             return Err(DebugReviewDenial::StaleOrRevoked);
         }
-        if self.pending.is_some() { return Err(DebugReviewDenial::ReviewAlreadyPending); }
-        if self.reviewed >= MAX_REVIEWS_PER_STOP { return Err(DebugReviewDenial::TooManyReviews); }
+        if self.pending.is_some() {
+            return Err(DebugReviewDenial::ReviewAlreadyPending);
+        }
+        if self.reviewed >= MAX_REVIEWS_PER_STOP {
+            return Err(DebugReviewDenial::TooManyReviews);
+        }
         let operation = match &intent {
             DebugReviewIntent::Breakpoint { source, line } => {
-                if !is_source(source) { return Err(DebugReviewDenial::BadOperation); }
+                if !is_source(source) {
+                    return Err(DebugReviewDenial::BadOperation);
+                }
                 if source != &self.stop.source || *line != self.stop.line {
                     return Err(DebugReviewDenial::WrongSource);
                 }
@@ -178,7 +224,8 @@ impl DebugReviewSession {
                     return Err(DebugReviewDenial::WrongThread);
                 }
                 let action = match kind {
-                    StepKind::Over => "over", StepKind::Into => "into",
+                    StepKind::Over => "over",
+                    StepKind::Into => "into",
                     StepKind::Out => "out",
                 };
                 format!("step:{action}:{thread_id}")
@@ -195,12 +242,21 @@ impl DebugReviewSession {
         self.reviewed += 1;
         let body = format!(
             "lu-debug-review-v1\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
-            self.stop.job_id, self.stop.debug_plan_sha,
-            self.stop.build_completed_sha, self.stop.debug_running_sha,
-            self.stop.owner_event_sha, self.stop.source_snapshot_sha,
-            self.stop.source, self.stop.line, self.stop.process_id,
-            self.stop.thread_id, self.stop.rip, self.stop.event_sequence,
-            self.reviewed, current_owner_sequence, operation,
+            self.stop.job_id,
+            self.stop.debug_plan_sha,
+            self.stop.build_completed_sha,
+            self.stop.debug_running_sha,
+            self.stop.owner_event_sha,
+            self.stop.source_snapshot_sha,
+            self.stop.source,
+            self.stop.line,
+            self.stop.process_id,
+            self.stop.thread_id,
+            self.stop.rip,
+            self.stop.event_sequence,
+            self.reviewed,
+            current_owner_sequence,
+            operation,
         );
         let preview = DebugReviewPreview {
             preview_sha256: format!("{:x}", Sha256::digest(body.as_bytes())),
@@ -216,7 +272,12 @@ impl DebugReviewSession {
         Ok(preview)
     }
     pub fn decline(&mut self, sha: &str) -> Result<(), DebugReviewDenial> {
-        if !self.live || !self.pending.as_ref().is_some_and(|p| p.preview_sha256 == sha) {
+        if !self.live
+            || !self
+                .pending
+                .as_ref()
+                .is_some_and(|p| p.preview_sha256 == sha)
+        {
             return Err(DebugReviewDenial::BadOperation);
         }
         self.pending = None;
@@ -225,12 +286,18 @@ impl DebugReviewSession {
     /// Bind the exactly pending review to the native owner and journal.
     /// There is deliberately no source-level executor in D6B.
     pub(crate) fn pending_native_binding(
-        &self, hash: &str, current_sequence: u64,
+        &self,
+        hash: &str,
+        current_sequence: u64,
     ) -> Result<NativeReviewBinding, DebugReviewDenial> {
         if !self.live || current_sequence != self.stop.event_sequence {
             return Err(DebugReviewDenial::StaleOrRevoked);
         }
-        if !self.pending.as_ref().is_some_and(|x| x.preview_sha256 == hash) {
+        if !self
+            .pending
+            .as_ref()
+            .is_some_and(|x| x.preview_sha256 == hash)
+        {
             return Err(DebugReviewDenial::BadOperation);
         }
         Ok(NativeReviewBinding {
@@ -249,7 +316,9 @@ impl DebugReviewSession {
         })
     }
     /// There is deliberately no approve/dispatch method in D6A.
-    pub fn has_executable_authority(&self) -> bool { false }
+    pub fn has_executable_authority(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -263,80 +332,170 @@ mod tests {
             debug_running_sha: "d".repeat(64),
             owner_event_sha: "e".repeat(64),
             source_snapshot_sha: "f".repeat(64),
-            source: "src/main.rs".into(), line: 7,
-            process_id: 22, thread_id: 33, rip: 0x140001000,
-            event_sequence: 5, verified_frame_id: None,
+            source: "src/main.rs".into(),
+            line: 7,
+            process_id: 22,
+            thread_id: 33,
+            rip: 0x140001000,
+            event_sequence: 5,
+            verified_frame_id: None,
         }
     }
     #[test]
     fn precise_breakpoint_review_requires_new_step_review_and_is_not_a_command() {
         let mut s = DebugReviewSession::from_stop(sample()).unwrap();
-        let first = s.preview(DebugReviewIntent::Breakpoint {
-            source: "src/main.rs".into(), line: 7,
-        }, 5).unwrap();
+        let first = s
+            .preview(
+                DebugReviewIntent::Breakpoint {
+                    source: "src/main.rs".into(),
+                    line: 7,
+                },
+                5,
+            )
+            .unwrap();
         assert!(is_sha(&first.preview_sha256));
         assert!(!first.executable_authority);
         assert!(!s.has_executable_authority());
-        assert_eq!(s.preview(DebugReviewIntent::Step {
-            kind: StepKind::Into, thread_id: 33,
-        }, 5), Err(DebugReviewDenial::ReviewAlreadyPending));
+        assert_eq!(
+            s.preview(
+                DebugReviewIntent::Step {
+                    kind: StepKind::Into,
+                    thread_id: 33,
+                },
+                5
+            ),
+            Err(DebugReviewDenial::ReviewAlreadyPending)
+        );
         s.decline(&first.preview_sha256).unwrap();
-        let second = s.preview(DebugReviewIntent::Step {
-            kind: StepKind::Over, thread_id: 33,
-        }, 5).unwrap();
+        let second = s
+            .preview(
+                DebugReviewIntent::Step {
+                    kind: StepKind::Over,
+                    thread_id: 33,
+                },
+                5,
+            )
+            .unwrap();
         assert_ne!(first.preview_sha256, second.preview_sha256);
         s.invalidate();
-        assert_eq!(s.preview(DebugReviewIntent::Step {
-            kind: StepKind::Out, thread_id: 33,
-        }, 5), Err(DebugReviewDenial::StaleOrRevoked));
+        assert_eq!(
+            s.preview(
+                DebugReviewIntent::Step {
+                    kind: StepKind::Out,
+                    thread_id: 33,
+                },
+                5
+            ),
+            Err(DebugReviewDenial::StaleOrRevoked)
+        );
     }
     #[test]
     fn rejects_wrong_files_lines_threads_and_unverified_variables() {
         let mut s = DebugReviewSession::from_stop(sample()).unwrap();
-        for path in ["/src/main.rs", "../src/main.rs", "src\\main.rs",
-                     "src/./main.rs", "C:/src/main.rs", "src//main.rs",
-                     "src/main.rs\n"] { assert!(!is_source(path)); }
-        assert_eq!(s.preview(DebugReviewIntent::Breakpoint {
-            source: "src/other.rs".into(), line: 7,
-        }, 5), Err(DebugReviewDenial::WrongSource));
-        assert_eq!(s.preview(DebugReviewIntent::Breakpoint {
-            source: "src/main.rs".into(), line: 8,
-        }, 5), Err(DebugReviewDenial::WrongSource));
-        assert_eq!(s.preview(DebugReviewIntent::Step {
-            kind: StepKind::Into, thread_id: 11,
-        }, 5), Err(DebugReviewDenial::WrongThread));
-        assert_eq!(s.preview(DebugReviewIntent::InspectVariables {
-            frame_id: 1,
-        }, 5), Err(DebugReviewDenial::UnverifiedFrame));
+        for path in [
+            "/src/main.rs",
+            "../src/main.rs",
+            "src\\main.rs",
+            "src/./main.rs",
+            "C:/src/main.rs",
+            "src//main.rs",
+            "src/main.rs\n",
+        ] {
+            assert!(!is_source(path));
+        }
+        assert_eq!(
+            s.preview(
+                DebugReviewIntent::Breakpoint {
+                    source: "src/other.rs".into(),
+                    line: 7,
+                },
+                5
+            ),
+            Err(DebugReviewDenial::WrongSource)
+        );
+        assert_eq!(
+            s.preview(
+                DebugReviewIntent::Breakpoint {
+                    source: "src/main.rs".into(),
+                    line: 8,
+                },
+                5
+            ),
+            Err(DebugReviewDenial::WrongSource)
+        );
+        assert_eq!(
+            s.preview(
+                DebugReviewIntent::Step {
+                    kind: StepKind::Into,
+                    thread_id: 11,
+                },
+                5
+            ),
+            Err(DebugReviewDenial::WrongThread)
+        );
+        assert_eq!(
+            s.preview(DebugReviewIntent::InspectVariables { frame_id: 1 }, 5),
+            Err(DebugReviewDenial::UnverifiedFrame)
+        );
     }
     #[test]
     fn changed_event_revokes_even_previous_review() {
         let mut s = DebugReviewSession::from_stop(sample()).unwrap();
-        assert_eq!(s.preview(DebugReviewIntent::Step {
-            kind: StepKind::Over, thread_id: 33,
-        }, 6), Err(DebugReviewDenial::StaleOrRevoked));
-        assert_eq!(s.preview(DebugReviewIntent::Step {
-            kind: StepKind::Over, thread_id: 33,
-        }, 5), Err(DebugReviewDenial::StaleOrRevoked));
+        assert_eq!(
+            s.preview(
+                DebugReviewIntent::Step {
+                    kind: StepKind::Over,
+                    thread_id: 33,
+                },
+                6
+            ),
+            Err(DebugReviewDenial::StaleOrRevoked)
+        );
+        assert_eq!(
+            s.preview(
+                DebugReviewIntent::Step {
+                    kind: StepKind::Over,
+                    thread_id: 33,
+                },
+                5
+            ),
+            Err(DebugReviewDenial::StaleOrRevoked)
+        );
     }
     #[test]
     fn malformed_owner_receipt_refused_at_construction() {
-        let mut bad = sample(); bad.owner_event_sha = "0".repeat(63);
-        assert!(matches!(DebugReviewSession::from_stop(bad),
-            Err(DebugReviewDenial::BadStop)));
+        let mut bad = sample();
+        bad.owner_event_sha = "0".repeat(63);
+        assert!(matches!(
+            DebugReviewSession::from_stop(bad),
+            Err(DebugReviewDenial::BadStop)
+        ));
     }
     #[test]
     fn eight_reviews_max_and_no_replay() {
         let mut s = DebugReviewSession::from_stop(sample()).unwrap();
         for _ in 0..MAX_REVIEWS_PER_STOP {
-            let p = s.preview(DebugReviewIntent::Step {
-                kind: StepKind::Over, thread_id: 33,
-            }, 5).unwrap();
+            let p = s
+                .preview(
+                    DebugReviewIntent::Step {
+                        kind: StepKind::Over,
+                        thread_id: 33,
+                    },
+                    5,
+                )
+                .unwrap();
             s.decline(&p.preview_sha256).unwrap();
         }
-        assert_eq!(s.preview(DebugReviewIntent::Step {
-            kind: StepKind::Over, thread_id: 33,
-        }, 5), Err(DebugReviewDenial::TooManyReviews));
+        assert_eq!(
+            s.preview(
+                DebugReviewIntent::Step {
+                    kind: StepKind::Over,
+                    thread_id: 33,
+                },
+                5
+            ),
+            Err(DebugReviewDenial::TooManyReviews)
+        );
         assert!(!s.has_executable_authority());
     }
 }

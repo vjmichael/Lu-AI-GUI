@@ -288,3 +288,20 @@ positive offline wheel install, wheel-origin attestations, physical
 human approval/refusal, Windows ACL worker, installed app and signed
 release are separately OPEN. See
 `ide/docs/IDE_DEV055_CONSOLIDATED_NATIVE_ACCEPTANCE_20261109.md`.
+
+
+### 2026-11-09 — IDE-05.5 genuine native CI failures inspected
+
+Read real GitHub Actions logs for exact IDE-05 group run **42704670757**
+on `0819e880b` Windows and Linux: both compiled runner tools and
+executed Node regression suite (Windows: 26 tests, 24 passed, two stale
+assertion patterns failed), blocking dependent Linux protected uv OS
+job. Also found upload-artifact ignored hidden receipt directory;
+fixed via `include-hidden-files: true`. Previous `6379bc1`
+supervisor Windows/Linux unit tests genuinely passed, but
+`cargo fmt --check` failed on 512 rustfmt hunks across 22 files;
+applied context-matched formatter changes, including inherited debugger
+formatting debt with no intended logic changes. New grouped exact-head
+native compile/runner results still required; no physical human,
+Windows package ACL, positive offline wheel install, wheel-source
+provenance or installed-app acceptance is claimed.

@@ -51,7 +51,7 @@ test('wheel origin and promotion are never fabricated from lockfile or installed
   assert.match(audit, /"https:\/\/"/);
   assert.match(audit, /"wheels"/);
   assert.match(audit, /strip_prefix\("sha256:"\)/);
-  assert.match(audit, /"direct_url\.json"/);
+  assert.match(audit, /direct_url\.json/);
   assert.match(audit, /wheel_archives_verified_against_lock:false/);
   assert.match(audit, /source_provenance_verified:false/);
   assert.match(audit, /approved_for_project_promotion:false/);

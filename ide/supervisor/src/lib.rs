@@ -11,26 +11,27 @@
 // The portable supervisor state machine itself performs no unsafe operations.
 #[cfg(feature = "dap-transport")]
 mod dap_transport;
-#[cfg(all(target_os = "linux", feature = "dap-transport"))]
-pub mod native_kernel_pc;
-#[cfg(all(windows, feature = "dap-transport"))]
-pub mod windows_kernel_pc;
-#[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
-mod windows_event_owner;
-#[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
-mod windows_stopped_line_oracle;
-pub mod debug_command_review;
-#[cfg(any(test, all(windows, debug_assertions, feature = "dev045d5-ci-event-owner")))]
+#[cfg(any(
+    test,
+    all(windows, debug_assertions, feature = "dev045d5-ci-event-owner")
+))]
 mod debug_action_receipts;
+pub mod debug_binary_witness;
+pub mod debug_command_review;
 #[cfg(any(test, all(windows, debug_assertions, feature = "dev046c-ci-control")))]
 mod debug_control_dispatch;
-pub mod debug_binary_witness;
 pub mod debug_symbol_verification;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
 pub mod live_output;
 #[cfg(feature = "lsp-transport")]
 mod lsp_transport;
+#[cfg(all(target_os = "linux", feature = "dap-transport"))]
+pub mod native_kernel_pc;
+#[cfg(feature = "package-uv-worker")]
+pub mod package_lifecycle;
+#[cfg(feature = "package-uv-worker")]
+pub mod package_output_evidence;
 pub mod project_debug_target;
 pub mod runtime_bundles;
 pub mod snapshot;
@@ -38,14 +39,16 @@ pub mod snapshot;
 pub mod windows_broker;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_cap_tree;
+#[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+mod windows_event_owner;
+#[cfg(all(windows, feature = "dap-transport"))]
+pub mod windows_kernel_pc;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_null_device;
+#[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
+mod windows_stopped_line_oracle;
 pub mod wo6_build_test_evidence;
 pub mod wo6_output_evidence;
-#[cfg(feature = "package-uv-worker")]
-pub mod package_output_evidence;
-#[cfg(feature = "package-uv-worker")]
-pub mod package_lifecycle;
 // The SCM-only recovery service must never compile into a plain D7C
 // windows-worker build: its per-job NUL lease requires a separately
 // installed and authenticated protected service identity.
@@ -146,13 +149,12 @@ fn validate_plan(value: &JobPlan) -> bool {
         && (matches!(
             value.recipe_id.as_str(),
             "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
-        ) || (cfg!(feature = "package-uv-worker")
-            && value.recipe_id == "uv_sync_offline")
+        ) || (cfg!(feature = "package-uv-worker") && value.recipe_id == "uv_sync_offline")
             || (cfg!(feature = "multilang-worker")
-            && matches!(
-                value.recipe_id.as_str(),
-                "python_pytest" | "js_tests" | "cpp_cmake_build"
-            ))
+                && matches!(
+                    value.recipe_id.as_str(),
+                    "python_pytest" | "js_tests" | "cpp_cmake_build"
+                ))
             || (cfg!(feature = "lsp-transport")
                 && matches!(
                     value.recipe_id.as_str(),
@@ -208,10 +210,12 @@ fn validate_plan(value: &JobPlan) -> bool {
                 && value.log_limit_bytes <= 64 * 1024
         } else if value.recipe_id == "uv_sync_offline" {
             cfg!(feature = "package-uv-worker")
-                && value.effect_class
+                && value
+                    .effect_class
                     .strip_prefix("package_uv_sync_offline:")
-                    .is_some_and(|hash| hex_sha(hash, 64)
-                        && hash.bytes().all(|b| !b.is_ascii_uppercase()))
+                    .is_some_and(|hash| {
+                        hex_sha(hash, 64) && hash.bytes().all(|b| !b.is_ascii_uppercase())
+                    })
                 && value.runtime_limit_ms <= 3 * 60_000
                 && value.process_limit <= 8
                 && value.log_limit_bytes <= 128 * 1024
@@ -456,11 +460,17 @@ impl Supervisor {
     #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
     pub(crate) fn native_owner_receipt_root(&self) -> Result<PathBuf, SupervisorError> {
         use std::os::windows::fs::MetadataExt;
-        let root = self.journal_path.parent().ok_or(SupervisorError::JournalUnavailable)?;
-        let metadata = fs::symlink_metadata(root).map_err(|_| SupervisorError::JournalUnavailable)?;
-        if !root.is_absolute() || !metadata.is_dir()
+        let root = self
+            .journal_path
+            .parent()
+            .ok_or(SupervisorError::JournalUnavailable)?;
+        let metadata =
+            fs::symlink_metadata(root).map_err(|_| SupervisorError::JournalUnavailable)?;
+        if !root.is_absolute()
+            || !metadata.is_dir()
             || metadata.file_type().is_symlink()
-            || metadata.file_attributes() & 0x400 != 0 {
+            || metadata.file_attributes() & 0x400 != 0
+        {
             return Err(SupervisorError::JournalUnavailable);
         }
         Ok(root.to_path_buf())
@@ -470,23 +480,33 @@ impl Supervisor {
     /// journal directory and native job ID; callers never choose a folder.
     #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
     pub fn verify_native_owner_receipt_after_restart(
-        &self, job_id: &str, seq: u64, expected_sha256: &str,
+        &self,
+        job_id: &str,
+        seq: u64,
+        expected_sha256: &str,
     ) -> Result<(), SupervisorError> {
         use sha2::{Digest, Sha256};
         use std::os::windows::fs::MetadataExt;
-        if !job_id.starts_with("job-") || job_id.len() != 36
+        if !job_id.starts_with("job-")
+            || job_id.len() != 36
             || !job_id[4..].bytes().all(|b| b.is_ascii_hexdigit())
-            || seq == 0 || seq > 4096
+            || seq == 0
+            || seq > 4096
             || expected_sha256.len() != 64
-            || !expected_sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+            || !expected_sha256.bytes().all(|b| b.is_ascii_hexdigit())
+        {
             return Err(SupervisorError::JournalCorrupt);
         }
-        let path = self.native_owner_receipt_root()?
+        let path = self
+            .native_owner_receipt_root()?
             .join(format!("lu-owner-{job_id}-{seq:016x}.receipt"));
         let meta = fs::symlink_metadata(&path).map_err(|_| SupervisorError::JournalCorrupt)?;
-        if !meta.is_file() || meta.file_type().is_symlink()
-            || meta.file_attributes() & 0x400 != 0 || meta.len() > 1024
-            || meta.len() < 128 {
+        if !meta.is_file()
+            || meta.file_type().is_symlink()
+            || meta.file_attributes() & 0x400 != 0
+            || meta.len() > 1024
+            || meta.len() < 128
+        {
             return Err(SupervisorError::JournalCorrupt);
         }
         let content = fs::read(&path).map_err(|_| SupervisorError::JournalCorrupt)?;
@@ -494,8 +514,7 @@ impl Supervisor {
         if got != expected_sha256 {
             return Err(SupervisorError::JournalCorrupt);
         }
-        let text = std::str::from_utf8(&content)
-            .map_err(|_| SupervisorError::JournalCorrupt)?;
+        let text = std::str::from_utf8(&content).map_err(|_| SupervisorError::JournalCorrupt)?;
         if !text.starts_with(&format!("lu-owner-v1\\n{job_id}\\n")) {
             return Err(SupervisorError::JournalCorrupt);
         }
@@ -507,8 +526,11 @@ impl Supervisor {
     /// token. Accepts opaque hash coordinates, not a user-controlled path.
     #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
     pub fn verify_native_debug_action_after_restart(
-        &self, action_id_sha256: &str, preview_sha256: &str,
-        last_receipt_sha256: &str, final_phase: &str,
+        &self,
+        action_id_sha256: &str,
+        preview_sha256: &str,
+        last_receipt_sha256: &str,
+        final_phase: &str,
     ) -> Result<(), SupervisorError> {
         let audit = crate::debug_action_receipts::DebugActionAuditRef {
             action_id_sha256: action_id_sha256.to_owned(),
@@ -517,8 +539,10 @@ impl Supervisor {
             final_phase: final_phase.to_owned(),
         };
         crate::debug_action_receipts::verify_action_receipt_after_restart(
-            &self.native_owner_receipt_root()?, &audit,
-        ).map_err(|_| SupervisorError::JournalCorrupt)
+            &self.native_owner_receipt_root()?,
+            &audit,
+        )
+        .map_err(|_| SupervisorError::JournalCorrupt)
     }
 
     /// D6D: joined, read-only action inventory. Never recreates consumed
@@ -529,13 +553,15 @@ impl Supervisor {
     ) -> Result<Vec<String>, SupervisorError> {
         let records = crate::debug_action_receipts::inspect_action_receipts_after_restart(
             &self.native_owner_receipt_root()?,
-        ).map_err(|_| SupervisorError::JournalCorrupt)?;
+        )
+        .map_err(|_| SupervisorError::JournalCorrupt)?;
         let jobs = self.inspect()?;
         let mut cleanup = Vec::new();
         for action in records {
-            if !jobs.iter().any(|job|
-                job.job_id == action.job_id && job.plan_sha256 == action.plan_sha256
-            ) {
+            if !jobs
+                .iter()
+                .any(|job| job.job_id == action.job_id && job.plan_sha256 == action.plan_sha256)
+            {
                 return Err(SupervisorError::JournalCorrupt);
             }
             // A previously consumed/approved action remains *audit-only*
@@ -543,14 +569,19 @@ impl Supervisor {
             // reconciled terminal with OS descendants verified gone, it
             // cannot require a second OS-tree kill or restore old consent.
             // A genuinely interrupted Job still blocks the next session.
-            let native = jobs.iter().find(|job|
-                job.job_id == action.job_id && job.plan_sha256 == action.plan_sha256
-            ).ok_or(SupervisorError::JournalCorrupt)?;
-            if action.requires_native_os_cleanup &&
-                (native.requires_reconciliation ||
-                    !matches!(native.phase,
-                        JobPhase::Completed | JobPhase::Cancelled | JobPhase::Denied |
-                        JobPhase::Failed))
+            let native = jobs
+                .iter()
+                .find(|job| job.job_id == action.job_id && job.plan_sha256 == action.plan_sha256)
+                .ok_or(SupervisorError::JournalCorrupt)?;
+            if action.requires_native_os_cleanup
+                && (native.requires_reconciliation
+                    || !matches!(
+                        native.phase,
+                        JobPhase::Completed
+                            | JobPhase::Cancelled
+                            | JobPhase::Denied
+                            | JobPhase::Failed
+                    ))
             {
                 cleanup.push(action.job_id);
             }

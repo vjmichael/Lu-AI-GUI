@@ -17,7 +17,7 @@ const ui = read('../web/main.jsx');
 
 test('IDE053 package worker is strictly opted in and no default apply authority exists',()=>{
   assert.match(cargo, /native-package-uv = \["native-multilang", "lu-ide-execution-supervisor\/package-uv-worker"\]/);
-  assert.match(supCargo, /package-uv-worker = \["multilang-worker"\]/);
+  assert.match(supCargo, /package-uv-worker = \["multilang-worker", "dep:toml", "dep:base64"\]/);
   assert.match(cargo, /default = \[\]/);
   assert.match(supCargo, /default = \[\]/);
   assert.match(tauri, /IDE053_PROTECTED_PACKAGE_RUNTIME_NOT_APPROVED/);

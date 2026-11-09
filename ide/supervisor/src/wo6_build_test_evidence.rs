@@ -56,8 +56,11 @@ impl Supervisor {
         expected_source_head: &str,
     ) -> Result<BuildTestEvidence, SupervisorError> {
         self.review_exact_receipt_for_operation(
-            job_id, expected_project_id, expected_plan_sha256,
-            expected_source_head, false,
+            job_id,
+            expected_project_id,
+            expected_plan_sha256,
+            expected_source_head,
+            false,
         )
     }
 
@@ -72,8 +75,11 @@ impl Supervisor {
         expected_source_head: &str,
     ) -> Result<BuildTestEvidence, SupervisorError> {
         self.review_exact_receipt_for_operation(
-            job_id, expected_project_id, expected_plan_sha256,
-            expected_source_head, true,
+            job_id,
+            expected_project_id,
+            expected_plan_sha256,
+            expected_source_head,
+            true,
         )
     }
 
@@ -93,18 +99,25 @@ impl Supervisor {
         let matches_operation = if package_worker {
             cfg!(feature = "package-uv-worker")
                 && job.plan.recipe_id == "uv_sync_offline"
-                && job.plan.effect_class
+                && job
+                    .plan
+                    .effect_class
                     .strip_prefix("package_uv_sync_offline:")
-                    .is_some_and(|hash|
-                        hash.len() == 64 && hash.bytes()
-                            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()))
+                    .is_some_and(|hash| {
+                        hash.len() == 64
+                            && hash
+                                .bytes()
+                                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+                    })
         } else {
             matches!(
                 job.plan.recipe_id.as_str(),
                 "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
             ) && job.plan.effect_class == "test_build_isolated"
         };
-        if !matches_operation { return Err(SupervisorError::InvalidPlan); }
+        if !matches_operation {
+            return Err(SupervisorError::InvalidPlan);
+        }
         if job.plan.project_id != expected_project_id
             || job.plan.source_head != expected_source_head
             || job.plan_hash != expected_plan_sha256

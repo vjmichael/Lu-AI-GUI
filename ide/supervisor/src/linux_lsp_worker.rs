@@ -874,13 +874,11 @@ impl LinuxDapSession {
         plan: &JobPlan,
         target: &crate::project_debug_target::SealedProjectDebugTarget,
     ) -> Result<crate::native_kernel_pc::ProtectedStopLineage, SupervisorError> {
-        use crate::native_kernel_pc::{
-            observe_linux_project_pc, ProtectedStopLineage,
-        };
+        use crate::native_kernel_pc::{observe_linux_project_pc, ProtectedStopLineage};
         use lu_ide_workspace::dap_source_lines::review_native_source_line;
-        if self.native_job_id != job_id || plan.recipe_id != "dap_lldb_project"
-            || plan.debug_target_binding_sha256.as_deref()
-                != Some(target.binding_sha256.as_str())
+        if self.native_job_id != job_id
+            || plan.recipe_id != "dap_lldb_project"
+            || plan.debug_target_binding_sha256.as_deref() != Some(target.binding_sha256.as_str())
             || target.lineage.project_id != plan.project_id
             || target.lineage.source_head != plan.source_head
             || target.lineage.source_snapshot_sha256 != plan.input_snapshot_sha256
@@ -893,21 +891,25 @@ impl LinuxDapSession {
         // The trusted native test/harness originally constructed both
         // immutable JobPlans. No renderer or DAP response can supply either.
         target.verify()?;
-        verify_input(&self.source_input)
-            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
-        let job = supervisor.inspect()?
-            .into_iter().find(|value| value.job_id == job_id)
+        verify_input(&self.source_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let job = supervisor
+            .inspect()?
+            .into_iter()
+            .find(|value| value.job_id == job_id)
             .ok_or(SupervisorError::NoSuchJob)?;
-        if job.phase != JobPhase::Running || job.requires_reconciliation
+        if job.phase != JobPhase::Running
+            || job.requires_reconciliation
             || job.plan_sha256 != self.native_plan_sha256
-            || job.project_id != plan.project_id {
+            || job.project_id != plan.project_id
+        {
             return Err(SupervisorError::InvalidTransition);
         }
         let debug_receipts = supervisor.receipt_history(job_id)?;
-        if !debug_receipts.iter().any(|r| r.body.phase == JobPhase::Authorized
-                && r.body.plan_sha256 == self.native_plan_sha256)
-            || debug_receipts.last().is_none_or(|r| r.body.phase != JobPhase::Running
-                || r.body.plan_sha256 != self.native_plan_sha256) {
+        if !debug_receipts.iter().any(|r| {
+            r.body.phase == JobPhase::Authorized && r.body.plan_sha256 == self.native_plan_sha256
+        }) || debug_receipts.last().is_none_or(|r| {
+            r.body.phase != JobPhase::Running || r.body.plan_sha256 != self.native_plan_sha256
+        }) {
             return Err(SupervisorError::InvalidTransition);
         }
         let build_receipts = supervisor.receipt_history(&target.lineage.build_job_id)?;
@@ -918,22 +920,30 @@ impl LinuxDapSession {
         }) {
             return Err(SupervisorError::InvalidTransition);
         }
-        let candidate = self.gateway.source_candidate()
+        let candidate = self
+            .gateway
+            .source_candidate()
             .ok_or(SupervisorError::NoContainment)?;
-        let pc = candidate.instruction_address.ok_or(SupervisorError::NoContainment)?;
+        let pc = candidate
+            .instruction_address
+            .ok_or(SupervisorError::NoContainment)?;
         // The source path must be the native-only read-only snapshot mounted
         // as /workspace; no arbitrary path or suffix/basename lookup.
-        let relative = candidate.adapter_path.strip_prefix("/workspace/")
+        let relative = candidate
+            .adapter_path
+            .strip_prefix("/workspace/")
             .ok_or(SupervisorError::WrongProjectOrSource)?;
         let clean = std::path::Path::new(relative);
-        if clean.components().count() == 0 || !clean.components()
-            .all(|component| matches!(component, std::path::Component::Normal(_)))
+        if clean.components().count() == 0
+            || !clean
+                .components()
+                .all(|component| matches!(component, std::path::Component::Normal(_)))
         {
             return Err(SupervisorError::WrongProjectOrSource);
         }
         let actual_source = self.source_input.root.join(clean);
-        let bytes = std::fs::read(&actual_source)
-            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let bytes =
+            std::fs::read(&actual_source).map_err(|_| SupervisorError::WrongProjectOrSource)?;
         if bytes.is_empty() || bytes.len() > 2 * 1024 * 1024 {
             return Err(SupervisorError::WrongProjectOrSource);
         }
@@ -941,24 +951,37 @@ impl LinuxDapSession {
         // Only native worker translates the confined adapter path to the
         // already verified snapshot; the renderer cannot pass an alternate.
         let mut native_candidate = candidate.clone();
-        native_candidate.adapter_path = actual_source.to_str()
-            .ok_or(SupervisorError::WrongProjectOrSource)?.to_owned();
-        let source = review_native_source_line(&self.source_input.root, relative,
-            &digest, &native_candidate).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        native_candidate.adapter_path = actual_source
+            .to_str()
+            .ok_or(SupervisorError::WrongProjectOrSource)?
+            .to_owned();
+        let source = review_native_source_line(
+            &self.source_input.root,
+            relative,
+            &digest,
+            &native_candidate,
+        )
+        .map_err(|_| SupervisorError::WrongProjectOrSource)?;
         let binary = target.root.join(target.confined_relative_binary());
         let kernel = observe_linux_project_pc(
-            &self.native_cgroup_dir, job_id, &binary,
-            &target.binary.binary_sha256, pc,
+            &self.native_cgroup_dir,
+            job_id,
+            &binary,
+            &target.binary.binary_sha256,
+            pc,
         )?;
         // Second validation closes source/binary TOCTOU after /proc maps.
         target.verify()?;
-        verify_input(&self.source_input)
-            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
-        let still_running = supervisor.inspect()?.into_iter()
-            .any(|v| v.job_id == job_id && v.phase == JobPhase::Running
+        verify_input(&self.source_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let still_running = supervisor.inspect()?.into_iter().any(|v| {
+            v.job_id == job_id
+                && v.phase == JobPhase::Running
                 && v.plan_sha256 == self.native_plan_sha256
-                && !v.requires_reconciliation);
-        if !still_running { return Err(SupervisorError::InvalidTransition); }
+                && !v.requires_reconciliation
+        });
+        if !still_running {
+            return Err(SupervisorError::InvalidTransition);
+        }
         Ok(ProtectedStopLineage {
             kernel,
             debugger_job_id: job_id.to_owned(),
@@ -994,12 +1017,9 @@ impl LinuxDapSession {
         }
         #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
         {
-            let mut witness = self.verify_stopped_project_image(
-                supervisor, job_id, plan, target,
-            )?;
-            crate::native_kernel_pc::verify_independent_dwarf_line_for_ci(
-                &mut witness, target,
-            )?;
+            let mut witness =
+                self.verify_stopped_project_image(supervisor, job_id, plan, target)?;
+            crate::native_kernel_pc::verify_independent_dwarf_line_for_ci(&mut witness, target)?;
             Ok(witness)
         }
     }

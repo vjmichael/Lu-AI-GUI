@@ -13,8 +13,8 @@ fn main() {
         std::process::exit(2);
     }
     let path = std::path::PathBuf::from(journal);
-    if !path.is_absolute() || path.file_name()
-        != Some(std::ffi::OsStr::new("debug-fixture-receipts.jsonl"))
+    if !path.is_absolute()
+        || path.file_name() != Some(std::ffi::OsStr::new("debug-fixture-receipts.jsonl"))
     {
         eprintln!("DENIED: unexpected journal filename");
         std::process::exit(2);
@@ -23,7 +23,8 @@ fn main() {
         eprintln!("DENIED: native supervisor durable journal invalid");
         std::process::exit(3);
     });
-    let waiting = supervisor.native_debug_action_cleanup_jobs_after_restart()
+    let waiting = supervisor
+        .native_debug_action_cleanup_jobs_after_restart()
         .unwrap_or_else(|_| {
             eprintln!("DENIED: original operator action journals corrupt or foreign");
             std::process::exit(4);
@@ -32,7 +33,9 @@ fn main() {
         eprintln!("DENIED: one or more stopped Jobs still require independent OS-only cleanup; no grant restored");
         std::process::exit(5);
     }
-    println!("DEV046D_NATIVE_RESTART_AUDIT=PASS;no_orphan_job_actions=true;authority_restored=false");
+    println!(
+        "DEV046D_NATIVE_RESTART_AUDIT=PASS;no_orphan_job_actions=true;authority_restored=false"
+    );
 }
 #[cfg(not(all(windows, debug_assertions, feature = "dev046d-native-dialog")))]
 fn main() {

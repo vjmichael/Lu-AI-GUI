@@ -48,9 +48,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         [one] if one == "--build" => ("rust_build", false),
         [one] if one == "--project-debug" || one == "--project-debug-cancel" => {
             ("rust_build", false)
-        },
+        }
         [one] if one == "--cancel" => ("rust_tests", true),
-        _ => return Err("DENIED: only fixed check/test/build/project-debug/project-debug-cancel/cancel modes".into()),
+        _ => return Err(
+            "DENIED: only fixed check/test/build/project-debug/project-debug-cancel/cancel modes"
+                .into(),
+        ),
     };
     let root = env::temp_dir().join(format!(
         "lu-ide-wo6-cargo-{}-{}",
@@ -396,7 +399,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let terminal_history = supervisor
                 .receipt_history(&debug_job.job_id)
                 .map_err(|e| e.code())?;
-            let terminal = terminal_history.last()
+            let terminal = terminal_history
+                .last()
                 .ok_or("DENIED: missing fsynced stopped-PC terminal receipt")?;
             if terminal.body.phase != debug_expected
                 || terminal.body.plan_sha256 != stopped_witness.debugger_plan_sha256
@@ -406,7 +410,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         && r.body.phase == JobPhase::Running
                 })
             {
-                return Err("DENIED: live kernel-PC proof not bound to durable debug terminal".into());
+                return Err(
+                    "DENIED: live kernel-PC proof not bound to durable debug terminal".into(),
+                );
             }
             let build_terminal = supervisor
                 .receipt_history(&stopped_witness.build_job_id)
@@ -428,7 +434,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     pair[0].body.phase == JobPhase::CancelRequested
                         && pair[1].body.phase == JobPhase::Cancelled
                 }) {
-                    return Err("DENIED: real project LLDB cancellation not durable before kernel kill".into());
+                    return Err(
+                        "DENIED: real project LLDB cancellation not durable before kernel kill"
+                            .into(),
+                    );
                 }
                 eprintln!("DEV045C_LINUX_REAL_PROJECT_LLDB_CANCEL_AND_CGROUP_REAP=PASS");
             }
@@ -437,12 +446,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // its terminal native receipt.
             if supervisor
                 .record_human_approval(
-                    &prepared.job_id, &prepared.plan_sha256, &plan.source_head, true,
+                    &prepared.job_id,
+                    &prepared.plan_sha256,
+                    &plan.source_head,
+                    true,
                 )
                 .is_ok()
                 || supervisor
                     .record_human_approval(
-                        &debug_job.job_id, &debug_job.plan_sha256, &debugger_plan.source_head, true,
+                        &debug_job.job_id,
+                        &debug_job.plan_sha256,
+                        &debugger_plan.source_head,
+                        true,
                     )
                     .is_ok()
             {
@@ -463,12 +478,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Supervisor::open(journal.clone()).map_err(|e| e.code())?;
             if independently_restarted
                 .record_human_approval(
-                    &prepared.job_id, &prepared.plan_sha256, &plan.source_head, true,
+                    &prepared.job_id,
+                    &prepared.plan_sha256,
+                    &plan.source_head,
+                    true,
                 )
                 .is_ok()
                 || independently_restarted
                     .record_human_approval(
-                        &debug_job.job_id, &debug_job.plan_sha256, &debugger_plan.source_head, true,
+                        &debug_job.job_id,
+                        &debug_job.plan_sha256,
+                        &debugger_plan.source_head,
+                        true,
                     )
                     .is_ok()
             {

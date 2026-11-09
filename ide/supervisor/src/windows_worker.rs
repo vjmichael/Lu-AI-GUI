@@ -731,7 +731,9 @@ fn bootstrap_multilang_environment(
             "UV_PROJECT_ENVIRONMENT={}\0UV_CACHE_DIR={}\0UV_NO_BUILD=1\0UV_NO_CONFIG=1\0UV_PYTHON_DOWNLOADS=never\0UV_NO_PROGRESS=1\0",
             output.join(".venv").display(), output.join("uv-cache").display(),
         ).replace("\\0", "\0")
-    } else { String::new() };
+    } else {
+        String::new()
+    };
     let env=format!(
         "HOME={}\0LOCALAPPDATA={}\0PATH={};{}\0PYTHONDONTWRITEBYTECODE=1\0SystemRoot={}\0TEMP={}\0TMP={}\0{}\0",
         local.display(),local.display(),tools.join("bin").display(),

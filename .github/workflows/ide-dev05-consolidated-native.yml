@@ -117,6 +117,7 @@ jobs:
           name: ide055-native-${{ matrix.os }}-${{ github.sha }}
           path: .ide055-receipts/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
 
   real-linux-uv-offline-negative:
@@ -226,4 +227,5 @@ jobs:
           name: ide055-real-uv-negative-${{ github.sha }}
           path: .ide055-native-evidence/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30

@@ -18,26 +18,24 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
-        ERROR_NO_MORE_FILES, WAIT_TIMEOUT,
+        CloseHandle, GetLastError, ERROR_NO_MORE_FILES, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT,
     },
     System::{
         Diagnostics::{
             Debug::{CheckRemoteDebuggerPresent, GetThreadContext, CONTEXT},
             ToolHelp::{
-                CreateToolhelp32Snapshot, Module32FirstW, Module32NextW,
-                Process32FirstW, Process32NextW, Thread32First, Thread32Next,
-                MODULEENTRY32W, PROCESSENTRY32W, THREADENTRY32,
-                TH32CS_SNAPPROCESS, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32,
-                TH32CS_SNAPTHREAD,
+                CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, Process32FirstW,
+                Process32NextW, Thread32First, Thread32Next, MODULEENTRY32W, PROCESSENTRY32W,
+                TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS, TH32CS_SNAPTHREAD,
+                THREADENTRY32,
             },
         },
-        JobObjects::{QueryInformationJobObject, JobObjectBasicProcessIdList},
+        JobObjects::{JobObjectBasicProcessIdList, QueryInformationJobObject},
         Threading::{
             GetProcessId, GetProcessIdOfThread, OpenProcess, OpenThread,
-            QueryFullProcessImageNameW, WaitForSingleObject,
-            PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
-            THREAD_GET_CONTEXT, THREAD_QUERY_LIMITED_INFORMATION,
+            QueryFullProcessImageNameW, WaitForSingleObject, PROCESS_QUERY_INFORMATION,
+            PROCESS_QUERY_LIMITED_INFORMATION, THREAD_GET_CONTEXT,
+            THREAD_QUERY_LIMITED_INFORMATION,
         },
     },
 };
@@ -47,7 +45,9 @@ const MAX_TARGET_THREADS: usize = 64;
 const MAX_ENUMERATED_THREADS: usize = 65_536;
 const AMD64_CONTEXT_CONTROL: u32 = 0x0010_0001;
 const MAX_BINARY: u64 = 64 * 1024 * 1024;
-fn denied() -> SupervisorError { SupervisorError::NoContainment }
+fn denied() -> SupervisorError {
+    SupervisorError::NoContainment
+}
 
 #[derive(Debug, Clone)]
 pub struct WindowsLoadedModuleWitness {
@@ -109,9 +109,15 @@ pub struct WindowsThreadRipSample {
 #[repr(align(16))]
 struct AlignedContext(CONTEXT);
 fn read_thread_rip(process_id: u32, thread_id: u32) -> Result<u64, SupervisorError> {
-    if process_id == 0 || thread_id == 0 { return Err(denied()); }
+    if process_id == 0 || thread_id == 0 {
+        return Err(denied());
+    }
     let handle = Owned::from_win32(unsafe {
-        OpenThread(THREAD_GET_CONTEXT | THREAD_QUERY_LIMITED_INFORMATION, 0, thread_id)
+        OpenThread(
+            THREAD_GET_CONTEXT | THREAD_QUERY_LIMITED_INFORMATION,
+            0,
+            thread_id,
+        )
     })?;
     // A ToolHelp ID can be reused between enumeration and opening; the
     // real thread HANDLE must still belong to this trusted Job member.
@@ -130,9 +136,7 @@ fn read_thread_rip(process_id: u32, thread_id: u32) -> Result<u64, SupervisorErr
     Ok(rip)
 }
 fn enumerate_target_threads(pid: u32) -> Result<Vec<u32>, SupervisorError> {
-    let snapshot = Owned::from_win32(unsafe {
-        CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
-    })?;
+    let snapshot = Owned::from_win32(unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) })?;
     let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
     entry.dwSize = size_of::<THREADENTRY32>() as u32;
     if unsafe { Thread32First(snapshot.0, &mut entry) } == 0 {
@@ -153,22 +157,30 @@ fn enumerate_target_threads(pid: u32) -> Result<Vec<u32>, SupervisorError> {
             if unsafe { GetLastError() } != ERROR_NO_MORE_FILES {
                 return Err(denied());
             }
-            if threads.is_empty() { return Err(denied()); }
+            if threads.is_empty() {
+                return Err(denied());
+            }
             threads.sort_unstable(); // stable identity set, not snapshot order
             return Ok(threads);
         }
-        if scanned + 1 == MAX_ENUMERATED_THREADS { return Err(denied()); }
+        if scanned + 1 == MAX_ENUMERATED_THREADS {
+            return Err(denied());
+        }
     }
     Err(denied())
 }
 /// Query-only, bounded sampling while the DAP session claims to be stopped.
 /// Cannot infer a native debug event or independently authorize a source line.
 pub(crate) fn sample_job_thread_rip(
-    job: HANDLE, module: &WindowsLoadedModuleWitness,
+    job: HANDLE,
+    module: &WindowsLoadedModuleWitness,
 ) -> Result<WindowsThreadRipSample, SupervisorError> {
-    if !module.job_member_verified || !module.process_exe_path_verified
-        || !module.os_loaded_pe_image_verified || module.observed_pc == 0
-        || !member_ids(job)?.contains(&module.pid) {
+    if !module.job_member_verified
+        || !module.process_exe_path_verified
+        || !module.os_loaded_pe_image_verified
+        || module.observed_pc == 0
+        || !member_ids(job)?.contains(&module.pid)
+    {
         return Err(denied());
     }
     let original = enumerate_target_threads(module.pid)?;
@@ -183,14 +195,17 @@ pub(crate) fn sample_job_thread_rip(
             Err(_) => continue,
         };
         if rip == module.observed_pc {
-            if found.replace((*id, rip)).is_some() { return Err(denied()); }
+            if found.replace((*id, rip)).is_some() {
+                return Err(denied());
+            }
         }
     }
     let (thread_id, rip) = found.ok_or_else(denied)?;
     // A DAP continue, thread replacement or process exit invalidates this.
     if enumerate_target_threads(module.pid)? != original
         || read_thread_rip(module.pid, thread_id)? != rip
-        || !member_ids(job)?.contains(&module.pid) {
+        || !member_ids(job)?.contains(&module.pid)
+    {
         return Err(denied());
     }
     Ok(WindowsThreadRipSample {
@@ -209,7 +224,9 @@ pub(crate) fn sample_job_thread_rip(
 /// a reported PID in LLDB-DAP or a private pipe event record.
 #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
 pub(crate) fn job_has_member(job: HANDLE, pid: u32) -> Result<bool, SupervisorError> {
-    if pid == 0 { return Err(denied()); }
+    if pid == 0 {
+        return Err(denied());
+    }
     Ok(member_ids(job)?.contains(&pid))
 }
 
@@ -219,19 +236,21 @@ pub(crate) fn job_has_member(job: HANDLE, pid: u32) -> Result<bool, SupervisorEr
 /// protected LLDB process HANDLE. A DAP or model-supplied TID is not accepted.
 #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
 pub(crate) fn verify_lldb_event_owner_thread(
-    ll_process: HANDLE, owner_tid: u32,
+    ll_process: HANDLE,
+    owner_tid: u32,
 ) -> Result<(), SupervisorError> {
-    if ll_process.is_null() || ll_process == INVALID_HANDLE_VALUE
-        || owner_tid == 0 { return Err(denied()); }
+    if ll_process.is_null() || ll_process == INVALID_HANDLE_VALUE || owner_tid == 0 {
+        return Err(denied());
+    }
     let pid = unsafe { GetProcessId(ll_process) };
     if pid == 0 || unsafe { WaitForSingleObject(ll_process, 0) } != WAIT_TIMEOUT {
         return Err(denied());
     }
-    let thread = Owned::from_win32(unsafe {
-        OpenThread(THREAD_QUERY_LIMITED_INFORMATION, 0, owner_tid)
-    })?;
+    let thread =
+        Owned::from_win32(unsafe { OpenThread(THREAD_QUERY_LIMITED_INFORMATION, 0, owner_tid) })?;
     if unsafe { GetProcessIdOfThread(thread.0) } != pid
-        || unsafe { WaitForSingleObject(ll_process, 0) } != WAIT_TIMEOUT {
+        || unsafe { WaitForSingleObject(ll_process, 0) } != WAIT_TIMEOUT
+    {
         return Err(denied());
     }
     Ok(())
@@ -252,27 +271,32 @@ pub struct WindowsDebugPortCorroboration {
     pub(crate) debugger_control_authorized: bool,
 }
 fn kernel_parent_pid(pid: u32) -> Result<u32, SupervisorError> {
-    let snapshot = Owned::from_win32(unsafe {
-        CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-    })?;
+    let snapshot = Owned::from_win32(unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) })?;
     let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
     entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
-    if unsafe { Process32FirstW(snapshot.0, &mut entry) } == 0 { return Err(denied()); }
+    if unsafe { Process32FirstW(snapshot.0, &mut entry) } == 0 {
+        return Err(denied());
+    }
     let mut seen = false;
     let mut parent = 0;
     for index in 0..MAX_ENUMERATED_THREADS {
         if entry.th32ProcessID == pid {
-            if seen { return Err(denied()); }
+            if seen {
+                return Err(denied());
+            }
             seen = true;
             parent = entry.th32ParentProcessID;
         }
         entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
         if unsafe { Process32NextW(snapshot.0, &mut entry) } == 0 {
-            if unsafe { GetLastError() } != ERROR_NO_MORE_FILES
-                || !seen || parent == 0 { return Err(denied()); }
+            if unsafe { GetLastError() } != ERROR_NO_MORE_FILES || !seen || parent == 0 {
+                return Err(denied());
+            }
             return Ok(parent);
         }
-        if index + 1 == MAX_ENUMERATED_THREADS { return Err(denied()); }
+        if index + 1 == MAX_ENUMERATED_THREADS {
+            return Err(denied());
+        }
     }
     Err(denied())
 }
@@ -281,29 +305,41 @@ fn kernel_parent_pid(pid: u32) -> Result<u32, SupervisorError> {
 /// created by the original SCM-admitted worker. No debug attach or privileged
 /// target mutation is performed here.
 pub(crate) fn verify_debug_port_and_owned_parent(
-    job: HANDLE, debugger_process: HANDLE,
+    job: HANDLE,
+    debugger_process: HANDLE,
     module: &WindowsLoadedModuleWitness,
 ) -> Result<WindowsDebugPortCorroboration, SupervisorError> {
-    if debugger_process.is_null() || debugger_process == INVALID_HANDLE_VALUE
-        || !module.job_member_verified || !module.process_exe_path_verified
-        || !module.os_loaded_pe_image_verified {
+    if debugger_process.is_null()
+        || debugger_process == INVALID_HANDLE_VALUE
+        || !module.job_member_verified
+        || !module.process_exe_path_verified
+        || !module.os_loaded_pe_image_verified
+    {
         return Err(denied());
     }
     let owner_pid = unsafe { GetProcessId(debugger_process) };
-    if owner_pid == 0 || owner_pid == module.pid { return Err(denied()); }
+    if owner_pid == 0 || owner_pid == module.pid {
+        return Err(denied());
+    }
     let initial_members = member_ids(job)?;
     if !initial_members.contains(&module.pid)
         || !initial_members.contains(&owner_pid)
-        || unsafe { WaitForSingleObject(debugger_process, 0) } != WAIT_TIMEOUT {
+        || unsafe { WaitForSingleObject(debugger_process, 0) } != WAIT_TIMEOUT
+    {
         return Err(denied());
     }
     let target = Owned::from_win32(unsafe {
-        OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION, 0, module.pid)
+        OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION,
+            0,
+            module.pid,
+        )
     })?;
     let mut attached: i32 = 0;
     if unsafe { CheckRemoteDebuggerPresent(target.0, &mut attached) } == 0
         || attached == 0
-        || kernel_parent_pid(module.pid)? != owner_pid {
+        || kernel_parent_pid(module.pid)? != owner_pid
+    {
         return Err(denied());
     }
     // A resumed, detached or replaced process invalidates the corroboration.
@@ -313,7 +349,8 @@ pub(crate) fn verify_debug_port_and_owned_parent(
         || kernel_parent_pid(module.pid)? != owner_pid
         || member_ids(job)? != initial_members
         || unsafe { WaitForSingleObject(target.0, 0) } != WAIT_TIMEOUT
-        || unsafe { WaitForSingleObject(debugger_process, 0) } != WAIT_TIMEOUT {
+        || unsafe { WaitForSingleObject(debugger_process, 0) } != WAIT_TIMEOUT
+    {
         return Err(denied());
     }
     Ok(WindowsDebugPortCorroboration {
@@ -340,7 +377,9 @@ impl Owned {
 impl Drop for Owned {
     fn drop(&mut self) {
         if !self.0.is_null() && self.0 != INVALID_HANDLE_VALUE {
-            unsafe { CloseHandle(self.0); }
+            unsafe {
+                CloseHandle(self.0);
+            }
         }
     }
 }
@@ -351,14 +390,20 @@ struct Pids {
     ids: [usize; MAX_JOB_PROCESSES],
 }
 fn member_ids(job: HANDLE) -> Result<Vec<u32>, SupervisorError> {
-    if job.is_null() || job == INVALID_HANDLE_VALUE { return Err(denied()); }
+    if job.is_null() || job == INVALID_HANDLE_VALUE {
+        return Err(denied());
+    }
     let mut buffer = Pids {
-        assigned: 0, listed: 0, ids: [0; MAX_JOB_PROCESSES],
+        assigned: 0,
+        listed: 0,
+        ids: [0; MAX_JOB_PROCESSES],
     };
     let ok = unsafe {
         QueryInformationJobObject(
-            job, JobObjectBasicProcessIdList,
-            (&raw mut buffer).cast(), size_of::<Pids>() as u32,
+            job,
+            JobObjectBasicProcessIdList,
+            (&raw mut buffer).cast(),
+            size_of::<Pids>() as u32,
             ptr::null_mut(),
         )
     };
@@ -373,20 +418,23 @@ fn member_ids(job: HANDLE) -> Result<Vec<u32>, SupervisorError> {
     let mut seen = BTreeSet::new();
     for value in buffer.ids.iter().take(buffer.listed as usize) {
         let pid = u32::try_from(*value).map_err(|_| denied())?;
-        if pid == 0 || !seen.insert(pid) { return Err(denied()); }
+        if pid == 0 || !seen.insert(pid) {
+            return Err(denied());
+        }
         ids.push(pid);
     }
     Ok(ids)
 }
 fn normalized_path(text: &str) -> Result<String, SupervisorError> {
-    if text.len() < 4 || text.len() > 2048
-        || text.chars().any(char::is_control) {
+    if text.len() < 4 || text.len() > 2048 || text.chars().any(char::is_control) {
         return Err(denied());
     }
     let stripped = text.strip_prefix(r"\\?\").unwrap_or(text);
-    if stripped.starts_with(r"\\") || stripped.contains("/../")
+    if stripped.starts_with(r"\\")
+        || stripped.contains("/../")
         || stripped.contains(r"\..\")
-        || stripped.contains(r"\.\") {
+        || stripped.contains(r"\.\")
+    {
         return Err(denied());
     }
     Ok(stripped.replace('/', r"\").to_lowercase())
@@ -399,17 +447,17 @@ fn from_wide(buffer: &[u16]) -> Result<String, SupervisorError> {
     String::from_utf16(&buffer[..end]).map_err(|_| denied())
 }
 fn query_executable(pid: u32) -> Result<(Owned, String), SupervisorError> {
-    let process = Owned::from_win32(unsafe {
-        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)
-    })?;
+    let process =
+        Owned::from_win32(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) })?;
     if unsafe { WaitForSingleObject(process.0, 0) } != WAIT_TIMEOUT {
         return Err(denied());
     }
     let mut data = [0u16; 2048];
     let mut len = data.len() as u32;
-    if unsafe {
-        QueryFullProcessImageNameW(process.0, 0, data.as_mut_ptr(), &mut len)
-    } == 0 || len == 0 || len as usize >= data.len() {
+    if unsafe { QueryFullProcessImageNameW(process.0, 0, data.as_mut_ptr(), &mut len) } == 0
+        || len == 0
+        || len as usize >= data.len()
+    {
         return Err(denied());
     }
     let path = String::from_utf16(&data[..len as usize]).map_err(|_| denied())?;
@@ -419,7 +467,10 @@ fn sha_file(path: &Path) -> Result<String, SupervisorError> {
     let m = fs::symlink_metadata(path).map_err(|_| denied())?;
     if m.file_type().is_symlink()
         || m.file_attributes() & 0x400 != 0
-        || !m.is_file() || m.len() == 0 || m.len() > MAX_BINARY {
+        || !m.is_file()
+        || m.len() == 0
+        || m.len() > MAX_BINARY
+    {
         return Err(denied());
     }
     let mut file = File::open(path).map_err(|_| denied())?;
@@ -428,12 +479,18 @@ fn sha_file(path: &Path) -> Result<String, SupervisorError> {
     let mut n = 0u64;
     loop {
         let k = file.read(&mut buf).map_err(|_| denied())?;
-        if k == 0 { break; }
+        if k == 0 {
+            break;
+        }
         n = n.checked_add(k as u64).ok_or_else(denied)?;
-        if n > MAX_BINARY { return Err(denied()); }
+        if n > MAX_BINARY {
+            return Err(denied());
+        }
         hasher.update(&buf[..k]);
     }
-    if n != m.len() { return Err(denied()); }
+    if n != m.len() {
+        return Err(denied());
+    }
     let after = fs::symlink_metadata(path).map_err(|_| denied())?;
     if after.len() != m.len() || after.modified().ok() != m.modified().ok() {
         return Err(denied());
@@ -441,20 +498,32 @@ fn sha_file(path: &Path) -> Result<String, SupervisorError> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 fn u16_at(data: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(data.get(at..at.checked_add(2)?)?.try_into().ok()?))
+    Some(u16::from_le_bytes(
+        data.get(at..at.checked_add(2)?)?.try_into().ok()?,
+    ))
 }
 fn u32_at(data: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(data.get(at..at.checked_add(4)?)?.try_into().ok()?))
+    Some(u32::from_le_bytes(
+        data.get(at..at.checked_add(4)?)?.try_into().ok()?,
+    ))
 }
 fn u64_at(data: &[u8], at: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(data.get(at..at.checked_add(8)?)?.try_into().ok()?))
+    Some(u64::from_le_bytes(
+        data.get(at..at.checked_add(8)?)?.try_into().ok()?,
+    ))
 }
 fn pe_preferred_image(data: &[u8]) -> Option<(u64, u64)> {
-    if data.get(..2)? != b"MZ" { return None; }
+    if data.get(..2)? != b"MZ" {
+        return None;
+    }
     let pe = usize::try_from(u32_at(data, 0x3c)?).ok()?;
-    if data.get(pe..pe.checked_add(4)?)? != b"PE\0\0" { return None; }
+    if data.get(pe..pe.checked_add(4)?)? != b"PE\0\0" {
+        return None;
+    }
     let optional = pe.checked_add(24)?;
-    if u16_at(data, optional)? != 0x20b { return None; }
+    if u16_at(data, optional)? != 0x20b {
+        return None;
+    }
     let size = u64::from(u32_at(data, optional.checked_add(56)?)?);
     let preferred = u64_at(data, optional.checked_add(24)?)?;
     if preferred < 0x10000 || size < 4096 || size > 512 * 1024 * 1024 {
@@ -462,9 +531,12 @@ fn pe_preferred_image(data: &[u8]) -> Option<(u64, u64)> {
     }
     Some((preferred, size))
 }
-fn module_at(pid: u32, expected: &str, pc: u64, pe_size: u64)
-    -> Result<Option<(u64, u64)>, SupervisorError>
-{
+fn module_at(
+    pid: u32,
+    expected: &str,
+    pc: u64,
+    pe_size: u64,
+) -> Result<Option<(u64, u64)>, SupervisorError> {
     let snapshot = Owned::from_win32(unsafe {
         CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid)
     })?;
@@ -475,25 +547,31 @@ fn module_at(pid: u32, expected: &str, pc: u64, pe_size: u64)
     }
     let mut hits = Vec::new();
     for index in 0..MAX_MODULES {
-        if entry.th32ProcessID != pid { return Err(denied()); }
+        if entry.th32ProcessID != pid {
+            return Err(denied());
+        }
         let module_path = normalized_path(&from_wide(&entry.szExePath)?)?;
         let base = entry.modBaseAddr as usize as u64;
         let size = u64::from(entry.modBaseSize);
-        if module_path == expected && size == pe_size
-            && base <= pc && pc < base.checked_add(size).ok_or_else(denied)? {
+        if module_path == expected
+            && size == pe_size
+            && base <= pc
+            && pc < base.checked_add(size).ok_or_else(denied)?
+        {
             hits.push((base, size));
         }
         entry.dwSize = size_of::<MODULEENTRY32W>() as u32;
         if unsafe { Module32NextW(snapshot.0, &mut entry) } == 0 {
             // A partially-read ToolHelp list is NOT module acceptance:
             // only the explicit end-of-module-list status is safe.
-            if unsafe { GetLastError() } != ERROR_NO_MORE_FILES
-                || hits.len() > 1 {
+            if unsafe { GetLastError() } != ERROR_NO_MORE_FILES || hits.len() > 1 {
                 return Err(denied());
             }
             return Ok(hits.pop());
         }
-        if index + 1 == MAX_MODULES { return Err(denied()); }
+        if index + 1 == MAX_MODULES {
+            return Err(denied());
+        }
     }
     Err(denied())
 }
@@ -501,37 +579,58 @@ fn module_at(pid: u32, expected: &str, pc: u64, pe_size: u64)
 /// stopped-thread PC still requires independent GetThreadContext evidence.
 /// Windows event/LLDB state is NEVER inferred from a module-list hit.
 pub(crate) fn observe_job_module(
-    job: HANDLE, expected_binary: &Path, expected_sha: &str, pc: u64,
+    job: HANDLE,
+    expected_binary: &Path,
+    expected_sha: &str,
+    pc: u64,
 ) -> Result<WindowsLoadedModuleWitness, SupervisorError> {
-    if !expected_binary.is_absolute() || pc == 0
+    if !expected_binary.is_absolute()
+        || pc == 0
         || expected_sha.len() != 64
-        || !expected_sha.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        || sha_file(expected_binary)? != expected_sha {
+        || !expected_sha
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        || sha_file(expected_binary)? != expected_sha
+    {
         return Err(denied());
     }
     let bytes = fs::read(expected_binary).map_err(|_| denied())?;
-    if bytes.len() as u64 > MAX_BINARY { return Err(denied()); }
+    if bytes.len() as u64 > MAX_BINARY {
+        return Err(denied());
+    }
     let (preferred_base, size) = pe_preferred_image(&bytes).ok_or_else(denied)?;
     let expected_path = native_path(expected_binary)?;
     let prior_members = member_ids(job)?;
     let mut result = None;
     for pid in &prior_members {
         let (process, image_path) = query_executable(*pid)?;
-        if image_path != expected_path { continue; }
+        if image_path != expected_path {
+            continue;
+        }
         let loaded = module_at(*pid, &expected_path, pc, size)?;
-        let Some((loaded_base, loaded_size)) = loaded else { continue; };
+        let Some((loaded_base, loaded_size)) = loaded else {
+            continue;
+        };
         let preferred_pc = preferred_base
             .checked_add(pc.checked_sub(loaded_base).ok_or_else(denied)?)
             .ok_or_else(denied)?;
-        if result.is_some() { return Err(denied()); }
+        if result.is_some() {
+            return Err(denied());
+        }
         // A changed/retired process is not a valid live debugger witness.
         if unsafe { WaitForSingleObject(process.0, 0) } != WAIT_TIMEOUT {
             return Err(denied());
         }
         result = Some(WindowsLoadedModuleWitness {
-            pid: *pid, loaded_base, loaded_size, preferred_base,
-            preferred_pc, observed_pc: pc, binary_sha256: expected_sha.to_owned(),
-            job_member_verified: true, process_exe_path_verified: true,
+            pid: *pid,
+            loaded_base,
+            loaded_size,
+            preferred_base,
+            preferred_pc,
+            observed_pc: pc,
+            binary_sha256: expected_sha.to_owned(),
+            job_member_verified: true,
+            process_exe_path_verified: true,
             os_loaded_pe_image_verified: true,
             os_thread_context_ip_verified: false,
             independent_pdb_line_verified: false,
@@ -551,16 +650,23 @@ mod tests {
     #[test]
     fn missing_real_lldb_handle_can_never_attest_event_owner() {
         let fake = WindowsLoadedModuleWitness {
-            pid: 1, loaded_base: 0x140000000, loaded_size: 0x2000,
-            preferred_base: 0x140000000, preferred_pc: 0x140001000,
-            observed_pc: 0x140001000, binary_sha256: "a".repeat(64),
-            job_member_verified: true, process_exe_path_verified: true,
-            os_loaded_pe_image_verified: true, os_thread_context_ip_verified: false,
-            independent_pdb_line_verified: false, installed_app_accepted: false,
+            pid: 1,
+            loaded_base: 0x140000000,
+            loaded_size: 0x2000,
+            preferred_base: 0x140000000,
+            preferred_pc: 0x140001000,
+            observed_pc: 0x140001000,
+            binary_sha256: "a".repeat(64),
+            job_member_verified: true,
+            process_exe_path_verified: true,
+            os_loaded_pe_image_verified: true,
+            os_thread_context_ip_verified: false,
+            independent_pdb_line_verified: false,
+            installed_app_accepted: false,
         };
-        assert!(verify_debug_port_and_owned_parent(
-            ptr::null_mut(), ptr::null_mut(), &fake,
-        ).is_err());
+        assert!(
+            verify_debug_port_and_owned_parent(ptr::null_mut(), ptr::null_mut(), &fake,).is_err()
+        );
     }
     #[test]
     fn pe_image_header_and_preferred_pc_are_bounded() {
@@ -585,12 +691,19 @@ mod tests {
     #[test]
     fn thread_context_sampling_is_never_a_debug_event_authorization() {
         let mock = WindowsLoadedModuleWitness {
-            pid: 0, loaded_base: 0x140000000, loaded_size: 0x2000,
-            preferred_base: 0x140000000, preferred_pc: 0x140001000,
-            observed_pc: 0x140001000, binary_sha256: "a".repeat(64),
-            job_member_verified: true, process_exe_path_verified: true,
-            os_loaded_pe_image_verified: true, os_thread_context_ip_verified: false,
-            independent_pdb_line_verified: false, installed_app_accepted: false,
+            pid: 0,
+            loaded_base: 0x140000000,
+            loaded_size: 0x2000,
+            preferred_base: 0x140000000,
+            preferred_pc: 0x140001000,
+            observed_pc: 0x140001000,
+            binary_sha256: "a".repeat(64),
+            job_member_verified: true,
+            process_exe_path_verified: true,
+            os_loaded_pe_image_verified: true,
+            os_thread_context_ip_verified: false,
+            independent_pdb_line_verified: false,
+            installed_app_accepted: false,
         };
         assert!(sample_job_thread_rip(ptr::null_mut(), &mock).is_err());
     }
@@ -601,8 +714,11 @@ mod tests {
         assert!(normalized_path(r"\\server\share\test.exe").is_err());
         assert!(member_ids(ptr::null_mut()).is_err());
         assert!(observe_job_module(
-            ptr::null_mut(), Path::new(r"C:\not-installed.exe"),
-            &"a".repeat(64), 0x140001000
-        ).is_err());
+            ptr::null_mut(),
+            Path::new(r"C:\not-installed.exe"),
+            &"a".repeat(64),
+            0x140001000
+        )
+        .is_err());
     }
 }

@@ -104,3 +104,41 @@ No native Windows/Linux compiler, actual protected package process,
 human dialog, installed application or real-wheel acceptance is claimed
 without genuine post-dispatch evidence. The separate DEV-04.6D debugger
 human-modal acceptance stays open.
+
+
+## Actual GitHub native run inspection and demonstrated repair (2026-11-09)
+
+Exact head `0819e880ba184db98d95b3c6af4994128c7033f6`:
+- IDE-05 group run **42704670757** executed on genuine Windows 2022
+  (job **129458221541**) and Ubuntu 24.04 (job **129458222099**).
+  BOTH failed at the Node regression step. Windows logged **26 tests,
+  24 passed, 2 failed**: the IDE-05.3 source test still expected
+  `package-uv-worker=["multilang-worker"]` after IDE-05.4 added
+  optional pinned parser/hash dependencies; an IDE-05.4 source test
+  expected a bare quoted `direct_url.json` instead of an interpolated
+  fixed `{dist}/direct_url.json`. These **test patterns** were repaired
+  without weakening their assertions. The real native protected Linux
+  dependent job was **skipped** because the compile matrix had not
+  passed: NEVER label uv OS acceptance as executed.
+- Both CI platforms then failed receipt artifact upload because
+  `.ide055-receipts/` is a hidden folder and upload-artifact@v4
+  excludes hidden files by default. The group workflow now explicitly
+  sets `include-hidden-files: true` for its two private receipt
+  archives only.
+- Previous exact-head `6379bc1` production supervisor run
+  **42677505364** (Linux job **129362776917**, Windows job
+  **129362777687**) and Windows D7 run **42677505507**
+  (job **129362775735**) did compile/test the original supervisor
+  features successfully, but each failed **cargo fmt --check**.
+  The Linux formatting log had 512 formatter hunks over 22 source and
+  example files, much of it inherited DEV-04/D6D formatting debt.
+  Formatter-proposed original→new source edits were applied only
+  after exact original context matching; no debugger behavior changes
+  were intended. IDE-05.5 requires a **new exact-head rerun** for
+  confirmation, and Rust/Tauri compilation with package features
+  still has no passing native result at this checkpoint.
+
+**Do not elevate these negative/failure results to IDE-05 acceptance.**
+The consolidated current group is the only new intended acceptance
+batch; all still-pending positive protected `uv`, original package
+provenance, human consent, installed-app and Windows ACL gates remain open.

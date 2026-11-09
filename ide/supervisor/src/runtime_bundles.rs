@@ -28,8 +28,7 @@ impl RuntimeProfile {
             "python_pytest" => Some(Self::PythonPytest),
             "js_tests" => Some(Self::NodeTests),
             "cpp_cmake_build" => Some(Self::CmakeCTest),
-            "uv_sync_offline" if cfg!(feature = "package-uv-worker") =>
-                Some(Self::UvSyncOffline),
+            "uv_sync_offline" if cfg!(feature = "package-uv-worker") => Some(Self::UvSyncOffline),
             _ => None,
         }
     }
@@ -46,11 +45,15 @@ impl RuntimeProfile {
     pub fn required(self, windows: bool) -> &'static [&'static str] {
         match (self, windows) {
             (Self::UvSyncOffline, true) => &[
-                "bin/uv.exe", "bin/python.exe", "LICENSES/uv.txt",
+                "bin/uv.exe",
+                "bin/python.exe",
+                "LICENSES/uv.txt",
                 "LICENSES/python.txt",
             ],
             (Self::UvSyncOffline, false) => &[
-                "bin/uv", "bin/python3", "LICENSES/uv.txt",
+                "bin/uv",
+                "bin/python3",
+                "LICENSES/uv.txt",
                 "LICENSES/python.txt",
             ],
             (Self::PythonPytest, true) => &[

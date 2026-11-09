@@ -81,11 +81,13 @@ fn hash_regular_file(path: &Path, expected_size: u64) -> Result<String, Supervis
     }
     let mut options = OpenOptions::new();
     options.read(true);
-    #[cfg(unix)] {
+    #[cfg(unix)]
+    {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(0x20000); // O_NOFOLLOW
     }
-    #[cfg(windows)] {
+    #[cfg(windows)]
+    {
         use std::os::windows::fs::OpenOptionsExt;
         options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
     }
@@ -124,12 +126,10 @@ pub fn audit_published_output(root: &Path) -> Result<OutputWitness, SupervisorEr
 /// verifier. Never serialize its unbounded list into WebView. Identical
 /// checked hash/path/budget rules as the existing advisory 96-file view.
 #[cfg(feature = "package-uv-worker")]
-pub(crate) fn audit_complete_package_output(root: &Path)
-    -> Result<OutputWitness, SupervisorError> {
+pub(crate) fn audit_complete_package_output(root: &Path) -> Result<OutputWitness, SupervisorError> {
     audit_output_internal(root, true)
 }
-fn audit_output_internal(root: &Path, retain_all: bool)
-    -> Result<OutputWitness, SupervisorError> {
+fn audit_output_internal(root: &Path, retain_all: bool) -> Result<OutputWitness, SupervisorError> {
     if !root.is_absolute() {
         return Err(denied());
     }
@@ -203,7 +203,9 @@ fn audit_output_internal(root: &Path, retain_all: bool)
     }
     let count = files.len();
     let truncated = !retain_all && count > MAX_VISIBLE;
-    if !retain_all { files.truncate(MAX_VISIBLE); }
+    if !retain_all {
+        files.truncate(MAX_VISIBLE);
+    }
     Ok(OutputWitness {
         tree_sha256: format!("{:x}", hasher.finalize()),
         file_count: count,

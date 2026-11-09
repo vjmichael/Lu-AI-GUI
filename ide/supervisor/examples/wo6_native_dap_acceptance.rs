@@ -231,6 +231,9 @@ mod protected {
         crash_owner: bool,
         ci_control: Option<&'static str>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        use lu_ide_execution_supervisor::windows_worker::lsp_native::{
+            native_lsp_bundle_digest, start_windows_project_dap,
+        };
         use lu_ide_execution_supervisor::{
             debug_binary_witness::audit_debug_binary_candidate,
             debug_symbol_verification::verify_build_debug_symbols,
@@ -243,11 +246,11 @@ mod protected {
             },
             wo6_output_evidence::audit_published_output,
         };
-        use lu_ide_execution_supervisor::windows_worker::lsp_native::{
-            native_lsp_bundle_digest, start_windows_project_dap,
-        };
         if ci_control.is_some() && (!verify_owner_event || crash_owner || cancel_project) {
-            return Err("DENIED: D6C native command requires verified owner and its own one-use normal Job".into());
+            return Err(
+                "DENIED: D6C native command requires verified owner and its own one-use normal Job"
+                    .into(),
+            );
         }
         if !matches!(ci_control, None | Some("step") | Some("breakpoint")) {
             return Err("DENIED: unknown native CI control mode".into());
@@ -294,22 +297,25 @@ mod protected {
         if ci_control == Some("step") {
             // A multi-line sealed original Cargo project allows a real
             // line step while preserving the immutable source snapshot.
-            fs::write(&source_file, concat!(
-                "fn main() {\n",
-                "    let first = 2u64;\n",
-                "    let second = first + 3;\n",
-                "    println!(\"protected step result {}\", second);\n",
-                "}\n"
-            ))?;
+            fs::write(
+                &source_file,
+                concat!(
+                    "fn main() {\n",
+                    "    let first = 2u64;\n",
+                    "    let second = first + 3;\n",
+                    "    println!(\"protected step result {}\", second);\n",
+                    "}\n"
+                ),
+            )?;
         } else {
-            fs::write(&source_file,
-                "fn main() { println!(\"protected project DAP\"); }\n"
+            fs::write(
+                &source_file,
+                "fn main() { println!(\"protected project DAP\"); }\n",
             )?;
         }
         let original_source_sha = sha(&source_file)?;
         let input = publish_input(&source, &stage, "rust_build").map_err(|e| e.code())?;
-        let toolchain_sha = trusted_offline_toolchain_digest(&rust_bundle)
-            .map_err(|e| e.code())?;
+        let toolchain_sha = trusted_offline_toolchain_digest(&rust_bundle).map_err(|e| e.code())?;
         let broker = TrustedBroker {
             executable: service.clone(),
             expected_sha256: sha(&service)?,
@@ -332,7 +338,9 @@ mod protected {
             log_limit_bytes: 65536,
             effect_class: "test_build_isolated".into(),
         };
-        let build_job = supervisor.prepare(build_plan.clone()).map_err(|e| e.code())?;
+        let build_job = supervisor
+            .prepare(build_plan.clone())
+            .map_err(|e| e.code())?;
         let live = Arc::new(LiveOutput::default());
         let built = execute_windows_worker_after_staging_approval_with_output(
             &supervisor,
@@ -365,8 +373,7 @@ mod protected {
         {
             return Err("DENIED: native Cargo build not terminally verified".into());
         }
-        let output_witness = audit_published_output(&built.output_root)
-            .map_err(|e| e.code())?;
+        let output_witness = audit_published_output(&built.output_root).map_err(|e| e.code())?;
         let candidate = audit_debug_binary_candidate(&built.output_root, &output_witness)
             .map_err(|e| e.code())?
             .ok_or("DENIED: no unique executable from protected build")?;
@@ -407,10 +414,9 @@ mod protected {
             build_successfully_completed: true,
             requires_reconciliation: false,
         };
-        let target = seal_project_debug_target(
-            &built.output_root, &private, lineage, &candidate, &symbols,
-        )
-        .map_err(|e| e.code())?;
+        let target =
+            seal_project_debug_target(&built.output_root, &private, lineage, &candidate, &symbols)
+                .map_err(|e| e.code())?;
         target.verify().map_err(|e| e.code())?;
         let debug_plan = JobPlan {
             project_id: build_plan.project_id.clone(),
@@ -427,10 +433,15 @@ mod protected {
             log_limit_bytes: 65536,
             effect_class: "debug_inspection_isolated".into(),
         };
-        let debug_job = supervisor.prepare(debug_plan.clone()).map_err(|e| e.code())?;
+        let debug_job = supervisor
+            .prepare(debug_plan.clone())
+            .map_err(|e| e.code())?;
         if supervisor
             .record_human_approval(
-                &build_job.job_id, &build_job.plan_sha256, &build_plan.source_head, true,
+                &build_job.job_id,
+                &build_job.plan_sha256,
+                &build_plan.source_head,
+                true,
             )
             .is_ok()
         {
@@ -438,7 +449,10 @@ mod protected {
         }
         supervisor
             .record_human_approval(
-                &debug_job.job_id, &debug_job.plan_sha256, &debug_plan.source_head, true,
+                &debug_job.job_id,
+                &debug_job.plan_sha256,
+                &debug_plan.source_head,
+                true,
             )
             .map_err(|e| e.code())?;
         let mut dap = start_windows_project_dap(
@@ -513,8 +527,11 @@ mod protected {
             return Err("DENIED: fixed owner crash test requires original verified event".into());
         }
         if (sample_stopped_thread || verify_independent_pdb || verify_owner_event)
-            && !verify_job_module {
-            return Err("DENIED: thread evidence cannot bypass PE module and journal witness".into());
+            && !verify_job_module
+        {
+            return Err(
+                "DENIED: thread evidence cannot bypass PE module and journal witness".into(),
+            );
         }
         if verify_job_module {
             // An authentic Job-owned PE image and preserved original journal
@@ -550,12 +567,16 @@ mod protected {
             let sample = dap.sample_stopped_project_thread_for_ci(
                 &supervisor, &debug_job.job_id, &debug_plan, &target,
             ).map_err(|_| "DENIED: query-only Job-owned stopped thread context unavailable or disagrees with DAP PC")?;
-            if !sample.two_matching_samples || !sample.job_membership_rechecked
+            if !sample.two_matching_samples
+                || !sample.job_membership_rechecked
                 || sample.kernel_debug_event_independently_verified
                 || sample.pdb_line_independently_verified
                 || sample.debugger_control_authorized
-                || sample.observed_rip == 0 {
-                return Err("DENIED: inconsistent or overclaimed Windows context observation".into());
+                || sample.observed_rip == 0
+            {
+                return Err(
+                    "DENIED: inconsistent or overclaimed Windows context observation".into(),
+                );
             }
             println!(
                 "DEV045D4B_WINDOWS_JOB_THREAD_RIP_SAMPLED=PASS;twice=true;independent_debug_event_verified=false;pdb_line_verified=false"
@@ -570,9 +591,16 @@ mod protected {
         if verify_independent_pdb && !verify_owner_event {
             #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
             {
-                let evidence = dap.verify_project_os_thread_pdb_receipts_for_ci(
-                    &supervisor, &debug_job.job_id, &debug_plan, &target,
-                ).map_err(|_| "DENIED: real LLDB Job-owned stopped RIP/PDB/source/receipt chain mismatch")?;
+                let evidence = dap
+                    .verify_project_os_thread_pdb_receipts_for_ci(
+                        &supervisor,
+                        &debug_job.job_id,
+                        &debug_plan,
+                        &target,
+                    )
+                    .map_err(|_| {
+                        "DENIED: real LLDB Job-owned stopped RIP/PDB/source/receipt chain mismatch"
+                    })?;
                 if !evidence.os_owned_thread_context_matches_lldb
                     || !evidence.independent_pdb_source_line_verified
                     || !evidence.kernel_debug_port_present
@@ -594,7 +622,7 @@ mod protected {
                 }
                 bound_line_receipts = Some((
                     evidence.debug_running_receipt_sha256.clone(),
-                    evidence.build_terminal_receipt_sha256.clone()
+                    evidence.build_terminal_receipt_sha256.clone(),
                 ));
                 println!(
                     "DEV045D4C_REAL_LU_JOB_RIP_PDB_AND_RUNNING_RECEIPTS=PASS;source_line={};os_pe_base=0x{:x};os_thread_context_matches_lldb=true;kernel_debug_port=true;parent_is_owned_lldb=true;pdb_line=independent;debug_event_owner_attested=false;source_commands_authorized=false",
@@ -603,7 +631,9 @@ mod protected {
             }
             #[cfg(not(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle")))]
             {
-                return Err("DENIED: real LLDB/PDB mapping is CI-only and never enabled in release".into());
+                return Err(
+                    "DENIED: real LLDB/PDB mapping is CI-only and never enabled in release".into(),
+                );
             }
         }
         #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
@@ -626,16 +656,25 @@ mod protected {
                     || owner.debugger_job_id != debug_job.job_id
                     || owner.debugger_plan_sha256 != debug_job.plan_sha256
                     || owner.build_terminal_receipt_sha256 != receipt.terminal_receipt_hash
-                    || owner.owner_sequence == 0 || owner.stopped_rip == 0
-                    || owner.verified_source_line == 0 {
-                    return Err("DENIED: owner event did not bind exact approved debug journal".into());
+                    || owner.owner_sequence == 0
+                    || owner.stopped_rip == 0
+                    || owner.verified_source_line == 0
+                {
+                    return Err(
+                        "DENIED: owner event did not bind exact approved debug journal".into(),
+                    );
                 }
                 let audit = dap.verify_bounded_debug_reviews_for_ci(
                     &supervisor, &owner, &input.seal.source_sha256,
                 ).map_err(|_| "DENIED: DEV-04.6A/B native operator review/one-use journal admission failed")?;
-                if audit.0.len() != 64 || audit.1.len() != 64
-                    || audit.2.len() != 64 || audit.3 != "ResultUncertain" {
-                    return Err("DENIED: D6B per-operation CI receipt incorrectly asserted success".into());
+                if audit.0.len() != 64
+                    || audit.1.len() != 64
+                    || audit.2.len() != 64
+                    || audit.3 != "ResultUncertain"
+                {
+                    return Err(
+                        "DENIED: D6B per-operation CI receipt incorrectly asserted success".into(),
+                    );
                 }
                 action_audit = Some(audit);
                 println!("DEV046B_NATIVE_OWNER_ACTION_ONE_USE=PASS;human_consent=CI_SIMULATED_ONLY;consumed_before_dispatch=true;no_dap_control=true;result=UNCERTAIN");
@@ -644,9 +683,7 @@ mod protected {
                     owner.debug_running_receipt_sha256.clone(),
                     owner.build_terminal_receipt_sha256.clone(),
                 ));
-                owner_receipt = Some((
-                    owner.owner_sequence, owner.native_owner_receipt_sha256,
-                ));
+                owner_receipt = Some((owner.owner_sequence, owner.native_owner_receipt_sha256));
                 if let Some(mode) = ci_control {
                     #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
                     {
@@ -657,12 +694,13 @@ mod protected {
                                 ).map_err(|_| "DENIED: D6C new native LLDB stop/OS RIP/PDB and step result not independently verified")?;
                                 if receipt.3 != "ResultVerified"
                                     || after.owner_sequence != owner.owner_sequence + 1
-                                    || after.native_owner_receipt_sha256 == owner.native_owner_receipt_sha256 {
+                                    || after.native_owner_receipt_sha256
+                                        == owner.native_owner_receipt_sha256
+                                {
                                     return Err("DENIED: D6C adapter acknowledgement substituted for a new owner event".into());
                                 }
-                                owner_receipt = Some((
-                                    after.owner_sequence, after.native_owner_receipt_sha256,
-                                ));
+                                owner_receipt =
+                                    Some((after.owner_sequence, after.native_owner_receipt_sha256));
                                 control_audit = Some(receipt);
                                 println!("DEV046C_NATIVE_CI_STEP_INDEPENDENT_OS_PDB=PASS;consent=CI_ONLY;new_event=true;result=verified");
                             }
@@ -695,18 +733,31 @@ mod protected {
             }
             #[cfg(not(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner")))]
             {
-                return Err("DENIED: first-party LLDB owner-event proof unavailable outside native CI".into());
+                return Err(
+                    "DENIED: first-party LLDB owner-event proof unavailable outside native CI"
+                        .into(),
+                );
             }
         }
         if crash_owner {
             #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
             {
                 dap.crash_real_lldb_after_owner_receipt_for_ci()
-                    .map_err(|_| "DENIED: native CI failed to kill the actual protected LLDB process")?;
-                if dap.verify_real_lldb_event_owner_for_ci(
-                    &supervisor, &debug_job.job_id, &debug_plan, &target,
-                ).is_ok() {
-                    return Err("DENIED: dead LLDB process replayed active kernel event evidence".into());
+                    .map_err(|_| {
+                        "DENIED: native CI failed to kill the actual protected LLDB process"
+                    })?;
+                if dap
+                    .verify_real_lldb_event_owner_for_ci(
+                        &supervisor,
+                        &debug_job.job_id,
+                        &debug_plan,
+                        &target,
+                    )
+                    .is_ok()
+                {
+                    return Err(
+                        "DENIED: dead LLDB process replayed active kernel event evidence".into(),
+                    );
                 }
                 println!("DEV045D5_REAL_LLDB_WORKER_CRASH_REVOKES_OWNER=PASS");
             }
@@ -726,14 +777,18 @@ mod protected {
                 pair[0].body.phase == JobPhase::CancelRequested
                     && pair[1].body.phase == JobPhase::Cancelled
             }) {
-                return Err("DENIED: project LLDB cancel receipts not fsynced before tree kill".into());
+                return Err(
+                    "DENIED: project LLDB cancel receipts not fsynced before tree kill".into(),
+                );
             }
             println!("DEV045C_WINDOWS_PROJECT_LLDB_CANCEL_JOB_TREE_AND_RECEIPTS=PASS");
         } else if verify_owner_event {
             #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
             {
-                let seq = owner_receipt.as_ref()
-                    .ok_or("DENIED: owner event receipt disappeared before DAP disconnect")?.0;
+                let seq = owner_receipt
+                    .as_ref()
+                    .ok_or("DENIED: owner event receipt disappeared before DAP disconnect")?
+                    .0;
                 dap.close_with_real_owner_continue_for_ci(seq)
                     .map_err(|_| "DENIED: original LLDB ContinueDebugEvent revocation missing before Job terminal")?;
                 println!("DEV045D5_NATIVE_LLDB_EVENT_CONTINUED_AND_REVOKED=PASS");
@@ -743,9 +798,15 @@ mod protected {
         } else {
             dap.close().map_err(|e| e.code())?;
         }
-        if supervisor.record_human_approval(
-            &debug_job.job_id, &debug_job.plan_sha256, &debug_plan.source_head, true,
-        ).is_ok() {
+        if supervisor
+            .record_human_approval(
+                &debug_job.job_id,
+                &debug_job.plan_sha256,
+                &debug_plan.source_head,
+                true,
+            )
+            .is_ok()
+        {
             return Err("DENIED: consumed debugger approval could be replayed".into());
         }
         if sha(&source_file)? != original_source_sha {
@@ -753,40 +814,50 @@ mod protected {
         }
         let expected_debug = if cancel_project || crash_owner {
             JobPhase::Cancelled
-        } else { JobPhase::Completed };
+        } else {
+            JobPhase::Completed
+        };
         let jobs = supervisor.inspect().map_err(|e| e.code())?;
-        if jobs.len() != 2 || jobs.iter().any(|j| {
-            j.requires_reconciliation
-                || j.phase != (if j.job_id == debug_job.job_id {
-                    expected_debug
-                } else {
-                    JobPhase::Completed
-                })
-        }) {
+        if jobs.len() != 2
+            || jobs.iter().any(|j| {
+                j.requires_reconciliation
+                    || j.phase
+                        != (if j.job_id == debug_job.job_id {
+                            expected_debug
+                        } else {
+                            JobPhase::Completed
+                        })
+            })
+        {
             return Err("DENIED: native protected build/debug terminals incomplete".into());
         }
         #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
         if let Some((running_sha, completed_build_sha)) = bound_line_receipts {
-            let debug_chain = supervisor.receipt_history(&debug_job.job_id)
+            let debug_chain = supervisor
+                .receipt_history(&debug_job.job_id)
                 .map_err(|e| e.code())?;
             let original_running = debug_chain.iter().any(|r| {
                 r.body.phase == JobPhase::Running
                     && r.entry_hash == running_sha
                     && r.body.plan_sha256 == debug_job.plan_sha256
             });
-            let terminal = debug_chain.last()
+            let terminal = debug_chain
+                .last()
                 .ok_or("DENIED: protected Windows line proof missing terminal receipt")?;
-            let build_chain = supervisor.receipt_history(&build_job.job_id)
+            let build_chain = supervisor
+                .receipt_history(&build_job.job_id)
                 .map_err(|e| e.code())?;
             let original_build = build_chain.last().is_some_and(|r| {
                 r.body.phase == JobPhase::Completed
                     && r.entry_hash == completed_build_sha
                     && r.body.plan_sha256 == build_job.plan_sha256
             });
-            if !original_running || !original_build
+            if !original_running
+                || !original_build
                 || terminal.body.phase != expected_debug
                 || terminal.body.plan_sha256 != debug_job.plan_sha256
-                || terminal.entry_hash == running_sha {
+                || terminal.entry_hash == running_sha
+            {
                 return Err("DENIED: protected Windows PDB stop did not survive independent fsynced terminal".into());
             }
             println!("DEV045D4C_LU_JOB_PDB_TERMINAL_JOURNAL=PASS");
@@ -799,59 +870,88 @@ mod protected {
         drop(supervisor);
         let replay = Supervisor::open(journal).map_err(|e| e.code())?;
         let jobs = replay.inspect().map_err(|e| e.code())?;
-        if jobs.len() != 2 || jobs.iter().any(|j| {
-            j.requires_reconciliation
-                || j.phase != (if j.job_id == debug_job.job_id {
-                    expected_debug
-                } else {
-                    JobPhase::Completed
-                })
-        }) {
+        if jobs.len() != 2
+            || jobs.iter().any(|j| {
+                j.requires_reconciliation
+                    || j.phase
+                        != (if j.job_id == debug_job.job_id {
+                            expected_debug
+                        } else {
+                            JobPhase::Completed
+                        })
+            })
+        {
             return Err("DENIED: native SCM debug receipts failed journal restart".into());
         }
         #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
         {
-            let orphan_jobs = replay.native_debug_action_cleanup_jobs_after_restart()
+            let orphan_jobs = replay
+                .native_debug_action_cleanup_jobs_after_restart()
                 .map_err(|_| "DENIED: D6D restart action inventory foreign or corrupt")?;
             if !orphan_jobs.is_empty() {
-                return Err("DENIED: D6D orphan operator approval requires separate OS-only cleanup".into());
+                return Err(
+                    "DENIED: D6D orphan operator approval requires separate OS-only cleanup".into(),
+                );
             }
             println!("DEV046D_ACTION_RESTART_INVENTORY=PASS;orphan_grants=0;new_authority=false");
         }
         #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
         if let Some((sequence, owner_sha)) = owner_receipt {
-            replay.verify_native_owner_receipt_after_restart(
-                &debug_job.job_id, sequence, &owner_sha,
-            ).map_err(|e| e.code())?;
+            replay
+                .verify_native_owner_receipt_after_restart(&debug_job.job_id, sequence, &owner_sha)
+                .map_err(|e| e.code())?;
             println!("DEV045D5_OWNER_EVENT_FSYNC_RESTART_RECOVERY=PASS");
         }
         #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
         if let Some((action_id, preview, last, phase)) = action_audit {
-            replay.verify_native_debug_action_after_restart(
-                &action_id, &preview, &last, &phase,
-            ).map_err(|_| "DENIED: native D6B one-use action journal missing or tampered after restart")?;
+            replay
+                .verify_native_debug_action_after_restart(&action_id, &preview, &last, &phase)
+                .map_err(|_| {
+                    "DENIED: native D6B one-use action journal missing or tampered after restart"
+                })?;
             println!("DEV046B_ACTION_JOURNAL_REOPEN_AUDIT=PASS;grant_restored=false;operation_not_dispatched=true");
         }
         #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
         if let Some((action_id, preview, last, phase)) = control_audit {
-            replay.verify_native_debug_action_after_restart(
-                &action_id, &preview, &last, &phase,
-            ).map_err(|_| "DENIED: D6C verified/uncertain control receipt not durable after restart")?;
+            replay
+                .verify_native_debug_action_after_restart(&action_id, &preview, &last, &phase)
+                .map_err(|_| {
+                    "DENIED: D6C verified/uncertain control receipt not durable after restart"
+                })?;
             match ci_control {
-                Some("step") if phase == "ResultVerified" => {},
-                Some("breakpoint") if phase == "ResultUncertain" => {},
-                _ => return Err("DENIED: native source control outcome asserted without matching OS witness".into()),
+                Some("step") if phase == "ResultVerified" => {}
+                Some("breakpoint") if phase == "ResultUncertain" => {}
+                _ => return Err(
+                    "DENIED: native source control outcome asserted without matching OS witness"
+                        .into(),
+                ),
             }
-            println!("DEV046C_NATIVE_STEP_OR_BP_ACTION_JOURNAL_RESTART=PASS;old_consent_replay=false");
+            println!(
+                "DEV046C_NATIVE_STEP_OR_BP_ACTION_JOURNAL_RESTART=PASS;old_consent_replay=false"
+            );
         }
         // Opening a fresh supervisor session must not restore either prior
         // grant, even though both old plan hashes and receipts remain readable.
-        if replay.record_human_approval(
-            &build_job.job_id, &build_job.plan_sha256, &build_plan.source_head, true,
-        ).is_ok() || replay.record_human_approval(
-            &debug_job.job_id, &debug_job.plan_sha256, &debug_plan.source_head, true,
-        ).is_ok() {
-            return Err("DENIED: completed Windows project debug grant replayed after restart".into());
+        if replay
+            .record_human_approval(
+                &build_job.job_id,
+                &build_job.plan_sha256,
+                &build_plan.source_head,
+                true,
+            )
+            .is_ok()
+            || replay
+                .record_human_approval(
+                    &debug_job.job_id,
+                    &debug_job.plan_sha256,
+                    &debug_plan.source_head,
+                    true,
+                )
+                .is_ok()
+        {
+            return Err(
+                "DENIED: completed Windows project debug grant replayed after restart".into(),
+            );
         }
         println!("DEV045B_WINDOWS_CARGO_TO_APPCONTAINER_PROJECT_LLDB=PASS");
         println!("DEV045B_WINDOWS_DISTINCT_GRANTS_RESTART_AND_STAGE_CLEANUP=PASS");
@@ -902,7 +1002,15 @@ mod protected {
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-breakpoint"] {
-            return run_windows_project_debug(false, true, true, true, true, false, Some("breakpoint"));
+            return run_windows_project_debug(
+                false,
+                true,
+                true,
+                true,
+                true,
+                false,
+                Some("breakpoint"),
+            );
         }
         let cancel = args.as_slice() == ["--cancel"];
         #[cfg(target_os = "linux")]

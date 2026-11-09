@@ -15,7 +15,9 @@ const MAX_SEQ: u64 = 4096;
 const MAGIC: &[u8; 8] = b"LUOE0001";
 const RECEIVED: u32 = 1;
 const CONTINUED: u32 = 2;
-fn denied() -> SupervisorError { SupervisorError::NoContainment }
+fn denied() -> SupervisorError {
+    SupervisorError::NoContainment
+}
 fn le_u32(b: &[u8], i: usize) -> u32 {
     u32::from_le_bytes(b[i..i + 4].try_into().unwrap())
 }
@@ -37,11 +39,12 @@ pub(crate) struct OwnerEvent {
     pub continue_status: u32,
 }
 pub(crate) fn decode(
-    bytes: &[u8], original_nonce: &[u8; 16],
+    bytes: &[u8],
+    original_nonce: &[u8; 16],
 ) -> Result<OwnerEvent, SupervisorError> {
-    if bytes.len() != SIZE || &bytes[0..8] != MAGIC
-        || &bytes[8..24] != original_nonce
-    { return Err(denied()); }
+    if bytes.len() != SIZE || &bytes[0..8] != MAGIC || &bytes[8..24] != original_nonce {
+        return Err(denied());
+    }
     let event = OwnerEvent {
         seq: le_u64(bytes, 24),
         kind: le_u32(bytes, 32),
@@ -54,15 +57,20 @@ pub(crate) fn decode(
         exception_address: le_u64(bytes, 64),
         continue_status: le_u32(bytes, 72),
     };
-    if event.seq == 0 || event.seq > MAX_SEQ
+    if event.seq == 0
+        || event.seq > MAX_SEQ
         || !matches!(event.kind, RECEIVED | CONTINUED)
-        || event.pid == 0 || event.tid == 0 || event.owner_tid == 0
-        || event.rip == 0 || event.exception_address == 0
+        || event.pid == 0
+        || event.tid == 0
+        || event.owner_tid == 0
+        || event.rip == 0
+        || event.exception_address == 0
         || event.first_chance > 1
         || (event.kind == RECEIVED && event.continue_status != 0)
-        || (event.kind == CONTINUED
-            && !matches!(event.continue_status, 1 | 2))
-    { return Err(denied()); }
+        || (event.kind == CONTINUED && !matches!(event.continue_status, 1 | 2))
+    {
+        return Err(denied());
+    }
     Ok(event)
 }
 #[derive(Default)]
@@ -72,13 +80,15 @@ pub(crate) struct OwnerEventLedger {
     revoked: bool,
 }
 impl OwnerEventLedger {
-    pub(crate) fn observe(&mut self, event: OwnerEvent)
-        -> Result<(), SupervisorError>
-    {
+    pub(crate) fn observe(&mut self, event: OwnerEvent) -> Result<(), SupervisorError> {
         match event.kind {
             RECEIVED => {
-                if self.active.is_some() || event.seq != self.next_sequence + 1
-                    || event.continue_status != 0 { return Err(denied()); }
+                if self.active.is_some()
+                    || event.seq != self.next_sequence + 1
+                    || event.continue_status != 0
+                {
+                    return Err(denied());
+                }
                 self.next_sequence = event.seq;
                 self.active = Some(event);
                 self.revoked = false;
@@ -87,15 +97,21 @@ impl OwnerEventLedger {
                 // A Win32 ContinueDebugEvent failure MUST NOT satisfy the
                 // normal terminal/stop-revocation acceptance. Record kind 2
                 // with status 2 is a denial, not successful continuation.
-                if event.continue_status != 1 { return Err(denied()); }
+                if event.continue_status != 1 {
+                    return Err(denied());
+                }
                 let old = self.active.as_ref().ok_or_else(denied)?;
-                if old.seq != event.seq || old.pid != event.pid
-                    || old.tid != event.tid || old.owner_tid != event.owner_tid
+                if old.seq != event.seq
+                    || old.pid != event.pid
+                    || old.tid != event.tid
+                    || old.owner_tid != event.owner_tid
                     || old.exception_code != event.exception_code
                     || old.first_chance != event.first_chance
                     || old.rip != event.rip
                     || old.exception_address != event.exception_address
-                { return Err(denied()); }
+                {
+                    return Err(denied());
+                }
                 self.active = None;
                 self.revoked = true;
             }
@@ -103,12 +119,21 @@ impl OwnerEventLedger {
         }
         Ok(())
     }
-    pub(crate) fn matching_stop(&self, pid: u32, tid: u32, rip: u64)
-        -> Result<OwnerEvent, SupervisorError>
-    {
+    pub(crate) fn matching_stop(
+        &self,
+        pid: u32,
+        tid: u32,
+        rip: u64,
+    ) -> Result<OwnerEvent, SupervisorError> {
         let event = self.active.as_ref().ok_or_else(denied)?;
-        if self.revoked || event.kind != RECEIVED || event.pid != pid
-            || event.tid != tid || event.rip != rip { return Err(denied()); }
+        if self.revoked
+            || event.kind != RECEIVED
+            || event.pid != pid
+            || event.tid != tid
+            || event.rip != rip
+        {
+            return Err(denied());
+        }
         Ok(event.clone())
     }
 }
@@ -119,17 +144,27 @@ impl OwnerEventLedger {
 /// The event source's authenticity was already proven via kernel handle list,
 /// compiled LLDB pin, nonce, owner thread PID and Job.
 pub(crate) fn persist_native_owner_receipt(
-    root: &Path, job_id: &str, plan_sha256: &str,
-    running_receipt_sha256: &str, event: &OwnerEvent,
+    root: &Path,
+    job_id: &str,
+    plan_sha256: &str,
+    running_receipt_sha256: &str,
+    event: &OwnerEvent,
 ) -> Result<String, SupervisorError> {
     use sha2::{Digest, Sha256};
     if !root.is_absolute()
-        || !job_id.starts_with("job-") || job_id.len() != 36
+        || !job_id.starts_with("job-")
+        || job_id.len() != 36
         || !job_id[4..].bytes().all(|b| b.is_ascii_hexdigit())
-        || plan_sha256.len() != 64 || running_receipt_sha256.len() != 64
+        || plan_sha256.len() != 64
+        || running_receipt_sha256.len() != 64
         || !plan_sha256.bytes().all(|b| b.is_ascii_hexdigit())
-        || !running_receipt_sha256.bytes().all(|b| b.is_ascii_hexdigit())
-        || event.kind != RECEIVED { return Err(denied()); }
+        || !running_receipt_sha256
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit())
+        || event.kind != RECEIVED
+    {
+        return Err(denied());
+    }
     let directory = fs::symlink_metadata(root).map_err(|_| denied())?;
     if !directory.is_dir() || directory.file_type().is_symlink() {
         return Err(denied());
@@ -139,19 +174,31 @@ pub(crate) fn persist_native_owner_receipt(
     let body = format!(
         "lu-owner-v1\n{job_id}\n{plan_sha256}\n{running_receipt_sha256}\n\
          {}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
-        event.seq, event.pid, event.tid, event.owner_tid,
-        event.exception_code, event.first_chance,
-        event.rip, event.exception_address
+        event.seq,
+        event.pid,
+        event.tid,
+        event.owner_tid,
+        event.exception_code,
+        event.first_chance,
+        event.rip,
+        event.exception_address
     );
-    if body.len() > 1024 { return Err(denied()); }
+    if body.len() > 1024 {
+        return Err(denied());
+    }
     let hash = format!("{:x}", Sha256::digest(body.as_bytes()));
-    let mut f = OpenOptions::new().write(true).create_new(true)
-        .open(&file).map_err(|_| denied())?;
+    let mut f = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&file)
+        .map_err(|_| denied())?;
     f.write_all(body.as_bytes()).map_err(|_| denied())?;
     f.sync_all().map_err(|_| denied())?;
     drop(f);
     let verify = fs::read(&file).map_err(|_| denied())?;
-    if verify != body.as_bytes() { return Err(denied()); }
+    if verify != body.as_bytes() {
+        return Err(denied());
+    }
     Ok(hash)
 }
 
@@ -164,7 +211,8 @@ pub(crate) struct OwnerSideband {
     pub(crate) ledger: OwnerEventLedger,
 }
 pub(crate) fn start_owner_pipe_reader(
-    raw: usize, nonce: [u8; 16],
+    raw: usize,
+    nonce: [u8; 16],
 ) -> Result<OwnerSideband, SupervisorError> {
     use std::{sync::mpsc, thread};
     use windows_sys::Win32::{
@@ -172,9 +220,12 @@ pub(crate) fn start_owner_pipe_reader(
         Storage::FileSystem::ReadFile,
     };
     let handle = raw as HANDLE;
-    if handle.is_null() || handle == INVALID_HANDLE_VALUE { return Err(denied()); }
+    if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+        return Err(denied());
+    }
     let (tx, rx) = mpsc::sync_channel(256);
-    thread::Builder::new().name("lu-lldb-owner-receipts".into())
+    thread::Builder::new()
+        .name("lu-lldb-owner-receipts".into())
         .spawn(move || {
             // Single owner of the raw anonymous pipe; no other thread reads.
             let handle = raw as HANDLE;
@@ -185,13 +236,21 @@ pub(crate) fn start_owner_pipe_reader(
                 while have < SIZE {
                     let mut n = 0u32;
                     let ok = unsafe {
-                        ReadFile(handle, wire[have..].as_mut_ptr(),
-                                 (SIZE - have) as u32, &mut n,
-                                 std::ptr::null_mut())
+                        ReadFile(
+                            handle,
+                            wire[have..].as_mut_ptr(),
+                            (SIZE - have) as u32,
+                            &mut n,
+                            std::ptr::null_mut(),
+                        )
                     };
                     if ok == 0 || n == 0 {
-                        if have != 0 { let _ = tx.try_send(Err(())); }
-                        unsafe { CloseHandle(handle); }
+                        if have != 0 {
+                            let _ = tx.try_send(Err(()));
+                        }
+                        unsafe {
+                            CloseHandle(handle);
+                        }
                         return;
                     }
                     have += n as usize;
@@ -202,23 +261,35 @@ pub(crate) fn start_owner_pipe_reader(
                     break;
                 }
                 let parsed = decode(&wire, &nonce).map_err(|_| ());
-                if tx.try_send(parsed).is_err() { break; }
+                if tx.try_send(parsed).is_err() {
+                    break;
+                }
             }
-            unsafe { CloseHandle(handle); }
+            unsafe {
+                CloseHandle(handle);
+            }
         })
         .map_err(|_| {
             // The caller relinquishes the raw handle before starting this
             // thread; failed creation must still close it exactly once.
-            unsafe { CloseHandle(raw as HANDLE); }
+            unsafe {
+                CloseHandle(raw as HANDLE);
+            }
             denied()
         })?;
-    Ok(OwnerSideband { receiver: rx, ledger: OwnerEventLedger::default() })
+    Ok(OwnerSideband {
+        receiver: rx,
+        ledger: OwnerEventLedger::default(),
+    })
 }
 impl OwnerSideband {
     fn drain(&mut self, first_wait: bool) -> Result<(), SupervisorError> {
         use std::sync::mpsc::TryRecvError;
         if first_wait {
-            match self.receiver.recv_timeout(std::time::Duration::from_millis(750)) {
+            match self
+                .receiver
+                .recv_timeout(std::time::Duration::from_millis(750))
+            {
                 Ok(Ok(record)) => self.ledger.observe(record)?,
                 _ => return Err(denied()),
             }
@@ -237,14 +308,14 @@ impl OwnerSideband {
     /// independently detects leaked inherited write handles in the inferior
     /// or a surviving descendant writer; absence of an owner IPC proof is
     /// not by itself enough to establish OS handle cleanup.
-    pub(crate) fn expect_pipe_eof_after_lldb_crash(
-        &mut self,
-    ) -> Result<(), SupervisorError> {
+    pub(crate) fn expect_pipe_eof_after_lldb_crash(&mut self) -> Result<(), SupervisorError> {
         use std::sync::mpsc::RecvTimeoutError;
         let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
         loop {
             let remaining = until.saturating_duration_since(std::time::Instant::now());
-            if remaining.is_zero() { return Err(denied()); }
+            if remaining.is_zero() {
+                return Err(denied());
+            }
             match self.receiver.recv_timeout(remaining) {
                 Ok(Ok(record)) => self.ledger.observe(record)?,
                 Ok(Err(())) => return Err(denied()),
@@ -257,27 +328,36 @@ impl OwnerSideband {
     /// pipe immediately after actual Win32 ContinueDebugEvent. No generic
     /// DAP continue command, model-selected PID or writable process access.
     pub(crate) fn wait_exact_native_continue(
-        &mut self, sequence: u64,
+        &mut self,
+        sequence: u64,
     ) -> Result<(), SupervisorError> {
         use std::sync::mpsc::RecvTimeoutError;
         let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
         loop {
-            if self.ledger.revoked && self.ledger.next_sequence == sequence
-                && self.ledger.active.is_none() {
+            if self.ledger.revoked
+                && self.ledger.next_sequence == sequence
+                && self.ledger.active.is_none()
+            {
                 return Ok(());
             }
             let left = until.saturating_duration_since(std::time::Instant::now());
-            if left.is_zero() { return Err(denied()); }
+            if left.is_zero() {
+                return Err(denied());
+            }
             match self.receiver.recv_timeout(left) {
                 Ok(Ok(event)) => self.ledger.observe(event)?,
-                Ok(Err(())) | Err(RecvTimeoutError::Disconnected)
-                    | Err(RecvTimeoutError::Timeout) => return Err(denied()),
+                Ok(Err(()))
+                | Err(RecvTimeoutError::Disconnected)
+                | Err(RecvTimeoutError::Timeout) => return Err(denied()),
             }
         }
     }
-    pub(crate) fn current(&mut self, pid: u32, tid: u32, rip: u64)
-        -> Result<OwnerEvent, SupervisorError>
-    {
+    pub(crate) fn current(
+        &mut self,
+        pid: u32,
+        tid: u32,
+        rip: u64,
+    ) -> Result<OwnerEvent, SupervisorError> {
         self.drain(self.ledger.active.is_none())?;
         self.ledger.matching_stop(pid, tid, rip)
     }
@@ -288,9 +368,15 @@ mod tests {
     use super::*;
     fn record(seq: u64, kind: u32) -> OwnerEvent {
         OwnerEvent {
-            seq, kind, pid: 55, tid: 75, owner_tid: 90,
-            exception_code: 0x80000003, first_chance: 1,
-            rip: 0x140001123, exception_address: 0x140001122,
+            seq,
+            kind,
+            pid: 55,
+            tid: 75,
+            owner_tid: 90,
+            exception_code: 0x80000003,
+            first_chance: 1,
+            rip: 0x140001123,
+            exception_address: 0x140001122,
             continue_status: if kind == CONTINUED { 1 } else { 0 },
         }
     }
@@ -299,8 +385,14 @@ mod tests {
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&nonce);
         out.extend_from_slice(&e.seq.to_le_bytes());
-        for value in [e.kind, e.pid, e.tid, e.owner_tid,
-                      e.exception_code, e.first_chance] {
+        for value in [
+            e.kind,
+            e.pid,
+            e.tid,
+            e.owner_tid,
+            e.exception_code,
+            e.first_chance,
+        ] {
             out.extend_from_slice(&value.to_le_bytes());
         }
         out.extend_from_slice(&e.rip.to_le_bytes());
@@ -342,9 +434,7 @@ mod tests {
         let mut failed = record(1, CONTINUED);
         failed.continue_status = 2;
         assert!(ledger.observe(failed).is_err());
-        assert_eq!(
-            ledger.matching_stop(55, 75, 0x140001123).unwrap().seq, 1
-        );
+        assert_eq!(ledger.matching_stop(55, 75, 0x140001123).unwrap().seq, 1);
         ledger.observe(record(1, CONTINUED)).unwrap();
         assert!(ledger.matching_stop(55, 75, 0x140001123).is_err());
     }

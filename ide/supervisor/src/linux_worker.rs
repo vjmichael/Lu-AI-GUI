@@ -65,8 +65,7 @@ fn reviewed_multilang_bundle(
         "python_pytest" => (DEV03_PYTHON_ROOT, DEV03_PYTHON_PIN),
         "js_tests" => (DEV03_NODE_ROOT, DEV03_NODE_PIN),
         "cpp_cmake_build" => (DEV03_CMAKE_ROOT, DEV03_CMAKE_PIN),
-        "uv_sync_offline" if cfg!(feature = "package-uv-worker") =>
-            (IDE05_UV_ROOT, IDE05_UV_PIN),
+        "uv_sync_offline" if cfg!(feature = "package-uv-worker") => (IDE05_UV_ROOT, IDE05_UV_PIN),
         _ => return Err(SupervisorError::InvalidPlan),
     };
     let expected = pin.ok_or(SupervisorError::NoContainment)?;
@@ -510,8 +509,9 @@ fn command_for(
         "lu_ide_host_tests" => "/workspace/ide/host/Cargo.toml",
         "rust_tests" | "rust_check" | "rust_build" => "/workspace/Cargo.toml",
         "python_pytest" if runtime.is_some() => "/workspace/pyproject.toml",
-        "uv_sync_offline" if cfg!(feature = "package-uv-worker")
-            && runtime.is_some() => "/workspace/pyproject.toml",
+        "uv_sync_offline" if cfg!(feature = "package-uv-worker") && runtime.is_some() => {
+            "/workspace/pyproject.toml"
+        }
         "js_tests" if runtime.is_some() => "/workspace/package.json",
         "cpp_cmake_build" if runtime.is_some() => "/workspace/CMakeLists.txt",
         _ => return Err(SupervisorError::InvalidPlan),
@@ -614,17 +614,23 @@ fn command_for(
         // environment/cache bytes are confined to the private /output mount.
         // --no-build alone does not suppress first-party build backends;
         // --no-install-workspace is independently necessary.
-        cmd.arg("--setenv").arg("UV_PROJECT_ENVIRONMENT")
+        cmd.arg("--setenv")
+            .arg("UV_PROJECT_ENVIRONMENT")
             .arg("/output/.venv")
-            .arg("--setenv").arg("UV_CACHE_DIR")
+            .arg("--setenv")
+            .arg("UV_CACHE_DIR")
             .arg("/output/uv-cache")
-            .arg("--setenv").arg("UV_NO_BUILD")
+            .arg("--setenv")
+            .arg("UV_NO_BUILD")
             .arg("1")
-            .arg("--setenv").arg("UV_PYTHON_DOWNLOADS")
+            .arg("--setenv")
+            .arg("UV_PYTHON_DOWNLOADS")
             .arg("never")
-            .arg("--setenv").arg("UV_NO_PROGRESS")
+            .arg("--setenv")
+            .arg("UV_NO_PROGRESS")
             .arg("1")
-            .arg("--setenv").arg("UV_NO_CONFIG")
+            .arg("--setenv")
+            .arg("UV_NO_CONFIG")
             .arg("1");
     }
     cmd.arg("--");
@@ -641,16 +647,25 @@ fn command_for(
             .arg("--manifest-path")
             .arg(manifest);
         }
-        "uv_sync_offline" if cfg!(feature = "package-uv-worker")
-            && runtime.is_some() => {
+        "uv_sync_offline" if cfg!(feature = "package-uv-worker") && runtime.is_some() => {
             if !input.root.join("uv.lock").is_file() {
                 return Err(SupervisorError::WrongProjectOrSource);
             }
             cmd.arg("/runtime/bin/uv").args([
-                "sync", "--offline", "--locked", "--no-build",
-                "--no-install-workspace", "--no-default-groups", "--no-dev",
-                "--no-sources", "--link-mode", "copy", "--no-config",
-                "--no-python-downloads", "--python", "/runtime/bin/python3",
+                "sync",
+                "--offline",
+                "--locked",
+                "--no-build",
+                "--no-install-workspace",
+                "--no-default-groups",
+                "--no-dev",
+                "--no-sources",
+                "--link-mode",
+                "copy",
+                "--no-config",
+                "--no-python-downloads",
+                "--python",
+                "/runtime/bin/python3",
             ]);
         }
         "python_pytest" if runtime.is_some() => {
