@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "df3130e2c91838559f21529098115732056373a9",
-  "trackedFileCount": 802,
+  "sourceCommitBeforeLock": "cbca41f79a1ede41d66a251196b834d3ed18eb62",
+  "trackedFileCount": 803,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -593,7 +593,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "497fdac121056d7d55e638196a06adda72341578"
+      "blob": "a41cf2d54a4693c6984553bdf2aca07e31f131af"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -894,6 +894,10 @@
     {
       "path": "lu-desktop/docs/LU_R21_WINDOWS_IMAGE_ADMISSION_AND_MODEL_BOUNDARY_20261101.md",
       "blob": "8e0863b4a6d72120ef06fd4bb30f9ef0242fc664"
+    },
+    {
+      "path": "lu-desktop/package-lock.json",
+      "blob": "b6d082da400a7585d9bc57f551063d0abadbec83"
     },
     {
       "path": "lu-desktop/package.json",
