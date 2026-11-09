@@ -240,6 +240,19 @@ pub fn bind_child_plan(
     if child_origin.as_ref()!=Some(&(chat,human_turn.to_owned())){
         return Err("Child is not a new plan from the exact fresh human turn".into())
     }
+    let fence:Option<(String,String)>=tx.query_row(
+        "SELECT state,revision_sha256 FROM lu_agent_schedule_owners WHERE plan_id=?1",
+        params![parent],|r|Ok((r.get(0)?,r.get(1)?))
+    ).optional().map_err(|e|e.to_string())?;
+    if fence.as_ref()!=Some(&("RELEASED".into(),revision.into())){
+        return Err("Original host is not released at child-plan binding".into())
+    }
+    let uncertain:i64=tx.query_row(
+        "SELECT COUNT(*) FROM lu_agent_schedule_proposals WHERE plan_id=?1
+          AND state!='OBSERVED_VERIFIED_HISTORICAL'",
+        params![parent],|r|r.get(0)
+    ).map_err(|e|e.to_string())?;
+    if uncertain!=0{return Err("Original work is uncertain".into())}
     let existing:Option<(String,String)>=tx.query_row(
         "SELECT child_plan_id,fresh_human_turn_id
           FROM lu_agent_continuation_children
@@ -259,6 +272,109 @@ pub fn bind_child_plan(
         ).map_err(|e|format!("Child plan lineage conflict: {e}"))?;
     }
     tx.commit().map_err(|e|e.to_string())
+}
+
+
+/// Reopen a child-to-parent lineage before opening any *new* reviewed-app
+/// execution session. Returns true only for a recognized continuation child.
+/// An ordinary first-step plan is still governed by its normal host broker.
+/// No tool grant or OS process is created by this read/reverification method.
+#[allow(clippy::too_many_arguments)]
+pub fn reverify_child_before_execution(
+    file:&Path,profile:&Path,child_plan:&str,chat:&str,
+    ledger:&AgentPlanLedger,revisions:&AgentPlanRevisionStore,
+    scheduler:&AgentHostScheduler,receipts:&AgentDeliverableReceipts,
+    sources:&dyn HostPlanReferenceVerifier,
+)->Result<bool,String>{
+    if !opaque_id(child_plan,"p-")||!opaque_id(chat,"c-"){
+        return Err("Invalid child plan scope".into())
+    }
+    let db=Connection::open_with_flags(
+        file,rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+            |rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
+    ).map_err(|e|e.to_string())?;
+    let present:Option<String>=db.query_row(
+        "SELECT name FROM sqlite_master WHERE type='table'
+         AND name='lu_agent_continuation_children'",
+        [],|r|r.get(0)
+    ).optional().map_err(|e|e.to_string())?;
+    if present.is_none(){return Ok(false)}
+    let link:Option<(String,String,u8,String)>=db.query_row(
+        "SELECT parent_plan_id,revision_sha256,step_index,fresh_human_turn_id
+         FROM lu_agent_continuation_children WHERE child_plan_id=?1",
+        params![child_plan],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))
+    ).optional().map_err(|e|format!("Corrupt child lineage: {e}"))?;
+    let Some((parent,revision,step,prep_turn))=link else{return Ok(false)};
+    if !opaque_id(&parent,"p-")||!lowercase_sha(&revision)
+        ||!opaque_id(&prep_turn,"g-")||step==0||step>31{
+        return Err("Corrupt persisted parent/child lineage".into())
+    }
+    let (orig_chat,original_turn):(String,String)=db.query_row(
+        "SELECT conversation_id,human_turn_id FROM lu_agent_plans WHERE plan_id=?1",
+        params![parent],|r|Ok((r.get(0)?,r.get(1)?))
+    ).map_err(|e|e.to_string())?;
+    let (child_chat,child_turn):(String,String)=db.query_row(
+        "SELECT conversation_id,human_turn_id FROM lu_agent_plans WHERE plan_id=?1",
+        params![child_plan],|r|Ok((r.get(0)?,r.get(1)?))
+    ).map_err(|e|e.to_string())?;
+    if orig_chat!=chat||child_chat!=chat||child_turn!=prep_turn{
+        return Err("Child plan has wrong human origin".into())
+    }
+    let intent:Option<String>=db.query_row(
+        "SELECT state FROM lu_agent_continuation_intents
+         WHERE plan_id=?1 AND revision_sha256=?2 AND step_index=?3
+           AND fresh_human_turn_id=?4",
+        params![parent,revision,step,prep_turn],|r|r.get(0)
+    ).optional().map_err(|e|e.to_string())?;
+    if intent.as_deref()!=Some("AWAITING_NEW_HOST_REVIEW"){
+        return Err("Child lineage lacks original fresh-human intent".into())
+    }
+    let original=ledger.snapshot(&parent,chat,&original_turn)
+        .map_err(|e|format!("Original plan unavailable: {e:?}"))?
+        .ok_or("Original plan not found")?;
+    if matches!(original.state.as_str(),"CANCEL_REQUESTED"|"NEEDS_REVIEW"){
+        return Err("Original plan is cancelled or uncertain".into())
+    }
+    let parent_revision=revisions.latest(&parent,chat)
+        .map_err(|e|format!("Original revision unavailable: {e:?}"))?
+        .ok_or("Parent revision missing")?;
+    if parent_revision.revision_sha256!=revision
+        ||parent_revision.review_state!="APPROVED_PLAN_ONLY"
+        ||!sources.goal_event_is_current(chat,&parent_revision.goal_id,
+            &parent_revision.goal_event_id)
+        ||parent_revision.assumption_sources.iter().any(|s|
+            !sources.assumption_source_is_readable(chat,s)) {
+        return Err("Original approved source or revision is stale".into())
+    }
+    let selection=parent_revision.steps.get(step as usize)
+        .ok_or("Parent continuation step missing")?;
+    if selection.depends_on!=Some(step-1)
+        ||selection.kind!=PlanStepKind::IndependentlyCheck
+        ||selection.expected!=ExpectedDeliverable::IndependentWitness {
+        return Err("Parent continuation dependency or step no longer matches".into())
+    }
+    let parent_owner=scheduler.view(&parent,chat,&original_turn,ledger)
+        .map_err(|e|format!("Parent scheduler history invalid: {e:?}"))?
+        .ok_or("Parent host custody missing")?;
+    if parent_owner.state!="RELEASED"||parent_owner.revision_sha!=revision
+        ||parent_owner.claims.len()!=step as usize
+        ||parent_owner.claims.iter().enumerate().any(|(i,c)|
+            c.step_index as usize!=i||c.revision_sha!=revision
+            ||c.claim_state!="OBSERVED_VERIFIED_HISTORICAL"){
+        return Err("Parent host not cleanly released or claimed step uncertain".into())
+    }
+    let history=receipts.history(
+        &parent,chat,&original_turn,profile,ledger,revisions,sources
+    ).map_err(|e|format!("Parent independent oracle unavailable: {e:?}"))?;
+    if !(0..step).all(|index|history.iter().any(|row|
+        row.revision_sha256==revision&&row.step_index==index
+        &&row.status=="VERIFIED_AT_OBSERVATION")){
+        return Err("Parent prerequisite independently unverified at present".into())
+    }
+    // A model/user cannot create a second reviewed operation from this link.
+    // The child itself must still pass exact human plan review, NEW saved
+    // execution turn, OS native resource picker and broker preflight.
+    Ok(true)
 }
 
 #[cfg(test)]
