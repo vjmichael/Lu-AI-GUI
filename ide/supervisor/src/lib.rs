@@ -11,11 +11,14 @@
 // The portable supervisor state machine itself performs no unsafe operations.
 #[cfg(feature = "dap-transport")]
 mod dap_transport;
+pub mod debug_binary_witness;
+pub mod debug_symbol_verification;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
 pub mod live_output;
 #[cfg(feature = "lsp-transport")]
 mod lsp_transport;
+pub mod project_debug_target;
 pub mod runtime_bundles;
 pub mod snapshot;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
@@ -26,9 +29,6 @@ mod windows_cap_tree;
 mod windows_null_device;
 pub mod wo6_build_test_evidence;
 pub mod wo6_output_evidence;
-pub mod debug_binary_witness;
-pub mod debug_symbol_verification;
-pub mod project_debug_target;
 // The SCM-only recovery service must never compile into a plain D7C
 // windows-worker build: its per-job NUL lease requires a separately
 // installed and authenticated protected service identity.
@@ -140,16 +140,19 @@ fn validate_plan(value: &JobPlan) -> bool {
                     "lsp_rust_analyzer" | "lsp_clangd" | "lsp_ruff"
                 ))
             || (cfg!(feature = "dap-transport")
-                && matches!(value.recipe_id.as_str(),"dap_lldb_fixed"|"dap_lldb_project")))
+                && matches!(
+                    value.recipe_id.as_str(),
+                    "dap_lldb_fixed" | "dap_lldb_project"
+                )))
         && hex_sha(&value.source_head, 40)
         && hex_sha(&value.input_snapshot_sha256, 64)
         && hex_sha(&value.manifest_sha256, 64)
         && hex_sha(&value.toolchain_sha256, 64)
-        && match (&value.debug_target_binding_sha256,value.recipe_id.as_str()) {
-            (Some(digest),"dap_lldb_project") => hex_sha(digest,64),
-            (None,"dap_lldb_project") => false,
-            (None,_) => true,
-            (Some(_),_) => false,
+        && match (&value.debug_target_binding_sha256, value.recipe_id.as_str()) {
+            (Some(digest), "dap_lldb_project") => hex_sha(digest, 64),
+            (None, "dap_lldb_project") => false,
+            (None, _) => true,
+            (Some(_), _) => false,
         }
         && value.runtime_limit_ms > 0
         && value.runtime_limit_ms <= MAX_RUNTIME_MS
@@ -171,7 +174,10 @@ fn validate_plan(value: &JobPlan) -> bool {
                 && value.process_limit
                     <= if value.recipe_id == "lsp_clangd" { 16 } else { 4 }
                 && value.log_limit_bytes <= 64 * 1024
-        } else if matches!(value.recipe_id.as_str(),"dap_lldb_fixed"|"dap_lldb_project") {
+        } else if matches!(
+            value.recipe_id.as_str(),
+            "dap_lldb_fixed" | "dap_lldb_project"
+        ) {
             cfg!(feature = "dap-transport")
                 && value.effect_class == "debug_inspection_isolated"
                 && value.runtime_limit_ms <= 3 * 60_000
@@ -1270,24 +1276,24 @@ mod tests {
         assert!(!validate_plan(&build));
     }
 
-    #[cfg(feature="dap-transport")]
+    #[cfg(feature = "dap-transport")]
     #[test]
-    fn project_debug_requires_exact_nonreplayable_target_binding_in_hashed_d3_plan(){
-        let mut plan=plan();
-        plan.recipe_id="dap_lldb_project".into();
-        plan.effect_class="debug_inspection_isolated".into();
-        plan.process_limit=16;
+    fn project_debug_requires_exact_nonreplayable_target_binding_in_hashed_d3_plan() {
+        let mut plan = plan();
+        plan.recipe_id = "dap_lldb_project".into();
+        plan.effect_class = "debug_inspection_isolated".into();
+        plan.process_limit = 16;
         assert!(!validate_plan(&plan)); // no build receipt/binary lineage
-        plan.debug_target_binding_sha256=Some("f".repeat(64));
+        plan.debug_target_binding_sha256 = Some("f".repeat(64));
         assert!(validate_plan(&plan));
-        let initial=fingerprint(&plan).unwrap();
-        plan.debug_target_binding_sha256=Some("e".repeat(64));
-        assert_ne!(initial,fingerprint(&plan).unwrap());
-        let mut fixed=plan();
+        let initial = fingerprint(&plan).unwrap();
+        plan.debug_target_binding_sha256 = Some("e".repeat(64));
+        assert_ne!(initial, fingerprint(&plan).unwrap());
+        let mut fixed = plan();
         assert!(validate_plan(&fixed));
-        let legacy=serde_json::to_string(&fixed).unwrap();
+        let legacy = serde_json::to_string(&fixed).unwrap();
         assert!(!legacy.contains("debugTargetBindingSha256"));
-        fixed.debug_target_binding_sha256=Some("a".repeat(64));
+        fixed.debug_target_binding_sha256 = Some("a".repeat(64));
         assert!(!validate_plan(&fixed)); // no target for Cargo/LSP/fixed DAP
     }
     #[test]
