@@ -23,7 +23,7 @@ Windows OS guarantees a debug-event callback suspends the debuggee while the **o
 ## CI
 
 - `.github/workflows/ide-dev04-5d4c-real-lldb-line.yml`: exact-head Windows source/policy/unit/format, Windows release-default denial and Linux compilation regression. Source checks **do not** close native running/installed acceptance.
-- `.github/workflows/ide-wo6-native-os-acceptance.yml`: real Windows service/Job/AppContainer, sealed offline Cargo compiler and first-party LLDB-DAP, **new real protected `--project-debug-line`**, then service null-lease revoke and SCM uninstall. Linux native existing cgroup tests remain separate.
+- `.github/workflows/ide-wo6-native-os-acceptance.yml`: real Windows service/Job/AppContainer, sealed offline Cargo compiler and first-party LLDB-DAP, **new real protected `--project-debug-line` and `--project-debug-line-cancel`**, then service null-lease revoke and SCM uninstall. The latter must retain the same matched OS/PDB/source and original receipts after an independently fsynced CancelRequested→Cancelled terminal and full Job descendant cleanup. Linux native existing cgroup tests remain separate.
 - Test deliberately **fails closed** on mismatched Job process/thread, missing source coordinates, changed binary/PDB, wrong module ASLR, wrong PDB line, malformed symbolizer JSON, missing/altered one-use receipts, changed source or exited/continued DAP.
 
 No exact-head native Windows result or installed Lu application success is claimed by this document.
