@@ -409,6 +409,66 @@ mod tests {
         assert!(!lowercase_sha(&"B".repeat(64)));
     }
     #[test]
+    fn immutable_child_link_survives_restart_and_rejects_duplicate_or_wrong_human(){
+        use std::time::{SystemTime,UNIX_EPOCH};
+        let filename=std::env::temp_dir().join(format!(
+            "lu-agent01i-child-{}-{}.sqlite",std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let chat=format!("c-{}","1".repeat(32));
+        let parent=format!("p-{}","2".repeat(32));
+        let child=format!("p-{}","3".repeat(32));
+        let other=format!("p-{}","4".repeat(32));
+        let original=format!("g-{}","5".repeat(32));
+        let fresh=format!("g-{}","6".repeat(32));
+        let rev="7".repeat(64);
+        {
+            let db=Connection::open(&filename).unwrap();
+            db.execute_batch("CREATE TABLE lu_agent_plans(
+                plan_id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL,
+                human_turn_id TEXT NOT NULL
+            ); CREATE TABLE lu_agent_schedule_owners(
+                plan_id TEXT PRIMARY KEY,state TEXT NOT NULL,
+                revision_sha256 TEXT NOT NULL
+            ); CREATE TABLE lu_agent_schedule_proposals(
+                plan_id TEXT NOT NULL,state TEXT NOT NULL
+            );").unwrap();
+            for (plan,turn) in [(&parent,&original),(&child,&fresh),(&other,&original)]{
+                db.execute(
+                    "INSERT INTO lu_agent_plans VALUES(?1,?2,?3)",
+                    params![plan,chat,turn]
+                ).unwrap();
+            }
+            db.execute("INSERT INTO lu_agent_schedule_owners VALUES(?1,'RELEASED',?2)",
+                params![parent,rev]).unwrap();
+            schema(&db).unwrap();
+            db.execute("INSERT INTO lu_agent_continuation_intents
+                (plan_id,revision_sha256,step_index,fresh_human_turn_id,state)
+                VALUES(?1,?2,1,?3,'AWAITING_NEW_HOST_REVIEW')",
+                params![parent,rev,fresh]).unwrap();
+        }
+        assert!(bind_child_plan(&filename,&parent,&rev,1,&fresh,&other).is_err());
+        assert!(bind_child_plan(&filename,&parent,&rev,1,&original,&child).is_err());
+        bind_child_plan(&filename,&parent,&rev,1,&fresh,&child).unwrap();
+        bind_child_plan(&filename,&parent,&rev,1,&fresh,&child).unwrap();
+        assert!(bind_child_plan(&filename,&parent,&rev,1,&fresh,&other).is_err());
+        {
+            let db=Connection::open(&filename).unwrap();
+            let actual:String=db.query_row(
+                "SELECT child_plan_id FROM lu_agent_continuation_children
+                WHERE parent_plan_id=?1",params![parent],|r|r.get(0)
+            ).unwrap();
+            assert_eq!(actual,child);
+            assert!(db.execute("DELETE FROM lu_agent_continuation_children",[]).is_err());
+            assert!(db.execute("UPDATE lu_agent_continuation_children
+                SET child_plan_id=?1",params![other]).is_err());
+        }
+        std::fs::remove_file(&filename).unwrap();
+        for suffix in ["-wal","-shm"]{
+            let _=std::fs::remove_file(format!("{}{}",filename.display(),suffix));
+        }
+    }
+    #[test]
     fn durable_intent_is_immutable_and_not_execution_authority(){
         let db=Connection::open_in_memory().unwrap();
         db.execute_batch("PRAGMA foreign_keys=OFF; CREATE TABLE lu_agent_plans(plan_id TEXT PRIMARY KEY);").unwrap();
