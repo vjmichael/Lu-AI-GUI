@@ -828,6 +828,8 @@ function App() {
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
   const [agentProgressByChat,setAgentProgressByChat]=useState({});
   const [agentRecoveryByPlan,setAgentRecoveryByPlan]=useState({});
+  const [recoveryProvenanceByChat,setRecoveryProvenanceByChat]=useState({});
+  const [recoveryProvenanceBusy,setRecoveryProvenanceBusy]=useState(false);
   const [agentReviewBusy,setAgentReviewBusy]=useState(false);
   const [agentStepOpByKey,setAgentStepOpByKey]=useState({});
   const [toolProgressByChat,setToolProgressByChat]=useState({});
@@ -2600,6 +2602,37 @@ function App() {
           '. Do not infer worker termination or retry a step.');
       }
     }finally{setAgentReviewBusy(false)}
+  }
+  async function inspectHistoricalRecoveryProvenance(targetChat=chatId){
+    if(!targetChat||recoveryProvenanceBusy)return;
+    setRecoveryProvenanceBusy(true);
+    // Clear an old successful observation BEFORE every new read. A failure
+    // must not leave earlier, possibly obsolete evidence visible as current.
+    setRecoveryProvenanceByChat(old=>({...old,[targetChat]:null}));
+    try{
+      const view=await invoke('lu_agent_recovery_provenance',{chatId:targetChat});
+      if(!view||view.schema!=='lu-memory-loop02c-operator-provenance-v1'||
+          view.executionAuthority!=='NOT_AUTHORIZED_FOR_EXECUTION'||
+          view.currentSourceFreshness!=='NOT_RECHECKED'||
+          view.priorGrantReusable!==false||
+          view.automaticRetryAllowed!==false||
+          view.historicalEffectMayBeReplayed!==false||
+          view.modelMayOverrideHostSafeDecision!==false||
+          !Array.isArray(view.turns)){
+        throw Error('Native source-bound recovery evidence was not accepted');
+      }
+      setRecoveryProvenanceByChat(old=>({...old,[targetChat]:view}));
+      if(currentChat.current===targetChat){
+        setActivity('Original-source recovery evidence inspected. No native operation or model continuation was authorized.');
+      }
+    }catch(error){
+      if(currentChat.current===targetChat){
+        setError('Historical recovery evidence unavailable: '+String(error)+
+          '. No historical source, OS termination or tool permission may be inferred.');
+      }
+    }finally{
+      setRecoveryProvenanceBusy(false);
+    }
   }
   async function prepareFreshAgentContinuation(plan,step){
     if(!chatId||!plan?.revisionSha256||
@@ -4601,6 +4634,73 @@ function App() {
             <button type="button" className="subtleButton"
               onClick={()=>setToolActivityOpen(false)}>Close</button>
           </div>
+          <section className="readProposalCard" role="region"
+            aria-label="Original-source recovery provenance">
+            <strong>Original-source recovery provenance</strong>
+            <small>This view is computed by Lu's native host from authenticated
+              human turns, original task/effect journals, independent source
+              checks and OS custody witnesses. It is not based on what the
+              loaded AI claims. Results are historical snapshots, never proof
+              that files or processes are unchanged now.</small>
+            <div className="settingsActions">
+              <button type="button" className="subtleButton"
+                disabled={recoveryProvenanceBusy}
+                onClick={()=>void inspectHistoricalRecoveryProvenance(chatId)}>
+                {recoveryProvenanceBusy?'Inspecting…':'Inspect original evidence'}
+              </button>
+            </div>
+            {recoveryProvenanceByChat[chatId]&&
+              <div className="recoveryProvenance" role="status"
+                aria-label="Host historical recovery report">
+                <strong>Host report: {recoveryProvenanceByChat[chatId].status.replaceAll('_',' ')}</strong>
+                <small>Required next action:
+                  {' '+recoveryProvenanceByChat[chatId].hostSafeNextAction.replaceAll('_',' ')}</small>
+                <small>{recoveryProvenanceByChat[chatId].hostSafeNextExplanation}</small>
+                <small>Current source freshness: NOT RECHECKED.
+                  Execution authority: NOT AUTHORIZED. Inspect again after
+                  any source, process or model change; this is not a live watch.</small>
+                {recoveryProvenanceByChat[chatId].olderHostTurnsNotInspected&&
+                  <small className="recoveryProvenanceWarning">Older authenticated
+                    human turns were not all inspected. This bounded view
+                    cannot clear their historical effects.</small>}
+                {(recoveryProvenanceByChat[chatId].turns||[]).length===0&&
+                  <small>No original reviewed effects could be established in
+                    this bounded human-turn window. Absence of evidence is
+                    not evidence of safe completion.</small>}
+                {(recoveryProvenanceByChat[chatId].turns||[]).map(turn=>
+                  <div className="recoveryProvenanceTurn" key={turn.originalHumanTurnId}>
+                    <strong>Original human turn: {turn.originalHumanTurnId}</strong>
+                    <small>Original source bound: {turn.originBound?'yes':'NO'}
+                      {' '}· Journal: {turn.journalStatus.replaceAll('_',' ')}
+                      {' '}· Reviewed operations: {turn.reviewedOperationCount}</small>
+                    <small>Turn action: {turn.hostSafeNextAction.replaceAll('_',' ')}</small>
+                    {turn.additionalOperationsNotRead&&
+                      <small className="recoveryProvenanceWarning">Additional
+                        original effect operations were not read. Reconcile
+                        complete original history before acting.</small>}
+                    {(turn.operations||[]).map((operation,index)=>
+                      <div className="recoveryProvenanceOperation"
+                        key={turn.originalHumanTurnId+':'+index}>
+                        <strong>{operation.operation}</strong>
+                        <small>Independent source verdict:
+                          {' '+operation.independentOracleAtObservation.replaceAll('_',' ')}</small>
+                        <small>Original effect: {operation.historicalEffectState}
+                          {' '}· Model call linked: {operation.originalModelCallLinked?'yes':'NO'}
+                          {' '}· Worker completed: {operation.completedWorkerTaskLinked?'yes':'NO'}</small>
+                        <small>Descendant custody: {operation.descendantCustody.replaceAll('_',' ')}
+                          {' '}· Current freshness: NOT RECHECKED</small>
+                        {operation.independentlyObservedSha256&&
+                          <small className="recoveryProvenanceDigest">Historical
+                            independent source SHA-256: {operation.independentlyObservedSha256}</small>}
+                        <small>Next action: {operation.hostSafeNextAction.replaceAll('_',' ')}</small>
+                      </div>)}
+                  </div>)}
+                <small>Historical grants cannot be reused. Automatic retry,
+                  worker resumption and model override are prohibited.
+                  Any new effect requires native source verification and
+                  separate fresh human authorization.</small>
+              </div>}
+          </section>
           <section className="readProposalCard" role="region"
             aria-label="Durable agent planning and recovery">
             <strong>Agent work plans — original conversation</strong>
