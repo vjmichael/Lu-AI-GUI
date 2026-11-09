@@ -11,6 +11,8 @@
 // The portable supervisor state machine itself performs no unsafe operations.
 #[cfg(feature = "dap-transport")]
 mod dap_transport;
+#[cfg(all(target_os = "linux", feature = "dap-transport"))]
+pub mod native_kernel_pc;
 pub mod debug_binary_witness;
 pub mod debug_symbol_verification;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
