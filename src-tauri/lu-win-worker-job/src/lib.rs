@@ -249,12 +249,12 @@ impl Job {
         if !self.1.load(Ordering::Acquire){
             return Err(io::Error::other("Job never admitted an owned worker"))
         }
-        // Win32 TerminateJobObject targets the entire assigned job, including
-        // descendants; it does not depend on a guessed saved process ID.
-        if unsafe{TerminateJobObject(self.0,1)}==0{
-            return Err(io::Error::last_os_error())
-        }
+        // Query before signalling: a reviewed one-shot may already have
+        // exited with no descendants, and an empty Job is still a valid
+        // kernel observation. If live children remain, TerminateJobObject
+        // targets only THIS assigned Job, never a saved or user-supplied PID.
         let deadline=Instant::now()+Duration::from_secs(5);
+        let mut termination_sent=false;
         loop{
             let mut accounting=JobBasicAccounting::default();
             let mut returned=0u32;
@@ -270,6 +270,12 @@ impl Job {
             }
             if accounting.active_processes==0{
                 return Ok(WindowsJobEmptyProof{_private:()})
+            }
+            if !termination_sent{
+                if unsafe{TerminateJobObject(self.0,1)}==0{
+                    return Err(io::Error::last_os_error())
+                }
+                termination_sent=true;
             }
             if Instant::now()>=deadline{
                 return Err(io::Error::other("Job still contains live descendants"))
