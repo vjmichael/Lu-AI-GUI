@@ -110,6 +110,11 @@ impl DapGateway {
             .map_err(protocol_denied)?;
         self.send(&frame)
     }
+    pub(crate) fn launch_verified_project(&mut self,target:&str)->Result<(),SupervisorError>{
+        let frame=self.session.launch_verified_project(target)
+            .map_err(protocol_denied)?;
+        self.send(&frame)
+    }
     pub(crate) fn configuration_needed(&self) -> bool {
         self.session.configuration_needed()
     }
