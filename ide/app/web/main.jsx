@@ -509,8 +509,19 @@ function App() {
               ingestJobProgress(previous, projectId, value));
             // A job ID originates only in the native broker status.
             // Never pass a path, stream label or executable from the WebView.
-            const jobId = value.current?.projectId === projectId
+            const activeJobId = value.current?.projectId === projectId
               ? value.current?.jobId : null;
+            // After an error or verified cancellation, the native in-memory
+            // window can outlive current. Only a matching *durable journal*
+            // identity may select that bounded advisory output. Restart does
+            // not recover or replay the log; no execution authority changes.
+            const lastOutputId = typeof value.lastOutputJobId === 'string' &&
+              value.journal.some(entry =>
+                entry.projectId === projectId &&
+                entry.jobId === value.lastOutputJobId &&
+                /^[a-f0-9]{64}$/.test(entry.planSha256))
+              ? value.lastOutputJobId : null;
+            const jobId = activeJobId || lastOutputId;
             if (jobId && !nativeOutputPending.current) {
               const cursor=nativeOutputCursor.current;
               const after=cursor.projectId===projectId &&
