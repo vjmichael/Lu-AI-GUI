@@ -222,7 +222,10 @@ mod protected {
     // approval after an independently verified PE/PDB and durable build receipt.
     // Test-only native SCM acceptance; never a user grant or release approval.
     #[cfg(windows)]
-    fn run_windows_project_debug(cancel_project: bool) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_windows_project_debug(
+        cancel_project: bool,
+        verify_job_module: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         use lu_ide_execution_supervisor::{
             debug_binary_witness::audit_debug_binary_candidate,
             debug_symbol_verification::verify_build_debug_symbols,
@@ -481,6 +484,36 @@ mod protected {
         } else {
             println!("DEV045D2_WINDOWS_REAL_DAP_SOURCE_CLAIM=unavailable");
         }
+        if verify_job_module {
+            // An authentic Job-owned PE image and preserved original journal
+            // can now be proved, but this is NOT an independent thread RIP
+            // nor PDB source-line pass. A different dedicated gate is needed
+            // before any setBreakpoints/step/variable-control request.
+            let observed = dap.verify_project_loaded_module(
+                &supervisor, &debug_job.job_id, &debug_plan, &target,
+            ).map_err(|_| "DENIED: live Windows AppContainer/SCM Job module or durable build/debug receipts not verified")?;
+            if !observed.module.job_member_verified
+                || !observed.module.process_exe_path_verified
+                || !observed.module.os_loaded_pe_image_verified
+                || observed.module.os_thread_context_ip_verified
+                || observed.module.independent_pdb_line_verified
+                || observed.source_line_mapping_verified
+                || observed.stopped_thread_os_verified
+                || observed.installed_app_accepted
+                || observed.debugger_job_id != debug_job.job_id
+                || observed.debugger_plan_sha256 != debug_job.plan_sha256
+                || observed.build_job_id != build_job.job_id
+                || observed.build_terminal_receipt_sha256 != receipt.terminal_receipt_hash
+                || observed.source_snapshot_sha256 != input.seal.source_sha256
+                || observed.target_binding_sha256 != target.binding_sha256
+            {
+                return Err("DENIED: loaded PE observation does not belong to the protected debugger/build pair".into());
+            }
+            println!(
+                "DEV045D4_WINDOWS_REAL_JOB_PE_MODULE=PASS;observed_base=0x{:x};preferred_pc=0x{:x};build_receipt=bound;running_receipt=bound;thread_pc_verified=false;pdb_line_verified=false",
+                observed.module.loaded_base, observed.module.preferred_pc
+            );
+        }
         if cancel_project {
             // The debugger reached a real stopped Cargo-built project and
             // returned actual nonempty thread/stack evidence. Dropping the
@@ -556,11 +589,15 @@ mod protected {
         let args: Vec<String> = env::args().skip(1).collect();
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug"] {
-            return run_windows_project_debug(false);
+            return run_windows_project_debug(false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-cancel"] {
-            return run_windows_project_debug(true);
+            return run_windows_project_debug(true, false);
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-module"] {
+            return run_windows_project_debug(false, true);
         }
         let cancel = args.as_slice() == ["--cancel"];
         #[cfg(target_os = "linux")]

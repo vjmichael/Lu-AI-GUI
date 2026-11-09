@@ -161,6 +161,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: real protected Cargo to project LLDB failed' }
             & $hostExe --project-debug-cancel
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: real protected project LLDB cancellation, SCM Job reaping or durable receipts failed' }
+            # D4 has its own read-only OS module evidence, not a PDB line
+            # or thread RIP success. It must use this same restricted SCM
+            # service + AppContainer Job, never a standalone process.
+            & $hostExe --project-debug-module
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: live Job-scoped PE base and original durable build/debug receipts not independently verified' }
           } finally {
             if ($nulTouched) {
               & $bootstrap --revoke-fixed-service
