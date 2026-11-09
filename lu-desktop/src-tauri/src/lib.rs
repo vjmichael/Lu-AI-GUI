@@ -44,6 +44,7 @@ mod agent_memory_handoff;
 mod agent_verified_feedback;
 mod host_safe_continuation;
 mod agent_recovery_provenance;
+mod memory_loop03_goal_gate;
 mod chat_message_interactions;
 mod chat_message_revisions;
 mod archive_desktop;
@@ -4386,6 +4387,98 @@ async fn generate_internal(
                     if envelope.len()<=4096 &&
                         model_prompt.len()+envelope.len()<=16*1024{
                         model_prompt.push_str(&envelope);
+                    }
+                }
+            }
+            // MEMORY-LOOP-03A: another tiny, nonexecuting host capsule binds
+            // the ACTUAL current authenticated human turn, saved ANSF goal
+            // and clarification status to the full bounded 02C recovery
+            // classification. The model cannot select source IDs, change
+            // the ranking or use a past permission. General chat is allowed
+            // without a saved goal; draft-plan admission remains independent.
+            if origin==GenerationOrigin::Human&&images.is_empty(){
+                use memory_loop03_goal_gate::{GoalRead,RecoveryRead};
+                let authenticated=state.chats
+                    .latest_authenticated_user_turn_id(&chat_id)
+                    .as_deref()==Some(gid.as_str())
+                    &&state.chats.trusted_user_turn_text(&chat_id,&gid)
+                        .as_deref()==Some(prompt.as_str());
+                let goal=match state.goal_memory.as_ref(){
+                    Ok(host_memory)=>match host_memory.snapshot(
+                        &state.chats,&chat_id
+                    ){
+                        Ok(snapshot)=>GoalRead::Known{
+                            goal_id_present:snapshot.goal_id.is_some(),
+                            goal_revision_present:
+                                snapshot.revision_event_id.is_some(),
+                            pending:snapshot.questions.iter()
+                                .filter(|q|q.status=="pending").count(),
+                            deferred:snapshot.questions.iter()
+                                .filter(|q|q.status=="deferred").count(),
+                            unknown_question_status:snapshot.questions.iter()
+                                .any(|q|!matches!(q.status.as_str(),
+                                    "answered"|"pending"|"deferred"|"superseded")),
+                        },
+                        Err(_)=>GoalRead::Unavailable,
+                    },
+                    Err(_)=>GoalRead::Unavailable,
+                };
+                let gate=match state.catalog_path.parent(){
+                    Some(profile)=>match
+                        agent_recovery_provenance::read_original_recovery(
+                            profile,&chat_id,&state.chats
+                        ){
+                            Ok(history)=>
+                                memory_loop03_goal_gate::classify_current_human_turn(
+                                    authenticated,goal,RecoveryRead::Original{
+                                        status:history.status,
+                                        host_safe_next_action:
+                                            history.host_safe_next_action,
+                                        older_human_turns_unread:
+                                            history.older_host_turns_not_inspected,
+                                    }
+                                ),
+                            Err(_)=>
+                                memory_loop03_goal_gate::classify_current_human_turn(
+                                    authenticated,goal,RecoveryRead::Unavailable
+                                ),
+                        },
+                    None=>memory_loop03_goal_gate::classify_current_human_turn(
+                        authenticated,goal,RecoveryRead::Unavailable
+                    ),
+                };
+                let data=serde_json::json!({
+                    "schema":"lu-memory-loop03a-current-goal-recovery-v1",
+                    "status":"CURRENT_HUMAN_GOAL_AND_HISTORICAL_EFFECT_DATA_ONLY",
+                    "goalStatus":gate.goal_status,
+                    "historicalRecoveryStatus":gate.historical_recovery_status,
+                    "conversationNextStep":gate.conversational_next_step,
+                    "draftReviewContextReady":gate.draft_review_context_ready,
+                    "pendingHumanQuestions":gate.pending_human_questions,
+                    "deferredHumanQuestions":gate.deferred_human_questions,
+                    "previousEffectsNeedReconciliation":
+                        gate.previous_effects_need_reconciliation,
+                    "executionAuthority":gate.execution_authority,
+                    "currentSourceFreshness":gate.current_source_freshness,
+                    "priorGrantReusable":gate.prior_grant_reusable,
+                    "automaticRetryAllowed":gate.automatic_retry_allowed,
+                    "modelMayOverrideHostDecision":
+                        gate.model_may_override_host_decision,
+                    "nextTaskPolicy":"A saved goal and past evidence guide explanation and clarification. A plan draft is not an effect. Only a new current user request, fresh source checks and the native authorized broker can permit any new operation."
+                });
+                let encoded=serde_json::to_string(&data)
+                    .map_err(|_|"Host goal/recovery preflight unavailable")?;
+                let envelope=format!(
+                    "\\n[LU HOST CURRENT GOAL + HISTORICAL RECOVERY — STATUS DATA ONLY; no old permission or model override]\\n{}\\n[END LU HOST PREFLIGHT]",
+                    encoded
+                );
+                if envelope.len()<=2300&&
+                    model_prompt.len()+envelope.len()<=16*1024{
+                    model_prompt.push_str(&envelope);
+                }else{
+                    let fallback="\\n[Lu goal/recovery preflight could not fit the bounded model context. Historical evidence and saved memory never grant tool execution.]";
+                    if model_prompt.len()+fallback.len()<=16*1024{
+                        model_prompt.push_str(fallback);
                     }
                 }
             }
