@@ -1412,6 +1412,21 @@ impl WindowsDapSession {
             target, &self.source_input.root,
             &native.module, &thread, &frame,
         )?;
+        // The native symbolizer is a separate CI worker. A stop can become
+        // stale while it runs. Query the REAL Job-owned kernel thread again
+        // and consume pending DAP input before accepting the receipt.
+        let second = self.gateway.sample_windows_stopped_thread_rip(
+            &native.module,
+        )?;
+        if second.process_id != thread.process_id
+            || second.thread_id != thread.thread_id
+            || second.observed_rip != thread.observed_rip
+            || !second.two_matching_samples || !second.job_membership_rechecked {
+            return Err(SupervisorError::NoContainment);
+        }
+        if !self.gateway.poll()?.is_empty() {
+            return Err(SupervisorError::NoContainment);
+        }
         let current = self.gateway.source_candidate()
             .ok_or(SupervisorError::NoContainment)?;
         if self.gateway.phase() != lu_ide_workspace::dap_session::DapPhase::Stopped
