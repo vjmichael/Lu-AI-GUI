@@ -1,279 +1,279 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "cbca41f79a1ede41d66a251196b834d3ed18eb62",
-  "trackedFileCount": 803,
+  "sourceCommitBeforeLock": "4c63e365122b52f8bac55c59964a400788f2642e",
+  "trackedFileCount": 808,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
-      "blob": "650f9b656f3dfe4090bd0673d1de20b5ecfd38f4"
+      "blob": "59c88ad05d2c5e53db6861bbd64851e5c3f2ecab"
     },
     {
       "path": ".github/workflows/lu-agent01b-plan-revisions.yml",
-      "blob": "6f1eada9b6e581c21191ab0c63de74f9793293cf"
+      "blob": "55d6ed6358d4fce55c9e77373810f45a7187c90c"
     },
     {
       "path": ".github/workflows/lu-agent01c-deliverable-receipts.yml",
-      "blob": "f27573424da7f0d1f0a8e764f598e8108c4dfdfa"
+      "blob": "69d157ae1c91b73e13f62d1bffc23be32ab99387"
     },
     {
       "path": ".github/workflows/lu-agent01d-host-scheduler.yml",
-      "blob": "168f4f2ec2b620d510a44df6d8adcbba9bcc9750"
+      "blob": "1415d307a49d35e7e1b6c9fa9c131490313584f2"
     },
     {
       "path": ".github/workflows/lu-agent01e-broker-progress.yml",
-      "blob": "ee69bcfe2ebe8eca083bf61f7a012469c8f65503"
+      "blob": "b16835e5322ff453676d226073bfb04e583541bd"
     },
     {
       "path": ".github/workflows/lu-agent01g-physical-windows-nsis.yml",
-      "blob": "ba94edd1a950a7c46bfc29d71ac5e18c44fc6d46"
+      "blob": "32fda01993f90b5c028de3e79b9c05fcd3d77477"
     },
     {
       "path": ".github/workflows/lu-agent01i-fresh-continuation.yml",
-      "blob": "f80f242c4a2a34efaff59cb75b5d795d78ec318e"
+      "blob": "e4f496c596dccfb89f059d7e17bc2452ed523413"
     },
     {
       "path": ".github/workflows/lu-agent01j-lineage-recovery.yml",
-      "blob": "a361b467e7be9aa93a68fef67563dc27b44996f8"
+      "blob": "13dd16d9ca7f5bb3287dcbcf4662af03b922723a"
     },
     {
       "path": ".github/workflows/lu-agent01k-independent-recovery.yml",
-      "blob": "a5fb1fd1dc90b6c9992d87c63fb13aa05062c783"
+      "blob": "8d7b93b3c7b9d11970bfe6313dff250eeb00fdb9"
     },
     {
       "path": ".github/workflows/lu-agent01l-linux-cgroup-v2.yml",
-      "blob": "371d4c469b4b9e450efa82ade9a30e304e06160e"
+      "blob": "a496a9875d9749550272dde64918480705411ee7"
     },
     {
       "path": ".github/workflows/lu-agent01l-os-custody.yml",
-      "blob": "8f0af5138b905613d58c019724d35104c504a86d"
+      "blob": "b98890312733b1ea86d58a6472f073519069aaa6"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
-      "blob": "f0f8ee91b525755cbc5eca83479b38cd41ce6a95"
+      "blob": "65a117e8c86422cc4d2ccb6f9625f5f95b132e61"
     },
     {
       "path": ".github/workflows/lu-ansf-three-arm-benchmark.yml",
-      "blob": "2ea26276c57a43d43a78544259ddaa0b4679483b"
+      "blob": "8df07700ea510a6a49c254457c145cc9fa50e88e"
     },
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
-      "blob": "8cf2f01994d9627124989b69e9a8998dc231fd3b"
+      "blob": "58021b8bfbb0c0304d9af8fbd78d19d48045dc49"
     },
     {
       "path": ".github/workflows/lu-ci.yml",
-      "blob": "b478eaaa33261f41284262dd0a4a08dbf778f7fa"
+      "blob": "fc62ac0ebd97c64c261dd81b58534e0cba4625bd"
     },
     {
       "path": ".github/workflows/lu-e1-app-admission.yml",
-      "blob": "c8cf8a0d7dadd28edb4a8d35f861b18b54db9669"
+      "blob": "4232b2cbfc26634ce85192b0cc269886a555c1c8"
     },
     {
       "path": ".github/workflows/lu-e1-p03-execution.yml",
-      "blob": "032d6c7cdbb8263ffb7232d1ce1c7f06341aa924"
+      "blob": "aa0e8593f98cfda1b7907a9c3e3d005f83e52115"
     },
     {
       "path": ".github/workflows/lu-e1-p04-artifact-custody.yml",
-      "blob": "e855ce3fd3520eef2143514ad01b839798cf8455"
+      "blob": "fd51c619581f1f0da9cfe9f6548878c71894ce5d"
     },
     {
       "path": ".github/workflows/lu-e1-p04-output-oracle.yml",
-      "blob": "536b69a0a98300f292fc98fcc26002214bea7d0c"
+      "blob": "e3ced7d290af042d7cd738f443264c5bb0d37ac2"
     },
     {
       "path": ".github/workflows/lu-e1-p05-three-arm.yml",
-      "blob": "0aa0058550d7e5101d3c2a4c1a526360e04cc613"
+      "blob": "3867364a50ec995e594a2563d39dfccf5236f39d"
     },
     {
       "path": ".github/workflows/lu-e1-p06-thirdparty-adapters.yml",
-      "blob": "ee3a4ecd299f39a606b0d043b6473612dede89ba"
+      "blob": "e99a49cf4743be9ec9f644926bba1d2de15f45ca"
     },
     {
       "path": ".github/workflows/lu-e1-p06b-real-thirdparty.yml",
-      "blob": "e070a1e3816f3472a29bc3ad312f1c917aff2c9d"
+      "blob": "5ef351ef1c21b8fc9933d21dae21923a2806fa1d"
     },
     {
       "path": ".github/workflows/lu-e1-p06c-typed-git.yml",
-      "blob": "2a3201c8d0fe21e46c4c1a91bcb5bebb4d8d68bd"
+      "blob": "6e75d8bda4f4039e42f02ac550e5d89957160a3f"
     },
     {
       "path": ".github/workflows/lu-e1-p06d-git-context.yml",
-      "blob": "d8ccd5147e31f812edf251e8bc570e575e9774c2"
+      "blob": "05bca4ab9f3682cc0de868e7d1c1a254b4e988dd"
     },
     {
       "path": ".github/workflows/lu-e1-p06e-ffprobe.yml",
-      "blob": "c193fd112f2d2fa816a5dce30c327248a7c2d412"
+      "blob": "e175becc173ebd36a4c27a85f1a6b4df59a9118f"
     },
     {
       "path": ".github/workflows/lu-e1-p07-genuine-gguf.yml",
-      "blob": "814d1296f31d45062175eda3fd550bf8ea3eef53"
+      "blob": "b594a7c34bf20f3a934856b2e25065868909edb5"
     },
     {
       "path": ".github/workflows/lu-e1-p07-reviewed-app.yml",
-      "blob": "cc9550348bc9282d094b9febdeec8a6152fa339c"
+      "blob": "4090b274a47e078d3b08973c1cfda1244e5e381e"
     },
     {
       "path": ".github/workflows/lu-e1-p08-reviewed-recovery.yml",
-      "blob": "53ade405c2609a8b7ad38118422e2472b956ec7c"
+      "blob": "0caacea0735ec046f597a60b58e15450a8ab7561"
     },
     {
       "path": ".github/workflows/lu-e1-p09-reviewed-audit.yml",
-      "blob": "d9f9f966eb1fbf33708ab0984269d7bdc063f445"
+      "blob": "a60f4cf440e98d423071a587cd61ca38a9a809cb"
     },
     {
       "path": ".github/workflows/lu-e1-p10-independent-outcomes.yml",
-      "blob": "e853fe13ac8237d2b626ac0229eb66fcc71e1958"
+      "blob": "7b67b6bce481a04b530ac3976803c1c0ce0867c5"
     },
     {
       "path": ".github/workflows/lu-e1-p11-independent-git-history.yml",
-      "blob": "be71f4f21f58ac0f4fd3e26865bb0c090cfe1d97"
+      "blob": "f6fcdd0c540c8ab3625ae0fc05c51f5a782979ac"
     },
     {
       "path": ".github/workflows/lu-e1-p12-independent-semantic-verifiers.yml",
-      "blob": "d4bc788abea1a35e043e23850d62cb2afbf2234f"
+      "blob": "13c65c6226c2c7c95d76b9568544dd6d439f2817"
     },
     {
       "path": ".github/workflows/lu-e1-p13-resource-revision.yml",
-      "blob": "6be7c275f3ea32587905cb92bfff6dc5b5819d01"
+      "blob": "d4502eaa1b2825de533bf461c7c61a03de6c1505"
     },
     {
       "path": ".github/workflows/lu-e1-p15-conversation-recovery.yml",
-      "blob": "af85aa529333d011e33c231bff4c0287f10e2f09"
+      "blob": "1eeae0189fac88b5b38251c8e1db3f33d7bf4bf4"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
-      "blob": "30f85a998b6a860ce562adbedba572014c0b7df6"
+      "blob": "91b1d8a8e639b22d6c588f4c0bbd984efe7963c5"
     },
     {
       "path": ".github/workflows/lu-m2-ansf-cutover.yml",
-      "blob": "65b1b7f88f52a4cca651e1dfce36608262223b5b"
+      "blob": "517a153bfbb834254a8465884059f68e5cdfe77b"
     },
     {
       "path": ".github/workflows/lu-m2-memory.yml",
-      "blob": "970974cbe2c3856d9e67fd13a754ac56a0d8a40b"
+      "blob": "0749ad752815ab6762b40f8d28ece7ec80434d53"
     },
     {
       "path": ".github/workflows/lu-m3-ansf-recall.yml",
-      "blob": "465323f6b3cda095e84b1f7b585a423397a67c17"
+      "blob": "6b24a3b47bc5757c4c43a2aaab4888cb61fadca5"
     },
     {
       "path": ".github/workflows/lu-m3-cognitum-real-benchmark.yml",
-      "blob": "523f6ee2b1e203bfe2945ad1cec9c75a23607049"
+      "blob": "7b59bd0a82c89202b59c4a004c98f8e89e4d8ef7"
     },
     {
       "path": ".github/workflows/lu-m4-verified-memory.yml",
-      "blob": "d48826f14830a358111b6f569cee8b54c3ce0528"
+      "blob": "ba85d25eb5361332bb203d7cbbd1d20bd95d2dcc"
     },
     {
       "path": ".github/workflows/lu-m5-memory-replay.yml",
-      "blob": "f864b709416d2358ee02cbd736203fb7bf5e56d0"
+      "blob": "665bf75c0a9b05a9b49be0e830fbbcdd75c52061"
     },
     {
       "path": ".github/workflows/lu-memory-loop02-real-qwen.yml",
-      "blob": "c1393d1fe88c38a058fbe931de3a4b3be050a49d"
+      "blob": "bcc41c4aa31b5e1c7a9f86b913fde8f2609d3436"
     },
     {
       "path": ".github/workflows/lu-memory-loop02-verified-feedback.yml",
-      "blob": "b9633db51c1e0b2b6bcc3d84864656167fee92ae"
+      "blob": "b928782fae473682574d9aa7e3b1e8de193d5986"
     },
     {
       "path": ".github/workflows/lu-memory-loop02b-safe-decision.yml",
-      "blob": "7694ecb4bfad12bcd9b5b42e6191b5aa439728fd"
+      "blob": "95fe0f45863619dca3eaedaf7311723e95951c1e"
     },
     {
       "path": ".github/workflows/lu-memory-loop02c-provenance.yml",
-      "blob": "2559986708f1c8b4025300969d9ccbd23b681b47"
+      "blob": "6a7e415c14dd185b091f0234e5b0fc78b76a0cdf"
     },
     {
       "path": ".github/workflows/lu-memory-loop03a-goal-recovery.yml",
-      "blob": "a29942c51a3005f0f65306c2a55cc8fe7f17a671"
+      "blob": "631396fe4175656453663ab5311a8b18a2fd9608"
     },
     {
       "path": ".github/workflows/lu-memory-loop03b-native.yml",
-      "blob": "dbaedf51cddc44d03fc48ca068d88e3cde724c50"
+      "blob": "0d764cce2344578eb821a9093e65ed10905dff6d"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
-      "blob": "bf2e3b0f2f9a1a28dc025368386d41eb6e963578"
+      "blob": "1e8fb12add505be4cf2fcddc904d431988fd9c02"
     },
     {
       "path": ".github/workflows/lu-p06-observe-privacy.yml",
-      "blob": "8454a1d5a8de10a63f3dd495e138a3318d38457b"
+      "blob": "e98cbc7a59dc0a7488273743727ac62d0ca31a14"
     },
     {
       "path": ".github/workflows/lu-p07-research-citation-styles.yml",
-      "blob": "f7126fd08d3a644c9ade2680032324472fcbdf53"
+      "blob": "3ba19695590265c0654699429a2d927cbde0240e"
     },
     {
       "path": ".github/workflows/lu-p08-archive-split.yml",
-      "blob": "8a351a5b7ce2dde74ee33c2d0133b113373a5718"
+      "blob": "08c89cd49e83967a0b7924d65fe9d6d3b5a1268b"
     },
     {
       "path": ".github/workflows/lu-p09-office-boundary.yml",
-      "blob": "b2be376619352f3e60d13858b488f8cd15703f6f"
+      "blob": "df6de5cb20b848003e2449c947a990b58cd4e52f"
     },
     {
       "path": ".github/workflows/lu-p10-image-basics.yml",
-      "blob": "7006bb7a9e8462657f9c974cfa1f093d011a9214"
+      "blob": "d9e5c8f92d1787563821946d9ffe7afb17ba2945"
     },
     {
       "path": ".github/workflows/lu-p11-git-core.yml",
-      "blob": "fc0cb44565293d2a9b9f8f492aa19b151353683a"
+      "blob": "9b6ac72f2f2cac5579dc8538db057757a875c156"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "27121b635612fff1928503af7263a4776beaa04c"
+      "blob": "329182c1ef58341998ccc1ee051ef2e29525b80d"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
-      "blob": "39ca56a28167511e78e442f26703655db92b82be"
+      "blob": "c7574c6ea0a9f66082d65066de3f6da1375106d7"
     },
     {
       "path": ".github/workflows/lu-tools-02-json-boundary.yml",
-      "blob": "1e61281d885cfd9364f44b8d58581e69b525ba19"
+      "blob": "2f470e4a0373d90bd2d619cd9948662bfdd4b18b"
     },
     {
       "path": ".github/workflows/lu-tools-03-git.yml",
-      "blob": "0ce08682f0ff5f8b7fc22bcb33c6a9dd5a84b7b7"
+      "blob": "1fd44b1f43a0c125e311edd248d593b6d3e04764"
     },
     {
       "path": ".github/workflows/lu-tools-04-archive.yml",
-      "blob": "a774d9dbcd76441586ee3afc3cdb5706065b186a"
+      "blob": "623d7ca71fdfb2d9c59a66e6b2f75d42c52c6af1"
     },
     {
       "path": ".github/workflows/lu-tools-11-background.yml",
-      "blob": "e074d565278ce9e20a30c4199f64374dc3af4c48"
+      "blob": "9e7a0912cb1741ce159534de79f2b81fc32973d6"
     },
     {
       "path": ".github/workflows/lu-ux-chat01-message-interactions.yml",
-      "blob": "75a0b73487d03bbc05a44fe56e1c36aa6f881cce"
+      "blob": "7f705f72f8499c060a0e2e4b47076c80173c0c70"
     },
     {
       "path": ".github/workflows/lu-ux-chat02-revisions-replies.yml",
-      "blob": "924f19729cfd45f809321736138486c396b8fd95"
+      "blob": "37673e0bf98749ffe0d6ea426c0a911792719076"
     },
     {
       "path": ".github/workflows/lu-v1-observe-learn.yml",
-      "blob": "c3af6cbde3bb64cf01ff1067669a943a20ee88d4"
+      "blob": "f1804b92b0d251c47a56e218d72883c97030b0d6"
     },
     {
       "path": ".github/workflows/lu-wave1-native-tools.yml",
-      "blob": "e2be58818d8d5c70fa56f7b69c015b25b6a17f4a"
+      "blob": "e996c1f965d69eb7b3bcf3b855884db686b08a3d"
     },
     {
       "path": ".github/workflows/lu-wave2-files.yml",
-      "blob": "53986a106404ae8860ffb992d68c53c038f6d45e"
+      "blob": "c6550b6b67610292c371e3c4568b3712c41a75f8"
     },
     {
       "path": ".github/workflows/lu-wave3-conversation-tools.yml",
-      "blob": "5e9b525bcd033cd897ab9f660025bc6b953b84df"
+      "blob": "b879d9ac0e0a7ab0806f0bc2e86d9003075d608e"
     },
     {
       "path": ".github/workflows/lu-wave4-contextual-tools.yml",
-      "blob": "3b37329dc34f8861cd86d886b5e77881f10f3a9b"
+      "blob": "5d7c358a3dd08155fa127340b93a957daa006a98"
     },
     {
       "path": ".github/workflows/lu-win-load-01.yml",
-      "blob": "09cdfcbe61d5e8ced66e60665349fc829cdd382e"
+      "blob": "f3eda3bfa345699fb5b7a97782b81f8d78fd5cb9"
     },
     {
       "path": ".gitignore",
@@ -504,6 +504,10 @@
       "blob": "0536adf6fb9bd696f600ed31051ad6082e603edd"
     },
     {
+      "path": "docs/LU_CI_TASK_GROUP_GATES_20261109.md",
+      "blob": "69338481a7272999d7525a2762054b3579059f4e"
+    },
+    {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
       "blob": "49edcf883abaa852b901de6ddfc0aa4da5122a4c"
     },
@@ -593,7 +597,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "a41cf2d54a4693c6984553bdf2aca07e31f131af"
+      "blob": "f4df8c42f8d6109816376d9581e3561047af304c"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -1682,6 +1686,22 @@
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
       "blob": "48bc8661a6f547471ac3c9899eca258e5ad4c5fa"
+    },
+    {
+      "path": "scripts/lu-ci-group-policy.mjs",
+      "blob": "d8aa882387ed30b5591495b16944e37625b37ef8"
+    },
+    {
+      "path": "scripts/lu-ci-group-policy.test.mjs",
+      "blob": "3ae032d0d11cb735de71cf79fafa1b340be1d488"
+    },
+    {
+      "path": "scripts/lu-ci-superseded-queue.mjs",
+      "blob": "d749bace0d203a538d7cfef69d6cce59a1be192e"
+    },
+    {
+      "path": "scripts/lu-ci-superseded-queue.test.mjs",
+      "blob": "a031fe2ba96cb7eaf2fc55d3366dd4e0a29ae267"
     },
     {
       "path": "scripts/m3-windows-installed-acceptance.ps1",

@@ -1,16 +1,5 @@
 name: Lu MEMORY-LOOP-03A Host Goal and Recovery Preflight Native
 on:
-  push:
-    branches: ['lu/memory-loop03-goal-recovery-preflight-20261109']
-  pull_request:
-    paths:
-      - 'lu-desktop/src-tauri/src/memory_loop03_goal_gate.rs'
-      - 'lu-desktop/src-tauri/src/agent_recovery_provenance.rs'
-      - 'lu-desktop/src-tauri/src/memory_desktop.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/tests/memory-loop03a-goal-recovery.test.mjs'
-      - '.github/workflows/lu-memory-loop03a-goal-recovery.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

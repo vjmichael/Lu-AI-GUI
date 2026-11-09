@@ -1,11 +1,6 @@
 name: Lu TOOLS-04 archive inspection
 on:
-  push:
-    branches:
-      - lu/tools-04-archive-inspection-20261104
-  pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
 

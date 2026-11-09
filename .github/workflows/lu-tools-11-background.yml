@@ -1,24 +1,5 @@
 name: Lu P02 Background Scheduler + Guardian Native Acceptance
 on:
-  push:
-    branches: ['lu/tools-11-*', 'lu/reader-*']
-  pull_request:
-    paths:
-      - 'src-tauri/lu-core/src/native_background_status.rs'
-      - 'src-tauri/lu-core/src/native_background_result.rs'
-      - 'src-tauri/lu-core/src/native_background_control.rs'
-      - 'src-tauri/lu-core/src/native_background_scheduler.rs'
-      - 'src-tauri/lu-core/src/native_resource_pressure.rs'
-      - 'src-tauri/lu-win-worker-job/src/system_memory.rs'
-      - 'src-tauri/lu-core/src/native_background_process.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/tests/background-scheduler.test.mjs'
-      - 'lu-desktop/tests/background-pane.test.mjs'
-      - 'src-tauri/lu-core/src/native_reader_pdf.rs'
-      - 'src-tauri/lu-core/src/tasks.rs'
-      - 'src-tauri/lu-core/src/lib.rs'
-      - '.github/workflows/lu-tools-11-background.yml'
   workflow_dispatch:
 # A new branch commit supersedes old source identities; cancel redundant
 # runs instead of compiling stale commits on both platforms.

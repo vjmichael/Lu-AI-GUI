@@ -1,20 +1,5 @@
 name: Lu E1-P08 Reviewed Application Restart Recovery
 on:
-  push:
-    branches: ['lu/e1-p08-reviewed-turn-recovery-20261107']
-    paths:
-      - 'lu-desktop/src-tauri/src/reviewed_app_recovery.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/tests/native-reviewed-recovery/**'
-      - '.github/workflows/lu-e1-p08-reviewed-recovery.yml'
-      - 'source-tree.lock.json'
-  pull_request:
-    paths:
-      - 'lu-desktop/src-tauri/src/reviewed_app_recovery.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/tests/native-reviewed-recovery/**'
-      - '.github/workflows/lu-e1-p08-reviewed-recovery.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

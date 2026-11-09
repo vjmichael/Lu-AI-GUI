@@ -1,18 +1,5 @@
 name: Lu MEMORY-LOOP-02C Operator Recovery Provenance Native Acceptance
 on:
-  push:
-    branches: ['lu/memory-loop02c-operator-provenance-20261109']
-  pull_request:
-    paths:
-      - 'lu-desktop/src-tauri/src/agent_recovery_provenance.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_task_continuity.rs'
-      - 'lu-desktop/src-tauri/src/host_safe_continuation.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/web/styles.css'
-      - 'lu-desktop/tests/memory-loop02c-operator-provenance.test.mjs'
-      - '.github/workflows/lu-memory-loop02c-provenance.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

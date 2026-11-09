@@ -1,18 +1,6 @@
 name: Lu AGENT-01G Current-Source Physical Windows NSIS CPU Test
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - '.github/workflows/lu-agent01g-physical-windows-nsis.yml'
-      - 'scripts/build-agent01g-physical-windows-nsis.ps1'
-      - 'lu-desktop/packaging/NSIS_AGENT01G_PHYSICAL_WINDOWS_CPU_TEST.nsi'
-      - 'lu-desktop/packaging/README_AGENT01G_PHYSICAL_WINDOWS_CPU_TEST.txt'
-      - 'lu-desktop/src-tauri/Cargo.toml'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
-      - 'lu-desktop/web/**'
-      - 'src-tauri/lu-core/**'
-      - 'source-tree.lock.json'
 permissions:
   contents: read
 concurrency:

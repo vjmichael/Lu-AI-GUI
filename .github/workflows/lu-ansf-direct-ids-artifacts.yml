@@ -1,18 +1,5 @@
 name: Lu ANSF Direct IDs and External Artifact References
 on:
-  push:
-    branches:
-      - lu/ansf-direct-source-ids-artifact-references-20261107
-  pull_request:
-    paths:
-      - 'src-tauri/lu-core/src/ansf.rs'
-      - 'src-tauri/lu-core/src/ansf_source_ids.rs'
-      - 'src-tauri/lu-core/src/ansf_artifact_links.rs'
-      - 'src-tauri/lu-core/src/ansf_library.rs'
-      - 'src-tauri/lu-core/src/lib.rs'
-      - 'lu-desktop/tests/native-chat/src/lib.rs'
-      - '.github/workflows/lu-ansf-direct-ids-artifacts.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

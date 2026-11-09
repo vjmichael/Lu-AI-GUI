@@ -1,12 +1,7 @@
 name: Lu TOOLS-03 native Git inspection
 
 on:
-  push:
-    branches:
-      - lu/tools-03-git-inspection-20261104
-  pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
 

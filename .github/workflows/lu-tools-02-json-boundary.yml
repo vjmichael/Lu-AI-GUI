@@ -1,12 +1,7 @@
 name: Lu TOOLS-02 internal JSON trust boundary
 
 on:
-  push:
-    branches:
-      - lu/tools-02-json-validation-20261103
-  pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
 

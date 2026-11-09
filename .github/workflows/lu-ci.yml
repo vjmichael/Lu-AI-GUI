@@ -1,8 +1,5 @@
 name: Lu Desktop CI
 on:
-  push:
-    paths: ['lu-desktop/**', 'src-tauri/**', 'source-tree.lock.json', '.github/workflows/lu-ci.yml']
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,6 +13,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify exact committed development-source manifest
         run: node scripts/verify-source-tree.mjs
+      - name: R00 task-group CI fanout and queue policy regression
+        if: hashFiles('scripts/lu-ci-group-policy.mjs') != ''
+        run: |
+          node --test scripts/lu-ci-group-policy.test.mjs scripts/lu-ci-superseded-queue.test.mjs
+          node scripts/lu-ci-group-policy.mjs
       - name: Check manifest versions
         shell: bash
         run: |

@@ -1,7 +1,5 @@
 name: Lu P07 Research Citation Style Native
 on:
-  push:
-    branches: ['lu/p07-research-citation-styles-*']
   workflow_dispatch:
 permissions:
   contents: read

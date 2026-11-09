@@ -1,8 +1,5 @@
 name: Lu P06 Observe Privacy Native
 on:
-  push:
-    branches: ['lu/p06-observe-privacy-*']
-  # Push already tests the same PR branch head; no duplicate CI matrix.
   workflow_dispatch:
 permissions:
   contents: read

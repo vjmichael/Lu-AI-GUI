@@ -1,36 +1,5 @@
 name: Lu UX-CHAT02 ANSF Edits Replies and Provenance Native Candidate
 on:
-  push:
-    branches: ['lu/ux-chat02-revisions-replies-provenance-20261108']
-    paths:
-      - 'src-tauri/lu-core/src/ansf_live_chat.rs'
-      - 'lu-desktop/src-tauri/src/ansf_chat_store.rs'
-      - 'lu-desktop/src-tauri/src/chat_message_interactions.rs'
-      - 'lu-desktop/src-tauri/src/chat_message_revisions.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/tests/native-chat/src/lib.rs'
-      - 'lu-desktop/tests/ux-chat02-revision-reply-provenance.test.mjs'
-      - 'lu-desktop/web/message_revisions.mjs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/web/styles.css'
-      - 'docs/LU_CENTRAL_DESIGN.md'
-      - '.github/workflows/lu-ux-chat02-revisions-replies.yml'
-      - 'source-tree.lock.json'
-  pull_request:
-    paths:
-      - 'src-tauri/lu-core/src/ansf_live_chat.rs'
-      - 'lu-desktop/src-tauri/src/ansf_chat_store.rs'
-      - 'lu-desktop/src-tauri/src/chat_message_interactions.rs'
-      - 'lu-desktop/src-tauri/src/chat_message_revisions.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/tests/native-chat/src/lib.rs'
-      - 'lu-desktop/tests/ux-chat02-revision-reply-provenance.test.mjs'
-      - 'lu-desktop/web/message_revisions.mjs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/web/styles.css'
-      - 'docs/LU_CENTRAL_DESIGN.md'
-      - '.github/workflows/lu-ux-chat02-revisions-replies.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

@@ -1,18 +1,5 @@
 name: Lu E1-P06E Real Reviewed FFprobe Media Inspection
 on:
-  push:
-    branches: ['lu/e1-p06e-ffprobe-typed-media-20261107']
-    paths:
-      - 'src-tauri/lu-core/src/native_background_process.rs'
-      - 'src-tauri/lu-core/src/native_app_typed_ffprobe.rs'
-      - 'src-tauri/lu-core/src/lib.rs'
-      - '.github/workflows/lu-e1-p06e-ffprobe.yml'
-  pull_request:
-    paths:
-      - 'src-tauri/lu-core/src/native_background_process.rs'
-      - 'src-tauri/lu-core/src/native_app_typed_ffprobe.rs'
-      - 'src-tauri/lu-core/src/lib.rs'
-      - '.github/workflows/lu-e1-p06e-ffprobe.yml'
   workflow_dispatch:
 permissions:
   contents: read

@@ -1,15 +1,5 @@
 name: Lu MEMORY-LOOP-02B Host Safe Decision Native Acceptance
 on:
-  pull_request:
-    paths:
-      - 'lu-desktop/src-tauri/src/host_safe_continuation.rs'
-      - 'lu-desktop/src-tauri/src/agent_verified_feedback.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/tests/memory-loop02b-host-safe-decision.test.mjs'
-      - '.github/workflows/lu-memory-loop02b-safe-decision.yml'
-      - 'source-tree.lock.json'
-  push:
-    branches: ['lu/memory-loop02b-host-safe-decision-20261108']
   workflow_dispatch:
 permissions:
   contents: read

@@ -1,30 +1,5 @@
 name: Lu UX-CHAT01 Dynamic Message History Native Acceptance
 on:
-  push:
-    branches: ['lu/ux-chat01-message-interactions-20261108']
-    paths:
-      - 'lu-desktop/src-tauri/src/chat_message_interactions.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/tests/native-chat/src/lib.rs'
-      - 'lu-desktop/tests/ux-chat01-message-interactions.test.mjs'
-      - 'lu-desktop/web/message_interactions.mjs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/web/styles.css'
-      - 'docs/LU_CENTRAL_DESIGN.md'
-      - '.github/workflows/lu-ux-chat01-message-interactions.yml'
-      - 'source-tree.lock.json'
-  pull_request:
-    paths:
-      - 'lu-desktop/src-tauri/src/chat_message_interactions.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/tests/native-chat/src/lib.rs'
-      - 'lu-desktop/tests/ux-chat01-message-interactions.test.mjs'
-      - 'lu-desktop/web/message_interactions.mjs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/web/styles.css'
-      - 'docs/LU_CENTRAL_DESIGN.md'
-      - '.github/workflows/lu-ux-chat01-message-interactions.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

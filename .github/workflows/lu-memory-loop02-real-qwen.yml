@@ -1,16 +1,5 @@
 name: Lu MEMORY-LOOP-02 Genuine Qwen3 Evidence Calibration
 on:
-  push:
-    branches: ['lu/memory-loop02-verified-feedback-20261108']
-  pull_request:
-    paths:
-      - 'lu-desktop/src-tauri/src/agent_verified_feedback.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_task_continuity.rs'
-      - 'src-tauri/lu-core/src/ansf_live_chat.rs'
-      - 'benchmarks/e1/memory_loop02_genuine_qwen_feedback.py'
-      - 'benchmarks/e1/test_memory_loop02_qwen_feedback.py'
-      - '.github/workflows/lu-memory-loop02-real-qwen.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

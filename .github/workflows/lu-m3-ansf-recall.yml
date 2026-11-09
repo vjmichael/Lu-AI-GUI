@@ -1,23 +1,5 @@
 name: Lu M3 ANSF Cross-Conversation Recall
 on:
-  push:
-    branches:
-      - lu/m3-cross-chat-recall-source-ids-20261107
-  pull_request:
-    paths:
-      - 'lu-desktop/src-tauri/src/ansf_chat_store.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/tests/native-chat/**'
-      - 'lu-desktop/tests/m3-ansf-recall.test.mjs'
-      - '.github/workflows/lu-m3-ansf-recall.yml'
-      - 'src-tauri/lu-core/src/ansf*.rs'
-      - 'lu-desktop/tests/m3-*.test.mjs'
-      - 'lu-desktop/web/history_window_geometry.mjs'
-      - 'src-tauri/lu-core/src/continuity.rs'
-      - 'src-tauri/lu-core/src/operational_asset_ledger.rs'
-      - 'src-tauri/lu-core/tests/continuity_effect_receipts.rs'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

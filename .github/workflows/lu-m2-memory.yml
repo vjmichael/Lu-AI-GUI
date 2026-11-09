@@ -1,18 +1,5 @@
 name: Lu M2 ANSF Goals and Clarification Native Acceptance
 on:
-  push:
-    branches:
-      - lu/m2-ansf-goals-clarifications-20261107
-  pull_request:
-    paths:
-      - 'src-tauri/lu-core/src/ansf*.rs'
-      - 'lu-desktop/src-tauri/src/chat_store.rs'
-      - 'lu-desktop/src-tauri/src/memory_desktop.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/tests/m2-ansf-memory.test.mjs'
-      - '.github/workflows/lu-m2-memory.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

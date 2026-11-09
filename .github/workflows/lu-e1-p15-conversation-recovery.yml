@@ -1,30 +1,5 @@
 name: Lu E1-P15 Conversation Task Recovery Native Candidate
 on:
-  push:
-    branches: ['lu/e1-p15-conversation-continuity-candidate-20261108']
-    paths:
-      - 'src-tauri/lu-core/src/tasks.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_task_continuity.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/web/reviewed_tool_feedback.mjs'
-      - 'lu-desktop/tests/reviewed-task-continuity.test.mjs'
-      - 'lu-desktop/tests/native-reviewed-recovery/**'
-      - '.github/workflows/lu-e1-p15-conversation-recovery.yml'
-      - 'source-tree.lock.json'
-  pull_request:
-    paths:
-      - 'src-tauri/lu-core/src/tasks.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
-      - 'lu-desktop/src-tauri/src/reviewed_task_continuity.rs'
-      - 'lu-desktop/src-tauri/src/lib.rs'
-      - 'lu-desktop/web/main.jsx'
-      - 'lu-desktop/web/reviewed_tool_feedback.mjs'
-      - 'lu-desktop/tests/reviewed-task-continuity.test.mjs'
-      - 'lu-desktop/tests/native-reviewed-recovery/**'
-      - '.github/workflows/lu-e1-p15-conversation-recovery.yml'
-      - 'source-tree.lock.json'
   workflow_dispatch:
 permissions:
   contents: read

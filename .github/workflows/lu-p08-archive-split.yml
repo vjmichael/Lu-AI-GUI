@@ -1,7 +1,5 @@
 name: Lu P08 Archive Split Native
 on:
-  push:
-    branches: ['lu/p08-archive-split-*']
   workflow_dispatch:
 permissions:
   contents: read
