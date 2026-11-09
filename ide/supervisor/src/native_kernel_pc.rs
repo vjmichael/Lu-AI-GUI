@@ -165,6 +165,26 @@ fn verify_pid(pid: u32, expected_binary: &Path, sha: &str, pc: u64)
         kernel_tracing_stop_verified: true,
     }))
 }
+/// Correlates three independent authorities, but does not authorize a
+/// new DAP command: host-only source snapshot, kernel cgroup mapping and
+/// separately fsynced original build/one-use debug job receipts.
+#[derive(Debug, Clone)]
+pub(crate) struct ProtectedStopLineage {
+    pub(crate) kernel: KernelLoadedImage,
+    pub(crate) debugger_job_id: String,
+    pub(crate) debugger_plan_sha256: String,
+    pub(crate) debug_running_receipt_sha256: String,
+    pub(crate) build_job_id: String,
+    pub(crate) build_terminal_receipt_sha256: String,
+    pub(crate) source_snapshot_sha256: String,
+    pub(crate) target_binding_sha256: String,
+    pub(crate) source_file_sha256: String,
+    pub(crate) source_relative_path: String,
+    pub(crate) source_line: u32,
+    pub(crate) independent_line_table_verified: bool,
+    pub(crate) installed_app_accepted: bool,
+}
+
 /// A true native witness must remain scoped to the real delegated cgroup,
 /// whose directory was created by the protected OS worker from its job ID.
 /// Arbitrary caller-supplied PIDs or directories are never trusted.
