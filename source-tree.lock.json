@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "bfda2c6fa40e07be0c09fe3e4c9d47d9abb2a9fc",
+  "sourceCommitBeforeLock": "d43a5aeae0c6046da38a6efa7548cd5e98831163",
   "trackedFileCount": 773,
   "files": [
     {
@@ -949,7 +949,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_recovery_desktop.rs",
-      "blob": "2285c2ff6546ec032de6ce7b1b466eae6db633c7"
+      "blob": "59ef10fa807d4fe337345feda9188729c548ba8e"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
@@ -1733,7 +1733,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_os_custody.rs",
-      "blob": "5f2d9508bb842272604d649c92d7c5caaad772ad"
+      "blob": "a10a4e1c6dcf8332a49a10872ee93a736b468f77"
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_ledger.rs",
@@ -3049,7 +3049,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs",
-      "blob": "8325308afb3eb3e52a8aedfa4d77e1c4fb4ecec2"
+      "blob": "8689978309f75d19bcb5d204cd883b73242e1b33"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-crash-parent.rs",
