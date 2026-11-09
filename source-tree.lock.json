@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6fcdc59dbf9816c4f51d9bb96130e009998de48b",
+  "sourceCommitBeforeLock": "e4b06e0e4411efb57780f981e574ce1bd8a7589d",
   "trackedFileCount": 793,
   "files": [
     {
@@ -1397,7 +1397,7 @@
     },
     {
       "path": "lu-desktop/tests/memory-loop02c-operator-provenance.test.mjs",
-      "blob": "48a11ab587397a7c3528e22571fc45bffa303ca8"
+      "blob": "1c50a3936356f78058daeb18a7ecfb24cd774ead"
     },
     {
       "path": "lu-desktop/tests/native-auth/Cargo.toml",
