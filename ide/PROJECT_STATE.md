@@ -1,5 +1,29 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## DEV-04.5D4D — Windows debug-port and LLDB owner verification (2026-11-09)
+
+Draft work stacked on PR #189. Read-only native Windows OS corroboration
+now checks the kernel's CheckRemoteDebuggerPresent on the actual protected
+debuggee, verifies the debuggee's process-table parent matches the real
+SCM/Job-owned LLDB process handle, and rechecks the Job membership,
+debug port and parent around independent PE/PDB lookup. It retains
+`actual_debug_event_owner_attested=false` and adds no debugger actions,
+attach, writable process handle or reusable permission.
+
+**Strict stop-event owner identity is NOT proved by this corroboration.**
+Microsoft documents that only the original debugger event loop can receive
+the actual Win32 DEBUG_EVENT. A reviewed, pinned LLDB DebuggerThread
+owner-side hook plus a separately admitted, one-use authenticated IPC
+and durable event/continue receipt must be developed and independently
+tested in real protected Windows Job/SCM acceptance. A DAP stop, matching
+RIP/PDB, kernel debug-port flag, ancestry, or standalone event observer
+cannot substitute. These checks have no native exact-head job result yet;
+D4C Windows CI is queued (real WO6 run 42584964922, source check run
+42584965121). Existing GTK and other source/installed gates stay open.
+No breakpoints, stepping, variables or default installed authority.
+See `ide/docs/IDE_DEV045D4D_WINDOWS_EVENT_OWNER_AND_NATIVE_GATES_20261109.md`.
+
+
 
 ## DEV-04.5D4C — Real Lu LLDB-owned stop → OS thread RIP → PDB → receipts (2026-11-09)
 
