@@ -1,0 +1,71 @@
+name: IDE DEV04.4 protected project LLDB integration
+on:
+  push:
+    branches: [ide/dev04-4-protected-project-debug-20261108]
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - 'ide/host/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-dev04-4-native-project-dap.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev044-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  exact-head-project-debug:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Linux Tauri development libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Verify exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - name: Verify source-to-build-to-symbol frontend identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test ide/app/tests/debug_binary_evidence.test.mjs ide/app/tests/debug_symbol_evidence.test.mjs ide/app/tests/project_debug_authority.test.mjs
+      - name: DAP parser and sealed private target native unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --lib --locked dap_session
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked --features dap-transport project_debug_target
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked --features dap-transport debug_symbol_verification
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked --features dap-transport project_debug_requires_exact
+      - name: Native protected project LLDB-DAP plus Cargo Tauri compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --locked --all-targets --features native-project-debug
+      - name: Actual kernel acceptance remains independent
+        if: always()
+        shell: bash
+        run: |
+          echo 'DEV044_LINUX_REAL_PROTECTED_CARGO_TO_PROJECT_LLDB=REQUIRES_WO6_NATIVE_OS_JOB'
+          echo 'DEV044_WINDOWS_REAL_APPCONTAINER_PROJECT_LLDB=OPEN_NOT_OS_ACCEPTED'
+          echo 'DEV044_INSTALLED_SIGNED_PROJECT_DEBUGGER=OPEN'
