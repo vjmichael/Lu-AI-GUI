@@ -83,21 +83,21 @@ def pe_pdb_guid_age_matches(executable, pdb, expected_pdb_name):
             "PE_STRUCTURE_DENIED")
     image_offset = struct.unpack_from("<I", executable, 0x3c)[0]
     require(image_offset < len(executable) - 24
-            and executable[image_offset:image_offset + 4] == b"PE\\x00\\x00",
+            and executable[image_offset:image_offset + 4] == b"PE\x00\x00",
             "PE_STRUCTURE_DENIED")
     records = []
     for found in re.finditer(b"RSDS", executable):
         at = found.start()
         if at + 24 >= len(executable):
             continue
-        end = executable.find(b"\\x00", at + 24, min(len(executable), at + 280))
+        end = executable.find(b"\x00", at + 24, min(len(executable), at + 280))
         if end < 0:
             continue
         try:
             original_path = executable[at + 24:end].decode("utf-8")
         except UnicodeError:
             continue
-        if original_path.replace("\\\\", "/").split("/")[-1].casefold() != expected_pdb_name.casefold():
+        if original_path.replace("\\", "/").split("/")[-1].casefold() != expected_pdb_name.casefold():
             continue
         age = struct.unpack_from("<I", executable, at + 20)[0]
         records.append((executable[at + 4:at + 20], age))
