@@ -19,6 +19,8 @@ on:
       - 'lu-desktop/tests/agent01e-progress-ui.test.mjs'
       - '.github/workflows/lu-agent01e-broker-progress.yml'
       - 'source-tree.lock.json'
+      - 'evidence/agent-01g/qwen2p5-local-cpu-20261108/**'
+      - 'scripts/verify-agent01g-local-evidence.mjs'
   pull_request:
     paths:
       - 'src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs'
@@ -37,6 +39,8 @@ on:
       - 'lu-desktop/tests/agent01e-progress-ui.test.mjs'
       - '.github/workflows/lu-agent01e-broker-progress.yml'
       - 'source-tree.lock.json'
+      - 'evidence/agent-01g/qwen2p5-local-cpu-20261108/**'
+      - 'scripts/verify-agent01g-local-evidence.mjs'
   workflow_dispatch:
 permissions:
   contents: read
@@ -88,6 +92,15 @@ jobs:
             2>&1 | tee agent01e-evidence/agent01g-ui-bridge.log
           grep -Fq '# pass 10' agent01e-evidence/agent01g-ui-bridge.log
           grep -Fq '# fail 0' agent01e-evidence/agent01g-ui-bridge.log
+      - name: AGENT-01G real local GGUF diagnostic receipts, SHA-256 only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/verify-agent01g-local-evidence.mjs \
+            2>&1 | tee agent01e-evidence/agent01g-local-qwen-diagnostics.log
+          grep -Fq '# pass 5' agent01e-evidence/agent01g-local-qwen-diagnostics.log
+          grep -Fq '# fail 0' agent01e-evidence/agent01g-local-qwen-diagnostics.log
+          echo 'Five source evidence integrity tests are NOT Lu-host or real Qwen3 model-selected broker acceptance.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
