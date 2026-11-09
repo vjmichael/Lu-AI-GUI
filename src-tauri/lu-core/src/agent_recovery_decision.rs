@@ -177,6 +177,60 @@ fn recheck_ancestors(
     Err("Continuation ancestry exceeds bounded independent recheck".into())
 }
 
+/// Check independently attested descendant custody for *every* ancestor.
+/// A child without any claimed work is not safely reviewable when its parent
+/// or grandparent still has unverified OS processes. This uses actual parent
+/// task/oracle history and the trusted host OS witness, never UI booleans.
+#[allow(clippy::too_many_arguments)]
+fn ancestors_have_independent_os_custody(
+    file:&Path,profile:&Path,plan:&str,chat:&str,
+    ledger:&AgentPlanLedger,revisions:&AgentPlanRevisionStore,
+    scheduler:&AgentHostScheduler,receipts:&AgentDeliverableReceipts,
+    sources:&dyn HostPlanReferenceVerifier,
+    custody:&dyn IndependentProcessCustody,
+)->Result<bool,String>{
+    let db=Connection::open_with_flags(file,
+        OpenFlags::SQLITE_OPEN_READ_ONLY|OpenFlags::SQLITE_OPEN_NO_MUTEX
+    ).map_err(|e|e.to_string())?;
+    let present:Option<String>=db.query_row(
+        "SELECT name FROM sqlite_master WHERE type='table'
+         AND name='lu_agent_continuation_children'",
+        [],|r|r.get(0)
+    ).optional().map_err(|e|e.to_string())?;
+    if present.is_none(){return Ok(true)}
+    let mut child=plan.to_owned();
+    for _ in 0..=MAX_GENERATIONS{
+        let parent:Option<String>=db.query_row(
+            "SELECT parent_plan_id FROM lu_agent_continuation_children
+             WHERE child_plan_id=?1",params![child],|r|r.get(0)
+        ).optional().map_err(|e|e.to_string())?;
+        let Some(parent)=parent else{return Ok(true)};
+        let human_turn:String=db.query_row(
+            "SELECT human_turn_id FROM lu_agent_plans WHERE plan_id=?1
+              AND conversation_id=?2",
+            params![parent,chat],|r|r.get(0)
+        ).map_err(|e|e.to_string())?;
+        let revision=revisions.latest(&parent,chat)
+            .map_err(|e|format!("Ancestor revision cannot be read: {e:?}"))?
+            .ok_or("Ancestor revision missing")?;
+        if revision.review_state!="APPROVED_PLAN_ONLY"
+            ||!sources.goal_event_is_current(
+                chat,&revision.goal_id,&revision.goal_event_id){
+            return Ok(false)
+        }
+        let owner=scheduler.view(&parent,chat,&human_turn,ledger)
+            .map_err(|e|format!("Ancestor host fence invalid: {e:?}"))?;
+        let historical=receipts.history(
+            &parent,chat,&human_turn,profile,ledger,revisions,sources
+        ).map_err(|e|format!("Ancestor source oracle cannot be read: {e:?}"))?;
+        if classify(owner.as_ref(),&revision.revision_sha256,&historical,
+            chat,custody,0).status!="REVIEW_NEW_STEP_WITH_FRESH_AUTHORIZATION_ONLY"{
+            return Ok(false)
+        }
+        child=parent;
+    }
+    Ok(false)
+}
 /// Evaluate a single authenticated original plan WITHOUT any new authority.
 /// Callers provide existing, previously opened evidence stores and a genuine
 /// host selected profile (never a model/WebView supplied path).
@@ -214,6 +268,14 @@ pub fn reconcile_recovery(
         file,profile,plan,chat,ledger,revisions,scheduler,receipts,sources
     ).is_err(){
         return Ok(deny("STOP_ANCESTOR_ORACLE_UNVERIFIED",INSPECT,generations))
+    }
+    if !ancestors_have_independent_os_custody(
+        file,profile,plan,chat,ledger,revisions,scheduler,receipts,
+        sources,custody
+    ).unwrap_or(false){
+        return Ok(deny("STOP_ANCESTOR_CUSTODY_UNPROVEN",
+            "An ancestor's original worker and descendants have no independent OS termination proof. Do not open another worker.",
+            generations))
     }
     let owner=scheduler.view(plan,chat,original_turn,ledger)
         .map_err(|e|format!("Scheduler cannot be independently observed: {e:?}"))?;
