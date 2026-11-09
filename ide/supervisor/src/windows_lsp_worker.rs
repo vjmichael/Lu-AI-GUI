@@ -1765,6 +1765,65 @@ impl WindowsDapSession {
             installed_app_accepted: false,
         })
     }
+    /// DEV-04.6A native CI integration: review proposals are derived from
+    /// the actual D5 kernel-owner receipt and must remain non-executable.
+    /// Only this existing native worker can see the authenticated sideband.
+    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    pub fn verify_bounded_debug_reviews_for_ci(
+        &mut self, owner: &WindowsOwnerEventAccepted, snapshot_sha256: &str,
+    ) -> Result<(), SupervisorError> {
+        use crate::debug_command_review::{
+            review_from_verified_native_owner_for_ci, DebugReviewDenial,
+            DebugReviewIntent, StepKind,
+        };
+        if self.gateway.phase() != lu_ide_workspace::dap_session::DapPhase::Stopped
+            || self.gateway.source_candidate()
+                .and_then(|frame| frame.instruction_address) != Some(owner.stopped_rip)
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        let live_event = self.gateway.verify_lldb_kernel_event_owner(
+            owner.debuggee_pid, owner.debuggee_thread_id, owner.stopped_rip,
+        )?;
+        if live_event.seq != owner.owner_sequence {
+            return Err(SupervisorError::NoContainment);
+        }
+        let mut review = review_from_verified_native_owner_for_ci(
+            owner, snapshot_sha256,
+        ).map_err(|_| SupervisorError::NoContainment)?;
+        let breakpoint = review.preview(DebugReviewIntent::Breakpoint {
+            source: "src/main.rs".into(), line: owner.verified_source_line,
+        }, owner.owner_sequence).map_err(|_| SupervisorError::NoContainment)?;
+        if breakpoint.executable_authority || breakpoint.installed_app_accepted
+            || review.has_executable_authority() {
+            return Err(SupervisorError::NoContainment);
+        }
+        review.decline(&breakpoint.preview_sha256)
+            .map_err(|_| SupervisorError::NoContainment)?;
+        let step = review.preview(DebugReviewIntent::Step {
+            kind: StepKind::Over, thread_id: owner.debuggee_thread_id,
+        }, owner.owner_sequence).map_err(|_| SupervisorError::NoContainment)?;
+        if step.executable_authority || step.preview_sha256 == breakpoint.preview_sha256 {
+            return Err(SupervisorError::NoContainment);
+        }
+        review.decline(&step.preview_sha256)
+            .map_err(|_| SupervisorError::NoContainment)?;
+        if review.preview(DebugReviewIntent::InspectVariables {
+            frame_id: 1,
+        }, owner.owner_sequence) != Err(DebugReviewDenial::UnverifiedFrame) {
+            return Err(SupervisorError::NoContainment);
+        }
+        // A later or continued event invalidates the entire review session;
+        // do not restore control from an older persisted receipt.
+        if review.preview(DebugReviewIntent::Step {
+            kind: StepKind::Into, thread_id: owner.debuggee_thread_id,
+        }, owner.owner_sequence.saturating_add(1))
+            != Err(DebugReviewDenial::StaleOrRevoked)
+            || review.has_executable_authority() {
+            return Err(SupervisorError::NoContainment);
+        }
+        Ok(())
+    }
     #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
     pub fn crash_real_lldb_after_owner_receipt_for_ci(
         &mut self,

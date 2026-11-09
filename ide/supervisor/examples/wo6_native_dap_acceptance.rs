@@ -605,6 +605,10 @@ mod protected {
                     || owner.verified_source_line == 0 {
                     return Err("DENIED: owner event did not bind exact approved debug journal".into());
                 }
+                dap.verify_bounded_debug_reviews_for_ci(
+                    &owner, &input.seal.source_sha256,
+                ).map_err(|_| "DENIED: DEV-04.6A native host review failed binding or granted debugger authority")?;
+                println!("DEV046A_NATIVE_REVIEW_BOUND_TO_REAL_OWNER=PASS;breakpoint=preview_only;step=preview_only;variables=denied;control_authorized=false");
                 bound_line_receipts = Some((
                     owner.debug_running_receipt_sha256,
                     owner.build_terminal_receipt_sha256,

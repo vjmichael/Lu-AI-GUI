@@ -38,3 +38,17 @@ broader D6 debugger admission group before that consolidated batch.
 
 All D5 native Windows compilation, stop/continue, crash/cancel and signed
 installed acceptance remain OPEN, with no expansion of control authority.
+
+## Real D5 worker integration for the grouped acceptance batch
+
+The already existing real protected Windows owner-event test now also
+invokes the D6A review gate after it authenticates the native event and
+before normal continuation/cancellation/crash. It confirms a same-line
+breakpoint and same-thread step can be previewed, their hashes differ,
+both remain non-executing, frame variables are denied, and simulated
+owner-event sequence change invalidates outstanding review state.
+
+This is a test integration only; it does NOT dispatch a breakpoint,
+step, scopes, variables or evaluate request. The existing exact-head
+native D5 OS workflow will exercise this when it is included in the
+later consolidated Windows/Linux batch; no small CI workflow was added.
