@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "430521265fa2bf0bf4ab5423ac76a230db469da6",
-  "trackedFileCount": 836,
+  "sourceCommitBeforeLock": "c63a10565a2fbec7287488bf2e7932251df978bf",
+  "trackedFileCount": 837,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -66,6 +66,10 @@
     {
       "path": ".github/workflows/lu-ci.yml",
       "blob": "7aa4ecd6cc5ca55de9b9e4b412a09d01635ac7a7"
+    },
+    {
+      "path": ".github/workflows/lu-development-ledger.yml",
+      "blob": "6cf584f67245fea02fc1730cb43e13e0dc6e1938"
     },
     {
       "path": ".github/workflows/lu-e1-app-admission.yml",
@@ -553,7 +557,7 @@
     },
     {
       "path": "docs/LU_CORE_CONVERGENCE_PLAN_20261109.md",
-      "blob": "7a67682646f33c197a9a509799433394601dc9ca"
+      "blob": "581824edceeeb81dcaeeff9fddbb213574d73a4e"
     },
     {
       "path": "docs/LU_CORE_OPEN_PR_STACK_20261109.json",
@@ -657,7 +661,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "97b42d5c306157b4f4352ebdcb29627de2a1e16f"
+      "blob": "fa6c4d0ad75594e94d13303ef86696268eaea755"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -821,7 +825,7 @@
     },
     {
       "path": "docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md",
-      "blob": "d5373d5b37b594709b6a938be6e4e3262e9d0c28"
+      "blob": "582da5156b8d401b8d9e5a7a2a3efd65d2b34705"
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",

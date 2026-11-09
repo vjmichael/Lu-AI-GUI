@@ -60,3 +60,7 @@ Reviewed original `Jan-Mod-Design-Document.md` (Oct 21–22), Lu Core `DESIGN_GA
 
 ## Owner correction — access, permission and authority (2026-11-03)
 Lu is not sandbox-first. Lu may access the actual Windows host to find and use compilers, SDKs, files, network and ordinary desktop tools. OS **permission** means technically able; task **authority** means the authenticated user has directed Lu to perform the operation. Only the second justifies action. Do not use AppContainer or workspace-only storage as a mandatory design requirement. Retain process supervision, user approval for high-impact operations, explicit effect auditing and rollback. See [canonical authority decision](../src-tauri/lu-core/SECURITY_AUTHORITY_AND_OS_CEILING.md).
+
+## Draft convergence note (2026-11-09; NOT an accepted policy change)
+
+The draft Core convergence branch preserves this newer Lu authority/resource contract. The independent main lineage at `fa91a0d4997a8e24f62bfe03e4c9ac00bb54ccca` contains expanded LU-RESOURCE-GUARDIAN-01 design proposals about measured GPU/RAM admission and host-led recovery. Those proposals are retained as source evidence through the real merge parent but **not silently promoted** or used to weaken existing fresh human authorization and recovery invariants. A separate human-reviewed reconciliation of resource thresholds, backend-specific telemetry and operating-system custody remains required before v1.0.

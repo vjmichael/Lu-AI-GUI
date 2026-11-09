@@ -307,3 +307,7 @@ Created a frozen Core candidate from draft #198 at `a7d82f13fd62ba460be9b204ba75
 ### 2026-11-09 — R00 convergence includes independently demonstrated Windows SQLite cleanup repair
 
 Native run #42701772029: Ubuntu success; Windows compiler and nine reviewed evidence tests succeeded, but opt-in G5 protected-worker restart fixture failed on Windows (`Os error 32`, `memory_loop03c_reviewed_worker_tests.rs:623`) because the separate source-selector `historical` EffectJournal was not closed before temporary profile deletion. PR #198 commit `74dbdfe1f8457631f1992efed2c79b37629715aa` explicitly closes that journal; the Core convergence merge includes the exact file blob and Git parent. No compile/runtime retest yet of the new SHA. Keep original review authority and no replay, no promotion.
+
+### 2026-11-09 — R00 genuine main→Core integration-branch merge
+
+A reviewed two-parent source merge of canonical `main` `fa91a0d4997a8e24f62bfe03e4c9ac00bb54ccca` and Lu Core convergence keeps the accepted CHANGELOG, main development ledger and unchanged WRITE-01E runtime module, preserving the Core's later verified worker/ANSF code. Repository metadata-only ledger workflow proposed as manual read-only (no implicit scheduled write authority). Main design-resource guardian delta remains explicitly open for human product reconciliation; documentation can be reviewed from the actual second Git parent. No changes to main, no IDE changes, no heavy CI dispatch, no native acceptance implied.

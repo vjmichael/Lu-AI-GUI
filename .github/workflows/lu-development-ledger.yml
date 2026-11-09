@@ -1,0 +1,30 @@
+name: Lu development ledger review (manual only)
+
+# Preserve main's canonical ledger verification without automatic branch
+# fanout or scheduled write access. Refresh must be reviewed by a human.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: lu-development-ledger-manual-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audit-ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate canonical ledger generator and Core graph
+        run: node --test scripts/lu-ledger.test.mjs scripts/lu-core-stack-graph.test.mjs
+      - name: Report stale historical PR metadata without writing to main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/lu-ledger.mjs --check
