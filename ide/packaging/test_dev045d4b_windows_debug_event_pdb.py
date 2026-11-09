@@ -74,7 +74,7 @@ class ActualWindowsEventAndPdbTests(unittest.TestCase):
             # compiler CRT, not the Lu app/service distribution.
             run([clang, "/nologo", "/MD", "/O2", str(observer_source),
                  "/Fe:" + str(observer)])
-            output = run([str(observer), str(exe)])
+            output = run([str(observer)])
             match = re.fullmatch(
                 r"D4B_OS_DEBUG_EVENT=PASS\n"
                 r"D4B_OS_IMAGE_BASE=(0x[0-9a-fA-F]+)\n"

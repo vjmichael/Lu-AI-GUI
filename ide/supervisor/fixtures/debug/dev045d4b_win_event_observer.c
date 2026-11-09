@@ -21,14 +21,19 @@ static int stop_child(PROCESS_INFORMATION *p, int code) {
     if (p->hProcess) CloseHandle(p->hProcess);
     return code;
 }
-int wmain(int argc, wchar_t **argv) {
+int wmain(void) {
 #if !defined(_M_X64) && !defined(__x86_64__)
     return 91;
 #else
-    if (argc != 2 || !argv[1] || wcslen(argv[1]) > 1024) return 90;
+    /* Fixed sibling fixture only. No path, executable or PID argument. */
     wchar_t full[MAX_PATH] = {0};
-    DWORD required = GetFullPathNameW(argv[1], MAX_PATH, full, NULL);
+    DWORD required = GetModuleFileNameW(NULL, full, MAX_PATH);
     if (!required || required >= MAX_PATH) return 92;
+    wchar_t *separator = wcsrchr(full, L'\\');
+    if (!separator) return 92;
+    if ((size_t)(separator - full) + 1 + wcslen(L"fixture.exe") >= MAX_PATH)
+        return 92;
+    wcscpy(separator + 1, L"fixture.exe");
     STARTUPINFOW startup = {0};
     PROCESS_INFORMATION child = {0};
     startup.cb = sizeof(startup);
