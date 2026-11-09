@@ -156,6 +156,56 @@ fn verify_events(raw: &[u8], action: &str, preview: &str)
     Ok((sequence, prior, phase.to_owned()))
 }
 
+/// Audit identity only. Possession of this value cannot recreate a
+/// consumed in-memory grant or invoke the DAP gateway.
+#[derive(Debug, Clone)]
+pub(crate) struct DebugActionAuditRef {
+    pub(crate) action_id_sha256: String,
+    pub(crate) preview_sha256: String,
+    pub(crate) last_receipt_sha256: String,
+    pub(crate) final_phase: String,
+}
+
+/// Reopen the original private journal directory after the supervisor
+/// restarts; verify the entire chained, transition-checked log. Never issue
+/// or reconstruct an authorization from a receipt file.
+pub(crate) fn verify_action_receipt_after_restart(
+    trusted_root: &Path, reference: &DebugActionAuditRef,
+) -> Result<(), ApprovalDenial> {
+    if !trusted_root.is_absolute() || !hex64(&reference.action_id_sha256)
+        || !hex64(&reference.preview_sha256)
+        || !hex64(&reference.last_receipt_sha256) {
+        return Err(ApprovalDenial::JournalCorrupt);
+    }
+    let root = fs::symlink_metadata(trusted_root)
+        .map_err(|_| ApprovalDenial::JournalUnavailable)?;
+    if !root.is_dir() || root.file_type().is_symlink() {
+        return Err(ApprovalDenial::JournalCorrupt);
+    }
+    let path = trusted_root.join(format!(
+        "lu-debug-action-{}.ndjson", reference.action_id_sha256,
+    ));
+    let meta = fs::symlink_metadata(&path)
+        .map_err(|_| ApprovalDenial::JournalUnavailable)?;
+    if !meta.is_file() || meta.file_type().is_symlink()
+        || meta.len() > MAX_LOG_BYTES || meta.len() == 0 {
+        return Err(ApprovalDenial::JournalCorrupt);
+    }
+    let mut bytes = Vec::new();
+    File::open(path).map_err(|_| ApprovalDenial::JournalUnavailable)?
+        .take(MAX_LOG_BYTES + 1).read_to_end(&mut bytes)
+        .map_err(|_| ApprovalDenial::JournalUnavailable)?;
+    let (_, hash, phase) = verify_events(
+        &bytes, &reference.action_id_sha256, &reference.preview_sha256,
+    )?;
+    if hash != reference.last_receipt_sha256 || phase != reference.final_phase
+        || !matches!(phase.as_str(), "Denied" | "Revoked" |
+            "Consumed" | "ResultVerified" | "ResultUncertain") {
+        return Err(ApprovalDenial::JournalCorrupt);
+    }
+    Ok(())
+}
+
 /// A one-time claim is not a debugger operation. There is deliberately no
 /// adapter request bytes or dispatch method in this object.
 #[derive(Debug, PartialEq, Eq)]
@@ -267,6 +317,20 @@ impl DebugActionApproval {
         self.seq += 1;
         self.prior = event.entry_hash.clone();
         Ok(event.entry_hash)
+    }
+    pub(crate) fn audit_reference(&self, final_phase: &str)
+        -> Result<DebugActionAuditRef, ApprovalDenial>
+    {
+        let verified = self.verify_reopened_audit()?;
+        if verified != final_phase {
+            return Err(ApprovalDenial::JournalCorrupt);
+        }
+        Ok(DebugActionAuditRef {
+            action_id_sha256: self.action_id_sha256.clone(),
+            preview_sha256: self.preview.preview_sha256.clone(),
+            last_receipt_sha256: self.prior.clone(),
+            final_phase: verified,
+        })
     }
     pub(crate) fn challenge_sha256(&self) -> &str { &self.challenge_sha256 }
     pub(crate) fn journal_path_for_audit(&self) -> &Path { &self.path }
@@ -455,6 +519,8 @@ mod tests {
             Err(ApprovalDenial::GrantConsumed));
         a.record_result(false, 508).unwrap();
         assert_eq!(a.verify_reopened_audit().unwrap(), "ResultUncertain");
+        let audit = a.audit_reference("ResultUncertain").unwrap();
+        verify_action_receipt_after_restart(&dir, &audit).unwrap();
         assert!(!a.has_live_dispatch_authority());
         clean(a, dir);
     }
