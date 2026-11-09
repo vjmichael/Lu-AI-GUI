@@ -40,3 +40,9 @@ The 12 non-physical gates A01–A12 from the owner's backlog still require exact
 2. Diff and integrate *only tested, independently justified* deltas from the 22 divergent Core PRs. Preserve original source identities and manual permissions; do not duplicate already-ancestral PRs.
 3. Run **one consolidated** exact-head Windows/Linux matrix for the integrated Core task group; inspect real compilation, protected worker, ANSF, model and UI evidence. Keep installed GGUF/signing/OS custody gates separate and honest.
 4. After test evidence and authorized review, define dependency-aware sequence for merging to `main`; do not automatically close historic drafts merely because their code appears in a descendant.
+
+### Main-only non-runtime source preservation
+
+The accepted main-branch PR template, AGENTS contribution guide, CHANGELOG, canonical development ledger and ledger generator/test are preserved by **identical Git blob SHA** from main `fa91a0d4997a8e24f62bfe03e4c9ac00bb54ccca` in this draft integration branch. The current Core README retains its later decisions and links to those historical records. This preservation does not imply a merge or integration acceptance of other PRs.
+
+Main's `.github/workflows/lu-development-ledger.yml` was intentionally **not imported**: its push/scheduled write-to-main triggers require a separate policy review under Lu's current CI rules. Main's resource-guardian amendments in `docs/LU_V1_0_DESIGN_RECONCILIATION_20261103.md` were **not substituted** over Core's later scope/authority decisions. `src-tauri/lu-core/src/reversible_edit.rs` and `docs/WRITE_01E_EXACT_EDIT_APPROVAL_20261103.md` were already byte-identical; no duplicate source was applied. The `lib.rs` file was not overwritten by an ancestor.

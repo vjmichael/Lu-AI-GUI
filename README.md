@@ -4,6 +4,8 @@ Lu is a standalone, locally hosted AI desktop application built with Tauri 2, Re
 
 **Status (2026-11-03):** Lu `0.1.0-alpha.2` accepted by the project owner as the **functional Windows alpha development baseline**, following physical GGUF/MMProj, streaming, chat history, image/doc persistence, FIFO cancellation and Retry tests. It is **not** a production-stable or fully secured v1.0 release. Windows model-load `Not Responding`, missing taskbar icon, import feedback, signing and thumbnail timing remain tracked defects.
 
+**Development and release status:** [Canonical development ledger](docs/LU_DEVELOPMENT_LEDGER.md) and [accepted release changelog](CHANGELOG.md) are preserved from `main` as historical source evidence; [Core convergence and outstanding branch differences](docs/LU_CORE_CONVERGENCE_PLAN_20261109.md) is the current draft source checkpoint. Draft PR code is **not** necessarily integrated, installed or accepted.
+
 **Central Lu design:** [Lu — Central Product and Technical Design](docs/LU_CENTRAL_DESIGN.md) is the authoritative product and architecture entrypoint.
 
 **Cross-conversation decision memory (read BEFORE re-planning):** [Lu Decision Memory Register — original design, supersessions, source evidence and status](docs/LU_DECISION_MEMORY_REGISTER_20261107.md). This is a searchable decision map, NOT a substitute for exact original chat/source text. Future assistants must consult it alongside Central Design and current owner instructions. The [recovered Conversations 01–21 handoff](docs/LU_CANONICAL_HANDOFF_CONVOS_01_21_20261103.md) supplies supporting provenance.

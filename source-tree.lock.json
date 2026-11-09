@@ -1,8 +1,12 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a7d82f13fd62ba460be9b204ba7574b9dcf87dcf",
-  "trackedFileCount": 830,
+  "sourceCommitBeforeLock": "f22b9f5e50df42f842e0e2655346020fe5e6eeb4",
+  "trackedFileCount": 836,
   "files": [
+    {
+      "path": ".github/pull_request_template.md",
+      "blob": "ed863daf448d97af570c2b8272553115ddf821fa"
+    },
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
       "blob": "59c88ad05d2c5e53db6861bbd64851e5c3f2ecab"
@@ -280,6 +284,14 @@
       "blob": "323525d460d1998525767d6dd5570bef9b7b6cd5"
     },
     {
+      "path": "AGENTS.md",
+      "blob": "7c0eb30161d83842248c1581ff28d0d0e849b661"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "blob": "4bdbf023b175171ae55df962ef776c43c1916cc5"
+    },
+    {
       "path": "LICENSE",
       "blob": "d645695673349e3947e8e5ae42332d0ac3164cd7"
     },
@@ -289,7 +301,7 @@
     },
     {
       "path": "README.md",
-      "blob": "9b7273500c9a16717e9ed6fb388cfa0377c31348"
+      "blob": "81d080af9def3ed5430947fd1e0b688937cb37fc"
     },
     {
       "path": "benchmarks/e1/agent01g_qwen_plan_probe.py",
@@ -541,7 +553,7 @@
     },
     {
       "path": "docs/LU_CORE_CONVERGENCE_PLAN_20261109.md",
-      "blob": "94308a852320e6e4fe677e9cabe0bc91775deb07"
+      "blob": "02b70a2d315d9a6e74b38168ad2dde5649f6347c"
     },
     {
       "path": "docs/LU_CORE_OPEN_PR_STACK_20261109.json",
@@ -558,6 +570,10 @@
     {
       "path": "docs/LU_DECISION_MEMORY_REGISTER_20261107.md",
       "blob": "3f0677108c9cce3ece07a7511f046eb871c1a43b"
+    },
+    {
+      "path": "docs/LU_DEVELOPMENT_LEDGER.md",
+      "blob": "6daf2707002a82351e06cd06334e842f45a3131e"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
@@ -1782,6 +1798,14 @@
     {
       "path": "scripts/lu-core-stack-graph.test.mjs",
       "blob": "01cb49225476b88151f118473d422146e70d0edb"
+    },
+    {
+      "path": "scripts/lu-ledger.mjs",
+      "blob": "0060dd91f8e39633f9a16fa41a512ba6a01a45b6"
+    },
+    {
+      "path": "scripts/lu-ledger.test.mjs",
+      "blob": "f7d38ae353d4ca0a98ddb4768fe99675c364087a"
     },
     {
       "path": "scripts/m3-windows-installed-acceptance.ps1",
