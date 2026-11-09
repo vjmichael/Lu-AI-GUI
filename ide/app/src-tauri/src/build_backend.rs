@@ -249,6 +249,8 @@ pub struct BuildStatus {
     code: String,
     description: &'static str,
     current: Option<ActiveView>,
+    // Ephemeral identity only; never an output path or replayable receipt.
+    last_output_job_id: Option<String>,
     recent: Vec<BuildRunView>,
     // Persisted supervisor journal; unlike recent, survives a host restart.
     journal: Vec<RecoveryView>,
@@ -326,6 +328,9 @@ impl NativeBuildRuntime {
                 recipe_id: job.recipe_id.clone(),
                 cancellation_requested: job.requested.load(Ordering::SeqCst),
             });
+        let last_output_job_id = locked.last_output.as_ref()
+            .filter(|(project, _, _)| project == project_id)
+            .map(|(_, job_id, _)| job_id.clone());
         let recent = locked.recent.values()
             .filter(|job| job.project_id == project_id).cloned().collect();
         drop(locked);
@@ -368,6 +373,7 @@ impl NativeBuildRuntime {
             description: "Pinned resources are not execution proof. Native Job/cgroup \
                 admission, human approval and terminal OS cleanup are checked for each job.",
             current,
+            last_output_job_id,
             recent,
             journal,
             quarantined,
