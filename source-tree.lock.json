@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a3a1303a5456b95048da12e95c3967d1090c3d98",
+  "sourceCommitBeforeLock": "60e254b03637844517ded0c3acf6ffd70bd19d78",
   "trackedFileCount": 820,
   "files": [
     {
@@ -365,7 +365,7 @@
     },
     {
       "path": "benchmarks/e1/test_memory_loop03c_reviewed_workers.py",
-      "blob": "9529ea35687e9a42cd41fbf5ae4ed40c63d92bbd"
+      "blob": "59fde8d6665524372299a9ae39172f1d4a541643"
     },
     {
       "path": "benchmarks/e1/verify_e1_p05_raw.py",
@@ -1481,7 +1481,7 @@
     },
     {
       "path": "lu-desktop/tests/memory-loop03b-source.test.mjs",
-      "blob": "f97ea74f42391b59352989dbebff56ab02645a7f"
+      "blob": "ef58fafbaabc5cae11d9617a99f89d977a35227a"
     },
     {
       "path": "lu-desktop/tests/memory-loop03e-crash-recovery.test.mjs",
