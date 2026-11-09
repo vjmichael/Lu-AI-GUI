@@ -635,7 +635,7 @@ mod protected {
                     && r.body.plan_sha256 == build_job.plan_sha256
             });
             if !original_running || !original_build
-                || terminal.body.phase != JobPhase::Completed
+                || terminal.body.phase != expected_debug
                 || terminal.body.plan_sha256 != debug_job.plan_sha256
                 || terminal.entry_hash == running_sha {
                 return Err("DENIED: protected Windows PDB stop did not survive independent fsynced terminal".into());
@@ -695,6 +695,10 @@ mod protected {
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-line"] {
             return run_windows_project_debug(false, true, true, true);
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-line-cancel"] {
+            return run_windows_project_debug(true, true, true, true);
         }
         let cancel = args.as_slice() == ["--cancel"];
         #[cfg(target_os = "linux")]

@@ -179,6 +179,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw 'DENIED: REAL protected LLDB Job/RIP, independent sealed PE/PDB line and two fsynced receipt chains did not all agree'
             }
+            & $hostExe --project-debug-line-cancel
+            if ($LASTEXITCODE -ne 0) {
+              throw 'DENIED: REAL protected LLDB/PDB stop did not produce fsynced cancellation, full Job-tree termination and replay denial'
+            }
           } finally {
             if ($nulTouched) {
               & $bootstrap --revoke-fixed-service
