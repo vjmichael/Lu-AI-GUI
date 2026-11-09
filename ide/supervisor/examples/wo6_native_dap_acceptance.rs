@@ -668,7 +668,8 @@ mod protected {
                             }
                             "breakpoint" => {
                                 let receipt = dap.attempt_one_protected_ci_breakpoint(
-                                    &supervisor, &owner,
+                                    &supervisor, &debug_job.job_id,
+                                    &debug_plan, &target, &owner,
                                 ).map_err(|_| "DENIED: D6C protected one-line native LLDB breakpoint attempt failed")?;
                                 if receipt.3 != "ResultUncertain" {
                                     return Err("DENIED: D6C DAP breakpoint ACK was falsely promoted to OS verified".into());

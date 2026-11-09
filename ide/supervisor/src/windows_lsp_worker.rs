@@ -2045,7 +2045,8 @@ impl WindowsDapSession {
     #[cfg(all(debug_assertions, feature = "dev046c-ci-control"))]
     pub fn attempt_one_protected_ci_breakpoint(
         &mut self,
-        supervisor: &Supervisor,
+        supervisor: &Supervisor, job_id: &str, plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
         original: &WindowsOwnerEventAccepted,
     ) -> Result<(String, String, String, String), SupervisorError> {
         use crate::{
@@ -2057,10 +2058,24 @@ impl WindowsDapSession {
         };
         use lu_ide_workspace::dap_session::DapPhase;
         if self.gateway.phase() != DapPhase::Stopped
+            || original.debugger_job_id != job_id
             || original.debugger_job_id != self.native_job_id
             || original.debugger_plan_sha256 != self.native_plan_sha256
-            || original.source_snapshot_sha256 != self.source_input.seal.source_sha256 {
+            || original.source_snapshot_sha256 != self.source_input.seal.source_sha256
+            || !original.lldb_event_loop_owner_attested
+            || original.debugger_commands_authorized
+            || original.installed_app_accepted {
             return Err(SupervisorError::NoContainment);
+        }
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let live = supervisor.inspect()?.into_iter().find(|r| r.job_id == job_id)
+            .ok_or(SupervisorError::NoSuchJob)?;
+        if live.phase != JobPhase::Running || live.requires_reconciliation
+            || live.plan_sha256 != self.native_plan_sha256
+            || plan.input_snapshot_sha256 != self.source_input.seal.source_sha256 {
+            return Err(SupervisorError::InvalidTransition);
         }
         let current = self.gateway.verify_lldb_kernel_event_owner(
             original.debuggee_pid, original.debuggee_thread_id, original.stopped_rip,
@@ -2114,6 +2129,17 @@ impl WindowsDapSession {
         let ack = ack.ok_or(SupervisorError::NoContainment)?;
         if !ack.response_acknowledged || ack.is_step
             || self.gateway.phase() != DapPhase::Stopped {
+            return Err(SupervisorError::NoContainment);
+        }
+        // Recheck still-owned stop, sealed original PE/PDB/source and Job
+        // after LLDB's ACK; this still cannot assert an installed breakpoint.
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let owner_after = self.gateway.verify_lldb_kernel_event_owner(
+            original.debuggee_pid, original.debuggee_thread_id, original.stopped_rip,
+        )?;
+        if owner_after.seq != original.owner_sequence {
             return Err(SupervisorError::NoContainment);
         }
         // Independent breakpoint *hit* or process memory proof does not yet

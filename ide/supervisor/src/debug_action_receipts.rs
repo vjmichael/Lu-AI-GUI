@@ -265,6 +265,7 @@ impl DebugActionApproval {
             || !hex64(&binding.owner_event_sha256)
             || !hex64(&binding.build_receipt_sha256)
             || !hex64(&binding.running_receipt_sha256)
+            || !hex64(&binding.source_snapshot_sha256)
             || !hex64(&preview.preview_sha256)
             || preview.owner_event_sha256 != binding.owner_event_sha256
             || preview.owner_sequence != binding.owner_sequence
@@ -272,7 +273,7 @@ impl DebugActionApproval {
             || preview.stopped_rip != binding.stopped_rip
             || binding.process_id == 0 || binding.thread_id == 0
             || binding.source_line == 0
-            || !binding.relative_source.starts_with("src/")
+            || binding.relative_source != "src/main.rs"
             || preview.executable_authority || preview.installed_app_accepted {
             return Err(ApprovalDenial::WrongStop);
         }
