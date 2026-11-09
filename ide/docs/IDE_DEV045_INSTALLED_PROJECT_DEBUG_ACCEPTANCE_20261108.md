@@ -7,6 +7,30 @@ The current DEV-04.5 branch is
 Do not describe the unsigned default installer, structural debug symbols, or
 source-only tests as a working installed debugger.
 
+## DEV-04.5A verified repair evidence (2026-11-08 Phoenix / 2026-11-09 UTC)
+
+- Linux 26.04 installed diagnostic run `42559552299`, exact head
+  `b7f38ef18fa72a95583d45d8326b8b736c14adec`: **239/239 frontend
+  tests passed**. Real Debian package and failed-upgrade recovery passed;
+  real GTK folder chooser did **not** accept the fixture directory
+  (`WO8_LINUX_EDITOR_DENIED:native_folder_chooser_not_accepted`).
+  This is an *installed GUI* failure, not a frontend test failure.
+- Applied **all 88 exact Rust formatter hunks** retrieved from failed native
+  Windows jobs `128957487278` and `128957482887`, to ten uniquely matched
+  Rust files in commit `5846b4d21ecc297f4afc5023812d65756d95a644`.
+  No new launcher policy, grant, recipe or execution permission was added.
+- On that exact head, Windows Job Object workflow `42560110426` passed
+  genuine probe build/execution, `cargo fmt --check`, and the safety
+  assertion. Windows AppContainer workflow `42560104648` passed native
+  zero-rights admission, native-probe Rust formatting, and export boundary.
+- Removed the temporary branch-only one-shot formatter workflow after
+  those independent formatting gates passed; formatting must remain
+  enforced by the actual native workflows.
+- Still open: current-head Windows **production worker** matrix,
+  DEV-04.4 Windows/Linux protected project debugger matrix, signed/pinned
+  installed project-debugger acceptance and the unrelated GTK picker.
+  A queued or partial job is not accepted evidence.
+
 ## Findings at the inspected DEV-04.4 exact head
 
 - Windows worker-containment workflow #42554629921: native Job Object
