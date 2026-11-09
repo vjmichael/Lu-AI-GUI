@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "ea277176603003c852ca389d2eebf1653ce3a289",
-  "trackedFileCount": 780,
+  "sourceCommitBeforeLock": "6f4b4ef54ce61d9500127fd4a920455841b8bce7",
+  "trackedFileCount": 785,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -168,6 +168,10 @@
       "blob": "f864b709416d2358ee02cbd736203fb7bf5e56d0"
     },
     {
+      "path": ".github/workflows/lu-memory-loop02-real-qwen.yml",
+      "blob": "3f3eb36c6bfeda2c65f49b9ea0d03d6ceefacd95"
+    },
+    {
       "path": ".github/workflows/lu-memory-loop02-verified-feedback.yml",
       "blob": "b9633db51c1e0b2b6bcc3d84864656167fee92ae"
     },
@@ -300,6 +304,10 @@
       "blob": "b655a718c5498509e7e24e0944cf14714f8e9a28"
     },
     {
+      "path": "benchmarks/e1/memory_loop02_genuine_qwen_feedback.py",
+      "blob": "2e1a78119482c85d9caa348e682537ef833fb1f8"
+    },
+    {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
       "blob": "83d07a6930624a375f8ded7a1c826a2d454813c6"
     },
@@ -314,6 +322,10 @@
     {
       "path": "benchmarks/e1/test_e1_p05_xml_oracle.py",
       "blob": "4d43ad1c19a120c34197015961cecc8af9b9a7f3"
+    },
+    {
+      "path": "benchmarks/e1/test_memory_loop02_qwen_feedback.py",
+      "blob": "8cf0d5c95e13f3555d51374ce0bbcdae25ff301c"
     },
     {
       "path": "benchmarks/e1/verify_e1_p05_raw.py",
@@ -565,7 +577,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "823fa38c07ec06e9a6b134cf27eef185f347fe45"
+      "blob": "6672bf3037f1501eafaf27709b8e0f9aee5703ac"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -610,6 +622,10 @@
     {
       "path": "docs/LU_MEMORY_LOOP01_AGENT_HANDOFF_20261108.md",
       "blob": "bc7eebff3ddaff39df9b305ad3151e746f88a362"
+    },
+    {
+      "path": "docs/LU_MEMORY_LOOP02_REAL_QWEN_ACCEPTANCE_20261108.md",
+      "blob": "e24f921e2e4f0bf6347abbb0daa231363a98ecf1"
     },
     {
       "path": "docs/LU_MEMORY_LOOP02_VERIFIED_FEEDBACK_20261108.md",
@@ -969,7 +985,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_verified_feedback.rs",
-      "blob": "3ae61413226d75612e118e08a86e5b102976db1a"
+      "blob": "648d92ae3cdf32eaceff6c2f700efe64e4811ed9"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
@@ -1342,6 +1358,10 @@
     {
       "path": "lu-desktop/tests/memory-loop01-agent-handoff.test.mjs",
       "blob": "2012b5878eb76d0625e5b410ea6836f61273095c"
+    },
+    {
+      "path": "lu-desktop/tests/memory-loop02-real-qwen-contract.test.mjs",
+      "blob": "8d2f2c9dff2b55d5267a59b664ec76a0be522afb"
     },
     {
       "path": "lu-desktop/tests/memory-loop02-verified-feedback.test.mjs",
