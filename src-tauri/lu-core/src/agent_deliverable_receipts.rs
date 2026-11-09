@@ -805,6 +805,104 @@ mod tests{
         fs::remove_dir_all(f.profile).unwrap();
     }
     #[test]
+    fn agent01k_real_sqlite_reopen_reconciles_worker_oracle_without_claiming_os_custody(){
+        use crate::{
+            agent_host_scheduler::AgentHostScheduler,
+            agent_recovery_decision::{
+                reconcile_recovery,NoIndependentCustodyProof
+            },
+        };
+        let f=fixture(true,false);
+        let execution_turn=id("g-",91);
+        // These are real SQLite journals but fixture effect bytes, NOT OS Git.
+        for kind in ["task","effects"]{
+            fs::rename(
+                f.profile.join(format!("lu-reviewed-{kind}-{}.sqlite",f.turn)),
+                f.profile.join(format!("lu-reviewed-{kind}-{execution_turn}.sqlite"))
+            ).unwrap();
+        }
+        let task_path=f.profile.join(format!(
+            "lu-reviewed-task-{execution_turn}.sqlite"
+        ));
+        let db=Connection::open(&task_path).unwrap();
+        db.execute("UPDATE lu_tasks SET workspace_id=?1 WHERE task_id=?2",
+            params![execution_turn,&f.call]).unwrap();
+        drop(db);
+        TaskStore::open(&task_path).unwrap().bind_reviewed_human_turn(
+            &f.chat,&execution_turn
+        ).unwrap();
+        let planfile=f.profile.join("agent-plans.sqlite");
+        let (ledger,revisions,receipts)=stores(&f);
+        let scheduler=AgentHostScheduler::open(&planfile).unwrap();
+        let owner=id("h-",92);
+        let claim=id("q-",93);
+        let budget=fresh_budget();
+        scheduler.claim_host(
+            &f.plan,&f.chat,&f.turn,&owner,&f.revision,
+            budget,&ledger,&revisions,&Sources(true)
+        ).unwrap();
+        let consent=ExactFreshStep{
+            chat:f.chat.clone(),turn:execution_turn.clone(),
+            plan:f.plan.clone(),revision:f.revision.clone(),
+            step:0,budget,
+        };
+        scheduler.propose_step(
+            &f.plan,&f.chat,&f.turn,&owner,1,&f.revision,0,&claim,
+            &execution_turn,budget,&ledger,&revisions,&Sources(true),
+            &Human,&consent,&f.profile,&receipts
+        ).unwrap();
+        receipts.record_verified_execution_turn(
+            &f.plan,&f.chat,&f.turn,&execution_turn,&f.revision,0,
+            &claim,&owner,1,&f.call,&f.profile,&ledger,&revisions,
+            &Sources(true),&scheduler,&Human
+        ).unwrap();
+        scheduler.acknowledge_historical_receipt(
+            &f.plan,&f.chat,&f.turn,&owner,1,&f.revision,0,
+            &claim,&f.profile,&ledger,&revisions,&receipts,&Sources(true)
+        ).unwrap();
+        scheduler.release_without_dispatch(
+            &f.plan,&f.chat,&f.turn,&owner,1
+        ).unwrap();
+        drop(scheduler);drop(receipts);drop(revisions);drop(ledger);
+        let ledger=AgentPlanLedger::open_existing_readonly(&planfile).unwrap();
+        let revisions=AgentPlanRevisionStore::open_existing_readonly(&planfile).unwrap();
+        let receipts=AgentDeliverableReceipts::open_existing_readonly(&planfile).unwrap();
+        let scheduler=AgentHostScheduler::open_existing_readonly(&planfile).unwrap();
+        let intact=reconcile_recovery(
+            &planfile,&f.profile,&f.chat,&f.plan,&f.turn,
+            &ledger,&revisions,&scheduler,&receipts,&Sources(true),
+            &NoIndependentCustodyProof
+        ).unwrap();
+        assert_eq!(intact.status,"STOP_DESCENDANT_CUSTODY_UNPROVEN");
+        assert_eq!(intact.independently_observed_steps,1);
+        assert_eq!(intact.steps[0].human_turn_id,execution_turn);
+        assert_eq!(intact.execution_authority,"NOT_AUTHORIZED_FOR_EXECUTION");
+        assert!(scheduler.claim_host(
+            &f.plan,&f.chat,&f.turn,&id("h-",94),
+            &f.revision,budget,&ledger,&revisions,&Sources(true)
+        ).is_err(),"A restarted host cannot replay a released owner");
+        let effect_file=f.profile.join(format!(
+            "lu-reviewed-effects-{execution_turn}.sqlite"
+        ));
+        let withheld=f.profile.join("agent01k-withheld-independent-effect.sqlite");
+        fs::rename(&effect_file,&withheld).unwrap();
+        let broken=reconcile_recovery(
+            &planfile,&f.profile,&f.chat,&f.plan,&f.turn,
+            &ledger,&revisions,&scheduler,&receipts,&Sources(true),
+            &NoIndependentCustodyProof
+        ).unwrap();
+        assert_eq!(broken.status,"STOP_UNVERIFIED_WORKER_ORACLE");
+        assert_eq!(broken.independently_observed_steps,0);
+        fs::rename(&withheld,&effect_file).unwrap();
+        assert_eq!(reconcile_recovery(
+            &planfile,&f.profile,&f.chat,&f.plan,&f.turn,
+            &ledger,&revisions,&scheduler,&receipts,&Sources(false),
+            &NoIndependentCustodyProof
+        ).unwrap().status,"STOP_GOAL_OR_SOURCE_CHANGED");
+        drop(scheduler);drop(receipts);drop(revisions);drop(ledger);
+        fs::remove_dir_all(f.profile).unwrap();
+    }
+    #[test]
     fn older_deliverable_schema_migrates_without_inventing_worker_identity(){
         let root=location();
         let file=root.join("legacy-agent-plans.sqlite");
