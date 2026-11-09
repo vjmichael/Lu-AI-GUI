@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import stat
 import sys
+import unicodedata
 import zipfile
 
 DOMAIN = b"lu-ide-runtime-tree-v1\0"
@@ -45,10 +46,20 @@ class Refused(ValueError):
     """No artifact is emitted after a provenance or content mismatch."""
 
 
+WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def portable_key(path: str) -> str:
+    """Detect names that alias after Windows case folding or Unicode normalization."""
+    return unicodedata.normalize("NFC", path).casefold()
+
+
 def safe_part(part: str) -> bool:
     if not part or part in {".", ".."} or len(part.encode("utf-8")) > 255:
         return False
     if part.endswith(".") or part.endswith(" "):
+        return False
+    if part.split(".", 1)[0].upper() in WINDOWS_RESERVED:
         return False
     return not any(ord(c) < 32 or ord(c) == 127 or c in r'\/:|' for c in part)
 
@@ -61,6 +72,7 @@ def stable_files(root: Path) -> tuple[list[tuple[str, Path, int, str]], str, int
         raise Refused("runtime root is not a regular directory")
     files: list[tuple[str, Path, int, str]] = []
     total = 0
+    portable_names: set[str] = set()
     stack = [(root, 0)]
     while stack:
         current, depth = stack.pop()
@@ -71,6 +83,10 @@ def stable_files(root: Path) -> tuple[list[tuple[str, Path, int, str]], str, int
             parts = rel.parts
             if not all(safe_part(p) for p in parts) or len(rel.as_posix().encode()) > MAX_PATH:
                 raise Refused("unsafe runtime path")
+            alias = portable_key(rel.as_posix())
+            if alias in portable_names:
+                raise Refused("case/Unicode alias in portable runtime tree")
+            portable_names.add(alias)
             before = path.lstat()
             if stat.S_ISLNK(before.st_mode):
                 raise Refused("runtime symlink forbidden")
