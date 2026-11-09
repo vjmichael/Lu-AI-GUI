@@ -62,6 +62,17 @@ const MAX_TOTAL_IO: usize = 32 * 1024 * 1024;
 /// pipes and the real kernel containment handle. No blanket std::process::Child
 /// or WebView-provided fd is accepted here.
 pub(crate) trait RestrictedLspProcess: Send {
+    #[cfg(windows)]
+    fn observe_windows_job_module(
+        &mut self,
+        _expected_binary: &Path,
+        _binary_sha256: &str,
+        _pc: u64,
+    ) -> Result<crate::windows_kernel_pc::WindowsLoadedModuleWitness, SupervisorError> {
+        // Only WindowsLspProcess with its actual protected Job HANDLE
+        // overrides this; mocks and unrelated workers fail closed.
+        Err(SupervisorError::NoContainment)
+    }
     fn write_bounded(&mut self, bytes: &[u8]) -> io::Result<()>;
     fn read_bounded(&mut self, limit: usize, timeout: Duration) -> io::Result<Vec<u8>>;
     /// Optional fixed, debug-only native fault witness BEFORE OS tree kill.

@@ -83,6 +83,24 @@ impl DapGateway {
     ) -> Option<lu_ide_workspace::dap_source_lines::SourceLineCandidate> {
         self.session.source_candidate().cloned()
     }
+    /// Read-only OS evidence from the *owned* native Job. A module hit is
+    /// never a verified stopped x64 thread context or a PDB line-table pass.
+    #[cfg(windows)]
+    pub(crate) fn observe_windows_project_module(
+        &mut self,
+        expected_binary: &std::path::Path,
+        sha: &str,
+        pc: u64,
+    ) -> Result<crate::windows_kernel_pc::WindowsLoadedModuleWitness, SupervisorError> {
+        if self.session.phase() != DapPhase::Stopped
+            || self.session.source_candidate()
+                .and_then(|f| f.instruction_address) != Some(pc)
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        let process = self.process.as_mut().ok_or(SupervisorError::NoContainment)?;
+        process.observe_windows_job_module(expected_binary, sha, pc)
+    }
     fn send(&mut self, bytes: &[u8]) -> Result<(), SupervisorError> {
         if bytes.is_empty()
             || bytes.len() > MAX_WRITE

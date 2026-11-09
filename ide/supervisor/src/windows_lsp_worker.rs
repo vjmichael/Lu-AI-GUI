@@ -597,6 +597,18 @@ struct WindowsLspProcess {
 // concurrently and each pipe read/write occurs on one serialized worker actor.
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
+    fn observe_windows_job_module(
+        &mut self, expected_binary: &Path, expected_sha256: &str, pc: u64,
+    ) -> Result<crate::windows_kernel_pc::WindowsLoadedModuleWitness, SupervisorError> {
+        if !self.lease.alive()
+            || unsafe { WaitForSingleObject(self.process.0, 0) } != WAIT_TIMEOUT
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        crate::windows_kernel_pc::observe_job_module(
+            self.job.handle.0, expected_binary, expected_sha256, pc,
+        )
+    }
     fn trace_native_fault(&mut self, stage: &'static str) {
         native_lsp_trace(stage);
         native_lsp_exit_code(self.process.0);

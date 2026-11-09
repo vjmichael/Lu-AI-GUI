@@ -13,6 +13,8 @@
 mod dap_transport;
 #[cfg(all(target_os = "linux", feature = "dap-transport"))]
 pub mod native_kernel_pc;
+#[cfg(all(windows, feature = "dap-transport"))]
+pub mod windows_kernel_pc;
 pub mod debug_binary_witness;
 pub mod debug_symbol_verification;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
