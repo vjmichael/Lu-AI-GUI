@@ -4,6 +4,17 @@ cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib 
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: event wire/sequence/revocation unit tests failed' }
 cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib windows_kernel_pc
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: native Job OS owner tests failed' }
+# One consolidated D6A/B/C hostile protocol/receipt/dispatch test group.
+cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib debug_action_receipts
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: one-use debugger receipt/replay tests failed' }
+cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib debug_control_dispatch
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: independent new stop step outcome tests failed' }
+cargo test --manifest-path ide/host/Cargo.toml --features 'dev046c-ci-control' --lib dap_session
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: native DAP step/breakpoint reply and source-denial tests failed' }
+cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: consolidated supervisor rustfmt contract failed' }
+cargo fmt --manifest-path ide/host/Cargo.toml -- --check
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: consolidated host DAP rustfmt contract failed' }
 cargo build --manifest-path ide/supervisor/Cargo.toml --features $features --bin windows_recovery_service --bin windows_null_service_bootstrap --example wo6_native_dap_acceptance
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: native Rust protected host compile failed' }
 $svc=(Resolve-Path 'ide/supervisor/target/debug/windows_recovery_service.exe').Path
