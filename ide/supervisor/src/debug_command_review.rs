@@ -121,6 +121,19 @@ pub struct DebugReviewPreview {
     pub installed_app_accepted: bool,
 }
 
+/// A private, non-transferable association between a reviewed operation
+/// and the original one-use OS event. It is never an execution grant.
+#[derive(Debug, Clone)]
+pub(crate) struct NativeReviewBinding {
+    pub(crate) job_id: String,
+    pub(crate) plan_sha256: String,
+    pub(crate) build_receipt_sha256: String,
+    pub(crate) running_receipt_sha256: String,
+    pub(crate) owner_event_sha256: String,
+    pub(crate) source_snapshot_sha256: String,
+    pub(crate) owner_sequence: u64,
+}
+
 pub struct DebugReviewSession {
     stop: NativeStop,
     live: bool,
@@ -203,6 +216,27 @@ impl DebugReviewSession {
         }
         self.pending = None;
         Ok(())
+    }
+    /// Bind the exactly pending review to the native owner and journal.
+    /// There is deliberately no source-level executor in D6B.
+    pub(crate) fn pending_native_binding(
+        &self, hash: &str, current_sequence: u64,
+    ) -> Result<NativeReviewBinding, DebugReviewDenial> {
+        if !self.live || current_sequence != self.stop.event_sequence {
+            return Err(DebugReviewDenial::StaleOrRevoked);
+        }
+        if !self.pending.as_ref().is_some_and(|x| x.preview_sha256 == hash) {
+            return Err(DebugReviewDenial::BadOperation);
+        }
+        Ok(NativeReviewBinding {
+            job_id: self.stop.job_id.clone(),
+            plan_sha256: self.stop.debug_plan_sha.clone(),
+            build_receipt_sha256: self.stop.build_completed_sha.clone(),
+            running_receipt_sha256: self.stop.debug_running_sha.clone(),
+            owner_event_sha256: self.stop.owner_event_sha.clone(),
+            source_snapshot_sha256: self.stop.source_snapshot_sha.clone(),
+            owner_sequence: self.stop.event_sequence,
+        })
     }
     /// There is deliberately no approve/dispatch method in D6A.
     pub fn has_executable_authority(&self) -> bool { false }

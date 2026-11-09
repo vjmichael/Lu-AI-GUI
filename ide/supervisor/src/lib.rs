@@ -20,6 +20,8 @@ mod windows_event_owner;
 #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
 mod windows_stopped_line_oracle;
 pub mod debug_command_review;
+#[cfg(any(test, all(windows, debug_assertions, feature = "dev045d5-ci-event-owner")))]
+mod debug_action_receipts;
 pub mod debug_binary_witness;
 pub mod debug_symbol_verification;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
