@@ -84,7 +84,10 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+#[cfg(not(feature = "physical_win_cpu_eval"))]
 const ENGINE_SHA256: &str = "36155bc14f8eb02224105377c946528ccac91337d715386a77d6187cb98105b4";
+#[cfg(feature = "physical_win_cpu_eval")]
+const ENGINE_SHA256: &str = env!("LU_01G_PHYSICAL_CPU_ENGINE_SHA256");
 const ENGINE_FILES: [(&str, &str, u64); 4] = [
     ("llama-server.exe", ENGINE_SHA256, 55_099_904),
     (
@@ -103,7 +106,22 @@ const ENGINE_FILES: [(&str, &str, u64); 4] = [
         49_792,
     ),
 ];
-const MAX_CATALOG_BYTES: u64 = 64 * 1024;
+// The physical Windows acceptance installer uses a single source-built,
+ // statically linked CPU engine with its SHA embedded at compilation. No
+ // arbitrary operator or model-provided manifest can waive this digest.
+ #[cfg(feature = "physical_win_cpu_eval")]
+ fn runtime_engine_files() -> Vec<(&'static str, &'static str, u64)> {
+     let size: u64 = env!("LU_01G_PHYSICAL_CPU_ENGINE_BYTES")
+         .parse().expect("Build-time CPU engine byte count must be u64");
+     assert!(size>1_000_000 && size<250_000_000,
+         "Implausible source-built physical Windows engine size");
+     vec![("llama-server.exe",ENGINE_SHA256,size)]
+ }
+ #[cfg(not(feature = "physical_win_cpu_eval"))]
+ fn runtime_engine_files() -> Vec<(&'static str, &'static str, u64)> {
+     ENGINE_FILES.to_vec()
+ }
+ const MAX_CATALOG_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -806,7 +824,7 @@ impl DesktopState {
             .resource_dir()
             .map_err(|e| e.to_string())?
             .join("lu-inference");
-        for (name, sha, bytes) in ENGINE_FILES {
+        for (name, sha, bytes) in runtime_engine_files() {
             check_file(&engine_dir.join(name), sha, bytes)?;
         }
         let executable = engine_dir.join("llama-server.exe");
@@ -843,7 +861,13 @@ impl DesktopState {
         let load_trace = Arc::new(Mutex::new(LoadTrace::default()));
         let engine_trace = Arc::clone(&load_trace);
         let supervisor = TrustedInferenceSupervisor::new(
-            "llama-vulkan".into(),
+            // Explicit test-only installed CPU package must not claim AMD
+            // Vulkan offload; normal desktop builds retain Vulkan identity.
+            (if cfg!(feature="physical_win_cpu_eval") {
+                "llama-cpu-physical-eval"
+            } else {
+                "llama-vulkan"
+            }).into(),
             4096,
             admitted_models,
             move || {

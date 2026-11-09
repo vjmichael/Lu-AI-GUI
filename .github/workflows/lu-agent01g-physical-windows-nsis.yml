@@ -1,0 +1,124 @@
+name: Lu AGENT-01G Current-Source Physical Windows NSIS CPU Test
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/lu-agent01g-physical-windows-nsis.yml'
+      - 'scripts/build-agent01g-physical-windows-nsis.ps1'
+      - 'lu-desktop/packaging/NSIS_AGENT01G_PHYSICAL_WINDOWS_CPU_TEST.nsi'
+      - 'lu-desktop/packaging/README_AGENT01G_PHYSICAL_WINDOWS_CPU_TEST.txt'
+      - 'lu-desktop/src-tauri/Cargo.toml'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/src-tauri/src/reviewed_app_desktop.rs'
+      - 'lu-desktop/web/**'
+      - 'src-tauri/lu-core/**'
+      - 'source-tree.lock.json'
+permissions:
+  contents: read
+concurrency:
+  group: lu-01g-current-nsis-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  current-native-source:
+    name: Exact-head source identity and test-only packaging contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate exact immutable development source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          node --test lu-desktop/tests/agent01g-physical-installer-contract.test.mjs
+          echo 'Windows CPU NSIS source only, NOT a compiled or physical-GGUF acceptance pass.' >> "$GITHUB_STEP_SUMMARY"
+  windows-nsis-engine-and-current-lu:
+    name: Build genuine current Lu x64 and pinned CPU llama.cpp to unsigned NSIS
+    runs-on: windows-2025
+    timeout-minutes: 180
+    needs: current-native-source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact SHA and independent manifest on real Windows
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:EXPECTED_SHA){throw 'Wrong Windows source revision'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'Frozen source manifest mismatch'}
+      - name: Provision pinned NSIS 3.11, not an arbitrary version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
+          if(-not(Test-Path $exe)){
+            choco install nsis --version=3.11.0 --yes --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'Pinned NSIS 3.11.0 unavailable'}
+          }
+          if(-not(Test-Path $exe)){throw 'Pinned makensis.exe not found'}
+          & $exe /VERSION
+          if($LASTEXITCODE -ne 0){throw 'NSIS compiler unusable'}
+      - name: Build pinned CPU engine and current AGENT-01G Windows Lu to isolated test NSIS
+        shell: pwsh
+        timeout-minutes: 150
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          & scripts/build-agent01g-physical-windows-nsis.ps1 -SourceSha $env:EXPECTED_SHA -OutputDirectory "$env:RUNNER_TEMP\lu-01g-physical-installer"
+          if($LASTEXITCODE -ne 0){throw 'Test-only NSIS builder failed'}
+          $apps=@(Get-ChildItem -LiteralPath "$env:RUNNER_TEMP\lu-01g-physical-installer" -Filter '*.exe' -File)
+          if($apps.Count -ne 1){throw 'Expected ONE genuine current-source Windows NSIS installer'}
+          $sha=(Get-FileHash -LiteralPath $apps[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $check=Get-Content -LiteralPath "$env:RUNNER_TEMP\lu-01g-physical-installer\installer-checksums.json" -Raw | ConvertFrom-Json
+          if($sha -cne $check.installerSha256 -or $check.sourceSha -cne $env:EXPECTED_SHA){
+            throw 'Installer/source evidence does not match real NSIS output'
+          }
+          "## AGENT-01G test-only installer" >> $env:GITHUB_STEP_SUMMARY
+          "Exact source: $env:EXPECTED_SHA" >> $env:GITHUB_STEP_SUMMARY
+          "Installer SHA-256: $sha" >> $env:GITHUB_STEP_SUMMARY
+          "Real pinned llama.cpp CPU engine compiled and bound to desktop at build-time." >> $env:GITHUB_STEP_SUMMARY
+          "Physical model/tool/recovery and AMD Vulkan GPU acceptance remain NOT TESTED." >> $env:GITHUB_STEP_SUMMARY
+      - name: Real Windows NSIS install-uninstall lifecycle (disposable hosted account)
+        shell: pwsh
+        timeout-minutes: 12
+        run: |
+          $ErrorActionPreference='Stop'
+          $path="$env:RUNNER_TEMP\lu-01g-physical-installer"
+          $check=Get-Content -LiteralPath (Join-Path $path 'installer-checksums.json') -Raw | ConvertFrom-Json
+          $installer=Join-Path $path $check.installerName
+          $evidence=Join-Path $path 'native-nsis-cycle-evidence'
+          & scripts/m3-windows-nsis-cycle.ps1 -InstallerPath $installer -InstallerSha256 $check.installerSha256 -ExpectedLuSha256 $check.appSha256 -ExpectedEngineSha256 $check.engineSha256 -UninstallerName 'UninstallLuAGENT01GPhysicalTest.exe' -DisposableWindowsConfirmed -EvidenceDir $evidence
+          if($LASTEXITCODE -ne 0){throw 'Native installed Windows package cycle FAILED or uncertain'}
+          $native=Get-Content -LiteralPath (Join-Path $evidence 'm3-nsis-cycle.json') -Raw | ConvertFrom-Json
+          if($native.packageRemoval -ne 'PASS_BINARIES_ABSENT' -or $native.installer -ne 'PASS_REAL_NATIVE_PROCESS_EXIT'){
+            throw 'NSIS installed/uninstalled native evidence insufficient'
+          }
+          "Disposable GH Windows install/uninstall of exact NSIS: PASS; does not demonstrate real loaded GGUF or UI dialogs." >> $env:GITHUB_STEP_SUMMARY
+      - name: Upload ACTUAL Windows x64 NSIS test installer and byte-provenance (no GGUF)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-AGENT01G-Physical-Windows-CPU-NSIS-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/lu-01g-physical-installer/
+          if-no-files-found: error
+          retention-days: 14

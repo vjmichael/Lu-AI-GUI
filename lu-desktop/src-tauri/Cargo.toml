@@ -7,6 +7,12 @@ publish = false
 license = "Apache-2.0"
 description = "Independent Lu-native Windows desktop, without Jan runtime dependencies"
 
+# Explicit non-release development evaluation of one source-pinned Windows CPU
+# llama.cpp build. Compile-time engine SHA-256 + byte size are mandatory; never
+# enable this feature for normal alpha, v1.0, or Vulkan production packaging.
+[features]
+physical_win_cpu_eval = []
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
