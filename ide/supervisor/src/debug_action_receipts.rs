@@ -134,6 +134,11 @@ fn verify_events(raw: &[u8], action: &str, preview: &str)
             || e.owner_sequence == 0 {
             return Err(ApprovalDenial::JournalCorrupt);
         }
+        if e.phase == "ResultVerified" {
+            let Some(hash) = e.outcome_code.strip_prefix("ci_independent_os_step:")
+            else { return Err(ApprovalDenial::JournalCorrupt); };
+            if !hex64(hash) { return Err(ApprovalDenial::JournalCorrupt); }
+        }
         let allowed = matches!(
             (phase, e.phase.as_str()),
             ("", "Prepared") | ("Prepared", "Approved")
@@ -453,6 +458,24 @@ impl DebugActionApproval {
     /// Never accept a caller's boolean or a DAP success message as proof.
     /// The only legal terminal for today's consumed/no-dispatch claim is
     /// ResultUncertain, which cannot restore or replay execution authority.
+    /// CI-only verified result may be written ONLY with a private proof
+    /// generated from fresh Job-owned kernel stop + independent PE/PDB and
+    /// correlated DAP reply. There is no "success: bool" caller shortcut.
+    #[cfg(any(test, all(windows, debug_assertions, feature = "dev046c-ci-control")))]
+    pub(crate) fn record_independent_ci_step_result(
+        &mut self,
+        proof: &crate::debug_control_dispatch::VerifiedCiStepResult,
+        now_ms: u64,
+    ) -> Result<(), ApprovalDenial> {
+        if self.state != State::Consumed
+            || !proof.matches_consumption(&self.action_id_sha256, &self.prior) {
+            return Err(ApprovalDenial::WrongStop);
+        }
+        let outcome = format!("ci_independent_os_step:{}", proof.evidence_sha256());
+        self.write_event("ResultVerified", &outcome, now_ms)?;
+        self.state = State::Revoked;
+        Ok(())
+    }
     pub(crate) fn record_uncertain_result(
         &mut self, now_ms: u64,
     ) -> Result<(), ApprovalDenial> {
@@ -487,6 +510,21 @@ impl DebugActionApproval {
         Ok(phase)
     }
     pub(crate) fn has_live_dispatch_authority(&self) -> bool { false }
+}
+
+/// Best-effort last-resort reconciliation on a failed native command.
+/// If the OS process is killed before Rust Drop, the durable terminal phase
+/// remains "Consumed" and is NEVER replayable after supervisor restart.
+impl Drop for DebugActionApproval {
+    fn drop(&mut self) {
+        if self.state == State::Consumed {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(self.deadline_ms);
+            let _ = self.record_uncertain_result(now);
+        }
+    }
 }
 
 #[cfg(test)]
