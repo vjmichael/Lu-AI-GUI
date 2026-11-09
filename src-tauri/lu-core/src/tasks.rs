@@ -179,18 +179,6 @@ impl TaskStore {
                user_turn_id TEXT NOT NULL,
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              );
-             CREATE TABLE IF NOT EXISTS lu_task_windows_job_custody(
-               task_id TEXT PRIMARY KEY REFERENCES lu_tasks(task_id),
-               workspace_id TEXT NOT NULL,
-               method TEXT NOT NULL CHECK(method='WINDOWS_JOB_ACTIVE_ZERO_V1'),
-               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-             );
-             CREATE TRIGGER IF NOT EXISTS lu_task_os_custody_no_update
-               BEFORE UPDATE ON lu_task_windows_job_custody
-               BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
-             CREATE TRIGGER IF NOT EXISTS lu_task_os_custody_no_delete
-               BEFORE DELETE ON lu_task_windows_job_custody
-               BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
              CREATE TABLE IF NOT EXISTS lu_task_auto_continue (
                workspace_id TEXT PRIMARY KEY NOT NULL,
                enabled INTEGER NOT NULL CHECK(enabled IN (0,1))
@@ -292,6 +280,23 @@ impl TaskStore {
         connection.execute(
             "DELETE FROM lu_awareness_notes
              WHERE created_at < datetime('now','-7 days')",[]
+        )?;
+        // Establish the OS custody child table only AFTER legacy lu_tasks
+        // rebuilds, so the foreign key never points at a dropped pre-upgrade
+        // task table. No old task receives a retroactive OS proof.
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS lu_task_windows_job_custody(
+               task_id TEXT PRIMARY KEY REFERENCES lu_tasks(task_id),
+               workspace_id TEXT NOT NULL,
+               method TEXT NOT NULL CHECK(method='WINDOWS_JOB_ACTIVE_ZERO_V1'),
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_os_custody_no_update
+               BEFORE UPDATE ON lu_task_windows_job_custody
+               BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_os_custody_no_delete
+               BEFORE DELETE ON lu_task_windows_job_custody
+               BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;"
         )?;
         Ok(Self {
             connection: Mutex::new(connection),
