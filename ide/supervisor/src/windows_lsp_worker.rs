@@ -1179,6 +1179,8 @@ fn start_windows_dap_inner(
             root: input.root.clone(),
             seal: input.seal.clone(),
         },
+        #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
+        private_reviewed_bundle: bundle.clone(),
         fixed_debuggee: bundle
             .join("debuggee/wo6-selftest.exe")
             .to_string_lossy()
@@ -1186,6 +1188,27 @@ fn start_windows_dap_inner(
     })
 }
 
+/// Native CI receipt; no Serialize and no public desktop route.
+#[cfg(all(feature = "dap-transport", debug_assertions, feature = "dev045d4c-ci-oracle"))]
+#[derive(Debug)]
+pub struct WindowsProjectStopPdbEvidence {
+    pub debugger_job_id: String,
+    pub debugger_plan_sha256: String,
+    pub debug_running_receipt_sha256: String,
+    pub build_job_id: String,
+    pub build_terminal_receipt_sha256: String,
+    pub source_snapshot_sha256: String,
+    pub target_binding_sha256: String,
+    pub source_line: u32,
+    pub source_file_sha256: String,
+    pub observed_rip: u64,
+    pub loaded_pe_base: u64,
+    pub os_owned_thread_context_matches_lldb: bool,
+    pub independent_pdb_source_line_verified: bool,
+    pub lldb_debug_event_owner_attested: bool,
+    pub debugger_commands_authorized: bool,
+    pub installed_app_accepted: bool,
+}
 #[cfg(feature = "dap-transport")]
 pub struct WindowsDapSession {
     gateway: crate::dap_transport::DapGateway,
@@ -1194,6 +1217,8 @@ pub struct WindowsDapSession {
     native_job_id: String,
     native_plan_sha256: String,
     source_input: PublishedInput,
+    #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
+    private_reviewed_bundle: PathBuf,
 }
 #[cfg(feature = "dap-transport")]
 impl WindowsDapSession {
@@ -1353,6 +1378,110 @@ impl WindowsDapSession {
             return Err(SupervisorError::NoContainment);
         }
         self.gateway.sample_windows_stopped_thread_rip(&witness.module)
+    }
+    /// DEV-04.5D4C: the real previously one-use-authorized project LLDB
+    /// DAP stop must match an OS Job-owned x64 RIP and independently decoded
+    /// PE/PDB line. Test-only and never a breakpoint/step/variable right.
+    #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
+    pub fn verify_project_os_thread_pdb_receipts_for_ci(
+        &mut self,
+        supervisor: &Supervisor,
+        job_id: &str,
+        plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+    ) -> Result<WindowsProjectStopPdbEvidence, SupervisorError> {
+        use crate::windows_stopped_line_oracle::independently_verify_pdb_line_for_ci;
+        let native = self.verify_project_loaded_module(
+            supervisor, job_id, plan, target,
+        )?;
+        let thread = self.gateway.sample_windows_stopped_thread_rip(
+            &native.module,
+        )?;
+        let frame = self.gateway.source_candidate()
+            .ok_or(SupervisorError::NoContainment)?;
+        if self.gateway.phase() != lu_ide_workspace::dap_session::DapPhase::Stopped
+            || frame.instruction_address != Some(thread.observed_rip)
+            || !thread.two_matching_samples || !thread.job_membership_rechecked
+            || thread.kernel_debug_event_independently_verified
+            || thread.debugger_control_authorized
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        let pdb = independently_verify_pdb_line_for_ci(
+            &self.private_reviewed_bundle, &plan.toolchain_sha256,
+            target, &self.source_input.root,
+            &native.module, &thread, &frame,
+        )?;
+        let current = self.gateway.source_candidate()
+            .ok_or(SupervisorError::NoContainment)?;
+        if self.gateway.phase() != lu_ide_workspace::dap_session::DapPhase::Stopped
+            || current != frame
+            || !pdb.independent_pe_pdb_source_line_verified
+            || !pdb.os_thread_rip_matches_lldb_stack
+            || !pdb.os_loaded_pe_mapping_verified
+            || pdb.lldb_owned_kernel_debug_event_attested
+            || pdb.debugger_commands_authorized
+            || pdb.installed_app_accepted
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        // Re-open BOTH original fsynced journal chains after the external
+        // symbol lookup. No old authorization can be reused.
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let live = supervisor.inspect()?.into_iter().find(|x| x.job_id == job_id)
+            .ok_or(SupervisorError::NoSuchJob)?;
+        if live.phase != JobPhase::Running || live.requires_reconciliation
+            || live.plan_sha256 != self.native_plan_sha256
+            || live.project_id != plan.project_id
+            || native.debugger_job_id != job_id
+            || native.debugger_plan_sha256 != self.native_plan_sha256
+            || native.build_terminal_receipt_sha256 != target.lineage.terminal_receipt_sha256
+            || native.target_binding_sha256 != target.binding_sha256
+            || native.source_snapshot_sha256 != plan.input_snapshot_sha256
+            || pdb.binary_sha256 != target.binary.binary_sha256
+            || pdb.pdb_sha256 != target.symbols.symbols_sha256
+            || pdb.oracle_bundle_sha256 != plan.toolchain_sha256
+        {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        let journal = supervisor.receipt_history(job_id)?;
+        if journal.last().is_none_or(|r| r.body.phase != JobPhase::Running
+            || r.body.plan_sha256 != self.native_plan_sha256
+            || r.entry_hash != native.debug_running_receipt_sha256)
+            || !journal.iter().any(|r| r.body.phase == JobPhase::Authorized
+                && r.body.plan_sha256 == self.native_plan_sha256)
+        {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        let build = supervisor.receipt_history(&native.build_job_id)?;
+        if build.last().is_none_or(|r| r.body.phase != JobPhase::Completed
+            || r.entry_hash != native.build_terminal_receipt_sha256
+            || r.body.plan_sha256 != target.lineage.build_plan_sha256)
+        {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        Ok(WindowsProjectStopPdbEvidence {
+            debugger_job_id: job_id.into(),
+            debugger_plan_sha256: self.native_plan_sha256.clone(),
+            debug_running_receipt_sha256: native.debug_running_receipt_sha256,
+            build_job_id: native.build_job_id,
+            build_terminal_receipt_sha256: native.build_terminal_receipt_sha256,
+            source_snapshot_sha256: native.source_snapshot_sha256,
+            target_binding_sha256: native.target_binding_sha256,
+            source_line: pdb.line,
+            source_file_sha256: pdb.source_sha256,
+            observed_rip: thread.observed_rip,
+            loaded_pe_base: native.module.loaded_base,
+            os_owned_thread_context_matches_lldb: true,
+            independent_pdb_source_line_verified: true,
+            // Only LLDB itself owns the kernel DEBUG_EVENT. Without an
+            // independently authenticated owner callback this remains false.
+            lldb_debug_event_owner_attested: false,
+            debugger_commands_authorized: false,
+            installed_app_accepted: false,
+        })
     }
     pub fn close(self) -> Result<(), SupervisorError> {
         self.gateway.close()
