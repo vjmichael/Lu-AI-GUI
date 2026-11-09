@@ -1,0 +1,115 @@
+name: IDE DEV04.5D4B Windows real debug event and independent PDB
+on:
+  pull_request:
+    paths:
+      - 'ide/supervisor/src/windows_kernel_pc.rs'
+      - 'ide/supervisor/src/windows_lsp_worker.rs'
+      - 'ide/supervisor/src/dap_transport.rs'
+      - 'ide/supervisor/src/lsp_transport.rs'
+      - 'ide/supervisor/fixtures/debug/dev045d4b_win_event_observer.c'
+      - 'ide/packaging/test_dev045d4b_windows_debug_event_pdb.py'
+      - 'ide/supervisor/examples/wo6_native_dap_acceptance.rs'
+      - '.github/workflows/ide-dev04-5d4b-win-event-pdb.yml'
+      - '.github/workflows/ide-wo6-native-os-acceptance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev045d4b-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-real-debug-event-pdb:
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Require exact candidate head and real native LLVM tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') {
+            throw 'DENIED: exact candidate checkout mismatch'
+          }
+          $llvm='C:\Program Files\LLVM\bin'
+          if (Test-Path $llvm) { $env:PATH="$llvm;$env:PATH"; Add-Content $env:GITHUB_PATH $llvm }
+          foreach ($name in @('clang-cl.exe','lld-link.exe','llvm-symbolizer.exe')) {
+            if (!(Get-Command $name -ErrorAction SilentlyContinue)) {
+              throw "DENIED: reviewed Windows LLVM native prerequisite missing: $name"
+            }
+          }
+          Write-Host 'DEV045D4B_NATIVE_LLVM_TOOLS=AVAILABLE_NOT_A_PASS'
+      - name: Real Win32 EXCEPTION_DEBUG_EVENT and GetThreadContext linked to PE-PDB line
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m unittest discover -s ide/packaging -p 'test_dev045d4b_windows_debug_event_pdb.py' -v
+          if ($LASTEXITCODE -ne 0) {
+            throw 'DENIED: actual Windows kernel debug-event or independent PDB line rejected'
+          }
+          Write-Host 'DEV045D4B_WINDOWS_FIXED_DEBUG_EVENT_PDB=PASS_FIXTURE_ONLY_NOT_LU_JOB'
+  windows-owned-job-thread-compiler:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Require exact head and native Windows compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service' --lib windows_kernel_pc
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service' --example wo6_native_dap_acceptance
+          echo 'DEV045D4B_JOB_THREAD_COMPILER=PASS_NOT_LIVE_LU_STOP'
+      - name: Enforce Rust formatting and immutable authorization gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+          python - <<'PY'
+          from pathlib import Path
+          os_source=Path('ide/supervisor/src/windows_kernel_pc.rs').read_text()
+          fixture=Path('ide/supervisor/examples/wo6_native_dap_acceptance.rs').read_text()
+          assert 'GetThreadContext' in os_source
+          assert 'TH32CS_SNAPTHREAD' in os_source
+          assert 'kernel_debug_event_independently_verified: false' in os_source
+          assert 'pdb_line_independently_verified: false' in os_source
+          assert 'debugger_control_authorized: false' in os_source
+          assert '--project-debug-thread' in fixture
+          assert 'sample_stopped_project_thread_for_ci' in fixture
+          for forbidden in ('SuspendThread(', 'DebugActiveProcess(', 'WriteProcessMemory(',
+                            'setBreakpoints', 'runInTerminal', 'setExpression'):
+              assert forbidden not in os_source
+          print('DEV045D4B_JOB_THREAD_NO_NEW_EXECUTION_RIGHTS=PASS')
+          PY
+          echo 'DEV045D4B_PROTECTED_LU_DEBUGGER_RIP_PDB=REQUIRES_WO6_LIVE_JOB_AND_ORACLE'
+  linux-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Verify Linux cgroup transport still compiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker'
+          echo 'DEV045D4B_LINUX_CGROUP_BUILD=PASS_NOT_NATIVE_STOP_ACCEPTANCE'

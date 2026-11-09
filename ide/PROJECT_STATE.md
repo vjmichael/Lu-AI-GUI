@@ -1,5 +1,32 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## DEV-04.5D4B Windows stopped RIP and independent PDB line — November 9, 2026
+
+Draft PR #186 stacked on D4 #184. The Windows protected SCM/Job
+debugger now supports query-only x64 GetThreadContext sampling of its
+real Job-member threads after a correlated LLDB stop; it rechecks
+the thread IDs, RIP and job membership, without suspending, attaching
+or authorizing debugger commands. **This sample alone is not proof of
+a Windows debug event or PDB source line**, because GetThreadContext
+may not be valid on running threads. Both authority bits stay false.
+
+A new native fixed-fixture test creates a real Windows DEBUG_ONLY_THIS_PROCESS
+child, owns WaitForDebugEvent(EXCEPTION_BREAKPOINT), reads that stopped
+event thread's RIP, and independently verifies the loaded PE relocation,
+MSF7 PE/PDB RSDS GUID/age, original source hash and LLVM CodeView source
+line. Tests must reject a wrong line, wrong RIP, changed source and
+rehashed mismatched PDB. Existing SCM/AppContainer protected acceptance
+adds --project-debug-thread, and exact-head Windows compiler/fixture
+and Linux regression workflows were added. These source changes **do not
+prove the real Lu LLDB-owned stop is independently verified**.
+
+All D4B exact-head OS jobs, real protected Lu thread context and PDB
+binding, default-installed debugger, UX GTK and signed release gates
+remain OPEN until completed native evidence passes. Keep source
+breakpoints, stepping, scopes/variables and evaluate disabled. See
+ide/docs/IDE_DEV045D4B_WINDOWS_STOP_EVENT_PDB_20261109.md.
+
+
 ## DEV-04.5D4 Windows Job module witness — November 9, 2026 (UTC)
 
 Draft [PR #184](https://github.com/vjmichael/Lu-AI-GUI/pull/184)

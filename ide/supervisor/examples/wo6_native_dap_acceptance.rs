@@ -225,6 +225,7 @@ mod protected {
     fn run_windows_project_debug(
         cancel_project: bool,
         verify_job_module: bool,
+        sample_stopped_thread: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use lu_ide_execution_supervisor::{
             debug_binary_witness::audit_debug_binary_candidate,
@@ -484,6 +485,9 @@ mod protected {
         } else {
             println!("DEV045D2_WINDOWS_REAL_DAP_SOURCE_CLAIM=unavailable");
         }
+        if sample_stopped_thread && !verify_job_module {
+            return Err("DENIED: thread evidence cannot bypass PE module and journal witness".into());
+        }
         if verify_job_module {
             // An authentic Job-owned PE image and preserved original journal
             // can now be proved, but this is NOT an independent thread RIP
@@ -512,6 +516,21 @@ mod protected {
             println!(
                 "DEV045D4_WINDOWS_REAL_JOB_PE_MODULE=PASS;observed_base=0x{:x};preferred_pc=0x{:x};build_receipt=bound;running_receipt=bound;thread_pc_verified=false;pdb_line_verified=false",
                 observed.module.loaded_base, observed.module.preferred_pc
+            );
+        }
+        if sample_stopped_thread {
+            let sample = dap.sample_stopped_project_thread_for_ci(
+                &supervisor, &debug_job.job_id, &debug_plan, &target,
+            ).map_err(|_| "DENIED: query-only Job-owned stopped thread context unavailable or disagrees with DAP PC")?;
+            if !sample.two_matching_samples || !sample.job_membership_rechecked
+                || sample.kernel_debug_event_independently_verified
+                || sample.pdb_line_independently_verified
+                || sample.debugger_control_authorized
+                || sample.observed_rip == 0 {
+                return Err("DENIED: inconsistent or overclaimed Windows context observation".into());
+            }
+            println!(
+                "DEV045D4B_WINDOWS_JOB_THREAD_RIP_SAMPLED=PASS;twice=true;independent_debug_event_verified=false;pdb_line_verified=false"
             );
         }
         if cancel_project {
@@ -589,15 +608,19 @@ mod protected {
         let args: Vec<String> = env::args().skip(1).collect();
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug"] {
-            return run_windows_project_debug(false, false);
+            return run_windows_project_debug(false, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-cancel"] {
-            return run_windows_project_debug(true, false);
+            return run_windows_project_debug(true, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-module"] {
-            return run_windows_project_debug(false, true);
+            return run_windows_project_debug(false, true, false);
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-thread"] {
+            return run_windows_project_debug(false, true, true);
         }
         let cancel = args.as_slice() == ["--cancel"];
         #[cfg(target_os = "linux")]
