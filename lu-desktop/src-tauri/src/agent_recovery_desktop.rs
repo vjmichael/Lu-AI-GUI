@@ -32,8 +32,10 @@ pub(crate) struct AgentRecoveryView{
     execution_authority:String,
 }
 /// READ ONLY. This is not a "resume", "repair" or "retry" command.
-/// A historical worker may have completed, but the installed desktop has no
-/// independently accepted persistent descendant custody verifier wired yet.
+/// A historical worker may have completed, but positive descendant custody
+/// requires the original verified Win32 Job or genuinely delegated Linux
+/// cgroup-v2 helper receipt. Neither source candidate is an accepted native
+/// installation guarantee until its exact OS gates pass.
 #[tauri::command]
 pub(crate) async fn lu_agent_reconcile_recovery(
     state:State<'_,Arc<DesktopState>>,
