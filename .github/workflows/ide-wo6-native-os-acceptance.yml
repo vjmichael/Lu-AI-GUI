@@ -166,6 +166,8 @@ jobs:
             # service + AppContainer Job, never a standalone process.
             & $hostExe --project-debug-module
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: live Job-scoped PE base and original durable build/debug receipts not independently verified' }
+            & $hostExe --project-debug-thread
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: real SCM Job scoped read-only thread context unavailable; no inferred PDB acceptance' }
           } finally {
             if ($nulTouched) {
               & $bootstrap --revoke-fixed-service
