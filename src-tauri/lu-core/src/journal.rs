@@ -312,6 +312,56 @@ impl EffectJournal {
         Ok(count)
     }
 
+    /// MEMORY-LOOP-03B: historical, read-only second-witness lookup.
+    /// A task checkpoint and APPLIED receipt alone are insufficient.
+    /// Reopen the original journal, compare the actual receipt bytes,
+    /// source-oracle method for the exact reviewed tool, and independently
+    /// observed digest. This is NOT a live source check or OS custody proof.
+    pub fn independent_verified_receipt(
+        &self,call_id:&str,tool_id:&str,receipt_sha256:&str
+    )->Result<bool,JournalError>{
+        let valid_sha=|s:&str|s.len()==64&&s.bytes().all(|b|
+            b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
+        if call_id.is_empty()||call_id.len()>128||
+           !valid_sha(receipt_sha256){return Ok(false)}
+        let conn=self.connection.lock().map_err(|_|JournalError::Poisoned)?;
+        let row:Option<(String,String,Option<Vec<u8>>,String,String,String,Option<String>)>=
+            conn.query_row(
+                "SELECT e.tool_id,e.state,e.receipt,o.verdict,
+                        o.method,o.receipt_sha256,o.observed_sha256
+                 FROM lu_effects e
+                 JOIN lu_independent_outcomes o ON o.call_id=e.call_id
+                 WHERE e.call_id=?1",
+                [call_id],|r|Ok((
+                    r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,
+                    r.get(4)?,r.get(5)?,r.get(6)?
+                ))
+            ).optional()?;
+        let Some((stored_tool,state,bytes,verdict,method,observed_receipt,observed_source))=
+            row else{return Ok(false)};
+        let expected_method=match tool_id{
+            "lu.reviewed.git.head"=>method=="GIT_HEAD_DIRECT_V1",
+            "lu.reviewed.git.branch"=>method=="GIT_BRANCH_DIRECT_V1",
+            "lu.reviewed.git.status"=>method=="GIT_STATUS_INDEX_TREE_V1",
+            "lu.reviewed.git.history"=>
+                matches!(method.as_str(),
+                    "GIT_HISTORY_LOOSE_DAG_V1"|"GIT_HISTORY_OBJECT_DAG_V2"),
+            "lu.reviewed.media.facts"=>
+                matches!(method.as_str(),"WAV_PCM_DIRECT_V1"|"MP4_BOXES_DIRECT_V1"),
+            _=>false,
+        };
+        let Some(receipt)=bytes else{return Ok(false)};
+        if receipt.is_empty()||receipt.len()>8*1024*1024{
+            return Ok(false)
+        }
+        let actual=format!("{:x}",Sha256::digest(&receipt));
+        let source_is_valid=observed_source.as_deref()
+            .is_some_and(valid_sha);
+        Ok(stored_tool==tool_id&&state=="APPLIED"&&verdict=="VERIFIED"
+            &&expected_method&&source_is_valid
+            &&actual==receipt_sha256&&actual==observed_receipt)
+    }
+
     pub fn get(&self, call_id: &str) -> Result<Option<EffectRecord>, JournalError> {
         let connection = self.connection.lock().map_err(|_| JournalError::Poisoned)?;
         let row = connection
@@ -348,6 +398,59 @@ mod independent_outcome_tests{
     use super::*;
     use crate::contracts::{ProtoPayload,ToolInvocation};
     use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+    #[test]
+    fn historical_second_witness_requires_matching_tool_method_and_unchanged_receipt(){
+        let root=std::env::temp_dir().join(format!("lu-03b-witness-{}-{}",
+            std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH)
+                .unwrap().as_nanos()));
+        fs::create_dir_all(&root).unwrap();
+        let path=root.join("journal.sqlite");
+        let call=ToolInvocation{
+            call_id:"reviewed-03b-gh".into(),tool_id:"lu.reviewed.git.head".into(),
+            workspace_id:None,
+            input:ProtoPayload{type_url:"lu.test".into(),bytes:vec![2]},
+        };
+        let receipt=b"real-original-receipt";
+        let receipt_sha=format!("{:x}",Sha256::digest(receipt));
+        let source_sha=format!("{:x}",Sha256::digest(b"independent-source"));
+        {
+            let db=EffectJournal::open(&path).unwrap();
+            db.prepare(&call).unwrap();
+            assert!(!db.independent_verified_receipt(
+                &call.call_id,&call.tool_id,&receipt_sha).unwrap());
+            db.mark_executing(&call.call_id).unwrap();
+            db.mark_applied(&call.call_id,receipt).unwrap();
+            assert!(!db.independent_verified_receipt(
+                &call.call_id,&call.tool_id,&receipt_sha).unwrap());
+            db.record_independent_outcome(
+                &call.call_id,receipt,IndependentOutcomeVerdict::Verified,
+                "GIT_HEAD_DIRECT_V1",Some(&source_sha)).unwrap();
+            assert!(db.independent_verified_receipt(
+                &call.call_id,&call.tool_id,&receipt_sha).unwrap());
+            assert!(!db.independent_verified_receipt(
+                &call.call_id,"lu.reviewed.git.branch",&receipt_sha).unwrap());
+            assert!(!db.independent_verified_receipt(
+                &call.call_id,&call.tool_id,&"0".repeat(64)).unwrap());
+        }
+        // All results are re-read from SQLite. A changed oracle digest,
+        // mismatched method or damaged original receipt invalidates recall.
+        let db=EffectJournal::open(&path).unwrap();
+        let conn=Connection::open(&path).unwrap();
+        conn.execute(
+            "UPDATE lu_independent_outcomes SET receipt_sha256=?1 WHERE call_id=?2",
+            params!["0".repeat(64),call.call_id]
+        ).unwrap();
+        assert!(!db.independent_verified_receipt(
+            &call.call_id,&call.tool_id,&receipt_sha).unwrap());
+        conn.execute(
+            "UPDATE lu_independent_outcomes SET receipt_sha256=?1,method='GIT_BRANCH_DIRECT_V1'
+             WHERE call_id=?2",params![receipt_sha,call.call_id]
+        ).unwrap();
+        assert!(!db.independent_verified_receipt(
+            &call.call_id,&call.tool_id,&receipt_sha).unwrap());
+        drop(conn);drop(db);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn outcome_is_separate_durable_receipt_and_rejects_forged_promotion(){
         let root=std::env::temp_dir().join(format!("lu-p10-outcome-{}-{}",
