@@ -2,8 +2,10 @@
 //!
 //! Windows evidence is written only after the live, assigned Win32 Job
 //! handle itself successfully observes BasicAccounting.ActiveProcesses=0.
-//! Linux process-group SIGKILL is NOT sufficient against setsid()/cgroup
-//! escape, and therefore has no successful provider in this module.
+//! Linux process-group SIGKILL alone is NOT sufficient against setsid().
+//! Linux only accepts the separately supervised delegated-cgroup-v2
+//! custodian's exact original-turn recursive populated-zero receipt; absence
+//! of genuine delegation or OS proof remains unverified.
 //!
 //! This is an historical kernel observation, not proof of a running process's
 //! current state, a portable cgroup guarantee, a secret signature, or a grant.
