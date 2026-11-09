@@ -21,6 +21,7 @@ AGENT-01I/J can show historical parent/child approval, model execution and ances
 - `STOP_HOST_STILL_OWNED_OR_UNKNOWN`, `STOP_CANCEL_UNCERTAIN`, `STOP_ABANDONED_HOST_CUSTODY`: worker ownership uncertain; inspect real process custody before any next step.
 - `STOP_UNVERIFIED_WORKER_ORACLE`, `STOP_MISSING_OR_EXTRA_WORKER_RECEIPTS`: original native result could not be independently corroborated.
 - `STOP_ANCESTOR_ORACLE_UNVERIFIED`, `STOP_LINEAGE_RECONCILIATION`, `STOP_GOAL_OR_SOURCE_CHANGED`: source-backed continuation context no longer agrees.
+- `STOP_ANCESTOR_CUSTODY_UNPROVEN`: even if the child plan has no claims or a verified result, any parent/grandparent lacking independently attested descendant termination blocks safe continuation review. This is the installed-host default for linked child plans until AGENT-01L connects real OS custody.
 - `STOP_DESCENDANT_CUSTODY_UNPROVEN`: historical worker evidence rechecked, but no independently verified full descendant termination (current production default).
 - `REVIEW_NEW_STEP_WITH_FRESH_AUTHORIZATION_ONLY`: only when every historical result and every required host OS custody witness pass. This **still returns `NOT_AUTHORIZED_FOR_EXECUTION`** and cannot be used to replay an old task.
 
