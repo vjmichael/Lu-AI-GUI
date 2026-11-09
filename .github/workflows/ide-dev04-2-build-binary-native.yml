@@ -1,0 +1,61 @@
+name: IDE DEV04.2 protected build binary provenance
+on:
+  push:
+    branches: [ide/dev04-2-build-binary-provenance-20261108]
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - 'ide/app/**'
+      - '.github/workflows/ide-dev04-2-build-binary-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev042-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-receipt-binary:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    timeout-minutes: 85
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Exact-head frontend result refusal and binary identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node --test ide/app/tests/debug_binary_evidence.test.mjs
+      - name: Rust native compiler and independently rehashed synthetic byte tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked debug_binary_witness
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked wo6_build_test_evidence
+      - name: Exact integrated native Tauri build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --all-targets --locked
+      - name: Distinguish protected process acceptance
+        shell: bash
+        run: |
+          echo 'SOURCE_COMPILE_ONLY: genuine protected rust_build verification in Linux WO6 and Windows D7B/D7D workflows'
+          echo 'PROJECT_DEBUG_EXECUTION=NOT_AUTHORIZED'
