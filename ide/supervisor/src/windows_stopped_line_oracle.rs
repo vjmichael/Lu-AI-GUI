@@ -241,7 +241,7 @@ pub(crate) fn independently_verify_pdb_line_for_ci(
     let tool = staged_dap_bundle.join("bin/llvm-symbolizer.exe");
     // The executable and all DLLs belong to the already reviewed, immutable
     // CI bundle bound to this separate one-use debugger plan SHA.
-    let tree_sha = crate::windows_lsp_worker::native_lsp_bundle_digest(
+    let tree_sha = crate::windows_worker::lsp_native::native_lsp_bundle_digest(
         staged_dap_bundle, "dap_lldb_project",
     )?;
     if tree_sha != original_bundle_sha256
@@ -256,7 +256,7 @@ pub(crate) fn independently_verify_pdb_line_for_ci(
     // Any mutation during the lookup is a denial, not an achieved mapping.
     target.verify()?;
     if bounded_sha(&original_source, MAX_SOURCE_BYTES)? != source_sha256
-        || crate::windows_lsp_worker::native_lsp_bundle_digest(
+        || crate::windows_worker::lsp_native::native_lsp_bundle_digest(
             staged_dap_bundle, "dap_lldb_project",
         )? != original_bundle_sha256 {
         return Err(denied());
