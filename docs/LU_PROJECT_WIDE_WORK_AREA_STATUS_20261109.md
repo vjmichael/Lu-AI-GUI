@@ -2,6 +2,14 @@
 
 This is a conservative implementation inventory against the owner's 22-area register. It supplements the [canonical development ledger](LU_DEVELOPMENT_LEDGER.md) and its [machine-readable open PR graph](LU_OPEN_PR_GRAPH.json). An open PR is source evidence, not integration into `main`. The exact SHA and parent for every open PR are in the graph (175 at this refresh, including new IDE #190). The accepted `0.1.0-alpha.2` remains separate.
 
+## Overnight Work follow-up audit — 07:02 MST
+
+**Completed source activities:** Work Area 00 **partial**: PR [#191](https://github.com/vjmichael/Lu-AI-GUI/pull/191) created the 175-open-PR snapshot, 22-area table and A01–A12 nonphysical gate matrix at `22fdf1d7db0517ef7e218243483a8626e6f447b2` (08:41:14 UTC). A separate narrow dependency repair on PR [#188](https://github.com/vjmichael/Lu-AI-GUI/pull/188) added the missing desktop npm lockfile, refreshed the K/I/A/F ledger and locked **803/803 verified Git blobs** at `4c63e365122b52f8bac55c59964a400788f2642e` (08:34:05 UTC). Work reported local frontend/source/ledger checks. These are source or local tests, not native Windows/Linux acceptance.
+
+**Not completed:** No evidence of resumed overnight implementation after 08:41:14 UTC in the Work-specific PR commits. **Zero of 22 whole work areas and zero of 12 nonphysical gates were accepted by this Work assignment.** Current #188 exact-head GitHub Actions: **59 PR-associated runs, 39 queued / 20 pending / zero completed conclusions**; #191 head: **no Actions runs** observed through exact-head query. No #191 merge. These counts are inspection-time facts requiring a new query when checking again.
+
+**Immediate R00 continuation:** inspect CI runners/availability, reconcile branch graph and source-lock ancestry, obtain genuine Windows/Linux native results, repair actual errors, then proceed to 03B native acceptance and 03C small-model comprehension/error attribution. Never turn this inventory into a claim of installed Lu, reviewed worker/OS custody, autonomous task completion or fresh tool permission. Physical-PC and 7B+ GGUF release tests remain deferred. See the [canonical development ledger](LU_DEVELOPMENT_LEDGER.md#2026-11-09-0702-mst--overnight-work-execution-audit-source-grounded).
+
 | Area | Present source / branch family | Remaining work and independent gate |
 | --- | --- | --- |
 | 00 Repository | `main` inventory script, 175 open PRs at refresh; #188 source lock 803 blobs after npm lock repair | Reconcile branch/lock drift and completed exact-head Windows/Linux jobs; source equivalence to original unpublished snapshot remains unknown. |
