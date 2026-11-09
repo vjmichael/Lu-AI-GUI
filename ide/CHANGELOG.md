@@ -1,5 +1,14 @@
 # Lu IDE — Development changelog
 
+- **DEV-04.6B one-use debugger action receipts (Nov 9):** Native-CI-only
+  operation-bound challenge, explicit simulated consent label,
+  separate Approved/Denied/Consumed/Revoked/ResultUncertain hash-chain
+  events, fsync-before-consume and read-only audit after restart.
+  No real installed human approval, DAP control or claimed operation
+  success. Seven hostile tests added; native acceptance OPEN.
+  Grouped CI policy retained, no new workflow or draft PR.
+
+
 - **DEV-04.6A source review previews and grouped CI (Nov 9):**
   Bounded, non-executing debugger review fingerprints precise owner-event
   receipts and Job/source/OS stop identity; denies other threads, unknown

@@ -1,5 +1,30 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## DEV-04.6B — one-use debugger control receipts and operator-consent contract (Nov 9, 2026)
+
+On working branch `ide/dev04-6a-debug-control-admission-20261109`,
+stacked on D5 draft PR #192. Added a native-test-only,
+operation-specific `DebugActionApproval` journal: exact D5 owner-event
+and independent Job/PE/PDB/line identity, one pending D6A review,
+CSPRNG challenge, approval/denial, 30-second expiry, consumption
+**fsynced before any future command**, revocation, and restart-only
+read/verification of the chained receipts. A consumed claim cannot
+be replayed and no journal file restores permission. The only current
+terminal outcome is **ResultUncertain**; caller-asserted success was
+explicitly prohibited.
+
+The existing real protected D5 acceptance fixture now exercises
+CI-simulated operator confirmation, one-use consumption, repeat denial
+and audit after restart; `ci_only_not_installed_consent` is preserved.
+**Actual OS human-approval UI, actual breakpoint/step/variable DAP
+commands, independently verified operation results and signed installed
+acceptance remain NOT IMPLEMENTED / OPEN.** Seven added adversarial
+source tests, native compiler and OS tests not yet executed. By owner
+policy, no tiny CI or draft PR was created; retain this work for one
+consolidated native acceptance batch after the cohesive D6 group.
+See `ide/docs/IDE_DEV046B_ACTION_APPROVAL_ONE_USE_20261109.md`.
+
+
 ## DEV-04.6A debugger operation review and CI batching — Nov 9, 2026
 
 Working branch ide/dev04-6a-debug-control-admission-20261109 stacked on
