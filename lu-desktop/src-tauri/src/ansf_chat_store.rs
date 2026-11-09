@@ -355,7 +355,9 @@ impl ChatStore {
             [chat_id],|r|r.get::<_,bool>(0)
         ).map_err(to_err)
     }
-    fn require(&self,chat_id:&str)->Result<Arc<AnsfStore>,String>{
+    // Trusted desktop modules use this for original-source verification;
+    // calling require is NOT a tool or chat ownership grant.
+    pub(crate) fn require(&self,chat_id:&str)->Result<Arc<AnsfStore>,String>{
         let conn=self.catalog.lock().map_err(to_err)?;
         if !Self::known(&conn,chat_id)?{return Err("unknown conversation".into())}
         self.ansf_book(chat_id)

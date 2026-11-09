@@ -11,6 +11,7 @@
 #![cfg(test)]
 use super::*;
 use crate::memory_loop03b_context::for_current_human_turn;
+use crate::reviewed_memory_evidence::{record_from_reviewed_turn,resolve_for_current_human};
 use lu_core::{
     ansf_belief_revision::{Claim,ClaimReceipt},
     ansf_verified_procedures::ProcedureCandidate,
@@ -264,7 +265,7 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
     let continuity=ContinuityStore::open(&continuity_path).unwrap();
     // Production reviewed-app custody uses an immutable per-turn worker
     // journal and task owner binding; do not silently share a new grant.
-    let effect_path=root.join("effects-first-turn.sqlite");
+    let effect_path=profile.join(format!("lu-reviewed-effects-{first_turn}.sqlite"));
     let effects=Arc::new(EffectJournal::open(&effect_path).unwrap());
     let tasks=Arc::new(TaskStore::open(&root.join("tasks-first-turn.sqlite")).unwrap());
     tasks.bind_reviewed_human_turn(&chat,&first_turn).unwrap();
@@ -300,6 +301,12 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
     assert_eq!(first_report.tool_calls,2);
     assert_eq!(first_report.model_generations,3);
     assert_eq!(scripted_model.observed_prompts.len(),3);
+    // 03D: the exact production evidence index is written from real
+    // protected worker reports and the original per-human-turn journal.
+    assert_eq!(record_from_reviewed_turn(
+        &chats,&continuity,&profile,&chat,&first_turn,&effects,&first_report
+    ).unwrap(),2);
+
     assert!(scripted_model.observed_prompts.iter().any(
         |p|p.contains(&expected_head)
     ));
@@ -437,7 +444,7 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
     // The next user turn has a DIFFERENT production-style worker journal,
     // not a new grant inside the old effect ledger. Both journals survive.
     let new_task_path=root.join("tasks-second-turn.sqlite");
-    let new_effect_path=root.join("effects-second-turn.sqlite");
+    let new_effect_path=profile.join(format!("lu-reviewed-effects-{second_turn}.sqlite"));
     let new_tasks=Arc::new(TaskStore::open(&new_task_path).unwrap());
     new_tasks.bind_reviewed_human_turn(&chat,&second_turn).unwrap();
     let new_effects=Arc::new(EffectJournal::open(&new_effect_path).unwrap());
@@ -458,6 +465,12 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
         )
     ).unwrap();
     assert_eq!(fresh_report.tool_calls,1);
+    // The independently observed NEW Git HEAD gets its own per-turn
+    // journal/index entry. A different observed HEAD blocks promotion
+    // and requires human review instead of superseding old knowledge.
+    assert_eq!(record_from_reviewed_turn(
+        &chats,&continuity,&profile,&chat,&second_turn,&new_effects,&fresh_report
+    ).unwrap(),1);
     let new_tool_call=fresh_report.records.iter().find_map(|x|{
         if let NativeTurnRecord::ToolFeedback(v)=x {
             if v["name"]=="lu_reviewed_git_head" {
@@ -566,6 +579,23 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
     assert_eq!(after["status"],"RETRACTED_OR_SUPERSEDED_BELIEF");
     assert_eq!(after["executionAuthority"],"NOT_AUTHORIZED_FOR_EXECUTION");
     rows.push(observation_row("restart_preserves_retracted_belief",belief_prompt,7,after));
+    // Installed Send's new exact-human lookup resolves only the authentic
+    // reviewed per-turn worker journal. This additional source check does
+    // not borrow current authority from the historical journal.
+    let lookup="Recall procedure project lu task review_git_head tool lu.reviewed.git.head tool-version 1.0 application-version 0.1";
+    let select_turn=format!("g-{:032x}",222);
+    recalled.append_user_with_turn_id(&chat,&select_turn,lookup).unwrap();
+    let historical=resolve_for_current_human(
+        &recalled,&profile,&chat,&select_turn,lookup
+    ).unwrap().expect("actual reviewed journal indexed");
+    let explicit=for_current_human_turn(
+        &recalled,&old_continuity,&historical,&chat,&select_turn,lookup,
+        "CURRENT_GOAL_REVIEWABLE_ONLY","NO_REVIEWED_EFFECTS_IN_BOUNDED_WINDOW"
+    ).unwrap().unwrap();
+    let parsed:Value=serde_json::from_str(&explicit).unwrap();
+    assert_eq!(parsed["executionAuthority"],"NOT_AUTHORIZED_FOR_EXECUTION");
+    assert_eq!(parsed["status"],"NO_CURRENTLY_REVALIDATED_VERIFIED_PROCEDURE");
+
 
     let result=json!({
         "schema":"lu-memory-loop03c-reviewed-git-ffprobe-native-v1",

@@ -689,6 +689,9 @@ async fn reviewed_app_ask_internal(
             let policy:Arc<dyn ToolAuthorizer>=Arc::new(
                 ReviewedDesktopPolicy{approved:granted}
             );
+            // Keep the original exact per-human-turn effect journal, rather
+            // than making an APPLIED shadow entry in normal chat's journal.
+            let historical_effects=Arc::clone(&effects);
             let mut reviewed=ReviewedApplicationTurnSession::from_verified_host_task(
                 authority,origin,gid_run.clone(),tasks,supervisor,effects,
                 policy,git,media
@@ -808,6 +811,19 @@ async fn reviewed_app_ask_internal(
             if answer.tool_calls==0{
                 return Err("Model did not use the approved reviewed app tool".into())
             }
+            // MEMORY-LOOP-03D: durable original-turn -> exact reviewed
+            // journal lookup and source-backed ANSF projection. The verified
+            // Git/FFprobe facts are HISTORICAL data only, never user consent
+            // for another tool, current freshness, or a scheduled step.
+            // A failed index write is not silently treated as completed
+            // memory; the actual OS effect remains inspectable in its own
+            // immutable journal after this turn is marked interrupted.
+            let profile=host.catalog_path.parent()
+                .ok_or("Reviewed app original host profile unavailable")?;
+            crate::reviewed_memory_evidence::record_from_reviewed_turn(
+                &host.chats,&host.continuity,profile,
+                &chat_id,&gid_run,historical_effects.as_ref(),&answer
+            ).map_err(|_|"Reviewed worker memory source linkage failed")?;
             if scheduled.is_some(){
                 // Refuse a successful plan witness if a clarification
                 // changed during the supervised model/worker operation.

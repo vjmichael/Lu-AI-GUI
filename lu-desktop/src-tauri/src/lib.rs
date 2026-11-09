@@ -32,6 +32,7 @@ mod reader_desktop;
 use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 mod workspace_desktop;
 mod reviewed_app_desktop;
+mod reviewed_memory_evidence;
 mod reviewed_app_recovery;
 mod reviewed_app_audit;
 mod reviewed_task_continuity;
@@ -4488,11 +4489,33 @@ async fn generate_internal(
                 // permission or legacy-memory store. Only explicit original
                 // current-human selectors may request a bounded old fact.
                 if authenticated {
-                    let retrieved=memory_loop03b_context::for_current_human_turn(
-                        &state.chats,&state.continuity,&state.effects,
-                        &chat_id,&gid,&prompt,gate.goal_status,
-                        gate.historical_recovery_status
-                    );
+                    // MEMORY-LOOP-03D: normal Send can now find an original,
+                    // host-indexed per-turn Git/FFprobe journal instead of
+                    // treating the generic task journal as source evidence.
+                    // The current original-human selector chooses a fixed
+                    // operation; it can NEVER select an OS path, old grant
+                    // or historical worker for execution. Corrupt or missing
+                    // indexed records fail closed; never use an unverified
+                    // fallback journal in that case.
+                    let remembered_journal=state.catalog_path.parent()
+                        .ok_or("Current Lu profile unavailable").and_then(
+                            |profile|reviewed_memory_evidence::resolve_for_current_human(
+                                &state.chats,profile,&chat_id,&gid,&prompt
+                            )
+                        );
+                    let retrieved=match remembered_journal{
+                        Ok(Some(original))=>memory_loop03b_context::for_current_human_turn(
+                            &state.chats,&state.continuity,&original,
+                            &chat_id,&gid,&prompt,gate.goal_status,
+                            gate.historical_recovery_status
+                        ),
+                        Ok(None)=>memory_loop03b_context::for_current_human_turn(
+                            &state.chats,&state.continuity,&state.effects,
+                            &chat_id,&gid,&prompt,gate.goal_status,
+                            gate.historical_recovery_status
+                        ),
+                        Err(_)=>Err("Reviewed historical source cannot be revalidated".into())
+                    };
                     let context=match retrieved{
                         Ok(data)=>data,
                         Err(_)=>Some(serde_json::json!({
