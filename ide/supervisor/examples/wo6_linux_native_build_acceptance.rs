@@ -393,6 +393,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if summary.phase != debug_expected || summary.requires_reconciliation {
                 return Err("DENIED: project debug kernel descendants not reconciled".into());
             }
+            let terminal_history = supervisor
+                .receipt_history(&debug_job.job_id)
+                .map_err(|e| e.code())?;
+            let terminal = terminal_history.last()
+                .ok_or("DENIED: missing fsynced stopped-PC terminal receipt")?;
+            if terminal.body.phase != debug_expected
+                || terminal.body.plan_sha256 != stopped_witness.debugger_plan_sha256
+                || terminal.entry_hash == stopped_witness.debug_running_receipt_sha256
+                || !terminal_history.iter().any(|r| {
+                    r.entry_hash == stopped_witness.debug_running_receipt_sha256
+                        && r.body.phase == JobPhase::Running
+                })
+            {
+                return Err("DENIED: live kernel-PC proof not bound to durable debug terminal".into());
+            }
+            let build_terminal = supervisor
+                .receipt_history(&stopped_witness.build_job_id)
+                .map_err(|e| e.code())?
+                .last()
+                .cloned()
+                .ok_or("DENIED: independent source build terminal missing")?;
+            if build_terminal.body.phase != JobPhase::Completed
+                || build_terminal.entry_hash != stopped_witness.build_terminal_receipt_sha256
+            {
+                return Err("DENIED: stopped-PC lineage lost completed native build".into());
+            }
+            eprintln!("DEV045D3_LINUX_REAL_STOP_LINE_TERMINAL_JOURNALS=PASS");
             if debug_cancel {
                 let entries = supervisor
                     .receipt_history(&debug_job.job_id)
