@@ -139,6 +139,11 @@ jobs:
             if (!$?) { throw 'DENIED: native UI editor review/save failed' }
             $newSourceHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash
             if ($newSourceHash -eq $originalSourceHash) { throw 'DENIED: explicit save did not change fixture source' }
+            & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario Dev035JobsReadOnly -FixtureRoot $fixture
+            if (!$?) { throw 'DENIED: real installed Windows Jobs discovery/lifecycle UX failed' }
+            if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash -ne $newSourceHash) {
+              throw 'DENIED: installed Jobs inspection modified source'
+            }
             & 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1' -InstalledExecutable $exe -ExpectedSha256 $sha -Scenario PersistedRestart -FixtureRoot $fixture
             if (!$?) { throw 'DENIED: native project restart/persistence failed' }
             if ((Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash -ne $newSourceHash) {

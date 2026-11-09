@@ -4,6 +4,9 @@ on:
     paths:
       - 'ide/supervisor/**'
       - 'ide/sandbox/**'
+      - 'ide/app/src-tauri/src/build_backend.rs'
+      - 'ide/app/web/protected_job_lifecycle.js'
+      - 'ide/app/web/main.jsx'
       - '.github/workflows/ide-wo6-native-os-acceptance.yml'
   workflow_dispatch:
 permissions:

@@ -60,6 +60,26 @@ fn multilang_release_pin(recipe_id: &str) -> Option<&'static str> {
     }}
 }
 
+// The supervisor serializes JobPhase with snake_case. Debug-lowercasing
+// would turn CancelRequested into "cancelrequested", silently breaking
+// recovery/progress guards and case-sensitive UI admission.
+fn native_phase_label(phase: JobPhase) -> &'static str {
+    match phase {
+        JobPhase::Prepared => "prepared",
+        JobPhase::Authorized => "authorized",
+        JobPhase::AdmissionPending => "admission_pending",
+        JobPhase::Running => "running",
+        JobPhase::ReleasePending => "release_pending",
+        JobPhase::CancelRequested => "cancel_requested",
+        JobPhase::Cancelled => "cancelled",
+        JobPhase::Completed => "completed",
+        JobPhase::Failed => "failed",
+        JobPhase::Denied => "denied",
+        JobPhase::RecoveryRequired => "recovery_required",
+        JobPhase::Uncertain => "uncertain",
+    }
+}
+
 const MAX_HISTORY: usize = 32;
 const MAX_RUNTIME_MS: u64 = 5 * 60_000;
 
@@ -229,6 +249,8 @@ pub struct BuildStatus {
     code: String,
     description: &'static str,
     current: Option<ActiveView>,
+    // Ephemeral identity only; never an output path or replayable receipt.
+    last_output_job_id: Option<String>,
     recent: Vec<BuildRunView>,
     // Persisted supervisor journal; unlike recent, survives a host restart.
     journal: Vec<RecoveryView>,
@@ -306,6 +328,9 @@ impl NativeBuildRuntime {
                 recipe_id: job.recipe_id.clone(),
                 cancellation_requested: job.requested.load(Ordering::SeqCst),
             });
+        let last_output_job_id = locked.last_output.as_ref()
+            .filter(|(project, _, _)| project == project_id)
+            .map(|(_, job_id, _)| job_id.clone());
         let recent = locked.recent.values()
             .filter(|job| job.project_id == project_id).cloned().collect();
         drop(locked);
@@ -321,7 +346,7 @@ impl NativeBuildRuntime {
                 project_id: job.project_id.clone(),
                 job_id: job.job_id.clone(),
                 plan_sha256: job.plan_sha256.clone(),
-                phase: format!("{:?}", job.phase).to_lowercase(),
+                phase: native_phase_label(job.phase).to_owned(),
                 requires_reconciliation: true,
             })
             .collect();
@@ -334,7 +359,7 @@ impl NativeBuildRuntime {
                 project_id: job.project_id,
                 job_id: job.job_id,
                 plan_sha256: job.plan_sha256,
-                phase: format!("{:?}", job.phase).to_lowercase(),
+                phase: native_phase_label(job.phase).to_owned(),
                 requires_reconciliation: job.requires_reconciliation,
             }).collect();
         journal.reverse();
@@ -348,6 +373,7 @@ impl NativeBuildRuntime {
             description: "Pinned resources are not execution proof. Native Job/cgroup \
                 admission, human approval and terminal OS cleanup are checked for each job.",
             current,
+            last_output_job_id,
             recent,
             journal,
             quarantined,
@@ -378,12 +404,19 @@ impl NativeBuildRuntime {
     pub fn cancel(&self, project_id: &str, job_id: Option<&str>) -> Result<&'static str, String> {
         let locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
         let active = locked.current.as_ref().ok_or("BUILD_NO_ACTIVE_JOB")?;
-        if active.project_id != project_id
-            || job_id.is_some_and(|id| active.job_id.as_deref() != Some(id))
-        {
+        if active.project_id != project_id {
             return Err("BUILD_JOB_SCOPE_MISMATCH".into());
         }
-        active.requested.store(true, Ordering::SeqCst);
+        // A known native job must be identified exactly: omitting its ID
+        // cannot cancel a replacement job admitted between UI polls.
+        match (active.job_id.as_deref(), job_id) {
+            (Some(current), Some(expected)) if current == expected => {}
+            (None, None) => {} // Only preflight, before a native ID exists.
+            _ => return Err("BUILD_CANCEL_EXACT_JOB_ID_REQUIRED".into()),
+        }
+        if active.requested.swap(true, Ordering::SeqCst) {
+            return Err("BUILD_CANCEL_ALREADY_REQUESTED".into());
+        }
         active.cancel.request_cancel();
         // Request is intentionally NOT mislabeled Cancelled. The worker must
         // first fsync the cancellation and prove native process-tree kill.
@@ -632,7 +665,7 @@ impl NativeBuildRuntime {
             input_snapshot_sha256: plan.input_snapshot_sha256,
             manifest_sha256: plan.manifest_sha256,
             toolchain_sha256: plan.toolchain_sha256,
-            phase: format!("{:?}", native.summary.phase).to_lowercase(),
+            phase: native_phase_label(native.summary.phase).to_owned(),
             native_exit_code: exit_code,
             native_error_category,
             output_sha256,
@@ -695,5 +728,19 @@ impl NativeBuildRuntime {
             return Err("BUILD_RECOVERY_REMAINS_QUARANTINED".into());
         }
         Ok("BUILD_KERNEL_TREE_RECONCILED_NO_REEXECUTION".into())
+    }
+}
+
+#[cfg(test)]
+mod dev035_native_lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn cancellation_and_recovery_phase_names_match_durable_supervisor_schema() {
+        assert_eq!(native_phase_label(JobPhase::CancelRequested), "cancel_requested");
+        assert_eq!(native_phase_label(JobPhase::ReleasePending), "release_pending");
+        assert_eq!(native_phase_label(JobPhase::RecoveryRequired), "recovery_required");
+        assert_eq!(native_phase_label(JobPhase::Cancelled), "cancelled");
+        assert_eq!(native_phase_label(JobPhase::Completed), "completed");
     }
 }

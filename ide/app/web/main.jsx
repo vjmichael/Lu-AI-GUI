@@ -36,6 +36,7 @@ import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 import { belongsToSelectedProject } from './job_render_guard.js';
 import { ingestJobProgress, visibleJobProgress } from './job_progress.js';
 import { safeConventionalTestDiscovery } from './conventional_tests.js';
+import { projectJobLifecycle } from './protected_job_lifecycle.js';
 import { acceptNativeOutput } from './native_build_output.js';
 
 const sections = [
@@ -508,8 +509,19 @@ function App() {
               ingestJobProgress(previous, projectId, value));
             // A job ID originates only in the native broker status.
             // Never pass a path, stream label or executable from the WebView.
-            const jobId = value.current?.projectId === projectId
+            const activeJobId = value.current?.projectId === projectId
               ? value.current?.jobId : null;
+            // After an error or verified cancellation, the native in-memory
+            // window can outlive current. Only a matching *durable journal*
+            // identity may select that bounded advisory output. Restart does
+            // not recover or replay the log; no execution authority changes.
+            const lastOutputId = typeof value.lastOutputJobId === 'string' &&
+              value.journal.some(entry =>
+                entry.projectId === projectId &&
+                entry.jobId === value.lastOutputJobId &&
+                /^[a-f0-9]{64}$/.test(entry.planSha256))
+              ? value.lastOutputJobId : null;
+            const jobId = activeJobId || lastOutputId;
             if (jobId && !nativeOutputPending.current) {
               const cursor=nativeOutputCursor.current;
               const after=cursor.projectId===projectId &&
@@ -3410,7 +3422,7 @@ function App() {
                 className="continuityDocument">
                 <h4>DEV-03.3 · Live protected job progress</h4>
                 <p>Read-only native broker phases, refreshed while Jobs is open.
-                  No command stdout/stderr is exposed yet. A progress entry
+                  Output is displayed separately above. A progress entry
                   does not prove kernel cleanup, successful output, or release acceptance.</p>
                 {visibleJobProgress(jobProgressEvents, activeProject?.projectId)
                   .length === 0
@@ -3424,6 +3436,32 @@ function App() {
                           {event.phase.replaceAll('_',' ')}
                           {event.cancellationRequested ? ' · cancel requested' : ''}
                         </li>)}
+                  </ol>}
+              </section>
+              <section className="continuityDocument"
+                aria-label="DEV-03.5 verified protected job lifecycle">
+                <h4>DEV-03.5 · Protected job lifecycle</h4>
+                <p>Lifecycle is projected only from the native durable
+                  journal, current worker identity and matching native
+                  result. Output and test filenames are never proof of
+                  execution, OS cleanup or installed acceptance.</p>
+                {projectJobLifecycle(buildStatus,activeProject?.projectId,
+                  nativeJobOutput).jobs.length===0
+                  ? <p>No matching protected job journal entries observed.</p>
+                  : <ol aria-live="polite">
+                    {projectJobLifecycle(buildStatus,activeProject?.projectId,
+                      nativeJobOutput).jobs.slice(-12).map(job=>
+                      <li key={job.jobId}>
+                        <code>{job.jobId}</code> ·
+                        {job.state.replaceAll('_',' ')} ·
+                        {job.nativeResult
+                          ? 'native result matches durable receipt'
+                          : 'no fresh native execution result proved'}
+                        {job.outputObserved && ' · bounded untrusted output observed'}
+                        {job.outputTruncated && ' · output truncated'}
+                        {job.requiresReconciliation && ' · OS reconciliation required'}
+                        {' · Installed acceptance not established'}
+                      </li>)}
                   </ol>}
               </section>
               {belongsToSelectedProject(activeProject, buildResult) && <div role="status">
