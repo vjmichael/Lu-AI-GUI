@@ -12,6 +12,7 @@ import os
 from pathlib import Path, PurePath
 import re
 import stat
+import struct
 import subprocess
 import sys
 
@@ -69,6 +70,81 @@ def safe_file(root, relative, expected_digest, ceiling):
     return file, contents
 
 
+def pe_pdb_guid_age_matches(executable, pdb, expected_pdb_name):
+    """Independent MSF7 PDB Info / PE RSDS GUID-age cross-check.
+
+    Never accept a PDB merely because an unrelated PDB file exists beside
+    a PE: the RSDS record must match the PDB's actual Info stream identity.
+    This parser is bounded and rejects unknown/truncated/colliding records.
+    """
+    require(pdb.startswith(b"Microsoft C/C++ MSF 7.00") and len(pdb) >= 56,
+            "PDB_STRUCTURE_DENIED")
+    require(len(executable) >= 64 and executable[:2] == b"MZ",
+            "PE_STRUCTURE_DENIED")
+    image_offset = struct.unpack_from("<I", executable, 0x3c)[0]
+    require(image_offset < len(executable) - 24
+            and executable[image_offset:image_offset + 4] == b"PE\\x00\\x00",
+            "PE_STRUCTURE_DENIED")
+    records = []
+    for found in re.finditer(b"RSDS", executable):
+        at = found.start()
+        if at + 24 >= len(executable):
+            continue
+        end = executable.find(b"\\x00", at + 24, min(len(executable), at + 280))
+        if end < 0:
+            continue
+        try:
+            original_path = executable[at + 24:end].decode("utf-8")
+        except UnicodeError:
+            continue
+        if original_path.replace("\\\\", "/").split("/")[-1].casefold() != expected_pdb_name.casefold():
+            continue
+        age = struct.unpack_from("<I", executable, at + 20)[0]
+        records.append((executable[at + 4:at + 20], age))
+    require(len(records) == 1 and records[0][1] > 0,
+            "PE_RSDS_IDENTITY_INVALID")
+    block_size, _, number_blocks, directory_size, _, block_map = struct.unpack_from(
+        "<6I", pdb, 32)
+    require(512 <= block_size <= 65536 and block_size & (block_size - 1) == 0
+            and 0 < number_blocks <= len(pdb) // block_size
+            and 8 <= directory_size <= 2 * 1024 * 1024
+            and block_map < number_blocks, "PDB_STREAM_DIRECTORY_DENIED")
+    blocks_needed = (directory_size + block_size - 1) // block_size
+    require(block_map * block_size + blocks_needed * 4 <= len(pdb),
+            "PDB_BLOCK_MAP_TRUNCATED")
+    directory_blocks = struct.unpack_from("<" + "I" * blocks_needed,
+                                           pdb, block_map * block_size)
+    require(all(b < number_blocks for b in directory_blocks),
+            "PDB_BLOCK_MAP_INVALID")
+    directory = b"".join(pdb[b * block_size:(b + 1) * block_size]
+                         for b in directory_blocks)[:directory_size]
+    nstreams = struct.unpack_from("<I", directory, 0)[0]
+    require(2 <= nstreams <= 10000 and 4 + nstreams * 4 <= len(directory),
+            "PDB_STREAM_COUNT_INVALID")
+    sizes = struct.unpack_from("<" + "I" * nstreams, directory, 4)
+    offset = 4 + nstreams * 4
+    info = None
+    for stream, size in enumerate(sizes):
+        if size == 0xffffffff:
+            continue
+        require(size <= len(pdb), "PDB_STREAM_SIZE_INVALID")
+        count = (size + block_size - 1) // block_size
+        require(offset + count * 4 <= len(directory),
+                "PDB_STREAM_BLOCK_LIST_INVALID")
+        locations = struct.unpack_from("<" + "I" * count, directory, offset) if count else ()
+        offset += count * 4
+        require(all(b < number_blocks for b in locations),
+                "PDB_STREAM_OUTSIDE_FILE")
+        if stream == 1:
+            info = b"".join(pdb[b * block_size:(b + 1) * block_size]
+                            for b in locations)[:size]
+    require(info is not None and len(info) >= 28, "PDB_INFO_STREAM_MISSING")
+    pdb_age = struct.unpack_from("<I", info, 8)[0]
+    pdb_guid = info[12:28]
+    require(records[0] == (pdb_guid, pdb_age),
+            "PE_PDB_GUID_AGE_MISMATCH")
+
+
 def verify_claim(root, claim, symbolizer, symbolizer_sha):
     require(isinstance(claim, dict) and set(claim) == ALLOWED,
             "CLAIM_SCHEMA_INVALID")
@@ -92,6 +168,7 @@ def verify_claim(root, claim, symbolizer, symbolizer_sha):
                                   claim["pdbSha256"], FILES["pdb"])
         require(contents.startswith(b"Microsoft C/C++ MSF 7.00")
                 and b"RSDS" in binary_bytes, "PDB_STRUCTURE_DENIED")
+        pe_pdb_guid_age_matches(binary_bytes, contents, pdb.name)
     else:
         require(claim["pdb"] is None and claim["pdbSha256"] is None,
                 "ELF_UNEXPECTED_PDB")
