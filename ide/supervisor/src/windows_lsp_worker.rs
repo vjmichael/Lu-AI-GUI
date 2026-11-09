@@ -1848,7 +1848,7 @@ impl WindowsDapSession {
         // Until D6C supplies an independently verified *actual* operation
         // result, the committed outcome MUST remain uncertain. Never
         // invent a debugger command, DAP reply or success witness.
-        action.record_result(false, now)
+        action.record_uncertain_result(now)
             .map_err(|_| SupervisorError::JournalUnavailable)?;
         let audit = action.audit_reference("ResultUncertain")
             .map_err(|_| SupervisorError::JournalCorrupt)?;
