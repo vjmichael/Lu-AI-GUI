@@ -617,6 +617,44 @@ mod tests {
     }
     #[cfg(windows)]
     #[test]
+    fn private_appcontainer_target_seal_rejects_changed_pdb_and_preserves_lineage(){
+        use crate::{
+            debug_binary_witness::audit_debug_binary_candidate,
+            project_debug_target::{seal_project_debug_target,CompletedBuildLineage},
+            wo6_output_evidence::audit_published_output
+        };
+        let root=std::env::temp_dir().join(format!("lu-dev044-win-{:032x}",rand::random::<u128>()));
+        let output=root.join("build");
+        let private=root.join("sealed");
+        fs::create_dir_all(output.join("target/debug")).unwrap();
+        fs::create_dir_all(&private).unwrap();
+        fs::write(output.join("target/debug/fixture.exe"),minimal_pe()).unwrap();
+        fs::write(output.join("target/debug/fixture.pdb"),minimal_matching_pdb()).unwrap();
+        let manifest=audit_published_output(&output).unwrap();
+        let binary=audit_debug_binary_candidate(&output,&manifest).unwrap().unwrap();
+        let symbols=verify_build_debug_symbols(&output,&manifest,&binary).unwrap().unwrap();
+        let lineage=CompletedBuildLineage{
+            project_id:format!("ide-{}","a".repeat(32)),
+            build_job_id:format!("job-{}","b".repeat(32)),
+            build_plan_sha256:"c".repeat(64),terminal_receipt_sha256:"d".repeat(64),
+            source_head:"e".repeat(40),source_snapshot_sha256:"f".repeat(64),
+            manifest_sha256:"1".repeat(64),build_toolchain_sha256:"2".repeat(64),
+            output_tree_sha256:manifest.tree_sha256.clone(),
+            build_successfully_completed:true,requires_reconciliation:false
+        };
+        let target=seal_project_debug_target(&output,&private,lineage,&binary,&symbols).unwrap();
+        target.verify().unwrap();
+        let staged=target.root.join("target/debug/fixture.pdb");
+        let mut forged=minimal_matching_pdb();
+        put32(&mut forged,5*512+8,2);
+        fs::write(&staged,forged).unwrap();
+        assert!(target.verify().is_err());
+        drop(target);
+        assert!(fs::read_dir(&private).unwrap().next().is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(windows)]
+    #[test]
     fn full_native_output_manifest_pe_pdb_witness_rehashes_both_files(){
         use crate::{debug_binary_witness::audit_debug_binary_candidate,
             wo6_output_evidence::audit_published_output};
