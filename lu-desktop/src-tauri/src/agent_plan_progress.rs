@@ -51,6 +51,10 @@
      pub steps:Vec<AgentStepProgress>,
      pub next_safe_action:&'static str,
      pub continuation_preview:AgentContinuationPreview,
+     /// AGENT-01J: original SQLite ancestry only, NOT a live oracle.
+     pub lineage_status:String,
+     pub lineage_generations:u8,
+     pub lineage_parent_id:Option<String>,
      pub execution_authority:&'static str,
  }
  // This is a pure read-only state classification, not a model or OS action.
@@ -368,9 +372,21 @@
          }else{
              "A fresh human request, source validation, reviewed broker grant and verified OS custody are still required."
          };
-         let preview=continuation_preview(
+         let lineage=lu_core::agent_lineage_recovery::inspect_continuation_lineage(
+             &root.join("lu-agent-plans.sqlite"),chat,&plan
+         )?;
+         let mut preview=continuation_preview(
              &state,review,owner_state,count as u8,&steps
          );
+         if lineage.status.starts_with("STOP_"){
+             preview=AgentContinuationPreview{
+                 candidate_step_index:None,
+                 status:"STOP_LINEAGE_RECONCILIATION",
+                 required_action:"Review recorded parent/child lineage, original independent evidence and OS custody. Do not attempt a new worker or auto-replay.",
+                 live_source_reverified:false,
+                 execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION",
+             };
+         }
          plans.push(AgentPlanProgress{
              plan_id:plan,original_human_turn_id:turn,plan_state:state,
              latest_revision:revision_number as u8,
@@ -380,6 +396,9 @@
              supervisor_state:owner_state.into(),
              step_count:steps.len() as u8,steps,
              next_safe_action:next,continuation_preview:preview,
+             lineage_status:lineage.status.into(),
+             lineage_generations:lineage.generations,
+             lineage_parent_id:lineage.immediate_parent_id,
              execution_authority:"NOT_AUTHORIZED_FOR_EXECUTION",
          });
      }
