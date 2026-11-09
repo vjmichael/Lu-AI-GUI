@@ -18,7 +18,7 @@ test('native OS custodian obtains only its actual /proc self cgroup without sudo
   assert.doesNotMatch(helper,/Command::new\("sudo"|systemd-run|pkexec|bash -c/);
 });
 test('custodian itself stays outside worker subtree and outlives parent SIGKILL',()=>{
-  assert.match(helper,/The helper itself is outside this path/);
+  assert.match(helper,/itself is outside this path/);
   assert.match(helper,/stdin\.read\(&mut buf\)/);
   assert.match(helper,/Ok\(0\)=>break/);
   assert.match(helper,/fs::write\(path\.join\("cgroup\.kill"\),b"1"\)/);
