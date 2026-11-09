@@ -984,6 +984,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn actual_pipe_drain_emits_bounded_distinct_streams() {
+        let sink = Arc::new(LiveOutput::default());
+        let stdout = collect_limited(
+            std::io::Cursor::new(b"ok\n".to_vec()), 4096,
+            Some(Arc::clone(&sink)), "stdout",
+        );
+        let stderr = collect_limited(
+            std::io::Cursor::new(b"warning\n".to_vec()), 4096,
+            Some(Arc::clone(&sink)), "stderr",
+        );
+        assert_eq!(stdout.join().unwrap().unwrap().bytes, 3);
+        assert_eq!(stderr.join().unwrap().unwrap().bytes, 8);
+        let page = sink.page(0);
+        assert_eq!(page.chunks.len(), 2);
+        let kinds: std::collections::HashSet<_> =
+            page.chunks.iter().map(|c| c.stream).collect();
+        assert!(kinds.contains("stdout"));
+        assert!(kinds.contains("stderr"));
+        assert!(page.live_unverified);
+    }
+
+    #[test]
     fn only_explicit_sibling_host_leaf_can_use_delegated_parent() {
         let root = Path::new("/sys/fs/cgroup");
         let base = root.join("user.slice").join("lu-ide-delegated");
