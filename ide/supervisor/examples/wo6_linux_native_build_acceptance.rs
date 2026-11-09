@@ -347,6 +347,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if stopped.is_none() || !threads || !stack {
                 return Err("DENIED: real project debug stop/stack absent".into());
             }
+            // Only a *candidate* instruction address from a real protected
+            // LLDB stop. The actual Linux process image slide must be
+            // independently corroborated from cgroup + kernel /proc maps.
+            // This diagnostic NEVER certifies a DWARF line mapping.
+            if let Some(candidate) = dap.source_candidate() {
+                if let Some(pc) = candidate.instruction_address {
+                    eprintln!(
+                        "DEV045D2_LINUX_REAL_DAP_STOP_PC_CLAIM=0x{:x};line={};os_module_slide_verified=false;binary_sha={}",
+                        pc, candidate.line, target.binary.binary_sha256
+                    );
+                } else {
+                    eprintln!("DEV045D2_LINUX_REAL_DAP_STOP_PC_CLAIM=absent");
+                }
+            } else {
+                eprintln!("DEV045D2_LINUX_REAL_DAP_SOURCE_CLAIM=unavailable");
+            }
             if debug_cancel {
                 // A real project, not the fixed debuggee, is stopped under
                 // cgroup custody before native Drop cancels and reaps it.
