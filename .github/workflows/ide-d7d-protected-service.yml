@@ -188,6 +188,8 @@ jobs:
             $env:LU_IDE_D7_PROTECTED_SERVICE_EXE=$service
             & $hostExe
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected real Cargo check failed' }
+            & $hostExe --build-native-worker
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: genuine SCM-protected AppContainer executable provenance failed' }
             & $hostExe --cancel-native-worker
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected real Cargo cancellation failed' }
           } finally {
