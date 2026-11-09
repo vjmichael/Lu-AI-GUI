@@ -38,6 +38,7 @@ import { ingestJobProgress, visibleJobProgress } from './job_progress.js';
 import { safeConventionalTestDiscovery } from './conventional_tests.js';
 import { projectJobLifecycle } from './protected_job_lifecycle.js';
 import { safeDebugTargetReview } from './debug_target_review.js';
+import { safeDebugBinaryEvidence } from './debug_binary_evidence.js';
 import { acceptNativeOutput } from './native_build_output.js';
 
 const sections = [
@@ -3505,6 +3506,27 @@ function App() {
                 <p>Source: <code>{buildResult.inputSnapshotSha256}</code></p>
                 <p>Toolchain: <code>{buildResult.toolchainSha256}</code></p>
                 <p>Worker output seal: {buildResult.outputSha256 || 'not independently published'}</p>
+                {safeDebugBinaryEvidence(buildResult,activeProject?.projectId) &&
+                  <section aria-label="DEV-04.2 protected native build binary witness">
+                    <h4>DEV-04.2 · Native build-to-binary provenance</h4>
+                    <p>One candidate rehashed after the protected worker exited,
+                      with exact source snapshot, native terminal receipt and
+                      toolchain binding. Executable and symbol closure remain
+                      unapproved; this does not enable debugging or launch.</p>
+                    <p>Candidate: <code>{safeDebugBinaryEvidence(buildResult,
+                      activeProject?.projectId).relativePath}</code></p>
+                    <p>Binary SHA-256: <code>{safeDebugBinaryEvidence(buildResult,
+                      activeProject?.projectId).binarySha}</code></p>
+                    <p>Terminal receipt SHA-256: <code>{safeDebugBinaryEvidence(
+                      buildResult,activeProject?.projectId).terminalReceiptSha}</code></p>
+                    <p><strong>Debug execution: not authorized.</strong></p>
+                  </section>}
+                {buildResult.recipeId==='rust_build' &&
+                  !safeDebugBinaryEvidence(buildResult,activeProject?.projectId) &&
+                  <p>DEV-04.2: no uniquely attested executable from this build.
+                    A completed Cargo build may produce a library or multiple
+                    targets; the debugger remains unavailable.</p>}
+
                 <p>Read-only artifact witness: {buildResult.artifactEvidenceState || 'unavailable'} ·
                   {buildResult.artifactCount ?? 0} files · {buildResult.artifactTruncated ? 'display truncated' : 'bounded listing'}</p>
                 <p>Artifact manifest SHA-256: <code>{buildResult.artifactManifestSha256 || 'unavailable'}</code></p>
