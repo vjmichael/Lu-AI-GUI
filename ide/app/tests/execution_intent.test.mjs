@@ -24,17 +24,17 @@ test('D1 native intent operations exist but no spawn, shell or execution grant',
 });
 test('D1 typed schemas offer only allowlisted recipes and decisions', () => {
   const schemas = JSON.parse(read('../../host/src/capability_schemas.json'));
-  assert.equal(Object.keys(schemas.operations).length,46);
+  assert.equal(Object.keys(schemas.operations).length,49);
   // B3 adds one read-only source-search operation and B2 adds four strictly
   // scoped private draft operations; original D1 intent policy is unchanged.
   for (const id of ['source.findProject','draft.checkpoint','draft.latest','draft.load','draft.discard']) {
     assert.ok(schemas.operations[id], id);
   }
-  assert.equal(Object.keys(schemas.definitions).length,42);
+  assert.equal(Object.keys(schemas.definitions).length,47);
   const prepare = schemas.operations['job.prepare'].request;
   assert.deepEqual(prepare.required,['projectId','recipeId']);
   assert.deepEqual(prepare.properties.recipeId.enum,[
-    'rust_check','rust_tests','lu_ide_host_tests',
+    'rust_check','rust_build','rust_tests','lu_ide_host_tests',
   ]);
   const review = schemas.operations['job.review'].request;
   assert.deepEqual(review.required,['projectId','intentId','decision']);
