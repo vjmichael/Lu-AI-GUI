@@ -253,9 +253,10 @@
          let Some((revision_number,revision_sha))=revision else{
              // This plan was only registered, not yet reviewed.
              plans.push(AgentPlanProgress{
-                 plan_id:plan,original_human_turn_id:turn,plan_state:state,
+                 plan_id:plan,original_human_turn_id:turn,plan_state:state.clone(),
                  latest_revision:0,revision_sha256:None,
                  revision_review:"NO_PROPOSAL".into(),pending_source_checks:0,
+                 lineage_status:"NO_PROPOSAL".into(),lineage_generations:0,lineage_parent_id:None,
                  supervisor_state:"NOT_CLAIMED".into(),step_count:0,
                  steps:Vec::new(),
                  continuation_preview:continuation_preview(

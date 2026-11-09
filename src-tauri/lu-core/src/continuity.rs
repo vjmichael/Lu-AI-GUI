@@ -28,7 +28,7 @@ pub struct VerifiedEffectEvidence{
     pub receipt_sha256:String,
     pub receipt_bytes:u64,
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TaskCheckpoint {
     pub checkpoint_id: String,
     pub project_id: String,

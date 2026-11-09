@@ -301,11 +301,11 @@ pub fn recognize_pinned_pdf_page(
     let raster_sha=verified_engine(rasterizer,expected_rasterizer_sha)?;
     let number=page.to_string();
     let mut worker=Command::new(rasterizer);
-    // Explicit Poppler syntax: -singlefile with output '-' streams exactly
-    // one PNG to stdout, while input '-' reads only approved stdin PDF bytes.
+    // With no output prefix Poppler streams the selected PNG to stdout.
+    // Passing '-' as a prefix instead writes a literal '-.png' file.
     worker.env_clear().args([
         "-f",number.as_str(),"-l",number.as_str(),
-        "-singlefile","-scale-to","2048","-png","-","-"
+        "-singlefile","-scale-to","2048","-png","-"
     ]);
     let png=run_owned_filter(
         worker,pdf,MAX_IMAGE_BYTES,Duration::from_secs(35),cancel

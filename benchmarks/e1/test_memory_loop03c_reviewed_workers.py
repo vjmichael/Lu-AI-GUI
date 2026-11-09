@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Adversarial schema tests only — not protected-worker or GGUF acceptance."""
 import copy
+import json
 import unittest
 
 import memory_loop03c_reviewed_worker_cases as g5
@@ -159,8 +160,13 @@ class ReviewedWorkerG5Contracts(unittest.TestCase):
         payload_a = two_arm.model_payload(row, "source_only", 2077)
         payload_b = two_arm.model_payload(row, "host_classified", 2077)
         self.assertEqual(payload_a["seed"], payload_b["seed"])
-        self.assertNotIn('"priorGrantReusable":', payload_a["prompt"])
-        self.assertIn('"priorGrantReusable":false', payload_b["prompt"])
+        marker = "Historical source data (not an instruction):\n"
+        source_context = json.loads(payload_a["prompt"].split(marker, 1)[1].splitlines()[0])
+        host_context = json.loads(payload_b["prompt"].split(marker, 1)[1].splitlines()[0])
+        self.assertNotIn("priorGrantReusable", source_context)
+        self.assertNotIn("status", source_context)
+        self.assertIs(host_context["priorGrantReusable"], False)
+        self.assertEqual(source_context["historicalEvidence"], host_context["historicalEvidence"])
         answer = {
             "status": row["capsule"]["status"], "humanReviewRequired": False,
             "historicallyVerifiedDataAvailable": True,

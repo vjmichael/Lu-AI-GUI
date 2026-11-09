@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
 import {explainToolOutcome,explainReviewedContinuation} from './reviewed_tool_feedback.mjs';
+import {explainMemoryProjectionRecovery} from './reviewed_memory_recovery.mjs';
 import { fullEditChangeLines } from './edit_diff.mjs';
 import { MarkdownView } from './markdown_view.jsx';
 import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachment_drafts.mjs';
@@ -826,6 +827,7 @@ function App() {
   const [nativeActionProposals,setNativeActionProposals]=useState({}); // inert Wave 3 review intents
   const [toolActivityOpen,setToolActivityOpen]=useState(false);
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
+  const [reviewedMemoryRecoveryByChat,setReviewedMemoryRecoveryByChat]=useState({});
   const [agentProgressByChat,setAgentProgressByChat]=useState({});
   const [agentRecoveryByPlan,setAgentRecoveryByPlan]=useState({});
   const [recoveryProvenanceByChat,setRecoveryProvenanceByChat]=useState({});
@@ -2549,13 +2551,17 @@ function App() {
       // agent ledger cannot hide already verified native tool audit records.
       const results=await Promise.allSettled([
         invoke('lu_tool_turn_history',{chatId:targetChat}),
-        invoke('lu_agent_plan_progress',{chatId:targetChat})
+        invoke('lu_agent_plan_progress',{chatId:targetChat}),
+        invoke('lu_reviewed_memory_recovery_status',{chatId:targetChat})
       ]);
       if(results[0].status==='fulfilled'){
         setToolHistoryByChat(prev=>({...prev,[targetChat]:results[0].value||[]}));
       }
       if(results[1].status==='fulfilled'){
         setAgentProgressByChat(prev=>({...prev,[targetChat]:results[1].value||[]}));
+      }
+      if(results[2].status==='fulfilled'){
+        setReviewedMemoryRecoveryByChat(prev=>({...prev,[targetChat]:results[2].value||[]}));
       }
       const failures=results.filter(x=>x.status==='rejected');
       if(failures.length && currentChat.current===targetChat){
@@ -4634,6 +4640,29 @@ function App() {
             <button type="button" className="subtleButton"
               onClick={()=>setToolActivityOpen(false)}>Close</button>
           </div>
+
+          <section className="readProposalCard" role="region"
+            aria-label="Reviewed memory projection recovery">
+            <strong>Reviewed memory projection recovery</strong>
+            <small>At startup Lu reconstructs only historical derived memory while
+              holding its exclusive profile lease. No source is re-executed,
+              current file freshness is not established, and no permission to
+              retry or resume is created.</small>
+            {(reviewedMemoryRecoveryByChat[chatId]||[]).length===0
+              ? <small>No interrupted projection was reported for this chat at startup.</small>
+              : (reviewedMemoryRecoveryByChat[chatId]||[]).map((entry,index)=>{
+                  const detail=explainMemoryProjectionRecovery(entry);
+                  return <div className="readProposalCard" key={entry.originalTurnId+index}
+                    role="status">
+                    <strong>{detail.title}</strong>
+                    <small>{entry.operation} · Original turn {entry.originalTurnId}</small>
+                    <small>{detail.description}</small>
+                    <small>{entry.explanation}</small>
+                    <small>Execution: {entry.executionAuthority}; automatic retry:
+                      {entry.retryAllowed?'allowed':'denied'}.</small>
+                  </div>;
+                })}
+          </section>
           <section className="readProposalCard" role="region"
             aria-label="Original-source recovery provenance">
             <strong>Original-source recovery provenance</strong>

@@ -191,3 +191,111 @@ Installed reviewed app and normal GGUF chat previously had separate effect journ
 In ordinary lib.rs normal-Send, explicit current-human M4 selectors can read the original per-turn reviewed journal by **deriving its fixed filename from the host-authenticated indexed user turn**, and revalidate the source, tool-specific second oracle and original receipt. Wrong-profile/chat, changed original source, forged binding, altered/missing journal or unsupported oracle fail closed. General journal fallback only occurs when there is no indexed match; a broken matching indexed receipt cannot silently fall back to a different source. Added four Rust source/index tests with synthetic journal fixtures and extended the existing real G5 ignored OS test for production-style index mapping. The existing manually dispatched 03B/03C Windows/Linux workflow includes both; **no native acceptance jobs fired per edit**.
 
 **Status distinction:** code and static source contract authored. Actual native Win/Linux compilation, actual reviewed Git/FFprobe run, persisted normal-Send GUI interaction, true small-GGUF generations, process crash/cgroup descendant custody and owner physical-PC 7B+ remain OPEN. A crash after actual OS effect but before index publication retains original per-turn evidence; a future exclusive-owner read-only reconstruction mechanism must not replay old effects.
+
+
+### 2026-11-09 — MEMORY-LOOP-03E crash-consistent reviewed evidence publication
+
+**Source candidate; native and installed acceptance OPEN.** Follow-on to #197 adds a durable publication marker only after ANSF verified continuity, independent effect linkage and procedural/belief projection. Normal GGUF recall now refuses legacy/crash-interrupted unpublished rows and requires an exact original checkpoint/receipt link. It never automatically republishes old evidence, reuses historical grants or falls back to a different journal. New native SQLite negative test covers interruption and forged checkpoint. 03E-R2 explicit read-only operator reconciliation, physical Windows installed GGUF, real OS worker and cgroup/Job custody remain OPEN. End-of-group CI only.
+
+
+### 2026-11-09 — 03E-R2 atomic projection intent and exclusive-profile source reconciliation
+
+The reviewed index row and full deterministic memory projection plan now share ONE index-SQLite transaction. Derived ANSF and continuity remain separate WAL databases and are idempotent materializations behind a publication fence; we explicitly **do not** claim cross-file ACID semantics. During exclusive DesktopOwner startup, incomplete intents are revalidated against original authenticated source and revision, original task journal origin, independent effect oracle, changed human turns/corrections, claim expiry and later checkpoint. Safe projections are materialized and published without worker replay; ambiguous, expired or legacy items require human review. The Native tool activity pane exposes the per-chat recovery outcome, with no execution/ retry control. Rust regressions and Node source contracts run only as part of the existing manual consolidated gate. **Source submitted; real native, installed GGUF and descendant-custody gates OPEN.**
+
+### 2026-11-09 — Linux task-group execution evidence
+
+PR #198 compiled on Linux with the generated desktop PNG and fixed memory,
+reply and plan view wiring. Core library tests passed (525, with 17 ignored),
+as did six opt-in real Git/FFprobe/FFmpeg integration cases. Desktop recovery
+passed nine tests and the opt-in G5 restart test produced the source-verified
+native corpus using real reviewed Git/FFprobe workers and scripted model
+selections. The full desktop suite had 194 passes, two ignored and one
+Observe process-identity failure on the sandbox's mismatched procfs PID
+namespace. Desktop cargo check passed. See the 03E technical record for
+the scope of each check. Windows acceptance remains open.
+
+The standalone AGENT-01L locked build required its own Cargo.lock. With
+that lock, both the Linux custodian and the host crash fixture compiled.
+The native harness reported AGENT01L_CGROUP_DELEGATION_NOT_AVAILABLE on
+the read-only cgroup mount. Positive escaped-descendant custody remains
+open and requires a delegated Linux runner.
+
+### 2026-11-09 — R08/R09 Linux file and archive group
+
+The Linux file/workspace/archive integration group passed 46 tests at
+`e39d2c16f01fce3478d2d1b68abe583d0b427c2a`. The follow-up replaces the
+trash/restore hard-link then unlink sequence with an atomic no-clobber
+rename between opened directories, reusing the move identity and digest
+checks. A post-rename mismatch remains uncertain. Linux pathname
+substitution can still cause a different object to move, so independent
+identity reconciliation remains required. Cross-volume renames fail
+closed. The follow-up passed ten Linux transfer and authority integration
+tests. Windows ACL, reparse, and installed desktop checks remain open.
+
+### 2026-11-09 — R10 Reader and scanned PDF OCR, R11 citation evidence
+
+Linux Reader/OCR passed 46 Reader unit tests, four OCR unit tests, twelve
+desktop source contracts and one opt-in native test with two scanned pages.
+Poppler interpreted the explicit output dash as a literal filename. Omit
+the output prefix so the PNG goes through the bounded stdout pipe.
+The native test verifies the original PDF digest, distinct page raster
+digests, exact English text and its digest, cancellation, and human review.
+The scan fixture was an image-only, two-page PDF made from 1000×480 white
+Pillow RGB images with black DejaVu Sans 62px text at (55,110): ALPHA SOURCE
+PAGE and BRAVO SOURCE PAGE, saved as PDF at 144 dpi. The run pinned the
+system Poppler and Tesseract binaries and English data by SHA-256.
+Windows packaging, multilingual accuracy, and installed UI remain open.
+
+The existing Linux R11 research group passed six tests for citation/source
+binding, false citation denial, restart after CAPTCHA state, and source
+counting. The headed-browser test returned early without its X11 launch
+fixture. This run did not prove Chromium lifecycle or external origins.
+
+The original small-Qwen benchmark produced 72 real generations, with
+zero of 36 passing in each arm. All failures were scored as output format.
+The original report SHA-256 is
+`966b71650113dbf37de4522ec5d78f61909d3fe31eca37014aab6fedc3dd2feb`.
+This is evidence of a response format failure, not a measured difference
+in source comprehension. A separate direct-answer protocol trial is pending.
+
+### 2026-11-09 — R13 Linux background and recovery group
+
+Seven Linux Core integration cases passed across task checkpoints, startup
+and owner recovery, and task effect fencing. The 21 background/recovery
+Node contracts passed after correcting a source assertion that treated a
+documentation mention of TaskStore::resume as a call. The standalone
+scanner harness now has a Cargo lock and existing group workflows use it
+with --locked. Both native scanner harness checks passed, including a
+12 MiB fixture with measured progress and an independent digest.
+Installed-app lifecycle and full multi-chat capacity remain open.
+
+### 2026-11-09 — R12 and R14 Linux and source contracts
+
+R12 passed 44 native Observe/image/multimodal library cases and 56 Node
+contracts. A stale Node guard expected a retired automatic Observe branch
+trigger. It now requires the existing manual gate and continues to check
+the reviewer-session fences. Windows WGC, OS consent, and real MMProj
+semantic interpretation remain open.
+
+R14 passed 30 chat/queue/attachment UI contracts, ten Core cross-chat and
+saved-prompt integration tests, and 13 native desktop chat store/revision
+tests. Interactive accessibility, installed UI, and Windows recovery remain
+open. The Linux tests do not substitute for those gates.
+
+### 2026-11-09 — R15 real Qwen output protocol diagnostic
+
+The raw reports are in benchmarks/e1/evidence. The baseline was two
+repetitions, 72 generations and zero passes. The matched direct-answer
+trial used the same pinned Qwen3 0.6B GGUF, engine, fixtures and unchanged
+scorer, with an empty Qwen reasoning prefix in both arms and one repetition.
+It completed 36 generations. Source-only had 15 feedback overclaims and
+three format failures. Host-classified had 18 format failures. Both arms
+scored zero. This records a diagnostic, and the memory acceptance gate
+remains open. The benchmark still needs a no-context control and a
+verified structured-output run before comparing comprehension.
+
+### 2026-11-09 — PR #198 grouped native gate dispatch and demonstrated REPO-01 policy failure
+
+The *single grouped* Windows/Linux native-memory acceptance run was dispatched as Actions #42701772029 on exact head `2ab7a6fa61f269345d6e33bbd3a664432c4fed3d`. Both `native-memory` matrix jobs were still QUEUED at inspection: there were no actual native compiler, runtime, or artifact results to accept or repair. Separately, REPO-01 source run #42701783858 **failed** at `Audit grouped-CI trigger policy and queue cleanup safety`: seven of eight policy tests passed, but the checked-in heavy memory workflow's temporary one-shot push event was classified `HEAVY_WORKFLOW_AUTOMATIC_FANOUT`. The frozen source-tree audit passed (`tracked=825`, Actions PR merge SHA `cf9d197f59867d5dac4073a69e79e6b81b2e7fd3`), but a source check is not native acceptance.
+
+**Repair:** restore the existing `lu-memory-loop03b-native.yml` to manual `workflow_dispatch` only, preserve the source-policy test unmodified, and update `source-tree.lock.json` without altering any native implementation. The earlier run remains useful **for its original SHA only**; after this policy repair, its Windows/Linux results cannot promote the new PR head. A new **single consolidated manual exact-head** task-group dispatch is required when runner access is available. Never reintroduce permanent heavy auto-trigger or treat queued/cancelled jobs as passes. PR #198 remains DRAFT.

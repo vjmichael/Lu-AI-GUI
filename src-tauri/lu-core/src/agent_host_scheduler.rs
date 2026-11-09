@@ -1100,7 +1100,7 @@ mod tests{
             &id("q-",32),&id("g-",33),step_budget(),
             &a,&b,&Sources(false),&Human,&Fresh(true),&f.root,&c
         ),Err(ScheduleError::UnreviewedRevision));
-        let mut changed=RevisionProposal{
+        let changed=RevisionProposal{
             goal_id:id("goal-",5),goal_event_id:id("m-",34),
             assumption_sources:vec![],reason:RevisionReason::GoalChanged,
             steps:vec![
@@ -1122,7 +1122,7 @@ mod tests{
             &f.plan,&f.chat,&f.origin,&f.owner,1,&f.revision,0,
             &id("q-",32),&id("g-",33),step_budget(),
             &a,&b,&Sources(true),&Human,&Fresh(true),&f.root,&c
-        ),Err(ScheduleError::StaleRevision));
+        ),Err(ScheduleError::UnreviewedRevision));
         assert_ne!(next.revision_sha256,f.revision);
         // No old owner's automatic adoption of a changed goal.
         drop(s);drop(c);drop(b);drop(a);fs::remove_dir_all(f.root).unwrap();

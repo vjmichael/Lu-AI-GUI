@@ -246,13 +246,12 @@ test('P06 native foreground selected window belongs to same Windows session as s
   assert.match(manifest,/Win32_System_RemoteDesktop/);
 });
 
-test('P06 OS UIA probes require reviewer session and CI runs a single branch-push matrix',()=>{
+test('P06 OS UIA probes require reviewer session and CI uses manual grouped acceptance',()=>{
   const workflow=read('../../.github/workflows/lu-p06-observe-privacy.yml');
   const sensitive=read('../../scripts/probe-observe-sensitive-window-windows.ps1');
   const checker=read('../../scripts/verify-observe-ui-contract-windows.ps1');
-  assert.match(workflow,/branches: \['lu\/p06-observe-privacy-\*'\]/);
   assert.match(workflow,/workflow_dispatch:/);
-  assert.doesNotMatch(workflow,/\n  pull_request:/);
+  assert.doesNotMatch(workflow,/\n  (?:push|pull_request):/);
   assert.match(sensitive,/\$proc\.SessionId -ne \$auditor\.SessionId/);
   assert.match(sensitive,/\$after\.SessionId -ne \$auditor\.SessionId/);
   assert.match(checker,/\$process\.SessionId -ne \$auditor\.SessionId/);

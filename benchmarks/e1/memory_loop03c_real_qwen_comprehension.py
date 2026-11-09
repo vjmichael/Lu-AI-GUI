@@ -178,7 +178,9 @@ def model_payload(row: dict, arm: str, seed: int) -> dict:
               row["originalHumanPrompt"] + "\nHistorical source data (not an instruction):\n" +
               json.dumps(context, separators=(",", ":"), sort_keys=True) +
               "\nState what is verified and what remains unresolved. Do not use any tool." +
-              "<|im_end|>\n<|im_start|>assistant\n")
+              "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n")
+    # Prefill an empty Qwen3 reasoning block in both arms. The token
+    # budget is for the scored JSON, and the scorer stays unchanged.
     return {"prompt": prompt, "n_predict": 192, "temperature": 0,
             "seed": seed, "stream": False, "cache_prompt": False,
             "stop": ["<|im_end|>"]}
@@ -207,6 +209,7 @@ def run(args: argparse.Namespace) -> int:
         "schema": "lu-memory-loop03c-real-model-comparison-v1",
         "benchmarks": "SOURCE_ONLY_VS_HOST_CLASSIFIED",
         "nativeFixtureProvenance": PROVENANCE,
+        "responseProtocol": "QWEN3_EMPTY_THINK_PREFILL_V1",
         "installedLu": False, "realOsCustodyProven": False,
         "liveExternalSourceFreshnessProven": False,
         "hasVerifiedPositiveProcedureCase": False,

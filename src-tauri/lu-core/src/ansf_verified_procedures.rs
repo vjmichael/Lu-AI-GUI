@@ -23,7 +23,7 @@ fn text(s:&str)->bool{
 }
 fn sha(s:&str)->String{format!("{:x}",Sha256::digest(s.as_bytes()))}
 
-#[derive(Debug,Clone,PartialEq,Eq)]
+#[derive(Debug,Clone,PartialEq,Eq,serde::Serialize,serde::Deserialize)]
 pub struct ProcedureCandidate{
     pub procedure_id:String,
     pub project_id:String,
@@ -209,6 +209,34 @@ impl AnsfStore{
         if saved!=record{return Err(AnsfError::InvalidInput)}
         tx.commit()?;
         Ok(saved)
+    }
+
+
+    /// Recovery may only restore a projection whose original human
+    /// corrections remain absent. This read never inserts any record and
+    /// does not authorize model/tool execution.
+    pub fn reviewed_memory_projection_has_human_correction(
+        &self,procedure_id:&str,claim_id:&str
+    )->Result<bool,AnsfError>{
+        if !id(procedure_id)||!id(claim_id){
+            return Err(AnsfError::InvalidInput)
+        }
+        let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+        for (table,column,identity) in [
+            ("ansf_procedure_invalidations","procedure_id",procedure_id),
+            ("ansf_claim_retractions","claim_id",claim_id)
+        ]{
+            let exists:i64=conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type='table' AND name=?1",
+                [table],|r|r.get(0)
+            )?;
+            if exists==0{continue}
+            let sql=format!("SELECT COUNT(*) FROM {table} WHERE {column}=?1");
+            let count:i64=conn.query_row(&sql,[identity],|r|r.get(0))?;
+            if count>0{return Ok(true)}
+        }
+        Ok(false)
     }
 
     /// Record a new human-confirmed correction as an append-only invalidation.

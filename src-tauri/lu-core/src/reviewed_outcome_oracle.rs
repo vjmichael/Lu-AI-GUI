@@ -477,6 +477,7 @@ mod tests{
         fs::write(&file,b"modified after worker exit").unwrap();
         assert_eq!(verify_media(&file,&sha,ReviewedContainer::Wave,&actual)
             .verdict,IndependentOutcomeVerdict::Conflict);
+        fs::write(&file,wav()).unwrap();
         assert_eq!(verify_media(&file,&sha,ReviewedContainer::Mp4,&actual)
             .verdict,IndependentOutcomeVerdict::Unsupported);
         fs::remove_dir_all(root).unwrap();

@@ -54,8 +54,8 @@ pub enum HostObservation{
 impl HostObservation{
     fn code(self)->&'static str{
         match self{
-            Self::UnverifiedEvidence=>"UNVERIFIED_EVIDENCE",
-            Self::ReconciliationNeeded=>"NEEDS_RECONCILIATION",
+            Self::UnverifiedEvidence=>"OBSERVED_UNVERIFIED",
+            Self::ReconciliationNeeded=>"NEEDS_REVIEW",
         }
     }
     fn next_state(self)->&'static str{

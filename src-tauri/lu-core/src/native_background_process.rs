@@ -340,7 +340,7 @@ impl BackgroundProcessSupervisor {
     /// No Tauri command or ModelToolCatalog invokes this API directly.
     pub fn start_host_approved(&self,plan:TrustedWorkerPlan)
         ->Result<(),BackgroundProcessError>{
-        self.start_host_approved_internal(plan,None)
+        self.start_host_approved_internal(plan,None,false)
     }
     /// Host-only external VERSION-ONLY observation. No generic executable
     /// stdout transport is available to tools or the WebView.
@@ -367,7 +367,7 @@ impl BackgroundProcessSupervisor {
                     |"print('Python '+('9'*8192))"))
         );
         if !version_only{return Err(BackgroundProcessError::InvalidPlan)}
-        self.start_host_approved_internal(plan,Some((output_limit,false)))
+        self.start_host_approved_internal(plan,Some((output_limit,false)),false)
     }
     /// Host-owned, bounded read-only Git operations; this does NOT sandbox
     /// Lu and it is NOT a generic CLI bridge. The repository root is provided
@@ -430,7 +430,7 @@ impl BackgroundProcessSupervisor {
         if !is_head&&!is_status&&!is_branch&&!is_count{
             return Err(BackgroundProcessError::InvalidPlan)
         }
-        self.start_host_approved_internal(plan,Some((output_limit,is_status||is_branch)))
+        self.start_host_approved_internal(plan,Some((output_limit,is_status||is_branch)),false)
     }
 
     /// E1-P06E: host-owned read-only FFprobe *single-file* inspection. This
@@ -470,10 +470,11 @@ impl BackgroundProcessSupervisor {
         if !correct_extension{return Err(BackgroundProcessError::InvalidPlan)}
         let observed=verified_media_input(input,reviewed_media_sha256)?;
         if observed==0{return Err(BackgroundProcessError::InvalidPlan)}
-        self.start_host_approved_internal(plan,Some((output_limit,false)))
+        self.start_host_approved_internal(plan,Some((output_limit,false)),true)
     }
     fn start_host_approved_internal(
-        &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>
+        &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>,
+        _linux_media_probe:bool
     )->Result<(),BackgroundProcessError>{
         if !valid_id(&plan.task_id)||!valid_id(&plan.workspace_id)
           ||plan.max_runtime_seconds.is_some_and(|n|n==0||n>86_400)
@@ -510,6 +511,15 @@ impl BackgroundProcessSupervisor {
         if workers.contains_key(&plan.task_id){
             return Err(BackgroundProcessError::AlreadyOwned);
         }
+        // Reject an invalid reviewed origin before creating durable task state.
+        #[cfg(target_os="linux")]
+        let reviewed_origin=if let Some(profile)=self.profile.as_deref().filter(|_|typed_capture.is_some()){
+            let (chat,turn)=self.store.reviewed_human_origin()
+                .map_err(|_|BackgroundProcessError::StoreUnavailable)?
+                .ok_or(BackgroundProcessError::InvalidPlan)?;
+            if turn!=plan.workspace_id{return Err(BackgroundProcessError::WrongWorkspace)}
+            Some((profile,chat,turn))
+        }else{None};
         self.store.create(&plan.task_id,Some(&plan.workspace_id),None)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
         // Prefer a delegated kernel cgroup subtree for reviewed typed tools.
@@ -518,21 +528,13 @@ impl BackgroundProcessSupervisor {
         // unavailable the reviewed tool may retain its existing PGID
         // guardian, but AGENT-01K/01L REFUSE full descendant custody.
         #[cfg(target_os="linux")]
-        let cgroup=if typed_capture.is_some(){
-            if let Some(profile)=self.profile.as_deref(){
-                let origin=self.store.reviewed_human_origin()
-                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?
-                    .ok_or(BackgroundProcessError::InvalidPlan)?;
-                if origin.1!=plan.workspace_id{
-                    return Err(BackgroundProcessError::WrongWorkspace)
-                }
-                lu_win_worker_job::unix_owned::LinuxCgroupCustodian::spawn_if_delegated(
-                    profile,&origin.0,&origin.1,&plan.task_id
-                ).map_err(|_|{
-                    let _=self.store.fail_pending(&plan.task_id);
-                    BackgroundProcessError::SpawnFailed
-                })?
-            }else{None}
+        let cgroup=if let Some((profile,chat,turn))=reviewed_origin{
+            lu_win_worker_job::unix_owned::LinuxCgroupCustodian::spawn_if_delegated(
+                profile,&chat,&turn,&plan.task_id
+            ).map_err(|_|{
+                let _=self.store.fail_pending(&plan.task_id);
+                BackgroundProcessError::SpawnFailed
+            })?
         }else{None};
         #[cfg(target_os="linux")]
         let guardian=if typed_capture.is_some()&&cgroup.is_none(){
@@ -577,6 +579,9 @@ impl BackgroundProcessSupervisor {
                 Some("--lu-file-scan-worker")=>Some(1024*1024*1024u64),
                 Some("--lu-e1-version-one-shot")|
                 Some("--lu-e1-artifact-one-shot")=>Some(256*1024*1024u64),
+                // Linux RLIMIT_AS includes mapped shared libraries. The
+                // reviewed FFprobe path needs room for its codec libraries.
+                _ if _linux_media_probe=>Some(512*1024*1024u64),
                 _ if typed_capture.is_some()=>Some(256*1024*1024u64),
                 _=>None
             };
@@ -975,6 +980,26 @@ mod tests{
             assert!(verified_media_input(&link,&expected).is_err());
         }
         fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(target_os="linux")]
+    #[test]
+    fn mismatched_reviewed_origin_creates_no_pending_worker_task(){
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let chat=format!("c-{}","1".repeat(32));
+        let turn=format!("g-{}","2".repeat(32));
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let supervisor=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),std::env::temp_dir()
+        );
+        let executable=std::env::current_exe().unwrap();
+        let digest=format!("{:x}",Sha256::digest(fs::read(&executable).unwrap()));
+        let result=supervisor.start_host_approved_internal(TrustedWorkerPlan{
+            task_id:"rejected-origin-gh".into(),workspace_id:"wrong-turn".into(),
+            executable,expected_sha256:digest,args:Vec::new(),
+            progress_protocol:false,max_runtime_seconds:Some(10),
+        },Some((1024,false)),false);
+        assert!(matches!(result,Err(BackgroundProcessError::WrongWorkspace)));
+        assert!(store.get("rejected-origin-gh").unwrap().is_none());
     }
     #[test]
     fn thirdparty_stdout_capture_is_bounded_and_one_use(){
