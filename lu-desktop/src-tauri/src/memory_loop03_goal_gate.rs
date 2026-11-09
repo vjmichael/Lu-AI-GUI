@@ -96,6 +96,7 @@ fn goal_gate(authenticated:bool,facts:GoalRead)->(GoalGate,usize,usize){
         GoalRead::Known{goal_id_present,goal_revision_present,pending,deferred,
             unknown_question_status}=>{
             let status=if goal_id_present!=goal_revision_present
+                ||(!goal_id_present&&(pending>0||deferred>0))
                 ||unknown_question_status||pending>64||deferred>64
                 ||pending.saturating_add(deferred)>64{
                 GoalGate::Inconsistent
@@ -267,6 +268,8 @@ mod tests{
                 pending:0,deferred:0,unknown_question_status:false},
             GoalRead::Known{goal_id_present:true,goal_revision_present:true,
                 pending:0,deferred:0,unknown_question_status:true},
+            GoalRead::Known{goal_id_present:false,goal_revision_present:false,
+                pending:1,deferred:0,unknown_question_status:false},
         ]{
             let r=classify_current_human_turn(true,bad,verified());
             assert!(!r.draft_review_context_ready);
