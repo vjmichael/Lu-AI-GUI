@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn independent_elf_program_header_slide_is_bounded_and_not_dap_supplied() {
         let mut elf = vec![0_u8; 0x100];
-        elf[..4].copy_from_slice(b"\\x7fELF");
+        elf[..4].copy_from_slice(b"\x7fELF");
         elf[4] = 2; // ELF64
         elf[5] = 1; // little endian
         elf[16..18].copy_from_slice(&3u16.to_le_bytes()); // ET_DYN
