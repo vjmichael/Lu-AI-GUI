@@ -1,5 +1,38 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## DEV-04.5D3 protected stop-to-source-line kernel and receipt binding — November 9, 2026 (UTC)
+
+Draft [PR #181](https://github.com/vjmichael/Lu-AI-GUI/pull/181) stacks on D2 #180.
+**Source implementation exists, real exact-head native acceptance remains OPEN.**
+Found that the Linux cgroup/Bubblewrap debugger tried to launch an OS-private
+`/debug-target` project executable without actually mounting the sealed
+binary; the associated bind mount was mistakenly placed in the language-server
+launcher and referenced a nonexistent `project_target`. D3 moved that
+readonly mount to the real native LLDB launcher without changing scope,
+cgroup quotas, user authorization or non-executing default installs.
+
+Native LinuxDapSession can now verify a real LLDB-correlated stopped PC
+against its own delegated cgroup-v2, kernel ptrace-stop state,
+`/proc/PID/exe` device/inode/verified SHA-256, same-process `r-x` VMA,
+ELF PT_LOAD relocated image bias, and pinned `/workspace` source snapshot.
+It ties all of this to the original **Completed Cargo build terminal
+receipt**, exact target binding and distinct **Authorized→Running**
+debugger job/plan. A dedicated default-disabled debug CI-only
+`dev045d3-ci-oracle` feature verifies the independent DWARF file/line
+through a compile-pinned original root-owned LLVM 18 symbolizer; it is
+not a production or WebView launch facility. Native project DAP test
+acceptance now demands the full witness and a separate fsynced
+Completed/Cancelled debugger terminal receipt, with restart replay denial.
+No breakpoints, stepping, evaluation, scopes/variables or attach authority.
+
+At latest inspection all exact-head D3 native Windows/Linux jobs were
+queued/pending, not successful. The Windows SCM/Job **live** PE/PDB
+module-base proof, actual Linux source-line OS receipt acceptance, signed
+installed app, older B/C native gates and GTK chooser remain OPEN.
+See `ide/docs/IDE_DEV045D3_PROTECTED_STOP_KERNEL_LINE_20261108.md`.
+Treat static DWARF/PDB and standalone ptrace trials as partial evidence only.
+
+
 ## B6 real Ubuntu26 native result and EWMH repair — November 8, 2026
 
 B6 native Ubuntu26 run #42518812684 completed 117/117 Node
