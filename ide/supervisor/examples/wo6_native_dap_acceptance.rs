@@ -228,6 +228,7 @@ mod protected {
         sample_stopped_thread: bool,
         verify_independent_pdb: bool,
         verify_owner_event: bool,
+        crash_owner: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use lu_ide_execution_supervisor::{
             debug_binary_witness::audit_debug_binary_candidate,
@@ -487,6 +488,9 @@ mod protected {
         } else {
             println!("DEV045D2_WINDOWS_REAL_DAP_SOURCE_CLAIM=unavailable");
         }
+        if crash_owner && !verify_owner_event {
+            return Err("DENIED: fixed owner crash test requires original verified event".into());
+        }
         if (sample_stopped_thread || verify_independent_pdb || verify_owner_event)
             && !verify_job_module {
             return Err("DENIED: thread evidence cannot bypass PE module and journal witness".into());
@@ -618,7 +622,22 @@ mod protected {
                 return Err("DENIED: first-party LLDB owner-event proof unavailable outside native CI".into());
             }
         }
-        if cancel_project {
+        if crash_owner {
+            #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+            {
+                dap.crash_real_lldb_after_owner_receipt_for_ci()
+                    .map_err(|_| "DENIED: native CI failed to kill the actual protected LLDB process")?;
+                if dap.verify_real_lldb_event_owner_for_ci(
+                    &supervisor, &debug_job.job_id, &debug_plan, &target,
+                ).is_ok() {
+                    return Err("DENIED: dead LLDB process replayed active kernel event evidence".into());
+                }
+                println!("DEV045D5_REAL_LLDB_WORKER_CRASH_REVOKES_OWNER=PASS");
+            }
+            #[cfg(not(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner")))]
+            return Err("DENIED: worker crash injection available only in reviewed CI".into());
+        }
+        if cancel_project || crash_owner {
             // The debugger reached a real stopped Cargo-built project and
             // returned actual nonempty thread/stack evidence. Dropping the
             // native gateway must journal CancelRequested BEFORE the Job
@@ -645,7 +664,9 @@ mod protected {
         if sha(&source_file)? != original_source_sha {
             return Err("DENIED: debugger changed original project source".into());
         }
-        let expected_debug = if cancel_project { JobPhase::Cancelled } else { JobPhase::Completed };
+        let expected_debug = if cancel_project || crash_owner {
+            JobPhase::Cancelled
+        } else { JobPhase::Completed };
         let jobs = supervisor.inspect().map_err(|e| e.code())?;
         if jobs.len() != 2 || jobs.iter().any(|j| {
             j.requires_reconciliation
@@ -726,35 +747,39 @@ mod protected {
         let args: Vec<String> = env::args().skip(1).collect();
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug"] {
-            return run_windows_project_debug(false, false, false, false, false);
+            return run_windows_project_debug(false, false, false, false, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-cancel"] {
-            return run_windows_project_debug(true, false, false, false, false);
+            return run_windows_project_debug(true, false, false, false, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-module"] {
-            return run_windows_project_debug(false, true, false, false, false);
+            return run_windows_project_debug(false, true, false, false, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-thread"] {
-            return run_windows_project_debug(false, true, true, false, false);
+            return run_windows_project_debug(false, true, true, false, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-line"] {
-            return run_windows_project_debug(false, true, true, true, false);
+            return run_windows_project_debug(false, true, true, true, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-line-cancel"] {
-            return run_windows_project_debug(true, true, true, true, false);
+            return run_windows_project_debug(true, true, true, true, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-owner"] {
-            return run_windows_project_debug(false, true, true, true, true);
+            return run_windows_project_debug(false, true, true, true, true, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-owner-cancel"] {
-            return run_windows_project_debug(true, true, true, true, true);
+            return run_windows_project_debug(true, true, true, true, true, false);
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-owner-crash"] {
+            return run_windows_project_debug(false, true, true, true, true, true);
         }
         let cancel = args.as_slice() == ["--cancel"];
         #[cfg(target_os = "linux")]
