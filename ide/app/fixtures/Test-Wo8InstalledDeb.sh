@@ -73,4 +73,19 @@ env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
     /usr/bin/python3 ide/app/fixtures/wo8_linux_editor_atspi.py
   ' || deny linux_native_editor_acceptance_failed
 echo "WO8_LINUX_INSTALLED_EDITOR_AND_CONFLICT=PASS"
+# Keep this check INSIDE the actual installed-package lifetime: the EXIT trap
+# removes the executable as soon as this fixture returns to its caller.
+env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
+  dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+  bash -c '
+    set -euo pipefail
+    openbox >/dev/null 2>&1 &
+    wm_pid=$!
+    trap "kill $wm_pid 2>/dev/null || true; wait $wm_pid 2>/dev/null || true" EXIT
+    for n in {1..20}; do
+      xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q "window id #" && break
+      sleep 0.2
+    done
+    /usr/bin/python3 ide/app/fixtures/dev035_jobs_installed_atspi.py
+  ' || deny dev035_real_installed_jobs_denied
 echo "WO8_LINUX_PROTECTED_RUN_DEBUG=NOT_ACCEPTED"
