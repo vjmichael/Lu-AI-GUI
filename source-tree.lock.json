@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "4c63e365122b52f8bac55c59964a400788f2642e",
-  "trackedFileCount": 808,
+  "sourceCommitBeforeLock": "f2d86b864f92a23c975b9b0d5c2d6702a8355b53",
+  "trackedFileCount": 811,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -189,7 +189,7 @@
     },
     {
       "path": ".github/workflows/lu-memory-loop03b-native.yml",
-      "blob": "0d764cce2344578eb821a9093e65ed10905dff6d"
+      "blob": "2f994786446794ad56a3ba999b930f1afdad1fb1"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -324,6 +324,10 @@
       "blob": "2e1a78119482c85d9caa348e682537ef833fb1f8"
     },
     {
+      "path": "benchmarks/e1/memory_loop03c_real_qwen_comprehension.py",
+      "blob": "11ef3ea1c738fbf865b6dc58702b557033edb87f"
+    },
+    {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
       "blob": "83d07a6930624a375f8ded7a1c826a2d454813c6"
     },
@@ -342,6 +346,10 @@
     {
       "path": "benchmarks/e1/test_memory_loop02_qwen_feedback.py",
       "blob": "8cf0d5c95e13f3555d51374ce0bbcdae25ff301c"
+    },
+    {
+      "path": "benchmarks/e1/test_memory_loop03c_real_qwen_comprehension.py",
+      "blob": "c53953e990128770e6d00d517635c83f6c23f458"
     },
     {
       "path": "benchmarks/e1/verify_e1_p05_raw.py",
@@ -597,7 +605,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "f4df8c42f8d6109816376d9581e3561047af304c"
+      "blob": "33ca0bccd5760cea166509a7996e41f40aaa7495"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -666,6 +674,10 @@
     {
       "path": "docs/LU_MEMORY_LOOP03B_VERIFIED_PROCEDURES_BELIEF_CCM_20261109.md",
       "blob": "0bcc6839022eea02beefb1858c716e18808682c6"
+    },
+    {
+      "path": "docs/LU_MEMORY_LOOP03C_REAL_MODEL_COMPREHENSION_20261109.md",
+      "blob": "9134dc1028967bdc433cda1b1df208b53a1df777"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -1133,7 +1145,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03b_context.rs",
-      "blob": "9bf799e3e068131539334e6f9cf128315f135959"
+      "blob": "9ad0b1521fe16338c640b3ffca694ffab354194f"
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03b_policy.rs",
