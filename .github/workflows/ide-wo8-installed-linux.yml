@@ -93,6 +93,25 @@ jobs:
           dpkg-deb --contents "${packages[0]}" | grep -F '/THIRD_PARTY_LICENSES/upstream-fetch.json' >/dev/null || { echo 'DENIED: retrieved upstream licenses missing from real Debian package' >&2; exit 2; }
           echo 'P04_NATIVE_DEBIAN_BUNDLED_LICENSE_INVENTORY=PASS'
           bash ide/app/fixtures/Test-Wo8InstalledDeb.sh "${packages[0]}" "$(git rev-parse HEAD)"
+      - name: Real installed Debian Jobs discovery, lifecycle display and denied native execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/lu-ide-wo8-linux-${GITHUB_RUN_ID}"
+          test -f "$fixture/main.rs"
+          export WO8_INSTALLED_EXE=/usr/bin/lu-ide-desktop
+          export WO8_FIXTURE_ROOT="$fixture"
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' bash -c '
+            set -euo pipefail
+            openbox >/dev/null 2>&1 &
+            wm_pid=$!
+            trap "kill $wm_pid 2>/dev/null || true; wait $wm_pid 2>/dev/null || true" EXIT
+            for n in {1..20}; do
+              xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q "window id #" && break
+              sleep 0.2
+            done
+            /usr/bin/python3 ide/app/fixtures/dev035_jobs_installed_atspi.py
+          '
       - name: Evidence meaning
         run: |
           echo "Native Linux installed Debian GUI window and uninstall only."
