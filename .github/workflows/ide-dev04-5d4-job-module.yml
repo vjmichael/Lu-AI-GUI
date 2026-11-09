@@ -1,0 +1,86 @@
+name: IDE DEV04.5D4 Windows Job PE module and durable receipts
+on:
+  pull_request:
+    paths:
+      - 'ide/supervisor/src/windows_kernel_pc.rs'
+      - 'ide/supervisor/src/windows_lsp_worker.rs'
+      - 'ide/supervisor/src/dap_transport.rs'
+      - 'ide/supervisor/src/lsp_transport.rs'
+      - 'ide/supervisor/src/lib.rs'
+      - 'ide/supervisor/Cargo.toml'
+      - 'ide/supervisor/examples/wo6_native_dap_acceptance.rs'
+      - '.github/workflows/ide-wo6-native-os-acceptance.yml'
+      - '.github/workflows/ide-dev04-5d4-job-module.yml'
+      - 'ide/docs/IDE_DEV045D4_WINDOWS_JOB_MODULE_20261108.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev045d4-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-windows-pe-job-read-only:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Exact reviewed commit not synthetic PR merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045D4_NATIVE_EXACT_HEAD=PASS'
+      - name: Real native Windows Job/PE parser unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service' --lib windows_kernel_pc
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service' --example wo6_native_dap_acceptance
+          echo 'DEV045D4_WINDOWS_JOB_MODULE_COMPILER_AND_UNIT=PASS'
+      - name: Enforce Rustfmt and no hidden runtime debugger command
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
+          python - <<'PY'
+          from pathlib import Path
+          src=Path('ide/supervisor/src/windows_kernel_pc.rs').read_text()
+          w=Path('ide/supervisor/src/windows_lsp_worker.rs').read_text()
+          assert 'QueryInformationJobObject' in src
+          assert 'JobObjectBasicProcessIdList' in src
+          assert 'Module32FirstW' in src
+          assert 'Module32NextW' in src
+          assert 'os_thread_context_ip_verified: false' in src
+          assert 'independent_pdb_line_verified: false' in src
+          assert 'source_line_mapping_verified: false' in w
+          for command in ('setBreakpoints', 'runInTerminal', 'setExpression',
+                          'ContinueDebugEvent', 'SuspendThread', 'WriteProcessMemory'):
+              assert command not in src
+          print('DEV045D4_JOB_PE_MODULE_NO_EXECUTION_ESCALATION=PASS')
+          PY
+          echo 'DEV045D4_LIVE_PROTECTED_JOB_ACCEPTANCE=REQUIRES_REAL_WO6_NATIVE_RUN'
+  linux-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Exact source and no Linux native custody regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,linux-worker'
+          echo 'DEV045D4_LINUX_CGROUP_WORKER_COMPILE=PASS_NOT_KERNEL_ACCEPTANCE'
