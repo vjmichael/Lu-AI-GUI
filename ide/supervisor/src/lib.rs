@@ -107,6 +107,11 @@ pub struct JobPlan {
     pub input_snapshot_sha256: String,
     pub manifest_sha256: String,
     pub toolchain_sha256: String,
+    /// DEV-04.4: only project debugger jobs may bind a completed native
+    /// build receipt and independently attested executable + symbols.
+    /// Skipped for existing jobs to preserve their historical journal hash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debug_target_binding_sha256: Option<String>,
     pub runtime_limit_ms: u64,
     pub memory_limit_bytes: u64,
     pub process_limit: u32,
@@ -133,11 +138,18 @@ fn validate_plan(value: &JobPlan) -> bool {
                     value.recipe_id.as_str(),
                     "lsp_rust_analyzer" | "lsp_clangd" | "lsp_ruff"
                 ))
-            || (cfg!(feature = "dap-transport") && value.recipe_id == "dap_lldb_fixed"))
+            || (cfg!(feature = "dap-transport")
+                && matches!(value.recipe_id.as_str(),"dap_lldb_fixed"|"dap_lldb_project")))
         && hex_sha(&value.source_head, 40)
         && hex_sha(&value.input_snapshot_sha256, 64)
         && hex_sha(&value.manifest_sha256, 64)
         && hex_sha(&value.toolchain_sha256, 64)
+        && match (&value.debug_target_binding_sha256,value.recipe_id.as_str()) {
+            (Some(digest),"dap_lldb_project") => hex_sha(digest,64),
+            (None,"dap_lldb_project") => false,
+            (None,_) => true,
+            (Some(_),_) => false,
+        }
         && value.runtime_limit_ms > 0
         && value.runtime_limit_ms <= MAX_RUNTIME_MS
         && value.memory_limit_bytes >= 32 * 1024 * 1024
@@ -158,7 +170,7 @@ fn validate_plan(value: &JobPlan) -> bool {
                 && value.process_limit
                     <= if value.recipe_id == "lsp_clangd" { 16 } else { 4 }
                 && value.log_limit_bytes <= 64 * 1024
-        } else if value.recipe_id == "dap_lldb_fixed" {
+        } else if matches!(value.recipe_id.as_str(),"dap_lldb_fixed"|"dap_lldb_project") {
             cfg!(feature = "dap-transport")
                 && value.effect_class == "debug_inspection_isolated"
                 && value.runtime_limit_ms <= 3 * 60_000
