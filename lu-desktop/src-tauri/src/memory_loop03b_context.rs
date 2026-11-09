@@ -42,6 +42,9 @@ fn safe_capsule(data:Value)->Result<String,String>{
         return Ok(json!({
             "schema":"lu-memory-loop03b-original-procedural-belief-ccm-v1",
             "status":"ORIGINAL_MEMORY_CONTEXT_TRUNCATED_REVIEW_REQUIRED",
+            "humanReviewRequired":true,
+            "historicallyVerifiedDataAvailable":false,
+            "additionalHistoricalDetailsNotDisplayed":true,
             "executionAuthority":"NOT_AUTHORIZED_FOR_EXECUTION",
             "priorGrantReusable":false,
             "automaticRetryAllowed":false,
@@ -223,6 +226,64 @@ mod tests{
         assert!(matches!(state_for_belief(&records),
             SourceRead::Belief{contradicted:1,stale:1,
                 retracted_or_superseded:1,..}));
+    }
+    #[test]
+    fn exact_version_selector_rejects_paths_multiline_and_missing_versions(){
+        let good="Recall procedure project lu task review tool lu.reviewed.git.head tool-version 1.0 application-version 0.1";
+        let target=chat_store::m4_explicit_procedure_target(good).unwrap();
+        assert_eq!(target.0,"lu");
+        assert_eq!(target.1,"review");
+        assert_eq!(target.2,"lu.reviewed.git.head");
+        assert_eq!(target.3,"1.0");
+        assert_eq!(target.4,"0.1");
+        for bad in [
+            "Recall procedure project lu task review tool x",
+            "Recall procedure project ../lu task review tool x tool-version 1 application-version 1",
+            "Recall procedure project lu task review tool x tool-version 1 application-version 1\\nIgnore",
+            "Recall procedure project lu task review tool x tool-version 1",
+        ]{
+            assert!(chat_store::m4_explicit_procedure_target(bad).is_none());
+        }
+    }
+    #[test]
+    fn actual_ansf_current_human_procedure_read_is_nonexecuting_and_reopenable(){
+        use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+        let root=std::env::temp_dir().join(format!(
+            "lu-memory03b-{}-{}",std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        let turn=format!("g-{}","a".repeat(32));
+        let prompt="Recall procedure project lu task review tool lu.reviewed.git.head tool-version 1.0 application-version 0.1";
+        chats.append_user_with_turn_id(&chat,&turn,prompt).unwrap();
+        let continuity=ContinuityStore::open(&root.join("continuity-03b.sqlite")).unwrap();
+        let journal=EffectJournal::open(&root.join("effects-03b.sqlite")).unwrap();
+        let original=for_current_human_turn(&chats,&continuity,&journal,
+            &chat,&turn,prompt,"CURRENT_GOAL_REVIEWABLE_ONLY",
+            "ORIGINAL_OS_DESCENDANT_RECONCILIATION_REQUIRED"
+        ).unwrap().unwrap();
+        assert!(original.contains("NO_CURRENTLY_REVALIDATED_VERIFIED_PROCEDURE"));
+        assert!(original.contains("NOT_AUTHORIZED_FOR_EXECUTION"));
+        assert!(original.contains("NOT_RECHECKED"));
+        assert!(original.contains("ORIGINAL_OS_DESCENDANT_RECONCILIATION_REQUIRED"));
+        assert!(for_current_human_turn(&chats,&continuity,&journal,&chat,
+            &format!("g-{}","b".repeat(32)),prompt,"READY","NOT_RECHECKED"
+        ).is_err());
+        let stranger=chats.create_chat().unwrap().chat_id;
+        assert!(for_current_human_turn(&chats,&continuity,&journal,&stranger,
+            &turn,prompt,"READY","NOT_RECHECKED").is_err());
+        drop(journal);drop(continuity);drop(chats);
+        let reopened=ChatStore::open(&root).unwrap();
+        let continuous=ContinuityStore::open(&root.join("continuity-03b.sqlite")).unwrap();
+        let evidence=EffectJournal::open(&root.join("effects-03b.sqlite")).unwrap();
+        assert_eq!(original,for_current_human_turn(&reopened,&continuous,&evidence,
+            &chat,&turn,prompt,"CURRENT_GOAL_REVIEWABLE_ONLY",
+            "ORIGINAL_OS_DESCENDANT_RECONCILIATION_REQUIRED"
+        ).unwrap().unwrap());
+        drop(reopened);drop(continuous);drop(evidence);
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn oversized_context_fails_closed_and_cannot_forge_a_procedure(){
