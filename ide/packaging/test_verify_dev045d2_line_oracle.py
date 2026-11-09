@@ -186,7 +186,8 @@ class RealNativeDebugLineTests(unittest.TestCase):
                 "    volatile int marker = 41;\n"
                 "    return marker + 1;\n"
                 "}\n"
-                "int entry(void) { return stopped_probe(); }\n",
+                "int entry(void) { return stopped_probe(); }\n"
+                "int main(void) { return entry(); }\n",
                 encoding="utf-8",
             )
             if os.name == "nt":
