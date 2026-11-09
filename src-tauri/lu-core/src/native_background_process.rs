@@ -36,6 +36,8 @@ struct OwnedWorker {
     deadline:Option<Instant>,
     #[cfg(windows)]
     job:Option<lu_win_worker_job::Job>,
+    #[cfg(windows)]
+    job_empty:Option<lu_win_worker_job::WindowsJobEmptyProof>,
     #[cfg(target_os="linux")]
     guardian:Option<lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian>,
 }
@@ -615,6 +617,8 @@ impl BackgroundProcessSupervisor {
             deadline:plan.max_runtime_seconds.map(|n|Instant::now()+Duration::from_secs(n)),
             #[cfg(windows)]
             job:Some(job),
+            #[cfg(windows)]
+            job_empty:None,
             #[cfg(target_os="linux")]
             guardian,
         };
@@ -653,7 +657,21 @@ impl BackgroundProcessSupervisor {
         let mut finished=Vec::new();
         for (id,worker) in workers.iter_mut(){
             match worker.child.try_wait(){
-                Ok(Some(status))=>finished.push((id.clone(),Some(status.success()))),
+                Ok(Some(status))=>{
+                    #[cfg(windows)]
+                    {
+                        // The owner still holds the original Job handle.
+                        // Query the KERNEL after terminating any surviving
+                        // descendants; a leader exit is not tree emptiness.
+                        let job=worker.job.as_ref()
+                            .ok_or(BackgroundProcessError::ProcessUncertain)?;
+                        worker.job_empty=Some(
+                            job.terminate_and_verify_empty()
+                                .map_err(|_|BackgroundProcessError::ProcessUncertain)?
+                        );
+                    }
+                    finished.push((id.clone(),Some(status.success())));
+                },
                 Ok(None)=>{
                     if worker.deadline.is_some_and(|deadline|Instant::now()>=deadline){
                         // Host deadline, never a model decision or an inferred
@@ -669,7 +687,9 @@ impl BackgroundProcessSupervisor {
         for (id,outcome) in finished{
             let mut owner=workers.remove(&id).expect("owned worker still registered");
             #[cfg(windows)]
-            drop(owner.job.take()); // Close Job and any inherited stdout handles.
+            let empty_job_witness=owner.job_empty.take();
+            #[cfg(windows)]
+            drop(owner.job.take()); // The kernel empty-job check preceded CloseHandle.
             // Shut down the Linux PGID anchor before joining pipes: a
             // descendant may have inherited worker stdout. A verified
             // guardian SIGKILL is required, not merely a leader exit.
@@ -698,6 +718,18 @@ impl BackgroundProcessSupervisor {
                 None=>self.store.timed_out(&id),
             };
             result.map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+            #[cfg(windows)]
+            if matches!(outcome,Some(true))
+                &&["-gh","-gs","-gb","-gc","-fm"]
+                    .iter().any(|suffix|id.ends_with(suffix)){
+                // Publish the OS witness only AFTER successful task terminal
+                // persistence. Any crash or mismatch leaves NO witness, so
+                // recovery remains blocked; never fabricate from APPLIED.
+                self.store.record_verified_windows_job_empty(
+                    &id,&workspace,empty_job_witness.as_ref()
+                        .ok_or(BackgroundProcessError::ProcessUncertain)?
+                ).map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+            }
             if matches!(outcome,Some(true)){
                 if let Some(version)=version{
                     let mut owned=self.version_outputs.lock()
@@ -848,8 +880,12 @@ fn terminate_owned(worker:&mut OwnedWorker)->Result<(),BackgroundProcessError>{
     }
     #[cfg(windows)]
     {
-        // Closing the Job first terminates all descendants, including those
-        // inheriting our stdout pipe. Only then can reader.join() be safe.
+        // A cancelled Job must also be empty before claiming that the OS
+        // stop completed. Cancellation does NOT create a reusable witness.
+        worker.job.as_ref()
+            .ok_or(BackgroundProcessError::ProcessUncertain)?
+            .terminate_and_verify_empty()
+            .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
         drop(worker.job.take());
     }
     worker.child.wait().map_err(|_|BackgroundProcessError::ProcessUncertain)?;
