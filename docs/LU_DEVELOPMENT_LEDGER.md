@@ -2,6 +2,24 @@
 
 > **START HERE for Lu project status.** This file on **`main`** is the authoritative *development index*, not a guarantee that draft code is merged, installed, or accepted. See [CHANGELOG.md](../CHANGELOG.md) for accepted milestones and [v1.0 design](LU_V1_0_DESIGN_RECONCILIATION_20261103.md) for requirements. Historical branch-local task logs and conversations are evidence, **not competing current status boards**.
 
+## 2026-11-09 07:02 MST — overnight Work execution audit (source-grounded)
+
+**User request:** Reconcile what ChatGPT Work actually completed after receiving the [22-area project-wide backlog](LU_PROJECT_WIDE_WORK_AREA_STATUS_20261109.md), and keep the canonical ledger truthful. **Outcome: partial Work Area 00 and one dependency repair, not an overnight 22-area execution run.** This entry is an audit of actual GitHub source and workflow metadata, not a certification of ChatGPT Work's runtime history.
+
+| Work artifact / time (UTC; Arizona = UTC-7) | Implemented / observed | Evidence and status |
+| --- | --- | --- |
+| [#188](https://github.com/vjmichael/Lu-AI-GUI/pull/188), `4c63e365122b52f8bac55c59964a400788f2642e`, **08:34:05 UTC / 01:34 MST** | Repaired desktop npm dependency lockfile for `npm ci`; updated K/I/A/F ledger and frozen source manifest. | **Source repair verified:** on exact Git tree, `source-tree.lock.json` matched all **803 of 803** non-lock Git blobs (zero mismatch, nontruncated). Work reported local `npm ci`, React bundle, 59 UI assertions, and focused memory/grader/ledger checks passing; those reported local commands are **not** Windows/Linux native acceptance. Draft PR remains open. |
+| [#191](https://github.com/vjmichael/Lu-AI-GUI/pull/191), `3499e6e255ef51876311aa10f65c20d540334868`, **08:38:58 UTC / 01:38 MST** | Built a timestamped, paginated graph/inventory of **175 open PRs at snapshot time**; added a 22-area implementation/gap table and twelve non-physical acceptance gates A01–A12. | **Source inventory exists**, but open PR count is snapshot metadata, not merged/implemented acceptance. [Project-wide status matrix](LU_PROJECT_WIDE_WORK_AREA_STATUS_20261109.md); [open PR graph](LU_OPEN_PR_GRAPH.json). PR #191 itself was opened after the snapshot. |
+| [#191](https://github.com/vjmichael/Lu-AI-GUI/pull/191), `22fdf1d7db0517ef7e218243483a8626e6f447b2`, **08:41:14 UTC / 01:41 MST** | Changed ledger CI drift checking to validate the committed snapshot rather than fail on routine new live PR arrivals. | Work reported **2/2 local ledger generator tests** and local inventory/consistency checks. No Actions workflow run was found for this PR head at this audit. This is not a native OS pass or release integration. |
+
+**Current exact-head external acceptance check (07:02 MST):** On #188 head `4c63e365122b52f8bac55c59964a400788f2642e`, the PR-associated Actions query returned **59 runs: 39 QUEUED, 20 PENDING, zero completed conclusions**. These include REPO-01 frozen source, Desktop CI, and MEMORY-LOOP-03B native acceptance. A separate exact-head Actions run query for #191 returned **zero runs**. Query results are point-in-time and must be refreshed before asserting a later pass or failure.
+
+**Disposition:** **0/22 entire work areas accepted by this Work assignment; 0/12 non-physical gates closed.** R00-I1's inventory is a **draft/source deliverable**, not a completed repo/CI closeout. #188's npm lock is a real narrow source/dependency fix. No new 03C model benchmark implementation, native OS/cgroup/Job witness, authenticated reviewed-worker end-to-end acceptance, or integrated 22-area closeout was evidenced in these Work-associated commits. The separate IDE [#190](https://github.com/vjmichael/Lu-AI-GUI/pull/190) is an independent IDE workstream; do not attribute it to Work's R00/03B changes.
+
+**Next unblocked Work tasks:** (1) R00-I2 reconcile exact PR ancestry, GitHub Actions status and true head-based native failures; avoid duplicate queued workflows; (2) obtain real Windows/Linux Rust/SQLite/Tauri source acceptance for #188 and repair genuine errors; (3) start P0 IMP-02 MEMORY-LOOP-03C actual small-GGUF source-comprehension/error attribution and IMP-03–07 fresh-authority/execution/OS recovery integration, as dependency gates permit; (4) continue independent tool-area and IDE verification without merging unrelated draft branches. The owner's physical-PC install and 7B+ GGUF acceptance stay deferred rather than passed.
+
+**Placement/merge truth:** This section is committed on **draft PR #191 against `main`**. It is not on the authoritative `main` branch until #191 passes appropriate checks and is merged. Do not report the draft ledger as merged.
+
 ## 1. Status rules (never collapse these)
 
 | Evidence level | Meaning |
