@@ -20,10 +20,10 @@ impl<'a> HostOriginalJobCustody<'a>{
     /// model response or saved plan to choose a journal directory.
     pub fn from_host_profile(profile:&'a Path)->Self{Self{profile}}
 }
-fn bounded_journal(path:&Path)->bool{
+fn bounded_journal(path:&Path,allow_empty:bool)->bool{
     let Ok(meta)=fs::symlink_metadata(path)else{return false};
     if !meta.is_file()||meta.file_type().is_symlink()
-        ||meta.len()==0||meta.len()>64*1024*1024{
+        ||(meta.len()==0&&!allow_empty)||meta.len()>64*1024*1024{
         return false
     }
     #[cfg(windows)]{
@@ -49,10 +49,10 @@ fn windows_original_job_empty(
         return false
     }
     let file=profile.join(format!("lu-reviewed-task-{turn}.sqlite"));
-    if !bounded_journal(&file){return false}
+    if !bounded_journal(&file,false){return false}
     for suffix in ["-wal","-shm","-journal"]{
         let side=PathBuf::from(format!("{}{}",file.display(),suffix));
-        if fs::symlink_metadata(&side).is_ok()&&!bounded_journal(&side){
+        if fs::symlink_metadata(&side).is_ok()&&!bounded_journal(&side,true){
             return false
         }
     }
