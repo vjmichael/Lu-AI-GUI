@@ -76,5 +76,5 @@ test('cgroup receipt never acts as tool grant or automatic task replay',()=>{
   assert.doesNotMatch(receiver,/ConversationAuthority::new|TaskAuthority\{|\.spawn\(/);
   assert.doesNotMatch(helper,/TaskAuthority|open_user_task|run_journaled_observed/);
   assert.match(receiver,/state=="COMPLETED"/);
-  assert.match(receiver,/rows\[5\]!="POPULATED=0"/);
+  assert.match(receiver,/lines\[5\]!="POPULATED=0"/);
 });
