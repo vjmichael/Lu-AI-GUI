@@ -15,7 +15,8 @@ function safeJob(source, expectedProjectId) {
   if (!source || typeof source !== 'object' ||
       source.projectId !== expectedProjectId ||
       !valid(source.jobId) || !RECIPE.test(source.recipeId || '')) return null;
-  const phase = typeof source.phase === 'string' ? source.phase.toLowerCase() : '';
+  const phase = typeof source.phase === 'string' ? source.phase.toLowerCase() :
+    (source.cancellationRequested === true ? 'cancel_requested' : 'running');
   if (!PHASES.has(phase)) return null;
   return {jobId:source.jobId, projectId:expectedProjectId,
     recipeId:source.recipeId, phase,
@@ -29,8 +30,9 @@ export function ingestJobProgress(previous, projectId, status) {
     PHASES.has(event.phase)).slice(-MAX_JOB_PROGRESS_EVENTS) : [];
   // Native status is the authority for reported phases; never use WebView
   // supplied messages or arbitrary log text as progression evidence.
-  const sources = [status.current, ...status.recent.slice(0, MAX_JOBS),
-    ...status.quarantined.slice(0, MAX_JOBS)];
+  const sources = [status.current, ...status.recent.slice(0, MAX_JOBS)];
+  // Recovery views intentionally omit recipe identity. Do not infer it from
+  // untrusted historical records or mislabel a quarantine as an active run.
   const observations = [];
   const seen = new Set();
   for (const source of sources) {
