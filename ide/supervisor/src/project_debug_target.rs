@@ -45,6 +45,13 @@ pub struct SealedProjectDebugTarget {
     pub binary:DebugBinaryWitness,
     pub symbols:DebugSymbolWitness,
 }
+impl Drop for SealedProjectDebugTarget {
+    fn drop(&mut self) {
+        // Never retain a runnable-looking artifact after the last native
+        // debugger/build owner releases it; no reauthorization on restart.
+        let _=fs::remove_dir_all(&self.root);
+    }
+}
 impl SealedProjectDebugTarget {
     pub fn verify(&self)->Result<(),SupervisorError>{
         if !sha(&self.binding_sha256,64){return Err(denied());}
