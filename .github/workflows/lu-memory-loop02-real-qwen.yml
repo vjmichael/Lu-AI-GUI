@@ -47,6 +47,14 @@ jobs:
           command -v git
           git --version | tee memory-loop02-real-qwen-evidence/native-git-version.txt
           printf 'SOURCE_COMMIT=%s\n' "$EXPECTED_HEAD" > memory-loop02-real-qwen-evidence/original-source.txt
+      - name: Source admission contract for actual Qwen benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/memory-loop02-real-qwen-contract.test.mjs \
+            2>&1 | tee memory-loop02-real-qwen-evidence/model-contracts.log
+          grep -Fq '# pass 7' memory-loop02-real-qwen-evidence/model-contracts.log
+          grep -Fq '# fail 0' memory-loop02-real-qwen-evidence/model-contracts.log
       - name: Prove benchmark grader fails forged outcomes and missing genuine model
         shell: bash
         run: |
