@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7f2b676f7a99d70b50dfbd98c6656b838f80a739",
-  "trackedFileCount": 813,
+  "sourceCommitBeforeLock": "9be77920d548264544956b5e961b96526d5da449",
+  "trackedFileCount": 816,
   "files": [
     {
       "path": ".github/workflows/lu-agent01a-durable-plan.yml",
@@ -189,7 +189,7 @@
     },
     {
       "path": ".github/workflows/lu-memory-loop03b-native.yml",
-      "blob": "cc7206a8c1319c0f5cacd3b74d2cdc9cf165022d"
+      "blob": "505e173d7e5a7b577eafe1aadbe1ed18aff0d459"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
@@ -329,7 +329,11 @@
     },
     {
       "path": "benchmarks/e1/memory_loop03c_real_qwen_comprehension.py",
-      "blob": "f8e9fdf57ed1f6e20618646a9d76d749b277bd8a"
+      "blob": "6806b5972bef6831d3c8358a6429829258bf7427"
+    },
+    {
+      "path": "benchmarks/e1/memory_loop03c_reviewed_worker_cases.py",
+      "blob": "e55c00715a891971926a679aace1d1359c78f3eb"
     },
     {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
@@ -358,6 +362,10 @@
     {
       "path": "benchmarks/e1/test_memory_loop03c_real_qwen_comprehension.py",
       "blob": "c53953e990128770e6d00d517635c83f6c23f458"
+    },
+    {
+      "path": "benchmarks/e1/test_memory_loop03c_reviewed_workers.py",
+      "blob": "9529ea35687e9a42cd41fbf5ae4ed40c63d92bbd"
     },
     {
       "path": "benchmarks/e1/verify_e1_p05_raw.py",
@@ -613,7 +621,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "bda7a5e6af4422686d78b7f681a7ba32b7df570d"
+      "blob": "a75162a2410fd9e72a4c136360dbaa64d5596a45"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -685,7 +693,7 @@
     },
     {
       "path": "docs/LU_MEMORY_LOOP03C_REAL_MODEL_COMPREHENSION_20261109.md",
-      "blob": "2ba553c292f3e11f9804aedcde182a00626c4e03"
+      "blob": "0ffd37b0a25db1bcc5b1e0ecb73a503149e6f389"
     },
     {
       "path": "docs/LU_NATIVE_HOST_AUTHORITY_E1P06C_20261107.md",
@@ -1053,7 +1061,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "ab0542d7402f8fb8b9df7e430f1d21da059e59c1"
+      "blob": "c4cac4f58e65e6c5a2d5a0cdfa584244e42535a8"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -1158,6 +1166,10 @@
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03b_policy.rs",
       "blob": "e426fa7ce1d1e53c7e1bc56f3aad2b46113fea1a"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/memory_loop03c_reviewed_worker_tests.rs",
+      "blob": "ec814018f08456d8af0fa9f8360bb77c44f6c8c6"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",

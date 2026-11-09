@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf ffmpeg
       - name: Windows test-only nonengine runtime fixture
         if: runner.os == 'Windows'
         shell: pwsh
@@ -73,6 +73,39 @@ jobs:
           foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
             Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
           }
+      - name: Linux real reviewed Git and FFprobe OS binary admission
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git_bin="$(command -v git)"
+          probe_bin="$(command -v ffprobe)"
+          test -x "$git_bin" && test -x "$probe_bin"
+          printf 'LU_MEMORY_LOOP03C_GIT=%s\nLU_MEMORY_LOOP03C_FFPROBE=%s\n' "$git_bin" "$probe_bin" >> "$GITHUB_ENV"
+          git --version
+          ffprobe -version | sed -n '1p'
+      - name: Windows real reviewed Git and FFprobe OS binary admission
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $git=(Get-Command git.exe -ErrorAction Stop).Source
+          $ff=(Get-Command ffprobe.exe -ErrorAction SilentlyContinue)
+          if (-not $ff) {
+            choco install ffmpeg --yes --no-progress
+            $pathCandidate=Join-Path $env:ChocolateyInstall 'bin\ffprobe.exe'
+            if (Test-Path -LiteralPath $pathCandidate) { $ff=Get-Item $pathCandidate }
+          }
+          if (-not $ff) { throw 'Real FFprobe executable unavailable' }
+          $probe=$ff.FullName
+          if (-not $probe) { $probe=$ff.Source }
+          if (-not (Test-Path -LiteralPath $git) -or -not (Test-Path -LiteralPath $probe)) {
+            throw 'Real OS executable missing'
+          }
+          "LU_MEMORY_LOOP03C_GIT=$git" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "LU_MEMORY_LOOP03C_FFPROBE=$probe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $git --version
+          & $probe -version | Select-Object -First 1
       - name: Real React bundle and static interaction checks
         shell: bash
         run: |
@@ -112,6 +145,17 @@ jobs:
             memory_loop03c_positive_direct_git_ansf_journal_and_correction_corpus -- --nocapture \
             2>&1 | tee memory-loop03b-evidence/memory03c-positive-native-git-test.log
           test -s memory-loop03b-evidence/memory03c-positive-git-corpus.json
+          export LU_MEMORY_LOOP03C_REVIEWED_FIXTURE_PATH="$GITHUB_WORKSPACE/memory-loop03b-evidence/memory03c-reviewed-worker-corpus.json"
+          # G5: the EXISTING protected reviewed-app model->native registry
+          # launches real OS Git+FFprobe, independently checks source bytes,
+          # enforces fresh human consent on changed HEAD and reconciles SQLite.
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib \
+            memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee memory-loop03b-evidence/memory03c-reviewed-worker-native.log
+          test -s memory-loop03b-evidence/memory03c-reviewed-worker-corpus.json
+          python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_reviewed_workers.py -v \
+            2>&1 | tee memory-loop03b-evidence/memory03c-reviewed-worker-parser-tests.log
           python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_real_qwen_comprehension.py -v \
             2>&1 | tee memory-loop03b-evidence/memory03c-grader-tests.log
           python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_positive_git.py -v \
@@ -119,9 +163,10 @@ jobs:
           python3 benchmarks/e1/memory_loop03c_real_qwen_comprehension.py \
             --fixture memory-loop03b-evidence/memory03c-native-corpus.json \
             --positive-fixture memory-loop03b-evidence/memory03c-positive-git-corpus.json \
+            --reviewed-fixture memory-loop03b-evidence/memory03c-reviewed-worker-corpus.json \
             --output memory-loop03b-evidence/memory03c-fixture-validation-only.json \
             --validate-fixture-only
-          echo '03C negative + direct native Git/ANSF/SQLite positive fixture tests do NOT prove reviewed Lu worker execution, current source freshness, kernel custody, or actual model comprehension.' >> "$GITHUB_STEP_SUMMARY"
+          echo '03C G5 uses real protected reviewed native Git/FFprobe workers, new human authority, changed-source CCM and journal recovery; the test-generated model calls are SCRIPTED, not GGUF, and escape-capable kernel custody remains unproven.' >> "$GITHUB_STEP_SUMMARY"
       - name: MEMORY-LOOP-03C optional pinned real Qwen source-only vs host-classified benchmark
         if: runner.os == 'Linux' && inputs.run_real_qwen
         shell: bash
@@ -143,10 +188,11 @@ jobs:
             --model "$RUNNER_TEMP/memory03c-qwen.gguf" \
             --fixture memory-loop03b-evidence/memory03c-native-corpus.json \
             --positive-fixture memory-loop03b-evidence/memory03c-positive-git-corpus.json \
+            --reviewed-fixture memory-loop03b-evidence/memory03c-reviewed-worker-corpus.json \
             --output memory-loop03b-evidence/memory03c-real-qwen-comparison.json \
             --repetitions 2 \
             2>&1 | tee memory-loop03b-evidence/memory03c-real-qwen-comparison.log
-          echo '03C Qwen comparison uses a genuine pinned sub-1B GGUF, not target Qwen3.8 27B, and includes test-only positive Git observations; actual reviewed Lu worker and live OS custody remain OPEN.' >> "$GITHUB_STEP_SUMMARY"
+          echo '03C Qwen comparison uses a genuine pinned sub-1B GGUF, not target Qwen3.8 27B, and includes native reviewed Lu Git/FFprobe source observations; installed Lu and escape-capable kernel custody remain OPEN.' >> "$GITHUB_STEP_SUMMARY"
       - name: Unaccepted operational requirements
         if: always()
         shell: bash
