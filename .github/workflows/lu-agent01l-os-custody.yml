@@ -1,0 +1,135 @@
+name: Lu AGENT-01L Native OS Custody Witness Acceptance
+on:
+  push:
+    branches: ['lu/agent01l-native-custody-20261108']
+  pull_request:
+    paths:
+      - 'src-tauri/lu-win-worker-job/src/lib.rs'
+      - 'src-tauri/lu-core/src/agent_os_custody.rs'
+      - 'src-tauri/lu-core/src/native_background_process.rs'
+      - 'src-tauri/lu-core/src/tasks.rs'
+      - 'src-tauri/lu-core/src/lib.rs'
+      - 'lu-desktop/src-tauri/src/agent_recovery_desktop.rs'
+      - 'lu-desktop/tests/agent01l-os-custody.test.mjs'
+      - 'lu-desktop/tests/agent01k-independent-recovery.test.mjs'
+      - '.github/workflows/lu-agent01l-os-custody.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-agent01l-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native-witness:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Pin exact native source revision
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p agent01l-evidence
+          printf 'SOURCE_SHA=%s\nOS=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > agent01l-evidence/provenance.txt
+      - name: Run source-side authorization and OS boundary checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01l-os-custody.test.mjs \
+            2>&1 | tee agent01l-evidence/source-contracts.log
+          grep -Fq '# pass 8' agent01l-evidence/source-contracts.log
+          grep -Fq '# fail 0' agent01l-evidence/source-contracts.log
+          node --test lu-desktop/tests/agent01k-independent-recovery.test.mjs \
+            2>&1 | tee agent01l-evidence/agent01k-regression.log
+          grep -Fq '# fail 0' agent01l-evidence/agent01k-regression.log
+      - name: Compile and test actual original-turn OS custody provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_os_custody::tests -- --nocapture \
+            2>&1 | tee agent01l-evidence/original-turn-custody.log
+          grep -Fq 'test agent_os_custody::tests::missing_original_task_journal_never_attests_os_cleanup ... ok' \
+            agent01l-evidence/original-turn-custody.log
+          if test "$RUNNER_OS" = Windows; then
+            grep -Fq 'test result: ok. 2 passed; 0 failed;' agent01l-evidence/original-turn-custody.log
+          else
+            grep -Fq 'test agent_os_custody::tests::linux_pgid_guardian_never_claims_escaped_descendant_custody ... ok' \
+              agent01l-evidence/original-turn-custody.log
+            grep -Fq 'test result: ok. 3 passed; 0 failed;' agent01l-evidence/original-turn-custody.log
+          fi
+      - name: Real Windows Win32 nested process Job Object and kernel emptiness
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+            --lib agent01l_kernel_job_tests -- --nocapture \
+            2>&1 | tee agent01l-evidence/windows-kernel-nested-job.log
+          grep -Fq 'test result: ok. 2 passed; 0 failed;' \
+            agent01l-evidence/windows-kernel-nested-job.log
+          grep -Fq 'native_job_terminates_descendant_cmd_tree_and_queries_kernel_empty ... ok' \
+            agent01l-evidence/windows-kernel-nested-job.log
+      - name: Real Windows reviewed Git worker, durable Job witness and restart
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git --version
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_background_process::tests::agent01l_real_git_job_attests_original_turn_and_reopens_without_replay \
+            -- --nocapture \
+            2>&1 | tee agent01l-evidence/windows-reviewed-git-kernel-witness.log
+          grep -Fq 'agent01l_real_git_job_attests_original_turn_and_reopens_without_replay ... ok' \
+            agent01l-evidence/windows-reviewed-git-kernel-witness.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            agent01l-evidence/windows-reviewed-git-kernel-witness.log
+      - name: Build real installed-host desktop recovery wiring on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+          Push-Location lu-desktop
+          if(Test-Path package-lock.json){npm ci}else{npm install --no-audit --no-fund}
+          if($LASTEXITCODE -ne 0){throw 'npm dependencies failed'}
+          npm run build
+          if($LASTEXITCODE -ne 0){throw 'React build failed'}
+          npm run check
+          if($LASTEXITCODE -ne 0){throw 'React typecheck failed'}
+          Pop-Location
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | Tee-Object -FilePath agent01l-evidence/windows-tauri-check.log
+          if($LASTEXITCODE -ne 0){throw 'Installed host Tauri compilation failed'}
+      - name: Explicit Linux escape limitation and no-auto-execution
+        shell: bash
+        run: |
+          echo 'Windows Job kernel ActiveProcesses zero produces a durable scope-bound historical witness only when an actual task completes. Linux process-group guardian does NOT attest escaped descendants: delegated cgroup-v2 kill+populated=0 and out-of-process crash recovery are still required. Neither platform authorizes unattended multi-step behavior. Native acceptance must be judged by real job logs.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-agent01l-native-os-custody-${{ matrix.os }}
+          path: agent01l-evidence/
+          retention-days: 14
+          if-no-files-found: warn
