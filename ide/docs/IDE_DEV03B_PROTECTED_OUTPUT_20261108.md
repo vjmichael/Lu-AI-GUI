@@ -23,14 +23,15 @@ the native Running transition. Bytes beyond the existing per-stream log
 budget are discarded; stdout/stderr retain their distinct stream labels.
 The original digest/truncation/exit/cgroup cleanup flow remains.
 
-**Windows**: existing AppContainer/Job/SCM Cargo launcher directs both OS
-handles to the same `cargo-diagnostics.log`. The worker opens this **fixed
-contained file** read-only (new sharing restriction allows native readback)
-during its existing kernel wait loop, caps each poll to 8 KiB, checks native
-file metadata and the same output policy limits. It reports stream
-`combined`, never fabricated separate stdout/stderr or strict interleaving.
-A failed structural read quarantines rather than granting success. The
-original terminal output seal and descendant termination flow remains.
+**Windows**: the AppContainer/Job/SCM Cargo launcher inherits three
+explicit allowlisted handles: NUL stdin, `cargo-stdout.log` stdout and
+`cargo-diagnostics.log` stderr, both files created inside the original
+contained output. The worker reopens only these fixed files read-only during
+its kernel wait loop, caps each stream to 8 KiB per poll and retains separate
+stdout/stderr labels, native metadata checks and existing output policy
+limits. Cross-stream byte interleaving is not guaranteed. A failed structural
+read quarantines rather than granting success. The existing terminal
+output seal and descendant termination flow remain.
 
 **Native readback**: `ide_build_read_output(projectId,jobId,after)`
 requires native registered project authority and exact in-memory
