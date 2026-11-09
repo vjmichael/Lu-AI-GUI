@@ -78,7 +78,7 @@ fn valid_job(value: &str) -> bool {
     value.len() == 36 && value.starts_with("job-")
         && value[4..].bytes().all(|x| x.is_ascii_hexdigit())
 }
-fn op_digest(op: &DebugReviewIntent) -> String {
+pub(crate) fn op_digest(op: &DebugReviewIntent) -> String {
     let canonical = match op {
         DebugReviewIntent::Breakpoint { source, line } => format!("breakpoint:{source}:{line}"),
         DebugReviewIntent::Step { kind, thread_id } =>

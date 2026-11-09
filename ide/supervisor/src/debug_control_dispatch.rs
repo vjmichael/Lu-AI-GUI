@@ -4,7 +4,7 @@
 //! stop/PDB must be established BEFORE any successful outcome is recorded.
 #![cfg(any(test, all(windows, debug_assertions, feature = "dev046c-ci-control")))]
 use crate::{
-    debug_action_receipts::ConsumedControlClaim,
+    debug_action_receipts::{ConsumedControlClaim, op_digest},
     debug_command_review::{DebugReviewIntent, StepKind},
 };
 use sha2::{Digest, Sha256};
@@ -117,6 +117,7 @@ impl CiControlSlot {
             || claim.approved_receipt_sha256 == claim.consumed_receipt_sha256
             || !hash64(&claim.action_id_sha256) || !hash64(&claim.preview_sha256)
             || !hash64(&claim.operation_sha256)
+            || claim.operation_sha256 != op_digest(&claim.operation)
             || !valid_stop(&current) {
             return Err(ControlDenial::Unreviewed);
         }

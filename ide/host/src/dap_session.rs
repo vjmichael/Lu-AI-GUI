@@ -340,6 +340,7 @@ impl DapSession {
         &mut self, compiled_source: &str, line: u32,
     ) -> Result<Vec<u8>, DapError> {
         if self.phase != DapPhase::Stopped || line == 0 || line > 1_000_000
+            || self.last_stopped_thread.is_none()
             || self.ci_control.is_some() || !self.pending.is_empty()
             || self.last_source_candidate.as_ref().is_none_or(|candidate|
                 candidate.adapter_path != compiled_source || candidate.line != line)

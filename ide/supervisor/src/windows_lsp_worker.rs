@@ -1964,6 +1964,15 @@ impl WindowsDapSession {
             StepKind::Into => CiStepKind::Into,
             StepKind::Out => CiStepKind::Out,
         };
+        // Re-check the exact one-use owner event AFTER durable consumption
+        // and immediately BEFORE the only executable native command.
+        // A revoked/advanced stop cannot spend the old human action slot.
+        let at_send = self.gateway.verify_lldb_kernel_event_owner(
+            original.debuggee_pid, original.debuggee_thread_id, original.stopped_rip,
+        )?;
+        if at_send.seq != original.owner_sequence {
+            return Err(SupervisorError::NoContainment);
+        }
         // The consumed claim is now held only in 'dispatched', which is
         // non-clonable and never returned to a caller/renderer. A failed
         // send leaves the journal at Consumed or ResultUncertain; NO retry.
@@ -2114,6 +2123,12 @@ impl WindowsDapSession {
         let submitted = slot.take_breakpoint().map_err(|_| SupervisorError::GrantConsumed)?;
         if submitted.independently_installed() || slot.has_unconsumed_slot()
             || submitted.source_line() != original.verified_source_line {
+            return Err(SupervisorError::NoContainment);
+        }
+        let at_send = self.gateway.verify_lldb_kernel_event_owner(
+            original.debuggee_pid, original.debuggee_thread_id, original.stopped_rip,
+        )?;
+        if at_send.seq != original.owner_sequence {
             return Err(SupervisorError::NoContainment);
         }
         self.gateway.ci_send_one_line_breakpoint()?;
