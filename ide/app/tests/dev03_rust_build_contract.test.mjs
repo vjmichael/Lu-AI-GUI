@@ -34,7 +34,9 @@ test('new build freezes project source via same sealed manifest snapshot',()=>{
 test('Linux executes fixed cargo build inside original cgroup/Bubblewrap route',()=>{
   const code=linux();
   assert.match(code,/"rust_tests" \| "rust_check" \| "rust_build" => "\/workspace\/Cargo.toml"/);
-  assert.match(code,/"rust_build" => \{\s*cmd\.arg\("build"\);/);
+  assert.match(code,/"rust_build" => "build"/);
+  assert.match(code,/cmd\.arg\(match plan\.recipe_id\.as_str\(\)/);
+  assert.match(code,/runtime\.is_none\(\)/);
   assert.match(code,/Command::new\(BWRAP\)/);
   assert.match(code,/--unshare-all/);
   assert.match(code,/--ro-bind/);

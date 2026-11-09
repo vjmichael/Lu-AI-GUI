@@ -95,5 +95,6 @@ test('UI explicitly opts in and snapshots actual CodeMirror state before closure
   const end=source.indexOf('function closeTab(key)',beginning);
   assert.ok(beginning>=0 && end>beginning);
   const handler=source.slice(beginning,end);
-  assert.doesNotMatch(handler,/invoke\(|ide_save_source_file|await /);
+  const executable=handler.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g,'');
+  assert.doesNotMatch(executable,/\binvoke\s*\(|ide_save_source_file|\bawait\s+/);
 });
