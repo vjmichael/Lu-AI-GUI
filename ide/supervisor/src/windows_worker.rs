@@ -22,7 +22,10 @@ use std::{
     fs::{self},
     io::{self, Read, Seek, SeekFrom},
     mem::size_of,
-    os::windows::ffi::{OsStrExt, OsStringExt},
+    os::windows::{
+        ffi::{OsStrExt, OsStringExt},
+        fs::{MetadataExt, OpenOptionsExt},
+    },
     path::{Path, PathBuf},
     ptr,
     sync::{
@@ -86,6 +89,7 @@ const GENERIC_WRITE_ACCESS: u32 = 0x4000_0000;
 const FILE_SHARE_READ_VALUE: u32 = 1;
 const FILE_SHARE_WRITE_VALUE: u32 = 2;
 const FILE_ATTRIBUTE_NORMAL_VALUE: u32 = 0x80;
+const FILE_FLAG_OPEN_REPARSE_POINT_VALUE: u32 = 0x0020_0000;
 // JOBOBJECT_CPU_RATE_CONTROL_INFORMATION is two DWORDs when using CpuRate.
 // ENABLE(1) | HARD_CAP(4), CpuRate = 5000/10000 (50%).
 const CPU_RATE_HARD_CAP: u32 = 0x1 | 0x4;
@@ -857,7 +861,17 @@ fn stream_windows_output(
         if !meta.is_file() || meta.len() > MAX_OUTPUT_FILE_BYTES || meta.len() < *offset {
             return Err(denied());
         }
-        let mut file = fs::File::open(path).map_err(io_denied)?;
+        // Open the reparse point itself (never its target). A malicious
+        // contained worker must not make the trusted host follow an escaped
+        // symlink/junction during a metadata-to-open race.
+        let mut file = fs::OpenOptions::new().read(true)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT_VALUE)
+            .open(&path).map_err(io_denied)?;
+        let opened = file.metadata().map_err(io_denied)?;
+        if !opened.is_file() || opened.file_attributes() & 0x400 != 0 ||
+            opened.len() < *offset || opened.len() > MAX_OUTPUT_FILE_BYTES {
+            return Err(denied());
+        }
         file.seek(SeekFrom::Start(*offset)).map_err(io_denied)?;
         let mut data = [0u8; 8192];
         let n = file.read(&mut data).map_err(io_denied)?;
