@@ -494,6 +494,15 @@ mod protected {
         }) {
             return Err("DENIED: native SCM debug receipts failed journal restart".into());
         }
+        // Opening a fresh supervisor session must not restore either prior
+        // grant, even though both old plan hashes and receipts remain readable.
+        if replay.record_human_approval(
+            &build_job.job_id, &build_job.plan_sha256, &build_plan.source_head, true,
+        ).is_ok() || replay.record_human_approval(
+            &debug_job.job_id, &debug_job.plan_sha256, &debug_plan.source_head, true,
+        ).is_ok() {
+            return Err("DENIED: completed Windows project debug grant replayed after restart".into());
+        }
         println!("DEV045B_WINDOWS_CARGO_TO_APPCONTAINER_PROJECT_LLDB=PASS");
         println!("DEV045B_WINDOWS_DISTINCT_GRANTS_RESTART_AND_STAGE_CLEANUP=PASS");
         Ok(())
