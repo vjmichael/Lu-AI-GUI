@@ -398,12 +398,19 @@ impl NativeBuildRuntime {
     pub fn cancel(&self, project_id: &str, job_id: Option<&str>) -> Result<&'static str, String> {
         let locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
         let active = locked.current.as_ref().ok_or("BUILD_NO_ACTIVE_JOB")?;
-        if active.project_id != project_id
-            || job_id.is_some_and(|id| active.job_id.as_deref() != Some(id))
-        {
+        if active.project_id != project_id {
             return Err("BUILD_JOB_SCOPE_MISMATCH".into());
         }
-        active.requested.store(true, Ordering::SeqCst);
+        // A known native job must be identified exactly: omitting its ID
+        // cannot cancel a replacement job admitted between UI polls.
+        match (active.job_id.as_deref(), job_id) {
+            (Some(current), Some(expected)) if current == expected => {}
+            (None, None) => {} // Only preflight, before a native ID exists.
+            _ => return Err("BUILD_CANCEL_EXACT_JOB_ID_REQUIRED".into()),
+        }
+        if active.requested.swap(true, Ordering::SeqCst) {
+            return Err("BUILD_CANCEL_ALREADY_REQUESTED".into());
+        }
         active.cancel.request_cancel();
         // Request is intentionally NOT mislabeled Cancelled. The worker must
         // first fsync the cancellation and prove native process-tree kill.
