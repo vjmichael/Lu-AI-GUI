@@ -226,6 +226,7 @@ mod protected {
         cancel_project: bool,
         verify_job_module: bool,
         sample_stopped_thread: bool,
+        verify_independent_pdb: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use lu_ide_execution_supervisor::{
             debug_binary_witness::audit_debug_binary_candidate,
@@ -485,7 +486,7 @@ mod protected {
         } else {
             println!("DEV045D2_WINDOWS_REAL_DAP_SOURCE_CLAIM=unavailable");
         }
-        if sample_stopped_thread && !verify_job_module {
+        if (sample_stopped_thread || verify_independent_pdb) && !verify_job_module {
             return Err("DENIED: thread evidence cannot bypass PE module and journal witness".into());
         }
         if verify_job_module {
@@ -533,6 +534,49 @@ mod protected {
                 "DEV045D4B_WINDOWS_JOB_THREAD_RIP_SAMPLED=PASS;twice=true;independent_debug_event_verified=false;pdb_line_verified=false"
             );
         }
+        // This is the decisive *real Lu* test path, NOT a fixed fake adapter
+        // or a separate standalone debuggee: same one-use SCM/Job session,
+        // actual LLDB-DAP stop, OS-owned thread RIP and distinct PE/PDB
+        // line reader; every native receipt must be preserved on restart.
+        #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
+        let mut bound_line_receipts: Option<(String, String)> = None;
+        if verify_independent_pdb {
+            #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
+            {
+                let evidence = dap.verify_project_os_thread_pdb_receipts_for_ci(
+                    &supervisor, &debug_job.job_id, &debug_plan, &target,
+                ).map_err(|_| "DENIED: real LLDB Job-owned stopped RIP/PDB/source/receipt chain mismatch")?;
+                if !evidence.os_owned_thread_context_matches_lldb
+                    || !evidence.independent_pdb_source_line_verified
+                    || evidence.lldb_debug_event_owner_attested
+                    || evidence.debugger_commands_authorized
+                    || evidence.installed_app_accepted
+                    || evidence.observed_rip == 0
+                    || evidence.source_line == 0
+                    || evidence.source_file_sha256.len() != 64
+                    || evidence.debugger_job_id != debug_job.job_id
+                    || evidence.debugger_plan_sha256 != debug_job.plan_sha256
+                    || evidence.build_job_id != build_job.job_id
+                    || evidence.build_terminal_receipt_sha256 != receipt.terminal_receipt_hash
+                    || evidence.source_snapshot_sha256 != input.seal.source_sha256
+                    || evidence.target_binding_sha256 != target.binding_sha256
+                {
+                    return Err("DENIED: source line/OS/Journals cannot be upgraded into debugger authority".into());
+                }
+                bound_line_receipts = Some((
+                    evidence.debug_running_receipt_sha256.clone(),
+                    evidence.build_terminal_receipt_sha256.clone()
+                ));
+                println!(
+                    "DEV045D4C_REAL_LU_JOB_RIP_PDB_AND_RUNNING_RECEIPTS=PASS;source_line={};os_pe_base=0x{:x};os_thread_context_matches_lldb=true;pdb_line=independent;debug_event_owner_attested=false;source_commands_authorized=false",
+                    evidence.source_line, evidence.loaded_pe_base,
+                );
+            }
+            #[cfg(not(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle")))]
+            {
+                return Err("DENIED: real LLDB/PDB mapping is CI-only and never enabled in release".into());
+            }
+        }
         if cancel_project {
             // The debugger reached a real stopped Cargo-built project and
             // returned actual nonempty thread/stack evidence. Dropping the
@@ -572,6 +616,32 @@ mod protected {
         }) {
             return Err("DENIED: native protected build/debug terminals incomplete".into());
         }
+        #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
+        if let Some((running_sha, completed_build_sha)) = bound_line_receipts {
+            let debug_chain = supervisor.receipt_history(&debug_job.job_id)
+                .map_err(|e| e.code())?;
+            let original_running = debug_chain.iter().any(|r| {
+                r.body.phase == JobPhase::Running
+                    && r.entry_hash == running_sha
+                    && r.body.plan_sha256 == debug_job.plan_sha256
+            });
+            let terminal = debug_chain.last()
+                .ok_or("DENIED: protected Windows line proof missing terminal receipt")?;
+            let build_chain = supervisor.receipt_history(&build_job.job_id)
+                .map_err(|e| e.code())?;
+            let original_build = build_chain.last().is_some_and(|r| {
+                r.body.phase == JobPhase::Completed
+                    && r.entry_hash == completed_build_sha
+                    && r.body.plan_sha256 == build_job.plan_sha256
+            });
+            if !original_running || !original_build
+                || terminal.body.phase != JobPhase::Completed
+                || terminal.body.plan_sha256 != debug_job.plan_sha256
+                || terminal.entry_hash == running_sha {
+                return Err("DENIED: protected Windows PDB stop did not survive independent fsynced terminal".into());
+            }
+            println!("DEV045D4C_LU_JOB_PDB_TERMINAL_JOURNAL=PASS");
+        }
         let target_root = target.root.clone();
         drop(target);
         if target_root.exists() {
@@ -608,19 +678,23 @@ mod protected {
         let args: Vec<String> = env::args().skip(1).collect();
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug"] {
-            return run_windows_project_debug(false, false, false);
+            return run_windows_project_debug(false, false, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-cancel"] {
-            return run_windows_project_debug(true, false, false);
+            return run_windows_project_debug(true, false, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-module"] {
-            return run_windows_project_debug(false, true, false);
+            return run_windows_project_debug(false, true, false, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-thread"] {
-            return run_windows_project_debug(false, true, true);
+            return run_windows_project_debug(false, true, true, false);
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-line"] {
+            return run_windows_project_debug(false, true, true, true);
         }
         let cancel = args.as_slice() == ["--cancel"];
         #[cfg(target_os = "linux")]
