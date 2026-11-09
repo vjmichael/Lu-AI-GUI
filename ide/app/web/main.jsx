@@ -1387,6 +1387,9 @@ function App() {
         buildStatus.current || !['rust_check', 'rust_build', 'rust_tests', 'lu_ide_host_tests'].includes(intentRecipe)) return;
     setBuildBusy(true);
     setBuildResult(null);
+    nativeJobOutputRef.current=null;
+    nativeOutputCursor.current={projectId:null,jobId:null,sequence:0};
+    setNativeJobOutput(null);
     setProblem('');
     try {
       // This is a REQUEST, not an execution grant. A separate native OS
@@ -1402,22 +1405,25 @@ function App() {
       // One final drain after the native terminal receipt; this never
       // substitutes output text for completed/cancelled state.
       try {
-        const cursor=nativeOutputCursor.current;
-        const after=cursor.projectId===projectId &&
-          cursor.jobId===outcome.jobId ? cursor.sequence : 0;
-        const page=await invoke('ide_build_read_output',
-          {projectId,jobId:outcome.jobId,after});
-        if (activeProjectIdRef.current===projectId) {
+        // Four bounded pages cover the native 256-chunk rolling window.
+        // Do not mark a worker successful based on this advisory text.
+        for(let n=0;n<4;n++) {
+          const cursor=nativeOutputCursor.current;
+          const after=cursor.projectId===projectId &&
+            cursor.jobId===outcome.jobId ? cursor.sequence : 0;
+          const page=await invoke('ide_build_read_output',
+            {projectId,jobId:outcome.jobId,after});
+          if (activeProjectIdRef.current!==projectId) break;
           const next=acceptNativeOutput(
             cursor.projectId===projectId && cursor.jobId===outcome.jobId
               ? nativeJobOutputRef.current : null,
             projectId,outcome.jobId,page);
-          if(next) {
-            nativeJobOutputRef.current=next;
-            nativeOutputCursor.current={projectId,jobId:outcome.jobId,
-              sequence:next.lastSequence};
-            setNativeJobOutput(next);
-          }
+          if(!next || next.lastSequence===after) break;
+          nativeJobOutputRef.current=next;
+          nativeOutputCursor.current={projectId,jobId:outcome.jobId,
+            sequence:next.lastSequence};
+          setNativeJobOutput(next);
+          if(next.lastSequence===page.lastSequence) break;
         }
       } catch {
         // Terminal receipt remains authoritative if the advisory log fails.
