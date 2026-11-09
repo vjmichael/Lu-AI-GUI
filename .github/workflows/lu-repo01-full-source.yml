@@ -32,7 +32,7 @@ jobs:
       - name: Audit Core branch convergence and retained canonical ledger
         if: hashFiles('scripts/lu-core-stack-graph.test.mjs') != ''
         run: |
-          node --test scripts/lu-core-stack-graph.test.mjs scripts/lu-ledger.test.mjs
+          node --test scripts/lu-core-stack-graph.test.mjs scripts/lu-core-convergence-22.test.mjs scripts/lu-ledger.test.mjs
           node scripts/lu-core-stack-graph.mjs --check --fixture docs/LU_CORE_OPEN_PR_STACK_20261109.json --relations docs/LU_CORE_SIDE_BRANCH_COMPARISONS_20261109.json
       - name: Run REPO-01 malicious-edit fixtures
         run: node --test tests/source-identity.test.mjs

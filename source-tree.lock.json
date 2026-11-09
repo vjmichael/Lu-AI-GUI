@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d8723309959613aa6c7fb8f352b0164d1da1f301",
-  "trackedFileCount": 837,
+  "sourceCommitBeforeLock": "3a87c7d34b4006fb47f491cb77dd7eca3b1fd23c",
+  "trackedFileCount": 840,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "9c64e76f07c2217b7ab6f9da29eb674b7d17e05f"
+      "blob": "fb4345a5d7a8a8490a8b262b6624bf3c7251e002"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -556,8 +556,16 @@
       "blob": "69338481a7272999d7525a2762054b3579059f4e"
     },
     {
+      "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
+      "blob": "7cd5d72b00d36c216b737a245a7e65c44b310c13"
+    },
+    {
       "path": "docs/LU_CORE_CONVERGENCE_PLAN_20261109.md",
-      "blob": "f8e08a50bda403e406de23e061623b210cd9e5e6"
+      "blob": "3e554efefb6d04629ad6cd29cc83158dde8524d2"
+    },
+    {
+      "path": "docs/LU_CORE_DIVERGENT_TIP_RESOLUTION_20261109.json",
+      "blob": "b6f6ef91f131853243cf92c6821920ca1ad499d6"
     },
     {
       "path": "docs/LU_CORE_OPEN_PR_STACK_20261109.json",
@@ -661,7 +669,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "97da80edc0d5069f90bb928c350d88a2164e3110"
+      "blob": "f954c9c19a8bddcd9b524222dfb849ffa3129b75"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -1794,6 +1802,10 @@
     {
       "path": "scripts/lu-ci-superseded-queue.test.mjs",
       "blob": "a031fe2ba96cb7eaf2fc55d3366dd4e0a29ae267"
+    },
+    {
+      "path": "scripts/lu-core-convergence-22.test.mjs",
+      "blob": "777fd613b32de5e532de41738df4d089df6d90f9"
     },
     {
       "path": "scripts/lu-core-stack-graph.mjs",

@@ -64,3 +64,7 @@ Selected #61 source improvements have been folded into the candidate with curren
 ### Priority #133 Linux custodian reconciliation
 
 The current production AGENT-01L custodian replaces E1-P08C's older alternative (parallel LinuxCgroupGuardian source is **not imported**). A specific missing requirement from #133 **is now implemented**: bounded, no-symlink cleanup of verified empty nested cgroup subtrees, plus a stricter real SIGKILL/setsid grandchild test with nested cgroup membership and durable independent receipt. Existing authority/worker admission remains controlled by AGENT-01L. No kernel-positive test is claimed until a delegated Linux native runner proves this path. A hostile same-UID ancestor migration negative remains OPEN, so do not equate this with complete escape-proof isolation.
+
+### Individual 22-branch disposition
+
+The full per-PR review is [LU_CORE_22_DIVERGENT_STATUS_20261109.md](LU_CORE_22_DIVERGENT_STATUS_20261109.md), backed by the machine-readable [exact-source disposition register](LU_CORE_DIVERGENT_TIP_RESOLUTION_20261109.json). Superseding an old branch is **not** Git ancestry or acceptance. Two targeted bugfix families were adopted; deprecated/redundant implementations are not blindly merged; optional JSON Schema and stronger long-horizon loop reasoning remain explicit future parity gaps, not silently called complete.
