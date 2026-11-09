@@ -84,6 +84,10 @@ impl OwnerEventLedger {
                 self.revoked = false;
             }
             CONTINUED => {
+                // A Win32 ContinueDebugEvent failure MUST NOT satisfy the
+                // normal terminal/stop-revocation acceptance. Record kind 2
+                // with status 2 is a denial, not successful continuation.
+                if event.continue_status != 1 { return Err(denied()); }
                 let old = self.active.as_ref().ok_or_else(denied)?;
                 if old.seq != event.seq || old.pid != event.pid
                     || old.tid != event.tid || old.owner_tid != event.owner_tid
@@ -309,6 +313,19 @@ mod tests {
         wrong.tid = 100;
         assert!(ledger.observe(wrong).is_err());
         assert!(ledger.matching_stop(55, 100, 0x140001123).is_err());
+    }
+    #[test]
+    fn failed_os_continue_never_counts_as_successful_revocation() {
+        let mut ledger = OwnerEventLedger::default();
+        ledger.observe(record(1, RECEIVED)).unwrap();
+        let mut failed = record(1, CONTINUED);
+        failed.continue_status = 2;
+        assert!(ledger.observe(failed).is_err());
+        assert_eq!(
+            ledger.matching_stop(55, 75, 0x140001123).unwrap().seq, 1
+        );
+        ledger.observe(record(1, CONTINUED)).unwrap();
+        assert!(ledger.matching_stop(55, 75, 0x140001123).is_err());
     }
     #[test]
     fn rejects_truncation_unknown_kind_and_status() {
