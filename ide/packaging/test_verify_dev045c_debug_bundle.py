@@ -11,6 +11,11 @@ import unittest
 from verify_dev045c_debug_bundle import Denied, audit, SCHEMA, SCOPE
 
 SOURCE = "a" * 40
+CANDIDATE = {
+    "installerSha256": "b" * 64,
+    "desktopSha256": "c" * 64,
+    "serviceSha256": "d" * 64,
+}
 
 
 def sha(value: bytes) -> str:
@@ -39,6 +44,7 @@ class InstalledProjectDebuggerBundleTests(unittest.TestCase):
             "schema": SCHEMA, "scope": SCOPE, "sourceSha": SOURCE,
             "releaseApproved": False, "redistributionApproved": False,
             "userSelectedExecutable": False, "platform": "windows-x86_64",
+            **CANDIDATE,
             "files": [{"path": name, "sha256": sha(body), "bytes": len(body)}
                       for name, body in self.contents.items()],
             "notice": {"path": "THIRD_PARTY_LICENSES/LLVM-LICENSE.txt",
@@ -47,7 +53,10 @@ class InstalledProjectDebuggerBundleTests(unittest.TestCase):
 
     def check(self, lock=None, source=SOURCE, platform="windows-x86_64"):
         return audit(self.root, lock if lock is not None else self.lock,
-                     source, platform=platform)
+                     source, platform=platform,
+                     installer_sha=CANDIDATE["installerSha256"],
+                     desktop_sha=CANDIDATE["desktopSha256"],
+                     service_sha=CANDIDATE["serviceSha256"])
 
     def test_exact_file_hash_and_notice_is_technical_intake_not_release(self):
         record = self.check()
@@ -69,6 +78,15 @@ class InstalledProjectDebuggerBundleTests(unittest.TestCase):
             candidate = copy.deepcopy(self.lock)
             candidate[key] = changed
             with self.subTest(key=key), self.assertRaises(Denied):
+                self.check(lock=candidate)
+
+    def test_review_lock_must_match_exact_signed_candidate_binary_triplet(self):
+        for key in CANDIDATE:
+            candidate = copy.deepcopy(self.lock)
+            candidate[key] = "e" * 64
+            with self.subTest(role=key), self.assertRaisesRegex(
+                Denied, "signed_candidate_binary_identity_mismatch"
+            ):
                 self.check(lock=candidate)
 
     def test_binary_or_transitive_dependency_tamper_denied(self):
