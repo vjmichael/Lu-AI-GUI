@@ -100,7 +100,7 @@ fn classify(
     let mut seen_turns=BTreeSet::new();
     let mut steps=Vec::new();
     for claim in &owner.claims{
-        if claim.revision_sha!=revision
+        if claim.revision_sha!=revision||claim.epoch!=owner.epoch
             ||claim.claim_state!="OBSERVED_VERIFIED_HISTORICAL"
             ||claim.plan_id.is_empty()
             ||!seen_turns.insert(claim.original_request_turn.clone()){
@@ -157,7 +157,7 @@ fn recheck_ancestors(
     if has_link.is_none(){return Ok(())}
     let mut child=plan.to_owned();
     let mut seen=BTreeSet::new();
-    for _ in 0..MAX_GENERATIONS{
+    for _ in 0..=MAX_GENERATIONS{
         if !seen.insert(child.clone()){
             return Err("Cycle in independently checked continuation ancestry".into())
         }
