@@ -3326,8 +3326,8 @@ function App() {
                 aria-label="Protected worker live stdout and stderr">
                 <h4>DEV-03.3B · Live protected worker output</h4>
                 <p>Bounded untrusted process text from the native worker.
-                  Linux preserves stdout/stderr identity; Windows currently
-                  provides a combined diagnostics stream. Live output is not
+                  Both Linux and Windows preserve stdout/stderr identity; Windows
+                  uses separate protected inherited file handles. Live output is not
                   a completed-job receipt or proof of kernel cleanup.</p>
                 {nativeJobOutput?.projectId===activeProject?.projectId &&
                   nativeJobOutput.chunks.length > 0
