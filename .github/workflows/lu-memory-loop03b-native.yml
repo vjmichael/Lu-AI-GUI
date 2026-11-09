@@ -145,6 +145,13 @@ jobs:
             memory_loop03c_positive_direct_git_ansf_journal_and_correction_corpus -- --nocapture \
             2>&1 | tee memory-loop03b-evidence/memory03c-positive-native-git-test.log
           test -s memory-loop03b-evidence/memory03c-positive-git-corpus.json
+          # 03D: historical worker index and normal Send lookup are tested
+          # from real ChatStore/ANSF, SQLite and journal records. These unit
+          # fixtures do not independently attest OS child execution; G5 below
+          # does that on the same exact revision.
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib \
+            reviewed_memory_evidence::tests -- --nocapture \
+            2>&1 | tee memory-loop03b-evidence/memory03d-index-source-recovery.log
           export LU_MEMORY_LOOP03C_REVIEWED_FIXTURE_PATH="$GITHUB_WORKSPACE/memory-loop03b-evidence/memory03c-reviewed-worker-corpus.json"
           # G5: the EXISTING protected reviewed-app model->native registry
           # launches real OS Git+FFprobe, independently checks source bytes,
