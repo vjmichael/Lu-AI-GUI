@@ -655,6 +655,33 @@ async fn ide_build_status(
     }
 }
 #[tauri::command]
+async fn ide_build_read_output(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    job_id: String,
+    after: u64,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
+    {
+        // The host revalidates project registration. Never accept a caller
+        // supplied output path, process ID, stream name or grant token.
+        registry.trusted_native_worker_root(&project_id)
+            .map_err(|_| "BUILD_PROJECT_NOT_ACTIVE")?;
+        let runtime = app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("BUILD_PROTECTED_HOST_UNAVAILABLE")?;
+        let value = runtime.read_output(&project_id, &job_id, after)?;
+        return serde_json::to_value(value)
+            .map_err(|_| "BUILD_OUTPUT_SERIALIZE_FAILED".into());
+    }
+    #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, registry, project_id, job_id, after);
+        Err("BUILD_PROTECTED_WORKER_NOT_INSTALLED".into())
+    }
+}
+
+#[tauri::command]
 async fn ide_build_start(
     app: AppHandle,
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
@@ -1441,6 +1468,7 @@ pub fn run() {
             ide_discover_project_run_profiles,
             ide_review_multilang_adapter,
             ide_build_status,
+            ide_build_read_output,
             ide_build_start,
             ide_build_cancel,
             ide_build_reconcile,
