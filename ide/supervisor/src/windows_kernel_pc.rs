@@ -17,7 +17,10 @@ use std::{
     ptr,
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT},
+    Foundation::{
+        CloseHandle, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
+        ERROR_NO_MORE_FILES, WAIT_TIMEOUT,
+    },
     System::{
         Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, Module32FirstW, Module32NextW,
@@ -233,7 +236,12 @@ fn module_at(pid: u32, expected: &str, pc: u64, pe_size: u64)
         }
         entry.dwSize = size_of::<MODULEENTRY32W>() as u32;
         if unsafe { Module32NextW(snapshot.0, &mut entry) } == 0 {
-            if hits.len() > 1 { return Err(denied()); }
+            // A partially-read ToolHelp list is NOT module acceptance:
+            // only the explicit end-of-module-list status is safe.
+            if unsafe { GetLastError() } != ERROR_NO_MORE_FILES
+                || hits.len() > 1 {
+                return Err(denied());
+            }
             return Ok(hits.pop());
         }
         if index + 1 == MAX_MODULES { return Err(denied()); }
