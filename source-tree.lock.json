@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "72f7d52b9248f8616a1e501a43d4479465256700",
+  "sourceCommitBeforeLock": "0b943b9028a11034047dcb7630892a616c6b08f1",
   "trackedFileCount": 730,
   "files": [
     {
@@ -21,7 +21,7 @@
     },
     {
       "path": ".github/workflows/lu-agent01e-broker-progress.yml",
-      "blob": "eae7d3a9fd24532bc2072d21291f88ce67f19ba3"
+      "blob": "13db6516fe776af46caaeb3edadbfad523211a65"
     },
     {
       "path": ".github/workflows/lu-ansf-direct-ids-artifacts.yml",
@@ -349,7 +349,7 @@
     },
     {
       "path": "docs/LU_AGENT01G_REVIEWED_STEP_EXECUTION_20261108.md",
-      "blob": "7c09982f381b57ad4a64510faa4766f3f682ef80"
+      "blob": "a852f3475346fc7339bcd787e6c651bbf129ddac"
     },
     {
       "path": "docs/LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md",
@@ -493,7 +493,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "df682bec485f4c8dda498114d293b8401eed9267"
+      "blob": "21d2417c85944f40e6ebb15e86b0ce0dd9d3f112"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -625,7 +625,7 @@
     },
     {
       "path": "docs/LU_V1_0_TASKS.md",
-      "blob": "fa2dbf7091a80f7bcd6998de4f17ab189d64dc48"
+      "blob": "60788b683e08abd8f8814ab2c9aaf5999185fd4a"
     },
     {
       "path": "docs/LU_V2_0_DLC_AF_UNIX_RESOURCE_REASONING_DEFERRED_20261103.md",
@@ -833,7 +833,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_admission.rs",
-      "blob": "64fe6ab88020e02e8c5dfbe47677c1dad833bf8d"
+      "blob": "98d86faf7d5f8b2b9c9e6593941811969b9d9807"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_progress.rs",
@@ -993,7 +993,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_desktop.rs",
-      "blob": "d33c147fb99b2328b5f2d943716ea77a78cc3873"
+      "blob": "d3eced4cc90dac6ac6e2c58a8500f45592cfa552"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_recovery.rs",
@@ -1057,7 +1057,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01g-approved-step-integration.test.mjs",
-      "blob": "347b0c53e3ae231d5cfee370941b09a90973f7b2"
+      "blob": "36f0d6e3812e8ddd59473a5771c4e68ed2d1b747"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
