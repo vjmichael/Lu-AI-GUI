@@ -138,8 +138,8 @@ pub(crate) fn for_current_human_turn(
                             };
                             (facts,json!({
                                 "originalCheckpointId":saved.checkpoint_id,
-                                "originalSourceIds":saved.original_source_ids
-                                    .into_iter().take(8).collect::<Vec<_>>(),
+                                "originalSourceIds":saved.original_source_ids.iter()
+                                    .take(8).cloned().collect::<Vec<_>>(),
                                 "sourceIdsTruncated":saved.original_source_ids.len()>8,
                                 "contextChange":change
                             }),false)
