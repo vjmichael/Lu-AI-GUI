@@ -13,10 +13,10 @@
 mod dap_transport;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
+pub mod live_output;
 #[cfg(feature = "lsp-transport")]
 mod lsp_transport;
 pub mod runtime_bundles;
-pub mod live_output;
 pub mod snapshot;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 pub mod windows_broker;
@@ -122,13 +122,15 @@ fn validate_plan(value: &JobPlan) -> bool {
             value.recipe_id.as_str(),
             "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
         ) || (cfg!(feature = "multilang-worker")
-            && matches!(value.recipe_id.as_str(),
-                "python_pytest" | "js_tests" | "cpp_cmake_build"))
-            || (cfg!(feature = "lsp-transport")
             && matches!(
                 value.recipe_id.as_str(),
-                "lsp_rust_analyzer" | "lsp_clangd" | "lsp_ruff"
+                "python_pytest" | "js_tests" | "cpp_cmake_build"
             ))
+            || (cfg!(feature = "lsp-transport")
+                && matches!(
+                    value.recipe_id.as_str(),
+                    "lsp_rust_analyzer" | "lsp_clangd" | "lsp_ruff"
+                ))
             || (cfg!(feature = "dap-transport") && value.recipe_id == "dap_lldb_fixed"))
         && hex_sha(&value.source_head, 40)
         && hex_sha(&value.input_snapshot_sha256, 64)
