@@ -16,6 +16,7 @@ use std::{
 use lu_ide_workspace::IdeWorkspaceRegistry;
 use lu_ide_execution_supervisor::{
     snapshot::{publish_input, verify_input},
+    live_output::{LiveOutput, OutputPage},
     wo6_output_evidence::{audit_published_output, ArtifactEntry},
     JobPlan, JobPhase, Supervisor,
 };
@@ -28,13 +29,13 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use lu_ide_execution_supervisor::{
     windows_broker::TrustedBroker,
     windows_worker::{
-        execute_windows_worker_after_staging_approval, trusted_offline_toolchain_digest,
+        execute_windows_worker_after_staging_approval_with_output, trusted_offline_toolchain_digest,
         reconcile_windows_interrupted_via_service, WindowsCancellation as NativeCancel,
     },
 };
 #[cfg(target_os = "linux")]
 use lu_ide_execution_supervisor::linux_worker::{
-    execute_linux_worker, installed_toolchain_digest, reconcile_linux_interrupted,
+    execute_linux_worker_with_output, installed_toolchain_digest, reconcile_linux_interrupted,
     RunCancellation as NativeCancel,
 };
 
@@ -248,10 +249,12 @@ struct Running {
     job_id: Option<String>,
     cancel: Arc<NativeCancel>,
     requested: Arc<AtomicBool>,
+    output: Arc<LiveOutput>,
 }
 struct Store {
     current: Option<Running>,
     recent: BTreeMap<String, BuildRunView>,
+    last_output: Option<(String, String, Arc<LiveOutput>)>,
 }
 pub struct NativeBuildRuntime {
     supervisor: Arc<Supervisor>,
@@ -276,6 +279,7 @@ impl NativeBuildRuntime {
             store: Mutex::new(Store {
                 current: None,
                 recent: BTreeMap::new(),
+                last_output: None,
             }),
         })
     }
@@ -385,6 +389,25 @@ impl NativeBuildRuntime {
         // first fsync the cancellation and prove native process-tree kill.
         Ok("BUILD_CANCELLATION_REQUESTED")
     }
+    /// Only current native job or most recently finished in this process.
+    /// No disk path is accepted, no journal is upgraded to log authority.
+    pub fn read_output(&self, project_id: &str, job_id: &str, after: u64)
+        -> Result<OutputPage, String> {
+        if after > 1_000_000 { return Err("BUILD_OUTPUT_CURSOR_INVALID".into()); }
+        let state = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
+        if let Some(current) = state.current.as_ref() {
+            if current.project_id == project_id &&
+               current.job_id.as_deref() == Some(job_id) {
+                return Ok(current.output.page(after));
+            }
+        }
+        if let Some((project, job, output)) = state.last_output.as_ref() {
+            if project == project_id && job == job_id {
+                return Ok(output.page(after));
+            }
+        }
+        Err("BUILD_OUTPUT_NOT_ACTIVE_OR_RECENT".into())
+    }
     pub fn run(
         &self,
         app: &AppHandle,
@@ -399,23 +422,32 @@ impl NativeBuildRuntime {
         }
         let cancel = Arc::new(NativeCancel::default());
         let requested = Arc::new(AtomicBool::new(false));
+        let output = Arc::new(LiveOutput::default());
         {
             let mut locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
             if locked.current.is_some() {
                 return Err("BUILD_ANOTHER_JOB_ACTIVE".into());
             }
+            locked.last_output = None;
             locked.current = Some(Running {
                 project_id: project_id.to_owned(),
                 recipe_id: recipe_id.to_owned(),
                 job_id: None,
                 cancel: Arc::clone(&cancel),
                 requested: Arc::clone(&requested),
+                output: Arc::clone(&output),
             });
         }
         let result = self.run_inner(
-            app, registry, project_id, recipe_id, &cancel, &requested,
+            app, registry, project_id, recipe_id, &cancel, &requested, &output,
         );
         let mut locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
+        if let Some(ref active) = locked.current {
+            if let Some(ref job_id) = active.job_id {
+                locked.last_output = Some((active.project_id.clone(),
+                    job_id.clone(), Arc::clone(&active.output)));
+            }
+        }
         locked.current = None;
         if let Ok(ref view) = result {
             locked.recent.insert(view.job_id.clone(), view.clone());
@@ -435,6 +467,7 @@ impl NativeBuildRuntime {
         recipe_id: &str,
         cancel: &Arc<NativeCancel>,
         requested: &Arc<AtomicBool>,
+        output: &Arc<LiveOutput>,
     ) -> Result<BuildRunView, String> {
         #[cfg(feature = "native-multilang")]
         let installed = if MULTILANG_RECIPES.contains(&recipe_id) {
@@ -526,17 +559,18 @@ impl NativeBuildRuntime {
         };
         #[cfg(windows)]
         let native = {
-            execute_windows_worker_after_staging_approval(
+            execute_windows_worker_after_staging_approval_with_output(
                 &self.supervisor, &prepared.job_id, &plan, &head, &input,
                 &installed.toolchain, &self.outputs, &installed.broker, cancel, approve,
+                Some(Arc::clone(output)),
             ).map_err(|e| e.code().to_owned())?
         };
         #[cfg(target_os = "linux")]
         let native = {
             approve().map_err(|e| e.code().to_owned())?;
-            execute_linux_worker(
+            execute_linux_worker_with_output(
                 &self.supervisor, &prepared.job_id, &plan, &input,
-                &self.outputs, cancel,
+                &self.outputs, cancel, Some(Arc::clone(output)),
             ).map_err(|e| e.code().to_owned())?
         };
         let evidence = self.supervisor.review_build_test_evidence(
