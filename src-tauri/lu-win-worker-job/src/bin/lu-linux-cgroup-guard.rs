@@ -126,16 +126,21 @@ mod linux{
         let group=group_root.join(format!("lu-review-{nonce}"));
         // No privilege escalation: if the OS has not delegated this parent
         // then create_dir fails. This is reported as NOT AVAILABLE.
-        if fs::create_dir(&group).is_err(){
-            io::stdout().write_all(b"UNAVAILABLE\n")?;
-            io::stdout().flush()?;
-            return Ok(())
+        match fs::create_dir(&group){
+            Ok(())=>{},
+            Err(e) if e.kind()==io::ErrorKind::PermissionDenied
+                ||matches!(e.raw_os_error(),Some(1|13|30))=>{
+                io::stdout().write_all(b"UNAVAILABLE\n")?;
+                io::stdout().flush()?;
+                return Ok(())
+            },
+            Err(e)=>return Err(e),
         }
         // Require genuine cgroup-v2 features. A foreign mount may not
         // contain these kernel files. Never fall back to killpg as proof.
         if !group.join("cgroup.kill").exists()
             ||!group.join("cgroup.procs").exists()
-            ||populated_zero(&group).is_err(){
+            ||!matches!(populated_zero(&group),Ok(true)){
             let _=fs::remove_dir(&group);
             io::stdout().write_all(b"UNAVAILABLE\n")?;
             io::stdout().flush()?;
