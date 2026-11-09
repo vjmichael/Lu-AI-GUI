@@ -1,0 +1,57 @@
+# Temporary DEV-04.5B branch-local rustfmt: remove after verified exact-head OS formatting.
+name: IDE DEV04.5B one-shot native rustfmt
+on:
+  push:
+    branches: [ide/dev04-5b-protected-project-debug-20261108]
+    paths:
+      - 'ide/supervisor/examples/wo6_native_dap_acceptance.rs'
+      - 'ide/supervisor/examples/wo6_linux_native_build_acceptance.rs'
+      - '.github/workflows/ide-dev04-5b-one-shot-rustfmt.yml'
+permissions:
+  contents: write
+concurrency:
+  group: dev045b-rustfmt-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  format-exact-branch:
+    if: github.ref == 'refs/heads/ide/dev04-5b-protected-project-debug-20261108'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Perform only source formatting, no native executable launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml --all
+          git diff --name-only > "$RUNNER_TEMP/native-rustfmt-changes"
+          if ! test -s "$RUNNER_TEMP/native-rustfmt-changes"; then
+            echo 'DEV045B_RUSTFMT=already_clean'
+            exit 0
+          fi
+          while IFS= read -r file; do
+            case "$file" in
+              ide/supervisor/examples/wo6_native_dap_acceptance.rs|ide/supervisor/examples/wo6_linux_native_build_acceptance.rs) ;;
+              *) echo "DENIED: formatter modified unreviewed file: $file"; exit 1 ;;
+            esac
+          done < "$RUNNER_TEMP/native-rustfmt-changes"
+          git add -- ide/supervisor/examples/wo6_native_dap_acceptance.rs ide/supervisor/examples/wo6_linux_native_build_acceptance.rs
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'style(ide): format DEV04.5B native project acceptance [rustfmt]'
+          git push origin HEAD:refs/heads/ide/dev04-5b-protected-project-debug-20261108
+      - name: Verify formatter result
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path ide/supervisor/Cargo.toml --all -- --check
+          echo 'DEV045B_RUSTFMT=checked_source_only_no_OS_acceptance'
