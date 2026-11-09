@@ -9,7 +9,8 @@ fn main() {
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use lu_ide_execution_supervisor::{
-        linux_worker::{execute_linux_worker, installed_toolchain_digest, RunCancellation},
+        linux_worker::{execute_linux_worker_with_output, installed_toolchain_digest, RunCancellation},
+        live_output::LiveOutput,
         snapshot::publish_input,
         JobPhase, JobPlan, Supervisor,
     };
@@ -17,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::{
         env, fs,
         path::PathBuf,
+        sync::Arc,
         thread,
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
@@ -94,13 +96,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         None
     };
-    let actual = execute_linux_worker(
+    let live = Arc::new(LiveOutput::default());
+    let actual = execute_linux_worker_with_output(
         &supervisor,
         &prepared.job_id,
         &plan,
         &input,
         &output,
         &cancellation,
+        Some(Arc::clone(&live)),
     )
     .map_err(|e| e.code())?;
     if let Some(worker) = cancel_thread {
@@ -123,6 +127,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "DENIED: real native Cargo OS worker did not finish with expected terminal phase"
                 .into(),
         );
+    }
+    // Real cgroup/bwrap worker bytes, not a synthetic Cursor unit test.
+    // The Cargo test recipe emits fixed compiler/test-harness diagnostics.
+    if !cancel && recipe == "rust_tests" {
+        let page = live.page(0);
+        if page.chunks.is_empty() || !page.live_unverified ||
+            !page.chunks.iter().all(|entry|
+                matches!(entry.stream, "stdout" | "stderr")) {
+            return Err("DENIED: protected Linux Cargo produced no bounded real native stream".into());
+        }
+        if page.chunks.iter().map(|entry| entry.text.len()).sum::<usize>() > 65536 {
+            return Err("DENIED: live Linux Cargo stream exceeded host memory cap".into());
+        }
+        eprintln!("DEV03B_LINUX_REAL_CGROUP_STDIO=PASS streams={} truncated={}",
+            page.chunks.len(), page.truncated);
     }
     if !cancel && actual.exit_code != Some(0) {
         return Err("DENIED: native contained Cargo recipe returned failed result".into());

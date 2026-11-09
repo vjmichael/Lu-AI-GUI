@@ -44,15 +44,16 @@ fn require_independent_broker_release(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use lu_ide_execution_supervisor::{
         snapshot::publish_input,
+        live_output::LiveOutput,
         windows_broker::TrustedBroker,
         windows_worker::{
-            execute_windows_worker_after_staging_approval, trusted_offline_toolchain_digest,
+            execute_windows_worker_after_staging_approval_with_output, trusted_offline_toolchain_digest,
             WindowsCancellation,
         },
         JobPhase, JobPlan, Supervisor,
     };
     use sha2::{Digest, Sha256};
-    use std::{env, fs, io::Read, path::PathBuf};
+    use std::{env, fs, io::Read, path::PathBuf, sync::Arc};
 
     // Fixed acceptance modes only. No caller-selected project executable,
     // arguments, environment, source or toolchain plan can be injected.
@@ -157,7 +158,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cancel_mode {
         cancellation.request_cancel();
     }
-    let result = execute_windows_worker_after_staging_approval(
+    let live = Arc::new(LiveOutput::default());
+    let result = execute_windows_worker_after_staging_approval_with_output(
         &supervisor,
         &prepared.job_id,
         &plan,
@@ -179,8 +181,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .map(|_| ())
         },
+        Some(Arc::clone(&live)),
     )
     .map_err(|e| format!("DENIED: OS worker: {}", e.code()))?;
+    if !cancel_mode && result.summary.phase == JobPhase::Completed {
+        let page = live.page(0);
+        if page.chunks.is_empty() || !page.live_unverified ||
+           !page.chunks.iter().all(|item| matches!(item.stream, "stdout" | "stderr")) ||
+            page.chunks.iter().map(|item| item.text.len()).sum::<usize>() > 65536 {
+            return Err("DENIED: genuine AppContainer Cargo stdout/stderr readback failed".into());
+        }
+        eprintln!("DEV03B_WINDOWS_REAL_JOBOBJECT_STDIO=PASS chunks={} truncated={}",
+            page.chunks.len(), page.truncated);
+    }
     // D7C test mode can only audit its same-user journal as diagnostic data.
     // D7D protected mode cannot read the service's ACL-isolated journal:
     // execute_windows_worker instead waits for an authenticated independent

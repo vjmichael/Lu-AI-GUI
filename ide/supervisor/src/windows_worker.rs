@@ -11,6 +11,7 @@ use crate::windows_broker::BrokerLease;
 #[cfg(feature = "protected-recovery-service")]
 use crate::windows_service_client::ServiceLease as BrokerLease;
 use crate::{
+    live_output::LiveOutput,
     snapshot::{verify_input, PublishedInput},
     windows_broker::TrustedBroker,
     windows_cap_tree::{audit_tree, digest_tree, live_output_quota, publish_into_native_parent},
@@ -20,9 +21,12 @@ use crate::{
 use std::{
     ffi::OsStr,
     fs::{self},
-    io,
+    io::{self, Read, Seek, SeekFrom},
     mem::size_of,
-    os::windows::ffi::{OsStrExt, OsStringExt},
+    os::windows::{
+        ffi::{OsStrExt, OsStringExt},
+        fs::{MetadataExt, OpenOptionsExt},
+    },
     path::{Path, PathBuf},
     ptr,
     sync::{
@@ -86,6 +90,7 @@ const GENERIC_WRITE_ACCESS: u32 = 0x4000_0000;
 const FILE_SHARE_READ_VALUE: u32 = 1;
 const FILE_SHARE_WRITE_VALUE: u32 = 2;
 const FILE_ATTRIBUTE_NORMAL_VALUE: u32 = 0x80;
+const FILE_FLAG_OPEN_REPARSE_POINT_VALUE: u32 = 0x0020_0000;
 // JOBOBJECT_CPU_RATE_CONTROL_INFORMATION is two DWORDs when using CpuRate.
 // ENABLE(1) | HARD_CAP(4), CpuRate = 5000/10000 (50%).
 const CPU_RATE_HARD_CAP: u32 = 0x1 | 0x4;
@@ -192,7 +197,12 @@ pub fn trusted_offline_toolchain_digest(bundle: &Path) -> Result<String, Supervi
     digest_tree(bundle, None, MAX_BUNDLE_FILES, MAX_BUNDLE_BYTES)
 }
 
-fn stage_toolchain(bundle: &Path, dest: &Path, expected: &str, recipe_id: &str) -> Result<(), SupervisorError> {
+fn stage_toolchain(
+    bundle: &Path,
+    dest: &Path,
+    expected: &str,
+    recipe_id: &str,
+) -> Result<(), SupervisorError> {
     if !expected.bytes().all(|x| x.is_ascii_hexdigit()) || expected.len() != 64 {
         return Err(SupervisorError::InvalidPlan);
     }
@@ -209,7 +219,8 @@ fn stage_toolchain(bundle: &Path, dest: &Path, expected: &str, recipe_id: &str) 
             }
         }
         if !clean_meta(&bundle.join("lib"))?.is_dir()
-            || !clean_meta(&bundle.join("cargo-home"))?.is_dir() {
+            || !clean_meta(&bundle.join("cargo-home"))?.is_dir()
+        {
             return Err(denied());
         }
     }
@@ -697,7 +708,10 @@ fn bootstrap_environment(
 /// Runtime-only AppContainer bootstrap, no inherited Python/Node/CMake,
 /// shell, PATH, HOME or registry build settings from the desktop user.
 fn bootstrap_multilang_environment(
-    local: &Path, workspace: &Path, output: &Path, tools: &Path,
+    local: &Path,
+    workspace: &Path,
+    output: &Path,
+    tools: &Path,
 ) -> Result<Vec<u16>, SupervisorError> {
     let system = std::env::var_os("SystemRoot").ok_or_else(denied)?;
     if !Path::new(&system).is_absolute()
@@ -714,8 +728,7 @@ fn bootstrap_multilang_environment(
         os_system32.display(),system.to_string_lossy(),local.display(),
         local.display()
     ).replace("\\0","\0");
-    if env.encode_utf16().count()>32767
-        || env.chars().any(|ch|ch=='\u{0001}') {
+    if env.encode_utf16().count() > 32767 || env.chars().any(|ch| ch == '\u{0001}') {
         return Err(denied());
     }
     Ok(env.encode_utf16().collect())
@@ -729,33 +742,45 @@ fn command_for(
 ) -> Result<(PathBuf, Vec<u16>), SupervisorError> {
     if cfg!(feature = "multilang-worker") {
         let (binary, manifest, args) = match plan.recipe_id.as_str() {
-            "python_pytest" => ("bin/python.exe", "pyproject.toml",
-                "-I -m pytest -q -p no:cacheprovider".to_owned()),
-            "js_tests" => ("bin/node.exe", "package.json",
-                "--test --test-reporter=tap".to_owned()),
-            "cpp_cmake_build" => ("bin/cmake.exe", "CMakeLists.txt",
+            "python_pytest" => (
+                "bin/python.exe",
+                "pyproject.toml",
+                "-I -m pytest -q -p no:cacheprovider".to_owned(),
+            ),
+            "js_tests" => (
+                "bin/node.exe",
+                "package.json",
+                "--test --test-reporter=tap".to_owned(),
+            ),
+            "cpp_cmake_build" => (
+                "bin/cmake.exe",
+                "CMakeLists.txt",
                 format!(
                     "-DLU_IDE_WORKSPACE=\"{}\" -DLU_IDE_OUTPUT=\"{}\" -P \"{}\"",
-                    workspace.display(),output.display(),
+                    workspace.display(),
+                    output.display(),
                     tools.join("drivers/dev03-cmake.cmake").display(),
-                )),
+                ),
+            ),
             _ => ("", "", String::new()),
         };
         if !binary.is_empty() {
-            let executable=tools.join(binary);
+            let executable = tools.join(binary);
             if !clean_meta(&executable)?.is_file()
-                || !clean_meta(&workspace.join(manifest))?.is_file() {
+                || !clean_meta(&workspace.join(manifest))?.is_file()
+            {
                 return Err(denied());
             }
             // All paths are host-created AppContainer directories, not a
             // project path, command string or environment from the WebView.
-            let command=format!("\"{}\" {}",executable.display(),args);
-            if command.contains('\n') || command.contains('\r')
-                || command.contains('\"')
-                    && executable.to_string_lossy().contains('\"') {
+            let command = format!("\"{}\" {}", executable.display(), args);
+            if command.contains('\n')
+                || command.contains('\r')
+                || command.contains('\"') && executable.to_string_lossy().contains('\"')
+            {
                 return Err(denied());
             }
-            return Ok((executable,wstr(&command)));
+            return Ok((executable, wstr(&command)));
         }
     }
     let (subcommand, manifest) = match plan.recipe_id.as_str() {
@@ -785,10 +810,10 @@ fn command_for(
     }
     Ok((exe, wstr(&command)))
 }
-/// Fixed NUL stdin and one write-only diagnostic log, located strictly
-/// inside the worker's already-contained output. Kernel HANDLE_LIST blocks
-/// every unrelated native host handle, including journal and credentials.
-fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle), SupervisorError> {
+/// NUL stdin and two independent write-only handles in the already-contained
+/// worker output. This preserves stdout/stderr identity without exposing
+/// host credentials, journal or any handle outside the explicit HANDLE_LIST.
+fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle, Handle), SupervisorError> {
     if !clean_meta(output)?.is_dir() {
         return Err(denied());
     }
@@ -812,22 +837,81 @@ fn isolated_cargo_stdio(output: &Path) -> Result<(Handle, Handle), SupervisorErr
         return Err(denied());
     }
     let nul = Handle::new(nul)?;
-    let file = output.join("cargo-diagnostics.log");
-    let diagnostics = unsafe {
-        CreateFileW(
-            wide(file.as_os_str()).as_ptr(),
-            GENERIC_WRITE_ACCESS,
-            0,
-            &mut sec,
-            CREATE_NEW,
-            FILE_ATTRIBUTE_NORMAL_VALUE,
-            ptr::null_mut(),
-        )
-    };
-    if diagnostics.is_null() || diagnostics == INVALID_HANDLE_VALUE {
-        return Err(denied());
+    fn create_stream(
+        output: &Path,
+        name: &str,
+        sec: &mut SECURITY_ATTRIBUTES,
+    ) -> Result<Handle, SupervisorError> {
+        let path = output.join(name);
+        let value = unsafe {
+            CreateFileW(
+                wide(path.as_os_str()).as_ptr(),
+                GENERIC_WRITE_ACCESS,
+                FILE_SHARE_READ_VALUE,
+                sec,
+                CREATE_NEW,
+                FILE_ATTRIBUTE_NORMAL_VALUE,
+                ptr::null_mut(),
+            )
+        };
+        if value.is_null() || value == INVALID_HANDLE_VALUE {
+            return Err(denied());
+        }
+        Handle::new(value)
     }
-    Ok((nul, Handle::new(diagnostics)?))
+    let stdout = create_stream(output, "cargo-stdout.log", &mut sec)?;
+    // Keep the original diagnostics filename for stderr and legacy artifact
+    // evidence; it is no longer incorrectly merged with stdout.
+    let stderr = create_stream(output, "cargo-diagnostics.log", &mut sec)?;
+    Ok((nul, stdout, stderr))
+}
+
+/// Bounded read-only observation of native fixed worker output files. The
+/// kernel Job Object, source seal and supervisor still govern execution.
+/// No caller-controlled path, file name, handle or output grant is accepted.
+fn stream_windows_output(
+    output: &Path,
+    stdout_offset: &mut u64,
+    stderr_offset: &mut u64,
+    live: Option<&Arc<LiveOutput>>,
+) -> Result<(), SupervisorError> {
+    let Some(live) = live else {
+        return Ok(());
+    };
+    for (name, stream, offset) in [
+        ("cargo-stdout.log", "stdout", stdout_offset),
+        ("cargo-diagnostics.log", "stderr", stderr_offset),
+    ] {
+        let path = output.join(name);
+        let meta = clean_meta(&path)?;
+        if !meta.is_file() || meta.len() > MAX_OUTPUT_FILE_BYTES || meta.len() < *offset {
+            return Err(denied());
+        }
+        // Open the reparse point itself (never its target). A malicious
+        // contained worker must not make the trusted host follow an escaped
+        // symlink/junction during a metadata-to-open race.
+        let mut file = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT_VALUE)
+            .open(&path)
+            .map_err(io_denied)?;
+        let opened = file.metadata().map_err(io_denied)?;
+        if !opened.is_file()
+            || opened.file_attributes() & 0x400 != 0
+            || opened.len() < *offset
+            || opened.len() > MAX_OUTPUT_FILE_BYTES
+        {
+            return Err(denied());
+        }
+        file.seek(SeekFrom::Start(*offset)).map_err(io_denied)?;
+        let mut data = [0u8; 8192];
+        let n = file.read(&mut data).map_err(io_denied)?;
+        if n > 0 {
+            live.append(stream, &data[..n]);
+            *offset += n as u64;
+        }
+    }
+    Ok(())
 }
 
 fn launch_appcontainer(
@@ -876,15 +960,15 @@ fn launch_appcontainer(
     {
         return Err(denied());
     }
-    let (stdin_nul, diagnostic_log) = isolated_cargo_stdio(output)?;
-    let inherited = [stdin_nul.0, diagnostic_log.0];
+    let (stdin_nul, stdout_log, stderr_log) = isolated_cargo_stdio(output)?;
+    let inherited = [stdin_nul.0, stdout_log.0, stderr_log.0];
     if unsafe {
         UpdateProcThreadAttribute(
             attrs.raw(),
             0,
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST_VALUE,
             inherited.as_ptr().cast(),
-            size_of::<[HANDLE; 2]>(),
+            size_of::<[HANDLE; 3]>(),
             ptr::null_mut(),
             ptr::null(),
         )
@@ -896,8 +980,8 @@ fn launch_appcontainer(
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
     startup.StartupInfo.hStdInput = stdin_nul.0;
-    startup.StartupInfo.hStdOutput = diagnostic_log.0;
-    startup.StartupInfo.hStdError = diagnostic_log.0;
+    startup.StartupInfo.hStdOutput = stdout_log.0;
+    startup.StartupInfo.hStdError = stderr_log.0;
     startup.lpAttributeList = attrs.raw();
     let mut proc = PROCESS_INFORMATION::default();
     let exe_wide = wide(executable.as_os_str());
@@ -1023,6 +1107,39 @@ pub fn execute_windows_worker_after_staging_approval<F>(
 where
     F: FnOnce() -> Result<(), SupervisorError>,
 {
+    execute_windows_worker_after_staging_approval_with_output(
+        supervisor,
+        job_id,
+        plan,
+        current_host_observed_head,
+        input,
+        trusted_offline_toolchain_root,
+        trusted_native_output_parent,
+        trusted_broker,
+        cancel,
+        approve_after_staging,
+        None,
+    )
+}
+
+/// Alternate native-only entry, preserving the exact existing admission,
+/// cancellation and terminal-receipt path.
+pub fn execute_windows_worker_after_staging_approval_with_output<F>(
+    supervisor: &Supervisor,
+    job_id: &str,
+    plan: &JobPlan,
+    current_host_observed_head: &str,
+    input: &PublishedInput,
+    trusted_offline_toolchain_root: &Path,
+    trusted_native_output_parent: &Path,
+    trusted_broker: &TrustedBroker,
+    cancel: &WindowsCancellation,
+    approve_after_staging: F,
+    live: Option<Arc<LiveOutput>>,
+) -> Result<WindowsExecutionResult, SupervisorError>
+where
+    F: FnOnce() -> Result<(), SupervisorError>,
+{
     if !valid_job_id(job_id)
         || plan.source_head != current_host_observed_head
         || plan.input_snapshot_sha256 != input.seal.source_sha256
@@ -1110,7 +1227,10 @@ where
     verify_input(&final_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
     if multilang {
         crate::runtime_bundles::verify_runtime_bundle(
-            &plan.recipe_id, &toolchain, &plan.toolchain_sha256)?;
+            &plan.recipe_id,
+            &toolchain,
+            &plan.toolchain_sha256,
+        )?;
     } else if trusted_offline_toolchain_digest(&toolchain)? != plan.toolchain_sha256 {
         return Err(SupervisorError::WrongProjectOrSource);
     }
@@ -1200,7 +1320,23 @@ where
     // OS process/job liveness and cancellation are polled every 40 ms.
     // A metadata-only directory walk need not run on *every* wait tick.
     let mut last_live_output_scan = Instant::now() - LIVE_OUTPUT_SCAN_INTERVAL;
+    let mut stdout_offset = 0u64;
+    let mut stderr_offset = 0u64;
     let exit_code = loop {
+        // Output is advisory, but a structural violation quarantines the job
+        // rather than silently trusting mutated worker files.
+        if stream_windows_output(
+            &output,
+            &mut stdout_offset,
+            &mut stderr_offset,
+            live.as_ref(),
+        )
+        .is_err()
+        {
+            let _ = job.kill_and_verify();
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(SupervisorError::Quarantined);
+        }
         let waited = unsafe { WaitForSingleObject(process.0, LOOP_DELAY.as_millis() as u32) };
         if waited == WAIT_OBJECT_0 {
             let mut code = 1_u32;
@@ -1273,6 +1409,19 @@ where
             break None;
         }
     };
+    // Capture any final buffered diagnostics before the output seal.
+    if stream_windows_output(
+        &output,
+        &mut stdout_offset,
+        &mut stderr_offset,
+        live.as_ref(),
+    )
+    .is_err()
+    {
+        let _ = job.kill_and_verify();
+        let _ = supervisor.native_quarantine_after_error(job_id);
+        return Err(SupervisorError::Quarantined);
+    }
     // All descendants must exit or be killed, including after the Cargo
     // parent process exits. Job Object handle remains open through receipt.
     let naturally_empty = job.await_empty(REAP_LIMIT);
@@ -1447,6 +1596,34 @@ pub fn reconcile_windows_interrupted_via_service(
 mod tests {
     use super::*;
     #[test]
+    fn two_windows_streams_preserve_identity_and_offsets() {
+        let root = test_tree();
+        fs::write(root.join("cargo-stdout.log"), b"output-one").unwrap();
+        fs::write(root.join("cargo-diagnostics.log"), b"error-one").unwrap();
+        let sink = Arc::new(LiveOutput::default());
+        let mut out = 0u64;
+        let mut err = 0u64;
+        stream_windows_output(&root, &mut out, &mut err, Some(&sink)).unwrap();
+        assert_eq!((out, err), (10, 9));
+        let page = sink.page(0);
+        assert_eq!(page.chunks.len(), 2);
+        assert_eq!(page.chunks[0].stream, "stdout");
+        assert_eq!(page.chunks[1].stream, "stderr");
+        stream_windows_output(&root, &mut out, &mut err, Some(&sink)).unwrap();
+        assert_eq!(sink.page(0).chunks.len(), 2);
+        use std::io::Write;
+        fs::OpenOptions::new()
+            .append(true)
+            .open(root.join("cargo-stdout.log"))
+            .unwrap()
+            .write_all(b"next")
+            .unwrap();
+        stream_windows_output(&root, &mut out, &mut err, Some(&sink)).unwrap();
+        assert_eq!(sink.page(2).chunks.len(), 1);
+        assert_eq!(sink.page(2).chunks[0].stream, "stdout");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn exact_job_names_and_fixed_cpu_rate() {
         assert!(job_name(&format!("job-{}", "a".repeat(32)), &"b".repeat(64)).is_ok());
         assert!(job_name("user-command", &"b".repeat(64)).is_err());
@@ -1617,7 +1794,9 @@ mod tests {
         let base = std::env::temp_dir().join(format!("lu-ide-d7-fixture-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
-        assert!(stage_toolchain(&base, &base.join("stage"), &"a".repeat(64), "rust_check").is_err());
+        assert!(
+            stage_toolchain(&base, &base.join("stage"), &"a".repeat(64), "rust_check").is_err()
+        );
         let _ = fs::remove_dir_all(base);
     }
 }
