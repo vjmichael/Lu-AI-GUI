@@ -587,6 +587,8 @@ mod protected {
         }
         #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
         let mut owner_receipt: Option<(u64, String)> = None;
+        #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+        let mut action_audit: Option<(String, String, String, String)> = None;
         if verify_owner_event {
             #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
             {
@@ -605,9 +607,15 @@ mod protected {
                     || owner.verified_source_line == 0 {
                     return Err("DENIED: owner event did not bind exact approved debug journal".into());
                 }
-                dap.verify_bounded_debug_reviews_for_ci(
-                    &owner, &input.seal.source_sha256,
-                ).map_err(|_| "DENIED: DEV-04.6A native host review failed binding or granted debugger authority")?;
+                let audit = dap.verify_bounded_debug_reviews_for_ci(
+                    &supervisor, &owner, &input.seal.source_sha256,
+                ).map_err(|_| "DENIED: DEV-04.6A/B native operator review/one-use journal admission failed")?;
+                if audit.0.len() != 64 || audit.1.len() != 64
+                    || audit.2.len() != 64 || audit.3 != "ResultUncertain" {
+                    return Err("DENIED: D6B per-operation CI receipt incorrectly asserted success".into());
+                }
+                action_audit = Some(audit);
+                println!("DEV046B_NATIVE_OWNER_ACTION_ONE_USE=PASS;human_consent=CI_SIMULATED_ONLY;consumed_before_dispatch=true;no_dap_control=true;result=UNCERTAIN");
                 println!("DEV046A_NATIVE_REVIEW_BOUND_TO_REAL_OWNER=PASS;breakpoint=preview_only;step=preview_only;variables=denied;control_authorized=false");
                 bound_line_receipts = Some((
                     owner.debug_running_receipt_sha256,
@@ -743,6 +751,13 @@ mod protected {
                 &debug_job.job_id, sequence, &owner_sha,
             ).map_err(|e| e.code())?;
             println!("DEV045D5_OWNER_EVENT_FSYNC_RESTART_RECOVERY=PASS");
+        }
+        #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+        if let Some((action_id, preview, last, phase)) = action_audit {
+            replay.verify_native_debug_action_after_restart(
+                &action_id, &preview, &last, &phase,
+            ).map_err(|_| "DENIED: native D6B one-use action journal missing or tampered after restart")?;
+            println!("DEV046B_ACTION_JOURNAL_REOPEN_AUDIT=PASS;grant_restored=false;operation_not_dispatched=true");
         }
         // Opening a fresh supervisor session must not restore either prior
         // grant, even though both old plan hashes and receipts remain readable.
