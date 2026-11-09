@@ -10,7 +10,8 @@ use lu_core::{
     agent_plan_revisions::AgentPlanRevisionStore,
     agent_host_scheduler::AgentHostScheduler,
     agent_deliverable_receipts::AgentDeliverableReceipts,
-    agent_recovery_decision::{reconcile_recovery,NoIndependentCustodyProof},
+    agent_recovery_decision::reconcile_recovery,
+    agent_os_custody::HostOriginalJobCustody,
 };
 
 #[derive(Clone,Serialize)]
@@ -65,7 +66,7 @@ pub(crate) async fn lu_agent_reconcile_recovery(
             &plan_file,profile,&chat_id,&plan_id,
             &current.original_human_turn_id,
             &ledger,&revisions,&scheduler,&receipts,&sources,
-            &NoIndependentCustodyProof
+            &HostOriginalJobCustody::from_host_profile(profile)
         )?;
         Ok(AgentRecoveryView{
             status:checked.status.into(),
