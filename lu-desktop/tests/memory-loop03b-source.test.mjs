@@ -103,7 +103,7 @@ test('large or missing source cannot silently create verified memory',()=>{
 });
 test('native policy and context unit scenarios cover contradictory, missing and truncated facts',()=>{
  assert.equal((policy.match(/#\[test\]/g)||[]).length,7);
- assert.equal((context.match(/#\[test\]/g)||[]).length,4);
+ assert.equal((context.match(/#\[test\]/g)||[]).length,6);
  assert.match(policy,/contradicted_claim_wins_over_verified_historical_receipt/);
  assert.match(policy,/missing_or_partial_procedure_requires_review/);
  assert.match(context,/oversized_context_fails_closed_and_cannot_forge_a_procedure/);
