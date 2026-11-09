@@ -231,6 +231,37 @@ impl DapGateway {
             .map_err(protocol_denied)?;
         self.send(&frame)
     }
+    /// CI-only native dispatcher; private Job-owned DAP protocol object,
+    /// not a Tauri/AI tool. Claim consumption and kernel stop validation
+    /// must happen in WindowsDapSession BEFORE reaching this gateway.
+    #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
+    pub(crate) fn ci_send_step(
+        &mut self, thread_id: u64,
+        kind: lu_ide_workspace::dap_session::CiStepKind,
+    ) -> Result<(), SupervisorError> {
+        let frame = self.session.ci_step(thread_id, kind)
+            .map_err(protocol_denied)?;
+        self.send(&frame)
+    }
+    #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
+    pub(crate) fn ci_send_one_line_breakpoint(
+        &mut self,
+    ) -> Result<(), SupervisorError> {
+        let source = self.session.source_candidate()
+            .ok_or(SupervisorError::NoContainment)?.clone();
+        let frame = self.session.ci_set_breakpoint(
+            &source.adapter_path, source.line,
+        ).map_err(protocol_denied)?;
+        self.send(&frame)
+    }
+    /// The LLDB response is correlation ONLY. It does not prove source
+    /// breakpoint installation or completed stepping.
+    #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
+    pub(crate) fn ci_take_observation(
+        &mut self,
+    ) -> Option<lu_ide_workspace::dap_session::CiControlObservation> {
+        self.session.ci_take_control_observation()
+    }
     pub(crate) fn poll(&mut self) -> Result<Vec<DapEvent>, SupervisorError> {
         if self.started.elapsed() > MAX_LIFETIME {
             return self.quarantine();
