@@ -1,8 +1,7 @@
 name: Lu Browser and Research Native Acceptance Candidates
 on:
   workflow_dispatch:
-  pull_request:
-    types: [edited]
+  workflow_call:
 permissions:
   contents: read
 jobs:

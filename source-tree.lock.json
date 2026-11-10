@@ -61,7 +61,7 @@
     },
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
-      "blob": "aa7dff77c884d599bd053d91ee0e2f489dd34e9d"
+      "blob": "c8468f8fb2f44692928efe2ad9e332419984dfba"
     },
     {
       "path": ".github/workflows/lu-ci.yml",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "f90e81a75613dcd7e95bee3f25cc6762cdb52180"
+      "blob": "8d31d1f763ac60b563f0fe6f0fed015c807411c5"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -1657,7 +1657,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-browser-real-ci-gate.test.mjs",
-      "blob": "a6dc6e71d8b8da7fcc2989abfc11ea6724539611"
+      "blob": "a59a6f69d96816f572124bf5840c1058a3b6805f"
     },
     {
       "path": "lu-desktop/tests/p0-hf-transfer-transaction.test.mjs",

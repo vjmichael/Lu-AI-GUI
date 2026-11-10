@@ -5,6 +5,8 @@ const workflow=readFileSync(new URL('../../.github/workflows/lu-browser-research
 const runtime=readFileSync(new URL('../src-tauri/src/native_browser_host.rs',import.meta.url),'utf8');
 test('real candidate gated to exact reviewed source SHA and no implicit production permission',()=>{
   assert.match(workflow,/LU_P0_BROWSER_NATIVE_SHA=/);
+  assert.match(workflow,/workflow_call:/);
+  assert.doesNotMatch(workflow,/^  pull_request:/m);
   assert.match(workflow,/github\.event\.pull_request\.head\.sha/);
   assert.match(workflow,/!contains\(github\.event\.changes\.body\.from/);
   assert.match(workflow,/assemble-browser-ci-candidate\.mjs/);
