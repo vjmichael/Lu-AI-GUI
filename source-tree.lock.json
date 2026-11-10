@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 864,
+  "trackedFileCount": 865,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -1236,6 +1236,10 @@
       "blob": "525d4316c9b1aa98f21ce5d3ef1c92cf001e5269"
     },
     {
+      "path": "lu-desktop/src-tauri/src/host_clock.rs",
+      "blob": "1f2206333e408eb3a5442c5126ead207eb1039b9"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/host_safe_continuation.rs",
       "blob": "1d15ccf4c0a4c78cf2811d8553e96937f20e289d"
     },
@@ -1245,7 +1249,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "0a1243279c087b15e6be5c7bce758ab6c09e7d9f"
+      "blob": "5fbc656f71bd9a8b2d99f4ea98423056db036558"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",

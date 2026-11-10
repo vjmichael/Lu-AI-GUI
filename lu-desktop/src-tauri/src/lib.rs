@@ -10,6 +10,7 @@ pub use file_scan_worker::run_file_scan_worker;
 mod generation_queue;
 mod background_context;
 mod environment_context;
+mod host_clock;
 mod vision_context;
 mod observe_desktop;
 #[cfg(target_os="linux")]
@@ -4849,6 +4850,11 @@ async fn generate_internal(
                 model_prompt.push_str(
                     &environment_context::fresh_environment_snapshot()
                 );
+            }
+            // Host clock is observed anew on every ordinary human turn.
+            // It is read-only context, NEVER permission to invoke a shell or other tools.
+            if origin==GenerationOrigin::Human {
+                model_prompt.push_str(&host_clock::fresh_local_clock_context());
             }
             let runtime = supervisor.status().map_err(|e| format!("status: {e:?}"))?;
             if runtime.session_id.as_deref() != Some(sid.as_str()) {
