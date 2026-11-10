@@ -239,6 +239,37 @@ async fn ide_workflow_run_step(
 
 /// WO9-D: native read-only preview for one tracked file; stage/commit
 /// require separate exact-source revalidation and an explicit OS confirmation.
+/// Group 6B batch review is metadata-only. These commands cannot stage,
+/// commit, execute Git hooks or grant a future operator approval.
+#[tauri::command]
+async fn ide_git_preview_batch(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_paths: Vec<String>,
+) -> Result<lu_ide_workspace::git_batch_review::ReviewedGitBatch, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.preview_reviewed_git_batch(&project_id, &relative_paths)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06B_BATCH_PREVIEW_HOST_UNAVAILABLE".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_git_verify_batch_review(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    expected: lu_ide_workspace::git_batch_review::ReviewedGitBatch,
+) -> Result<lu_ide_workspace::git_batch_review::ReviewedGitBatch, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.revalidate_reviewed_git_batch(&expected)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06B_BATCH_REVERIFY_HOST_UNAVAILABLE".to_owned())?
+}
+
 #[tauri::command]
 async fn ide_git_review_file(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
@@ -2131,6 +2162,8 @@ pub fn run() {
             ide_workflow_run_step,
             ide_workflow_verify_native_receipt,
             ide_workflow_cancel_pending,
+            ide_git_preview_batch,
+            ide_git_verify_batch_review,
             ide_git_review_file,
             ide_git_stage_reviewed,
             ide_git_commit_reviewed,
