@@ -4285,6 +4285,18 @@ async fn lu_generate(
         return generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
             prompt,image_refs,max_new_tokens,GenerationOrigin::Human,true).await
     }
+    // Ordinary explicit human requests for one public HTTPS URL may enter
+    // the already-existing scoped native browser tool loop. Lu still requires
+    // a verified, separately packaged browser and new native human approval
+    // for the exact origin; URLs in prompt text confer no authority.
+    if !read_only_workspace.unwrap_or(false) && image_refs.is_empty()
+        && max_new_tokens==512 {
+        if let Some(origin)=browser_model_desktop::explicit_browse_origin(&prompt){
+            return browser_model_desktop::lu_generate_browser(
+                app,state,session_id,chat_id,prompt,origin,512
+            ).await;
+        }
+    }
     // Git inspection is a separate read-only, host-scoped capability.
     // It is never inferred from retrieved text, background turns, or a
     // general workspace grant. The native picker is still mandatory.

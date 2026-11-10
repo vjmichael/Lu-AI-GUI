@@ -264,6 +264,43 @@ pub(crate) async fn lu_browser_model_read(
     result
 }
 
+/// Host-side discovery from the ORIGINAL submitted human text only.
+/// It opens a native approval flow, never a silent network request. Only a
+/// single explicit HTTPS origin is admitted; exact public-origin checks
+/// remain in BrowserOriginScope, and a missing verified runtime fails closed.
+pub(crate) fn explicit_browse_origin(prompt:&str)->Option<String>{
+    let trimmed=prompt.trim();
+    if trimmed.is_empty()||trimmed.len()>4096||trimmed.contains("[Attached text file:")
+        ||trimmed.contains("<|"){return None}
+    let lower=trimmed.to_ascii_lowercase();
+    if ["do not browse","don't browse","do not open","don't open",
+        "without browsing","no browser","no network","how to browse",
+        "explain browsing"].iter().any(|bad|lower.contains(bad)){return None}
+    if !["browse ","visit ","open website","open https://","read https://",
+        "read the website","summarize https://","inspect https://",
+        "summarize the page","look at https://","check https://"]
+        .iter().any(|v|lower.starts_with(v)){return None}
+    let mut origins=std::collections::BTreeSet::new();
+    for word in trimmed.split_whitespace(){
+        let candidate=word.trim_matches(|c:char|matches!(c,'"'\''|'"'|'('|')'|'['|']'|','|';'|'.'));
+        if !candidate.starts_with("https://"){continue}
+        let authority=candidate[8..].split(['/', '?', '#']).next()?;
+        if authority.is_empty()||authority.len()>255||authority.contains('@')
+            ||authority.contains(':')
+            ||authority.starts_with('.')||authority.ends_with('.')
+            ||!authority.contains('.')
+            ||!authority.bytes().all(|ch|ch.is_ascii_alphanumeric()||ch==b'-'||ch==b'.'){
+            return None;
+        }
+        origins.insert(format!("https://{}",authority.to_ascii_lowercase()));
+    }
+    if origins.len()!=1 {return None}
+    let origin=origins.into_iter().next()?;
+    use lu_core::browser_authorized_execution::BrowserOriginScope;
+    BrowserOriginScope::from_host_grant(vec![origin.clone()]).ok()?;
+    Some(origin)
+}
+
 /// One bounded research turn never silently inherits Browser authority:
 /// it has an explicit opt-in on normal Send, persists its own USER event,
 /// then obtains a new native approval for the exact submitted turn.
@@ -705,5 +742,30 @@ mod tests{
         let mut altered=descriptor;
         altered.effect=ToolEffect::NetworkWrite;
         assert!(policy.authorize(&invocation,&altered).is_err());
+    }
+}
+
+#[cfg(test)]
+mod p0_browse_intent_tests {
+    use super::explicit_browse_origin;
+    #[test]
+    fn browser_model_request_only_for_original_explicit_public_https(){
+        assert_eq!(explicit_browse_origin("Browse https://example.org/post"),
+            Some("https://example.org".to_string()));
+        assert_eq!(explicit_browse_origin("Summarize https://docs.rs/serde/latest"),
+            Some("https://docs.rs".to_string()));
+        for invalid in [
+            "Tell me what surfing means","What time is it?",
+            "Do not browse https://example.org",
+            "Browse https://localhost/",
+            "Browse https://127.0.0.1/admin",
+            "Browse https://example.org and https://example.net",
+            "Browse http://example.org",
+            "Browse https://alice:secret@example.org",
+            "Open C:\\Windows\\System32",
+            "Explain browsing https://example.org"
+        ] {
+            assert_eq!(explicit_browse_origin(invalid),None,"{invalid}");
+        }
     }
 }

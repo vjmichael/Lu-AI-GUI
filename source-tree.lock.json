@@ -1193,7 +1193,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/browser_model_desktop.rs",
-      "blob": "12b6a9a0cea452387074685f9de5cf0ca3bf7c39"
+      "blob": "dc0a0cb565c6dd357c36a1ef3e899b5c514190a8"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_message_interactions.rs",
@@ -1253,7 +1253,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "23d599d11b20fe1420cbb50de04cd8fb9d40e5e5"
+      "blob": "37136ae7f1956dc7fca392a60d6933ba313c7c13"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1373,7 +1373,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
-      "blob": "a64cd09ccd8da543495d3d93c5094b81beee5aa6"
+      "blob": "027dd6e2336498d22328818e706ce33e0373dbe4"
     },
     {
       "path": "lu-desktop/src-tauri/src/write_proposal.rs",
