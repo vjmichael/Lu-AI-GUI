@@ -185,7 +185,11 @@ def _x11_dialog_activation(attempt):
     try:
         subprocess.run(["xdotool", "windowactivate", "--sync", active],
                        check=True, timeout=5)
-        key("Return" if attempt % 2 == 0 else "alt+o")
+        # GTK versions differ: an X11 folder chooser can expose no
+        # accessible Select Folder button despite a real dialog window.
+        # Try only bounded standard native confirmation keys, never a
+        # backend/JS selection or an unrelated-window click.
+        key(("Return", "alt+o", "alt+s", "Return")[attempt])
         print("P04_GTK_X11_CHOOSER=visible_real_os_dialog_keyboard;"
               "attempt=" + str(attempt), flush=True)
         return True
@@ -453,6 +457,31 @@ def _select_real_fixture_directory():
     return False
 
 
+def _native_parent_and_exact_child():
+    # The real Ubuntu 24.04 installed run at 5788f9a opened an authentic
+    # GTK folder chooser but exposed zero AT-SPI child rows after Alt+Up.
+    # Navigate to the *exact ephemeral fixture parent* through GTK's own
+    # native location entry; never assume that Alt+Up landed correctly.
+    # A keyboard type-ahead of the exact child basename is an OS action,
+    # NOT acceptance. Registration and dialog closure are still mandatory.
+    if not _native_chooser_still_open():
+        return False
+    key("ctrl+l")
+    type_text(str(ROOT.parent))
+    key("Return")
+    time.sleep(0.6)
+    print("P04_GTK_PARENT_LOCATION=exact_native_parent_submitted", flush=True)
+    if _select_real_fixture_directory():
+        return True
+    # Some GTK file list providers omit AT-SPI rows; try a bounded native
+    # file-list typeahead, but never invent a selected child from a keystroke.
+    key("Tab")
+    type_text(ROOT.name)
+    key("space")
+    print("P04_GTK_CHILD_TYPEAHEAD=native_keyboard_attempt_not_witness", flush=True)
+    return _select_real_fixture_directory()
+
+
 def select_native_folder():
     # The former parent-path chooser test saw zero AT-SPI rows for the child.
     # GTK's native Ctrl+L location entry accepts an absolute path to the
@@ -481,14 +510,11 @@ def select_native_folder():
             # keyboard to go up and select the exact fixture child. If GTK
             # does not expose that row, reassert the exact path in its native
             # location entry without blindly accepting an unrelated window.
-            key("alt+Up")
-            time.sleep(0.7)
-            if not _select_real_fixture_directory():
+            if not _native_parent_and_exact_child():
+                # Fail-closed fallback: reassert the exact directory using
+                # native GTK location entry, not a UI/IPC-selected path.
                 key("ctrl+l")
                 type_text(str(ROOT))
-                # Commit the actual native location entry before trying a
-                # different GTK confirmation mode. A typed but unsubmitted
-                # location is not a selected folder.
                 key("Return")
                 print("P04_GTK_EXACT_PATH_ENTRY=reasserted_and_submitted_in_native_chooser",
                       flush=True)

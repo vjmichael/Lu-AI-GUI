@@ -33,6 +33,9 @@ jobs:
         run: |
           python ide/packaging/test_ide056_successor_lock.py
           python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform ubuntu-24.04 --ide05-successor
+      - name: Check real GTK folder-selection policy before expensive package build
+        run: |
+          python3 ide/app/fixtures/test_gtk_chooser_confirmation_policy.py
       - name: Install native Linux Tauri and graphical acceptance prerequisites
         run: |
           sudo apt-get update -qq
@@ -129,6 +132,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: successor lock hostile tests failed' }
           python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022 --ide05-successor
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: successor lock review not proven' }
+      - name: Parse bounded Windows post-navigation accessibility recovery before package build
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'ide/app/fixtures/Test-Wo8NativeDesktopUI.ps1').Path,[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { throw "DENIED: invalid native UIA recovery fixture: $($errors[0])" }
       - name: Validate frontend and Rust host contract
         working-directory: ide/app
         run: |

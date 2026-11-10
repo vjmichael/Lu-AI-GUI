@@ -152,7 +152,19 @@ function Warm-InstalledWebViewAccessibility {
 }
 
 function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
-  $end=(Get-Date).AddSeconds($seconds)
+  $start=Get-Date
+  $end=$start.AddSeconds($seconds)
+  $focusRecoveries=0
+  # Actual NSIS/WebView2 acceptance at 5788f9a: immediately after invoking
+  # Job requests, UIA exposed only 3 root nodes although its HWND remained
+  # visible and foreground. The initial shell focus-recovery proved native
+  # Tab can restore Chromium's UIA provider; repeat that bounded method
+  # only for known IDE navigation headings, never for a permission dialog.
+  $navigationHeading=$query -in @(
+    'Workspace projects', 'Execution requests', 'IDE capabilities',
+    'Language server providers', 'Packages & workflows',
+    'Source control', 'Coding proposals', 'Project continuity'
+  )
   while ((Get-Date) -lt $end) {
     # Do not fake a WebView response. Every candidate is a real native UIA
     # provider reached from this exact installed desktop's child HWND chain.
@@ -171,6 +183,25 @@ function Find-Control([string]$query,[string]$kind,[int]$seconds=18) {
           } catch {}
         }
       } catch {}
+    }
+    # Do not convert an unavailable WebView into a fabricated UI pass.
+    # Only re-focus the exact native installed process (max 2 harmless Tabs),
+    # and still require the requested real UIA element to materialize.
+    if ($navigationHeading -and $focusRecoveries -lt 2 -and
+        ((Get-Date)-$start).TotalSeconds -ge (4 + 4*$focusRecoveries)) {
+      $main=WindowRoot
+      if ($main -and $proc.MainWindowHandle -ne [IntPtr]::Zero) {
+        $hwnd=$proc.MainWindowHandle
+        [void][P04NativeWebViewWindows]::SetForegroundWindow($hwnd)
+        Start-Sleep -Milliseconds 150
+        if ([P04NativeWebViewWindows]::GetForegroundWindow() -eq $hwnd) {
+          [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+          Write-Host ('WO8_NATIVE_UIA_POST_NAV_FOCUS_RECOVERY='+$query+
+            ';attempt='+($focusRecoveries+1))
+          Start-Sleep -Milliseconds 250
+        }
+      }
+      $focusRecoveries++
     }
     Start-Sleep -Milliseconds 450
   }
