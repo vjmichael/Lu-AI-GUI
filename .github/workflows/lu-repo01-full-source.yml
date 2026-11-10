@@ -1142,7 +1142,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PYTHONPATH=benchmarks/e1 python3 -c 'import os, e1_p07_llama_completion as m; m.assert_grammar_enforced(int(os.environ["LU_E1_P07_LLAMA_PORT"])); print("LIVE_GBNF_DECODER_ENFORCED")' \
+          PYTHONPATH=benchmarks/e1 python3 -c 'import os, e1_p07_llama_completion as m; port=int(os.environ["LU_E1_P07_LLAMA_PORT"]); m.assert_grammar_enforced(port); m.assert_tool_grammar_enforced(port); print("LIVE_GBNF_DECODER_ENFORCED")' \
             2>&1 | tee e1-p07-gguf-evidence/live-grammar-preflight.log
           grep -Fq 'LIVE_GBNF_DECODER_ENFORCED' e1-p07-gguf-evidence/live-grammar-preflight.log
       - name: Record genuine Qwen3 plan-format reliability without granting tools

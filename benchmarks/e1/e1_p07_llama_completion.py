@@ -19,16 +19,19 @@ import urllib.request
 # The model still chooses the tool name and ALL argument values; host-side
 # catalog, original-human authority, bounded effects and independent oracles
 # remain unchanged. This is a TEST transport, not a synthetic tool call.
+# From pinned llama.cpp b12143 grammars/json.gbnf (normal JSON value,
+# string, number, whitespace grammar), with the two strict Lu envelopes.
+# Do not substitute ad-hoc regex classes: the previous grammar was accepted
+# as an HTTP request but did not constrain the real model's full response.
 _JSON_RULES = r'''
-tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws string ws "," ws "\"arguments\"" ws ":" ws object ws "}"
-final ::= "{" ws "\"kind\"" ws ":" ws "\"final\"" ws "," ws "\"text\"" ws ":" ws string ws "}"
-object ::= "{" ws (string ws ":" ws value (ws "," ws string ws ":" ws value)*)? ws "}"
-array ::= "[" ws (value (ws "," ws value)*)? ws "]"
-value ::= object | array | string | number | "true" | "false" | "null"
-string ::= "\"" ([^"\\] | "\\" (["\\/bfnrt] | "u" hex hex hex hex))* "\""
-hex ::= [0-9a-fA-F]
-number ::= "-"? ("0" | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
-ws ::= [ \t\n\r]*
+tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws string "," ws "\"arguments\"" ws ":" ws object "}" ws
+final ::= "{" ws "\"kind\"" ws ":" ws "\"final\"" ws "," ws "\"text\"" ws ":" ws string "}" ws
+value ::= object | array | string | number | ("true" | "false" | "null") ws
+object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws
+array ::= "[" ws (value ("," ws value)*)? "]" ws
+string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws
+number ::= ("-"? ([0-9] | [1-9] [0-9]{0,15})) ("." [0-9]+)? ([eE] [-+]? [0-9] [1-9]{0,15})? ws
+ws ::= | " " | "\n" [ \t]{0,20}
 '''
 GENERIC_REPLY_GBNF = {
     "required": "root ::= tool\n" + _JSON_RULES,
@@ -74,6 +77,47 @@ def grammar_preflight_payload() -> dict:
         "cache_prompt": False, "stop": ["<|im_end|>"],
         "grammar": 'root ::= "LU_GRAMMAR_PROBE_OK"',
     }
+
+
+def assert_tool_grammar_enforced(port: int):
+    """Verify b12143 constrained JSON tool-envelope shape without effects.
+
+    The model may choose ANY tool name and JSON arguments. This probe does
+    not invoke native tools or grant access; it ensures the decoder does
+    not append unstructured prose like the previously observed Qwen reply.
+    """
+    prompt = (
+        "<|im_start|>system\n"
+        "Return an ordinary brief sentence. Do NOT produce JSON.\n"
+        "<|im_end|>\n<|im_start|>user\n"
+        "Please say HELLO in plain English, then one Russian sentence.\n"
+        "<|im_end|>\n<|im_start|>assistant\n"
+    )
+    payload = model_payload(prompt, 128, "json_schema", "required")
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/completion",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=90) as reply:
+        raw = reply.read(262145)
+        if len(raw) > 262144:
+            raise ValueError("Oversized strict tool-grammar probe")
+    content = json.loads(raw).get("content")
+    if not isinstance(content, str) or len(content) > 65536:
+        raise ValueError("No bounded model output in strict grammar probe")
+    try:
+        obj = json.loads(content)
+    except (ValueError, TypeError):
+        raise ValueError(
+            "Pinned llama.cpp did not enforce full tool GBNF as one exact JSON object"
+        ) from None
+    if not isinstance(obj, dict) or set(obj) != {"kind","name","arguments"} \
+        or obj["kind"] != "tool" or not isinstance(obj["name"], str) \
+        or not isinstance(obj["arguments"], dict):
+        raise ValueError("Pinned llama.cpp full tool GBNF produced wrong envelope")
+    # The tool name is deliberately NOT validated against Lu's registry
+    # here; the real native model turn does that after genuine user review.
 
 
 def assert_grammar_enforced(port: int):

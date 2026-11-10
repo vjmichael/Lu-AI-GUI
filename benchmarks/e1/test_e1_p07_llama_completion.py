@@ -31,7 +31,8 @@ class RealQwenJsonInterface(unittest.TestCase):
         grammar=out['grammar']
         self.assertIn('root ::= tool\n',grammar)
         self.assertNotIn('root ::= tool | final',grammar)
-        self.assertIn('string ws',grammar)
+        self.assertIn('string ::= ',grammar)
+        self.assertIn('ws ::= | " "',grammar)
         self.assertIn('object',grammar)
         self.assertNotIn('lu_reviewed_git_head',grammar)
         self.assertNotIn('lu_reviewed_media_facts',grammar)
@@ -46,6 +47,15 @@ class RealQwenJsonInterface(unittest.TestCase):
         self.assertNotIn('lu_reviewed_git_head',str(payload))
         self.assertNotIn('permission',str(payload))
         self.assertNotIn('schema',payload)
+    def test_full_grammar_uses_pinned_llama_json_primitive_rules(self):
+        grammar=m.GENERIC_REPLY_GBNF['required']
+        self.assertIn('root ::= tool\n',grammar)
+        self.assertIn('value ::= object | array | string | number',grammar)
+        self.assertIn('[0-9a-fA-F]{4}',grammar)
+        self.assertIn('ws ::= | " "',grammar)
+        self.assertIn('"\\\\"',grammar)
+        self.assertNotIn('lu_reviewed_git_head',grammar)
+
     def test_unknown_protocol_refused(self):
         with self.assertRaises(ValueError):
             m.model_payload('hello',128,'force_git_head')
