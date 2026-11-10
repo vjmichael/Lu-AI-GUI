@@ -29,6 +29,10 @@ jobs:
       - name: Verify exact source checkout for native installed package
         run: |
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+      - name: Prove scoped successor graph and hostile drift denial before native build
+        run: |
+          python ide/packaging/test_ide056_successor_lock.py
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform ubuntu-24.04 --ide05-successor
       - name: Install native Linux Tauri and graphical acceptance prerequisites
         run: |
           sudo apt-get update -qq
@@ -43,10 +47,10 @@ jobs:
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npm run check
-          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04 --ide05-successor
           npm ci --ignore-scripts --no-audit --no-fund
           cargo fetch --locked --manifest-path src-tauri/Cargo.toml
-          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04
+          python ../packaging/verify_p06_candidate_lock.py --repo-root ../.. --platform ubuntu-24.04 --ide05-successor
           python ../packaging/verify_tauri_minor.py --repo-root ../..
           python ../packaging/upstream_notice_receipt.py --repo-root ../.. --source-sha '${{ github.sha }}' --output src-tauri/upstream-notice-receipt.json
           python ../packaging/collect_verification_licenses.py --repo-root ../.. --output src-tauri/verification-notices --source-sha '${{ github.sha }}' --upstream-receipt src-tauri/upstream-notice-receipt.json
@@ -118,6 +122,13 @@ jobs:
           if ((git rev-parse HEAD).Trim() -ine '${{ github.sha }}') {
             throw 'DENIED: installed Windows source checkout is not exact pull-request head'
           }
+      - name: Prove scoped successor graph and hostile drift denial before native build
+        shell: pwsh
+        run: |
+          python ide/packaging/test_ide056_successor_lock.py
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: successor lock hostile tests failed' }
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022 --ide05-successor
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: successor lock review not proven' }
       - name: Validate frontend and Rust host contract
         working-directory: ide/app
         run: |
@@ -130,13 +141,13 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
-          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022 --ide05-successor
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: installer resolved lock graph differs from reviewed OS evidence' }
           npm ci --prefix ide/app --ignore-scripts --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: npm locked install failed' }
           cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: Cargo locked resolution failed' }
-          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022
+          python ide/packaging/verify_p06_candidate_lock.py --repo-root . --platform windows-2022 --ide05-successor
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: locked reinstall changed OS dependency graph' }
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: cannot resolve native dependency license sources' }
           python ide/packaging/verify_tauri_minor.py --repo-root .

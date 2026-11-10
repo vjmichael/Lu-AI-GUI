@@ -1,0 +1,23 @@
+{
+  "schema": "lu.ide.p06.ide05-successor.v1",
+  "purpose": "unsigned-installed-ci-only",
+  "previousReviewCargoSha256": "d4312b60209f89181766b60c2982fb8b199e8ed9d6be1a9dcbdcb3dd07abf6b4",
+  "previousReviewCargoBlob": "87d0045a4be1c78651f080300aba71c14dbe1f30",
+  "newCargoSha256": "c7995fb9957bee2fb0f8247e232c5f7f9db3b3ef5d77d3afcbdc09f1ed9b36aa",
+  "newCargoBlob": "69bc41f0cf739c3d77989531b14b28a472b16e4a",
+  "unchangedCargoOutsideSupervisorSha256": "cbe657f1a2b150d0a45744e4a855a36382f6572f2fb9f6893e49758cc705d2e7",
+  "newSupervisorBlockSha256": "c3db915c6dc08447057ccb628ecac1825489c594f6238a8393ecd01073a73dac",
+  "changedLocalPackage": "lu-ide-execution-supervisor@0.1.0",
+  "addedExistingDependencies": [
+    "base64 0.22.1",
+    "toml 0.8.2"
+  ],
+  "cargoPackages": 500,
+  "npmRawSha256": "3c137aede8749007c062b80e53bef0c83241b73d21e4c692ae1718882e81a316",
+  "reviewedNativeCompileHead": "b7fa7dc2f1d52a558653674f86e167a9e4a95f5d",
+  "reviewedNativeRunId": 42742430229,
+  "externalDependencyChanges": 0,
+  "releaseApproved": false,
+  "licenseLegalReviewApproved": false,
+  "independentHumanApproval": false
+}
