@@ -686,7 +686,12 @@ fn command_for(
                 // CI-only wheel is already in the read-only runtime, so use
                 // an ephemeral cache in the isolated /tmp mount instead.
                 // Production offline workers retain their existing cache.
-                cmd.args(["--no-index", "--find-links", "/runtime/wheelhouse", "--no-cache"]);
+                cmd.args([
+                    "--no-index",
+                    "--find-links",
+                    "/runtime/wheelhouse",
+                    "--no-cache",
+                ]);
             }
         }
         "python_pytest" if runtime.is_some() => {

@@ -247,3 +247,15 @@ output scanner's symlink allowlist or alter production offline cache
 semantics. The next exact-head native runner must still independently
 prove positive install, tamper rejection, crash/restart reconciliation,
 source preservation and proper final receipts before Task 4 acceptance.
+
+## Task 4 — native formatter-only repair
+
+At `a0330edef320fcca6991cf45449502744ca63bd4`,
+[run 42733387421](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42733387421)
+Ubuntu's native Node, host, supervisor and Tauri compile checks passed.
+The grouped gate still correctly denied acceptance because `cargo fmt --check`
+required multiline formatting for the new four-element fixed CI wheelhouse
+args. The following commit applies the **exact formatter hunk** from the
+native Ubuntu result, changing no command argument, containment, grant,
+kernel cleanup, hash or installed package behavior. A new exact-head
+Windows/Linux group remains mandatory; this prior run is not approval.
