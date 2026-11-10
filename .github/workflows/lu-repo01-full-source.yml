@@ -652,3 +652,123 @@ jobs:
           path: phase1-evidence/
           retention-days: 14
           if-no-files-found: warn
+
+  native-r00-phase2:
+    # A single exact-head Windows/Linux Phase 2 implementation group.
+    # The normal source workflow never starts it on synchronize/push.
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_PHASE2_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_PHASE2_GATE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source and one-time task-group admission
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p phase2-evidence
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python3 - <<'PY'
+          import os,re
+          markers=re.findall(r"(?m)^LU_R00_PHASE2_GATE_SHA=([0-9a-f]{40})$",os.environ["BODY"])
+          if markers != [os.environ["HEAD_SHA"]]: raise SystemExit("Unverified phase2 group marker")
+          PY
+          node scripts/verify-source-tree.mjs 2>&1 | tee phase2-evidence/source-lock.log
+          echo "SOURCE_SHA=$HEAD_SHA" > phase2-evidence/identity.txt
+      - name: Human-directed replan frontend semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/phase2-agent-replan.test.mjs \
+            2>&1 | tee phase2-evidence/frontend-replan.log
+      - name: Production Core chain, immutable replan, independent source and journal tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_replan_lineage::tests -- --nocapture \
+            2>&1 | tee phase2-evidence/replan-lineage.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_continuation_intent::tests -- --nocapture \
+            2>&1 | tee phase2-evidence/continuation-intent.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib agent_recovery_decision::tests -- --nocapture \
+            2>&1 | tee phase2-evidence/independent-recovery.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            -- --nocapture 2>&1 | tee phase2-evidence/reviewed-native-registry.log
+      - name: Native desktop prerequisites (real WebView/Tauri code)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev \
+            libssl-dev patchelf ffmpeg
+      - name: Windows compile-only fixed runtime assets (not GGUF proof)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build real frontend, native desktop continuation and replan commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
+          test -f lu-desktop/dist/index.html
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib agent_plan_continuation_desktop::phase2_multistep_tests -- --nocapture \
+            2>&1 | tee phase2-evidence/multistep-desktop.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib agent_plan_replan_desktop::tests -- --nocapture \
+            2>&1 | tee phase2-evidence/replan-desktop.log
+      - name: Genuine native Git/FFprobe reviewed operations and independent outcomes
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LU_E1_P07_GIT="$(command -v git)"
+          export LU_E1_P07_FFPROBE="$(command -v ffprobe)"
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            actual_model_selected_reviewed_git_and_media_tools_return_verified_receipts \
+            -- --ignored --nocapture \
+            2>&1 | tee phase2-evidence/genuine-os-worker-oracle.log
+      - name: Document scope separately from physical installation
+        if: always()
+        shell: bash
+        run: |
+          echo 'Phase 2 tested real native source/worker checks but this is NOT automatic unapproved multi-step execution, a passing model-comprehension score, a physical GGUF/Vulkan installer, or an OS-pinned approval acceptance.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-core-phase2-${{ matrix.os }}
+          path: phase2-evidence/
+          retention-days: 14
+          if-no-files-found: warn

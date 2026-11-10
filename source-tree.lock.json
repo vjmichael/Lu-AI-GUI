@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 848,
+  "trackedFileCount": 853,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "38528af7b00d480c9719f3cd7b71eab4fa914b88"
+      "blob": "1bac950e64d9be29b08fe2332df948e447023f5c"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -808,6 +808,10 @@
       "blob": "bd90f4f6ea12dac2bcb1234adedd3af5a797029c"
     },
     {
+      "path": "docs/LU_PHASE2_AGENT_EXECUTION_LOOP_20261109.md",
+      "blob": "96a966100a2c85ea79461de80f953a37d07ff275"
+    },
+    {
       "path": "docs/LU_R00_CAPABILITY_CONSOLIDATION_20261109.md",
       "blob": "0d6ea8e7fa09586b1c02e1b1cc04b462ce8c9986"
     },
@@ -1109,11 +1113,15 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_continuation_desktop.rs",
-      "blob": "2c09b89432d5ef2ebe0ccdbc6bfcea0cfc0eebe1"
+      "blob": "b7026a236500851ed130ff9842b6f2c97865a9fc"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_progress.rs",
       "blob": "f35efdc9db9965853f34feaf43cbb5dfbc20898b"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/agent_plan_replan_desktop.rs",
+      "blob": "ee1db6fa4fc27b21317872f8699e6f5f9d742a5e"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_review.rs",
@@ -1121,7 +1129,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_recovery_desktop.rs",
-      "blob": "59ef10fa807d4fe337345feda9188729c548ba8e"
+      "blob": "09ee072dd302bc35e8687664e4c4683019c5363d"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_recovery_provenance.rs",
@@ -1213,7 +1221,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "36d33525163e93f3b863b88cfa7c0203c11a686f"
+      "blob": "f6b16a73dc31503aac6b5c3512b486d7c34792ed"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1624,6 +1632,10 @@
       "blob": "d23b10f426d6546bad7816d2bb2f86b6dbc14c6a"
     },
     {
+      "path": "lu-desktop/tests/phase2-agent-replan.test.mjs",
+      "blob": "0fb6e7deff3f97a824f82f9cc2e292fe3ab6ca02"
+    },
+    {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
       "blob": "5f7a2ff0b8fc2d326e3e030d03f4e6289e6b6935"
     },
@@ -1728,6 +1740,10 @@
       "blob": "c4e9f4a01fcab2f6dbf793e646d9300408274c35"
     },
     {
+      "path": "lu-desktop/web/agent_replan.mjs",
+      "blob": "b7d69ce938deb87b24e4a881f2dcc2093d6afa28"
+    },
+    {
       "path": "lu-desktop/web/attachment_drafts.mjs",
       "blob": "fcbe6f578f5856b28522c89b4c4e587ac6ff0540"
     },
@@ -1765,7 +1781,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "375050e53dfed526c0d76f14c356d2e89139a4cf"
+      "blob": "2ff82020a85eeb78e0ce5c70e4614f781cfa61b3"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -2038,6 +2054,10 @@
     {
       "path": "src-tauri/lu-core/src/agent_recovery_decision.rs",
       "blob": "38b85ca8f05cf95d3830f046f0cc01ad4db10355"
+    },
+    {
+      "path": "src-tauri/lu-core/src/agent_replan_lineage.rs",
+      "blob": "13c7384a3a6efe179a8d36e3413ccca4477afe7d"
     },
     {
       "path": "src-tauri/lu-core/src/agent_reviewed_broker_bridge.rs",
@@ -2325,7 +2345,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "57e0122e960d416b44df55005e85ab366251ceed"
+      "blob": "d5c0a26ebc407647d0bf07a8a967c45a5210fa1d"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",

@@ -130,6 +130,53 @@ pub(crate) fn require_fresh_child_os_custody_before_worker(
     let profile=host.catalog_path.parent()
         .ok_or("Host profile unavailable")?;
     let file=crate::agent_plan_review::existing_plan_file(profile)?;
+    // Phase 2: every separately prepared replacement in a replan chain
+    // requires its ORIGINAL parent's independently verified OS custody.
+    // A broken stage->child transaction, stale source revision or uncertain
+    // ancestor is not a new root and never grants a fresh worker.
+    let mut replan_cursor=plan.to_owned();
+    let mut seen=std::collections::BTreeSet::new();
+    let mut completed_chain=false;
+    for _ in 0..32{
+        if !seen.insert(replan_cursor.clone()){
+            return Err("Replan lineage cycle or reused parent".into())
+        }
+        let parent=lu_core::agent_replan_lineage::inspect_replan_parent(
+            &file,chat,&replan_cursor
+        )?;
+        let Some(parent)=parent else{
+            completed_chain=true;
+            break
+        };
+        let source=crate::agent_plan_progress::read_chat_progress(
+            profile,chat,&host.chats
+        )?.into_iter().find(|p|p.plan_id==parent.parent_plan_id)
+            .ok_or("Replan original parent not found in authenticated chat")?;
+        if source.revision_sha256.as_deref()!=Some(parent.parent_revision_sha.as_str()){
+            return Err("Replan parent revision changed; no replacement execution".into())
+        }
+        // A never-claimed previous draft has no plan worker or old owner
+        // to inherit. It may be replaced once a new human plan has its own
+        // review; do not demand an impossible process-kill receipt for a
+        // process that was never dispatched. Any claim, partial evidence,
+        // active owner or uncertain result still requires full independent
+        // recovery instead.
+        if source.supervisor_state=="NOT_CLAIMED" {
+            if source.steps.iter().any(|s|s.schedule_state!="NOT_SCHEDULED")
+                ||matches!(source.plan_state.as_str(),
+                    "CANCEL_REQUESTED"|"NEEDS_REVIEW"){
+                return Err("Unverified parent history blocks replacement worker".into())
+            }
+        }else{
+            require_parent_os_custody_for_fresh_plan(
+                host,chat,&parent.parent_plan_id,&parent.original_turn_id
+            )?;
+        }
+        replan_cursor=parent.parent_plan_id;
+    }
+    if !completed_chain{
+        return Err("Replan lineage depth exceeded; no execution".into())
+    }
     let ancestry=lu_core::agent_lineage_recovery::inspect_continuation_lineage(
         &file,chat,plan
     )?;

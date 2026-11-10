@@ -8,7 +8,7 @@ use lu_core::{
     agent_continuation_intent::stage_fresh_continuation,
     agent_host_scheduler::{AgentHostScheduler,HostFreshStepConsent,ScheduleBudget},
     agent_plan_ledger::AgentPlanLedger,
-    agent_plan_revisions::{AgentPlanRevisionStore,ExpectedDeliverable},
+    agent_plan_revisions::{AgentPlanRevisionStore,ExpectedDeliverable,RevisionStep},
     agent_deliverable_receipts::AgentDeliverableReceipts,
     agent_plan_ledger::PlanStepKind,
 };
@@ -31,6 +31,37 @@ fn single_step_budget()->ScheduleBudget{
         max_claims:1,model_token_ceiling:1536,tool_call_ceiling:1,
         wall_clock_ceiling_ms:60_000,output_ceiling_bytes:65_536,
     }
+}
+
+
+/// Phase 2: carry the *unexecuted suffix* of a linear, source-reviewed plan
+/// forward to the next separately authorized child. The previous version
+/// discarded all but one step, permanently stranding 3+ step plans. Preserve
+/// the kinds and expected result types: never substitute an independent
+/// Git check for a different unimplemented operation.
+fn remaining_reviewed_steps(
+    reviewed:&[RevisionStep], next:u8,
+)->Result<Vec<ProposedStep>,String>{
+    if next==0 || next as usize>=reviewed.len() || reviewed.len()>32 {
+        return Err("No bounded next step in reviewed plan".into());
+    }
+    let selected=next as usize;
+    if reviewed[selected].kind!=PlanStepKind::IndependentlyCheck
+        ||reviewed[selected].expected!=ExpectedDeliverable::IndependentWitness {
+        return Err("Next operation has no installed reviewed worker adapter; replan required".into());
+    }
+    let mut remaining=Vec::with_capacity(reviewed.len()-selected);
+    for (index,step) in reviewed.iter().enumerate().skip(selected) {
+        if step.depends_on!=Some((index-1) as u8) {
+            return Err("Nonlinear plan requires explicit human-reviewed replanning".into());
+        }
+        let depends_on=if index==selected {None}
+            else{Some((index-selected-1) as u8)};
+        remaining.push(ProposedStep{
+            kind:step.kind,depends_on,expected:step.expected,
+        });
+    }
+    Ok(remaining)
 }
 
 /// Native OS confirmation is a fresh *preparation request*, never a grant.
@@ -120,13 +151,16 @@ pub(crate) async fn lu_agent_prepare_next_step(
             &ledger,&revisions,&scheduler,&receipts,
             &sources,&host.chats,&consent
         )?;
+        let current=revisions.latest(&plan_id,&chat_id)
+            .map_err(|e|format!("Current reviewed continuation unavailable: {e:?}"))?
+            .ok_or("Reviewed continuation revision missing")?;
+        if current.revision_sha256!=revision_sha
+            ||current.review_state!="APPROVED_PLAN_ONLY" {
+            return Err("Plan changed during next-step preparation".into());
+        }
+        let remaining=remaining_reviewed_steps(&current.steps,step_index)?;
         let child=stage_initial_draft(
-            root,&host.chats,&chat_id,&turn,
-            &[ProposedStep{
-                kind:PlanStepKind::IndependentlyCheck,
-                depends_on:None,
-                expected:ExpectedDeliverable::IndependentWitness,
-            }]
+            root,&host.chats,&chat_id,&turn,&remaining
         )?;
         lu_core::agent_continuation_intent::bind_child_plan(
             &path,&plan_id,&revision_sha,step_index,&turn,&child.plan_id,
@@ -135,4 +169,52 @@ pub(crate) async fn lu_agent_prepare_next_step(
         // additional scheduler owner, tool grant, or model continuation.
         Ok(Some(child.plan_id))
     }).await.map_err(|_|"Native continuation preparation failed")?
+}
+
+
+#[cfg(test)]
+mod phase2_multistep_tests {
+    use super::*;
+    fn step(index:usize, kind:PlanStepKind, expected:ExpectedDeliverable)->RevisionStep{
+        RevisionStep{
+            kind, expected,depends_on:if index==0{None}else{Some((index-1) as u8)},
+            deliverable_id:format!("d-{}",format!("{index:032x}")),
+        }
+    }
+    #[test]
+    fn three_step_reviewed_execution_retains_two_step_child_and_future_dependency(){
+        let original=(0..3).map(|i|step(
+            i,PlanStepKind::IndependentlyCheck,ExpectedDeliverable::IndependentWitness
+        )).collect::<Vec<_>>();
+        let child=remaining_reviewed_steps(&original,1).unwrap();
+        assert_eq!(child.len(),2);
+        assert_eq!(child[0].depends_on,None);
+        assert_eq!(child[1].depends_on,Some(0));
+        assert_eq!(child[0].expected,ExpectedDeliverable::IndependentWitness);
+        let grandchild=(0..2).map(|i|step(i,child[i].kind,child[i].expected))
+            .collect::<Vec<_>>();
+        assert_eq!(remaining_reviewed_steps(&grandchild,1).unwrap().len(),1);
+    }
+    #[test]
+    fn future_unsupported_step_is_preserved_not_silently_run_as_git(){
+        let original=vec![
+            step(0,PlanStepKind::IndependentlyCheck,ExpectedDeliverable::IndependentWitness),
+            step(1,PlanStepKind::IndependentlyCheck,ExpectedDeliverable::IndependentWitness),
+            step(2,PlanStepKind::Present,ExpectedDeliverable::Explanation),
+        ];
+        let child=remaining_reviewed_steps(&original,1).unwrap();
+        assert_eq!(child[1].kind,PlanStepKind::Present);
+        assert_eq!(child[1].expected,ExpectedDeliverable::Explanation);
+        let remaining=vec![step(0,child[0].kind,child[0].expected),
+            step(1,child[1].kind,child[1].expected)];
+        assert!(remaining_reviewed_steps(&remaining,1).is_err());
+    }
+    #[test]
+    fn non_sequential_or_missing_predecessor_cannot_be_reindexed(){
+        let mut original=(0..4).map(|i|step(i,PlanStepKind::IndependentlyCheck,
+            ExpectedDeliverable::IndependentWitness)).collect::<Vec<_>>();
+        original[3].depends_on=Some(1);
+        assert!(remaining_reviewed_steps(&original,1).is_err());
+        assert!(remaining_reviewed_steps(&original,0).is_err());
+    }
 }

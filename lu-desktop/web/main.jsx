@@ -16,6 +16,7 @@ import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewCh
 import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryAnchor} from './history_window_geometry.mjs';
 import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppearance,textForBackground,visibleReactionBySeq} from './message_interactions.mjs';
 import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget,correctedMessageFollowUp} from './message_revisions.mjs';
+import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from './agent_replan.mjs';
 
 function MessageText({text, role='assistant'}) {
   if (role === 'user') return <div className="messageContent userText">{text}</div>;
@@ -834,6 +835,8 @@ function App() {
   const [recoveryProvenanceBusy,setRecoveryProvenanceBusy]=useState(false);
   const [agentReviewBusy,setAgentReviewBusy]=useState(false);
   const [agentStepOpByKey,setAgentStepOpByKey]=useState({});
+  const [replanOutlineByPlan,setReplanOutlineByPlan]=useState({});
+  const [replanReasonByPlan,setReplanReasonByPlan]=useState({});
   const [toolProgressByChat,setToolProgressByChat]=useState({});
   const [turnCapabilitiesByChat,setTurnCapabilitiesByChat]=useState({});
   const [toolHistoryBusy,setToolHistoryBusy]=useState(false);
@@ -2639,6 +2642,35 @@ function App() {
     }finally{
       setRecoveryProvenanceBusy(false);
     }
+  }
+  async function stageHumanAgentReplan(plan){
+    if(!chatId||!plan?.revisionSha256||!plan?.planId)return;
+    const targetChat=chatId;
+    setAgentReviewBusy(true);
+    try{
+      const outline=replanOutlineByPlan[plan.planId] ??
+        humanReplanDefaultOutline(plan.steps);
+      const steps=parseHumanReplanOutline(outline,plan.steps);
+      const reason=replanReasonByPlan[plan.planId]||'CHANGE_APPROACH';
+      if(!REPLAN_REASONS.includes(reason))throw Error('Unknown replan reason');
+      const child=await invoke('lu_agent_stage_replan',{
+        chatId:targetChat,planId:plan.planId,revisionSha:plan.revisionSha256,
+        reason,steps
+      });
+      if(child===null)return; // Native OS dialog cancelled.
+      if(typeof child!=='string'||!child.startsWith('p-')){
+        throw Error('Invalid new replan identity');
+      }
+      await refreshToolActivity(targetChat);
+      if(currentChat.current===targetChat){
+        setActivity('Replacement draft '+child+' recorded with immutable original-plan lineage. Review it separately; original uncertain processes and approvals were NOT inherited.');
+      }
+    }catch(error){
+      if(currentChat.current===targetChat){
+        setError('Replan not created: '+String(error));
+      }
+      await refreshToolActivity(targetChat).catch(()=>{});
+    }finally{setAgentReviewBusy(false)}
   }
   async function prepareFreshAgentContinuation(plan,step){
     if(!chatId||!plan?.revisionSha256||
@@ -4816,6 +4848,43 @@ function App() {
                 </div>
                 <small>Approval, rejection and cancellation require a native
                   confirmation. None launches, resumes or terminates an OS worker.</small>
+                {plan.revisionSha256&&
+                  <details className="readProposalCard">
+                    <summary>Revise this plan with a new human request</summary>
+                    <small>Change the ordered steps (1–8) using COLLECT_SOURCE,
+                      INSPECT, ANALYZE, INDEPENDENT_CHECK, HUMAN_REVIEW or
+                      PRESENT, separated by commas. Each step depends on the
+                      preceding step. Unsupported types remain review-only;
+                      nothing runs or reuses an earlier grant.</small>
+                    <label>Replacement steps
+                      <textarea rows={2}
+                        value={replanOutlineByPlan[plan.planId] ??
+                          humanReplanDefaultOutline(plan.steps)}
+                        onChange={e=>setReplanOutlineByPlan(prev=>({
+                          ...prev,[plan.planId]:e.target.value
+                        }))}/>
+                    </label>
+                    <label>Reason
+                      <select value={replanReasonByPlan[plan.planId]||'CHANGE_APPROACH'}
+                        onChange={e=>setReplanReasonByPlan(prev=>({
+                          ...prev,[plan.planId]:e.target.value
+                        }))}>
+                        {REPLAN_REASONS.map(reason=>
+                          <option key={reason} value={reason}>
+                            {reason.replaceAll('_',' ').toLowerCase()}
+                          </option>)}
+                      </select>
+                    </label>
+                    <button type="button" className="subtleButton"
+                      disabled={agentReviewBusy||working||chatBusy}
+                      title="A native confirmation records a distinct human plan and immutable ancestry; the previous operation remains subject to recovery before new execution."
+                      onClick={()=>void stageHumanAgentReplan(plan)}>
+                      Create separately reviewed replacement plan
+                    </button>
+                    <small>A failed or uncertain original worker is not retried.
+                      Any replacement execution is blocked until the original
+                      process custody and independent outcome are accounted for.</small>
+                  </details>}
                 {plan.steps.map(step=>
                   <div className="readProposalCard"
                     key={step.stepIndex} role="group"

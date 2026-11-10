@@ -40,6 +40,7 @@ mod agent_plan_progress;
 mod agent_plan_review;
 mod agent_plan_admission;
 mod agent_plan_continuation_desktop;
+mod agent_plan_replan_desktop;
 mod agent_recovery_desktop;
 mod agent_memory_handoff;
 mod agent_verified_feedback;
@@ -8064,6 +8065,7 @@ pub fn run() {
             agent_recovery_desktop::lu_agent_reconcile_recovery,
             agent_recovery_provenance::lu_agent_recovery_provenance,
             agent_plan_continuation_desktop::lu_agent_prepare_next_step,
+            agent_plan_replan_desktop::lu_agent_stage_replan,
             lu_agent_cancel_plan,
             lu_message_decorations,
             lu_set_message_reaction,
