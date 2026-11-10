@@ -104,7 +104,7 @@ impl IdeWorkspaceRegistry {
         let mut out = initial(project_id, "local_inventory_inspected");
         out.repository_kind = if repo.is_worktree() { "linked_worktree" } else { "main_worktree" };
         let detached = repo.head_detached().unwrap_or(false);
-        let unborn = repo.head_unborn().unwrap_or(false);
+        let unborn = repo.head().is_err() && repo.is_empty().unwrap_or(false);
         out.head_state = if detached {
             "detached"
         } else if unborn {
