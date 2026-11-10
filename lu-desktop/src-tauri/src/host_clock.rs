@@ -48,7 +48,7 @@ fn device_clock() -> Option<String> {
 #[cfg(not(windows))]
 fn civil_from_days(days:i64)->(i64,i64,i64){
     let z=days+719_468;
-    let era=if z>=0 {z} else {z-146_096}/146_097;
+    let era=(if z>=0 {z} else {z-146_096})/146_097;
     let doe=z-era*146_097;
     let yoe=(doe-doe/1_460+doe/36_524-doe/146_096)/365;
     let mut y=yoe+era*400;
@@ -85,6 +85,6 @@ mod tests{
     fn unix_calendar_handles_leap_day(){
         assert_eq!(civil_from_days(0),(1970,1,1));
         assert_eq!(civil_from_days(19_782),(2024,2,29));
-        assert_eq!(civil_from_days(21_549),(2029,1,1));
+        assert_eq!(civil_from_days(21_550),(2029,1,1));
     }
 }

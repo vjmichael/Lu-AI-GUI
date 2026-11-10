@@ -1237,7 +1237,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/host_clock.rs",
-      "blob": "1f2206333e408eb3a5442c5126ead207eb1039b9"
+      "blob": "ee3c4f825951bb1ef20e2e721c7c7ee310cee9b7"
     },
     {
       "path": "lu-desktop/src-tauri/src/host_safe_continuation.rs",
