@@ -87,6 +87,40 @@ class UpstreamIntakeTests(unittest.TestCase):
         self.build(extra="evil-link", link=True)
         with self.assertRaises(MODULE.Denied):
             self.check()
+    def test_installed_binary_and_license_aliases_are_denied(self):
+        original_binary = self.root / "native-elf"
+        original_binary.write_bytes(self.binary.read_bytes())
+        self.binary.unlink()
+        self.binary.symlink_to(original_binary)
+        with self.assertRaises(MODULE.Denied):
+            self.check()
+        self.binary.unlink()
+        self.binary.write_bytes(original_binary.read_bytes())
+        original_license = self.root / "original-license"
+        original_license.write_bytes(self.license.read_bytes())
+        self.license.unlink()
+        self.license.symlink_to(original_license)
+        with self.assertRaises(MODULE.Denied):
+            self.check()
+
+    def test_original_file_handle_replacement_is_denied(self):
+        # A path swapped while the read is underway cannot supply bytes
+        # from a different inode even if its length and content match.
+        from unittest import mock
+        original_open = MODULE.os.open
+        observed = []
+        def replaced(path, flags, *args, **kwargs):
+            fd = original_open(path, flags, *args, **kwargs)
+            if Path(path) == self.binary and not observed:
+                observed.append(True)
+                replacement = self.root / "replacement"
+                replacement.write_bytes(self.binary.read_bytes())
+                replacement.replace(self.binary)
+            return fd
+        with mock.patch.object(MODULE.os, "open", side_effect=replaced):
+            with self.assertRaises(MODULE.Denied):
+                self.check()
+
     def test_wheel_path_symlink_denied(self):
         alias = self.root / "alias.whl"
         alias.symlink_to(self.wheel)
