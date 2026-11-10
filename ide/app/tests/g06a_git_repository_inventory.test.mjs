@@ -59,7 +59,7 @@ test('G06A05 native blame path is validated, committed and bounded', () => {
 
 test('G06A06 references and remotes expose no credential URLs', () => {
   const refs = read('../../host/src/git_refs_health.rs');
-  assert.match(refs, /self\.registered_git_root\(project_id\)/);
+  assert.match(refs, /registry\.registered_git_root\(project_id\)/);
   assert.match(refs, /repo\.references\(\)/);
   assert.match(refs, /repo\.remotes\(\)/);
   assert.doesNotMatch(refs, /\.url\(\)|\.pushurl\(\)|Command::new|repo\.fetch\(/);
