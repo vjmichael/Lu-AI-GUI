@@ -77,11 +77,8 @@ def apply(root: Path) -> None:
     progress_text = progress.read_text(encoding="utf-8")
     progress_text = replace_one(
         progress_text,
-        "#include <atomic>\
-",
-        "#include <atomic>\
-#include <chrono>\
-",
+        "#include <atomic>\n",
+        "#include <atomic>\n#include <chrono>\n",
     )
     overlay = Path(__file__).with_name("LuIdeOwnerEvent.h")
     if not overlay.is_file():
