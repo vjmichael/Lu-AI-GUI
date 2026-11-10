@@ -47,8 +47,10 @@ def regular_bytes(path: Path, max_size: int) -> bytes:
     require(stat.S_ISREG(info.st_mode) and 0 <= info.st_size <= max_size,
             "IDE056_SOURCE_FILE_UNTRUSTED")
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
-    require(hasattr(os, "O_NOFOLLOW"), "IDE056_NOFOLLOW_UNAVAILABLE")
-    flags |= os.O_NOFOLLOW
+    # Linux is the executable target; Windows CI still runs these hostile
+    # parser tests, where O_NOFOLLOW is unavailable. Identity checks below
+    # must deny replacement on both OSes before returning provenance.
+    flags |= getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags)
     try:
         opened = os.fstat(fd)
