@@ -69,7 +69,8 @@ impl IdeWorkspaceRegistry {
         let tree = head.tree().map_err(|_| "G06A_HEAD_TREE_UNAVAILABLE")?;
         let object = tree.get_path(std::path::Path::new(relative_path))
             .map_err(|_| "G06A_TRACKED_PATH_REQUIRED")?;
-        if object.kind() != Some(git2::ObjectType::Blob) {
+        if object.kind() != Some(git2::ObjectType::Blob)
+            || !matches!(object.filemode(), 0o100644 | 0o100755) {
             return Err("G06A_TRACKED_REGULAR_FILE_REQUIRED");
         }
         let mut opts = BlameOptions::new();
@@ -103,7 +104,7 @@ impl IdeWorkspaceRegistry {
                 Some(commit.parent(0).and_then(|p| p.tree()).map_err(|_| "G06A_HISTORY_UNAVAILABLE")?)
             } else { None };
             let mut diff_opts = git2::DiffOptions::new();
-            diff_opts.pathspec(relative_path);
+            diff_opts.pathspec(relative_path).disable_pathspec_match(true);
             let diff = repo.diff_tree_to_tree(previous.as_ref(), Some(&current_tree), Some(&mut diff_opts))
                 .map_err(|_| "G06A_HISTORY_UNAVAILABLE")?;
             if diff.deltas().next().is_none() { continue; }
