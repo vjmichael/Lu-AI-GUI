@@ -9,9 +9,12 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+# The separately admitted, exact-SHA P0 native job must not be reaped
+# by a later source-only PR edit. No other heavy job runs without its
+# explicit grouped authorization marker.
 concurrency:
   group: repo01-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   verify-source:
     runs-on: ubuntu-latest
@@ -977,6 +980,14 @@ jobs:
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib agent_memory_reasoning::tests -- --nocapture 2>&1 | tee p0-native-evidence/ansf-regression.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml multimodal_http::tests -- --nocapture 2>&1 | tee p0-native-evidence/mm-http-native.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml multimodal_saved_turn::tests -- --nocapture 2>&1 | tee p0-native-evidence/mm-json-native.log
+      - name: Preserve actual built React UI for independent screenshot review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-p0-frontend-${{ matrix.os }}-${{ github.event.pull_request.head.sha }}
+          path: lu-desktop/dist/
+          if-no-files-found: warn
+          retention-days: 14
       - name: State limitations honestly
         if: always()
         shell: bash
