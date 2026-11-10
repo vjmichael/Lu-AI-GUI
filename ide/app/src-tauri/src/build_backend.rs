@@ -696,11 +696,9 @@ impl NativeBuildRuntime {
                 .cloned()
                 .ok_or("DEV044_NO_SEALED_BUILD_TARGET")?
         };
-        self.verify_replayed_completed_job(
-            project_id,
-            &target.lineage.build_job_id,
-            &target.lineage.build_plan_sha256,
-        )?;
+        self.supervisor
+            .verify_original_completed_cargo_build_for_debug(&target.lineage)
+            .map_err(|e| e.code().to_owned())?;
         target
             .verify()
             .map_err(|_| "DEV044_PRIVATE_TARGET_CHANGED".to_owned())?;

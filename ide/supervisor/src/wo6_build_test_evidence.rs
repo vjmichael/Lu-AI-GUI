@@ -83,6 +83,47 @@ impl Supervisor {
         )
     }
 
+    /// G04-A: at the build-to-debug handoff, independently re-read the
+    /// original D3 terminal receipt and the native plan's immutable inputs.
+    /// A phase/JobID/plan match alone is insufficient: an old or unrelated
+    /// terminal hash must never be accepted as the sealed debugger's build.
+    /// This is a read-only provenance check, NOT kernel or installed consent.
+    pub fn verify_original_completed_cargo_build_for_debug(
+        &self,
+        lineage: &crate::project_debug_target::CompletedBuildLineage,
+    ) -> Result<(), SupervisorError> {
+        if !lineage.build_successfully_completed || lineage.requires_reconciliation {
+            return Err(SupervisorError::WrongProjectOrSource);
+        }
+        let build = self.review_build_test_evidence(
+            &lineage.build_job_id,
+            &lineage.project_id,
+            &lineage.build_plan_sha256,
+            &lineage.source_head,
+        )?;
+        if build.recipe_id != "rust_build"
+            || build.stage != BuildTestStage::CompletionRequiresNativeEvidence
+            || build.requires_reconciliation
+            || build.input_snapshot_sha256 != lineage.source_snapshot_sha256
+            || build.manifest_sha256 != lineage.manifest_sha256
+            || build.toolchain_sha256 != lineage.build_toolchain_sha256
+            || build.terminal_receipt_hash != lineage.terminal_receipt_sha256
+        {
+            return Err(SupervisorError::WrongProjectOrSource);
+        }
+        let receipts = self.receipt_history(&lineage.build_job_id)?;
+        let terminal = receipts.last().ok_or(SupervisorError::JournalCorrupt)?;
+        if terminal.entry_hash != lineage.terminal_receipt_sha256
+            || terminal.body.phase != JobPhase::Completed
+            || terminal.body.job_id != lineage.build_job_id
+            || terminal.body.project_id != lineage.project_id
+            || terminal.body.plan_sha256 != lineage.build_plan_sha256
+        {
+            return Err(SupervisorError::JournalCorrupt);
+        }
+        Ok(())
+    }
+
     fn review_exact_receipt_for_operation(
         &self,
         job_id: &str,

@@ -1732,6 +1732,72 @@ mod tests {
     }
 
     #[test]
+    fn group04_debug_handoff_requires_exact_original_cargo_build_terminal() {
+        use crate::project_debug_target::CompletedBuildLineage;
+        let filename = path();
+        let sup = Supervisor::open(filename.clone()).unwrap();
+        let mut build = plan();
+        build.recipe_id = "rust_build".into();
+        let job = sup.prepare(build.clone()).unwrap();
+        sup.record_human_approval(&job.job_id, &job.plan_sha256, &build.source_head, true)
+            .unwrap();
+        inject_running(&sup, &job); // test-only state, no OS execution claim
+        sup.native_finish_with_output(&job.job_id, true, true, true, Some(&"a".repeat(64)))
+            .unwrap();
+        let terminal = sup.receipt_history(&job.job_id).unwrap().pop().unwrap();
+        let lineage = CompletedBuildLineage {
+            project_id: build.project_id.clone(),
+            build_job_id: job.job_id.clone(),
+            build_plan_sha256: job.plan_sha256.clone(),
+            terminal_receipt_sha256: terminal.entry_hash.clone(),
+            source_head: build.source_head.clone(),
+            source_snapshot_sha256: build.input_snapshot_sha256.clone(),
+            manifest_sha256: build.manifest_sha256.clone(),
+            build_toolchain_sha256: build.toolchain_sha256.clone(),
+            output_tree_sha256: "a".repeat(64),
+            build_successfully_completed: true,
+            requires_reconciliation: false,
+        };
+        assert!(sup.verify_original_completed_cargo_build_for_debug(&lineage).is_ok());
+        let mut wrong = lineage.clone();
+        wrong.terminal_receipt_sha256 = "f".repeat(64);
+        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        let mut wrong = lineage.clone();
+        wrong.source_snapshot_sha256 = "f".repeat(64);
+        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        let mut wrong = lineage.clone();
+        wrong.manifest_sha256 = "f".repeat(64);
+        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        let mut wrong = lineage.clone();
+        wrong.build_toolchain_sha256 = "f".repeat(64);
+        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        let mut wrong = lineage.clone();
+        wrong.build_plan_sha256 = "f".repeat(64);
+        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        let mut wrong = lineage.clone();
+        wrong.requires_reconciliation = true;
+        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+
+        // Even a completed protected TEST recipe cannot be used as a
+        // compiled project debugger target by relabeling its receipt.
+        let tests = plan();
+        let other = sup.prepare(tests.clone()).unwrap();
+        sup.record_human_approval(&other.job_id, &other.plan_sha256, &tests.source_head, true)
+            .unwrap();
+        inject_running(&sup, &other);
+        sup.native_finish_with_output(&other.job_id, true, true, true, Some(&"a".repeat(64)))
+            .unwrap();
+        let other_terminal = sup.receipt_history(&other.job_id).unwrap().pop().unwrap();
+        let mut wrong = lineage.clone();
+        wrong.build_job_id = other.job_id;
+        wrong.build_plan_sha256 = other.plan_sha256;
+        wrong.terminal_receipt_sha256 = other_terminal.entry_hash;
+        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        drop(sup);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
     fn forged_or_missing_published_output_seal_cannot_finish() {
         let filename = path();
         let sup = Supervisor::open(filename.clone()).unwrap();

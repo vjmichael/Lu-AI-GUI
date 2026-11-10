@@ -1,5 +1,26 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 4A — Protected Build/Test and LLDB (2026-11-10)
+
+Working branch `ide/group04-protected-build-test-lldb-20261110` is
+stacked on Group 3 draft at `9dec923748bcdaa4df6f78aae104e07b653f6509`.
+The existing protected Cargo Build/Test and owner-verified LLDB work is
+being reconciled, not replaced. The first hardening change makes the
+build-to-project-debugger handoff compare its cached terminal receipt
+hash and original source/manifest/toolchain identity against the
+supervisor's actual Completed `rust_build` receipt. A phase/plan-only
+match or completed test recipe can no longer supply project-debugger
+provenance. This change never creates an OS grant or approves execution.
+
+Native Rust regression was added but **not yet run** on exact-head
+Windows/Linux. Group 3's real physical approval and production OS gates
+remain OPEN. Group 4 still requires real OS-contained Build/Test
+normal/cancel/crash/restart, LLDB owner-event breakpoint and step proof,
+variable provenance/redaction before enabling inspection, and installed
+human authorization. Do not promote debugger functions from disposable
+CI/developer-only builds or make the default executable.
+See `ide/docs/IDE_GROUP04_PROTECTED_BUILD_TEST_LLDB_20261110.md`.
+
 ## DEV-04.6C — protected CI debugger command and independent result (Nov 9, 2026)
 
 Working branch `ide/dev04-6a-debug-control-admission-20261109` stacked

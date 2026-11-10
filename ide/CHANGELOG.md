@@ -1,5 +1,14 @@
 # Lu IDE — Development changelog
 
+- **Group 4A protected Build/Test → LLDB original terminal binding (Nov 10):**
+  The native debugger handoff now requires the exact original Cargo Build
+  Completed receipt SHA, checked Git/source snapshot and manifest/toolchain
+  digests from the supervisor's current read-only receipt query. A completed
+  test recipe, stale terminal hash, changed source/manifest or quarantined
+  job cannot be relabeled as a debugger build. Hostile native Rust tests added.
+  Source is committed only; exact-head Windows/Linux tests, real LLDB,
+  physical human consent and installed protected release remain OPEN.
+
 - **DEV-04.6C protected native CI control + independent step result (Nov 9):**
   Scoped one-use, fsynced-before-send step for actual D5-owned thread,
   new DAP reason=step + correlated response, independent fresh Windows
