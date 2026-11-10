@@ -45,7 +45,21 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml --features dev046c-ci-control --lib dap_session::tests
           cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib group04_debug_handoff
           cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib cargo_style_internal_hardlinks
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib g04_enclosed_cargo_elf_dwarf_alias
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib g04_variable_scope_requires_original_native_frame
           echo 'IDE_G04_SOURCE_COMPILER_AND_HOSTILE=PASS'
+      - name: Windows G04 D5/D6C frame one-use compiler and source contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $features='dap-transport,protected-recovery-service,dev046c-ci-control'
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib debug_control_dispatch
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: D6C native one-use control compiler or hostile tests' }
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib debug_action_receipts
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: one-use action receipt tests' }
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features $features --example wo6_native_dap_acceptance
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: actual native owner+frame compiler failed' }
+          Write-Host 'IDE_G04_D5_D6C_WINDOWS_SOURCE_ONLY=PASS_NOT_HUMAN_OR_INSTALLED'
       - name: Compile protected service, bootstrap and genuine LLDB-DAP fixture
         shell: pwsh
         run: |
@@ -242,6 +256,8 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml --features dev046c-ci-control --lib dap_session::tests
           cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib group04_debug_handoff
           cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib cargo_style_internal_hardlinks
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib g04_enclosed_cargo_elf_dwarf_alias
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib g04_variable_scope_requires_original_native_frame
           echo 'IDE_G04_SOURCE_COMPILER_AND_HOSTILE=PASS'
       - name: Install actual LLDB-DAP, Clang and Bubblewrap
         shell: bash
@@ -347,6 +363,8 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml --features dev046c-ci-control --lib dap_session::tests
           cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib group04_debug_handoff
           cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib cargo_style_internal_hardlinks
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib g04_enclosed_cargo_elf_dwarf_alias
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib g04_variable_scope_requires_original_native_frame
           echo 'IDE_G04_SOURCE_COMPILER_AND_HOSTILE=PASS'
       - name: Install root-owned fixed offline Cargo and Bubblewrap
         shell: bash
@@ -421,3 +439,69 @@ jobs:
 # This workflow provides real isolated kernel acceptance only.
 # Native GUI human dialogs, signed artifact provenance, and installed
 # action/restart acceptance remain independently REQUIRED and OPEN.
+
+  # Group 4C genuine first-party LLVM DebuggerThread owner / one-use step,
+  # distinct from the basic DAP/SCM and Linux protected jobs above. A compiled
+  # disposable CI worker does not count as physical installed human consent.
+  windows-pinned-llvm18-native:
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10.11'
+      - name: Require exact reviewed head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+      - name: Compile protected host owner-event records and test negative cases
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $features='dap-transport,protected-recovery-service,dev045d5-ci-event-owner'
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features $features --lib windows_event_owner
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: owner-event parser/nonce/replay tests failed' }
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features $features --example wo6_native_dap_acceptance
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: real Windows host owner-event compile failed' }
+          cargo check --release --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service'
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: Windows regular release compile regressed' }
+      - name: Compile real source-pinned LLVM18 DebuggerThread and produce hashed owner binary
+        shell: pwsh
+        run: |
+          & ide/llvm18_owner/Build-PinnedOwnerWindows.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: modified LLVM18 LLDB Windows build failed' }
+      - name: Stage exact reviewed offline Windows SDK and MSVC toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/New-PinnedWindowsToolchain.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'dev045d5-offline-msvc') -LockPath (Join-Path $env:RUNNER_TEMP 'dev045d5-msvc-lock.json') -RustVersion '1.99.1' -SdkVersion '10.0.26100.0' -VsVersionPrefix '17.14.' -MsvcVersionPrefix '14.44.'
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: independent offline Cargo/SDK bundle failed' }
+      - name: Real SCM/AppContainer owner stop, PE/PDB, cancellation and journal restart
+        shell: pwsh
+        run: |
+          & ide/llvm18_owner/Test-PinnedOwnerWindows.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: native protected stop/owner/journal acceptance failed' }
+      - name: Preserve binary source and offline compiler lock evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev045d5-windows-native-locks
+          path: |
+            ${{ runner.temp }}/lu-owner-llvm18-lock.json
+            ${{ runner.temp }}/dev045d5-msvc-lock.json
+          if-no-files-found: ignore
+      - name: No installed or release acceptance inferred
+        if: always()
+        shell: bash
+        run: |
+          echo 'DEV045D5_SIGNED_RELEASE=NOT_ACCEPTED'
+          echo 'DEV045D5_OS_COMPILATION=REQUIRES_EXACT_HEAD_JOB_LOGS'
