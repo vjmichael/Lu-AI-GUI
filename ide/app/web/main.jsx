@@ -3598,7 +3598,11 @@ function App() {
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
         </div>
       </header>
-      {problem && <div className="errorMsg appError" role="alert">{problem}
+      {problem && <div className="errorMsg appError" role="alert"
+        aria-label={problem.startsWith('File changed on disk.')
+          ? 'File changed on disk. Unsaved edits preserved' : undefined}
+        aria-describedby="ide-visible-error-message">
+        <span id="ide-visible-error-message">{problem}</span>
         <button type="button" onClick={() => setProblem('')}>Dismiss</button></div>}
       {hint && <div className={'successMsg appMessage noticeBanner' +
         (hint.startsWith('Saved ') ? ' saveConfirmation' :
@@ -3707,7 +3711,7 @@ function App() {
                 Nothing here grants execution or runs a project script.</p>
               {belongsToSelectedProject(activeProject, testDiscovery) &&
                 <>
-                  <p role="status">
+                  <p role="status" aria-label="Conventional test discovery incomplete by design">
                     {testDiscovery.files.length} filenames found
                     {testDiscovery.truncated?' · results truncated':''}
                     {' · discovery incomplete by design'}
@@ -3799,7 +3803,9 @@ function App() {
                   execution, OS cleanup or installed acceptance.</p>
                 {projectJobLifecycle(buildStatus,activeProject?.projectId,
                   nativeJobOutput).jobs.length===0
-                  ? <p>No matching protected job journal entries observed.</p>
+                  ? <p role="status"
+                      aria-label="No matching protected job journal entries observed">
+                      No matching protected job journal entries observed.</p>
                   : <ol aria-live="polite">
                     {projectJobLifecycle(buildStatus,activeProject?.projectId,
                       nativeJobOutput).jobs.slice(-12).map(job=>
@@ -5256,6 +5262,7 @@ function App() {
                   </div>
                   <div className="projectActions">
                     {project.active && <button className="primaryBtn"
+                      aria-label={'Edit project ' + project.displayName}
                       disabled={explorerPending || pending || workspaceLayoutBusy}
                       onClick={() => openDirectory(project, '')}>Edit</button>}
                     {project.active
@@ -5264,6 +5271,7 @@ function App() {
                           onClick={() => operation('ide_close_project',
                             {projectId: project.projectId})}>Close</button>
                       : <button className="ghostBtn" disabled={pending || !project.available}
+                          aria-label={'Reopen project ' + project.displayName}
                           onClick={() => operation('ide_open_project',
                             {projectId: project.projectId})}>Reopen</button>}
                     <button className="removeProjectBtn"
@@ -5436,6 +5444,8 @@ function App() {
               {visibleEditorTabs.visible.map(tab => <div className={'editorTab' +
                 (tab.key === activeTabKey ? ' selected' : '')} key={tab.key}>
                 <button type="button" role="tab" aria-selected={tab.key === activeTabKey}
+                  aria-label={(tab.dirty ? 'Unsaved source tab ' : 'Saved source tab ') +
+                    tab.relativePath}
                   className="editorTabSelect" title={tab.relativePath}
                   onClick={() => selectPrimaryEditorTab(tab.key)}>
                   <span>{leafFor(tab.relativePath)}</span>
@@ -5484,7 +5494,10 @@ function App() {
               <div className="sourcePreviewHeader">
                 <strong>{activeTab.relativePath}</strong>
                 <span className="editorToolbar">
-                  <span>{activeTab.draft.length.toLocaleString()} chars ·
+                  <span role="status"
+                    aria-label={(activeTab.dirty
+                      ? 'Unsaved editor draft ' : 'Saved editor source ') +
+                      activeTab.relativePath}>{activeTab.draft.length.toLocaleString()} chars ·
                     {activeTab.dirty ? ' Unsaved' : ' Saved'}
                     {isLargeSourceEditor(activeTab.draft) ? ' · Lightweight editor' : ''}
                   </span>

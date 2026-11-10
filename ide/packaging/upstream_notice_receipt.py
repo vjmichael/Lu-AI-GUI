@@ -9,6 +9,8 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import time
+import urllib.error
 import urllib.request
 
 SOURCES = {
@@ -24,15 +26,36 @@ MAX_LICENSE = 2_000_000
 class NoticeDenied(ValueError):
     pass
 
-def download(url):
-    request = urllib.request.Request(url, headers={"User-Agent": "Lu-IDE-license-provenance/1", "Accept": "text/plain"})
-    with urllib.request.urlopen(request, timeout=20) as response:
-        if response.geturl() != url:
-            raise NoticeDenied("upstream_unexpected_redirect")
-        data = response.read(MAX_LICENSE + 1)
-    if len(data) > MAX_LICENSE:
-        raise NoticeDenied("upstream_notice_oversize")
-    return data
+def download(url, opener=None, sleeper=None):
+    """Bounded exact-origin retry for temporary transport failures only.
+
+    Retry does not change pinned URLs, accepted response size, origin checks
+    or exact vendored-byte verification. Redirects, size violations and
+    permanent HTTP rejection remain immediate hard denials.
+    """
+    opener = opener or urllib.request.urlopen
+    sleeper = sleeper or time.sleep
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "Lu-IDE-license-provenance/1",
+                      "Accept": "text/plain"})
+    transient_http = {408, 429, 500, 502, 503, 504}
+    for attempt in range(3):
+        try:
+            with opener(request, timeout=20) as response:
+                if response.geturl() != url:
+                    raise NoticeDenied("upstream_unexpected_redirect")
+                data = response.read(MAX_LICENSE + 1)
+            if len(data) > MAX_LICENSE:
+                raise NoticeDenied("upstream_notice_oversize")
+            return data
+        except urllib.error.HTTPError as error:
+            if attempt == 2 or error.code not in transient_http:
+                raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if attempt == 2:
+                raise
+        sleeper(attempt + 1)
+    raise NoticeDenied("upstream_notice_fetch_unavailable")
 
 def verify_sources(root, source_sha, downloader=download):
     if len(source_sha) != 40 or any(c not in "0123456789abcdefABCDEF" for c in source_sha):

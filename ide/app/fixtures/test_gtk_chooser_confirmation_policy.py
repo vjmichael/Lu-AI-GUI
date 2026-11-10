@@ -3,7 +3,8 @@
 from pathlib import Path
 import unittest
 from gtk_chooser_confirmation_policy import (
-    candidate_captions, retry_requires_native_fallback
+    candidate_captions, retry_requires_native_fallback,
+    exact_native_directory_row
 )
 
 
@@ -31,6 +32,24 @@ class ChooserPolicyTests(unittest.TestCase):
         for index in (-1, 4, 500):
             self.assertEqual(candidate_captions(["Open"], index), ())
         self.assertEqual(candidate_captions([None, 123, {"name": "Open"}], 0), ())
+
+    def test_native_directory_row_requires_exact_identity(self):
+        self.assertTrue(exact_native_directory_row(
+            "fixture-42", "", "fixture-42", "table cell"))
+        self.assertTrue(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "label", ("table cell",)))
+        self.assertFalse(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "label"))
+        self.assertFalse(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "text", ("entry",)))
+        self.assertFalse(exact_native_directory_row(
+            "fixture-42-next", "", "fixture-42", "table cell"))
+        self.assertFalse(exact_native_directory_row(
+            "fixture-42", "", "fixture-42", "button"))
+        self.assertFalse(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "dialog"))
+        self.assertFalse(exact_native_directory_row(
+            "fixture-42", "", "../fixture-42", "table cell"))
 
     def test_actual_installed_atspi_script_requires_native_outcome(self):
         fixture = Path(__file__).with_name("wo8_linux_editor_atspi.py").read_text(
@@ -79,7 +98,8 @@ class ChooserPolicyTests(unittest.TestCase):
         block=fixture.split("def _native_parent_and_exact_child():",1)[1].split(
             "def select_native_folder():",1)[0]
         self.assertIn("return True", block)
-        self.assertNotIn("return _select_real_fixture_directory()", block)
+        self.assertIn("return _select_real_fixture_directory()", block)
+        self.assertNotIn("return True\n\n\ndef select_native_folder", block)
         self.assertNotIn('key("space")', block)
         self.assertIn('deny("native_folder_chooser_did_not_register_project")', fixture)
         self.assertIn("_native_chooser_diagnostics()", fixture)
@@ -94,7 +114,15 @@ class ChooserPolicyTests(unittest.TestCase):
         selector=fixture.split("def select_native_folder():",1)[1].split(
             "def editor_project():",1)[0]
         self.assertIn("parent_child_candidate = _native_parent_and_exact_child()", selector)
-        self.assertIn("P04_GTK_SELECTION_ROUTE=parent_child_native_candidate", selector)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=verified_native_parent_child", selector)
+        self.assertIn("P04_GTK_DIRECTORY_ROW_INVENTORY=", fixture)
+        self.assertIn("cwd=str(ROOT.parent)", fixture)
+        self.assertIn("tuple(ancestors)", fixture)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=chooser_closed_before_location_fallback", fixture)
+        self.assertIn("if depth < 28:", fixture)
+        self.assertIn("exact_native_directory_row(", fixture)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=exact_native_location_alt_open", selector)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=exact_native_location_return", selector)
         self.assertIn("P04_GTK_PARENT_CHILD_RETRY=native_selection_attempt", selector)
         self.assertIn('if outcome != "registered_exact_root_and_webview":', selector)
         self.assertIn("P04_GTK_EXACT_PATH_SELECTION=exact_fixture_reasserted_in_native_chooser",
@@ -107,6 +135,45 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertIn('str(row.get("root", "")) == str(ROOT.parent)', fixture)
         self.assertIn('observed == "exact_native_root_persisted"', fixture)
         self.assertIn('_registered_native_project_is_exposed()', fixture)
+        self.assertIn("IDE_G02_WEBVIEW_PROJECT_CONTROLS=", fixture)
+        self.assertIn('name == "Edit project " + ROOT.name', fixture)
+        self.assertIn('name == "Reopen project " + ROOT.name', fixture)
+        self.assertIn('_activate_exact_project_button("Edit project ", seconds=18)', fixture)
+        self.assertIn('_activate_exact_project_button("Reopen project ", seconds=3,', fixture)
+        self.assertIn("IDE_G02_NATIVE_ACTIVE_EDITOR_BUTTON=verified_exact_project", fixture)
+        self.assertNotIn('accessible("Open · editor available"', fixture)
+        self.assertIn("def _native_conflict_warning_and_draft(seconds=16):", fixture)
+        self.assertIn("def _native_source_editor_nodes():", fixture)
+        self.assertIn('node.name or "").strip() != "Source explorer and editor"', fixture)
+        self.assertIn("while stack and scanned < 8000:", fixture)
+        self.assertIn("if depth < 28:", fixture)
+        self.assertIn("for node in _native_source_editor_nodes():", fixture)
+        self.assertIn("IDE_G02_LINUX_NATIVE_EXTERNAL_CONFLICT_ALERT_AND_DRAFT=PASS", fixture)
+        self.assertIn('name == "Unsaved source tab main.rs"', fixture)
+        self.assertIn('name == "Unsaved editor draft main.rs"', fixture)
+        self.assertIn("active_dirty_status = True", fixture)
+        self.assertIn("def _real_active_editor_save_remains_enabled():", fixture)
+        self.assertIn('node.name or "").strip() != "Save · Ctrl+S"', fixture)
+        self.assertIn("state.contains(pyatspi.STATE_ENABLED)", fixture)
+        self.assertIn("return len(matches) == 1", fixture)
+        self.assertIn("if alert and (dirty_tab or active_dirty_status or save_still_enabled):", fixture)
+        self.assertIn("IDE_G02_LINUX_DIRTY_SOURCE_WITNESS=", fixture)
+        self.assertIn('name == "File changed on disk. Unsaved edits preserved"', fixture)
+        self.assertNotIn('accessible("File changed on disk"', fixture)
+        self.assertNotIn('accessible("Unsaved", seconds=10)', fixture)
+        web = Path(__file__).parents[1].joinpath("web", "main.jsx").read_text(
+            encoding="utf-8")
+        self.assertIn("aria-label={'Edit project ' + project.displayName}", web)
+        self.assertIn("aria-label={'Reopen project ' + project.displayName}", web)
+        self.assertIn("'File changed on disk. Unsaved edits preserved' : undefined", web)
+        self.assertIn('aria-describedby="ide-visible-error-message"', web)
+        self.assertIn("Unsaved source tab ' : 'Saved source tab '", web)
+        self.assertIn("'Unsaved editor draft ' : 'Saved editor source '", web)
+        self.assertIn('role="status"', web)
+        self.assertIn("activeTab.dirty", web)
+        self.assertIn("disabled={!activeTab.dirty || explorerPending || !!savingKey}", web)
+        self.assertIn("{savingKey === activeTab.key ? 'Saving…' : 'Save · Ctrl+S'}", web)
+        self.assertIn("project.active && <button", web)
         self.assertIn("deny(\"native_folder_chooser_did_not_register_project\")", fixture)
         self.assertNotIn("subprocess.run([\"gh\"", fixture)
 

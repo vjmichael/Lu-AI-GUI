@@ -14,7 +14,7 @@ import time
 
 import pyatspi
 
-from gtk_chooser_confirmation_policy import candidate_captions
+from gtk_chooser_confirmation_policy import candidate_captions, exact_native_directory_row
 
 EXE = os.environ["WO8_INSTALLED_EXE"]
 ROOT = Path(os.environ["WO8_FIXTURE_ROOT"]).resolve()
@@ -144,7 +144,12 @@ def _host_picker_receipts():
 
 def start():
     stderr_target = open(_NATIVE_APP_LOG, "ab") if os.environ.get("GITHUB_ACTIONS") == "true" else subprocess.DEVNULL
-    app = subprocess.Popen([EXE], stdout=subprocess.DEVNULL, stderr=stderr_target)
+    # The disposable GTK acceptance fixture has exactly one target directory
+    # under ROOT.parent. With the OS preference startup-mode=cwd, the native
+    # chooser displays that directory as a real list row from its first map.
+    # This does not register a project or bypass GTK's UI decision.
+    app = subprocess.Popen([EXE], cwd=str(ROOT.parent),
+                           stdout=subprocess.DEVNULL, stderr=stderr_target)
     if stderr_target != subprocess.DEVNULL:
         stderr_target.close()
     try:
@@ -578,6 +583,27 @@ def _native_catalog_project_disposition():
                    for row in rows):
                 return "wrong_parent_persisted"
             if rows:
+                # Relative-category diagnostics only. Never expose real
+                # paths, labels or project content in the native CI logs.
+                relations = set()
+                for row in rows:
+                    try:
+                        item = Path(str(row.get("root", ""))).resolve(strict=True)
+                        if item == ROOT.parent:
+                            relation = "parent"
+                        elif ROOT in item.parents:
+                            relation = "child"
+                        elif item in ROOT.parents:
+                            relation = "ancestor"
+                        elif item.parent == ROOT.parent:
+                            relation = "sibling"
+                        else:
+                            relation = "other"
+                    except (OSError, RuntimeError, ValueError, TypeError):
+                        relation = "invalid"
+                    relations.add(relation)
+                print("P04_GTK_REGISTERED_ROOT_RELATION=" +
+                      ",".join(sorted(relations)), flush=True)
                 observed="unexpected_project_persisted"
             else:
                 observed="catalog_without_projects"
@@ -608,26 +634,116 @@ def _wait_for_native_registered_project(seconds=20):
 
 
 def _registered_native_project_is_exposed():
-    # Distinguish the exact project row in the desktop WebView from its name
-    # echoed inside a GTK folder chooser. No direct catalog reads or IPC.
+    """Observe the exact registered project *and* its actionable editor state.
+
+    The former check accepted any exposed project title and then expected
+    WebKitGTK to name a plain-text <p> status. The installed run proved the
+    catalog and project title were correct but that label was not available.
+    Instead, require the actual active-only Edit button in the real WebView.
+    """
+    project_visible = False
+    active_edit_available = False
     for node in elements():
         try:
-            if (node.name or "").strip() != ROOT.name:
+            if _native_dialog_ancestor(node):
                 continue
-            current = node
-            within_dialog = False
-            for _ in range(14):
-                current = current.parent
-                if current is None:
-                    break
-                role = (current.getRoleName() or "").casefold()
-                if "file chooser" in role or "dialog" in role:
-                    within_dialog = True
-                    break
-            if not within_dialog:
-                return True
+            state = node.getState()
+            if not (state.contains(pyatspi.STATE_SHOWING)
+                    and state.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            name = (node.name or "").strip()
+            role = (node.getRoleName() or "").casefold()
+            if name == ROOT.name:
+                project_visible = True
+            if (name == "Edit project " + ROOT.name and "button" in role
+                    and state.contains(pyatspi.STATE_ENABLED)):
+                active_edit_available = True
         except Exception:
             continue
+    return project_visible and active_edit_available
+
+
+def _native_project_control_inventory():
+    """Category-only installed WebView state diagnostics (no raw names/paths)."""
+    counts = {"project": 0, "edit": 0, "reopen": 0,
+              "edit_enabled": 0, "reopen_enabled": 0}
+    for node in elements():
+        try:
+            if _native_dialog_ancestor(node):
+                continue
+            state = node.getState()
+            if not (state.contains(pyatspi.STATE_SHOWING)
+                    and state.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            name = (node.name or "").strip()
+            role = (node.getRoleName() or "").casefold()
+            if name == ROOT.name:
+                counts["project"] += 1
+            if "button" not in role:
+                continue
+            if name == "Edit project " + ROOT.name:
+                counts["edit"] += 1
+                if state.contains(pyatspi.STATE_ENABLED):
+                    counts["edit_enabled"] += 1
+            if name == "Reopen project " + ROOT.name:
+                counts["reopen"] += 1
+                if state.contains(pyatspi.STATE_ENABLED):
+                    counts["reopen_enabled"] += 1
+        except Exception:
+            continue
+    print("IDE_G02_WEBVIEW_PROJECT_CONTROLS=" +
+          ";".join(k + ":" + str(min(v, 32))
+                   for k, v in sorted(counts.items())), flush=True)
+
+
+def _activate_exact_project_button(prefix, seconds=15, required=True):
+    """Activate a unique visible, enabled button through native AT-SPI.
+
+    Prefix is a fixed caller-selected phrase; the exact basename is derived
+    only from the disposable OS fixture. Never use an arbitrary 'Edit' button
+    or substitute a host IPC call for actual installed WebView interaction.
+    """
+    target = prefix + ROOT.name
+    deadline = time.monotonic() + seconds
+    while True:
+        matches = []
+        for node in elements():
+            try:
+                if (node.name or "").strip() != target:
+                    continue
+                if "button" not in (node.getRoleName() or "").casefold():
+                    continue
+                if _native_dialog_ancestor(node):
+                    continue
+                state = node.getState()
+                if (state.contains(pyatspi.STATE_SHOWING) and
+                    state.contains(pyatspi.STATE_VISIBLE) and
+                    state.contains(pyatspi.STATE_ENABLED)):
+                    matches.append(node)
+            except Exception:
+                continue
+        if len(matches) == 1:
+            node = matches[0]
+            try:
+                action = node.queryAction()
+                for index in range(action.nActions):
+                    if action.getName(index).casefold() in ("click", "press", "activate"):
+                        if action.doAction(index):
+                            return True
+            except Exception:
+                pass
+            try:
+                if node.queryComponent().grabFocus():
+                    key("Return")
+                    return True
+            except Exception:
+                pass
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.25)
+    if required:
+        _native_project_control_inventory()
+        deny("native_exact_project_action_unavailable_" + prefix.split()[0].lower())
     return False
 
 
@@ -647,11 +763,11 @@ def _deep_visible_gtk_chooser_nodes():
                     state.contains(pyatspi.STATE_VISIBLE)):
                 continue
             stack = [(chooser, 0)]
-            while stack and seen < 6000:
+            while stack and seen < 12000:
                 node, depth = stack.pop()
                 seen += 1
                 yield node
-                if depth < 16:
+                if depth < 28:
                     stack.extend((child, depth + 1)
                                  for child in children_of(node))
         except Exception:
@@ -752,36 +868,100 @@ def _focus_gtk_file_list_via_bounded_pointer():
 
 
 def _select_real_fixture_directory():
-    # SELECT_FOLDER accepts a *selected* directory, not necessarily the
-    # directory currently visible. Navigate to its parent via GTK's native
-    # location entry, then select the exact ephemeral fixture child.
-    exact=0
+    """Select the exact visible GTK child *after* navigating to its parent.
+
+    A basename typed into the wrong focused control is not a selection.
+    Only act on an exact native AT-SPI name/text match under a visible file
+    chooser, and never accept this action without canonical host+UI proof.
+    """
+    exact = 0
+    native_rows = 0
+    named_matches = 0
+    text_matches = 0
     for node in _deep_visible_gtk_chooser_nodes():
         try:
-            if (node.name or "").strip() != ROOT.name or not _native_dialog_ancestor(node):
+            if not _native_dialog_ancestor(node):
                 continue
-            role=(node.getRoleName() or "").casefold()
-            if not any(kind in role for kind in ("row", "cell", "icon", "list item", "text", "label")):
+            states = node.getState()
+            if not (states.contains(pyatspi.STATE_VISIBLE) and
+                    states.contains(pyatspi.STATE_SHOWING)):
                 continue
-            exact+=1
+            role = (node.getRoleName() or "").casefold()
+            if any(kind in role for kind in ("row", "cell", "list item", "tree item", "icon")):
+                native_rows += 1
+            name = (node.name or "").strip()
+            text_value = ""
             try:
-                if node.queryComponent().grabFocus():
-                    key("space")
-                    print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_native_keyboard",flush=True)
-                    return True
+                accessible_text = node.queryText()
+                text_value = accessible_text.getText(0, accessible_text.characterCount).strip()
             except Exception:
                 pass
-            try:
-                parent=node.parent
-                index=node.getIndexInParent()
-                if parent is not None and index>=0 and parent.querySelection().selectChild(index):
-                    print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_atspi_selection",flush=True)
-                    return True
-            except Exception:
-                pass
+            if name == ROOT.name:
+                named_matches += 1
+            if text_value == ROOT.name:
+                text_matches += 1
+            ancestors = []
+            current = node
+            for _ in range(6):
+                try:
+                    current = current.parent
+                    if current is None:
+                        break
+                    parent_role = (current.getRoleName() or "").casefold()
+                    if "file chooser" in parent_role or "dialog" in parent_role:
+                        break
+                    ancestors.append(parent_role)
+                except Exception:
+                    break
+            if not exact_native_directory_row(
+                    name, text_value, ROOT.name, role, tuple(ancestors)):
+                continue
+            exact += 1
+            # GTK may expose a label nested within a selectable row/table.
+            # A real OS selection interface can exist several parents above
+            # the exact child text; inspect at most five native ancestors.
+            current = node
+            for _ in range(5):
+                try:
+                    parent = current.parent
+                    if parent is None:
+                        break
+                    index = current.getIndexInParent()
+                    if index >= 0 and parent.querySelection().selectChild(index):
+                        print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_atspi_selection",
+                              flush=True)
+                        return True
+                    current = parent
+                except Exception:
+                    try:
+                        current = current.parent
+                    except Exception:
+                        break
+            # Genuine GTK row/cell keyboard focus + Space is the bounded
+            # native alternative; a label alone must never select a path.
+            current = node
+            for _ in range(5):
+                try:
+                    target_role = (current.getRoleName() or "").casefold()
+                    if any(kind in target_role for kind in
+                           ("row", "cell", "list item", "tree item", "icon")):
+                        if current.queryComponent().grabFocus():
+                            key("space")
+                            print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_native_keyboard",
+                                  flush=True)
+                            return True
+                    current = current.parent
+                    if current is None or not _native_dialog_ancestor(current):
+                        break
+                except Exception:
+                    break
         except Exception:
             continue
-    print("P04_GTK_FIXTURE_DIRECTORY_CANDIDATES="+str(exact),flush=True)
+    # Category-only observability; never expose project names or raw GTK text.
+    print("P04_GTK_DIRECTORY_ROW_INVENTORY=rows:" + str(min(native_rows, 12000)) +
+          ";exact_names:" + str(min(named_matches, 12000)) +
+          ";exact_text:" + str(min(text_matches, 12000)), flush=True)
+    print("P04_GTK_FIXTURE_DIRECTORY_CANDIDATES=" + str(exact), flush=True)
     return False
 
 
@@ -812,9 +992,10 @@ def _native_parent_and_exact_child():
     type_text(ROOT.name)
     print("P04_GTK_CHILD_TYPEAHEAD=native_candidate_preserved_until_real_confirmation",
           flush=True)
-    # This is only a native keyboard attempt; modal closure and exact
-    # project registration are still required by the caller.
-    return True
+    # A basename keystroke or pointer dispatch cannot make a directory
+    # selected. This route stays fail-closed if the genuine row remains
+    # unavailable. Never return True without a native selection witness.
+    return _select_real_fixture_directory()
 
 
 def select_native_folder():
@@ -829,21 +1010,32 @@ def select_native_folder():
         deny("ephemeral_fixture_was_already_registered_before_picker")
     activate("+ Open folder")
     time.sleep(1)
-    # GTK SELECT_FOLDER requires an actual directory selection on some
-    # versions. Enter on an absolute path can navigate *inside* the folder
-    # without enabling the accept action; the real installed GTK run left
-    # the chooser open after four confirmations on that route. First use
-    # genuine GTK parent navigation and child selection/typeahead, then
-    # fall back to the original exact-path OS keyboard route.
+    # This call must happen BEFORE scanning for ROOT's selectable child row.
+    # The previous driver looked for it in the chooser's default directory,
+    # then tried an absolute location entry; the native row was never present.
+    # Parent navigation is a real GTK keyboard action, not an input shortcut
+    # to the IDE host, and selection still requires an exact native row.
     parent_child_candidate = _native_parent_and_exact_child()
     if parent_child_candidate:
-        print("P04_GTK_SELECTION_ROUTE=parent_child_native_candidate", flush=True)
+        print("P04_GTK_SELECTION_ROUTE=verified_native_parent_child", flush=True)
     else:
-        key("ctrl+l")
-        type_text(str(ROOT))
-        key("Return")
-        print("P04_GTK_SELECTION_ROUTE=exact_path_native_candidate", flush=True)
-    time.sleep(1.4)
+        # A zero-row GTK result must not become acceptance just because a
+        # path was typed. One bounded native location-entry fallback is
+        # permitted, but exact host catalog and visible project row remain
+        # mandatory, and the test fails closed on a different root.
+        if not _native_chooser_still_open():
+            print("P04_GTK_SELECTION_ROUTE=chooser_closed_before_location_fallback",
+                  flush=True)
+        else:
+            key("ctrl+l")
+            type_text(str(ROOT))
+            key("alt+o")
+            print("P04_GTK_SELECTION_ROUTE=exact_native_location_alt_open", flush=True)
+            time.sleep(0.4)
+            if _native_chooser_still_open():
+                key("Return")
+                print("P04_GTK_SELECTION_ROUTE=exact_native_location_return", flush=True)
+    time.sleep(1.1)
     # GTK SELECT_FOLDER may interpret the first accept as "navigate into
     # selected directory" instead of closing. Native CI proved the real
     # dialog remained open afterward. Confirm only while the authentic OS
@@ -860,9 +1052,12 @@ def select_native_folder():
                 print("P04_GTK_PARENT_CHILD_RETRY=native_selection_attempt",
                       flush=True)
             else:
+                # Give the exact native location entry up with GTK Tab;
+                # keyboard default activation remains an OS action, never
+                # evidence of the selected path until the catalog is read.
                 key("ctrl+l")
                 type_text(str(ROOT))
-                key("Return")
+                key("Tab")
                 print("P04_GTK_EXACT_PATH_SELECTION=exact_fixture_reasserted_in_native_chooser",
                       flush=True)
             time.sleep(0.6)
@@ -890,6 +1085,7 @@ def select_native_folder():
     print("P04_NATIVE_GTK_REGISTRATION_RESULT=" + outcome, flush=True)
     print("P04_NATIVE_GTK_HOST_PICKER_RESULT=" + _host_picker_receipts(), flush=True)
     if outcome != "registered_exact_root_and_webview":
+        _native_project_control_inventory()
         print("P04_NATIVE_GTK_FOLDER_ACCEPT=closed_without_exact_project_registration",flush=True)
         deny("native_folder_chooser_did_not_register_project")
     print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_closed_after_native_action;"
@@ -946,21 +1142,175 @@ def select_native_folder():
 
 
 def editor_project():
-    # After a true desktop restart, the persisted project is registered but
-    # CLOSED. Reopen through the installed GTK/WebKit accessibility UI; never
-    # jump directly into an IPC or assume a saved catalog means an open editor.
-    try:
-        accessible("Closed · ready to reopen", seconds=2)
-    except RuntimeError:
-        pass
-    else:
-        activate("Reopen", timeout=15)
-        print("WO8_LINUX_PROJECT_REOPEN=real_atspi_action", flush=True)
-    accessible("Open · editor available", seconds=15)
-    activate("Edit")
+    # Persisted registration is CLOSED after an actual desktop restart.
+    # React exposes a Reopen button only for inactive records and an Edit
+    # button only for ACTIVE records. Plain paragraph text like
+    # "Open · editor available" is not reliably named in WebKitGTK/AT-SPI.
+    # Verify the real button state, not its non-interactive status label.
+    if _activate_exact_project_button("Reopen project ", seconds=3,
+                                      required=False):
+        print("WO8_LINUX_PROJECT_REOPEN=exact_native_atspi_action", flush=True)
+    _activate_exact_project_button("Edit project ", seconds=18)
+    print("IDE_G02_NATIVE_ACTIVE_EDITOR_BUTTON=verified_exact_project",
+          flush=True)
     accessible("Source explorer and editor", seconds=15)
     activate("main.rs")
     focus_editor()
+
+
+def _native_source_editor_nodes():
+    """Bounded AT-SPI descendants of the exact visible source workspace.
+
+    The global desktop scan stops at 13 levels. Real CodeMirror/editor tabs
+    are nested deeper; scan only the independently exposed OS/WebView source
+    workspace rather than accepting an unrelated 'Unsaved' status anywhere.
+    """
+    roots = []
+    for node in elements():
+        try:
+            if (node.name or "").strip() != "Source explorer and editor":
+                continue
+            if _native_dialog_ancestor(node):
+                continue
+            state = node.getState()
+            if (state.contains(pyatspi.STATE_VISIBLE) and
+                    state.contains(pyatspi.STATE_SHOWING)):
+                roots.append(node)
+        except Exception:
+            continue
+    scanned = 0
+    for root in roots[:2]:
+        stack = [(root, 0)]
+        while stack and scanned < 8000:
+            node, depth = stack.pop()
+            scanned += 1
+            yield node
+            if depth < 28:
+                stack.extend((child, depth + 1) for child in children_of(node))
+
+
+def _real_active_editor_save_remains_enabled():
+    """Check actual installed WebView's exact enabled Save action.
+
+    React's only primary source Save button is disabled when
+    !activeTab.dirty, and while editor IO/saving is pending. After a real
+    native FILE_CHANGED_ON_DISK refusal, the same control must still be
+    enabled for the unsaved draft. This is observable through OS AT-SPI;
+    no application IPC, DOM inspection or model-controlled state is used.
+    """
+    matches = []
+    for node in elements():
+        try:
+            if (node.name or "").strip() != "Save · Ctrl+S":
+                continue
+            if "button" not in (node.getRoleName() or "").casefold():
+                continue
+            if _native_dialog_ancestor(node):
+                continue
+            state = node.getState()
+            if not (state.contains(pyatspi.STATE_VISIBLE)
+                    and state.contains(pyatspi.STATE_SHOWING)):
+                continue
+            if state.contains(pyatspi.STATE_ENABLED):
+                matches.append(node)
+        except Exception:
+            continue
+    return len(matches) == 1
+
+
+def _native_conflict_warning_and_draft(seconds=16):
+    """Require real accessible conflict warning AND the still-dirty source tab.
+
+    The installed host's revision check must reject external drift; the
+    original disk SHA and outside writer's content are independently checked
+    BEFORE this accessible witness. A generic 'Unsaved' footer is not enough.
+    """
+    deadline = time.monotonic() + seconds
+    last_alert = False
+    last_dirty_tab = False
+    while True:
+        alert = False
+        dirty_tab = False
+        active_dirty_status = False
+        save_still_enabled = False
+        # Error notification lives at the app shell; it was independently
+        # visible in the prior installed Ubuntu run.
+        for node in elements():
+            try:
+                if _native_dialog_ancestor(node):
+                    continue
+                state = node.getState()
+                if not (state.contains(pyatspi.STATE_VISIBLE) and
+                        state.contains(pyatspi.STATE_SHOWING)):
+                    continue
+                name = (node.name or "").strip()
+                role = (node.getRoleName() or "").casefold()
+                if (name == "File changed on disk. Unsaved edits preserved"
+                        and any(kind in role for kind in ("alert", "notification", "status"))):
+                    alert = True
+                    break
+            except Exception:
+                continue
+        # A named source status is rendered from the *actual* activeTab.dirty
+        # in the installed editor toolbar; it is NOT the global footer,
+        # inferred save failure, or synthetic draft state. A role=status
+        # is exported by WebKitGTK more reliably than a deeply nested tab.
+        # Require exact full project-relative source name and visible native
+        # accessibility semantics. The actual source editor is independently
+        # verified open by editor_project() and the actual disk SHA check.
+        for node in elements():
+            try:
+                if _native_dialog_ancestor(node):
+                    continue
+                state = node.getState()
+                if not (state.contains(pyatspi.STATE_VISIBLE) and
+                        state.contains(pyatspi.STATE_SHOWING)):
+                    continue
+                name = (node.name or "").strip()
+                role = (node.getRoleName() or "").casefold()
+                if (name == "Unsaved editor draft main.rs" and
+                        any(kind in role for kind in ("status", "notification"))):
+                    active_dirty_status = True
+                    break
+            except Exception:
+                continue
+        # Real source tabs can be nested beyond the global AT-SPI traversal,
+        # so retain the strict per-file native tab check as another valid
+        # witness of *the same* saved-vs-draft React state.
+        for node in _native_source_editor_nodes():
+            try:
+                state = node.getState()
+                if not (state.contains(pyatspi.STATE_VISIBLE) and
+                        state.contains(pyatspi.STATE_SHOWING)):
+                    continue
+                name = (node.name or "").strip()
+                role = (node.getRoleName() or "").casefold()
+                if name == "Unsaved source tab main.rs" and "tab" in role:
+                    dirty_tab = True
+                    break
+            except Exception:
+                continue
+        # The primary real Save control's disabled predicate is
+        # !activeTab.dirty, so enabled *after rejected Save* independently
+        # proves the current unsaved editor buffer remains editable.
+        save_still_enabled = _real_active_editor_save_remains_enabled()
+        if alert and (dirty_tab or active_dirty_status or save_still_enabled):
+            print("IDE_G02_LINUX_NATIVE_EXTERNAL_CONFLICT_ALERT_AND_DRAFT=PASS",
+                  flush=True)
+            print("IDE_G02_LINUX_DIRTY_SOURCE_WITNESS=" +
+                  ("actual_source_tab" if dirty_tab else
+                   "active_editor_status" if active_dirty_status else
+                   "enabled_primary_save_after_rejected_save"), flush=True)
+            return
+        last_alert, last_dirty_tab = alert, (dirty_tab or active_dirty_status or save_still_enabled)
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.30)
+    print("IDE_G02_LINUX_NATIVE_CONFLICT_INVENTORY=alert:" +
+          ("visible" if last_alert else "missing") +
+          ";dirty_tab:" + ("visible" if last_dirty_tab else "missing"),
+          flush=True)
+    deny("native_external_conflict_warning_or_draft_not_exposed")
 
 
 def main():
@@ -1022,10 +1372,11 @@ def main():
         SOURCE.write_text(before + "\n// " + CONFLICT + "\n", encoding="utf-8")
         outside_sha = digest()
         activate("Save · Ctrl+S")
-        accessible("File changed on disk", seconds=16)
+        # Refusal of a stale revision must retain the *external* disk bytes.
+        # The alert alone cannot certify the native save guard.
         if digest() != outside_sha or CONFLICT not in SOURCE.read_text(encoding="utf-8"):
             deny("conflicting_external_edit_overwritten")
-        accessible("Unsaved", seconds=10)
+        _native_conflict_warning_and_draft(seconds=16)
         print("WO8_LINUX_NATIVE_EXTERNAL_CONFLICT_DENIED=PASS", flush=True)
     finally:
         stop(second)
