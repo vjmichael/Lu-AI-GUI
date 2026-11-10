@@ -1,5 +1,15 @@
 # Lu IDE — Development changelog
 
+## 2026-11-10 — Group 6A-05/06/07 read-only Git expansion
+
+Added bounded file blame, first-parent file history, local
+references, remote alias-only inspection, and repository health.
+Added Tauri/UI read-only routes, hostile native fixtures, async
+project-switch invalidation and physical installed Windows/Linux
+operator witness scripts. No Git mutation grants, network
+operations or credentials introduced. Native and installed
+acceptance remains explicitly open.
+
 ## 2026-11-10 — Group 6A-01/02 native Git inventory
 
 Added bounded, non-executing libgit2 local branch and linked worktree
