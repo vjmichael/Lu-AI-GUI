@@ -1,5 +1,22 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 5 engineering continuation — 5A/5C/5D/5E source safeguards (Nov 10)
+
+Group 5 remains independent of Group 4 LLVM GH Ops. Dedicated branch
+`ide/group05-package-review-20261110` implements strict static
+vcpkg Add/Remove direct-declaration rejection for conditional/duplicate
+matching entries (`9a8f888`), vcpkg Sync JSON parsing instead of
+blind hash-only approval (`12cf727`), a non-redirected native frozen
+source root for private package audit (`8a0e698`), rejection of
+relative Windows package ACL audit roots (`af40523`), and denial of
+old pre-discard state being reused to mark private cleanup verified
+(`b44edaa`). Adversarial tests have been added but **not run** on
+Windows/Linux at this new head; physical protected package execution,
+AppContainer hostile write/rename, output provenance, installer,
+restart/rollback and real human approval remain OPEN. No execution
+permission, package runtime, signing or Lu bridge was enabled. See
+`ide/docs/IDE_GROUP05_PACKAGE_TOOLCHAIN_20261110.md`.
+
 ## Group 5 — Package manager review work, November 10, 2026 (source only)
 
 Work has started on separate branch `ide/group05-package-review-20261110`,
