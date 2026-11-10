@@ -1,5 +1,15 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 6A-07 interrupted Git inspection branch (2026-11-10)
+
+Source branch `ide/group06a-recovery-health-20261110` adds
+native-only interrupted-operation/conflict classification and
+explicit no-auto-resume/no-auto-abort flags; Source Control warns
+when operator reconciliation is required. Native Git MERGE_HEAD
+and pure classification fixture tests added. This development is
+independent of the ongoing canonical Group 6A exact-head native
+run. OS/installed approval and 6D recovery execution remain open.
+
 ## IDE Group 6A current engineering state — 2026-11-10
 
 Native registered-root modules now provide bounded local committed
