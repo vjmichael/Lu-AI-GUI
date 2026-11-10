@@ -476,6 +476,16 @@ jobs:
           foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
             Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
           }
+      - name: Build real React frontend before production Tauri macro/native tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
+          test -f lu-desktop/dist/index.html
       - name: Native production Tauri ANSF original-message revision, linked reply and crash recovery
         shell: bash
         run: |
