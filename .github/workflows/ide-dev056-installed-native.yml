@@ -1,3 +1,9 @@
+# IDE-05.6 GROUP-DISPATCH (2026-11-10):
+# Exact source-tree at prior code commit c32d2c1b345a82a02f84c4df70c41ee7169679c1.
+# One grouped NSIS+Debian native install/launch/edit/restart/uninstall acceptance
+# after product missing-project render guard and GTK native selection repair.
+# Workflow self-path deliberately avoids per-source-edit automatic CI fanout.
+# This comment changes no executable code and is NOT a release/human/ACL grant.
 name: IDE-05.6 installed default-denial Windows NSIS and Linux Debian group (NOT release)
 on:
   push:
