@@ -31,8 +31,29 @@ try{
   if($LASTEXITCODE -ne 0 -or (& git -C $vendor rev-parse HEAD).Trim() -cne $upstream){
     throw 'Upstream exact commit verification failed'
   }
+  # GitHub windows-2025 may carry VS 2026 (18.x), not VS 2022 (17.x).
+  # Bind to the installed host MSVC toolchain, never silently substitute MinGW.
+  $vswhere=(Get-Command vswhere.exe -ErrorAction SilentlyContinue).Source
+  if(-not $vswhere){
+    $vswhere=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
+  }
+  if(-not(Test-Path -LiteralPath $vswhere)){throw 'Native Visual Studio host discovery missing'}
+  $vsArgs=@('-latest','-products','*','-requires',
+    'Microsoft.VisualStudio.Component.VC.Tools.x86.x64')
+  $vsPath=(& $vswhere @vsArgs -property installationPath).Trim()
+  $vsVersion=(& $vswhere @vsArgs -property installationVersion).Trim()
+  if($LASTEXITCODE -ne 0 -or -not(Test-Path -LiteralPath $vsPath)){
+    throw 'No verified installed Visual Studio C++ workload'
+  }
+  $major=[int]($vsVersion.Split('.')[0])
+  $generator=switch($major){
+    17 {'Visual Studio 17 2022'}
+    18 {'Visual Studio 18 2026'}
+    default {throw "Unsupported host MSVC major $major"}
+  }
+  Write-Host "Pinned llama.cpp build: installed MSVC $vsVersion at $vsPath; CMake generator $generator"
   $engineBuild=Join-Path $env:RUNNER_TEMP 'lu-01g-llama-build'
-  & cmake -S $vendor -B $engineBuild -G 'Visual Studio 17 2022' -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_APP=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON
+  & cmake -S $vendor -B $engineBuild -G $generator -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_APP=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON
   if($LASTEXITCODE -ne 0){throw 'Pinned CPU llama.cpp CMake configure failed'}
   & cmake --build $engineBuild --config Release --target llama-server --parallel 4
   if($LASTEXITCODE -ne 0){throw 'Pinned CPU llama.cpp build failed'}

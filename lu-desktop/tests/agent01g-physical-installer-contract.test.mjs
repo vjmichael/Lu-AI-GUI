@@ -42,6 +42,11 @@ test('Windows build has real Win32 manifest and a separate app-data identity',()
   assert.match(build,/verify_win_v6_manifest\.py/);
   assert.match(build,/lu-01g-common-controls-v6\.res/);
   assert.match(build,/modelBundled=\$false/);
+  assert.match(build,/vswhere\.exe/);
+  assert.match(build,/Visual Studio 18 2026/);
+  assert.match(build,/Visual Studio 17 2022/);
+  assert.match(build,/Microsoft\.VisualStudio\.Component\.VC\.Tools\.x86\.x64/);
+  assert.doesNotMatch(build,/-G 'Visual Studio 17 2022'/);
 });
 test('only packaged app and source-pinned engine are installed; user data survive uninstall',()=>{
   assert.match(nsis,/File \/oname=lu-desktop\.exe/);

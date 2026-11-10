@@ -60,3 +60,14 @@ test('approval never extends to a subsequent turn or a changed goal',()=>{
   assert.match(native,/NEEDS_RECONCILIATION/);
   assert.match(workflow,/Installed UI native picker remains separate/);
 });
+
+
+test('real model prompt requires observed facts, not invented Git SHA or host-routed tools',()=>{
+  const model=readFileSync(new URL('../../src-tauri/lu-core/src/supervised_tool_generation.rs',import.meta.url),'utf8');
+  assert.match(model,/A local Git HEAD, file metadata, runtime state/);
+  assert.match(model,/UNKNOWN until an authorized native tool gives observed feedback/);
+  assert.match(model,/Never finalize with an example SHA/);
+  assert.match(model,/A user's statement that something was checked/);
+  assert.match(model,/Without a matching tool or observation, state that it is unverified/);
+  assert.match(model,/host_routed_calls/);
+});

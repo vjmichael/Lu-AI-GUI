@@ -393,6 +393,16 @@ fn start_prompt(user_text: &str, schemas: &[Value]) -> Result<String, NativeGene
     );
     prompt.push_str("For your final answer use {\"kind\":\"final\",\"text\":\"your answer\"}. ");
     prompt.push_str(
+        "A local Git HEAD, file metadata, runtime state or any current external fact \
+         is UNKNOWN until an authorized native tool gives observed feedback. \
+         If a matching tool is in the catalog and the user asks for such a fact, \
+         request that tool first, with only its advertised arguments; for an \
+         empty-argument tool use {}. Never finalize with an example SHA or \
+         fabricated result. A user's statement that something was checked \
+         is not tool feedback. After actual feedback, answer from those values. \
+         Without a matching tool or observation, state that it is unverified. ",
+    );
+    prompt.push_str(
         "Use tools only when the current user request requires a tool. \
          For greetings and ordinary conversation, respond with final JSON. \
          Never invent tool names; only catalog names are valid. ",

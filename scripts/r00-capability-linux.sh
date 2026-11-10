@@ -59,17 +59,34 @@ for i in $(seq 1 180); do
   sleep 2
 done
 test "$ready" -eq 1
-python3 benchmarks/e1/agent01g_qwen_plan_probe.py \
+# A small real model may fail comprehension. That must FAIL acceptance, but
+# its mistake must not prevent independent K/I/A/F and three-arm measurement.
+# Every model output is still genuine and journaled; nothing is repaired or
+# fabricated into a tool call. Each model-dependent test gets its own receipt.
+model_semantic_failures=0
+if python3 benchmarks/e1/agent01g_qwen_plan_probe.py \
   --port "$LU_E1_P07_LLAMA_PORT" --output "$root/genuine-qwen-plan-probe.json" \
-  2>&1 | tee "$root/plan-probe.log"
+  2>&1 | tee "$root/plan-probe.log"; then
+  echo 'MODEL_PLAN_PROBE_EXECUTED=1' >> "$GITHUB_STEP_SUMMARY"
+else
+  model_semantic_failures=$((model_semantic_failures+1))
+  echo 'MODEL_PLAN_PROBE_FAILED=1' >> "$GITHUB_STEP_SUMMARY"
+fi
 for case in \
   agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart \
   agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart \
   genuine_gguf_independently_selects_git_and_media_tools_and_survives_journal_restart; do
-  cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+  if cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
     --test e1_reviewed_model_tools "$case" -- --ignored --nocapture \
-    2>&1 | tee "$root/$case.log"
-  grep -Fq "test $case ... ok" "$root/$case.log"
+    2>&1 | tee "$root/$case.log"; then
+    if ! grep -Fq "test $case ... ok" "$root/$case.log"; then
+      model_semantic_failures=$((model_semantic_failures+1))
+      echo "MODEL_NATIVE_TEST_MISSING=$case" >> "$GITHUB_STEP_SUMMARY"
+    fi
+  else
+    model_semantic_failures=$((model_semantic_failures+1))
+    echo "MODEL_NATIVE_TEST_FAILED=$case" >> "$GITHUB_STEP_SUMMARY"
+  fi
 done
 cleanup
 trap - EXIT
@@ -107,3 +124,11 @@ python3 benchmarks/e1/verify_e1_p05_raw.py \
   --mode three-arm --repeats 1
 cat "$root/three-arm/e1_p05_summary.md" >> "$GITHUB_STEP_SUMMARY"
 echo 'This is real Qwen3-0.6B CPU, not target Qwen 27B or installed Windows Vulkan/rollback acceptance.' >> "$GITHUB_STEP_SUMMARY"
+
+# A model-comprehension regression is never downgraded to success simply
+# because all raw measurements and independent worker outcomes were captured.
+printf 'MODEL_NATIVE_FAILURES=%d\n' "$model_semantic_failures" | tee "$root/model-semantic-summary.txt"
+if test "$model_semantic_failures" -ne 0; then
+  echo "Genuine Qwen plan/tool comprehension remains OPEN ($model_semantic_failures independent native failures)." >> "$GITHUB_STEP_SUMMARY"
+  exit 48
+fi

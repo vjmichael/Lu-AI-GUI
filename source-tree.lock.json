@@ -1361,11 +1361,11 @@
     },
     {
       "path": "lu-desktop/tests/agent01g-physical-installer-contract.test.mjs",
-      "blob": "0dd4181ca991c20d8b833d20e22b75f00db1dff2"
+      "blob": "7de42aeb29f3dce944c31363cdae01166d494016"
     },
     {
       "path": "lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs",
-      "blob": "ce9e2b9087e6517966ec2a1edbd01215a966c67f"
+      "blob": "a7b63b3efe9e3244ce7e206cd133bfda02922c27"
     },
     {
       "path": "lu-desktop/tests/agent01h-next-step-preview.test.mjs",
@@ -1789,7 +1789,7 @@
     },
     {
       "path": "scripts/build-agent01g-physical-windows-nsis.ps1",
-      "blob": "43f56dd45d32b01640b8145f355b6aad6b1a41fe"
+      "blob": "34bcbce39ec31e29ef851e706e3b7e73e86e3aa2"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
@@ -1861,7 +1861,7 @@
     },
     {
       "path": "scripts/r00-capability-linux.sh",
-      "blob": "ab5f219bc8cdb9e26655ba1b0b16f3ad7b3b3018"
+      "blob": "4e4eb6ddb0d0873fa14a64697d671b7e70bc7631"
     },
     {
       "path": "scripts/r00-capability-windows.ps1",
@@ -2765,7 +2765,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/supervised_tool_generation.rs",
-      "blob": "c87ce20c1775399ebd47cd31eccab44cea417865"
+      "blob": "4c9dba08ba44487eceddf6341b92d8b5d7cf837e"
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
