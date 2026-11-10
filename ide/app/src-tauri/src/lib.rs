@@ -472,6 +472,35 @@ async fn ide_read_git_repository_inventory(
     .map_err(|_| "GIT_INVENTORY_HOST_UNAVAILABLE".to_owned())
 }
 
+/// Local committed-file history and blame only. Untrusted file path is
+/// checked inside the native registered-project capability.
+#[tauri::command]
+async fn ide_read_git_file_history(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+) -> Result<lu_ide_workspace::git_file_history::GitFileHistoryEvidence, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_git_file_history(&project_id, &relative_path)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06A_HISTORY_HOST_UNAVAILABLE".to_owned())?
+}
+
+/// Read-only local refs, safe remote aliases and Git health; no URLs,
+/// credential access, Git process or branch mutation.
+#[tauri::command]
+async fn ide_read_git_refs_health(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_refs_health::GitRefsAndHealthEvidence, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_git_refs_health(&project_id)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06A_REFS_HOST_UNAVAILABLE".to_owned())?
+}
+
 /// On explicit human request, compare local work with current public GitHub
 /// branch evidence. HTTPS to fixed api.github.com only; no token or Git fetch.
 #[tauri::command]
@@ -2088,6 +2117,8 @@ pub fn run() {
             ide_observe_task_ci,
             ide_read_git_status,
             ide_read_git_repository_inventory,
+            ide_read_git_file_history,
+            ide_read_git_refs_health,
             ide_read_git_diff,
             ide_probe_project_resource,
             ide_read_git_history,
