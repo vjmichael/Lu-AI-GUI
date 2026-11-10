@@ -978,6 +978,14 @@ pub fn execute_linux_worker_with_output(
         return Err(denied());
     }
     supervisor.native_mark_running(job_id)?;
+    // CI-only crash oracle: abort after kernel membership and durable Running.
+    // This opt-in feature is absent from default workers and installed apps.
+    if cfg!(feature = "ide055-ci-wheelhouse")
+        && std::env::var("LU_IDE055_CI_CRASH_AFTER_RUNNING").as_deref() == Ok("1")
+    {
+        eprintln!("IDE055_CI_HOSTILE_ABORT_AFTER_NATIVE_RUNNING_RECEIPT");
+        std::process::abort();
+    }
     let stdout = child.stdout.take().ok_or_else(denied)?;
     let stderr = child.stderr.take().ok_or_else(denied)?;
     let half = usize::try_from(plan.log_limit_bytes / 2).unwrap_or(0);

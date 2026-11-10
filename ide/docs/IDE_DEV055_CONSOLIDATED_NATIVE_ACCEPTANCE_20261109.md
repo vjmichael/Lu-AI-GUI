@@ -173,3 +173,36 @@ from the real native runner diff.
 was skipped because other prerequisite jobs failed. Therefore physical
 human approval, installed package acceptance, recovery, wheel-origin
 attestation and Windows workspace ACLs remain open.
+
+## Task 4 — synthetic first-party positive wheel and hostile restart
+
+The Task 4 native CI gate extends the same protected Ubuntu systemd-delegated
+cgroup, Bubblewrap network namespace and exact root-owned runtime pin.
+The dedicated ide055-ci-wheelhouse build feature is absent from both installed
+desktop bundles and the normal native-package-uv worker.
+
+The runtime setup constructs a deterministic first-party synthetic MIT wheel,
+pins its archive SHA in the exact runtime tree and in the native CI executable,
+and serves it from a read-only local wheelhouse. Only the CI fixture may use
+this exact local registry identity. User-provided path, Git, editable, sdist
+and arbitrary wheel sources remain denied.
+
+The --positive native fixture requires a real successful uv sync --offline
+--locked to a private output directory, correct wheel bytes, license text,
+installed RECORD hashes, absence of unlisted site-packages files, original
+source immutability and denial after installed-module tampering. The resulting
+environment is NOT approved for project promotion. In particular, this
+self-generated wheel proves neither independent upstream supply-chain origin
+nor external publisher/license approval.
+
+For the --hostile-recovery fixture, an opt-in CI-only fault oracle aborts the
+native runner after kernel cgroup membership and a durable Running receipt.
+A separate native process must replay the journal, find RecoveryRequired,
+perform kernel-backed cgroup cleanup, record Cancelled, preserve source data,
+and demonstrate no automatic retry or restored execution grant. This is not
+a physical desktop/human approval test.
+
+Task 4's CI-only acceptance requires exact-head Windows/Linux native source
+jobs plus genuine positive/offline-miss/cancel/hostile-recovery OS fixture
+logs and their receipts. The separate production provenance and installed-app
+operator gates remain open.

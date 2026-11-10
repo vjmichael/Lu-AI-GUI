@@ -182,19 +182,24 @@ jobs:
           test -n "$uv_license" && test -f "$uv_license"
           test -f /usr/share/doc/python3.12/copyright
           sudo install -d -o root -g root -m 755 /opt/lu-ide/runtimes
-          pin="$(sudo /usr/bin/python3 \
+          staged="$(sudo /usr/bin/python3 \
             ide/supervisor/fixtures/package/prepare_ide05_ci_uv.py \
             --runtime-root /opt/lu-ide/runtimes/uv_sync_offline \
             --uv-exe "$uv_binary" --python-exe /usr/bin/python3 \
             --uv-license "$uv_license" \
             --python-license /usr/share/doc/python3.12/copyright \
-            | sed -n 's/^LU_IDE05_LINUX_UV_SHA256=//p')"
+)"
+          pin="$(printf '%s\n' "$staged" | sed -n 's/^LU_IDE05_LINUX_UV_SHA256=//p')"
+          wheel_sha="$(printf '%s\n' "$staged" | sed -n 's/^LU_IDE05_CI_WHEEL_SHA256=//p')"
+          test "${#wheel_sha}" = 64
           test "${#pin}" = 64
           test "$(stat -c %u /opt/lu-ide/runtimes/uv_sync_offline)" = 0
           test "$(stat -c %a /opt/lu-ide/runtimes/uv_sync_offline)" = 755
           test ! -L /opt/lu-ide/runtimes/uv_sync_offline
           echo "IDE055_RUNTIME_ROOT_OWNER_MODE=PASS"
           echo "LU_IDE05_LINUX_UV_SHA256=$pin" >> "$GITHUB_ENV"
+          echo "LU_IDE05_CI_WHEEL_SHA256=$wheel_sha" >> "$GITHUB_ENV"
+          echo "IDE055_CI_SYNTHETIC_WHEEL_HASH=$wheel_sha"
           echo "IDE055_CI_SELF_MEASURED_NOT_RELEASE_PIN=$pin"
       - name: Require real Linux namespace and delegated cgroup (never disable AppArmor)
         shell: bash
@@ -222,14 +227,14 @@ jobs:
           cargo build --manifest-path ide/sandbox/Cargo.toml \
             --bin linux_cgroup_prepare --bin linux_delegated_ci_ide05_host
           cargo build --manifest-path ide/supervisor/Cargo.toml \
-            --features 'linux-worker,package-uv-worker' \
+            --features 'linux-worker,package-uv-worker,ide055-ci-wheelhouse' \
             --example ide05_native_uv_acceptance
       - name: Exact cgroup/bwrap uv offline MISS, OS terminal failure receipt and durable restart
         shell: bash
         run: |
           set -euo pipefail
           host="$(realpath ide/sandbox/target/debug/linux_delegated_ci_ide05_host)"
-          for mode in --offline-miss --cancel; do
+          for mode in --offline-miss --cancel --positive --hostile-recovery; do
             rc=0
             sudo /usr/bin/systemd-run --wait --collect --pipe \
               --unit=lu-ide-delegated \
@@ -249,14 +254,15 @@ jobs:
             fi
             echo "IDE055_REAL_PROTECTED_UV_$mode=PASS"
           done
-          echo IDE055_POSITIVE_NATIVE_PACKAGE_INSTALL=OPEN
+          echo IDE055_POSITIVE_NATIVE_PACKAGE_INSTALL=CI_ONLY_SYNTHETIC_WHEEL_VERIFIED
+          echo IDE055_HOSTILE_RESTART_NATIVE=CHECK_LOGS_FOR_OS_RECONCILIATION
           echo IDE055_REAL_HUMAN_APPROVAL=OPEN
       - name: Store native negative evidence
         if: always()
         shell: bash
         run: |
           mkdir -p .ide055-native-evidence
-          printf 'sha=%s\nrun=%s\nreal_uv_process=see_logs\nfixture=ci_only_offline_denial\nhuman_approval=OPEN\nwheel_provenance=OPEN\ninstalled_app=OPEN\n' \
+          printf 'sha=%s\nrun=%s\nreal_uv_process=see_logs\nfixture=ci_only_negative_and_positive_wheelhouse\nhuman_approval=OPEN\nupstream_wheel_provenance=OPEN\ninstalled_app=OPEN\n' \
             "$GITHUB_SHA" "$GITHUB_RUN_ID" > .ide055-native-evidence/status.txt
       - uses: actions/upload-artifact@v4
         if: always()

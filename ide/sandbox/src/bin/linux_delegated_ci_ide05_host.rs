@@ -14,8 +14,12 @@ fn main(){
 fn run()->Result<(),&'static str>{
     use std::{env,fs,path::Path,process::Command};
     let args=env::args().skip(1).collect::<Vec<_>>();
-    if args.as_slice()!=["--offline-miss"] && args.as_slice()!=["--cancel"] {
-        return Err("only fixed --offline-miss or --cancel");
+    if args.as_slice()!=["--offline-miss"]
+        && args.as_slice()!=["--cancel"]
+        && args.as_slice()!=["--positive"]
+        && args.as_slice()!=["--hostile-recovery"]
+    {
+        return Err("only fixed package acceptance modes");
     }
     let root=Path::new(env!("CARGO_MANIFEST_DIR"));
     let prep=root.join("target/debug/linux_cgroup_prepare");
@@ -31,7 +35,31 @@ fn run()->Result<(),&'static str>{
         .map_err(|_|"delegated OS preparation could not execute")?.success(){
         return Err("real systemd delegated cgroup not established");
     }
-    if !Command::new(&runner)
+    if args.as_slice() == ["--hostile-recovery"] {
+        use std::os::unix::process::ExitStatusExt;
+        let status = Command::new(&runner)
+            .arg("--crash-after-running")
+            .env_clear()
+            .env("HOME", "/tmp")
+            .env("LANG", "C")
+            .env("LU_IDE055_CI_CRASH_AFTER_RUNNING", "1")
+            .status()
+            .map_err(|_| "fixed crash worker could not start")?;
+        if status.signal() != Some(6) {
+            return Err("CI interruption was not a genuine SIGABRT");
+        }
+        if !Command::new(&runner)
+            .arg("--recover")
+            .env_clear()
+            .env("HOME", "/tmp")
+            .env("LANG", "C")
+            .status()
+            .map_err(|_| "independent native journal recovery could not start")?
+            .success()
+        {
+            return Err("kernel-backed journal recovery failed");
+        }
+    } else if !Command::new(&runner)
         .arg(&args[0])
         .env_clear()
         .env("HOME","/tmp")
@@ -39,7 +67,7 @@ fn run()->Result<(),&'static str>{
         .status()
         .map_err(|_|"fixed protected uv fixture could not execute")?
         .success(){
-        return Err("real offline uv failed wrong native denial gate");
+        return Err("native uv acceptance outcome unverified");
     }
     println!("IDE055_REAL_DELEGATED_UV_OS_GATE=PASS; mode={}; user_approval=false; install_accepted=false",args[0]);
     Ok(())
