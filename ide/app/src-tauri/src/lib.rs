@@ -270,6 +270,40 @@ async fn ide_git_verify_batch_review(
     .map_err(|_| "G06B_BATCH_REVERIFY_HOST_UNAVAILABLE".to_owned())?
 }
 
+/// Group 6B-02: exact reviewed hunks from a registered project. The
+/// WebView cannot supply a patch or ask this command to stage anything.
+#[tauri::command]
+async fn ide_git_preview_hunks(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+) -> Result<lu_ide_workspace::git_hunk_review::ReviewedHunkPlan, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.preview_reviewed_git_hunks(&project_id, &relative_path)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06B_HUNK_HOST_UNAVAILABLE".to_owned())?
+}
+
+/// A selection is still review data. The entire supplied plan is
+/// independently rebuilt from native Git and capability-held file bytes.
+#[tauri::command]
+async fn ide_git_select_reviewed_hunks(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    expected: lu_ide_workspace::git_hunk_review::ReviewedHunkPlan,
+    selected_ids: Vec<String>,
+) -> Result<lu_ide_workspace::git_hunk_review::ReviewedHunkSelection, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.select_reviewed_git_hunks(&expected, &selected_ids)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06B_HUNK_SELECTION_HOST_UNAVAILABLE".to_owned())?
+}
+
 #[tauri::command]
 async fn ide_git_review_file(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
@@ -2164,6 +2198,8 @@ pub fn run() {
             ide_workflow_cancel_pending,
             ide_git_preview_batch,
             ide_git_verify_batch_review,
+            ide_git_preview_hunks,
+            ide_git_select_reviewed_hunks,
             ide_git_review_file,
             ide_git_stage_reviewed,
             ide_git_commit_reviewed,
