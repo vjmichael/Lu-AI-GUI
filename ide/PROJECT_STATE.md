@@ -1,3 +1,7 @@
+## Group 4 native terminal evidence (2026-11-10)
+
+Original historical run 42870494783 at e8fce1f finished FAILED: pinned Windows LLVM18 owner job 130020178608 reached MSVC but failed missing direct chrono include in LLDB-DAP ProgressEvent.h/ProgressEvent.cpp; no owner-event/lock acceptance. Windows/Linux other lanes failed dap_session correlated-stack test InvalidPhase at line 1799. Temporary run 42876264987 at a617977: Linux source PASS, Windows parser 23/23 and control 9/9 PASS, desktop compiler FAIL because icons/icon.ico missing. These are historical source failures, NOT exact-head native acceptance at authoritative 545a7a3. No Group 4 branch rewrite, CI dispatch, OS human approval or installed acceptance. See ide/docs/IDE_GROUP04_PROTECTED_BUILD_TEST_LLDB_20261110.md. Group 4B/C/D remain OPEN.
+
 # Lu IDE — Current project state (authoritative handoff)
 
 ## Group 4D native inspection staging (Nov 10; NOT PROMOTED)
