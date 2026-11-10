@@ -6,6 +6,9 @@ param(
   [Parameter(Mandatory=$true)][string]$ProfileDirectory,
   [Parameter(Mandatory=$true)][string]$AuditExecutable,
   [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
+  [Parameter(Mandatory=$true)][ValidatePattern('^[a-fA-F0-9]{40}$')][string]$ExpectedSourceSha,
+  [Parameter(Mandatory=$true)][string]$ExpectedDesktopExecutable,
+  [Parameter(Mandatory=$true)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ExpectedDesktopSha256,
   [Parameter(Mandatory=$true)]
   [ValidateSet('ApproveStep','RefuseStep','CancelWhilePrompted','ApproveBreakpoint')]
   [string]$Scenario
@@ -18,6 +21,19 @@ if ($env:OS -ne 'Windows_NT' -or $env:GITHUB_ACTIONS -eq 'true') {
 }
 $userSession=(Get-Process -Id $PID).SessionId
 if ($userSession -le 0) { Deny 'interactive_user_session_missing' }
+$head=(git rev-parse HEAD 2>$null)
+if ($LASTEXITCODE -ne 0 -or !$head -or $head.Trim() -ine $ExpectedSourceSha) {
+  Deny 'exact_local_source_commit_does_not_match_review'
+}
+$expectedDesktop=(Resolve-Path -LiteralPath $ExpectedDesktopExecutable -ErrorAction Stop).Path
+if (!(Test-Path -LiteralPath $expectedDesktop -PathType Leaf) -or
+    [IO.Path]::GetFileName($expectedDesktop) -ine 'lu-ide-desktop.exe') {
+  Deny 'reviewed_desktop_executable_missing_or_wrong_name'
+}
+$reviewedDigest=(Get-FileHash -Algorithm SHA256 -LiteralPath $expectedDesktop).Hash
+if ($reviewedDigest -ine $ExpectedDesktopSha256) {
+  Deny 'reviewed_desktop_binary_hash_mismatch'
+}
 $profile=[IO.Path]::GetFullPath($ProfileDirectory)
 if (!(Test-Path -LiteralPath $profile -PathType Container)) { Deny 'native_profile_missing' }
 $journal=Join-Path $profile 'debug-fixture-receipts.jsonl'
@@ -31,6 +47,17 @@ if ([IO.Path]::GetFileNameWithoutExtension($audit) -ne 'dev046d_restart_receipt_
 $desktop=@(Get-Process -Name 'lu-ide-desktop' -ErrorAction SilentlyContinue |
   Where-Object { $_.SessionId -eq $userSession -and $_.MainWindowHandle -ne [IntPtr]::Zero })
 if ($desktop.Count -ne 1) { Deny 'one_visible_lu_ide_desktop_required' }
+try {
+  $runningImage=(Resolve-Path -LiteralPath $desktop[0].MainModule.FileName -ErrorAction Stop).Path
+} catch { Deny 'visible_process_image_unavailable' }
+if (![string]::Equals($runningImage,$expectedDesktop,[StringComparison]::OrdinalIgnoreCase)) {
+  Deny 'visible_process_does_not_match_reviewed_desktop'
+}
+$runningDigest=(Get-FileHash -Algorithm SHA256 -LiteralPath $runningImage).Hash
+if ($runningDigest -ine $ExpectedDesktopSha256) {
+  Deny 'running_desktop_image_hash_mismatch'
+}
+Write-Host 'IDE_G03_PHYSICAL_VISIBLE_DESKTOP_SOURCE_AND_BINARY=PINNED_NOT_CONSENT'
 New-Item -ItemType Directory -Path $EvidenceDirectory -Force | Out-Null
 $before=@(Get-ChildItem -LiteralPath $profile -Filter 'lu-debug-action-*.ndjson' -File |
   Select-Object -ExpandProperty Name)
@@ -103,6 +130,8 @@ switch($Scenario) {
 if ($LASTEXITCODE -ne 0) { Deny 'independent_native_restart_audit_failed' }
 $observed=[ordered]@{
   scope='physical_interactive_developer_build_not_signed_release'
+  exactSourceCommit=$ExpectedSourceSha
+  reviewedDesktopSha256=$ExpectedDesktopSha256.ToLowerInvariant()
   scenario=$Scenario
   desktopPid=$desktop[0].Id
   sessionId=$userSession
