@@ -1,5 +1,15 @@
 # Lu IDE — Development changelog
 
+## 2026-11-10 — Group 6A-01/02 native Git inventory
+
+Added bounded, non-executing libgit2 local branch and linked worktree
+admin-name inspection, exact registered-project root restriction,
+host-only Tauri command and Source Control read-only UI. Added native
+branch, linked-worktree, detached/unborn, parent-discovery and
+unregistered-project fixtures, plus Node source-boundary checks.
+External linked paths are never opened, statted or granted. Windows/
+Linux native and installed UI acceptance remain unverified.
+
 ## 2026-11-10 — Group 6A existing Git audit (documentation only)
 
 Audited the standalone IDE's libgit2 status, bounded local diff/history,
