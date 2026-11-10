@@ -15,26 +15,40 @@ test('physical alpha preserves model load, queue, eject and conversation',()=>{
   assert.match(ui,/Message Lu/);
 });
 
-test('only top right gear opens visible Settings; models have a separate window',()=>{
+test('one gear launches native Settings; Model Library and chat are distinct Tauri roots',()=>{
+  const windows=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+  const capability=readFileSync(new URL('../src-tauri/capabilities/default.json',import.meta.url),'utf8');
   assert.match(ui,/className="quietSettings" title="Settings"/);
-  assert.doesNotMatch(ui,/<button className="settingsButton" onClick=\{\(\) => setSettingsOpen\(true\)\}>⚙ Settings/);
-  assert.match(ui,/setModelLibraryOpen\(true\);\}\}>Manage models/);
-  assert.match(ui,/aria-label="Lu settings"/);
-  assert.match(ui,/aria-label="Model Library"/);
-  assert.match(ui,/No registered local GGUF models/);
-  assert.match(ui,/Observe & Learn privacy settings/);
-  assert.match(ui,/Select a conversation to review its native observation status/);
-  assert.match(ui,/false && settingsOpen && <div className="settingsBackdrop"/);
-  assert.match(css,/\.luFullWindow\{/);
+  assert.match(ui,/invoke\('lu_open_aux_window',\{kind:'settings'\}\)/);
+  assert.match(ui,/invoke\('lu_open_aux_window',\{kind:'model-library'\}\)/);
+  assert.match(ui,/luWindow==='settings'\?<SettingsWindow\/>/);
+  assert.match(ui,/luWindow==='model-library'\?<ModelLibraryWindow\/>/);
+  assert.match(rust,/fn lu_open_aux_window\(/);
+  assert.match(rust,/WebviewWindowBuilder::new/);
+  assert.match(rust,/spec\.query/);
+  assert.match(capability,/"windows": \["main", "settings", "model-library"\]/);
+  assert.match(windows,/aria-label="Lu settings"/);
+  assert.match(windows,/aria-label="Model Library"/);
+  assert.match(windows,/Model-specific settings/);
+  assert.match(windows,/Lu runtime/);
+  assert.match(windows,/Tools & permissions/);
+  assert.match(windows,/Browser & research/);
+  assert.match(windows,/Memory & ANSF/);
+  assert.match(windows,/Privacy & Observe/);
+  assert.match(windows,/Hugging Face/);
+  assert.match(windows,/No registered local GGUF models/);
 });
 
-test('Observe & Learn is not mounted in chat composer; only settings owns active panel',()=>{
-  const chatEnd=ui.indexOf('</main>');
-  const newSettings=ui.indexOf('aria-label="Lu settings"');
-  const observedPanel=ui.indexOf('aria-label="Observe and Learn — Lu-only pilot"');
-  assert.ok(chatEnd>=0 && newSettings>chatEnd && observedPanel>newSettings);
-  assert.match(ui,/Enable experimental Observe & Learn/);
-  assert.match(ui,/Forget saved observation notes for this chat/);
+test('Observe & Learn and configuration are mounted only in an independent native Settings root',()=>{
+  const windows=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+  assert.match(windows,/invoke\('lu_observe_'\+action,\{chatId\}\)/);
+  assert.match(windows,/lu_observe_forget_notes/);
+  assert.match(windows,/Request native consent/);
+  assert.match(windows,/OFF by default/);
+  assert.match(ui,/false && <details className="chatToolsDrawer"/);
+  assert.match(ui,/window\.location\.search/);
+  assert.match(ui,/<SettingsWindow\/>/);
+  assert.match(ui,/<ModelLibraryWindow\/>/);
 });
 
 test('emoji reactions are contextual and open a picker below message',()=>{
@@ -45,11 +59,12 @@ test('emoji reactions are contextual and open a picker below message',()=>{
   assert.match(css,/\.messageReactions\{display:flex;flex-direction:column/);
 });
 
-test('chat footer hides manual specialist tools behind an opt-in Tools disclosure',()=>{
-  assert.match(ui,/<details className="chatToolsDrawer"><summary>Tools<\/summary>/);
-  assert.match(ui,/<\/div><\/details>/);
-  assert.match(ui,/File operations/);
-  assert.match(ui,/Research with Lu browser/);
+test('specialist manual buttons are not mounted in composer; host native routes remain',()=>{
+  assert.match(ui,/false && <details className="chatToolsDrawer"><summary>Tools<\/summary>/);
+  assert.match(ui,/<\/div><\/details>\}/);
+  assert.match(rust,/fn lu_native_route_catalog\(/);
+  assert.match(rust,/reviewed_app_desktop::explicit_media_metadata_request/);
+  assert.match(ui,/routeExplicitLocalFolderRequest\(input\)/);
 });
 
 test('fake elapsed timer is absent; actual memory loading percent remains explicitly unverified',()=>{

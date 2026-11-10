@@ -4368,6 +4368,15 @@ async fn lu_generate(
             app,Arc::clone(state.inner()),session_id,chat_id,prompt,
         ).await?.ok_or_else(||"Reader document was not selected".into())
     }
+    // Media inspection is now a normal-chat, model-neutral capability route.
+    // Text only triggers the native file-picker request; it supplies no
+    // filepath, command, tool ID, effect result or durable grant.
+    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty()
+        &&max_new_tokens==512&&reviewed_app_desktop::explicit_media_metadata_request(&prompt){
+        return reviewed_app_desktop::lu_reviewed_app_ask(
+            app,state,session_id,chat_id,prompt,"media".into()
+        ).await?.ok_or_else(||"Media file was not selected".into())
+    }
     generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
         prompt,image_refs,max_new_tokens,GenerationOrigin::Human,false).await
 }
@@ -8175,6 +8184,139 @@ fn lu_observe_capture_available()->bool{
     { false }
 }
 
+// The two secondary UI surfaces use fixed, host-created Tauri WebviewWindows.
+// Neither a model nor a renderer-supplied URL/label can create a new window.
+// The main chat React component never mounts in these secondary roots.
+#[derive(Clone,Copy)]
+struct AuxiliaryWindowSpec{
+    label:&'static str,title:&'static str,query:&'static str,
+    width:f64,height:f64,
+}
+fn auxiliary_window_spec(caller:&str,kind:&str)->Option<AuxiliaryWindowSpec>{
+    match (caller,kind){
+        ("main","settings")=>Some(AuxiliaryWindowSpec{
+            label:"settings",title:"Lu — Settings",
+            query:"index.html?lu-window=settings",width:1050.0,height:760.0
+        }),
+        ("main"|"settings","model-library")=>Some(AuxiliaryWindowSpec{
+            label:"model-library",title:"Lu — Model Library",
+            query:"index.html?lu-window=model-library",width:1160.0,height:780.0
+        }),
+        _=>None,
+    }
+}
+#[tauri::command]
+fn lu_open_aux_window(
+    app:AppHandle,caller:tauri::WebviewWindow,kind:String
+)->Result<(),String>{
+    let spec=auxiliary_window_spec(caller.label(),&kind)
+        .ok_or("Only the Lu chat or Settings window may open approved auxiliary windows")?;
+    if let Some(existing)=app.get_webview_window(spec.label){
+        return existing.set_focus().map_err(|_|"Cannot focus native Lu window".into());
+    }
+    tauri::WebviewWindowBuilder::new(
+        &app,spec.label,tauri::WebviewUrl::App(spec.query.into())
+    ).title(spec.title)
+     .inner_size(spec.width,spec.height)
+     .min_inner_size(720.0,540.0)
+     .center()
+     .build()
+     .map_err(|_|"Unable to create independent native Lu window")?;
+    Ok(())
+}
+#[tauri::command]
+fn lu_close_aux_window(caller:tauri::WebviewWindow)->Result<(),String>{
+    if !matches!(caller.label(),"settings"|"model-library"){
+        return Err("Main conversation window cannot be closed by an auxiliary command".into())
+    }
+    caller.close().map_err(|_|"Native auxiliary window could not be closed".into())
+}
+
+// This is ONLY a potential-route inventory for Settings, not
+// NativeCapabilityView from a granted model turn. Actual tool names/schemas
+// come from lu_core::native_capability_inventory with the original per-turn
+// ConversationAuthority and registered codecs. Nothing here grants a tool.
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct LuNativeRouteView{
+    id:&'static str,name:&'static str,
+    status:&'static str,description:&'static str,authorization:&'static str,
+}
+#[tauri::command]
+fn lu_native_route_catalog()->Vec<LuNativeRouteView>{
+    const AUTH:&str="Fresh native resource selection and original-human-turn authorization are required. Discovery alone never executes a tool.";
+    vec![
+        LuNativeRouteView{
+            id:"host.clock",name:"Device time",
+            status:"Host deterministic read; not a model tool grant",
+            description:"Exact native local time and UTC epoch in original human chat; no shell or network.",
+            authorization:"No privileged device access or executable worker."
+        },
+        LuNativeRouteView{
+            id:"workspace.read",name:"Workspace search and reading",
+            status:"Conditional: native directory picker and read-only turn",
+            description:"Host-scoped file discovery, directory listing and text inspection offered to the loaded model after approval.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"reader.document",name:"Reader/OCR",
+            status:"Conditional: native document or image admission",
+            description:"Bounded content inspection. Supported formats and model multimodality must be verified separately.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"reviewed.git",name:"Reviewed Git",
+            status:"Conditional: native repository picker and reviewed executable",
+            description:"Read-only Git facts and independently verified effects; the model chooses an advertised typed tool.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"reviewed.media",name:"Reviewed media/FFprobe",
+            status:"Conditional: approved WAV/MP4 file and installed FFprobe",
+            description:"Native model-selected media metadata; independently verify original media bytes and source identity.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"browser.read",name:"Supervised browser",
+            status:"Unavailable unless a fully reviewed browser bundle is installed",
+            description:"Model-proposed read-only operations against newly approved HTTPS origins; no ambient browser fallback.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"vision",name:"Multimodal vision",
+            status:"Conditional: compatible loaded GGUF and admitted MMProj",
+            description:"Real pixel-result acceptance is required; filename or projector metadata is insufficient.",
+            authorization:AUTH
+        }
+    ]
+}
+#[cfg(test)]
+mod auxiliary_window_tests{
+    use super::*;
+    #[test]
+    fn windows_are_fixed_labels_and_have_no_renderer_selected_urls(){
+        let settings=auxiliary_window_spec("main","settings").unwrap();
+        assert_eq!(settings.label,"settings");
+        assert_eq!(settings.query,"index.html?lu-window=settings");
+        let library=auxiliary_window_spec("settings","model-library").unwrap();
+        assert_eq!(library.label,"model-library");
+        assert_eq!(library.query,"index.html?lu-window=model-library");
+        assert!(auxiliary_window_spec("model-library","settings").is_none());
+        assert!(auxiliary_window_spec("settings","settings").is_none());
+        assert!(auxiliary_window_spec("main","https://evil.example").is_none());
+        assert!(auxiliary_window_spec("main","chat").is_none());
+    }
+    #[test]
+    fn route_inventory_is_not_an_authorization_or_work_receipt(){
+        let views=lu_native_route_catalog();
+        assert!(views.iter().all(|v|!v.authorization.is_empty()));
+        assert!(views.iter().any(|v|v.id=="reviewed.git"));
+        assert!(views.iter().any(|v|v.id=="browser.read"
+            &&v.status.starts_with("Unavailable")));
+        assert!(views.iter().all(|v|!v.status.contains("VERIFIED_EFFECT")));
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -8186,6 +8328,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            lu_open_aux_window,
+            lu_close_aux_window,
+            lu_native_route_catalog,
             lu_status,
             lu_list_models,
             lu_model_preflight,

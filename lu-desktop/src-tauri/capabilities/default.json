@@ -2,6 +2,13 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
   "description": "Lu-owned UI: invoke native commands and listen to bounded generation events",
-  "windows": ["main"],
-  "permissions": ["core:default", "core:event:default"]
+  "windows": [
+    "main",
+    "settings",
+    "model-library"
+  ],
+  "permissions": [
+    "core:default",
+    "core:event:default"
+  ]
 }

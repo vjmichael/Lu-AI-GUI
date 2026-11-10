@@ -25,7 +25,7 @@ test('GUI smoke is independent from strict real install-uninstall/AppData and on
   assert.match(ui,/className="modelSwitcher" aria-label="Choose a model"/);
 });
 
-test('WebView2 accessibility activates through supported UIA or independently verified OS click, never simulation',()=>{
+test('distinct real Tauri windows activate through supported UIA or verified physical OS click',()=>{
   assert.match(script,/TryGetCurrentPattern\(\[System\.Windows\.Automation\.InvokePattern\]::Pattern/);
   // The optional legacy provider type does not exist on every current
   // PowerShell/.NET UIAutomationClient runtime. Its absence must NOT
@@ -37,5 +37,10 @@ test('WebView2 accessibility activates through supported UIA or independently ve
   assert.match(script,/WebView clickable point not within reviewed installed native window/);
   assert.match(script,/SetCursorPos/);
   assert.match(script,/activationMethods/);
-  assert.match(script,/Wait-Element \$window 'Model Library'/);
+  assert.match(script,/Wait-NativeWindow 'Lu — Settings'/);
+  assert.match(script,/Wait-NativeWindow 'Lu — Model Library'/);
+  assert.match(script,/NativeWindowHandle/);
+  assert.match(script,/PASS_DISTINCT_NATIVE_TAURI_SETTINGS_WINDOW/);
+  assert.match(script,/PASS_DISTINCT_NATIVE_TAURI_MODEL_LIBRARY_WINDOW/);
+  assert.doesNotMatch(script,/PASS_NATIVE_WEBVIEW_DIALOG/);
 });

@@ -18,6 +18,7 @@ import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryA
 import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppearance,textForBackground,visibleReactionBySeq} from './message_interactions.mjs';
 import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget,correctedMessageFollowUp} from './message_revisions.mjs';
 import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from './agent_replan.mjs';
+import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
 
 function MessageText({text, role='assistant'}) {
   if (role === 'user') return <div className="messageContent userText">{text}</div>;
@@ -1887,6 +1888,15 @@ function App() {
     setRuntime(status);
     setSelectedModel(old => old && knownModels.some(m => m.modelRef === old) ? old : status.modelRef || knownModels[0]?.modelRef || '');
   }
+  useEffect(()=>{
+    let alive=true,off=null;
+    listen('lu-model-catalog-changed',()=>{
+      if(alive)void refreshCatalog().catch(error=>setError(String(error)));
+    }).then(fn=>{if(alive)off=fn;else fn();}).catch(()=>{});
+    const focused=()=>{if(alive)void refreshCatalog().catch(()=>{});};
+    window.addEventListener('focus',focused);
+    return ()=>{alive=false;off?.();window.removeEventListener('focus',focused);};
+  },[]);
   async function startMediaFileScan() {
     setBackgroundError('');
     try {
@@ -4130,9 +4140,7 @@ function App() {
       <div className="sidebarFooter">
         <div className="runtimeStatus"><span className="statusDot" data-ready={loaded}></span><strong>{loaded ? 'Model loaded' : working && activity.startsWith('Loading') ? 'Loading model…' : 'No model loaded'}</strong></div>
         <small>{loaded ? loadedModel?.filename : 'Select a model from the chat header'}</small>
-        <button className="settingsButton" onClick={() => setBackgroundPaneOpen(true)}>
-          ◷ Background Tasks {activeBackgroundTasks.length ? '· '+activeBackgroundTasks.length : ''}
-        </button>
+        {/* Background receipts remain in the conversation on demand; no dashboard button. */}
       </div>
     </aside>
     {historyPaneOpen&&chatId&&<AnsfHistoryPane activeChatId={chatId}
@@ -4165,7 +4173,7 @@ function App() {
               {!models.length && <div className="asideHelp">Put GGUF files in Lu's models directory or import them from Settings.</div>}
               <div className="modelMenuActions">
                 <button className="primaryButton" disabled={busy || loaded || !selected?.available} onClick={loadModel}>Load selected</button>
-                <button className="subtleButton" onClick={() => {setModelMenuOpen(false);setModelLibraryTab("installed");setModelLibraryOpen(true);}}>Manage models</button>
+                <button className="subtleButton" onClick={() => {setModelMenuOpen(false);void invoke('lu_open_aux_window',{kind:'model-library'}).catch(error=>setError(String(error)));}}>Manage models</button>
               </div>
               {loaded && <button className="subtleButton full" disabled={busy} onClick={() => {setModelMenuOpen(false);unloadModel();}}>⏏ Unload active model</button>}
             </div>}
@@ -4174,7 +4182,8 @@ function App() {
           <button type="button" className="subtleButton" title="Open independent ANSF history"
             disabled={!chatId} aria-expanded={historyPaneOpen}
             onClick={()=>setHistoryPaneOpen(v=>!v)}>History library</button>
-          <button className="quietSettings" title="Settings" aria-label="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
+          <button className="quietSettings" title="Settings" aria-label="Settings"
+            onClick={()=>void invoke('lu_open_aux_window',{kind:'settings'}).catch(error=>setError(String(error)))}>⚙</button>
         </div>
       </header>
       {chatId&&<section className="m2MemoryPane" aria-label="Conversation goal and clarifications">
@@ -5668,7 +5677,8 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
-            <details className="chatToolsDrawer"><summary>Tools</summary><div className="chatToolsGrid">
+            {/* Legacy specialist controls retained temporarily for compatibility, but no longer mounted. Native tools enter through the original human chat and per-turn OS approvals. */}
+            {false && <details className="chatToolsDrawer"><summary>Tools</summary><div className="chatToolsGrid">
             <button type="button" className="subtleButton" disabled={!loaded}
               title="Inspect native vision status without claiming MMProj presence proves visual understanding"
               onClick={()=>void invoke('lu_vision_capability')
@@ -5890,7 +5900,7 @@ function App() {
             </button>
             <span className="composerHelp">Explicit workspace searches and document-reading requests open native pickers; Git status, log and diff require selecting a repository · No automatic file permission</span>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
-            </div></details>
+            </div></details>}
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
               : <button className="primaryButton" type="submit" disabled={working || !loaded || !prompt.trim()}>Send</button>}
@@ -7384,4 +7394,10 @@ function App() {
   </div>;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+// Fixed, host-created native window URLs isolate Settings/Model Library from
+// App() chat effects, generation event handlers, queues, model prompts and drafts.
+const luWindow=new URLSearchParams(window.location.search).get('lu-window');
+createRoot(document.getElementById('root')).render(
+  luWindow==='settings'?<SettingsWindow/>:
+  luWindow==='model-library'?<ModelLibraryWindow/>:<App/>
+);

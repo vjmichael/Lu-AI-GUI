@@ -515,3 +515,44 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .luFullWindowBody .luSettingsGroup p{color:#bdccdc}
 @media(max-width:700px){.luModelSearchRow{align-items:stretch}
   .luModelSearchRow input{flex-basis:100%;width:100%}}
+
+
+/* P0-NATIVE-WINDOW: real independent Tauri WebviewWindow surfaces.
+   Deliberately not a modal overlay inside Lu chat. */
+.nativeWindowRoot{height:100vh;min-height:0;display:flex;flex-direction:column;background:#151f2d;color:#e2edf7;overflow:hidden}
+.nativeWindowHeader{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 24px;background:#101b2a;border-bottom:1px solid #344a61}
+.nativeWindowHeader h1{font-size:21px;margin:0 0 4px}
+.nativeWindowHeader small{color:#a8bfd3}
+.nativeWindowSplit{flex:1;min-height:0;min-width:0;display:grid;grid-template-columns:minmax(180px,240px) minmax(0,1fr)}
+.nativeSettingsNavigation{min-height:0;overflow:auto;background:#172536;border-right:1px solid #324760;padding:16px 10px;display:flex;flex-direction:column;gap:4px}
+.nativeSettingsNavigation button{width:100%;text-align:left;border:1px solid transparent;border-radius:8px;color:#cbdced;background:transparent;padding:12px 11px;font-size:13px}
+.nativeSettingsNavigation button:hover,.nativeSettingsNavigation button.selected{background:#304b67;border-color:#496887;color:#fff}
+.nativeSettingsContent,.nativeModelContent{flex:1;min-width:0;min-height:0;overflow:auto;padding:25px clamp(17px,3vw,42px);scrollbar-gutter:stable}
+.nativeSettingsContent{display:block}
+.nativePreferenceSection{max-width:950px;min-width:0;background:#1c2c40;border:1px solid #38516b;border-radius:13px;padding:24px;line-height:1.6}
+.nativePreferenceSection h2{font-size:20px;margin:0 0 15px}
+.nativePreferenceSection h3{overflow-wrap:anywhere}
+.nativePreferenceSection p,.nativePreferenceSection small{color:#b6c8d9;overflow-wrap:anywhere}
+.nativePreferenceSection p{font-size:13px;line-height:1.65}
+.nativeField{display:flex;flex-direction:column;gap:7px;margin:18px 0;font-size:12px;font-weight:600}
+.nativeField select,.nativeModelContent input{max-width:100%;min-width:0;padding:10px 12px;border-radius:7px;border:1px solid #597694;background:#132137;color:#e0edf9}
+.nativeChoiceRow{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:16px 0}
+.nativeChoiceRow button,.nativeOption button,.nativeModelTabs button{background:#274460;border:1px solid #537494;border-radius:8px;color:#e1edfc;padding:10px 13px}
+.nativeChoiceRow button:hover:not(:disabled),.nativeOption button:hover:not(:disabled){background:#376188}
+.nativeOptionList{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px}
+.nativeOption{border:1px solid #35516b;background:#15283a;border-radius:9px;padding:16px;min-width:0}
+.nativeOption strong{display:block;margin-bottom:6px;font-size:14px}
+.nativeReadiness{font-size:11px;color:#9acfe8}
+.nativeModelTabs{display:flex;padding:12px 22px;border-bottom:1px solid #34506a;gap:10px}
+.nativeModelTabs button[aria-current=page]{background:#446d91;border-color:#90b8dd}
+.nativeModelContent{display:block}
+.nativeModelGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:12px;margin:18px 0}
+.nativeModelCard{display:flex;flex-direction:column;text-align:left;gap:10px;min-width:0;background:#20354c;border:1px solid #466887;border-radius:10px;color:#e4eef8;padding:16px}
+.nativeModelCard strong,.nativeModelCard small{word-break:break-word}
+.nativeModelCard small{color:#a9c4dd}
+.nativeModelCard.selected{border-color:#9bc7ed;background:#335979}
+.nativeModelContent .nativePreferenceSection{margin-top:18px}
+.nativeError,.nativeNotice{padding:12px 16px;border-radius:8px;margin:0 0 16px;word-break:break-word}
+.nativeError{background:#492d39;color:#ffd5d7;border:1px solid #aa6875}
+.nativeNotice{background:#263e55;color:#c7e6ff;border:1px solid #507795}
+@media(max-width:760px){.nativeWindowSplit{grid-template-columns:150px minmax(0,1fr)}.nativeSettingsNavigation{padding:7px}.nativeSettingsNavigation button{font-size:11px;padding:10px 7px}.nativeSettingsContent,.nativeModelContent{padding:14px}.nativePreferenceSection{padding:15px}}

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 877,
+  "trackedFileCount": 879,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -1109,7 +1109,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/capabilities/default.json",
-      "blob": "625e4f6e822111009e74b45e2b85ea0314f0804a"
+      "blob": "cbbb98bce1289e7acc1c75606fc55d999558cc02"
     },
     {
       "path": "lu-desktop/src-tauri/icons/icon.ico",
@@ -1257,7 +1257,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "9241dd38a67be3f229ba675826dd265120eebced"
+      "blob": "7c80e37a5b86fee11e07b36d654cfc2ac0c0e0bc"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1349,7 +1349,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_desktop.rs",
-      "blob": "321d20b54d055a998e3622509d02108dc24c6684"
+      "blob": "0a3a7b88ef74b5e661ed874f89d0726e4f198307"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_recovery.rs",
@@ -1653,7 +1653,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
-      "blob": "182ce2c598fc59525c52292579b6f6e131fc023f"
+      "blob": "f40c884831c522bdd09eb9856c6e48981d4883e9"
     },
     {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
@@ -1664,8 +1664,12 @@
       "blob": "db04a97e39f3fd70cc3fd804b5bc3e8600d00a32"
     },
     {
+      "path": "lu-desktop/tests/p0-native-window-separation.test.mjs",
+      "blob": "97ac4a7e39f90163439b28efe0548d5a66fe42b3"
+    },
+    {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
-      "blob": "60fea919c3add6b9ed1086dd048d45a34369d52e"
+      "blob": "fa1eeffdca63033e6429e2f43376cdc7d6434779"
     },
     {
       "path": "lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs",
@@ -1857,7 +1861,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "f5dec35b0b955a478c27042284dfefee0b2f3ed0"
+      "blob": "3eaf451c9b13a8452c9058ce57214fed8c19c2f4"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1880,6 +1884,10 @@
       "blob": "aa33fa16d006ce808c7f93b36e8fe9cf2af4f52d"
     },
     {
+      "path": "lu-desktop/web/native_windows.jsx",
+      "blob": "1221a25dd6fc76d074b9b5f9cb82713200eb24e9"
+    },
+    {
       "path": "lu-desktop/web/response_view.mjs",
       "blob": "fd2f9a2f0d9cc4593733656d5d1e7c3ffdbfaeb1"
     },
@@ -1893,7 +1901,7 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "9364bc813c09d33577e3f7d98e09ed8e63e282f2"
+      "blob": "9b8197c67d5855388343e6a7d9f3efcea19ed626"
     },
     {
       "path": "scripts/build-agent01g-physical-windows-nsis.ps1",
@@ -1965,7 +1973,7 @@
     },
     {
       "path": "scripts/p0-windows-installed-gui-smoke.ps1",
-      "blob": "88de6bdbf58772794c1d130d39612f9357bd3d16"
+      "blob": "c0dd0e135278cceca56755f907e11edf58a7c53f"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",

@@ -66,8 +66,36 @@ public static class LuP0Mouse {
   public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
 }
 '@
-function Invoke-UIA([System.Windows.Automation.AutomationElement]$element){
-  if($null -eq $element){throw 'No trusted WebView UIA element to activate'}
+# Only an independently created top-level native Tauri window, owned by
+# the same installed EXE process but with a DISTINCT Win32 handle, counts.
+# A same-WebView overlay/dialog in the main Lu window cannot pass this gate.
+function Wait-NativeWindow([string]$title){
+  $deadline=[DateTime]::UtcNow.AddSeconds(30)
+  do{
+    $top=[System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+      [System.Windows.Automation.TreeScope]::Children,
+      [System.Windows.Automation.Condition]::TrueCondition
+    )
+    foreach($candidate in $top){
+      try{
+        if($candidate.Current.Name -ne $title){continue}
+        if([int64]$candidate.Current.ProcessId -ne [int64]$script:process.Id){continue}
+        if($candidate.Current.ControlType -ne [System.Windows.Automation.ControlType]::Window){continue}
+        if($candidate.Current.NativeWindowHandle -eq 0){continue}
+        if($candidate.Current.NativeWindowHandle -eq $script:window.Current.NativeWindowHandle){continue}
+        if($candidate.Current.IsOffscreen){continue}
+        return $candidate
+      }catch{}
+    }
+    Start-Sleep -Milliseconds 250
+  }while([DateTime]::UtcNow -lt $deadline)
+  throw "No distinct native top-level Lu window with installed process identity: $title"
+}
+function Invoke-UIA([System.Windows.Automation.AutomationElement]$element,[System.Windows.Automation.AutomationElement]$owner){
+  if($null -eq $element -or $null -eq $owner){throw 'No trusted WebView UIA element or native owner'}
+  if([int64]$owner.Current.ProcessId -ne [int64]$script:process.Id){
+    throw 'Selected native window does not belong to installed Lu process'
+  }
   $pattern=$null
   if($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)){
     ([System.Windows.Automation.InvokePattern]$pattern).Invoke()
@@ -93,7 +121,7 @@ function Invoke-UIA([System.Windows.Automation.AutomationElement]$element){
   # native process identity was verified before calling this function.
   if($element.Current.IsOffscreen){throw 'Installed WebView control is offscreen'}
   $rect=$element.Current.BoundingRectangle
-  $windowRect=$script:window.Current.BoundingRectangle
+  $windowRect=$owner.Current.BoundingRectangle
   $point=$element.GetClickablePoint()
   if($rect.Width -lt 3 -or $rect.Height -lt 3 -or
      $point.X -lt $rect.Left -or $point.X -ge $rect.Right -or
@@ -162,17 +190,21 @@ try{
   }
   if($settingsButtons -ne 1){throw "Expected exactly one Settings button; observed $settingsButtons"}
   $report.singleSettingsEntry='PASS_ONLY_TOP_RIGHT_GEAR'
-  $report.activationMethods+=@(Invoke-UIA $settings)
-  $null=Wait-Element $window 'Lu settings'
-  $report.independentSettingsWindow='PASS_NATIVE_WEBVIEW_DIALOG'
+  $report.activationMethods+=@(Invoke-UIA $settings $window)
+  $settingsWindow=Wait-NativeWindow 'Lu — Settings'
+  $null=Wait-Element $settingsWindow 'General & appearance' $true
+  $null=Wait-Element $settingsWindow 'Tools & permissions' $true
+  $report.independentSettingsWindow='PASS_DISTINCT_NATIVE_TAURI_SETTINGS_WINDOW'
   $report.settingsScreenshot=Save-Visible-Desktop 'installed-settings.png'
-  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Close settings' $true))
-  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Choose a model' $true))
-  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Manage models' $true))
-  $null=Wait-Element $window 'Model Library'
-  $report.independentModelLibrary='PASS_NATIVE_WEBVIEW_DIALOG'
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $settingsWindow 'Close settings' $true) $settingsWindow)
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Choose a model' $true) $window)
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Manage models' $true) $window)
+  $modelsWindow=Wait-NativeWindow 'Lu — Model Library'
+  $null=Wait-Element $modelsWindow 'Installed GGUF' $true
+  $null=Wait-Element $modelsWindow 'Discover · Hugging Face' $true
+  $report.independentModelLibrary='PASS_DISTINCT_NATIVE_TAURI_MODEL_LIBRARY_WINDOW'
   $report.modelLibraryScreenshot=Save-Visible-Desktop 'installed-model-library.png'
-  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Close model library' $true))
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $modelsWindow 'Close model library' $true) $modelsWindow)
   $report.result='PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS'
 }catch{
   $report.errors=@($report.errors)+@($_.Exception.Message)
