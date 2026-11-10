@@ -17,6 +17,7 @@ pub mod debug_target_review;
 pub mod draft_vault;
 pub mod editor;
 pub mod execution_intents;
+pub mod git_batch_review;
 pub mod git_evidence;
 pub mod git_file_history;
 pub mod git_inventory;
