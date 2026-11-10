@@ -1,5 +1,12 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 4B — contained Cargo executable link closure (2026-11-10)
+
+Added all-links-accounted postrun verification for legitimate Cargo
+same-inode executable copies within the private build output. External
+hard-links remain denied; no containment, approval or release permission
+changed. Real Linux readback rerun is OPEN pending native acceptance.
+
 ## Group 4B — demonstrated parent compiler failures (2026-11-10)
 
 At the original Group 3 parent head, real WO6 Windows/Linux unit builds

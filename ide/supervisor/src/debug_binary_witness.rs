@@ -79,6 +79,7 @@ fn is_reparse(meta: &fs::Metadata) -> bool {
 fn checked_file(
     root: &Path,
     entry: &ArtifactEntry,
+    witness: &OutputWitness,
 ) -> Result<DebugBinaryWitnessFile, SupervisorError> {
     if entry.bytes == 0 || entry.bytes > MAX_BINARY {
         return Err(denied());
@@ -102,7 +103,7 @@ fn checked_file(
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        if before.nlink() != 1 || before.permissions().mode() & 0o111 == 0 {
+        if before.nlink() == 0 || before.permissions().mode() & 0o111 == 0 {
             return Err(denied());
         }
     }
@@ -126,7 +127,37 @@ fn checked_file(
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if before.dev() != opened.dev() || before.ino() != opened.ino() || opened.nlink() != 1 {
+        if before.dev() != opened.dev()
+            || before.ino() != opened.ino()
+            || before.nlink() != opened.nlink()
+        {
+            return Err(denied());
+        }
+        // Cargo may hard-link the executable in target/debug to the
+        // same bytes under target/debug/deps. Permit that only when EVERY
+        // kernel-reported link is accounted for inside the independently
+        // hashed private output inventory. A link outside the tree or a
+        // mismatched alias still fails closed.
+        let mut enclosed_links = 0u64;
+        for alias in &witness.files {
+            let relative = Path::new(&alias.relative_path);
+            if !relative.components().all(|c| matches!(c, Component::Normal(_))) {
+                return Err(denied());
+            }
+            let meta = fs::symlink_metadata(root.join(relative)).map_err(|_| denied())?;
+            if meta.dev() == opened.dev() && meta.ino() == opened.ino() {
+                if !meta.is_file()
+                    || meta.file_type().is_symlink()
+                    || alias.bytes != entry.bytes
+                    || alias.sha256 != entry.sha256
+                    || meta.len() != entry.bytes
+                {
+                    return Err(denied());
+                }
+                enclosed_links = enclosed_links.checked_add(1).ok_or_else(denied)?;
+            }
+        }
+        if enclosed_links != opened.nlink() {
             return Err(denied());
         }
     }
@@ -209,7 +240,7 @@ pub fn audit_debug_binary_candidate(
     if found.next().is_some() {
         return Ok(None);
     }
-    let target = checked_file(root, entry)?;
+    let target = checked_file(root, entry, witness)?;
     Ok(Some(DebugBinaryWitness {
         relative_path: entry.relative_path.clone(),
         bytes: entry.bytes,
@@ -299,6 +330,30 @@ mod tests {
         assert!(audit_debug_binary_candidate(&root, &witness).is_err());
         fs::remove_dir_all(root).unwrap();
     }
+    #[cfg(unix)]
+    #[test]
+    fn cargo_style_internal_hardlinks_pass_but_external_link_denied() {
+        use crate::wo6_output_evidence::audit_published_output;
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("lu-g04-{:032x}", rand::random::<u128>()));
+        fs::create_dir_all(root.join("target/debug/deps")).unwrap();
+        let executable = root.join("target/debug/fixture");
+        let inside = root.join("target/debug/deps/fixture-fixed");
+        fs::write(&executable, b"\x7fELFfixed-cargo-binary").unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::hard_link(&executable, &inside).unwrap();
+        let witness = audit_published_output(&root).unwrap();
+        assert_eq!(witness.file_count, 2);
+        assert!(audit_debug_binary_candidate(&root, &witness).unwrap().is_some());
+        let escaped = std::env::temp_dir().join(format!("lu-g04-external-{:032x}", rand::random::<u128>()));
+        fs::hard_link(&executable, &escaped).unwrap();
+        // The old witness now omits one real kernel link: do not follow it,
+        // rehash it, or accept it as a contained project executable.
+        assert!(audit_debug_binary_candidate(&root, &witness).is_err());
+        fs::remove_file(escaped).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(windows)]
     #[test]
     fn actual_pe_candidate_readback_does_not_grant_debugging() {

@@ -74,3 +74,18 @@ no source pass substitutes for physical human consent.
 **CI policy:** one consolidated exact-SHA Windows/Linux native task-group
 gate after cohesive fixes, not a CI workflow per subtask. Group 3 native
 claims do not close Group 4. Preserve all existing default-off features.
+
+## Group 4B contained executable alias accounting — source repair
+
+Linux Cargo can hard-link the primary executable under `target/debug/`
+to its same-inode compiled copy under `target/debug/deps/`. The native
+readback previously required `nlink == 1`, which rejects both even when
+the entire compiled output is private and post-termination SHA-checked.
+The auditor now requires that **every OS link** be accounted for in the
+bounded native output inventory, with the same device/inode, byte length
+and SHA-256. Any link outside the inventoried output is still denied.
+Hostile Unix tests create a genuine same-inode Cargo-style alias and then
+an external alias that must fail. The earlier native refusal does not
+identify which `checked_file` predicate failed, so this is a targeted
+hypothesis requiring an actual exact-head Linux rerun, not proven success.
+

@@ -1,5 +1,12 @@
 # Lu IDE — Development changelog
 
+- **Group 4B private Cargo artifact hardlink closure (Nov 10):** Read-only
+  ELF executable validation now admits Cargo's same-inode output aliases
+  only when all kernel hard-links are present in the bounded hash-verified
+  native output inventory. A hostile external link still blocks the
+  compiled target. Linux native output readback must be rerun; the
+  original failure reported only generic postrun denial.
+
 - **Group 4B demonstrated native compiler repairs (Nov 10):** Previous exact-head
   Windows/Linux WO6 jobs independently failed Rust E0618 (unit test
   `plan()` shadowed by a local) and Windows E0425 (ordinary LSP branch
