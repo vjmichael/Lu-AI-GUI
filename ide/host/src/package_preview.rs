@@ -227,7 +227,9 @@ fn inspect_vcpkg_direct_declaration(
             }
         }
     }
-    Ok(if found {
+    Ok(if name.is_empty() {
+        "not_applicable_to_sync"
+    } else if found {
         "observed_declared"
     } else {
         "observed_absent"
@@ -283,19 +285,19 @@ fn create_preview(
         risks.push("sync_may_modify_environment_outside_manifest");
     }
     let observed_direct_declaration = if request.manager_id == "vcpkg" {
-        if let Some(name) = request.package_name.as_deref() {
-            inspect_vcpkg_direct_declaration(
-                registry,
-                project_id,
-                manifest
-                    .sha256
-                    .as_deref()
-                    .ok_or("IDE052_MANIFEST_NOT_VERIFIED")?,
-                name,
-            )?
-        } else {
-            "not_applicable_to_sync"
-        }
+        // Sync is not an exemption from parsing the actual manifest: a
+        // correctly hashed but malformed JSON file is not a valid preview.
+        // Empty name means validate all static dependency entry shapes,
+        // without claiming any single package was resolved.
+        inspect_vcpkg_direct_declaration(
+            registry,
+            project_id,
+            manifest
+                .sha256
+                .as_deref()
+                .ok_or("IDE052_MANIFEST_NOT_VERIFIED")?,
+            request.package_name.as_deref().unwrap_or(""),
+        )?
     } else {
         "not_parsed_by_static_preview"
     };
@@ -710,6 +712,29 @@ mod tests {
             registry.preview_package_operation(&id, remove),
             Err("IDE052_VCPKG_DUPLICATE_DECLARATION")
         ));
+    }
+    #[test]
+    fn vcpkg_sync_rejects_malformed_manifest_without_invoking_manager() {
+        let (_t, registry, id, dir) = fixture();
+        fs::write(dir.join("vcpkg.json"), b"{not-json").unwrap();
+        assert!(matches!(
+            registry.preview_package_operation(&id, request("vcpkg", PackageOperation::Sync)),
+            Err("IDE052_VCPKG_JSON_INVALID")
+        ));
+        fs::write(dir.join("vcpkg.json"), br#"{"dependencies":[123]}"#).unwrap();
+        assert!(matches!(
+            registry.preview_package_operation(&id, request("vcpkg", PackageOperation::Sync)),
+            Err("IDE052_VCPKG_DEPENDENCIES_UNSUPPORTED")
+        ));
+        fs::write(dir.join("vcpkg.json"), br#"{"dependencies":["fmt"]}"#).unwrap();
+        let safe = registry
+            .preview_package_operation(&id, request("vcpkg", PackageOperation::Sync))
+            .unwrap();
+        assert_eq!(
+            safe.proposed_changes[0].observed_direct_declaration,
+            "not_applicable_to_sync"
+        );
+        assert!(!safe.ready_for_approval && !safe.process_started);
     }
     #[test]
     fn malformed_vcpkg_fails_closed_without_forged_diff() {
