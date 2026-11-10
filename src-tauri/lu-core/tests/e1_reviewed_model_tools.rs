@@ -1255,8 +1255,9 @@ async fn agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_
     assert_eq!(receipt.status,"VERIFIED_AT_OBSERVATION");
     assert_eq!(receipt.tool_id,"lu.reviewed.git.head");
     assert_eq!(receipt.continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
-    assert_eq!(auth.permitted_tool_ids(&fresh_origin).is_err(),true,
-        "completed model/worker must revoke the fresh one-step authority");
+    assert!(auth.permitted_tool_ids(&fresh_origin)
+        .is_ok_and(|names|names.is_empty()),
+        "completed model/worker must revoke all original one-step permissions");
     // Release only after the verified fact is saved in original conversation.
     book.append_entry(&chat,&agent01g_id("g-",112),EntryRole::Assistant,
         "Host-verified Git source result",&format!(
@@ -1310,7 +1311,7 @@ async fn agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_
         &agent01g_id("h-",113),&revision,budget,
         &ledger,&revisions,&source
     ).is_err(),"restarted host cannot reuse an approved plan");
-    assert!(auth.permitted_tool_ids(&fresh_origin).is_err());
+    assert!(auth.permitted_tool_ids(&fresh_origin).is_ok_and(|names|names.is_empty()));
     // Goal source changes after verified history: historical evidence
     // remains on disk but is no longer current authorization or a fresh
     // verified dependency, and cannot cause an automatic second step.
@@ -1548,8 +1549,9 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     assert_eq!(receipt.status,"VERIFIED_AT_OBSERVATION");
     assert_eq!(receipt.tool_id,"lu.reviewed.git.head");
     assert_eq!(receipt.continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
-    assert_eq!(auth.permitted_tool_ids(&fresh_origin).is_err(),true,
-        "completed model/worker must revoke the fresh one-step authority");
+    assert!(auth.permitted_tool_ids(&fresh_origin)
+        .is_ok_and(|names|names.is_empty()),
+        "completed model/worker must revoke all original one-step permissions");
     // Release only after the verified fact is saved in original conversation.
     book.append_entry(&chat,&agent01g_id("g-",112),EntryRole::Assistant,
         "Host-verified Git source result",&format!(
@@ -1726,7 +1728,7 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     ).unwrap();
     assert_eq!(child_verified.status,"VERIFIED_AT_OBSERVATION");
     assert_eq!(child_verified.continuation,"NOT_AUTHORIZED_FOR_EXECUTION");
-    assert!(child_auth.permitted_tool_ids(&child_origin).is_err());
+    assert!(child_auth.permitted_tool_ids(&child_origin).is_ok_and(|names|names.is_empty()));
     book.append_entry(&chat,&agent01g_id("g-",123),EntryRole::Assistant,
         "Second separately verified result",&format!(
             "Independently verified second fresh Git HEAD: {actual_head}"
@@ -1794,7 +1796,7 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
         &child_plan,&chat,&preparation,&agent01g_id("h-",124),
         &child_revision,budget,&ledger,&revisions,&source
     ).is_err(),"second released owner must never revive");
-    assert!(child_auth.permitted_tool_ids(&child_origin).is_err());
+    assert!(child_auth.permitted_tool_ids(&child_origin).is_ok_and(|names|names.is_empty()));
     let child_history=receipts.history(
         &child_plan,&chat,&preparation,&root,&ledger,&revisions,&source
     ).unwrap();
@@ -1854,7 +1856,7 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
         &agent01g_id("h-",113),&revision,budget,
         &ledger,&revisions,&source
     ).is_err(),"restarted host cannot reuse an approved plan");
-    assert!(auth.permitted_tool_ids(&fresh_origin).is_err());
+    assert!(auth.permitted_tool_ids(&fresh_origin).is_ok_and(|names|names.is_empty()));
     // Goal source changes after verified history: historical evidence
     // remains on disk but is no longer current authorization or a fresh
     // verified dependency, and cannot cause an automatic second step.
