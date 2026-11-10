@@ -259,3 +259,26 @@ args. The following commit applies the **exact formatter hunk** from the
 native Ubuntu result, changing no command argument, containment, grant,
 kernel cleanup, hash or installed package behavior. A new exact-head
 Windows/Linux group remains mandatory; this prior run is not approval.
+
+## Task 4 — real uv 0.9.9 bounded installer thread-pool failure
+
+At exact-head `daae5b7cabf3382f168119921fbbf86b171e5036`,
+[run 42733978070](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42733978070)
+passed both Windows and Ubuntu native source matrices plus real delegated
+Linux negative offline-miss/cancellation. Positive native execution confirmed
+`tree_reaped:true`, `output_bounded:true`, and the real `uv` process
+resolved and prepared the single CI synthetic wheel, but exit was `101`
+due to `failed to initialize global rayon pool: ThreadPoolBuildError`
+with OS code `11/EAGAIN` (`Resource temporarily unavailable`) under the
+reviewed **8-PID cgroup limit**. The failure was independently observed in
+the bounded CI-only diagnostic, not inferred from source.
+
+The fix sets **`UV_CONCURRENT_INSTALLS=1`** as a trusted Bubblewrap
+environment option *before* the command separator, and only for the exact
+`ide055-ci-wheelhouse` synthetic positive plan. This is uv's supported
+installer/unzip concurrency control (rather than increasing allowed PIDs,
+relaxing containment, or using project-supplied config). Both `--offline`,
+`--no-cache`, `--no-build`, `--no-install-workspace`, and the strict
+installed-byte/source/journal checks remain unchanged. No production worker
+inherits this CI-specific environment setting. The next exact-head native
+matrix and delegated-process/hostile-restart group must still pass.

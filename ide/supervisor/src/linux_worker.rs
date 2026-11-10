@@ -641,6 +641,13 @@ fn command_for(
         && plan.effect_class == "package_uv_sync_offline:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
     if ci_positive_wheelhouse {
         cmd.arg("--setenv").arg("UV_NO_INDEX").arg("1");
+        // uv 0.9's default install pool sizes to host CPU count, which
+        // exceeds this OS-enforced 8-PID fixture limit on CI hardware.
+        // Bound the Rayon installer pool without adding cgroup PIDs or
+        // changing any production worker's admission/resource policy.
+        cmd.arg("--setenv")
+            .arg("UV_CONCURRENT_INSTALLS")
+            .arg("1");
     }
     cmd.arg("--");
     match plan.recipe_id.as_str() {
