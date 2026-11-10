@@ -1325,6 +1325,28 @@ function App() {
     }
   }
 
+  async function reconcilePartialStageReceipt() {
+    if (!activeProject?.projectId || gitPartialRecoveryBusy ||
+        !gitPartialRecovery?.operatorReconciliationRequired ||
+        gitPartialRecovery.pendingGitLock) return;
+    const projectId = activeProject.projectId;
+    const ticket = gitHunkRequest.current;
+    setGitPartialRecoveryBusy(true);
+    setProblem('');
+    try {
+      const reconciled = await invoke('ide_git_reconcile_partial_stage', {projectId});
+      if (ticket === gitHunkRequest.current && reconciled.projectId === projectId) {
+        setGitPartialRecovery(reconciled);
+        setHint('Independent native partial-stage journal reconciliation completed.');
+      }
+    } catch (error) {
+      if (ticket === gitHunkRequest.current)
+        setProblem('Native partial-stage reconciliation denied: ' + String(error));
+    } finally {
+      if (ticket === gitHunkRequest.current) setGitPartialRecoveryBusy(false);
+    }
+  }
+
   async function inspectPartialStageRecovery() {
     if (!activeProject?.projectId || gitPartialRecoveryBusy) return;
     const projectId = activeProject.projectId;
@@ -5089,9 +5111,16 @@ function App() {
                 <p>Last phase: {gitPartialRecovery.lastPhase || 'none'}
                   {' · '}Existing Git lock: {String(gitPartialRecovery.pendingGitLock)}</p>
                 {gitPartialRecovery.operatorReconciliationRequired
-                  ? <p role="alert">Interrupted or ambiguous Git index operation.
-                    Original Git metadata must be reviewed manually.
-                    No automatic rollback or Git lock removal is authorized.</p>
+                  ? <div>
+                    <p role="alert">Interrupted or ambiguous Git index operation.
+                      Original Git metadata must be reviewed manually.
+                      No automatic rollback or Git lock removal is authorized.</p>
+                    {!gitPartialRecovery.pendingGitLock && <button type="button"
+                      className="ghostBtn" disabled={gitPartialRecoveryBusy}
+                      onClick={() => reconcilePartialStageReceipt()}>
+                      Ask OS permission to independently reconcile the journal receipt
+                    </button>}
+                  </div>
                   : <p>No unfinished native partial-stage receipt detected at inspection time.</p>}
               </div>}
             </div>}
