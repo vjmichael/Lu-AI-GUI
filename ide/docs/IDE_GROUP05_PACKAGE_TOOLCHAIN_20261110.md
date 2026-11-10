@@ -27,3 +27,24 @@
 3. Do not promote synthetic first-party wheel evidence into third-party release provenance; do not treat a parser, metadata hash, or a CI mock approval as an installed package operation.
 4. Defer signing and final legal/publisher approval by owner decision while preserving checks and releaseApproved=false; unsigned development is not signed release acceptance.
 5. Lu Core bridge remains deferred. No Docker requirement.
+
+## Additional Group 5 source safeguards (November 10)
+
+- `af40523` (5D): Observation-only Windows staged DACL auditor refuses
+  caller-relative roots, even when handed a non-null package SID. A
+  deterministic null-SID and relative-root negative test was added.
+  This cannot satisfy real AppContainer package-SID/MIC/SCM containment.
+- `b44edaa` (5E): The journal's `verify_discard` transition now requires
+  a fresh `private_output_cleanup_pending` status, rather than
+  accepting a stale status captured before discard preparation. Test
+  covers attempts before and after preparation with the old status.
+  A fresh pending status is only a prerequisite: actual filesystem
+  disposal and native process-tree proof must be independently supplied
+  before the caller invokes the transition. The method does not do that
+  OS verification itself and this is **not** a cleanup-acceptance claim.
+
+**Current stage:** five source edits with hostile regression tests are
+committed. No native compiler or runtime test has been executed on the
+latest source SHA; the four-lane Group 4 job is unaffected. Group 5B and
+5F still require genuine protected Linux/Windows execution and physical
+installed human evidence, and are not closed by the new source checks.
