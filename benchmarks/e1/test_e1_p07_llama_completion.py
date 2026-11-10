@@ -9,28 +9,34 @@ class RealQwenJsonInterface(unittest.TestCase):
         out=m.model_payload(prompt,128,'raw')
         self.assertEqual(out['prompt'],prompt)
         self.assertNotIn('json_schema',out)
-    def test_schema_preserves_two_choices_without_preselecting_tool(self):
+        self.assertNotIn('grammar',out)
+    def test_complete_grammar_preserves_two_choices_without_preselecting_tool(self):
         prompt='<|im_start|>assistant\n'
         out=m.model_payload(prompt,128,'json_schema')
-        schema=out['json_schema']
-        self.assertEqual(len(schema['oneOf']),2)
-        self.assertEqual({arm['properties']['kind']['enum'][0] for arm in schema['oneOf']},{'tool','final'})
-        self.assertEqual(schema['oneOf'][0]['properties']['name'],{'type':'string'})
-        self.assertEqual(schema['oneOf'][0]['properties']['arguments'],{'type':'object'})
-        self.assertNotIn('lu_reviewed_git_head',str(schema))
-        self.assertNotIn('permission',str(schema))
+        grammar=out['grammar']
+        self.assertIn('root ::= tool | final',grammar)
+        self.assertIn('name',grammar)
+        self.assertIn('arguments',grammar)
+        self.assertIn('object',grammar)
+        self.assertIn('number',grammar)
+        self.assertNotIn('lu_reviewed_git_head',grammar)
+        self.assertNotIn('lu_reviewed_media_facts',grammar)
+        self.assertNotIn('permission',grammar)
+        self.assertNotIn('json_schema',out)
         self.assertTrue(out['prompt'].endswith('<think>\n\n</think>\n\n'))
 
-    def test_reviewed_first_step_requires_an_actual_model_chosen_tool_name(self):
+    def test_reviewed_first_step_requires_tool_envelope_not_tool_identity(self):
         prompt='<|im_start|>assistant\n'
         out=m.model_payload(prompt,128,'json_schema','required')
-        schema=out['json_schema']
-        self.assertEqual(schema['properties']['kind']['enum'],['tool'])
-        self.assertEqual(schema['properties']['name'],{'type':'string'})
-        self.assertEqual(schema['properties']['arguments'],{'type':'object'})
-        self.assertNotIn('lu_reviewed_git_head',str(schema))
-        self.assertNotIn('lu_reviewed_media_facts',str(schema))
-        self.assertNotIn('final',str(schema))
+        grammar=out['grammar']
+        self.assertIn('root ::= tool\n',grammar)
+        self.assertNotIn('root ::= tool | final',grammar)
+        self.assertIn('string ws',grammar)
+        self.assertIn('object',grammar)
+        self.assertNotIn('lu_reviewed_git_head',grammar)
+        self.assertNotIn('lu_reviewed_media_facts',grammar)
+        self.assertNotIn('json_schema',out)
+
     def test_unreviewed_required_mode_is_not_admitted(self):
         with self.assertRaises(ValueError):
             m.model_payload('hello',128,'raw','required')

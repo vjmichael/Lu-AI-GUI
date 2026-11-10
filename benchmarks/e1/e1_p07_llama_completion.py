@@ -12,31 +12,28 @@ import urllib.request
 
 
 
-# Opt-in decoder grammar: it permits BOTH tool and final forms, never
-# specifies a tool name, command, arguments, authority or a correct answer.
-# It only prevents a small Qwen GGUF from wasting the entire token budget
-# on an unfinished <think> block or invalid JSON. Native Lu still decides
-# whether the chosen tool exists and whether a fresh human approved it.
-GENERIC_REPLY_JSON_SCHEMA = {
-    "oneOf": [
-        {"type": "object",
-         "properties": {
-             "kind": {"type": "string", "enum": ["tool"]},
-             "name": {"type": "string"},
-             "arguments": {"type": "object"},
-         },
-         "required": ["kind", "name", "arguments"],
-         "additionalProperties": False},
-        {"type": "object",
-         "properties": {
-             "kind": {"type": "string", "enum": ["final"]},
-             "text": {"type": "string"},
-         },
-         "required": ["kind", "text"],
-         "additionalProperties": False},
-    ]
+# Explicit GBNF for llama.cpp /completion. The observed pinned-Qwen
+# failure was a complete tool object FOLLOWED by unstructured text, despite
+# the previously supplied JSON-schema hint. The grammar constrains the
+# decoder's complete reply, rather than deleting the trailing model bytes.
+# The model still chooses the tool name and ALL argument values; host-side
+# catalog, original-human authority, bounded effects and independent oracles
+# remain unchanged. This is a TEST transport, not a synthetic tool call.
+_JSON_RULES = r'''
+tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws string ws "," ws "\"arguments\"" ws ":" ws object ws "}"
+final ::= "{" ws "\"kind\"" ws ":" ws "\"final\"" ws "," ws "\"text\"" ws ":" ws string ws "}"
+object ::= "{" ws (string ws ":" ws value (ws "," ws string ws ":" ws value)*)? ws "}"
+array ::= "[" ws (value (ws "," ws value)*)? ws "]"
+value ::= object | array | string | number | "true" | "false" | "null"
+string ::= "\"" ([^"\\] | "\\" (["\\/bfnrt] | "u" hex hex hex hex))* "\""
+hex ::= [0-9a-fA-F]
+number ::= "-"? ("0" | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
+ws ::= [ \t\n\r]*
+'''
+GENERIC_REPLY_GBNF = {
+    "required": "root ::= tool\n" + _JSON_RULES,
+    "auto": "root ::= tool | final\n" + _JSON_RULES,
 }
-
 
 def model_payload(prompt: str, tokens: int, protocol: str, tool_mode: str = "auto") -> dict:
     if tool_mode not in ("auto", "required"):
@@ -61,10 +58,11 @@ def model_payload(prompt: str, tokens: int, protocol: str, tool_mode: str = "aut
         # tool-shaped envelope, without supplying a tool NAME/arguments.
         # Qwen must still select the advertised live catalog tool.
         # Host validates authorization, exact effects, feedback and restart.
-        result["json_schema"] = (
-            GENERIC_REPLY_JSON_SCHEMA["oneOf"][0] if tool_mode == "required"
-            else GENERIC_REPLY_JSON_SCHEMA
-        )
+        # The former json_schema/oneOf hint did not prevent a real
+        # pinned-Qwen reply from appending prose after a valid tool object.
+        # llama.cpp supports a directly supplied complete-output GBNF.
+        # No host-side JSON slicing, answer rewriting or tool fabrication.
+        result["grammar"] = GENERIC_REPLY_GBNF[tool_mode]
     return result
 
 

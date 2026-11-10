@@ -325,7 +325,7 @@
     },
     {
       "path": "benchmarks/e1/e1_p07_llama_completion.py",
-      "blob": "6f50ac8ef8ffe654a638344c39912fb12ac3406e"
+      "blob": "17dca1bb8ac7ea286c5dcfd8a6c1032028ab34f7"
     },
     {
       "path": "benchmarks/e1/e1_p08_linux_group_guard.py",
@@ -381,7 +381,7 @@
     },
     {
       "path": "benchmarks/e1/test_e1_p07_llama_completion.py",
-      "blob": "4ba4c0493031b2a58222a2eb14614af39ee0e4b7"
+      "blob": "518926927bd57c31f4679c1f189e48fc4b342d91"
     },
     {
       "path": "benchmarks/e1/test_memory_loop02_qwen_feedback.py",
@@ -1965,7 +1965,7 @@
     },
     {
       "path": "scripts/p0-windows-installed-gui-smoke.ps1",
-      "blob": "e741a7cc89d111b3f0343ba3798424084c93ad8e"
+      "blob": "88de6bdbf58772794c1d130d39612f9357bd3d16"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",

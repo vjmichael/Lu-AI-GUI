@@ -73,10 +73,20 @@ function Invoke-UIA([System.Windows.Automation.AutomationElement]$element){
     ([System.Windows.Automation.InvokePattern]$pattern).Invoke()
     return 'UIA_INVOKE'
   }
-  $pattern=$null
-  if($element.TryGetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern,[ref]$pattern)){
-    ([System.Windows.Automation.LegacyIAccessiblePattern]$pattern).DoDefaultAction()
-    return 'UIA_LEGACY_DEFAULT'
+  # UIAutomationClient on modern PowerShell/.NET need not expose the
+  # optional LegacyIAccessiblePattern type. Discover it reflectively, rather
+  # than failing before the strictly verified on-screen fallback is tried.
+  $legacyType='System.Windows.Automation.LegacyIAccessiblePattern' -as [type]
+  if($null -ne $legacyType){
+    $legacyField=$legacyType.GetField('Pattern')
+    $legacyAction=$legacyType.GetMethod('DoDefaultAction')
+    if($null -ne $legacyField -and $null -ne $legacyAction){
+      $pattern=$null
+      if($element.TryGetCurrentPattern($legacyField.GetValue($null),[ref]$pattern)){
+        $null=$legacyAction.Invoke($pattern,[object[]]@())
+        return 'UIA_LEGACY_DEFAULT'
+      }
+    }
   }
   # Last resort on a disposable, interactive runner only: click the point
   # that the CURRENT genuine UIA element says is reachable. The parent
