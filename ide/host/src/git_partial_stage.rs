@@ -691,11 +691,14 @@ mod tests {
         let selection = reviewed(&registry, &id, &root);
         registry.apply_approved_partial_stage(&selection, &AtomicU8::new(0)).unwrap();
         let repo = Repository::open(&root).unwrap();
-        let index = repo.index().unwrap();
+        let mut index = repo.index().unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         let sig = Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
         repo.commit(Some("HEAD"), &sig, &sig, "later authorized commit", &tree, &[&head]).unwrap();
+        fs::write(root.join("tracked.txt"), b"later independently staged bytes\n").unwrap();
+        index.add_path(Path::new("tracked.txt")).unwrap();
+        index.write().unwrap();
         drop(tree);
         drop(index);
         drop(repo);
