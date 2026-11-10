@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """IDE-05.6 security regression tests; no network or real operator required."""
+import base64
+import csv
 import hashlib
 import importlib.util
 import io
@@ -25,11 +27,25 @@ class UpstreamIntakeTests(unittest.TestCase):
         self.binary.write_bytes(b"\x7fELFnative first-party fixture")
         self.license.write_bytes(b"MIT\nCI fixture only\n")
         self.build()
-    def build(self, extra=None, link=False):
+    def build(self, extra=None, link=False, corrupt_record=False):
+        entries = {
+            "uv/uv": self.binary.read_bytes(),
+            "uv-0.9.9.dist-info/METADATA": b"Name: uv\nVersion: 0.9.9\n\n",
+            "uv-0.9.9.dist-info/licenses/LICENSE-MIT": self.license.read_bytes(),
+        }
+        record_rows = []
+        for name, contents in entries.items():
+            encoded = base64.urlsafe_b64encode(hashlib.sha256(contents).digest()).decode().rstrip("=")
+            record_rows.append([name, "sha256=" + encoded, str(len(contents))])
+        if corrupt_record:
+            record_rows[0][1] = "sha256=" + "x" * 43
+        record_rows.append(["uv-0.9.9.dist-info/RECORD", "", ""])
+        record_text = io.StringIO()
+        csv.writer(record_text).writerows(record_rows)
         with zipfile.ZipFile(self.wheel, "w", compression=zipfile.ZIP_STORED) as z:
-            z.writestr("uv/uv", self.binary.read_bytes())
-            z.writestr("uv-0.9.9.dist-info/METADATA", "Name: uv\nVersion: 0.9.9\n\n")
-            z.writestr("uv-0.9.9.dist-info/licenses/LICENSE-MIT", self.license.read_bytes())
+            for name, contents in entries.items():
+                z.writestr(name, contents)
+            z.writestr("uv-0.9.9.dist-info/RECORD", record_text.getvalue())
             if extra:
                 entry = zipfile.ZipInfo(extra)
                 if link:
@@ -54,6 +70,14 @@ class UpstreamIntakeTests(unittest.TestCase):
         self.assertTrue(result["registryWheelHashAndInstalledBinaryMatched"])
         self.assertFalse(result["upstreamPublisherSignatureVerified"])
         self.assertFalse(result["releaseApproved"])
+    def test_archive_record_hash_tamper_denied_even_with_updated_registry_digest(self):
+        self.build(corrupt_record=True)
+        with self.assertRaises(MODULE.Denied):
+            self.check()
+    def test_archive_extra_unlisted_payload_denied_even_with_updated_registry_digest(self):
+        self.build(extra="uv/unlisted-native.dll")
+        with self.assertRaises(MODULE.Denied):
+            self.check()
     def test_original_binary_changed(self):
         self.binary.write_bytes(b"impostor")
         with self.assertRaises(MODULE.Denied):
