@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
-import {routeExplicitLocalFolderRequest} from './native_intent.mjs';
+// Host classifies original user intent; no frontend filesystem routing.
 import {explainToolOutcome,explainReviewedContinuation} from './reviewed_tool_feedback.mjs';
 import {explainMemoryProjectionRecovery} from './reviewed_memory_recovery.mjs';
 import { fullEditChangeLines } from './edit_diff.mjs';
@@ -3816,9 +3816,11 @@ function App() {
     // Explicit human folder requests may enter existing native read-only
     // workspace mode. The path text is never authority; user selects an
     // actual directory through Lu's fresh native OS folder picker.
-    const useWorkspaceTools=workspaceToolsNextSend ||
-      (!usePlanDraft&&!useBrowserResearch&&!useReviewedApp&&
-        routeExplicitLocalFolderRequest(input));
+    // This flag is only the historical explicit user opt-in. Ordinary
+    // user requests are classified by the native lu_generate host, which
+    // prioritizes approved Git, Reader, media and HTTPS Browser routes
+    // before workspace. Renderer heuristics never choose a tool scope.
+    const useWorkspaceTools=workspaceToolsNextSend;
     if([Boolean(useWorkspaceTools),Boolean(useBrowserResearch),Boolean(useReviewedApp),Boolean(usePlanDraft)].filter(Boolean).length>1){
       setError('Choose only one native workspace, reviewed app or Browser mode for this turn.');return;
     }

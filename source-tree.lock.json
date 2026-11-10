@@ -1661,7 +1661,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-native-intent.test.mjs",
-      "blob": "db04a97e39f3fd70cc3fd804b5bc3e8600d00a32"
+      "blob": "de3e49a11441103ab17161f331c1e94425f2f2a0"
     },
     {
       "path": "lu-desktop/tests/p0-native-window-separation.test.mjs",
@@ -1669,7 +1669,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
-      "blob": "fa1eeffdca63033e6429e2f43376cdc7d6434779"
+      "blob": "f9a5601660c0cbe37ab6ea6a0403b9a455447199"
     },
     {
       "path": "lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs",
@@ -1861,7 +1861,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "3eaf451c9b13a8452c9058ce57214fed8c19c2f4"
+      "blob": "8d025a9c22d5617cf3bdc04572f3f29d65acd159"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",

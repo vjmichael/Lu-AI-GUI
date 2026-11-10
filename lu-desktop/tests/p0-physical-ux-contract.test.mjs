@@ -64,7 +64,8 @@ test('specialist manual buttons are not mounted in composer; host native routes 
   assert.match(ui,/<\/div><\/details>\}/);
   assert.match(rust,/fn lu_native_route_catalog\(/);
   assert.match(rust,/reviewed_app_desktop::explicit_media_metadata_request/);
-  assert.match(ui,/routeExplicitLocalFolderRequest\(input\)/);
+  assert.match(rust,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
+  assert.doesNotMatch(ui,/routeExplicitLocalFolderRequest\(input\)/);
 });
 
 test('fake elapsed timer is absent; actual memory loading percent remains explicitly unverified',()=>{
