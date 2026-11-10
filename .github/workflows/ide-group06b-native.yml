@@ -1,4 +1,5 @@
-# IDE Group 6B preview-only gate. No Git write authority or operator acceptance.
+# IDE Group 6B exact-head rerun: native formatter and hidden artifact collection repaired.
+# No Git write authority or operator acceptance.
 name: IDE Group 6B reviewed batch source (not release)
 on:
   push:
@@ -85,4 +86,5 @@ jobs:
           name: ide-g06b-${{ matrix.os }}-${{ github.sha }}
           path: .ide-g06b-receipts/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
