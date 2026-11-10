@@ -1,4 +1,4 @@
-# Group 6B-03 exact-head gate after native six-test PASS and 56 genuine Rustfmt fixes; physical OS dialog remains untested.
+# Group 6B-03 final source gate: formatter-safe Node assertions, six real native receipt/cancel tests, one-use OS consent.
 # Preserve real frontend-built icon; no CI-only icon may overwrite a valid app resource.
 # No Git write authority or operator acceptance.
 name: IDE Group 6B reviewed batch source (not release)
