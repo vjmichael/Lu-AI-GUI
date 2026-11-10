@@ -454,15 +454,34 @@ impl PackageLifecycleLedger {
         };
         self.append(body)
     }
-    pub fn verify_discard(&self, status: &PackageLifecycleStatus) -> Result<(), SupervisorError> {
-        // A stale pre-cleanup observation cannot be used to advance the
-        // journal to destroyed. This remains only a journal transition;
-        // callers must independently verify OS child cleanup and bytes.
+    /// Record private cleanup only after independent path absence. The
+    /// caller must separately attest the OS process tree is reaped. This
+    /// method cannot turn path absence into proof of kernel custody.
+    pub fn verify_discard(
+        &self,
+        status: &PackageLifecycleStatus,
+        private_output: &Path,
+    ) -> Result<(), SupervisorError> {
         if status.state != "private_output_cleanup_pending"
             || !status.requires_explicit_private_cleanup
+            || !private_output.is_absolute()
         {
             return Err(SupervisorError::InvalidTransition);
         }
+        let parent = private_output.parent().ok_or_else(denied)?;
+        if !native_path_ok(parent) {
+            return Err(denied());
+        }
+        match fs::symlink_metadata(private_output) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err(denied()), // present file, directory, link, or uncertain IO
+        }
+        // Force the containing directory's metadata before the terminal
+        // journal transition, where supported. The journal itself fsyncs.
+        #[cfg(unix)]
+        fs::File::open(parent)
+            .and_then(|dir| dir.sync_all())
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
         let body = PackageLifecycleBody {
             version: 1,
             sequence: 0,
@@ -535,7 +554,7 @@ mod tests {
         assert_eq!(pending.state, "private_output_cleanup_pending");
         assert!(pending.requires_explicit_private_cleanup);
         assert!(!pending.may_execute_or_retry_worker);
-        reopened.verify_discard(&pending).unwrap();
+        reopened.verify_discard(&pending, &temp.0.join("missing-private-output")).unwrap();
         let final_reopen = PackageLifecycleLedger::open(temp.0.clone()).unwrap();
         let done = final_reopen.statuses().unwrap().pop().unwrap();
         assert_eq!(done.state, "private_output_destroyed");
@@ -551,17 +570,35 @@ mod tests {
             .unwrap();
         let stale = ledger.statuses().unwrap().pop().unwrap();
         assert!(matches!(
-            ledger.verify_discard(&stale),
+            ledger.verify_discard(&stale, &_temp.0.join("missing-private-output")),
             Err(SupervisorError::InvalidTransition)
         ));
         ledger.prepare_discard(&stale).unwrap();
         assert!(matches!(
-            ledger.verify_discard(&stale),
+            ledger.verify_discard(&stale, &_temp.0.join("missing-private-output")),
             Err(SupervisorError::InvalidTransition)
         ));
         let pending = ledger.statuses().unwrap().pop().unwrap();
         assert_eq!(pending.state, "private_output_cleanup_pending");
         assert!(!pending.may_execute_or_retry_worker);
+    }
+    #[test]
+    fn live_or_linked_private_output_cannot_be_marked_destroyed() {
+        let (temp, ledger) = fixture();
+        let (project, job, plan, terminal, tree, audit) = ids();
+        ledger.record_prepared(&project, &job, &plan).unwrap();
+        ledger.record_audit(&project, &job, &plan, &terminal, &tree, Some(&audit)).unwrap();
+        let original = ledger.statuses().unwrap().pop().unwrap();
+        ledger.prepare_discard(&original).unwrap();
+        let pending = ledger.statuses().unwrap().pop().unwrap();
+        let output = temp.0.join("owned-private-output");
+        fs::create_dir(&output).unwrap();
+        fs::write(output.join("installed-package"), b"still present").unwrap();
+        assert!(ledger.verify_discard(&pending, &output).is_err());
+        assert_eq!(ledger.statuses().unwrap()[0].state, "private_output_cleanup_pending");
+        fs::remove_dir_all(&output).unwrap();
+        ledger.verify_discard(&pending, &output).unwrap();
+        assert_eq!(ledger.statuses().unwrap()[0].state, "private_output_destroyed");
     }
     #[test]
     fn tampered_or_partial_journal_refuses_replay() {
@@ -601,7 +638,7 @@ mod tests {
         assert!(pending.requires_explicit_private_cleanup);
         assert!(!pending.may_execute_or_retry_worker);
         assert!(reopened.prepare_discard(&pending).is_err());
-        assert!(reopened.verify_discard(&pending).is_err());
+        assert!(reopened.verify_discard(&pending, &temp.0.join("missing-private-output")).is_err());
     }
     #[test]
     fn same_job_cannot_claim_new_plan_or_replay_audit() {
@@ -644,7 +681,7 @@ mod tests {
         assert_eq!(discard.terminal_receipt_sha256, terminal);
         assert_eq!(discard.output_tree_sha256, tree);
         assert!(discard.audit_sha256.is_none());
-        reopened.verify_discard(&discard).unwrap();
+        reopened.verify_discard(&discard, &temp.0.join("missing-private-output")).unwrap();
         assert_eq!(
             reopened.statuses().unwrap().pop().unwrap().state,
             "private_output_destroyed"
@@ -661,7 +698,7 @@ mod tests {
         let blocked = ledger.statuses().unwrap().pop().unwrap();
         assert_eq!(blocked.state, "private_output_audit_blocked");
         assert!(ledger.prepare_discard(&blocked).is_err());
-        assert!(ledger.verify_discard(&blocked).is_err());
+        assert!(ledger.verify_discard(&blocked, &_temp.0.join("missing-private-output")).is_err());
         assert!(!blocked.may_execute_or_retry_worker);
     }
     #[cfg(unix)]
