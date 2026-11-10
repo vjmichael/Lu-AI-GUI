@@ -48,3 +48,17 @@ committed. No native compiler or runtime test has been executed on the
 latest source SHA; the four-lane Group 4 job is unaffected. Group 5B and
 5F still require genuine protected Linux/Windows execution and physical
 installed human evidence, and are not closed by the new source checks.
+
+## November 10 continuation: provenance and consolidated native gate
+
+**5B:** Existing Linux protected worker test group contains real modes `--offline-miss`, `--cancel`, `--positive` (CI-only synthetic wheel) and `--hostile-recovery` under a delegated cgroup and unnetworked Bubblewrap. These modes must execute at the newly reconciled source SHA; an earlier success is not a pass for the new 5A–5E source.
+
+**5C:** `fc9ced3`, `cb03be4` and `eba7344` changed the fixed upstream uv intake reader to compare original, opened-descriptor and final path identity, with `O_NOFOLLOW` on supporting OSes. New negative cases cover aliasing the installed binary/license and replacing the selected executable path while a descriptor is held. The fetched PyPI release JSON and wheel hash still do not provide a publisher signature, legal clearance, or complete transitive dependency provenance.
+
+**5D:** The consolidated Windows native source job already compiles and invokes the explicitly disposable `ide056_windows_acl_positive` AppContainer kernel fixture: source read allowed, source write/rename/delete and owner/DACL mutation denied, private output write, containment/Job ownership. This has **not** enabled production Windows package operations; the native job must be inspected for genuine pass/failure. Physical Windows operator approval remains separate.
+
+**5E:** The grouped Linux native fixture exercises SIGABRT/restart and original journal reconciliation. The new journal state guard refuses stale cleanup claims but by itself does not verify physical deletion or process-tree zero. A native cleanup receipt + real filesystem observation is still required before release acceptance.
+
+**5F:** The checked-in physical Windows negative fixture can witness installed application denial only, and may not substitute for positive human approval. A user-controlled physical installed session must separately test approval, refusal, cancellation, stale-plan denial, process death, restart and uninstall with exact binary and journal hashes. An interactive session is not accessible from this GitHub-only execution context. Do not script fake human clicks.
+
+**Integration:** Use the existing consolidated `.github/workflows/ide-dev05-consolidated-native.yml` workflow on this Group 5 branch, rather than creating CI micro-jobs. Every meaningful result must be inspected at one exact SHA. Run disposition is unknown until GitHub reports jobs and logs; no release acceptance is implied by a queued or started workflow.
