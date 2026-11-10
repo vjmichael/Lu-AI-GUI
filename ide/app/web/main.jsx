@@ -397,6 +397,7 @@ function App() {
     setGitInventory(null);
     setGitRefsHealth(null);
     setGitFileHistory(null);
+    setGitFileBusy(false);
     gitSnapshotRequest.current += 1;
     setGithubComparison(null);
     exactCiRequest.current += 1;
@@ -1401,6 +1402,7 @@ function App() {
     setGitInventory(null);
     setGitRefsHealth(null);
     setGitFileHistory(null);
+    setGitFileBusy(false);
     setGitDiff(null);
     setGitHistory(null);
     gitEvidenceRequest.current += 1;
