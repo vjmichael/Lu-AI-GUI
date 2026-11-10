@@ -164,3 +164,14 @@ now share the exact enclosed-hardlink proof and reject any foreign alias;
 private debug target sealing passes the original complete inventory.
 A new cross-layer ELF/DWARF alias-vs-external-alias regression was added.
 **Native rerun required**; no symbol/LLDB success asserted yet.
+
+### Linux LLDB launch failure localization
+
+The same real native run `42866653321` confirmed that the OS-owned
+LLDB-DAP adapter initializes inside a genuine delegated cgroup/Bwrap
+worker, yet the next correlated DAP reply has `success=false`, originally
+classified only as `other_adapter_error`. Before touching ptrace, AppArmor,
+mounts, resources or process authority, the native diagnostic now emits
+only the fixed reviewed request category and additional bounded error
+classes (`sealed_target_launch`, `target_launch_failed`, etc.), never raw
+adapter paths/contents. **No OS policy change or LLDB success is claimed.**

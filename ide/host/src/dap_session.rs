@@ -620,6 +620,19 @@ impl DapSession {
                         // paths, messages, child output or error numbers.
                         let mismatch = command != Some(expected);
                         eprintln!(
+                            "PROTECTED_DAP_FAILED_REQUEST={}",
+                            match expected {
+                                "launch" => "sealed_target_launch",
+                                "configurationDone" => "fixed_configuration",
+                                "initialize" => "fixed_initialize",
+                                "threads" | "stackTrace" => "read_only_stack",
+                                "next" | "stepIn" | "stepOut" => "one_use_step",
+                                "setBreakpoints" => "one_use_breakpoint",
+                                "scopes" | "variables" => "redacted_inspection",
+                                _ => "other_fixed_protocol",
+                            }
+                        );
+                        eprintln!(
                             "PROTECTED_DAP_RESPONSE_CORRELATION={}",
                             if mismatch {
                                 "wrong_command"
@@ -1028,6 +1041,9 @@ fn classify_native_adapter_error(response: &serde_json::Map<String, Value>) -> &
         || text.contains("failed to launch")
         || text.contains("launch failed")
         || text.contains("could not launch")
+        || text.contains("cannot launch")
+        || text.contains("unable to launch")
+        || text.contains("could not create process")
     {
         "target_launch_failed"
     } else if text.contains("python") || text.contains("resource") || text.contains("platform") {
@@ -1037,6 +1053,12 @@ fn classify_native_adapter_error(response: &serde_json::Map<String, Value>) -> &
         || text.contains("invalid launch")
     {
         "unsupported_debug_adapter_operation"
+    } else if text.contains("target") && text.contains("error") {
+        "fixed_target_error_unclassified"
+    } else if text.contains("lldb") && text.contains("error") {
+        "debugger_error_unclassified"
+    } else if text.contains("process") && text.contains("error") {
+        "native_process_error_unclassified"
     } else if text.trim().is_empty() {
         "no_adapter_error_detail"
     } else {
