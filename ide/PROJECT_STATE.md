@@ -1,5 +1,20 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 6A-01/02 — read-only Git inventory source (Nov 10, 2026)
+
+Dedicated `ide/group06a-git-repository-audit-20261110` branch now
+contains `ide/host/src/git_inventory.rs`: a bounded libgit2 local
+branch inventory and linked worktree administrative-name inventory.
+Tauri exposes only an OS-picker registered project ID; the Source
+Control panel displays local-only branch tracking and linked-worktree
+metadata. Absolute linked locations are not exposed or inspected, and
+no branch/write/network/process capability is added. Native fixtures
+cover ordinary/detached/unborn roots, unknown project, nested parent
+Git discovery denial and linked worktree. Code and UI boundary test
+are committed, but exact-head Windows/Linux compilation and physical
+installed acceptance remain OPEN. See
+`ide/docs/IDE_GROUP06A_GIT_REPOSITORY_AUDIT_20261110.md`.
+
 ## Group 6A audit only — Git repository management (Nov 10, 2026)
 
 Branch `ide/group06a-git-repository-audit-20261110` is stacked
