@@ -651,10 +651,13 @@ fn command_for(
             if !input.root.join("uv.lock").is_file() {
                 return Err(SupervisorError::WrongProjectOrSource);
             }
-            // Only the dedicated, non-release CI binary may read the
-            // separately root-owned, tree-pinned synthetic wheelhouse.
-            // All ordinary package workers retain registry-only lock policy.
-            if cfg!(feature = "ide055-ci-wheelhouse") {
+            // Only this exact CI fixture, NOT the negative fixture or any
+            // production worker, may resolve the pinned local wheelhouse.
+            // A different reviewed plan retains the original --offline
+            // registry/cache behavior and cannot inherit the CI exception.
+            let ci_positive_wheelhouse = cfg!(feature = "ide055-ci-wheelhouse")
+                && plan.effect_class == "package_uv_sync_offline:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+            if ci_positive_wheelhouse {
                 cmd.arg("--setenv").arg("UV_NO_INDEX").arg("1");
             }
             cmd.arg("/runtime/bin/uv").args([
@@ -673,7 +676,7 @@ fn command_for(
                 "--python",
                 "/runtime/bin/python3",
             ]);
-            if cfg!(feature = "ide055-ci-wheelhouse") {
+            if ci_positive_wheelhouse {
                 cmd.args(["--no-index", "--find-links", "/runtime/wheelhouse"]);
             }
         }

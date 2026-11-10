@@ -185,6 +185,7 @@ wheels = [
         eprintln!("IDE055_NATIVE_UV_RUNTIME_GATE_DENIED={}", error.code());
         "IDE055_PINNED_ROOT_OWNED_UV_RUNTIME_ABSENT"
     })?;
+    let fixture_preview_sha = if positive { "c".repeat(64) } else { "b".repeat(64) };
     let plan = JobPlan {
         project_id: format!("ide-{}", "5".repeat(32)),
         recipe_id: "uv_sync_offline".into(),
@@ -197,7 +198,7 @@ wheels = [
         memory_limit_bytes: 512 * 1024 * 1024,
         process_limit: 8,
         log_limit_bytes: 128 * 1024,
-        effect_class: format!("package_uv_sync_offline:{}", "b".repeat(64)),
+        effect_class: format!("package_uv_sync_offline:{fixture_preview_sha}"),
     };
     let journal = root.join("supervisor-receipts.jsonl");
     let supervisor = Supervisor::open(journal.clone()).map_err(|e| e.code())?;
@@ -239,6 +240,13 @@ wheels = [
             || diagnostic.contains("cache")
             || diagnostic.contains("network disabled"))
         {
+            // CI owns this fixed synthetic project; print only a bounded
+            // diagnostic for a genuine native failure, never arbitrary
+            // installed application stderr.
+            eprintln!(
+                "IDE055_OFFLINE_DENIAL_DIAGNOSTIC={}",
+                diagnostic.chars().take(400).collect::<String>().replace('\n', " ")
+            );
             return Err("IDE055_OFFLINE_MISS_CAUSE_NOT_EVIDENCED".into());
         }
     }
