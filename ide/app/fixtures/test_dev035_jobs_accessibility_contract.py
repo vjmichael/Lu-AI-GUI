@@ -21,6 +21,9 @@ class NativeJobsA11yContract(unittest.TestCase):
         self.assertIn('role="status"\n                      aria-label="No matching protected job journal entries observed"', web)
         self.assertIn('No matching protected job journal entries observed.</p>', web)
         self.assertIn('disabled={!activeProject || !buildStatus?.ready', web)
+        self.assertIn('aria-label="DEV-03.4 bounded test discovery"', web)
+        self.assertIn('belongsToSelectedProject(activeProject, testDiscovery)', web)
+        self.assertIn('<p role="status" aria-label="Conventional test discovery incomplete by design">', web)
 
     def test_real_atspi_checks_exact_named_status_under_real_jobs_region(self):
         fixture = FIXTURE.read_text(encoding="utf-8")
@@ -36,6 +39,13 @@ class NativeJobsA11yContract(unittest.TestCase):
         self.assertIn('run.getState().contains(pyatspi.STATE_ENABLED)', fixture)
         self.assertIn('if digest()!=old:', fixture)
         self.assertIn('DEV035_LINUX_INSTALLED_PROTECTED_WORKER=NOT_ACCEPTED', fixture)
+        self.assertIn('def native_bounded_test_discovery_status(seconds=18):', fixture)
+        self.assertIn('current.name or "").strip() == "DEV-03.4 bounded test discovery"', fixture)
+        self.assertIn('name == "Conventional test discovery incomplete by design"', fixture)
+        self.assertIn('if region is not None and matches == 1 and alerts == 0:', fixture)
+        self.assertIn('DEV035_LINUX_NATIVE_TEST_DISCOVERY_STATUS=verified_native_result', fixture)
+        self.assertIn('native_bounded_test_discovery_status(seconds=18)', fixture)
+        self.assertNotIn('accessible("discovery incomplete by design",seconds=18)', fixture)
 
 
 if __name__ == "__main__":

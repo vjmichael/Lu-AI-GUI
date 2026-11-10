@@ -3711,7 +3711,7 @@ function App() {
                 Nothing here grants execution or runs a project script.</p>
               {belongsToSelectedProject(activeProject, testDiscovery) &&
                 <>
-                  <p role="status">
+                  <p role="status" aria-label="Conventional test discovery incomplete by design">
                     {testDiscovery.files.length} filenames found
                     {testDiscovery.truncated?' · results truncated':''}
                     {' · discovery incomplete by design'}

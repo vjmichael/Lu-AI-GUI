@@ -349,3 +349,35 @@ installed acceptance pair. Linux must also reach real dpkg uninstall,
 absence of the installed program and byte-identical original source and
 native project catalog. Do not promote PR #203 or Group 2 without both
 completed successful OS jobs.
+
+## DEV-03.4 real installed test-discovery status (2026-11-10 UTC)
+
+[Run 42850358256](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42850358256)
+tested `1769cd4cc7d458857fbb7b1c54c039c51566df73`. Ubuntu real installed GTK success receipts include
+correct project selection, active Edit, explicit source Save, restart/Reopen,
+external-file conflict/unsaved draft **PASS**, and crucially
+`DEV035_LINUX_NATIVE_EMPTY_JOURNAL_STATUS=verified_region_and_status`.
+This verified the prior DEV-03.5 semantic-label repair against the actual
+WebKitGTK accessibility tree.
+
+The very next step activated real `Discover test files`, but the test's
+global AT-SPI search could not locate the unlabelled paragraph text
+`discovery incomplete by design`. The React component renders that status
+only when `belongsToSelectedProject(activeProject, testDiscovery)`,
+i.e. a genuine project-matched native metadata result. This is a **separate
+WebKitGTK accessibility contract gap**; a failed native host result would
+remain a failure and must not be silently accepted.
+
+Small repair: label that existing conditional paragraph with
+`role=status` and one fixed, distinct accessible name. The installed
+driver descends only from the real DEV-03.4 native WebView region, bounds
+the scan to 3,200 nodes and 24 levels, requires exactly one visible
+status and zero named native test-discovery failure alerts, and reports
+only bounded category counts if missing. It still performs an actual
+AT-SPI click on the discovery button, verifies the protected Run/Test
+control remains disabled, compares original source SHA to exclude
+unexpected changes, and performs actual dpkg uninstall plus native
+catalog/source retention witness later in the same installed gate.
+No protected action, model execution, Core integration, fake result
+or user-data alteration is authorized or introduced. One exact-SHA
+Windows NSIS / Linux Debian installed group is required to close.
