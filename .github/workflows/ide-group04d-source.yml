@@ -1,3 +1,4 @@
+# Exact Windows Tauri source gate uses CI-only diagnostic ICO; no installed release asset.
 # Third source gate; exact formatter repaired in developer desktop.
 # Exact native-source rerun after independently reported supervisor formatting correction.
 # Recheck exact developer source after native Rustfmt and renderer safety updates.
@@ -55,6 +56,9 @@ jobs:
         with:
           toolchain: '1.99.1'
           components: rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10.11'
       - name: Exact-source and nonexecutable source consent boundary
         shell: pwsh
         run: |
@@ -68,6 +72,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: desktop Rustfmt failure' }
           node --test ide/app/tests/ide_group04d_native_inspection.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: privilege/redaction boundary changed' }
+          # Syntax ONLY: a headless runner must never simulate a human click.
+          $tokens=$null
+          $parseErrors=$null
+          [Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'ide/app/fixtures/Test-DEV046D-PhysicalHumanConsent.ps1').Path,
+            [ref]$tokens,[ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -ne 0) { throw 'DENIED: physical human operator script invalid' }
       - name: Compile real protected Windows native scope bridge, original receipts and dev-only desktop
         shell: pwsh
         run: |
@@ -79,6 +90,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: one-use OS scope/control tests failed' }
           cargo check --manifest-path ide/supervisor/Cargo.toml --features $features --lib
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected Windows scope bridge compiler failed' }
+          # Tauri build.rs requires icons/icon.ico on Windows. Generate a
+          # deterministic temporary diagnostic image ONLY in headless CI,
+          # after the clean exact-source check. Never package or promote it.
+          python ide/app/fixtures/make_g04d_ci_icon.py
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: temporary CI resource unavailable' }
           cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features dev046d-native-dialog
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: dev native human modal desktop compiler failed' }
           echo 'IDE_G04D_WINDOWS_SOURCE=PASS_NOT_PHYSICAL_APPROVAL_OR_INSTALLED'

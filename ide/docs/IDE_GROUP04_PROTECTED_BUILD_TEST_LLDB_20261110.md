@@ -263,3 +263,7 @@ steps or an installed release was validated**.
 - Windows source/native developer desktop compile: in progress when recorded; not accepted yet.
 - Current temporary branch also adds interactive `ApproveVariables`, `RefuseVariables`, cancellation, timeout, and optional real process restart to its existing physical Windows fixture. This has NOT been run by a real human or installed app.
 - The authoritative four-lane Group 4 at `545a7a3` remains untested at that SHA while the previously started LLVM18 compilation continues. Never count the temporary source gate as an installed OS or human result.
+
+### G04D Windows developer compiler: CI-only missing icon resource
+
+[Developer source run 42876264987](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42876264987) proved Linux source tests passed; Windows host DAP protocol tests, protected supervisor tests and native supervisor compilation also passed, but Tauri desktop `cargo check` stopped at `icons/icon.ico not found`. This is a **build-script required resource**, not a debugger authorization failure. The next exact-head source workflow creates a deterministic diagnostic ICO using Python stdlib ONLY in the CI checkout immediately before Tauri compile; it is never checked into the release tree, and cannot be used to claim installer or artwork approval. The same gate syntax-checks the expanded real physical-human fixture without executing it.
