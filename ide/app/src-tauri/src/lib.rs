@@ -457,6 +457,21 @@ async fn ide_read_git_status(
     Ok(status)
 }
 
+/// Read-only branch and linked worktree metadata from the exact selected
+/// native project root. A linked location is never authorized or exposed.
+#[tauri::command]
+async fn ide_read_git_repository_inventory(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_inventory::GitRepositoryInventory, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_git_repository_inventory(&project_id)
+    })
+    .await
+    .map_err(|_| "GIT_INVENTORY_HOST_UNAVAILABLE".to_owned())
+}
+
 /// On explicit human request, compare local work with current public GitHub
 /// branch evidence. HTTPS to fixed api.github.com only; no token or Git fetch.
 #[tauri::command]
@@ -2072,6 +2087,7 @@ pub fn run() {
             ide_link_task_source,
             ide_observe_task_ci,
             ide_read_git_status,
+            ide_read_git_repository_inventory,
             ide_read_git_diff,
             ide_probe_project_resource,
             ide_read_git_history,
