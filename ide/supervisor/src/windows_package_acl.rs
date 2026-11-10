@@ -72,8 +72,8 @@ fn parse_system_sid() -> Result<OwnedLocal, SupervisorError> {
     Ok(OwnedLocal(sid))
 }
 /// Inspect an explicit native MEDIUM no-write-up mandatory-integrity SACL.
- /// An implicit default-medium label is not accepted for sealed untrusted
- /// source; the observer never grants token privileges or changes the label.
+/// An implicit default-medium label is not accepted for sealed untrusted
+/// source; the observer never grants token privileges or changes the label.
 fn require_explicit_medium_integrity_label(path: &Path) -> Result<(), SupervisorError> {
     let mut sacl = ptr::null_mut();
     let mut descriptor = ptr::null_mut();
@@ -121,9 +121,7 @@ fn require_explicit_medium_integrity_label(path: &Path) -> Result<(), Supervisor
         return Err(denied());
     }
     let mut medium = ptr::null_mut();
-    if unsafe {
-        ConvertStringSidToSidW(wide(OsStr::new("S-1-16-8192")).as_ptr(), &mut medium)
-    } == 0
+    if unsafe { ConvertStringSidToSidW(wide(OsStr::new("S-1-16-8192")).as_ptr(), &mut medium) } == 0
         || medium.is_null()
     {
         return Err(denied());

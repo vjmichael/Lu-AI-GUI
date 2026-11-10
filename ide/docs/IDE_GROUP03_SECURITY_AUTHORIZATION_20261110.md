@@ -194,3 +194,15 @@ Late OS replies cannot grant or consume the operation. This
 is source-level test infrastructure, NOT a CI-simulated human click.
 Stale-source, wrong-scope, replay and installed production human
 package-worker approval must still be physically attested.
+
+## Explicit MIC SACL initial formatting failure — no kernel witness inferred
+
+[Run 42859434783](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42859434783)
+on `eb302297e0f48b45c2b0707d9ad7a753877ff699`: genuine Linux delegated cgroup/Bubblewrap hostile tests,
+Windows SCM crash and loss jobs **PASS**; both Windows and Linux supervisor
+test suites pass, but the source formatting gate found two exact Rustfmt
+differences in the new native Windows MIC SACL observer. Windows
+AppContainer MIC/reparse positive checks **were not reached**, and no
+release acceptance is inferred. Only exact Rustfmt differences were
+corrected in the next SHA, without weakening source-integrity or
+containment policy. Require genuine Windows native rerun.
