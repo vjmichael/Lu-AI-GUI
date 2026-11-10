@@ -95,6 +95,16 @@ jobs:
           # after the clean exact-source check. Never package or promote it.
           python ide/app/fixtures/make_g04d_ci_icon.py
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: temporary CI resource unavailable' }
+          # Actual Tauri generate_context! also requires the configured frontendDist.
+          # Build from pinned npm lock and source; no mock dist or installed consent.
+          Push-Location ide/app
+          try {
+            npm ci --ignore-scripts
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: locked frontend dependencies failed' }
+            node scripts/build.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: genuine frontend build failed' }
+          } finally { Pop-Location }
+          if (!(Test-Path ide/app/dist/index.html)) { throw 'DENIED: actual frontendDist missing' }
           cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features dev046d-native-dialog
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: dev native human modal desktop compiler failed' }
           echo 'IDE_G04D_WINDOWS_SOURCE=PASS_NOT_PHYSICAL_APPROVAL_OR_INSTALLED'
