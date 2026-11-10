@@ -24,7 +24,7 @@ mod native {
         Security::{
             Authorization::{
                 ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-                SetNamedSecurityInfoW, SE_FILE_OBJECT,
+                ConvertStringSidToSidW, SetNamedSecurityInfoW, SE_FILE_OBJECT,
             },
             FreeSid, GetSecurityDescriptorDacl, GetSidSubAuthority, GetSidSubAuthorityCount,
             GetTokenInformation,
@@ -32,7 +32,7 @@ mod native {
                 CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
             },
             TokenIntegrityLevel, TokenIsAppContainer, TokenUser, DACL_SECURITY_INFORMATION,
-            PROTECTED_DACL_SECURITY_INFORMATION, PSID, SECURITY_CAPABILITIES,
+            OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSID, SECURITY_CAPABILITIES,
             TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TOKEN_USER,
         },
         Storage::FileSystem::{
@@ -217,22 +217,38 @@ mod native {
             }
             return Err(fail("IDE056_DACL_MISSING").into());
         }
+        // CI runner tokens may create files with the Administrators group
+        // as implicit OWNER rather than TokenUser. Our independent native
+        // observer requires *exactly* the reviewed host TokenUser SID.
+        // Assign that owner explicitly; never relax the observer to accept
+        // Administrator, SYSTEM, package SID or an arbitrary inherited ACE.
+        let owner_text = w(user);
+        let mut owner_sid: PSID = ptr::null_mut();
+        if unsafe { ConvertStringSidToSidW(owner_text.as_ptr(), &mut owner_sid) } == 0
+            || owner_sid.is_null()
+        {
+            unsafe { LocalFree(descriptor); }
+            return Err(fail("IDE056_EXACT_OWNER_SID_INVALID").into());
+        }
         let mut name = wide(path.as_os_str());
         let result = unsafe {
             SetNamedSecurityInfoW(
                 name.as_mut_ptr(),
                 SE_FILE_OBJECT,
-                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-                ptr::null_mut(),
+                DACL_SECURITY_INFORMATION
+                    | PROTECTED_DACL_SECURITY_INFORMATION
+                    | OWNER_SECURITY_INFORMATION,
+                owner_sid,
                 ptr::null_mut(),
                 dacl,
                 ptr::null_mut(),
             )
         };
         unsafe {
+            LocalFree(owner_sid);
             LocalFree(descriptor);
         }
-        ensure(result == 0, "IDE056_DACL_SEAL_DENIED")
+        ensure(result == 0, "IDE056_EXACT_OWNER_AND_DACL_SEAL_DENIED")
     }
     fn attest_low_integrity_token() -> R<()> {
         let mut raw = ptr::null_mut();
@@ -476,6 +492,7 @@ mod native {
         }
         ensure(args.len() == 1, "IDE056_UNSUPPORTED_ACCEPTANCE_MODE")?;
         let profile = create_profile()?;
+        println!("IDE_G03_WINDOWS_ACL_STAGE=profile_created");
         let package = sid_string(profile.sid)?;
         let user = host_user_sid()?;
         let stage = local_state(&profile)?.join("ide056-native-acl");
@@ -492,10 +509,13 @@ mod native {
             seal(path, &user, &package, false)?;
         }
         seal(&output, &user, &package, true)?;
+        println!("IDE_G03_WINDOWS_ACL_STAGE=owner_and_dacl_sealed");
         let audited =
             inspect_ide056_readonly_tree(&source_dir, profile.sid).map_err(|e| fail(e.code()))?;
         ensure(audited == 2, "IDE056_SOURCE_ACL_AUDIT_NOT_EXACT")?;
+        println!("IDE_G03_WINDOWS_ACL_STAGE=independent_source_acl_accepted");
         run_probe(&exe, &stage, &source, &output, &profile)?;
+        println!("IDE_G03_WINDOWS_ACL_STAGE=native_child_verified");
         ensure(
             fs::read(&source)? == b"immutable-acl-source",
             "IDE056_SOURCE_CHANGED_AFTER_CHILD",

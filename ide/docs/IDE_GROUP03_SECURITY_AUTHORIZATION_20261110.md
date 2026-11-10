@@ -106,3 +106,33 @@ pinned frontend/Tauri/NSIS/Debian release graph, and does not grant code
 execution in the installed IDE. A separate audited and committed Cargo
 lock will be required if these test crates become distributed products.
 One combined exact-head native group is required after this correction.
+
+## Windows AppContainer source-owner defect and narrow repair
+
+[First real Group 3 Windows run 42855823301](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42855823301),
+exact source `d304bb8cddb549ba8f950be68043c450ee465789`: 100 genuine Windows supervisor tests **PASS**,
+but test-only AppContainer example returned
+`SUPERVISOR_OS_CONTAINMENT_NOT_VERIFIED` before printing any positive
+kernel ACL receipts. The existing `inspect_staged_readonly_tree`
+requires the *exact host TokenUser SID* as owner and a protected DACL.
+On hosted administrator Windows accounts, freshly staged test files may
+inherit the Administrators group as owner. The fixture set only the DACL,
+not the owner. This is a real mismatch between fixture setup and its
+mandatory native attestation; the original single generic error does
+not by itself prove the precise failing step.
+
+Repair: disposable positive fixture now resolves that exact reviewed
+host TokenUser SID through native Win32, sets OWNER + protected DACL
+together with `SetNamedSecurityInfoW` on its staged source, executable
+and private output; fails if exact owner cannot be applied. The
+independent source ACL observer, low-integrity child, denied
+WRITE_DAC/WRITE_OWNER/read-only source, private output and Job checks
+are unchanged. Fixed-category stage markers distinguish profile
+creation, exact owner+DACL sealing, independent audit, native child,
+with **no paths/secrets** in logs. Production installed app never
+enables this test feature and `NoContainment` denial stays intact.
+
+Require a new native Windows run to prove the result; otherwise keep
+the AppContainer gate OPEN. Windows SCM service loss native observer
+already passed at the first run, but separate host-crash and original
+Job proof must be inspected before positive acceptance.
