@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 866,
+  "trackedFileCount": 868,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -1640,6 +1640,10 @@
       "blob": "221ee8cf7cb216d433666ffc27655b6cab448d99"
     },
     {
+      "path": "lu-desktop/tests/p0-native-intent.test.mjs",
+      "blob": "db04a97e39f3fd70cc3fd804b5bc3e8600d00a32"
+    },
+    {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
       "blob": "1f7cbf42ddacaa224d0eed8aca695157abee1b45"
     },
@@ -1825,7 +1829,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "7635e3dfbede0de88a3abc4bcebd47e905f68968"
+      "blob": "21af6b6899d8f512e109ed119285ec9a28523faf"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1842,6 +1846,10 @@
     {
       "path": "lu-desktop/web/message_revisions.mjs",
       "blob": "a9de257bde90ba5a6f0a1930e0faf63be80097a0"
+    },
+    {
+      "path": "lu-desktop/web/native_intent.mjs",
+      "blob": "aa33fa16d006ce808c7f93b36e8fe9cf2af4f52d"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",

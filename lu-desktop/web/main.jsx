@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
+import {routeExplicitLocalFolderRequest} from './native_intent.mjs';
 import {explainToolOutcome,explainReviewedContinuation} from './reviewed_tool_feedback.mjs';
 import {explainMemoryProjectionRecovery} from './reviewed_memory_recovery.mjs';
 import { fullEditChangeLines } from './edit_diff.mjs';
@@ -3795,10 +3796,15 @@ function App() {
     e.preventDefault();
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
     const input = prompt.trim();
-    const useWorkspaceTools=workspaceToolsNextSend;
     const usePlanDraft=planDraftNextSend;
     const useBrowserResearch=browserResearchNextSend;
     const useReviewedApp=reviewedAppNextSend;
+    // Explicit human folder requests may enter existing native read-only
+    // workspace mode. The path text is never authority; user selects an
+    // actual directory through Lu's fresh native OS folder picker.
+    const useWorkspaceTools=workspaceToolsNextSend ||
+      (!usePlanDraft&&!useBrowserResearch&&!useReviewedApp&&
+        routeExplicitLocalFolderRequest(input));
     if([Boolean(useWorkspaceTools),Boolean(useBrowserResearch),Boolean(useReviewedApp),Boolean(usePlanDraft)].filter(Boolean).length>1){
       setError('Choose only one native workspace, reviewed app or Browser mode for this turn.');return;
     }
