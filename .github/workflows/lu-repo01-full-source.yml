@@ -848,6 +848,19 @@ jobs:
             done
           fi
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib agent_memory_reasoning::tests -- --nocapture 2>&1 | tee phase3-evidence/agent-memory.log
+      - name: Reject malformed PowerShell installer sources before SDK/build work
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count){
+              foreach($error in $errors){Write-Host ($error.ToString())}
+              throw "NSIS_POWERSHELL_PARSER_ERROR: $file"
+            }
+          }
       - name: Provision real Windows NSIS 3.11
         if: runner.os == 'Windows'
         shell: pwsh
