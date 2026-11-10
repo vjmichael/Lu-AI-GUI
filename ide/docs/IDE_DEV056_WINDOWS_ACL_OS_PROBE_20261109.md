@@ -41,3 +41,23 @@ write/rename/delete/private-output outcomes PASS after seeing the
 actual Windows GitHub Actions exit status and log markers. Never
 promote if the CI example only compiled, or if the run fails after
 a positive marker.
+
+## Extended native child-owner and mandatory-integrity negative probes
+
+The disposable Windows child must additionally obtain its own native
+`TokenIntegrityLevel` from the OS and prove its integrity RID is **Low
+or lower**. It must independently request `WRITE_DAC` and
+`WRITE_OWNER` through `CreateFileW` against the original source
+file and receive **kernel denial** for each. A child that can alter its
+own source security descriptor must fail acceptance even if ordinary
+`fs::write` and rename failed. These assertions run inside the real
+restricted process, not against synthetic Windows ACL strings.
+
+The native source job emits a separate
+`IDE056_WINDOWS_REAL_APPCONTAINER_LOW_IL_AND_OWNER_CONTROL_DENIED=PASS`
+marker only after the child and source/output verification return
+success. It is NOT an assertion about an explicit file MIC SACL
+label, the actual installed protected SCM service, restart custody or
+physical one-use human approval. Those remain mandatory independent
+positive gates, and production Windows `uv_sync_offline` stays
+`NoContainment` denied.

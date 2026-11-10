@@ -42,6 +42,13 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertIn("key(\"Return\")", fixture)
         self.assertIn('native_key = ("Return", "alt+s", "alt+o", "Return")[attempt]', fixture)
         self.assertIn("P04_GTK_NATIVE_CONFIRM_KEY=",fixture)
+        self.assertIn("def _native_accept_button_from_visible_chooser(attempt):", fixture)
+        self.assertIn("P04_GTK_NATIVE_ACTION_ROW=", fixture)
+        self.assertIn("if _native_accept_button_from_visible_chooser(attempt):", fixture)
+        self.assertIn('caption in ("cancel", "close", "back", "previous", "up", "abort")', fixture)
+        self.assertIn("rect.x >= chooser.x + chooser.width * 0.55", fixture)
+        self.assertIn("if len(candidates) != 1:", fixture)
+
         # Do not return after the unreliable spatial action before trying
         # real native OS affirmative keys for the same confirmed GTK dialog.
         section=fixture.split("def _native_picker_confirm",1)[1].split(

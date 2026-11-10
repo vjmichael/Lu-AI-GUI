@@ -289,6 +289,110 @@ def _atspi_bounded_chooser_mouse(attempt):
     return False
 
 
+def _native_accept_button_from_visible_chooser(attempt):
+    """One bounded native button candidate, never an acceptance assertion.
+
+    GTK on installed Ubuntu exposed exactly ONE enabled visible OS button
+    outside the original textual allowlist. This fallback acts only on
+    a non-cancel button whose geometry is fully inside a visible native
+    file-chooser's lower-right action row. The caller must still prove a
+    closed modal AND the exact registered canonical project directory.
+    """
+    if attempt != 1 or not _native_chooser_still_open():
+        return False
+    try:
+        active = subprocess.check_output(
+            ["xdotool", "getactivewindow"], text=True, timeout=5).strip()
+        title = subprocess.check_output(
+            ["xdotool", "getwindowname", active], text=True, timeout=5
+        ).strip().casefold()
+        if not active.isdigit() or (
+                title not in ("open", "select", "select folder", "choose folder",
+                              "open folder", "choose a folder", "select a folder")
+                and not any(word in title for word in (
+                    "select folder", "choose folder", "open folder"))):
+            return False
+        dim = subprocess.check_output(
+            ["xdotool", "getdisplaygeometry"], text=True,
+            timeout=5).split()
+        if len(dim) != 2:
+            return False
+        width, height = map(int, dim)
+    except (OSError, ValueError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired):
+        return False
+    choosers = []
+    for node in elements():
+        try:
+            if "file chooser" not in (node.getRoleName() or "").casefold():
+                continue
+            state = node.getState()
+            if not (state.contains(pyatspi.STATE_VISIBLE) and
+                    state.contains(pyatspi.STATE_SHOWING)):
+                continue
+            rect = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            if (rect.width < 480 or rect.height < 340 or
+                rect.x < 0 or rect.y < 0 or
+                rect.x + rect.width > width or rect.y + rect.height > height):
+                continue
+            choosers.append(rect)
+        except Exception:
+            continue
+    candidates = []
+    for node in elements():
+        try:
+            if "button" not in (node.getRoleName() or "").casefold():
+                continue
+            if not _native_dialog_ancestor(node):
+                continue
+            state = node.getState()
+            if not (state.contains(pyatspi.STATE_VISIBLE) and
+                    state.contains(pyatspi.STATE_SHOWING) and
+                    state.contains(pyatspi.STATE_ENABLED)):
+                continue
+            caption = (node.name or "").strip().casefold()
+            # A Cancel/Close button must never be treated as an affirmative
+            # folder-selection action merely because it is visible.
+            if caption in ("cancel", "close", "back", "previous", "up", "abort"):
+                continue
+            rect = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            if rect.width < 32 or rect.height < 16:
+                continue
+            for chooser in choosers:
+                if (rect.x >= chooser.x + chooser.width * 0.55 and
+                    rect.y >= chooser.y + chooser.height * 0.71 and
+                    rect.x + rect.width <= chooser.x + chooser.width - 4 and
+                    rect.y + rect.height <= chooser.y + chooser.height - 3):
+                    candidates.append((rect.x + rect.width, rect.y, node, rect))
+                    break
+        except Exception:
+            continue
+    if len(candidates) != 1:
+        print("P04_GTK_NATIVE_ACTION_ROW=not_single_verified_button", flush=True)
+        return False
+    _, _, node, rect = candidates[0]
+    try:
+        action = node.queryAction()
+        for index in range(action.nActions):
+            if action.getName(index).casefold() in ("click", "press", "activate"):
+                if action.doAction(index):
+                    print("P04_GTK_NATIVE_ACTION_ROW=real_atspi_button_attempt",
+                          flush=True)
+                    return True
+    except Exception:
+        pass
+    try:
+        x = int(rect.x + rect.width / 2)
+        y = int(rect.y + rect.height / 2)
+        subprocess.run(["xdotool", "mousemove", "--sync", str(x), str(y)],
+                       check=True, timeout=5)
+        subprocess.run(["xdotool", "click", "1"], check=True, timeout=5)
+        print("P04_GTK_NATIVE_ACTION_ROW=real_x11_button_attempt", flush=True)
+        return True
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return False
+
+
 def _native_picker_confirm(attempt=0):
     # The previous real Ubuntu 26.04 run clicked an authentic AT-SPI
     # chooser action THREE times and the dialog never closed. A generic
@@ -356,6 +460,12 @@ def _native_picker_confirm(attempt=0):
     # showing. Every spatial attempt is inside an actual visible AT-SPI
     # file-chooser rectangle; a close without exact project registration
     # still fails the acceptance test.
+    # At the exact-directory confirmation attempt, prefer a real visible,
+    # enabled native action-row button over guessed GTK keyboard mnemonics.
+    # A dispatched action is never accepted without exact Tauri catalog and
+    # installed WebView project identity evidence.
+    if _native_accept_button_from_visible_chooser(attempt):
+        return
     # Send the *authentic* native GTK keyboard confirmation before trying
     # AT-SPI geometry. Earlier real runs never exercised the Alt+S mnemonic:
     # a successful mouse dispatch returned early even though the chooser

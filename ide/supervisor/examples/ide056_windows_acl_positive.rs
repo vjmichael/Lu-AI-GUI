@@ -26,14 +26,18 @@ mod native {
                 ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
                 SetNamedSecurityInfoW, SE_FILE_OBJECT,
             },
-            FreeSid, GetSecurityDescriptorDacl, GetTokenInformation,
+            FreeSid, GetSecurityDescriptorDacl, GetSidSubAuthority,
+            GetSidSubAuthorityCount, GetTokenInformation,
             Isolation::{
                 CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
             },
-            TokenIsAppContainer, TokenUser, DACL_SECURITY_INFORMATION,
-            PROTECTED_DACL_SECURITY_INFORMATION, PSID, SECURITY_CAPABILITIES, TOKEN_QUERY,
-            TOKEN_USER,
+            TokenIntegrityLevel, TokenIsAppContainer, TokenUser,
+            DACL_SECURITY_INFORMATION,
+            PROTECTED_DACL_SECURITY_INFORMATION, PSID, SECURITY_CAPABILITIES,
+            TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TOKEN_USER,
         },
+        Storage::FileSystem::{CreateFileW, FILE_SHARE_DELETE, FILE_SHARE_READ,
+                              FILE_SHARE_WRITE, OPEN_EXISTING},
         System::{
             Com::CoTaskMemFree,
             JobObjects::{
@@ -230,7 +234,57 @@ mod native {
         }
         ensure(result == 0, "IDE056_DACL_SEAL_DENIED")
     }
+    fn attest_low_integrity_token() -> R<()> {
+        let mut raw = ptr::null_mut();
+        ensure(unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } != 0
+            && !raw.is_null(), "IDE056_LOW_INTEGRITY_TOKEN_UNAVAILABLE")?;
+        let token = KernelHandle(raw);
+        let mut size = 0u32;
+        unsafe { GetTokenInformation(token.0, TokenIntegrityLevel, ptr::null_mut(), 0, &mut size); }
+        ensure(size >= size_of::<TOKEN_MANDATORY_LABEL>() as u32 && size < 4096,
+               "IDE056_LOW_INTEGRITY_SIZE_INVALID")?;
+        let mut data = vec![0usize; (size as usize).div_ceil(size_of::<usize>())];
+        ensure(unsafe { GetTokenInformation(token.0, TokenIntegrityLevel,
+                data.as_mut_ptr().cast(), size, &mut size) } != 0,
+               "IDE056_LOW_INTEGRITY_QUERY_FAILED")?;
+        let sid = unsafe { (*(data.as_ptr() as *const TOKEN_MANDATORY_LABEL)).Label.Sid };
+        ensure(!sid.is_null(), "IDE056_INTEGRITY_SID_MISSING")?;
+        let subcount = unsafe { GetSidSubAuthorityCount(sid) };
+        ensure(!subcount.is_null(), "IDE056_INTEGRITY_SID_INVALID")?;
+        let n = unsafe { *subcount } as u32;
+        ensure(n > 0 && n <= 8, "IDE056_INTEGRITY_SID_SUBAUTHORITY_DENIED")?;
+        let rid = unsafe { GetSidSubAuthority(sid, n - 1) };
+        ensure(!rid.is_null(), "IDE056_INTEGRITY_SID_RID_MISSING")?;
+        // AppContainer must never inherit a medium/high host token.
+        // Kernel MIC checks run in addition to DACL restrictions.
+        ensure(unsafe { *rid } <= 0x1000, "IDE056_APP_CONTAINER_NOT_LOW_IL")?;
+        Ok(())
+    }
+
+    fn attest_owner_rights_denied(source: &Path) -> R<()> {
+        // Explicitly probe the host-owned file from inside the AppContainer:
+        // owner implicit WRITE_DAC/WRITE_OWNER must not cross the package
+        // SID's limited access intersection.
+        let name = wide(source.as_os_str());
+        for access in [0x0004_0000u32, 0x0008_0000u32] {
+            let handle = unsafe {
+                CreateFileW(name.as_ptr(), access,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            ptr::null(), OPEN_EXISTING, 0, ptr::null_mut())
+            };
+            if handle != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+                if !handle.is_null() {
+                    unsafe { CloseHandle(handle); }
+                }
+                return Err(fail("IDE056_APPCONTAINER_CAN_MODIFY_OWNER_OR_DACL").into());
+            }
+        }
+        Ok(())
+    }
+
     fn child(source: &Path, output: &Path) -> R<()> {
+        attest_low_integrity_token()?;
+        attest_owner_rights_denied(source)?;
         ensure(
             fs::read(source)? == b"immutable-acl-source",
             "IDE056_CHILD_CANNOT_READ_SOURCE",
@@ -429,6 +483,7 @@ mod native {
         println!("IDE056_WINDOWS_REAL_APPCONTAINER_SOURCE_WRITE_RENAME_DELETE_DENIED=PASS");
         println!("IDE056_WINDOWS_REAL_APPCONTAINER_PRIVATE_OUTPUT_WRITE=PASS");
         println!("IDE056_WINDOWS_REAL_APPCONTAINER_JOB_AND_TOKEN=PASS");
+        println!("IDE056_WINDOWS_REAL_APPCONTAINER_LOW_IL_AND_OWNER_CONTROL_DENIED=PASS");
         println!("IDE056_HUMAN_APPROVAL=OPEN;SCM_RECOVERY=OPEN;MIC_ATTESTATION=OPEN");
         fs::remove_dir_all(stage)?;
         Ok(())

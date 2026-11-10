@@ -341,3 +341,38 @@ run is needed to establish whether GTK returns exactly the intended root.
 Independent physical human approval/refusal, OS MIC/owner rights and
 SCM custody remain OPEN. Windows production package execution still
 fails closed.
+
+## 2026-11-10 — exact-directory GTK chooser still needs a real action button
+
+[Installed run 42759605087](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42759605087)
+at `18951aa2c4dc4208595332c8cea808cad2ab7ff6`
+verified actual unsigned Debian packaging, license evidence, broken-upgrade
+recovery and GTK graphical launch. The prior wrong-parent selection was
+eliminated: the fixture reasserted **the exact target root** in GTK's
+native location field. However, native Return, Alt+S, Alt+O and Return
+all left the genuine visible file chooser open.
+The bounded AT-SPI inventory reported **two visible chooser nodes, four
+button roles, one enabled visible button and zero action names matching
+the original affirmative caption allowlist**.
+No Tauri host registration occurred in this run; the test correctly
+failed `native_folder_chooser_not_accepted`. This is not installer
+acceptance.
+
+The next test-fixture change only attempts one genuine **enabled,
+visible native action-row button** whose AT-SPI geometry is within
+the lower-right quadrant of a visible OS file chooser, with the X11
+active title separately checked. It explicitly denies Cancel/Close,
+requires a *unique* candidate and rejects missing/ambiguous native
+controls; fallback input is a bounded native AT-SPI action or X11 click
+on the exact verified button rectangle. Neither a dispatched action
+nor a closed dialog counts as registration without the exact canonical
+fixture root in the host catalog **and** the corresponding installed
+WebView row. Never synthesize the folder through IPC or alter the
+catalog directly.
+
+[Native source run 42759605100](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42759605100)
+passed **all 3 exact-head Windows/Ubuntu/delegated-Linux jobs** on the
+prior revision. The next run must compile and install both OS packages
+again before any GTK action-row outcome is promoted. Production Windows
+package execution remains fail-closed, with human/SCM/MIC release gates
+separately open.
