@@ -1796,6 +1796,13 @@ mod tests {
         assert_eq!(candidate.line, 2);
         assert_eq!(candidate.column, Some(4));
         assert_eq!(candidate.adapter_path, "/trusted/src/main.rs");
+        // This older fixture constructs a Stopped DAP phase without an
+        // event. Under native D6/G04 controls, supply the exact stopped
+        // thread identity that a real correlated OS-owned event provides.
+        #[cfg(feature = "dev046c-ci-control")]
+        {
+            s.last_stopped_thread = Some(1);
+        }
         s.stack_trace(1).unwrap();
         assert!(
             s.source_candidate().is_none(),

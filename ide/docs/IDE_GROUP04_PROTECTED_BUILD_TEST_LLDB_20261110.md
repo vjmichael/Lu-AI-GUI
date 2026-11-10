@@ -218,3 +218,7 @@ acceptance pass.
 ## Exact native Windows LLVM generator failure — runner repair
 
 [Four-lane run 42868873025](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42868873025) finished FAILURE. The pinned-LLVM source build obtained and overlaid LLVM18, but CMake's reviewed `Visual Studio 17 2022` generator reported `could not find any instance of Visual Studio` on hosted `windows-2025`. The separate fixed Windows lane had reached only the source-format gate. Both Group 4 Windows lanes now use `windows-2022` **without altering** LLVM 18.1.8, Rust 1.99.1, required VS17.14/MSVC14.44/SDK 10.0.26100.0, kernel containment, grant scope or checksum checks. The revised workflow must actually prove these pins exist; otherwise deny and keep native acceptance open.
+
+## Fifth exact native preflight — older fixture missing synthetic stopped-thread identity
+
+[Run 42870494783](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42870494783) Linux host feature-gated tests compiled and exercised 20/21 DAP cases successfully. The existing `dev045d_only_correlated_stack_can_supply_bounded_source_candidate` test fabricated `DapPhase::Stopped` without a stopped thread, then attempted a second `stackTrace`. The new Group 4 cross-thread protection correctly denied with `InvalidPhase`. That **synthetic fixture** now supplies the reviewed same-thread identity when opt-in D6/G04 controls are enabled. No production dispatch or thread check was relaxed; native worker acceptance must be rerun.
