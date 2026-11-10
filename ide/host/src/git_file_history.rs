@@ -124,3 +124,57 @@ impl IdeWorkspaceRegistry {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{IdeError, NativeDirectoryPicker};
+    use git2::Signature;
+    use std::{fs, path::PathBuf};
+    struct Picker(PathBuf);
+    impl NativeDirectoryPicker for Picker {
+        fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+    struct Fixture(PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    }
+    fn fixture() -> (Fixture, IdeWorkspaceRegistry, String) {
+        let base = std::env::temp_dir().join(format!("ide-g06a-blame-{:032x}", rand::random::<u128>()));
+        let dir = base.join("repo");
+        fs::create_dir_all(&dir).unwrap();
+        let repo = Repository::init(&dir).unwrap();
+        fs::write(dir.join("file.txt"), b"first line\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("file.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "initial file", &tree, &[]).unwrap();
+        drop(tree);
+        drop(index);
+        drop(repo);
+        let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
+        let id = registry.register_from_native_picker(&mut Picker(dir)).unwrap().unwrap().project_id;
+        (Fixture(base), registry, id)
+    }
+    #[test]
+    fn local_blame_and_file_history_do_not_execute_or_read_worktree_bytes() {
+        let (_tmp, registry, id) = fixture();
+        let evidence = registry.inspect_git_file_history(&id, "file.txt").unwrap();
+        assert_eq!(evidence.blame.len(), 1);
+        assert_eq!(evidence.blame[0].final_start_line, 1);
+        assert_eq!(evidence.commits.len(), 1);
+        assert_eq!(evidence.commits[0].summary, "initial file");
+        assert!(!evidence.worktree_read && !evidence.git_process_started && !evidence.network_queried);
+    }
+    #[test]
+    fn path_traversal_and_untracked_file_blame_are_denied() {
+        let (_tmp, registry, id) = fixture();
+        for path in ["../outside", ".git/config", "/etc/passwd", "untracked.rs", "file.txt/../file.txt"] {
+            assert!(registry.inspect_git_file_history(&id, path).is_err());
+        }
+    }
+}
