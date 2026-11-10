@@ -3,7 +3,8 @@
 from pathlib import Path
 import unittest
 from gtk_chooser_confirmation_policy import (
-    candidate_captions, retry_requires_native_fallback
+    candidate_captions, retry_requires_native_fallback,
+    exact_native_directory_row
 )
 
 
@@ -31,6 +32,20 @@ class ChooserPolicyTests(unittest.TestCase):
         for index in (-1, 4, 500):
             self.assertEqual(candidate_captions(["Open"], index), ())
         self.assertEqual(candidate_captions([None, 123, {"name": "Open"}], 0), ())
+
+    def test_native_directory_row_requires_exact_identity(self):
+        self.assertTrue(exact_native_directory_row(
+            "fixture-42", "", "fixture-42", "table cell"))
+        self.assertTrue(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "label"))
+        self.assertFalse(exact_native_directory_row(
+            "fixture-42-next", "", "fixture-42", "table cell"))
+        self.assertFalse(exact_native_directory_row(
+            "fixture-42", "", "fixture-42", "button"))
+        self.assertFalse(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "dialog"))
+        self.assertFalse(exact_native_directory_row(
+            "fixture-42", "", "../fixture-42", "table cell"))
 
     def test_actual_installed_atspi_script_requires_native_outcome(self):
         fixture = Path(__file__).with_name("wo8_linux_editor_atspi.py").read_text(
@@ -94,8 +109,11 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertIn("P04_NATIVE_GTK_REGISTRATION_RESULT=", fixture)
         selector=fixture.split("def select_native_folder():",1)[1].split(
             "def editor_project():",1)[0]
-        self.assertIn("parent_child_candidate = _select_real_fixture_directory()", selector)
-        self.assertIn("P04_GTK_SELECTION_ROUTE=verified_native_row", selector)
+        self.assertIn("parent_child_candidate = _native_parent_and_exact_child()", selector)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=verified_native_parent_child", selector)
+        self.assertIn("P04_GTK_DIRECTORY_ROW_INVENTORY=", fixture)
+        self.assertIn("if depth < 28:", fixture)
+        self.assertIn("exact_native_directory_row(", fixture)
         self.assertIn("P04_GTK_SELECTION_ROUTE=exact_native_location_alt_open", selector)
         self.assertIn("P04_GTK_SELECTION_ROUTE=exact_native_location_return", selector)
         self.assertIn("P04_GTK_PARENT_CHILD_RETRY=native_selection_attempt", selector)

@@ -90,3 +90,28 @@ dpkg injected post-install failure and previous-package restoration passed.
 - No installed Group 2 release/approval acceptance can be claimed from
   this red run. One consolidated current-head native installed group
   is required after the repairs; do not dispatch micro-CI.
+
+## GTK native selection repair — 2026-11-10, current Group 2 work
+
+The last true installed Ubuntu native test at SHA `61944a409e86`,
+[run 42771116544](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42771116544),
+reported no selected GTK directory and no enabled affirmative chooser action.
+The actual source was inspecting for the target folder row BEFORE navigating
+the native chooser to that folder's parent, so it could not find the real row
+in the default chooser location. That ordering defect is now corrected.
+GTK's real Ctrl+L navigation to the exact parent happens first. An expanded,
+bounded (28 levels / 12,000 elements) native AT-SPI subtree scan now checks
+exact accessible name OR exact accessible text under a visible genuine GTK
+chooser; it can select a nested native row via actual AT-SPI Selection
+or verified row keyboard focus. No fuzzy name match, guessed file path,
+Tauri IPC, browser JavaScript, raw path in logs or synthetic registration
+is permitted. If the GTK provider still hides the row, a bounded OS-native
+keyboard candidate is allowed but registration of a wrong folder or a stuck
+chooser remains a hard FAIL. Added pure negative tests for exact-name role
+matching and the required navigate-before-scan order.
+
+This is a **repair hypothesis** until new exact-SHA installed Linux GUI
+acceptance passes. Windows remains part of one consolidated OS gate at
+the final source SHA. Prior Windows result from `61944a409e86...` passed
+exact native NSIS install/edit/restart/conflict/uninstall and data retention;
+it cannot automatically certify the new SHA.

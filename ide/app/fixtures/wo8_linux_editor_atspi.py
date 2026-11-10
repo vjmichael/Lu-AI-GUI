@@ -14,7 +14,7 @@ import time
 
 import pyatspi
 
-from gtk_chooser_confirmation_policy import candidate_captions
+from gtk_chooser_confirmation_policy import candidate_captions, exact_native_directory_row
 
 EXE = os.environ["WO8_INSTALLED_EXE"]
 ROOT = Path(os.environ["WO8_FIXTURE_ROOT"]).resolve()
@@ -668,11 +668,11 @@ def _deep_visible_gtk_chooser_nodes():
                     state.contains(pyatspi.STATE_VISIBLE)):
                 continue
             stack = [(chooser, 0)]
-            while stack and seen < 6000:
+            while stack and seen < 12000:
                 node, depth = stack.pop()
                 seen += 1
                 yield node
-                if depth < 16:
+                if depth < 28:
                     stack.extend((child, depth + 1)
                                  for child in children_of(node))
         except Exception:
@@ -773,36 +773,86 @@ def _focus_gtk_file_list_via_bounded_pointer():
 
 
 def _select_real_fixture_directory():
-    # SELECT_FOLDER accepts a *selected* directory, not necessarily the
-    # directory currently visible. Navigate to its parent via GTK's native
-    # location entry, then select the exact ephemeral fixture child.
-    exact=0
+    """Select the exact visible GTK child *after* navigating to its parent.
+
+    A basename typed into the wrong focused control is not a selection.
+    Only act on an exact native AT-SPI name/text match under a visible file
+    chooser, and never accept this action without canonical host+UI proof.
+    """
+    exact = 0
+    native_rows = 0
+    named_matches = 0
+    text_matches = 0
     for node in _deep_visible_gtk_chooser_nodes():
         try:
-            if (node.name or "").strip() != ROOT.name or not _native_dialog_ancestor(node):
+            if not _native_dialog_ancestor(node):
                 continue
-            role=(node.getRoleName() or "").casefold()
-            if not any(kind in role for kind in ("row", "cell", "icon", "list item", "text", "label")):
+            states = node.getState()
+            if not (states.contains(pyatspi.STATE_VISIBLE) and
+                    states.contains(pyatspi.STATE_SHOWING)):
                 continue
-            exact+=1
+            role = (node.getRoleName() or "").casefold()
+            if any(kind in role for kind in ("row", "cell", "list item", "tree item", "icon")):
+                native_rows += 1
+            name = (node.name or "").strip()
+            text_value = ""
             try:
-                if node.queryComponent().grabFocus():
-                    key("space")
-                    print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_native_keyboard",flush=True)
-                    return True
+                accessible_text = node.queryText()
+                text_value = accessible_text.getText(0, accessible_text.characterCount).strip()
             except Exception:
                 pass
-            try:
-                parent=node.parent
-                index=node.getIndexInParent()
-                if parent is not None and index>=0 and parent.querySelection().selectChild(index):
-                    print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_atspi_selection",flush=True)
-                    return True
-            except Exception:
-                pass
+            if name == ROOT.name:
+                named_matches += 1
+            if text_value == ROOT.name:
+                text_matches += 1
+            if not exact_native_directory_row(name, text_value, ROOT.name, role):
+                continue
+            exact += 1
+            # GTK may expose a label nested within a selectable row/table.
+            # A real OS selection interface can exist several parents above
+            # the exact child text; inspect at most five native ancestors.
+            current = node
+            for _ in range(5):
+                try:
+                    parent = current.parent
+                    if parent is None:
+                        break
+                    index = current.getIndexInParent()
+                    if index >= 0 and parent.querySelection().selectChild(index):
+                        print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_atspi_selection",
+                              flush=True)
+                        return True
+                    current = parent
+                except Exception:
+                    try:
+                        current = current.parent
+                    except Exception:
+                        break
+            # Genuine GTK row/cell keyboard focus + Space is the bounded
+            # native alternative; a label alone must never select a path.
+            current = node
+            for _ in range(5):
+                try:
+                    target_role = (current.getRoleName() or "").casefold()
+                    if any(kind in target_role for kind in
+                           ("row", "cell", "list item", "tree item", "icon")):
+                        if current.queryComponent().grabFocus():
+                            key("space")
+                            print("P04_GTK_FIXTURE_DIRECTORY_SELECTED=real_native_keyboard",
+                                  flush=True)
+                            return True
+                    current = current.parent
+                    if current is None or not _native_dialog_ancestor(current):
+                        break
+                except Exception:
+                    break
         except Exception:
             continue
-    print("P04_GTK_FIXTURE_DIRECTORY_CANDIDATES="+str(exact),flush=True)
+    # Category-only observability; never expose project names or raw GTK text.
+    print("P04_GTK_DIRECTORY_ROW_INVENTORY=rows:" + str(min(native_rows, 12000)) +
+          ";exact_names:" + str(min(named_matches, 12000)) +
+          ";exact_text:" + str(min(text_matches, 12000)), flush=True)
+    print("P04_GTK_FIXTURE_DIRECTORY_CANDIDATES=" + str(exact), flush=True)
     return False
 
 
@@ -851,19 +901,19 @@ def select_native_folder():
         deny("ephemeral_fixture_was_already_registered_before_picker")
     activate("+ Open folder")
     time.sleep(1)
-    # Real installed run 42769749355 proved that GTK typeahead with ZERO
-    # accessible folder rows was not a selection: it closed the chooser
-    # with an unrelated registered project. Never treat a pointer inside
-    # the chooser or typed basename as a selected directory. Accept a
-    # parent-list candidate only when a real GTK row was selected.
-    parent_child_candidate = _select_real_fixture_directory()
+    # This call must happen BEFORE scanning for ROOT's selectable child row.
+    # The previous driver looked for it in the chooser's default directory,
+    # then tried an absolute location entry; the native row was never present.
+    # Parent navigation is a real GTK keyboard action, not an input shortcut
+    # to the IDE host, and selection still requires an exact native row.
+    parent_child_candidate = _native_parent_and_exact_child()
     if parent_child_candidate:
-        print("P04_GTK_SELECTION_ROUTE=verified_native_row", flush=True)
+        print("P04_GTK_SELECTION_ROUTE=verified_native_parent_child", flush=True)
     else:
-        # First attempt to commit the exact OS-native location entry with
-        # the chooser's own Open mnemonic BEFORE Enter can navigate into
-        # the target and inadvertently submit another current directory.
-        # No Tauri command, JS, direct catalog edit or hidden app state.
+        # A zero-row GTK result must not become acceptance just because a
+        # path was typed. One bounded native location-entry fallback is
+        # permitted, but exact host catalog and visible project row remain
+        # mandatory, and the test fails closed on a different root.
         key("ctrl+l")
         type_text(str(ROOT))
         key("alt+o")
