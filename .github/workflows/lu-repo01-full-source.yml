@@ -457,19 +457,7 @@ jobs:
           python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_real_qwen_comprehension.py -v \
             2>&1 | tee r00-capability-evidence/kiaf-protocol-unit-tests.log
           grep -Fq 'OK' r00-capability-evidence/kiaf-protocol-unit-tests.log
-      - name: Native ANSF original-message revision, linked reply and crash recovery
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
-            --lib chat_message_revisions::tests -- --nocapture \
-            2>&1 | tee r00-capability-evidence/native-ux-revisions.log
-          grep -Fq 'test result: ok. 5 passed; 0 failed;' r00-capability-evidence/native-ux-revisions.log
-          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
-            --lib chat_message_interactions::tests -- --nocapture \
-            2>&1 | tee r00-capability-evidence/native-ux-interactions.log
-          ! grep -Fq 'test result: FAILED.' r00-capability-evidence/native-ux-interactions.log
-      - name: Install real Linux desktop and FFprobe dependencies
+      - name: Install real Linux desktop and FFprobe dependencies before native Tauri tests
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -478,6 +466,30 @@ jobs:
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf ffmpeg
           test -x "$(command -v git)"
           test -x "$(command -v ffprobe)"
+      - name: Windows test-only runtime resources for native desktop Rust tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Native production Tauri ANSF original-message revision, linked reply and crash recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Portable native-chat fixture is not a current production crate:
+          # it no longer includes Lu's real reviewed worker, ancestry or Tauri.
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib chat_message_revisions::tests -- --nocapture \
+            2>&1 | tee r00-capability-evidence/native-ux-revisions.log
+          grep -Fq 'test result: ok. 5 passed; 0 failed;' r00-capability-evidence/native-ux-revisions.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib chat_message_interactions::tests -- --nocapture \
+            2>&1 | tee r00-capability-evidence/native-ux-interactions.log
+          ! grep -Fq 'test result: FAILED.' r00-capability-evidence/native-ux-interactions.log
       - name: Real loaded Qwen, two fresh reviewed Git approvals, ANSF/CCM memory and KIAF
         if: runner.os == 'Linux'
         shell: bash
