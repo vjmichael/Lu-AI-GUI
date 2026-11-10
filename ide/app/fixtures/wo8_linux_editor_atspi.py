@@ -486,6 +486,74 @@ def _focus_native_gtk_file_list():
     return False
 
 
+def _focus_gtk_file_list_via_bounded_pointer():
+    """Attempt actual GTK list focus only within a visible OS chooser.
+
+    AT-SPI on the installed Ubuntu 24.04 runner reported zero folder rows
+    and no focused list after 14 tabs. A bounded X11 click inside a verified
+    visible chooser's content region is an alternative native OS input, not
+    an assertion of selection or authority. Exact registration stays required.
+    """
+    try:
+        active = subprocess.check_output(
+            ["xdotool", "getactivewindow"], text=True, timeout=5).strip()
+        title = subprocess.check_output(
+            ["xdotool", "getwindowname", active], text=True,
+            timeout=5).strip().casefold()
+        allowed = ("open", "open folder", "select folder", "select a folder",
+                   "choose folder", "choose a folder", "select")
+        if not active.isdigit() or (
+                title not in allowed and not any(
+                    label in title for label in
+                    ("select folder", "choose folder", "open folder"))):
+            print("P04_GTK_FILE_LIST_POINTER=active_native_window_not_verified",
+                  flush=True)
+            return False
+        dimensions = subprocess.check_output(
+            ["xdotool", "getdisplaygeometry"], text=True,
+            timeout=5).split()
+        if len(dimensions) != 2:
+            return False
+        screen_w, screen_h = map(int, dimensions)
+        for chooser in elements():
+            try:
+                if "file chooser" not in (
+                        chooser.getRoleName() or "").casefold():
+                    continue
+                state = chooser.getState()
+                if not (state.contains(pyatspi.STATE_SHOWING) and
+                        state.contains(pyatspi.STATE_VISIBLE)):
+                    continue
+                rect = chooser.queryComponent().getExtents(
+                    pyatspi.DESKTOP_COORDS)
+                if (rect.width < 480 or rect.height < 340 or
+                    rect.x < 0 or rect.y < 0 or
+                    rect.x + rect.width > screen_w or
+                    rect.y + rect.height > screen_h):
+                    continue
+                # Constrained native chooser body, away from the title,
+                # sidebar, path entry, and bottom action buttons.
+                x = rect.x + int(rect.width * 0.63)
+                y = rect.y + int(rect.height * 0.48)
+                if not (rect.x + 200 < x < rect.x + rect.width - 40 and
+                        rect.y + 110 < y < rect.y + rect.height - 100):
+                    continue
+                subprocess.run(["xdotool", "mousemove", "--sync",
+                                str(x), str(y)], check=True, timeout=5)
+                subprocess.run(["xdotool", "click", "1"],
+                               check=True, timeout=5)
+                print("P04_GTK_FILE_LIST_POINTER=verified_native_chooser_interior_attempt",
+                      flush=True)
+                return True
+            except (AttributeError, ValueError, OSError,
+                    subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                continue
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        pass
+    print("P04_GTK_FILE_LIST_POINTER=no_verified_native_target", flush=True)
+    return False
+
+
 def _select_real_fixture_directory():
     # SELECT_FOLDER accepts a *selected* directory, not necessarily the
     # directory currently visible. Navigate to its parent via GTK's native
@@ -540,7 +608,8 @@ def _native_parent_and_exact_child():
     # levels. Scan only its bounded native subtree and focus the actual
     # file-list control before typing the exact ephemeral folder name.
     if not _focus_native_gtk_file_list():
-        return False
+        if not _focus_gtk_file_list_via_bounded_pointer():
+            return False
     if _select_real_fixture_directory():
         return True
     type_text(ROOT.name)

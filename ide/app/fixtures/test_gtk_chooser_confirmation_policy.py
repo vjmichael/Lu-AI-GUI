@@ -57,6 +57,13 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertIn("def _deep_visible_gtk_chooser_nodes():", fixture)
         self.assertIn("def _focus_native_gtk_file_list():", fixture)
         self.assertIn("P04_GTK_NATIVE_FILE_LIST_FOCUS=", fixture)
+        self.assertIn("def _focus_gtk_file_list_via_bounded_pointer():", fixture)
+        self.assertIn("P04_GTK_FILE_LIST_POINTER=verified_native_chooser_interior_attempt",
+                      fixture)
+        self.assertIn("if not _focus_gtk_file_list_via_bounded_pointer():", fixture)
+        self.assertIn("rect.width < 480 or rect.height < 340", fixture)
+        self.assertIn("rect.x + 200 < x < rect.x + rect.width - 40", fixture)
+
         self.assertIn("for node in _deep_visible_gtk_chooser_nodes():", fixture)
         self.assertIn("if not _focus_native_gtk_file_list():", fixture)
         self.assertIn(

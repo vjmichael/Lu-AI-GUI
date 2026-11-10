@@ -220,3 +220,30 @@ package execution path **still returns NoContainment before any
 AppContainer profile or approval**. Genuine independent human approval,
 refusal, timeout, stale-plan and signed-installed operator evidence
 remain separate, unaccepted Task 5 gates.
+
+## 2026-11-10 — exact-head GTK file-list-focus result and bounded repair
+
+At code SHA `50275787cbb6b75016f0de0a038fdbb01089f351`
+([native source 42753529668](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42753529668)),
+all Windows/Ubuntu/native delegated-Linux source/worker jobs **passed**,
+including the exact rustfmt correction to the Windows read-only ACL audit.
+
+[Installed run 42753529850](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42753529850)
+proved Windows unsigned NSIS installed acceptance **PASS**. The Linux
+Debian package, GTK GUI launch, license inventory and failed-upgrade
+rollback passed, but the native folder selection failed:
+`P04_GTK_FIXTURE_DIRECTORY_CANDIDATES=0` and
+`P04_GTK_NATIVE_FILE_LIST_FOCUS=not_visible_after_bounded_tabs`.
+The chooser remained visible after real Enter, Alt+S and Alt+O inputs.
+This is **not** a successful GTK project registration.
+
+The follow-up adds exactly one OS X11 pointer-focus fallback constrained
+to a verified active, visible GTK file-chooser rectangle with a large enough
+body. It only clicks its inner content area and then types the exact
+disposable fixture basename via real OS keyboard; it never claims the
+click selected the correct folder. Both **real chooser closure AND exact
+project registration in the installed WebView** remain mandatory. There is
+no unscoped click, JS/IPC, synthetic picker, or weakened acceptance gate.
+
+A new grouped Windows/Linux installed gate is required at the next source
+SHA. This does not promote human consent or Windows package execution.
