@@ -312,6 +312,60 @@ pub fn inspect_repository_baseline(
     })
 }
 
+/// Native, bounded Git ancestry observations for PLAN-02, never a model,
+/// remote repository, CI verdict, or Git mutation.
+#[derive(Clone,Debug,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct LocalBranchMembership{
+    pub name:String,pub commit:String,pub contained_in_selected_head:bool,
+}
+pub fn inspect_local_branch_membership(
+    root:&Path,executable:&Path,selected_head:&str
+)->Result<Vec<LocalBranchMembership>,String>{
+    if !(selected_head.len()==40||selected_head.len()==64)||
+       !selected_head.bytes().all(|b|b.is_ascii_hexdigit()){
+        return Err("Invalid selected HEAD identity for native ancestry".into())
+    }
+    let repo=ApprovedGit::open(root,executable)?;
+    let (current,limit)=repo.run(&["rev-parse".into(),"--verify".into(),"HEAD".into()],256)
+        .map_err(|e|format!("Cannot independently resolve current Git HEAD: {e:?}"))?;
+    if limit||String::from_utf8_lossy(&current).trim()!=selected_head{
+        return Err("Original Git HEAD changed between project scans".into())
+    }
+    let (raw,limit)=repo.run(&["for-each-ref".into(),
+        "--format=%(refname:short)%00%(objectname)".into(),
+        "refs/heads".into()],8192)
+        .map_err(|e|format!("Local branch listing refused: {e:?}"))?;
+    if limit{return Err("Local branch output exceeds bounded capture".into())}
+    let mut out=Vec::new();
+    for line in raw.split(|b|*b==b'\n').filter(|b|!b.is_empty()){
+        if out.len()>=12{return Err("More than 12 branch heads; partial topology only".into())}
+        let row=String::from_utf8(line.to_vec())
+            .map_err(|_|"Local branch identity contains invalid UTF-8")?;
+        let (name,tip)=row.trim_end_matches('\r').split_once('\0')
+            .ok_or("Malformed local branch ref record")?;
+        if name.is_empty()||name.len()>240||
+            name.split('/').any(|s|s.is_empty()||s=="."||s=="..")||
+            name.bytes().any(|b|b<32||b==127||b==b':'||b==b'\\')||
+            !matches!(tip.len(),40|64)||!tip.bytes().all(|b|b.is_ascii_hexdigit()){
+            return Err("Malformed local branch tip identity".into())
+        }
+        let ancestor=if tip==selected_head{true}else{
+            let output=repo.run(&["merge-base".into(),
+                "--".into(),tip.into(),selected_head.into()],256);
+            match output{
+                Ok((bytes,false))=>String::from_utf8_lossy(&bytes).trim()==tip,
+                _=>false,
+            }
+        };
+        out.push(LocalBranchMembership{
+            name:name.into(),commit:tip.into(),
+            contained_in_selected_head:ancestor,
+        });
+    }
+    Ok(out)
+}
+
 fn status(repo: &ApprovedGit, max_entries: u32) -> Result<ToolOutput, ToolFailure> {
     if !(1..=MAX_STATUS_ENTRIES).contains(&max_entries) {
         return Err(denied("INVALID_LIMIT", "invalid Git status entry limit"));
@@ -645,6 +699,58 @@ mod plan01_real_git_tests{
         assert!(detached.detached&&detached.branch.is_none());
         assert_eq!(detached.head_commit,clean.head_commit);
         assert!(!detached.dirty);
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod plan02_local_topology_tests{
+    use super::*;
+    use std::process::Command;
+    #[test]
+    #[ignore = "needs a genuine OS Git executable and isolated test repository"]
+    fn independent_merge_base_refuses_separate_branches_until_merged(){
+        let git=PathBuf::from(std::env::var_os("LU_PLAN01_TEST_GIT")
+            .expect("Native trusted Git fixture executable required"));
+        let root=std::env::temp_dir().join(format!(
+            "lu-plan02-git-{}-{:?}",std::process::id(),std::thread::current().id()));
+        let _=fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let run=|args:&[&str]|{
+            let status=Command::new(&git)
+                .args(["-C",root.to_str().unwrap()])
+                .args(["-c","user.name=Lu Test","-c","user.email=lu@example.invalid"])
+                .args(args)
+                .env("GIT_CONFIG_NOSYSTEM","1")
+                .env("GIT_CONFIG_GLOBAL",if cfg!(windows){"NUL"}else{"/dev/null"})
+                .env("GIT_TERMINAL_PROMPT","0")
+                .status().unwrap();
+            assert!(status.success(),"Original test Git failed");
+        };
+        run(&["init","-q","-b","main"]);
+        fs::write(root.join("base.txt"),"original").unwrap();
+        run(&["add","base.txt"]);
+        run(&["commit","-qm","base"]);
+        run(&["checkout","-qb","separate-feature"]);
+        fs::write(root.join("feature.txt"),"feature").unwrap();
+        run(&["add","feature.txt"]);
+        run(&["commit","-qm","feature"]);
+        run(&["checkout","-q","main"]);
+        fs::write(root.join("main.txt"),"main").unwrap();
+        run(&["add","main.txt"]);
+        run(&["commit","-qm","main"]);
+        let head=inspect_repository_baseline(&root,&git).unwrap().head_commit;
+        let before=inspect_local_branch_membership(&root,&git,&head).unwrap();
+        assert!(before.iter().any(|r|r.name=="main"&&r.contained_in_selected_head));
+        assert!(before.iter().any(|r|r.name=="separate-feature"&&
+            !r.contained_in_selected_head));
+        run(&["merge","--no-ff","-qm","merge feature","separate-feature"]);
+        let joined=inspect_repository_baseline(&root,&git).unwrap().head_commit;
+        let after=inspect_local_branch_membership(&root,&git,&joined).unwrap();
+        assert!(after.iter().any(|r|r.name=="separate-feature"&&
+            r.contained_in_selected_head));
+        assert!(inspect_local_branch_membership(&root,&git,&head).is_err(),
+            "A changed current HEAD must invalidate historical ancestry observations");
         fs::remove_dir_all(root).unwrap();
     }
 }

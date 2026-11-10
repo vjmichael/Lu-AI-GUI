@@ -68,3 +68,24 @@ test('PLAN-01 uses native picker and existing host-bound read-only Git',()=>{
   assert.doesNotMatch(scanner,/Command::new|reqwest|http:|https:|spawn\("llama/);
   assert.doesNotMatch(settings,/invoke\('lu_project_discover',\{.*path/);
 });
+
+test('PLAN-02 schema and native folder boundary remain host owned',()=>{
+  const screen=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+  const graph=readFileSync(new URL('../../src-tauri/lu-core/src/project_evidence_graph.rs',import.meta.url),'utf8');
+  const hostGraph=readFileSync(new URL('../src-tauri/src/project_evidence_desktop.rs',import.meta.url),'utf8');
+  assert.match(host,/mod project_evidence_desktop;/);
+  assert.match(host,/project_evidence_desktop::lu_project_evidence_graph,/);
+  assert.match(hostGraph,/caller\.label\(\)!="settings"/);
+  assert.match(hostGraph,/blocking_pick_folder\(\)/);
+  assert.match(hostGraph,/project_discovery_desktop::scan_selected/);
+  assert.match(hostGraph,/OpenFlags::SQLITE_OPEN_READ_WRITE/);
+  assert.match(hostGraph,/ansf_project_evidence_snapshots/);
+  assert.match(hostGraph,/INSERT OR IGNORE/);
+  assert.match(graph,/pub enum EvidenceState\{Reported,Inspected,IndependentlyVerified,Stale,Unknown\}/);
+  assert.match(graph,/PLAN02_FALSE_VERIFICATION/);
+  assert.match(graph,/PLAN02_SNAPSHOT_CHANGED/);
+  assert.match(screen,/invoke\('lu_project_evidence_graph'\)/);
+  assert.match(screen,/PLAN-03 classifier, PLAN-04 GGUF task synthesis/);
+  assert.doesNotMatch(hostGraph,/Command::new|reqwest|git fetch|model\.infer|run_plan/);
+  assert.doesNotMatch(screen,/invoke\('lu_project_evidence_graph',\{.*root/);
+});
