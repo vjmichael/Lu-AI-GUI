@@ -11,11 +11,15 @@ test('secondary Tauri windows have fixed native labels/paths and cannot open arb
   assert.match(rust,/fn auxiliary_window_spec\(caller:&str,kind:&str\)/);
   assert.match(rust,/\("main","settings"\)/);
   assert.match(rust,/\("main"\|"settings","model-library"\)/);
-  assert.match(rust,/WebviewUrl::App\(spec\.query\.into\(\)\)/);
+  assert.match(rust,/WebviewUrl::App\(spec\.asset\.into\(\)\)/);
+  assert.match(rust,/asset:"index.html"/);
+  assert.doesNotMatch(rust,/index\.html\?lu-window=/);
   assert.match(rust,/fn lu_close_aux_window\(caller:tauri::WebviewWindow\)/);
   assert.deepEqual(cap.windows,['main','settings','model-library']);
 });
 test('native windows mount instead of Chat App and keep distinct focus, no background worker effects',()=>{
+  assert.match(chat,/getCurrentWindow\(\)\.label/);
+  assert.match(chat,/window\.__TAURI_INTERNALS__/);
   assert.match(chat,/luWindow==='settings'\?<SettingsWindow\/>/);
   assert.match(chat,/luWindow==='model-library'\?<ModelLibraryWindow\/>:<App\/>/);
   assert.match(windows,/These roots mount INSTEAD of App/);

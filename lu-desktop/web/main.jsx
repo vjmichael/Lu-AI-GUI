@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
 // Host classifies original user intent; no frontend filesystem routing.
@@ -6140,7 +6141,11 @@ function App() {
 
 // Fixed, host-created native window URLs isolate Settings/Model Library from
 // App() chat effects, generation event handlers, queues, model prompts and drafts.
-const luWindow=new URLSearchParams(window.location.search).get('lu-window');
+// Installed windows use an authenticated Tauri label, not a query parameter
+// on an internal asset URL. Browser-only previews retain their query fixture.
+const luWindow=window.__TAURI_INTERNALS__
+  ? getCurrentWindow().label
+  : new URLSearchParams(window.location.search).get('lu-window');
 createRoot(document.getElementById('root')).render(
   luWindow==='settings'?<SettingsWindow/>:
   luWindow==='model-library'?<ModelLibraryWindow/>:<App/>

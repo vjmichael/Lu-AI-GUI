@@ -49,7 +49,7 @@ function Save-UIA-Failure([System.Windows.Automation.AutomationElement]$owner,[s
     $max=[Math]::Min(500,$items.Count)
     for($i=0;$i -lt $max;$i++){
       try{
-        $el=$items.Item($i)
+        $el=$items[$i]
         $sample.Add([ordered]@{
           name=$el.Current.Name; controlType=[string]$el.Current.ControlType.ProgrammaticName
           automationId=$el.Current.AutomationId; className=$el.Current.ClassName
@@ -66,13 +66,26 @@ function Save-UIA-Failure([System.Windows.Automation.AutomationElement]$owner,[s
       phase=$phase; inspectedCount=$items.Count; capturedCount=$sample.Count
       expectedProcessId=[int64]$script:process.Id
       ownerHandle=[int64]$owner.Current.NativeWindowHandle
-      ownerTitle=$owner.Current.Name; elements=@($sample)
+      ownerTitle=$owner.Current.Name; elements=$sample.ToArray()
     }
     $evidence|ConvertTo-Json -Depth 6 |
       Set-Content -LiteralPath (Join-Path $EvidenceDir ("uia-"+$safe+".json")) -Encoding UTF8
     $report.errors=@($report.errors)+@("UIA tree captured for "+$phase)
   }catch{
     $report.errors=@($report.errors)+@('UIA diagnostic failed: '+$_.Exception.Message)
+    # Preserve the authenticated owner when enumeration fails; this is only
+    # a diagnostic, not a substitute for a missing accessible child.
+    try {
+      [ordered]@{
+        phase=$phase; diagnostic='SUBTREE_UNAVAILABLE'
+        expectedProcessId=[int64]$script:process.Id
+        ownerTitle=$owner.Current.Name
+        ownerHandle=[int64]$owner.Current.NativeWindowHandle
+        error=$_.Exception.Message
+      }|ConvertTo-Json -Depth 4 |
+        Set-Content -LiteralPath (Join-Path $EvidenceDir ("uia-"+$safe+".json")) -Encoding UTF8
+    }catch{}
+
   }
   try {
     $report.errors=@($report.errors)+@(

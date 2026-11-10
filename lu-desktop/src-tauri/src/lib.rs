@@ -8382,23 +8382,26 @@ fn lu_observe_capture_available()->bool{
     { false }
 }
 
+// Both secondary windows reuse the exact same packaged index.html that the
+// main installed WebView2 already loads. Role selection is by Tauri's native
+// window label, not an app-asset URL query which produced a blank white window.
 // The two secondary UI surfaces use fixed, host-created Tauri WebviewWindows.
 // Neither a model nor a renderer-supplied URL/label can create a new window.
 // The main chat React component never mounts in these secondary roots.
 #[derive(Clone,Copy)]
 struct AuxiliaryWindowSpec{
-    label:&'static str,title:&'static str,query:&'static str,
+    label:&'static str,title:&'static str,asset:&'static str,
     width:f64,height:f64,
 }
 fn auxiliary_window_spec(caller:&str,kind:&str)->Option<AuxiliaryWindowSpec>{
     match (caller,kind){
         ("main","settings")=>Some(AuxiliaryWindowSpec{
             label:"settings",title:"Lu — Settings",
-            query:"index.html?lu-window=settings",width:1050.0,height:760.0
+            asset:"index.html",width:1050.0,height:760.0
         }),
         ("main"|"settings","model-library")=>Some(AuxiliaryWindowSpec{
             label:"model-library",title:"Lu — Model Library",
-            query:"index.html?lu-window=model-library",width:1160.0,height:780.0
+            asset:"index.html",width:1160.0,height:780.0
         }),
         _=>None,
     }
@@ -8413,7 +8416,7 @@ fn lu_open_aux_window(
         return existing.set_focus().map_err(|_|"Cannot focus native Lu window".into());
     }
     tauri::WebviewWindowBuilder::new(
-        &app,spec.label,tauri::WebviewUrl::App(spec.query.into())
+        &app,spec.label,tauri::WebviewUrl::App(spec.asset.into())
     ).title(spec.title)
      .inner_size(spec.width,spec.height)
      .min_inner_size(720.0,540.0)
@@ -8519,10 +8522,10 @@ mod auxiliary_window_tests{
     fn windows_are_fixed_labels_and_have_no_renderer_selected_urls(){
         let settings=auxiliary_window_spec("main","settings").unwrap();
         assert_eq!(settings.label,"settings");
-        assert_eq!(settings.query,"index.html?lu-window=settings");
+        assert_eq!(settings.asset,"index.html");
         let library=auxiliary_window_spec("settings","model-library").unwrap();
         assert_eq!(library.label,"model-library");
-        assert_eq!(library.query,"index.html?lu-window=model-library");
+        assert_eq!(library.asset,"index.html");
         assert!(auxiliary_window_spec("model-library","settings").is_none());
         assert!(auxiliary_window_spec("settings","settings").is_none());
         assert!(auxiliary_window_spec("main","https://evil.example").is_none());

@@ -42,7 +42,8 @@ fn hf_p05_real_network_download_cancel_resume_publish_sha(){
         std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
     fs::create_dir(&root).unwrap();
     let first="hflivenonce0000001";let second="hflivenonce0000002";
-    for id in [first,second]{fs::create_dir(root.join(id)).unwrap();}
+    let interrupted="hflivenonce0000003";
+    for id in [first,second,interrupted]{fs::create_dir(root.join(id)).unwrap();}
     let cancelled=AtomicBool::new(true);
     assert_eq!(download_approved_part(
         &curl,&plan,&root.join(first).join("received.part"),0,&cancelled,|_|{},
@@ -72,6 +73,48 @@ fn hf_p05_real_network_download_cancel_resume_publish_sha(){
     assert_eq!(proof.sha256,format!("{:x}",Sha256::digest(fs::read(&original.file).unwrap())));
     assert_eq!(publish_verified_part(&root,second,&plan,&running),
         Err(TransferError::ReadbackMismatch));
+    // On Linux, throttle only this TEST OWNED forwarding wrapper so the
+    // real HTTPS curl child is demonstrably in flight before cancellation.
+    // The production Lu client remains the original independently pinned
+    // executable; this wrapper is never staged or approved for users.
+    #[cfg(unix)]
+    {
+        use std::{os::unix::fs::PermissionsExt,sync::atomic::Ordering};
+        let shell_curl=curl.to_str().expect("Test curl must be UTF-8");
+        assert!(!shell_curl.contains('\''));
+        let throttle=root.join("ci-test-throttled-curl");
+        fs::write(&throttle,format!(
+            "#!/bin/sh\nexec '{}' --limit-rate 32768 \"$@\"\n",shell_curl
+        )).unwrap();
+        let mut permissions=fs::metadata(&throttle).unwrap().permissions();
+        permissions.set_mode(0o700);fs::set_permissions(&throttle,permissions).unwrap();
+        let part_path=root.join(interrupted).join("received.part");
+        let midflight_cancel=AtomicBool::new(false);
+        let mut witnessed_bytes=false;
+        assert_eq!(download_approved_part(
+            &throttle,&plan,&part_path,0,&midflight_cancel,|size|{
+                if size>0 && size<plan.expected_bytes{
+                    witnessed_bytes=true;
+                    midflight_cancel.store(true,Ordering::Release);
+                }
+            }
+        ),Err(TransportError::Cancelled));
+        assert!(witnessed_bytes,"Only genuine live streamed bytes may trigger cancellation");
+        let stopped_bytes=fs::metadata(&part_path).unwrap().len();
+        assert!(stopped_bytes>0&&stopped_bytes<plan.expected_bytes);
+        let fresh_process_consent=AtomicBool::new(false);
+        let restarted=download_approved_part(
+            &curl,&plan,&part_path,stopped_bytes,&fresh_process_consent,|_|{}
+        ).expect("Fresh HTTPS 206 resume after an actually killed child must pass");
+        assert_eq!(restarted.http_code,206);
+        assert!(restarted.was_resumed);
+        let checked=publish_verified_part(
+            &root,interrupted,&plan,&fresh_process_consent
+        ).expect("Independently re-read complete cancelled-then-resumed source");
+        assert_eq!(checked.sha256,plan.sha256);
+        println!("HF_P05_CANCEL_MID_TRANSFER_RESTART_RESUME_VERIFIED bytes_before_cancel={} http=206 sha256={}",
+            stopped_bytes,checked.sha256);
+    }
     println!("HF_P05_REAL_NETWORK_VERIFIED repo={} revision={} bytes={} sha256={} http=200,206 cancel_before_spawn=PASS replay=DENIED",
         REPO,revision,plan.expected_bytes,plan.sha256);
     fs::remove_dir_all(root).unwrap();
