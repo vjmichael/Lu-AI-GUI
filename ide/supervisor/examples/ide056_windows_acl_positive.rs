@@ -26,18 +26,18 @@ mod native {
                 ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
                 SetNamedSecurityInfoW, SE_FILE_OBJECT,
             },
-            FreeSid, GetSecurityDescriptorDacl, GetSidSubAuthority,
-            GetSidSubAuthorityCount, GetTokenInformation,
+            FreeSid, GetSecurityDescriptorDacl, GetSidSubAuthority, GetSidSubAuthorityCount,
+            GetTokenInformation,
             Isolation::{
                 CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
             },
-            TokenIntegrityLevel, TokenIsAppContainer, TokenUser,
-            DACL_SECURITY_INFORMATION,
+            TokenIntegrityLevel, TokenIsAppContainer, TokenUser, DACL_SECURITY_INFORMATION,
             PROTECTED_DACL_SECURITY_INFORMATION, PSID, SECURITY_CAPABILITIES,
             TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TOKEN_USER,
         },
-        Storage::FileSystem::{CreateFileW, FILE_SHARE_DELETE, FILE_SHARE_READ,
-                              FILE_SHARE_WRITE, OPEN_EXISTING},
+        Storage::FileSystem::{
+            CreateFileW, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+        },
         System::{
             Com::CoTaskMemFree,
             JobObjects::{
@@ -236,17 +236,33 @@ mod native {
     }
     fn attest_low_integrity_token() -> R<()> {
         let mut raw = ptr::null_mut();
-        ensure(unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } != 0
-            && !raw.is_null(), "IDE056_LOW_INTEGRITY_TOKEN_UNAVAILABLE")?;
+        ensure(
+            unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } != 0
+                && !raw.is_null(),
+            "IDE056_LOW_INTEGRITY_TOKEN_UNAVAILABLE",
+        )?;
         let token = KernelHandle(raw);
         let mut size = 0u32;
-        unsafe { GetTokenInformation(token.0, TokenIntegrityLevel, ptr::null_mut(), 0, &mut size); }
-        ensure(size >= size_of::<TOKEN_MANDATORY_LABEL>() as u32 && size < 4096,
-               "IDE056_LOW_INTEGRITY_SIZE_INVALID")?;
+        unsafe {
+            GetTokenInformation(token.0, TokenIntegrityLevel, ptr::null_mut(), 0, &mut size);
+        }
+        ensure(
+            size >= size_of::<TOKEN_MANDATORY_LABEL>() as u32 && size < 4096,
+            "IDE056_LOW_INTEGRITY_SIZE_INVALID",
+        )?;
         let mut data = vec![0usize; (size as usize).div_ceil(size_of::<usize>())];
-        ensure(unsafe { GetTokenInformation(token.0, TokenIntegrityLevel,
-                data.as_mut_ptr().cast(), size, &mut size) } != 0,
-               "IDE056_LOW_INTEGRITY_QUERY_FAILED")?;
+        ensure(
+            unsafe {
+                GetTokenInformation(
+                    token.0,
+                    TokenIntegrityLevel,
+                    data.as_mut_ptr().cast(),
+                    size,
+                    &mut size,
+                )
+            } != 0,
+            "IDE056_LOW_INTEGRITY_QUERY_FAILED",
+        )?;
         let sid = unsafe { (*(data.as_ptr() as *const TOKEN_MANDATORY_LABEL)).Label.Sid };
         ensure(!sid.is_null(), "IDE056_INTEGRITY_SID_MISSING")?;
         let subcount = unsafe { GetSidSubAuthorityCount(sid) };
@@ -268,13 +284,21 @@ mod native {
         let name = wide(source.as_os_str());
         for access in [0x0004_0000u32, 0x0008_0000u32] {
             let handle = unsafe {
-                CreateFileW(name.as_ptr(), access,
-                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                            ptr::null(), OPEN_EXISTING, 0, ptr::null_mut())
+                CreateFileW(
+                    name.as_ptr(),
+                    access,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    ptr::null(),
+                    OPEN_EXISTING,
+                    0,
+                    ptr::null_mut(),
+                )
             };
             if handle != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
                 if !handle.is_null() {
-                    unsafe { CloseHandle(handle); }
+                    unsafe {
+                        CloseHandle(handle);
+                    }
                 }
                 return Err(fail("IDE056_APPCONTAINER_CAN_MODIFY_OWNER_OR_DACL").into());
             }

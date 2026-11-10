@@ -829,9 +829,20 @@ def select_native_folder():
         deny("ephemeral_fixture_was_already_registered_before_picker")
     activate("+ Open folder")
     time.sleep(1)
-    key("ctrl+l")
-    type_text(str(ROOT))
-    key("Return")
+    # GTK SELECT_FOLDER requires an actual directory selection on some
+    # versions. Enter on an absolute path can navigate *inside* the folder
+    # without enabling the accept action; the real installed GTK run left
+    # the chooser open after four confirmations on that route. First use
+    # genuine GTK parent navigation and child selection/typeahead, then
+    # fall back to the original exact-path OS keyboard route.
+    parent_child_candidate = _native_parent_and_exact_child()
+    if parent_child_candidate:
+        print("P04_GTK_SELECTION_ROUTE=parent_child_native_candidate", flush=True)
+    else:
+        key("ctrl+l")
+        type_text(str(ROOT))
+        key("Return")
+        print("P04_GTK_SELECTION_ROUTE=exact_path_native_candidate", flush=True)
     time.sleep(1.4)
     # GTK SELECT_FOLDER may interpret the first accept as "navigate into
     # selected directory" instead of closing. Native CI proved the real
@@ -840,12 +851,25 @@ def select_native_folder():
     attempts = 0
     while _native_chooser_still_open() and attempts < 4:
         if attempts == 1:
-            # Genuine exact-head catalog evidence proved that the previous
-            # parent/typeahead fallback registered an UNRELATED directory
-            # after the chooser closed. Do not navigate to ROOT.parent and
-            # rely on an inaccessible GTK row or approximate X11 focus.
-            # Keep the trusted, disposable exact ROOT in GTK's native
-            # location field until the real OS Select/Accept action.
+            if parent_child_candidate:
+                # A previously accepted parent folder is not evidence that
+                # ROOT was selected. Re-enter the real chooser's parent and
+                # select its exact child again, rather than approving a
+                # potentially unrelated directory.
+                parent_child_candidate = _native_parent_and_exact_child()
+                print("P04_GTK_PARENT_CHILD_RETRY=native_selection_attempt",
+                      flush=True)
+            else:
+                key("ctrl+l")
+                type_text(str(ROOT))
+                key("Return")
+                print("P04_GTK_EXACT_PATH_SELECTION=exact_fixture_reasserted_in_native_chooser",
+                      flush=True)
+            time.sleep(0.6)
+        elif attempts == 2 and parent_child_candidate:
+            # The direct path remains a last bounded native GTK candidate.
+            # Neither a successful key dispatch nor dialog closure alone
+            # grants acceptance: the catalog must contain exactly ROOT.
             key("ctrl+l")
             type_text(str(ROOT))
             key("Return")
