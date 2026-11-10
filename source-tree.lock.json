@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 865,
+  "trackedFileCount": 866,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -1638,6 +1638,10 @@
     {
       "path": "lu-desktop/tests/native-reviewed-recovery/src/lib.rs",
       "blob": "221ee8cf7cb216d433666ffc27655b6cab448d99"
+    },
+    {
+      "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
+      "blob": "1f7cbf42ddacaa224d0eed8aca695157abee1b45"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
