@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 853,
+  "trackedFileCount": 860,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "1bac950e64d9be29b08fe2332df948e447023f5c"
+      "blob": "ca65220884676c76ed2583e0caf03f74c6035674"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -812,6 +812,10 @@
       "blob": "96a966100a2c85ea79461de80f953a37d07ff275"
     },
     {
+      "path": "docs/LU_PHASE3_MEMORY_DRIVEN_REASONING_20261109.md",
+      "blob": "ff95dc7bf844275dce2f84681acb94686420541b"
+    },
+    {
       "path": "docs/LU_R00_CAPABILITY_CONSOLIDATION_20261109.md",
       "blob": "0d6ea8e7fa09586b1c02e1b1cc04b462ce8c9986"
     },
@@ -1016,12 +1020,20 @@
       "blob": "38eb331e4e4e8efd7f2d83ec38eed2c5d38549c9"
     },
     {
+      "path": "lu-desktop/packaging/NSIS_CURRENT_DEV_PREVIEW.nsi",
+      "blob": "0df4da415c2babd7d3b0f9b4aafce71802a5c305"
+    },
+    {
       "path": "lu-desktop/packaging/NSIS_DEV_EVAL_NOT_ALPHA.nsi",
       "blob": "5c76758a30ad342269a7f9608b7372618fc1f718"
     },
     {
       "path": "lu-desktop/packaging/README_AGENT01G_PHYSICAL_WINDOWS_CPU_TEST.txt",
       "blob": "e6345a8e93d1b228117e64877f36db40b284c160"
+    },
+    {
+      "path": "lu-desktop/packaging/README_CURRENT_DEV_PREVIEW.txt",
+      "blob": "03a0ecf25a0770e7dad6b36ffe8d91b2454c8576"
     },
     {
       "path": "lu-desktop/packaging/README_NOT_ALPHA.txt",
@@ -1106,6 +1118,10 @@
     {
       "path": "lu-desktop/src-tauri/src/agent_memory_handoff.rs",
       "blob": "30cc1dea2e4347ca68b15226b66af863baf7874b"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/agent_memory_reasoning.rs",
+      "blob": "57f59c5a98968c5a6d762e5c00b5943e52ef911a"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_admission.rs",
@@ -1221,7 +1237,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "f6b16a73dc31503aac6b5c3512b486d7c34792ed"
+      "blob": "b89e69661c747ed590bffb8538ac2f07bc2893f2"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1309,7 +1325,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_desktop.rs",
-      "blob": "d5fc32a8348cb6188364442e75d9b44d47ea0e91"
+      "blob": "321d20b54d055a998e3622509d02108dc24c6684"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_recovery.rs",
@@ -1636,6 +1652,10 @@
       "blob": "0fb6e7deff3f97a824f82f9cc2e292fe3ab6ca02"
     },
     {
+      "path": "lu-desktop/tests/phase3-agent-memory.test.mjs",
+      "blob": "f20c54e4949223746dca1347902f128c726a7c55"
+    },
+    {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
       "blob": "5f7a2ff0b8fc2d326e3e030d03f4e6289e6b6935"
     },
@@ -1820,6 +1840,10 @@
       "blob": "98d2494978afa3939836b12ab84e5732e1cbd135"
     },
     {
+      "path": "scripts/build-current-windows-nsis.ps1",
+      "blob": "2a2c585b5df01cb06415c21f457a7b2ae4e8e720"
+    },
+    {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
       "blob": "48bc8661a6f547471ac3c9899eca258e5ad4c5fa"
     },
@@ -1898,6 +1922,10 @@
     {
       "path": "scripts/r00-native-windows-versioned-rollback.ps1",
       "blob": "978cb05963c52be9f4a617689c6d5049027f574d"
+    },
+    {
+      "path": "scripts/run-qwen38-27b-local.ps1",
+      "blob": "a30b6e1f97e6e046c1016109c1dee21057ab8b5b"
     },
     {
       "path": "scripts/source-identity.mjs",

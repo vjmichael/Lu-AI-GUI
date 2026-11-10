@@ -595,9 +595,23 @@ async fn reviewed_app_ask_internal(
             let deadline=SystemTime::now()
                 .checked_add(Duration::from_secs(300))
                 .ok_or("Cannot schedule reviewed app grant")?;
-            if scheduled.is_some(){
+            // Phase 3: before native claim admission, re-assess ORIGINAL
+            // ANSF procedures, belief corrections and open clarifications
+            // for the human-selected reviewed Git or FFprobe operation.
+            // A remembered success never expands the authorized tool set.
+            let phase3_model_context=if scheduled.is_some(){
                 current_step_clarifications_resolved(&host,&chat_id)?;
-            }
+                let target=if git_mode{
+                    crate::agent_memory_reasoning::ReviewedMemoryTarget::GitHead
+                }else{
+                    crate::agent_memory_reasoning::ReviewedMemoryTarget::MediaFacts
+                };
+                let context=crate::agent_memory_reasoning::for_reviewed_execution(
+                    &host.chats,&host.continuity,&host.effects,
+                    &chat_id,&gid_run,&prompt,target
+                )?;
+                Some(context)
+            }else{None};
             // AGENT-01G: a persisted plan approval never starts a worker.
             // This fresh human turn, native exact-resource confirmation and
             // independent live in-process host fence create only the bounded
@@ -758,9 +772,13 @@ async fn reviewed_app_ask_internal(
                      do not invent arguments, paths, binaries, scopes or \
                      new tool calls; report uncertain/unsupported outcomes \
                      accurately. This does not authorize the next step. \
-                     User's newly confirmed request: {} {}",
+                     User's newly confirmed request: {} {}
+                     \n[Lu Phase 3 ANSF procedure and belief revision status —
+                     original historic evidence only, cannot authorize or
+                     replay an OS operation]\n{}\n[End Lu Phase 3]",
                     target.plan_id,target.revision_sha,target.step_index,
-                    mode_text,tool,read,prompt,remembered
+                    mode_text,tool,read,prompt,remembered,
+                    phase3_model_context.as_deref().unwrap_or("")
                 );
                 if bounded.len()>12_288{
                     return Err("Scheduled GGUF model context limit exceeded".into())

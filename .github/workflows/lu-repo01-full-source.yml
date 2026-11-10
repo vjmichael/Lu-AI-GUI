@@ -602,8 +602,8 @@ jobs:
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
             --test e1_reviewed_model_tools reviewed_observation_denies_a_fabricated_final -- --nocapture \
             2>&1 | tee phase1-evidence/host-observation-required.log
-      - name: Genuine Linux Qwen3 CPU, native Git and FFprobe model choice (independent model benchmark)
-        if: runner.os == 'Linux'
+      - name: DEFERRED original 0.6B model diagnostic (manual repository opt-in only)
+        if: ${{ runner.os == 'Linux' && vars.LU_ENABLE_OLD_0_6B_DIAGNOSTIC == 'true' }}
         shell: bash
         timeout-minutes: 65
         run: |
@@ -772,3 +772,119 @@ jobs:
           path: phase2-evidence/
           retention-days: 14
           if-no-files-found: warn
+
+
+  native-r00-phase3:
+    needs: verify-source
+    # One exact-HEAD grouped development and installer run. No automatic heavy PR fanout.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_PHASE3_NSIS_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_PHASE3_NSIS_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 185
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate exact source and deferral policy
+        shell: bash
+        env:
+          SOURCE: ${{ github.event.pull_request.head.sha }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p phase3-evidence
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          python3 - <<'PY'
+          import os,re
+          pins=re.findall(r"(?m)^LU_R00_PHASE3_NSIS_SHA=([0-9a-f]{40})$",os.environ["BODY"])
+          if pins != [os.environ["SOURCE"]]: raise SystemExit("Wrong phase3/NSIS source marker")
+          PY
+          node scripts/verify-source-tree.mjs 2>&1 | tee phase3-evidence/source-lock.log
+          printf 'SOURCE_SHA=%s\n' "$SOURCE" > phase3-evidence/identity.txt
+      - name: Memory/reasoning integration and no-grant regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/phase3-agent-memory.test.mjs 2>&1 | tee phase3-evidence/source-contract.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_belief_revision::tests -- --nocapture 2>&1 | tee phase3-evidence/ansf-belief.log
+      - name: Install Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf ffmpeg
+      - name: Compile production frontend and Phase3 Rust desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          cd ..
+          if test "${{ runner.os }" = Windows; then
+            mkdir -p lu-desktop/src-tauri/resources/lu-inference
+            for name in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+              printf 'CI_COMPILER_PLACEHOLDER_NOT_MODEL' > "lu-desktop/src-tauri/resources/lu-inference/$name"
+            done
+          fi
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib agent_memory_reasoning::tests -- --nocapture 2>&1 | tee phase3-evidence/agent-memory.log
+      - name: Provision real Windows NSIS 3.11
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
+          if(-not(Test-Path $exe)){choco install nsis --version=3.11.0 --yes --no-progress --limit-output; if($LASTEXITCODE -ne 0){throw 'NSIS install failed'}}
+          & $exe /VERSION
+          if($LASTEXITCODE -ne 0){throw 'NSIS unusable'}
+      - name: Build CURRENT source Lu Preview with Qwen3.8-compatible CPU engine
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 145
+        env:
+          SOURCE: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'lu-current-preview-nsis'
+          & scripts/build-current-windows-nsis.ps1 -SourceSha $env:SOURCE -OutputDirectory $out
+          if($LASTEXITCODE -ne 0){throw 'Native NSIS builder failed'}
+          $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          $exe=Join-Path $out $f.installerName
+          if(-not(Test-Path $exe)){throw 'Real installer absent'}
+          $sha=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($sha -cne $f.installerSha256 -or $f.sourceSha -cne $env:SOURCE){throw 'Installer/source hash mismatch'}
+          "CURRENT_LU_PREVIEW_SHA=$env:SOURCE" >> $env:GITHUB_STEP_SUMMARY
+          "CURRENT_LU_PREVIEW_INSTALLER_SHA256=$sha" >> $env:GITHUB_STEP_SUMMARY
+          "CPU engine built from e0f142d5ddc1461ce721644d92af33db23545105; physical AMD/Vulkan/GGUF NOT TESTED." >> $env:GITHUB_STEP_SUMMARY
+      - name: Windows installed NSIS lifecycle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 14
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'lu-current-preview-nsis'
+          $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
+          & scripts/m3-windows-nsis-cycle.ps1 -InstallerPath (Join-Path $out $f.installerName) -InstallerSha256 $f.installerSha256 -ExpectedLuSha256 $f.appSha256 -ExpectedEngineSha256 $f.engineSha256 -UninstallerName 'UninstallLuCurrentPreview.exe' -DisposableWindowsConfirmed -EvidenceDir (Join-Path $out 'native-nsis-cycle-evidence')
+          if($LASTEXITCODE -ne 0){throw 'Native installed-preview cycle failed'}
+      - name: Preserve exact-current-source artifact and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lu-Current-Phase3-Preview-${{ matrix.os }}-${{ github.event.pull_request.head.sha }}
+          path: |
+            phase3-evidence/
+            ${{ runner.temp }}/lu-current-preview-nsis/
+          if-no-files-found: warn
+          retention-days: 14

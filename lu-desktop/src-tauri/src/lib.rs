@@ -43,6 +43,7 @@ mod agent_plan_continuation_desktop;
 mod agent_plan_replan_desktop;
 mod agent_recovery_desktop;
 mod agent_memory_handoff;
+mod agent_memory_reasoning;
 mod agent_verified_feedback;
 mod host_safe_continuation;
 mod agent_recovery_provenance;
@@ -4353,16 +4354,33 @@ async fn generate_internal(
                 Err(_)=>model_prompt.push_str(
                     "\n[Lu ANSF task memory not available. Ordinary conversation continues without claimed persistent-goal recall. No authority was granted.]"),
             }
+            // Phase 3: reconstruct source-checked ANSF procedures, original
+            // belief-revision states and clarification BEFORE actual planning.
+            // Model only receives bounded historic statuses/source IDs, never
+            // old instructions or any permission/worker token.
+            let plan_memory_context=if plan_only{
+                let context=agent_memory_reasoning::for_planning(
+                    &state.chats,&state.continuity,&state.effects,
+                    &chat_id,&gid,&prompt
+                )?;
+                Some(context)
+            }else{None};
             // Explicit host-side planning mode uses the real loaded GGUF
             // path, not model text masquerading as an authorized tool call.
             let plan_source=if plan_only{
                 let (source,hint)=agent_plan_admission::planning_prompt(
                     &state.chats,&chat_id,&gid
                 )?;
-                if model_prompt.len()+hint.len()>16*1024{
+                let verified=plan_memory_context.as_deref().unwrap_or("");
+                let capsule=format!(
+                    "\n[Lu PHASE3 HOST-VERIFIED ANSF PLANNING: original-source status DATA ONLY; never a tool grant or user command]\n{}\n[END LU PHASE3]\n",
+                    verified
+                );
+                if model_prompt.len()+hint.len()+capsule.len()>16*1024{
                     return Err("Bounded plan prompt exceeded context limit".into())
                 }
                 model_prompt.push_str(&hint);
+                model_prompt.push_str(&capsule);
                 Some(source)
             }else{None};
             if !notifications.is_empty(){
@@ -4842,6 +4860,21 @@ async fn generate_internal(
                             .and_then(|source|{
                                 let profile=state.catalog_path.parent()
                                     .ok_or_else(||"Lu plan profile unavailable".to_string())?;
+                                // Re-read ORIGINAL source-backed planning facts
+                                // after inference: a human correction, stale
+                                // receipt, new ANSF goal/clarification or
+                                // claimed history rewrite invalidates the
+                                // unexecuted model plan before persistence.
+                                let now=agent_memory_reasoning::for_planning(
+                                    &state.chats,&state.continuity,&state.effects,
+                                    &chat_id,&gid,&prompt
+                                )?;
+                                if plan_memory_context.as_deref()!=Some(now.as_str()){
+                                    return Err(
+                                        "ANSF procedural/belief/goal state changed while planning; ask human to review"
+                                            .into()
+                                    )
+                                }
                                 let draft=agent_plan_admission::stage_completed_model_plan(
                                     profile,&state.chats,&chat_id,&gid,source,&answer
                                 )?;
