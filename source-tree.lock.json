@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 868,
+  "trackedFileCount": 869,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -198,6 +198,10 @@
     {
       "path": ".github/workflows/lu-memory-loop03b-native.yml",
       "blob": "5ce9770eb61c8a4d45e526a72c36c1d44aef6091"
+    },
+    {
+      "path": ".github/workflows/lu-p0-installed-ux-native.yml",
+      "blob": "351961e2ba1c179e1f069773ae46c73841567431"
     },
     {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
