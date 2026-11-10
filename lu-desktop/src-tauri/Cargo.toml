@@ -12,6 +12,9 @@ description = "Independent Lu-native Windows desktop, without Jan runtime depend
 # enable this feature for normal alpha, v1.0, or Vulkan production packaging.
 [features]
 physical_win_cpu_eval = []
+# Explicit separate CPU+Vulkan dual-engine current-preview package.
+# Requires physical_win_cpu_eval for independently pinned CPU SHA.
+dual_win_preview = ["physical_win_cpu_eval"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }

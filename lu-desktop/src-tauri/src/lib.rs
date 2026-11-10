@@ -122,10 +122,10 @@ const ENGINE_FILES: [(&str, &str, u64); 4] = [
 // The physical Windows acceptance installer uses a single source-built,
  // statically linked CPU engine with its SHA embedded at compilation. No
  // arbitrary operator or model-provided manifest can waive this digest.
- #[cfg(feature = "physical_win_cpu_eval")]
+ #[cfg(feature = "dual_win_preview")]
  const VULKAN_ENGINE_SHA256: &str = env!("LU_PREVIEW_VULKAN_ENGINE_SHA256");
 
- #[cfg(feature = "physical_win_cpu_eval")]
+ #[cfg(feature = "dual_win_preview")]
  fn runtime_engine_files() -> Vec<(&'static str, &'static str, u64)> {
      let cpu_bytes: u64 = env!("LU_01G_PHYSICAL_CPU_ENGINE_BYTES")
          .parse().expect("Build-time CPU engine byte count must be u64");
@@ -141,6 +141,12 @@ const ENGINE_FILES: [(&str, &str, u64); 4] = [
          ("llama-server.exe",ENGINE_SHA256,cpu_bytes),
          ("llama-server-vulkan.exe",VULKAN_ENGINE_SHA256,vulkan_bytes),
      ]
+ }
+ #[cfg(all(feature = "physical_win_cpu_eval",not(feature="dual_win_preview")))]
+ fn runtime_engine_files() -> Vec<(&'static str,&'static str,u64)> {
+     let bytes: u64=env!("LU_01G_PHYSICAL_CPU_ENGINE_BYTES")
+         .parse().expect("Legacy CPU engine bytes not u64");
+     vec![("llama-server.exe",ENGINE_SHA256,bytes)]
  }
  #[cfg(not(feature = "physical_win_cpu_eval"))]
  fn runtime_engine_files() -> Vec<(&'static str, &'static str, u64)> {
@@ -317,15 +323,15 @@ struct BackendOptionView{
 fn lu_model_backend_options(
     state:State<'_,Arc<DesktopState>>
 )->Result<Vec<BackendOptionView>,String>{
-    #[cfg(feature="physical_win_cpu_eval")]
+    #[cfg(feature="dual_win_preview")]
     let preference=preview_engine_choice::read_choice(
         state.catalog_path.parent().ok_or("Lu profile directory unavailable")?
     )?;
-    #[cfg(not(feature="physical_win_cpu_eval"))]
+    #[cfg(not(feature="dual_win_preview"))]
     let preference=preview_engine_choice::BackendChoice::Cpu;
-    #[cfg(feature="physical_win_cpu_eval")]
+    #[cfg(feature="dual_win_preview")]
     let bundled_dual=true;
-    #[cfg(not(feature="physical_win_cpu_eval"))]
+    #[cfg(not(feature="dual_win_preview"))]
     let bundled_dual=false;
     Ok(vec![
         BackendOptionView{
@@ -368,10 +374,10 @@ fn lu_model_backend_options(
 async fn lu_model_select_backend(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,backend:String
 )->Result<bool,String>{
-    #[cfg(not(feature="physical_win_cpu_eval"))]
+    #[cfg(not(feature="dual_win_preview"))]
     {let _=(app,state,backend);
         return Err("CPU/Vulkan switch requires the dual-engine Lu preview".into())}
-    #[cfg(feature="physical_win_cpu_eval")]
+    #[cfg(feature="dual_win_preview")]
     {
         let requested=preview_engine_choice::BackendChoice::from_id(&backend)?;
         let root=state.catalog_path.parent()
@@ -930,11 +936,11 @@ impl DesktopState {
         // The packaged preview has TWO separately source-pinned binaries.
         // The user chooses CPU/Vulkan in Settings and restarts Lu; the model
         // cannot choose an executable, filesystem path or backend grant.
-        #[cfg(feature = "physical_win_cpu_eval")]
+        #[cfg(feature = "dual_win_preview")]
         let selected_engine=preview_engine_choice::read_choice(&root)?;
-        #[cfg(not(feature = "physical_win_cpu_eval"))]
+        #[cfg(not(feature = "dual_win_preview"))]
         let selected_engine=preview_engine_choice::BackendChoice::Cpu;
-        #[cfg(feature = "physical_win_cpu_eval")]
+        #[cfg(feature = "dual_win_preview")]
         let (executable,selected_engine_sha,backend_label) = match selected_engine {
             preview_engine_choice::BackendChoice::Cpu=>(
                 engine_dir.join("llama-server.exe"),
@@ -945,7 +951,7 @@ impl DesktopState {
                 VULKAN_ENGINE_SHA256,"llama-vulkan-preview"
             )
         };
-        #[cfg(not(feature = "physical_win_cpu_eval"))]
+        #[cfg(not(feature = "dual_win_preview"))]
         let (executable,selected_engine_sha,backend_label)=(
             engine_dir.join("llama-server.exe"),ENGINE_SHA256,"llama-pinned"
         );

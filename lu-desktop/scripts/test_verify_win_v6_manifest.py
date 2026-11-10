@@ -28,7 +28,7 @@ class ManifestDecoderTests(unittest.TestCase):
             MANIFEST+b'\x00garbage',
             b'<?xml?><a/><a/>',
             b'\xff\xfe\x00',
-            MANIFEST[:-1],
+            MANIFEST.replace(b'</assembly>',b'</assembl>'),
             MANIFEST+b'\x00\x00\x00'
         ]:
             with self.subTest(size=len(invalid),end=invalid[-9:]):

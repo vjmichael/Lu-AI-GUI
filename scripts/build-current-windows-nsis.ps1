@@ -191,7 +191,7 @@ try{
   # build.rs/tauri-build already embeds the one reviewed Common Controls v6
   # Win32 manifest. Linking a second custom .res provably breaks MSVC with
   # CVT1100 duplicate RT_MANIFEST / LNK1123. The PE oracle below is mandatory.
-  & cargo rustc --release --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --features physical_win_cpu_eval --bin lu-desktop
+  & cargo rustc --release --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --features physical_win_cpu_eval,dual_win_preview --bin lu-desktop
   if($LASTEXITCODE -ne 0){throw 'Current exact-source Windows Rust build failed'}
   $app=Join-Path $repo 'lu-desktop/src-tauri/target/release/lu-desktop.exe'
   if(-not(Test-Path -LiteralPath $app -PathType Leaf)){throw 'Compiled Lu desktop EXE missing'}

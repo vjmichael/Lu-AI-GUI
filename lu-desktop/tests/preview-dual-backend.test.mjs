@@ -7,6 +7,9 @@ test('the current NSIS bundles two distinct source-built and SHA-pinned engines'
   const builder=read('../scripts/build-current-windows-nsis.ps1');
   const nsi=read('packaging/NSIS_CURRENT_DEV_PREVIEW.nsi');
   const host=read('src-tauri/src/lib.rs');
+  const cargo=read('src-tauri/Cargo.toml');
+  assert.match(cargo,/dual_win_preview = \["physical_win_cpu_eval"\]/);
+  assert.match(builder,/--features physical_win_cpu_eval,dual_win_preview/);
   assert.match(builder,/-DGGML_VULKAN=OFF/);
   assert.match(builder,/'-DGGML_VULKAN=ON'/);
   assert.match(builder,/LU_PREVIEW_VULKAN_ENGINE_SHA256=\$vkHash/);
