@@ -5,6 +5,7 @@ import csv
 import hashlib
 import importlib.util
 import io
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -127,6 +128,7 @@ class UpstreamIntakeTests(unittest.TestCase):
         with self.assertRaises(MODULE.Denied):
             self.check()
 
+    @unittest.skipUnless(os.name == "posix", "renaming over an open file is a POSIX-only hostile fixture")
     def test_original_file_handle_replacement_is_denied(self):
         # A path swapped while the read is underway cannot supply bytes
         # from a different inode even if its length and content match.
@@ -142,6 +144,24 @@ class UpstreamIntakeTests(unittest.TestCase):
                 replacement.replace(self.binary)
             return fd
         with mock.patch.object(MODULE.os, "open", side_effect=replaced):
+            with self.assertRaises(MODULE.Denied):
+                self.check()
+
+    def test_changed_open_handle_identity_is_rejected_on_both_platforms(self):
+        # Portable negative control: reject an unexpected file identity
+        # without depending on Windows allowing rename of a live handle.
+        from unittest import mock
+        real_fstat = MODULE.os.fstat
+        def substituted(fd):
+            stat_info = real_fstat(fd)
+            class Altered:
+                st_mode = stat_info.st_mode
+                st_dev = stat_info.st_dev
+                st_ino = stat_info.st_ino + 1
+                st_size = stat_info.st_size
+                st_mtime_ns = stat_info.st_mtime_ns
+            return Altered()
+        with mock.patch.object(MODULE.os, "fstat", side_effect=substituted):
             with self.assertRaises(MODULE.Denied):
                 self.check()
 
