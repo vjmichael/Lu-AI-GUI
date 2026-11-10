@@ -282,3 +282,15 @@ relaxing containment, or using project-supplied config). Both `--offline`,
 installed-byte/source/journal checks remain unchanged. No production worker
 inherits this CI-specific environment setting. The next exact-head native
 matrix and delegated-process/hostile-restart group must still pass.
+
+## Task 4 — Windows native formatting-only follow-up
+
+At exact-head `4001538caeabbe59e898ab9787691341f988180b`,
+[run 42735112718](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42735112718)
+Windows native Node, host, supervisor, and Tauri jobs **passed their real
+compiler/test phases**, but `cargo fmt --check` denied the consolidated
+gate because rustfmt requires one line for the fixed
+`UV_CONCURRENT_INSTALLS` Bubblewrap environment setting. This exact
+formatter change does not modify any arguments or admission logic;
+the previously queued Linux delegated process proof remains **OPEN** until
+a complete post-change grouped exact-head run independently passes.

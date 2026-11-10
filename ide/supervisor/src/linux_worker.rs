@@ -645,9 +645,7 @@ fn command_for(
         // exceeds this OS-enforced 8-PID fixture limit on CI hardware.
         // Bound the Rayon installer pool without adding cgroup PIDs or
         // changing any production worker's admission/resource policy.
-        cmd.arg("--setenv")
-            .arg("UV_CONCURRENT_INSTALLS")
-            .arg("1");
+        cmd.arg("--setenv").arg("UV_CONCURRENT_INSTALLS").arg("1");
     }
     cmd.arg("--");
     match plan.recipe_id.as_str() {
