@@ -1,4 +1,6 @@
 # Group 2 — one exact-SHA Windows NSIS / Linux Debian real installed group.
+# Group2 boundary repair: verify OS catalog identity via samefile (Windows)
+# and never treat GTK unverified typeahead as directory selection (Linux).
 # Reuse native OS and security gates; add independently verified user-data retention.
 name: IDE Group 2 consolidated native installed editor and data preservation (NOT release)
 on:

@@ -64,11 +64,19 @@ def take_snapshot(fixture):
     for row in rows:
         if not isinstance(row, dict) or not isinstance(row.get("root"), str):
             deny("catalog_project_invalid")
+        # Rust fs::canonicalize on Windows stores a \\?\\-prefixed native
+        # path in the catalog; Python Path.resolve may display the same
+        # directory with a different prefix. String equality is not OS
+        # identity. Use real filesystem identity, reject final symlinks,
+        # and retain the exact display-name and host-ID checks.
         try:
-            resolved = Path(row["root"]).resolve(strict=True)
+            selected = Path(row["root"])
+            if selected.is_symlink():
+                deny("catalog_root_symlink")
+            same = os.path.samefile(selected, root)
         except (OSError, RuntimeError, ValueError):
             deny("catalog_root_unavailable")
-        if os.path.normcase(str(resolved)) == os.path.normcase(str(root)):
+        if same and row.get("display_name") == root.name:
             matches.append(row)
     if len(matches) != 1 or not re.fullmatch(r"ide-[a-f0-9]{32}", str(matches[0].get("id", ""))):
         deny("exact_registered_project_not_proven")

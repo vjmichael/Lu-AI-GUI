@@ -79,7 +79,8 @@ class ChooserPolicyTests(unittest.TestCase):
         block=fixture.split("def _native_parent_and_exact_child():",1)[1].split(
             "def select_native_folder():",1)[0]
         self.assertIn("return True", block)
-        self.assertNotIn("return _select_real_fixture_directory()", block)
+        self.assertIn("return _select_real_fixture_directory()", block)
+        self.assertNotIn("return True\n\n\ndef select_native_folder", block)
         self.assertNotIn('key("space")', block)
         self.assertIn('deny("native_folder_chooser_did_not_register_project")', fixture)
         self.assertIn("_native_chooser_diagnostics()", fixture)
@@ -93,8 +94,10 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertIn("P04_NATIVE_GTK_REGISTRATION_RESULT=", fixture)
         selector=fixture.split("def select_native_folder():",1)[1].split(
             "def editor_project():",1)[0]
-        self.assertIn("parent_child_candidate = _native_parent_and_exact_child()", selector)
-        self.assertIn("P04_GTK_SELECTION_ROUTE=parent_child_native_candidate", selector)
+        self.assertIn("parent_child_candidate = _select_real_fixture_directory()", selector)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=verified_native_row", selector)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=exact_native_location_alt_open", selector)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=exact_native_location_return", selector)
         self.assertIn("P04_GTK_PARENT_CHILD_RETRY=native_selection_attempt", selector)
         self.assertIn('if outcome != "registered_exact_root_and_webview":', selector)
         self.assertIn("P04_GTK_EXACT_PATH_SELECTION=exact_fixture_reasserted_in_native_chooser",

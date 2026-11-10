@@ -578,6 +578,27 @@ def _native_catalog_project_disposition():
                    for row in rows):
                 return "wrong_parent_persisted"
             if rows:
+                # Relative-category diagnostics only. Never expose real
+                # paths, labels or project content in the native CI logs.
+                relations = set()
+                for row in rows:
+                    try:
+                        item = Path(str(row.get("root", ""))).resolve(strict=True)
+                        if item == ROOT.parent:
+                            relation = "parent"
+                        elif ROOT in item.parents:
+                            relation = "child"
+                        elif item in ROOT.parents:
+                            relation = "ancestor"
+                        elif item.parent == ROOT.parent:
+                            relation = "sibling"
+                        else:
+                            relation = "other"
+                    except (OSError, RuntimeError, ValueError, TypeError):
+                        relation = "invalid"
+                    relations.add(relation)
+                print("P04_GTK_REGISTERED_ROOT_RELATION=" +
+                      ",".join(sorted(relations)), flush=True)
                 observed="unexpected_project_persisted"
             else:
                 observed="catalog_without_projects"
@@ -812,9 +833,10 @@ def _native_parent_and_exact_child():
     type_text(ROOT.name)
     print("P04_GTK_CHILD_TYPEAHEAD=native_candidate_preserved_until_real_confirmation",
           flush=True)
-    # This is only a native keyboard attempt; modal closure and exact
-    # project registration are still required by the caller.
-    return True
+    # A basename keystroke or pointer dispatch cannot make a directory
+    # selected. This route stays fail-closed if the genuine row remains
+    # unavailable. Never return True without a native selection witness.
+    return _select_real_fixture_directory()
 
 
 def select_native_folder():
@@ -829,21 +851,28 @@ def select_native_folder():
         deny("ephemeral_fixture_was_already_registered_before_picker")
     activate("+ Open folder")
     time.sleep(1)
-    # GTK SELECT_FOLDER requires an actual directory selection on some
-    # versions. Enter on an absolute path can navigate *inside* the folder
-    # without enabling the accept action; the real installed GTK run left
-    # the chooser open after four confirmations on that route. First use
-    # genuine GTK parent navigation and child selection/typeahead, then
-    # fall back to the original exact-path OS keyboard route.
-    parent_child_candidate = _native_parent_and_exact_child()
+    # Real installed run 42769749355 proved that GTK typeahead with ZERO
+    # accessible folder rows was not a selection: it closed the chooser
+    # with an unrelated registered project. Never treat a pointer inside
+    # the chooser or typed basename as a selected directory. Accept a
+    # parent-list candidate only when a real GTK row was selected.
+    parent_child_candidate = _select_real_fixture_directory()
     if parent_child_candidate:
-        print("P04_GTK_SELECTION_ROUTE=parent_child_native_candidate", flush=True)
+        print("P04_GTK_SELECTION_ROUTE=verified_native_row", flush=True)
     else:
+        # First attempt to commit the exact OS-native location entry with
+        # the chooser's own Open mnemonic BEFORE Enter can navigate into
+        # the target and inadvertently submit another current directory.
+        # No Tauri command, JS, direct catalog edit or hidden app state.
         key("ctrl+l")
         type_text(str(ROOT))
-        key("Return")
-        print("P04_GTK_SELECTION_ROUTE=exact_path_native_candidate", flush=True)
-    time.sleep(1.4)
+        key("alt+o")
+        print("P04_GTK_SELECTION_ROUTE=exact_native_location_alt_open", flush=True)
+        time.sleep(0.4)
+        if _native_chooser_still_open():
+            key("Return")
+            print("P04_GTK_SELECTION_ROUTE=exact_native_location_return", flush=True)
+    time.sleep(1.1)
     # GTK SELECT_FOLDER may interpret the first accept as "navigate into
     # selected directory" instead of closing. Native CI proved the real
     # dialog remained open afterward. Confirm only while the authentic OS
@@ -860,9 +889,12 @@ def select_native_folder():
                 print("P04_GTK_PARENT_CHILD_RETRY=native_selection_attempt",
                       flush=True)
             else:
+                # Give the exact native location entry up with GTK Tab;
+                # keyboard default activation remains an OS action, never
+                # evidence of the selected path until the catalog is read.
                 key("ctrl+l")
                 type_text(str(ROOT))
-                key("Return")
+                key("Tab")
                 print("P04_GTK_EXACT_PATH_SELECTION=exact_fixture_reasserted_in_native_chooser",
                       flush=True)
             time.sleep(0.6)

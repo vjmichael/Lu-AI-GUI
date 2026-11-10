@@ -60,3 +60,33 @@ integration and Group 6 final branch convergence are separate work.
 Core-DLC integration deferred until after Lu Core v1.0. No signing/legal
 release approval, physical approval, PR mass merge or Core source changes
 are authorized by Group 2.
+
+## First genuine Group 2 installed run — failed, exact SHA `accdd179e2f0c6ba363b270e7a0794fbf0e974e3`
+
+[Consolidated run 42769749355](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42769749355)
+built native NSIS/Debian and passed source/lock/notice checks. Ubuntu native
+dpkg injected post-install failure and previous-package restoration passed.
+
+- Linux installed GUI job `129674510885`: GTK's native folder selection
+  registered a DIFFERENT directory (`unexpected_project_persisted`), so
+  correct exact-root and WebView acceptance failed. In particular,
+  `P04_GTK_FIXTURE_DIRECTORY_CANDIDATES=0` accompanied a pointer/typeahead
+  fallback, and that fallback was mistakenly treated as a selection
+  candidate. This is a genuine native test-driver behavior defect, not
+  evidence that any unrelated directory is an acceptable project.
+  Corrected driver refuses to infer selection from typeahead and tries
+  a direct native GTK location Open path first. Strict exact-root
+  registered catalog and real WebView evidence remain mandatory.
+- Windows installed GUI job `129674510618`: native shell, actual
+  project picker, explicit Save, restart/reopen, protected debugger
+  default-denial and external-source conflict all passed. The newly
+  added read-only Group 2 receipt failed
+  `IDE_G02_USER_DATA_DENIED:exact_registered_project_not_proven`
+  at the pre-uninstall comparison. Rust's canonical Windows path may
+  carry an extended-length prefix; string spelling is not OS directory
+  identity. The repair compares the two existing directories by actual
+  filesystem identity (`os.path.samefile`), retaining bounded catalog,
+  non-symlink, exact display name and native host-ID checks.
+- No installed Group 2 release/approval acceptance can be claimed from
+  this red run. One consolidated current-head native installed group
+  is required after the repairs; do not dispatch micro-CI.
