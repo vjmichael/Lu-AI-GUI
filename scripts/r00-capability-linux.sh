@@ -59,6 +59,13 @@ for i in $(seq 1 180); do
   sleep 2
 done
 test "$ready" -eq 1
+# Model-selected tool/final JSON syntax is constrained without a host-selected
+# tool name, argument, authority or result. Verify the pure decoder contract
+# before launching any real-GGUF native turn.
+python3 -m unittest discover -s benchmarks/e1 -p 'test_e1_p07_llama_completion.py' -v \
+  2>&1 | tee "$root/tool-decoder-contract.log"
+export LU_E1_P07_RESPONSE_PROTOCOL=json_schema
+echo 'REAL_MODEL_NATIVE_PROTOCOL=GENERIC_JSON_SYNTAX_NOT_TOOL_SELECTION' >> "$GITHUB_STEP_SUMMARY"
 # A small real model may fail comprehension. That must FAIL acceptance, but
 # its mistake must not prevent independent K/I/A/F and three-arm measurement.
 # Every model output is still genuine and journaled; nothing is repaired or

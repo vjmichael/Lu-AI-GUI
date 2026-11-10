@@ -71,3 +71,17 @@ test('real model prompt requires observed facts, not invented Git SHA or host-ro
   assert.match(model,/Without a matching tool or observation, state that it is unverified/);
   assert.match(model,/host_routed_calls/);
 });
+
+test('test-only genuine model JSON grammar has no host-selected tool or grant',()=>{
+  const bridge=readFileSync(new URL('../../benchmarks/e1/e1_p07_llama_completion.py',import.meta.url),'utf8');
+  const grouped=readFileSync(new URL('../../scripts/r00-capability-linux.sh',import.meta.url),'utf8');
+  assert.match(bridge,/GENERIC_REPLY_JSON_SCHEMA/);
+  assert.match(bridge,/"enum": \["tool"\]/);
+  assert.match(bridge,/"enum": \["final"\]/);
+  assert.match(bridge,/"name": \{"type": "string"\}/);
+  assert.match(bridge,/LU_E1_P07_RESPONSE_PROTOCOL/);
+  assert.match(bridge,/print\(json.dumps\(\{"reply": content\}/);
+  assert.doesNotMatch(bridge,/lu_reviewed_git_head|tool_name_rewrite|fake_result/);
+  assert.match(grouped,/export LU_E1_P07_RESPONSE_PROTOCOL=json_schema/);
+  assert.match(grouped,/test_e1_p07_llama_completion\.py/);
+});

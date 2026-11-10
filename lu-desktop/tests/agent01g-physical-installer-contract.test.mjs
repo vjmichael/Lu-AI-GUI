@@ -38,9 +38,14 @@ test('explicit CPU test-only feature pins real binary at compile time',()=>{
 });
 test('Windows build has real Win32 manifest and a separate app-data identity',()=>{
   assert.match(build,/org\.lu\.agent01g\.devtest/);
-  assert.match(build,/build_win_manifest_res\.py/);
+  const buildRust=get('../src-tauri/build.rs');
+  const manifest=get('../scripts/lu-desktop.manifest');
+  assert.match(buildRust,/WindowsAttributes::new\(\)/);
+  assert.match(buildRust,/app_manifest\(include_str!\("\.\.\/scripts\/lu-desktop\.manifest"\)\)/);
+  assert.match(manifest,/Microsoft\.Windows\.Common-Controls/);
+  assert.match(manifest,/version="6\.0\.0\.0"/);
   assert.match(build,/verify_win_v6_manifest\.py/);
-  assert.match(build,/lu-01g-common-controls-v6\.res/);
+  assert.doesNotMatch(build,/build_win_manifest_res\.py|lu-01g-common-controls-v6\.res|manifest:no/);
   assert.match(build,/modelBundled=\$false/);
   assert.match(build,/vswhere\.exe/);
   assert.match(build,/Visual Studio 18 2026/);
@@ -75,4 +80,19 @@ test('hosted NSIS lifecycle proves isolated AppData sentinel survives uninstall,
   assert.match(cycle,/Get-FileHash -LiteralPath \$marker -Algorithm SHA256/);
   assert.match(cycle,/NOT_TESTED_REQUIRES_TWO_DISTINCT_INSTALLERS/);
   assert.doesNotMatch(cycle,/Remove-Item[^\n]*\$profile/);
+});
+
+test('versioned rollback requires two independently hash-verified source installers',()=>{
+  const rollback=get('../../scripts/r00-native-windows-versioned-rollback.ps1');
+  assert.match(rollback,/BaselineManifestPath/);
+  assert.match(rollback,/CandidateManifestPath/);
+  assert.match(rollback,/baselineSourceSha/);
+  assert.match(rollback,/candidateSourceSha/);
+  assert.match(rollback,/distinctSourcesAndAppBytes=\$true/);
+  assert.match(rollback,/PASS_REAL_NATIVE_SHA256/);
+  assert.match(rollback,/PASS_UNMODIFIED_SHA256/);
+  assert.match(rollback,/rollbackToOriginalBytes/);
+  assert.match(rollback,/realSQLiteSchemaUpgradeAndDowngrade='NOT_TESTED'/);
+  assert.match(rollback,/if\(\$state\.result -ne 'PASS_TEST_ONLY_TWO_VERSION_APP_BINARY_LIFECYCLE'\)\{exit 2\}/);
+  assert.doesNotMatch(rollback,/Remove-Item/);
 });

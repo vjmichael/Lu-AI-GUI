@@ -122,10 +122,10 @@ try{
   # Engine SHA and length are embedded into THIS TEST build at compile time.
   $env:LU_01G_PHYSICAL_CPU_ENGINE_SHA256=$engineHash
   $env:LU_01G_PHYSICAL_CPU_ENGINE_BYTES=[string]$engineSize
-  $manifestRes=Join-Path $env:RUNNER_TEMP 'lu-01g-common-controls-v6.res'
-  & python lu-desktop/scripts/build_win_manifest_res.py lu-desktop/scripts/lu-desktop.manifest $manifestRes
-  if($LASTEXITCODE -ne 0){throw 'Windows manifest resource compilation failed'}
-  & cargo rustc --release --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --features physical_win_cpu_eval --bin lu-desktop -- -C 'link-arg=/manifest:no' -C "link-arg=$manifestRes"
+  # build.rs/tauri-build already embeds the one reviewed Common Controls v6
+  # Win32 manifest. Linking a second custom .res provably breaks MSVC with
+  # CVT1100 duplicate RT_MANIFEST / LNK1123. The PE oracle below is mandatory.
+  & cargo rustc --release --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --features physical_win_cpu_eval --bin lu-desktop
   if($LASTEXITCODE -ne 0){throw 'Current exact-source Windows Rust build failed'}
   $app=Join-Path $repo 'lu-desktop/src-tauri/target/release/lu-desktop.exe'
   if(-not(Test-Path -LiteralPath $app -PathType Leaf)){throw 'Compiled Lu desktop EXE missing'}
