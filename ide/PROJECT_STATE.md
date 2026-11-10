@@ -1,5 +1,22 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 5 — Package manager review work, November 10, 2026 (source only)
+
+Work has started on separate branch `ide/group05-package-review-20261110`,
+stacked on Group 4D source head `d01c4b0`. This does not alter the pending
+Group 4 authoritative LLVM/native branch. The existing IDE-05.1–05.6
+static preview, offline uv worker and upstream-intake experiments are
+preserved. A new conservative IDE-05.2 vcpkg parser correction refuses
+feature/platform-qualified declarations for the *requested* package
+and duplicate requested names instead of claiming unconditional presence.
+Hostile native unit cases were added. Commit `9a8f888` is **source-only**;
+Windows/Linux native compiler and installed package acceptance have not
+been executed at that commit. Group 5 next: real grouped exact-source
+regression, independently verified native package provenance, Windows
+AppContainer ACL custody, approved worker output/recovery, physical
+operator consent and installed rollback. No package install-on-open,
+uncontained execution or Lu bridge.
+
 ## Group 4D native inspection staging (Nov 10; NOT PROMOTED)
 
 The temporary `ide/group04d-native-inspection-20261110` branch is
