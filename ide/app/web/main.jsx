@@ -3598,7 +3598,11 @@ function App() {
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
         </div>
       </header>
-      {problem && <div className="errorMsg appError" role="alert">{problem}
+      {problem && <div className="errorMsg appError" role="alert"
+        aria-label={problem.startsWith('File changed on disk.')
+          ? 'File changed on disk. Unsaved edits preserved' : undefined}
+        aria-describedby="ide-visible-error-message">
+        <span id="ide-visible-error-message">{problem}</span>
         <button type="button" onClick={() => setProblem('')}>Dismiss</button></div>}
       {hint && <div className={'successMsg appMessage noticeBanner' +
         (hint.startsWith('Saved ') ? ' saveConfirmation' :
@@ -5438,6 +5442,8 @@ function App() {
               {visibleEditorTabs.visible.map(tab => <div className={'editorTab' +
                 (tab.key === activeTabKey ? ' selected' : '')} key={tab.key}>
                 <button type="button" role="tab" aria-selected={tab.key === activeTabKey}
+                  aria-label={(tab.dirty ? 'Unsaved source tab ' : 'Saved source tab ') +
+                    tab.relativePath}
                   className="editorTabSelect" title={tab.relativePath}
                   onClick={() => selectPrimaryEditorTab(tab.key)}>
                   <span>{leafFor(tab.relativePath)}</span>

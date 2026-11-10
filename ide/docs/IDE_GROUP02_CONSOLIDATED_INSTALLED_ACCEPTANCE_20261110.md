@@ -173,3 +173,37 @@ synthetic registration or protected execution is introduced.
 
 This is an unaccepted implementation until the next exact-head NSIS/Debian
 installed Windows and Linux group runs to completion.
+
+## Exact Linux native editor Save/restart success and conflict alert gap (2026-11-10)
+
+[Consolidated run 42835712577](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42835712577),
+source `d4eb5fa8154352ac9c2ec8b5728ad548613794eb`,
+demonstrated these **genuine installed Ubuntu 24.04** results:
+
+- `P04_NATIVE_GTK_REGISTRATION_RESULT=registered_exact_root_and_webview`
+- `IDE_G02_NATIVE_ACTIVE_EDITOR_BUTTON=verified_exact_project`
+- `WO8_LINUX_NATIVE_EDITOR_REVIEW_AND_EXPLICIT_SAVE=PASS`
+- `WO8_LINUX_PROJECT_REOPEN=exact_native_atspi_action`
+- `WO8_LINUX_NATIVE_RESTART_REOPEN=PASS`
+
+It then failed when the real external source changed and the fixture waited for
+a free-form error-message substring `File changed on disk` to be exposed
+as an AT-SPI object. This showed a second **accessibility labeling gap**:
+React's visible `role="alert"` did not have an explicitly named alert,
+and the dirty source tab exposed only a visual dot / nonsemantic text.
+
+The corrected React UI now assigns a fixed accessibility label to the
+actual conflict alert ONLY when the native Save returns `FILE_CHANGED_ON_DISK`,
+with the full error preserved via `aria-describedby`. The existing
+editor tab's actual `tab.dirty` state also produces a named
+`Unsaved source tab <relative path>` accessible control. The Linux
+installed AT-SPI witness insists on both named, showing native elements
+for the exact fixture; the disk SHA must still equal the external writer's
+pre-save SHA, and outside edits must remain unmodified. A generic footer
+or banner text, failed save call, synthetic DOM value or injected IPC is
+never enough. On failure only fixed category-count diagnostics are emitted.
+No save semantics or filesystem authorization were changed.
+
+The new source must pass one final exact-SHA Windows NSIS/Linux Debian
+installed group, including error-state witness, project save/restart,
+real package uninstall and source/catalog preservation before Group 2 closes.

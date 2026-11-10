@@ -1158,6 +1158,51 @@ def editor_project():
     focus_editor()
 
 
+def _native_conflict_warning_and_draft(seconds=16):
+    """Require real accessible conflict warning AND the still-dirty source tab.
+
+    The installed host's revision check must reject external drift; the
+    original disk SHA and outside writer's content are independently checked
+    BEFORE this accessible witness. A generic 'Unsaved' footer is not enough.
+    """
+    deadline = time.monotonic() + seconds
+    last_alert = False
+    last_dirty_tab = False
+    while True:
+        alert = False
+        dirty_tab = False
+        for node in elements():
+            try:
+                if _native_dialog_ancestor(node):
+                    continue
+                state = node.getState()
+                if not (state.contains(pyatspi.STATE_VISIBLE) and
+                        state.contains(pyatspi.STATE_SHOWING)):
+                    continue
+                name = (node.name or "").strip()
+                role = (node.getRoleName() or "").casefold()
+                if (name == "File changed on disk. Unsaved edits preserved"
+                        and any(kind in role for kind in ("alert", "notification", "status"))):
+                    alert = True
+                if (name == "Unsaved source tab main.rs" and "tab" in role):
+                    dirty_tab = True
+            except Exception:
+                continue
+        if alert and dirty_tab:
+            print("IDE_G02_LINUX_NATIVE_EXTERNAL_CONFLICT_ALERT_AND_DRAFT=PASS",
+                  flush=True)
+            return
+        last_alert, last_dirty_tab = alert, dirty_tab
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.30)
+    print("IDE_G02_LINUX_NATIVE_CONFLICT_INVENTORY=alert:" +
+          ("visible" if last_alert else "missing") +
+          ";dirty_tab:" + ("visible" if last_dirty_tab else "missing"),
+          flush=True)
+    deny("native_external_conflict_warning_or_draft_not_exposed")
+
+
 def main():
     if os.environ.get("GITHUB_ACTIONS") != "true" or not os.environ.get("DISPLAY"):
         deny("dedicated_native_x11_runner_required")
@@ -1217,10 +1262,11 @@ def main():
         SOURCE.write_text(before + "\n// " + CONFLICT + "\n", encoding="utf-8")
         outside_sha = digest()
         activate("Save · Ctrl+S")
-        accessible("File changed on disk", seconds=16)
+        # Refusal of a stale revision must retain the *external* disk bytes.
+        # The alert alone cannot certify the native save guard.
         if digest() != outside_sha or CONFLICT not in SOURCE.read_text(encoding="utf-8"):
             deny("conflicting_external_edit_overwritten")
-        accessible("Unsaved", seconds=10)
+        _native_conflict_warning_and_draft(seconds=16)
         print("WO8_LINUX_NATIVE_EXTERNAL_CONFLICT_DENIED=PASS", flush=True)
     finally:
         stop(second)
