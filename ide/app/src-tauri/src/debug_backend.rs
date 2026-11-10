@@ -950,8 +950,10 @@ impl NativeDebugRuntime {
             None => (None, None),
         };
         #[cfg(not(all(windows, debug_assertions, feature = "dev046d-native-dialog")))]
-        let (inspected_frame_id, redacted_variables):
-            (Option<u64>, Option<Vec<RedactedVariableSummary>>) = (None, None);
+        let (inspected_frame_id, redacted_variables): (
+            Option<u64>,
+            Option<Vec<RedactedVariableSummary>>,
+        ) = (None, None);
 
         let state = self
             .supervisor
