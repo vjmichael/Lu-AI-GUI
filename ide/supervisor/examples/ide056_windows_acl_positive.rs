@@ -10,8 +10,9 @@ fn main() {
 mod native {
     use lu_ide_execution_supervisor::inspect_ide056_readonly_tree;
     use std::{
-        env, fs, io,
+        env,
         ffi::{c_void, OsStr},
+        fs, io,
         mem::size_of,
         os::windows::ffi::OsStrExt,
         path::{Path, PathBuf},
@@ -22,30 +23,30 @@ mod native {
         Foundation::{CloseHandle, LocalFree, HANDLE, WAIT_OBJECT_0},
         Security::{
             Authorization::{
-                ConvertSidToStringSidW,
-                ConvertStringSecurityDescriptorToSecurityDescriptorW,
+                ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
                 SetNamedSecurityInfoW, SE_FILE_OBJECT,
             },
-            Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath},
-            FreeSid, GetTokenInformation, GetSecurityDescriptorDacl,
-            TokenUser, TokenIsAppContainer, SECURITY_CAPABILITIES, PSID,
-            TOKEN_QUERY, TOKEN_USER,
-            DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
+            FreeSid, GetSecurityDescriptorDacl, GetTokenInformation,
+            Isolation::{
+                CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
+            },
+            TokenIsAppContainer, TokenUser, DACL_SECURITY_INFORMATION,
+            PROTECTED_DACL_SECURITY_INFORMATION, PSID, SECURITY_CAPABILITIES, TOKEN_QUERY,
+            TOKEN_USER,
         },
         System::{
             Com::CoTaskMemFree,
             JobObjects::{
-                CreateJobObjectW, IsProcessInJob, SetInformationJobObject,
-                TerminateJobObject, JobObjectExtendedLimitInformation,
-                JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                CreateJobObjectW, IsProcessInJob, JobObjectExtendedLimitInformation,
+                SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
             },
             Threading::{
                 CreateProcessW, DeleteProcThreadAttributeList, GetCurrentProcess,
                 GetExitCodeProcess, InitializeProcThreadAttributeList, OpenProcessToken,
-                ResumeThread, UpdateProcThreadAttribute, WaitForSingleObject,
-                CREATE_NO_WINDOW, CREATE_SUSPENDED, EXTENDED_STARTUPINFO_PRESENT,
-                PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-                STARTUPINFOEXW,
+                ResumeThread, UpdateProcThreadAttribute, WaitForSingleObject, CREATE_NO_WINDOW,
+                CREATE_SUSPENDED, EXTENDED_STARTUPINFO_PRESENT, PROCESS_INFORMATION,
+                PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTUPINFOEXW,
             },
         },
     };
@@ -55,36 +56,61 @@ mod native {
         io::Error::other(code)
     }
     fn ensure(ok: bool, code: &'static str) -> R<()> {
-        if ok { Ok(()) } else { Err(fail(code).into()) }
+        if ok {
+            Ok(())
+        } else {
+            Err(fail(code).into())
+        }
     }
     fn wide(s: &OsStr) -> Vec<u16> {
         s.encode_wide().chain([0]).collect()
     }
-    fn w(s: &str) -> Vec<u16> { wide(OsStr::new(s)) }
+    fn w(s: &str) -> Vec<u16> {
+        wide(OsStr::new(s))
+    }
     unsafe fn read_wide(p: *const u16) -> R<String> {
         ensure(!p.is_null(), "IDE056_NATIVE_NULL_WSTRING")?;
         let mut n = 0usize;
-        while n < 32768 && *p.add(n) != 0 { n += 1; }
+        while n < 32768 && *p.add(n) != 0 {
+            n += 1;
+        }
         ensure(n < 32768, "IDE056_NATIVE_WSTRING_TOO_LONG")?;
         Ok(String::from_utf16(std::slice::from_raw_parts(p, n))?)
     }
     struct KernelHandle(HANDLE);
     impl Drop for KernelHandle {
-        fn drop(&mut self) { if !self.0.is_null() { unsafe { CloseHandle(self.0); } } }
+        fn drop(&mut self) {
+            if !self.0.is_null() {
+                unsafe {
+                    CloseHandle(self.0);
+                }
+            }
+        }
     }
-    struct Profile { name: Vec<u16>, sid: PSID }
+    struct Profile {
+        name: Vec<u16>,
+        sid: PSID,
+    }
     impl Drop for Profile {
         fn drop(&mut self) {
-            unsafe { if !self.sid.is_null() { FreeSid(self.sid); }
-                     DeleteAppContainerProfile(self.name.as_ptr()); }
+            unsafe {
+                if !self.sid.is_null() {
+                    FreeSid(self.sid);
+                }
+                DeleteAppContainerProfile(self.name.as_ptr());
+            }
         }
     }
     fn sid_string(sid: PSID) -> R<String> {
         let mut ptr: *mut u16 = ptr::null_mut();
-        ensure(unsafe { ConvertSidToStringSidW(sid, &mut ptr) } != 0 && !ptr.is_null(),
-               "IDE056_SID_STRING_UNAVAILABLE")?;
+        ensure(
+            unsafe { ConvertSidToStringSidW(sid, &mut ptr) } != 0 && !ptr.is_null(),
+            "IDE056_SID_STRING_UNAVAILABLE",
+        )?;
         let string = unsafe { read_wide(ptr) };
-        unsafe { LocalFree(ptr.cast()); }
+        unsafe {
+            LocalFree(ptr.cast());
+        }
         string
     }
     fn create_profile() -> R<Profile> {
@@ -92,9 +118,16 @@ mod native {
         let name = w(&format!("LuIde056ACL{}{}", std::process::id(), stamp));
         let desc = w("Lu IDE disposable host-verified ACL acceptance");
         let mut sid = ptr::null_mut();
-        let hr = unsafe { CreateAppContainerProfile(
-            name.as_ptr(), desc.as_ptr(), desc.as_ptr(), ptr::null(), 0, &mut sid,
-        ) };
+        let hr = unsafe {
+            CreateAppContainerProfile(
+                name.as_ptr(),
+                desc.as_ptr(),
+                desc.as_ptr(),
+                ptr::null(),
+                0,
+                &mut sid,
+            )
+        };
         ensure(hr >= 0 && !sid.is_null(), "IDE056_PROFILE_CREATION_FAILED")?;
         Ok(Profile { name, sid })
     }
@@ -102,26 +135,46 @@ mod native {
         let name = w(&sid_string(profile.sid)?);
         let mut ptr: *mut u16 = ptr::null_mut();
         let hr = unsafe { GetAppContainerFolderPath(name.as_ptr(), &mut ptr) };
-        ensure(hr >= 0 && !ptr.is_null(), "IDE056_PACKAGE_FOLDER_UNAVAILABLE")?;
+        ensure(
+            hr >= 0 && !ptr.is_null(),
+            "IDE056_PACKAGE_FOLDER_UNAVAILABLE",
+        )?;
         let result = unsafe { read_wide(ptr) };
-        unsafe { CoTaskMemFree(ptr.cast()); }
+        unsafe {
+            CoTaskMemFree(ptr.cast());
+        }
         let path = PathBuf::from(result?).join("LocalState");
         fs::create_dir_all(&path)?;
         Ok(path)
     }
     fn host_user_sid() -> R<String> {
         let mut handle = ptr::null_mut();
-        ensure(unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut handle) } != 0,
-               "IDE056_HOST_TOKEN_UNAVAILABLE")?;
+        ensure(
+            unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut handle) } != 0,
+            "IDE056_HOST_TOKEN_UNAVAILABLE",
+        )?;
         let token = KernelHandle(handle);
         let mut bytes = 0u32;
-        unsafe { GetTokenInformation(token.0, TokenUser, ptr::null_mut(), 0, &mut bytes); }
-        ensure(bytes as usize >= size_of::<TOKEN_USER>() && bytes <= 4096,
-               "IDE056_HOST_SID_INVALID")?;
+        unsafe {
+            GetTokenInformation(token.0, TokenUser, ptr::null_mut(), 0, &mut bytes);
+        }
+        ensure(
+            bytes as usize >= size_of::<TOKEN_USER>() && bytes <= 4096,
+            "IDE056_HOST_SID_INVALID",
+        )?;
         let mut data = vec![0usize; (bytes as usize).div_ceil(size_of::<usize>())];
-        ensure(unsafe { GetTokenInformation(
-            token.0, TokenUser, data.as_mut_ptr().cast(), bytes, &mut bytes,
-        ) } != 0, "IDE056_HOST_SID_QUERY_FAILED")?;
+        ensure(
+            unsafe {
+                GetTokenInformation(
+                    token.0,
+                    TokenUser,
+                    data.as_mut_ptr().cast(),
+                    bytes,
+                    &mut bytes,
+                )
+            } != 0,
+            "IDE056_HOST_SID_QUERY_FAILED",
+        )?;
         let sid = unsafe { (*(data.as_ptr() as *const TOKEN_USER)).User.Sid };
         sid_string(sid)
     }
@@ -134,72 +187,132 @@ mod native {
         ));
         let mut descriptor: *mut c_void = ptr::null_mut();
         let mut bytes = 0u32;
-        ensure(unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            sddl.as_ptr(), 1, &mut descriptor, &mut bytes,
-        ) } != 0 && !descriptor.is_null(), "IDE056_DACL_PARSE_FAILED")?;
+        ensure(
+            unsafe {
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    sddl.as_ptr(),
+                    1,
+                    &mut descriptor,
+                    &mut bytes,
+                )
+            } != 0
+                && !descriptor.is_null(),
+            "IDE056_DACL_PARSE_FAILED",
+        )?;
         let mut present = 0;
         let mut dacl = ptr::null_mut();
         let mut defaulted = 0;
-        let ok = unsafe { GetSecurityDescriptorDacl(
-            descriptor, &mut present, &mut dacl, &mut defaulted,
-        ) } != 0 && present != 0 && !dacl.is_null();
+        let ok = unsafe {
+            GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted)
+        } != 0
+            && present != 0
+            && !dacl.is_null();
         if !ok {
-            unsafe { LocalFree(descriptor); }
+            unsafe {
+                LocalFree(descriptor);
+            }
             return Err(fail("IDE056_DACL_MISSING").into());
         }
         let mut name = wide(path.as_os_str());
-        let result = unsafe { SetNamedSecurityInfoW(
-            name.as_mut_ptr(), SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-            ptr::null_mut(), ptr::null_mut(), dacl, ptr::null_mut(),
-        ) };
-        unsafe { LocalFree(descriptor); }
+        let result = unsafe {
+            SetNamedSecurityInfoW(
+                name.as_mut_ptr(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                dacl,
+                ptr::null_mut(),
+            )
+        };
+        unsafe {
+            LocalFree(descriptor);
+        }
         ensure(result == 0, "IDE056_DACL_SEAL_DENIED")
     }
     fn child(source: &Path, output: &Path) -> R<()> {
-        ensure(fs::read(source)? == b"immutable-acl-source",
-               "IDE056_CHILD_CANNOT_READ_SOURCE")?;
-        ensure(fs::OpenOptions::new().write(true).open(source).is_err(),
-               "IDE056_CHILD_CAN_WRITE_SOURCE")?;
-        ensure(fs::rename(source, source.with_extension("renamed")).is_err(),
-               "IDE056_CHILD_CAN_RENAME_SOURCE")?;
-        ensure(fs::remove_file(source).is_err(), "IDE056_CHILD_CAN_DELETE_SOURCE")?;
+        ensure(
+            fs::read(source)? == b"immutable-acl-source",
+            "IDE056_CHILD_CANNOT_READ_SOURCE",
+        )?;
+        ensure(
+            fs::OpenOptions::new().write(true).open(source).is_err(),
+            "IDE056_CHILD_CAN_WRITE_SOURCE",
+        )?;
+        ensure(
+            fs::rename(source, source.with_extension("renamed")).is_err(),
+            "IDE056_CHILD_CAN_RENAME_SOURCE",
+        )?;
+        ensure(
+            fs::remove_file(source).is_err(),
+            "IDE056_CHILD_CAN_DELETE_SOURCE",
+        )?;
         fs::write(output.join("child-proof.txt"), b"private-output-only")?;
         Ok(())
     }
-    fn run_probe(exe: &Path, stage: &Path, source: &Path, output: &Path, profile: &Profile) -> R<()> {
+    fn run_probe(
+        exe: &Path,
+        stage: &Path,
+        source: &Path,
+        output: &Path,
+        profile: &Profile,
+    ) -> R<()> {
         let raw_job = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
         ensure(!raw_job.is_null(), "IDE056_JOB_CREATION_FAILED")?;
         let job = KernelHandle(raw_job);
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        ensure(unsafe { SetInformationJobObject(
-            job.0, JobObjectExtendedLimitInformation,
-            (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-        ) } != 0, "IDE056_JOB_LIMITS_MISSING")?;
+        ensure(
+            unsafe {
+                SetInformationJobObject(
+                    job.0,
+                    JobObjectExtendedLimitInformation,
+                    (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                    size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                )
+            } != 0,
+            "IDE056_JOB_LIMITS_MISSING",
+        )?;
         let mut bytes = 0usize;
-        unsafe { InitializeProcThreadAttributeList(ptr::null_mut(), 2, 0, &mut bytes); }
+        unsafe {
+            InitializeProcThreadAttributeList(ptr::null_mut(), 2, 0, &mut bytes);
+        }
         ensure(bytes > 0 && bytes < 8192, "IDE056_ATTRIBUTE_SIZE_INVALID")?;
         let mut data = vec![0usize; bytes.div_ceil(size_of::<usize>())];
         let attr = data.as_mut_ptr().cast();
-        ensure(unsafe { InitializeProcThreadAttributeList(attr, 2, 0, &mut bytes) } != 0,
-               "IDE056_ATTRIBUTES_UNAVAILABLE")?;
+        ensure(
+            unsafe { InitializeProcThreadAttributeList(attr, 2, 0, &mut bytes) } != 0,
+            "IDE056_ATTRIBUTES_UNAVAILABLE",
+        )?;
         let mut caps = SECURITY_CAPABILITIES::default();
         caps.AppContainerSid = profile.sid;
         caps.Capabilities = ptr::null_mut();
         caps.CapabilityCount = 0;
         let jobs = [job.0];
         let setup = unsafe {
-            UpdateProcThreadAttribute(attr, 0,
+            UpdateProcThreadAttribute(
+                attr,
+                0,
                 PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize,
                 (&caps as *const SECURITY_CAPABILITIES).cast(),
-                size_of::<SECURITY_CAPABILITIES>(), ptr::null_mut(), ptr::null()) != 0
-            && UpdateProcThreadAttribute(attr, 0, 131085, jobs.as_ptr().cast(),
-                size_of::<HANDLE>(), ptr::null_mut(), ptr::null()) != 0
+                size_of::<SECURITY_CAPABILITIES>(),
+                ptr::null_mut(),
+                ptr::null(),
+            ) != 0
+                && UpdateProcThreadAttribute(
+                    attr,
+                    0,
+                    131085,
+                    jobs.as_ptr().cast(),
+                    size_of::<HANDLE>(),
+                    ptr::null_mut(),
+                    ptr::null(),
+                ) != 0
         };
         if !setup {
-            unsafe { DeleteProcThreadAttributeList(attr); }
+            unsafe {
+                DeleteProcThreadAttributeList(attr);
+            }
             return Err(fail("IDE056_APP_CONTAINER_JOB_ATTRIBUTES_MISSING").into());
         }
         let mut startup = STARTUPINFOEXW::default();
@@ -208,40 +321,74 @@ mod native {
         let mut process = PROCESS_INFORMATION::default();
         let exe_wide = wide(exe.as_os_str());
         let cwd_wide = wide(stage.as_os_str());
-        let mut command = w(&format!("\"{}\" --probe \"{}\" \"{}\"",
-                                     exe.display(), source.display(), output.display()));
-        let spawned = unsafe { CreateProcessW(
-            exe_wide.as_ptr(), command.as_mut_ptr(), ptr::null(), ptr::null(),
-            0, CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
-            ptr::null(), cwd_wide.as_ptr(), &startup.StartupInfo, &mut process,
-        ) };
-        unsafe { DeleteProcThreadAttributeList(attr); }
+        let mut command = w(&format!(
+            "\"{}\" --probe \"{}\" \"{}\"",
+            exe.display(),
+            source.display(),
+            output.display()
+        ));
+        let spawned = unsafe {
+            CreateProcessW(
+                exe_wide.as_ptr(),
+                command.as_mut_ptr(),
+                ptr::null(),
+                ptr::null(),
+                0,
+                CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
+                ptr::null(),
+                cwd_wide.as_ptr(),
+                &startup.StartupInfo,
+                &mut process,
+            )
+        };
+        unsafe {
+            DeleteProcThreadAttributeList(attr);
+        }
         ensure(spawned != 0, "IDE056_NATIVE_APP_CONTAINER_LAUNCH_FAILED")?;
         let child_handle = KernelHandle(process.hProcess);
         let thread = KernelHandle(process.hThread);
         let mut in_job = 0;
-        ensure(unsafe { IsProcessInJob(child_handle.0, job.0, &mut in_job) } != 0 && in_job != 0,
-               "IDE056_PROCESS_ESCAPED_JOB")?;
+        ensure(
+            unsafe { IsProcessInJob(child_handle.0, job.0, &mut in_job) } != 0 && in_job != 0,
+            "IDE056_PROCESS_ESCAPED_JOB",
+        )?;
         let mut child_token = ptr::null_mut();
-        ensure(unsafe { OpenProcessToken(child_handle.0, TOKEN_QUERY, &mut child_token) } != 0,
-               "IDE056_CHILD_TOKEN_MISSING")?;
+        ensure(
+            unsafe { OpenProcessToken(child_handle.0, TOKEN_QUERY, &mut child_token) } != 0,
+            "IDE056_CHILD_TOKEN_MISSING",
+        )?;
         let token = KernelHandle(child_token);
         let mut is_app = 0u32;
         let mut returned = 0u32;
-        ensure(unsafe { GetTokenInformation(
-            token.0, TokenIsAppContainer, (&mut is_app as *mut u32).cast(),
-            size_of::<u32>() as u32, &mut returned,
-        ) } != 0 && is_app == 1, "IDE056_CHILD_NOT_APP_CONTAINER")?;
-        ensure(unsafe { ResumeThread(thread.0) } != u32::MAX,
-               "IDE056_CHILD_RESUME_FAILED")?;
+        ensure(
+            unsafe {
+                GetTokenInformation(
+                    token.0,
+                    TokenIsAppContainer,
+                    (&mut is_app as *mut u32).cast(),
+                    size_of::<u32>() as u32,
+                    &mut returned,
+                )
+            } != 0
+                && is_app == 1,
+            "IDE056_CHILD_NOT_APP_CONTAINER",
+        )?;
+        ensure(
+            unsafe { ResumeThread(thread.0) } != u32::MAX,
+            "IDE056_CHILD_RESUME_FAILED",
+        )?;
         let waited = unsafe { WaitForSingleObject(child_handle.0, 30000) };
         if waited != WAIT_OBJECT_0 {
-            unsafe { TerminateJobObject(job.0, 1); }
+            unsafe {
+                TerminateJobObject(job.0, 1);
+            }
             return Err(fail("IDE056_CHILD_DID_NOT_EXIT_IN_BUDGET").into());
         }
         let mut code = u32::MAX;
-        ensure(unsafe { GetExitCodeProcess(child_handle.0, &mut code) } != 0 && code == 0,
-               "IDE056_CHILD_NATIVE_ACL_PROBE_FAILED")?;
+        ensure(
+            unsafe { GetExitCodeProcess(child_handle.0, &mut code) } != 0 && code == 0,
+            "IDE056_CHILD_NATIVE_ACL_PROBE_FAILED",
+        )?;
         Ok(())
     }
     pub fn run() -> R<()> {
@@ -267,13 +414,18 @@ mod native {
             seal(path, &user, &package, false)?;
         }
         seal(&output, &user, &package, true)?;
-        let audited = inspect_ide056_readonly_tree(&source_dir, profile.sid)?;
+        let audited = inspect_ide056_readonly_tree(&source_dir, profile.sid)
+            .map_err(|e| fail(e.code()))?;
         ensure(audited == 2, "IDE056_SOURCE_ACL_AUDIT_NOT_EXACT")?;
         run_probe(&exe, &stage, &source, &output, &profile)?;
-        ensure(fs::read(&source)? == b"immutable-acl-source",
-               "IDE056_SOURCE_CHANGED_AFTER_CHILD")?;
-        ensure(fs::read(output.join("child-proof.txt"))? == b"private-output-only",
-               "IDE056_CHILD_PRIVATE_OUTPUT_NOT_OBSERVED")?;
+        ensure(
+            fs::read(&source)? == b"immutable-acl-source",
+            "IDE056_SOURCE_CHANGED_AFTER_CHILD",
+        )?;
+        ensure(
+            fs::read(output.join("child-proof.txt"))? == b"private-output-only",
+            "IDE056_CHILD_PRIVATE_OUTPUT_NOT_OBSERVED",
+        )?;
         println!("IDE056_WINDOWS_REAL_APPCONTAINER_SOURCE_WRITE_RENAME_DELETE_DENIED=PASS");
         println!("IDE056_WINDOWS_REAL_APPCONTAINER_PRIVATE_OUTPUT_WRITE=PASS");
         println!("IDE056_WINDOWS_REAL_APPCONTAINER_JOB_AND_TOKEN=PASS");
