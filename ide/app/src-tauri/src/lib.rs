@@ -14,7 +14,11 @@ mod build_backend;
 mod debug_backend;
 #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
 mod lsp_backend;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, Mutex, atomic::{AtomicU8, Ordering}},
+};
 
 use lu_ide_workspace::{
     continuity::DevelopmentLedger,
@@ -26,6 +30,33 @@ use lu_ide_workspace::{
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
+
+/// In-memory one-use lifetime of an OS-confirmed partial stage.
+#[derive(Default)]
+struct PartialStageSessions(Mutex<HashMap<String, Arc<AtomicU8>>>);
+impl PartialStageSessions {
+    fn begin(&self, project_id: &str) -> Result<Arc<AtomicU8>, String> {
+        let mut sessions = self.0.lock().map_err(|_| "G06B_STAGE_SESSION_UNAVAILABLE")?;
+        if sessions.contains_key(project_id) {
+            return Err("G06B_STAGE_ANOTHER_OPERATION_ACTIVE".into());
+        }
+        let token = Arc::new(AtomicU8::new(0));
+        sessions.insert(project_id.to_owned(), Arc::clone(&token));
+        Ok(token)
+    }
+    fn end(&self, project_id: &str) {
+        if let Ok(mut sessions) = self.0.lock() { sessions.remove(project_id); }
+    }
+    fn cancel(&self, project_id: &str) -> Result<&'static str, String> {
+        let sessions = self.0.lock().map_err(|_| "G06B_STAGE_SESSION_UNAVAILABLE")?;
+        let control = sessions.get(project_id).ok_or("G06B_STAGE_NOT_IN_PROGRESS")?;
+        if lu_ide_workspace::git_partial_stage::request_partial_stage_cancel(control) {
+            Ok("cancel_requested_before_index_publication")
+        } else {
+            Err("G06B_STAGE_ALREADY_CANCELLED_OR_COMMIT_POINT".into())
+        }
+    }
+}
 
 struct NativePicker(AppHandle);
 impl NativeDirectoryPicker for NativePicker {
@@ -302,6 +333,87 @@ async fn ide_git_select_reviewed_hunks(
     })
     .await
     .map_err(|_| "G06B_HUNK_SELECTION_HOST_UNAVAILABLE".to_owned())?
+}
+
+/// Native OS confirmation supplies authorization. Neither plan nor
+/// selected IDs are an approval token. Consent is deliberately one-shot.
+#[tauri::command]
+async fn ide_git_stage_selected_hunks(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    expected: lu_ide_workspace::git_hunk_review::ReviewedHunkSelection,
+) -> Result<lu_ide_workspace::git_partial_stage::PartialStageReceipt, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    let coordinator = Arc::clone(sessions.inner());
+    let project_id = expected.plan.project_id.clone();
+    let cancel = coordinator.begin(&project_id)?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        // Independent verification precedes the dialog. Approval is never
+        // derived from serialized WebView selection fields.
+        let refreshed = registry.select_reviewed_git_hunks(
+            &expected.plan, &expected.selected_ids).map_err(str::to_owned)?;
+        if refreshed.selection_sha256 != expected.selection_sha256
+            || refreshed.selected_ids != expected.selected_ids
+            || refreshed.plan != expected.plan
+            || !expected.ready_for_operator_review
+            || expected.stage_authorized || expected.commit_authorized
+            || expected.operation_performed
+        {
+            return Err("G06B_STAGE_REVIEW_STALE_OR_FORGED".into());
+        }
+        if cancel.load(Ordering::SeqCst) != 0 {
+            return Err("G06B_STAGE_CANCELLED_BEFORE_APPROVAL".into());
+        }
+        let approved = app.dialog()
+            .message(format!(
+                "Stage ONLY {} selected Git hunk(s) in one tracked file?\n\nFile: {}\nProject: {}\nHEAD: {}\nSelection SHA-256: {}\n\nThis changes the Git INDEX, not the source file. No commit, hooks, checkout, Git CLI or remote operations. Review does not authorize future changes.",
+                refreshed.selected_ids.len(),
+                refreshed.plan.relative_path,
+                refreshed.plan.project_id,
+                refreshed.plan.head_sha,
+                refreshed.selection_sha256,
+            ))
+            .title("Lu IDE · One-use protected partial Git stage")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Stage only reviewed hunks".into(), "Deny / Cancel".into(),
+            ))
+            .blocking_show();
+        if !approved {
+            return Err("G06B_STAGE_HUMAN_DENIED_OR_CANCELLED".into());
+        }
+        if cancel.load(Ordering::SeqCst) != 0 {
+            return Err("G06B_STAGE_CANCELLED_AFTER_DIALOG".into());
+        }
+        registry.apply_approved_partial_stage(&refreshed, &cancel)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06B_STAGE_HOST_TASK_INTERRUPTED".to_owned());
+    coordinator.end(&project_id);
+    result?
+}
+
+/// Safe to request while an approval dialog or native preparation is active.
+/// Cancellation never rolls back an already-published Git index.
+#[tauri::command]
+async fn ide_git_cancel_partial_stage(
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+) -> Result<&'static str, String> {
+    sessions.cancel(&project_id)
+}
+
+/// Read-only durable journal reconciliation across native process restart.
+/// Never guess an interrupted index write can be rolled back automatically.
+#[tauri::command]
+async fn ide_git_partial_stage_recovery(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_partial_stage::PartialStageRecovery, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_partial_stage_recovery(&project_id).map_err(str::to_owned)
+    }).await.map_err(|_| "G06B_STAGE_RECOVERY_HOST_UNAVAILABLE".to_owned())?
 }
 
 #[tauri::command]
@@ -2102,6 +2214,7 @@ pub fn run() {
             )
             .map_err(|_| std::io::Error::other("IDE private navigation unavailable"))?;
             app.manage(Arc::new(navigation));
+            app.manage(Arc::new(PartialStageSessions::default()));
             app.manage(Arc::new(registry));
             let snapshots = InventorySnapshots::new(data.join("evidence-baselines.json"))
                 .map_err(|_| std::io::Error::other("IDE evidence history failed to open"))?;
@@ -2200,6 +2313,9 @@ pub fn run() {
             ide_git_verify_batch_review,
             ide_git_preview_hunks,
             ide_git_select_reviewed_hunks,
+            ide_git_stage_selected_hunks,
+            ide_git_cancel_partial_stage,
+            ide_git_partial_stage_recovery,
             ide_git_review_file,
             ide_git_stage_reviewed,
             ide_git_commit_reviewed,
