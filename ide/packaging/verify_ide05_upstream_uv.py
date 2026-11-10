@@ -41,17 +41,31 @@ def sha256(data: bytes) -> str:
 
 
 def regular_bytes(path: Path, max_size: int) -> bytes:
+    # A prior lstat alone cannot protect an installed binary or license:
+    # a hostile filesystem could replace it with a symlink before open.
     info = path.lstat()
-    require(stat.S_ISREG(info.st_mode) and info.st_size <= max_size,
+    require(stat.S_ISREG(info.st_mode) and 0 <= info.st_size <= max_size,
             "IDE056_SOURCE_FILE_UNTRUSTED")
-    with path.open("rb") as stream:
-        data = stream.read(max_size + 1)
-    after = path.lstat()
-    require(len(data) == info.st_size and
-            (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns) ==
-            (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns),
-            "IDE056_SOURCE_MUTATED_DURING_READ")
-    return data
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    require(hasattr(os, "O_NOFOLLOW"), "IDE056_NOFOLLOW_UNAVAILABLE")
+    flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        identity = lambda x: (x.st_dev, x.st_ino, x.st_size, x.st_mtime_ns)
+        require(stat.S_ISREG(opened.st_mode) and identity(opened) == identity(info),
+                "IDE056_SOURCE_REPLACED_BEFORE_OPEN")
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            data = stream.read(max_size + 1)
+        after_handle = os.fstat(fd)
+        after_path = path.lstat()
+        require(len(data) == info.st_size and
+                identity(info) == identity(after_handle) == identity(after_path) and
+                stat.S_ISREG(after_path.st_mode),
+                "IDE056_SOURCE_MUTATED_DURING_READ")
+        return data
+    finally:
+        os.close(fd)
 
 
 def public_pypi_record() -> dict:
