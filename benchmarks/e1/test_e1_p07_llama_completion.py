@@ -20,6 +20,20 @@ class RealQwenJsonInterface(unittest.TestCase):
         self.assertNotIn('lu_reviewed_git_head',str(schema))
         self.assertNotIn('permission',str(schema))
         self.assertTrue(out['prompt'].endswith('<think>\n\n</think>\n\n'))
+
+    def test_reviewed_first_step_requires_an_actual_model_chosen_tool_name(self):
+        prompt='<|im_start|>assistant\n'
+        out=m.model_payload(prompt,128,'json_schema','required')
+        schema=out['json_schema']
+        self.assertEqual(schema['properties']['kind']['enum'],['tool'])
+        self.assertEqual(schema['properties']['name'],{'type':'string'})
+        self.assertEqual(schema['properties']['arguments'],{'type':'object'})
+        self.assertNotIn('lu_reviewed_git_head',str(schema))
+        self.assertNotIn('lu_reviewed_media_facts',str(schema))
+        self.assertNotIn('final',str(schema))
+    def test_unreviewed_required_mode_is_not_admitted(self):
+        with self.assertRaises(ValueError):
+            m.model_payload('hello',128,'raw','required')
     def test_unknown_protocol_refused(self):
         with self.assertRaises(ValueError):
             m.model_payload('hello',128,'force_git_head')

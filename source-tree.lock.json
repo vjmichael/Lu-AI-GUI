@@ -325,7 +325,7 @@
     },
     {
       "path": "benchmarks/e1/e1_p07_llama_completion.py",
-      "blob": "e5fbd88ef456e7e7029dbae7570bb9504863ec42"
+      "blob": "6f50ac8ef8ffe654a638344c39912fb12ac3406e"
     },
     {
       "path": "benchmarks/e1/e1_p08_linux_group_guard.py",
@@ -381,7 +381,7 @@
     },
     {
       "path": "benchmarks/e1/test_e1_p07_llama_completion.py",
-      "blob": "266f408d9c7fc0e9f7607f6d500c7125a0a34f9a"
+      "blob": "4ba4c0493031b2a58222a2eb14614af39ee0e4b7"
     },
     {
       "path": "benchmarks/e1/test_memory_loop02_qwen_feedback.py",
@@ -3145,7 +3145,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "6677080ba349bea45a39a88bd4d82cfc7c1c4949"
+      "blob": "acbc6b81cb54f5fd500f436c803e94e0c6382703"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",

@@ -828,8 +828,13 @@ impl ModelStepGenerator for GenuineGgufStep{
             .stdin(Stdio::piped()).stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn().map_err(|_|NativeGenerationError::InferenceFailed)?;
+        // AGENT-01G's human-reviewed task demands native observation.
+        // Constrain only the first envelope kind; the model still chooses
+        // the actual catalog tool name/arguments. Host grant and effect
+        // verification are unchanged; never substitute a scripted call.
+        let tool_mode=if self.raw_replies.is_empty(){"required"}else{"auto"};
         let payload=serde_json::json!({
-            "prompt":prompt,"max_tokens":max_tokens
+            "prompt":prompt,"max_tokens":max_tokens,"tool_mode":tool_mode
         }).to_string();
         child.stdin.take().unwrap().write_all(payload.as_bytes())
             .map_err(|_|NativeGenerationError::InferenceFailed)?;

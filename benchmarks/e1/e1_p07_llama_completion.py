@@ -38,7 +38,11 @@ GENERIC_REPLY_JSON_SCHEMA = {
 }
 
 
-def model_payload(prompt: str, tokens: int, protocol: str) -> dict:
+def model_payload(prompt: str, tokens: int, protocol: str, tool_mode: str = "auto") -> dict:
+    if tool_mode not in ("auto", "required"):
+        raise ValueError("Unknown reviewed observation mode")
+    if tool_mode == "required" and protocol != "json_schema":
+        raise ValueError("Required observation mode needs strict JSON schema")
     if protocol not in ("raw", "json_schema"):
         raise ValueError("Unknown explicit test-only response protocol")
     if protocol == "json_schema":
@@ -52,15 +56,24 @@ def model_payload(prompt: str, tokens: int, protocol: str) -> dict:
         "stop": ["<|im_end|>"]
     }
     if protocol == "json_schema":
-        result["json_schema"] = GENERIC_REPLY_JSON_SCHEMA
+        # Host review policy already requires an observed effect before any
+        # final answer in these tests. Narrow only the FIRST step to a
+        # tool-shaped envelope, without supplying a tool NAME/arguments.
+        # Qwen must still select the advertised live catalog tool.
+        # Host validates authorization, exact effects, feedback and restart.
+        result["json_schema"] = (
+            GENERIC_REPLY_JSON_SCHEMA["oneOf"][0] if tool_mode == "required"
+            else GENERIC_REPLY_JSON_SCHEMA
+        )
     return result
 
 
 def main():
     request = json.load(sys.stdin)
-    if not isinstance(request, dict) or set(request) != {"prompt", "max_tokens"}:
+    if not isinstance(request, dict) or set(request) != {"prompt", "max_tokens", "tool_mode"}:
         raise ValueError("Expected exactly prompt and max_tokens")
     prompt, tokens = request["prompt"], request["max_tokens"]
+    tool_mode = request["tool_mode"]
     if not isinstance(prompt, str) or not 0 < len(prompt.encode()) <= 131072:
         raise ValueError("Invalid native-model prompt")
     if type(tokens) is not int or not 1 <= tokens <= 512:
@@ -69,7 +82,7 @@ def main():
     if not 1024 <= port <= 65535:
         raise ValueError("Only the configured localhost model port is permitted")
     protocol = os.environ.get("LU_E1_P07_RESPONSE_PROTOCOL", "raw")
-    payload = json.dumps(model_payload(prompt, tokens, protocol)).encode("utf-8")
+    payload = json.dumps(model_payload(prompt, tokens, protocol, tool_mode)).encode("utf-8")
     url = f"http://127.0.0.1:{port}/completion"
     http_request = urllib.request.Request(
         url, data=payload, headers={"Content-Type": "application/json"},
