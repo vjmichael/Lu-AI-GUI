@@ -96,7 +96,6 @@ pub struct CiControlObservation {
     pub is_step: bool,
 }
 
-
 #[cfg(feature = "dev046c-ci-control")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CiRedactedVariable {
@@ -389,9 +388,7 @@ impl DapSession {
     /// expressions are available. The adapter's values are never returned.
     #[cfg(feature = "dev046c-ci-control")]
     pub fn ci_variables(&mut self) -> Result<Vec<u8>, DapError> {
-        if self.phase != DapPhase::Stopped
-            || !self.pending.is_empty()
-            || self.ci_control.is_some()
+        if self.phase != DapPhase::Stopped || !self.pending.is_empty() || self.ci_control.is_some()
         {
             return Err(DapError::InvalidPhase);
         }
@@ -741,11 +738,15 @@ impl DapSession {
                     }
                     #[cfg(feature = "dev046c-ci-control")]
                     "scopes" if self.phase == DapPhase::Stopped => {
-                        let probe = self.ci_variable_probe.as_mut().ok_or(DapError::InvalidPhase)?;
+                        let probe = self
+                            .ci_variable_probe
+                            .as_mut()
+                            .ok_or(DapError::InvalidPhase)?;
                         if probe.scope_reference.is_some() || probe.variables_requested {
                             return Err(DapError::InvalidMessage);
                         }
-                        let scopes = obj.get("body")
+                        let scopes = obj
+                            .get("body")
                             .and_then(|body| body.get("scopes"))
                             .and_then(Value::as_array)
                             .ok_or(DapError::InvalidMessage)?;
@@ -754,13 +755,16 @@ impl DapSession {
                         }
                         let mut selected = None;
                         for scope in scopes {
-                            let name = scope.get("name").and_then(Value::as_str)
+                            let name = scope
+                                .get("name")
+                                .and_then(Value::as_str)
                                 .ok_or(DapError::InvalidMessage)?;
                             if name.len() > 48 || name.chars().any(char::is_control) {
                                 return Err(DapError::InvalidMessage);
                             }
                             if matches!(name, "Locals" | "Arguments") {
-                                let reference = scope.get("variablesReference")
+                                let reference = scope
+                                    .get("variablesReference")
                                     .and_then(Value::as_u64)
                                     .filter(|id| *id > 0 && *id <= MAX_SEQ)
                                     .ok_or(DapError::InvalidMessage)?;
@@ -776,14 +780,18 @@ impl DapSession {
                     }
                     #[cfg(feature = "dev046c-ci-control")]
                     "variables" if self.phase == DapPhase::Stopped => {
-                        let probe = self.ci_variable_probe.as_mut().ok_or(DapError::InvalidPhase)?;
+                        let probe = self
+                            .ci_variable_probe
+                            .as_mut()
+                            .ok_or(DapError::InvalidPhase)?;
                         if !probe.variables_requested
                             || probe.scope_reference.is_none()
                             || probe.redacted.is_some()
                         {
                             return Err(DapError::InvalidMessage);
                         }
-                        let entries = obj.get("body")
+                        let entries = obj
+                            .get("body")
                             .and_then(|body| body.get("variables"))
                             .and_then(Value::as_array)
                             .ok_or(DapError::InvalidMessage)?;
@@ -792,17 +800,29 @@ impl DapSession {
                         }
                         let mut redacted = Vec::with_capacity(entries.len());
                         for entry in entries {
-                            let name = entry.get("name").and_then(Value::as_str)
+                            let name = entry
+                                .get("name")
+                                .and_then(Value::as_str)
                                 .ok_or(DapError::InvalidMessage)?;
-                            if name.is_empty() || name.len() > 64 ||
-                                !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                            if name.is_empty()
+                                || name.len() > 64
+                                || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
                             {
                                 return Err(DapError::InvalidMessage);
                             }
-                            let declared_type = entry.get("type").and_then(Value::as_str)
-                                .filter(|ty| ty.len() <= 64
-                                    && ty.bytes().all(|b| b.is_ascii_alphanumeric()
-                                        || matches!(b, b'_' | b'<' | b'>' | b',' | b' ' | b'&' | b'*')))
+                            let declared_type = entry
+                                .get("type")
+                                .and_then(Value::as_str)
+                                .filter(|ty| {
+                                    ty.len() <= 64
+                                        && ty.bytes().all(|b| {
+                                            b.is_ascii_alphanumeric()
+                                                || matches!(
+                                                    b,
+                                                    b'_' | b'<' | b'>' | b',' | b' ' | b'&' | b'*'
+                                                )
+                                        })
+                                })
                                 .map(str::to_owned);
                             redacted.push(CiRedactedVariable {
                                 name: name.to_owned(),
@@ -1063,7 +1083,9 @@ mod tests {
         s.phase = DapPhase::Stopped;
         s.last_stopped_thread = Some(11);
         s.last_source_candidate = Some(SourceLineCandidate {
-            frame_id: 9, line: 7, column: None,
+            frame_id: 9,
+            line: 7,
+            column: None,
             adapter_path: "/workspace/src/main.rs".into(),
             instruction_address: Some(0x140001000),
         });
@@ -1076,7 +1098,8 @@ mod tests {
             "success":true,"body":{"scopes":[
                 {"name":"Locals","variablesReference":77,"expensive":false}
             ]}
-        }))).unwrap();
+        })))
+        .unwrap();
         let wire = String::from_utf8(s.ci_variables().unwrap()).unwrap();
         assert!(wire.contains(r#""command":"variables""#));
         assert!(wire.contains(r#""count":16"#));
@@ -1088,7 +1111,8 @@ mod tests {
                  "variablesReference":100},
                 {"name":"counter","type":"i32","value":"17","variablesReference":0}
             ]}
-        }))).unwrap();
+        })))
+        .unwrap();
         let result = s.ci_take_redacted_variables().unwrap();
         assert_eq!(result.frame_id, 9);
         assert_eq!(result.variables.len(), 2);
@@ -1107,7 +1131,9 @@ mod tests {
             s.phase = DapPhase::Stopped;
             s.last_stopped_thread = Some(3);
             s.last_source_candidate = Some(SourceLineCandidate {
-                frame_id: 5, line: 2, column: None,
+                frame_id: 5,
+                line: 2,
+                column: None,
                 adapter_path: "/workspace/src/main.rs".into(),
                 instruction_address: Some(0x140001000),
             });
@@ -1115,29 +1141,41 @@ mod tests {
         };
         let mut expensive = make();
         expensive.ci_scopes(5).unwrap();
-        assert_eq!(expensive.receive(&framed(json!({
-            "seq":1,"type":"response","request_seq":1,"command":"scopes",
-            "success":true,"body":{"scopes":[
-                {"name":"Locals","variablesReference":99,"expensive":true}
-            ]}
-        }))).unwrap_err(),DapError::InvalidMessage);
-        assert_eq!(expensive.phase(),DapPhase::Quarantined);
+        assert_eq!(
+            expensive
+                .receive(&framed(json!({
+                    "seq":1,"type":"response","request_seq":1,"command":"scopes",
+                    "success":true,"body":{"scopes":[
+                        {"name":"Locals","variablesReference":99,"expensive":true}
+                    ]}
+                })))
+                .unwrap_err(),
+            DapError::InvalidMessage
+        );
+        assert_eq!(expensive.phase(), DapPhase::Quarantined);
         let mut stale = make();
         stale.ci_scopes(5).unwrap();
-        stale.receive(&framed(json!({
-            "seq":3,"type":"event","event":"continued"
-        }))).unwrap();
+        stale
+            .receive(&framed(json!({
+                "seq":3,"type":"event","event":"continued"
+            })))
+            .unwrap();
         assert!(stale.ci_take_redacted_variables().is_none());
-        assert_eq!(stale.ci_variables().unwrap_err(),DapError::InvalidPhase);
+        assert_eq!(stale.ci_variables().unwrap_err(), DapError::InvalidPhase);
         let mut duplicate = make();
         duplicate.ci_scopes(5).unwrap();
-        assert_eq!(duplicate.receive(&framed(json!({
-            "seq":1,"type":"response","request_seq":1,"command":"scopes",
-            "success":true,"body":{"scopes":[
-                {"name":"Locals","variablesReference":99},
-                {"name":"Arguments","variablesReference":101}
-            ]}
-        }))).unwrap_err(),DapError::InvalidMessage);
+        assert_eq!(
+            duplicate
+                .receive(&framed(json!({
+                    "seq":1,"type":"response","request_seq":1,"command":"scopes",
+                    "success":true,"body":{"scopes":[
+                        {"name":"Locals","variablesReference":99},
+                        {"name":"Arguments","variablesReference":101}
+                    ]}
+                })))
+                .unwrap_err(),
+            DapError::InvalidMessage
+        );
     }
 
     #[test]

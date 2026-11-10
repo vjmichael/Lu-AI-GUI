@@ -125,3 +125,7 @@ It is triggered only by this workflow file on the Group 4 branch and does
 not automatically open an independent CI fanout. All three actual OS
 jobs must pass at one SHA. A queued/failed/absent job is NOT ACCEPTED.
 
+
+## First exact-head Group 4 CI finding
+
+[Consolidated run 42865814046](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42865814046) at `ae6c9a41ddf833526eb8b8e58a7c4b0cb843fa73` reached the source preflight and found native `rustfmt` differences in the new redacted-variable DAP processor. Linux kernel worker tests were not reached; this is not containment failure or a native PASS. The exact formatter output was applied without changing authority. A *new* final-head run is necessary before any native claim.
