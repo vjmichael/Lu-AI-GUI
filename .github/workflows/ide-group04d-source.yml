@@ -1,3 +1,4 @@
+# Exact native-source rerun after independently reported supervisor formatting correction.
 # Recheck exact developer source after native Rustfmt and renderer safety updates.
 name: IDE G04D guarded variable inspection source and native compiler (not release)
 on:
