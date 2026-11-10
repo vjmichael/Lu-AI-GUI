@@ -29,6 +29,7 @@ test('backend selection stays a human controlled native preference, not a model 
   const host=read('src-tauri/src/lib.rs');
   const choice=read('src-tauri/src/preview_engine_choice.rs');
   const ui=read('web/main.jsx');
+  const settings=read('web/native_windows.jsx');
   assert.match(host,/async fn lu_model_select_backend/);
   assert.match(host,/MessageDialogButtons::OkCancelCustom/);
   assert.match(host,/lu_model_select_backend,/);
@@ -36,9 +37,11 @@ test('backend selection stays a human controlled native preference, not a model 
   assert.match(choice,/Unknown engine mode/);
   assert.match(choice,/read_choice/);
   assert.match(choice,/write_choice/);
-  assert.match(ui,/invoke\('lu_model_select_backend'/);
-  assert.match(ui,/Use \{item.backend\} on next Lu restart/);
-  assert.match(ui,/gpuExecutionVerified/);
+  assert.match(settings,/invoke\('lu_model_select_backend'/);
+  assert.match(settings,/Use on next start/);
+  assert.match(settings,/selectedOnNextStart/);
+  assert.match(settings,/Saving a preference never grants GPU access/);
+  assert.doesNotMatch(ui,/invoke\('lu_model_select_backend'/);
   assert.doesNotMatch(choice,/Command::new|std::process::Command|unsafe/);
 });
 
