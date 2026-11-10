@@ -208,9 +208,9 @@ impl CiControlSlot {
     }
     pub(crate) fn take_variables(&mut self) -> Result<CiVariablesDispatch, ControlDenial> {
         let claim = self.claim.take().ok_or(ControlDenial::AlreadyConsumed)?;
-        match claim.operation {
+        match &claim.operation {
             DebugReviewIntent::InspectVariables { frame_id }
-                if frame_id == self.current.frame_id =>
+                if *frame_id == self.current.frame_id =>
             {
                 Ok(CiVariablesDispatch {
                     from: self.current.clone(),
