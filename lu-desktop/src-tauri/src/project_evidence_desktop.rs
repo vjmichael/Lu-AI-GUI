@@ -298,4 +298,43 @@ mod tests{
         assert!(scoped_read(&d,"/root/file",1024).is_err());
         fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn entire_selected_project_produces_original_source_and_stale_run_links(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-plan02-endtoend-{}",std::process::id()));
+        let _=fs::remove_dir_all(&root);
+        for sub in ["src","tests","reports","docs"]{
+            fs::create_dir_all(root.join(sub)).unwrap();
+        }
+        fs::write(root.join("docs/REQUIREMENTS.md"),
+            "# Requirements\n- [ ] Must implement src/feature.rs and verify by test\n").unwrap();
+        fs::write(root.join("src/feature.rs"),"pub fn ready()->bool{true}").unwrap();
+        fs::write(root.join("tests/feature.test.js"),"// test evidence needs a real runner").unwrap();
+        let old=serde_json::json!({
+            "schema":"lu-project-native-run-v1",
+            "sourceCommit":"a".repeat(40),
+            "testPath":"tests/feature.test.js",
+            "sourcePath":"src/feature.rs",
+            "runId":"historical-linux-1",
+            "outcome":"passed",
+            "artifactPath":null,"artifactSha256":null
+        });
+        fs::write(root.join("reports/run.json"),
+            serde_json::to_vec(&old).unwrap()).unwrap();
+        let result=assemble_from_selected(&root).unwrap();
+        graph::audit(&result).unwrap();
+        assert!(result.selected_head.is_none());
+        assert!(result.nodes.iter().any(|n|n.kind==graph::NodeKind::Requirement));
+        assert!(result.nodes.iter().any(|n|n.kind==graph::NodeKind::Run
+            &&n.evidence==graph::EvidenceState::Stale));
+        for relation in [graph::Relation::OriginatesFrom,
+            graph::Relation::ExplicitMention,graph::Relation::ChecksSource,
+            graph::Relation::ClaimsOutcome]{
+            assert!(result.edges.iter().any(|e|e.relation==relation));
+        }
+        assert!(result.edges.iter().all(|e|
+            e.evidence!=graph::EvidenceState::IndependentlyVerified));
+        fs::remove_dir_all(root).unwrap();
+    }
+
 }

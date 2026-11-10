@@ -163,7 +163,7 @@ pub(crate) fn scan_selected(root:&Path)->Result<ProjectBaseline,String>{
         let entries=match dir.read_dir("."){
             Ok(v)=>v,Err(_)=>{incomplete=true;continue},
         };
-        let mut names=Vec::new();
+        let mut names:Vec<String>=Vec::new();
         for entry in entries{
             if names.len()>MAX_FILES||began.elapsed()>MAX_TIME{
                 incomplete=true;break
@@ -213,7 +213,7 @@ pub(crate) fn scan_selected(root:&Path)->Result<ProjectBaseline,String>{
                 }else{
                     let read=dir.open(&name).and_then(|mut file|{
                         let mut buffer=Vec::new();
-                        file.by_ref().take(MAX_DOC_BYTES+1).read_to_end(&mut buffer)?;
+                        std::io::Read::by_ref(&mut file).take(MAX_DOC_BYTES+1).read_to_end(&mut buffer)?;
                         Ok(buffer)
                     });
                     match read{

@@ -1481,7 +1481,7 @@ jobs:
             --lib project_discovery_desktop::tests -- --nocapture 2>&1 | tee plan02-native-evidence/project-inventory.log
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
             --lib project_evidence_desktop::tests -- --nocapture 2>&1 | tee plan02-native-evidence/evidence-integration.log
-          grep -Fq 'test result: ok. 3 passed; 0 failed;' plan02-native-evidence/evidence-integration.log
+          grep -Fq 'test result: ok. 4 passed; 0 failed;' plan02-native-evidence/evidence-integration.log
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | tee plan02-native-evidence/native-check.log
           echo 'PLAN02_NATIVE_PROJECT_GRAPH_TESTS_PASS' >> "$GITHUB_STEP_SUMMARY"
           echo 'No real installed GUI, remote GitHub CI or human release acceptance claimed.' >> "$GITHUB_STEP_SUMMARY"
