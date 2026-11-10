@@ -32,8 +32,8 @@ mod native {
                 CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
             },
             TokenIntegrityLevel, TokenIsAppContainer, TokenUser, DACL_SECURITY_INFORMATION,
-            OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSID, SECURITY_CAPABILITIES,
-            TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TOKEN_USER,
+            OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSID,
+            SECURITY_CAPABILITIES, TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TOKEN_USER,
         },
         Storage::FileSystem::{
             CreateFileW, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
