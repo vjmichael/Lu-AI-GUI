@@ -65,10 +65,23 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml --all-targets
           cargo fmt --manifest-path ide/host/Cargo.toml -- --check
           echo IDE_G06A_GIT_INVENTORY_HOST=PASS
+      - name: Operator harness syntax (never execute human acceptance in CI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n ide/app/fixtures/Test-G06A-PhysicalLinuxGitInventory.sh
+          if [ "$RUNNER_OS" = Windows ]; then
+            powershell.exe -NoProfile -Command "`$tokens=`$null; `$errors=`$null; [System.Management.Automation.Language.Parser]::ParseFile('ide/app/fixtures/Test-G06A-PhysicalWindowsGitInventory.ps1', [ref]`$tokens, [ref]`$errors) | Out-Null; if (`$errors.Count -ne 0) { exit 1 }"
+          fi
       - name: Native Tauri route compiles on this platform
         shell: bash
         run: |
           set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ]; then
+            # The installed release icon is NOT replaced; this fixture
+            # creates only a deterministic temporary headless CI resource.
+            python ide/app/fixtures/make_g04d_ci_icon.py
+          fi
           cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
           echo IDE_G06A_NATIVE_TAURI=COMPILED_NOT_INSTALLED
       - name: Source receipt (not operator acceptance)
