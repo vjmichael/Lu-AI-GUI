@@ -43,6 +43,9 @@ ide055-ci-wheelhouse = ["package-uv-worker"]
 # Explicit compile-time opt-in for disposable native CI ONLY. This is not a
 # production worker feature and must not be inherited by Tauri/NSIS builds.
 ci-native-null-lease = ["windows-worker"]
+# Disposable Windows kernel AppContainer ACL hostile-child test only.
+# Never linked into the installed IDE or native-package-uv production path.
+ide056-ci-acl-positive = ["windows-worker"]
 # CI-only ELF oracle outside the child cgroup, never packaged into a desktop.
 # Without this precise opt-in the native method fails closed at runtime.
 dev045d3-ci-oracle = ["dap-transport", "linux-worker"]

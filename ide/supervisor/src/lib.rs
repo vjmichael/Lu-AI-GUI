@@ -47,6 +47,8 @@ pub mod windows_kernel_pc;
 mod windows_null_device;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_package_acl;
+#[cfg(all(target_os = "windows", feature = "ide056-ci-acl-positive"))]
+pub use windows_package_acl::inspect_staged_readonly_tree as inspect_ide056_readonly_tree;
 #[cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
 mod windows_stopped_line_oracle;
 pub mod wo6_build_test_evidence;

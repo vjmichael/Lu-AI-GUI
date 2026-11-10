@@ -104,6 +104,15 @@ jobs:
             --features "$features" --all-targets
           cargo check --manifest-path ide/supervisor/Cargo.toml \
             --features "$features" --all-targets
+          if [ "$RUNNER_OS" = Windows ]; then
+            # First-party disposable ACL probe. Real CreateAppContainerProfile,
+            # CREATE_SUSPENDED+JOB_LIST, native source read and write/rename/
+            # delete denial, plus private output success. This is not human
+            # approval or installed package-worker enablement.
+            cargo run --manifest-path ide/supervisor/Cargo.toml \
+              --example ide056_windows_acl_positive \
+              --features ide056-ci-acl-positive
+          fi
           echo IDE055_NATIVE_SUPERVISOR_AND_HOSTILE_PACKAGE_FIXTURES_PASS
       - name: Actual platform Tauri package feature compile; not physical installation
         id: tauri_compile
