@@ -13,6 +13,7 @@ import sys
 LLVM18_PIN = "3b5b5c1ec4a3095ab096dd780e84d7ab81f3d7ff"
 SOURCE = "lldb/source/Plugins/Process/Windows/Common/DebuggerThread.cpp"
 HEADER = "lldb/source/Plugins/Process/Windows/Common/LuIdeOwnerEvent.h"
+PROGRESS_HEADER = "lldb/tools/lldb-dap/ProgressEvent.h"
 
 
 def replace_one(source: str, original: str, replacement: str) -> str:
@@ -66,7 +67,7 @@ def apply(root: Path) -> None:
         "      // Revoke this exact exception event immediately after continue.\n"
         "      lu_ide_owner::OnContinued(dbe, continued);",
     )
-    overlay = Path(__file__).with_name("LuIdeOwnerEvent.h")
+    # Pinned LLVM 18.1.8 MSVC compile failure (run 42870494783):\n    # ProgressEvent.h uses std::chrono without including its owning header.\n    # Apply only against the exact reviewed upstream include anchor; never\n    # relax compiler flags or substitute an unpinned LLDB binary.\n    progress = root / PROGRESS_HEADER\n    if not progress.is_file():\n        raise RuntimeError("DENIED: pinned LLVM ProgressEvent.h missing")\n    progress_text = progress.read_text(encoding="utf-8")\n    progress_text = replace_one(\n        progress_text,\n        "#include <atomic>\\n",\n        "#include <atomic>\\n#include <chrono>\\n",\n    )\n    overlay = Path(__file__).with_name("LuIdeOwnerEvent.h")
     if not overlay.is_file():
         raise RuntimeError("DENIED: first-party owner-event header missing")
     dest = root / HEADER
@@ -74,6 +75,7 @@ def apply(root: Path) -> None:
         raise RuntimeError("DENIED: upstream target unexpectedly exists")
     dest.write_bytes(overlay.read_bytes())
     cpp.write_text(content, encoding="utf-8")
+    progress.write_text(progress_text, encoding="utf-8")
     print("LU_LLDB18_FIRST_PARTY_EVENT_OWNER_OVERLAY=APPLIED_NOT_NATIVE_ACCEPTED")
 
 
