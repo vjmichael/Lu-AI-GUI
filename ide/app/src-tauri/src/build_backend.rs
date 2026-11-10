@@ -1035,6 +1035,7 @@ impl NativeBuildRuntime {
                     format!(
                         "Approve one OFFLINE LOCKED uv Sync in an OS-protected worker?\n\n\
                         Project: {project_id}\nExact source HEAD: {head}\n\
+                        One-use native Job ID: {}\nFull sealed JobPlan SHA-256: {}\n\
                         Manifest + lock evidence: {}\nReviewed operation: {}\n\
                         Frozen source tree: {}\nPinned uv runtime: {}\n\n\
                         Source /workspace is read only; writable environment is in \
@@ -1042,6 +1043,8 @@ impl NativeBuildRuntime {
                         network capabilities; builds, editable workspace installs, and \
                         arbitrary package manager arguments are disabled.\n\
                         Dependency output will be independently audited. Deny if source changed.",
+                        prepared.job_id,
+                        prepared.plan_sha256,
                         reviewed.evidence_fingerprint,
                         reviewed.preview_sha256,
                         plan.input_snapshot_sha256,

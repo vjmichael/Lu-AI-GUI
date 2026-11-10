@@ -3627,7 +3627,7 @@ function App() {
                 conventional files in tests/. This is not exhaustive test
                 discovery, does not execute scripts, and does not validate
                 package dependencies or approve a worker.</p>
-              {projectRunProfiles?.projectId===activeProject?.projectId &&
+              {belongsToSelectedProject(activeProject, projectRunProfiles) &&
                 <div className="dev03ProfileGrid">
                   {projectRunProfiles.profiles.map(profile=>
                     <article className="dev03ProfileCard" key={profile.id}>
@@ -3665,7 +3665,7 @@ function App() {
                               {adapterReviewBusy ? 'Reviewing…' :
                                 'Inspect fixed native adapter contract'}
                             </button>
-                            {adapterReview?.projectId===activeProject?.projectId &&
+                            {belongsToSelectedProject(activeProject, adapterReview) &&
                               adapterReview.profileId===profile.id &&
                               adapterReview.manifestSha===profile.sha &&
                               <section className="dev03AdapterReceipt"
@@ -3705,7 +3705,7 @@ function App() {
                 matches are hints, not individual runnable tests. Nested,
                 generated and framework-discovered tests may be omitted.
                 Nothing here grants execution or runs a project script.</p>
-              {testDiscovery?.projectId===activeProject?.projectId &&
+              {belongsToSelectedProject(activeProject, testDiscovery) &&
                 <>
                   <p role="status">
                     {testDiscovery.files.length} filenames found
@@ -3755,7 +3755,7 @@ function App() {
                   Both Linux and Windows preserve stdout/stderr identity; Windows
                   uses separate protected inherited file handles. Live output is not
                   a completed-job receipt or proof of kernel cleanup.</p>
-                {nativeJobOutput?.projectId===activeProject?.projectId &&
+                {belongsToSelectedProject(activeProject, nativeJobOutput) &&
                   nativeJobOutput.chunks.length > 0
                   ? <>
                     {nativeJobOutput.truncated &&
@@ -3930,7 +3930,7 @@ function App() {
                 <h3>DEV-04.1 · Project debugger target preparation</h3>
                 <button type="button" className="ghostBtn"
                   disabled={!activeProject||debugTargetBusy||buildBusy||
-                    projectRunProfiles?.projectId!==activeProject?.projectId||
+                    !belongsToSelectedProject(activeProject, projectRunProfiles)||
                     !projectRunProfiles.profiles.some(p=>p.id==='rust_build'&&p.sha)}
                   onClick={()=>void inspectDebugTarget()}>
                   {debugTargetBusy?'Reviewing…':'Review Rust target provenance'}
@@ -3941,7 +3941,7 @@ function App() {
                 debug symbols or a safe execution target. Project debugger
                 launch remains unavailable pending independently verified
                 build-to-binary provenance and native OS authorization.</p>
-              {debugTargetReview?.projectId===activeProject?.projectId &&
+              {belongsToSelectedProject(activeProject, debugTargetReview) &&
                 <div role="status">
                   <p>Clean source HEAD:
                     {' '}<code>{debugTargetReview.cleanGitHead}</code></p>
@@ -4271,7 +4271,7 @@ function App() {
                 {packageInspectionBusy ? 'Inspecting manifest evidence…' :
                   'Inspect project package managers'}
               </button>
-              {packageInspection?.projectId===activeProject?.projectId &&
+              {belongsToSelectedProject(activeProject, packageInspection) &&
                 <div role="status" className="continuityEvents">
                   <p>Revision fingerprint: <code>{packageInspection.fingerprint}</code></p>
                   <p>Snapshot: {packageInspection.snapshotConsistency.replaceAll('_',' ')}.
@@ -4294,7 +4294,7 @@ function App() {
                     </article>)}
                 </div>}
             </div>
-              {packageInspection?.projectId===activeProject?.projectId &&
+              {belongsToSelectedProject(activeProject, packageInspection) &&
                 <section aria-label="IDE-05.2 verified package operation preview">
                   <h3>Review a proposed dependency operation</h3>
                   <p>The host fixes the recognized manager to this project and
@@ -4355,7 +4355,7 @@ function App() {
                     {packagePreviewBusy?'Inspecting source evidence…':
                       'Preview operation without executing'}
                   </button>
-                  {packagePreview?.projectId===activeProject?.projectId &&
+                  {belongsToSelectedProject(activeProject, packagePreview) &&
                     <article className="continuityEvent">
                       <strong>Static review — {packagePreview.request.managerId}
                         {' · '}{packagePreview.request.operation}</strong>
@@ -4422,7 +4422,7 @@ function App() {
 
                     </article>}
                 </section>}
-              {buildStatus?.current?.projectId===activeProject?.projectId &&
+              {belongsToSelectedProject(activeProject, buildStatus?.current) &&
                 buildStatus.current.recipeId==='uv_sync_offline' &&
                 <article className="continuityEvent" role="status">
                   <strong>Active protected offline uv Sync</strong>
@@ -4443,7 +4443,7 @@ function App() {
                     Ask for separate native OS recovery approval
                   </button>
                 </article>)}
-              {packageRunResult?.projectId===activeProject?.projectId &&
+              {belongsToSelectedProject(activeProject, packageRunResult) &&
                 <article className="continuityEvent" role="status">
                   <strong>Last protected uv Sync</strong>
                   <p>Job: <code>{packageRunResult.jobId}</code> ·
@@ -5387,7 +5387,7 @@ function App() {
                 : 'No remembered tab layout. Remember tabs explicitly for restart.'}
               {' '}Never stores unsaved code or Undo. Use Preserve draft for private recovery.
             </p>
-            {diskAuditReport?.projectId===activeProject?.projectId &&
+            {belongsToSelectedProject(activeProject, diskAuditReport) &&
               <section className="diskAuditPanel" aria-label="External file changes">
                 <div className="diskAuditHeading">
                   <strong>External file revision check</strong>
@@ -5426,7 +5426,7 @@ function App() {
                    visibleEditorTabs.count} · max {MAX_OPEN_TABS_PER_PROJECT}
               </span>
               <select className="editorTabJump" aria-label="Jump to open file"
-                value={activeTab?.projectId===activeProject?.projectId ?
+                value={belongsToSelectedProject(activeProject, activeTab) ?
                   activeTab.key : ''}
                 onChange={event=>selectPrimaryEditorTab(event.target.value)}>
                 <option value="">Open tabs</option>
@@ -5458,7 +5458,7 @@ function App() {
                   onClick={()=>void loadEditorTaskCatalog()}>
                   {editorTaskBusy ? 'Working…' : 'Load C6 tasks'}
                 </button>
-                {editorTaskCatalog?.projectId===activeProject?.projectId &&
+                {belongsToSelectedProject(activeProject, editorTaskCatalog) &&
                   editorTaskCatalog.tasks.length>0 && <>
                     <label htmlFor="c7EditorTaskChoice">Task</label>
                     <select id="c7EditorTaskChoice" value={editorTaskId}
@@ -5475,7 +5475,7 @@ function App() {
                       Link saved file to task
                     </button>
                   </>}
-                {editorTaskCatalog?.projectId===activeProject?.projectId &&
+                {belongsToSelectedProject(activeProject, editorTaskCatalog) &&
                   !editorTaskCatalog.tasks.length &&
                   <span>Create a development task in Continuity first.</span>}
                 <small>Host-verified saved SHA only. Draft bytes, test results,
@@ -5586,7 +5586,7 @@ function App() {
                   </button>
                 </span>
               </div>
-              {diskComparison?.projectId===activeProject?.projectId &&
+              {belongsToSelectedProject(activeProject, diskComparison) &&
                 diskComparison.tabKey===activeTab.key &&
                 diskComparison.bufferRevision===activeTab.bufferRevision &&
                 diskComparison.generation===activeTab.generation &&
@@ -5635,7 +5635,7 @@ function App() {
                   <p>Existing Reload and Save commands retain their own confirmation,
                     source revision checks and draft-protection rules.</p>
                 </section>}
-              {mergeReview?.projectId===activeProject?.projectId &&
+              {belongsToSelectedProject(activeProject, mergeReview) &&
                 mergeReview.tabKey===activeTab.key &&
                 mergeReview.generation===activeTab.generation &&
                 mergeReview.savedRevision===activeTab.revision &&

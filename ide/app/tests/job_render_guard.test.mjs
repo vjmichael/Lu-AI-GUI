@@ -22,3 +22,30 @@ test('P04 React protected Job requests view uses proven scoped guards', () => {
   }
   assert.doesNotMatch(ui,/\{(?:buildStatus\?\.current|debugStatus\?\.current|buildResult|debugResult)\?\.projectId === activeProject\?\.projectId/);
 });
+
+test('IDE-05.6 all project-scoped Jobs, Packages and Editor views require a real selected project',()=>{
+  const ui=readFileSync(new URL('../web/main.jsx', import.meta.url),'utf8');
+  const names=[
+    'projectRunProfiles','adapterReview','testDiscovery','nativeJobOutput',
+    'debugTargetReview','packageInspection','packagePreview','buildStatus?.current',
+    'packageRunResult','diskAuditReport','activeTab','editorTaskCatalog',
+    'diskComparison','mergeReview'
+  ];
+  for(const name of names) assert.ok(
+    ui.includes('belongsToSelectedProject(activeProject, '+name+')'),
+    'missing identity guard: '+name
+  );
+  assert.doesNotMatch(ui,/\?\.projectId\s*={2,3}\s*activeProject\?\.projectId/);
+  assert.doesNotMatch(ui,/projectRunProfiles\?\.projectId\s*!==\s*activeProject\?\.projectId/);
+});
+test('IDE-05.6 no-project and cross-project receipts cannot select UI panels',()=>{
+  for(const record of [
+    null,undefined,{}, {projectId:''}, {projectId:'ide-foreign'},
+    {projectId:undefined,profiles:[{id:'rust_build'}]}
+  ]) {
+    assert.equal(belongsToSelectedProject(null,record),false);
+    assert.equal(belongsToSelectedProject({projectId:'ide-current'},record),false);
+  }
+  assert.equal(belongsToSelectedProject({projectId:'ide-current'},
+    {projectId:'ide-current',profiles:[]}),true);
+});

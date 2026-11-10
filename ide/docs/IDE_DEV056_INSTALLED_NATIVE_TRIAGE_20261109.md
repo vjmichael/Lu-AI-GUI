@@ -84,3 +84,64 @@ unscoped generic Open-click retry or fake folder selection is introduced.
 
 No Task 5 **full release/physical human** acceptance should be claimed
 from a successful default-disabled NSIS or .deb smoke run.
+
+## 2026-11-10 follow-up — installed gate `79d0643` and actual defects
+
+At [run 42747082451](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42747082451),
+Windows/Ubuntu native compilation and the real delegated Linux protected
+`uv` OS gate all **passed** at exact head
+`79d0643961bbfa39419dec98c78a7c7ee6814017`.
+That does not promote the installed app or human permission gates.
+
+At [installed run 42747082943](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42747082943)
+the genuine unsigned Windows NSIS again installed, launched and bundled
+license evidence, but its WebView UIA tree became empty after the user-facing
+Job requests navigation, despite successful initial native focus recovery.
+Inspecting the **actual React source** found a deterministic render failure:
+when `activeProject===null` and e.g. `projectRunProfiles===null`,
+`projectRunProfiles?.projectId===activeProject?.projectId` evaluates
+`undefined===undefined` → true, so the Jobs page tries to call
+`projectRunProfiles.profiles.map` on null and kills the React render.
+The same incorrect guard affected `testDiscovery`, `nativeJobOutput`,
+package panels and other project-only data. The product fix uses the
+existing `belongsToSelectedProject(activeProject, record)` helper,
+requiring two real, nonempty matching project identities; it also corrects
+one inverted identity guard and tests missing/cross-project data.
+It does **not** substitute UIA clicks, fake any WebView state, or remove
+installed source/restore/uninstall requirements.
+
+The real Linux Debian install, graphical launch, bundled licenses,
+failed-upgrade rollback and user-state preservation passed, but GTK
+`SELECT_FOLDER` did not close or register the fixture after attempts.
+The `79d0643` fixture's attempt 1 and 3 mouse geometry calls succeeded
+and returned before the native `Alt+S` acceptance mnemonic was ever sent.
+The next correction prioritizes independently X11-title-verified actual
+GTK keyboard `Alt+S`, then `Alt+O`, before the limited UIA/AT-SPI
+geometry fallback, and continues to require both actual modal closure
+and the exact registered project; keystroke delivery is never a pass.
+
+## Task 5 one-use approval binding and Windows ACL status
+
+The protected offline-uv approval dialog now includes the freshly prepared
+native **Job ID** and full sealed **JobPlan SHA-256** alongside frozen
+source, manifest, reviewed operation and runtime SHA. The dialog still
+refuses timeout, denial, concurrent cancellation and stale reviewed source
+and grants once only after OS/native revalidation. This is a **binding
+implementation and source-test gate**, not proof that a real human has
+personally clicked Approve/Refuse on a signed installed release.
+
+Windows `uv_sync_offline` is still **refused before creating an AppContainer
+profile**: the copied source and toolchain under `LocalState` have not
+been independently sealed against writes by the exact AppContainer SID.
+The fail-closed `NoContainment` branch is explicitly regression-tested
+ahead of profile creation and staging. A genuine positive Windows security
+gate must independently prove native DACL and mandatory integrity
+read-only source/runtime, writable private output only, no alternate
+token/capability write route, reparse and rename denial, native SCM/Job
+custody and restart recovery. No CI or installed-app smoke run to date
+grants that permission. Do **not** remove the early denial until the
+actual native positive tests and physical approval witness exist.
+
+**Pending:** next exact-head grouped Windows/Ubuntu+delegated Linux source gate
+and NSIS/Debian installed group. Full Task 5 remains open until the real
+installed checks pass and separately all human/Windows ACL gates pass.

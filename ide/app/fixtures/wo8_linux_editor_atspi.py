@@ -189,7 +189,19 @@ def _x11_dialog_activation(attempt):
         # accessible Select Folder button despite a real dialog window.
         # Try only bounded standard native confirmation keys, never a
         # backend/JS selection or an unrelated-window click.
-        key(("Return", "alt+o", "alt+s", "Return")[attempt])
+        # A real Ubuntu 24.04 run navigated to the selected folder on the
+        # first Enter, while later attempts clicked inside the dialog rather
+        # than activating its missing accessibility-exposed accept button.
+        # In GTK SELECT_FOLDER the native affirmative mnemonic is frequently
+        # Alt+S ("Select"); attempt that BEFORE an ambiguous spatial click.
+        # Every event remains a candidate only: exact project registration
+        # and native dialog closure are independently mandatory.
+        native_key = ("Return", "alt+s", "alt+o", "Return")[attempt]
+        key(native_key)
+        print("P04_GTK_NATIVE_CONFIRM_KEY=" +
+              ("enter" if native_key == "Return" else
+               "alt_select" if native_key == "alt+s" else "alt_open") +
+              ";attempt=" + str(attempt), flush=True)
         print("P04_GTK_X11_CHOOSER=visible_real_os_dialog_keyboard;"
               "attempt=" + str(attempt), flush=True)
         return True
@@ -316,16 +328,15 @@ def _native_picker_confirm(attempt=0):
     # showing. Every spatial attempt is inside an actual visible AT-SPI
     # file-chooser rectangle; a close without exact project registration
     # still fails the acceptance test.
-    if attempt in (1, 3):
-        if _atspi_bounded_chooser_mouse(attempt):
-            return
-        if _x11_dialog_activation(attempt):
-            return
-    else:
-        if _x11_dialog_activation(attempt):
-            return
-        if _atspi_bounded_chooser_mouse(attempt):
-            return
+    # Send the *authentic* native GTK keyboard confirmation before trying
+    # AT-SPI geometry. Earlier real runs never exercised the Alt+S mnemonic:
+    # a successful mouse dispatch returned early even though the chooser
+    # remained open. Dispatch is not success; the caller still checks GTK
+    # modal closure AND the exact registered project identity.
+    if _x11_dialog_activation(attempt):
+        return
+    if _atspi_bounded_chooser_mouse(attempt):
+        return
     print("P04_NATIVE_LINUX_GTK_DIALOG_CONFIRMATION=missing_real_chooser_button;"
           "matching_dialog_buttons=" + str(len(ranked)), flush=True)
     deny("native_dialog_confirmation_not_found")

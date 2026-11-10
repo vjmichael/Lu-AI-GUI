@@ -40,6 +40,15 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertIn("if _x11_dialog_activation(attempt):", fixture)
         self.assertIn("if _atspi_bounded_chooser_mouse(attempt):", fixture)
         self.assertIn("key(\"Return\")", fixture)
+        self.assertIn('native_key = ("Return", "alt+s", "alt+o", "Return")[attempt]', fixture)
+        self.assertIn("P04_GTK_NATIVE_CONFIRM_KEY=",fixture)
+        # Do not return after the unreliable spatial action before trying
+        # real native OS affirmative keys for the same confirmed GTK dialog.
+        section=fixture.split("def _native_picker_confirm",1)[1].split(
+            "def _native_chooser_still_open",1)[0]
+        self.assertLess(section.index("if _x11_dialog_activation(attempt):"),
+                        section.index("if _atspi_bounded_chooser_mouse(attempt):"))
+
         self.assertIn("key(\"ctrl+l\")", fixture)
         self.assertIn("if _native_chooser_still_open():", fixture)
         self.assertIn("def _native_chooser_diagnostics():", fixture)

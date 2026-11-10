@@ -81,6 +81,14 @@ test('OS native human consent is fresh and bounded; historical review cannot gra
   assert.match(backend, /fn native_package_consent\(/);
   assert.match(backend, /\.show\(move \|confirmed\|/);
   assert.match(backend, /Duration::from_secs\(45\)/);
+  assert.match(backend, /One-use native Job ID: \{\}/);
+  assert.match(backend, /Full sealed JobPlan SHA-256: \{\}/);
+  assert.match(backend, /prepared\.job_id,\s*prepared\.plan_sha256,/);
+  // Display binding is only source-level evidence; a real human approval
+  // must separately prove OS dialogue, refusal, timeout and stale review.
+  assert.match(backend, /if !choice \|\| requested\.load\(Ordering::SeqCst\)/);
+  assert.match(backend, /\.cancel_before_start\(&prepared\.job_id\)/);
+
   assert.match(backend, /requested\.load\(Ordering::SeqCst\)/);
   assert.match(backend, /registry\s*\.revalidate_package_operation\(/);
   assert.match(backend, /self\s*\.supervisor\s*\.record_human_approval\(/);
@@ -107,4 +115,15 @@ test('cancellation and crash recovery use existing durable original Job not a se
   assert.match(ui, /onClick=\{\(\)=>void reconcileProtectedBuild\(job\)\}/);
   assert.match(ui, /No automatic replay or/);
   assert.match(ui, /result\.installedAppAccepted!==false/);
+});
+
+test('IDE056 Windows package-worker ACLs stay fail-closed before profile or human grant',()=>{
+  const early=windows.indexOf('if plan.recipe_id == "uv_sync_offline"');
+  const create=windows.indexOf('let profile = AppProfile::create(job_id)');
+  const record=windows.indexOf('workspace_staged');
+  assert.ok(early>0 && create>early && record>create,
+    'the native package denial must precede profile, staging and grant');
+  assert.match(windows.slice(early,create),
+    /return Err\(SupervisorError::NoContainment\)/);
+  assert.match(windows, /A copied source tree alone/);
 });
