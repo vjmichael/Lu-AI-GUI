@@ -194,6 +194,62 @@ fn checked_project(
     Ok((repo, root))
 }
 
+/// Internal bytes for a single read-only hunk diff. These are produced
+/// from the registered-project source capability and a verified clean index,
+/// not by allowing libgit2 to follow a WebView-supplied worktree path.
+pub(crate) struct ReviewedGitHunkBuffers {
+    pub review: ReviewedGitFile,
+    pub index_blob_oid: String,
+    pub index_bytes: Vec<u8>,
+    pub source_bytes: Vec<u8>,
+}
+
+impl IdeWorkspaceRegistry {
+    pub(crate) fn read_reviewed_git_hunk_buffers(
+        &self,
+        project_id: &str,
+        relative_path: &str,
+    ) -> Result<ReviewedGitHunkBuffers, &'static str> {
+        let reviewed = self.preview_reviewed_git_file(project_id, relative_path)?;
+        let (repo, _) = checked_project(self, project_id)?;
+        same_head(&repo, &reviewed.local_head)?;
+        let index = clean_index(&repo)?;
+        if index_fingerprint(&index) != reviewed.index_fingerprint {
+            return Err("G06B_HUNK_INDEX_CHANGED");
+        }
+        let entry = index
+            .get_path(Path::new(relative_path), 0)
+            .ok_or("G06B_HUNK_INDEX_ENTRY_MISSING")?;
+        if !matches!(entry.mode, 0o100644 | 0o100755) {
+            return Err("G06B_HUNK_NONREGULAR_INDEX_DENIED");
+        }
+        let blob = repo
+            .find_blob(entry.id)
+            .map_err(|_| "G06B_HUNK_INDEX_BLOB_MISSING")?;
+        if blob.size() > MAX_GIT_FILE_BYTES as usize {
+            return Err("G06B_HUNK_INDEX_BLOB_OVERSIZED");
+        }
+        let index_bytes = blob.content().to_vec();
+        let source_bytes = read_pinned_source(self, project_id, relative_path)?;
+        if source_bytes.len() != reviewed.file_size
+            || hex_digest(&source_bytes) != reviewed.worktree_sha256
+        {
+            return Err("G06B_HUNK_SOURCE_CHANGED");
+        }
+        same_head(&repo, &reviewed.local_head)?;
+        let latest_index = clean_index(&repo)?;
+        if index_fingerprint(&latest_index) != reviewed.index_fingerprint {
+            return Err("G06B_HUNK_INDEX_CHANGED");
+        }
+        Ok(ReviewedGitHunkBuffers {
+            review: reviewed,
+            index_blob_oid: entry.id.to_string(),
+            index_bytes,
+            source_bytes,
+        })
+    }
+}
+
 impl IdeWorkspaceRegistry {
     pub fn preview_reviewed_git_file(
         &self,
