@@ -55,11 +55,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let journal = recovery_root.join("supervisor-receipts.jsonl");
         let reopened = Supervisor::open(journal.clone()).map_err(|e| e.code())?;
         let mut pending = reopened.inspect().map_err(|e| e.code())?;
+        // Replayed Running must be quarantined, NOT silently rewritten as
+        // RecoveryRequired: that receipt is durably appended only by the
+        // explicit kernel-backed reconcile operation below.
         if pending.len() != 1
-            || pending[0].phase != JobPhase::RecoveryRequired
+            || pending[0].phase != JobPhase::Running
             || !pending[0].requires_reconciliation
         {
-            return Err("IDE055_RESTART_DID_NOT_REQUIRE_NATIVE_RECONCILIATION".into());
+            return Err("IDE055_RESTART_RUNNING_NOT_QUARANTINED".into());
         }
         let old = pending.remove(0);
         let clean = reconcile_linux_interrupted(&reopened, &old.job_id).map_err(|e| e.code())?;
@@ -77,6 +80,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || rows[0].execution_verified
         {
             return Err("IDE055_FALSE_EXECUTION_AUTHORITY_ON_RESTART".into());
+        }
+        let history = after.receipt_history(&old.job_id).map_err(|e| e.code())?;
+        let recovery_written = history.iter().any(|item| {
+            item.body.phase == JobPhase::RecoveryRequired
+                && item.body.outcome_code == "recovery_before_os_reconcile"
+        });
+        let terminal_written = history.last().is_some_and(|item| {
+            item.body.phase == JobPhase::Cancelled
+                && item.body.outcome_code == "os_orphan_cleanup_verified"
+        });
+        if !recovery_written || !terminal_written {
+            return Err("IDE055_RESTART_RECOVERY_RECEIPTS_UNVERIFIED".into());
         }
         let source = recovery_root.join("source/pyproject.toml");
         if !fs::read_to_string(source)?.contains("unavailable-ide05-fixture==9999.0.0") {

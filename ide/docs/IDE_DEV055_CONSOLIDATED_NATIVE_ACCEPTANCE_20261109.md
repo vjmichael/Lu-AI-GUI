@@ -294,3 +294,34 @@ gate because rustfmt requires one line for the fixed
 formatter change does not modify any arguments or admission logic;
 the previously queued Linux delegated process proof remains **OPEN** until
 a complete post-change grouped exact-head run independently passes.
+
+## Task 4 — genuine positive wheel PASS; hostile replay expectation corrected
+
+At exact-head `9e62d7055b666178b484d70d2b6b29e7cc9a120e`,
+[run 42735910714](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42735910714)
+passed both Windows and Ubuntu exact-head native compiler/test/formatter matrices.
+The real Linux systemd-delegated cgroup + Bubblewrap fixture also independently
+passed **offline-miss**, **cancellation**, and **positive wheel install**:
+the positive protected uv 0.9.9 child exited **0**, all descendants reaped,
+private output bounded, synthetic archive/RECORD/license/module bytes
+verified, tampered private module correctly denied, source unchanged, durable
+terminal receipt produced, no restart execution grant.
+
+The remaining `--hostile-recovery` case genuinely aborted via **SIGABRT**
+after a durable native Running receipt but stopped with
+`IDE055_RESTART_DID_NOT_REQUIRE_NATIVE_RECONCILIATION`. The original fixture
+incorrectly expected reopened `phase == RecoveryRequired`. The actual
+supervisor contract intentionally replays the durable phase **Running**
+with **requires_reconciliation=true/quarantine**, and its explicit
+`reconcile_interrupted_with` writes the `RecoveryRequired` receipt
+*before* calling the kernel cgroup terminator, then a terminal
+`Cancelled/os_orphan_cleanup_verified` receipt after success. Source
+tests already enforce that no fresh grant survives reopening.
+
+This repair changes only the **CI hostile-fixture assertion** to require
+quarantined `Running` at reopening, invokes real native cgroup cleanup
+unchanged, and additionally asserts both the recovery-before-OS and
+kernel-cleanup terminal receipt codes in the independently reopened chain.
+It does **not** bypass quarantine, auto-retry, skip native kernel evidence
+or alter production logic. The complete group must be rerun at the new
+SHA, including genuine SIGABRT and successful restart reconciliation.
