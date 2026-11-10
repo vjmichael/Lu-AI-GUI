@@ -634,26 +634,116 @@ def _wait_for_native_registered_project(seconds=20):
 
 
 def _registered_native_project_is_exposed():
-    # Distinguish the exact project row in the desktop WebView from its name
-    # echoed inside a GTK folder chooser. No direct catalog reads or IPC.
+    """Observe the exact registered project *and* its actionable editor state.
+
+    The former check accepted any exposed project title and then expected
+    WebKitGTK to name a plain-text <p> status. The installed run proved the
+    catalog and project title were correct but that label was not available.
+    Instead, require the actual active-only Edit button in the real WebView.
+    """
+    project_visible = False
+    active_edit_available = False
     for node in elements():
         try:
-            if (node.name or "").strip() != ROOT.name:
+            if _native_dialog_ancestor(node):
                 continue
-            current = node
-            within_dialog = False
-            for _ in range(14):
-                current = current.parent
-                if current is None:
-                    break
-                role = (current.getRoleName() or "").casefold()
-                if "file chooser" in role or "dialog" in role:
-                    within_dialog = True
-                    break
-            if not within_dialog:
-                return True
+            state = node.getState()
+            if not (state.contains(pyatspi.STATE_SHOWING)
+                    and state.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            name = (node.name or "").strip()
+            role = (node.getRoleName() or "").casefold()
+            if name == ROOT.name:
+                project_visible = True
+            if (name == "Edit project " + ROOT.name and "button" in role
+                    and state.contains(pyatspi.STATE_ENABLED)):
+                active_edit_available = True
         except Exception:
             continue
+    return project_visible and active_edit_available
+
+
+def _native_project_control_inventory():
+    """Category-only installed WebView state diagnostics (no raw names/paths)."""
+    counts = {"project": 0, "edit": 0, "reopen": 0,
+              "edit_enabled": 0, "reopen_enabled": 0}
+    for node in elements():
+        try:
+            if _native_dialog_ancestor(node):
+                continue
+            state = node.getState()
+            if not (state.contains(pyatspi.STATE_SHOWING)
+                    and state.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            name = (node.name or "").strip()
+            role = (node.getRoleName() or "").casefold()
+            if name == ROOT.name:
+                counts["project"] += 1
+            if "button" not in role:
+                continue
+            if name == "Edit project " + ROOT.name:
+                counts["edit"] += 1
+                if state.contains(pyatspi.STATE_ENABLED):
+                    counts["edit_enabled"] += 1
+            if name == "Reopen project " + ROOT.name:
+                counts["reopen"] += 1
+                if state.contains(pyatspi.STATE_ENABLED):
+                    counts["reopen_enabled"] += 1
+        except Exception:
+            continue
+    print("IDE_G02_WEBVIEW_PROJECT_CONTROLS=" +
+          ";".join(k + ":" + str(min(v, 32))
+                   for k, v in sorted(counts.items())), flush=True)
+
+
+def _activate_exact_project_button(prefix, seconds=15, required=True):
+    """Activate a unique visible, enabled button through native AT-SPI.
+
+    Prefix is a fixed caller-selected phrase; the exact basename is derived
+    only from the disposable OS fixture. Never use an arbitrary 'Edit' button
+    or substitute a host IPC call for actual installed WebView interaction.
+    """
+    target = prefix + ROOT.name
+    deadline = time.monotonic() + seconds
+    while True:
+        matches = []
+        for node in elements():
+            try:
+                if (node.name or "").strip() != target:
+                    continue
+                if "button" not in (node.getRoleName() or "").casefold():
+                    continue
+                if _native_dialog_ancestor(node):
+                    continue
+                state = node.getState()
+                if (state.contains(pyatspi.STATE_SHOWING) and
+                    state.contains(pyatspi.STATE_VISIBLE) and
+                    state.contains(pyatspi.STATE_ENABLED)):
+                    matches.append(node)
+            except Exception:
+                continue
+        if len(matches) == 1:
+            node = matches[0]
+            try:
+                action = node.queryAction()
+                for index in range(action.nActions):
+                    if action.getName(index).casefold() in ("click", "press", "activate"):
+                        if action.doAction(index):
+                            return True
+            except Exception:
+                pass
+            try:
+                if node.queryComponent().grabFocus():
+                    key("Return")
+                    return True
+            except Exception:
+                pass
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.25)
+    if required:
+        _native_project_control_inventory()
+        deny("native_exact_project_action_unavailable_" + prefix.split()[0].lower())
     return False
 
 
@@ -995,6 +1085,7 @@ def select_native_folder():
     print("P04_NATIVE_GTK_REGISTRATION_RESULT=" + outcome, flush=True)
     print("P04_NATIVE_GTK_HOST_PICKER_RESULT=" + _host_picker_receipts(), flush=True)
     if outcome != "registered_exact_root_and_webview":
+        _native_project_control_inventory()
         print("P04_NATIVE_GTK_FOLDER_ACCEPT=closed_without_exact_project_registration",flush=True)
         deny("native_folder_chooser_did_not_register_project")
     print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_closed_after_native_action;"
@@ -1051,18 +1142,17 @@ def select_native_folder():
 
 
 def editor_project():
-    # After a true desktop restart, the persisted project is registered but
-    # CLOSED. Reopen through the installed GTK/WebKit accessibility UI; never
-    # jump directly into an IPC or assume a saved catalog means an open editor.
-    try:
-        accessible("Closed · ready to reopen", seconds=2)
-    except RuntimeError:
-        pass
-    else:
-        activate("Reopen", timeout=15)
-        print("WO8_LINUX_PROJECT_REOPEN=real_atspi_action", flush=True)
-    accessible("Open · editor available", seconds=15)
-    activate("Edit")
+    # Persisted registration is CLOSED after an actual desktop restart.
+    # React exposes a Reopen button only for inactive records and an Edit
+    # button only for ACTIVE records. Plain paragraph text like
+    # "Open · editor available" is not reliably named in WebKitGTK/AT-SPI.
+    # Verify the real button state, not its non-interactive status label.
+    if _activate_exact_project_button("Reopen project ", seconds=3,
+                                      required=False):
+        print("WO8_LINUX_PROJECT_REOPEN=exact_native_atspi_action", flush=True)
+    _activate_exact_project_button("Edit project ", seconds=18)
+    print("IDE_G02_NATIVE_ACTIVE_EDITOR_BUTTON=verified_exact_project",
+          flush=True)
     accessible("Source explorer and editor", seconds=15)
     activate("main.rs")
     focus_editor()

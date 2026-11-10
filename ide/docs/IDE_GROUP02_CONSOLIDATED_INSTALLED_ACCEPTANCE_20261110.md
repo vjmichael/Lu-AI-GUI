@@ -143,3 +143,33 @@ identity, not a bypass of actual GUI folder selection. No success is claimed
 until one **final exact-head** Windows/Linux consolidated installed group
 passes with both project catalog and real WebView root confirmation,
 editing/restart/conflict/uninstall and user-data preservation.
+
+## Native WebView project activation after GTK selection — 2026-11-10 UTC
+
+[Run 42775168983](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42775168983)
+was the first genuine Ubuntu Debian-installed group in which
+`P04_NATIVE_GTK_REGISTRATION_RESULT=registered_exact_root_and_webview`
+and `P04_NATIVE_GTK_HOST_PICKER_RESULT=registered` PASSED. The host
+`register_from_native_picker` atomically persists and activates the record
+(`active: true`), but the GTK installed editor test next failed looking for
+the plain-text React paragraph `Open · editor available`, whose AT-SPI
+accessible name is not guaranteed. This was a **test/UI accessibility contract
+gap**, not proven evidence of inactive host registration. The same run's
+Windows installed acceptance succeeded.
+
+Repair: the actual React project-card **Edit** and **Reopen** buttons expose
+explicit, human-readable project-scoped `aria-label` names. The installed
+Linux AT-SPI test observes the exact registered project card **AND** a visible,
+enabled, active-only native `Edit project <display name>` button before it
+claims WebView registration. It activates that unique control through real
+AT-SPI action or OS keyboard focus. On restart it first uses an exact, visible
+`Reopen project <display name>` button where available. The stale paragraph
+string no longer acts as a gate. Diagnostic counters (exact project label,
+visible Edit/Reopen buttons, enabled states) report categories only, never raw
+file paths, accessible text or source data. GTK chooser and host catalog
+root-equality, native Save, restart, conflict and uninstall/data preservation
+checks remain mandatory. No direct Tauri IPC, injected DOM automation,
+synthetic registration or protected execution is introduced.
+
+This is an unaccepted implementation until the next exact-head NSIS/Debian
+installed Windows and Linux group runs to completion.

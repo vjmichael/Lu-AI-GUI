@@ -5256,6 +5256,7 @@ function App() {
                   </div>
                   <div className="projectActions">
                     {project.active && <button className="primaryBtn"
+                      aria-label={'Edit project ' + project.displayName}
                       disabled={explorerPending || pending || workspaceLayoutBusy}
                       onClick={() => openDirectory(project, '')}>Edit</button>}
                     {project.active
@@ -5264,6 +5265,7 @@ function App() {
                           onClick={() => operation('ide_close_project',
                             {projectId: project.projectId})}>Close</button>
                       : <button className="ghostBtn" disabled={pending || !project.available}
+                          aria-label={'Reopen project ' + project.displayName}
                           onClick={() => operation('ide_open_project',
                             {projectId: project.projectId})}>Reopen</button>}
                     <button className="removeProjectBtn"

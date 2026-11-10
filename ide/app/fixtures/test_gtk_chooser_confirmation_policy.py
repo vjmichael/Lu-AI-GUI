@@ -135,6 +135,18 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertIn('str(row.get("root", "")) == str(ROOT.parent)', fixture)
         self.assertIn('observed == "exact_native_root_persisted"', fixture)
         self.assertIn('_registered_native_project_is_exposed()', fixture)
+        self.assertIn("IDE_G02_WEBVIEW_PROJECT_CONTROLS=", fixture)
+        self.assertIn('name == "Edit project " + ROOT.name', fixture)
+        self.assertIn('name == "Reopen project " + ROOT.name', fixture)
+        self.assertIn('_activate_exact_project_button("Edit project ", seconds=18)', fixture)
+        self.assertIn('_activate_exact_project_button("Reopen project ", seconds=3,', fixture)
+        self.assertIn("IDE_G02_NATIVE_ACTIVE_EDITOR_BUTTON=verified_exact_project", fixture)
+        self.assertNotIn('accessible("Open · editor available"', fixture)
+        web = Path(__file__).parents[1].joinpath("web", "main.jsx").read_text(
+            encoding="utf-8")
+        self.assertIn("aria-label={'Edit project ' + project.displayName}", web)
+        self.assertIn("aria-label={'Reopen project ' + project.displayName}", web)
+        self.assertIn("project.active && <button", web)
         self.assertIn("deny(\"native_folder_chooser_did_not_register_project\")", fixture)
         self.assertNotIn("subprocess.run([\"gh\"", fixture)
 
