@@ -14,9 +14,9 @@ test('6B03 native stage is pinned to exact source, index, head, and Git lock', (
   assert.match(native, /select_reviewed_git_hunks/);
   assert.match(native, /read_reviewed_git_hunk_buffers/);
   assert.match(native, /selected_index_bytes\(&pinned\.index_bytes, &fresh\)/);
-  assert.match(native, /repo\.blob\(&projected\)/);
+  assert.match(native, /repo\s*\.blob\(&projected\)/);
   assert.match(native, /Index::open\(&temp_path\)/);
-  assert.match(native, /create_new\(true\)\.open\(&lock_path\)/);
+  assert.match(native, /create_new\(true\)\s*\.open\(&lock_path\)/);
   assert.match(native, /fs::rename\(&lock_path, &old_index_path\)/);
   assert.match(native, /G06B_STAGE_PREEXISTING_STAGED_CHANGES/);
   assert.match(native, /G06B_STAGE_GIT_OPERATION_OR_WORKTREE_DENIED/);
@@ -25,8 +25,8 @@ test('6B03 native stage is pinned to exact source, index, head, and Git lock', (
 
 test('6B03 cancellation and durable recovery never auto delete foreign Git lock', () => {
   assert.match(native, /request_partial_stage_cancel\(/);
-  assert.match(native, /compare_exchange\(0, 1, Ordering::SeqCst/);
-  assert.match(native, /journal_append\(&path, &journal\)/);
+  assert.match(native, /compare_exchange\(\s*0,\s*1,\s*Ordering::SeqCst/);
+  assert.match(native, /journal_append\(\s*&path,\s*&journal\)/);
   assert.match(native, /operator_reconciliation_required/);
   assert.match(native, /auto_delete_git_lock: false/);
   assert.match(native, /auto_rollback_index: false/);
@@ -47,7 +47,7 @@ test('6B03 only native OS dialog can authorize one stage; Tauri cancel and recov
   assert.match(ui, /invoke\('ide_git_reconcile_partial_stage'/);
   assert.match(tauri, /MessageDialogButtons::OkCancelCustom/);
   assert.match(tauri, /if !approved/);
-  assert.match(tauri, /registry\.apply_approved_partial_stage\(&refreshed, &cancel\)/);
+  assert.match(tauri, /registry\s*\.apply_approved_partial_stage\(\s*&refreshed,\s*&cancel\)/);
   assert.match(tauri, /app\.manage\(Arc::new\(PartialStageSessions::default\(\)\)\)/);
   assert.match(ui, /invoke\('ide_git_stage_selected_hunks'/);
   assert.match(ui, /invoke\('ide_git_cancel_partial_stage'/);
