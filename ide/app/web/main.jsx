@@ -81,6 +81,10 @@ function App() {
   const [gitSelectedHunkIds, setGitSelectedHunkIds] = useState([]);
   const [gitHunkSelection, setGitHunkSelection] = useState(null);
   const [gitHunkBusy, setGitHunkBusy] = useState(false);
+  const [gitPartialStageBusy, setGitPartialStageBusy] = useState(false);
+  const [gitPartialStageReceipt, setGitPartialStageReceipt] = useState(null);
+  const [gitPartialRecovery, setGitPartialRecovery] = useState(null);
+  const [gitPartialRecoveryBusy, setGitPartialRecoveryBusy] = useState(false);
   const gitHunkRequest = useRef(0);
   const [gitReview, setGitReview] = useState(null);
   const [gitStageReceipt, setGitStageReceipt] = useState(null);
@@ -417,6 +421,10 @@ function App() {
     setGitSelectedHunkIds([]);
     setGitHunkSelection(null);
     setGitHunkBusy(false);
+    setGitPartialStageBusy(false);
+    setGitPartialStageReceipt(null);
+    setGitPartialRecovery(null);
+    setGitPartialRecoveryBusy(false);
     setGithubComparison(null);
     exactCiRequest.current += 1;
     setExactCi(null);
@@ -1271,6 +1279,67 @@ function App() {
       }
     } finally {
       if (serial === workflowRequest.current) setWorkflowBusy(false);
+    }
+  }
+
+  async function stageReviewedSelectedHunks() {
+    if (!activeProject?.projectId || !gitHunkSelection || gitPartialStageBusy ||
+        gitHunkSelection.plan.projectId !== activeProject.projectId ||
+        gitHunkSelection.stageAuthorized || gitHunkSelection.operationPerformed) return;
+    const projectId = activeProject.projectId;
+    const ticket = gitHunkRequest.current;
+    setGitPartialStageBusy(true);
+    setGitPartialStageReceipt(null);
+    setProblem('');
+    try {
+      const receipt = await invoke('ide_git_stage_selected_hunks', {
+        expected: gitHunkSelection,
+      });
+      if (ticket === gitHunkRequest.current && receipt.projectId === projectId) {
+        setGitPartialStageReceipt(receipt);
+        setGitHunkPlan(null);
+        setGitHunkSelection(null);
+        setGitSelectedHunkIds([]);
+        setHint('The selected hunks were staged in the Git index. No commit was created.');
+        void refreshGitStatus();
+      }
+    } catch (error) {
+      if (ticket === gitHunkRequest.current) {
+        setProblem('Protected partial staging denied or interrupted: ' + String(error));
+        setGitHunkSelection(null);
+      }
+    } finally {
+      if (ticket === gitHunkRequest.current) setGitPartialStageBusy(false);
+    }
+  }
+
+  async function cancelProtectedPartialStage() {
+    if (!activeProject?.projectId || !gitPartialStageBusy) return;
+    try {
+      const state = await invoke('ide_git_cancel_partial_stage', {
+        projectId: activeProject.projectId,
+      });
+      setHint('Partial stage cancellation: ' + state + '. No published index is rolled back automatically.');
+    } catch (error) {
+      setProblem('Partial stage cannot be cancelled at this phase: ' + String(error));
+    }
+  }
+
+  async function inspectPartialStageRecovery() {
+    if (!activeProject?.projectId || gitPartialRecoveryBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = gitHunkRequest.current;
+    setGitPartialRecoveryBusy(true);
+    setGitPartialRecovery(null);
+    try {
+      const result = await invoke('ide_git_partial_stage_recovery', { projectId });
+      if (ticket === gitHunkRequest.current && result.projectId === projectId)
+        setGitPartialRecovery(result);
+    } catch (error) {
+      if (ticket === gitHunkRequest.current)
+        setProblem('Native partial-stage journal inspection failed: ' + String(error));
+    } finally {
+      if (ticket === gitHunkRequest.current) setGitPartialRecoveryBusy(false);
     }
   }
 
@@ -4978,13 +5047,52 @@ function App() {
                   onClick={() => confirmSelectedGitHunks()}>
                   Reverify selected hunks (no stage)
                 </button>
-                {gitHunkSelection && <p role="status">
-                  Reviewed {gitHunkSelection.selectedIds.length} hunk(s).
-                  Selection SHA-256: <code>{gitHunkSelection.selectionSha256}</code>
-                </p>}
-                <p>Stage authorized: <strong>No</strong>.
-                  Commit authorized: <strong>No</strong>.
-                  No Git index or source operation was performed.</p>
+                {gitHunkSelection && <div>
+                  <p role="status">Reviewed {gitHunkSelection.selectedIds.length} hunk(s).
+                    Selection SHA-256: <code>{gitHunkSelection.selectionSha256}</code>
+                  </p>
+                  <button type="button" className="ghostBtn"
+                    disabled={gitPartialStageBusy || gitHunkBusy}
+                    onClick={() => stageReviewedSelectedHunks()}>
+                    Request native one-use OS approval to stage selected hunks
+                  </button>
+                </div>}
+                {gitPartialStageBusy && <div role="status">
+                  Native approval or partial index transaction in progress.
+                  <button type="button" className="ghostBtn"
+                    onClick={() => cancelProtectedPartialStage()}>
+                    Request cancellation before index publication
+                  </button>
+                </div>}
+                <p>Review alone grants no staging or commit authority.
+                  Only the native OS approval dialog may authorize a one-use index update.</p>
+              </div>}
+            </div>}
+            {activeProject && <div className="continuityDocument" aria-label="Native partial Git staging recovery and receipts">
+              <h3>Protected partial staging · journal and recovery</h3>
+              <button type="button" className="ghostBtn"
+                disabled={gitPartialRecoveryBusy}
+                onClick={() => inspectPartialStageRecovery()}>
+                {gitPartialRecoveryBusy ? 'Inspecting recovery…' : 'Inspect native Git recovery journal'}
+              </button>
+              {gitPartialStageReceipt && gitPartialStageReceipt.projectId === activeProject.projectId && <div role="status">
+                <p>Selected hunk index published and verified. No commit created.</p>
+                <p>Staged blob: <code>{gitPartialStageReceipt.stagedBlobOid}</code>
+                  {' · '}SHA-256: <code>{gitPartialStageReceipt.stagedBlobSha256}</code></p>
+                <p>Index before: <code>{gitPartialStageReceipt.oldIndexSha256}</code></p>
+                <p>Index after: <code>{gitPartialStageReceipt.newIndexSha256}</code></p>
+                <p>Durable journal: {String(gitPartialStageReceipt.durableJournalVerified)}
+                  {' · '}Source modified: {String(gitPartialStageReceipt.sourceFileModified)}</p>
+              </div>}
+              {gitPartialRecovery && gitPartialRecovery.projectId === activeProject.projectId && <div>
+                <p>Journal state: <strong>{gitPartialRecovery.state.replaceAll('_', ' ')}</strong></p>
+                <p>Last phase: {gitPartialRecovery.lastPhase || 'none'}
+                  {' · '}Existing Git lock: {String(gitPartialRecovery.pendingGitLock)}</p>
+                {gitPartialRecovery.operatorReconciliationRequired
+                  ? <p role="alert">Interrupted or ambiguous Git index operation.
+                    Original Git metadata must be reviewed manually.
+                    No automatic rollback or Git lock removal is authorized.</p>
+                  : <p>No unfinished native partial-stage receipt detected at inspection time.</p>}
               </div>}
             </div>}
             {activeProject && <div className="continuityDocument" aria-label="Reviewed Git batch planning only">
