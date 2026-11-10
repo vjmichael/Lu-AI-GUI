@@ -4144,7 +4144,7 @@ function App() {
         <div className="chatTitle"><h1>{activeChat?.title && activeChat.title !== 'New chat' ? activeChat.title : 'Chat'}</h1>
           <p>{loaded ? 'Ready to chat · local model' : 'Choose a local GGUF to start'}</p></div>
         <div className="headerControls">
-          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model · {modelLoadTrace?.loading&&modelLoadTrace.events?.length ? modelLoadTrace.events[modelLoadTrace.events.length-1].phase.replaceAll('_',' ') : 'Reading model and initializing backend'} · Memory allocation percentage unavailable until real backend telemetry</span>
+          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model · {modelLoadTrace?.loading&&modelLoadTrace.events?.length ? modelLoadTrace.events[modelLoadTrace.events.length-1].phase.replaceAll('_',' ') : 'Reading model and initializing backend'} · Memory allocation percentage unavailable until real backend telemetry</span>}
           <div className="modelSwitcherWrap" ref={modelMenuRef}>
             <button className="modelSwitcher" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
               <span className="modelText">{selectModelText}</span> <span>⌄</span></button>
