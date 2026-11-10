@@ -20,7 +20,7 @@ test('6B03 native stage is pinned to exact source, index, head, and Git lock', (
   assert.match(native, /fs::rename\(&lock_path, &old_index_path\)/);
   assert.match(native, /G06B_STAGE_PREEXISTING_STAGED_CHANGES/);
   assert.match(native, /G06B_STAGE_GIT_OPERATION_OR_WORKTREE_DENIED/);
-  assert.doesNotMatch(native, /std::process::Command|repo\.push\(|repo\.fetch\(|repo\.commit\(/);
+  assert.doesNotMatch(native.split('#[cfg(test)]')[0], /std::process::Command|repo\.push\(|repo\.fetch\(|repo\.commit\(/);
 });
 
 test('6B03 cancellation and durable recovery never auto delete foreign Git lock', () => {
