@@ -42,6 +42,7 @@ jobs:
       - name: Check real GTK folder-selection and Group 2 read-only data witness
         run: |
           python3 ide/app/fixtures/test_gtk_chooser_confirmation_policy.py
+          bash -n ide/app/fixtures/Test-Wo8InstalledDeb.sh
           python3 -m py_compile ide/app/fixtures/group02_user_data_preservation.py
           test -f ide/app/fixtures/group02_user_data_preservation.py
           grep -F 'IDE_G02_NATIVE_UNINSTALL_PRESERVED_CATALOG_AND_SOURCE=PASS' ide/app/fixtures/group02_user_data_preservation.py

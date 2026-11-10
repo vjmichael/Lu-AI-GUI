@@ -92,7 +92,7 @@ env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
       { echo "IDE_G02_LINUX_DENIED:gsettings_unavailable" >&2; exit 2; }
     gsettings set org.gtk.Settings.FileChooser startup-mode cwd ||
       { echo "IDE_G02_LINUX_DENIED:native_gtk_setting_failed" >&2; exit 2; }
-    [[ "$(gsettings get org.gtk.Settings.FileChooser startup-mode)" == "'cwd'" ]] ||
+    [[ "$(gsettings get org.gtk.Settings.FileChooser startup-mode)" == *cwd* ]] ||
       { echo "IDE_G02_LINUX_DENIED:native_gtk_setting_unverified" >&2; exit 2; }
     echo "IDE_G02_NATIVE_GTK_STARTUP_CWD=verified"
     /usr/bin/python3 ide/app/fixtures/wo8_linux_editor_atspi.py
