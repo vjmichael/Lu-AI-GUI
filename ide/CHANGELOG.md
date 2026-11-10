@@ -1,5 +1,14 @@
 # Lu IDE — Development changelog
 
+## Group 5 — 2026-11-10 source-only native provenance and recovery hardening
+
+Added independent PyPI wheel member RECORD completeness plus per-member
+hash/size verification and negative tests for unlisted wheel payload
+and RECORD tampering. Private package discard now checks path absence
+before recording a terminal verified-destruction receipt. These
+source patches are not observed native Windows/Linux passes. Physical
+installed approval and genuine OS process custody remain open.
+
 ### Group 5 — fixed upstream runtime identity / one grouped acceptance (Nov 10)
 
 Hardened `verify_ide05_upstream_uv.py` against binary/license path
