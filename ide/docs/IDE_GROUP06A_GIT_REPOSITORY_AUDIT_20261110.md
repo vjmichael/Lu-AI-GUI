@@ -52,3 +52,26 @@
 - New code only after this audit; native tests and installed results must be independently executed before acceptance.
 
 **Recommended next implementation:** 6A-P0 read-only branch + linked-worktree inventory, source-only with hostile fixtures, then one consolidated Windows/Linux native gate. Do not wait for Group 4/5 GitHub Ops to begin source development.
+
+## Group 6A-01 / 6A-02 source implementation (November 10, 2026)
+
+**Implementation branch:** `ide/group06a-git-repository-audit-20261110` (stacked on Group 5 `2f1509f`).
+
+The new `ide/host/src/git_inventory.rs` is compiled into the standalone Rust host and exposes a **single non-executing** `IdeWorkspaceRegistry::inspect_git_repository_inventory(project_id)` operation. It uses only the host-registered exact project root, refuses repository discovery from the parent directory, and reports:
+
+- **6A-01 branches:** up to 96 local branches with bounded human-readable labels, tip SHA, current branch, stored upstream branch/SHA and local ancestry ahead/behind when independently computable. It labels upstream as *stored*, never live GitHub; absent upstream/ancestry remains unknown.
+- **6A-02 linked worktrees:** up to 48 libgit2 administrative worktree names and state labels. It never exports an absolute linked path, opens another linked project, stats an outside root or considers a listed worktree an authorization to edit or switch. Missing/ambiguous admin records are explicitly marked unverified. Worktree lock state is intentionally `not_assessed`.
+- **Repository state:** main vs linked repository, attached/detached/unborn HEAD, current commit SHA and partial/truncated metadata. It does not execute Git, run hooks or mutate branch refs.
+
+`ide/app/src-tauri/src/lib.rs` has `ide_read_git_repository_inventory`, an ID-only, read-only Tauri command. `ide/app/web/main.jsx` refreshes the new evidence with existing local Git status and displays bounded branch/worktree cards under Source Control, clearly marking external worktrees unregistered. `ide/app/tests/g06a_git_repository_inventory.test.mjs` enforces the host/command/UI boundary.
+
+Native Rust fixtures cover two local branches, unregistered project denial, a real libgit2-created linked worktree, detached HEAD, an unborn HEAD, and nested selection that must not discover the parent's repository. Their existence is **not** a passing Windows/Linux result until the matching exact SHA has actually compiled and run.
+
+### Remaining implementation and acceptance gaps
+
+1. The source-only 6A inventory is not yet independently compiled and tested on Windows and Linux. Test the exact source SHA, Rustfmt, `git2` API compatibility, Node UI boundary, real Tauri compile, and original registered-root behavior in **one** consolidated native source group.
+2. The linked worktree listing deliberately does **not** validate the external directory, show a path, report the external linked HEAD, or classify lock/prunable flags. Those require a separate, explicitly registered and reviewed project identity rather than an ambient external path.
+3. A bounded validated remote/tracking ref inventory, per-file blame, repository health states, branch/worktree switching, staging hunks and all mutation workflows remain in later 6A P1/Groups 6B–6F.
+4. Windows/Linux installed GUI project picker, real linked-worktree browsing, restart state, accessibility and native security remain unverified. Do not label an unexecuted fixture as acceptance.
+
+This is an independent Group 6A implementation and does not reconcile, promote or interrupt Group 4/5 pending native acceptance.
