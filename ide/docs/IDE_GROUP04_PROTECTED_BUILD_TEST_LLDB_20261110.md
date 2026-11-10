@@ -183,3 +183,7 @@ adapter paths/contents. **No OS policy change or LLDB success is claimed.**
 ## Four-lane consolidated Group 4 native gate
 
 One Group 4 branch/workflow-path-triggered native gate now contains: Windows fixed LLDB/AppContainer/SCM; Windows independently pinned LLVM18 D5 owner-event and D6 step/breakpoint script; genuine delegated Linux LLDB crash/normal/cancel; and genuine delegated Linux offline Cargo check/test/build/project-debug/cancel. Each first runs the exact-source hostile regression suite (original build receipt, enclosed ELF/DWARF alias and frame-bound consumed variable review). The Windows owner lane compiles native one-use journal, developer Tauri dialog and actual protected step/breakpoint fixtures. **No headless CI job may satisfy physical interactive approval or installed debugger acceptance**. A pending native job or a missing reviewed Windows VS installation remains OPEN.
+
+## Four-lane first preflight outcome
+
+[Run 42868873025](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42868873025), SHA `ca8c99f705a0ec914a21d593674d59b62ca20e98`, showed Linux Rustfmt differences in the shared enclosed-hardlink source before the real Linux kernel worker stages. Six exactly reported formatting differences were corrected; neither native OS runtime nor installed consent may be inferred from this preflight.

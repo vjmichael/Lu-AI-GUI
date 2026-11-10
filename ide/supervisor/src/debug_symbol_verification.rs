@@ -1,14 +1,13 @@
 //! DEV-04.3: format and debug-information structural witness for the
 //! independently rehashed, OS-contained, completed Cargo build output.
 //! Read-only and fail-closed. No target execution, DAP launch or OS grant.
+#[cfg(unix)]
+use crate::debug_binary_witness::verify_enclosed_private_hardlinks;
 use crate::{
     debug_binary_witness::DebugBinaryWitness,
-    
     wo6_output_evidence::{ArtifactEntry, OutputWitness},
     SupervisorError,
 };
-#[cfg(unix)]
-use crate::debug_binary_witness::verify_enclosed_private_hardlinks;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -936,18 +935,24 @@ mod tests {
             wo6_output_evidence::audit_published_output,
         };
         use std::os::unix::fs::PermissionsExt;
-        let root = std::env::temp_dir().join(format!("lu-g04-dwarf-{:032x}", rand::random::<u128>()));
+        let root =
+            std::env::temp_dir().join(format!("lu-g04-dwarf-{:032x}", rand::random::<u128>()));
         fs::create_dir_all(root.join("target/debug/deps")).unwrap();
         let image = root.join("target/debug/fixture");
         fs::write(&image, minimal_dwarf_elf()).unwrap();
         fs::set_permissions(&image, fs::Permissions::from_mode(0o700)).unwrap();
         fs::hard_link(&image, root.join("target/debug/deps/fixture-fixed")).unwrap();
         let witness = audit_published_output(&root).unwrap();
-        let candidate = audit_debug_binary_candidate(&root, &witness).unwrap().unwrap();
+        let candidate = audit_debug_binary_candidate(&root, &witness)
+            .unwrap()
+            .unwrap();
         assert!(verify_build_debug_symbols(&root, &witness, &candidate)
             .unwrap()
             .is_some());
-        let outside = std::env::temp_dir().join(format!("lu-g04-dwarf-escape-{:032x}", rand::random::<u128>()));
+        let outside = std::env::temp_dir().join(format!(
+            "lu-g04-dwarf-escape-{:032x}",
+            rand::random::<u128>()
+        ));
         fs::hard_link(&image, &outside).unwrap();
         // Neither the executable nor the DWARF reader can accept missing
         // link provenance outside the original protected output inventory.
