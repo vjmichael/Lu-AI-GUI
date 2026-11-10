@@ -206,3 +206,22 @@ Task 4's CI-only acceptance requires exact-head Windows/Linux native source
 jobs plus genuine positive/offline-miss/cancel/hostile-recovery OS fixture
 logs and their receipts. The separate production provenance and installed-app
 operator gates remain open.
+
+## Task 4 — runner-verified positive-mode argument-order failure
+
+At exact-head `33870ac23456bdb5ac28d2876e327d35f24e045b`,
+[run 42731353632](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42731353632)
+passed the full Windows/Ubuntu native-source matrix and the real delegated
+Linux offline-miss and cancellation cases. The positive case failed with
+`bwrap: execvp --setenv: No such file or directory` after native exit 1.
+The previous fixture appended CI-only `--setenv UV_NO_INDEX 1` **after**
+Bubblewrap's `--` executable separator; it was parsed as the executable,
+not as a Bubblewrap setting. The reviewed correction hoists the
+synthetic-plan-specific environment flag **before** the separator, keeps
+`/runtime/wheelhouse` read-only, keeps production plans without that
+flag, and retains the same real cgroup/namespace/approval/receipt checks.
+
+**Do not accept Task 4 from the source patch.** Require one exact-new-head
+native Windows/Linux group and independent logs showing positive wheel
+installation, installed-byte tampering rejection, kernel-backed hostile
+SIGABRT/restart reconciliation, offline miss, and cancellation.

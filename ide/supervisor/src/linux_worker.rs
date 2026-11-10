@@ -633,6 +633,15 @@ fn command_for(
             .arg("UV_NO_CONFIG")
             .arg("1");
     }
+    // Bubblewrap options MUST be constructed before its "--" separator.
+    // Only this exact CI-only synthetic-wheel plan gets a local wheelhouse.
+    // This never authorizes a production package project or network access.
+    let ci_positive_wheelhouse = cfg!(feature = "ide055-ci-wheelhouse")
+        && plan.recipe_id == "uv_sync_offline"
+        && plan.effect_class == "package_uv_sync_offline:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    if ci_positive_wheelhouse {
+        cmd.arg("--setenv").arg("UV_NO_INDEX").arg("1");
+    }
     cmd.arg("--");
     match plan.recipe_id.as_str() {
         "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests" if runtime.is_none() => {
@@ -655,11 +664,6 @@ fn command_for(
             // production worker, may resolve the pinned local wheelhouse.
             // A different reviewed plan retains the original --offline
             // registry/cache behavior and cannot inherit the CI exception.
-            let ci_positive_wheelhouse = cfg!(feature = "ide055-ci-wheelhouse")
-                && plan.effect_class == "package_uv_sync_offline:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
-            if ci_positive_wheelhouse {
-                cmd.arg("--setenv").arg("UV_NO_INDEX").arg("1");
-            }
             cmd.arg("/runtime/bin/uv").args([
                 "sync",
                 "--offline",
