@@ -1193,7 +1193,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/browser_model_desktop.rs",
-      "blob": "dc0a0cb565c6dd357c36a1ef3e899b5c514190a8"
+      "blob": "4752ba03f87ccd3f22e56fd232dcef939b2f670b"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_message_interactions.rs",

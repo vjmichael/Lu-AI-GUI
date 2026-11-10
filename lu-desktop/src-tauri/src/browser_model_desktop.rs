@@ -282,7 +282,7 @@ pub(crate) fn explicit_browse_origin(prompt:&str)->Option<String>{
         .iter().any(|v|lower.starts_with(v)){return None}
     let mut origins=std::collections::BTreeSet::new();
     for word in trimmed.split_whitespace(){
-        let candidate=word.trim_matches(|c:char|matches!(c,'"'\''|'"'|'('|')'|'['|']'|','|';'|'.'));
+        let candidate=word.trim_matches(|c:char|matches!(c,'"'|'('|')'|'['|']'|','|';'|'.')||c as u32==39);
         if !candidate.starts_with("https://"){continue}
         let authority=candidate[8..].split(['/', '?', '#']).next()?;
         if authority.is_empty()||authority.len()>255||authority.contains('@')
