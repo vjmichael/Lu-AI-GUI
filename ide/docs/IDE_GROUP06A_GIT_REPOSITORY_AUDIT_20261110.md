@@ -75,3 +75,21 @@ Native Rust fixtures cover two local branches, unregistered project denial, a re
 4. Windows/Linux installed GUI project picker, real linked-worktree browsing, restart state, accessibility and native security remain unverified. Do not label an unexecuted fixture as acceptance.
 
 This is an independent Group 6A implementation and does not reconcile, promote or interrupt Group 4/5 pending native acceptance.
+
+## 6A-05/06/07 continuation — source implementation and acceptance (Nov 10)
+
+### Source delivered
+- `ide/host/src/git_file_history.rs`: bounded HEAD-committed tracked regular-file blame (96 hunks, 512-KiB blob) and 40 first-parent path-change commits with a maximum 2,000-commit walk. Rejects unregistered project IDs, `.git` control paths, traversal, untracked files, symlink blobs and non-literal pathspec matching. Source trust is *local committed Git objects*, not worktree, live remote or signed author proof.
+- `ide/host/src/git_refs_health.rs`: up to 120 displayed local, stored remote-tracking and tag refs, capped at 3,000 scanned refs; up to 32 remote **names only**, no remote URLs, config, tokens or network. Reports native repository operation-state, conflicts, shallow/unborn/detached flags. `metadata_clean_only` does **not** authorize Git activity; `operation_ready` remains false.
+- New Tauri commands `ide_read_git_file_history` and `ide_read_git_refs_health` are host-only, project-scoped. Source Control shows read-only refs/health and an explicitly requested tracked-file history/blame panel. Async results are checked against project identity and request revision; no additional Git writes were introduced.
+- Native fixtures now include local tracked-file history, hostile path denial and a URL-with-fake-credentials remote that must not be exposed; Node source-boundary tests cover Tauri/UI/no Git CLI.
+- Project switch or source refresh invalidates old branch/history results and clears loading state. Installed project-switch/restart operator scripts:
+  `ide/app/fixtures/Test-G06A-PhysicalWindowsGitInventory.ps1` and
+  `ide/app/fixtures/Test-G06A-PhysicalLinuxGitInventory.sh`.
+  They require a real interactive installed desktop, collect bounded operator observations and do not claim OS proof, Git immutability or release approval.
+
+### Still open and not conflated
+- Exact-head GitHub Action job IDs and Windows/Linux compiler/runtime results **not accessible** via the current connector (it exposes PR runs only, whereas this group is push-triggered). The public Actions page also could not be fetched. No native pass/failure is asserted without real job evidence.
+- Native Rustfmt, Rust compiler/API parity, test execution, JavaScript frontend, Windows and Linux Tauri compilations, installed application picker and restart behavior must be verified at a single source SHA.
+- No physically installed NSIS/Debian operator test has run in this session; the witness fixtures merely prepare the future acceptance.
+- Blame does not follow renames; first-parent path history is explicitly limited. Ref/remote inventory is not live authenticated GitHub access. Conflict remediation, branch/worktree mutations, credential broker, signing, Lu bridge remain later groups.
