@@ -34,12 +34,17 @@ test('6B03 cancellation and durable recovery never auto delete foreign Git lock'
   assert.match(native, /cancellation_before_publication_denies_without_index_changes/);
   assert.match(native, /preexisting_lock_and_stale_selection_refuse_without_clobber/);
   assert.match(native, /interrupted_journal_is_detected_and_never_auto_repaired/);
+  assert.match(native, /restart_reconciles_unpublished_prepared_journal_without_git_writes/);
+  assert.match(native, /completed_receipt_stays_terminal_after_later_external_git_changes/);
+  assert.match(native, /reconcile_partial_stage_journal/);
 });
 
 test('6B03 only native OS dialog can authorize one stage; Tauri cancel and recovery explicit', () => {
   assert.match(tauri, /async fn ide_git_stage_selected_hunks\(/);
   assert.match(tauri, /async fn ide_git_cancel_partial_stage\(/);
   assert.match(tauri, /async fn ide_git_partial_stage_recovery\(/);
+  assert.match(tauri, /async fn ide_git_reconcile_partial_stage\(/);
+  assert.match(ui, /invoke\('ide_git_reconcile_partial_stage'/);
   assert.match(tauri, /MessageDialogButtons::OkCancelCustom/);
   assert.match(tauri, /if !approved/);
   assert.match(tauri, /registry\.apply_approved_partial_stage\(&refreshed, &cancel\)/);
