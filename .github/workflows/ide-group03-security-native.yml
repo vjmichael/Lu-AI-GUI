@@ -1,3 +1,6 @@
+# Group 3 native standalone supervisor/sandbox crates are source-tested without
+# --locked: neither has a committed standalone Cargo.lock. Group 2 installed
+# dependency locking remains unchanged; these are NOT production packages.
 name: IDE Group 3 Windows AppContainer SCM and Linux authorization negatives (NOT release)
 on:
   push:
@@ -37,14 +40,14 @@ jobs:
       - name: Native Windows supervisor security and journal tests
         shell: pwsh
         run: |
-          cargo test --locked --manifest-path ide/supervisor/Cargo.toml --features package-uv-worker,protected-recovery-service --lib
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features package-uv-worker,protected-recovery-service --lib
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: supervisor tests failed' }
           cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: supervisor formatting' }
       - name: Actual Windows AppContainer low IL, owner-rights denial and private output
         shell: pwsh
         run: |
-          cargo run --locked --manifest-path ide/supervisor/Cargo.toml --features ide056-ci-acl-positive --example ide056_windows_acl_positive
+          cargo run --manifest-path ide/supervisor/Cargo.toml --features ide056-ci-acl-positive --example ide056_windows_acl_positive
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: real AppContainer ACL probe failed' }
           Write-Host 'IDE_G03_WINDOWS_NATIVE_APPCONTAINER_ACL=PASS'
           Write-Host 'IDE_G03_PRODUCTION_PACKAGE_WORKER=NOT_AUTHORIZED'
@@ -81,7 +84,7 @@ jobs:
       - name: Compile restricted native SCM service and hostile observer
         shell: pwsh
         run: |
-          cargo build --locked --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --bin windows_recovery_service --bin d7d_service_crash_fixture
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --bin windows_recovery_service --bin d7d_service_crash_fixture
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native SCM compile failed' }
       - name: Actual service-owner/job custody, crash loss and cleanup
         shell: pwsh
@@ -129,14 +132,14 @@ jobs:
       - name: Run native Linux supervisor and sandbox safety tests
         run: |
           set -euo pipefail
-          cargo test --locked --manifest-path ide/supervisor/Cargo.toml --features package-uv-worker,linux-worker --lib
-          cargo test --locked --manifest-path ide/sandbox/Cargo.toml --lib
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features package-uv-worker,linux-worker --lib
+          cargo test --manifest-path ide/sandbox/Cargo.toml --lib
           cargo fmt --manifest-path ide/supervisor/Cargo.toml -- --check
           echo IDE_G03_LINUX_NATIVE_SOURCE_SECURITY=PASS
       - name: Inspect real kernel cgroup quota admission, separate limited/denied outcome
         run: |
           set -euo pipefail
-          cargo run --locked --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_probe | tee "$RUNNER_TEMP/g03-cgroup.txt"
+          cargo run --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_probe | tee "$RUNNER_TEMP/g03-cgroup.txt"
           if grep -F 'PASS: dedicated empty Lu IDE cgroup-v2 parent delegated' "$RUNNER_TEMP/g03-cgroup.txt"; then
             echo IDE_G03_LINUX_NATIVE_CGROUP=LIMITED_QUOTA_PROBE_PASS
           elif grep -F 'CONTROLLED DENIAL: production worker admission remains disabled' "$RUNNER_TEMP/g03-cgroup.txt"; then

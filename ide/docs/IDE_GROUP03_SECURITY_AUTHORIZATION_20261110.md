@@ -86,3 +86,23 @@ uncompleted job, and never turn on default-disabled protected execution.
 `SOURCE` vs `NATIVE_KERNEL` vs `INSTALLED` vs `HUMAN`. A
 green test-only example can never authorize an installed user workflow.
 Stop after Group 3 for owner direction.
+
+## First consolidated native Group 3 CI finding
+
+[Run 42855571804](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42855571804),
+source `384772af2535ffc6450008034b362217c19f3945`, failed **before any kernel witness**:
+Windows ACL and both Windows SCM scenarios, plus Linux native supervisor,
+called Cargo `--locked` where the independently developed standalone
+`ide/supervisor` / `ide/sandbox` crates have no committed local
+`Cargo.lock`. Cargo refused to create those test-only locks. The
+negative human/physical source contract already passed on Linux.
+This is a CI invocation defect, not permission denial or proven
+AppContainer/SCM failure.
+
+The corrected Group 3 source-only/native-OS test steps follow the same
+(non-`--locked`) convention as the existing consolidated native
+supervisor workflows. This does **not** change, remove or regenerate the
+pinned frontend/Tauri/NSIS/Debian release graph, and does not grant code
+execution in the installed IDE. A separate audited and committed Cargo
+lock will be required if these test crates become distributed products.
+One combined exact-head native group is required after this correction.
