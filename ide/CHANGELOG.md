@@ -1,5 +1,15 @@
 # Lu IDE — Development changelog
 
+## 2026-11-10 — Group 5 independent static package preview hardening
+
+On `ide/group05-package-review-20261110`, added a fail-closed static
+vcpkg declaration check: conditional/feature-qualified entries for the
+selected package and duplicate matching declarations no longer become
+an unconditional Add/Remove decision. Added native regression tests.
+This does not resolve package versions, execute a manager, grant installs,
+or close any native/physical acceptance gate. Group 4 LLVM evidence stays
+on its existing branch and is not a prerequisite to this source-only work.
+
 - **Group 4B native DWARF auditor correction (Nov 10):** Real delegated
   Linux Cargo Build passed the first hardlink check but failed a second
   ELF/DWARF reader's `nlink == 1` rule. Reused the strict all-kernel-links-
