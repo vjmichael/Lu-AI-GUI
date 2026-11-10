@@ -1,4 +1,5 @@
-# IDE Group 6B exact-head rerun: do not overwrite actual Tauri icon created by frontend build.
+# IDE Group 6B-02 exact-head hunk-selection gate; verified diff data only, no staging authority.
+# Preserve real frontend-built icon; no CI-only icon may overwrite a valid app resource.
 # No Git write authority or operator acceptance.
 name: IDE Group 6B reviewed batch source (not release)
 on:
@@ -55,15 +56,16 @@ jobs:
           set -euo pipefail
           cd ide/app
           npm ci --ignore-scripts --no-audit --no-fund
-          node --test tests/g06b_reviewed_batch_preview.test.mjs
+          node --test tests/g06b_reviewed_batch_preview.test.mjs tests/g06b_reviewed_hunk_selection.test.mjs
           npm run build
       - name: Native reviewed-batch bounded validation and formatting
         shell: bash
         run: |
           set -euo pipefail
           cargo test --manifest-path ide/host/Cargo.toml --lib git_batch_review
-          rustfmt --edition 2021 --check ide/host/src/git_batch_review.rs
-          echo IDE_G06B_BATCH_REVIEW=TESTED_READ_ONLY_NOT_STAGE_AUTHORIZED
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_hunk_review
+          rustfmt --edition 2021 --check ide/host/src/git_batch_review.rs ide/host/src/git_hunk_review.rs ide/host/src/reviewed_git.rs
+          echo IDE_G06B_HUNK_REVIEW=TESTED_READ_ONLY_NOT_STAGE_AUTHORIZED
       - name: Tauri read-only route compilation
         shell: bash
         run: |
