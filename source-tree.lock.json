@@ -1361,7 +1361,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01g-physical-installer-contract.test.mjs",
-      "blob": "93123fb8d25f2a6aba60111602738b482ba627ba"
+      "blob": "0dd4181ca991c20d8b833d20e22b75f00db1dff2"
     },
     {
       "path": "lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs",

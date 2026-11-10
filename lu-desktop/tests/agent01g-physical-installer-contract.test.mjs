@@ -40,7 +40,7 @@ test('Windows build has real Win32 manifest and a separate app-data identity',()
   assert.match(build,/org\.lu\.agent01g\.devtest/);
   assert.match(build,/build_win_manifest_res\.py/);
   assert.match(build,/verify_win_v6_manifest\.py/);
-  assert.match(build,/lu-agent01g-common-controls-v6\.res/);
+  assert.match(build,/lu-01g-common-controls-v6\.res/);
   assert.match(build,/modelBundled=\$false/);
 });
 test('only packaged app and source-pinned engine are installed; user data survive uninstall',()=>{
