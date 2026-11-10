@@ -368,6 +368,8 @@ jobs:
             --property="User=$(id -un)" \
             --property="WorkingDirectory=$GITHUB_WORKSPACE" \
             --setenv="LU_AGENT01L_TEST_CGROUP_GUARD=$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard" \
+            --setenv="PATH=$PATH" \
+            --setenv="CARGO_HOME=$CARGO_HOME" \
             /bin/bash -c '
               set -euo pipefail
               python3 benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py \

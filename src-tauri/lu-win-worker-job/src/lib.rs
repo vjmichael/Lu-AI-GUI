@@ -242,6 +242,27 @@ impl Job {
         self.1.store(true,Ordering::Release);
         Ok(())
     }
+    // Test-only positive precondition: kernel confirms the owned Job
+    // contains both the primary shell and a genuine spawned descendant.
+    #[cfg(test)]
+    pub(crate) fn kernel_live_count_for_test(&self)->io::Result<u32>{
+        if !self.1.load(Ordering::Acquire){
+            return Err(io::Error::other("No worker assigned to test Job"))
+        }
+        let mut accounting=JobBasicAccounting::default();
+        let mut returned=0u32;
+        let ok=unsafe{QueryInformationJobObject(
+            self.0,JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION_CLASS,
+            &mut accounting as *mut _ as *mut c_void,
+            mem::size_of::<JobBasicAccounting>() as u32,
+            &mut returned
+        )};
+        if ok==0{return Err(io::Error::last_os_error())}
+        if returned!=mem::size_of::<JobBasicAccounting>() as u32{
+            return Err(io::Error::other("Invalid test kernel Job accounting size"))
+        }
+        Ok(accounting.active_processes)
+    }
     /// E1-P08/AGENT-01L: obtain an actual kernel observation while retaining
     /// the original private handle, before any result may be marked complete.
     /// Never accept a PID or Job handle from a saved SQLite record.
@@ -701,7 +722,7 @@ pub mod unix_owned {
 #[cfg(all(windows,test))]
 mod agent01l_kernel_job_tests{
     use super::Job;
-    use std::{process::{Command,Stdio},time::Duration,
+    use std::{process::{Command,Stdio},time::{Duration,Instant},
         os::windows::process::CommandExt};
     #[test]
     fn unassigned_job_cannot_forge_an_empty_process_tree(){
@@ -727,7 +748,17 @@ mod agent01l_kernel_job_tests{
             let _=child.kill();let _=child.wait();
             panic!("Reviewed worker Job admission failed: {e}");
         }
-        std::thread::sleep(Duration::from_millis(100));
+        // Do not assume ping spawned because 100 ms elapsed: query THIS Job's
+        // live kernel membership until both the shell and its child exist.
+        let deadline=Instant::now()+Duration::from_secs(5);
+        loop{
+            if job.kernel_live_count_for_test().unwrap()>=2{break;}
+            if Instant::now()>=deadline{
+                let _=child.kill();let _=child.wait();
+                panic!("Kernel never observed an actual nested Job descendant");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
         let proof=job.terminate_and_verify_empty().unwrap();
         assert_eq!(proof.method(),"WINDOWS_JOB_ACTIVE_ZERO_V1");
         let _=child.wait().unwrap();

@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "cd7cc3e8c0c56e8469c864e100a8e6a53a5f0727"
+      "blob": "f34254134af2d9dc2a4e267c702d01a5050b11b5"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -3341,7 +3341,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "544e45e56ee0154687b80b7ef1009ffb55fb5b58"
+      "blob": "8ba2acc186f71af96b355082c145ca070b30d127"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
