@@ -953,9 +953,9 @@ pub fn start_windows_lsp(
     native_lsp_trace("scm_exact_nul_lease_requested");
     lease.grant_null()?;
     native_lsp_trace("scm_exact_nul_lease_fsynced");
-    if let Some(target) = project_target {
-        target.verify()?;
-    }
+    // This is the ordinary LSP worker; it has no project-debug target.
+    // The distinct start_windows_dap_inner validates its optional sealed
+    // project target before launching LLDB. Never borrow debugger authority.
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
     let (process, child_thread, stdin_write, stdout_read, debug_stderr, _event_pipe) =

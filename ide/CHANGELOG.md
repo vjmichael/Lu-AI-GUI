@@ -1,5 +1,14 @@
 # Lu IDE — Development changelog
 
+- **Group 4B demonstrated native compiler repairs (Nov 10):** Previous exact-head
+  Windows/Linux WO6 jobs independently failed Rust E0618 (unit test
+  `plan()` shadowed by a local) and Windows E0425 (ordinary LSP branch
+  used debugger-only `project_target`). Qualified the test fixture call
+  and removed the invalid cross-subsystem LSP reference; native debugger
+  target verification stays in its separate LLDB launcher. Linux native
+  output rehash discrepancy and independent LLDB runtime acceptance
+  remain OPEN. Exact-head repaired native CI has not passed.
+
 - **Group 4A protected Build/Test → LLDB original terminal binding (Nov 10):**
   The native debugger handoff now requires the exact original Cargo Build
   Completed receipt SHA, checked Git/source snapshot and manifest/toolchain

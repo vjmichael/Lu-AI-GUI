@@ -37,6 +37,16 @@ Hostile unit cases cover accepted exact match, substituted terminal
 hash, source/manifest/toolchain/plan tamper, quarantined lineage and
 wrong recipe. Tests are **source added, not executed**.
 
+## Group 4B — Parent exact-head native compiler diagnostics and narrow repair
+
+Observed genuine parent SHA `9dec923748bcdaa4df6f78aae104e07b653f6509`:
+- [WO6 source run 42860263579](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42860263579) failed Windows/Linux test compilation with Rust E0618: `lib.rs` unit test's local `plan` variable shadowed the fixture function when constructing `fixed`. Qualified `self::plan()` without changing authority or product code.
+- [WO6 native OS run 42860263865](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42860263865) and [opt-in Windows desktop run 42860263589](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42860263589) failed Windows Rust E0425: `start_windows_lsp` referenced `project_target`, which only exists in the separate debugger launcher. Removed this unreachable/invalid LSP branch; the Windows DAP project-target validation remains separate, strict and unchanged.
+- Native Linux Cargo got a genuinely Completed/exit-zero contained check, but then **denied** postrun with `DENIED: real completed Cargo binary readback changed`. Cause and fix remain open; do not call this native Build/Test a success.
+- Real Linux LLDB delegated stop/cancel also failed a later native gate, not yet reconciled.
+
+These compiler repairs are committed source changes; no subsequent exact-head Windows/Linux acceptance has yet passed. Do not rerun unchanged failed prior SHA as evidence of the new code.
+
 ## Task 4B — Genuine OS-contained Build/Test acceptance (OPEN)
 
 Use the existing WO6 native Windows SCM/AppContainer and Linux systemd-

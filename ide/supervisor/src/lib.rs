@@ -1506,7 +1506,7 @@ mod tests {
         let initial = fingerprint(&plan).unwrap();
         plan.debug_target_binding_sha256 = Some("e".repeat(64));
         assert_ne!(initial, fingerprint(&plan).unwrap());
-        let mut fixed = plan();
+        let mut fixed = self::plan();
         assert!(validate_plan(&fixed));
         let legacy = serde_json::to_string(&fixed).unwrap();
         assert!(!legacy.contains("debugTargetBindingSha256"));

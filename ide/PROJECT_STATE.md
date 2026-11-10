@@ -1,5 +1,16 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 4B — demonstrated parent compiler failures (2026-11-10)
+
+At the original Group 3 parent head, real WO6 Windows/Linux unit builds
+failed with Rust E0618 (a `plan` test variable shadowed `plan()`), and
+Windows protected worker compile failed E0425 (ordinary LSP launcher
+used debugger-only `project_target`). Both source defects are repaired
+within the same Group 4 branch without a containment or release change.
+Real delegated Linux Cargo also failed after native success because
+its protected binary readback changed, and native LLDB later failed;
+those are unresolved. Group 4 exact-head CI is NOT ACCEPTED.
+
 ## Group 4A — Protected Build/Test and LLDB (2026-11-10)
 
 Working branch `ide/group04-protected-build-test-lldb-20261110` is
