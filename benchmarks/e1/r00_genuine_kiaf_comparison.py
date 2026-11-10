@@ -49,9 +49,10 @@ def verified_report(path,protocol):
         if len(raw)<8192:
             require(hashlib.sha256(raw).hexdigest()==sample["rawSha256"],
                     "Raw model completion SHA mismatch")
-    require(len({s[1:] for s in identities if s[0]=="source_only"})==
-            len({s[1:] for s in identities if s[0]=="host_classified"})==
-            len(samples)//2,"Missing paired source/model observations")
+    source_ids={s[1:] for s in identities if s[0]=="source_only"}
+    host_ids={s[1:] for s in identities if s[0]=="host_classified"}
+    require(source_ids==host_ids and len(source_ids)*2==len(samples),
+            "Source-only and host-classified case identities differ")
     return report,hashlib.sha256(blob).hexdigest()
 
 def summarize(report):

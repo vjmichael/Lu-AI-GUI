@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8ee33e39699556fcfcd1e84bf0bfd3db4556d60f",
-  "trackedFileCount": 847,
+  "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
+  "trackedFileCount": 848,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "16f66ca2771e3090d636af24d4dccbd45f992be5"
+      "blob": "38528af7b00d480c9719f3cd7b71eab4fa914b88"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -361,7 +361,7 @@
     },
     {
       "path": "benchmarks/e1/r00_genuine_kiaf_comparison.py",
-      "blob": "51570cccebecf93b081035c3763b80fa8426b5af"
+      "blob": "532e83256556951c5df8156d812235b2bb17997f"
     },
     {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
@@ -398,6 +398,10 @@
     {
       "path": "benchmarks/e1/test_memory_loop03c_reviewed_workers.py",
       "blob": "59fde8d6665524372299a9ae39172f1d4a541643"
+    },
+    {
+      "path": "benchmarks/e1/test_r00_genuine_kiaf_comparison.py",
+      "blob": "1edb8fb60cf822056b940d8041d2a244d4b5ac8c"
     },
     {
       "path": "benchmarks/e1/verify_e1_p05_raw.py",

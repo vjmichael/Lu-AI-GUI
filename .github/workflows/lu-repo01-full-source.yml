@@ -457,6 +457,9 @@ jobs:
           python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_real_qwen_comprehension.py -v \
             2>&1 | tee r00-capability-evidence/kiaf-protocol-unit-tests.log
           grep -Fq 'OK' r00-capability-evidence/kiaf-protocol-unit-tests.log
+          python3 -m unittest discover -s benchmarks/e1 -p test_r00_genuine_kiaf_comparison.py -v \
+            2>&1 | tee r00-capability-evidence/r00-paired-identity-negative-tests.log
+          grep -Fq 'OK' r00-capability-evidence/r00-paired-identity-negative-tests.log
       - name: Install real Linux desktop and FFprobe dependencies before native Tauri tests
         if: runner.os == 'Linux'
         shell: bash
