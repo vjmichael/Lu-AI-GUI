@@ -53,12 +53,19 @@ pub struct GitRefsAndHealthEvidence {
 fn safe_name(s: &str) -> bool {
     !s.is_empty() && s.len() <= MAX_NAME_BYTES && !s.chars().any(char::is_control)
 }
-fn selected_repo(registry: &IdeWorkspaceRegistry, project_id: &str) -> Result<Repository, &'static str> {
-    let root = registry.registered_git_root(project_id).map_err(|_| "G06A_PROJECT_NOT_OPEN")?;
+fn selected_repo(
+    registry: &IdeWorkspaceRegistry,
+    project_id: &str,
+) -> Result<Repository, &'static str> {
+    let root = registry
+        .registered_git_root(project_id)
+        .map_err(|_| "G06A_PROJECT_NOT_OPEN")?;
     let repo = Repository::open(&root).map_err(|_| "G06A_REPOSITORY_UNAVAILABLE")?;
     let actual = fs::canonicalize(repo.workdir().ok_or("G06A_BARE_UNSUPPORTED")?)
         .map_err(|_| "G06A_WORKTREE_UNVERIFIABLE")?;
-    if actual != root { return Err("G06A_REPOSITORY_OUTSIDE_PROJECT"); }
+    if actual != root {
+        return Err("G06A_REPOSITORY_OUTSIDE_PROJECT");
+    }
     Ok(repo)
 }
 
@@ -77,7 +84,9 @@ impl IdeWorkspaceRegistry {
                 break;
             }
             let reference = item.map_err(|_| "G06A_REF_UNVERIFIABLE")?;
-            let Some(raw) = reference.name() else { continue; };
+            let Some(raw) = reference.name() else {
+                continue;
+            };
             let (kind, name) = if let Some(rest) = raw.strip_prefix("refs/heads/") {
                 ("local_branch", rest)
             } else if let Some(rest) = raw.strip_prefix("refs/remotes/") {
@@ -88,25 +97,35 @@ impl IdeWorkspaceRegistry {
                 // Internal refs, HEAD and notes are intentionally excluded.
                 continue;
             };
-            if !safe_name(name) { continue; }
+            if !safe_name(name) {
+                continue;
+            }
             let direct = reference.target();
             let resolved = reference.resolve().ok().and_then(|r| r.target());
             refs.push(GitRefEvidence {
-                name: name.to_owned(), kind,
+                name: name.to_owned(),
+                kind,
                 direct_sha: direct.map(|o| o.to_string()),
                 resolved_sha: resolved.map(|o| o.to_string()),
                 symbolic: reference.symbolic_target().is_some(),
             });
         }
-        refs.sort_by(|a,b| a.kind.cmp(b.kind).then(a.name.cmp(&b.name)));
+        refs.sort_by(|a, b| a.kind.cmp(b.kind).then(a.name.cmp(&b.name)));
         // Remote names are aliases only. Do NOT fetch remote URLs or
         // expose git config, including credential-bearing origin URLs.
-        let names = repo.remotes().map_err(|_| "G06A_REMOTE_ALIASES_UNAVAILABLE")?;
+        let names = repo
+            .remotes()
+            .map_err(|_| "G06A_REMOTE_ALIASES_UNAVAILABLE")?;
         let mut aliases = Vec::new();
         let mut remotes_truncated = false;
         for name in names.iter().flatten() {
-            if aliases.len() >= MAX_REMOTES { remotes_truncated = true; break; }
-            if safe_name(name) { aliases.push(name.to_owned()); }
+            if aliases.len() >= MAX_REMOTES {
+                remotes_truncated = true;
+                break;
+            }
+            if safe_name(name) {
+                aliases.push(name.to_owned());
+            }
         }
         aliases.sort();
         let state = format!("{:?}", repo.state());
@@ -114,12 +133,20 @@ impl IdeWorkspaceRegistry {
         let unborn = repo.head().is_err() && repo.is_empty().unwrap_or(false);
         let detached = repo.head_detached().unwrap_or(false);
         let healthy = matches!(repo.state(), git2::RepositoryState::Clean)
-            && conflicts == Some(false) && !unborn;
+            && conflicts == Some(false)
+            && !unborn;
         Ok(GitRefsAndHealthEvidence {
-            schema_version: 1, project_id: project_id.to_owned(),
-            head_sha: repo.head().ok().and_then(|head| head.target()).map(|id| id.to_string()),
-            local_refs: refs, refs_truncated,
-            remote_aliases: aliases, remotes_truncated,
+            schema_version: 1,
+            project_id: project_id.to_owned(),
+            head_sha: repo
+                .head()
+                .ok()
+                .and_then(|head| head.target())
+                .map(|id| id.to_string()),
+            local_refs: refs,
+            refs_truncated,
+            remote_aliases: aliases,
+            remotes_truncated,
             health: GitRepositoryHealth {
                 repository_state: state,
                 index_conflicts: conflicts,
@@ -129,8 +156,10 @@ impl IdeWorkspaceRegistry {
                 metadata_clean_only: healthy,
                 operation_ready: false,
             },
-            remote_url_exposed: false, network_queried: false,
-            git_process_started: false, refs_or_files_modified: false,
+            remote_url_exposed: false,
+            network_queried: false,
+            git_process_started: false,
+            refs_or_files_modified: false,
         })
     }
 }
@@ -149,11 +178,14 @@ mod tests {
     }
     struct Fixture(PathBuf);
     impl Drop for Fixture {
-        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
     #[test]
     fn local_refs_and_remote_aliases_never_return_credential_url() {
-        let path = std::env::temp_dir().join(format!("ide-g06a-refs-{:032x}", rand::random::<u128>()));
+        let path =
+            std::env::temp_dir().join(format!("ide-g06a-refs-{:032x}", rand::random::<u128>()));
         let _fixture = Fixture(path.clone());
         let root = path.join("root");
         fs::create_dir_all(&root).unwrap();
@@ -164,21 +196,37 @@ mod tests {
         index.write().unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
         let sig = Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
-        let oid = repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
-        repo.reference("refs/tags/v1", oid, false, "test tag").unwrap();
-        repo.remote("origin", "https://secret-user:secret-token@example.invalid/org/repo.git").unwrap();
+        let oid = repo
+            .commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+            .unwrap();
+        repo.reference("refs/tags/v1", oid, false, "test tag")
+            .unwrap();
+        repo.remote(
+            "origin",
+            "https://secret-user:secret-token@example.invalid/org/repo.git",
+        )
+        .unwrap();
         drop(tree);
         drop(index);
         drop(repo);
         let registry = IdeWorkspaceRegistry::open(path.join("catalog.json")).unwrap();
-        let id = registry.register_from_native_picker(&mut Picker(root)).unwrap().unwrap().project_id;
+        let id = registry
+            .register_from_native_picker(&mut Picker(root))
+            .unwrap()
+            .unwrap()
+            .project_id;
         let result = registry.inspect_git_refs_health(&id).unwrap();
-        assert!(result.local_refs.iter().any(|r| r.name == "v1" && r.kind == "tag"));
+        assert!(result
+            .local_refs
+            .iter()
+            .any(|r| r.name == "v1" && r.kind == "tag"));
         assert_eq!(result.remote_aliases, vec!["origin"]);
         let encoded = serde_json::to_string(&result).unwrap();
         assert!(!encoded.contains("secret-token"));
         assert!(!encoded.contains("example.invalid"));
-        assert!(!result.remote_url_exposed && !result.network_queried && !result.git_process_started);
+        assert!(
+            !result.remote_url_exposed && !result.network_queried && !result.git_process_started
+        );
         assert_eq!(result.health.index_conflicts, Some(false));
         assert!(result.health.metadata_clean_only);
         assert!(!result.health.operation_ready);
