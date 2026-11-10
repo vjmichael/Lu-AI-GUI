@@ -1758,25 +1758,39 @@ mod tests {
             build_successfully_completed: true,
             requires_reconciliation: false,
         };
-        assert!(sup.verify_original_completed_cargo_build_for_debug(&lineage).is_ok());
+        assert!(sup
+            .verify_original_completed_cargo_build_for_debug(&lineage)
+            .is_ok());
         let mut wrong = lineage.clone();
         wrong.terminal_receipt_sha256 = "f".repeat(64);
-        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        assert!(sup
+            .verify_original_completed_cargo_build_for_debug(&wrong)
+            .is_err());
         let mut wrong = lineage.clone();
         wrong.source_snapshot_sha256 = "f".repeat(64);
-        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        assert!(sup
+            .verify_original_completed_cargo_build_for_debug(&wrong)
+            .is_err());
         let mut wrong = lineage.clone();
         wrong.manifest_sha256 = "f".repeat(64);
-        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        assert!(sup
+            .verify_original_completed_cargo_build_for_debug(&wrong)
+            .is_err());
         let mut wrong = lineage.clone();
         wrong.build_toolchain_sha256 = "f".repeat(64);
-        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        assert!(sup
+            .verify_original_completed_cargo_build_for_debug(&wrong)
+            .is_err());
         let mut wrong = lineage.clone();
         wrong.build_plan_sha256 = "f".repeat(64);
-        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        assert!(sup
+            .verify_original_completed_cargo_build_for_debug(&wrong)
+            .is_err());
         let mut wrong = lineage.clone();
         wrong.requires_reconciliation = true;
-        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        assert!(sup
+            .verify_original_completed_cargo_build_for_debug(&wrong)
+            .is_err());
 
         // Even a completed protected TEST recipe cannot be used as a
         // compiled project debugger target by relabeling its receipt.
@@ -1792,7 +1806,9 @@ mod tests {
         wrong.build_job_id = other.job_id;
         wrong.build_plan_sha256 = other.plan_sha256;
         wrong.terminal_receipt_sha256 = other_terminal.entry_hash;
-        assert!(sup.verify_original_completed_cargo_build_for_debug(&wrong).is_err());
+        assert!(sup
+            .verify_original_completed_cargo_build_for_debug(&wrong)
+            .is_err());
         drop(sup);
         fs::remove_file(filename).unwrap();
     }

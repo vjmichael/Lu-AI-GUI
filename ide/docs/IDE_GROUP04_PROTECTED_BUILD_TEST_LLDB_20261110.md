@@ -129,3 +129,7 @@ jobs must pass at one SHA. A queued/failed/absent job is NOT ACCEPTED.
 ## First exact-head Group 4 CI finding
 
 [Consolidated run 42865814046](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42865814046) at `ae6c9a41ddf833526eb8b8e58a7c4b0cb843fa73` reached the source preflight and found native `rustfmt` differences in the new redacted-variable DAP processor. Linux kernel worker tests were not reached; this is not containment failure or a native PASS. The exact formatter output was applied without changing authority. A *new* final-head run is necessary before any native claim.
+
+### Second consolidated native preflight
+
+[Run 42866301600](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42866301600), SHA `ef3365b913b351970b585e0794e24f2c73ebca70`, independently reached the supervisor rustfmt gate after the host redaction-path formatting was corrected. It found four exact formatter differences in the new Unix hardlink and D3 receipt regression tests; the native jobs did not reach OS execution. Only those exact formatting changes were applied. Native Build/Test and LLDB runtime acceptance remain OPEN pending a later exact-SHA rerun.

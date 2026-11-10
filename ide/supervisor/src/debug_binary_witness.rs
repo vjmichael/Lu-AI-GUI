@@ -141,7 +141,10 @@ fn checked_file(
         let mut enclosed_links = 0u64;
         for alias in &witness.files {
             let relative = Path::new(&alias.relative_path);
-            if !relative.components().all(|c| matches!(c, Component::Normal(_))) {
+            if !relative
+                .components()
+                .all(|c| matches!(c, Component::Normal(_)))
+            {
                 return Err(denied());
             }
             let meta = fs::symlink_metadata(root.join(relative)).map_err(|_| denied())?;
@@ -344,8 +347,11 @@ mod tests {
         fs::hard_link(&executable, &inside).unwrap();
         let witness = audit_published_output(&root).unwrap();
         assert_eq!(witness.file_count, 2);
-        assert!(audit_debug_binary_candidate(&root, &witness).unwrap().is_some());
-        let escaped = std::env::temp_dir().join(format!("lu-g04-external-{:032x}", rand::random::<u128>()));
+        assert!(audit_debug_binary_candidate(&root, &witness)
+            .unwrap()
+            .is_some());
+        let escaped =
+            std::env::temp_dir().join(format!("lu-g04-external-{:032x}", rand::random::<u128>()));
         fs::hard_link(&executable, &escaped).unwrap();
         // The old witness now omits one real kernel link: do not follow it,
         // rehash it, or accept it as a contained project executable.
