@@ -1,5 +1,5 @@
 # Group 6A-01/02/05/06/07: ONE exact-head Windows/Linux native source acceptance group.
-# Exact-head rerun after formatter-driven multiline security assertions were repaired; prior native jobs had Node fail.
+# Exact-head rerun after splitting OS-specific syntax probes to remove fatal Bash backtick parsing.
 # No Git mutation, installed GUI proof or owner/operator approval is claimed.
 name: IDE Group 6A native branch and worktree inventory (not release)
 on:
@@ -67,14 +67,24 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml --all-targets
           cargo fmt --manifest-path ide/host/Cargo.toml -- --check
           echo IDE_G06A_GIT_INVENTORY_HOST=PASS
-      - name: Operator harness syntax (never execute human acceptance in CI)
+      - name: Linux operator harness shell syntax only, never physical clicks
         shell: bash
         run: |
           set -euo pipefail
           bash -n ide/app/fixtures/Test-G06A-PhysicalLinuxGitInventory.sh
-          if [ "$RUNNER_OS" = Windows ]; then
-            powershell.exe -NoProfile -Command "`$tokens=`$null; `$errors=`$null; [System.Management.Automation.Language.Parser]::ParseFile('ide/app/fixtures/Test-G06A-PhysicalWindowsGitInventory.ps1', [ref]`$tokens, [ref]`$errors) | Out-Null; if (`$errors.Count -ne 0) { exit 1 }"
-          fi
+      - name: Windows operator harness PowerShell syntax only
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'ide/app/fixtures/Test-G06A-PhysicalWindowsGitInventory.ps1').Path,
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -ne 0) { throw 'IDE_G06A_PHYSICAL_OPERATOR_SCRIPT_SYNTAX_DENIED' }
       - name: Native Tauri route compiles on this platform
         shell: bash
         run: |
