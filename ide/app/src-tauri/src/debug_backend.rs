@@ -127,6 +127,14 @@ fn installation(app: &AppHandle) -> Result<Installation, String> {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RedactedVariableSummary {
+    pub name: String,
+    pub declared_type: Option<String>,
+    pub value_redacted: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DebugWitness {
     pub job_id: String,
     pub project_id: String,
@@ -148,6 +156,10 @@ pub struct DebugWitness {
     pub target_binding_sha256: Option<String>,
     pub operation_outcome_code: Option<&'static str>,
     pub operation_receipt_sha256: Option<String>,
+    /// Only developer-only, physically consented one-shot DAP names/types.
+    /// No adapter values, memory references, handles or expressions.
+    pub inspected_frame_id: Option<u64>,
+    pub redacted_variables: Option<Vec<RedactedVariableSummary>>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -183,6 +195,7 @@ pub struct DebugInterrupted {
 pub enum ReviewedNativeAction {
     StepOver,
     SameLineBreakpoint,
+    InspectVariables,
 }
 struct Active {
     project_id: String,
@@ -816,6 +829,8 @@ impl NativeDebugRuntime {
         #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
         let mut native_action_receipt: Option<(u64, String, &'static str)> = None;
         #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
+        let mut inspected_variables: Option<(u64, Vec<RedactedVariableSummary>)> = None;
+        #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
         if let (Some(target), Some(operation)) = (target, operation) {
             if cancel.load(Ordering::SeqCst) {
                 return Err("DEV046D_CANCELLED_BEFORE_STOP_APPROVAL".into());
@@ -850,6 +865,43 @@ impl NativeDebugRuntime {
                         return Err("DEV046D_STEP_MISSING_INDEPENDENT_STOP".into());
                     }
                     (after.owner_sequence, audit.2, "native_dialog_step_verified")
+                }
+                ReviewedNativeAction::InspectVariables => {
+                    let (read, audit) = session
+                        .inspect_one_protected_native_variables(
+                            &self.supervisor,
+                            &prepared.job_id,
+                            &plan,
+                            target,
+                            &original,
+                            &mut dialog,
+                            cancel,
+                        )
+                        .map_err(|e| e.code().to_owned())?;
+                    if audit.3 != "ResultUncertain"
+                        || read.installed_app_accepted
+                        || read.frame_id != original.verified_frame_id
+                        || read.variables.len() > 16
+                        || read.variables.iter().any(|v| !v.value_redacted)
+                    {
+                        return Err("IDE_G04D_VARIABLES_OWNER_OR_REDACTION_FAILED".into());
+                    }
+                    inspected_variables = Some((
+                        read.frame_id,
+                        read.variables
+                            .into_iter()
+                            .map(|variable| RedactedVariableSummary {
+                                name: variable.name,
+                                declared_type: variable.declared_type,
+                                value_redacted: true,
+                            })
+                            .collect(),
+                    ));
+                    (
+                        original.owner_sequence,
+                        audit.2,
+                        "native_dialog_variables_redacted_uncertain",
+                    )
                 }
                 ReviewedNativeAction::SameLineBreakpoint => {
                     let audit = session
@@ -892,6 +944,15 @@ impl NativeDebugRuntime {
             (None, None)
         };
 
+        #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
+        let (inspected_frame_id, redacted_variables) = match inspected_variables {
+            Some((frame, variables)) => (Some(frame), Some(variables)),
+            None => (None, None),
+        };
+        #[cfg(not(all(windows, debug_assertions, feature = "dev046d-native-dialog")))]
+        let (inspected_frame_id, redacted_variables):
+            (Option<u64>, Option<Vec<RedactedVariableSummary>>) = (None, None);
+
         let state = self
             .supervisor
             .inspect()
@@ -928,6 +989,8 @@ impl NativeDebugRuntime {
             target_binding_sha256: target.map(|target| target.binding_sha256.clone()),
             operation_outcome_code,
             operation_receipt_sha256,
+            inspected_frame_id,
+            redacted_variables,
         })
     }
 }

@@ -792,6 +792,48 @@ async fn ide_debug_breakpoint_project(
     }
 }
 
+/// G04D: opt-in developer only. The native host derives the exact
+/// previously verified frame and obtains a NEW physical OS modal for this
+/// inspection. No path, PID, frame ID, DAP payload or consent crosses JS.
+#[tauri::command]
+async fn ide_debug_inspect_project_variables(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
+    {
+        let debug = app
+            .try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("IDE_G04D_PROTECTED_DEBUGGER_MISSING")?;
+        let builds = app
+            .try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("IDE_G04D_PROTECTED_BUILD_HOST_MISSING")?;
+        let debug = Arc::clone(debug.inner());
+        let builds = Arc::clone(builds.inner());
+        let registry = Arc::clone(registry.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let target = builds.native_project_debug_target(&project_id)?;
+            debug.run_project_native_action(
+                &app,
+                &registry,
+                &project_id,
+                target,
+                debug_backend::ReviewedNativeAction::InspectVariables,
+            )
+        })
+        .await
+        .map_err(|_| "IDE_G04D_VARIABLES_TASK_UNAVAILABLE")??;
+        return serde_json::to_value(result)
+            .map_err(|_| "IDE_G04D_VARIABLES_SERIALIZATION_FAILED".into());
+    }
+    #[cfg(not(all(windows, debug_assertions, feature = "dev046d-native-dialog")))]
+    {
+        let _ = (app, registry, project_id);
+        Err("IDE_G04D_VARIABLE_INSPECTION_NOT_INSTALLED".into())
+    }
+}
+
 #[tauri::command]
 async fn ide_debug_cancel(
     app: AppHandle,
@@ -2022,6 +2064,7 @@ pub fn run() {
             ide_debug_run_project,
             ide_debug_step_project,
             ide_debug_breakpoint_project,
+            ide_debug_inspect_project_variables,
             ide_debug_cancel,
             ide_debug_reconcile,
             ide_read_project_context,
