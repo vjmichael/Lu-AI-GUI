@@ -1,5 +1,13 @@
 # Lu IDE — Development changelog
 
+## 2026-11-10 — Group 5 source regression portability
+
+Follow-up to G05C descriptor-bound wheel verification: confine the real
+rename-over-open race fixture to POSIX and add a portable mismatched
+descriptor witness for Windows/Linux; classify a no-follow open denial as
+a typed provenance refusal. Native execution and physical installed
+approval are pending independent exact-head evidence.
+
 ## Group 5 — 2026-11-10 source-only native provenance and recovery hardening
 
 Added independent PyPI wheel member RECORD completeness plus per-member
