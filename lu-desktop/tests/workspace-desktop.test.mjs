@@ -43,3 +43,28 @@ test('P01 native filename/metadata discovery is advertised only in a scoped work
   assert.doesNotMatch(route,/register_discovery_tool\(/);
   assert.match(ui,/Choose a folder and let Lu discover files by name/);
 });
+
+test('PLAN-01 uses native picker and existing host-bound read-only Git',()=>{
+  const settings=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+  const scanner=readFileSync(new URL('../src-tauri/src/project_discovery_desktop.rs',import.meta.url),'utf8');
+  const git=readFileSync(new URL('../../src-tauri/lu-core/src/native_git_inspect.rs',import.meta.url),'utf8');
+  assert.match(host,/mod project_discovery_desktop;/);
+  assert.match(host,/project_discovery_desktop::lu_project_discover,/);
+  assert.match(scanner,/caller\.label\(\)!="settings"/);
+  assert.match(scanner,/blocking_pick_folder\(\)/);
+  assert.match(scanner,/Dir::open_ambient_dir/);
+  assert.match(scanner,/MAX_DIRS:usize=256/);
+  assert.match(scanner,/MAX_FILES:usize=1600/);
+  assert.match(scanner,/MAX_DOC_BYTES:u64=96\*1024/);
+  assert.match(scanner,/remote_issue_pr_state:"not_checked_no_network"/);
+  assert.match(scanner,/reported_untrusted_document_only/);
+  assert.match(scanner,/workspace_desktop::trusted_git_executable\(\)/);
+  assert.match(scanner,/native_git_inspect::inspect_repository_baseline/);
+  assert.match(git,/ApprovedGit::open\(approved_root,trusted_git_exe\)/);
+  assert.match(git,/--no-optional-locks/);
+  assert.match(git,/GIT_NO_LAZY_FETCH/);
+  assert.match(settings,/invoke\('lu_project_discover'\)/);
+  assert.match(settings,/Remote issues\/PRs\/CI: NOT INSPECTED/);
+  assert.doesNotMatch(scanner,/Command::new|reqwest|http:|https:|spawn\("llama/);
+  assert.doesNotMatch(settings,/invoke\('lu_project_discover',\{.*path/);
+});

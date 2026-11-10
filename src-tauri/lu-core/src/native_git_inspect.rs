@@ -239,6 +239,79 @@ impl ApprovedGit {
     }
 }
 
+/// PLAN-01 host-scoped repository identity, reusing the approved, fixed-argv
+/// read-only Git process wrapper. These facts are a local observation only:
+/// no network, remote PR claims, CI claims, write permission or model tools.
+#[derive(Clone,Debug,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct GitBaseline{
+    pub head_commit:String,
+    pub branch:Option<String>,
+    pub detached:bool,
+    pub tracked_changed_paths:u32,
+    pub untracked_paths:u32,
+    pub dirty:bool,
+    pub status_complete:bool,
+}
+fn parse_original_head(bytes:&str)->Result<Option<String>,String>{
+    let value=bytes.trim_end_matches(['\r','\n']);
+    if let Some(branch)=value.strip_prefix("ref: refs/heads/"){
+        if branch.is_empty()||branch.len()>240||
+            branch.split('/').any(|part|part.is_empty()||part=="."||part=="..")||
+            branch.chars().any(|c|c.is_control()||matches!(c,'\\'|':')){
+            return Err("Local Git HEAD branch identity malformed".into())
+        }
+        return Ok(Some(branch.to_owned()))
+    }
+    if matches!(value.len(),40|64)&&value.bytes().all(|b|b.is_ascii_hexdigit()){
+        return Ok(None)
+    }
+    Err("Local Git HEAD is not a supported direct or symbolic ref".into())
+}
+pub fn inspect_repository_baseline(
+    approved_root:&Path,trusted_git_exe:&Path
+)->Result<GitBaseline,String>{
+    let repo=ApprovedGit::open(approved_root,trusted_git_exe)?;
+    let head_path=repo.git_dir.join("HEAD");
+    let head_meta=fs::symlink_metadata(&head_path)
+        .map_err(|_|"Local Git HEAD disappeared")?;
+    if !head_meta.file_type().is_file()||head_meta.len()>512{
+        return Err("Local Git HEAD was replaced or exceeds limits".into())
+    }
+    let head_text=fs::read_to_string(&head_path)
+        .map_err(|_|"Cannot read original local Git HEAD")?;
+    let branch=parse_original_head(&head_text)?;
+    let (bytes,cap)=repo.run(&["rev-parse".into(),"--verify".into(),
+            "HEAD".into()],512)
+        .map_err(|e|format!("Approved Git commit lookup failed: {e:?}"))?;
+    if cap{return Err("Local Git commit hash overflow".into())}
+    let head=String::from_utf8(bytes)
+        .map_err(|_|"Local Git commit identity is not text")?
+        .trim().to_owned();
+    if !matches!(head.len(),40|64)||!head.bytes().all(|b|b.is_ascii_hexdigit()){
+        return Err("Local Git commit identity malformed".into())
+    }
+    let (status,cap)=repo.run(&["status".into(),"--porcelain=v1".into(),
+        "-z".into(),"--no-renames".into(),"--untracked-files=all".into(),
+        "--ignore-submodules=none".into()],MAX_STATUS_CAPTURE)
+        .map_err(|e|format!("Original Git worktree status unavailable: {e:?}"))?;
+    if cap{return Err("Local Git worktree status exceeded bounded capture".into())}
+    let mut changed=0u32;
+    let mut untracked=0u32;
+    for row in status.split(|b|*b==0).filter(|row|!row.is_empty()){
+        if row.len()<4||row[2]!=b' '{
+            return Err("Original Git status record malformed".into())
+        }
+        if row[..2]==*b"??"{untracked=untracked.saturating_add(1)}
+        else{changed=changed.saturating_add(1)}
+    }
+    Ok(GitBaseline{
+        head_commit:head,detached:branch.is_none(),branch,
+        tracked_changed_paths:changed,untracked_paths:untracked,
+        dirty:changed>0||untracked>0,status_complete:true,
+    })
+}
+
 fn status(repo: &ApprovedGit, max_entries: u32) -> Result<ToolOutput, ToolFailure> {
     if !(1..=MAX_STATUS_ENTRIES).contains(&max_entries) {
         return Err(denied("INVALID_LIMIT", "invalid Git status entry limit"));
@@ -502,4 +575,76 @@ pub fn register_git_inspection_tools(
         }).map_err(|e| format!("Git model schema refused: {e:?}"))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod project_baseline_tests{
+    use super::*;
+    #[test]
+    fn head_ref_cannot_be_interpreted_as_tool_authority(){
+        assert_eq!(parse_original_head("ref: refs/heads/feature/plan01\n").unwrap(),
+            Some("feature/plan01".into()));
+        assert_eq!(parse_original_head(&format!("{}\n","a".repeat(40))).unwrap(),None);
+        for bad in ["ref: refs/heads/../escape","ref: refs/heads/x\nexecute",
+            "ref: refs/heads/a\\b","ref: refs/tags/v1","ref: refs/heads/"]{
+            assert!(parse_original_head(bad).is_err());
+        }
+    }
+}
+
+#[cfg(test)]
+mod plan01_real_git_tests{
+    use super::*;
+    use std::process::Command;
+    /// Opt-in test-only OS executable and fixture repository. This test
+    /// creates its OWN isolated repository; production never mutates Git.
+    #[test]
+    #[ignore = "requires LU_PLAN01_TEST_GIT and a native Git runner"]
+    fn native_git_reports_original_branch_dirty_untracked_and_detached(){
+        let binary=std::env::var_os("LU_PLAN01_TEST_GIT")
+            .map(PathBuf::from).expect("Pass host-resolved original Git executable");
+        let meta=fs::metadata(&binary).expect("Real Git executable");
+        assert!(meta.is_file());
+        let root=std::env::temp_dir().join(format!(
+            "lu-plan01-real-git-{}-{:?}",std::process::id(),std::thread::current().id()
+        ));
+        let _=fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let run=|args:&[&str]|{
+            let success=Command::new(&binary)
+                .args(["-C",root.to_str().unwrap()])
+                .args(["-c","core.hooksPath=/dev/null"])
+                .args(args)
+                .env("GIT_CONFIG_NOSYSTEM","1")
+                .env("GIT_CONFIG_GLOBAL",
+                    if cfg!(windows){"NUL"}else{"/dev/null"})
+                .env("GIT_TERMINAL_PROMPT","0")
+                .status().expect("test-only Git subprocess");
+            assert!(success.success(),"test Git fixture command failed");
+        };
+        run(&["init","-q","-b","plan01"]);
+        fs::write(root.join("README.md"),"original\n").unwrap();
+        run(&["add","README.md"]);
+        run(&["-c","user.name=Lu Fixture","-c","user.email=lu@example.invalid",
+            "commit","-qm","test-only original"]);
+        let clean=inspect_repository_baseline(&root,&binary).unwrap();
+        assert_eq!(clean.branch.as_deref(),Some("plan01"));
+        assert!(!clean.detached&&!clean.dirty&&clean.status_complete);
+        assert_eq!(clean.head_commit.len(),40);
+        fs::write(root.join("README.md"),"changed\n").unwrap();
+        fs::write(root.join("untracked.md"),"not staged").unwrap();
+        let changed=inspect_repository_baseline(&root,&binary).unwrap();
+        assert!(changed.dirty);
+        assert_eq!(changed.tracked_changed_paths,1);
+        assert_eq!(changed.untracked_paths,1);
+        assert_eq!(clean.head_commit,changed.head_commit);
+        run(&["reset","--hard","-q","HEAD"]);
+        fs::remove_file(root.join("untracked.md")).unwrap();
+        run(&["checkout","-q","--detach","HEAD"]);
+        let detached=inspect_repository_baseline(&root,&binary).unwrap();
+        assert!(detached.detached&&detached.branch.is_none());
+        assert_eq!(detached.head_commit,clean.head_commit);
+        assert!(!detached.dirty);
+        fs::remove_dir_all(root).unwrap();
+    }
 }
