@@ -185,7 +185,11 @@ wheels = [
         eprintln!("IDE055_NATIVE_UV_RUNTIME_GATE_DENIED={}", error.code());
         "IDE055_PINNED_ROOT_OWNED_UV_RUNTIME_ABSENT"
     })?;
-    let fixture_preview_sha = if positive { "c".repeat(64) } else { "b".repeat(64) };
+    let fixture_preview_sha = if positive {
+        "c".repeat(64)
+    } else {
+        "b".repeat(64)
+    };
     let plan = JobPlan {
         project_id: format!("ide-{}", "5".repeat(32)),
         recipe_id: "uv_sync_offline".into(),
@@ -245,7 +249,11 @@ wheels = [
             // installed application stderr.
             eprintln!(
                 "IDE055_OFFLINE_DENIAL_DIAGNOSTIC={}",
-                diagnostic.chars().take(400).collect::<String>().replace('\n', " ")
+                diagnostic
+                    .chars()
+                    .take(400)
+                    .collect::<String>()
+                    .replace('\n', " ")
             );
             return Err("IDE055_OFFLINE_MISS_CAUSE_NOT_EVIDENCED".into());
         }
