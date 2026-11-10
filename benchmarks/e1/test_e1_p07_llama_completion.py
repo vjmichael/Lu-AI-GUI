@@ -29,12 +29,12 @@ class RealQwenJsonInterface(unittest.TestCase):
         prompt='<|im_start|>assistant\n'
         out=m.model_payload(prompt,128,'json_schema','required')
         grammar=out['grammar']
-        self.assertIn('root ::= observed_tool\n',grammar)
+        self.assertIn('root ::= observed-tool\n',grammar)
         self.assertNotIn('root ::= tool | final',grammar)
         self.assertIn('string ::= ',grammar)
         self.assertIn('ws ::= | " "',grammar)
         self.assertIn('object',grammar)
-        self.assertIn('observed_tool ::=',grammar)
+        self.assertIn('observed-tool ::=',grammar)
         self.assertNotIn('lu_reviewed_git_head',grammar)
         self.assertNotIn('lu_reviewed_media_facts',grammar)
         self.assertNotIn('json_schema',out)
@@ -50,7 +50,7 @@ class RealQwenJsonInterface(unittest.TestCase):
         self.assertNotIn('schema',payload)
     def test_full_grammar_uses_pinned_llama_json_primitive_rules(self):
         grammar=m.GENERIC_REPLY_GBNF['required']
-        self.assertIn('root ::= observed_tool\n',grammar)
+        self.assertIn('root ::= observed-tool\n',grammar)
         self.assertIn('value ::= object | array | string | number',grammar)
         self.assertIn('[0-9a-fA-F]{4}',grammar)
         self.assertIn('ws ::= | " "',grammar)

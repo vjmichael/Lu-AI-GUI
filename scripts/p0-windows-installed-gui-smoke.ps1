@@ -35,6 +35,54 @@ $report=[ordered]@{
   errors=@()
 }
 $process=$null
+# Genuine UIAutomation tree and pixel evidence when an installed WebView fails.
+# Never use this snapshot to manufacture an element or pass a gate.
+function Save-UIA-Failure([System.Windows.Automation.AutomationElement]$owner,[string]$phase){
+  if($null -eq $owner){return}
+  $safe=($phase -replace '[^a-zA-Z0-9._-]','-')
+  try {
+    $items=$owner.FindAll(
+      [System.Windows.Automation.TreeScope]::Descendants,
+      [System.Windows.Automation.Condition]::TrueCondition
+    )
+    $sample=New-Object 'System.Collections.Generic.List[object]'
+    $max=[Math]::Min(500,$items.Count)
+    for($i=0;$i -lt $max;$i++){
+      try{
+        $el=$items.Item($i)
+        $sample.Add([ordered]@{
+          name=$el.Current.Name; controlType=[string]$el.Current.ControlType.ProgrammaticName
+          automationId=$el.Current.AutomationId; className=$el.Current.ClassName
+          processId=[int64]$el.Current.ProcessId
+          enabled=[bool]$el.Current.IsEnabled; offscreen=[bool]$el.Current.IsOffscreen
+          handle=[int64]$el.Current.NativeWindowHandle
+          bounds=[string]$el.Current.BoundingRectangle
+        })
+      }catch{
+        $sample.Add([ordered]@{error='Inaccessible UIA child'})
+      }
+    }
+    $evidence=[ordered]@{
+      phase=$phase; inspectedCount=$items.Count; capturedCount=$sample.Count
+      expectedProcessId=[int64]$script:process.Id
+      ownerHandle=[int64]$owner.Current.NativeWindowHandle
+      ownerTitle=$owner.Current.Name; elements=@($sample)
+    }
+    $evidence|ConvertTo-Json -Depth 6 |
+      Set-Content -LiteralPath (Join-Path $EvidenceDir ("uia-"+$safe+".json")) -Encoding UTF8
+    $report.errors=@($report.errors)+@("UIA tree captured for "+$phase)
+  }catch{
+    $report.errors=@($report.errors)+@('UIA diagnostic failed: '+$_.Exception.Message)
+  }
+  try {
+    $report.errors=@($report.errors)+@(
+      'Failure-time desktop pixels: '+(Save-Visible-Desktop ("failed-"+$safe+".png"))
+    )
+  }catch{
+    $report.errors=@($report.errors)+@('Failure screenshot unavailable: '+$_.Exception.Message)
+  }
+}
+
 function Wait-Element([System.Windows.Automation.AutomationElement]$window,[string]$label,[bool]$button=$false){
   $deadline=[DateTime]::UtcNow.AddSeconds(20)
   do{
@@ -51,6 +99,7 @@ function Wait-Element([System.Windows.Automation.AutomationElement]$window,[stri
     }
     Start-Sleep -Milliseconds 250
   }while([DateTime]::UtcNow -lt $deadline)
+  Save-UIA-Failure $window ("missing-"+$label)
   throw "Installed WebView2 did not expose UI Automation element: $label"
 }
 # WebView2 Chromium controls can be accessible Button elements while not
@@ -192,6 +241,10 @@ try{
   $report.singleSettingsEntry='PASS_ONLY_TOP_RIGHT_GEAR'
   $report.activationMethods+=@(Invoke-UIA $settings $window)
   $settingsWindow=Wait-NativeWindow 'Lu — Settings'
+  # The window HWND exists before Chromium exposes its accessibility subtree.
+  # Focus only the already independently verified installed process/window;
+  # do not synthesize a DOM or treat focus as a pass.
+  try{$settingsWindow.SetFocus()}catch{Write-Warning ('Installed Settings focus unavailable: '+$_.Exception.Message)}
   $null=Wait-Element $settingsWindow 'General & appearance' $true
   $null=Wait-Element $settingsWindow 'Tools & permissions' $true
   $report.independentSettingsWindow='PASS_DISTINCT_NATIVE_TAURI_SETTINGS_WINDOW'
@@ -200,6 +253,7 @@ try{
   $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Choose a model' $true) $window)
   $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Manage models' $true) $window)
   $modelsWindow=Wait-NativeWindow 'Lu — Model Library'
+  try{$modelsWindow.SetFocus()}catch{Write-Warning ('Installed Model Library focus unavailable: '+$_.Exception.Message)}
   $null=Wait-Element $modelsWindow 'Installed GGUF' $true
   $null=Wait-Element $modelsWindow 'Discover · Hugging Face' $true
   $report.independentModelLibrary='PASS_DISTINCT_NATIVE_TAURI_MODEL_LIBRARY_WINDOW'

@@ -12,6 +12,10 @@ test('actual installed GUI uses OS window, process identity, UIA and screen capt
   assert.match(script,/UIAutomationClient/);
   assert.match(script,/CopyFromScreen/);
   assert.match(script,/PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS/);
+  assert.match(script,/Save-UIA-Failure/);
+  assert.match(script,/inspectedCount/);
+  assert.match(script,/failed-/);
+  assert.match(script,/SetFocus\(\)/);
   assert.match(script,/genuineGgufInference='NOT_TESTED'/);
   assert.match(script,/activeGpuOffload='NOT_TESTED'/);
 });

@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import urllib.request
+import urllib.error
 
 
 
@@ -29,7 +30,7 @@ tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws s
 # empty argument object. This constrains only the typed argument SHAPE, not
 # the model's tool-name selection. The host still verifies its real catalog.
 # Prevent the earlier Qwen malformed object/prose tail before any OS effect.
-observed_tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws string "," ws "\"arguments\"" ws ":" ws "{" ws "}" ws "}" ws
+observed-tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws string "," ws "\"arguments\"" ws ":" ws "{" ws "}" ws "}" ws
 final ::= "{" ws "\"kind\"" ws ":" ws "\"final\"" ws "," ws "\"text\"" ws ":" ws string "}" ws
 value ::= object | array | string | number | ("true" | "false" | "null") ws
 object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws
@@ -39,7 +40,7 @@ number ::= ("-"? ([0-9] | [1-9] [0-9]{0,15})) ("." [0-9]+)? ([eE] [-+]? [0-9] [1
 ws ::= | " " | "\n" [ \t]{0,20}
 '''
 GENERIC_REPLY_GBNF = {
-    "required": "root ::= observed_tool\n" + _JSON_RULES,
+    "required": "root ::= observed-tool\n" + _JSON_RULES,
     "auto": "root ::= tool | final\n" + _JSON_RULES,
 }
 
@@ -104,8 +105,15 @@ def assert_tool_grammar_enforced(port: int):
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"}, method="POST",
     )
-    with urllib.request.urlopen(request, timeout=90) as reply:
-        raw = reply.read(262145)
+    try:
+        with urllib.request.urlopen(request, timeout=90) as reply:
+            raw = reply.read(262145)
+    except urllib.error.HTTPError as exc:
+        diagnostic = exc.read(4097).decode("utf-8", "replace")
+        raise ValueError(
+            "Pinned llama.cpp rejected exact tool GBNF, HTTP "
+            + str(exc.code) + " (bounded native error): " + diagnostic[:4096]
+        ) from None
         if len(raw) > 262144:
             raise ValueError("Oversized strict tool-grammar probe")
     content = json.loads(raw).get("content")

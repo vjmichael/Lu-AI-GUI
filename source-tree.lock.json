@@ -325,7 +325,7 @@
     },
     {
       "path": "benchmarks/e1/e1_p07_llama_completion.py",
-      "blob": "6e17eef0f842862776dbac1b182d08ade6a2d7ae"
+      "blob": "783f5d2ac6b1e0edd72045058b541582f46fb97f"
     },
     {
       "path": "benchmarks/e1/e1_p08_linux_group_guard.py",
@@ -381,7 +381,7 @@
     },
     {
       "path": "benchmarks/e1/test_e1_p07_llama_completion.py",
-      "blob": "af059da60b7422941b82ef65ef616ae085f53161"
+      "blob": "7b6736823baacc6810544703331277cc02418e46"
     },
     {
       "path": "benchmarks/e1/test_memory_loop02_qwen_feedback.py",
@@ -1661,7 +1661,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
-      "blob": "f40c884831c522bdd09eb9856c6e48981d4883e9"
+      "blob": "8618fb25b0382b1390955d33460b884bcb2f5f2e"
     },
     {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
@@ -1981,7 +1981,7 @@
     },
     {
       "path": "scripts/p0-windows-installed-gui-smoke.ps1",
-      "blob": "c0dd0e135278cceca56755f907e11edf58a7c53f"
+      "blob": "34e15a4e283736dd6b5410992fbdd8e6827a44c8"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",
