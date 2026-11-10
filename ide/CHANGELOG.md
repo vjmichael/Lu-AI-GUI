@@ -1,5 +1,14 @@
 # Lu IDE — Development changelog
 
+### Group 5 — fixed upstream runtime identity / one grouped acceptance (Nov 10)
+
+Hardened `verify_ide05_upstream_uv.py` against binary/license path
+replacement between metadata inspection and file read, with descriptor
+identity checks and no-follow on supported OSes. Regression cases include
+symlinked installed inputs and a replaced native binary during open.
+The exact-head consolidated Windows/Linux native group is the acceptance
+path; no source or CI fixture constitutes installed human approval.
+
 ### Group 5 continuation — November 10, 2026, no native acceptance claimed
 
 On separate `ide/group05-package-review-20261110` source branch: hardened
