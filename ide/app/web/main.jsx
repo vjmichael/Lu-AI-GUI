@@ -3803,7 +3803,9 @@ function App() {
                   execution, OS cleanup or installed acceptance.</p>
                 {projectJobLifecycle(buildStatus,activeProject?.projectId,
                   nativeJobOutput).jobs.length===0
-                  ? <p>No matching protected job journal entries observed.</p>
+                  ? <p role="status"
+                      aria-label="No matching protected job journal entries observed">
+                      No matching protected job journal entries observed.</p>
                   : <ol aria-live="polite">
                     {projectJobLifecycle(buildStatus,activeProject?.projectId,
                       nativeJobOutput).jobs.slice(-12).map(job=>

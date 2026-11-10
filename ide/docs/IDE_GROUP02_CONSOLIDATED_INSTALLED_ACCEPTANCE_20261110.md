@@ -316,3 +316,36 @@ wrong project, absent alert or overwritten disk still FAILS.
 No host Save logic or filesystem authorization changed. The repair
 remains unaccepted until another exact-head installed Windows/Linux
 consolidated group passes including package uninstall and retention.
+
+## Group 2 native installed Jobs empty-journal accessibility — 2026-11-10
+
+[Run 42846150719](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42846150719),
+exact source `f6eb02d8a12cea8e0762ed592526d47a57001b01`: Windows NSIS installed UI **PASS**.
+Ubuntu Debian installed GTK exact project registration, active Edit,
+explicit Save, restart/reopen, external file-hash rejection and genuinely
+unsaved draft **PASS**. The follow-on installed read-only Jobs test found the
+actual headings `DEV-03.4`, `DEV-03.3B` and `DEV-03.5`, but failed to
+discover the plain paragraph `No matching protected job journal entries observed`.
+This is an installed accessibility-surface gap, not evidence of a worker
+executing, the source changing, or a broken native journal. The job never
+reached the post-uninstall project/catalog retention gate, so Linux Group 2
+is **NOT ACCEPTED**.
+
+Targeted repair: React keeps the same real `projectJobLifecycle(...).jobs.length===0`
+condition and visible text, but makes that paragraph a distinctly named
+`role=status` accessibility node. The real Debian-installed AT-SPI test
+first finds the existing DEV-03.5 heading, then its named parent region,
+and scans only that native WebView region (max 3,200 nodes / 24 levels).
+It requires exactly one visible named empty-journal status and no
+project-job list; on failure it prints fixed-category counts only.
+It **still checks** real native Discover test files, default-disabled
+protected Run/Test, unchanged source digest and real restart. No IPC,
+mock Jobs state, direct catalog editing, executable authorization or
+Lu Core integration is introduced. Negative/source contract tests run
+before expensive Linux packaging.
+
+**Closure policy:** one final exact-head Windows NSIS and Linux Debian
+installed acceptance pair. Linux must also reach real dpkg uninstall,
+absence of the installed program and byte-identical original source and
+native project catalog. Do not promote PR #203 or Group 2 without both
+completed successful OS jobs.
