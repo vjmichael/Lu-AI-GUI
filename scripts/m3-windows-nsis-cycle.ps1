@@ -172,3 +172,6 @@ try{
   Write-Output 'No cleanup of uncertain installation state is attempted'
 }
 if($record.packageRemoval -ne 'PASS_BINARIES_ABSENT'){exit 2}
+# Without explicit success, a prior native command's LASTEXITCODE survives
+# the script call and falsely marks a verified lifecycle receipt as failure.
+exit 0
