@@ -1257,7 +1257,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "3d41e809d1d0aa40c34790d4745d2dc3c983942e"
+      "blob": "bb31c8da2ff239aa9776055842840e4cae5860df"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",

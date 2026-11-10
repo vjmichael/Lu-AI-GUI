@@ -1227,7 +1227,9 @@ impl DesktopState {
             background_tasks,
             reader_generations:Mutex::new(HashMap::new()),
             source_reuse:lu_core::ai_operations::SourceReuseIndex::new(),
-            models_dir,
+            // Keep this path available for the separately initialized HF
+            // transfer custody manager later in the same struct literal.
+            models_dir:models_dir.clone(),
             catalog_path,
             chats,
             operational_assets:lu_core::operational_asset_ledger::OperationalAssetLedger::open(
