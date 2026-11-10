@@ -132,3 +132,12 @@ Windows package execution remains fail-closed until staged ACL evidence;
 physical installed-app approval is a separate human gate. Legacy
 per-commit supervisor micro-workflow push triggers are disabled;
 PR/manual triggers remain. Queue remains blocked.
+
+
+## IDE-05.6 Task 5 — independent upstream runtime wheel intake (source stage)
+
+See [IDE-05.6](IDE_DEV056_UPSTREAM_APPROVAL_ACCEPTANCE_20261109.md).
+The fixed Linux CI uv runtime now needs independently observed upstream
+release-metadata archive hash, wheel-extracted executable and license bytes
+before protected execution. No CI package approval, Windows ACL bypass,
+upstream publisher signature or physical installed-app acceptance is implied.

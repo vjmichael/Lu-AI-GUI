@@ -4,6 +4,9 @@ on:
     branches: [ide/dev05-1-package-discovery-20261109]
     paths:
       - 'ide/supervisor/**'
+      - 'ide/packaging/verify_ide05_upstream_uv.py'
+      - 'ide/packaging/test_ide05_upstream_intake.py'
+      - 'ide/docs/IDE_DEV056_UPSTREAM_APPROVAL_ACCEPTANCE_20261109.md'
       - 'ide/host/**'
       - 'ide/sandbox/src/bin/linux_delegated_ci_ide05_host.rs'
       - 'ide/app/**'
@@ -46,6 +49,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13.5'
+      - name: IDE-05.6 upstream wheel intake negative tests; no network or release grant
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ide/packaging/test_ide05_upstream_intake.py
+          echo IDE056_UPSTREAM_WHEEL_INTAKE_NEGATIVE_CASES=PASS
       - name: Linux Tauri development libs
         if: runner.os == 'Linux'
         shell: bash
@@ -200,6 +209,23 @@ jobs:
           echo "LU_IDE05_CI_WHEEL_SHA256=$wheel_sha" >> "$GITHUB_ENV"
           echo "IDE055_CI_SYNTHETIC_WHEEL_HASH=$wheel_sha"
           echo "IDE055_CI_SELF_MEASURED_NOT_RELEASE_PIN=$pin"
+      - name: IDE-05.6 compare real pinned upstream PyPI uv wheel, installed binary and original license
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ide056-wheel" .ide055-native-evidence
+          python -m pip download --no-deps --only-binary=:all: --dest "$RUNNER_TEMP/ide056-wheel" uv==0.9.9
+          shopt -s nullglob
+          wheels=("$RUNNER_TEMP"/ide056-wheel/uv-0.9.9-*.whl)
+          test "${#wheels[@]}" -eq 1
+          uv_binary="$(find "$RUNNER_TEMP/ide055-uv" -type f -name uv -print -quit)"
+          uv_license="$(find "$RUNNER_TEMP/ide055-uv" -type f -iname 'LICENSE-MIT' -print -quit)"
+          test -f "$uv_binary" && test -f "$uv_license"
+          python ide/packaging/verify_ide05_upstream_uv.py \
+            --wheel "${wheels[0]}" --installed-uv "$uv_binary" \
+            --installed-license "$uv_license" \
+            --receipt .ide055-native-evidence/uv-pypi-observation.json
+          echo IDE056_UPSTREAM_UV_OBSERVATION=REGISTRY_DIGEST_VERIFIED_NOT_SIGNED
       - name: Require real Linux namespace and delegated cgroup (never disable AppArmor)
         shell: bash
         run: |
