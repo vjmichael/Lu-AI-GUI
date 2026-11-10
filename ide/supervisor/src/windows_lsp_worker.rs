@@ -2563,11 +2563,15 @@ impl WindowsDapSession {
         // After fsync and one-use consumption, repeat native OS custody
         // immediately before sending the first fixed read-only DAP query.
         if cancelled.load(Ordering::SeqCst)
-            || self.gateway.verify_lldb_kernel_event_owner(
-                original.debuggee_pid,
-                original.debuggee_thread_id,
-                original.stopped_rip,
-            )?.seq != original.owner_sequence
+            || self
+                .gateway
+                .verify_lldb_kernel_event_owner(
+                    original.debuggee_pid,
+                    original.debuggee_thread_id,
+                    original.stopped_rip,
+                )?
+                .seq
+                != original.owner_sequence
         {
             return Err(SupervisorError::NoContainment);
         }
@@ -2581,11 +2585,15 @@ impl WindowsDapSession {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         if !self.gateway.ci_scopes_ready()
-            || self.gateway.verify_lldb_kernel_event_owner(
-                original.debuggee_pid,
-                original.debuggee_thread_id,
-                original.stopped_rip,
-            )?.seq != original.owner_sequence
+            || self
+                .gateway
+                .verify_lldb_kernel_event_owner(
+                    original.debuggee_pid,
+                    original.debuggee_thread_id,
+                    original.stopped_rip,
+                )?
+                .seq
+                != original.owner_sequence
         {
             return Err(SupervisorError::NoContainment);
         }
@@ -2607,11 +2615,15 @@ impl WindowsDapSession {
             || redacted.variables.len() > 16
             || redacted.variables.iter().any(|entry| !entry.value_redacted)
             || cancelled.load(Ordering::SeqCst)
-            || self.gateway.verify_lldb_kernel_event_owner(
-                original.debuggee_pid,
-                original.debuggee_thread_id,
-                original.stopped_rip,
-            )?.seq != original.owner_sequence
+            || self
+                .gateway
+                .verify_lldb_kernel_event_owner(
+                    original.debuggee_pid,
+                    original.debuggee_thread_id,
+                    original.stopped_rip,
+                )?
+                .seq
+                != original.owner_sequence
         {
             return Err(SupervisorError::NoContainment);
         }
