@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 872,
+  "trackedFileCount": 874,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "55e50ea47df7ae241089cc9bd2c64321fd1484b8"
+      "blob": "a24af5ddddceab2512b135ebe3fcb4995937570c"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -1648,6 +1648,10 @@
       "blob": "4cc4480724918fa804a391fe73ab4d1700702309"
     },
     {
+      "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
+      "blob": "8dd1ea955bde1a5fbb62e24b36d3e7ac94705010"
+    },
+    {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
       "blob": "6f81cb5cf27d35b0f26655bd690c57563d26a3ae"
     },
@@ -1845,7 +1849,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "7c3676bef1cb5d9a0b0f5618a23e17fd02cd7134"
+      "blob": "f5dec35b0b955a478c27042284dfefee0b2f3ed0"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1937,7 +1941,7 @@
     },
     {
       "path": "scripts/m3-windows-nsis-cycle.ps1",
-      "blob": "fbf032585cedc6818e4a4c815418bfe4481adb91"
+      "blob": "9bede8de776a22430351b48535e7056caa943019"
     },
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",
@@ -1946,6 +1950,10 @@
     {
       "path": "scripts/m5-windows-installed-memory-pilot.ps1",
       "blob": "47b032f51b4c87a1414d980a5a4839d2647dffea"
+    },
+    {
+      "path": "scripts/p0-windows-installed-gui-smoke.ps1",
+      "blob": "ce0f041292170624adce03bdcfb481420840a3af"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",

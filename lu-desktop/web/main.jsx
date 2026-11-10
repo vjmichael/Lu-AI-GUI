@@ -4154,7 +4154,7 @@ function App() {
             ? 'GPU process '+(modelMemorySample.dedicatedGpuBytes/1073741824).toFixed(2)+' GiB'
             : 'GPU unmeasured'} · Tensor loading % unavailable</span>}
           <div className="modelSwitcherWrap" ref={modelMenuRef}>
-            <button className="modelSwitcher" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
+            <button className="modelSwitcher" aria-label="Choose a model" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
               <span className="modelText">{selectModelText}</span> <span>⌄</span></button>
             {modelMenuOpen && <div className="modelMenu">
               <div className="modelMenuHeading">LOCAL GGUF MODELS <small>Selection does not load</small></div>
@@ -4174,7 +4174,7 @@ function App() {
           <button type="button" className="subtleButton" title="Open independent ANSF history"
             disabled={!chatId} aria-expanded={historyPaneOpen}
             onClick={()=>setHistoryPaneOpen(v=>!v)}>History library</button>
-          <button className="quietSettings" title="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
+          <button className="quietSettings" title="Settings" aria-label="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
         </div>
       </header>
       {chatId&&<section className="m2MemoryPane" aria-label="Conversation goal and clarifications">

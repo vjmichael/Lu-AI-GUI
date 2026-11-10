@@ -908,11 +908,14 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         timeout-minutes: 14
+        env:
+          LU_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           $ErrorActionPreference='Stop'
           $out=Join-Path $env:RUNNER_TEMP 'lu-current-preview-nsis'
           $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
-          & scripts/m3-windows-nsis-cycle.ps1 -InstallerPath (Join-Path $out $f.installerName) -InstallerSha256 $f.installerSha256 -ExpectedLuSha256 $f.appSha256 -ExpectedEngineSha256 $f.engineSha256 -ExpectedVulkanSha256 $f.vulkanEngineSha256 -ProfileIdentifier 'org.lu.current.devpreview' -UninstallerName 'UninstallLuCurrentPreview.exe' -ExpectedResearchSha256 ([string]$f.researchClientSha256) -DisposableWindowsConfirmed -EvidenceDir (Join-Path $out 'native-nsis-cycle-evidence')
+          $verifyUi=($env:LU_PR_NUMBER -eq '205')
+          & scripts/m3-windows-nsis-cycle.ps1 -ExerciseInstalledGui:$verifyUi -InstallerPath (Join-Path $out $f.installerName) -InstallerSha256 $f.installerSha256 -ExpectedLuSha256 $f.appSha256 -ExpectedEngineSha256 $f.engineSha256 -ExpectedVulkanSha256 $f.vulkanEngineSha256 -ProfileIdentifier 'org.lu.current.devpreview' -UninstallerName 'UninstallLuCurrentPreview.exe' -ExpectedResearchSha256 ([string]$f.researchClientSha256) -DisposableWindowsConfirmed -EvidenceDir (Join-Path $out 'native-nsis-cycle-evidence')
           if($LASTEXITCODE -ne 0){throw 'Native installed-preview cycle failed'}
       - name: Preserve exact-current-source artifact and evidence
         if: always()
