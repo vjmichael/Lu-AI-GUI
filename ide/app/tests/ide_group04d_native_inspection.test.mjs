@@ -52,3 +52,15 @@ test('G04D restart denies reconnect and variable values remain redacted', () => 
   assert.match(backend, /DEBUG_KERNEL_RECOVERY_REQUIRED_BEFORE_ANY_NEW_RUN/);
   assert.match(backend, /DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED/);
 });
+
+test('G04D advanced controls stay collapsed and renderer cannot forge variable evidence', () => {
+  const web = read('../web/main.jsx');
+  assert.match(web, /<details className="jobOperationControls"/);
+  assert.match(web, /<summary>Advanced debugger actions \(developer build only\)<\/summary>/);
+  assert.match(web, /kind==='inspectVariables'\?'ide_debug_inspect_project_variables'/);
+  assert.match(web, /invoke\(command,\{projectId\}\)/);
+  assert.match(web, /IDE_G04D_VARIABLES_UNREVIEWED_OR_RAW_VALUES_DENIED/);
+  assert.match(web, /entry\.valueRedacted!==true/);
+  assert.match(web, /value redacted/);
+  assert.doesNotMatch(web, /invoke\(command,\{projectId,\s*(?:pid|threadId|frameId|path|dap|token|consent)/);
+});

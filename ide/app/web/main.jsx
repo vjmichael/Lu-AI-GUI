@@ -1838,7 +1838,8 @@ function App() {
        !debugStatus?.operationControlSupported ||
        !!debugStatus.current || debugBusy || buildBusy)return;
     const command=kind==='stepOver'?'ide_debug_step_project':
-      kind==='sameLineBreakpoint'?'ide_debug_breakpoint_project':null;
+      kind==='sameLineBreakpoint'?'ide_debug_breakpoint_project':
+      kind==='inspectVariables'?'ide_debug_inspect_project_variables':null;
     if(!command)return;
     setDebugBusy(true);
     setProblem('');
@@ -1856,9 +1857,27 @@ function App() {
          (result.operationOutcomeCode!=='native_dialog_bp_uncertain' ||
           !/^[a-f0-9]{64}$/i.test(result.operationReceiptSha256||'')))
         throw Error('DEV046D_BREAKPOINT_RESULT_MUST_BE_UNCERTAIN');
+      if(kind==='inspectVariables') {
+        if(result.operationOutcomeCode!=='native_dialog_variables_redacted_uncertain' ||
+           !/^[a-f0-9]{64}$/i.test(result.operationReceiptSha256||'') ||
+           !Number.isSafeInteger(result.inspectedFrameId) ||
+           result.inspectedFrameId<=0 ||
+           !Array.isArray(result.redactedVariables) ||
+           result.redactedVariables.length>16 ||
+           result.redactedVariables.some(entry=>
+             !entry || entry.valueRedacted!==true ||
+             !/^[A-Za-z0-9_]{1,64}$/.test(entry.name||'') ||
+             (entry.declaredType!=null && (
+               typeof entry.declaredType!=='string' ||
+               entry.declaredType.length>64)))) {
+          throw Error('IDE_G04D_VARIABLES_UNREVIEWED_OR_RAW_VALUES_DENIED');
+        }
+      }
       setDebugResult(result);
       setHint(kind==='stepOver'?
         'Native dialog approved exactly one step; independent OS/PDB stop and terminal journal were verified in this development build. Not signed installed acceptance.':
+        kind==='inspectVariables'?
+        'One fresh native dialog approved read-only local variable names/types. All values are redacted, and adapter assertions remain unverified. No installed release acceptance.':
         'Native dialog approved a same-source-line breakpoint; adapter acknowledgment is not an independently verified breakpoint hit. Result remains uncertain.');
     }catch(error){
       if(activeProjectIdRef.current===projectId)
@@ -3982,7 +4001,8 @@ function App() {
                     are not independently installed/approved on this desktop.
                     The default build remains nonexecuting.</p>}
                 {debugStatus?.operationControlSupported &&
-                  <div className="jobOperationControls" aria-label="Developer-only native debugger action approval">
+                  <details className="jobOperationControls" aria-label="Developer-only native debugger action approval">
+                    <summary>Advanced debugger actions (developer build only)</summary>
                     <p><strong>DEV-04.6D development mode only.</strong> Each action creates
                       a new sealed, OS-protected debugging session with separate launch
                       approval and a second native modal bound to the verified stop.
@@ -4001,9 +4021,17 @@ function App() {
                       onClick={()=>void runNativeDebuggerAction('sameLineBreakpoint')}>
                       Request verified-line breakpoint (native approval)
                     </button>
-                    <p>Breakpoint acknowledgement remains uncertain; variables,
-                      evaluate, attach and arbitrary paths are unavailable.</p>
-                  </div>}
+                    <button type="button" className="ghostBtn"
+                      disabled={!activeProject||!debugStatus?.projectDebugSupported||
+                        !!debugStatus.current||debugBusy||buildBusy||
+                        !safeDebugSymbolEvidence(buildResult,activeProject?.projectId)}
+                      onClick={()=>void runNativeDebuggerAction('inspectVariables')}>
+                      Inspect redacted local names/types (native approval)
+                    </button>
+                    <p>Breakpoint acknowledgement and adapter-reported variable names/types
+                      remain unverified. Variable values, evaluate, child expansion, attach
+                      and arbitrary paths are unavailable.</p>
+                  </details>}
               </section>
               <p>The fixed self-test remains available separately. Project debugging
                 requires the distinct opt-in native-project-debug feature,
@@ -4070,6 +4098,19 @@ function App() {
                   {debugResult.stackResponseObserved ? 'observed' : 'not proven'}</p>
                 <p>Kernel tree cleanup: {debugResult.verifiedOsTreeReleaseByWorker
                   ? 'reported by protected supervisor' : 'not verified'}.</p>
+                {debugResult.operationOutcomeCode==='native_dialog_variables_redacted_uncertain' &&
+                  Array.isArray(debugResult.redactedVariables) &&
+                  debugResult.redactedVariables.length<=16 && <>
+                  <p>Read-only frame: <code>{debugResult.inspectedFrameId}</code>.
+                    Native consent was one-use. All variable values are redacted;
+                    the names and types below remain adapter assertions.</p>
+                  <ul>{debugResult.redactedVariables
+                    .filter(entry=>entry.valueRedacted===true)
+                    .map((entry,index)=>
+                      <li key={index}><code>{entry.name}</code>
+                        {' '}· {entry.declaredType||'type unavailable'} · value redacted</li>)}
+                  </ul>
+                </>}
                 <p>Installed/debugger project release acceptance: <strong>Not established.</strong></p>
               </div>}
             </div>
