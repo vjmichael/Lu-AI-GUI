@@ -207,3 +207,27 @@ No save semantics or filesystem authorization were changed.
 The new source must pass one final exact-SHA Windows NSIS/Linux Debian
 installed group, including error-state witness, project save/restart,
 real package uninstall and source/catalog preservation before Group 2 closes.
+
+## Real Linux conflict alert reached; nested source-tab accessibility — 2026-11-10 UTC
+
+[Consolidated installed run 42837344891](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42837344891),
+source `6200387e765a9ce5a21baa4365b4a759c0a938f7`, confirmed real
+native GTK project registration, active Edit button, explicit Save and
+reopened project after restart. It also confirmed
+`IDE_G02_LINUX_NATIVE_CONFLICT_INVENTORY=alert:visible;dirty_tab:missing`.
+The new *actual React conflict error role=alert* is present. However the
+global installed AT-SPI desktop traversal is bounded to 13 levels and does
+not necessarily reach CodeMirror's deeply nested source tab (which has the
+explicit unsaved-label derived from `tab.dirty`). That absence is not
+proof the native disk guard failed; equally it cannot be promoted as an
+accepted preserved draft.
+
+Repair: the conflict witness still requires a distinct installed native
+named alert and unchanged external file SHA, but now scans only the real
+`Source explorer and editor` accessible workspace's descendants using a
+separate, bounded traversal (28 levels, 8,000 elements). It demands the exact
+`Unsaved source tab main.rs` named tab *under that workspace*. A generic
+footer, arbitrary other tab, external file overwrite, or injected tool call
+still fails. No Rust host, source Save, worker permission or Lu Core code
+was changed. One exact-head Windows/Linux installed acceptance pair must
+prove the repair before Group 2 can close.

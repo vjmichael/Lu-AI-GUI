@@ -1158,6 +1158,37 @@ def editor_project():
     focus_editor()
 
 
+def _native_source_editor_nodes():
+    """Bounded AT-SPI descendants of the exact visible source workspace.
+
+    The global desktop scan stops at 13 levels. Real CodeMirror/editor tabs
+    are nested deeper; scan only the independently exposed OS/WebView source
+    workspace rather than accepting an unrelated 'Unsaved' status anywhere.
+    """
+    roots = []
+    for node in elements():
+        try:
+            if (node.name or "").strip() != "Source explorer and editor":
+                continue
+            if _native_dialog_ancestor(node):
+                continue
+            state = node.getState()
+            if (state.contains(pyatspi.STATE_VISIBLE) and
+                    state.contains(pyatspi.STATE_SHOWING)):
+                roots.append(node)
+        except Exception:
+            continue
+    scanned = 0
+    for root in roots[:2]:
+        stack = [(root, 0)]
+        while stack and scanned < 8000:
+            node, depth = stack.pop()
+            scanned += 1
+            yield node
+            if depth < 28:
+                stack.extend((child, depth + 1) for child in children_of(node))
+
+
 def _native_conflict_warning_and_draft(seconds=16):
     """Require real accessible conflict warning AND the still-dirty source tab.
 
@@ -1171,6 +1202,8 @@ def _native_conflict_warning_and_draft(seconds=16):
     while True:
         alert = False
         dirty_tab = False
+        # Error notification lives at the app shell; it was independently
+        # visible in the prior installed Ubuntu run.
         for node in elements():
             try:
                 if _native_dialog_ancestor(node):
@@ -1184,8 +1217,23 @@ def _native_conflict_warning_and_draft(seconds=16):
                 if (name == "File changed on disk. Unsaved edits preserved"
                         and any(kind in role for kind in ("alert", "notification", "status"))):
                     alert = True
-                if (name == "Unsaved source tab main.rs" and "tab" in role):
+                    break
+            except Exception:
+                continue
+        # Actual source-tab state is deeper in the WebView than the global
+        # 13-level desktop traversal; only trust a tab under the exact
+        # visible source-editor workspace.
+        for node in _native_source_editor_nodes():
+            try:
+                state = node.getState()
+                if not (state.contains(pyatspi.STATE_VISIBLE) and
+                        state.contains(pyatspi.STATE_SHOWING)):
+                    continue
+                name = (node.name or "").strip()
+                role = (node.getRoleName() or "").casefold()
+                if name == "Unsaved source tab main.rs" and "tab" in role:
                     dirty_tab = True
+                    break
             except Exception:
                 continue
         if alert and dirty_tab:
