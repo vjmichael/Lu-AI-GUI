@@ -67,3 +67,15 @@ test('G06A06 references and remotes expose no credential URLs', () => {
   assert.match(tauri, /async fn ide_read_git_refs_health\(/);
   assert.match(ui, /invoke\('ide_read_git_refs_health'/);
 });
+
+test('G06A07 interrupted Git operation is an explicit non-authorizing recovery status', () => {
+  const refs = read('../../host/src/git_refs_health.rs');
+  assert.match(refs, /pub struct GitRecoveryState/);
+  assert.match(refs, /requires_operator_reconciliation/);
+  assert.match(refs, /can_auto_resume: false/);
+  assert.match(refs, /can_auto_abort: false/);
+  assert.match(refs, /write_authority_granted: false/);
+  assert.match(refs, /actual_git_merge_head_marker_survives_reopen_without_auto_recovery/);
+  assert.match(ui, /Git recovery requires operator reconciliation/);
+  assert.doesNotMatch(ui, /invoke\('ide_git_abort'/);
+});
