@@ -939,7 +939,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --test lu-desktop/tests/p0-physical-ux-contract.test.mjs lu-desktop/tests/p0-native-intent.test.mjs lu-desktop/tests/ux-chat01-message-interactions.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs 2>&1 | tee p0-native-evidence/p0-source-tests.log
+          node --test lu-desktop/tests/p0-physical-ux-contract.test.mjs lu-desktop/tests/p0-native-intent.test.mjs lu-desktop/tests/p0-memory-telemetry.test.mjs lu-desktop/tests/p0-browser-bundle.test.mjs lu-desktop/tests/ux-chat01-message-interactions.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs 2>&1 | tee p0-native-evidence/p0-source-tests.log
       - name: Native Linux desktop WebView dependencies
         if: runner.os == 'Linux'
         shell: bash
@@ -971,7 +971,12 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib host_clock::tests -- --nocapture 2>&1 | tee p0-native-evidence/clock-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib engine_memory::tests -- --nocapture 2>&1 | tee p0-native-evidence/memory-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib p0_browse_intent_tests -- --nocapture 2>&1 | tee p0-native-evidence/browser-intent-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib literal_windows_path_triggers_native_picker -- --nocapture 2>&1 | tee p0-native-evidence/folder-intent-native.log
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib agent_memory_reasoning::tests -- --nocapture 2>&1 | tee p0-native-evidence/ansf-regression.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml multimodal_http::tests -- --nocapture 2>&1 | tee p0-native-evidence/mm-http-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml multimodal_saved_turn::tests -- --nocapture 2>&1 | tee p0-native-evidence/mm-json-native.log
       - name: State limitations honestly
         if: always()
         shell: bash
