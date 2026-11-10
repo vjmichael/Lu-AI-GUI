@@ -7,6 +7,8 @@ use serde::Serialize;
 use std::fs;
 
 const MAX_HUNKS: usize = 96;
+const MAX_FILE_BYTES: usize = 512 * 1024;
+const MAX_WALK_COMMITS: usize = 2000;
 const MAX_FILE_COMMITS: usize = 40;
 const MAX_SUMMARY_CHARS: usize = 180;
 
@@ -73,6 +75,10 @@ impl IdeWorkspaceRegistry {
             || !matches!(object.filemode(), 0o100644 | 0o100755) {
             return Err("G06A_TRACKED_REGULAR_FILE_REQUIRED");
         }
+        let blob = repo.find_blob(object.id()).map_err(|_| "G06A_BLOB_UNAVAILABLE")?;
+        if blob.size() > MAX_FILE_BYTES {
+            return Err("G06A_FILE_TOO_LARGE_FOR_BLAME");
+        }
         let mut opts = BlameOptions::new();
         opts.newest_commit(head.id());
         let blame = repo.blame_file(std::path::Path::new(relative_path), Some(&mut opts))
@@ -96,7 +102,11 @@ impl IdeWorkspaceRegistry {
         // complete rename-following across all merge parents.
         let mut commits = Vec::new();
         let mut history_truncated = false;
-        for oid in walk {
+        for (scanned, oid) in walk.enumerate() {
+            if scanned >= MAX_WALK_COMMITS {
+                history_truncated = true;
+                break;
+            }
             let oid = oid.map_err(|_| "G06A_HISTORY_UNAVAILABLE")?;
             let commit = repo.find_commit(oid).map_err(|_| "G06A_HISTORY_UNAVAILABLE")?;
             let current_tree = commit.tree().map_err(|_| "G06A_HISTORY_UNAVAILABLE")?;
