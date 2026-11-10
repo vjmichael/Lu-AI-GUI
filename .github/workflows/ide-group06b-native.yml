@@ -1,4 +1,4 @@
-# Group 6B-03 verified source: native partial-index reload, restart reconciliation and cancel gates.
+# Group 6B-03 exact-head Rust borrow fixture correction, native index reload and journal recovery gate.
 # Preserve real frontend-built icon; no CI-only icon may overwrite a valid app resource.
 # No Git write authority or operator acceptance.
 name: IDE Group 6B reviewed batch source (not release)
