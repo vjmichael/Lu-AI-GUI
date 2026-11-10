@@ -62,3 +62,63 @@ installed human evidence, and are not closed by the new source checks.
 **5F:** The checked-in physical Windows negative fixture can witness installed application denial only, and may not substitute for positive human approval. A user-controlled physical installed session must separately test approval, refusal, cancellation, stale-plan denial, process death, restart and uninstall with exact binary and journal hashes. An interactive session is not accessible from this GitHub-only execution context. Do not script fake human clicks.
 
 **Integration:** Use the existing consolidated `.github/workflows/ide-dev05-consolidated-native.yml` workflow on this Group 5 branch, rather than creating CI micro-jobs. Every meaningful result must be inspected at one exact SHA. Run disposition is unknown until GitHub reports jobs and logs; no release acceptance is implied by a queued or started workflow.
+
+## Follow-up — independent verification attempt and remaining physical gates
+
+The GitHub connector read on 2026-11-10 confirmed Group 5 was still at
+`3d5fea43d915766b4f789cd650ed76573070fa19` when queried. The
+commit-associated workflow lookup returned **no workflow runs**. That
+lookup only reports PR-triggered runs, so it **cannot prove that no
+push-triggered workflow exists**. A separate web Actions-page attempt
+was inaccessible. There is **no new verified terminal CI outcome** to
+justify closing native Windows/Linux acceptance.
+
+### New 5E private disposal invariant
+
+`e0188cf`: `PackageLifecycleLedger::verify_discard` now takes a
+private output path and refuses the durable `discard_verified` stage
+while that entry exists, is relative, or has an untrusted parent. The
+parent is fsynced on Unix before appending the terminal journal entry.
+New tests assert existing package files cannot falsely be declared
+destroyed and only an absent private tree permits the transition.
+This is **filesystem absence + durable journal only**; separate OS
+process-tree zero/SCM/cgroup attestation, project identity binding and
+installed restart checks are still required. Do not use this API to
+replace those native checks.
+
+### New 5C wheel member closure
+
+`6789b9f`, `1a96ddf`: the fixed upstream `uv` PyPI wheel verifier
+now requires a bounded, valid `.dist-info/RECORD` manifest, requires
+one entry for every actual non-directory wheel member, recomputes each
+member's SHA256/byte count, and denies duplicates, unlisted payloads,
+bad RECORD self-hash or changed member hashes. Previously accepted
+binary + license + metadata comparison alone could overlook a payload
+unlisted inside the wheel. New negative tests regenerate a registry
+checksum for the corrupted wheel to demonstrate this additional
+cross-check. This is still **not** a publisher signature, original
+license legal clearance, source reproducibility, CVE audit, or a
+complete transitive project dependency provenance chain.
+
+### 5B, 5D, 5F acceptance boundary
+
+The existing grouped workflow already contains Linux actual cgroup-v2
+and Bubblewrap offline-miss, cancel, synthetic positive install and
+SIGABRT/restart fixtures, plus an explicitly feature-gated Windows
+AppContainer kernel witness with source read, write/rename/delete
+denial, private output write and Job Object custody. These are
+**candidate tests**, not newly observed results. Windows production
+`uv_sync_offline` remains fail-closed.
+
+Physical installed Windows NSIS and Linux Debian human approve,
+decline, timeout, stale-plan, cancel, restart/uninstall and retained
+project-data tests have **not been performed** in this GitHub-only
+session. A real operator must execute them on pinned installed images;
+CI-only modal syntax, simulated consent, or the physical Windows
+denial witness are not positive human approval.
+
+**Next consolidated action:** use the existing
+`.github/workflows/ide-dev05-consolidated-native.yml` at one exact
+reconciled Group 5 SHA and inspect *actual* run/job logs. Do not start
+independent micro-lanes, promote CI synthetic wheels, relax ACLs or
+mark installation accepted without the evidence.
