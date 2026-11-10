@@ -240,6 +240,11 @@ function App() {
   const checkpointRequest = useRef(0);
   const [gitStatus, setGitStatus] = useState(null);
   const [gitInventory, setGitInventory] = useState(null);
+  const [gitRefsHealth, setGitRefsHealth] = useState(null);
+  const [gitFileHistory, setGitFileHistory] = useState(null);
+  const [gitFilePath, setGitFilePath] = useState('');
+  const [gitFileBusy, setGitFileBusy] = useState(false);
+  const gitSnapshotRequest = useRef(0);
   const [gitBusy, setGitBusy] = useState(false);
   const [gitDiffScope, setGitDiffScope] = useState('worktree');
   const [gitDiff, setGitDiff] = useState(null);
@@ -390,6 +395,9 @@ function App() {
     setDebugResult(null);
     setGitStatus(null);
     setGitInventory(null);
+    setGitRefsHealth(null);
+    setGitFileHistory(null);
+    gitSnapshotRequest.current += 1;
     setGithubComparison(null);
     exactCiRequest.current += 1;
     setExactCi(null);
@@ -1383,12 +1391,16 @@ function App() {
     if (!activeProject?.projectId) {
       setGitStatus(null);
       setGitInventory(null);
+      setGitRefsHealth(null);
       return;
     }
     const projectId = activeProject.projectId;
+    const request = ++gitSnapshotRequest.current;
     setGitBusy(true);
     setGitStatus(null);
     setGitInventory(null);
+    setGitRefsHealth(null);
+    setGitFileHistory(null);
     setGitDiff(null);
     setGitHistory(null);
     gitEvidenceRequest.current += 1;
@@ -1398,19 +1410,43 @@ function App() {
     setExactCiBusy(false);
     setProblem('');
     try {
-      const [status, inventory] = await Promise.all([
+      const [status, inventory, refs] = await Promise.all([
         invoke('ide_read_git_status', { projectId }),
         invoke('ide_read_git_repository_inventory', { projectId }),
+        invoke('ide_read_git_refs_health', { projectId }),
       ]);
-      if (inventory.projectId !== projectId || activeProject?.projectId !== projectId)
+      if (request !== gitSnapshotRequest.current) return;
+      if (inventory.projectId !== projectId || refs.projectId !== projectId || activeProject?.projectId !== projectId)
         throw Error('GIT_PROJECT_CONTEXT_CHANGED');
       setGitStatus(status);
       setGitInventory(inventory);
+      setGitRefsHealth(refs);
     } catch (error) {
-      setGitStatus(null);
-      setGitInventory(null);
-      setProblem('Could not inspect source control: ' + String(error));
-    } finally { setGitBusy(false); }
+      if (request === gitSnapshotRequest.current) {
+        setGitStatus(null);
+        setGitInventory(null);
+        setGitRefsHealth(null);
+        setProblem('Could not inspect source control: ' + String(error));
+      }
+    } finally { if (request === gitSnapshotRequest.current) setGitBusy(false); }
+  }
+
+  async function loadGitFileHistory() {
+    if (!activeProject?.projectId || !gitFilePath.trim() || gitFileBusy) return;
+    const projectId = activeProject.projectId;
+    const request = gitSnapshotRequest.current;
+    setGitFileBusy(true);
+    setGitFileHistory(null);
+    try {
+      const history = await invoke('ide_read_git_file_history', {
+        projectId, relativePath: gitFilePath.trim(),
+      });
+      if (request !== gitSnapshotRequest.current || history.projectId !== projectId) return;
+      setGitFileHistory(history);
+    } catch (error) {
+      if (request === gitSnapshotRequest.current)
+        setProblem('File blame/history unavailable: ' + String(error));
+    } finally { if (request === gitSnapshotRequest.current) setGitFileBusy(false); }
   }
 
   async function loadGitEvidence() {
@@ -4866,7 +4902,53 @@ function App() {
                 {gitInventory.worktreesTruncated && <p role="status">Worktree inventory is capped at 48 entries.</p>}
                 <p>No branch changes, worktree access grants, Git processes or network requests are made by this inventory.</p>
               </div>}
-            {gitBusy && <p role="status">Inspecting local Git state…</p>}
+            {gitRefsHealth && gitRefsHealth.projectId === activeProject?.projectId &&
+              <div className="continuityDocument" aria-label="Local Git refs and repository health">
+                <h3>References, remotes and repository health · read-only</h3>
+                <p>Repository state: {gitRefsHealth.health.repositoryState}
+                  {' · '}Index conflicts: {String(gitRefsHealth.health.indexConflicts)}
+                  {' · '}Shallow: {String(gitRefsHealth.health.shallow)}
+                  {' · '}Detached: {String(gitRefsHealth.health.detachedHead)}</p>
+                <p>Remote aliases (URLs and credentials hidden):
+                  {' '}{gitRefsHealth.remoteAliases.join(', ') || 'none observed'}</p>
+                <p>Local/tracking/tag refs ({gitRefsHealth.localRefs.length}{gitRefsHealth.refsTruncated ? '+' : ''}):</p>
+                <div className="continuityEvents">
+                  {gitRefsHealth.localRefs.map(item => <article className="continuityEvent" key={item.kind + item.name}>
+                    <strong>{item.name}</strong>
+                    <p>{item.kind.replaceAll('_', ' ')} · SHA: <code>{item.resolvedSha || 'unresolved'}</code></p>
+                  </article>)}
+                </div>
+                {(gitRefsHealth.refsTruncated || gitRefsHealth.remotesTruncated) &&
+                  <p role="status">Git ref/remote evidence is truncated.</p>}
+                <p>Remote references are locally stored; no live fetch or remote verification was performed.</p>
+              </div>}
+            {activeProject && <div className="continuityDocument" aria-label="Committed file history and blame">
+              <h3>File history and blame · local Git objects</h3>
+              <label htmlFor="g06a-file-history-path">Tracked project-relative file</label>
+              <input id="g06a-file-history-path" type="text" value={gitFilePath}
+                placeholder="src/main.rs" maxLength={240} disabled={gitFileBusy}
+                onChange={event => { setGitFilePath(event.target.value); setGitFileHistory(null); }} />
+              <button type="button" className="ghostBtn"
+                disabled={gitFileBusy || !gitFilePath.trim()}
+                onClick={() => loadGitFileHistory()}>
+                {gitFileBusy ? 'Inspecting…' : 'Inspect committed file history'}
+              </button>
+              {gitFileHistory && gitFileHistory.projectId === activeProject.projectId &&
+                <div>
+                  <p>HEAD: <code>{gitFileHistory.headSha}</code>
+                    {' · '} {gitFileHistory.blame.length} blame hunk(s)</p>
+                  {gitFileHistory.blame.map((entry, idx) =>
+                    <p key={idx}>Lines {entry.finalStartLine}–{entry.finalStartLine + entry.lineCount - 1}
+                      {' · '}<code>{entry.finalCommitSha.slice(0, 12)}</code></p>)}
+                  <h4>First-parent path history</h4>
+                  {gitFileHistory.commits.map(entry =>
+                    <p key={entry.commitSha}><code>{entry.commitSha.slice(0, 12)}</code>
+                      {' · '}{entry.summary}</p>)}
+                  {(gitFileHistory.blameTruncated || gitFileHistory.historyTruncated) &&
+                    <p role="status">File history or blame has been truncated.</p>}
+                </div>}
+            </div>}
+            {gitBusy && <p role="status">Inspecting local Git state…</p>
             {!gitBusy && gitStatus && <div className="continuityBody">
               <p><strong>{gitStatus.state.replaceAll('_', ' ')}</strong>
                 {' · '} Branch: <code>{gitStatus.branch || 'Unknown or detached'}</code>
