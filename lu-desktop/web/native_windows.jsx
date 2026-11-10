@@ -69,6 +69,8 @@ export function SettingsWindow(){
   const [modelList,setModelList]=useState([]);
   const [memorySample,setMemorySample]=useState(null);
   const [capabilityStatus,setCapabilityStatus]=useState([]);
+  const [vision,setVision]=useState(null);
+  const [visionBusy,setVisionBusy]=useState(false);
   const [captureWorkerReady,setCaptureWorkerReady]=useState(false);
   const [captureTaskId,setCaptureTaskId]=useState(null);
   const [captureLocalTaskId,setCaptureLocalTaskId]=useState(null);
@@ -80,10 +82,11 @@ export function SettingsWindow(){
     const results=await Promise.allSettled([
       invoke('lu_status'),invoke('lu_model_backend_options'),invoke('lu_chats'),
       invoke('lu_browser_visibility'),invoke('lu_browser_runtime_status'),
-      invoke('lu_list_models'),invoke('lu_native_route_catalog')
+      invoke('lu_list_models'),invoke('lu_native_route_catalog'),
+      invoke('lu_vision_capability')
     ]);
     const setters=[setRuntime,setBackends,v=>setChats(v?.chats||[]),
-      setBrowserVisibility,setBrowserRuntime,setModelList,setCapabilityStatus];
+      setBrowserVisibility,setBrowserRuntime,setModelList,setCapabilityStatus,setVision];
     results.forEach((result,i)=>{if(result.status==='fulfilled')setters[i](result.value);});
     if(results.every(x=>x.status==='rejected')){
       setError('Native Lu settings are unavailable. No preference was changed.');
@@ -116,6 +119,22 @@ export function SettingsWindow(){
       return result;
     }catch(e){setError(errorText(e));return null;}
     finally{setBusy(false);}
+  }
+  async function verifyNativeVision(){
+    if(!chatId||!runtime?.sessionId||visionBusy||busy)return;
+    setVisionBusy(true);setError('');setNotice('');
+    try{
+      const result=await invoke('lu_vision_run_probe',{chatId});
+      if(result?.sessionId!==runtime.sessionId||
+         result?.modelRef!==runtime.modelRef){
+        throw Error('Native pixel probe returned evidence for another loaded model; result discarded');
+      }
+      setVision(result);
+      setNotice(result.status==='verified'
+        ?'Four native pixel-inference challenges passed for this exact model session. Real-task accuracy remains unverified.'
+        :'Native image probe did not establish visual competence.');
+    }catch(e){setError(errorText(e));}
+    finally{setVisionBusy(false);}
   }
   async function chooseBackend(backend){
     await act('Backend preference saved for next Lu restart.',async()=>{
@@ -226,6 +245,21 @@ export function SettingsWindow(){
           <p>Model identities and compatibility are verified by Lu's native GGUF/MMProj preflight. Names or metadata alone never attest inference, vision or hardware support.</p>
           <p>Local registered models: {modelList.length}. Active model reference: {runtime?.modelRef||'none'}.</p>
           <button className="primaryButton" type="button" onClick={()=>void openModels()}>Open Model Library</button>
+          <div className="nativeOption">
+            <strong>Actual multimodal inference</strong>
+            <p role="status">Vision: {vision?.status||'unverified'} — {vision?.detail||'No native result is available.'}</p>
+            <label className="nativeField">Conversation for independently witnessed pixel probe
+              <select value={chatId} onChange={e=>setChatId(e.target.value)}>
+                <option value="">Select conversation…</option>
+                {chats.map(c=><option key={c.chatId} value={c.chatId}>{c.title}</option>)}
+              </select>
+            </label>
+            <button type="button" disabled={!chatId||!runtime?.sessionId||busy||visionBusy}
+              onClick={()=>void verifyNativeVision()}>
+              {visionBusy?'Running actual GGUF/MMProj inference…':'Verify native pixel inference…'}
+            </button>
+            <p>Fresh OS approval is required. Lu generates four private randomized-color PNG challenges, runs them through the loaded GGUF/MMProj and checks each actual response. A missing projector, failed model response, or incompatible backend is never reported as verified vision.</p>
+          </div>
           <p>Per-model context and prompt templates will appear here after model-specific runtime adapters are independently accepted. Unsupported settings are not exposed as working controls.</p>
         </Section>}
         {section==='runtime'&&<Section title="Lu runtime">

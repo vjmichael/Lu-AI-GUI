@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "8713d524b471ea36874969543c53c7ac9558ff3d"
+      "blob": "e3ec731485ad4d811b69aaf521443099cf959b73"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -325,7 +325,7 @@
     },
     {
       "path": "benchmarks/e1/e1_p07_llama_completion.py",
-      "blob": "17dca1bb8ac7ea286c5dcfd8a6c1032028ab34f7"
+      "blob": "84cde358b851537950b6bfa2cffd3dc886a360b0"
     },
     {
       "path": "benchmarks/e1/e1_p08_linux_group_guard.py",
@@ -381,7 +381,7 @@
     },
     {
       "path": "benchmarks/e1/test_e1_p07_llama_completion.py",
-      "blob": "518926927bd57c31f4679c1f189e48fc4b342d91"
+      "blob": "dd53cf95a17a2b6ae7a7665efa64c4e34ffff66d"
     },
     {
       "path": "benchmarks/e1/test_memory_loop02_qwen_feedback.py",
@@ -1861,7 +1861,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "701c7425919f1f56b49889dc8d232c058c2ddfe6"
+      "blob": "ed66666b10a1bd4253f1d6adfa0e424997ba7ea1"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1885,7 +1885,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "ff1f784c471848e82d9b436ee8603f5f5a822a8e"
+      "blob": "5427b6e2fbd872f3c753cd6bed8207dcf96399de"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",

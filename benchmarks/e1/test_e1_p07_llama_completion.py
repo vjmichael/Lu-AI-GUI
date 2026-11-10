@@ -40,6 +40,12 @@ class RealQwenJsonInterface(unittest.TestCase):
     def test_unreviewed_required_mode_is_not_admitted(self):
         with self.assertRaises(ValueError):
             m.model_payload('hello',128,'raw','required')
+    def test_literal_gbnf_preflight_has_no_tool_or_authority_name(self):
+        payload=m.grammar_preflight_payload()
+        self.assertEqual(payload['grammar'], 'root ::= "LU_GRAMMAR_PROBE_OK"')
+        self.assertNotIn('lu_reviewed_git_head',str(payload))
+        self.assertNotIn('permission',str(payload))
+        self.assertNotIn('schema',payload)
     def test_unknown_protocol_refused(self):
         with self.assertRaises(ValueError):
             m.model_payload('hello',128,'force_git_head')

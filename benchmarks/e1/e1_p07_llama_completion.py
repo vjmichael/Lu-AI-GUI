@@ -66,6 +66,41 @@ def model_payload(prompt: str, tokens: int, protocol: str, tool_mode: str = "aut
     return result
 
 
+def grammar_preflight_payload() -> dict:
+    """A literal-decoder challenge: model text CANNOT satisfy it by guessing."""
+    return {
+        "prompt": "<|im_start|>user\nWrite BANANA without stopping.\n<|im_end|>\n<|im_start|>assistant\n",
+        "n_predict": 32, "temperature": 0, "stream": False,
+        "cache_prompt": False, "stop": ["<|im_end|>"],
+        "grammar": 'root ::= "LU_GRAMMAR_PROBE_OK"',
+    }
+
+
+def assert_grammar_enforced(port: int):
+    """The pinned llama.cpp server must actually honor its GBNF parameter.
+
+    A server silently ignoring an invalid/unsupported grammar is NOT a
+    serialization fix. This test controls no tool, effect, permission, or
+    target; it proves only that the decoder constraint is active. Refuse
+    genuine tool acceptance if this fails.
+    """
+    url = f"http://127.0.0.1:{port}/completion"
+    request = urllib.request.Request(
+        url, data=json.dumps(grammar_preflight_payload()).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST"
+    )
+    with urllib.request.urlopen(request, timeout=90) as reply:
+        raw = reply.read(262145)
+        if len(raw) > 262144:
+            raise ValueError("Oversized llama grammar preflight response")
+    decoded = json.loads(raw)
+    if decoded.get("content") != "LU_GRAMMAR_PROBE_OK":
+        raise ValueError(
+            "Pinned llama.cpp did not enforce literal decoder GBNF; "
+            "strict model tool serialization cannot be accepted"
+        )
+
+
 def main():
     request = json.load(sys.stdin)
     if not isinstance(request, dict) or set(request) != {"prompt", "max_tokens", "tool_mode"}:

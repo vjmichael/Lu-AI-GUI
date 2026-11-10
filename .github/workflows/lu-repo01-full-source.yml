@@ -1138,6 +1138,13 @@ jobs:
           done
           test "$ready" = 1
           grep -q 'status' e1-p07-gguf-evidence/health.json
+      - name: Enforce the pinned llama.cpp live grammar protocol before any model tool acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=benchmarks/e1 python3 -c 'import os, e1_p07_llama_completion as m; m.assert_grammar_enforced(int(os.environ["LU_E1_P07_LLAMA_PORT"])); print("LIVE_GBNF_DECODER_ENFORCED")' \
+            2>&1 | tee e1-p07-gguf-evidence/live-grammar-preflight.log
+          grep -Fq 'LIVE_GBNF_DECODER_ENFORCED' e1-p07-gguf-evidence/live-grammar-preflight.log
       - name: Record genuine Qwen3 plan-format reliability without granting tools
         shell: bash
         run: |

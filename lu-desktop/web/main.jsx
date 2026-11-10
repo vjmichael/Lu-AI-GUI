@@ -875,7 +875,6 @@ function App() {
   const [lastHostLoadReply, setLastHostLoadReply] = useState(0);
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [documentSettings, setDocumentSettings] = useState(null);
   const [latestCreated, setLatestCreated] = useState(null);
@@ -932,8 +931,6 @@ function App() {
   const [wave2RecoveryByChat,setWave2RecoveryByChat] = useState({});
   const [wave2RecoveryBusy,setWave2RecoveryBusy] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [modelLibraryOpen,setModelLibraryOpen] = useState(false);
-  const [modelLibraryTab,setModelLibraryTab] = useState('installed');
   const [reactionPickerSeq,setReactionPickerSeq] = useState(null);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -1011,20 +1008,12 @@ function App() {
     return () => { mounted = false; clearInterval(timer); };
   }, [working, activity]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
+  // Availability is host-checked, not inferred from an open/closed Settings pane.
   useEffect(()=>{
-    if(!settingsOpen)return;
-    let active=true;
-    invoke('lu_browser_runtime_status')
-      .then(v=>{if(active)setBrowserRuntime(v);})
-      .catch(e=>{if(active)setBrowserPreferenceError(String(e));});
-    return()=>{active=false;};
-  },[settingsOpen]);
-  useEffect(()=>{
-    if(!settingsOpen)return;
     invoke('lu_research_available')
       .then(v=>setResearchAvailable(Boolean(v)))
       .catch(()=>setResearchAvailable(false));
-  },[settingsOpen]);
+  },[]);
   async function runResearchDiscovery(page=1){
     const selectedPage=Number.isInteger(page)?page:1;
     if(!chatId||researchBusy||!researchAvailable
@@ -1857,30 +1846,7 @@ function App() {
       })
       .catch(e=>setError(String(e)));
   }
-  useEffect(()=>{
-    if(!settingsOpen)return;
-    let active=true;
-    invoke('lu_browser_visibility')
-      .then(mode=>{if(active){setBrowserVisibility(mode);setBrowserPreferenceError('');}})
-      .catch(e=>{if(active)setBrowserPreferenceError(String(e));});
-    return()=>{active=false;};
-  },[settingsOpen]);
 
-  useEffect(()=>{
-    if ((!settingsOpen && !modelLibraryOpen) || !selectedModel) { setModelInspection(null); return; }
-    let alive=true;
-    setModelInspection(null);
-    invoke('lu_model_backend_options').then(options=>{
-      if(alive)setModelBackends(options);
-    }).catch(()=>{if(alive)setModelBackends([]);});
-    invoke('lu_model_preflight',{modelRef:selectedModel})
-      .then(view=>{if(alive)setModelInspection(view);})
-      .catch(()=>{if(alive)setModelInspection({
-        modelRef:selectedModel,status:'inspection_unavailable',loadAllowed:false,
-        detail:'Native model compatibility inspection failed. No model was loaded.'
-      });});
-    return()=>{alive=false;};
-  },[settingsOpen,modelLibraryOpen,selectedModel,models]);
 
   async function refreshCatalog() {
     const [knownModels, status] = await Promise.all([invoke('lu_list_models'), invoke('lu_status')]);
@@ -2359,17 +2325,16 @@ function App() {
     pendingPrepend.current=null;
   },[history]);
 
-  useEffect(() => { if (!settingsOpen) composerRef.current?.focus(); }, [chatId]);
+  useEffect(() => { composerRef.current?.focus(); }, [chatId]);
   useEffect(() => {
     function onShortcut(event) {
       if (event.defaultPrevented) return;
-      if (isSearchKey(event) && !settingsOpen) {
+      if (isSearchKey(event)) {
         event.preventDefault(); setChatQuery(''); searchRef.current?.focus();
-      } else if (isNewChatKey(event) && !settingsOpen) {
+      } else if (isNewChatKey(event)) {
         event.preventDefault(); void newChat();
       } else if (event.key === 'Escape') {
-        if (settingsOpen) setSettingsOpen(false);
-        else if (modelMenuOpen) setModelMenuOpen(false);
+        if (modelMenuOpen) setModelMenuOpen(false);
         else if (document.activeElement === searchRef.current) {
           setChatQuery(''); composerRef.current?.focus();
         }
@@ -2377,7 +2342,7 @@ function App() {
     }
     document.addEventListener('keydown', onShortcut);
     return () => document.removeEventListener('keydown', onShortcut);
-  }, [settingsOpen, modelMenuOpen]);
+  }, [modelMenuOpen]);
   useEffect(() => {
     if (!modelMenuOpen) return;
     function onOutside(event) {
