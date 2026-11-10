@@ -1,4 +1,4 @@
-# IDE Group 6B exact-head rerun: native formatter and hidden artifact collection repaired.
+# IDE Group 6B exact-head rerun: do not overwrite actual Tauri icon created by frontend build.
 # No Git write authority or operator acceptance.
 name: IDE Group 6B reviewed batch source (not release)
 on:
@@ -68,7 +68,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$RUNNER_OS" = Windows ]; then
+          # Reuse the existing frontend-built icon; the CI-only helper
+          # must never overwrite it. Generate only when genuinely absent.
+          if [ "$RUNNER_OS" = Windows ] && [ ! -f ide/app/src-tauri/icons/icon.ico ]; then
             python ide/app/fixtures/make_g04d_ci_icon.py
           fi
           cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
