@@ -1889,7 +1889,7 @@
     },
     {
       "path": "scripts/build-current-windows-nsis.ps1",
-      "blob": "ce3a289110937f28536594a95aad1ab4101c8af1"
+      "blob": "d7ca1bedd8e8d046809c78f45e874f146e2ad1e1"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
