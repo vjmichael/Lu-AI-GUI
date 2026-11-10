@@ -87,3 +87,22 @@ artifact/receipt file are inspected.
 When work progresses, append the exact SHA, workflow run ID, job IDs,
 positive or negative result and independently remaining human/installed/
 Windows release gates here.
+
+## Actual native Task 5 upstream-corroboration failure and repair
+
+At exact head `f34f6d20d32e0b6bc85341465473aa9d0fd6a2c6`,
+[run 42739837059](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42739837059)
+passed the Windows 2022 and Ubuntu 24.04 source matrices including the
+new negative intake suite. The real Linux upstream-wheel comparison failed
+`IDE056_INSTALLED_UV_BYTES_DIFFER_FROM_WHEEL`. The inherited staging step
+chose a `find ... -name uv -print -quit` basename result from a pip
+`--target` tree which may include both wheel-shipped native ELF and
+pip-generated console entrypoints. Selection by traversal order is NOT an
+upstream binary identity.
+
+The next exact-head correction pins the **one fixed wheel package member**
+`$RUNNER_TEMP/ide055-uv/uv/uv`, requires it to be executable and to
+have native ELF magic, and applies this path in both runtime staging and
+independent archive comparison. This does NOT relax exact wheel archive
+hashes, the license check, OS containment, CI synthetic no-network worker
+or any release/human authority. It requires new native runner evidence.
