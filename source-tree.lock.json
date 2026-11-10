@@ -1653,7 +1653,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
-      "blob": "7eb29ade66420d287cfd91de662a04f000710a35"
+      "blob": "182ce2c598fc59525c52292579b6f6e131fc023f"
     },
     {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",

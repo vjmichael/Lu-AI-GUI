@@ -30,9 +30,9 @@ test('WebView2 accessibility activates through supported UIA or independently ve
   // The optional legacy provider type does not exist on every current
   // PowerShell/.NET UIAutomationClient runtime. Its absence must NOT
   // abort the genuine OS click + installed-dialog evidence path.
-  assert.match(script,/LegacyIAccessiblePattern' -as \\[type\\]/);
-  assert.match(script,/\\$null -ne \\$legacyType/);
-  assert.doesNotMatch(script,/\\[System\\.Windows\\.Automation\\.LegacyIAccessiblePattern\\]::Pattern/);
+  assert.match(script,/LegacyIAccessiblePattern' -as \[type\]/);
+  assert.match(script,/\$null -ne \$legacyType/);
+  assert.doesNotMatch(script,/\[System\.Windows\.Automation\.LegacyIAccessiblePattern\]::Pattern/);
   assert.match(script,/GetClickablePoint\(\)/);
   assert.match(script,/WebView clickable point not within reviewed installed native window/);
   assert.match(script,/SetCursorPos/);
