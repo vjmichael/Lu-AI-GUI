@@ -1,5 +1,20 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 6A audit only — Git repository management (Nov 10, 2026)
+
+Branch `ide/group06a-git-repository-audit-20261110` is stacked
+on Group 5 source head `2f1509f`. Inspected existing native
+Git status/diff/history, public GitHub/CI read-only queries,
+one-file reviewed stage/commit, multi-project evidence and
+standalone Tauri UI. The genuinely missing 6A P0 operations are
+typed local branch inventory, linked worktree inventory and
+explicit repository state/identity classification, with hostile
+cross-platform fixtures. File blame/history by path, safe ref/
+remote listing, repository health and GUI navigation are P1.
+No executable code or Git write scope was added; Group 4/5 OS
+acceptance remains separate. See
+`ide/docs/IDE_GROUP06A_GIT_REPOSITORY_AUDIT_20261110.md`.
+
 ## Group 5 — consolidated CI lookup constraint and portability repair (Nov 10)
 
 Exact Group 5 source was checked at `9b17bf2`, but connector workflow lookup
