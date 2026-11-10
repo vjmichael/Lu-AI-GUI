@@ -114,3 +114,14 @@ wired to this protocol. The added code is private, non-installed test
 scaffolding, NOT real accepted variable inspection. Breakpoint ACK remains
 `ResultUncertain`; native breakpoint hit and Windows physical approval
 remain OPEN.
+
+## Consolidated native acceptance submitted (not a passing result)
+
+One new branch-path-only workflow, `.github/workflows/ide-group04-native.yml`,
+reuses the existing real Windows SCM/AppContainer and two Linux delegated
+Cargo/LLDB jobs, with exact-head test/format preflight for Group 4's
+original-build lineage, enclosed ELF hardlinks and redacted DAP parser.
+It is triggered only by this workflow file on the Group 4 branch and does
+not automatically open an independent CI fanout. All three actual OS
+jobs must pass at one SHA. A queued/failed/absent job is NOT ACCEPTED.
+
