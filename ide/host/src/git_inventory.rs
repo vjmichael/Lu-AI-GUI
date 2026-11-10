@@ -56,9 +56,7 @@ pub struct GitRepositoryInventory {
 }
 
 fn safe_label(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= MAX_LABEL_BYTES
-        && !s.chars().any(char::is_control)
+    !s.is_empty() && s.len() <= MAX_LABEL_BYTES && !s.chars().any(char::is_control)
 }
 
 fn initial(project_id: &str, state: &'static str) -> GitRepositoryInventory {
@@ -102,7 +100,11 @@ impl IdeWorkspaceRegistry {
             return initial(project_id, "repository_not_eligible");
         };
         let mut out = initial(project_id, "local_inventory_inspected");
-        out.repository_kind = if repo.is_worktree() { "linked_worktree" } else { "main_worktree" };
+        out.repository_kind = if repo.is_worktree() {
+            "linked_worktree"
+        } else {
+            "main_worktree"
+        };
         let detached = repo.head_detached().unwrap_or(false);
         let unborn = repo.head().is_err() && repo.is_empty().unwrap_or(false);
         out.head_state = if detached {
@@ -117,7 +119,10 @@ impl IdeWorkspaceRegistry {
         if let Ok(head) = repo.head() {
             out.current_head_sha = head.target().map(|id| id.to_string());
             if !detached {
-                out.current_branch = head.shorthand().filter(|s| safe_label(s)).map(str::to_owned);
+                out.current_branch = head
+                    .shorthand()
+                    .filter(|s| safe_label(s))
+                    .map(str::to_owned);
             }
         }
         // Bound enumeration before performing expensive ancestry comparisons.
@@ -158,7 +163,12 @@ impl IdeWorkspaceRegistry {
             };
             if let Ok(upstream) = branch.upstream() {
                 row.upstream_state = "stored_tracking_only";
-                row.upstream_name = upstream.name().ok().flatten().filter(|s| safe_label(s)).map(str::to_owned);
+                row.upstream_name = upstream
+                    .name()
+                    .ok()
+                    .flatten()
+                    .filter(|s| safe_label(s))
+                    .map(str::to_owned);
                 let upstream_tip = upstream.get().target();
                 row.upstream_sha = upstream_tip.map(|id| id.to_string());
                 if let (Some(local), Some(remote)) = (tip, upstream_tip) {
@@ -195,7 +205,11 @@ impl IdeWorkspaceRegistry {
                         LinkedWorktreeEntry {
                             name: name.to_owned(),
                             current_project: current,
-                            path_state: if current { "registered_root_only" } else { "unregistered_path_not_inspected" },
+                            path_state: if current {
+                                "registered_root_only"
+                            } else {
+                                "unregistered_path_not_inspected"
+                            },
                             administrative_state: "listed_not_validated",
                             registered_for_access: false,
                             absolute_path_exposed: false,
@@ -239,7 +253,9 @@ mod tests {
     }
     struct Fixture(PathBuf);
     impl Drop for Fixture {
-        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
     fn fixture() -> (Fixture, IdeWorkspaceRegistry, String, PathBuf) {
         let base = std::env::temp_dir().join(format!("ide-g06a-{:032x}", rand::random::<u128>()));
@@ -252,7 +268,9 @@ mod tests {
         index.write().unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
         let sig = Signature::now("IDE Fixture", "fixture@localhost.invalid").unwrap();
-        let initial = repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+        let initial = repo
+            .commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+            .unwrap();
         let parent = repo.find_commit(initial).unwrap();
         repo.branch("feature", &parent, false).unwrap();
         drop(parent);
@@ -260,7 +278,11 @@ mod tests {
         drop(index);
         drop(repo);
         let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
-        let id = registry.register_from_native_picker(&mut Picker(dir.clone())).unwrap().unwrap().project_id;
+        let id = registry
+            .register_from_native_picker(&mut Picker(dir.clone()))
+            .unwrap()
+            .unwrap()
+            .project_id;
         (Fixture(base), registry, id, dir)
     }
     #[test]
@@ -270,8 +292,14 @@ mod tests {
         assert_eq!(result.state, "local_inventory_inspected");
         assert_eq!(result.repository_kind, "main_worktree");
         assert_eq!(result.head_state, "attached");
-        assert!(result.branches.iter().any(|b| b.name == "feature" && !b.current));
-        assert!(result.branches.iter().any(|b| b.current && b.tip_sha.is_some()));
+        assert!(result
+            .branches
+            .iter()
+            .any(|b| b.name == "feature" && !b.current));
+        assert!(result
+            .branches
+            .iter()
+            .any(|b| b.current && b.tip_sha.is_some()));
         assert!(!result.git_process_started && !result.remote_queried);
         assert!(!result.refs_or_files_modified && !result.linked_worktree_access_granted);
     }
@@ -330,9 +358,9 @@ mod tests {
         let other = temp.0.join("not-registered-linked");
         repo.worktree("secondary", &other, None).unwrap();
         let result = registry.inspect_git_repository_inventory(&id);
-        assert!(result.worktrees.iter().any(|w|
-            w.name == "secondary" && !w.registered_for_access && !w.absolute_path_exposed
-        ));
+        assert!(result.worktrees.iter().any(|w| w.name == "secondary"
+            && !w.registered_for_access
+            && !w.absolute_path_exposed));
         assert!(!result.linked_worktree_access_granted);
     }
 }
