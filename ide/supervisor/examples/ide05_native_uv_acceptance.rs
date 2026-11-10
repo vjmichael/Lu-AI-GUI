@@ -62,9 +62,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err("IDE055_RESTART_DID_NOT_REQUIRE_NATIVE_RECONCILIATION".into());
         }
         let old = pending.remove(0);
-        let clean = reconcile_linux_interrupted(&reopened, &old.job_id)
-            .map_err(|e| e.code())?;
-        if clean.phase != JobPhase::Cancelled || clean.requires_reconciliation
+        let clean = reconcile_linux_interrupted(&reopened, &old.job_id).map_err(|e| e.code())?;
+        if clean.phase != JobPhase::Cancelled
+            || clean.requires_reconciliation
             || clean.execution_verified
         {
             return Err("IDE055_HOSTILE_CGROUP_TREE_NOT_INDEPENDENTLY_REAPED".into());
@@ -167,7 +167,10 @@ wheels = [
 "#,
         wheel_sha
     );
-    fs::write(source.join("uv.lock"), if positive { &positive_lock } else { &lock })?;
+    fs::write(
+        source.join("uv.lock"),
+        if positive { &positive_lock } else { &lock },
+    )?;
     let input = publish_input(&source, &staged, "uv_sync_offline").map_err(|e| e.code())?;
     verify_input(&input).map_err(|e| e.code())?;
     let lock_sha = format!(
@@ -258,7 +261,7 @@ wheels = [
     verify_input(&input).map_err(|_| "IDE055_FROZEN_INPUT_MUTATED")?;
     if positive {
         let wheel = std::path::Path::new(
-            "/opt/lu-ide/runtimes/uv_sync_offline/wheelhouse/ide05_demo-1.0.0-py3-none-any.whl"
+            "/opt/lu-ide/runtimes/uv_sync_offline/wheelhouse/ide05_demo-1.0.0-py3-none-any.whl",
         );
         let verified = ci_positive_wheel_install(&result.output_directory, wheel, wheel_sha)?;
         let module = verified.join("ide05_demo/__init__.py");
@@ -347,10 +350,18 @@ fn ci_positive_wheel_install(
     let site = dirs[0].path().join("site-packages");
     let dist = site.join("ide05_demo-1.0.0.dist-info");
     let meta = fs::read(dist.join("METADATA"))?;
-    if !meta.windows(b"Name: ide05-demo".len()).any(|w| w == b"Name: ide05-demo")
-        || !meta.windows(b"Version: 1.0.0".len()).any(|w| w == b"Version: 1.0.0")
-        || !meta.windows(b"License-Expression: MIT".len()).any(|w| w == b"License-Expression: MIT")
-        || !meta.windows(b"License-File: LICENSE.txt".len()).any(|w| w == b"License-File: LICENSE.txt")
+    if !meta
+        .windows(b"Name: ide05-demo".len())
+        .any(|w| w == b"Name: ide05-demo")
+        || !meta
+            .windows(b"Version: 1.0.0".len())
+            .any(|w| w == b"Version: 1.0.0")
+        || !meta
+            .windows(b"License-Expression: MIT".len())
+            .any(|w| w == b"License-Expression: MIT")
+        || !meta
+            .windows(b"License-File: LICENSE.txt".len())
+            .any(|w| w == b"License-File: LICENSE.txt")
     {
         return Err("IDE055_INSTALLED_ORIGINAL_LICENSE_METADATA_DENIED".into());
     }
@@ -370,7 +381,10 @@ fn ci_positive_wheel_install(
             return Err("IDE055_INVALID_REAL_WHEEL_RECORD_CSV".into());
         }
         let rel = fields[0];
-        if rel.starts_with('/') || rel.split('/').any(|segment| segment.is_empty() || segment == "." || segment == "..")
+        if rel.starts_with('/')
+            || rel
+                .split('/')
+                .any(|segment| segment.is_empty() || segment == "." || segment == "..")
             || !declared.insert(rel.to_owned())
         {
             return Err("IDE055_UNTRUSTED_RECORD_PATH_OR_DUPLICATE".into());
@@ -387,7 +401,9 @@ fn ci_positive_wheel_install(
             return Err("IDE055_RECORD_TARGET_NOT_REGULAR".into());
         }
         let bytes = fs::read(target)?;
-        let expected = fields[1].strip_prefix("sha256=").ok_or("IDE055_RECORD_UNHASHED_FILE")?;
+        let expected = fields[1]
+            .strip_prefix("sha256=")
+            .ok_or("IDE055_RECORD_UNHASHED_FILE")?;
         if expected != URL_SAFE_NO_PAD.encode(Sha256::digest(&bytes))
             || fields[2].parse::<usize>().ok() != Some(bytes.len())
         {

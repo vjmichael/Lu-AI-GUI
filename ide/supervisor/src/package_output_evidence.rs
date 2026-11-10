@@ -381,8 +381,7 @@ fn verified_lock_packages(lock: &[u8]) -> Result<BTreeMap<String, LockPackage>, 
                     // Exact compile-time CI witness, not a production registry.
                     // A project-origin local wheel, arbitrary path, or
                     // unpinned archive can never pass this exception.
-                    let expected = option_env!("LU_IDE05_CI_WHEEL_SHA256")
-                        .ok_or_else(denied)?;
+                    let expected = option_env!("LU_IDE05_CI_WHEEL_SHA256").ok_or_else(denied)?;
                     if table.len() != 2
                         || table.get("path").and_then(toml::Value::as_str)
                             != Some("ide05_demo-1.0.0-py3-none-any.whl")
@@ -391,7 +390,9 @@ fn verified_lock_packages(lock: &[u8]) -> Result<BTreeMap<String, LockPackage>, 
                     {
                         return Err(denied());
                     }
-                } else if table.get("url").and_then(toml::Value::as_str)
+                } else if table
+                    .get("url")
+                    .and_then(toml::Value::as_str)
                     .is_none_or(|url| !url.starts_with("https://"))
                 {
                     return Err(denied());

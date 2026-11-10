@@ -655,9 +655,7 @@ fn command_for(
             // separately root-owned, tree-pinned synthetic wheelhouse.
             // All ordinary package workers retain registry-only lock policy.
             if cfg!(feature = "ide055-ci-wheelhouse") {
-                cmd.arg("--setenv")
-                    .arg("UV_NO_INDEX")
-                    .arg("1");
+                cmd.arg("--setenv").arg("UV_NO_INDEX").arg("1");
             }
             cmd.arg("/runtime/bin/uv").args([
                 "sync",
