@@ -21,6 +21,9 @@ test('only top right gear opens visible Settings; models have a separate window'
   assert.match(ui,/setModelLibraryOpen\(true\);\}\}>Manage models/);
   assert.match(ui,/aria-label="Lu settings"/);
   assert.match(ui,/aria-label="Model Library"/);
+  assert.match(ui,/No registered local GGUF models/);
+  assert.match(ui,/Observe & Learn privacy settings/);
+  assert.match(ui,/Select a conversation to review its native observation status/);
   assert.match(ui,/false && settingsOpen && <div className="settingsBackdrop"/);
   assert.match(css,/\.luFullWindow\{/);
 });

@@ -491,3 +491,27 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .messageReactions .reactionPicker{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px;background:#1a2b3d;border:1px solid #51708e;border-radius:12px}
 .messageReactions .reactionPicker button{font-size:21px;padding:5px 8px}
 @media(max-width:700px){.luWindowBackdrop{padding:0}.luFullWindow{border-radius:0}.luFullWindowBody{padding:14px}.luModelGrid{grid-template-columns:1fr}.luFullWindowHeader{padding:14px}}
+
+/* P0 native screenshot review: consistent settings/model controls, no browser-default white widgets. */
+.luFullWindow button:not(.quietIcon):not(.luModelCard){
+  border:1px solid #456785;background:#233a52;color:#eaf4ff;
+  border-radius:8px;padding:9px 14px;cursor:pointer;line-height:1.35}
+.luFullWindow button:not(.quietIcon):not(.luModelCard):hover:not(:disabled){
+  background:#305577;border-color:#7097bb}
+.luFullWindow button:not(.quietIcon):not(.luModelCard):disabled{
+  opacity:.48;cursor:not-allowed}
+.luFullWindow button:focus-visible,.luFullWindow input:focus-visible,
+.luFullWindow select:focus-visible{outline:2px solid #9bcaff;outline-offset:2px}
+.luModelTabs{flex-wrap:wrap}
+.luModelTabs button{min-width:100px}
+.luModelTabs button[aria-current=page]{background:#355f89!important;border-color:#83aede!important}
+.luModelSearchRow input,.luSettingsGroup select{
+  color:#edf5ff;background:#102137;border:1px solid #456681;border-radius:8px;
+  padding:10px 12px;min-height:40px;box-sizing:border-box}
+.luModelSearchRow input::placeholder{color:#98afc6}
+.luModelEmpty{padding:16px 18px;margin:0;color:#bdcbdc;background:#1b2e44;
+  border:1px dashed #486887;border-radius:10px}
+.luFullWindowBody .luSettingsGroup h3{margin:0 0 10px}
+.luFullWindowBody .luSettingsGroup p{color:#bdccdc}
+@media(max-width:700px){.luModelSearchRow{align-items:stretch}
+  .luModelSearchRow input{flex-basis:100%;width:100%}}

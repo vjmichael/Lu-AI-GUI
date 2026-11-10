@@ -1657,7 +1657,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
-      "blob": "b91acb065c2192c2ba64a4d3649648c714853035"
+      "blob": "60fea919c3add6b9ed1086dd048d45a34369d52e"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -1841,7 +1841,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "c289ad09430e4234ee9495e86e5c8d986ade3e56"
+      "blob": "7c3676bef1cb5d9a0b0f5618a23e17fd02cd7134"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1877,7 +1877,7 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "a5124b9f003476e20c3fa3c60033af704386fded"
+      "blob": "9364bc813c09d33577e3f7d98e09ed8e63e282f2"
     },
     {
       "path": "scripts/build-agent01g-physical-windows-nsis.ps1",

@@ -7146,6 +7146,11 @@ function App() {
             </div>
           </>}
         </section>
+          {!chatId&&<section className="luSettingsGroup" aria-label="Observe & Learn privacy settings">
+            <h3>Observe & Learn</h3>
+            <p>Off by default. Select a conversation to review its native observation status,
+              request explicit operating-system consent, or forget its private notes.</p>
+          </section>}
                   {chatId && <section className="observePilot" aria-label="Observe and Learn — Lu-only pilot">
           <div className="observePilotTop">
             <strong>Observe & Learn · Lu UI only</strong>
@@ -7328,6 +7333,9 @@ function App() {
                 <span>{selectedModel===m.modelRef?'● Selected':'Inspect model'}</span>
               </button>)}
             </div>
+            {!models.length&&<p className="luModelEmpty">No registered local GGUF models. Import an existing model file to get started; Lu never downloads or loads models automatically.</p>}
+            {!!models.length&&!models.some(m=>m.filename.toLocaleLowerCase().includes(modelSearch.trim().toLocaleLowerCase()))&&
+              <p className="luModelEmpty">No models match that filename. Try another search.</p>}
             {selected&&<div className="luModelDetail" aria-label="Selected model details">
               <h3>{selected.filename}</h3>
               {modelInspection?.modelRef===selectedModel&&<>
