@@ -187,8 +187,7 @@ jobs:
             --runtime-root /opt/lu-ide/runtimes/uv_sync_offline \
             --uv-exe "$uv_binary" --python-exe /usr/bin/python3 \
             --uv-license "$uv_license" \
-            --python-license /usr/share/doc/python3.12/copyright \
-)"
+            --python-license /usr/share/doc/python3.12/copyright)"
           pin="$(printf '%s\n' "$staged" | sed -n 's/^LU_IDE05_LINUX_UV_SHA256=//p')"
           wheel_sha="$(printf '%s\n' "$staged" | sed -n 's/^LU_IDE05_CI_WHEEL_SHA256=//p')"
           test "${#wheel_sha}" = 64
