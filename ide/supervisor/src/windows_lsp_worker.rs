@@ -2376,6 +2376,267 @@ impl WindowsDapSession {
         ))
     }
 
+    /// Group 4D: exact previously source-pinned OS-owned stopped frame,
+    /// one separate physical native dialog, and one consumed durable
+    /// operation before any scopes/variables DAP traffic. Developer only.
+    /// No arbitrary frame, expression, child handle or supplied PID/path.
+    /// Variable VALUES are never returned or written to a receipt.
+    #[cfg(all(debug_assertions, feature = "dev046d-native-dialog"))]
+    pub fn inspect_one_protected_native_variables(
+        &mut self,
+        supervisor: &Supervisor,
+        job_id: &str,
+        plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+        original: &WindowsOwnerEventAccepted,
+        approve: &mut dyn FnMut(&str) -> bool,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<
+        (
+            lu_ide_workspace::dap_session::CiVariableReview,
+            (String, String, String, String),
+        ),
+        SupervisorError,
+    > {
+        use crate::{
+            debug_action_receipts::{DebugActionApproval, NativeConsentMarker},
+            debug_command_review::{review_from_verified_native_owner_for_ci, DebugReviewIntent},
+            debug_control_dispatch::{native_control_stop_from_owner, CiControlSlot},
+        };
+        use lu_ide_workspace::dap_session::DapPhase;
+        use std::sync::atomic::Ordering;
+        if self.gateway.phase() != DapPhase::Stopped
+            || original.debugger_job_id != job_id
+            || original.debugger_job_id != self.native_job_id
+            || original.debugger_plan_sha256 != self.native_plan_sha256
+            || original.source_snapshot_sha256 != self.source_input.seal.source_sha256
+            || plan.input_snapshot_sha256 != self.source_input.seal.source_sha256
+            || !original.lldb_event_loop_owner_attested
+            || !original.protected_pe_pdb_verified
+            || !original.durable_receipt_verified
+            || original.debugger_commands_authorized
+            || original.installed_app_accepted
+            || cancelled.load(Ordering::SeqCst)
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        target.verify()?;
+        verify_input(&self.source_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let still = self.gateway.verify_lldb_kernel_event_owner(
+            original.debuggee_pid,
+            original.debuggee_thread_id,
+            original.stopped_rip,
+        )?;
+        if still.seq != original.owner_sequence
+            || !self.gateway.source_candidate().is_some_and(|frame| {
+                frame.frame_id == original.verified_frame_id
+                    && frame.line == original.verified_source_line
+                    && frame.instruction_address == Some(original.stopped_rip)
+            })
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        let initial = supervisor
+            .inspect()?
+            .into_iter()
+            .find(|job| job.job_id == job_id)
+            .ok_or(SupervisorError::NoSuchJob)?;
+        if initial.phase != JobPhase::Running
+            || initial.requires_reconciliation
+            || initial.plan_sha256 != self.native_plan_sha256
+        {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        let mut review = review_from_verified_native_owner_for_ci(
+            original,
+            &self.source_input.seal.source_sha256,
+        )
+        .map_err(|_| SupervisorError::NoContainment)?;
+        let preview = review
+            .preview(
+                DebugReviewIntent::InspectVariables {
+                    frame_id: original.verified_frame_id,
+                },
+                original.owner_sequence,
+            )
+            .map_err(|_| SupervisorError::NoContainment)?;
+        let binding = review
+            .pending_native_binding(&preview.preview_sha256, original.owner_sequence)
+            .map_err(|_| SupervisorError::NoContainment)?;
+        let mut action = DebugActionApproval::prepare_native(
+            &supervisor.native_owner_receipt_root()?,
+            binding,
+            preview.clone(),
+            crate::now_ms()?,
+        )
+        .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let challenge = action.challenge_sha256().to_owned();
+        let message = format!(
+            "Approve ONE read-only redacted LLDB variables inspection?\\n\\n\\
+             Protected Job: {job_id}\\n\\
+             Verified OS thread: {}\\n\\
+             Verified native owner sequence: {}\\n\\
+             Original source snapshot: {}\\n\\
+             Verified top DAP frame: {}\\n\\
+             One-use review: {}\\n\\
+             One-use challenge: {}\\n\\n\\
+             ONLY up to 16 local names and type labels; values ALWAYS redacted.\\n\\
+             No child expansion, evaluate, memory access, mutation or replay.",
+            original.debuggee_thread_id,
+            original.owner_sequence,
+            original.source_snapshot_sha256,
+            original.verified_frame_id,
+            preview.preview_sha256,
+            challenge,
+        );
+        let confirmed = approve(&message);
+        if cancelled.load(Ordering::SeqCst)
+            || target.verify().is_err()
+            || verify_input(&self.source_input).is_err()
+            || self.gateway.phase() != DapPhase::Stopped
+            || self
+                .gateway
+                .verify_lldb_kernel_event_owner(
+                    original.debuggee_pid,
+                    original.debuggee_thread_id,
+                    original.stopped_rip,
+                )
+                .map(|event| event.seq)
+                .ok()
+                != Some(original.owner_sequence)
+            || !self.gateway.source_candidate().is_some_and(|frame| {
+                frame.frame_id == original.verified_frame_id
+                    && frame.line == original.verified_source_line
+                    && frame.instruction_address == Some(original.stopped_rip)
+            })
+        {
+            let _ = action.revoke(crate::now_ms()?);
+            return Err(SupervisorError::NoContainment);
+        }
+        let current = supervisor
+            .inspect()?
+            .into_iter()
+            .find(|job| job.job_id == job_id)
+            .ok_or(SupervisorError::NoSuchJob)?;
+        if current.phase != JobPhase::Running
+            || current.requires_reconciliation
+            || current.plan_sha256 != self.native_plan_sha256
+        {
+            let _ = action.revoke(crate::now_ms()?);
+            return Err(SupervisorError::Quarantined);
+        }
+        let consent = NativeConsentMarker::for_trusted_modal(
+            &preview.preview_sha256,
+            &challenge,
+            original.owner_sequence,
+            crate::now_ms()?,
+            confirmed,
+        );
+        action
+            .decide(consent, original.owner_sequence, crate::now_ms()?)
+            .map_err(|_| SupervisorError::InvalidApproval)?;
+        if cancelled.load(Ordering::SeqCst) {
+            let _ = action.revoke(crate::now_ms()?);
+            return Err(SupervisorError::Quarantined);
+        }
+        let claim = action
+            .consume_for_receipt_test(
+                &preview.preview_sha256,
+                original.owner_sequence,
+                crate::now_ms()?,
+            )
+            .map_err(|_| SupervisorError::GrantConsumed)?;
+        if claim.ci_fixture_only || claim.execution_authorized {
+            return Err(SupervisorError::InvalidApproval);
+        }
+        let mut slot = CiControlSlot::admit(
+            claim,
+            native_control_stop_from_owner(original).map_err(|_| SupervisorError::NoContainment)?,
+        )
+        .map_err(|_| SupervisorError::NoContainment)?;
+        let dispatched = slot
+            .take_variables()
+            .map_err(|_| SupervisorError::GrantConsumed)?;
+        if slot.has_unconsumed_slot() || dispatched.frame_id() != original.verified_frame_id {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        // After fsync and one-use consumption, repeat native OS custody
+        // immediately before sending the first fixed read-only DAP query.
+        if cancelled.load(Ordering::SeqCst)
+            || self.gateway.verify_lldb_kernel_event_owner(
+                original.debuggee_pid,
+                original.debuggee_thread_id,
+                original.stopped_rip,
+            )?.seq != original.owner_sequence
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        self.gateway.ci_send_scopes(dispatched.frame_id())?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        while std::time::Instant::now() < deadline && !self.gateway.ci_scopes_ready() {
+            if cancelled.load(Ordering::SeqCst) {
+                return Err(SupervisorError::Quarantined);
+            }
+            self.gateway.poll()?;
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        if !self.gateway.ci_scopes_ready()
+            || self.gateway.verify_lldb_kernel_event_owner(
+                original.debuggee_pid,
+                original.debuggee_thread_id,
+                original.stopped_rip,
+            )?.seq != original.owner_sequence
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        self.gateway.ci_send_variables()?;
+        let mut redacted = None;
+        while std::time::Instant::now() < deadline && redacted.is_none() {
+            if cancelled.load(Ordering::SeqCst) {
+                return Err(SupervisorError::Quarantined);
+            }
+            self.gateway.poll()?;
+            redacted = self.gateway.ci_take_redacted_variables();
+            if redacted.is_none() {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        let redacted = redacted.ok_or(SupervisorError::NoContainment)?;
+        if redacted.frame_id != original.verified_frame_id
+            || redacted.installed_app_accepted
+            || redacted.variables.len() > 16
+            || redacted.variables.iter().any(|entry| !entry.value_redacted)
+            || cancelled.load(Ordering::SeqCst)
+            || self.gateway.verify_lldb_kernel_event_owner(
+                original.debuggee_pid,
+                original.debuggee_thread_id,
+                original.stopped_rip,
+            )?.seq != original.owner_sequence
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        target.verify()?;
+        verify_input(&self.source_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        // DAP's declared names/types are still adapter assertions, not an
+        // independent OS witness. Durable terminal remains ResultUncertain.
+        action
+            .record_uncertain_result(crate::now_ms()?)
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let audit = action
+            .audit_reference("ResultUncertain")
+            .map_err(|_| SupervisorError::JournalCorrupt)?;
+        review.invalidate();
+        Ok((
+            redacted,
+            (
+                audit.action_id_sha256,
+                audit.preview_sha256,
+                audit.last_receipt_sha256,
+                audit.final_phase,
+            ),
+        ))
+    }
+
     /// A breakpoint may be transmitted only to the same independently
     /// reviewed source location in disposable CI; a DAP verified=true
     /// response is NEVER sufficient to mark installation successful.

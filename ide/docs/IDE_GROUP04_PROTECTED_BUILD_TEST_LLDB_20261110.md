@@ -222,3 +222,19 @@ acceptance pass.
 ## Fifth exact native preflight — older fixture missing synthetic stopped-thread identity
 
 [Run 42870494783](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42870494783) Linux host feature-gated tests compiled and exercised 20/21 DAP cases successfully. The existing `dev045d_only_correlated_stack_can_supply_bounded_source_candidate` test fabricated `DapPhase::Stopped` without a stopped thread, then attempted a second `stackTrace`. The new Group 4 cross-thread protection correctly denied with `InvalidPhase`. That **synthetic fixture** now supplies the reviewed same-thread identity when opt-in D6/G04 controls are enabled. No production dispatch or thread check was relaxed; native worker acceptance must be rerun.
+
+## Group 4D native Windows inspection authorization implementation (stacked branch)
+
+The developer-only protected Windows DAP session now requires the exact
+native D5 Job/PE/PDB/thread/owner receipt and correlated source frame,
+then a *new* bounded OS-native human modal for one read-only variable
+inspection. It rechecks source, OS owner and protected job after the modal;
+consumes and fsyncs a single-use action before `scopes`; requests only
+one non-expensive local scope and at most 16 redacted named variables;
+then rechecks the original owner and immutable source. DAP names/types
+remain **unverified adapter assertions**, so the result is marked
+`ResultUncertain`, never `ResultVerified`. A cancelled, refused, stale,
+foreign-frame or crashed action cannot recreate a grant. This code is
+feature-gated and not an installed/default release capability; Windows
+native build, genuine approval and restart acceptance are still REQUIRED.
+
