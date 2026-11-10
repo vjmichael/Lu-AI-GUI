@@ -96,6 +96,32 @@ pub struct CiControlObservation {
     pub is_step: bool,
 }
 
+
+#[cfg(feature = "dev046c-ci-control")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CiRedactedVariable {
+    pub name: String,
+    pub declared_type: Option<String>,
+    // No variable value, memory address, variablesReference, or raw DAP
+    // body is ever stored in this read-only projection.
+    pub value_redacted: bool,
+}
+#[cfg(feature = "dev046c-ci-control")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CiVariableReview {
+    pub frame_id: u64,
+    pub variables: Vec<CiRedactedVariable>,
+    pub installed_app_accepted: bool,
+}
+#[cfg(feature = "dev046c-ci-control")]
+#[derive(Debug, Clone)]
+struct CiVariableProbe {
+    frame_id: u64,
+    scope_reference: Option<u64>,
+    variables_requested: bool,
+    redacted: Option<Vec<CiRedactedVariable>>,
+}
+
 /// This object holds NO authorization. It only checks frames from a debugger
 /// already launched by an independently authenticated native supervisor.
 pub struct DapSession {
@@ -112,6 +138,8 @@ pub struct DapSession {
     ci_control: Option<CiControlPending>,
     #[cfg(feature = "dev046c-ci-control")]
     last_stopped_thread: Option<u64>,
+    #[cfg(feature = "dev046c-ci-control")]
+    ci_variable_probe: Option<CiVariableProbe>,
 }
 impl Default for DapSession {
     fn default() -> Self {
@@ -133,6 +161,8 @@ impl DapSession {
             ci_control: None,
             #[cfg(feature = "dev046c-ci-control")]
             last_stopped_thread: None,
+            #[cfg(feature = "dev046c-ci-control")]
+            ci_variable_probe: None,
         }
     }
     pub fn phase(&self) -> DapPhase {
@@ -152,6 +182,7 @@ impl DapSession {
         {
             self.ci_control = None;
             self.last_stopped_thread = None;
+            self.ci_variable_probe = None;
         }
         why
     }
@@ -316,11 +347,83 @@ impl DapSession {
         }
         // A new, independently correlated stack invalidates prior coordinates.
         self.last_source_candidate = None;
+        #[cfg(feature = "dev046c-ci-control")]
+        {
+            self.ci_variable_probe = None;
+        }
         self.request(
             "stackTrace",
             json!({"threadId":thread_id, "startFrame":0, "levels":16}),
         )
     }
+
+    /// DEV-04.7 / Group 4D: bounded *developer-only* read-only DAP
+    /// inspection. Native ownership, PE/PDB/source and a separate one-use
+    /// operator consent are required by a caller before invoking this.
+    /// The protocol object itself confers NO native approval and no
+    /// Tauri/renderer route exists for this feature.
+    #[cfg(feature = "dev046c-ci-control")]
+    pub fn ci_scopes(&mut self, frame_id: u64) -> Result<Vec<u8>, DapError> {
+        if self.phase != DapPhase::Stopped
+            || frame_id == 0
+            || frame_id > MAX_SEQ
+            || self.last_stopped_thread.is_none()
+            || self.last_source_candidate.as_ref().map(|x| x.frame_id) != Some(frame_id)
+            || self.ci_control.is_some()
+            || self.ci_variable_probe.is_some()
+            || !self.pending.is_empty()
+        {
+            return Err(DapError::InvalidPhase);
+        }
+        let wire = self.request("scopes", json!({"frameId":frame_id}))?;
+        self.ci_variable_probe = Some(CiVariableProbe {
+            frame_id,
+            scope_reference: None,
+            variables_requested: false,
+            redacted: None,
+        });
+        Ok(wire)
+    }
+    /// Only the previously correlated Locals/Arguments scope may be read.
+    /// No child expansion, evaluate, setVariable, memory reads or watch
+    /// expressions are available. The adapter's values are never returned.
+    #[cfg(feature = "dev046c-ci-control")]
+    pub fn ci_variables(&mut self) -> Result<Vec<u8>, DapError> {
+        if self.phase != DapPhase::Stopped
+            || !self.pending.is_empty()
+            || self.ci_control.is_some()
+        {
+            return Err(DapError::InvalidPhase);
+        }
+        let reference = self
+            .ci_variable_probe
+            .as_ref()
+            .filter(|p| !p.variables_requested && p.redacted.is_none())
+            .and_then(|p| p.scope_reference)
+            .ok_or(DapError::InvalidPhase)?;
+        let wire = self.request(
+            "variables",
+            json!({"variablesReference":reference,"filter":"named",
+                   "start":0,"count":16,"format":{"hex":false}}),
+        )?;
+        if let Some(probe) = self.ci_variable_probe.as_mut() {
+            probe.variables_requested = true;
+        }
+        Ok(wire)
+    }
+    /// The only allowed output is bounded variable NAMES and conservative
+    /// type labels. Every value is excluded and readback is one-use.
+    #[cfg(feature = "dev046c-ci-control")]
+    pub fn ci_take_redacted_variables(&mut self) -> Option<CiVariableReview> {
+        let probe = self.ci_variable_probe.as_mut()?;
+        let variables = probe.redacted.take()?;
+        Some(CiVariableReview {
+            frame_id: probe.frame_id,
+            variables,
+            installed_app_accepted: false,
+        })
+    }
+
     /// Build one fixed, previously native-authorized step DAP frame for a
     /// *sealed* debuggee. The host protocol never accepts raw user commands.
     /// A DAP ACK alone is not an independently verified result.
@@ -357,6 +460,7 @@ impl DapSession {
         // Stale original source coordinates must not be used after resume.
         self.last_source_candidate = None;
         self.last_stopped_thread = None;
+        self.ci_variable_probe = None;
         self.phase = DapPhase::Ready;
         Ok(wire)
     }
@@ -636,6 +740,80 @@ impl DapSession {
                         Ok(Some(DapEvent::StackTraceReceived))
                     }
                     #[cfg(feature = "dev046c-ci-control")]
+                    "scopes" if self.phase == DapPhase::Stopped => {
+                        let probe = self.ci_variable_probe.as_mut().ok_or(DapError::InvalidPhase)?;
+                        if probe.scope_reference.is_some() || probe.variables_requested {
+                            return Err(DapError::InvalidMessage);
+                        }
+                        let scopes = obj.get("body")
+                            .and_then(|body| body.get("scopes"))
+                            .and_then(Value::as_array)
+                            .ok_or(DapError::InvalidMessage)?;
+                        if scopes.is_empty() || scopes.len() > 8 {
+                            return Err(DapError::ExcessiveData);
+                        }
+                        let mut selected = None;
+                        for scope in scopes {
+                            let name = scope.get("name").and_then(Value::as_str)
+                                .ok_or(DapError::InvalidMessage)?;
+                            if name.len() > 48 || name.chars().any(char::is_control) {
+                                return Err(DapError::InvalidMessage);
+                            }
+                            if matches!(name, "Locals" | "Arguments") {
+                                let reference = scope.get("variablesReference")
+                                    .and_then(Value::as_u64)
+                                    .filter(|id| *id > 0 && *id <= MAX_SEQ)
+                                    .ok_or(DapError::InvalidMessage)?;
+                                if scope.get("expensive") == Some(&Value::Bool(true))
+                                    || selected.replace(reference).is_some()
+                                {
+                                    return Err(DapError::InvalidMessage);
+                                }
+                            }
+                        }
+                        probe.scope_reference = Some(selected.ok_or(DapError::InvalidMessage)?);
+                        Ok(None)
+                    }
+                    #[cfg(feature = "dev046c-ci-control")]
+                    "variables" if self.phase == DapPhase::Stopped => {
+                        let probe = self.ci_variable_probe.as_mut().ok_or(DapError::InvalidPhase)?;
+                        if !probe.variables_requested
+                            || probe.scope_reference.is_none()
+                            || probe.redacted.is_some()
+                        {
+                            return Err(DapError::InvalidMessage);
+                        }
+                        let entries = obj.get("body")
+                            .and_then(|body| body.get("variables"))
+                            .and_then(Value::as_array)
+                            .ok_or(DapError::InvalidMessage)?;
+                        if entries.len() > 16 {
+                            return Err(DapError::ExcessiveData);
+                        }
+                        let mut redacted = Vec::with_capacity(entries.len());
+                        for entry in entries {
+                            let name = entry.get("name").and_then(Value::as_str)
+                                .ok_or(DapError::InvalidMessage)?;
+                            if name.is_empty() || name.len() > 64 ||
+                                !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                            {
+                                return Err(DapError::InvalidMessage);
+                            }
+                            let declared_type = entry.get("type").and_then(Value::as_str)
+                                .filter(|ty| ty.len() <= 64
+                                    && ty.bytes().all(|b| b.is_ascii_alphanumeric()
+                                        || matches!(b, b'_' | b'<' | b'>' | b',' | b' ' | b'&' | b'*')))
+                                .map(str::to_owned);
+                            redacted.push(CiRedactedVariable {
+                                name: name.to_owned(),
+                                declared_type,
+                                value_redacted: true,
+                            });
+                        }
+                        probe.redacted = Some(redacted);
+                        Ok(None)
+                    }
+                    #[cfg(feature = "dev046c-ci-control")]
                     "next" | "stepIn" | "stepOut"
                         if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) =>
                     {
@@ -726,6 +904,13 @@ impl DapSession {
                             }
                             self.last_stopped_thread = Some(thread_id);
                         }
+                        // A new stop invalidates the previous frame/source
+                        // and its scoped variables, even on the same thread.
+                        self.last_source_candidate = None;
+                        #[cfg(feature = "dev046c-ci-control")]
+                        {
+                            self.ci_variable_probe = None;
+                        }
                         self.phase = DapPhase::Stopped;
                         Ok(Some(DapEvent::Stopped { thread_id }))
                     }
@@ -735,6 +920,7 @@ impl DapSession {
                         #[cfg(feature = "dev046c-ci-control")]
                         {
                             self.last_stopped_thread = None;
+                            self.ci_variable_probe = None;
                         }
                         Ok(Some(DapEvent::Continued))
                     }
@@ -748,6 +934,7 @@ impl DapSession {
                         {
                             self.ci_control = None;
                             self.last_stopped_thread = None;
+                            self.ci_variable_probe = None;
                         }
                         Ok(Some(DapEvent::Terminated))
                     }
@@ -869,6 +1056,90 @@ mod tests {
         result.extend(b);
         result
     }
+    #[cfg(feature = "dev046c-ci-control")]
+    #[test]
+    fn g04_redacted_variables_are_one_use_and_never_include_adapter_values() {
+        let mut s = DapSession::new();
+        s.phase = DapPhase::Stopped;
+        s.last_stopped_thread = Some(11);
+        s.last_source_candidate = Some(SourceLineCandidate {
+            frame_id: 9, line: 7, column: None,
+            adapter_path: "/workspace/src/main.rs".into(),
+            instruction_address: Some(0x140001000),
+        });
+        assert_eq!(s.ci_scopes(8).unwrap_err(), DapError::InvalidPhase);
+        let request = String::from_utf8(s.ci_scopes(9).unwrap()).unwrap();
+        assert!(request.contains(r#""command":"scopes""#));
+        assert_eq!(s.ci_scopes(9).unwrap_err(), DapError::InvalidPhase);
+        s.receive(&framed(json!({
+            "seq":1,"type":"response","request_seq":1,"command":"scopes",
+            "success":true,"body":{"scopes":[
+                {"name":"Locals","variablesReference":77,"expensive":false}
+            ]}
+        }))).unwrap();
+        let wire = String::from_utf8(s.ci_variables().unwrap()).unwrap();
+        assert!(wire.contains(r#""command":"variables""#));
+        assert!(wire.contains(r#""count":16"#));
+        assert_eq!(s.ci_variables().unwrap_err(), DapError::InvalidPhase);
+        s.receive(&framed(json!({
+            "seq":2,"type":"response","request_seq":2,"command":"variables",
+            "success":true,"body":{"variables":[
+                {"name":"password","type":"String","value":"SECRET-DO-NOT-RETURN",
+                 "variablesReference":100},
+                {"name":"counter","type":"i32","value":"17","variablesReference":0}
+            ]}
+        }))).unwrap();
+        let result = s.ci_take_redacted_variables().unwrap();
+        assert_eq!(result.frame_id, 9);
+        assert_eq!(result.variables.len(), 2);
+        assert!(result.variables.iter().all(|v| v.value_redacted));
+        assert!(!format!("{result:?}").contains("SECRET-DO-NOT-RETURN"));
+        assert!(!result.installed_app_accepted);
+        assert!(s.ci_take_redacted_variables().is_none());
+        assert_eq!(s.ci_scopes(9).unwrap_err(), DapError::InvalidPhase);
+    }
+
+    #[cfg(feature = "dev046c-ci-control")]
+    #[test]
+    fn g04_variables_deny_expensive_or_duplicate_scopes_and_stale_stop() {
+        let make = || {
+            let mut s = DapSession::new();
+            s.phase = DapPhase::Stopped;
+            s.last_stopped_thread = Some(3);
+            s.last_source_candidate = Some(SourceLineCandidate {
+                frame_id: 5, line: 2, column: None,
+                adapter_path: "/workspace/src/main.rs".into(),
+                instruction_address: Some(0x140001000),
+            });
+            s
+        };
+        let mut expensive = make();
+        expensive.ci_scopes(5).unwrap();
+        assert_eq!(expensive.receive(&framed(json!({
+            "seq":1,"type":"response","request_seq":1,"command":"scopes",
+            "success":true,"body":{"scopes":[
+                {"name":"Locals","variablesReference":99,"expensive":true}
+            ]}
+        }))).unwrap_err(),DapError::InvalidMessage);
+        assert_eq!(expensive.phase(),DapPhase::Quarantined);
+        let mut stale = make();
+        stale.ci_scopes(5).unwrap();
+        stale.receive(&framed(json!({
+            "seq":3,"type":"event","event":"continued"
+        }))).unwrap();
+        assert!(stale.ci_take_redacted_variables().is_none());
+        assert_eq!(stale.ci_variables().unwrap_err(),DapError::InvalidPhase);
+        let mut duplicate = make();
+        duplicate.ci_scopes(5).unwrap();
+        assert_eq!(duplicate.receive(&framed(json!({
+            "seq":1,"type":"response","request_seq":1,"command":"scopes",
+            "success":true,"body":{"scopes":[
+                {"name":"Locals","variablesReference":99},
+                {"name":"Arguments","variablesReference":101}
+            ]}
+        }))).unwrap_err(),DapError::InvalidMessage);
+    }
+
     #[test]
     fn fragmented_initialize_and_correlated_read_only_queries() {
         let mut s = DapSession::new();

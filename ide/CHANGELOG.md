@@ -1,5 +1,14 @@
 # Lu IDE — Development changelog
 
+- **Group 4C/4D stopped-source and variable-protocol boundary (Nov 10):**
+  Windows protected DAP rechecks the exact private target immediately
+  before consuming the one-use native grant. Each new DAP stop revokes
+  stale source/frame/variable state. Test-only DAP scopes/variables path
+  allows a single bounded local scope, 16 names/types, all values redacted,
+  no recursion or installed access. The independent native verified-frame
+  bridge, physical action approval, true breakpoint hit and installed
+  debugger acceptance remain open.
+
 - **Group 4B private Cargo artifact hardlink closure (Nov 10):** Read-only
   ELF executable validation now admits Cargo's same-inode output aliases
   only when all kernel hard-links are present in the bounded hash-verified

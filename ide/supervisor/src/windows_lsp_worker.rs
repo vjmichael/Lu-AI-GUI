@@ -1233,6 +1233,12 @@ fn start_windows_dap_inner(
     native_lsp_trace("scm_exact_nul_lease_requested");
     lease.grant_null()?;
     native_lsp_trace("scm_exact_nul_lease_fsynced");
+    // G04C: the real project-only DAP launcher, not ordinary LSP, owns
+    // this sealed target. Revalidate its bytes immediately before the
+    // one-use OS grant is consumed, after staging and SCM admission.
+    if let Some(target) = project_target {
+        target.verify()?;
+    }
     supervisor.consume_grant_after_attestation(job_id, plan, &proof())?;
     native_lsp_trace("grant_consumed");
     let (process, child_thread, stdin_write, stdout_read, debug_stderr, owner_pipe) =

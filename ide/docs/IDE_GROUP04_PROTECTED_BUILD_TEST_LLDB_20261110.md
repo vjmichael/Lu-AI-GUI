@@ -89,3 +89,28 @@ an external alias that must fail. The earlier native refusal does not
 identify which `checked_file` predicate failed, so this is a targeted
 hypothesis requiring an actual exact-head Linux rerun, not proven success.
 
+
+## Group 4C / 4D — stale-frame denial and developer-only redacted inspection
+
+The genuine Windows project DAP launcher now re-verifies the privately
+sealed Cargo target **after staging/SCM admission and immediately before
+one-use grant consumption**. Ordinary LSP has no project debugger target.
+The DAP parser now invalidates its previous source/frame and any variable
+probe on each new stop, continue, step, stack revision, termination or
+quarantine. It prevents an old source coordinate being reused across stops.
+
+A narrowly feature-gated `dev046c-ci-control` protocol path can issue one
+correlated `scopes` query for the currently returned source frame and one
+bounded `variables` query for one non-expensive Locals/Arguments scope.
+Up to 16 conservative identifier/type records are returned **with all
+values, addresses and child references excluded**. No recursive expansion,
+`evaluate`, `setVariable`, arbitrary DAP payload, Tauri command or installed
+feature is added. Hostile tests check stale frame, duplicate/expensive scopes,
+one-use consumption and a secret value that must never surface.
+
+**NOT CLOSED:** the DAP frame ID is adapter-supplied; its independent native
+OS/PE/PDB binding and per-inspection human action receipt are not yet
+wired to this protocol. The added code is private, non-installed test
+scaffolding, NOT real accepted variable inspection. Breakpoint ACK remains
+`ResultUncertain`; native breakpoint hit and Windows physical approval
+remain OPEN.

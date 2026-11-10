@@ -1,5 +1,14 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 4C/4D — guarded DAP and redacted variable protocol (2026-11-10)
+
+Revalidated protected Windows project target before one-use DAP job grant.
+New stop/continue invalidates old source/frame. Added developer-only
+correlated one-scope/16-variable names-and-types readback with values
+redacted and no recursively dereferenced references. It is not yet
+independently OS-frame verified or operator-consented in an installed IDE;
+actual 4C breakpoint hit and 4D release acceptance remain OPEN.
+
 ## Group 4B — contained Cargo executable link closure (2026-11-10)
 
 Added all-links-accounted postrun verification for legitimate Cargo
