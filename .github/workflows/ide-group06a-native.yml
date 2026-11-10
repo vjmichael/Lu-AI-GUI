@@ -1,5 +1,5 @@
 # Group 6A-01/02/05/06/07: ONE exact-head Windows/Linux native source acceptance group.
-# Exact-head rerun after correcting the registered-root Node assertion (c485075).
+# Exact-head rerun: verified JSX missing closing brace fixed at a10d2d3.
 # No Git mutation, installed GUI proof or owner/operator approval is claimed.
 name: IDE Group 6A native branch and worktree inventory (not release)
 on:
