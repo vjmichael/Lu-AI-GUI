@@ -1,5 +1,5 @@
 # Group 6A-01/02/05/06/07: ONE exact-head Windows/Linux native source acceptance group.
-# Native Rustfmt closeout: 38 exact diffs from genuine Linux compiler gate applied to four source files.
+# Exact-head rerun after formatter-driven multiline security assertions were repaired; prior native jobs had Node fail.
 # No Git mutation, installed GUI proof or owner/operator approval is claimed.
 name: IDE Group 6A native branch and worktree inventory (not release)
 on:
