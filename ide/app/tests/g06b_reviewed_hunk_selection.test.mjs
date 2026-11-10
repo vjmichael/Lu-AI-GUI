@@ -49,5 +49,7 @@ test('G06B02 Tauri and UI expose preview and recheck, never stage a chosen hunk'
   assert.match(ui, /gitHunkRequest\.current \+= 1/);
   assert.match(ui, /Stage authorized: <strong>No<\/strong>/);
   assert.doesNotMatch(ui, /invoke\('ide_git_apply_selected_hunks'/);
-  assert.doesNotMatch(ui, /invoke\('ide_git_stage_selected_hunks'/);
+  assert.match(ui, /invoke\('ide_git_stage_selected_hunks'/);
+  assert.match(desktop, /MessageDialogButtons::OkCancelCustom/);
+  assert.match(desktop, /if !approved/);
 });
