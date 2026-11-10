@@ -1,5 +1,21 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 4D native inspection staging (Nov 10; NOT PROMOTED)
+
+The temporary `ide/group04d-native-inspection-20261110` branch is
+based on exact Gate 4 SHA `545a7a3` without changing that base ref
+while long-running pinned Windows LLVM18 job #130020178608 executes.
+It contains developer-only protected Windows scope/variable inspection,
+physical OS modal and one-use fsynced control receipt, redacted
+names/types only, stale-stop revocation, collapsed advanced controls,
+strict source tests and a real interactive Windows consent/restart
+operator fixture. As of source gate #42876264987, Linux exact-head
+format+Rust tests passed; Windows native dev compilation was still
+in progress. No native LLVM/installed physical result is inferred.
+Release/default remains disabled. Promote only after original Group 4
+exact-sha acceptance and independently checked Windows/Linux compiler,
+OS custody and physical human evidence. No source-check bypass.
+
 ## Group 4 implementation/evidence boundary (Nov 10)
 
 The Group4 branch now contains original Cargo terminal binding, all-links-

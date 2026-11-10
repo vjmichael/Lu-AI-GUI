@@ -255,3 +255,11 @@ without granting or replaying an operation. This script is an operator
 acceptance harness, **not evidence that anyone performed the physical
 steps or an installed release was validated**.
 
+
+## Group 4D source gate and physical acceptance boundaries (stacked)
+
+[CI run 42876264987](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42876264987) was initiated from `a61797728984707c5840948c91f595e97a87dd86`:
+- Linux source/format/protocol/supervisor compiler: **PASS** at that older exact head.
+- Windows source/native developer desktop compile: in progress when recorded; not accepted yet.
+- Current temporary branch also adds interactive `ApproveVariables`, `RefuseVariables`, cancellation, timeout, and optional real process restart to its existing physical Windows fixture. This has NOT been run by a real human or installed app.
+- The authoritative four-lane Group 4 at `545a7a3` remains untested at that SHA while the previously started LLVM18 compilation continues. Never count the temporary source gate as an installed OS or human result.
