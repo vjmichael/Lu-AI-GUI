@@ -306,3 +306,99 @@ jobs:
           path: memory-loop03b-evidence/
           if-no-files-found: warn
           retention-days: 14
+
+
+  native-r00-custody:
+    needs: verify-source
+    # One manual, SHA-bound transition on PR #200 only. Not a push/sync build.
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_CUSTODY_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_CUSTODY_GATE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact head and single custody gate admission
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          REQUEST_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p custody-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python3 - <<'PY'
+          import os,re
+          matches=re.findall(r"(?m)^LU_R00_CUSTODY_GATE_SHA=([0-9a-f]{40})$",os.environ["REQUEST_BODY"])
+          if matches!=[os.environ["EXPECTED_SHA"]]: raise SystemExit("CUSTODY_GATE_REFUSED")
+          PY
+          node scripts/verify-source-tree.mjs | tee custody-evidence/source-lock.log
+          printf 'HEAD=%s\nOS=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > custody-evidence/source.txt
+      - name: First-party custody source security contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/agent01l-os-custody.test.mjs lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs 2>&1 | tee custody-evidence/source-contracts.log
+          grep -Fq '# fail 0' custody-evidence/source-contracts.log
+      - name: Linux native helper and real delegated-kernel crash plus Git restart
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          test -d /run/systemd/system
+          cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --features e1-p08-crash-fixture --bin lu-linux-cgroup-guard --bin lu-e1-p08-linux-cgroup-crash-parent 2>&1 | tee custody-evidence/linux-helper-build.log
+          python3 benchmarks/e1/e1_p08_setsid_escape_probe.py 2>&1 | tee custody-evidence/linux-negative.log
+          grep -Fq 'E1_P08_GROUP_ESCAPE_PROVEN=1' custody-evidence/linux-negative.log
+          # sudo provisions a CI-only delegated unit. All test processes run as the ordinary runner UID.
+          sudo systemd-run --wait --pipe --collect \
+            --unit="lu-r00-custody-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --property=Type=exec --property=Delegate=yes \
+            --property="User=$(id -un)" \
+            --property="WorkingDirectory=$GITHUB_WORKSPACE" \
+            --setenv="LU_AGENT01L_TEST_CGROUP_GUARD=$GITHUB_WORKSPACE/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard" \
+            /bin/bash -c '
+              set -euo pipefail
+              python3 benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py \
+                --guard "$LU_AGENT01L_TEST_CGROUP_GUARD" \
+                --parent "$PWD/src-tauri/lu-win-worker-job/target/debug/lu-e1-p08-linux-cgroup-crash-parent"
+              cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+                --lib native_background_process::tests::agent01l_linux_real_git_cgroup_custody_after_restart -- --ignored --nocapture
+            ' 2>&1 | tee custody-evidence/linux-delegated-kernel-git.log
+          grep -Fq 'AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1' custody-evidence/linux-delegated-kernel-git.log
+          grep -Fq 'agent01l_linux_real_git_cgroup_custody_after_restart ... ok' custody-evidence/linux-delegated-kernel-git.log
+          ! grep -Fq 'AGENT01L_CGROUP_DELEGATION_NOT_AVAILABLE=1' custody-evidence/linux-delegated-kernel-git.log
+      - name: Windows genuine Job object nested-process and reviewed Git restart
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib agent01l_kernel_job_tests -- --nocapture 2>&1 | tee custody-evidence/windows-job.log
+          grep -Fq 'native_job_terminates_descendant_cmd_tree_and_queries_kernel_empty ... ok' custody-evidence/windows-job.log
+          grep -Fq 'test result: ok. 2 passed; 0 failed;' custody-evidence/windows-job.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib native_background_process::tests::agent01l_real_git_job_attests_original_turn_and_reopens_without_replay -- --nocapture 2>&1 | tee custody-evidence/windows-reviewed-git-restart.log
+          grep -Fq 'agent01l_real_git_job_attests_original_turn_and_reopens_without_replay ... ok' custody-evidence/windows-reviewed-git-restart.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' custody-evidence/windows-reviewed-git-restart.log
+      - name: Preserve explicit independent exclusions
+        if: always()
+        shell: bash
+        run: |
+          echo 'This is AGENT-01L native OS custody only: no installed GGUF/model, physical GPU, hostile ancestor migration, or rollback acceptance is implied.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-r00-agent01l-custody-${{ matrix.os }}
+          path: custody-evidence/
+          if-no-files-found: warn
+          retention-days: 14
