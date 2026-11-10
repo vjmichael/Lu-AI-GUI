@@ -325,3 +325,39 @@ kernel-cleanup terminal receipt codes in the independently reopened chain.
 It does **not** bypass quarantine, auto-retry, skip native kernel evidence
 or alter production logic. The complete group must be rerun at the new
 SHA, including genuine SIGABRT and successful restart reconciliation.
+
+## TASK 4 CI-only closeout — ACCEPTED (2026-11-10 UTC)
+
+**Code evidence SHA:** `7c9075478f6428630e5980aad549da1b10a370d0`.
+**One complete grouped native acceptance:** [run 42737200464](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42737200464),
+**SUCCESS**, with the following exact-SHA native jobs:
+
+| Gate | Actual job | Result |
+| --- | --- | --- |
+| Ubuntu 24.04 Node, Rust host/supervisor, Tauri feature, hostile fixtures, rustfmt and lockfiles | [129569214086](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42737200464/job/129569214086) | PASS |
+| Windows 2022 same native task-group matrix | [129569214458](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42737200464/job/129569214458) | PASS |
+| Real Linux `systemd-run` delegated cpu/memory/pids cgroup, AppArmor and Bubblewrap; fixed protected `uv==0.9.9` | [129571664578](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42737200464/job/129571664578) | PASS |
+
+The Linux worker's four independent OS modes **all passed**, not merely compiled:
+1. `--offline-miss`: genuine absent-wheel denial (native exit 1), bounded outputs, kernel process tree reaped, source intact and no replay authority;
+2. `--cancel`: native Cancelled, real process tree gone and private journal reopened without an execution grant;
+3. `--positive`: real `uv sync --offline --locked` **exit 0** under **8-PID** cgroup limit with no network or source writes; synthetic wheel archive SHA-256
+   `4243c4b32ebff42e41e19d07152076028cb27c4991116be4f96ccfa67dc08d1b`;
+   installed WHEEL/METADATA/LICENCE/RECORD/module bytes independently verified;
+   modified installed module denied, restored original bytes reverified;
+   true terminal receipt
+   `cf3252797d5ca17cdbd2accddf8f04fce0f7b9421415cd5d7504b805e43fcfcc`;
+4. `--hostile-recovery`: actual **SIGABRT after fsynced Running**, a **different native OS process** reopened the quarantined journal, appended durable
+   `RecoveryRequired/recovery_before_os_reconcile` before `cgroup.kill`, verified kernel descendant cleanup, appended `Cancelled/os_orphan_cleanup_verified`, reopened the journal again, observed no durable execution grant, no auto-retry and unchanged original source. Exact log marker: `IDE055_HOSTILE_RESTART=PASS` with `kernel_reaped=true, replay_grant=false, auto_retry=false, source_preserved=true`.
+
+**Retained GitHub Actions artifacts:** Ubuntu
+[13728255778](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42737200464/artifacts/13728255778);
+Windows
+[13728016963](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42737200464/artifacts/13728016963);
+Linux OS receipt
+[13726944178](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42737200464/artifacts/13726944178).
+The artifacts preserve exact-SHA audit coordinates; detailed kernel/hostile receipts are in the job log, not substituted by the small status files.
+
+**Disposition:** Task 4's bounded **CI-only first-party synthetic-wheel acceptance is CLOSED**. This is not a release, merge, package-manager promotion, signed/installed app, real person approval, original upstream wheel/source-provenance or physical Windows AppContainer execution. Those independent Task 5/release/operator gates remain **OPEN**. Task 5 was not started in this group.
+
+This section is a **documentation-only closeout appended after the verified code SHA**. It changes no Rust, Tauri, host, test fixture, workflow, dependency or runtime bytes. Do not misrepresent the doc-only follow-up SHA as a separate native compile/run: the native test is bound to the code SHA above.
