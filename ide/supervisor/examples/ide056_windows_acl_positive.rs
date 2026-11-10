@@ -24,14 +24,15 @@ mod native {
         Security::{
             Authorization::{
                 ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-                SetNamedSecurityInfoW, SE_FILE_OBJECT,
+                ConvertStringSidToSidW, SetNamedSecurityInfoW, SE_FILE_OBJECT,
             },
-            FreeSid, GetSecurityDescriptorDacl, GetSidSubAuthority, GetSidSubAuthorityCount,
-            GetTokenInformation,
+            FreeSid, GetSecurityDescriptorDacl, GetSecurityDescriptorSacl, GetSidSubAuthority,
+            GetSidSubAuthorityCount, GetTokenInformation,
             Isolation::{
                 CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
             },
             TokenIntegrityLevel, TokenIsAppContainer, TokenUser, DACL_SECURITY_INFORMATION,
+            LABEL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
             PROTECTED_DACL_SECURITY_INFORMATION, PSID, SECURITY_CAPABILITIES,
             TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TOKEN_USER,
         },
@@ -186,8 +187,11 @@ mod native {
         // Only three explicit ACEs; protected DACL prevents broad inherited
         // grants. Package source rights never include delete, owner or WRITE_DAC.
         let pkg_mask = if writable { "0x001301bf" } else { "0x001200a9" };
+        let level = if writable { "LW" } else { "ME" };
+        // Explicit MIC label supplements, never replaces, source DACL
+        // read-only policy. Private output alone receives LOW label.
         let sddl = w(&format!(
-            "D:P(A;OICI;0x001f01ff;;;SY)(A;OICI;0x001f01ff;;;{user})(A;OICI;{pkg_mask};;;{package})"
+            "D:P(A;OICI;0x001f01ff;;;SY)(A;OICI;0x001f01ff;;;{user})(A;OICI;{pkg_mask};;;{package})S:(ML;OICI;NW;;;{level})"
         ));
         let mut descriptor: *mut c_void = ptr::null_mut();
         let mut bytes = 0u32;
@@ -217,22 +221,60 @@ mod native {
             }
             return Err(fail("IDE056_DACL_MISSING").into());
         }
+        let mut sacl_present = 0;
+        let mut sacl = ptr::null_mut();
+        let mut sacl_defaulted = 0;
+        if unsafe {
+            GetSecurityDescriptorSacl(
+                descriptor,
+                &mut sacl_present,
+                &mut sacl,
+                &mut sacl_defaulted,
+            )
+        } == 0
+            || sacl_present == 0
+            || sacl.is_null()
+        {
+            unsafe {
+                LocalFree(descriptor);
+            }
+            return Err(fail("IDE_G03_EXPLICIT_MIC_SACL_PARSE_DENIED").into());
+        }
+        // CI runner tokens may create files with the Administrators group
+        // as implicit OWNER rather than TokenUser. Our independent native
+        // observer requires *exactly* the reviewed host TokenUser SID.
+        // Assign that owner explicitly; never relax the observer to accept
+        // Administrator, SYSTEM, package SID or an arbitrary inherited ACE.
+        let owner_text = w(user);
+        let mut owner_sid: PSID = ptr::null_mut();
+        if unsafe { ConvertStringSidToSidW(owner_text.as_ptr(), &mut owner_sid) } == 0
+            || owner_sid.is_null()
+        {
+            unsafe {
+                LocalFree(descriptor);
+            }
+            return Err(fail("IDE056_EXACT_OWNER_SID_INVALID").into());
+        }
         let mut name = wide(path.as_os_str());
         let result = unsafe {
             SetNamedSecurityInfoW(
                 name.as_mut_ptr(),
                 SE_FILE_OBJECT,
-                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-                ptr::null_mut(),
+                DACL_SECURITY_INFORMATION
+                    | PROTECTED_DACL_SECURITY_INFORMATION
+                    | OWNER_SECURITY_INFORMATION
+                    | LABEL_SECURITY_INFORMATION,
+                owner_sid,
                 ptr::null_mut(),
                 dacl,
-                ptr::null_mut(),
+                sacl,
             )
         };
         unsafe {
+            LocalFree(owner_sid);
             LocalFree(descriptor);
         }
-        ensure(result == 0, "IDE056_DACL_SEAL_DENIED")
+        ensure(result == 0, "IDE056_EXACT_OWNER_DACL_AND_MIC_SEAL_DENIED")
     }
     fn attest_low_integrity_token() -> R<()> {
         let mut raw = ptr::null_mut();
@@ -476,6 +518,7 @@ mod native {
         }
         ensure(args.len() == 1, "IDE056_UNSUPPORTED_ACCEPTANCE_MODE")?;
         let profile = create_profile()?;
+        println!("IDE_G03_WINDOWS_ACL_STAGE=profile_created");
         let package = sid_string(profile.sid)?;
         let user = host_user_sid()?;
         let stage = local_state(&profile)?.join("ide056-native-acl");
@@ -492,10 +535,24 @@ mod native {
             seal(path, &user, &package, false)?;
         }
         seal(&output, &user, &package, true)?;
+        println!("IDE_G03_WINDOWS_ACL_STAGE=owner_dacl_and_mic_sealed");
         let audited =
             inspect_ide056_readonly_tree(&source_dir, profile.sid).map_err(|e| fail(e.code()))?;
         ensure(audited == 2, "IDE056_SOURCE_ACL_AUDIT_NOT_EXACT")?;
+        println!("IDE_G03_WINDOWS_ACL_STAGE=independent_source_acl_and_mic_accepted");
+        // Real hostile NTFS reparse link: the production source observer
+        // must deny it even when the target is otherwise a sealed file.
+        let hostile = source_dir.join("reparse.txt");
+        std::os::windows::fs::symlink_file(&source, &hostile)
+            .map_err(|_| fail("IDE_G03_NATIVE_HOSTILE_REPARSE_CREATION_UNAVAILABLE"))?;
+        ensure(
+            inspect_ide056_readonly_tree(&source_dir, profile.sid).is_err(),
+            "IDE_G03_SOURCE_REPARSE_NOT_DENIED",
+        )?;
+        fs::remove_file(&hostile)?;
+        println!("IDE_G03_WINDOWS_NATIVE_HOSTILE_REPARSE_DENIED=PASS");
         run_probe(&exe, &stage, &source, &output, &profile)?;
+        println!("IDE_G03_WINDOWS_ACL_STAGE=native_child_verified");
         ensure(
             fs::read(&source)? == b"immutable-acl-source",
             "IDE056_SOURCE_CHANGED_AFTER_CHILD",
@@ -508,6 +565,7 @@ mod native {
         println!("IDE056_WINDOWS_REAL_APPCONTAINER_PRIVATE_OUTPUT_WRITE=PASS");
         println!("IDE056_WINDOWS_REAL_APPCONTAINER_JOB_AND_TOKEN=PASS");
         println!("IDE056_WINDOWS_REAL_APPCONTAINER_LOW_IL_AND_OWNER_CONTROL_DENIED=PASS");
+        println!("IDE_G03_WINDOWS_NATIVE_EXPLICIT_SOURCE_MIC_LABEL=PASS");
         println!("IDE056_HUMAN_APPROVAL=OPEN;SCM_RECOVERY=OPEN;MIC_ATTESTATION=OPEN");
         fs::remove_dir_all(stage)?;
         Ok(())
