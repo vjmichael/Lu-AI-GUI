@@ -225,3 +225,25 @@ flag, and retains the same real cgroup/namespace/approval/receipt checks.
 native Windows/Linux group and independent logs showing positive wheel
 installation, installed-byte tampering rejection, kernel-backed hostile
 SIGABRT/restart reconciliation, offline miss, and cancellation.
+
+## Task 4 — second actual native OS finding
+
+At exact-head `c2426057dd28a68ec8b40120435085caa61f16f1`,
+[run 42732291264](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42732291264)
+passed both Windows/Ubuntu compiler matrices and delegated Linux offline-miss
+and cancellation. It passed the prior Bubblewrap argv error, but the
+CI-only positive wheel caused `output_bounded:false` and a fail-closed
+`SUPERVISOR_RECONCILIATION_REQUIRED` before completion. Independent
+local `uv` reproduction showed its normal wheel link-index cache
+generates symlinks under `uv-cache`, whereas the strict scanner admits
+only fixed virtualenv interpreter aliases.
+
+The correction retains the source-pinned read-only wheelhouse and
+network-denied namespace, and passes `--no-cache` **only** for the
+`ide055-ci-wheelhouse` and exact synthetic-plan identity. Temporary
+uv cache content stays inside the isolated `/tmp` mount, and is never
+promoted into private output or a project. It does NOT broaden the
+output scanner's symlink allowlist or alter production offline cache
+semantics. The next exact-head native runner must still independently
+prove positive install, tamper rejection, crash/restart reconciliation,
+source preservation and proper final receipts before Task 4 acceptance.

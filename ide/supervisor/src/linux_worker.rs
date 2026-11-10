@@ -681,7 +681,12 @@ fn command_for(
                 "/runtime/bin/python3",
             ]);
             if ci_positive_wheelhouse {
-                cmd.args(["--no-index", "--find-links", "/runtime/wheelhouse"]);
+                // uv's default link-index cache creates symlinks that the
+                // strict native private-output scanner rejects. This fixed
+                // CI-only wheel is already in the read-only runtime, so use
+                // an ephemeral cache in the isolated /tmp mount instead.
+                // Production offline workers retain their existing cache.
+                cmd.args(["--no-index", "--find-links", "/runtime/wheelhouse", "--no-cache"]);
             }
         }
         "python_pytest" if runtime.is_some() => {
