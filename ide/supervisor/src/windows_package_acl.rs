@@ -278,7 +278,9 @@ pub fn inspect_staged_readonly_tree(
     root: &Path,
     package_sid: *mut c_void,
 ) -> Result<usize, SupervisorError> {
-    if package_sid.is_null() {
+    // Never inspect a caller-relative tree under a mutable process CWD.
+    // This observer still confers no worker launch or write entitlement.
+    if package_sid.is_null() || !root.is_absolute() {
         return Err(denied());
     }
     let system = parse_system_sid()?;
@@ -330,6 +332,18 @@ mod tests {
             SupervisorError::NoContainment
         );
         fs::remove_dir_all(&path).unwrap();
+    }
+    #[test]
+    fn relative_acl_observation_and_null_package_sid_are_denied() {
+        let sid = parse_system_sid().unwrap();
+        assert_eq!(
+            inspect_staged_readonly_tree(Path::new("."), sid.0).unwrap_err(),
+            SupervisorError::NoContainment
+        );
+        assert_eq!(
+            inspect_staged_readonly_tree(Path::new("."), ptr::null_mut()).unwrap_err(),
+            SupervisorError::NoContainment
+        );
     }
     #[test]
     fn exact_read_execute_mask_does_not_grant_mutation_or_dacl_control() {
