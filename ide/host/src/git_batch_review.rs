@@ -57,8 +57,8 @@ impl IdeWorkspaceRegistry {
         let mut common_index: Option<String> = None;
         for path in &ordered {
             let reviewed = self.preview_reviewed_git_file(project_id, path)?;
-            if common_head.as_deref().is_some_and(|h| h != reviewed.local_head)
-                || common_index.as_deref().is_some_and(|i| i != reviewed.index_fingerprint)
+            if common_head.as_deref().is_some_and(|h| h != reviewed.local_head.as_str())
+                || common_index.as_deref().is_some_and(|i| i != reviewed.index_fingerprint.as_str())
             {
                 return Err("G06B_SOURCE_CHANGED_DURING_PREVIEW");
             }
