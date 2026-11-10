@@ -127,10 +127,9 @@ impl IdeWorkspaceRegistry {
         let patch = Patch::from_buffers(old, Some(path), new, Some(path), Some(&mut opts))
             .map_err(|_| "G06B_HUNK_DIFF_UNAVAILABLE")?;
         let mut hunks = Vec::new();
-        if let Some(patch) = patch {
-            if patch.num_hunks() > MAX_HUNKS || patch.size(true, true, false) > MAX_PATCH_BYTES {
-                return Err("G06B_HUNK_DIFF_OVER_LIMIT");
-            }
+        if patch.num_hunks() > MAX_HUNKS || patch.size(true, true, false) > MAX_PATCH_BYTES {
+            return Err("G06B_HUNK_DIFF_OVER_LIMIT");
+        }
             let mut displayed = 0_usize;
             for position in 0..patch.num_hunks() {
                 let (hunk, line_count) = patch.hunk(position)
@@ -188,7 +187,6 @@ impl IdeWorkspaceRegistry {
                     lines,
                 });
             }
-        }
         // The source was capability-read and verified again after libgit2's
         // index snapshot. No patch content has been applied to the index.
         Ok(ReviewedHunkPlan {
