@@ -247,3 +247,62 @@ no unscoped click, JS/IPC, synthetic picker, or weakened acceptance gate.
 
 A new grouped Windows/Linux installed gate is required at the next source
 SHA. This does not promote human consent or Windows package execution.
+
+## 2026-11-10 — Root-cause split: native picker closure vs host registration
+
+At [installed gate 42755326804](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42755326804)
+(commit `c3976b37ff5c4f0cd033010a572612536e3cf267`), Windows installed
+NSIS passed. Linux native package installation, original license checks,
+broken-upgrade rollback, and real GTK window launch passed. The bounded
+X11 pointer focus successfully reached the real chooser and it eventually
+**closed** after native controls, but no exact project row was observed:
+`P04_NATIVE_GTK_FOLDER_ACCEPT=closed_without_exact_project_registration`.
+This is not project acceptance.
+
+Source review traced the actual trusted registration path:
+`tauri_plugin_dialog::blocking_pick_folder()` →
+`NativePicker::choose_project_directory()` →
+`IdeWorkspaceRegistry::register_from_native_picker()` →
+`safe_root()` →
+`save_catalog()` →
+`ide_choose_project::summarize()` →
+React `operation('ide_choose_project')` → `setProjects(next)`.
+The native OS chooser can close **before** the Tauri `spawn_blocking` task
+returns and React mounts the row. The previous fixture checked project
+registration **only once, immediately after dialog closure**. This can
+incorrectly reject a real selection in flight; it can also hide a parent
+directory being chosen instead of the requested disposable fixture.
+
+The new fixture waits **bounded 20 seconds** for both the exact canonical
+fixture root in the fixed OS-owned private `projects.json` catalog and the
+actual native installed WebView project row. It records only fixed
+categories (`exact_native_root_persisted`, `wrong_parent_persisted`,
+`unexpected_project_persisted`, `catalog_without_projects`,
+`catalog_exact_but_ui_missing`, etc.). This catalog check is a second
+identity witness, never a replacement for the genuine WebView; no
+untrusted root/path is permitted as an IPC parameter. The Tauri command
+also emits **path-free** `IDE056_NATIVE_PICKER_RESULT` categories
+(`registered`, `cancelled` or fixed error), captured from the actual
+installed process by the test fixture with no raw stderr exposed.
+A closed chooser, a catalog write alone, or a sent keystroke still
+cannot establish acceptance.
+
+### Windows ACL probe result and exact formatting repair
+
+At [source gate 42756733826](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42756733826),
+the *real Windows kernel child* passed all three markers:
+`IDE056_WINDOWS_REAL_APPCONTAINER_SOURCE_WRITE_RENAME_DELETE_DENIED=PASS`,
+`IDE056_WINDOWS_REAL_APPCONTAINER_PRIVATE_OUTPUT_WRITE=PASS`,
+and `IDE056_WINDOWS_REAL_APPCONTAINER_JOB_AND_TOKEN=PASS`.
+The whole source group still **failed** because `cargo fmt --check`
+required a final wrap of the `inspect_ide056_readonly_tree` error mapping.
+The change is exactly the Windows rustfmt-suggested hunk, with no changed
+privileges, ACL masks, child behaviors or security exceptions.
+
+**Required next evidence:** a fresh consolidated exact-head Windows/Ubuntu
+source gate and one grouped installed NSIS/Debian gate on the completed
+patch, followed by inspection and repair of only demonstrated failures.
+Physical human approvals/refusals, full Windows MIC/owner rights and SCM
+recovery remain separate **OPEN** gates. The Windows production
+`uv_sync_offline` job still denies `NoContainment`; do not promote it
+from the isolated CI probe.

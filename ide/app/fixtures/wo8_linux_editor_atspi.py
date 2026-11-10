@@ -117,8 +117,36 @@ def wait_source(fragment, seconds=12):
     deny("explicit_save_not_written_to_disk")
 
 
+# A dedicated runner-only stderr file is read by category-filtered probes.
+# Never print the file's raw contents, paths, native crashes or arbitrary text.
+_NATIVE_APP_LOG = Path(os.environ.get("RUNNER_TEMP", "/dev/null")) / "ide056-native-picker.log"
+
+def _host_picker_receipts():
+    try:
+        if not _NATIVE_APP_LOG.is_file() or _NATIVE_APP_LOG.is_symlink():
+            return "none"
+        tail = _NATIVE_APP_LOG.read_bytes()[-32768:]
+        known = (
+            b"registered", b"cancelled", b"invalid_directory",
+            b"project_capacity", b"already_open", b"io_failure",
+            b"catalog_invalid", b"host_unavailable", b"unexpected_error"
+        )
+        markers = []
+        for line in tail.splitlines():
+            if b"IDE056_NATIVE_PICKER_RESULT=" not in line:
+                continue
+            value = line.split(b"IDE056_NATIVE_PICKER_RESULT=", 1)[1].strip()
+            if value in known:
+                markers.append(value.decode("ascii"))
+        return ",".join(markers[-4:]) if markers else "none"
+    except (OSError, UnicodeError):
+        return "unavailable"
+
 def start():
-    app = subprocess.Popen([EXE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    stderr_target = open(_NATIVE_APP_LOG, "ab") if os.environ.get("GITHUB_ACTIONS") == "true" else subprocess.DEVNULL
+    app = subprocess.Popen([EXE], stdout=subprocess.DEVNULL, stderr=stderr_target)
+    if stderr_target != subprocess.DEVNULL:
+        stderr_target.close()
     try:
         accessible("Workspace projects", seconds=35)
     except Exception:
@@ -410,6 +438,65 @@ def _native_chooser_diagnostics():
           ";other_buttons:" + str(min(other_actions, 256)), flush=True)
 
 
+def _native_catalog_project_disposition():
+    """Diagnostic only, never a substitute for the genuine installed UI row.
+
+    Read the one fixed Tauri app-data catalog for the disposable test account.
+    Classify the canonical root; don't print, leak or accept arbitrary paths.
+    """
+    import json
+    catalogs=(
+        Path.home() / ".local/share/org.lu.ide/projects.json",
+        Path.home() / ".config/org.lu.ide/projects.json",
+    )
+    observed = "not_written"
+    for path in catalogs:
+        try:
+            if not path.is_file() or path.is_symlink():
+                continue
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            rows = payload.get("projects")
+            if not isinstance(rows, list):
+                return "invalid_records"
+            if any(isinstance(row, dict) and
+                   str(row.get("root", "")) == str(ROOT) and
+                   row.get("display_name") == ROOT.name
+                   for row in rows):
+                return "exact_native_root_persisted"
+            if any(isinstance(row, dict) and
+                   str(row.get("root", "")) == str(ROOT.parent)
+                   for row in rows):
+                return "wrong_parent_persisted"
+            if rows:
+                observed="unexpected_project_persisted"
+            else:
+                observed="catalog_without_projects"
+        except (OSError, ValueError, TypeError):
+            return "unreadable_catalog"
+    return observed
+
+
+def _wait_for_native_registered_project(seconds=20):
+    """Wait for Tauri's asynchronous picker callback and React render.
+
+    A closed OS chooser is *not* registration. A catalog file is *not* a
+    clickable UI control. Require both exact persisted root and observed
+    native installed WebView project row; never accept a parent/other root.
+    """
+    deadline = time.monotonic() + seconds
+    observed = "not_written"
+    while time.monotonic() < deadline:
+        if _native_chooser_still_open():
+            return "chooser_reopened"
+        observed = _native_catalog_project_disposition()
+        if observed in ("wrong_parent_persisted", "unexpected_project_persisted"):
+            return observed
+        if observed == "exact_native_root_persisted" and _registered_native_project_is_exposed():
+            return "registered_exact_root_and_webview"
+        time.sleep(0.35)
+    return observed if observed != "exact_native_root_persisted" else "catalog_exact_but_ui_missing"
+
+
 def _registered_native_project_is_exposed():
     # Distinguish the exact project row in the desktop WebView from its name
     # echoed inside a GTK folder chooser. No direct catalog reads or IPC.
@@ -667,7 +754,10 @@ def select_native_folder():
         print("P04_NATIVE_GTK_FOLDER_ACCEPT=visible_dialog_still_open_after_bounded_real_actions;"
               "attempts=" + str(attempts),flush=True)
         deny("native_folder_chooser_not_accepted")
-    if not _registered_native_project_is_exposed():
+    outcome = _wait_for_native_registered_project(seconds=20)
+    print("P04_NATIVE_GTK_REGISTRATION_RESULT=" + outcome, flush=True)
+    print("P04_NATIVE_GTK_HOST_PICKER_RESULT=" + _host_picker_receipts(), flush=True)
+    if outcome != "registered_exact_root_and_webview":
         print("P04_NATIVE_GTK_FOLDER_ACCEPT=closed_without_exact_project_registration",flush=True)
         deny("native_folder_chooser_did_not_register_project")
     print("P04_NATIVE_GTK_FOLDER_ACCEPT=dialog_closed_after_native_action;"

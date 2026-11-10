@@ -414,8 +414,8 @@ mod native {
             seal(path, &user, &package, false)?;
         }
         seal(&output, &user, &package, true)?;
-        let audited = inspect_ide056_readonly_tree(&source_dir, profile.sid)
-            .map_err(|e| fail(e.code()))?;
+        let audited =
+            inspect_ide056_readonly_tree(&source_dir, profile.sid).map_err(|e| fail(e.code()))?;
         ensure(audited == 2, "IDE056_SOURCE_ACL_AUDIT_NOT_EXACT")?;
         run_probe(&exe, &stage, &source, &output, &profile)?;
         ensure(

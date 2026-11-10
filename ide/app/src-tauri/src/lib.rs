@@ -1478,9 +1478,27 @@ async fn ide_choose_project(
     let registry = Arc::clone(state.inner());
     let ledger = Arc::clone(ledger.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        let selected = registry
-            .register_from_native_picker(&mut NativePicker(app))
-            .map_err(|error| stable_error(&error).to_string())?;
+        let attempted = registry.register_from_native_picker(&mut NativePicker(app));
+        // Fixed-vocabulary diagnostic; never print selected filesystem paths,
+        // project names, user content or window text. Native selection is not
+        // a worker authorization or an assertion that UI has rendered.
+        match &attempted {
+            Ok(Some(_)) => eprintln!("IDE056_NATIVE_PICKER_RESULT=registered"),
+            Ok(None) => eprintln!("IDE056_NATIVE_PICKER_RESULT=cancelled"),
+            Err(error) => {
+                let category = match stable_error(error) {
+                    "INVALID_DIRECTORY" => "invalid_directory",
+                    "PROJECT_CAPACITY" => "project_capacity",
+                    "PROJECT_ALREADY_OPEN" => "already_open",
+                    "IO_FAILURE" => "io_failure",
+                    "CATALOG_INVALID" => "catalog_invalid",
+                    "HOST_UNAVAILABLE" => "host_unavailable",
+                    _ => "unexpected_error",
+                };
+                eprintln!("IDE056_NATIVE_PICKER_RESULT={category}");
+            }
+        }
+        let selected = attempted.map_err(|error| stable_error(&error).to_string())?;
         if let Some(ref project) = selected {
             observe(
                 &ledger,

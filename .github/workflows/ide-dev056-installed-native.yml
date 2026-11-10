@@ -1,3 +1,6 @@
+# IDE-05.6 native registration split: one exact-head NSIS/Debian group.
+# Acceptance requires BOTH canonical fixture-root catalog and actual WebView row.
+# Native OS chooser closure alone remains explicitly non-authoritative.
 # IDE-05.6 GTK SELECTION GROUP: exact-source controlled rerun 2026-11-10.
 # Only real X11 input inside native chooser; project identity still independently required.
 # IDE-05.6 GROUP-DISPATCH (2026-11-10, selection-fix v2):
