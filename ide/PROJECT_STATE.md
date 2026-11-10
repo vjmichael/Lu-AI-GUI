@@ -1,5 +1,19 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 5 — runner-bound continuation (November 10, 2026)
+
+New Group 5 upstream uv evidence input read now compares path identity
+with an open descriptor and checks for replacement or symlinked binary
+and license files (`fc9ced3`, `cb03be4`, `eba7344`).
+The existing grouped IDE-05 workflow (Windows native AppContainer
+negative/positive ACL fixture, Linux delegated cgroup offline uv
+miss/cancel/CI-wheel positive/hostile restart, exact Windows/Linux
+Rust/Tauri/Node tests) is the intended sole native group. Re-enable
+only the Group 5 branch trigger for ONE coherent source SHA, not a
+per-change CI fanout. The Linux upstream wheel receipt is not publisher
+signature or full transitive lock provenance. Physical installed operator
+approval and Windows production package-worker enablement remain OPEN.
+
 ## Group 5 engineering continuation — 5A/5C/5D/5E source safeguards (Nov 10)
 
 Group 5 remains independent of Group 4 LLVM GH Ops. Dedicated branch
