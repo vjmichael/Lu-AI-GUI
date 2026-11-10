@@ -240,9 +240,18 @@ fn index_bytes(path: &Path) -> Result<Vec<u8>, &'static str> {
     fs::read(path).map_err(|_| "G06B_STAGE_INDEX_UNREADABLE")
 }
 
-struct RemoveOnDrop(PathBuf);
+struct RemoveOnDrop {
+    path: PathBuf,
+    armed: bool,
+}
+impl RemoveOnDrop {
+    fn new(path: PathBuf) -> Self { Self { path, armed: true } }
+    fn disarm(&mut self) { self.armed = false; }
+}
 impl Drop for RemoveOnDrop {
-    fn drop(&mut self) { let _ = fs::remove_file(&self.0); }
+    fn drop(&mut self) {
+        if self.armed { let _ = fs::remove_file(&self.path); }
+    }
 }
 
 impl IdeWorkspaceRegistry {
@@ -348,7 +357,7 @@ impl IdeWorkspaceRegistry {
         // been fully verified do we publish using Git's exclusive lockfile.
         let op = format!("{:032x}", rand::random::<u128>());
         let temp_path = state_root(self)?.join(format!("{}.{}.index", fresh.plan.project_id, op));
-        let _temp_guard = RemoveOnDrop(temp_path.clone());
+        let _temp_guard = RemoveOnDrop::new(temp_path.clone());
         let mut temp = Index::open(&temp_path).map_err(|_| "G06B_STAGE_TEMP_INDEX_UNAVAILABLE")?;
         for entry in index.iter() { temp.add(&entry).map_err(|_| "G06B_STAGE_TEMP_INDEX_COPY_FAILED")?; }
         temp.add(&selected_entry).map_err(|_| "G06B_STAGE_TEMP_INDEX_UPDATE_FAILED")?;
@@ -383,7 +392,7 @@ impl IdeWorkspaceRegistry {
         let lock_path = gitdir.join("index.lock");
         let mut lock = OpenOptions::new().write(true).create_new(true).open(&lock_path)
             .map_err(|_| "G06B_STAGE_INDEX_LOCK_UNAVAILABLE")?;
-        let _lock_guard = RemoveOnDrop(lock_path.clone());
+        let mut lock_guard = RemoveOnDrop::new(lock_path.clone());
         // Other well-behaved Git writers cannot acquire index.lock now.
         if sha(&index_bytes(&old_index_path)?) != old_sha
             || repo.head().ok().and_then(|r| r.target()).map(|o| o.to_string()).as_deref()
@@ -405,6 +414,10 @@ impl IdeWorkspaceRegistry {
             return Err("G06B_STAGE_CANCELLED_BEFORE_PUBLICATION");
         }
         drop(lock);
+        // Do not unlink a *new* index.lock created by another Git writer
+        // after our successful rename. If rename fails, leave our lock for
+        // explicit crash recovery rather than deleting uncertain bytes.
+        lock_guard.disarm();
         fs::rename(&lock_path, &old_index_path)
             .map_err(|_| "G06B_STAGE_ATOMIC_INDEX_REPLACE_FAILED")?;
         #[cfg(unix)]
@@ -423,17 +436,14 @@ impl IdeWorkspaceRegistry {
         if staged_entry.id != oid || sha(actual_blob.content()) != staged_sha {
             return Err("G06B_STAGE_PUBLISHED_BYTES_MISMATCH");
         }
-        // Original source is intentionally untouched, with a fresh
-        // capability-held read after the index publication.
-        let source_after = self.preview_reviewed_git_file(
-            &fresh.plan.project_id, &fresh.plan.relative_path);
-        // A changed staged index invalidates the clean one-file preview by
-        // design: inspect the OS-capability source directly instead.
-        let source_unmodified = match source_after {
-            Err("WO9_GIT_EXISTING_STAGED_CHANGES_DENIED") => true,
-            _ => false,
-        };
-        if !source_unmodified { return Err("G06B_STAGE_SOURCE_STATE_UNVERIFIABLE"); }
+        // Independently reread exact worktree bytes under the original
+        // registered OS capability. A dirty index is EXPECTED here and
+        // cannot be used as a proxy for original source verification.
+        let fresh_source = self.reread_reviewed_git_source_bytes(
+            &fresh.plan.project_id, &fresh.plan.relative_path)?;
+        if sha(&fresh_source) != fresh.plan.source_sha256 {
+            return Err("G06B_STAGE_SOURCE_CHANGED_AFTER_PUBLICATION");
+        }
         journal.phase = "verified".into();
         journal_append(&path, &journal)?;
         Ok(PartialStageReceipt {
