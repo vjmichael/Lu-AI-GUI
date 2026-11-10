@@ -1257,7 +1257,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "8c8aef003768da1f416b05b361a527bea97827f4"
+      "blob": "2fbf9b188d877090675d04c6d1e99f6810a01268"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1373,7 +1373,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/vision_context.rs",
-      "blob": "9795049132076ebea2a597e9e0e819c23d2470e5"
+      "blob": "2e508998a6a3502bb16d5ee8547f3bd57ae649f1"
     },
     {
       "path": "lu-desktop/src-tauri/src/wave2_recovery.rs",
@@ -1677,7 +1677,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-native-window-separation.test.mjs",
-      "blob": "602cff9af9d88cc30806e3d858bf31a0c912ae94"
+      "blob": "200503a22677351eea84c27d87f97d2c6882664f"
     },
     {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",

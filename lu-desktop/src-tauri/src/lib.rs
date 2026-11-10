@@ -2416,11 +2416,19 @@ async fn lu_vision_run_probe(
         // A fresh app session never inherits this runtime attestation.
         let parent=owner.models_dir.parent()
             .ok_or("Owner app-data root unavailable for vision receipts")?;
+        let evidence_dir=parent.join("lu-native-vision-probes");
         vision_context::persist_native_vision_receipt(
-            &parent.join("lu-native-vision-probes"),
-            &evidence_id,&sid,&model,&trials
+            &evidence_dir,&evidence_id,&sid,&model,&trials
         )?;
-        let verified=passed==4;
+        // Never present a green vision indicator merely because a JSON
+        // writer returned success. Independently reopen the durable original,
+        // regenerate each PNG and re-check the four actual model replies.
+        let (checked_passed,verified)=vision_context::review_native_vision_receipt(
+            &evidence_dir,&evidence_id,&sid,&model
+        )?;
+        if checked_passed!=passed as usize||verified!=(passed==4){
+            return Err("Native image replies differ from independent on-disk review".into())
+        }
         let receipt=VisionProbeReceipt{
             session_id:sid.clone(),model_ref:model.clone(),
             challenges_passed:passed,total_challenges:4,passed:verified,
@@ -2433,7 +2441,7 @@ async fn lu_vision_run_probe(
             evidence_id:Some(evidence_id),
             status:if verified{"verified"}else{"unverified"},
             detail:if verified{
-                "Native image probe passed 4/4 private pixel challenges for this exact loaded session. Not an independent accuracy benchmark."
+                "Four original image replies and PNG hashes independently rechecked from durable receipt. Not a general accuracy benchmark or GPU-attestation."
             }else{
                 "Native image probe failed at least one of four color challenges. Image understanding remains unverified."
             },

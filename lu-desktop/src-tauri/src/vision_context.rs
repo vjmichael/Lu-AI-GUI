@@ -157,6 +157,82 @@ pub(crate) fn persist_native_vision_receipt(
     Ok(())
 }
 
+/// Independently reopen a real installed-app probe receipt using only a
+/// host-selected app-data directory and the exact current loaded model/session.
+/// A receipt is observation data, never an OS grant, process-custody witness or
+/// proof that the local model generalizes beyond four synthetic color images.
+pub(crate) fn review_native_vision_receipt(
+    root:&std::path::Path,run_id:&str,session_id:&str,model_ref:&str
+)->Result<(usize,bool),String>{
+    use sha2::{Digest,Sha256};
+    use std::{collections::BTreeSet,fs};
+    if !receipt_id_ok(run_id)||session_id.is_empty()||model_ref.is_empty(){
+        return Err("Invalid original image-probe review identity".into())
+    }
+    let dir=fs::symlink_metadata(root)
+        .map_err(|_|"Original native probe directory missing")?;
+    if !dir.file_type().is_dir()||dir.file_type().is_symlink(){
+        return Err("Image-probe evidence directory changed".into())
+    }
+    let path=root.join(format!("{run_id}.json"));
+    let meta=fs::symlink_metadata(&path)
+        .map_err(|_|"Original image-probe receipt missing")?;
+    if !meta.file_type().is_file()||meta.len()==0||meta.len()>8192{
+        return Err("Original image-probe receipt is not a bounded file".into())
+    }
+    let bytes=fs::read(&path).map_err(|_|"Original image-probe readback failed")?;
+    if bytes.len() as u64!=meta.len(){
+        return Err("Original image-probe receipt changed during readback".into())
+    }
+    let record:serde_json::Value=serde_json::from_slice(&bytes)
+        .map_err(|_|"Original image-probe receipt JSON is invalid")?;
+    if record["schema"]!="lu-native-real-vision-pixel-proof-v1"
+        ||record["runId"]!=run_id||record["sessionId"]!=session_id
+        ||record["modelRef"]!=model_ref||record["nativeOperatorApproved"]!=true
+        ||record["challengeCount"]!=4
+        ||record["promptSha256"]!=format!("{:x}",Sha256::digest(PROBE_PROMPT.as_bytes())){
+        return Err("Original native probe session or prompt does not match".into())
+    }
+    let samples=record["samples"].as_array()
+        .ok_or("Original model image replies are absent")?;
+    if samples.len()!=4{return Err("Four original image replies required".into())}
+    let mut colors=BTreeSet::new();
+    let mut ids=BTreeSet::new();
+    let mut passed=0usize;
+    for trial in samples{
+        let id=trial["challengeId"].as_str()
+            .ok_or("Missing original challenge identity")?;
+        if id.is_empty()||id.len()>128||!id.bytes().all(|b|
+            b.is_ascii_alphanumeric()||b==b'-')||!ids.insert(id){
+            return Err("Original challenge identity duplicated or changed".into())
+        }
+        let color=trial["expectedColor"].as_str()
+            .ok_or("Original image expected color missing")?;
+        let index=PROBE_COLORS.iter().position(|(name,_)|*name==color)
+            .ok_or("Unknown synthetic image color")?;
+        if !colors.insert(color){
+            return Err("Duplicated synthetic image challenge".into())
+        }
+        let actual_png=image_for_probe(index)?;
+        let actual_hash=format!("{:x}",Sha256::digest(&actual_png.bytes));
+        if trial["imageSha256"]!=actual_hash{
+            return Err("Original PNG digest does not match independently regenerated pixels".into())
+        }
+        let reply=trial["modelReply"].as_str()
+            .ok_or("Original model text is missing")?;
+        if reply.len()>256{return Err("Unbounded original model reply".into())}
+        let correct=reply.trim().eq_ignore_ascii_case(color);
+        if trial["passed"].as_bool()!=Some(correct){
+            return Err("Original model result flag does not match reply".into())
+        }
+        if correct{passed+=1}
+    }
+    if record["passedCount"]!=passed || record["verified"]!=(passed==4){
+        return Err("Original native image-probe aggregate result was altered".into())
+    }
+    Ok((passed,passed==4))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -181,6 +257,14 @@ mod tests{
         assert_eq!(record["verified"],true);
         assert_eq!(record["passedCount"],4);
         assert_eq!(record["samples"][0]["imageSha256"],trials[0].image_sha256);
+        // This audit opens the ORIGINAL receipt from disk, regenerates all
+        // four synthetic PNG digests and recomputes the actual text outcomes.
+        assert_eq!(review_native_vision_receipt(
+            &root,id,"session-test","model-test"
+        ).unwrap(),(4,true));
+        assert!(review_native_vision_receipt(
+            &root,id,"another-session","model-test"
+        ).is_err());
         assert!(persist_native_vision_receipt(&root,id,"session-test","model-test",&trials).is_err());
         let mut forged=trials.clone();
         forged[0].model_reply="hallucinated".into();
@@ -190,6 +274,14 @@ mod tests{
         duplicate[1].expected_color=duplicate[0].expected_color.clone();
         assert!(persist_native_vision_receipt(&root,
             "vp-independentfixture0000003","session-test","model-test",&duplicate).is_err());
+        let original_path=root.join(format!("{id}.json"));
+        let mut changed:serde_json::Value=serde_json::from_slice(
+            &fs::read(&original_path).unwrap()).unwrap();
+        changed["samples"][0]["imageSha256"]="0".repeat(64).into();
+        fs::write(&original_path,serde_json::to_vec(&changed).unwrap()).unwrap();
+        assert!(review_native_vision_receipt(
+            &root,id,"session-test","model-test"
+        ).is_err(),"A changed PNG digest must prevent model-vision acceptance");
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

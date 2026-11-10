@@ -51,6 +51,9 @@ test('real pixel trials require a durable local receipt, never only a model/proj
   const vision=readFileSync(new URL('../src-tauri/src/vision_context.rs',import.meta.url),'utf8');
   const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
   assert.match(vision,/persist_native_vision_receipt/);
+  assert.match(vision,/review_native_vision_receipt/);
+  assert.match(vision,/Sha256::digest\(&actual_png\.bytes\)/);
+  assert.match(host,/vision_context::review_native_vision_receipt/);
   assert.match(vision,/image_sha256/);
   assert.match(vision,/model_reply/);
   assert.match(vision,/create_new\(true\)/);
