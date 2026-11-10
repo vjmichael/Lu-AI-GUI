@@ -1,5 +1,13 @@
 # Lu IDE — Development changelog
 
+## Nov 10, 2026 — Group 6A health and recovery preview
+
+Implemented a read-only Git interrupted-operation health model,
+including conflict/index uncertainty and merge/rebase/cherry-pick/
+revert/bisect states. Added native merge-sentinel fixture and
+accessible operator warning. No Git abort/replay authority or
+installed acceptance; native compiler checks are still pending.
+
 ## 2026-11-10 — Group 6A source history/refs/health continuation
 
 Implemented native bounded blame and first-parent file history,
