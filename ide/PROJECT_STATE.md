@@ -1,5 +1,21 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 6B-02 — exact hunk selection source (Nov 10, 2026)
+
+New `ide/host/src/git_hunk_review.rs` computes text-only, bounded,
+content-hashed diff hunks from a verified clean Git index blob and
+tracked source bytes acquired through the registered-project native
+capability. It rejects binary/unsupported UTF-8 and oversized hunks;
+selection is independently rebuilt and matched to exact HEAD, index,
+source bytes and hunk IDs. Tauri exposes review and selection routes;
+Source Control shows readable hunks with accessible checkboxes.
+**No hunk application, staged index write or commit permission exists.**
+A consolidated Windows/Linux native source workflow is evaluating
+the new Rust/Node/Tauri gates. Physical installed app acceptance remains
+separate and unverified. See
+`ide/docs/IDE_GROUP06B_ADVANCED_STAGING_20261110.md`.
+
+
 ## Group 6B — reviewed multi-file preview source (Nov 10, 2026)
 
 Independent branch `ide/group06b-advanced-staging-20261110`
