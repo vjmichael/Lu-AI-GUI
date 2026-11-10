@@ -1,3 +1,13 @@
+## Native terminal findings — 2026-11-10, historical source only
+
+Original four-lane [run 42870494783](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42870494783) is now **terminal failure**, at **e8fce1f**, not authoritative Group 4 **545a7a3**. Windows pinned LLVM18 owner job **130020178608** reached actual MSVC compilation, then failed in pinned `lldb/tools/lldb-dap/ProgressEvent.h:79`: `std::chrono::system_clock` unavailable (C2039/C3083/C3861), also `ProgressEvent.cpp:134`. The pinned source needs a reviewed direct `#include <chrono>` in the LLVM overlay and a fresh native build; no OS owner event, debug stop, lock artifact or signed bundle was produced. The lock upload reported no files. Do not claim owner-event acceptance.
+
+All three other original lanes failed the same `dap_session::tests::dev045d_only_correlated_stack_can_supply_bounded_source_candidate` test at `dap_session.rs:1799`, `InvalidPhase` on unwrap: Windows 21 passed/1 failed, Linux each 20 passed/1 failed. Repair the fixture's actual state transition without loosening protocol phase checks.
+
+Temporary [run 42876264987](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42876264987), at **a617977**, completed Linux source PASS; Windows source FAIL. Windows host parser tests **23/23** and control tests **9/9** passed, but desktop Tauri build failed because `ide/app/src-tauri/icons/icon.ico` was absent. Restore a reviewed real Windows icon asset in source control; do not disable Tauri resources or fabricate a human acceptance result. Neither run is exact-head 545a7a3 acceptance.
+
+**No authoritative branch changes or new expensive CI dispatched in this inspection.** Group 4B/C/D, OS receipts, breakpoint/step proof, variable review, native human approval and installed restart remain OPEN. Temporary branch fixes must not be merged before the authoritative acceptance/reconciliation decision.
+
 # IDE Group 4 — Protected Build/Test and LLDB (2026-11-10)
 
 ## Group 4 task-boundary handoff (latest native evidence, Nov 10)
