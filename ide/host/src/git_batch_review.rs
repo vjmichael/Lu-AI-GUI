@@ -57,18 +57,27 @@ impl IdeWorkspaceRegistry {
         let mut common_index: Option<String> = None;
         for path in &ordered {
             let reviewed = self.preview_reviewed_git_file(project_id, path)?;
-            if common_head.as_deref().is_some_and(|h| h != reviewed.local_head.as_str())
-                || common_index.as_deref().is_some_and(|i| i != reviewed.index_fingerprint.as_str())
+            if common_head
+                .as_deref()
+                .is_some_and(|h| h != reviewed.local_head.as_str())
+                || common_index
+                    .as_deref()
+                    .is_some_and(|i| i != reviewed.index_fingerprint.as_str())
             {
                 return Err("G06B_SOURCE_CHANGED_DURING_PREVIEW");
             }
-            total_bytes = total_bytes.checked_add(reviewed.file_size)
+            total_bytes = total_bytes
+                .checked_add(reviewed.file_size)
                 .ok_or("G06B_BATCH_SOURCE_TOO_LARGE")?;
             if total_bytes > MAX_BATCH_BYTES {
                 return Err("G06B_BATCH_SOURCE_TOO_LARGE");
             }
-            if common_head.is_none() { common_head = Some(reviewed.local_head.clone()); }
-            if common_index.is_none() { common_index = Some(reviewed.index_fingerprint.clone()); }
+            if common_head.is_none() {
+                common_head = Some(reviewed.local_head.clone());
+            }
+            if common_index.is_none() {
+                common_index = Some(reviewed.index_fingerprint.clone());
+            }
             files.push(reviewed);
         }
         // Re-evaluate after the last file: earlier preview evidence can
@@ -102,28 +111,34 @@ impl IdeWorkspaceRegistry {
         &self,
         expected: &ReviewedGitBatch,
     ) -> Result<ReviewedGitBatch, &'static str> {
-        if expected.schema_version != 1 || !expected.ready_for_review
-            || expected.stage_authorized || expected.commit_authorized
-            || expected.git_hooks_executed || expected.remote_updated
+        if expected.schema_version != 1
+            || !expected.ready_for_review
+            || expected.stage_authorized
+            || expected.commit_authorized
+            || expected.git_hooks_executed
+            || expected.remote_updated
             || expected.operation_performed
         {
             return Err("G06B_INVALID_BATCH_EXPECTATION");
         }
-        let requested: Vec<String> = expected.files.iter()
-            .map(|file| file.relative_path.clone()).collect();
+        let requested: Vec<String> = expected
+            .files
+            .iter()
+            .map(|file| file.relative_path.clone())
+            .collect();
         validate_files(&requested)?;
         let refreshed = self.preview_reviewed_git_batch(&expected.project_id, &requested)?;
         if refreshed.head_sha != expected.head_sha
             || refreshed.index_fingerprint != expected.index_fingerprint
             || refreshed.total_source_bytes != expected.total_source_bytes
             || refreshed.files.len() != expected.files.len()
-            || refreshed.files.iter().zip(&expected.files).any(|(a,b)|
+            || refreshed.files.iter().zip(&expected.files).any(|(a, b)| {
                 a.relative_path != b.relative_path
-                || a.worktree_sha256 != b.worktree_sha256
-                || a.file_size != b.file_size
-                || a.local_head != b.local_head
-                || a.index_fingerprint != b.index_fingerprint
-            )
+                    || a.worktree_sha256 != b.worktree_sha256
+                    || a.file_size != b.file_size
+                    || a.local_head != b.local_head
+                    || a.index_fingerprint != b.index_fingerprint
+            })
         {
             return Err("G06B_REVIEW_STALE");
         }
@@ -136,7 +151,10 @@ mod tests {
     use super::*;
     use crate::{IdeError, NativeDirectoryPicker};
     use git2::{Repository, Signature};
-    use std::{fs, path::{Path, PathBuf}};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
     struct Picker(PathBuf);
     impl NativeDirectoryPicker for Picker {
         fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> {
@@ -145,7 +163,9 @@ mod tests {
     }
     struct Fixture(PathBuf);
     impl Drop for Fixture {
-        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
     fn fixture() -> (Fixture, IdeWorkspaceRegistry, String, PathBuf) {
         let base = std::env::temp_dir().join(format!("ide-g06b-{:032x}", rand::random::<u128>()));
@@ -160,10 +180,17 @@ mod tests {
         index.write().unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
         let sig = Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
-        drop(tree); drop(index); drop(repo);
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+            .unwrap();
+        drop(tree);
+        drop(index);
+        drop(repo);
         let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
-        let id = registry.register_from_native_picker(&mut Picker(root.clone())).unwrap().unwrap().project_id;
+        let id = registry
+            .register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap()
+            .unwrap()
+            .project_id;
         (Fixture(base), registry, id, root)
     }
     #[test]
@@ -175,22 +202,45 @@ mod tests {
         let preview = registry.preview_reviewed_git_batch(&id, &paths).unwrap();
         assert_eq!(preview.files.len(), 2);
         assert_eq!(preview.files[0].relative_path, "one.rs");
-        assert!(!preview.operation_performed && !preview.stage_authorized && !preview.commit_authorized);
+        assert!(
+            !preview.operation_performed && !preview.stage_authorized && !preview.commit_authorized
+        );
         assert!(!preview.git_hooks_executed && !preview.remote_updated);
         registry.revalidate_reviewed_git_batch(&preview).unwrap();
-        assert!(Repository::open(&root).unwrap().statuses(None).unwrap().iter().count() >= 2);
+        assert!(
+            Repository::open(&root)
+                .unwrap()
+                .statuses(None)
+                .unwrap()
+                .iter()
+                .count()
+                >= 2
+        );
     }
     #[test]
     fn duplicates_untracked_traversal_and_stale_bytes_are_denied() {
         let (_t, registry, id, root) = fixture();
         assert_eq!(
-            registry.preview_reviewed_git_batch(&id, &["one.rs".into(), "one.rs".into()]).unwrap_err(),
+            registry
+                .preview_reviewed_git_batch(&id, &["one.rs".into(), "one.rs".into()])
+                .unwrap_err(),
             "G06B_BATCH_DUPLICATE_PATH_DENIED"
         );
-        assert!(registry.preview_reviewed_git_batch(&id, &["../outside".into()]).is_err());
-        assert!(registry.preview_reviewed_git_batch(&id, &["untracked.rs".into()]).is_err());
-        let preview = registry.preview_reviewed_git_batch(&id, &["one.rs".into(), "two.rs".into()]).unwrap();
+        assert!(registry
+            .preview_reviewed_git_batch(&id, &["../outside".into()])
+            .is_err());
+        assert!(registry
+            .preview_reviewed_git_batch(&id, &["untracked.rs".into()])
+            .is_err());
+        let preview = registry
+            .preview_reviewed_git_batch(&id, &["one.rs".into(), "two.rs".into()])
+            .unwrap();
         fs::write(root.join("two.rs"), b"changed since review\n").unwrap();
-        assert_eq!(registry.revalidate_reviewed_git_batch(&preview).unwrap_err(), "G06B_REVIEW_STALE");
+        assert_eq!(
+            registry
+                .revalidate_reviewed_git_batch(&preview)
+                .unwrap_err(),
+            "G06B_REVIEW_STALE"
+        );
     }
 }
