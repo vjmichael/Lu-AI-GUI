@@ -214,6 +214,15 @@ fn inspect_vcpkg_direct_declaration(
             // Treat package identity as literal; no normalization, guessing
             // or fallback to another manager's matching package name.
             if declared == name {
+                // A conditional/feature-qualified declaration cannot be
+                // treated as an unconditional dependency by a static preview.
+                // Do not execute vcpkg or infer platform/feature evaluation.
+                if dep.as_object().is_some_and(|obj| obj.len() != 1) {
+                    return Err("IDE052_VCPKG_CONDITIONAL_DECLARATION_UNRESOLVED");
+                }
+                if found {
+                    return Err("IDE052_VCPKG_DUPLICATE_DECLARATION");
+                }
                 found = true;
             }
         }
@@ -679,6 +688,27 @@ mod tests {
         assert!(matches!(
             registry.preview_package_operation(&id, absent),
             Err("IDE052_DEPENDENCY_NOT_DECLARED")
+        ));
+    }
+    #[test]
+    fn conditional_or_duplicate_vcpkg_declarations_are_not_falsely_resolved() {
+        let (_t, registry, id, dir) = fixture();
+        let mut remove = request("vcpkg", PackageOperation::Remove);
+        remove.package_name = Some("fmt".into());
+        for data in [
+            br#"{"dependencies":[{"name":"fmt","platform":"windows"}]}"#.as_slice(),
+            br#"{"dependencies":[{"name":"fmt","features":["core"]}]}"#.as_slice(),
+        ] {
+            fs::write(dir.join("vcpkg.json"), data).unwrap();
+            assert!(matches!(
+                registry.preview_package_operation(&id, remove.clone()),
+                Err("IDE052_VCPKG_CONDITIONAL_DECLARATION_UNRESOLVED")
+            ));
+        }
+        fs::write(dir.join("vcpkg.json"), br#"{"dependencies":["fmt","fmt"]}"#).unwrap();
+        assert!(matches!(
+            registry.preview_package_operation(&id, remove),
+            Err("IDE052_VCPKG_DUPLICATE_DECLARATION")
         ));
     }
     #[test]
