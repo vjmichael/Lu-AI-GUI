@@ -67,7 +67,23 @@ def apply(root: Path) -> None:
         "      // Revoke this exact exception event immediately after continue.\n"
         "      lu_ide_owner::OnContinued(dbe, continued);",
     )
-    # Pinned LLVM 18.1.8 MSVC compile failure (run 42870494783):\n    # ProgressEvent.h uses std::chrono without including its owning header.\n    # Apply only against the exact reviewed upstream include anchor; never\n    # relax compiler flags or substitute an unpinned LLDB binary.\n    progress = root / PROGRESS_HEADER\n    if not progress.is_file():\n        raise RuntimeError("DENIED: pinned LLVM ProgressEvent.h missing")\n    progress_text = progress.read_text(encoding="utf-8")\n    progress_text = replace_one(\n        progress_text,\n        "#include <atomic>\\n",\n        "#include <atomic>\\n#include <chrono>\\n",\n    )\n    overlay = Path(__file__).with_name("LuIdeOwnerEvent.h")
+    # Pinned LLVM 18.1.8 MSVC compile failure (run 42870494783):
+    # ProgressEvent.h uses std::chrono without including its owning header.
+    # Apply only against the exact reviewed upstream include anchor; never
+    # relax compiler flags or substitute an unpinned LLDB binary.
+    progress = root / PROGRESS_HEADER
+    if not progress.is_file():
+        raise RuntimeError("DENIED: pinned LLVM ProgressEvent.h missing")
+    progress_text = progress.read_text(encoding="utf-8")
+    progress_text = replace_one(
+        progress_text,
+        "#include <atomic>\
+",
+        "#include <atomic>\
+#include <chrono>\
+",
+    )
+    overlay = Path(__file__).with_name("LuIdeOwnerEvent.h")
     if not overlay.is_file():
         raise RuntimeError("DENIED: first-party owner-event header missing")
     dest = root / HEADER
