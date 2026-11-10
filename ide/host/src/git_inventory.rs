@@ -188,16 +188,15 @@ impl IdeWorkspaceRegistry {
                         continue;
                     }
                     let row = if let Ok(worktree) = repo.find_worktree(name) {
-                        let path_state = match fs::symlink_metadata(worktree.path()) {
-                            Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => "directory_observed_not_authorized",
-                            Ok(_) => "path_not_regular_directory",
-                            Err(_) => "path_missing_or_inaccessible",
-                        };
+                        // Reading libgit2's stored path is NOT authorization to
+                        // stat, validate or open it. Only compare it with our
+                        // already checked registered root, without disk I/O.
+                        let current = worktree.path() == root.as_path();
                         LinkedWorktreeEntry {
                             name: name.to_owned(),
-                            current_project: worktree.path() == root,
-                            path_state,
-                            administrative_state: if worktree.validate().is_ok() { "libgit2_validated" } else { "invalid_or_stale" },
+                            current_project: current,
+                            path_state: if current { "registered_root_only" } else { "unregistered_path_not_inspected" },
+                            administrative_state: "listed_not_validated",
                             registered_for_access: false,
                             absolute_path_exposed: false,
                             locked_state: "not_assessed",
