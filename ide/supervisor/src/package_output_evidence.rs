@@ -84,6 +84,12 @@ fn read_private(root: &Path, rel: &str, limit: u64) -> Result<Vec<u8>, Superviso
     if !root.is_absolute() || !safe_relative(rel) {
         return Err(denied());
     }
+    // The frozen-source root is itself a trust boundary: reject link or
+    // reparse redirection before inspecting any child components.
+    let root_meta = fs::symlink_metadata(root).map_err(|_| denied())?;
+    if !root_meta.is_dir() || root_meta.file_type().is_symlink() || untrusted_meta(&root_meta) {
+        return Err(denied());
+    }
     let file = root.join(rel);
     let mut parent = root.to_path_buf();
     for component in rel
@@ -759,6 +765,20 @@ wheels = [
         record.push_str("demo-1.0.0.dist-info/RECORD,,\n");
         fs::write(dist.join("RECORD"), record).unwrap();
         (file_hash(py), file_hash(lock.as_bytes()))
+    }
+    #[cfg(unix)]
+    #[test]
+    fn frozen_source_root_symlink_never_supplies_package_evidence() {
+        use std::os::unix::fs::symlink;
+        let fixture = fixture();
+        fs::write(fixture.source.join("uv.lock"), b"untrusted lock bytes").unwrap();
+        let linked = fixture.root.join("linked-frozen");
+        symlink(&fixture.source, &linked).unwrap();
+        assert!(read_private(&linked, "uv.lock", MAX_LOCK).is_err());
+        assert_eq!(
+            read_private(&fixture.source, "uv.lock", MAX_LOCK).unwrap(),
+            b"untrusted lock bytes"
+        );
     }
     #[test]
     fn independent_private_install_bytes_license_and_lock_are_checked() {
