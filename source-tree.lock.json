@@ -1373,7 +1373,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
-      "blob": "027dd6e2336498d22328818e706ce33e0373dbe4"
+      "blob": "b09ede9175e4b6f0fc630324968d6f38d3cec339"
     },
     {
       "path": "lu-desktop/src-tauri/src/write_proposal.rs",

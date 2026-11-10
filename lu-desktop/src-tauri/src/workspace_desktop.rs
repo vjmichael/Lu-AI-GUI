@@ -90,7 +90,7 @@ fn explicit_navigation_to_windows_folder(prompt:&str)->bool{
     let bytes=prompt.as_bytes();
     bytes.windows(3).any(|v|v[0].is_ascii_alphabetic()
         &&v[1]==b':' &&v[2]==b'\\')
-        ||prompt.contains("\\\\\\\\")
+        ||prompt.contains(r"\\")
 }
 /// Wave 4: only explicit current USER requests for local Git inspection
 /// can offer the native repository picker. A quoted instruction, repo
