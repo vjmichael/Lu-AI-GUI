@@ -1069,7 +1069,7 @@
     },
     {
       "path": "lu-desktop/scripts/lu-desktop.manifest",
-      "blob": "ed1c5a1c76a1ec5c295c602b11af14ee909ed364"
+      "blob": "61ce8367757eac742496109a50db06c958bdd623"
     },
     {
       "path": "lu-desktop/scripts/make-icon.mjs",
@@ -1085,7 +1085,7 @@
     },
     {
       "path": "lu-desktop/scripts/test_verify_win_v6_manifest.py",
-      "blob": "7395f46640221e9dd6a5c5ac9ef74f8280e24200"
+      "blob": "750147a174c9970b51bc47d4264b528cde106d7f"
     },
     {
       "path": "lu-desktop/scripts/verify_win_v6_manifest.py",

@@ -21,6 +21,18 @@ class ManifestDecoderTests(unittest.TestCase):
                 root=parse_manifest_resource(blob)
                 self.assertEqual(root.tag,
                   '{urn:schemas-microsoft-com:asm.v1}assembly')
+    def test_valid_resource_with_msvc_space_padding(self):
+        # winres/tauri-build emits spaces around the manifest text. An XML
+        # declaration cannot legally follow that first space, so the source
+        # manifest must start with the assembly element instead.
+        self.assertFalse(MANIFEST.lstrip().startswith(b'<?xml'))
+        padded=b' ' + MANIFEST.replace(b'\n',b' ') + b' '
+        root=parse_manifest_resource(padded)
+        self.assertEqual(root.tag,
+            '{urn:schemas-microsoft-com:asm.v1}assembly')
+        with self.assertRaises(ManifestError):
+            parse_manifest_resource(b' <?xml version="1.0" encoding="UTF-8"?>\n' + MANIFEST)
+
     def test_malformed_or_multi_document_resource_rejected(self):
         for invalid in [
             MANIFEST+b'\x00\x00',
