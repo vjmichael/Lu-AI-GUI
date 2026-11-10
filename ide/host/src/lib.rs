@@ -18,6 +18,7 @@ pub mod draft_vault;
 pub mod editor;
 pub mod execution_intents;
 pub mod git_evidence;
+pub mod git_inventory;
 pub mod git_status;
 pub mod github_ci;
 pub mod github_live;
