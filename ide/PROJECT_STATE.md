@@ -1,3 +1,7 @@
+## G04D genuine Windows frontendDist source-gate repair — 2026-11-10
+
+[Temporary source run 42877709275](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42877709275) at `d01c4b0` finished Linux SUCCESS, Windows FAILURE: Windows host/supervisor native tests and protected supervisor compilation progressed, but Tauri `generate_context!()` panicked because configured `frontendDist: ../dist` was absent. The earlier missing ICO was already addressed with a CI-only diagnostic resource. The temporary source workflow now runs `npm ci --ignore-scripts` against the checked-in lockfile and genuine `node scripts/build.mjs`, checks `ide/app/dist/index.html`, then compiles Tauri; this does not simulate human consent or grant installed release. This is **source repair, native rerun pending**; the workflow path push triggers only its two-lane source gate, not expensive pinned LLVM. Authoritative Group 4 remains at `545a7a3`, no exact-head OS acceptance, no branch reconciliation, no Group 4B/C/D closure.
+
 
 ## Group 4C demonstrated MSVC defect repair — 2026-11-10
 
