@@ -1,5 +1,15 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 5 — consolidated CI lookup constraint and portability repair (Nov 10)
+
+Exact Group 5 source was checked at `9b17bf2`, but connector workflow lookup
+only covers PR-triggered jobs and returned none; push-run terminal compiler
+and OS logs are **not accessible/verified** here. Source-only follow-up
+commits `677be73` and `380d762` separate a POSIX-only file replacement
+race fixture from a portable descriptor identity mismatch check and
+normalize O_NOFOLLOW open failures to a fail-closed provenance denial.
+No Windows AppContainer or NSIS/Debian physical acceptance was performed.
+
 ## Group 5 provenance/discard continuation — November 10, 2026
 
 Group 5 now checks independent wheel RECORD member completeness and
