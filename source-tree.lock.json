@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 869,
+  "trackedFileCount": 868,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -200,10 +200,6 @@
       "blob": "5ce9770eb61c8a4d45e526a72c36c1d44aef6091"
     },
     {
-      "path": ".github/workflows/lu-p0-installed-ux-native.yml",
-      "blob": "351961e2ba1c179e1f069773ae46c73841567431"
-    },
-    {
       "path": ".github/workflows/lu-p03-ai-ops.yml",
       "blob": "1e8fb12add505be4cf2fcddc904d431988fd9c02"
     },
@@ -233,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "e9371026719c1ac9865d5f4d5eb4b831e98aaa45"
+      "blob": "0f19fd50483cd28e59edf2773896ad807e4946e1"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
