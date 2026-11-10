@@ -125,6 +125,9 @@ mod platform {
             if code!=0x8000_07d2||bytes==0||bytes>4*1024*1024||count>10000{return None}
             let mut buf=vec![0usize;(bytes as usize+mem::size_of::<usize>()-1)/mem::size_of::<usize>()];
             if unsafe{PdhGetFormattedCounterArrayW(counter,0x400,&mut bytes,&mut count,buf.as_mut_ptr().cast())}!=0{return None}
+            // The returned count is external OS data, not a Rust slice length.
+            // Defend against driver/provider errors before constructing a slice.
+            if (count as usize).saturating_mul(mem::size_of::<PdhItem>())>buf.len()*mem::size_of::<usize>(){return None}
             let needle=format!("pid_{pid}_");
             let exact=format!("pid_{pid}");
             let mut total=0u64;

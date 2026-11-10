@@ -1217,7 +1217,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/engine_memory.rs",
-      "blob": "ed985feb5f870784da89c5a0b0405a588ed17005"
+      "blob": "200e872aeef4ab24daf11a7c9a129cc592da1804"
     },
     {
       "path": "lu-desktop/src-tauri/src/environment_context.rs",
@@ -1657,7 +1657,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
-      "blob": "1f7cbf42ddacaa224d0eed8aca695157abee1b45"
+      "blob": "b91acb065c2192c2ba64a4d3649648c714853035"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",

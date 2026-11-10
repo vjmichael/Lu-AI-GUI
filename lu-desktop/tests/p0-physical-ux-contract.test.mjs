@@ -51,7 +51,9 @@ test('chat footer hides manual specialist tools behind an opt-in Tools disclosur
 
 test('fake elapsed timer is absent; actual memory loading percent remains explicitly unverified',()=>{
   assert.doesNotMatch(ui,/modelLoadSeconds|s elapsed/);
-  assert.match(ui,/Memory allocation percentage unavailable until real backend telemetry/);
+  assert.match(ui,/Tensor loading % unavailable/);
+  assert.match(ui,/workingSetRamBytes/);
+  assert.match(ui,/dedicatedGpuBytes/);
 });
 
 test('ordinary human chat turns inject a fresh non-authoritative native device time observation',()=>{
