@@ -1,5 +1,15 @@
 # Lu IDE — Development changelog
 
+## 2026-11-10 — Group 6A source history/refs/health continuation
+
+Implemented native bounded blame and first-parent file history,
+local ref/tag tracking plus redacted remote aliases, read-only
+repository conflict/operation state, Tauri and UI bindings and native
+adversarial tests. Repaired stale project-switch evidence and
+bounded file/history/ref enumeration. Added Windows/Linux real
+operator installed witness scripts; they are not executed.
+Native cross-platform compiler/runtime acceptance remains open.
+
 ## 2026-11-10 — Group 6A-05/06/07 read-only Git expansion
 
 Added bounded file blame, first-parent file history, local
