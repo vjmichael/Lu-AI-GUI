@@ -730,20 +730,18 @@ def select_native_folder():
     attempts = 0
     while _native_chooser_still_open() and attempts < 4:
         if attempts == 1:
-            # GTK SELECT_FOLDER may have navigated INSIDE the target instead
-            # of selecting its directory row. Use only a real native dialog
-            # keyboard to go up and select the exact fixture child. If GTK
-            # does not expose that row, reassert the exact path in its native
-            # location entry without blindly accepting an unrelated window.
-            if not _native_parent_and_exact_child():
-                # Fail-closed fallback: reassert the exact directory using
-                # native GTK location entry, not a UI/IPC-selected path.
-                key("ctrl+l")
-                type_text(str(ROOT))
-                key("Return")
-                print("P04_GTK_EXACT_PATH_ENTRY=reasserted_and_submitted_in_native_chooser",
-                      flush=True)
-                time.sleep(0.5)
+            # Genuine exact-head catalog evidence proved that the previous
+            # parent/typeahead fallback registered an UNRELATED directory
+            # after the chooser closed. Do not navigate to ROOT.parent and
+            # rely on an inaccessible GTK row or approximate X11 focus.
+            # Keep the trusted, disposable exact ROOT in GTK's native
+            # location field until the real OS Select/Accept action.
+            key("ctrl+l")
+            type_text(str(ROOT))
+            key("Return")
+            print("P04_GTK_EXACT_PATH_SELECTION=exact_fixture_reasserted_in_native_chooser",
+                  flush=True)
+            time.sleep(0.6)
         if not _native_chooser_still_open():
             break
         _native_picker_confirm(attempts)

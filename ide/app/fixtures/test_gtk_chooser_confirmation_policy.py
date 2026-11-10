@@ -84,6 +84,13 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertIn("outcome = _wait_for_native_registered_project(seconds=20)", fixture)
         self.assertIn('if outcome != "registered_exact_root_and_webview":', fixture)
         self.assertIn("P04_NATIVE_GTK_REGISTRATION_RESULT=", fixture)
+        selector=fixture.split("def select_native_folder():",1)[1].split(
+            "def editor_project():",1)[0]
+        self.assertNotIn("if not _native_parent_and_exact_child()", selector)
+        self.assertIn("P04_GTK_EXACT_PATH_SELECTION=exact_fixture_reasserted_in_native_chooser",
+                      selector)
+        self.assertIn('type_text(str(ROOT))', selector)
+
         self.assertIn("P04_NATIVE_GTK_HOST_PICKER_RESULT=", fixture)
         self.assertIn("def _native_catalog_project_disposition():", fixture)
         self.assertIn('str(row.get("root", "")) == str(ROOT)', fixture)

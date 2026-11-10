@@ -306,3 +306,38 @@ Physical human approvals/refusals, full Windows MIC/owner rights and SCM
 recovery remain separate **OPEN** gates. The Windows production
 `uv_sync_offline` job still denies `NoContainment`; do not promote it
 from the isolated CI probe.
+
+## 2026-11-10 — Actual host registration proved WRONG directory, not React lag
+
+[Installed run 42758958108](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42758958108)
+at `2ccfa724665fdf09ef98df578fd9c4682907479a` passed native
+Debian installation, package/third-party license/broken-upgrade checks,
+GTK graphical launch and **real OS chooser closure**. The newly added
+separate host/category receipts distinguished the cause:
+`P04_NATIVE_GTK_HOST_PICKER_RESULT=registered` and
+`P04_NATIVE_GTK_REGISTRATION_RESULT=unexpected_project_persisted`.
+Thus the host Tauri `ide_choose_project` path executed and
+`register_from_native_picker` successfully persisted a directory, but
+it was NOT the exact disposable project root. The deliberate dual
+catalog+UI identity gate correctly failed.
+
+The test fixture previously moved **back to ROOT.parent** after the
+initial native full-path entry, because its AT-SPI provider exposed no
+child directory row, then clicked a generic chooser interior and typed
+the exact basename without independent selection. That OS sequence
+permitted a *different* directory to be selected by the final native
+Select/Open control. A chooser close is not sufficient.
+
+Repair: keep the exact `WO8_FIXTURE_ROOT` (trusted runner-private
+disposable canonical directory) in GTK's **native Ctrl+L location field**
+immediately before the explicit confirmation. Eliminate the
+parent/typeahead fallback from the actual selection sequence.
+Keep real GTK modal-closure, Tauri host result, exact persisted root,
+and exact installed WebView row all mandatory. No synthetic
+`register_project` operation, privileged IPC, JS state injection or
+acceptance bypass is introduced. Another genuine grouped NSIS/Debian
+run is needed to establish whether GTK returns exactly the intended root.
+
+Independent physical human approval/refusal, OS MIC/owner rights and
+SCM custody remain OPEN. Windows production package execution still
+fails closed.
