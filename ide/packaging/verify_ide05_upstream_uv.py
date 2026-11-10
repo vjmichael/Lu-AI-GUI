@@ -9,7 +9,10 @@ malformed archives and mismatched installed executable/license bytes.
 from __future__ import annotations
 
 import argparse
+import base64
+import csv
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -147,6 +150,35 @@ def verify_pypi_uv_wheel(
         licenses = [n for n in payload if n.endswith("/LICENSE-MIT") or n == "LICENSE-MIT"]
         require(len(licenses) == 1, "IDE056_LICENSE_SOURCE_AMBIGUOUS")
         license_path = licenses[0]
+        # RECORD is an archive-internal integrity cross-check, distinct
+        # from the externally observed registry checksum. An archive whose
+        # bytes match a registry record may still contain unlisted payload.
+        record_name = "uv-0.9.9.dist-info/RECORD"
+        require(record_name in names, "IDE056_WHEEL_RECORD_MISSING")
+        record_bytes = zipped.read(record_name)
+        require(len(record_bytes) <= 512 * 1024, "IDE056_WHEEL_RECORD_OVERSIZE")
+        try:
+            records = list(csv.reader(io.StringIO(record_bytes.decode("utf-8"))))
+        except (UnicodeDecodeError, csv.Error):
+            raise Denied("IDE056_WHEEL_RECORD_INVALID") from None
+        require(len(records) <= MAX_MEMBERS, "IDE056_WHEEL_RECORD_OVER_LIMIT")
+        by_name = {}
+        for row in records:
+            require(len(row) == 3 and row[0] not in by_name and
+                    row[0] in names and not row[0].endswith("/"),
+                    "IDE056_WHEEL_RECORD_PATH_OR_DUPLICATE")
+            by_name[row[0]] = (row[1], row[2])
+        actual_files = {entry.filename for entry in members if not entry.is_dir()}
+        require(set(by_name) == actual_files, "IDE056_WHEEL_RECORD_UNLISTED_PAYLOAD")
+        for filename in actual_files:
+            signature, size = by_name[filename]
+            if filename == record_name:
+                require(signature == "" and size == "", "IDE056_WHEEL_RECORD_SELF_INVALID")
+                continue
+            content = zipped.read(filename)
+            encoded = base64.urlsafe_b64encode(hashlib.sha256(content).digest()).decode("ascii").rstrip("=")
+            require(signature == "sha256=" + encoded and size == str(len(content)),
+                    "IDE056_WHEEL_RECORD_HASH_OR_SIZE_MISMATCH")
     natives = [value for path, value in payload.items()
                if (path.endswith("/uv") or path == "uv") and value.startswith(b"\x7fELF")]
     require(len(natives) == 1 and binary.startswith(b"\x7fELF")
