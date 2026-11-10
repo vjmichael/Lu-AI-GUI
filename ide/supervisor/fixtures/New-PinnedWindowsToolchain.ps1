@@ -73,9 +73,22 @@ if ($LASTEXITCODE -ne 0) { throw 'DENIED: sysroot unavailable' }
 $pf86=[Environment]::GetFolderPath('ProgramFilesX86')
 $vswhere=Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
 Require $vswhere
-$vsroot=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
-$vsver=(& $vswhere -latest -products '*' -property installationVersion).Trim()
-if (!$vsroot -or !$vsver.StartsWith($VsVersionPrefix)) { throw "DENIED: VS pin $VsVersionPrefix not installed" }
+# A newer VS instance can be -latest even when the exact reviewed 17.14
+# side-by-side instance is installed. Resolve version AND path from ONE
+# independently reported instance; never mix the latest path with a
+# different version's toolchain. Missing/ambiguous reviewed pins deny.
+$instancesRaw=(& $vswhere -all -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json)
+if ($LASTEXITCODE -ne 0) { throw 'DENIED: VS instance enumeration failed' }
+$instances=@($instancesRaw | ConvertFrom-Json)
+$matched=@($instances | Where-Object {
+  $_.installationVersion -and
+  ([string]$_.installationVersion).StartsWith($VsVersionPrefix,[StringComparison]::Ordinal) -and
+  $_.installationPath -and
+  (Test-Path -LiteralPath ([string]$_.installationPath) -PathType Container)
+})
+if ($matched.Count -ne 1) { throw "DENIED: exactly one reviewed VS pin $VsVersionPrefix required" }
+$vsroot=[string]$matched[0].installationPath
+$vsver=[string]$matched[0].installationVersion
 $found=@(Get-ChildItem -LiteralPath (Join-Path $vsroot 'VC\Tools\MSVC') -Directory |
   Where-Object { $_.Name.StartsWith($MsvcVersionPrefix) })
 if ($found.Count -ne 1) { throw "DENIED: exactly one pinned MSVC $MsvcVersionPrefix required" }

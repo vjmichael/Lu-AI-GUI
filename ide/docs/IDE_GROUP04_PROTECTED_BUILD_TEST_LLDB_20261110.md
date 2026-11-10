@@ -175,3 +175,7 @@ mounts, resources or process authority, the native diagnostic now emits
 only the fixed reviewed request category and additional bounded error
 classes (`sealed_target_launch`, `target_launch_failed`, etc.), never raw
 adapter paths/contents. **No OS policy change or LLDB success is claimed.**
+
+## Windows native runner VS installation-selection finding
+
+[Group 4 native run 42866653321](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42866653321) reached the Windows offline toolchain stage, but the existing helper selected `vswhere -latest` and rejected the result as `DENIED: VS pin 17.14. not installed`. A newer side-by-side VS instance may shadow the required reviewed version. The helper now selects **exactly one** VS instance whose independently reported version starts `17.14.` and has the reviewed VC Tools component; it binds that instance's path and version in the same record, and still demands the exact MSVC `14.44.` and Windows SDK `10.0.26100.0`. No arbitrary version, unsigned release provenance, or machine-supplied command gains authorization. A new native run must determine whether the required exact pinned instance actually exists; if absent, the runner remains correctly blocked.
