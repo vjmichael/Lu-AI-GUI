@@ -239,6 +239,7 @@ function App() {
   const contextRequest = useRef(0);
   const checkpointRequest = useRef(0);
   const [gitStatus, setGitStatus] = useState(null);
+  const [gitInventory, setGitInventory] = useState(null);
   const [gitBusy, setGitBusy] = useState(false);
   const [gitDiffScope, setGitDiffScope] = useState('worktree');
   const [gitDiff, setGitDiff] = useState(null);
@@ -388,6 +389,7 @@ function App() {
     setDebugBusy(false);
     setDebugResult(null);
     setGitStatus(null);
+    setGitInventory(null);
     setGithubComparison(null);
     exactCiRequest.current += 1;
     setExactCi(null);
@@ -1380,9 +1382,13 @@ function App() {
   async function refreshGitStatus() {
     if (!activeProject?.projectId) {
       setGitStatus(null);
+      setGitInventory(null);
       return;
     }
+    const projectId = activeProject.projectId;
     setGitBusy(true);
+    setGitStatus(null);
+    setGitInventory(null);
     setGitDiff(null);
     setGitHistory(null);
     gitEvidenceRequest.current += 1;
@@ -1392,9 +1398,17 @@ function App() {
     setExactCiBusy(false);
     setProblem('');
     try {
-      setGitStatus(await invoke('ide_read_git_status', { projectId: activeProject.projectId }));
+      const [status, inventory] = await Promise.all([
+        invoke('ide_read_git_status', { projectId }),
+        invoke('ide_read_git_repository_inventory', { projectId }),
+      ]);
+      if (inventory.projectId !== projectId || activeProject?.projectId !== projectId)
+        throw Error('GIT_PROJECT_CONTEXT_CHANGED');
+      setGitStatus(status);
+      setGitInventory(inventory);
     } catch (error) {
       setGitStatus(null);
+      setGitInventory(null);
       setProblem('Could not inspect source control: ' + String(error));
     } finally { setGitBusy(false); }
   }
@@ -4821,6 +4835,37 @@ function App() {
                 Remote unchanged; release unapproved.</p>}
             </div>}
 
+            {gitInventory && gitInventory.projectId === activeProject?.projectId &&
+              <div className="continuityDocument" aria-label="Local branches and linked worktrees">
+                <h3>Branches and linked worktrees · read-only</h3>
+                <p>Repository: {gitInventory.repositoryKind.replaceAll('_', ' ')}
+                  {' · '}HEAD: {gitInventory.headState.replaceAll('_', ' ')}
+                  {' · '}Inventory: {gitInventory.state.replaceAll('_', ' ')}</p>
+                <h4>Local branches ({gitInventory.branches.length}{gitInventory.branchesTruncated ? '+' : ''})</h4>
+                {gitInventory.branches.length === 0 && <p>No verified branch names available.</p>}
+                <div className="continuityEvents">
+                  {gitInventory.branches.map(item => <article className="continuityEvent" key={item.name}>
+                    <strong>{item.name}{item.current ? ' · current' : ''}</strong>
+                    <p>Local tip: <code>{item.tipSha || 'unresolved'}</code></p>
+                    <p>Stored upstream: {item.upstreamName || 'not verified'}
+                      {' · '}{item.upstreamState.replaceAll('_', ' ')}</p>
+                    {item.ahead !== null && <p>Ahead: {item.ahead} · Behind: {item.behind}</p>}
+                  </article>)}
+                </div>
+                {gitInventory.branchesTruncated && <p role="status">Branch inventory is capped at 96 entries.</p>}
+                <h4>Linked worktrees ({gitInventory.worktrees.length}{gitInventory.worktreesTruncated ? '+' : ''})</h4>
+                {gitInventory.worktrees.length === 0 && <p>No linked worktrees observed in repository metadata.</p>}
+                <div className="continuityEvents">
+                  {gitInventory.worktrees.map(item => <article className="continuityEvent" key={item.name}>
+                    <strong>{item.name}{item.currentProject ? ' · current project' : ''}</strong>
+                    <p>{item.administrativeState.replaceAll('_', ' ')}
+                      {' · '}{item.pathState.replaceAll('_', ' ')}</p>
+                    <p>Not registered for access; external path hidden. Locked state: {item.lockedState.replaceAll('_', ' ')}.</p>
+                  </article>)}
+                </div>
+                {gitInventory.worktreesTruncated && <p role="status">Worktree inventory is capped at 48 entries.</p>}
+                <p>No branch changes, worktree access grants, Git processes or network requests are made by this inventory.</p>
+              </div>}
             {gitBusy && <p role="status">Inspecting local Git state…</p>}
             {!gitBusy && gitStatus && <div className="continuityBody">
               <p><strong>{gitStatus.state.replaceAll('_', ' ')}</strong>
