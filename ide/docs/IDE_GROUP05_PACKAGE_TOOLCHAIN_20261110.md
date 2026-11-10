@@ -122,3 +122,13 @@ denial witness are not positive human approval.
 reconciled Group 5 SHA and inspect *actual* run/job logs. Do not start
 independent micro-lanes, promote CI synthetic wheels, relax ACLs or
 mark installation accepted without the evidence.
+
+## Exact-head run inspection and portability corrections — November 10
+
+The Group 5 branch was inspected at source SHA `9b17bf203423ff20756dba3a1caf53e599886511`. GitHub's available `fetch_commit_workflow_runs` connector explicitly searches **pull-request-triggered** runs, not push-triggered runs, and returned none. Direct public GitHub Actions pages/API were inaccessible. Consequently, the consolidated Windows/Linux run could **not** be positively identified or its compiler/runtime logs inspected; absence of PR runs is **not** evidence that no push job exists. No native result or installed acceptance has been inferred.
+
+Source inspection then found two portable regression issues on the current 5C implementation:
+- `677be73`: the file-replacement-after-open fixture uses a POSIX inode/rename behavior and cannot be required on Windows (which may reject overwriting an open file). Kept that original real replacement fixture POSIX-only and added a cross-platform independent opened-descriptor identity-mismatch negative test.
+- `380d762`: `os.open` rejects a post-`lstat` symlink with an OS-specific error (e.g., Linux ELOOP). Normalize such failure to the fail-closed `IDE056_SOURCE_OPEN_DENIED` provenance outcome; do not treat it as successful source inspection.
+
+These are source corrections awaiting actual execution. On this tool connection, a push workflow run cannot be enumerated without its run ID, and no local physical Windows/Linux installed session is accessible. Do not claim Windows AppContainer, human approval, rollback or exact-head CI PASS. Continue with the existing grouped workflow and independently inspect its job IDs/logs when available; preserve production Windows package deny-by-default.
