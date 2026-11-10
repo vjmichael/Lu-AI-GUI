@@ -899,7 +899,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $out=Join-Path $env:RUNNER_TEMP 'lu-current-preview-nsis'
           $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
-          & scripts/m3-windows-nsis-cycle.ps1 -InstallerPath (Join-Path $out $f.installerName) -InstallerSha256 $f.installerSha256 -ExpectedLuSha256 $f.appSha256 -ExpectedEngineSha256 $f.engineSha256 -ExpectedVulkanSha256 $f.vulkanEngineSha256 -ProfileIdentifier 'org.lu.current.devpreview' -UninstallerName 'UninstallLuCurrentPreview.exe' -DisposableWindowsConfirmed -EvidenceDir (Join-Path $out 'native-nsis-cycle-evidence')
+          & scripts/m3-windows-nsis-cycle.ps1 -InstallerPath (Join-Path $out $f.installerName) -InstallerSha256 $f.installerSha256 -ExpectedLuSha256 $f.appSha256 -ExpectedEngineSha256 $f.engineSha256 -ExpectedVulkanSha256 $f.vulkanEngineSha256 -ProfileIdentifier 'org.lu.current.devpreview' -UninstallerName 'UninstallLuCurrentPreview.exe' -ExpectedResearchSha256 ([string]$f.researchClientSha256) -DisposableWindowsConfirmed -EvidenceDir (Join-Path $out 'native-nsis-cycle-evidence')
           if($LASTEXITCODE -ne 0){throw 'Native installed-preview cycle failed'}
       - name: Preserve exact-current-source artifact and evidence
         if: always()
@@ -954,6 +954,19 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf
+      - name: Parse the actual production NSIS, lifecycle and signed-client scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count){
+              foreach($error in $errors){Write-Host ($error.ToString())}
+              throw "NSIS_POWERSHELL_PARSER_ERROR: $file"
+            }
+          }
       - name: Windows test-only Tauri build resources (not real model or package)
         if: runner.os == 'Windows'
         shell: pwsh

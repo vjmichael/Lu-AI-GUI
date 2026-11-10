@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "9f806b4dca4bc18a4a79b2902f7d805138ab7825"
+      "blob": "ee32ab307f85bfbad3320f1eee387ff92de5e391"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -1661,7 +1661,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-research-provider-bundle.test.mjs",
-      "blob": "43b27efac43e6169f777687e0f10ad0e9bac3d74"
+      "blob": "6af44cabe7a2f0eef35cd8d5b47299963ae149bd"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -1937,7 +1937,7 @@
     },
     {
       "path": "scripts/m3-windows-nsis-cycle.ps1",
-      "blob": "e3fca8ec177c5b6cd3bbc2dd004e8bf22033f79b"
+      "blob": "fbf032585cedc6818e4a4c815418bfe4481adb91"
     },
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",

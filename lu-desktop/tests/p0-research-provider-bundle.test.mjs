@@ -18,4 +18,8 @@ test('public model discovery is bundled only through signed and hash-pinned Syst
   assert.match(installer,/RMDir "\$INSTDIR\\lu-research"/);
   assert.match(host,/option_env!\("LU_RESEARCH_CURL_SHA256"\)/);
   assert.match(host,/verified_file\(&self\.curl,sha\)/);
+  const lifecycle=readFileSync(new URL('../../scripts/m3-windows-nsis-cycle.ps1',import.meta.url),'utf8');
+  assert.match(lifecycle,/ExpectedResearchSha256/);
+  assert.match(lifecycle,/installedResearchClient='PASS_SHA256'/);
+  assert.match(lifecycle,/if\(\$researchExe\)\{\$watchPaths/);
 });
