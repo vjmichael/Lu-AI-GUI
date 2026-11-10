@@ -1,5 +1,17 @@
 # Lu IDE — Development changelog
 
+## 2026-11-10 — Group 6B-03 native partial Git staging
+
+Implemented a native-only OS-confirmed selected-hunk stage operation
+using the Git exclusive index.lock and an atomic index replacement
+with original source/HEAD/index revalidation. Added independent
+on-disk blob/index SHA verification, native cancellation commit point,
+durable append-and-fsync journal and restart reconciliation without
+automatic destructive Git recovery. Added protected Source Control UI,
+Rust adversarial fixtures and exact SHA Windows/Linux source gate.
+Physical installed human approval remains unverified.
+
+
 ## 2026-11-10 — IDE Group 6B-02 read-only hunk selection
 
 Added native libgit2 exact index-vs-capability-source hunk preview,
