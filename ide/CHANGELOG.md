@@ -1,5 +1,14 @@
 # Lu IDE — Development changelog
 
+## 2026-11-10 — Group 6A existing Git audit (documentation only)
+
+Audited the standalone IDE's libgit2 status, bounded local diff/history,
+reviewed one-file stage/commit, public GitHub/CI inspection and source-control
+UI. Recorded missing branch/worktree inventory, repository state/identity
+classification, per-file blame, refs/remotes and health/navigation.
+No new Git code or permission introduced. Group 4/5 native acceptance
+continues independently.
+
 ## 2026-11-10 — Group 5 source regression portability
 
 Follow-up to G05C descriptor-bound wheel verification: confine the real
