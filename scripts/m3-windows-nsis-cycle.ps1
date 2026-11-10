@@ -54,6 +54,8 @@ $record=[ordered]@{
   webViewUiAndModelInference='NOT_TESTED'
   installationStateUncertain=$false
   profilePreservation='NOT_TESTED'
+  removalObservedAfterMs=0
+  postUninstallResidue=@()
   versionedRollback='NOT_TESTED_REQUIRES_TWO_DISTINCT_INSTALLERS'
   failureStage=$null
   errors=@()
@@ -119,17 +121,44 @@ try{
   }
   Invoke-Reviewed-Child $uninstaller @('/S')
   $record.uninstaller='PASS_REAL_NATIVE_PROCESS_EXIT'
-  if((Test-Path -LiteralPath $app) -or (Test-Path -LiteralPath $engine) -or
-    ($vulkanEngine -and (Test-Path -LiteralPath $vulkanEngine)) -or
-    @(Get-Process -Name 'Lu','lu-desktop' -ErrorAction SilentlyContinue).Count -gt 0){
-    throw 'Installed program or live Lu process survived uninstall'
+  # NSIS can schedule final file and directory cleanup after the parent
+  # uninstaller exits. Observe a bounded 30 seconds without deleting anything
+  # from the test host or weakening the final absence oracle.
+  $watchPaths=@($app,$engine,$uninstaller)
+  if($vulkanEngine){$watchPaths+=@($vulkanEngine)}
+  $timer=[Diagnostics.Stopwatch]::StartNew()
+  $residue=@()
+  do{
+    $residue=@()
+    foreach($candidate in $watchPaths){
+      if(Test-Path -LiteralPath $candidate){$residue+=('file:'+ $candidate)}
+    }
+    if(Test-Path -LiteralPath $target){$residue+=('install-dir:'+ $target)}
+    foreach($proc in @(Get-Process -Name 'Lu','lu-desktop' -ErrorAction SilentlyContinue)){
+      $residue+=('process:'+ $proc.ProcessName + ':' + $proc.Id)
+    }
+    if($residue.Count -eq 0){break}
+    Start-Sleep -Milliseconds 250
+  }while($timer.Elapsed.TotalSeconds -lt 30)
+  $timer.Stop()
+  $record.removalObservedAfterMs=[int]$timer.ElapsedMilliseconds
+  $record.postUninstallResidue=@($residue)
+  # Independently witness profile preservation even if removal fails.
+  # Neither result substitutes for the other.
+  if((Test-Path -LiteralPath $marker -PathType Leaf) -and
+    (Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash -ceq $markerSha){
+    $record.profilePreservation='PASS_UNTOUCHED_APPDATA_SENTINEL'
+  }else{
+    $record.profilePreservation='FAIL_APPDATA_SENTINEL_MISSING_OR_MODIFIED'
+  }
+  if($residue.Count -ne 0){
+    $record.packageRemoval='FAIL_POST_UNINSTALL_RESIDUE'
+    throw ('NSIS uninstall left: '+($residue -join '; '))
   }
   $record.packageRemoval='PASS_BINARIES_ABSENT'
-  if(-not(Test-Path -LiteralPath $marker -PathType Leaf) -or
-    (Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash -cne $markerSha){
+  if($record.profilePreservation -ne 'PASS_UNTOUCHED_APPDATA_SENTINEL'){
     throw 'NSIS uninstall altered isolated AppData sentinel'
   }
-  $record.profilePreservation='PASS_UNTOUCHED_APPDATA_SENTINEL'
   $record.activeModelWorkersReaped='INCONCLUSIVE_NO_MODEL_LAUNCH_IN_THIS_CYCLE'
 }catch{
   $record.failureStage=$stage

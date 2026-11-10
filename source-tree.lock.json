@@ -1905,7 +1905,7 @@
     },
     {
       "path": "scripts/m3-windows-nsis-cycle.ps1",
-      "blob": "70a6d27534428d96b2c2aefb532098c98121fc0f"
+      "blob": "4fb2f37c5b37a8908f0221356f7e7324c7260231"
     },
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",
