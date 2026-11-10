@@ -102,7 +102,9 @@ def verify_pypi_uv_wheel(
             "IDE056_PYPI_ARCHIVE_SIZE_MISMATCH")
     binary = regular_bytes(installed_binary, MAX_ARCHIVE_BYTES)
     license_bytes = regular_bytes(installed_license, 512 * 1024)
-    expected_bin = "uv/uv"
+    # The wheel's executable can be installed as a native package member
+    # or a data/scripts payload. Its actual content, not the guessed path
+    # or a pip-generated wrapper, establishes identity.
     license_path = ""
     names: set[str] = set()
     payload: dict[str, bytes] = {}
@@ -123,13 +125,16 @@ def verify_pypi_uv_wheel(
             total += entry.file_size
             require(total <= MAX_EXTRACTED_BYTES and entry.file_size <= MAX_ARCHIVE_BYTES,
                     "IDE056_WHEEL_EXPANSION_DENIED")
-            if path == expected_bin or path.endswith("/LICENSE-MIT") or path == "LICENSE-MIT" or path == "uv-0.9.9.dist-info/METADATA":
+            if path.endswith("/uv") or path == "uv" or path.endswith("/LICENSE-MIT") or path == "LICENSE-MIT" or path == "uv-0.9.9.dist-info/METADATA":
                 require(not entry.is_dir(), "IDE056_REQUIRED_WHEEL_ENTRY_NOT_FILE")
                 payload[path] = zipped.read(entry)
         licenses = [n for n in payload if n.endswith("/LICENSE-MIT") or n == "LICENSE-MIT"]
         require(len(licenses) == 1, "IDE056_LICENSE_SOURCE_AMBIGUOUS")
         license_path = licenses[0]
-    require(expected_bin in payload and payload[expected_bin] == binary,
+    natives = [value for path, value in payload.items()
+               if (path.endswith("/uv") or path == "uv") and value.startswith(b"\\x7fELF")]
+    require(len(natives) == 1 and binary.startswith(b"\\x7fELF")
+            and natives[0] == binary,
             "IDE056_INSTALLED_UV_BYTES_DIFFER_FROM_WHEEL")
     require(payload[license_path] == license_bytes,
             "IDE056_LICENSE_BYTES_DIFFER_FROM_WHEEL")

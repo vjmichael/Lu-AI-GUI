@@ -106,3 +106,22 @@ have native ELF magic, and applies this path in both runtime staging and
 independent archive comparison. This does NOT relax exact wheel archive
 hashes, the license check, OS containment, CI synthetic no-network worker
 or any release/human authority. It requires new native runner evidence.
+
+## Real second native Task 5 upstream intake finding
+
+At `be88de11155195d8db3d43bb221b1c872e20f243`,
+[run 42741186648](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42741186648)
+passed both exact-SHA Windows/Ubuntu source matrices. The dependent native
+Linux job failed **before starting uv**: a hardcoded pip target path
+`$RUNNER_TEMP/ide055-uv/uv/uv` did not satisfy the executable/ELF
+preflight. An installed layout is not a trustworthy identifier: pip may
+write wrappers and binaries to different locations.
+
+The new fixed CI selector scans only the runner-owned `uv==0.9.9`
+`--target` directory, requires **exactly one** executable native ELF
+named `uv`, rejects multiple matches, and then independently compares
+its entire bytes with the **exactly one ELF executable member** inside
+the PyPI-checksummed wheel. No path from an app, project or LLM is accepted,
+and no archive hash, publisher status or protected OS admission rule is
+relaxed. Re-run the **single grouped native Windows/Linux gate** at the
+new SHA before accepting this upstream observation.

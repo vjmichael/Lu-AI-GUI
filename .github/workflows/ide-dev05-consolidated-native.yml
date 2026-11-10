@@ -185,11 +185,17 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python -m pip install --no-deps --target "$RUNNER_TEMP/ide055-uv" uv==0.9.9
-          uv_binary="$RUNNER_TEMP/ide055-uv/uv/uv"
-          # The wheel also installs pip-generated CLI wrappers. Never choose
-          # an arbitrary basename hit; pin the exact native ELF wheel member.
-          test -f "$uv_binary" && test -x "$uv_binary"
-          test "$(head -c 4 "$uv_binary" | od -An -tx1 | tr -d ' \\n')" = 7f454c46
+          # pip --target may create command wrappers beside wheel-shipped
+          # binaries. Select exactly one ELF named uv; never rely on path
+          # traversal order or assume a hardcoded wheel install layout.
+          uv_binary=""
+          while IFS= read -r candidate; do
+            if [ "$(head -c 4 "$candidate" | od -An -tx1 | tr -d '[:space:]')" = 7f454c46 ]; then
+              test -z "$uv_binary" || { echo IDE056_AMBIGUOUS_NATIVE_UV_ELF; exit 2; }
+              uv_binary="$candidate"
+            fi
+          done < <(find "$RUNNER_TEMP/ide055-uv" -type f -name uv)
+          test -n "$uv_binary" && test -x "$uv_binary"
           uv_license="$(find "$RUNNER_TEMP/ide055-uv" -type f -iname 'LICENSE-MIT' -print -quit)"
           test -n "$uv_binary" && test -f "$uv_binary"
           test -n "$uv_license" && test -f "$uv_license"
@@ -222,11 +228,17 @@ jobs:
           shopt -s nullglob
           wheels=("$RUNNER_TEMP"/ide056-wheel/uv-0.9.9-*.whl)
           test "${#wheels[@]}" -eq 1
-          uv_binary="$RUNNER_TEMP/ide055-uv/uv/uv"
-          # The wheel also installs pip-generated CLI wrappers. Never choose
-          # an arbitrary basename hit; pin the exact native ELF wheel member.
-          test -f "$uv_binary" && test -x "$uv_binary"
-          test "$(head -c 4 "$uv_binary" | od -An -tx1 | tr -d ' \\n')" = 7f454c46
+          # pip --target may create command wrappers beside wheel-shipped
+          # binaries. Select exactly one ELF named uv; never rely on path
+          # traversal order or assume a hardcoded wheel install layout.
+          uv_binary=""
+          while IFS= read -r candidate; do
+            if [ "$(head -c 4 "$candidate" | od -An -tx1 | tr -d '[:space:]')" = 7f454c46 ]; then
+              test -z "$uv_binary" || { echo IDE056_AMBIGUOUS_NATIVE_UV_ELF; exit 2; }
+              uv_binary="$candidate"
+            fi
+          done < <(find "$RUNNER_TEMP/ide055-uv" -type f -name uv)
+          test -n "$uv_binary" && test -x "$uv_binary"
           uv_license="$(find "$RUNNER_TEMP/ide055-uv" -type f -iname 'LICENSE-MIT' -print -quit)"
           test -f "$uv_binary" && test -f "$uv_license"
           python ide/packaging/verify_ide05_upstream_uv.py \
