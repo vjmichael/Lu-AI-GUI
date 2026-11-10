@@ -833,7 +833,7 @@ jobs:
           npm run build
           npm run check
           cd ..
-          if test "${{ runner.os }" = Windows; then
+          if test "${{ runner.os }}" = Windows; then
             mkdir -p lu-desktop/src-tauri/resources/lu-inference
             for name in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
               printf 'CI_COMPILER_PLACEHOLDER_NOT_MODEL' > "lu-desktop/src-tauri/resources/lu-inference/$name"
