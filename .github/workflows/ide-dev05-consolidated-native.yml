@@ -1,3 +1,4 @@
+# IDE TG1 FINAL GROUP (2026-11-10): same-head Windows/Linux source/native security verification as installed group. Workflow dispatch comments do not change worker permissions.
 name: IDE-05 consolidated native group (NOT release)
 on:
   push:
