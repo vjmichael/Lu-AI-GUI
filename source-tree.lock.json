@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 874,
+  "trackedFileCount": 877,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -880,6 +880,10 @@
       "blob": "763083341256a5b96ed43972d45230705199b55e"
     },
     {
+      "path": "docs/P0_QWEN38_RADEON_PHYSICAL_ACCEPTANCE.md",
+      "blob": "900c38577c14e0041a3192dc2f1d5a108f7d7c71"
+    },
+    {
       "path": "docs/TOOLS_02_INTERNAL_JSON_BOUNDARY_20261103.md",
       "blob": "d7b167786941064a6d72baeb1fb3e107e72dd5ef"
     },
@@ -1664,6 +1668,10 @@
       "blob": "60fea919c3add6b9ed1086dd048d45a34369d52e"
     },
     {
+      "path": "lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs",
+      "blob": "c198045e72d793c6b19a77a010ba5e5a9fa367e3"
+    },
+    {
       "path": "lu-desktop/tests/p0-research-provider-bundle.test.mjs",
       "blob": "6af44cabe7a2f0eef35cd8d5b47299963ae149bd"
     },
@@ -1950,6 +1958,10 @@
     {
       "path": "scripts/m5-windows-installed-memory-pilot.ps1",
       "blob": "47b032f51b4c87a1414d980a5a4839d2647dffea"
+    },
+    {
+      "path": "scripts/p0-qwen38-radeon-physical.ps1",
+      "blob": "6d33e3546b0611efa64555ff4039ad4a2268143b"
     },
     {
       "path": "scripts/p0-windows-installed-gui-smoke.ps1",
