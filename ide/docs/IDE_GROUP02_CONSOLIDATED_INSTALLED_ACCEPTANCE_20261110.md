@@ -256,3 +256,34 @@ The canonical Group 2 final acceptance remains OPEN until a single
 exact-SHA installed Windows NSIS plus Linux Debian run completes, including
 real GTK editor conflict/draft, restart and uninstall with unchanged
 source/catalog evidence. No legal release approval is inferred.
+
+## Linux preserved draft native status after conflict (2026-11-10)
+
+[Exact-head grouped run 42840704155](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42840704155)
+at `2d7efd74808caf94ff4b5b093427d958a43e36b4` confirmed Windows
+NSIS **SUCCESS** including real project Save/restart/conflict, native
+uninstall and unchanged catalog+source hashes. Linux native Debian and
+upstream license verification passed, as did real GTK exact project
+registration, active Edit, explicit Save, restart and Reopen. The Linux
+conflict check failed with `alert:visible;dirty_tab:missing` even after
+a bounded 28-level AT-SPI source-workspace subtree traversal. It reached
+the original conflict check, but the named WebKitGTK tab role is not
+reliably exported, so the error cannot be promoted without a separate
+real *dirty editor state* witness.
+
+The React source preview's already-visible character-count / Saved vs
+Unsaved status now explicitly exposes `role=status` with an accessible
+name derived **only from `activeTab.dirty` and `activeTab.relativePath`**.
+This is the actual currently visible editor toolbar, not a newly fabricated
+or generic footer flag. The installed native Linux test still demands the
+named conflict `role=alert` and the original external file's exact SHA
+unchanged after rejected Save, and now accepts either the exact native
+dirty source tab OR this exact named active-editor status as the
+independently accessible dirty-state witness. It rejects arbitrary
+unrelated status, successful file overwrite, wrong source name or
+inaccessible editor. Source Save behavior and native security/policy
+remain unchanged.
+
+This source remains unaccepted until the next exact-head consolidated
+Windows/Linux installed run reports all required checks including
+the real Debian uninstall and catalog+source retention.

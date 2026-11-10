@@ -1202,6 +1202,7 @@ def _native_conflict_warning_and_draft(seconds=16):
     while True:
         alert = False
         dirty_tab = False
+        active_dirty_status = False
         # Error notification lives at the app shell; it was independently
         # visible in the prior installed Ubuntu run.
         for node in elements():
@@ -1220,9 +1221,32 @@ def _native_conflict_warning_and_draft(seconds=16):
                     break
             except Exception:
                 continue
-        # Actual source-tab state is deeper in the WebView than the global
-        # 13-level desktop traversal; only trust a tab under the exact
-        # visible source-editor workspace.
+        # A named source status is rendered from the *actual* activeTab.dirty
+        # in the installed editor toolbar; it is NOT the global footer,
+        # inferred save failure, or synthetic draft state. A role=status
+        # is exported by WebKitGTK more reliably than a deeply nested tab.
+        # Require exact full project-relative source name and visible native
+        # accessibility semantics. The actual source editor is independently
+        # verified open by editor_project() and the actual disk SHA check.
+        for node in elements():
+            try:
+                if _native_dialog_ancestor(node):
+                    continue
+                state = node.getState()
+                if not (state.contains(pyatspi.STATE_VISIBLE) and
+                        state.contains(pyatspi.STATE_SHOWING)):
+                    continue
+                name = (node.name or "").strip()
+                role = (node.getRoleName() or "").casefold()
+                if (name == "Unsaved editor draft main.rs" and
+                        any(kind in role for kind in ("status", "notification"))):
+                    active_dirty_status = True
+                    break
+            except Exception:
+                continue
+        # Real source tabs can be nested beyond the global AT-SPI traversal,
+        # so retain the strict per-file native tab check as another valid
+        # witness of *the same* saved-vs-draft React state.
         for node in _native_source_editor_nodes():
             try:
                 state = node.getState()
@@ -1236,11 +1260,14 @@ def _native_conflict_warning_and_draft(seconds=16):
                     break
             except Exception:
                 continue
-        if alert and dirty_tab:
+        if alert and (dirty_tab or active_dirty_status):
             print("IDE_G02_LINUX_NATIVE_EXTERNAL_CONFLICT_ALERT_AND_DRAFT=PASS",
                   flush=True)
+            print("IDE_G02_LINUX_DIRTY_SOURCE_WITNESS=" +
+                  ("actual_source_tab" if dirty_tab else "active_editor_status"),
+                  flush=True)
             return
-        last_alert, last_dirty_tab = alert, dirty_tab
+        last_alert, last_dirty_tab = alert, (dirty_tab or active_dirty_status)
         if time.monotonic() >= deadline:
             break
         time.sleep(0.30)

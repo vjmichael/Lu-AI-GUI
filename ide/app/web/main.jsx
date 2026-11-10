@@ -5492,7 +5492,10 @@ function App() {
               <div className="sourcePreviewHeader">
                 <strong>{activeTab.relativePath}</strong>
                 <span className="editorToolbar">
-                  <span>{activeTab.draft.length.toLocaleString()} chars ·
+                  <span role="status"
+                    aria-label={(activeTab.dirty
+                      ? 'Unsaved editor draft ' : 'Saved editor source ') +
+                      activeTab.relativePath}>{activeTab.draft.length.toLocaleString()} chars ·
                     {activeTab.dirty ? ' Unsaved' : ' Saved'}
                     {isLargeSourceEditor(activeTab.draft) ? ' · Lightweight editor' : ''}
                   </span>
