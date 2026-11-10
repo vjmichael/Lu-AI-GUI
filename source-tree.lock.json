@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 871,
+  "trackedFileCount": 872,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -1025,7 +1025,7 @@
     },
     {
       "path": "lu-desktop/packaging/NSIS_CURRENT_DEV_PREVIEW.nsi",
-      "blob": "b42231024dbe8e8d3944cfe5d92e67ba52c025af"
+      "blob": "c041d632cb44564b36ec4bcc22118bc37209e6c8"
     },
     {
       "path": "lu-desktop/packaging/NSIS_DEV_EVAL_NOT_ALPHA.nsi",
@@ -1660,6 +1660,10 @@
       "blob": "60fea919c3add6b9ed1086dd048d45a34369d52e"
     },
     {
+      "path": "lu-desktop/tests/p0-research-provider-bundle.test.mjs",
+      "blob": "43b27efac43e6169f777687e0f10ad0e9bac3d74"
+    },
+    {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
       "blob": "d62b8ada2fabf1930054b3752d2d51ec901f16ca"
     },
@@ -1885,7 +1889,7 @@
     },
     {
       "path": "scripts/build-current-windows-nsis.ps1",
-      "blob": "2d59f9628931dd1574285e5a2acfdad0dbf38e88"
+      "blob": "ce3a289110937f28536594a95aad1ab4101c8af1"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
