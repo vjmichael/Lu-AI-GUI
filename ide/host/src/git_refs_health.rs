@@ -28,6 +28,7 @@ pub struct GitRepositoryHealth {
     pub shallow: bool,
     pub detached_head: bool,
     pub unborn_head: bool,
+    pub metadata_clean_only: bool,
     pub operation_ready: bool,
 }
 
@@ -121,7 +122,8 @@ impl IdeWorkspaceRegistry {
                 shallow: repo.is_shallow(),
                 detached_head: detached,
                 unborn_head: unborn,
-                operation_ready: healthy,
+                metadata_clean_only: healthy,
+                operation_ready: false,
             },
             remote_url_exposed: false, network_queried: false,
             git_process_started: false, refs_or_files_modified: false,
@@ -174,5 +176,7 @@ mod tests {
         assert!(!encoded.contains("example.invalid"));
         assert!(!result.remote_url_exposed && !result.network_queried && !result.git_process_started);
         assert_eq!(result.health.index_conflicts, Some(false));
+        assert!(result.health.metadata_clean_only);
+        assert!(!result.health.operation_ready);
     }
 }
