@@ -37,7 +37,11 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertTrue(exact_native_directory_row(
             "fixture-42", "", "fixture-42", "table cell"))
         self.assertTrue(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "label", ("table cell",)))
+        self.assertFalse(exact_native_directory_row(
             "", "fixture-42", "fixture-42", "label"))
+        self.assertFalse(exact_native_directory_row(
+            "", "fixture-42", "fixture-42", "text", ("entry",)))
         self.assertFalse(exact_native_directory_row(
             "fixture-42-next", "", "fixture-42", "table cell"))
         self.assertFalse(exact_native_directory_row(
@@ -112,6 +116,9 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertIn("parent_child_candidate = _native_parent_and_exact_child()", selector)
         self.assertIn("P04_GTK_SELECTION_ROUTE=verified_native_parent_child", selector)
         self.assertIn("P04_GTK_DIRECTORY_ROW_INVENTORY=", fixture)
+        self.assertIn("cwd=str(ROOT.parent)", fixture)
+        self.assertIn("tuple(ancestors)", fixture)
+        self.assertIn("P04_GTK_SELECTION_ROUTE=chooser_closed_before_location_fallback", fixture)
         self.assertIn("if depth < 28:", fixture)
         self.assertIn("exact_native_directory_row(", fixture)
         self.assertIn("P04_GTK_SELECTION_ROUTE=exact_native_location_alt_open", selector)

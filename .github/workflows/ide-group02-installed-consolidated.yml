@@ -1,4 +1,5 @@
 # Group 2 — one exact-SHA Windows NSIS / Linux Debian real installed group.
+# GTK CWD native chooser determinism and exact file-row identity at real installed gate.
 # Repair exact Gtk native chooser order: parent navigation before bounded row matching.
 # Group2 boundary repair: verify OS catalog identity via samefile (Windows)
 # and never treat GTK unverified typeahead as directory selection (Linux).

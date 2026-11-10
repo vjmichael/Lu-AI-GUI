@@ -46,7 +46,13 @@ exec_path=/usr/bin/lu-ide-desktop
 [[ -x "$exec_path" ]] || deny installed_desktop_executable_missing
 # The unsigned default install must not stage native debug/tool execution.
 [[ ! -e /usr/lib/lu-ide-desktop/resources/debugger/bin/lldb-dap ]] || deny default_install_bundled_debugger
-fixture="$RUNNER_TEMP/lu-ide-wo8-linux-${GITHUB_RUN_ID:-fixture}"
+# A dedicated one-child parent makes native GTK folder selection
+# deterministic without supplying the project to Tauri or the backend.
+# The human-equivalent native GTK file-list row must still be selected.
+parent="$RUNNER_TEMP/lu-ide-wo8-gtk-parent-${GITHUB_RUN_ID:-fixture}"
+fixture="$parent/lu-ide-wo8-linux-${GITHUB_RUN_ID:-fixture}"
+[[ ! -e "$parent" && ! -L "$parent" ]] || deny preexisting_picker_parent
+mkdir -m 700 -- "$parent"
 mkdir -m 700 -- "$fixture"
 env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
   dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
@@ -79,6 +85,16 @@ env WO8_INSTALLED_EXE="$exec_path" WO8_FIXTURE_ROOT="$fixture" \
       exit 1
     fi
     echo "WO8_NATIVE_LINUX_X11_EWMH_WM=verified"
+    # Documented GTK 3 preference: actual native chooser starts in the
+    # application process CWD, which is ROOT.parent. Keep the OS picker,
+    # keyboard and independent installed host/UI exact-project checks.
+    command -v gsettings >/dev/null ||
+      { echo "IDE_G02_LINUX_DENIED:gsettings_unavailable" >&2; exit 2; }
+    gsettings set org.gtk.Settings.FileChooser startup-mode cwd ||
+      { echo "IDE_G02_LINUX_DENIED:native_gtk_setting_failed" >&2; exit 2; }
+    [[ "$(gsettings get org.gtk.Settings.FileChooser startup-mode)" == "'cwd'" ]] ||
+      { echo "IDE_G02_LINUX_DENIED:native_gtk_setting_unverified" >&2; exit 2; }
+    echo "IDE_G02_NATIVE_GTK_STARTUP_CWD=verified"
     /usr/bin/python3 ide/app/fixtures/wo8_linux_editor_atspi.py
   ' || deny linux_native_editor_acceptance_failed
 echo "WO8_LINUX_INSTALLED_EDITOR_AND_CONFLICT=PASS"

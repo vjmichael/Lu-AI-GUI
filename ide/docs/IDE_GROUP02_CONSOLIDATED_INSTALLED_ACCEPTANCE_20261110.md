@@ -115,3 +115,31 @@ acceptance passes. Windows remains part of one consolidated OS gate at
 the final source SHA. Prior Windows result from `61944a409e86...` passed
 exact native NSIS install/edit/restart/conflict/uninstall and data retention;
 it cannot automatically certify the new SHA.
+
+## Installed GTK failure analysis — new evidence 2026-11-10
+
+[Group 2 run 42773916622](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42773916622)
+built and installed actual Debian bytes and passed its real failed-upgrade
+recovery gate. The native GTK picker remained open. It reported 20 visible
+native rows yet ZERO exact target names/text immediately after the attempted
+Ctrl+L parent navigation. Later typeahead created 2 exact accessible TEXT
+matches, but without native row selection. This proves the previous matching
+rule risked confusing the GTK location/search entry with a selectable
+directory, even though independent installed registration correctly denied it.
+
+The native GTK3 file chooser supports a documented per-user startup-mode
+preference to open at the current working directory. On disposable CI only,
+the real GTK/X11 installed editor now starts in an isolated parent directory
+containing only the actual test project child. Its DBus session calls
+`gsettings set org.gtk.Settings.FileChooser startup-mode cwd` and verifies
+it. The installed IDE process launches with this parent as its CWD;
+no project path is sent into Lu IDE, the OS dialog is still required,
+and no worker authorization is created. The exact row identification policy
+now requires GTK file-list row/cell identity or a label nested inside it,
+never bare location-entry/search text. A verified closed chooser is also
+required before sending any additional native keyboard input.
+This is test-environment determinism and strictly stronger native input
+identity, not a bypass of actual GUI folder selection. No success is claimed
+until one **final exact-head** Windows/Linux consolidated installed group
+passes with both project catalog and real WebView root confirmation,
+editing/restart/conflict/uninstall and user-data preservation.

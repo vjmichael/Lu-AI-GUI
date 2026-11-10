@@ -38,7 +38,7 @@ def retry_requires_native_fallback(names, attempt):
     return not candidate_captions(names, attempt)
 
 
-def exact_native_directory_row(name, text, basename, role):
+def exact_native_directory_row(name, text, basename, role, ancestor_roles=()):
     """Classify an exact GTK native directory row, not approximate typeahead.
 
     This is a *candidate identifier*, not a permission or successful picker
@@ -47,8 +47,18 @@ def exact_native_directory_row(name, text, basename, role):
     """
     if not isinstance(basename, str) or not basename or "/" in basename or "\\" in basename:
         return False
-    if not isinstance(role, str) or not any(part in role.casefold() for part in
-            ("row", "cell", "list item", "tree item", "icon", "label", "text")):
+    if not isinstance(role, str):
+        return False
+    # GTK location/path/search entries can echo the basename as accessible
+    # text without selecting a directory. A real file-list row/cell is
+    # required, either directly or as the accessible label's ancestor.
+    selection_roles = ("row", "cell", "list item", "tree item", "icon")
+    native_row = any(part in role.casefold() for part in selection_roles)
+    if not native_row and role.casefold() in ("label", "text"):
+        native_row = any(isinstance(parent_role, str) and
+                         any(part in parent_role.casefold() for part in selection_roles)
+                         for parent_role in ancestor_roles[:6])
+    if not native_row:
         return False
     return (isinstance(name, str) and name.strip() == basename) or (
         isinstance(text, str) and text.strip() == basename)

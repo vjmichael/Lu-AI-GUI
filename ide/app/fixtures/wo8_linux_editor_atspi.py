@@ -144,7 +144,12 @@ def _host_picker_receipts():
 
 def start():
     stderr_target = open(_NATIVE_APP_LOG, "ab") if os.environ.get("GITHUB_ACTIONS") == "true" else subprocess.DEVNULL
-    app = subprocess.Popen([EXE], stdout=subprocess.DEVNULL, stderr=stderr_target)
+    # The disposable GTK acceptance fixture has exactly one target directory
+    # under ROOT.parent. With the OS preference startup-mode=cwd, the native
+    # chooser displays that directory as a real list row from its first map.
+    # This does not register a project or bypass GTK's UI decision.
+    app = subprocess.Popen([EXE], cwd=str(ROOT.parent),
+                           stdout=subprocess.DEVNULL, stderr=stderr_target)
     if stderr_target != subprocess.DEVNULL:
         stderr_target.close()
     try:
@@ -805,7 +810,21 @@ def _select_real_fixture_directory():
                 named_matches += 1
             if text_value == ROOT.name:
                 text_matches += 1
-            if not exact_native_directory_row(name, text_value, ROOT.name, role):
+            ancestors = []
+            current = node
+            for _ in range(6):
+                try:
+                    current = current.parent
+                    if current is None:
+                        break
+                    parent_role = (current.getRoleName() or "").casefold()
+                    if "file chooser" in parent_role or "dialog" in parent_role:
+                        break
+                    ancestors.append(parent_role)
+                except Exception:
+                    break
+            if not exact_native_directory_row(
+                    name, text_value, ROOT.name, role, tuple(ancestors)):
                 continue
             exact += 1
             # GTK may expose a label nested within a selectable row/table.
@@ -914,14 +933,18 @@ def select_native_folder():
         # path was typed. One bounded native location-entry fallback is
         # permitted, but exact host catalog and visible project row remain
         # mandatory, and the test fails closed on a different root.
-        key("ctrl+l")
-        type_text(str(ROOT))
-        key("alt+o")
-        print("P04_GTK_SELECTION_ROUTE=exact_native_location_alt_open", flush=True)
-        time.sleep(0.4)
-        if _native_chooser_still_open():
-            key("Return")
-            print("P04_GTK_SELECTION_ROUTE=exact_native_location_return", flush=True)
+        if not _native_chooser_still_open():
+            print("P04_GTK_SELECTION_ROUTE=chooser_closed_before_location_fallback",
+                  flush=True)
+        else:
+            key("ctrl+l")
+            type_text(str(ROOT))
+            key("alt+o")
+            print("P04_GTK_SELECTION_ROUTE=exact_native_location_alt_open", flush=True)
+            time.sleep(0.4)
+            if _native_chooser_still_open():
+                key("Return")
+                print("P04_GTK_SELECTION_ROUTE=exact_native_location_return", flush=True)
     time.sleep(1.1)
     # GTK SELECT_FOLDER may interpret the first accept as "navigate into
     # selected directory" instead of closing. Native CI proved the real
