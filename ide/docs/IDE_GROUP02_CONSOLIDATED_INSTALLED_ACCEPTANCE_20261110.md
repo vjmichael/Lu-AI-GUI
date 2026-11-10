@@ -287,3 +287,32 @@ remain unchanged.
 This source remains unaccepted until the next exact-head consolidated
 Windows/Linux installed run reports all required checks including
 the real Debian uninstall and catalog+source retention.
+
+## Conflict and unsaved draft: definitive native Save-state witness (2026-11-10)
+
+[Exact-head installed run 42843681742](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42843681742),
+source `5dd6032abf729e8fa71fab4a50dc8233b5fe80d5`, again proved real GTK registered root, exact active
+project Edit, explicit source Save, native restart/reopen, and a visible
+`File changed on disk. Unsaved edits preserved` alert. WebKitGTK still
+does not expose the dirty-tab label or the new active source status by
+the tested AT-SPI traversals (`alert:visible;dirty_tab:missing`).
+This is an **accessibility discovery limitation**, not demonstrated loss
+of the unsaved draft. The disk hash and external writer sentinel remain
+mandatory.
+
+The actual source editor's primary `Save · Ctrl+S` button is
+`disabled={!activeTab.dirty || explorerPending || !!savingKey}`.
+A real native click on this button caused the exact conflict alert.
+Therefore, checking the **same unique, visible, enabled native Save
+button again AFTER the rejected operation** independently proves the
+actual current editor remains dirty and can still attempt explicit
+Save, without trusting generic footer text or missing tab names.
+The installed acceptance now requires the actual alert, external
+disk-content SHA unchanged, and either the exact dirty tab, exact
+dirty active source status, or exactly one enabled real primary Save
+button. Source contract tests bind the last case to React's
+`activeTab.dirty` gate; any disabled/missing/ambiguous Save button,
+wrong project, absent alert or overwritten disk still FAILS.
+No host Save logic or filesystem authorization changed. The repair
+remains unaccepted until another exact-head installed Windows/Linux
+consolidated group passes including package uninstall and retention.

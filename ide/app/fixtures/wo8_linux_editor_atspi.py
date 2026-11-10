@@ -1189,6 +1189,35 @@ def _native_source_editor_nodes():
                 stack.extend((child, depth + 1) for child in children_of(node))
 
 
+def _real_active_editor_save_remains_enabled():
+    """Check actual installed WebView's exact enabled Save action.
+
+    React's only primary source Save button is disabled when
+    !activeTab.dirty, and while editor IO/saving is pending. After a real
+    native FILE_CHANGED_ON_DISK refusal, the same control must still be
+    enabled for the unsaved draft. This is observable through OS AT-SPI;
+    no application IPC, DOM inspection or model-controlled state is used.
+    """
+    matches = []
+    for node in elements():
+        try:
+            if (node.name or "").strip() != "Save · Ctrl+S":
+                continue
+            if "button" not in (node.getRoleName() or "").casefold():
+                continue
+            if _native_dialog_ancestor(node):
+                continue
+            state = node.getState()
+            if not (state.contains(pyatspi.STATE_VISIBLE)
+                    and state.contains(pyatspi.STATE_SHOWING)):
+                continue
+            if state.contains(pyatspi.STATE_ENABLED):
+                matches.append(node)
+        except Exception:
+            continue
+    return len(matches) == 1
+
+
 def _native_conflict_warning_and_draft(seconds=16):
     """Require real accessible conflict warning AND the still-dirty source tab.
 
@@ -1203,6 +1232,7 @@ def _native_conflict_warning_and_draft(seconds=16):
         alert = False
         dirty_tab = False
         active_dirty_status = False
+        save_still_enabled = False
         # Error notification lives at the app shell; it was independently
         # visible in the prior installed Ubuntu run.
         for node in elements():
@@ -1260,14 +1290,19 @@ def _native_conflict_warning_and_draft(seconds=16):
                     break
             except Exception:
                 continue
-        if alert and (dirty_tab or active_dirty_status):
+        # The primary real Save control's disabled predicate is
+        # !activeTab.dirty, so enabled *after rejected Save* independently
+        # proves the current unsaved editor buffer remains editable.
+        save_still_enabled = _real_active_editor_save_remains_enabled()
+        if alert and (dirty_tab or active_dirty_status or save_still_enabled):
             print("IDE_G02_LINUX_NATIVE_EXTERNAL_CONFLICT_ALERT_AND_DRAFT=PASS",
                   flush=True)
             print("IDE_G02_LINUX_DIRTY_SOURCE_WITNESS=" +
-                  ("actual_source_tab" if dirty_tab else "active_editor_status"),
-                  flush=True)
+                  ("actual_source_tab" if dirty_tab else
+                   "active_editor_status" if active_dirty_status else
+                   "enabled_primary_save_after_rejected_save"), flush=True)
             return
-        last_alert, last_dirty_tab = alert, (dirty_tab or active_dirty_status)
+        last_alert, last_dirty_tab = alert, (dirty_tab or active_dirty_status or save_still_enabled)
         if time.monotonic() >= deadline:
             break
         time.sleep(0.30)
