@@ -659,6 +659,51 @@ mod tests {
     }
 
     #[test]
+    fn restart_reconciles_unpublished_prepared_journal_without_git_writes() {
+        let (_temp, registry, id, root) = fixture();
+        let journal = journal_path(&registry, &id).unwrap();
+        let original = fs::read(root.join(".git/index")).unwrap();
+        let head = Repository::open(&root).unwrap().head().unwrap().target().unwrap();
+        journal_append(&journal, &JournalLine {
+            schema_version: 1, operation_id: "restart-fixture".into(),
+            project_id: id.clone(), relative_path: "tracked.txt".into(),
+            phase: "prepared".into(), head_sha: head.to_string(),
+            selection_sha256: "a".repeat(64), previous_index_sha256: sha(&original),
+            intended_index_sha256: "b".repeat(64),
+            intended_blob_oid: "c".repeat(40), intended_blob_sha256: "d".repeat(64),
+            source_sha256: sha(&fs::read(root.join("tracked.txt")).unwrap()),
+        }).unwrap();
+        drop(registry);
+        let reopened = IdeWorkspaceRegistry::open(_temp.0.join("catalog.json")).unwrap();
+        reopened.reopen(&id).unwrap();
+        let status = reopened.inspect_partial_stage_recovery(&id).unwrap();
+        assert!(status.operator_reconciliation_required);
+        assert_eq!(status.state, "index_not_published_or_external_change");
+        let verified = reopened.reconcile_partial_stage_journal(&id).unwrap();
+        assert_eq!(verified.state, "cancelled_index_unchanged");
+        assert!(!verified.operator_reconciliation_required);
+        assert_eq!(fs::read(root.join(".git/index")).unwrap(), original);
+        assert!(!root.join(".git/index.lock").exists());
+    }
+    #[test]
+    fn completed_receipt_stays_terminal_after_later_external_git_changes() {
+        let (_tmp, registry, id, root) = fixture();
+        let selection = reviewed(&registry, &id, &root);
+        registry.apply_approved_partial_stage(&selection, &AtomicU8::new(0)).unwrap();
+        let repo = Repository::open(&root).unwrap();
+        let index = repo.index().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        let sig = Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "later authorized commit", &tree, &[&head]).unwrap();
+        drop(tree);
+        drop(index);
+        drop(repo);
+        let status = registry.inspect_partial_stage_recovery(&id).unwrap();
+        assert_eq!(status.state, "verified_receipt_followed_by_git_changes");
+        assert!(!status.operator_reconciliation_required);
+    }
+    #[test]
     fn interrupted_journal_is_detected_and_never_auto_repaired() {
         let (_temp, registry, id, root) = fixture();
         let path = journal_path(&registry, &id).unwrap();
