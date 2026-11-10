@@ -344,6 +344,12 @@ impl DapSession {
         if self.phase != DapPhase::Stopped || thread_id == 0 || thread_id > MAX_SEQ {
             return Err(DapError::InvalidPhase);
         }
+        // Native D6/Group 4 variable and step controls may never query a
+        // different thread's frame while reviewing this exact stopped owner.
+        #[cfg(feature = "dev046c-ci-control")]
+        if self.last_stopped_thread != Some(thread_id) {
+            return Err(DapError::InvalidPhase);
+        }
         // A new, independently correlated stack invalidates prior coordinates.
         self.last_source_candidate = None;
         #[cfg(feature = "dev046c-ci-control")]
@@ -1098,6 +1104,18 @@ mod tests {
         result.extend(b);
         result
     }
+    #[cfg(feature = "dev046c-ci-control")]
+    #[test]
+    fn g04_stack_coordinates_cannot_cross_stopped_native_thread() {
+        let mut session = DapSession::new();
+        session.phase = DapPhase::Stopped;
+        session.last_stopped_thread = Some(15);
+        assert_eq!(session.stack_trace(16).unwrap_err(), DapError::InvalidPhase);
+        assert_eq!(session.stack_trace(0).unwrap_err(), DapError::InvalidPhase);
+        let request = String::from_utf8(session.stack_trace(15).unwrap()).unwrap();
+        assert!(request.contains(r#""threadId":15"#));
+    }
+
     #[cfg(feature = "dev046c-ci-control")]
     #[test]
     fn g04_redacted_variables_are_one_use_and_never_include_adapter_values() {

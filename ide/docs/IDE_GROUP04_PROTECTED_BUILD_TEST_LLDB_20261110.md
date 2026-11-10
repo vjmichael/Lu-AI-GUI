@@ -187,3 +187,12 @@ One Group 4 branch/workflow-path-triggered native gate now contains: Windows fix
 ## Four-lane first preflight outcome
 
 [Run 42868873025](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42868873025), SHA `ca8c99f705a0ec914a21d593674d59b62ca20e98`, showed Linux Rustfmt differences in the shared enclosed-hardlink source before the real Linux kernel worker stages. Six exactly reported formatting differences were corrected; neither native OS runtime nor installed consent may be inferred from this preflight.
+
+### Frame/thread identity negative regression
+
+Feature-gated D6C/G04 variable and stepping reviews now refuse a
+`stackTrace` for any thread other than the last correlated DAP stopped
+thread. Even a numerically valid frame ID from another thread may not
+be reused. No renderer input, grant, or installed debugger command was
+added. This is protocol-only until native OS/consent and installed
+acceptance pass.
