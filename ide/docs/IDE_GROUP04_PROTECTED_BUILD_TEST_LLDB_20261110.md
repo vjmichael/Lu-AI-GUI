@@ -238,3 +238,20 @@ foreign-frame or crashed action cannot recreate a grant. This code is
 feature-gated and not an installed/default release capability; Windows
 native build, genuine approval and restart acceptance are still REQUIRED.
 
+
+## Group 4D installed operator/restart acceptance fixture
+
+Extended the preexisting exact-source, hash-pinned, physical Windows
+`Test-DEV046D-PhysicalHumanConsent.ps1` with `ApproveVariables`, `RefuseVariables`,
+`CancelVariablesWhilePrompted`, `TimeoutVariables` and optional
+`-RequireRestart`. Only an actual visible desktop session can run it;
+CI, synthetic clicks, unexpected process image or mismatched binary
+SHA fail. It separately checks a fresh one-use action receipt, native
+human confirmation, the correct `ResultUncertain` terminal for adapter-
+reported variable names, and no raw DAP variable values in its journal.
+With `-RequireRestart`, it requires a **new** visible process for the
+same reviewed desktop image and repeats the native reboot/receipt audit
+without granting or replaying an operation. This script is an operator
+acceptance harness, **not evidence that anyone performed the physical
+steps or an installed release was validated**.
+

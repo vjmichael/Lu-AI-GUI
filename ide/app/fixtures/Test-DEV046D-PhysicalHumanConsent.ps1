@@ -10,8 +10,10 @@ param(
   [Parameter(Mandatory=$true)][string]$ExpectedDesktopExecutable,
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ExpectedDesktopSha256,
   [Parameter(Mandatory=$true)]
-  [ValidateSet('ApproveStep','RefuseStep','CancelWhilePrompted','ApproveBreakpoint','TimeoutOperation')]
-  [string]$Scenario
+  [ValidateSet('ApproveStep','RefuseStep','CancelWhilePrompted','ApproveBreakpoint','TimeoutOperation',
+    'ApproveVariables','RefuseVariables','CancelVariablesWhilePrompted','TimeoutVariables')]
+  [string]$Scenario,
+  [switch]$RequireRestart
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -62,7 +64,7 @@ New-Item -ItemType Directory -Path $EvidenceDirectory -Force | Out-Null
 $before=@(Get-ChildItem -LiteralPath $profile -Filter 'lu-debug-action-*.ndjson' -File |
   Select-Object -ExpandProperty Name)
 Write-Host "Physical approval acceptance: $Scenario"
-Write-Host 'In the open Lu IDE, use the matching developer-only Step Over / Breakpoint button.'
+Write-Host 'In Lu IDE open Advanced debugger actions and select the matching Step/Breakpoint/Redacted Variables operation.'
 Write-Host 'The IDE itself must show TWO separate native dialogs: launch consent and per-action consent.'
 switch($Scenario) {
   'ApproveStep' { Write-Host 'Click Approve in both dialogs; observe a new independently verified stop.' }
@@ -73,6 +75,20 @@ switch($Scenario) {
   }
   'ApproveBreakpoint' {
     Write-Host 'Approve launch then approve the same-line breakpoint; an LLDB ACK is NOT a verified hit.'
+  }
+  'ApproveVariables' {
+    Write-Host 'Approve launch and a SEPARATE native Inspect redacted variables action.'
+    Write-Host 'Confirm at most 16 local identifiers/types and NO variable values in the visible UI.'
+  }
+  'RefuseVariables' {
+    Write-Host 'Approve launch but Decline the separate native variable inspection modal.'
+  }
+  'CancelVariablesWhilePrompted' {
+    Write-Host 'Approve launch; while the variable inspection modal is open, cancel from the IDE.'
+    Write-Host 'Any subsequent late Approve MUST NOT send a scopes or variables request.'
+  }
+  'TimeoutVariables' {
+    Write-Host 'Approve launch, leave the variables native action modal unanswered for at least 35 seconds.'
   }
   'TimeoutOperation' {
     Write-Host 'Approve launch. Do NOT touch the operation native dialog for at least 35 seconds.'
@@ -116,9 +132,26 @@ switch($Scenario) {
       Deny 'breakpoint_missing_human_approval_or_false_verification'
     }
   }
+  'ApproveVariables' {
+    if ($terminal -ne 'ResultUncertain' -or $approved.Count -ne 1 -or
+        $consumed.Count -ne 1 -or
+        $approved[0].outcome_code -ne 'native_human_confirmed' -or
+        $events[-1].outcome_code -ne 'requires_independent_result_reconciliation_no_replay') {
+      Deny 'variable_scope_inspection_missing_human_approval_or_false_verification'
+    }
+    $observedRaw=Get-Content -LiteralPath $file.FullName -Raw
+    if ($observedRaw -match '(?i)variablesReference|SECRET-DO-NOT-RETURN|rawAdapter|"value"') {
+      Deny 'raw_debugger_variables_exposed_in_action_journal'
+    }
+  }
   'RefuseStep' {
     if ($terminal -ne 'Denied' -or $approved.Count -ne 0 -or $consumed.Count -ne 0) {
       Deny 'refused_native_dialog_still_consumed_or_dispatched'
+    }
+  }
+  'RefuseVariables' {
+    if ($terminal -ne 'Denied' -or $approved.Count -ne 0 -or $consumed.Count -ne 0) {
+      Deny 'refused_variable_dialog_still_consumed_or_dispatched'
     }
   }
   'CancelWhilePrompted' {
@@ -127,10 +160,22 @@ switch($Scenario) {
       Deny 'cancelled_human_prompt_granted_or_left_live'
     }
   }
+  'CancelVariablesWhilePrompted' {
+    if ($consumed.Count -ne 0 -or $approved.Count -ne 0 -or
+        $terminal -notin @('Denied','Revoked')) {
+      Deny 'cancelled_variable_prompt_granted_or_left_live'
+    }
+  }
   'TimeoutOperation' {
     if ($consumed.Count -ne 0 -or $approved.Count -ne 0 -or
         $terminal -notin @('Denied','Revoked')) {
       Deny 'timed_out_native_dialog_granted_or_left_live'
+    }
+  }
+  'TimeoutVariables' {
+    if ($consumed.Count -ne 0 -or $approved.Count -ne 0 -or
+        $terminal -notin @('Denied','Revoked')) {
+      Deny 'timed_out_variable_dialog_granted_or_left_live'
     }
   }
 }
@@ -138,6 +183,37 @@ switch($Scenario) {
 # original persistent Job identity, and absence of unreconciled native Job trees.
 & $audit $journal
 if ($LASTEXITCODE -ne 0) { Deny 'independent_native_restart_audit_failed' }
+$restartedApplicationVerified=$false
+if ($RequireRestart) {
+  # Human actions are required; never use SendKeys, synthetic clicks or
+  # a headless runner to claim that a physical UI approval or restart passed.
+  Write-Host 'Close the reviewed developer Lu IDE and relaunch the SAME installed binary.'
+  Write-Host 'If an interrupted debug job appears, use native Verify protected debugger cleanup.'
+  Write-Host 'Do NOT approve another operation. Check that no old debuggee restarts.'
+  $confirmation=Read-Host 'Once the real app has restarted, enter RESTARTED to verify its PID, image and journal'
+  if ($confirmation -cne 'RESTARTED') { Deny 'operator_did_not_confirm_real_restart' }
+  $restarted=@(Get-Process -Name 'lu-ide-desktop' -ErrorAction SilentlyContinue |
+    Where-Object { $_.SessionId -eq $userSession -and $_.MainWindowHandle -ne [IntPtr]::Zero })
+  if ($restarted.Count -ne 1 -or $restarted[0].Id -eq $desktop[0].Id) {
+    Deny 'new_visible_desktop_process_missing_after_restart'
+  }
+  try {
+    $restartImage=(Resolve-Path -LiteralPath $restarted[0].MainModule.FileName -ErrorAction Stop).Path
+  } catch { Deny 'restarted_desktop_image_unavailable' }
+  if (![string]::Equals($restartImage,$expectedDesktop,[StringComparison]::OrdinalIgnoreCase) -or
+      (Get-FileHash -Algorithm SHA256 -LiteralPath $restartImage).Hash -ine $ExpectedDesktopSha256) {
+    Deny 'restarted_desktop_image_changed'
+  }
+  $later=@(Get-ChildItem -LiteralPath $profile -Filter 'lu-debug-action-*.ndjson' -File |
+    Select-Object -ExpandProperty Name)
+  $approvedName=$file.Name
+  if ($later.Count -ne ($before.Count + 1) -or $later -notcontains $approvedName) {
+    Deny 'restart_recreated_or_changed_debugger_action_journal'
+  }
+  & $audit $journal
+  if ($LASTEXITCODE -ne 0) { Deny 'restarted_native_receipt_audit_failed' }
+  $restartedApplicationVerified=$true
+}
 $observed=[ordered]@{
   scope='physical_interactive_developer_build_not_signed_release'
   exactSourceCommit=$ExpectedSourceSha
@@ -152,6 +228,7 @@ $observed=[ordered]@{
   actionFileSha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash
   witnessedUtc=[DateTime]::UtcNow.ToString('o')
   subjectToNativeIndependentReview=$true
+  physicalApplicationRestartVerified=$restartedApplicationVerified
 }
 $destination=Join-Path $EvidenceDirectory ('dev046d-physical-'+$Scenario+'.json')
 ($observed | ConvertTo-Json -Depth 4) | Set-Content -LiteralPath $destination -Encoding UTF8
