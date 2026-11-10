@@ -1,5 +1,20 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 6B-03 — Protected partial Git staging (Nov 10)
+
+Source now contains exact reviewed-hunk index-byte reconstruction,
+exclusive Git index.lock publication, one-use native OS staging dialog,
+cancellation before the index commit point, independent staged blob and
+original source checks, and a durable JSONL phase journal. Native
+read-only restart status and separate OS-approved journal receipt
+reconciliation are implemented; no automatic lock removal, index
+rollback, hook, commit, fetch or push is authorized. Existing reviewed
+hunk and batch interfaces remain. Real Windows/Linux native acceptance
+is still running through exact-head CI; physical NSIS/Debian approval,
+refusal, cancellation and process-kill recovery remain open. See
+`ide/docs/IDE_GROUP06B_ADVANCED_STAGING_20261110.md`.
+
+
 ## Group 6B-02 — exact hunk selection source (Nov 10, 2026)
 
 New `ide/host/src/git_hunk_review.rs` computes text-only, bounded,
