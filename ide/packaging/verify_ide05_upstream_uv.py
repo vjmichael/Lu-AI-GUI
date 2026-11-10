@@ -54,7 +54,12 @@ def regular_bytes(path: Path, max_size: int) -> bytes:
     # parser tests, where O_NOFOLLOW is unavailable. Identity checks below
     # must deny replacement on both OSes before returning provenance.
     flags |= getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        # O_NOFOLLOW can reject a post-lstat symlink with ELOOP. This is
+        # the same fail-closed provenance denial, not an uncaught crash.
+        raise Denied("IDE056_SOURCE_OPEN_DENIED") from exc
     try:
         opened = os.fstat(fd)
         identity = lambda x: (x.st_dev, x.st_ino, x.st_size, x.st_mtime_ns)
