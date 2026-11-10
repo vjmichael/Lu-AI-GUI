@@ -141,3 +141,17 @@ The fixed Linux CI uv runtime now needs independently observed upstream
 release-metadata archive hash, wheel-extracted executable and license bytes
 before protected execution. No CI package approval, Windows ACL bypass,
 upstream publisher signature or physical installed-app acceptance is implied.
+
+## Group 5 independent static-preview hardening (Nov 10, 2026)
+
+Branch `ide/group05-package-review-20261110` starts from the existing
+Group 4D lineage without changing the LLVM acceptance branch. The
+`vcpkg.json` static declaration projection now denies ambiguous
+platform/feature-qualified dependency objects for the requested package,
+and denies duplicate requested-package entries. These cases cannot be
+promoted to an unconditional observed declaration without actually
+interpreting vcpkg's full semantics. Other dependencies' feature objects
+remain visible as static evidence and do not authorize resolution.
+Added tests are not yet accepted by Windows/Linux native CI. Runtime
+install, source provenance, real human approval, Windows package ACLs,
+installed rollback and recovery remain separate open IDE-05 gates.
