@@ -346,7 +346,8 @@ impl IdeWorkspaceRegistry {
         {
             return Err("G06B_STAGE_RECOVERY_AMBIGUOUS_INDEX");
         }
-        let index = repo.index().map_err(|_| "G06B_STAGE_RECOVERY_INDEX_UNAVAILABLE")?;
+        let mut index = repo.index().map_err(|_| "G06B_STAGE_RECOVERY_INDEX_UNAVAILABLE")?;
+        index.read(true).map_err(|_| "G06B_STAGE_RECOVERY_INDEX_RELOAD_FAILED")?;
         if index.has_conflicts() {
             return Err("G06B_STAGE_RECOVERY_CONFLICTED_INDEX");
         }
@@ -516,12 +517,18 @@ impl IdeWorkspaceRegistry {
         if sha(&index_bytes(&old_index_path)?) != intended_sha {
             return Err("G06B_STAGE_PUBLISHED_INDEX_HASH_MISMATCH");
         }
-        let after = repo.index().map_err(|_| "G06B_STAGE_INDEX_VERIFY_UNAVAILABLE")?;
+        // libgit2 may retain an index handle created before our exclusive
+        // atomic rename. Force a disk reload before independent verification.
+        let mut after = repo.index().map_err(|_| "G06B_STAGE_INDEX_VERIFY_UNAVAILABLE")?;
+        after.read(true).map_err(|_| "G06B_STAGE_PUBLISHED_INDEX_RELOAD_FAILED")?;
         let staged_entry = after.get_path(Path::new(&fresh.plan.relative_path), 0)
             .ok_or("G06B_STAGE_ENTRY_NOT_PUBLISHED")?;
+        if staged_entry.id != oid {
+            return Err("G06B_STAGE_PUBLISHED_OID_MISMATCH");
+        }
         let actual_blob = repo.find_blob(staged_entry.id)
             .map_err(|_| "G06B_STAGE_PUBLISHED_BLOB_MISSING")?;
-        if staged_entry.id != oid || sha(actual_blob.content()) != staged_sha {
+        if sha(actual_blob.content()) != staged_sha {
             return Err("G06B_STAGE_PUBLISHED_BYTES_MISMATCH");
         }
         // Independently reread exact worktree bytes under the original
