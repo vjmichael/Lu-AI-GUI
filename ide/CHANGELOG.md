@@ -1,5 +1,13 @@
 # Lu IDE — Development changelog
 
+## 2026-11-10 — IDE Group 6B source-only reviewed batch staging preview
+
+Started independent advanced Git staging with a read-only, 1–8 tracked
+file review plan, SHA-256/HEAD/index revalidation, 4-MiB batch bound,
+stale rejection, separate Tauri routes and Source Control panel.
+No batch Git write operation, one-use authorization or installed
+acceptance was added. Single-file reviewed staging/commit preserved.
+
 ## 2026-11-10 — Group 6A source history/refs/health continuation
 
 Implemented native bounded blame and first-parent file history,
