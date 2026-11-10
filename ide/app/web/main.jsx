@@ -4911,6 +4911,15 @@ function App() {
                   {' · '}Index conflicts: {String(gitRefsHealth.health.indexConflicts)}
                   {' · '}Shallow: {String(gitRefsHealth.health.shallow)}
                   {' · '}Detached: {String(gitRefsHealth.health.detachedHead)}</p>
+                {gitRefsHealth.health.recovery.requiresOperatorReconciliation &&
+                  <p role="alert">Git recovery requires operator reconciliation:
+                    {' '}{gitRefsHealth.health.recovery.classification.replaceAll('_', ' ')}.
+                    No automatic continue, abort, checkout, or index rewrite is authorized.
+                    Inspect the local repository and preserve original Git recovery data before any action.
+                  </p>}
+                {!gitRefsHealth.health.recovery.requiresOperatorReconciliation &&
+                  <p>Git interruption markers and index conflicts were not detected at inspection time.
+                    This observation is not authorization to execute Git commands.</p>}
                 <p>Remote aliases (URLs and credentials hidden):
                   {' '}{gitRefsHealth.remoteAliases.join(', ') || 'none observed'}</p>
                 <p>Local/tracking/tag refs ({gitRefsHealth.localRefs.length}{gitRefsHealth.refsTruncated ? '+' : ''}):</p>
