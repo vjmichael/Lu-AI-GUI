@@ -591,3 +591,60 @@ mod project_baseline_tests{
         }
     }
 }
+
+#[cfg(test)]
+mod plan01_real_git_tests{
+    use super::*;
+    use std::process::Command;
+    /// Opt-in test-only OS executable and fixture repository. This test
+    /// creates its OWN isolated repository; production never mutates Git.
+    #[test]
+    #[ignore = "requires LU_PLAN01_TEST_GIT and a native Git runner"]
+    fn native_git_reports_original_branch_dirty_untracked_and_detached(){
+        let binary=std::env::var_os("LU_PLAN01_TEST_GIT")
+            .map(PathBuf::from).expect("Pass host-resolved original Git executable");
+        let meta=fs::metadata(&binary).expect("Real Git executable");
+        assert!(meta.is_file());
+        let root=std::env::temp_dir().join(format!(
+            "lu-plan01-real-git-{}-{:?}",std::process::id(),std::thread::current().id()
+        ));
+        let _=fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let run=|args:&[&str]|{
+            let success=Command::new(&binary)
+                .args(["-C",root.to_str().unwrap()])
+                .args(["-c","core.hooksPath=/dev/null"])
+                .args(args)
+                .env("GIT_CONFIG_NOSYSTEM","1")
+                .env("GIT_CONFIG_GLOBAL",
+                    if cfg!(windows){"NUL"}else{"/dev/null"})
+                .env("GIT_TERMINAL_PROMPT","0")
+                .status().expect("test-only Git subprocess");
+            assert!(success.success(),"test Git fixture command failed");
+        };
+        run(&["init","-q","-b","plan01"]);
+        fs::write(root.join("README.md"),"original\n").unwrap();
+        run(&["add","README.md"]);
+        run(&["-c","user.name=Lu Fixture","-c","user.email=lu@example.invalid",
+            "commit","-qm","test-only original"]);
+        let clean=inspect_repository_baseline(&root,&binary).unwrap();
+        assert_eq!(clean.branch.as_deref(),Some("plan01"));
+        assert!(!clean.detached&&!clean.dirty&&clean.status_complete);
+        assert_eq!(clean.head_commit.len(),40);
+        fs::write(root.join("README.md"),"changed\n").unwrap();
+        fs::write(root.join("untracked.md"),"not staged").unwrap();
+        let changed=inspect_repository_baseline(&root,&binary).unwrap();
+        assert!(changed.dirty);
+        assert_eq!(changed.tracked_changed_paths,1);
+        assert_eq!(changed.untracked_paths,1);
+        assert_eq!(clean.head_commit,changed.head_commit);
+        run(&["reset","--hard","-q","HEAD"]);
+        fs::remove_file(root.join("untracked.md")).unwrap();
+        run(&["checkout","-q","--detach","HEAD"]);
+        let detached=inspect_repository_baseline(&root,&binary).unwrap();
+        assert!(detached.detached&&detached.branch.is_none());
+        assert_eq!(detached.head_commit,clean.head_commit);
+        assert!(!detached.dirty);
+        fs::remove_dir_all(root).unwrap();
+    }
+}

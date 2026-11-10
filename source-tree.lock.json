@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "8d31d1f763ac60b563f0fe6f0fed015c807411c5"
+      "blob": "85e51629ae6e3b73258fdb52f2e58953cce4c268"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -1337,7 +1337,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_discovery_desktop.rs",
-      "blob": "9ba4f9b0993d175668c56d82d3998f6b05717fed"
+      "blob": "c09edc22644ca19b38bf6c62f1e3da25690c6f02"
     },
     {
       "path": "lu-desktop/src-tauri/src/prompt_context.rs",
@@ -2693,7 +2693,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_git_inspect.rs",
-      "blob": "0360a087cf13f20e5153a06b1b51eb92ee23e852"
+      "blob": "e8aa595052bb94d155525aef235717c9245b385e"
     },
     {
       "path": "src-tauri/lu-core/src/native_gui_verification.rs",

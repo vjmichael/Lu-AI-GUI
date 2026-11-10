@@ -166,7 +166,8 @@ fn scan_selected(root:&Path)->Result<ProjectBaseline,String>{
             }
             match entry{
                 Ok(e)=>{
-                    if let Some(s)=e.file_name().to_str(){
+                    let file_name=e.file_name();
+                    if let Some(s)=file_name.to_str(){
                         if valid_name(s){names.push(s.into())}else{incomplete=true}
                     }else{incomplete=true}
                 },Err(_)=>incomplete=true,
@@ -202,7 +203,8 @@ fn scan_selected(root:&Path)->Result<ProjectBaseline,String>{
             }
             let mut sha=None;
             if document{
-                if docs>=MAX_DOCS||bytes>=MAX_TOTAL_BYTES||meta.len()>MAX_DOC_BYTES{
+                if docs>=MAX_DOCS||meta.len()>MAX_DOC_BYTES||
+                    bytes.saturating_add(meta.len())>MAX_TOTAL_BYTES{
                     incomplete=true;
                 }else{
                     let read=dir.open(&name).and_then(|mut file|{
