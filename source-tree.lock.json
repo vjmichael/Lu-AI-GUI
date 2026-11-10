@@ -1289,7 +1289,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
-      "blob": "2c45b2a13d0e837e4f2a67e07318f6f6b5263c9a"
+      "blob": "5610fbabed4e49a346e180bb9de4bd5df076f3f6"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",

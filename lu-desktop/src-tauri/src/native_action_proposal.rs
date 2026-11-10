@@ -104,10 +104,15 @@ fn valid_patch(p:&NativeOfficePatch)->bool{
     ["word_text","slide_text","cell_number","cell_boolean","cell_text"]
         .contains(&p.kind.as_str())
         && p.expected_old.len()<=1024 && p.new_value.len()<=1024
-        && !p.new_value.chars().any(|ch|ch.is_control()&&ch!='\n'&&ch!='\t')
+        && !p.new_value.chars().any(|ch|ch.is_control()
+            &&ch!=char::from(10)&&ch!=char::from(9))
         && p.address.as_deref().is_none_or(|v|
-            v.len()<=16 && !v.is_empty() &&
-            v.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'
+            v.len()<=16 && !v.is_empty()
+            && v.bytes().all(|b|b.is_ascii_alphanumeric()||b==36))
+        && p.text_index.is_none_or(|v|v<=100_000)
+        && p.slide_number.is_none_or(|v|(1..=100_000).contains(&v))
+        && p.sheet_number.is_none_or(|v|(1..=100_000).contains(&v))
+}
 #[derive(Clone,Debug,Serialize,PartialEq,Eq)]
 #[serde(rename_all="camelCase")]
 pub struct ActionProposalView{
