@@ -132,8 +132,8 @@ def verify_pypi_uv_wheel(
         require(len(licenses) == 1, "IDE056_LICENSE_SOURCE_AMBIGUOUS")
         license_path = licenses[0]
     natives = [value for path, value in payload.items()
-               if (path.endswith("/uv") or path == "uv") and value.startswith(b"\\x7fELF")]
-    require(len(natives) == 1 and binary.startswith(b"\\x7fELF")
+               if (path.endswith("/uv") or path == "uv") and value.startswith(b"\x7fELF")]
+    require(len(natives) == 1 and binary.startswith(b"\x7fELF")
             and natives[0] == binary,
             "IDE056_INSTALLED_UV_BYTES_DIFFER_FROM_WHEEL")
     require(payload[license_path] == license_bytes,

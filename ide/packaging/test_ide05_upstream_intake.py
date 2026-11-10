@@ -22,7 +22,7 @@ class UpstreamIntakeTests(unittest.TestCase):
         self.wheel = self.root / "uv-0.9.9-py3-none-manylinux_2_17_x86_64.whl"
         self.binary = self.root / "uv"
         self.license = self.root / "LICENSE-MIT"
-        self.binary.write_bytes(b"\\x7fELFnative first-party fixture")
+        self.binary.write_bytes(b"\x7fELFnative first-party fixture")
         self.license.write_bytes(b"MIT\nCI fixture only\n")
         self.build()
     def build(self, extra=None, link=False):
