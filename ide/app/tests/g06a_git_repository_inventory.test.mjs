@@ -44,3 +44,26 @@ test('G06A desktop renders local-only metadata, not authorized external paths', 
   assert.match(ui, /gitInventory\.worktreesTruncated/);
   assert.doesNotMatch(ui, /item\.absolutePath|item\.externalPath|item\.worktreePath/);
 });
+
+test('G06A05 native blame path is validated, committed and bounded', () => {
+  const history = read('../../host/src/git_file_history.rs');
+  assert.match(history, /validate_relative\(relative_path, false\)/);
+  assert.match(history, /tree\.get_path/);
+  assert.match(history, /blame_file/);
+  assert.match(history, /const MAX_HUNKS: usize = 96/);
+  assert.match(history, /const MAX_FILE_COMMITS: usize = 40/);
+  assert.doesNotMatch(history, /Command::new|repo\.checkout|repo\.fetch|repo\.push/);
+  assert.match(tauri, /async fn ide_read_git_file_history\(/);
+  assert.match(ui, /invoke\('ide_read_git_file_history'/);
+});
+
+test('G06A06 references and remotes expose no credential URLs', () => {
+  const refs = read('../../host/src/git_refs_health.rs');
+  assert.match(refs, /self\.registered_git_root\(project_id\)/);
+  assert.match(refs, /repo\.references\(\)/);
+  assert.match(refs, /repo\.remotes\(\)/);
+  assert.doesNotMatch(refs, /\.url\(\)|\.pushurl\(\)|Command::new|repo\.fetch\(/);
+  assert.match(refs, /remote_url_exposed: false/);
+  assert.match(tauri, /async fn ide_read_git_refs_health\(/);
+  assert.match(ui, /invoke\('ide_read_git_refs_health'/);
+});
