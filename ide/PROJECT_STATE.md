@@ -1,5 +1,18 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 6B — reviewed multi-file preview source (Nov 10, 2026)
+
+Independent branch `ide/group06b-advanced-staging-20261110`
+is stacked on stable Group 6A source SHA `119830a`. New
+`ide/host/src/git_batch_review.rs` provides a **read-only** bounded,
+deduplicated, exact HEAD/index/source-hash batch review for up to eight
+already tracked regular files. Tauri and Source Control expose
+review/revalidation without granting multi-file stage, commit, checkout,
+Git hooks or GitHub operations. Existing one-file native human approved
+stage/commit remains unchanged. Added native and Node adversarial
+fixtures. Source introduced, not yet native/installed accepted.
+See `ide/docs/IDE_GROUP06B_ADVANCED_STAGING_20261110.md`.
+
 ## IDE Group 6A current engineering state — 2026-11-10
 
 Native registered-root modules now provide bounded local committed
