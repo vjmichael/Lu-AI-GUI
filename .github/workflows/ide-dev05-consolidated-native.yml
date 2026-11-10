@@ -1,8 +1,9 @@
+# IDE Group 5 reconciled source gate (2026-11-10): one grouped branch-specific acceptance attempt.
 # IDE TG1 FINAL GROUP (2026-11-10): same-head Windows/Linux source/native security verification as installed group. Workflow dispatch comments do not change worker permissions.
 name: IDE-05 consolidated native group (NOT release)
 on:
   push:
-    branches: [ide/dev05-1-package-discovery-20261109]
+    branches: [ide/dev05-1-package-discovery-20261109, ide/group05-package-review-20261110]
     paths:
       - 'ide/supervisor/**'
       - 'ide/packaging/verify_ide05_upstream_uv.py'
