@@ -25,6 +25,11 @@ import urllib.request
 # as an HTTP request but did not constrain the real model's full response.
 _JSON_RULES = r'''
 tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws string "," ws "\"arguments\"" ws ":" ws object "}" ws
+# The genuine Git/FFprobe test's advertised Protobuf schemas require an
+# empty argument object. This constrains only the typed argument SHAPE, not
+# the model's tool-name selection. The host still verifies its real catalog.
+# Prevent the earlier Qwen malformed object/prose tail before any OS effect.
+observed_tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws string "," ws "\"arguments\"" ws ":" ws "{" ws "}" ws "}" ws
 final ::= "{" ws "\"kind\"" ws ":" ws "\"final\"" ws "," ws "\"text\"" ws ":" ws string "}" ws
 value ::= object | array | string | number | ("true" | "false" | "null") ws
 object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws
@@ -34,7 +39,7 @@ number ::= ("-"? ([0-9] | [1-9] [0-9]{0,15})) ("." [0-9]+)? ([eE] [-+]? [0-9] [1
 ws ::= | " " | "\n" [ \t]{0,20}
 '''
 GENERIC_REPLY_GBNF = {
-    "required": "root ::= tool\n" + _JSON_RULES,
+    "required": "root ::= observed_tool\n" + _JSON_RULES,
     "auto": "root ::= tool | final\n" + _JSON_RULES,
 }
 
@@ -114,7 +119,7 @@ def assert_tool_grammar_enforced(port: int):
         ) from None
     if not isinstance(obj, dict) or set(obj) != {"kind","name","arguments"} \
         or obj["kind"] != "tool" or not isinstance(obj["name"], str) \
-        or not isinstance(obj["arguments"], dict):
+        or obj["arguments"] != {}:
         raise ValueError("Pinned llama.cpp full tool GBNF produced wrong envelope")
     # The tool name is deliberately NOT validated against Lu's registry
     # here; the real native model turn does that after genuine user review.

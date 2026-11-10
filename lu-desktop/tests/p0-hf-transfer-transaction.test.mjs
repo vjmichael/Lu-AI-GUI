@@ -1,0 +1,47 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const core=readFileSync(new URL('../../src-tauri/lu-core/src/model_provider_transport.rs',import.meta.url),'utf8');
+const stage=readFileSync(new URL('../../src-tauri/lu-core/src/model_provider_staging.rs',import.meta.url),'utf8');
+const desktop=readFileSync(new URL('../src-tauri/src/model_transfer_desktop.rs',import.meta.url),'utf8');
+const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+const windows=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+test('real HF transfer cannot use model-provided URL, shell or ambient curl',()=>{
+  assert.match(core,/https:\/\/huggingface\.co/);
+  assert.match(core,/SecureHttpFetcher/);
+  assert.match(core,/validated_host/);
+  assert.match(core,/trusted_resolution/);
+  assert.match(core,/cmd\.env_clear\(\)/);
+  assert.match(core,/--max-redirs/);
+  assert.match(core,/--noproxy/);
+  assert.match(core,/--resolve/);
+  assert.match(core,/--max-filesize/);
+  assert.doesNotMatch(core,/\.arg\("-L"\)|--location|\.shell\(/);
+});
+test('network chunk cannot publish until exact range and independent full-file SHA',()=>{
+  assert.match(core,/parsed_http_receipt\(marker,offset,plan\.expected_bytes\)/);
+  assert.match(core,/Content-Range|content-range/);
+  assert.match(core,/child\.kill\(\)/);
+  assert.match(stage,/pub fn publish_verified_part/);
+  assert.match(stage,/independent_readback/);
+  assert.match(stage,/digest!=plan\.sha256/);
+  assert.match(stage,/fs::rename\(&part,&destination\)/);
+  assert.match(desktop,/model_provider_staging::publish_verified_part/);
+});
+test('native operator grants each original/resumed transfer and recovery never auto-replays',()=>{
+  assert.match(host,/fn lu_model_transfer_start/);
+  assert.match(host,/fn lu_model_transfer_resume/);
+  assert.match(host,/fn lu_model_transfer_cancel/);
+  assert.match(host,/fn lu_model_transfer_verify/);
+  assert.match(host,/caller\.label\(\)!="model-library"/);
+  assert.match(host,/model_provider_review/);
+  assert.match(host,/blocking_show\(\)/);
+  assert.match(desktop,/pub fn execute_reviewed/);
+  assert.match(desktop,/INTERRUPTED_REVIEW_REQUIRED/);
+  assert.match(desktop,/pub fn reviewed_plan/);
+  assert.match(desktop,/pub fn verify_published_now/);
+  assert.match(windows,/lu_model_transfer_ready/);
+  assert.match(windows,/lu_model_transfer_resume/);
+  assert.match(windows,/lu_model_transfer_cancel/);
+  assert.match(windows,/Verify full file SHA-256 now/);
+});

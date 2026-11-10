@@ -19,7 +19,8 @@ pub enum TransferError{
     InvalidPlan,UnsafeRoot,AlreadyExists,Interrupted,Transport,
     Overlong,Truncated,DigestMismatch,ReadbackMismatch,Publication,
 }
-#[derive(Debug,Clone,PartialEq,Eq)]
+#[derive(Debug,Clone,PartialEq,Eq,serde::Serialize,serde::Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
 pub struct ExactFilePlan{
     pub repo_id:String,pub revision:String,pub filename:String,
     pub expected_bytes:u64,pub sha256:String,
@@ -128,6 +129,42 @@ pub fn receive_verified_stream<R:Read>(
         status:"verified_local_bytes_not_gguf_admitted",
     })
 }
+/// This function is the ONLY publication path for a real externally streamed
+/// transfer. The transport must first prove exact HTTP 200 or 206 Range
+/// semantics and successful curl termination. No 302/HTML/partial download
+/// or cancellation may be promoted to an installed model.
+pub fn publish_verified_part(
+    trusted_root:&Path,nonce:&str,plan:&ExactFilePlan,cancel:&AtomicBool
+)->Result<VerifiedTransfer,TransferError>{
+    plan.validated()?;
+    if !valid_nonce(nonce)||!regular_directory(trusted_root)||
+        !regular_directory(&trusted_root.join(nonce)){
+        return Err(TransferError::UnsafeRoot)
+    }
+    let folder=trusted_root.join(nonce);
+    let part=folder.join("received.part");
+    if cancel.load(Ordering::Acquire){return Err(TransferError::Interrupted)}
+    let (bytes,digest)=independent_readback(&part,plan.expected_bytes)?;
+    if bytes!=plan.expected_bytes{return Err(TransferError::Truncated)}
+    if digest!=plan.sha256{return Err(TransferError::DigestMismatch)}
+    if cancel.load(Ordering::Acquire){return Err(TransferError::Interrupted)}
+    let destination=folder.join(&plan.filename);
+    if destination.exists(){return Err(TransferError::AlreadyExists)}
+    // Same-directory rename is atomic and never overwrites a previous target.
+    fs::rename(&part,&destination).map_err(|_|TransferError::Publication)?;
+    // Cancellation after rename cannot un-publish data. Return an exact
+    // readback result rather than inventing a failed/rolled-back operation.
+    let (published_bytes,published_digest)=
+        independent_readback(&destination,plan.expected_bytes)?;
+    if published_bytes!=bytes||published_digest!=digest{
+        return Err(TransferError::ReadbackMismatch)
+    }
+    Ok(VerifiedTransfer{
+        sha256:digest,bytes,file:destination,
+        status:"verified_local_bytes_not_gguf_admitted"
+    })
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -157,6 +194,27 @@ mod tests{
         assert_eq!(result.sha256,plan(bytes).sha256);
         assert_eq!(result.status,"verified_local_bytes_not_gguf_admitted");
         assert_eq!(fs::read(result.file).unwrap(),bytes);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn externally_streamed_part_cannot_publish_until_sha_size_and_review_match(){
+        let root=root();let bytes=b"GGUF-trusted-network-fixture";
+        let approved=plan(bytes);
+        let folder=root.join("freshnonce0000006");
+        fs::create_dir(&folder).unwrap();
+        fs::write(folder.join("received.part"),&bytes[..8]).unwrap();
+        assert_eq!(publish_verified_part(&root,"freshnonce0000006",
+            &approved,&AtomicBool::new(false)),Err(TransferError::Truncated));
+        fs::write(folder.join("received.part"),bytes).unwrap();
+        assert_eq!(publish_verified_part(&root,"freshnonce0000006",
+            &approved,&AtomicBool::new(true)),Err(TransferError::Interrupted));
+        let done=publish_verified_part(&root,"freshnonce0000006",
+            &approved,&AtomicBool::new(false)).unwrap();
+        assert_eq!(done.sha256,approved.sha256);
+        assert!(done.file.is_file());
+        assert!(!folder.join("received.part").exists());
+        assert_eq!(publish_verified_part(&root,"freshnonce0000006",
+            &approved,&AtomicBool::new(false)),Err(TransferError::ReadbackMismatch));
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

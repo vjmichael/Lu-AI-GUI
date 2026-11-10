@@ -119,6 +119,7 @@ pub mod model;
 pub mod model_admission;
 pub mod model_provider_catalog;
 pub mod model_provider_staging;
+pub mod model_provider_transport;
 pub mod model_import;
 pub mod model_json_boundary;
 pub mod model_turn_journal;

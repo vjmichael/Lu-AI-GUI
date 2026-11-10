@@ -18,6 +18,7 @@ mod observe_linux_auth;
 mod native_browser_host;
 mod browser_model_desktop;
 mod research_desktop;
+mod model_transfer_desktop;
 mod image_workspace_desktop;
 mod load_trace;
 mod engine_memory;
@@ -423,6 +424,173 @@ async fn lu_model_provider_review(
         host.research.model_provider_review(&repo_id,&revision)
     ).await.map_err(|_|"Model provider review worker stopped")?
 }
+/// P05 reviewed immutable Hugging Face transfer. Only the Model Library
+/// native window can ask. The host independently re-fetches the provider
+/// SHA, size and license, then shows a fresh OS confirmation. Model output,
+/// WebView metadata, imported files and untrusted URLs are NOT grants.
+#[tauri::command]
+async fn lu_model_transfer_start(
+    app:AppHandle,caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>,
+    repo_id:String,revision:String,filename:String,sha256:String,bytes:u64,
+)->Result<Option<model_transfer_desktop::ModelTransferView>,String>{
+    if caller.label()!="model-library"{
+        return Err("Only the native Model Library may request model downloads".into())
+    }
+    let owner=Arc::clone(state.inner());
+    owner.observe.deny_unscoped_network_while_observing()?;
+    let requested_repo=repo_id.clone();let requested_rev=revision.clone();
+    let review=tauri::async_runtime::spawn_blocking({
+        let owner=Arc::clone(&owner);
+        move||owner.research.model_provider_review(&requested_repo,&requested_rev)
+    }).await.map_err(|_|"HF metadata review worker unavailable")??;
+    if review.repo_id!=repo_id||review.revision!=revision||
+        !review.files.iter().any(|f|
+            f.name==filename&&f.bytes==bytes&&f.sha256==sha256.to_ascii_lowercase()){
+        return Err("HF immutable model digest or metadata changed; restart review".into())
+    }
+    let plan=lu_core::model_provider_staging::ExactFilePlan{
+        repo_id,revision,filename,sha256:sha256.to_ascii_lowercase(),
+        expected_bytes:bytes,
+    };
+    plan.validated().map_err(|_|"Untrusted HF file identity")?;
+    let client=owner.research.pinned_transfer_client()?;
+    let modal=format!(
+        "Download this exact Hugging Face GGUF into Lu's private model library?\n\n\
+         Repository: {}\nImmutable commit: {}\nAsset: {}\n\
+         Expected bytes: {}\nSHA-256: {}\nProvider license: {}\n\n\
+         You must read and accept the provider's full license and access terms. \
+         This operation downloads remote bytes using an independently pinned HTTPS client, \
+         does NOT load the model and never grants the AI network access. \
+         Cancel retains no download. Interrupted bytes remain in private staging \
+         until you separately review and resume them.",
+        plan.repo_id,plan.revision,plan.filename,
+        plan.expected_bytes,plan.sha256,review.license_label
+    );
+    let accepted=tauri::async_runtime::spawn_blocking(move||
+        app.dialog().message(modal)
+            .title("Lu — Authorize exact HF model download")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Accept terms and start verified download".into(),"Cancel".into()
+            )).blocking_show()
+    ).await.map_err(|_|"Native HF approval dialog unavailable")?;
+    if !accepted{return Ok(None)}
+    owner.observe.deny_unscoped_network_while_observing()?;
+    let id=next_id("hf-");
+    let viewed=owner.model_transfers.stage(&id,plan,&review.license_label)?;
+    let worker=Arc::clone(&owner.model_transfers);
+    tauri::async_runtime::spawn_blocking(move||{
+        // Status and exact errors are persisted. No silent retry on failure
+        // or restart. The model never receives this task ID as a tool grant.
+        let _=worker.execute_reviewed(&id,&client);
+    });
+    Ok(Some(viewed))
+}
+/// Resume ONLY a previously interrupted transfer after a NEW provider
+/// recheck and native human approval. The original SHA/size/license cannot
+/// be modified by the renderer or by a stale user turn.
+#[tauri::command]
+async fn lu_model_transfer_resume(
+    app:AppHandle,caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>,transfer_id:String
+)->Result<Option<model_transfer_desktop::ModelTransferView>,String>{
+    if caller.label()!="model-library"{
+        return Err("Only Model Library may resume an HF transfer".into())
+    }
+    let owner=Arc::clone(state.inner());
+    owner.observe.deny_unscoped_network_while_observing()?;
+    let (plan,license)=owner.model_transfers.reviewed_plan(&transfer_id)?;
+    let info=owner.model_transfers.status(&transfer_id)?;
+    let repo=plan.repo_id.clone();let rev=plan.revision.clone();
+    let reviewed=tauri::async_runtime::spawn_blocking({
+        let owner=Arc::clone(&owner);
+        move||owner.research.model_provider_review(&repo,&rev)
+    }).await.map_err(|_|"HF resume metadata worker unavailable")??;
+    if reviewed.repo_id!=plan.repo_id||
+        reviewed.revision!=plan.revision||reviewed.license_label!=license||
+        !reviewed.files.iter().any(|f|
+            f.name==plan.filename&&f.bytes==plan.expected_bytes&&
+            f.sha256==plan.sha256){
+        return Err("Pinned HF identity or license changed; resume refused".into())
+    }
+    let client=owner.research.pinned_transfer_client()?;
+    let message=format!(
+        "Resume only the prior, INCOMPLETE Lu model download?\n\n\
+         ID: {}\nRepo: {}\nFile: {}\n\
+         Already staged: {} / {} bytes\nExpected SHA-256: {}\n\
+         Full original license remains accepted only for this separately reviewed attempt.\n\
+         The server MUST return exact 206 Content-Range. Every byte is rehashed \
+         before atomic publication; no automatic import/load.",
+        transfer_id,plan.repo_id,plan.filename,
+        info.received_bytes,plan.expected_bytes,plan.sha256
+    );
+    let approved=tauri::async_runtime::spawn_blocking(move||
+        app.dialog().message(message)
+            .title("Lu — Separately authorize HF resume")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Approve exact resume".into(),"Keep interrupted".into()
+            )).blocking_show()
+    ).await.map_err(|_|"HF native resume review failed")?;
+    if !approved{return Ok(None)}
+    owner.observe.deny_unscoped_network_while_observing()?;
+    let worker=Arc::clone(&owner.model_transfers);
+    let id=transfer_id.clone();
+    tauri::async_runtime::spawn_blocking(move||{
+        let _=worker.execute_reviewed(&id,&client);
+    });
+    owner.model_transfers.status(&transfer_id).map(Some)
+}
+#[tauri::command]
+fn lu_model_transfer_cancel(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,transfer_id:String
+)->Result<bool,String>{
+    if caller.label()!="model-library"{
+        return Err("Only native Model Library may cancel transfers".into())
+    }
+    state.model_transfers.cancel(&transfer_id)
+}
+#[tauri::command]
+fn lu_model_transfer_status(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,transfer_id:String
+)->Result<model_transfer_desktop::ModelTransferView,String>{
+    if caller.label()!="model-library"{
+        return Err("HF transfer details are available only inside Model Library".into())
+    }
+    state.model_transfers.status(&transfer_id)
+}
+/// This checks the exact installed Lu HTTPS-client digest, not the
+/// presence of a PATH binary or a provider result.
+#[tauri::command]
+fn lu_model_transfer_ready(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>
+)->Result<bool,String>{
+    if caller.label()!="model-library"{
+        return Err("Only Model Library may inspect transfer readiness".into())
+    }
+    Ok(state.research.available())
+}
+#[tauri::command]
+fn lu_model_transfer_recent(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>
+)->Result<Vec<model_transfer_desktop::ModelTransferView>,String>{
+    if caller.label()!="model-library"{
+        return Err("HF transfer history is available only inside Model Library".into())
+    }
+    state.model_transfers.recent(16)
+}
+#[tauri::command]
+async fn lu_model_transfer_verify(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,transfer_id:String
+)->Result<model_transfer_desktop::ModelTransferView,String>{
+    if caller.label()!="model-library"{
+        return Err("Only native Model Library may verify a published model".into())
+    }
+    let manager=Arc::clone(&state.model_transfers);
+    tauri::async_runtime::spawn_blocking(move||
+        manager.verify_published_now(&transfer_id)
+    ).await.map_err(|_|"HF independent disk readback worker unavailable")?
+}
+
 /// Reviewed P03 transfer INTENT only. The host independently fetches and
 /// checks the exact public revision and digest again before showing a real
 /// native operator confirmation. No network write or model-load follows.
@@ -569,6 +737,7 @@ struct DesktopState {
     browser_authority: lu_core::conversation_authority::ConversationAuthority,
     browser_grant: Mutex<Option<ActiveBrowserGrant>>,
     research: Arc<research_desktop::ResearchDesktop>,
+    model_transfers: Arc<model_transfer_desktop::ModelTransferManager>,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -1101,6 +1270,12 @@ impl DesktopState {
                 app.path().resource_dir().map_err(|e|format!("Research resource path unavailable: {e}"))?,
                 root.clone(),
             )),
+            // Model transfer IDs become first-level Lu model folders.
+            // A verified GGUF is discoverable only after explicit rescan;
+            // no transfer can load a model automatically.
+            model_transfers:Arc::new(
+                model_transfer_desktop::ModelTransferManager::new(models_dir.clone())?
+            ),
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -8367,6 +8542,13 @@ pub fn run() {
             lu_model_provider_search,
             lu_model_provider_review,
             lu_model_prepare_transfer,
+            lu_model_transfer_start,
+            lu_model_transfer_resume,
+            lu_model_transfer_cancel,
+            lu_model_transfer_status,
+            lu_model_transfer_recent,
+            lu_model_transfer_ready,
+            lu_model_transfer_verify,
             lu_import_model,
             lu_attach_projector,
             lu_pick_image,

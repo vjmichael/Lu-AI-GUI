@@ -556,3 +556,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .nativeError{background:#492d39;color:#ffd5d7;border:1px solid #aa6875}
 .nativeNotice{background:#263e55;color:#c7e6ff;border:1px solid #507795}
 @media(max-width:760px){.nativeWindowSplit{grid-template-columns:150px minmax(0,1fr)}.nativeSettingsNavigation{padding:7px}.nativeSettingsNavigation button{font-size:11px;padding:10px 7px}.nativeSettingsContent,.nativeModelContent{padding:14px}.nativePreferenceSection{padding:15px}}
+
+/* Measured model-transfer bytes, not model-loading or GPU inference progress. */
+.nativeTransferProgress{height:9px;margin:10px 0 12px;border:1px solid #4b6784;border-radius:99px;background:#102337;overflow:hidden}
+.nativeTransferProgress span{display:block;height:100%;background:#4dbf86;transition:width 0.16s linear}
+.nativeModelContent .nativeOption{overflow-wrap:anywhere}

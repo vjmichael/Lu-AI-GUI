@@ -962,7 +962,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --test lu-desktop/tests/p0-physical-ux-contract.test.mjs lu-desktop/tests/p0-native-window-separation.test.mjs lu-desktop/tests/p0-native-intent.test.mjs lu-desktop/tests/p0-memory-telemetry.test.mjs lu-desktop/tests/p0-browser-bundle.test.mjs lu-desktop/tests/p0-research-provider-bundle.test.mjs lu-desktop/tests/p0-installed-gui-smoke.test.mjs lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs lu-desktop/tests/ux-chat01-message-interactions.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs 2>&1 | tee p0-native-evidence/p0-source-tests.log
+          node --test lu-desktop/tests/p0-physical-ux-contract.test.mjs lu-desktop/tests/p0-native-window-separation.test.mjs lu-desktop/tests/p0-native-intent.test.mjs lu-desktop/tests/p0-memory-telemetry.test.mjs lu-desktop/tests/p0-browser-bundle.test.mjs lu-desktop/tests/p0-research-provider-bundle.test.mjs lu-desktop/tests/p0-installed-gui-smoke.test.mjs lu-desktop/tests/p0-hf-transfer-transaction.test.mjs lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs lu-desktop/tests/ux-chat01-message-interactions.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs 2>&1 | tee p0-native-evidence/p0-source-tests.log
       - name: Native Linux desktop WebView dependencies
         if: runner.os == 'Linux'
         shell: bash
@@ -1015,6 +1015,10 @@ jobs:
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib agent_memory_reasoning::tests -- --nocapture 2>&1 | tee p0-native-evidence/ansf-regression.log
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_action_proposal::tests -- --nocapture 2>&1 | tee p0-native-evidence/model-action-review.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml model_provider_staging::tests -- --nocapture 2>&1 | tee p0-native-evidence/hf-integrity-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml model_provider_transport::tests -- --nocapture 2>&1 | tee p0-native-evidence/hf-transport-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib model_transfer_desktop::tests -- --nocapture 2>&1 | tee p0-native-evidence/hf-custody-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_browser_host::tests -- --nocapture 2>&1 | tee p0-native-evidence/browser-package-fail-closed-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib vision_context::tests -- --nocapture 2>&1 | tee p0-native-evidence/vision-capability-fail-closed-native.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml multimodal_http::tests -- --nocapture 2>&1 | tee p0-native-evidence/mm-http-native.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml multimodal_saved_turn::tests -- --nocapture 2>&1 | tee p0-native-evidence/mm-json-native.log
       - name: Preserve actual built React UI for independent screenshot review

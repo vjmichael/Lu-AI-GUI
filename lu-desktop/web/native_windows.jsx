@@ -368,7 +368,7 @@ export function SettingsWindow(){
           <small>One-shot capture requires genuine Windows Graphics Capture, OS-confirmed source and the separately reviewed worker. No screenshot is taken automatically.</small>
         </Section>}
         {section==='huggingface'&&<Section title="Hugging Face model discovery">
-          <p>Browse remote GGUF metadata in the separate Model Library. Search and repository review are read-only. Download/resume/install are unavailable until the independently verified transfer manager is integrated.</p>
+          <p>Browse remote GGUF metadata in Model Library. An installed SHA-pinned HTTPS client can start a separately OS-reviewed transfer, with cancellation, interruption recovery, exact-range resume and independent full-file SHA-256 readback. Availability is checked at runtime. A completed transfer is never automatically loaded or treated as proven inference.</p>
           <button className="primaryButton" type="button" onClick={()=>void openModels()}>Open Model Library · Discover</button>
         </Section>}
         {section==='diagnostics'&&<Section title="Diagnostics">
@@ -395,6 +395,8 @@ export function ModelLibraryWindow(){
   const [providerQuery,setProviderQuery]=useState('');
   const [hits,setHits]=useState([]);
   const [review,setReview]=useState(null);
+  const [transfers,setTransfers]=useState([]);
+  const [transferReady,setTransferReady]=useState(false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
@@ -403,7 +405,23 @@ export function ModelLibraryWindow(){
     setModels(list);setRuntime(status);
     setSelected(value=>list.some(m=>m.modelRef===value)?value:status.modelRef||list[0]?.modelRef||'');
   }
-  useEffect(()=>{void refresh().catch(e=>setError(errorText(e)));},[]);
+  async function refreshTransfers(){
+    const views=await invoke('lu_model_transfer_recent');
+    setTransfers(views);
+    return views;
+  }
+  useEffect(()=>{
+    let alive=true;
+    void refresh().catch(e=>setError(errorText(e)));
+    void invoke('lu_model_transfer_ready')
+      .then(v=>{if(alive)setTransferReady(Boolean(v));})
+      .catch(()=>{if(alive)setTransferReady(false);});
+    void refreshTransfers().catch(()=>{});
+    const interval=setInterval(()=>{
+      if(alive)void refreshTransfers().catch(()=>{});
+    },1600);
+    return ()=>{alive=false;clearInterval(interval);};
+  },[]);
   useEffect(()=>{
     let alive=true;
     if(!selected){setInspection(null);return ()=>{alive=false};}
@@ -483,7 +501,10 @@ export function ModelLibraryWindow(){
             setHits(items);return items;
           })}>Search catalog</button>
         </div>
-        <p>Provider discovery is read-only and may be unavailable. Downloads, resumes and verified imports from HF are NOT implemented in this preview.</p>
+        <p>Model discovery is metadata-only. {transferReady
+          ?'Lu has an installed hash-pinned HTTPS transfer client. Each download and interrupted resume still needs a fresh OS confirmation, exact immutable asset and full verified bytes.'
+          :'The independently pinned Lu transfer client is not available; remote download and resume are disabled.'}
+          No successful download by itself admits a GGUF for inference or GPU loading.</p>
         <div className="nativeModelGrid">
           {hits.map(lead=><button key={lead.repoId+lead.revision} className="nativeModelCard"
             onClick={()=>void act('Immutable model metadata reviewed.',async()=>{
@@ -500,12 +521,71 @@ export function ModelLibraryWindow(){
             <small>Revision {lead.revision?.slice(0,12)||'unknown'} · License {lead.licenseLabel||'unknown'}</small>
           </button>)}
         </div>
+        <Section title="Verified model transfers & recovery">
+          <p>These are original host-owned transfer receipts. Downloaded bytes are distinct from GGUF compatibility, model-load RAM/VRAM or inference verification.</p>
+          <div className="nativeChoiceRow">
+            <button type="button" disabled={busy}
+              onClick={()=>void act('Original transfer receipts refreshed.',refreshTransfers)}>
+              Refresh transfers
+            </button>
+          </div>
+          {transfers.map(t=>{
+            const measuredPercent=t.totalBytes>0
+              ?Math.min(100,Math.floor(100*t.receivedBytes/t.totalBytes)):0;
+            const running=t.state==='RUNNING'||t.state==='REVIEWED';
+            const interrupted=t.state==='INTERRUPTED_REVIEW_REQUIRED';
+            const published=t.state==='VERIFIED_AT_PUBLICATION';
+            return <article key={t.transferId} className="nativeOption">
+              <strong>{t.filename}</strong>
+              <small>Immutable repository {t.repoId} · revision {t.revision.slice(0,12)}</small>
+              <p>{t.state} · {t.receivedBytes.toLocaleString()} / {t.totalBytes.toLocaleString()} bytes · {measuredPercent}% received</p>
+              <div role="progressbar" aria-label={'Measured transfer bytes for '+t.filename}
+                aria-valuemin={0} aria-valuemax={100} aria-valuenow={measuredPercent}
+                className="nativeTransferProgress">
+                <span style={{width:measuredPercent+'%'}}/>
+              </div>
+              <small>Expected SHA-256: {t.expectedSha256}</small>
+              <p>{t.message}</p>
+              <div className="nativeChoiceRow">
+                {running&&<button type="button" disabled={busy}
+                  onClick={()=>void act('Cancellation signaled to owned transfer worker.',async()=>{
+                    const signaled=await invoke('lu_model_transfer_cancel',{transferId:t.transferId});
+                    await refreshTransfers();return signaled;
+                  })}>Cancel download</button>}
+                {interrupted&&<button type="button" disabled={busy||!transferReady}
+                  onClick={()=>void act('Separately reviewed immutable transfer resume.',async()=>{
+                    const resumed=await invoke('lu_model_transfer_resume',{transferId:t.transferId});
+                    await refreshTransfers();return resumed;
+                  })}>Review and resume…</button>}
+                {published&&<button type="button" disabled={busy}
+                  onClick={()=>void act('Current downloaded GGUF bytes independently reverified.',async()=>{
+                    const verified=await invoke('lu_model_transfer_verify',{transferId:t.transferId});
+                    await refreshTransfers();return verified;
+                  })}>Verify full file SHA-256 now</button>}
+                {published&&<button type="button" disabled={busy||loaded}
+                  onClick={()=>void mutated(()=>invoke('lu_rescan_models'))}>
+                  Admit GGUF metadata into Model Library
+                </button>}
+              </div>
+            </article>
+          })}
+          {transfers.length===0&&<p>No managed model downloads or interrupted transfers have been recorded.</p>}
+        </Section>
         {review&&<Section title={review.repoId}>
           <p>Immutable revision: {review.revision} · Provider-reported license: {review.licenseLabel||'unknown'}</p>
-          {(review.files||[]).map(file=><p key={file.name}>
-            <strong>{file.name}</strong> · {bytesGiB(file.bytes)} · SHA-256: <code>{file.sha256}</code>
-          </p>)}
-          <p>No download or install command is offered without the reviewed native transfer manager.</p>
+          {(review.files||[]).map(file=><article key={file.name} className="nativeOption">
+            <strong>{file.name}</strong>
+            <p>{bytesGiB(file.bytes)} · SHA-256: <code>{file.sha256}</code></p>
+            <button type="button" disabled={busy||!transferReady}
+              onClick={()=>void act('Fresh native download review completed.',async()=>{
+                const started=await invoke('lu_model_transfer_start',{
+                  repoId:review.repoId,revision:review.revision,
+                  filename:file.name,sha256:file.sha256,bytes:file.bytes
+                });
+                await refreshTransfers();return started;
+              })}>Review and download exact GGUF…</button>
+          </article>)}
+          <p>Only the native operator may authorize transfer. Lu never uses a model-supplied URL, writes outside its model library, resumes after restart without review or automatically loads downloaded weights.</p>
           {review.sourceUrl&&<a href={review.sourceUrl} target="_blank" rel="noopener noreferrer">View on Hugging Face</a>}
         </Section>}
       </>}
