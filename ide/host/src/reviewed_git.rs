@@ -205,6 +205,19 @@ pub(crate) struct ReviewedGitHunkBuffers {
 }
 
 impl IdeWorkspaceRegistry {
+    /// Read through the trusted project capability even when the Git index
+    /// is staged. A dirty index blocks preview but must not prevent native
+    /// post-publication verification of unchanged worktree source bytes.
+    pub(crate) fn reread_reviewed_git_source_bytes(
+        &self,
+        project_id: &str,
+        relative_path: &str,
+    ) -> Result<Vec<u8>, &'static str> {
+        read_pinned_source(self, project_id, relative_path)
+    }
+}
+
+impl IdeWorkspaceRegistry {
     pub(crate) fn read_reviewed_git_hunk_buffers(
         &self,
         project_id: &str,
