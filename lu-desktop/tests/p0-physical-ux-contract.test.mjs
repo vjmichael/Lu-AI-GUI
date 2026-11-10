@@ -25,7 +25,9 @@ test('one gear launches native Settings; Model Library and chat are distinct Tau
   assert.match(ui,/luWindow==='model-library'\?<ModelLibraryWindow\/>/);
   assert.match(rust,/fn lu_open_aux_window\(/);
   assert.match(rust,/WebviewWindowBuilder::new/);
-  assert.match(rust,/spec\.query/);
+  assert.match(rust,/WebviewUrl::App\(spec\.asset\.into\(\)\)/);
+  assert.match(ui,/getCurrentWindow\(\)\.label/);
+  assert.doesNotMatch(rust,/index\.html\?lu-window=/);
   assert.deepEqual(capability.windows,['main','settings','model-library']);
   assert.match(windows,/aria-label="Lu settings"/);
   assert.match(windows,/aria-label="Model Library"/);

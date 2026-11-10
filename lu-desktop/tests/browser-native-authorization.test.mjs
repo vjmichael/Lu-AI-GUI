@@ -11,6 +11,7 @@ const model=read('../src-tauri/src/browser_model_desktop.rs');
 const runtime=read('../src-tauri/src/native_browser_host.rs');
 const store=read('../src-tauri/src/chat_store.rs');
 const ui=read('../web/main.jsx');
+const settings=read('../web/native_windows.jsx');
 const stage=read('../scripts/stage-browser-runtime.mjs');
 const tauri=JSON.parse(read('../src-tauri/tauri.browser.conf.json'));
 const scoped=read('../../src-tauri/lu-core/src/native_browser_tool.rs');
@@ -72,8 +73,11 @@ test('CAPTCHA is human-owned and user watch/hide is never a model-facing network
   assert.match(host,/async fn lu_browser_set_visible\(/);
   assert.match(host,/browser_runtime\.set_user_visible\(visible\)\?/);
   assert.match(runtime,/pub fn set_user_visible\(&self,visible:bool\)/);
-  assert.match(ui,/lu_browser_set_visible/);
-  assert.match(ui,/lu_browser_human_verified/);
+  // Human controls belong to independent Settings, not the model-facing
+  // conversation root. They still invoke genuine native grant checks.
+  assert.match(settings,/invoke\('lu_browser_set_visible'/);
+  assert.match(settings,/invoke\('lu_browser_human_verified'/);
+  assert.doesNotMatch(ui,/invoke\('lu_browser_set_visible'|invoke\('lu_browser_human_verified'/);
   assert.match(model,/human_verification_required/);
   assert.match(model,/phase:"needs-human"/);
   assert.doesNotMatch(model,/fn lu_browser_human_solve\(/);

@@ -299,6 +299,37 @@ export function SettingsWindow(){
             </select>
           </label>
           <Readiness value={browserRuntime?.reason||'Browser runtime not independently verified'}/>
+          <div className="nativeChoiceRow" aria-label="Human browser controls">
+            <button type="button" disabled={busy}
+              onClick={()=>void act('Native browser status inspected.',async()=>{
+                const next=await invoke('lu_browser_runtime_status');
+                setBrowserRuntime(next);return next;
+              })}>Refresh supervised browser status</button>
+            {browserRuntime?.running&&<>
+              <button type="button" disabled={busy}
+                onClick={()=>void act('Browser made visible for human review.',async()=>{
+                  const next=await invoke('lu_browser_set_visible',{visible:true});
+                  setBrowserRuntime(next);return next;
+                })}>Show browser</button>
+              <button type="button" disabled={busy}
+                onClick={()=>void act('Browser hidden by the human operator.',async()=>{
+                  const next=await invoke('lu_browser_set_visible',{visible:false});
+                  setBrowserRuntime(next);return next;
+                })}>Hide browser</button>
+              {browserRuntime.humanVerificationRequired&&<button type="button" disabled={busy}
+                onClick={()=>void act('Human verification response submitted to the native browser owner.',async()=>{
+                  const next=await invoke('lu_browser_human_verified');
+                  setBrowserRuntime(next);return next;
+                })}>I completed browser verification</button>}
+              <button type="button" disabled={busy}
+                onClick={()=>void act('Supervised browser stopped; original task revoked.',async()=>{
+                  const stopped=await invoke('lu_browser_stop');
+                  setBrowserRuntime(await invoke('lu_browser_runtime_status'));
+                  return stopped;
+                })}>Stop supervised browser</button>
+            </>}
+          </div>
+          <p>These are human-owned, live native task controls. No browser page, model output or prior session can grant permission to use them.</p>
           <p>Research source checking, cited page reading and retrieved documents are initiated through the conversation; they are not settings operations.</p>
         </Section>}
         {section==='memory'&&<Section title="Memory & ANSF">

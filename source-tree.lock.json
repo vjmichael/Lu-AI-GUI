@@ -1481,7 +1481,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-native-authorization.test.mjs",
-      "blob": "c60f247494ca6a6da8296f476a13f606873ba8f6"
+      "blob": "6871bac3b9468a870c0156e05ce669b56266c98e"
     },
     {
       "path": "lu-desktop/tests/browser-research-evidence.test.mjs",
@@ -1681,7 +1681,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
-      "blob": "31a281a310270bae1f2972a14d927b0dc3f61808"
+      "blob": "9d50c027947e510e4cbd68158f3710beb400b527"
     },
     {
       "path": "lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs",
@@ -1897,7 +1897,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "0adf53ca3b816cc331151f4a88cdaa71924397d2"
+      "blob": "241bc20b9a7264f1ff0abe8870a72dceeb0d8d0d"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
