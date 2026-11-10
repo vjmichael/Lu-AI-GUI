@@ -1,4 +1,4 @@
-# IDE Group 6B-02 exact-head rerun: native rustfmt and whitespace-tolerant boundary assertion reconciled.
+# Group 6B-03: physical OS authorization route, atomic index publication, durable recovery acceptance.
 # Preserve real frontend-built icon; no CI-only icon may overwrite a valid app resource.
 # No Git write authority or operator acceptance.
 name: IDE Group 6B reviewed batch source (not release)
@@ -56,7 +56,7 @@ jobs:
           set -euo pipefail
           cd ide/app
           npm ci --ignore-scripts --no-audit --no-fund
-          node --test tests/g06b_reviewed_batch_preview.test.mjs tests/g06b_reviewed_hunk_selection.test.mjs
+          node --test tests/g06b_reviewed_batch_preview.test.mjs tests/g06b_reviewed_hunk_selection.test.mjs tests/g06b_protected_partial_stage.test.mjs
           npm run build
       - name: Native reviewed-batch bounded validation and formatting
         shell: bash
@@ -64,8 +64,9 @@ jobs:
           set -euo pipefail
           cargo test --manifest-path ide/host/Cargo.toml --lib git_batch_review
           cargo test --manifest-path ide/host/Cargo.toml --lib git_hunk_review
-          rustfmt --edition 2021 --check ide/host/src/git_batch_review.rs ide/host/src/git_hunk_review.rs ide/host/src/reviewed_git.rs
-          echo IDE_G06B_HUNK_REVIEW=TESTED_READ_ONLY_NOT_STAGE_AUTHORIZED
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_partial_stage
+          rustfmt --edition 2021 --check ide/host/src/git_batch_review.rs ide/host/src/git_hunk_review.rs ide/host/src/reviewed_git.rs ide/host/src/git_partial_stage.rs
+          echo IDE_G06B_PROTECTED_STAGE=TESTED_SOURCE_NOT_PHYSICAL_HUMAN_APPROVAL
       - name: Tauri read-only route compilation
         shell: bash
         run: |
