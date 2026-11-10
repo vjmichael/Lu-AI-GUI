@@ -229,6 +229,43 @@ fn model_catalog_registers_only_host_bound_zero_argument_tools(){
     f.cleanup();
 }
 #[test]
+fn per_turn_live_tool_discovery_excludes_ungranted_names_and_source_paths() {
+    let bin=std::env::current_exe().unwrap().canonicalize().unwrap();
+    let mut f=Fixture::new(&bin,Some(&bin),true,true);
+    f.register(&bin,Some(&bin)).unwrap();
+    let turn=f.turn(&["lu_reviewed_git_head"]).unwrap();
+    let schemas=turn.live_schemas(&f.catalog,&f.registry).unwrap();
+    assert_eq!(schemas.len(),1);
+    assert_eq!(schemas[0]["function"]["name"],"lu_reviewed_git_head");
+    let published=serde_json::to_string(&schemas).unwrap();
+    assert!(!published.contains("lu_reviewed_media_facts"));
+    assert!(!published.contains(f.repo.to_str().unwrap()));
+    let unknown=BTreeSet::from(["lu_uninstalled_tool".to_owned()]);
+    assert!(f.catalog.live_schemas(&unknown,&f.registry).is_err());
+    assert_eq!(turn.live_schemas(&f.catalog,&f.registry).unwrap(),schemas);
+    f.cleanup();
+}
+#[tokio::test]
+async fn reviewed_observation_denies_a_fabricated_final_without_native_tool() {
+    let bin=std::env::current_exe().unwrap().canonicalize().unwrap();
+    let mut f=Fixture::new(&bin,None,true,false);
+    f.register(&bin,None).unwrap();
+    let mut turn=f.turn(&["lu_reviewed_git_head"]).unwrap();
+    turn.require_observed_tool_result();
+    assert!(turn.needs_observed_tool_result());
+    let result=turn.handle_model_reply(
+        r#"{"kind":"final","text":"Local HEAD is an invented SHA"}"#,
+        &f.catalog,&f.registry,&f.auth,&Allow
+    ).await;
+    assert_eq!(result,Err(ToolTurnError::ObservationRequiredBeforeFinal));
+    // The refusal did not consume a native dispatch slot, emit a fabricated
+    // observation, or grow the model-facing tool catalog.
+    assert_eq!(turn.step_count(),0);
+    let schemas=turn.live_schemas(&f.catalog,&f.registry).unwrap();
+    assert_eq!(schemas.len(),1);
+    f.cleanup();
+}
+#[test]
 fn missing_original_user_resource_grant_blocks_tool_discovery(){
     let bin=std::env::current_exe().unwrap().canonicalize().unwrap();
     let mut f=Fixture::new(&bin,None,false,false);

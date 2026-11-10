@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "8ee33e39699556fcfcd1e84bf0bfd3db4556d60f",
-  "trackedFileCount": 846,
+  "trackedFileCount": 847,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "ef8e928a9c2f800044e9092ce074fb81a5991b05"
+      "blob": "16f66ca2771e3090d636af24d4dccbd45f992be5"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -798,6 +798,10 @@
     {
       "path": "docs/LU_P11_GIT_CORE.md",
       "blob": "1a3a4c52eef7669a1507002d52ddeade0f4f5ed4"
+    },
+    {
+      "path": "docs/LU_PHASE1_MODEL_TOOL_INTERFACE_20261109.md",
+      "blob": "bd90f4f6ea12dac2bcb1234adedd3af5a797029c"
     },
     {
       "path": "docs/LU_R00_CAPABILITY_CONSOLIDATION_20261109.md",
@@ -2037,7 +2041,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
-      "blob": "a67c72ba18cf07a4e0b9d24a36e2e483157f68e8"
+      "blob": "aae7f652fe72695c11a66f5154a883c4500f9325"
     },
     {
       "path": "src-tauri/lu-core/src/ai_operations.rs",
@@ -2337,7 +2341,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/model.rs",
-      "blob": "826ff87f5456d90999eb81e550efac7ff7ed2273"
+      "blob": "8dd1cad8b789aca4d979cf81cd4a45c022c1e1a3"
     },
     {
       "path": "src-tauri/lu-core/src/model_admission.rs",
@@ -2349,7 +2353,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/model_json_boundary.rs",
-      "blob": "9f90f35e677593f14aa573294e42ce026bc108cb"
+      "blob": "3afbb30a58ffc2136fa0a2f9c7a610591566c737"
     },
     {
       "path": "src-tauri/lu-core/src/model_provider_catalog.rs",
@@ -2661,7 +2665,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_reviewed_app_tool.rs",
-      "blob": "5b2e9e055b33d71289bb274a7693f3361a100066"
+      "blob": "7580da533ec9bf8cbc08d843317fefe5f739b2d8"
     },
     {
       "path": "src-tauri/lu-core/src/native_rpm.rs",
@@ -2773,7 +2777,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/supervised_tool_generation.rs",
-      "blob": "4c9dba08ba44487eceddf6341b92d8b5d7cf837e"
+      "blob": "359dcefe133b95e8aa419a0dd9e384c5e8911b4c"
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
@@ -3021,7 +3025,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "940312bceccb0473f370a5e6e0e953e82f4a2901"
+      "blob": "6677080ba349bea45a39a88bd4d82cfc7c1c4949"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
@@ -3069,7 +3073,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/model_json_boundary.rs",
-      "blob": "c0cc8d13ef09fe632e744e190b39f6c34ccdf3e7"
+      "blob": "f7103a5aa21aac413389942b0e6c49f4cc548940"
     },
     {
       "path": "src-tauri/lu-core/tests/model_native_files.rs",

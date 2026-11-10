@@ -57,6 +57,8 @@ pub enum ToolTurnError {
     UnexpectedFields,
     TooLarge,
     NoAuthorizedTools,
+    /// A host-reviewed factual task requires an actual native observation.
+    ObservationRequiredBeforeFinal,
     StepLimit,
     NoProgress,
     AlreadyFinished,
@@ -75,6 +77,8 @@ pub struct NativeToolTurn {
     done: bool,
     last_repair: JsonRepairStatus,
     read_only: bool,
+    requires_observed_tool_result: bool,
+    observed_tool_result: bool,
     previous_request_digest:Option<String>,
     previous_result_digest:Option<String>,
     identical_result_count:u8,
@@ -119,6 +123,8 @@ impl NativeToolTurn {
             done: false,
             last_repair: JsonRepairStatus::Unchanged,
             read_only: false,
+            requires_observed_tool_result: false,
+            observed_tool_result: false,
             previous_request_digest:None,
             previous_result_digest:None,
             identical_result_count:0,
@@ -167,6 +173,34 @@ impl NativeToolTurn {
     pub fn schemas(&self, catalog: &ModelToolCatalog) -> Result<Vec<Value>, ToolTurnError> {
         catalog
             .schemas(&self.advertised)
+            .map_err(ToolTurnError::Catalog)
+    }
+
+    /// Host-only admission for a reviewed observation task. This never
+    /// selects a native tool, changes a grant or trusts historical memory.
+    pub fn require_observed_tool_result(&mut self) {
+        self.requires_observed_tool_result = true;
+    }
+
+    pub fn needs_observed_tool_result(&self) -> bool {
+        self.requires_observed_tool_result
+    }
+
+    fn ensure_final_has_required_observation(&self) -> Result<(), ToolTurnError> {
+        if self.requires_observed_tool_result && !self.observed_tool_result {
+            return Err(ToolTurnError::ObservationRequiredBeforeFinal);
+        }
+        Ok(())
+    }
+
+    /// Read-only model discovery from an already authenticated user task.
+    /// Never expose an uninstalled native codec or widen the advertised set.
+    pub fn live_schemas(
+        &self,
+        catalog: &ModelToolCatalog,
+        registry: &NativeToolRegistry,
+    ) -> Result<Vec<Value>, ToolTurnError> {
+        catalog.live_schemas(&self.advertised, registry)
             .map_err(ToolTurnError::Catalog)
     }
 
@@ -308,6 +342,9 @@ impl NativeToolTurn {
                 let plain_final = !text.is_empty()
                     && !matches!(text.as_bytes()[0], b'{' | b'[' | b'"' | b'`')
                     && !text.contains("<|")
+                    && !text.contains("<think>")
+                    && !text.contains("</think>")
+                    && !text.contains("```")
                     && !text.contains("\"kind\"")
                     && !text
                         .chars()
@@ -324,6 +361,7 @@ impl NativeToolTurn {
                     if current.is_empty() {
                         return Err(ToolTurnError::Revoked);
                     }
+                    self.ensure_final_has_required_observation()?;
                     self.done = true;
                     return Ok(ToolTurnOutcome::FinalText(text.to_owned()));
                 }
@@ -351,6 +389,7 @@ impl NativeToolTurn {
                 if current.is_empty() {
                     return Err(ToolTurnError::Revoked);
                 }
+                self.ensure_final_has_required_observation()?;
                 self.done = true;
                 return Ok(ToolTurnOutcome::FinalText(text.to_owned()));
             }
@@ -377,6 +416,7 @@ impl NativeToolTurn {
             if current.is_empty() {
                 return Err(ToolTurnError::Revoked);
             }
+            self.ensure_final_has_required_observation()?;
             self.done = true;
             return Ok(ToolTurnOutcome::FinalText(text.to_owned()));
         }
@@ -478,6 +518,9 @@ impl NativeToolTurn {
         let data = catalog
             .decode_result(&self.advertised, name, &response)
             .map_err(ToolTurnError::Catalog)?;
+        if data.get("ok").and_then(Value::as_bool) == Some(true) {
+            self.observed_tool_result = true;
+        }
         let encoded_result=serde_json::to_vec(&data)
             .map_err(|_|ToolTurnError::MalformedModelReply)?;
         let result_digest=format!("{:x}",Sha256::digest(&encoded_result));

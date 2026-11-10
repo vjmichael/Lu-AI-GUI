@@ -724,9 +724,15 @@ impl ReviewedApplicationTurnSession{
             git,media
         )?;
         let allowed=names.into_iter().collect::<BTreeSet<_>>();
-        let turn=crate::agent_tool_loop::NativeToolTurn::new(
+        let mut turn=crate::agent_tool_loop::NativeToolTurn::new(
             &catalog,&authority,origin.clone(),workspace_id,&allowed
         ).map_err(|e|format!("reviewed model turn denied: {e:?}"))?;
+        // This trusted host-reviewed session was opened specifically to
+        // observe one selected source. A model-authored final answer before
+        // an actual successful native observation cannot certify the task.
+        // Tool identity and permission remain model-choice and host authority,
+        // respectively. A normal conversational Lu turn is unaffected.
+        turn.require_observed_tool_result();
         Ok(Self{registry,catalog,authority,turn,policy,effects,origin})
     }
     /// AGENT-01D/E: bind a live scheduler proposal to this ACTUAL
@@ -758,7 +764,7 @@ impl ReviewedApplicationTurnSession{
         Ok(binding)
     }
     pub fn schemas(&self)->Result<Vec<Value>,String>{
-        self.turn.schemas(&self.catalog).map_err(|e|format!("{e:?}"))
+        self.turn.live_schemas(&self.catalog,&self.registry).map_err(|e|format!("{e:?}"))
     }
     pub fn capabilities(
         &self

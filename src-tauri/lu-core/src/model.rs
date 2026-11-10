@@ -207,6 +207,33 @@ impl ModelToolCatalog {
             .collect()
     }
 
+    /// Discover tools for this exact turn only after rechecking the live
+    /// native registry and its Protobuf type identities. Model-facing schemas
+    /// remain a projection of host grants; they cannot authorize execution.
+    pub fn live_schemas(
+        &self,
+        allowed: &BTreeSet<String>,
+        registry: &NativeToolRegistry,
+    ) -> Result<Vec<Value>, ModelToolError> {
+        let schemas = self.schemas(allowed)?;
+        let installed = registry.tools()
+            .map_err(|_| ModelToolError::RegistryUnavailable)?;
+        for name in allowed {
+            let definition = self.definitions.get(name)
+                .ok_or_else(|| ModelToolError::UnknownTool(name.clone()))?;
+            let descriptor = installed.iter()
+                .find(|d| d.id == definition.native_tool_id)
+                .ok_or_else(|| ModelToolError::NoNativeImplementation(
+                    definition.native_tool_id.clone()))?;
+            if descriptor.input_type_url != definition.codec.input_type_url()
+                || descriptor.output_type_url != definition.codec.output_type_url()
+            {
+                return Err(ModelToolError::TypeMismatch(definition.native_tool_id.clone()));
+            }
+        }
+        Ok(schemas)
+    }
+
     /// Only publish an explicit allow-list, e.g. the current chat context,
     /// installed workspace, and model capability. No accidental "all tools".
     pub fn schemas(&self, allowed: &BTreeSet<String>) -> Result<Vec<Value>, ModelToolError> {

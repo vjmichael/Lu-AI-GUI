@@ -19,6 +19,8 @@ pub enum JsonRepairStatus {
     RemovedFence,
     RemovedTrailingCommas,
     RemovedFenceAndTrailingCommas,
+    RemovedThinkingPrefix,
+    RemovedThinkingPrefixAndTrailingCommas,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,6 +133,36 @@ fn strip_exact_json_fence(raw: &str) -> Option<&str> {
     content.strip_suffix("\n```")
 }
 
+/// Strip only one completely closed, bounded model-owned reasoning prefix.
+/// Original bytes remain in Lu's raw model audit; the result still needs
+/// a strict complete JSON envelope, codec, task grant and host policy.
+fn strip_closed_thinking_prefix(raw: &str) -> Result<Option<&str>, JsonBoundaryError> {
+    let leading = raw.trim_start();
+    let Some(reasoning) = leading.strip_prefix("<think>") else {
+        return Ok(None);
+    };
+    let (private, rest) = reasoning.split_once("</think>")
+        .ok_or(JsonBoundaryError::Malformed)?;
+    if private.len() > 16 * 1024
+        || private.contains("<think>")
+        || private.contains("<|")
+        || private.contains("</think")
+    {
+        return Err(JsonBoundaryError::Malformed);
+    }
+    let response = rest.trim();
+    if response.is_empty()
+        || response.starts_with("~~~")
+        || response.contains("<|im_start|>")
+        || response.contains("<|im_end|>")
+        || response.contains("<think>")
+        || response.contains("</think>")
+    {
+        return Err(JsonBoundaryError::Malformed);
+    }
+    Ok(Some(response))
+}
+
 /// Remove a comma only when followed by optional whitespace and a closing
 /// object/array delimiter; string literals (including escapes) are untouched.
 fn strip_trailing_commas(raw: &str) -> (String, bool) {
@@ -178,23 +210,36 @@ pub fn parse_model_boundary(raw: &str) -> Result<ParsedModelJson, JsonBoundaryEr
     if raw.len() > MAX_BOUNDARY_JSON_BYTES {
         return Err(JsonBoundaryError::TooLarge);
     }
-    match strict_parse(raw) {
+    let (normalized, had_reasoning) = match strip_closed_thinking_prefix(raw)? {
+        Some(value) => (value, true),
+        None => (raw, false),
+    };
+    match strict_parse(normalized) {
         Ok(Value::Object(object)) => {
             return Ok(ParsedModelJson {
                 object,
-                repair: JsonRepairStatus::Unchanged,
+                repair: if had_reasoning {
+                    JsonRepairStatus::RemovedThinkingPrefix
+                } else {
+                    JsonRepairStatus::Unchanged
+                },
             })
         }
         Ok(_) => return Err(JsonBoundaryError::NonObject),
         Err(JsonBoundaryError::DuplicateKey) => return Err(JsonBoundaryError::DuplicateKey),
         Err(_) => {}
     }
-    let (candidate, had_fence) = match strip_exact_json_fence(raw) {
+    // Do not combine a reasoning prefix and a Markdown fence into a
+    // multi-stage speculative repair.
+    if had_reasoning && strip_exact_json_fence(normalized).is_some() {
+        return Err(JsonBoundaryError::Malformed);
+    }
+    let (candidate, had_fence) = match strip_exact_json_fence(normalized) {
         Some(value) => (value, true),
-        None => (raw, false),
+        None => (normalized, false),
     };
     let (repaired, had_comma) = strip_trailing_commas(candidate);
-    if !had_fence && !had_comma {
+    if !had_fence && !had_comma && !had_reasoning {
         return Err(JsonBoundaryError::Malformed);
     }
     if repaired.len() > MAX_BOUNDARY_JSON_BYTES {
@@ -204,11 +249,14 @@ pub fn parse_model_boundary(raw: &str) -> Result<ParsedModelJson, JsonBoundaryEr
         Value::Object(object) => object,
         _ => return Err(JsonBoundaryError::NonObject),
     };
-    let repair = match (had_fence, had_comma) {
-        (true, true) => JsonRepairStatus::RemovedFenceAndTrailingCommas,
-        (true, false) => JsonRepairStatus::RemovedFence,
-        (false, true) => JsonRepairStatus::RemovedTrailingCommas,
-        (false, false) => JsonRepairStatus::Unchanged,
+    let repair = match (had_reasoning, had_fence, had_comma) {
+        (true, false, true) => JsonRepairStatus::RemovedThinkingPrefixAndTrailingCommas,
+        (true, false, false) => JsonRepairStatus::RemovedThinkingPrefix,
+        (false, true, true) => JsonRepairStatus::RemovedFenceAndTrailingCommas,
+        (false, true, false) => JsonRepairStatus::RemovedFence,
+        (false, false, true) => JsonRepairStatus::RemovedTrailingCommas,
+        (false, false, false) => JsonRepairStatus::Unchanged,
+        (true, true, _) => return Err(JsonBoundaryError::Malformed),
     };
     Ok(ParsedModelJson { object, repair })
 }
