@@ -231,3 +231,28 @@ footer, arbitrary other tab, external file overwrite, or injected tool call
 still fails. No Rust host, source Save, worker permission or Lu Core code
 was changed. One exact-head Windows/Linux installed acceptance pair must
 prove the repair before Group 2 can close.
+
+## Real Linux packaging interrupted by missing upstream notice — 2026-11-10
+
+[Run 42838670900](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42838670900),
+source `9caea6b6ad04d2f25abc9405de5105f5ce34cfa4`: Ubuntu installation prerequisites and all 276 frontend
+tests passed, but the package stage stopped **before any GTK installed
+acceptance** with `DENIED: upstream_notice_fetch_unavailable` from the
+existing exact-origin verification. This is an external license-source fetch
+failure, not an IDE compiler or GTK regression. Windows installed acceptance
+passed at this same SHA.
+
+The provenance helper now retries only bounded temporary transport errors
+(three attempts, 1/2 second pause) for each of its six *unchanged pinned
+upstream URLs*. A permanent HTTP 404, unexpected redirect, excessive bytes,
+remote/local notice mismatch, absent receipt, or failed origin verification
+remains a hard FAIL. The original exact source SHA and notice content
+comparison are unchanged. Added offline positive/hostile tests for one
+transient recovery, permanent HTTP rejection, unexpected redirect, and
+permanent network refusal. Both Windows/Linux gate jobs test those policies
+before expensive package generation.
+
+The canonical Group 2 final acceptance remains OPEN until a single
+exact-SHA installed Windows NSIS plus Linux Debian run completes, including
+real GTK editor conflict/draft, restart and uninstall with unchanged
+source/catalog evidence. No legal release approval is inferred.

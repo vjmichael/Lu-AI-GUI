@@ -2,7 +2,8 @@
 from pathlib import Path
 import tempfile
 import unittest
-from upstream_notice_receipt import SOURCES, verify_sources, NoticeDenied
+from urllib.error import HTTPError, URLError
+from upstream_notice_receipt import SOURCES, verify_sources, NoticeDenied, download
 
 class UpstreamNoticeTests(unittest.TestCase):
     def setUp(self):
@@ -18,6 +19,67 @@ class UpstreamNoticeTests(unittest.TestCase):
             self.data[url] = content
     def fetch(self, url):
         return self.data[url]
+    def test_bounded_transport_retry_recovers_exact_origin(self):
+        url = next(iter(self.data))
+        counts = []
+        sleeps = []
+        content = self.data[url]
+        class FakeResponse:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+            def geturl(self):
+                return url
+            def read(self, _):
+                return content
+        def opener(request, timeout):
+            self.assertEqual(request.full_url, url)
+            self.assertEqual(timeout, 20)
+            counts.append(1)
+            if len(counts) < 3:
+                raise URLError("temporary network unavailable")
+            return FakeResponse()
+        self.assertEqual(download(url, opener=opener, sleeper=sleeps.append),
+                         content)
+        self.assertEqual(len(counts), 3)
+        self.assertEqual(sleeps, [1, 2])
+
+    def test_redirect_and_http_404_not_retried(self):
+        url = next(iter(self.data))
+        calls = []
+        def permanently_missing(request, timeout):
+            calls.append(1)
+            raise HTTPError(url, 404, "not found", {}, None)
+        with self.assertRaises(HTTPError):
+            download(url, opener=permanently_missing,
+                     sleeper=lambda _: self.fail("unexpected_retry"))
+        self.assertEqual(len(calls), 1)
+        class RedirectResponse:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+            def geturl(self):
+                return url + "/other"
+            def read(self, _):
+                return b"A" * 200
+        with self.assertRaisesRegex(NoticeDenied, "upstream_unexpected_redirect"):
+            download(url, opener=lambda *_a, **_k: RedirectResponse(),
+                     sleeper=lambda _: self.fail("unexpected_retry"))
+
+    def test_transport_failure_never_produces_license_receipt(self):
+        url = next(iter(self.data))
+        calls = []
+        sleeps = []
+        def missing(request, timeout):
+            calls.append(1)
+            raise URLError("unavailable")
+        with self.assertRaises(URLError):
+            download(url, opener=missing, sleeper=sleeps.append)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleeps, [1, 2])
+
     def test_exact_upstream_notice_bytes(self):
         result = verify_sources(self.root, "a"*40, self.fetch)
         self.assertTrue(result["allSourcesRetrieved"])

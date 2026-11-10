@@ -1,4 +1,5 @@
 # Group 2 — one exact-SHA Windows NSIS / Linux Debian real installed group.
+# Fail-closed three-attempt exact-origin license source transport retry.
 # Native AT-SPI deep source-workspace tab traversal; no acceptance relaxation.
 # Exact React conflict alert and unsaved-tab accessible names for native Linux acceptance.
 # WebKitGTK: confirm exact active project via named native Edit action, not plain status paragraph.
@@ -45,6 +46,7 @@ jobs:
       - name: Check real GTK folder-selection and Group 2 read-only data witness
         run: |
           python3 ide/app/fixtures/test_gtk_chooser_confirmation_policy.py
+          python3 ide/packaging/test_upstream_notice_receipt.py
           bash -n ide/app/fixtures/Test-Wo8InstalledDeb.sh
           python3 -m py_compile ide/app/fixtures/group02_user_data_preservation.py
           test -f ide/app/fixtures/group02_user_data_preservation.py
@@ -154,6 +156,8 @@ jobs:
           if ($errors.Count) { throw "DENIED: invalid native UIA recovery fixture: $($errors[0])" }
           python -m py_compile ide/app/fixtures/group02_user_data_preservation.py
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: Group 2 user-data witness invalid Python' }
+          python ide/packaging/test_upstream_notice_receipt.py
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact-origin upstream notice retry contract failed' }
       - name: Validate frontend and Rust host contract
         working-directory: ide/app
         run: |
