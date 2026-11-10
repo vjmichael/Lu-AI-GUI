@@ -1,5 +1,15 @@
 # Lu IDE — Development changelog
 
+### Group 5 continuation — November 10, 2026, no native acceptance claimed
+
+On separate `ide/group05-package-review-20261110` source branch: hardened
+vcpkg Sync JSON review (malformed inputs now deny), frozen-source package
+readback root link/reparse refusal, Windows ACL observer absolute-root
+precondition, and durable private discard transition requiring a fresh
+cleanup-pending state. Added hostile regression cases without enabling
+any package install or changing Group 4 LLVM branch. Exact-head OS,
+physical consent and installed app acceptance remain unverified.
+
 ## 2026-11-10 — Group 5 independent static package preview hardening
 
 On `ide/group05-package-review-20261110`, added a fail-closed static
