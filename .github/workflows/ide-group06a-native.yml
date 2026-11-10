@@ -1,5 +1,5 @@
 # Group 6A-01/02/05/06/07: ONE exact-head Windows/Linux native source acceptance group.
-# Exact-head rerun after splitting OS-specific syntax probes to remove fatal Bash backtick parsing.
+# Exact-head rerun after witnessed Windows Tauri icon-preparation denial; reuse real frontend icon.
 # No Git mutation, installed GUI proof or owner/operator approval is claimed.
 name: IDE Group 6A native branch and worktree inventory (not release)
 on:
@@ -89,9 +89,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$RUNNER_OS" = Windows ]; then
-            # The installed release icon is NOT replaced; this fixture
-            # creates only a deterministic temporary headless CI resource.
+          # Preserve the real frontend-generated application icon. The
+          # deterministic CI helper is allowed only if no icon exists.
+          if [ "$RUNNER_OS" = Windows ] && [ ! -f ide/app/src-tauri/icons/icon.ico ]; then
             python ide/app/fixtures/make_g04d_ci_icon.py
           fi
           cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
