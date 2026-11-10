@@ -9,9 +9,12 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+# The separately admitted, exact-SHA P0 native job must not be reaped
+# by a later source-only PR edit. No other heavy job runs without its
+# explicit grouped authorization marker.
 concurrency:
   group: repo01-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   verify-source:
     runs-on: ubuntu-latest
@@ -777,7 +780,7 @@ jobs:
   native-r00-phase3:
     needs: verify-source
     # One exact-HEAD grouped development and installer run. No automatic heavy PR fanout.
-    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_PHASE3_NSIS_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_PHASE3_NSIS_SHA={0}', github.event.pull_request.head.sha)) }}
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.draft && ((github.event.pull_request.number == 200 && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_PHASE3_NSIS_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_PHASE3_NSIS_SHA={0}', github.event.pull_request.head.sha))) || (github.event.pull_request.number == 205 && github.event.pull_request.head.ref == 'lu/p0-installed-ux-agent-acceptance-20261110' && contains(github.event.pull_request.body, format('LU_P0_NSIS_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_NSIS_SHA={0}', github.event.pull_request.head.sha)))) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 185
     strategy:
@@ -800,14 +803,18 @@ jobs:
         env:
           SOURCE: ${{ github.event.pull_request.head.sha }}
           BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           mkdir -p phase3-evidence
           test "$(git rev-parse HEAD)" = "$SOURCE"
           python3 - <<'PY'
           import os,re
-          pins=re.findall(r"(?m)^LU_R00_PHASE3_NSIS_SHA=([0-9a-f]{40})$",os.environ["BODY"])
-          if pins != [os.environ["SOURCE"]]: raise SystemExit("Wrong phase3/NSIS source marker")
+          pr=os.environ["PR_NUMBER"]
+          marker={"200":"LU_R00_PHASE3_NSIS_SHA","205":"LU_P0_NSIS_SHA"}.get(pr)
+          if marker is None: raise SystemExit("Unauthorized Core/UX NSIS PR")
+          pins=re.findall(rf"(?m)^{re.escape(marker)}=([0-9a-f]{{40}})$",os.environ["BODY"])
+          if pins != [os.environ["SOURCE"]]: raise SystemExit("Wrong exact-head NSIS source marker")
           PY
           node scripts/verify-source-tree.mjs 2>&1 | tee phase3-evidence/source-lock.log
           printf 'SOURCE_SHA=%s\n' "$SOURCE" > phase3-evidence/identity.txt
@@ -841,6 +848,19 @@ jobs:
             done
           fi
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib agent_memory_reasoning::tests -- --nocapture 2>&1 | tee phase3-evidence/agent-memory.log
+      - name: Reject malformed PowerShell installer sources before SDK/build work
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1','scripts/p0-windows-installed-gui-smoke.ps1','scripts/p0-qwen38-radeon-physical.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count){
+              foreach($error in $errors){Write-Host ($error.ToString())}
+              throw "NSIS_POWERSHELL_PARSER_ERROR: $file"
+            }
+          }
       - name: Provision real Windows NSIS 3.11
         if: runner.os == 'Windows'
         shell: pwsh
@@ -888,11 +908,14 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         timeout-minutes: 14
+        env:
+          LU_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           $ErrorActionPreference='Stop'
           $out=Join-Path $env:RUNNER_TEMP 'lu-current-preview-nsis'
           $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
-          & scripts/m3-windows-nsis-cycle.ps1 -InstallerPath (Join-Path $out $f.installerName) -InstallerSha256 $f.installerSha256 -ExpectedLuSha256 $f.appSha256 -ExpectedEngineSha256 $f.engineSha256 -ExpectedVulkanSha256 $f.vulkanEngineSha256 -ProfileIdentifier 'org.lu.current.devpreview' -UninstallerName 'UninstallLuCurrentPreview.exe' -DisposableWindowsConfirmed -EvidenceDir (Join-Path $out 'native-nsis-cycle-evidence')
+          $verifyUi=($env:LU_PR_NUMBER -eq '205')
+          & scripts/m3-windows-nsis-cycle.ps1 -ExerciseInstalledGui:$verifyUi -InstallerPath (Join-Path $out $f.installerName) -InstallerSha256 $f.installerSha256 -ExpectedLuSha256 $f.appSha256 -ExpectedEngineSha256 $f.engineSha256 -ExpectedVulkanSha256 $f.vulkanEngineSha256 -ProfileIdentifier 'org.lu.current.devpreview' -UninstallerName 'UninstallLuCurrentPreview.exe' -ExpectedResearchSha256 ([string]$f.researchClientSha256) -DisposableWindowsConfirmed -EvidenceDir (Join-Path $out 'native-nsis-cycle-evidence')
           if($LASTEXITCODE -ne 0){throw 'Native installed-preview cycle failed'}
       - name: Preserve exact-current-source artifact and evidence
         if: always()
@@ -904,3 +927,358 @@ jobs:
             ${{ runner.temp }}/lu-current-preview-nsis/
           if-no-files-found: warn
           retention-days: 14
+
+  p0-native:
+    needs: verify-source
+    if: ${{ github.event.pull_request.number == 205 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-installed-ux-agent-acceptance-20261110' && contains(github.event.pull_request.body, format('LU_P0_UX_NATIVE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_UX_NATIVE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source identity and frozen tree
+        shell: bash
+        env:
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p p0-native-evidence
+          test "$(git rev-parse HEAD)" = "$SHA"
+          node scripts/verify-source-tree.mjs 2>&1 | tee p0-native-evidence/source-lock.log
+          printf 'SOURCE_SHA=%s\n' "$SHA" > p0-native-evidence/identity.txt
+      - name: Source and behavior contracts for actual owner-observed failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/p0-physical-ux-contract.test.mjs lu-desktop/tests/p0-native-window-separation.test.mjs lu-desktop/tests/p0-native-intent.test.mjs lu-desktop/tests/p0-memory-telemetry.test.mjs lu-desktop/tests/p0-browser-bundle.test.mjs lu-desktop/tests/p0-research-provider-bundle.test.mjs lu-desktop/tests/p0-installed-gui-smoke.test.mjs lu-desktop/tests/p0-hf-transfer-transaction.test.mjs lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs lu-desktop/tests/ux-chat01-message-interactions.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs 2>&1 | tee p0-native-evidence/p0-source-tests.log
+      - name: Native Linux desktop WebView dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf
+      - name: Parse the actual production NSIS, lifecycle and signed-client scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1','scripts/p0-windows-installed-gui-smoke.ps1','scripts/p0-qwen38-radeon-physical.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count){
+              foreach($error in $errors){Write-Host ($error.ToString())}
+              throw "NSIS_POWERSHELL_PARSER_ERROR: $file"
+            }
+          }
+      - name: Windows test-only Tauri build resources (not real model or package)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'P0_TEST_ONLY_NOT_A_REAL_ENGINE' -NoNewline
+          }
+      - name: Compile actual React frontend and frontend safety checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build 2>&1 | tee ../p0-native-evidence/react-build.log
+          npm run check 2>&1 | tee ../p0-native-evidence/react-check.log
+          popd
+      - name: Native Windows/Linux production Tauri clock tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib host_clock::tests -- --nocapture 2>&1 | tee p0-native-evidence/clock-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib auxiliary_window_tests -- --nocapture 2>&1 | tee p0-native-evidence/native-windows.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib media_intent_tests -- --nocapture 2>&1 | tee p0-native-evidence/model-media-intent.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib engine_memory::tests -- --nocapture 2>&1 | tee p0-native-evidence/memory-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib p0_browse_intent_tests -- --nocapture 2>&1 | tee p0-native-evidence/browser-intent-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib literal_windows_path_triggers_native_picker -- --nocapture 2>&1 | tee p0-native-evidence/folder-intent-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib agent_memory_reasoning::tests -- --nocapture 2>&1 | tee p0-native-evidence/ansf-regression.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_action_proposal::tests -- --nocapture 2>&1 | tee p0-native-evidence/model-action-review.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml model_provider_staging::tests -- --nocapture 2>&1 | tee p0-native-evidence/hf-integrity-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml model_provider_transport::tests -- --nocapture 2>&1 | tee p0-native-evidence/hf-transport-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib model_transfer_desktop::tests -- --nocapture 2>&1 | tee p0-native-evidence/hf-custody-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_browser_host::tests -- --nocapture 2>&1 | tee p0-native-evidence/browser-package-fail-closed-native.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib vision_context::tests -- --nocapture 2>&1 | tee p0-native-evidence/vision-capability-fail-closed-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml multimodal_http::tests -- --nocapture 2>&1 | tee p0-native-evidence/mm-http-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml multimodal_saved_turn::tests -- --nocapture 2>&1 | tee p0-native-evidence/mm-json-native.log
+      - name: Preserve actual built React UI for independent screenshot review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-p0-frontend-${{ matrix.os }}-${{ github.event.pull_request.head.sha }}
+          path: lu-desktop/dist/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: State limitations honestly
+        if: always()
+        shell: bash
+        run: |
+          echo 'This task group validates sources, frontend compilation and native host-clock tests only. It does NOT prove installed UX screenshots, physical AMD Vulkan memory telemetry, real model tool selection, browser worker, multimodal GGUF or HF verified download.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-p0-ux-native-${{ matrix.os }}-${{ github.event.pull_request.head.sha }}
+          path: p0-native-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  p0-genuine-model-directed-tool-use:
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 205 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-installed-ux-agent-acceptance-20261110' && contains(github.event.pull_request.body, format('LU_P0_GGUF_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_GGUF_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      LU_E1_P07_LLAMA_PORT: '18972'
+      MODEL_SHA256: 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
+      # In a separately human-approved observation test, the FIRST GGUF
+      # answer is tool-shaped (but the model must pick NAME and arguments).
+      # Later replies allow either tool or final. No host-selected tool
+      # identity, argument, result, authority or synthetic success.
+      LU_E1_P07_RESPONSE_PROTOCOL: json_schema
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Install real FFprobe for the independent GGUF model/tool run
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffprobe
+      - name: Verify exact frozen source and installed Git/FFprobe binaries
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p e1-p07-gguf-evidence
+          command -v git
+          command -v ffprobe
+          echo "LU_E1_P07_GIT=$(command -v git)" >> "$GITHUB_ENV"
+          echo "LU_E1_P07_FFPROBE=$(command -v ffprobe)" >> "$GITHUB_ENV"
+          python3 -m py_compile benchmarks/e1/e1_p07_llama_completion.py benchmarks/e1/agent01g_qwen_plan_probe.py
+          python3 -m unittest discover -s benchmarks/e1 -p 'test_e1_p07_llama_completion.py' -v \
+            2>&1 | tee e1-p07-gguf-evidence/qwen-json-decoder-tests.log
+          python3 -m unittest discover -s benchmarks/e1 -p test_agent01g_qwen_plan_probe.py -v \
+            2>&1 | tee e1-p07-gguf-evidence/agent01g-plan-boundary-tests.log
+          grep -Fq 'Ran 8 tests' e1-p07-gguf-evidence/agent01g-plan-boundary-tests.log
+          grep -Fq 'OK' e1-p07-gguf-evidence/agent01g-plan-boundary-tests.log
+          git --version | tee e1-p07-gguf-evidence/native-app-versions.log
+          ffprobe -version | sed -n '1p' | tee -a e1-p07-gguf-evidence/native-app-versions.log
+          printf 'SOURCE_SHA=%s\n' "$EXPECTED_HEAD" | tee e1-p07-gguf-evidence/source.txt
+      - name: Build SHA-pinned actual llama.cpp CPU server
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch b12143 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/e1-p07-llama-cpp"
+          actual="$(git -C "$RUNNER_TEMP/e1-p07-llama-cpp" rev-parse HEAD)"
+          test "$actual" = 2bc46baa9207d098d03741ac394e7faaf1a955b6
+          cmake -S "$RUNNER_TEMP/e1-p07-llama-cpp" -B "$RUNNER_TEMP/e1-p07-llama-build" \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF \
+            -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/e1-p07-llama-build" \
+            --target llama-server --parallel 3
+          sha256sum "$RUNNER_TEMP/e1-p07-llama-build/bin/llama-server" \
+            | tee e1-p07-gguf-evidence/llama-engine-sha256.txt
+          echo "ENGINE_SOURCE_SHA=$actual" >> e1-p07-gguf-evidence/source.txt
+      - name: Download checksum-pinned genuine Qwen3-0.6B GGUF
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 5 --connect-timeout 30 \
+            https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf \
+            -o "$RUNNER_TEMP/e1-p07-qwen.gguf"
+          printf '%s  %s\n' "$MODEL_SHA256" "$RUNNER_TEMP/e1-p07-qwen.gguf" \
+            | sha256sum -c -
+          printf 'MODEL_SHA256=%s\n' "$MODEL_SHA256" \
+            >> e1-p07-gguf-evidence/source.txt
+      - name: Load actual local GGUF and verify server readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/e1-p07-llama-build/bin/llama-server" \
+            -m "$RUNNER_TEMP/e1-p07-qwen.gguf" \
+            --host 127.0.0.1 --port "$LU_E1_P07_LLAMA_PORT" \
+            -c 8192 -ngl 0 \
+            > e1-p07-gguf-evidence/llama-server.log 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/e1-p07-llama.pid"
+          ready=0
+          for i in $(seq 1 180); do
+            if ! kill -0 "$(cat "$RUNNER_TEMP/e1-p07-llama.pid")" 2>/dev/null; then
+              echo "llama-server died before model readiness"; exit 1
+            fi
+            if curl -fsS --max-time 2 "http://127.0.0.1:$LU_E1_P07_LLAMA_PORT/health" \
+              > e1-p07-gguf-evidence/health.json; then
+              ready=1; break
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+          grep -q 'status' e1-p07-gguf-evidence/health.json
+      - name: Enforce the pinned llama.cpp live grammar protocol before any model tool acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=benchmarks/e1 python3 -c 'import os, e1_p07_llama_completion as m; port=int(os.environ["LU_E1_P07_LLAMA_PORT"]); m.assert_grammar_enforced(port); m.assert_tool_grammar_enforced(port); print("LIVE_GBNF_DECODER_ENFORCED")' \
+            2>&1 | tee e1-p07-gguf-evidence/live-grammar-preflight.log
+          grep -Fq 'LIVE_GBNF_DECODER_ENFORCED' e1-p07-gguf-evidence/live-grammar-preflight.log
+      - name: Record genuine Qwen3 plan-format reliability without granting tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/e1/agent01g_qwen_plan_probe.py \
+            --port "$LU_E1_P07_LLAMA_PORT" \
+            --output e1-p07-gguf-evidence/agent01g-qwen3-plan-probe.json \
+            2>&1 | tee e1-p07-gguf-evidence/agent01g-qwen3-plan-probe.log
+          python3 - <<'PY'
+          import json
+          p="e1-p07-gguf-evidence/agent01g-qwen3-plan-probe.json"
+          r=json.load(open(p))
+          assert r["schema"]=="lu-agent01g-qwen3-review-only-plan-diagnostic-v1"
+          assert len(r["samples"])==3
+          assert r["never_authorizes_workers"] is True
+          print("Qwen3 plan-quality sample completed; counts are observational, not an execution grant")
+          PY
+          echo 'Qwen3 AGENT-01G planning-quality probe records actual bounded model responses, but never approves a plan, calls Git/FFprobe, or certifies Lu host execution.' >> "$GITHUB_STEP_SUMMARY"
+      - name: AGENT-01G genuine Qwen3 - original ANSF, fresh step, reviewed Git, oracle, restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          grep -Fq 'test agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_restart ... ok' \
+            e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            e1-p07-gguf-evidence/agent01g-real-host-native-e2e.log
+          echo 'AGENT-01G real loaded-GGUF host-native ANSF plan/fresh consent, reviewed Git OS effect, independent oracle, restart passed. Installed UI native picker remains separate.' >> "$GITHUB_STEP_SUMMARY"
+      - name: AGENT-01I two genuine Qwen turns with separate plan grants, native Git, oracle and restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart \
+            -- --ignored --nocapture \
+            2>&1 | tee e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          grep -Fq 'test agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart ... ok' \
+            e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          grep -Fq 'AGENT01I_TWO_STEP_REAL_QWEN_AND_NATIVE_ORACLE_PASS' \
+            e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' \
+            e1-p07-gguf-evidence/agent01i-two-step-real-qwen-native.log
+          echo 'Two distinct loaded-Qwen model tool choices, separately scoped parent and child native Git runs, individual oracle receipts and restart replay denial passed. Native OS dialog and physical installed Windows acceptance remain separate.' >> "$GITHUB_STEP_SUMMARY"
+      - name: GGUF independently selects Git and FFprobe in production Lu tool loop
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test e1_reviewed_model_tools \
+            genuine_gguf_independently_selects_git_and_media_tools_and_survives_journal_restart \
+            -- --ignored --nocapture 2>&1 | tee e1-p07-gguf-evidence/genuine-model-selection.log
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' \
+            e1-p07-gguf-evidence/genuine-model-selection.log
+          echo 'Real GGUF-selected Git/FFprobe and durable journal reopen passed' >> "$GITHUB_STEP_SUMMARY"
+      - name: Disclose incomplete GGUF tests and stop local engine
+        if: always()
+        shell: bash
+        run: |
+          if test -e "$RUNNER_TEMP/e1-p07-llama.pid"; then
+            kill "$(cat "$RUNNER_TEMP/e1-p07-llama.pid")" 2>/dev/null || true
+          fi
+          if ! test -f e1-p07-gguf-evidence/genuine-model-selection.log; then
+            echo 'No GGUF-selected Lu tool test ran. Genuine-model gate OPEN.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-p0-real-qwen-native-model-tools-${{ github.event.pull_request.head.sha }}
+          path: e1-p07-gguf-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  p0-hf-real-transfer:
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 205 && github.event.pull_request.head.ref == 'lu/p0-installed-ux-agent-acceptance-20261110' && contains(github.event.pull_request.body, format('LU_P0_HF_LIVE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_HF_LIVE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Original frozen source and test-only public asset permission
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p hf-p05-real-evidence
+          printf 'SOURCE_SHA=%s\n' "$EXPECTED_HEAD" > hf-p05-real-evidence/source.txt
+          command -v curl
+          curl --version | head -n 1 | tee hf-p05-real-evidence/client-version.txt
+      - name: Actual immutable public-HF HTTPS 200, partial 206 and SHA-256 readback
+        shell: bash
+        env:
+          LU_HF_P05_REAL_TEST: ci-test-only
+        run: |
+          set -euo pipefail
+          export LU_HF_P05_TEST_CURL="$(command -v curl)"
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test hf_p05_real_network \
+            hf_p05_real_network_download_cancel_resume_publish_sha \
+            -- --ignored --nocapture \
+            2>&1 | tee hf-p05-real-evidence/live-transfer.log
+          grep -Fq 'HF_P05_REAL_NETWORK_VERIFIED' hf-p05-real-evidence/live-transfer.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' hf-p05-real-evidence/live-transfer.log
+          echo 'Actual public-HF immutable GGUF 200+206 and full SHA passed. This is a CI fixture and does not attest human desktop approval, real mid-stream cancellation or installed model inference.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve actual network evidence even on refusal
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-hf-p05-real-transfer-${{ github.event.pull_request.head.sha }}
+          path: hf-p05-real-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  p0-browser-real-candidate:
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 205 && github.event.pull_request.head.ref == 'lu/p0-installed-ux-agent-acceptance-20261110' && contains(github.event.pull_request.body, format('LU_P0_BROWSER_NATIVE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_BROWSER_NATIVE_SHA={0}', github.event.pull_request.head.sha)) }}
+    uses: ./.github/workflows/lu-browser-research-acceptance.yml

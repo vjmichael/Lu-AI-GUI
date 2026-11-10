@@ -7,9 +7,11 @@ param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedLuSha256,
   [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedEngineSha256,
   [string]$ExpectedVulkanSha256='',
+  [string]$ExpectedResearchSha256='',
   [string]$ProfileIdentifier='org.lu.agent01g.devtest',
   [Parameter(Mandatory=$true)][ValidatePattern('^[A-Za-z0-9._-]+\.exe$')][string]$UninstallerName,
   [switch]$DisposableWindowsConfirmed,
+  [switch]$ExerciseInstalledGui,
   [ValidateRange(30,1800)][int]$TimeoutSeconds=480,
   [string]$EvidenceDir=(Join-Path $env:TEMP ('Lu-M3-nsis-'+[guid]::NewGuid().ToString('N')))
 )
@@ -44,6 +46,7 @@ $record=[ordered]@{
   engineSha256=$ExpectedEngineSha256.ToLowerInvariant()
   vulkanEngineSha256=$ExpectedVulkanSha256
   installedVulkanEngine='NOT_TESTED'
+  installedResearchClient='NOT_TESTED'
   windowsEnvironment='OPERATOR_CONFIRMED_DISPOSABLE'
   installer='NOT_TESTED'
   installedApp='NOT_TESTED'
@@ -52,6 +55,7 @@ $record=[ordered]@{
   packageRemoval='NOT_TESTED'
   activeModelWorkersReaped='NOT_TESTED'
   webViewUiAndModelInference='NOT_TESTED'
+  installedUiSmoke='NOT_TESTED'
   installationStateUncertain=$false
   profilePreservation='NOT_TESTED'
   removalObservedAfterMs=0
@@ -107,6 +111,39 @@ try{
     if($vulkanEngine -ieq $engine){throw 'CPU/Vulkan paths must be distinct'}
     $record.installedVulkanEngine='PASS_SHA256'
   }
+  $researchExe=$null
+  if($ExpectedResearchSha256){
+    if($ExpectedResearchSha256 -notmatch '^[0-9a-fA-F]{64}$'){throw 'Invalid signed research client digest'}
+    $researchExe=Verified-Exe (Join-Path $target 'lu-research\curl.exe') $ExpectedResearchSha256
+    $record.installedResearchClient='PASS_SHA256'
+  }
+  if($ExerciseInstalledGui){
+    $stage='installed-ui'
+    $uiDir=Join-Path $EvidenceDir 'p0-installed-ui'
+    $pwsh=(Get-Process -Id $PID).Path
+    $start=[Diagnostics.ProcessStartInfo]::new($pwsh)
+    $start.UseShellExecute=$false
+    foreach($arg in @('-NoProfile','-File',(Join-Path $PSScriptRoot 'p0-windows-installed-gui-smoke.ps1'),
+      '-InstalledExe',$app,'-ExpectedSha256',$ExpectedLuSha256,
+      '-EvidenceDir',$uiDir,'-DisposableWindowsConfirmed')){
+      [void]$start.ArgumentList.Add([string]$arg)
+    }
+    try{
+      $child=[Diagnostics.Process]::Start($start)
+      if($null -eq $child){throw 'UI evidence child failed to start'}
+      if(-not $child.WaitForExit(180000)){
+        $child.Kill($true)
+        $null=$child.WaitForExit(10000)
+        throw 'Installed UI smoke exceeded 180 seconds'
+      }
+      $record.installedUiSmoke=if($child.ExitCode -eq 0){
+        'PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS'
+      }else{'FAIL_INSTALLED_UI_EVIDENCE'}
+    }catch{
+      $record.installedUiSmoke='FAIL_INSTALLED_UI_WORKER'
+      $record.errors=@($record.errors)+@('UI smoke: '+$_.Exception.Message)
+    }
+  }
   $stage='uninstall'
   $uninstaller=Join-Path $target $UninstallerName
   if(-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)){
@@ -126,6 +163,7 @@ try{
   # from the test host or weakening the final absence oracle.
   $watchPaths=@($app,$engine,$uninstaller)
   if($vulkanEngine){$watchPaths+=@($vulkanEngine)}
+  if($researchExe){$watchPaths+=@($researchExe)}
   $timer=[Diagnostics.Stopwatch]::StartNew()
   $residue=@()
   do{
@@ -172,6 +210,7 @@ try{
   Write-Output 'No cleanup of uncertain installation state is attempted'
 }
 if($record.packageRemoval -ne 'PASS_BINARIES_ABSENT'){exit 2}
+if($ExerciseInstalledGui -and $record.installedUiSmoke -ne 'PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS'){exit 3}
 # Without explicit success, a prior native command's LASTEXITCODE survives
 # the script call and falsely marks a verified lifecycle receipt as failure.
 exit 0

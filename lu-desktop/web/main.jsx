@@ -1,8 +1,10 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { splitModelOutput } from './response_view.mjs';
+// Host classifies original user intent; no frontend filesystem routing.
 import {explainToolOutcome,explainReviewedContinuation} from './reviewed_tool_feedback.mjs';
 import {explainMemoryProjectionRecovery} from './reviewed_memory_recovery.mjs';
 import { fullEditChangeLines } from './edit_diff.mjs';
@@ -17,6 +19,7 @@ import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryA
 import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppearance,textForBackground,visibleReactionBySeq} from './message_interactions.mjs';
 import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget,correctedMessageFollowUp} from './message_revisions.mjs';
 import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from './agent_replan.mjs';
+import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
 
 function MessageText({text, role='assistant'}) {
   if (role === 'user') return <div className="messageContent userText">{text}</div>;
@@ -868,12 +871,11 @@ function App() {
   const [reviewedAppNextSend,setReviewedAppNextSend] = useState(null);
   // Explicit one-turn Browser opt-in; native dialog remains the grant.
   const [browserResearchNextSend,setBrowserResearchNextSend]=useState(false);
-  const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [modelLoadTrace, setModelLoadTrace] = useState(null);
+  const [modelMemorySample,setModelMemorySample] = useState(null);
   const [lastHostLoadReply, setLastHostLoadReply] = useState(0);
   const [error, setError] = useState('');
   const [activity, setActivity] = useState('');
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [documentSettings, setDocumentSettings] = useState(null);
   const [latestCreated, setLatestCreated] = useState(null);
@@ -930,6 +932,7 @@ function App() {
   const [wave2RecoveryByChat,setWave2RecoveryByChat] = useState({});
   const [wave2RecoveryBusy,setWave2RecoveryBusy] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [reactionPickerSeq,setReactionPickerSeq] = useState(null);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
   const [expandedFolders, setExpandedFolders] = useState([]);
@@ -975,13 +978,6 @@ function App() {
     !(i === history.length - 1 && entry.role === 'assistant' && entry.interrupted && !entry.cancelled)) : history;
   useEffect(() => { draftText.current = prompt; draftImages.current = images; draftFiles.current = textFiles; }, [prompt, images, textFiles]);
   useEffect(() => {
-    if (!(working && activity.startsWith('Loading'))) { setModelLoadSeconds(0); return; }
-    const started = Date.now();
-    setModelLoadSeconds(0);
-    const timer = setInterval(() => setModelLoadSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
-    return () => clearInterval(timer);
-  }, [working, activity]);
-  useEffect(() => {
     if (!(working && activity.startsWith('Loading'))) {
       setModelLoadTrace(null);
       setLastHostLoadReply(0);
@@ -993,9 +989,12 @@ function App() {
       if (pending) return; // One outstanding probe; no unbounded request buildup.
       pending = true;
       try {
-        const trace = await invoke('lu_load_diagnostics');
+        const [trace,allocation]=await Promise.all([
+          invoke('lu_load_diagnostics'),invoke('lu_load_memory_sample')
+        ]);
         if (mounted) {
           setModelLoadTrace(trace);
+          setModelMemorySample(allocation);
           setLastHostLoadReply(Date.now());
         }
       } catch {
@@ -1010,20 +1009,12 @@ function App() {
     return () => { mounted = false; clearInterval(timer); };
   }, [working, activity]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
+  // Availability is host-checked, not inferred from an open/closed Settings pane.
   useEffect(()=>{
-    if(!settingsOpen)return;
-    let active=true;
-    invoke('lu_browser_runtime_status')
-      .then(v=>{if(active)setBrowserRuntime(v);})
-      .catch(e=>{if(active)setBrowserPreferenceError(String(e));});
-    return()=>{active=false;};
-  },[settingsOpen]);
-  useEffect(()=>{
-    if(!settingsOpen)return;
     invoke('lu_research_available')
       .then(v=>setResearchAvailable(Boolean(v)))
       .catch(()=>setResearchAvailable(false));
-  },[settingsOpen]);
+  },[]);
   async function runResearchDiscovery(page=1){
     const selectedPage=Number.isInteger(page)?page:1;
     if(!chatId||researchBusy||!researchAvailable
@@ -1856,30 +1847,7 @@ function App() {
       })
       .catch(e=>setError(String(e)));
   }
-  useEffect(()=>{
-    if(!settingsOpen)return;
-    let active=true;
-    invoke('lu_browser_visibility')
-      .then(mode=>{if(active){setBrowserVisibility(mode);setBrowserPreferenceError('');}})
-      .catch(e=>{if(active)setBrowserPreferenceError(String(e));});
-    return()=>{active=false;};
-  },[settingsOpen]);
 
-  useEffect(()=>{
-    if (!settingsOpen || !selectedModel) { setModelInspection(null); return; }
-    let alive=true;
-    setModelInspection(null);
-    invoke('lu_model_backend_options').then(options=>{
-      if(alive)setModelBackends(options);
-    }).catch(()=>{if(alive)setModelBackends([]);});
-    invoke('lu_model_preflight',{modelRef:selectedModel})
-      .then(view=>{if(alive)setModelInspection(view);})
-      .catch(()=>{if(alive)setModelInspection({
-        modelRef:selectedModel,status:'inspection_unavailable',loadAllowed:false,
-        detail:'Native model compatibility inspection failed. No model was loaded.'
-      });});
-    return()=>{alive=false;};
-  },[settingsOpen,selectedModel,models]);
 
   async function refreshCatalog() {
     const [knownModels, status] = await Promise.all([invoke('lu_list_models'), invoke('lu_status')]);
@@ -1887,6 +1855,44 @@ function App() {
     setRuntime(status);
     setSelectedModel(old => old && knownModels.some(m => m.modelRef === old) ? old : status.modelRef || knownModels[0]?.modelRef || '');
   }
+  // Native Settings can attach a separately OS-approved one-shot WGC frame
+  // to the SAME active conversation. This event is not a grant: the host
+  // independently validates imageRef ownership, source provenance, local
+  // egress and projector admission on the next ordinary Send.
+  useEffect(()=>{
+    let alive=true,off=null;
+    listen('lu-observed-image-admitted',event=>{
+      const image=event.payload;
+      if(!alive||!image||typeof image.imageRef!=='string'||
+         image.imageRef.length>128||
+         !['image/png','image/jpeg'].includes(image.mimeType)||
+         image.chatId!==currentChat.current)return;
+      if(draftImages.current.some(item=>item.imageRef===image.imageRef))return;
+      if(draftImages.current.length>=4){
+        setError('Maximum four image attachments. Remove one before attaching an observed frame.');
+        return;
+      }
+      const original={imageRef:image.imageRef,mimeType:image.mimeType,
+        name:'Approved local observation',size:0};
+      const next=[...draftImages.current,original];
+      draftImages.current=next;setImages(next);
+      const prior=pendingDrafts.current.get(image.chatId)||{prompt:draftText.current,files:draftFiles.current};
+      pendingDrafts.current.set(image.chatId,{...prior,images:next});
+      setActivity('Native-approved local frame attached. It remains local; the model has not analyzed it yet.');
+    }).then(unsubscribe=>{if(alive)off=unsubscribe;else unsubscribe();})
+      .catch(()=>{});
+    return ()=>{alive=false;off?.();};
+  },[]);
+
+  useEffect(()=>{
+    let alive=true,off=null;
+    listen('lu-model-catalog-changed',()=>{
+      if(alive)void refreshCatalog().catch(error=>setError(String(error)));
+    }).then(fn=>{if(alive)off=fn;else fn();}).catch(()=>{});
+    const focused=()=>{if(alive)void refreshCatalog().catch(()=>{});};
+    window.addEventListener('focus',focused);
+    return ()=>{alive=false;off?.();window.removeEventListener('focus',focused);};
+  },[]);
   async function startMediaFileScan() {
     setBackgroundError('');
     try {
@@ -2320,17 +2326,16 @@ function App() {
     pendingPrepend.current=null;
   },[history]);
 
-  useEffect(() => { if (!settingsOpen) composerRef.current?.focus(); }, [chatId]);
+  useEffect(() => { composerRef.current?.focus(); }, [chatId]);
   useEffect(() => {
     function onShortcut(event) {
       if (event.defaultPrevented) return;
-      if (isSearchKey(event) && !settingsOpen) {
+      if (isSearchKey(event)) {
         event.preventDefault(); setChatQuery(''); searchRef.current?.focus();
-      } else if (isNewChatKey(event) && !settingsOpen) {
+      } else if (isNewChatKey(event)) {
         event.preventDefault(); void newChat();
       } else if (event.key === 'Escape') {
-        if (settingsOpen) setSettingsOpen(false);
-        else if (modelMenuOpen) setModelMenuOpen(false);
+        if (modelMenuOpen) setModelMenuOpen(false);
         else if (document.activeElement === searchRef.current) {
           setChatQuery(''); composerRef.current?.focus();
         }
@@ -2338,7 +2343,7 @@ function App() {
     }
     document.addEventListener('keydown', onShortcut);
     return () => document.removeEventListener('keydown', onShortcut);
-  }, [settingsOpen, modelMenuOpen]);
+  }, [modelMenuOpen]);
   useEffect(() => {
     if (!modelMenuOpen) return;
     function onOutside(event) {
@@ -3112,9 +3117,21 @@ function App() {
         case 'move_file':await reviewNativeFileTransfer('move');break;
         case 'trash_file':await reviewNativeTrashFile();break;
         case 'extract_archive':await reviewArchiveTree();break;
-        case 'create_document':setDocumentComposerOpen(true);break;
-        case 'revise_office':setOfficeRevisionOpen(true);break;
-        case 'batch_office':setOfficeBatchOpen(true);break;
+        case 'extract_archive_batch':await reviewArchiveBatch();break;
+        case 'split_archive':await runP08Multipart('split');break;
+        case 'create_document':
+          if(approved.documentDraft) setDocumentDraft({
+            format:approved.documentDraft.format,
+            title:approved.documentDraft.title,
+            content:approved.documentDraft.content
+          });
+          setDocumentComposerOpen(true);break;
+        case 'revise_office':
+          if(approved.officePatch)setOfficePatch(approved.officePatch);
+          setOfficeRevisionOpen(true);break;
+        case 'batch_office':
+          if(approved.officeBatch)setOfficeBatchDraft(approved.officeBatch);
+          setOfficeBatchOpen(true);break;
         default:throw Error('Unrecognized native operation review');
       }
     }catch(error){setError(String(error));}
@@ -3800,10 +3817,17 @@ function App() {
     e.preventDefault();
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
     const input = prompt.trim();
-    const useWorkspaceTools=workspaceToolsNextSend;
     const usePlanDraft=planDraftNextSend;
     const useBrowserResearch=browserResearchNextSend;
     const useReviewedApp=reviewedAppNextSend;
+    // Explicit human folder requests may enter existing native read-only
+    // workspace mode. The path text is never authority; user selects an
+    // actual directory through Lu's fresh native OS folder picker.
+    // This flag is only the historical explicit user opt-in. Ordinary
+    // user requests are classified by the native lu_generate host, which
+    // prioritizes approved Git, Reader, media and HTTPS Browser routes
+    // before workspace. Renderer heuristics never choose a tool scope.
+    const useWorkspaceTools=workspaceToolsNextSend;
     if([Boolean(useWorkspaceTools),Boolean(useBrowserResearch),Boolean(useReviewedApp),Boolean(usePlanDraft)].filter(Boolean).length>1){
       setError('Choose only one native workspace, reviewed app or Browser mode for this turn.');return;
     }
@@ -4125,10 +4149,7 @@ function App() {
       <div className="sidebarFooter">
         <div className="runtimeStatus"><span className="statusDot" data-ready={loaded}></span><strong>{loaded ? 'Model loaded' : working && activity.startsWith('Loading') ? 'Loading model…' : 'No model loaded'}</strong></div>
         <small>{loaded ? loadedModel?.filename : 'Select a model from the chat header'}</small>
-        <button className="settingsButton" onClick={() => setBackgroundPaneOpen(true)}>
-          ◷ Background Tasks {activeBackgroundTasks.length ? '· '+activeBackgroundTasks.length : ''}
-        </button>
-        <button className="settingsButton" onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
+        {/* Background receipts remain in the conversation on demand; no dashboard button. */}
       </div>
     </aside>
     {historyPaneOpen&&chatId&&<AnsfHistoryPane activeChatId={chatId}
@@ -4144,9 +4165,13 @@ function App() {
         <div className="chatTitle"><h1>{activeChat?.title && activeChat.title !== 'New chat' ? activeChat.title : 'Chat'}</h1>
           <p>{loaded ? 'Ready to chat · local model' : 'Choose a local GGUF to start'}</p></div>
         <div className="headerControls">
-          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model… {modelLoadSeconds}s elapsed · {lastHostLoadReply && Date.now() - lastHostLoadReply < 5000 ? 'Host responding' : 'Host response pending'}{modelLoadTrace?.loading && modelLoadTrace.events?.length > 0 ? ' · ' + modelLoadTrace.events[modelLoadTrace.events.length - 1].phase.replaceAll('_', ' ') : ''}</span>}
+          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model · {modelLoadTrace?.loading&&modelLoadTrace.events?.length ? modelLoadTrace.events[modelLoadTrace.events.length-1].phase.replaceAll('_',' ') : 'Reading model and initializing backend'} · {modelMemorySample?.workingSetRamBytes!=null
+            ? 'RAM process '+(modelMemorySample.workingSetRamBytes/1073741824).toFixed(2)+' GiB'
+            : 'RAM unmeasured'} · {modelMemorySample?.dedicatedGpuBytes!=null
+            ? 'GPU process '+(modelMemorySample.dedicatedGpuBytes/1073741824).toFixed(2)+' GiB'
+            : 'GPU unmeasured'} · Tensor loading % unavailable</span>}
           <div className="modelSwitcherWrap" ref={modelMenuRef}>
-            <button className="modelSwitcher" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
+            <button className="modelSwitcher" aria-label="Choose a model" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
               <span className="modelText">{selectModelText}</span> <span>⌄</span></button>
             {modelMenuOpen && <div className="modelMenu">
               <div className="modelMenuHeading">LOCAL GGUF MODELS <small>Selection does not load</small></div>
@@ -4157,7 +4182,7 @@ function App() {
               {!models.length && <div className="asideHelp">Put GGUF files in Lu's models directory or import them from Settings.</div>}
               <div className="modelMenuActions">
                 <button className="primaryButton" disabled={busy || loaded || !selected?.available} onClick={loadModel}>Load selected</button>
-                <button className="subtleButton" onClick={() => {setModelMenuOpen(false);setSettingsOpen(true);}}>Manage models</button>
+                <button className="subtleButton" onClick={() => {setModelMenuOpen(false);void invoke('lu_open_aux_window',{kind:'model-library'}).catch(error=>setError(String(error)));}}>Manage models</button>
               </div>
               {loaded && <button className="subtleButton full" disabled={busy} onClick={() => {setModelMenuOpen(false);unloadModel();}}>⏏ Unload active model</button>}
             </div>}
@@ -4166,7 +4191,8 @@ function App() {
           <button type="button" className="subtleButton" title="Open independent ANSF history"
             disabled={!chatId} aria-expanded={historyPaneOpen}
             onClick={()=>setHistoryPaneOpen(v=>!v)}>History library</button>
-          <button className="quietSettings" title="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
+          <button className="quietSettings" title="Settings" aria-label="Settings"
+            onClick={()=>void invoke('lu_open_aux_window',{kind:'settings'}).catch(error=>setError(String(error)))}>⚙</button>
         </div>
       </header>
       {chatId&&<section className="m2MemoryPane" aria-label="Conversation goal and clarifications">
@@ -4294,14 +4320,19 @@ function App() {
                 </button>
               </>}
               <div className="messageReactions" role="group" aria-label="React to this message">
-                {MESSAGE_REACTIONS.map(emoji=>
-                  <button type="button" key={emoji}
-                    disabled={messageDecorationBusy}
-                    aria-pressed={chatReactions[entry.seq]===emoji}
+                <button type="button" className="reactionTrigger"
+                  aria-label="Open emoji reactions" aria-expanded={reactionPickerSeq===entry.seq}
+                  onClick={()=>setReactionPickerSeq(v=>v===entry.seq?null:entry.seq)}>
+                  ☺ {chatReactions[entry.seq]||''}
+                </button>
+                {reactionPickerSeq===entry.seq&&<div className="reactionPicker" role="group" aria-label="Choose a reaction below this message">
+                  {MESSAGE_REACTIONS.map(emoji=><button type="button" key={emoji}
+                    disabled={messageDecorationBusy} aria-pressed={chatReactions[entry.seq]===emoji}
                     aria-label={'React '+emoji}
-                    onClick={()=>void setChatMessageReaction(entry,emoji)}>
+                    onClick={()=>{void setChatMessageReaction(entry,emoji);setReactionPickerSeq(null);}}>
                     {emoji}
                   </button>)}
+                </div>}
               </div>
             </div>}
         </div>;
@@ -4480,151 +4511,7 @@ function App() {
           <span className="composerHandle">···</span>
           <button type="button" className="collapseComposer" onPointerDown={e => e.stopPropagation()} onClick={() => setComposerCollapsed(v => !v)}>{composerCollapsed ? 'Expand' : 'Collapse'} composer</button>
         </div>
-        {chatId && <section className="observePilot" aria-label="Observe and Learn — Lu-only pilot">
-          <div className="observePilotTop">
-            <strong>Observe & Learn · Lu UI only</strong>
-            <span role="status" className={'observeIndicator mode-'+observeView.mode}>
-              {observeView.mode==='active'?'● Observing Lu UI events':
-               observeView.mode==='paused'?'Paused':'Off'}
-            </span>
-          </div>
-          <small>Experimental · OFF by default · two native confirmations to enable · Linux administrator authentication.
-            Observe & Learn data is marked LOCAL ONLY; Lu's network tools must never transmit it.
-            You choose what the screen exposes. No remote viewing interface.</small>
-          <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
-            An additionally approved Windows foreground-window capture rechecks HWND, PID and process creation time;
-            the general picker can select a monitor but cannot independently identify the selected OS source. Receipt-only capture fully blanks the frame. Separate user-approved local-GGUF image modes retain one private bounded frame for a deliberate second Attach action.</small>
-          <div className="settingsActions">
-            {observeView.mode==='off' &&
-              <button type="button" onClick={()=>observeAction('start')}>Enable experimental Observe & Learn</button>}
-            {observeView.mode==='active' &&
-              <button type="button" onClick={()=>observeAction('pause')}>Pause</button>}
-            {observeView.mode==='paused' &&
-              <button type="button" onClick={()=>observeAction('resume')}>Resume</button>}
-            {observeView.mode==='active' && captureWorkerReady &&
-              <>
-                <button type="button" disabled={captureStarting}
-                  onClick={()=>observeCaptureOneShot(true)}>
-                  {captureStarting?'Capturing…':'Capture selected foreground app (4s)'}
-                </button>
-                <button type="button" disabled={captureStarting}
-                  onClick={()=>observeCaptureOneShot(false,true)}>
-                  Capture primary display (OS-identified, full screen)
-                </button>
-                <button type="button" disabled={captureStarting}
-                  onClick={()=>observeCaptureOneShot(false)}>
-                  Select window/display · capture one frame
-                </button>
-                <button type="button" disabled={captureStarting}
-                  onClick={()=>observeCaptureOneShot(true,false,true)}>
-                  Capture foreground app for local GGUF image
-                </button>
-                <button type="button" disabled={captureStarting}
-                  onClick={()=>observeCaptureOneShot(false,true,true)}>
-                  Capture primary display for local GGUF image
-                </button>
-              </>}
-            {observeView.mode!=='off' &&
-              <button type="button" onClick={()=>observeAction('stop')}>Stop observation</button>}
-          </div>
-          {observeView.mode==='off' &&
-            <button type="button" className="subtleButton"
-              onClick={()=>void forgetObserveNotes()}>
-              Forget saved observation notes for this chat
-            </button>}
-          {observeView.mode==='active' && !captureWorkerReady &&
-            <small>Windows Graphics Capture is unavailable until the signed-off capture worker is installed with Lu.</small>}
-          {captureTaskId && <div aria-label="Native one-shot capture evidence">
-            <small role="status">One-shot WGC task: {captureTaskId}.
-              Receipts are fully redacted. An explicitly approved local-image
-              capture can temporarily hold one bounded frame in native RAM;
-              it has no network destination and requires a second action to attach.</small>
-            <button type="button" onClick={()=>void reviewCaptureReceipt()}>
-              Inspect native frame receipt
-            </button>
-            {captureLocalTaskId===captureTaskId
-              &&captureReceipt?.chatId===chatId
-              &&captureReceipt.frameObserved
-              &&captureReceipt.sourceIdentityAttested
-              &&observeView.mode==='active' &&
-              <button type="button" disabled={captureStarting}
-                onClick={()=>void attachLocalObservedFrame()}>
-                Attach approved frame to this local multimodal chat
-              </button>}
-            {captureReceipt?.chatId===chatId&&
-              <small>Capture state: {captureReceipt.state}.
-                {captureReceipt.frameObserved?' WGC frame observed; receipt is fully blanked.':''}
-                {captureReceipt.pixelsRetained
-                  ?' A private local-only frame is temporarily held in native RAM pending Attach or cancellation.'
-                  :''}
-                {captureReceipt.frameSha256
-                  ?' Fully redacted frame receipt SHA-256: '+captureReceipt.frameSha256
-                  :' No completed frame digest.'}
-                {captureReceipt.sourceIdentityAttested
-                  ?' Native foreground HWND or primary display identity checked.'
-                  :' Selected source identity is not attested.'}
-                {captureReceipt.fullyRedactedReceipt
-                  ?' Entire captured frame was blanked before receipt output.'
-                  :' No verified redacted frame receipt.'}
-                This is not an image preview, GUI test verdict or model visual understanding.</small>}
-          </div>}
-          {observeView.mode!=='off'&&
-            <small>Observed state-change hints: {observeView.nativeEventCount||0}.
-              Durable awareness notes: {observeView.notesLogged||0}.
-              No automatically saved learning, GPU inference or GUI test verdict.</small>}
-          {observeView.mode!=='off'&&
-            <div className="observeNotations" aria-label="Local awareness notations">
-              <strong>Awareness notes · native-only</strong>
-              {observeNotes.length===0
-                ? <small>No issues noted in this observation session.</small>
-                : <ul>{observeNotes.slice(0,8).map(n=>
-                  <li key={n.sequence}>
-                    {n.kind==='error_indicator'?'Error indicator observed (not verified)':
-                      n.kind==='verified_test_failure'?'Independently verified test failure':
-                      n.kind} · {n.source==='renderer_hint'?'UI hint':n.source}
-                    · {n.priority}
-                  </li>
-                )}</ul>}
-              <button type="button" disabled={observeNotes.length===0}
-                onClick={reviewObserveHandoff}>Prepare large-model review handoff</button>
-              <button type="button" className="subtleButton"
-                onClick={()=>void forgetObserveNotes()}>
-                Forget observation notes for this chat
-              </button>
-              <small>Diagnostic codes expire after seven days. Forgetting clears Lu's
-                stored notes and current review summary, not existing chat messages,
-                exported text, or durable task-operation receipts. No observation data
-                is automatically promoted to memory or model training.</small>
-              {observeHandoff?.sessionId===observeView.sessionId&&
-                <div role="status" className="observeHandoff">
-                  <strong>Observed evidence prepared for human review</strong>
-                  <small>{observeHandoff.sourceNoteCount} bounded native records.
-                    Independently verified test failures: {observeHandoff.verifiedFailures};
-                    unverified indicators: {observeHandoff.unverifiedIndicators}.</small>
-                  <small>Review SHA-256: {observeHandoff.reviewSha256}</small>
-                  <textarea readOnly rows={8} aria-label="Read-only native observation handoff"
-                    value={observeHandoff.reviewDraft}/>
-                  <div className="settingsActions">
-                    <button type="button" disabled={!chatId||working||chatBusy}
-                      onClick={()=>{
-                        const draft=observeHandoff.reviewDraft;
-                        if(!draft||observeHandoff.sessionId!==observeView.sessionId)return;
-                        setPrompt(prev=>prev?(prev+'\n\n'+draft):draft);
-                        setObserveHandoff(null);
-                        setActivity('Observation briefing added to chat draft. Review and press Send when ready.');
-                      }}>
-                      Add observed evidence to chat draft
-                    </button>
-                    <button type="button" onClick={()=>setObserveHandoff(null)}>
-                      Dismiss briefing
-                    </button>
-                  </div>
-                  <small>Nothing is sent automatically. These records never establish
-                    verified GUI correctness or grant source editing, OS access,
-                    or further tools; ordinary per-turn approval still applies.</small>
-                </div>}
-            </div>}
-        </section>}
+
         {wave2FileBusy && <section className="readProposalCard" role="status"
           aria-live="polite" aria-label="Native file operation in progress">
           <strong>Native file operation in progress</strong>
@@ -5799,227 +5686,8 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
-            <button type="button" className="subtleButton" disabled={!loaded}
-              title="Inspect native vision status without claiming MMProj presence proves visual understanding"
-              onClick={()=>void invoke('lu_vision_capability')
-                .then(setVisionCapability).catch(e=>setError(String(e)))}>Check vision</button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId||!loaded||visionProbeBusy||working}
-              title="Native approval; submit private synthetic pixel images to the actually loaded GGUF/MMProj backend"
-              onClick={()=>void verifyNativeVision()}>
-              {visionProbeBusy?'Running pixel probe…':'Verify vision with real images'}
-            </button>
-            {visionCapability?.sessionId===runtime.sessionId && visionCapability?.modelRef===runtime.modelRef &&
-              <span className="composerHelp" role="status">
-                Vision: {visionCapability.status} · {visionCapability.detail}
-              </span>}
-            <button type="button" className="subtleButton"
-              disabled={!chatId || wave2RecoveryBusy}
-              title="Read-only durable history of approved archives, documents and file operations"
-              onClick={()=>void refreshWave2Recovery(chatId)}>
-              {wave2RecoveryBusy ? 'Checking operations…' : 'File operations'}
-            </button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId || working || chatBusy || trashBusy || Boolean(trashReview) || Boolean(restoreReview)}
-              title="Native-pick one file and review a reversible same-directory custody operation"
-              onClick={()=>void reviewNativeTrashFile()}>Trash file</button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId || trashBusy} title="Inspect journaled trash/restore receipts, including interrupted operations"
-              onClick={()=>{setTrashHistoryOpen(v=>!v);void refreshTrashHistory();}}>
-              File recovery
-            </button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId || working || chatBusy || fileTransferBusy || Boolean(fileTransferReview)}
-              title="Native-pick an existing file, review exact SHA-256 and approve a no-clobber copy"
-              onClick={()=>void reviewNativeFileTransfer('copy')}>Copy file</button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId || working || chatBusy || fileTransferBusy || Boolean(fileTransferReview)}
-              title="Native-pick an existing file and approve a same-directory move into a new filename"
-              onClick={()=>void reviewNativeFileTransfer('move')}>Move file</button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId || working || chatBusy || officeBatchBusy || Boolean(officeBatchReview)}
-              title="Review up to 32 Word, PowerPoint or Excel changes, then create one new version"
-              onClick={()=>setOfficeBatchOpen(v=>!v)}>
-              {officeBatchOpen ? 'Close batch' : 'Batch Office'}
-            </button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId || working || chatBusy || officeRevisionBusy || Boolean(officeRevisionReview)}
-              title="Revise one existing Office field while preserving original and unrelated package contents"
-              onClick={()=>setOfficeRevisionOpen(v=>!v)}>
-              {officeRevisionOpen ? 'Close revision' : 'Revise Office'}
-            </button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId || working || chatBusy || documentCreateBusy || Boolean(documentCreateReview)}
-              title="Create a new DOCX or PPTX through a native folder picker and exact-content approval"
-              onClick={() => setDocumentComposerOpen(v=>!v)}>
-              {documentComposerOpen ? 'Close document' : '+ Document'}
-            </button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId || working || chatBusy || archiveBusy || Boolean(archiveReview)}
-              title="Use native file and folder pickers to safely review an archive and extract it into one NEW folder"
-              onClick={() => void reviewArchiveTree()}>{archiveBusy ? 'Archive…' : 'Extract archive'}</button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId||working||chatBusy||archiveBusy||archiveBatchBusy
-                ||Boolean(archiveReview)||Boolean(archiveBatchReview)}
-              title="Pick 1–8 archives in a native dialog; inspect every entry and approve one NEW group"
-              onClick={()=>void reviewArchiveBatch()}>
-              {archiveBatchBusy?'Reviewing batch…':'Extract archive batch'}
-            </button>
-            <label className="readerSectionSelector"
-              title="Lu archive byte-part size, not spanned ZIP/RAR/7z format">
-              Lu multipart size
-              <select aria-label="Lu multipart archive part size MiB"
-                value={p08PartMib} disabled={p08Busy}
-                onChange={e=>setP08PartMib(Number(e.target.value))}>
-                {[4,8,16,32].map(x=><option key={x} value={x}>{x} MiB</option>)}
-              </select>
-            </label>
-            <button type="button" className="subtleButton"
-              disabled={!chatId||working||chatBusy||p08Busy||archiveBusy||archiveBatchBusy}
-              title="OS-pick existing archive, review SHA-256, split to NEW Lu part folder"
-              onClick={()=>void runP08Multipart('split')}>
-              {p08Busy?'Multipart operation…':'Split archive into Lu parts'}
-            </button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId||working||chatBusy||p08Busy}
-              title="OS-pick interrupted Lu stage folder and rehash source and existing parts"
-              onClick={()=>void runP08Multipart('resume')}>Resume Lu split stage</button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId||working||chatBusy||p08Busy}
-              title="OS-pick lu-parts.json plus destination; verify all SHA-256 and create only a NEW archive"
-              onClick={()=>void runP08Multipart('join')}>Reassemble Lu archive parts</button>
-            <button type="button" className="subtleButton"
-              disabled={!chatId||working||chatBusy||p08Busy}
-              title="OS-pick original Lu split stage; inspect partial output without writing, replaying or deleting"
-              onClick={()=>void runP08Multipart('review')}>Review interrupted Lu split (read-only)</button>
-            {p08ResultByChat[chatId]?.status&&
-              <div className="researchResults" role="status" aria-label="P08 recovery review">
-                <strong>{p08ResultByChat[chatId].status}: {p08ResultByChat[chatId].outputFolder}</strong>
-                <small>{p08ResultByChat[chatId].verifiedParts} / {p08ResultByChat[chatId].expectedParts} verified parts</small>
-                <small>{p08ResultByChat[chatId].note}</small>
-              </div>}
-            {p08ResultByChat[chatId]&&!p08ResultByChat[chatId].status&&
-              <div className="researchResults" role="status" aria-label="P08 multipart archive receipt">
-                <strong>{p08ResultByChat[chatId].destination}</strong>
-                <small>{p08ResultByChat[chatId].parts} parts · {p08ResultByChat[chatId].bytes} bytes
-                  · original SHA-256: {p08ResultByChat[chatId].sha256}</small>
-                <small>Manifest SHA-256: {p08ResultByChat[chatId].manifestSha256}</small>
-                <small>{p08ResultByChat[chatId].note}</small>
-                <small>Stages are retained for reconciliation. Lu parts are not natively
-                  spanned ZIP/RAR/7z; archives are not converted or repaired.</small>
-              </div>}
-            {archiveBatchBusy&&!archiveBatchReview&&
-              <button type="button" className="subtleButton"
-                disabled={archiveBatchCancelRequested}
-                onClick={()=>void cancelArchiveBatch()}>
-                {archiveBatchCancelRequested?'Stopping batch preview…':'Cancel batch preview'}
-              </button>}
-            {archiveBusy && !archiveReview && <button type="button"
-              className="subtleButton" disabled={archiveCancelRequested}
-              onClick={()=>void cancelArchivePreview()}>
-              {archiveCancelRequested?'Stopping archive preview…':'Cancel archive preview'}
-            </button>}
-            <button type="button" className="subtleButton" disabled={working || chatBusy} onClick={inspectSelectedTextFile} title="Choose a local text file in a native file picker and inspect it using Lu’s explicitly granted read-only native tool">Inspect file</button>
-            <label className="readerSectionSelector" title="Use Lu's existing safe Reader selectors">
-              Reader section
-              <input type="text" maxLength={160}
-                placeholder="page:2 · chapter:3 · notes:1 · range:Sales!A1:D10"
-                value={readerSelector}
-                onChange={e=>{
-                  setReaderSelector(e.target.value);
-                  setReaderContinuation(null);
-                }}/>
-            </label>
-            <button type="button" className="subtleButton" disabled={!loaded}
-              onClick={()=>void attachReaderDocument(false)}>+ Read file</button>
-            {readerContinuation?.chatId===(currentChat.current||'new')&&
-              readerContinuation.selector===readerSelector&&
-              readerContinuation.nextOffset!==null&&
-              <button type="button" className="subtleButton" disabled={!loaded}
-                title={'Reselect '+readerContinuation.name+
-                  ' to verify its SHA-256 before reading the next excerpt'}
-                onClick={()=>void attachReaderDocument(true)}>
-                Continue Reader at {readerContinuation.nextOffset}
-              </button>}
-            <button type="button" className="subtleButton"
-              disabled={!loaded||chatBusy||working||!prompt.trim()}
-              title="Select one document and allow a read-only AI Reader tool turn"
-              onClick={()=>void askReaderDocument()}>Ask Reader</button>
-            <button type="button" className="subtleButton"
-              disabled={!loaded||chatBusy||working||!prompt.trim()}
-              title="Choose a folder and let Lu discover files by name, type, size, date or bounded text, then inspect or read them under one approved read-only tool turn"
-              onClick={()=>void askWorkspaceDirectory()}>Ask Workspace</button>
-            <button type="button" className="subtleButton"
-              aria-pressed={planDraftNextSend}
-              disabled={!loaded||chatBusy||working||!m2Context?.goalId||Boolean(images.length)||Boolean(textFiles.length)}
-              title="Use the loaded GGUF model to propose a strict, review-only step plan for the saved ANSF goal. Does NOT execute any tool."
-              onClick={()=>{
-                setWorkspaceToolsNextSend(false);setReviewedAppNextSend(null);
-                setBrowserResearchNextSend(false);setPlanDraftNextSend(v=>!v);
-              }}>
-              {planDraftNextSend?'Draft plan: next Send ✓':'Draft plan with Lu'}
-            </button>
-            {planDraftNextSend&&<span className="composerHelp" role="status">
-              The loaded model will propose a bounded plan from the saved ANSF goal.
-              Lu validates it and stores it for separate review; no tools will run.
-            </span>}
-            <button type="button" className="subtleButton"
-              aria-pressed={workspaceToolsNextSend}
-              disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
-              title="On the next normal Send, choose a folder in the native picker and let Lu use approved read-only tools for that one turn"
-              onClick={()=>{setPlanDraftNextSend(false);setReviewedAppNextSend(null);setBrowserResearchNextSend(false);setWorkspaceToolsNextSend(value=>!value);}}>
-              {workspaceToolsNextSend?'Workspace tools: next Send ✓':'Use workspace tools on Send'}
-            </button>
-            {workspaceToolsNextSend && <span className="composerHelp" role="status">
-              Next Send will open a native folder picker. Read-only access is granted for that turn only.
-            </span>}
-            <button type="button" className="subtleButton"
-              aria-pressed={reviewedAppNextSend==='git'}
-              disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
-              title="Next Send: choose a Git folder with the native picker, authorize read-only reviewed Git operations, and let the local model use them"
-              onClick={()=>{
-                setPlanDraftNextSend(false);setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(false);
-                setReviewedAppNextSend(v=>v==='git'?null:'git');
-              }}>
-              {reviewedAppNextSend==='git'?'Reviewed Git: next Send ✓':'Use reviewed Git on Send'}
-            </button>
-            <button type="button" className="subtleButton"
-              aria-pressed={reviewedAppNextSend==='media'}
-              disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
-              title="Next Send: choose one WAV/MP4 file with the native picker and let the local model request FFprobe metadata"
-              onClick={()=>{
-                setPlanDraftNextSend(false);setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(false);
-                setReviewedAppNextSend(v=>v==='media'?null:'media');
-              }}>
-              {reviewedAppNextSend==='media'?'Reviewed media: next Send ✓':'Use reviewed media on Send'}
-            </button>
-            {reviewedAppNextSend&&<span className="composerHelp" role="status">
-              Next Send opens a native {reviewedAppNextSend==='git'?'Git folder':'WAV/MP4 file'} picker.
-              Only approved read-only app operations are offered to Lu for that turn.
-            </span>}
-            <button type="button" className="subtleButton"
-              aria-pressed={browserResearchNextSend}
-              disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
-              title="Next Send: request native approval for exact HTTPS origins, use a supervised read-only Browser and return a journaled answer"
-              onClick={()=>{setPlanDraftNextSend(false);setReviewedAppNextSend(null);setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(v=>!v);}}>
-              {browserResearchNextSend?'Browser research: next Send ✓':'Research with Lu browser (read only)'}
-            </button>
-            {browserResearchNextSend&&<label className="composerHelp">
-              Research HTTPS origins (exact public sites)
-              <input value={browserOrigins} maxLength={2048}
-                onChange={e=>setBrowserOrigins(e.target.value)}
-                placeholder="https://example.org" />
-              <small>Lu asks for native approval of the entire list.
-                Text-only, read-only, one conversation turn.</small>
-            </label>}
-            <button type="button" className="subtleButton"
-              disabled={!chatId}
-              title="Inspect host-recorded Reader/Workspace/Git and reviewed-app model audits and durable native effect states without replaying tools"
-              onClick={()=>{setToolActivityOpen(v=>!v);void refreshToolActivity(chatId);}}>
-              {toolActivityOpen?'Hide tool activity':'Tool activity'}
-            </button>
-            <span className="composerHelp">Explicit workspace searches and document-reading requests open native pickers; Git status, log and diff require selecting a repository · No automatic file permission</span>
-            <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
+            {/* Legacy specialist controls retained temporarily for compatibility, but no longer mounted. Native tools enter through the original human chat and per-turn OS approvals. */}
+            
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
               : <button className="primaryButton" type="submit" disabled={working || !loaded || !prompt.trim()}>Send</button>}
@@ -6468,767 +6136,17 @@ function App() {
         </footer>
       </aside>
     </div>}
-    {settingsOpen && <div className="settingsBackdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
-      <div className="settingsPane" role="dialog" aria-label="Lu settings" aria-modal="true" onClick={e => e.stopPropagation()}>
-        <header><div><h2>Settings</h2><small>Local model management and chat appearance</small></div><button className="quietIcon" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></header>
-        <section className="chatAppearanceSettings" aria-label="Conversation appearance">
-          <h3>Conversation appearance</h3>
-          <small>Colors belong only to this chat. They never alter model input or
-            the original saved messages.</small>
-          {!chatId?<p>Select a conversation to customize it.</p>:<>
-            <div className="appearancePresetRow" role="group" aria-label="Color presets">
-              {CHAT_APPEARANCE_PRESETS.map(preset=>
-                <button type="button" key={preset.name}
-                  disabled={messageDecorationBusy}
-                  onClick={()=>void saveChatAppearance(preset)}
-                  title={'Apply '+preset.name+' colors'}>
-                  {preset.name}
-                </button>)}
-            </div>
-            <div className="chatColorInputs">
-              <label>Chat background
-                <input type="color" value={chatAppearance.background}
-                  disabled={messageDecorationBusy}
-                  onChange={event=>void saveChatAppearance({
-                    ...chatAppearance,background:event.target.value
-                  })}/>
-              </label>
-              <label>Your message bubbles
-                <input type="color" value={chatAppearance.userBubble}
-                  disabled={messageDecorationBusy}
-                  onChange={event=>void saveChatAppearance({
-                    ...chatAppearance,userBubble:event.target.value
-                  })}/>
-              </label>
-              <label>Lu's message bubbles
-                <input type="color" value={chatAppearance.assistantBubble}
-                  disabled={messageDecorationBusy}
-                  onChange={event=>void saveChatAppearance({
-                    ...chatAppearance,assistantBubble:event.target.value
-                  })}/>
-              </label>
-            </div>
-          </>}
-        </section>
-        <button type="button" className="subtleButton full"
-          aria-expanded={advancedSettingsOpen} onClick={() => setAdvancedSettingsOpen(v => !v)}>
-          {advancedSettingsOpen ? 'Hide advanced settings' : 'Advanced settings'}
-        </button>
-        {advancedSettingsOpen && <section className="advancedDocumentSettings"
-          aria-label="Default document folder settings">
-          <h3>Documents and saved files</h3>
-          <p>New text documents save to your user Documents folder by default.
-            You may choose a different default folder with the native folder picker.</p>
-          <small>System Documents: {documentSettings?.systemDocumentsFolder || 'Unavailable'}</small>
-          <code className="writeTarget">{documentSettings?.defaultFolder || 'No default directory resolved'}</code>
-          {!documentSettings?.isAvailable &&
-            <small role="alert">The default folder is missing or unavailable. Select a valid folder before saving.</small>}
-          <div className="settingsActions">
-            <button type="button" className="subtleButton" onClick={chooseDefaultDocumentsFolder}>
-              Choose default folder
-            </button>
-            <button type="button" className="subtleButton" onClick={resetDefaultDocumentsFolder}
-              disabled={!documentSettings?.isCustom}>
-              Reset to system Documents
-            </button>
-          </div>
-          <p className="settingsNotice">Lu saves only after reviewing the exact file contents and destination.
-            Modifying existing files requires a separate validated edit/backup pipeline.</p>
-        </section>}
-        <section className="advancedDocumentSettings" aria-label="Browser visibility settings">
-          <h3>Browser visibility</h3>
-          <p>Automatic uses a headed Chromium window hidden by default until the user is needed.
-             Always Visible is optional. This preference does not launch or authorize browsing.</p>
-          <label htmlFor="browserVisibilityMode">Window visibility</label>
-          <select id="browserVisibilityMode" value={browserVisibility}
-            onChange={e=>{
-              const mode=e.target.value;
-              invoke('lu_set_browser_visibility',{mode})
-                .then(saved=>{setBrowserVisibility(saved);setBrowserPreferenceError('');})
-                .catch(error=>setBrowserPreferenceError(String(error)));
-            }}>
-            <option value="automatic_hidden">Automatic (headed, initially hidden)</option>
-            <option value="always_visible">Always visible</option>
-          </select>
-          {browserPreferenceError&&<small role="alert">{browserPreferenceError}</small>}
-          <small>{browserRuntime?.reason||'Checking native browser runtime admission…'}</small>
-          <div className="settingsActions">
-            <button type="button" className="subtleButton"
-              disabled={browserBusy} onClick={()=>browserOperation('lu_browser_runtime_status')}>
-              Check Browser runtime
-            </button>
-          </div>
-          <label htmlFor="browserTrustedOrigins">HTTPS origins for a new read-only task</label>
-          <input id="browserTrustedOrigins" value={browserOrigins}
-            onChange={e=>setBrowserOrigins(e.target.value)} disabled={browserBusy||browserRuntime?.running}
-            placeholder="https://example.org" />
-          <div className="settingsActions">
-            {!browserRuntime?.running &&
-              <button type="button" disabled={browserBusy||!chatId||!browserRuntime?.launchReady}
-                onClick={()=>browserOperation('lu_browser_start',{chatId,origins:browserOrigins})}>
-                Authorize read-only Browser
-              </button>}
-            {browserRuntime?.running && <>
-              <button type="button" disabled={browserBusy||browserReadBusy||!runtime.sessionId
-                  ||browserRuntime.humanVerificationRequired}
-                onClick={()=>void inspectWithBrowserModel()}>
-                {browserReadBusy?'Running supervised Browser model read…':
-                  'Let Lu inspect this approved browser'}
-              </button>
-
-              <button type="button" disabled={browserBusy}
-                onClick={()=>browserOperation('lu_browser_set_visible',{visible:true})}>
-                Show browser
-              </button>
-              <button type="button" disabled={browserBusy}
-                onClick={()=>browserOperation('lu_browser_set_visible',{visible:false})}>
-                Hide browser
-              </button>
-              {browserRuntime.humanVerificationRequired &&
-                <button type="button" disabled={browserBusy}
-                  onClick={()=>browserOperation('lu_browser_human_verified')}>
-                  I've completed verification
-                </button>}
-              <button type="button" disabled={browserBusy}
-                onClick={()=>browserOperation('lu_browser_stop')}>Stop browser</button>
-            </>}
-          </div>
-          <small>Browser navigation requires a currently authenticated human conversation and separate native approval.
-            Lu's supervised read-only inspection uses the same approved turn and exact origins. It grants no form, click, typing or additional network authority.</small>
-          {browserReadError&&<small role="alert">{browserReadError}</small>}
-          {browserReadResult?.chatId===chatId&&<section aria-label="Model-guided browser observations">
-            <strong>{browserReadResult.proposalsExecuted} supervised Browser operations</strong>
-            <small>{browserReadResult.message}</small>
-            <ul>{browserReadResult.observations.map((page,index)=><li key={index}>
-              <strong>{page.status}</strong>
-              {page.url&&<small>{page.url}</small>}
-              {page.excerpt&&<pre>{page.excerpt}</pre>}
-              {page.truncated&&<small>Page excerpt truncated.</small>}
-            </li>)}</ul>
-          </section>}
-        </section>
-        <section className="advancedDocumentSettings" aria-label="Research discovery">
-          <h3>Research · verified-evidence workflow</h3>
-          <p>OpenAlex discovery is a separately approved read-only operation. Search results are
-             unverified leads, never citations, until registry and document evidence are checked.</p>
-          <div className="settingsActions">
-            <button type="button" disabled={!chatId||browserEvidenceBusy}
-              onClick={()=>void reviewBrowserEvidence()}>
-              {browserEvidenceBusy?'Reading evidence…':'Review observed Browser evidence'}
-            </button>
-          </div>
-          <small>Browser reads are local, untrusted observations, not independently
-            corroborated sources or verified academic citations. Their exact
-            post-redirect URLs and text digests come from Lu's supervised worker.</small>
-          {Array.isArray(browserEvidenceByChat[chatId])&&
-            <div className="researchResults" aria-label="Observed Browser evidence">
-              <strong>{browserEvidenceByChat[chatId].length} recent Browser observations · UNCORROBORATED</strong>
-              <ul>{browserEvidenceByChat[chatId].map(item=><li key={item.callId}>
-                <strong>{item.sourceUrl}</strong>
-                <small>Observed SHA-256: {item.observedSha256}</small>
-                <small>{item.verificationStatus} · citation verified: no</small>
-                <pre>{item.excerpt.slice(0,1500)}</pre>
-                {item.excerptTruncated&&<small>Excerpt incomplete; only saved text can be checked.</small>}
-                <label>Exact passage from this observed excerpt
-                  <input value={researchQuoteDraftByKey[chatId+'|'+item.generationId+'|'+item.callId]||''}
-                    onChange={e=>{
-                      const key=chatId+'|'+item.generationId+'|'+item.callId;
-                      setResearchQuoteDraftByKey(old=>({...old,[key]:e.target.value}));
-                      setResearchQuoteProofByKey(old=>({...old,[key]:null}));
-                    }} placeholder="Paste a verbatim quotation" />
-                </label>
-                <label>Optional independently corroborated OpenAlex source ID
-                  <input value={researchQuoteSourceByKey[chatId+'|'+item.generationId+'|'+item.callId]||''}
-                    onChange={e=>{
-                      const key=chatId+'|'+item.generationId+'|'+item.callId;
-                      setResearchQuoteSourceByKey(old=>({...old,[key]:e.target.value}));
-                      setResearchQuoteProofByKey(old=>({...old,[key]:null}));
-                    }} placeholder="Only if Crossref metadata was checked" />
-                </label>
-                <button type="button" disabled={researchQuoteBusy||
-                  (researchQuoteDraftByKey[chatId+'|'+item.generationId+'|'+item.callId]||'').trim().length<4}
-                  onClick={()=>void verifyObservedQuote(item)}>
-                  Check exact source passage
-                </button>
-                {researchQuoteProofByKey[chatId+'|'+item.generationId+'|'+item.callId]&&
-                  <small>{researchQuoteProofByKey[chatId+'|'+item.generationId+'|'+item.callId].message}</small>}
-              </li>)}</ul>
-            </div>}
-          <label htmlFor="researchQuery">Research question or subject</label>
-          <input id="researchQuery" value={researchQuery} disabled={researchBusy}
-            onChange={e=>{setResearchQuery(e.target.value);setResearchResult(null);}}
-            placeholder="e.g., spatial reasoning and GUI automation" />
-          <div className="settingsActions">
-            <button type="button" disabled={!chatId||!researchAvailable||researchBusy||!researchQuery.trim()}
-              onClick={runResearchDiscovery}>
-              {researchBusy?'Searching reviewed source…':'Search OpenAlex'}
-            </button>
-          </div>
-          <small>{researchAvailable?'Pinned HTTPS research runtime available. Native consent required.'
-            :'Research network runtime is not bundled in this build; discovery remains disabled.'}</small>
-          <label>Maximum distinct DOI leads (up to 120)
-            <input type="number" min="1" max="120" value={researchCampaignCeiling}
-              onChange={e=>setResearchCampaignCeiling(Math.min(120,Math.max(1,
-                Number(e.target.value)||1)))} />
-          </label>
-          <div className="settingsActions">
-            <button type="button" disabled={!chatId||!researchAvailable||
-              !researchQuery.trim()||researchCampaignBusy}
-              onClick={()=>void runResearchCampaign()}>
-              {researchCampaignBusy?'Researching in approved catalog…':'Run bounded Research campaign'}
-            </button>
-            <button type="button" disabled={!chatId||researchCampaignBusy}
-              onClick={()=>void refreshResearchCampaigns()}>
-              Restore saved research jobs
-            </button>
-          </div>
-          {Array.isArray(researchCampaignsByChat[chatId])&&
-            <div className="researchResults" aria-label="Durable research campaigns">
-              <ul>{researchCampaignsByChat[chatId].map(job=><li key={job.campaignId}>
-                <strong>{job.query}</strong>
-                <small>{job.state} · {job.distinctDois}/{job.candidateCeiling}
-                  distinct DOI leads · {job.completedPages} pages checkpointed</small>
-                <small>{job.message}</small>
-                {job.distinctDois>0&&job.state!=='CANCELLED'&&
-                  <button type="button" disabled={researchCampaignBusy||!researchAvailable}
-                    onClick={()=>void reviewResearchCampaign(job.campaignId)}>
-                    Review next 10 discovered sources
-                  </button>}
-                {researchCampaignReviewByChat[chatId+'|'+job.campaignId]&&
-                  <small>Reviewed {researchCampaignReviewByChat[chatId+'|'+job.campaignId].sourcesReviewed}
-                    of {researchCampaignReviewByChat[chatId+'|'+job.campaignId].discoveredDois}
-                    DOI leads; full document text admitted for
-                    {' '}{researchCampaignReviewByChat[chatId+'|'+job.campaignId].completeDocumentTexts}.
-                    Unsupported, mismatched and incomplete sources remain uncited.</small>}
-                <button type="button" disabled={researchCampaignBusy}
-                  onClick={()=>void showResearchReviewRows(job.campaignId)}>
-                  Inspect each source outcome
-                </button>
-                {Array.isArray(researchCampaignRowsByChat[chatId+'|'+job.campaignId])&&
-                  <ul>{researchCampaignRowsByChat[chatId+'|'+job.campaignId].map(item=>
-                    <li key={item.sourceId}>
-                      <small>{item.sourceId}</small>
-                      <small>{item.stage} · {item.reasonCode}</small>
-                      {item.canRetry&&
-                        <button type="button" disabled={researchCampaignBusy}
-                          onClick={()=>void retryResearchSource(job.campaignId,item.sourceId)}>
-                          Authorize candidate retry
-                        </button>}
-                    </li>
-                  )}</ul>}
-                {job.blockedReason&&<small>Blocker: {job.blockedReason}</small>}
-                {['PAUSED','BLOCKED','RUNNING'].includes(job.state)&&
-                  <button type="button" disabled={researchCampaignBusy||!researchAvailable}
-                    onClick={()=>void resumeResearchCampaign(job.campaignId)}>
-                    Reauthorize and resume
-                  </button>}
-                {!['DONE','CANCELLED'].includes(job.state)&&
-                  <button type="button" disabled={researchCampaignBusy}
-                    onClick={()=>void cancelResearchCampaign(job.campaignId)}>
-                    Cancel campaign
-                  </button>}
-              </li>)}</ul>
-            </div>}
-          <div className="researchResults" aria-label="Source-linked claim matrix">
-            <strong>Document-backed claim and counterevidence review</strong>
-            <small>Only a previously verified full-text PDF passage can enter this matrix.
-              Your interpretation is recorded as human-reviewed, not as established fact.</small>
-            <input aria-label="Verified research source ID"
-              placeholder="Crossref-corroborated OpenAlex source ID"
-              value={researchClaimDraft.sourceId}
-              onChange={e=>setResearchClaimDraft(old=>({...old,sourceId:e.target.value}))}/>
-            <input aria-label="Claim under analysis" placeholder="Specific claim"
-              value={researchClaimDraft.claim}
-              onChange={e=>setResearchClaimDraft(old=>({...old,claim:e.target.value}))}/>
-            <textarea aria-label="Verified quote for research claim"
-              placeholder="Exact verified PDF passage" value={researchClaimDraft.quote}
-              onChange={e=>setResearchClaimDraft(old=>({...old,quote:e.target.value}))}/>
-            <label>Evidence relationship
-              <select value={researchClaimDraft.stance}
-                onChange={e=>setResearchClaimDraft(old=>({...old,stance:e.target.value}))}>
-                <option value="SUPPORTS">Supports</option>
-                <option value="CHALLENGES">Challenges</option>
-                <option value="COMPLICATES">Qualifies or complicates</option>
-              </select>
-            </label>
-            <input aria-label="Reasoning for interpretation"
-              placeholder="Why this quote relates to the claim"
-              value={researchClaimDraft.reasoning}
-              onChange={e=>setResearchClaimDraft(old=>({...old,reasoning:e.target.value}))}/>
-            <div className="settingsActions">
-              <button type="button" disabled={!chatId||researchReportBusy||
-                !researchClaimDraft.sourceId.trim()||!researchClaimDraft.claim.trim()||
-                !researchClaimDraft.quote.trim()||!researchClaimDraft.reasoning.trim()}
-                onClick={()=>void submitResearchClaim()}>
-                Save my evidence interpretation
-              </button>
-              <button type="button" disabled={!chatId||researchReportBusy}
-                onClick={()=>void refreshResearchClaims()}>
-                Review saved claims
-              </button>
-            </div>
-            {Array.isArray(researchClaimsByChat[chatId])&&
-              <ul>{researchClaimsByChat[chatId].map(item=><li key={item.claim}>
-                <strong>{item.claim}</strong>
-                <small>Support: {item.supports} · Challenge: {item.challenges}
-                  · Qualification: {item.complicates}
-                  · Source IDs: {item.distinctCatalogSources}</small>
-                {item.unresolvedDisagreement&&
-                  <small>Unresolved: contrary or qualifying evidence remains</small>}
-                <small>{item.reasonCodes.join(', ')}</small>
-              </li>)}</ul>}
-            <label>Verified evidence report title
-              <input value={researchReportTitle}
-                onChange={e=>setResearchReportTitle(e.target.value)}/>
-            </label>
-            <label>
-              <input type="checkbox" checked={researchReportIncludeBibliography}
-                onChange={e=>setResearchReportIncludeBibliography(e.target.checked)}/>
-              Include reviewed P07 bibliography ({researchCitationStyle})
-            </label>
-            <small>The optional bibliography uses only sealed local Crossref receipts;
-              it never independently validates publication editions, direct
-              quotations, exact pages or factual conclusions.</small>
-            <div className="settingsActions">
-              <button type="button" disabled={!chatId||researchReportBusy}
-                onClick={()=>void exportResearchReport('markdown')}>
-                Save Markdown report
-              </button>
-              <button type="button" disabled={!chatId||researchReportBusy}
-                onClick={()=>void exportResearchReport('json')}>
-                Save evidence JSON
-              </button>
-            </div>
-            {researchReportSavedByChat[chatId]&&
-              <small>Saved {researchReportSavedByChat[chatId].format}:
-                {' '}{researchReportSavedByChat[chatId].savedPath}
-                {' '}· SHA-256: {researchReportSavedByChat[chatId].savedSha256}
-                {' '}· {researchReportSavedByChat[chatId].checkedPassages}
-                verified passages · {researchReportSavedByChat[chatId].bibliographySources||0}
-                reviewed bibliography sources. Interpretations are not independently certified.</small>}
-          </div>
-          <label>Review citation style
-            <select aria-label="Research citation style" value={researchCitationStyle}
-              disabled={researchCitationBusy}
-              onChange={e=>{
-                setResearchCitationStyle(e.target.value);
-                setResearchCitationsByChat({});
-                setResearchBibliographiesByChat({});
-                setResearchBibliographyExportsByChat({});
-              }}>
-              <option value="apa7">APA 7</option>
-              <option value="mla9">MLA 9</option>
-              <option value="chicago18">Chicago 18 (notes/bibliography)</option>
-              <option value="turabian9">Turabian 9 (notes/bibliography)</option>
-              <option value="sbl2">SBL Handbook 2</option>
-            </select>
-          </label>
-          <small>Academic citations require separately corroborated DOI and author identity.
-            Review Crossref publication metadata before using it; Lu never invents a
-            journal abbreviation, page reference, quotation, or ancient text edition.</small>
-          <div className="settingsActions">
-            <button type="button" disabled={!chatId||researchBusy||researchBibliographyBusy}
-              onClick={()=>void previewResearchBibliography()}>
-              {researchBibliographyBusy?'Reviewing bibliography…':'Compile reviewed bibliography offline'}
-            </button>
-            <button type="button" disabled={!chatId||researchBibliographyBusy}
-              onClick={()=>void exportResearchBibliography('markdown')}>
-              Save new bibliography Markdown
-            </button>
-            <button type="button" disabled={!chatId||researchBibliographyBusy}
-              onClick={()=>void exportResearchBibliography('csl-json')}>
-              Save new bibliography CSL-JSON
-            </button>
-          </div>
-          {researchBibliographiesByChat[chatId]&&
-            <div className="researchResults" aria-label="Reviewed citation bibliography preview">
-              <strong>{researchBibliographiesByChat[chatId].style} · {
-                researchBibliographiesByChat[chatId].sourceCount} pinned sources · REVIEW REQUIRED</strong>
-              <small>{researchBibliographiesByChat[chatId].message}</small>
-              <pre>{researchBibliographiesByChat[chatId].markdown.slice(0,12000)}</pre>
-              {researchBibliographiesByChat[chatId].markdown.length>12000&&
-                <small>Preview limited to 12,000 characters. Export includes the full bounded bibliography.</small>}
-              <small>Catalog evidence manifest SHA-256: {
-                researchBibliographiesByChat[chatId].catalogManifestSha256}</small>
-            </div>}
-          {researchBibliographyExportsByChat[chatId]&&
-            <small role="status">New bibliography saved: {
-              researchBibliographyExportsByChat[chatId].savedPath} · SHA-256: {
-              researchBibliographyExportsByChat[chatId].savedSha256}. Publication details remain unverified.</small>}
-          <div className="researchResults" aria-label="SBL2 Scripture locator only">
-            <h4>SBL2 canonical Scripture locator · unverified passage</h4>
-            <small>Choose a canonical book and an explicitly named translation.
-              This formats a reference only. Lu does not fetch or verify Bible text,
-              ancient manuscripts, critical editions or the existence of the verse.
-              Modern Bible translations normally do not create a bibliography entry.</small>
-            <label>Bible book
-              <select aria-label="SBL Scripture book" value={sblScriptureBook}
-                onChange={e=>setSblScriptureBook(e.target.value)}>
-                <option key="Genesis" value="Genesis">Genesis</option>
-                <option key="Exodus" value="Exodus">Exodus</option>
-                <option key="Leviticus" value="Leviticus">Leviticus</option>
-                <option key="Numbers" value="Numbers">Numbers</option>
-                <option key="Deuteronomy" value="Deuteronomy">Deuteronomy</option>
-                <option key="Joshua" value="Joshua">Joshua</option>
-                <option key="Judges" value="Judges">Judges</option>
-                <option key="Ruth" value="Ruth">Ruth</option>
-                <option key="1 Samuel" value="1 Samuel">1 Samuel</option>
-                <option key="2 Samuel" value="2 Samuel">2 Samuel</option>
-                <option key="1 Kings" value="1 Kings">1 Kings</option>
-                <option key="2 Kings" value="2 Kings">2 Kings</option>
-                <option key="1 Chronicles" value="1 Chronicles">1 Chronicles</option>
-                <option key="2 Chronicles" value="2 Chronicles">2 Chronicles</option>
-                <option key="Ezra" value="Ezra">Ezra</option>
-                <option key="Nehemiah" value="Nehemiah">Nehemiah</option>
-                <option key="Esther" value="Esther">Esther</option>
-                <option key="Job" value="Job">Job</option>
-                <option key="Psalms" value="Psalms">Psalms</option>
-                <option key="Proverbs" value="Proverbs">Proverbs</option>
-                <option key="Ecclesiastes" value="Ecclesiastes">Ecclesiastes</option>
-                <option key="Song of Songs" value="Song of Songs">Song of Songs</option>
-                <option key="Isaiah" value="Isaiah">Isaiah</option>
-                <option key="Jeremiah" value="Jeremiah">Jeremiah</option>
-                <option key="Lamentations" value="Lamentations">Lamentations</option>
-                <option key="Ezekiel" value="Ezekiel">Ezekiel</option>
-                <option key="Daniel" value="Daniel">Daniel</option>
-                <option key="Hosea" value="Hosea">Hosea</option>
-                <option key="Joel" value="Joel">Joel</option>
-                <option key="Amos" value="Amos">Amos</option>
-                <option key="Obadiah" value="Obadiah">Obadiah</option>
-                <option key="Jonah" value="Jonah">Jonah</option>
-                <option key="Micah" value="Micah">Micah</option>
-                <option key="Nahum" value="Nahum">Nahum</option>
-                <option key="Habakkuk" value="Habakkuk">Habakkuk</option>
-                <option key="Zephaniah" value="Zephaniah">Zephaniah</option>
-                <option key="Haggai" value="Haggai">Haggai</option>
-                <option key="Zechariah" value="Zechariah">Zechariah</option>
-                <option key="Malachi" value="Malachi">Malachi</option>
-                <option key="Matthew" value="Matthew">Matthew</option>
-                <option key="Mark" value="Mark">Mark</option>
-                <option key="Luke" value="Luke">Luke</option>
-                <option key="John" value="John">John</option>
-                <option key="Acts" value="Acts">Acts</option>
-                <option key="Romans" value="Romans">Romans</option>
-                <option key="1 Corinthians" value="1 Corinthians">1 Corinthians</option>
-                <option key="2 Corinthians" value="2 Corinthians">2 Corinthians</option>
-                <option key="Galatians" value="Galatians">Galatians</option>
-                <option key="Ephesians" value="Ephesians">Ephesians</option>
-                <option key="Philippians" value="Philippians">Philippians</option>
-                <option key="Colossians" value="Colossians">Colossians</option>
-                <option key="1 Thessalonians" value="1 Thessalonians">1 Thessalonians</option>
-                <option key="2 Thessalonians" value="2 Thessalonians">2 Thessalonians</option>
-                <option key="1 Timothy" value="1 Timothy">1 Timothy</option>
-                <option key="2 Timothy" value="2 Timothy">2 Timothy</option>
-                <option key="Titus" value="Titus">Titus</option>
-                <option key="Philemon" value="Philemon">Philemon</option>
-                <option key="Hebrews" value="Hebrews">Hebrews</option>
-                <option key="James" value="James">James</option>
-                <option key="1 Peter" value="1 Peter">1 Peter</option>
-                <option key="2 Peter" value="2 Peter">2 Peter</option>
-                <option key="1 John" value="1 John">1 John</option>
-                <option key="2 John" value="2 John">2 John</option>
-                <option key="3 John" value="3 John">3 John</option>
-                <option key="Jude" value="Jude">Jude</option>
-                <option key="Revelation" value="Revelation">Revelation</option>
-              </select>
-            </label>
-            <label>Translation or version
-              <select aria-label="SBL Scripture translation" value={sblScriptureTranslation}
-                onChange={e=>setSblScriptureTranslation(e.target.value)}>
-                {['NRSV','RSV','NIV','NASB','KJV','CEB'].map(v=><option key={v}>{v}</option>)}
-              </select>
-            </label>
-            <div className="settingsActions">
-              <label>Chapter
-                <input type="number" min="1" max="150" value={sblScriptureChapter}
-                  onChange={e=>setSblScriptureChapter(e.target.value)}/>
-              </label>
-              <label>First verse
-                <input type="number" min="1" max="176" value={sblScriptureFirstVerse}
-                  onChange={e=>setSblScriptureFirstVerse(e.target.value)}/>
-              </label>
-              <label>Last verse (optional)
-                <input type="number" min="1" max="176" value={sblScriptureLastVerse}
-                  onChange={e=>setSblScriptureLastVerse(e.target.value)}/>
-              </label>
-            </div>
-            <button type="button" disabled={!chatId}
-              onClick={()=>void previewSblScriptureLocator()}>
-              Format SBL2 Scripture reference locally
-            </button>
-            {sblScripturePreview&&
-              <div>
-                <strong>{sblScripturePreview.reference}</strong>
-                <small>Passage text not checked; translation and edition unverified.
-                  This is not a bibliography item or scholarly source attestation.</small>
-                <button type="button"
-                  onClick={()=>void navigator.clipboard.writeText(sblScripturePreview.reference)
-                    .catch(e=>setResearchError(String(e)))}>
-                  Copy Scripture reference
-                </button>
-              </div>}
-            <label>Critical-edition reference (not a manuscript-witness check)
-              <select aria-label="SBL critical edition" value={sblEditionId}
-                onChange={e=>{setSblEditionId(e.target.value);setSblEditionPreview(null);}}>
-                <option value="NA28">Novum Testamentum Graece, 28th rev. edition (Greek NT)</option>
-                <option value="RAHLFS-HANHART-2006">Rahlfs–Hanhart, Septuaginta, 2006 (Greek OT)</option>
-              </select>
-            </label>
-            <button type="button" disabled={!chatId}
-              onClick={()=>void previewSblCriticalEdition()}>
-              Format selected critical-edition reference
-            </button>
-            {sblEditionPreview&&
-              <div className="researchResults" aria-label="Critical edition identification only">
-                <strong>{sblEditionPreview.reference}</strong>
-                <small>{sblEditionPreview.editionTitle} · {sblEditionPreview.publisher} · {
-                  sblEditionPreview.publicationYear} · ISBN {sblEditionPreview.isbn}</small>
-                <small>Edition catalog: {sblEditionPreview.catalogUrl}</small>
-                <small>Text readings, verse-numbering equivalences, variant witnesses,
-                  translations and any specific manuscript remain UNVERIFIED.</small>
-                <button type="button" onClick={()=>void navigator.clipboard.writeText(
-                  sblEditionPreview.reference
-                ).catch(e=>setResearchError(String(e)))}>
-                  Copy critical-edition reference
-                </button>
-              </div>}
-          </div>
-          {researchError&&<small role="alert">{researchError}</small>}
-          {researchResult?.chatId===chatId&&<div className="researchResults" aria-label="Research evidence leads">
-            <strong>{researchResult.sourceCount} discovered sources · UNVERIFIED</strong>
-            <small>{researchResult.message}</small>
-            <ul>{researchResult.leads.slice(0,25).map(l=><li key={l.sourceId}>
-              <strong>{l.title}</strong>
-              <small>Source ID: {l.sourceId}</small>
-              <small>{l.authors} · DOI {l.doi} · {
-                researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus || l.verificationStatus
-              }</small>
-              <button type="button" disabled={researchBusy||!researchAvailable}
-                onClick={()=>void checkResearchMetadata(l.sourceId)}>
-                Check independent Crossref metadata
-              </button>
-              {researchMetadataByChat[chatId+'|'+l.sourceId]&&
-                <small>{researchMetadataByChat[chatId+'|'+l.sourceId].message}</small>}
-              {researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus==='metadata_corroborated'&&
-                <button type="button" disabled={researchBusy||!researchAvailable}
-                  onClick={()=>void retrieveResearchDocument(l.sourceId)}>
-                  Retrieve bounded PDF/HTML document
-                </button>}
-              {researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus==='metadata_corroborated'&&
-                <button type="button" disabled={researchBusy||researchCitationBusy||!researchAvailable}
-                  onClick={()=>void previewResearchCitation(l.sourceId)}>
-                  {researchCitationBusy?'Reviewing catalog…':'Preview evidence-bound citation'}
-                </button>}
-              {researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus==='metadata_corroborated'&&
-                <button type="button" disabled={researchBusy||researchCitationBusy||!researchAvailable}
-                  onClick={()=>void reviewResearchCitationRevision(l.sourceId)}>
-                  Review changed Crossref metadata (prior version remains until approval)
-                </button>}
-              {researchCitationRevisionByChat[chatId+'|'+l.sourceId]&&
-                <small role="status">Citation catalog revision #{
-                  researchCitationRevisionByChat[chatId+'|'+l.sourceId].revisionCount} approved.
-                  Previous SHA-256: {researchCitationRevisionByChat[chatId+'|'+l.sourceId].previousSha256};
-                  current SHA-256: {researchCitationRevisionByChat[chatId+'|'+l.sourceId].currentSha256}.
-                  Publication details and passages still need independent review.</small>}
-              {researchCitationsByChat[chatId+'|'+l.sourceId]&&
-                <div className="researchResults" aria-label="Crossref-backed citation preview">
-                  <strong>{researchCitationsByChat[chatId+'|'+l.sourceId].style} · REVIEW REQUIRED</strong>
-                  <pre>{researchCitationsByChat[chatId+'|'+l.sourceId].bibliography}</pre>
-                  {researchCitationsByChat[chatId+'|'+l.sourceId].firstNote&&
-                    <small>First note: {researchCitationsByChat[chatId+'|'+l.sourceId].firstNote}</small>}
-                  <small>Crossref metadata response SHA-256:
-                    {' '}{researchCitationsByChat[chatId+'|'+l.sourceId].catalogResponseSha256}</small>
-                  <small>{researchCitationsByChat[chatId+'|'+l.sourceId].message}</small>
-                  <details>
-                    <summary>CSL-JSON-compatible source record · evidence limitations included</summary>
-                    <pre>{JSON.stringify(researchCitationsByChat[chatId+'|'+l.sourceId].cslJson,null,2)}</pre>
-                    <button type="button"
-                      onClick={()=>void navigator.clipboard.writeText(
-                        JSON.stringify(researchCitationsByChat[chatId+'|'+l.sourceId].cslJson,null,2)
-                      ).catch(e=>setResearchError(String(e)))}>
-                      Copy reviewed CSL JSON
-                    </button>
-                  </details>
-                  <small>Bibliographic identity matched; publication particulars, quotations,
-                    pages, and interpretations remain unverified. This is a preview,
-                    not a final scholarly citation.</small>
-                </div>}
-              {researchDocumentActive?.chatId===chatId
-                &&researchDocumentActive?.sourceId===l.sourceId&&
-                <button type="button" disabled={!researchBusy}
-                  onClick={()=>void cancelResearchDocument()}>
-                  Cancel active HTTPS document read
-                </button>}
-              {researchDocumentsByChat[chatId+'|'+l.sourceId]&&
-                <div className="researchResults" aria-label="Retrieved research document">
-                  <small>{researchDocumentsByChat[chatId+'|'+l.sourceId].message}</small>
-                  <small>Final HTTPS URL: {researchDocumentsByChat[chatId+'|'+l.sourceId].finalUrl}</small>
-                  <small>Redirect-chain SHA-256: {researchDocumentsByChat[chatId+'|'+l.sourceId].redirectChainSha256}</small>
-                  <small>{researchDocumentsByChat[chatId+'|'+l.sourceId].format} · {researchDocumentsByChat[chatId+'|'+l.sourceId].documentAccessed?'Document text accessed':'Unverified document candidate'}</small>
-                  <pre>{researchDocumentsByChat[chatId+'|'+l.sourceId].excerpt}</pre>
-                  {researchDocumentsByChat[chatId+'|'+l.sourceId].documentAccessed&&
-                    <>
-                      <input aria-label="Exact quote from retrieved document"
-                        value={researchDocumentQuotes[chatId+'|'+l.sourceId]||''}
-                        onChange={e=>{
-                          const key=chatId+'|'+l.sourceId;
-                          setResearchDocumentQuotes(old=>({...old,[key]:e.target.value}));
-                          setResearchDocumentPassages(old=>({...old,[key]:null}));
-                        }} placeholder="Copy an exact PDF passage" />
-                      <button type="button" disabled={researchBusy||
-                        !(researchDocumentQuotes[chatId+'|'+l.sourceId]||'').trim()}
-                        onClick={()=>void verifyResearchDocumentPassage(l.sourceId)}>
-                        Verify stored PDF passage
-                      </button>
-                      {researchDocumentPassages[chatId+'|'+l.sourceId]&&
-                        <small>Passage verified against stored PDF text; model interpretation remains unverified.</small>}
-                    </>}
-                </div>}
-            </li>)}</ul>
-            <div className="settingsActions">
-              <button type="button" disabled={researchBusy||researchResult.page<=1}
-                onClick={()=>void runResearchDiscovery(researchResult.page-1)}>
-                Previous discovery page
-              </button>
-              <small>Page {researchResult.page} of at most 5 · leads are not citations</small>
-              <button type="button" disabled={researchBusy||!researchResult.nextPage}
-                onClick={()=>void runResearchDiscovery(researchResult.nextPage)}>
-                Next discovery page
-              </button>
-            </div>
-          </div>}
-        </section>
-        <section className="researchResults" aria-label="Non-destructive Office text replacement">
-          <h3>Word and PowerPoint text editing</h3>
-          <small>Replace matching complete text runs across a DOCX or PPTX,
-            preserving the original document and non-target package content.
-            Text spanning separately styled runs is not guessed or merged.</small>
-          <label>Document format
-            <select value={wordReplaceFormat}
-              onChange={e=>{setWordReplaceFormat(e.target.value);setWordReplaceReceipt(null);}}>
-              <option value="docx">Word (.docx)</option>
-              <option value="pptx">PowerPoint (.pptx)</option>
-            </select>
-          </label>
-          <label>Exact existing text
-            <input value={wordReplaceOld}
-              onChange={e=>setWordReplaceOld(e.target.value)}/>
-          </label>
-          <label>Replacement text
-            <input value={wordReplaceNew}
-              onChange={e=>setWordReplaceNew(e.target.value)}/>
-          </label>
-          <button type="button" disabled={!chatId||wordReplaceBusy||
-            !wordReplaceOld.trim()||!wordReplaceNew.trim()||
-            wordReplaceOld===wordReplaceNew}
-            onClick={()=>void replaceWordTextRuns()}>
-            {wordReplaceBusy?'Preparing exact Office revision…':
-              'Select '+(wordReplaceFormat==='docx'?'Word':'PowerPoint')+' document and replace'}
-          </button>
-          {wordReplaceReceipt&&<small role="status">
-            Created {wordReplaceReceipt.newFileName}: {wordReplaceReceipt.replacements}
-            replacements · SHA-256 {wordReplaceReceipt.revisedSha256}.
-            Original file was not overwritten.
-          </small>}
-        </section>
-        <h3>Models</h3><p>GGUF models are discovered only from Lu's existing model store, never loaded automatically. Searching below is local and read-only.</p>
-        <label className="modelSearchLabel">Search registered local models
-          <input type="search" value={modelSearch} maxLength={100} autoComplete="off"
-            placeholder="Filename…" onChange={event=>setModelSearch(event.target.value)}/>
-        </label>
-        <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>
-        <button className="subtleButton full" onClick={importModel} disabled={busy}>Import GGUF from another location</button>
-        <div className="settingsModelList">{models.filter(m=>m.filename.toLocaleLowerCase().includes(modelSearch.trim().toLocaleLowerCase()))
-          .map(m => <button key={m.modelRef} className={'settingsModel '+(selectedModel === m.modelRef ? 'selected' : '')}
-          onClick={() => setSelectedModel(m.modelRef)} disabled={busy}>
-          <strong>{m.filename}</strong><small>{m.projectorAttached ? 'GGUF + MMProj' : 'GGUF only'} · {m.available ? 'Available' : 'Missing file'}</small></button>)}</div>
-        {modelInspection?.modelRef===selectedModel&&<section className="modelInspection" aria-label="Local model compatibility inspection">
-          <strong>Pre-load compatibility: {modelInspection.status.replaceAll('_',' ')}</strong>
-          <small>{modelInspection.detail}</small>
-          {modelInspection.fileBytes!=null&&<small>
-            GGUF v{modelInspection.ggufVersion} · {(modelInspection.fileBytes/1048576).toFixed(1)} MiB on disk ·
-            {modelInspection.tensorCount} header tensors ·
-            MMProj {modelInspection.projectorAttached?(modelInspection.projectorChecked?'header checked':'unavailable'):'not paired'}
-          </small>}
-          {modelInspection.architecture&&<small>GGUF-reported architecture: {modelInspection.architecture}
-            {modelInspection.tokenizerModel?' · tokenizer: '+modelInspection.tokenizerModel:''}
-            {modelInspection.reportedContextLength?' · reported context: '+modelInspection.reportedContextLength.toLocaleString()+' tokens':''}
-            {modelInspection.ggufFileType!=null?' · GGUF file-type code: '+modelInspection.ggufFileType:''}
-          </small>}
-          <small>Backend: {modelInspection.backendRequested}. Metadata is untrusted and does not certify architecture support, license or GPU/VRAM compatibility.</small>
-        </section>}
-        <button className="subtleButton full" disabled={busy || loaded || !selected || selected.projectorAttached} onClick={attachProjector}>Attach MMProj to selected model</button>
-        <div className="settingsActions"><button className="primaryButton" disabled={busy || loaded || !selected?.available || !modelInspection?.loadAllowed || modelInspection.modelRef!==selectedModel} onClick={loadModel}>Load inspected model</button>
-          <button className="subtleButton" disabled={busy || !loaded} onClick={unloadModel}>Unload current model</button></div>
-        <div className="settingsStatus"><span className="statusDot" data-ready={loaded}></span>{activity || (loaded ? 'Ready' : 'No model loaded')}</div>
-        <section aria-label="Public GGUF model discovery" className="modelProviderReview">
-          <h4>Public model discovery (Hugging Face)</h4>
-          <small>Explicit search uses Lu's separately hash-pinned public HTTPS reader. It cannot send credentials or download weights.</small>
-          <label>Search public model repositories
-            <input value={providerQuery} maxLength={96} autoComplete="off"
-              placeholder="e.g. qwen gguf"
-              onChange={event=>setProviderQuery(event.target.value)}/>
-          </label>
-          <button type="button" className="subtleButton" disabled={providerBusy||!providerQuery.trim()}
-            onClick={()=>void searchPublicModels()}>
-            {providerBusy?'Inspecting public catalog…':'Search public GGUF repositories'}
-          </button>
-          {providerFailure&&<small role="alert">{providerFailure}</small>}
-          {!!providerHits.length&&<div aria-label="Provider model search results">
-            {providerHits.map(lead=><button key={lead.repoId+lead.revision}
-              className="settingsModel" type="button" disabled={providerBusy}
-              onClick={()=>void inspectPublicModel(lead)}>
-              <strong>{lead.repoId}</strong>
-              <small>Revision {lead.revision.slice(0,12)} · reported license {lead.licenseLabel} · inspect files</small>
-            </button>)}
-          </div>}
-          {providerReview&&<div className="modelInspection" aria-label="Pinned model file review">
-            <strong>{providerReview.repoId}</strong>
-            <small>Exact revision {providerReview.revision} · provider-reported license {providerReview.licenseLabel}</small>
-            {providerReview.files.map(file=><div key={file.name}>
-              <strong>{file.name}</strong>
-              <small>{(file.bytes/1048576).toFixed(1)} MiB · SHA-256 {file.sha256}</small>
-              <button type="button" className="subtleButton" disabled={providerBusy}
-                onClick={()=>void preparePinnedTransfer(file)}>
-                Review immutable future download plan (does not download)
-              </button>
-            </div>)}
-            {providerTransferIntent&&<small role="status">
-              Metadata reviewed for {providerTransferIntent.filename} · expected SHA-256 {providerTransferIntent.sha256}.
-              Transfer state: awaiting P05; no file has been downloaded or installed.
-            </small>}
-            <small>Read-only preview. The license and model architecture require your review. In-app downloads are blocked until the P05 native Transfer Manager can validate HTTPS redirects, bytes, cancellation, resumable identity and separate approval.</small>
-            <a href={providerReview.sourceUrl} rel="noopener noreferrer" target="_blank">View pinned repository externally</a>
-          </div>}
-        </section>
-        <section aria-label="Model backend availability">
-          <h4>Inference backends</h4>
-          {modelBackends.map(item=><div className="modelInspection" key={item.backend}>
-            <strong>{item.engine} — {item.backend}</strong>
-            <small>{item.packaged?'Packaged':'Not packaged'} ·
-              {item.selectedOnNextStart?' Selected for next start':' Not selected'} ·
-              {item.gpuExecutionVerified?' GPU proven':' GPU not proven'} · {item.detail}</small>
-            {item.selectable&&!item.selectedOnNextStart&&
-              <button type="button" className="subtleButton"
-                disabled={working||chatBusy}
-                onClick={async()=>{
-                  try{
-                    const saved=await invoke('lu_model_select_backend',{backend:item.backend});
-                    if(saved){
-                      setModelBackends(await invoke('lu_model_backend_options'));
-                      setActivity('Saved '+item.backend+' backend for the next Lu restart. Existing model and approval remain unchanged.');
-                    }
-                  }catch(error){setError('Backend preference not saved: '+String(error))}
-                }}>
-                Use {item.backend} on next Lu restart
-              </button>}
-          </div>)}
-          <small>Both CPU and Vulkan binaries are bundled in the current Windows preview. A backend change needs a restart; real Radeon offload requires a loaded GGUF and driver. Lu will not silently grant model tools or switch to uninstalled backends.</small>
-        </section>
-        <p className="settingsNotice">A remote search result never installs, imports or loads a model. Use the existing native GGUF import picker for files you have downloaded and checked. The pinned engine requests Vulkan on Windows; driver/offload verification remains a separate physical gate.</p>
-      </div>
-    </div>}
-  </div>;
+      </div>;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+// Fixed, host-created native window URLs isolate Settings/Model Library from
+// App() chat effects, generation event handlers, queues, model prompts and drafts.
+// Installed windows use an authenticated Tauri label, not a query parameter
+// on an internal asset URL. Browser-only previews retain their query fixture.
+const luWindow=window.__TAURI_INTERNALS__
+  ? getCurrentWindow().label
+  : new URLSearchParams(window.location.search).get('lu-window');
+createRoot(document.getElementById('root')).render(
+  luWindow==='settings'?<SettingsWindow/>:
+  luWindow==='model-library'?<ModelLibraryWindow/>:<App/>
+);

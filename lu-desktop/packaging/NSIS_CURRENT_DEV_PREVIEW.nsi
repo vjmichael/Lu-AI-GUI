@@ -13,6 +13,9 @@ Unicode true
 !ifndef LU_ENGINE_MANIFEST
   !error "Set LU_ENGINE_MANIFEST to the engine manifest"
 !endif
+!ifndef LU_RESEARCH_DIR
+  !error "Set LU_RESEARCH_DIR to verified signed Windows HTTPS client"
+!endif
 !ifndef LU_TEST_README
   !error "Set LU_TEST_README to the human test checklist"
 !endif
@@ -49,6 +52,15 @@ Section "Lu Current-source Windows development preview" SEC_TEST
   File /oname=manifest.json "${LU_ENGINE_MANIFEST}"
   SetOutPath "$INSTDIR\lu-native-codecs"
   File /r "${LU_CODECS_DIR}\*.*"
+  SetOutPath "$INSTDIR\lu-research"
+  File /oname=curl.exe "${LU_RESEARCH_DIR}\curl.exe"
+!ifdef LU_BROWSER_DIR
+  ; Only a reviewed content-pinned Chromium/Node/Playwright runtime may be
+  ; packaged. The native host re-verifies the embedded complete manifest
+  ; before any process launch or network authorization.
+  SetOutPath "$INSTDIR\lu-browser"
+  File /r "${LU_BROWSER_DIR}\*.*"
+!endif
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\UninstallLuCurrentPreview.exe"
   CreateDirectory "$SMPROGRAMS\Lu Current Preview"
@@ -76,5 +88,9 @@ Section "Uninstall"
   Delete "$INSTDIR\lu-inference\manifest.json"
   RMDir "$INSTDIR\lu-inference"
   RMDir /r "$INSTDIR\lu-native-codecs"
+  Delete "$INSTDIR\lu-research\curl.exe"
+  RMDir "$INSTDIR\lu-research"
+  ; App-owned binary runtime only. Never touch model store, AppData or chats.
+  RMDir /r "$INSTDIR\lu-browser"
   RMDir "$INSTDIR"
 SectionEnd

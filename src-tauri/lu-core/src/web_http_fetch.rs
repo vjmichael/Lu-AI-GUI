@@ -76,7 +76,7 @@ fn public_ip(ip: IpAddr) -> bool {
         },
     }
 }
-fn validated_host(url: &str) -> Result<(String,String),FetchError> {
+pub(crate) fn validated_host(url: &str) -> Result<(String,String),FetchError> {
     if !url.starts_with("https://") || url.len()>2048 || url.chars().any(char::is_control) {
         return Err(FetchError::InvalidUrl);
     }
@@ -97,7 +97,7 @@ fn validated_host(url: &str) -> Result<(String,String),FetchError> {
     { return Err(FetchError::InvalidUrl); }
     Ok((host.clone(),format!("https://{}{}",host,&remainder[end..])))
 }
-fn trusted_resolution(addresses: impl IntoIterator<Item=IpAddr>) -> Result<Ipv4Addr,FetchError> {
+pub(crate) fn trusted_resolution(addresses: impl IntoIterator<Item=IpAddr>) -> Result<Ipv4Addr,FetchError> {
     let addresses:Vec<_>=addresses.into_iter().collect();
     if addresses.is_empty() || addresses.iter().any(|ip| !public_ip(*ip)) {
         return Err(FetchError::UnsafeAddress);

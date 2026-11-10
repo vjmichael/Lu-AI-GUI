@@ -9,36 +9,46 @@ import json
 import os
 import sys
 import urllib.request
+import urllib.error
 
 
 
-# Opt-in decoder grammar: it permits BOTH tool and final forms, never
-# specifies a tool name, command, arguments, authority or a correct answer.
-# It only prevents a small Qwen GGUF from wasting the entire token budget
-# on an unfinished <think> block or invalid JSON. Native Lu still decides
-# whether the chosen tool exists and whether a fresh human approved it.
-GENERIC_REPLY_JSON_SCHEMA = {
-    "oneOf": [
-        {"type": "object",
-         "properties": {
-             "kind": {"type": "string", "enum": ["tool"]},
-             "name": {"type": "string"},
-             "arguments": {"type": "object"},
-         },
-         "required": ["kind", "name", "arguments"],
-         "additionalProperties": False},
-        {"type": "object",
-         "properties": {
-             "kind": {"type": "string", "enum": ["final"]},
-             "text": {"type": "string"},
-         },
-         "required": ["kind", "text"],
-         "additionalProperties": False},
-    ]
+# Explicit GBNF for llama.cpp /completion. The observed pinned-Qwen
+# failure was a complete tool object FOLLOWED by unstructured text, despite
+# the previously supplied JSON-schema hint. The grammar constrains the
+# decoder's complete reply, rather than deleting the trailing model bytes.
+# The model still chooses the tool name and ALL argument values; host-side
+# catalog, original-human authority, bounded effects and independent oracles
+# remain unchanged. This is a TEST transport, not a synthetic tool call.
+# From pinned llama.cpp b12143 grammars/json.gbnf (normal JSON value,
+# string, number, whitespace grammar), with the two strict Lu envelopes.
+# Do not substitute ad-hoc regex classes: the previous grammar was accepted
+# as an HTTP request but did not constrain the real model's full response.
+_JSON_RULES = r'''
+tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws string "," ws "\"arguments\"" ws ":" ws object "}" ws
+# The genuine Git/FFprobe test's advertised Protobuf schemas require an
+# empty argument object. This constrains only the typed argument SHAPE, not
+# the model's tool-name selection. The host still verifies its real catalog.
+# Prevent the earlier Qwen malformed object/prose tail before any OS effect.
+observed-tool ::= "{" ws "\"kind\"" ws ":" ws "\"tool\"" ws "," ws "\"name\"" ws ":" ws string "," ws "\"arguments\"" ws ":" ws "{" ws "}" ws "}" ws
+final ::= "{" ws "\"kind\"" ws ":" ws "\"final\"" ws "," ws "\"text\"" ws ":" ws string "}" ws
+value ::= object | array | string | number | ("true" | "false" | "null") ws
+object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws
+array ::= "[" ws (value ("," ws value)*)? "]" ws
+string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws
+number ::= ("-"? ([0-9] | [1-9] [0-9]{0,15})) ("." [0-9]+)? ([eE] [-+]? [0-9] [1-9]{0,15})? ws
+ws ::= | " " | "\n" [ \t]{0,20}
+'''
+GENERIC_REPLY_GBNF = {
+    "required": "root ::= observed-tool\n" + _JSON_RULES,
+    "auto": "root ::= tool | final\n" + _JSON_RULES,
 }
 
-
-def model_payload(prompt: str, tokens: int, protocol: str) -> dict:
+def model_payload(prompt: str, tokens: int, protocol: str, tool_mode: str = "auto") -> dict:
+    if tool_mode not in ("auto", "required"):
+        raise ValueError("Unknown reviewed observation mode")
+    if tool_mode == "required" and protocol != "json_schema":
+        raise ValueError("Required observation mode needs strict JSON schema")
     if protocol not in ("raw", "json_schema"):
         raise ValueError("Unknown explicit test-only response protocol")
     if protocol == "json_schema":
@@ -52,15 +62,108 @@ def model_payload(prompt: str, tokens: int, protocol: str) -> dict:
         "stop": ["<|im_end|>"]
     }
     if protocol == "json_schema":
-        result["json_schema"] = GENERIC_REPLY_JSON_SCHEMA
+        # Host review policy already requires an observed effect before any
+        # final answer in these tests. Narrow only the FIRST step to a
+        # tool-shaped envelope, without supplying a tool NAME/arguments.
+        # Qwen must still select the advertised live catalog tool.
+        # Host validates authorization, exact effects, feedback and restart.
+        # The former json_schema/oneOf hint did not prevent a real
+        # pinned-Qwen reply from appending prose after a valid tool object.
+        # llama.cpp supports a directly supplied complete-output GBNF.
+        # No host-side JSON slicing, answer rewriting or tool fabrication.
+        result["grammar"] = GENERIC_REPLY_GBNF[tool_mode]
     return result
+
+
+def grammar_preflight_payload() -> dict:
+    """A literal-decoder challenge: model text CANNOT satisfy it by guessing."""
+    return {
+        "prompt": "<|im_start|>user\nWrite BANANA without stopping.\n<|im_end|>\n<|im_start|>assistant\n",
+        "n_predict": 32, "temperature": 0, "stream": False,
+        "cache_prompt": False, "stop": ["<|im_end|>"],
+        "grammar": 'root ::= "LU_GRAMMAR_PROBE_OK"',
+    }
+
+
+def assert_tool_grammar_enforced(port: int):
+    """Verify b12143 constrained JSON tool-envelope shape without effects.
+
+    The model may choose ANY tool name and JSON arguments. This probe does
+    not invoke native tools or grant access; it ensures the decoder does
+    not append unstructured prose like the previously observed Qwen reply.
+    """
+    prompt = (
+        "<|im_start|>system\n"
+        "Return an ordinary brief sentence. Do NOT produce JSON.\n"
+        "<|im_end|>\n<|im_start|>user\n"
+        "Please say HELLO in plain English, then one Russian sentence.\n"
+        "<|im_end|>\n<|im_start|>assistant\n"
+    )
+    payload = model_payload(prompt, 128, "json_schema", "required")
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/completion",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=90) as reply:
+            raw = reply.read(262145)
+    except urllib.error.HTTPError as exc:
+        diagnostic = exc.read(4097).decode("utf-8", "replace")
+        raise ValueError(
+            "Pinned llama.cpp rejected exact tool GBNF, HTTP "
+            + str(exc.code) + " (bounded native error): " + diagnostic[:4096]
+        ) from None
+        if len(raw) > 262144:
+            raise ValueError("Oversized strict tool-grammar probe")
+    content = json.loads(raw).get("content")
+    if not isinstance(content, str) or len(content) > 65536:
+        raise ValueError("No bounded model output in strict grammar probe")
+    try:
+        obj = json.loads(content)
+    except (ValueError, TypeError):
+        raise ValueError(
+            "Pinned llama.cpp did not enforce full tool GBNF as one exact JSON object"
+        ) from None
+    if not isinstance(obj, dict) or set(obj) != {"kind","name","arguments"} \
+        or obj["kind"] != "tool" or not isinstance(obj["name"], str) \
+        or obj["arguments"] != {}:
+        raise ValueError("Pinned llama.cpp full tool GBNF produced wrong envelope")
+    # The tool name is deliberately NOT validated against Lu's registry
+    # here; the real native model turn does that after genuine user review.
+
+
+def assert_grammar_enforced(port: int):
+    """The pinned llama.cpp server must actually honor its GBNF parameter.
+
+    A server silently ignoring an invalid/unsupported grammar is NOT a
+    serialization fix. This test controls no tool, effect, permission, or
+    target; it proves only that the decoder constraint is active. Refuse
+    genuine tool acceptance if this fails.
+    """
+    url = f"http://127.0.0.1:{port}/completion"
+    request = urllib.request.Request(
+        url, data=json.dumps(grammar_preflight_payload()).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST"
+    )
+    with urllib.request.urlopen(request, timeout=90) as reply:
+        raw = reply.read(262145)
+        if len(raw) > 262144:
+            raise ValueError("Oversized llama grammar preflight response")
+    decoded = json.loads(raw)
+    if decoded.get("content") != "LU_GRAMMAR_PROBE_OK":
+        raise ValueError(
+            "Pinned llama.cpp did not enforce literal decoder GBNF; "
+            "strict model tool serialization cannot be accepted"
+        )
 
 
 def main():
     request = json.load(sys.stdin)
-    if not isinstance(request, dict) or set(request) != {"prompt", "max_tokens"}:
+    if not isinstance(request, dict) or set(request) != {"prompt", "max_tokens", "tool_mode"}:
         raise ValueError("Expected exactly prompt and max_tokens")
     prompt, tokens = request["prompt"], request["max_tokens"]
+    tool_mode = request["tool_mode"]
     if not isinstance(prompt, str) or not 0 < len(prompt.encode()) <= 131072:
         raise ValueError("Invalid native-model prompt")
     if type(tokens) is not int or not 1 <= tokens <= 512:
@@ -69,7 +172,7 @@ def main():
     if not 1024 <= port <= 65535:
         raise ValueError("Only the configured localhost model port is permitted")
     protocol = os.environ.get("LU_E1_P07_RESPONSE_PROTOCOL", "raw")
-    payload = json.dumps(model_payload(prompt, tokens, protocol)).encode("utf-8")
+    payload = json.dumps(model_payload(prompt, tokens, protocol, tool_mode)).encode("utf-8")
     url = f"http://127.0.0.1:{port}/completion"
     http_request = urllib.request.Request(
         url, data=payload, headers={"Content-Type": "application/json"},

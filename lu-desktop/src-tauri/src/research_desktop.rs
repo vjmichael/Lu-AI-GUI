@@ -395,6 +395,12 @@ impl ResearchDesktop{
     pub(crate) fn available(&self)->bool{
         self.expected_sha256.is_some_and(|sha|verified_file(&self.curl,sha))
     }
+    pub(crate) fn pinned_transfer_client(&self)->Result<PathBuf,String>{
+        if !self.available(){
+            return Err("HF transfer denied: verified Lu HTTPS binary is not packaged".into())
+        }
+        Ok(self.curl.clone())
+    }
     /// P03 explicit operator-selected public model discovery. The same
     /// hash-pinned HTTPS reader used by Research is reused rather than
     /// introducing a model-provided binary, URL, credential or network tool.

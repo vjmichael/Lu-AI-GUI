@@ -1,26 +1,44 @@
 name: Lu Browser and Research Native Acceptance Candidates
 on:
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 jobs:
   source:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 205 && github.event.pull_request.head.ref == 'lu/p0-installed-ux-agent-acceptance-20261110' && contains(github.event.pull_request.body, format('LU_P0_BROWSER_NATIVE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_BROWSER_NATIVE_SHA={0}', github.event.pull_request.head.sha))) }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: node scripts/verify-source-tree.mjs
-      - run: node --test lu-desktop/tests/research-source-route.test.mjs
-      - run: node --test lu-desktop/tests/browser-research-evidence.test.mjs
-      - run: node --test lu-desktop/tests/research-citation-enforcement.test.mjs
-      - run: node --test lu-desktop/tests/research-roadmap-acceptance.test.mjs
+      - run: node --test lu-desktop/tests/p0-browser-real-ci-gate.test.mjs
       - run: node --test lu-desktop/tests/browser-model-read.test.mjs
       - run: node --test lu-desktop/tests/browser-staging.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs
       - run: node --test tests/lu-browser-worker.test.mjs
+  research-ui-regression:
+    # Retain the original OpenAlex/Crossref source acceptance, including
+    # missing legacy controls, as its own failing evidence—not a browser
+    # runtime prerequisite and not a silent waiver.
+    needs: source
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/verify-source-tree.mjs
+      - name: Original research UI and independent citation contracts
+        run: node --test lu-desktop/tests/research-source-route.test.mjs lu-desktop/tests/browser-research-evidence.test.mjs lu-desktop/tests/research-citation-enforcement.test.mjs lu-desktop/tests/research-roadmap-acceptance.test.mjs
+
   browser-candidate:
     needs: source
     strategy:
@@ -32,6 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -59,16 +78,21 @@ jobs:
       - name: Exercise bundled headed Chromium in Xvfb on Linux
         if: runner.os == 'Linux'
         run: xvfb-run -a node --test lu-desktop/tests/browser-ci-executable.test.mjs
-      - name: Publish short-lived candidate manifest, NOT an approved runtime
+      - name: Preserve exact inspected headed browser candidate, NOT an approved runtime
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lu-browser-candidate-${{ runner.os }}-${{ github.sha }}
-          if-no-files-found: error
-          retention-days: 3
-          path: |
-            out/lu-browser-candidate/manifest.json
-            out/lu-browser-candidate/manifest.sha256
-            out/lu-browser-candidate/candidate-summary.json
+          name: lu-browser-review-required-${{ runner.os }}-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0
+          path: out/lu-browser-candidate/
+      - name: Do not silently admit candidate as production browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e 'const m=require("./out/lu-browser-candidate/manifest.json");if(m.status!=="candidate")throw Error("CI cannot auto-review Chromium");console.log("UNAPPROVED_BROWSER_CANDIDATE_AFTER_REAL_EXECUTION "+m.files.length)'
+          echo 'REAL HEADED CHROMIUM CANDIDATE EXERCISED; full artifact preserved for independent review. Runtime is NOT production-admitted.' >> "$GITHUB_STEP_SUMMARY"
   research-evidence:
     needs: source
     strategy:
@@ -79,6 +103,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -98,6 +123,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:

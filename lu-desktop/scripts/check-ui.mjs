@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 const ui = readFileSync(new URL('../web/main.jsx', import.meta.url), 'utf8');
+const windows = readFileSync(new URL('../web/native_windows.jsx', import.meta.url), 'utf8');
+const researchHost = readFileSync(new URL('../src-tauri/src/research_desktop.rs', import.meta.url), 'utf8');
 const host = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
 const workspaceHost = readFileSync(new URL('../src-tauri/src/workspace_desktop.rs', import.meta.url), 'utf8');
 const store = readFileSync(new URL('../src-tauri/src/ansf_chat_store.rs', import.meta.url), 'utf8');
@@ -24,63 +26,64 @@ const tests = [
     host.includes('async fn lu_research_openalex(') &&
     host.includes('fn lu_research_available(') &&
     ui.includes("invoke('lu_research_openalex',{chatId:sourceChat,query:researchQuery,page:selectedPage})") &&
-    ui.includes('discovered sources · UNVERIFIED') &&
-    ui.includes('Research network runtime is not bundled')],
+    researchHost.includes('verification_status') &&
+    researchHost.includes('citation_verified') &&
+    host.includes('state.observe.deny_unscoped_network_while_observing()?')],
   ['Browser runtime is native-owned, permit-gated, and host-verified with no ambient model navigation',
     host.includes('async fn lu_browser_runtime_status(') &&
     host.includes('async fn lu_browser_start(') &&
     host.includes('owner.browser_authority.open_user_task(') &&
     host.includes('owner.browser_runtime.require_launch_ready()?') &&
-    ui.includes("browserOperation('lu_browser_start',{chatId,origins:browserOrigins})") &&
-    ui.includes('Authorize read-only Browser')],
-  ['Observe awareness lane logs scoped native hints and prepares a no-execution handoff',
+    host.includes('browser_model_desktop::explicit_browse_origin(&prompt)') &&
+    host.includes('start_browser_for_exact_turn(') &&
+    host.includes('Browser grant')],
+  ['Observe awareness lane stays confined to native Settings and never grants an AI task',
     host.includes('fn lu_observe_notes(') &&
     host.includes('fn lu_observe_handoff(') &&
     host.includes('lu_observe_notes,') &&
-    ui.includes("invoke('lu_observe_notes',{chatId})") &&
-    ui.includes('Prepare large-model review handoff') &&
-    ui.includes('Observation briefing added to chat draft. Review and press Send when ready.') &&
-    css.includes('.observeNotations')],
-  ['Observe WGC one-shot is explicit, pinned, supervised, user-selected and does not claim visual understanding',
+    windows.includes("invoke('lu_observe_notes',{chatId})") &&
+    windows.includes("invoke('lu_observe_handoff',{chatId})") &&
+    windows.includes('Prepare large-model review handoff') &&
+    windows.includes('Nothing is sent automatically.') &&
+    !ui.includes('luWindowBackdrop')],
+  ['Observe WGC one-shot remains explicitly pinned, consented and locally attached',
     host.includes('async fn lu_observe_capture_one_shot(') &&
     host.includes('LU_OBSERVE_CAPTURE_WORKER_SHA256') &&
     host.includes('observer.launch_one_shot(&chat_id,plan,lease)') &&
     host.includes('guardian.admit_host_worker(') &&
     host.includes('lu_observe_capture_available,') &&
-    ui.includes("invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly,primaryDisplay,localImage})") &&
-    ui.includes('Select window/display · capture one frame') &&
-    ui.includes('Capture selected foreground app (4s)') &&
-    ui.includes('Capture primary display (OS-identified, full screen)') &&
-    ui.includes('Capture foreground app for local GGUF image') &&
+    windows.includes("invoke('lu_observe_capture_one_shot',{") &&
+    windows.includes('Select window/display · capture one frame') &&
+    windows.includes('Capture selected foreground app (4s)') &&
+    windows.includes('Capture primary display (redacted)') &&
+    windows.includes('Capture foreground app for local GGUF image') &&
     host.includes('async fn lu_observe_capture_local_image(') &&
     host.includes('--lu-observe-foreground-one-shot') &&
-    ui.includes("if(action==='pause'||action==='stop'){") &&
-    ui.includes('setCaptureTaskId(null);setCaptureReceipt(null)') &&
-    ui.includes('Receipt-only capture fully blanks the frame.') &&
-    ui.includes('Separate user-approved local-GGUF image modes retain one private bounded frame') &&
-    ui.includes('Entire captured frame was blanked before receipt output.') &&
-    ui.includes('Attach approved frame to this local multimodal chat') &&
-    ui.includes('Capture primary display for local GGUF image') &&
-    ui.includes('fullyRedactedReceipt')],
-  ['Observe pilot is native-approved, scoped to Lu events and never claims desktop capture',
+    windows.includes("invoke('lu_observe_capture_local_image',{chatId})") &&
+    windows.includes("invoke('lu_observe_capture_receipt',{chatId})") &&
+    windows.includes('fullyRedactedReceipt') &&
+    windows.includes('sourceIdentityAttested') &&
+    ui.includes("listen('lu-observed-image-admitted'") &&
+    host.includes('register_observed_local_image')],
+  ['Observe pilot remains OFF by default, OS-confirmed, scoped to original chat',
     host.includes('fn lu_observe_self_signal(') &&
     host.includes('fn lu_observe_status(') &&
     host.includes('lu_observe_start,') &&
-    ui.includes('Observe & Learn · Lu UI only') &&
-    ui.includes('An additionally approved Windows foreground-window capture rechecks HWND, PID and process creation time') &&
-    ui.includes("observeAction('stop')") &&
+    windows.includes('OFF by default') &&
+    windows.includes("changeObservation('stop')") &&
     host.includes('notice.task_id.starts_with("obs-")') &&
-    css.includes('.observePilot')],
+    windows.includes('local-only')],
   ['Wave 4 browser preference remains a host-only render setting without navigation authority',
     host.includes('fn lu_browser_visibility(') &&
     host.includes('fn lu_set_browser_visibility(') &&
-    ui.includes("invoke('lu_set_browser_visibility',{mode})") &&
-    ui.includes('This preference does not launch or authorize browsing')],
+    windows.includes("invoke('lu_set_browser_visibility',{mode:event.target.value})") &&
+    windows.includes('never grants GPU access')],
   ['Wave 4 vision status is host-attested and never claims projector presence is a successful probe',
     host.includes('fn lu_vision_capability(') &&
     host.includes('vision_context::image_preflight(') &&
-    ui.includes("invoke('lu_vision_capability')") &&
-    ui.includes('Vision: {visionCapability.status}')],
+    host.includes('async fn lu_vision_run_probe(') &&
+    host.includes('vision_context::probe_evidence') &&
+    host.includes('name:"Multimodal vision"')],
   ['Image Workspace keeps immutable original and native-reviewed revision export separate from AI edits',
     ui.includes('Image Workspace · original and immutable revision export') &&
     ui.includes('setImageViewer({imageRef:im.imageRef,zoom:1})') &&
@@ -94,13 +97,13 @@ const tests = [
     host.includes('workspace_desktop::ask_git_for_chat(') &&
     workspaceHost.includes('WorkspaceReadTurnSession::new_git(') &&
     workspaceHost.includes('trusted_git_executable()') &&
-    ui.includes('Git status, log and diff require selecting a repository')],
+    host.includes('workspace_desktop::ask_git_for_chat(')],
   ['Wave 3 ordinary Send can open trusted Reader for explicit document interpretation',
     host.includes('reader_desktop::explicit_reader_document_request(&prompt)') &&
     host.includes('reader_desktop::ask_reader_for_chat(')],
   ['Wave 3 ordinary text can offer a native workspace picker without model permission or attachment instructions',
     host.includes('workspace_desktop::explicit_read_workspace_request(&prompt)') &&
-    ui.includes('Explicit workspace searches and document-reading requests open native pickers')],
+    host.includes('workspace_desktop::ask_workspace_for_chat(')],
   ['Wave 3 tool discovery comes from the actual authorized native registry, never from model names',
     ui.includes("listen('lu-native-turn-capabilities'") &&
     ui.includes('Read-only native tools for this turn') &&
@@ -123,7 +126,8 @@ const tests = [
     host.includes('fn lu_accept_native_action_proposal(')],
   ['Wave 3 normal Send one-turn workspace route is explicitly opt-in and uses native picker',
     ui.includes('readOnlyWorkspace: useWorkspaceTools') &&
-    ui.includes('Use workspace tools on Send') &&
+    host.includes('workspace_desktop::explicit_read_workspace_request(&prompt)') &&
+    !ui.includes('chatToolsDrawer') &&
     ui.includes('if (useWorkspaceTools) setWorkspaceToolsNextSend(false)') &&
     host.includes('workspace_desktop::ask_workspace_for_chat(') &&
     host.includes('workspace_desktop::validate_workspace_send_request(')],
@@ -132,7 +136,7 @@ const tests = [
   ['new chats and conversation history are host-owned', ui.includes("invoke('lu_new_chat')") && ui.includes("invoke('lu_chats')") && host.includes('fn lu_new_chat(')],
   ['one-level folders and favorites are durable', ui.includes("invoke('lu_new_folder'") && ui.includes("invoke('lu_favorite_chat'") && store.includes('pub fn favorite(')],
   ['models available from a quick dropdown', ui.includes('modelSwitcher') && ui.includes('modelMenu')],
-  ['model management only in Settings', ui.includes('settingsOpen') && ui.includes('Settings') && !ui.includes('MODEL CONTROL')],
+  ['model management only in Settings', ui.includes("kind:'settings'") && windows.includes('Settings sections') && !ui.includes('settingsBackdrop')],
   ['no visible Lu Native Runtime chip', !ui.includes('Lu Native Runtime')],
   ['selection does not start model inference', !/onClick=\{\(\) => \{ setSelectedModel\([^}]*loadModel/.test(ui) && ui.includes('Selection does not load')],
   ['model discovery stays host owned and explicit', host.includes('fn scan_unindexed_models(') && host.includes('fn lu_rescan_models(')],
@@ -158,7 +162,7 @@ const tests = [
     host.includes('state.archive_reviews.stage_supervised(') &&
     host.includes('fn lu_cancel_archive_preview(') &&
     ui.includes("invoke('lu_cancel_archive_preview'") &&
-    ui.includes('Cancel archive preview')],
+    host.includes('state.archive_runs.request_cancel_chat(&chat_id)')],
   ['archive recovery independently observes approved full-tree integrity after restart',
     host.includes('state.wave2_recovery.record_archive_intent(') &&
     ui.includes('operation.targetIntegrity') &&

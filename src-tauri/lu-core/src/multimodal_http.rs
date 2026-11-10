@@ -286,7 +286,12 @@ pub fn generate_chat_stream_body(
             ChatEvent::Done=>Ok(FrameDisposition::Done),
         }
     })?;
-    if emitted==0{return Err("multimodal engine did not finish with nonempty text".into());}
+    if emitted==0 {
+        // Exact request protocol and session are checked separately. This
+        // is a genuine native-image failure, never a synthetic PASS. No
+        // prompt, pixels, raw reasoning or engine response body is exposed.
+        return Err("multimodal engine completed with zero visible answer tokens; verify MMProj/vision architecture, chat template and reasoning settings".into());
+    }
     Ok(())
 }
 

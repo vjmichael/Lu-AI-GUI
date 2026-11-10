@@ -386,10 +386,22 @@ pub fn build_structured_chat_request(
     } else {
         messages.push(json!({"role":"user","content":parts}));
     }
-    Ok(
-        json!({"messages":messages,"max_tokens":max_new_tokens,"temperature":0.0,"stream":true})
-            .to_string(),
-    )
+    // Vision is an observation task. Hybrid Qwen-family chat templates can
+    // use the entire short response budget for internal reasoning, returning
+    // no final visible token. llama.cpp supports both explicit options.
+    // Keep the standard text/tool path unchanged so agent reasoning remains.
+    // Neither option substitutes for proof of actual image understanding.
+    let mut request=json!({
+        "messages":messages,
+        "max_tokens":max_new_tokens,
+        "temperature":0.0,
+        "stream":true
+    });
+    if !images.is_empty() {
+        request["chat_template_kwargs"]=json!({"enable_thinking":false});
+        request["reasoning_effort"]=json!("none");
+    }
+    Ok(request.to_string())
 }
 
 /// Compatibility wrapper for the existing saved multimodal turn parser.
@@ -593,6 +605,8 @@ mod tests {
         let body = build_llama_chat_request(&turn, 128).unwrap();
         let payload: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(payload["messages"][0]["content"][1]["type"], "image_url");
+        assert_eq!(payload["chat_template_kwargs"]["enable_thinking"], false);
+        assert_eq!(payload["reasoning_effort"], "none");
         assert!(payload["messages"][0]["content"][1]["image_url"]["url"]
             .as_str()
             .unwrap()

@@ -3,6 +3,55 @@
 //! The host uses native OS pickers and verifies a persisted human user turn.
 //! No mandatory sandbox is imposed on Lu Core.
 use super::*;
+/// Conservative ORIGINAL-human-text classification for a local media
+/// metadata task. This only chooses whether to OFFER the existing native
+/// WAV/MP4 picker; the subsequent model still selects a typed reviewed
+/// FFprobe tool and only a fresh native human decision can authorize it.
+pub(crate) fn explicit_media_metadata_request(prompt:&str)->bool{
+    let input=prompt.trim();
+    if input.is_empty()||input.len()>8192||input.contains("<|")
+        ||input.contains("[Attached text file:"){return false}
+    let lower=input.to_ascii_lowercase();
+    if ["do not ","don't ","never ","without ","how to ","explain ",
+        "hypothetical ","example of ","what is a ","what is an "]
+        .iter().any(|term|lower.contains(term)){return false}
+    let verb=["inspect ","analyze ","analyse ","probe ","check ",
+        "read ","show ","verify ","identify ","tell me the "]
+        .iter().any(|term|lower.contains(term));
+    let selected=["my wav","this wav","local wav","selected wav",
+        "my mp4","this mp4","local mp4","selected mp4",
+        "my audio file","this audio file","local audio file",
+        "my video file","this video file","local video file",
+        "my media file","this media file","selected media file"]
+        .iter().any(|term|lower.contains(term));
+    let facts=["codec","duration","metadata","bitrate","container",
+        "resolution","stream","audio","video"]
+        .iter().any(|term|lower.contains(term));
+    verb&&selected&&facts
+}
+#[cfg(test)]
+mod media_intent_tests{
+    use super::*;
+    #[test]
+    fn original_human_media_fact_requests_offer_only_native_picker(){
+        assert!(explicit_media_metadata_request(
+            "Inspect the codec and duration of my local WAV file"));
+        assert!(explicit_media_metadata_request(
+            "Verify metadata and stream count for this MP4"));
+        for text in [
+            "What is a WAV file?",
+            "Explain how to check my WAV file codec",
+            "Do not inspect my MP4 video's metadata",
+            "Check a hypothetical video stream",
+            "Research video streaming on the web",
+            "[Attached text file: bad] Inspect my WAV codec"
+        ]{
+            assert!(!explicit_media_metadata_request(text),"{text}");
+        }
+    }
+}
+
+
 use lu_core::{
     agent_tool_loop::ToolDispatchCheckpoint,
     contracts::{AuthorizationError,ToolAuthorizer,ToolDescriptor,ToolEffect,ToolInvocation},

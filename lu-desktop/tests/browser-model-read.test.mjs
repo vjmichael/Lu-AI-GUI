@@ -42,15 +42,23 @@ test('Browser Stop revokes the task and interrupts the queued or active model re
   assert.match(host,/owner\.browser_authority\.revoke_task\(&g\.task_id\)/);
   assert.match(bridge,/struct ProbeLease/);
   assert.match(bridge,/if ticket\.cancelled\(\)\|\|!grant_current\(/);
-  assert.match(ui,/Let Lu inspect this approved browser/);
+  // Simplified Lu chat removed the legacy explicit browser button. Original
+  // human chat intent is routed by the host, never by an ambient UI control.
+  assert.match(host,/browser_model_desktop::explicit_browse_origin/);
+  assert.doesNotMatch(ui,/Let Lu inspect this approved browser/);
 });
 test('Preview is bounded untrusted evidence, never raw screenshots or invented citations',()=>{
   assert.match(bridge,/take\(2048\)/);
   assert.match(bridge,/if calls\.len\(\)>8/);
   assert.match(bridge,/source_is_untrusted:true/);
   assert.match(bridge,/source_verified_for_citation:false/);
-  assert.match(ui,/Model-guided browser observations/);
-  assert.match(ui,/page\.excerpt&&<pre>/);
+  // Untrusted preview stays host-owned. The old preview panel was removed;
+  // its absence is not evidence of permission, citation, or execution.
+  const settings=file('../web/native_windows.jsx');
+  assert.match(settings,/Browser & research/);
+  assert.match(settings,/Research source checking, cited page reading and retrieved documents are initiated through the conversation/);
+  assert.doesNotMatch(settings,/invoke\('lu_browser_model_read'/);
+  assert.doesNotMatch(ui,/Model-guided browser observations|page\.excerpt&&<pre>/);
   assert.doesNotMatch(bridge,/response\.image|base64|screenshot_bytes/);
 });
 

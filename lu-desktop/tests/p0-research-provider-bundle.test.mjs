@@ -1,0 +1,25 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const build=readFileSync(new URL('../../scripts/build-current-windows-nsis.ps1',import.meta.url),'utf8');
+const stage=readFileSync(new URL('../../scripts/stage-research-windows.ps1',import.meta.url),'utf8');
+const installer=readFileSync(new URL('../packaging/NSIS_CURRENT_DEV_PREVIEW.nsi',import.meta.url),'utf8');
+const host=readFileSync(new URL('../src-tauri/src/research_desktop.rs',import.meta.url),'utf8');
+test('public model discovery is bundled only through signed and hash-pinned System32 HTTPS runtime',()=>{
+  assert.match(stage,/Get-AuthenticodeSignature/);
+  assert.match(stage,/SignerCertificate.Subject -notmatch 'Microsoft'/);
+  assert.match(stage,/System32\\curl\.exe/);
+  assert.match(build,/scripts\/stage-research-windows\.ps1/);
+  assert.match(build,/LU_RESEARCH_CURL_SHA256/);
+  assert.match(build,/resources\/lu-research\/curl.exe/);
+  assert.match(build,/DLU_RESEARCH_DIR=/);
+  assert.match(installer,/!ifndef LU_RESEARCH_DIR/);
+  assert.match(installer,/File \/oname=curl.exe/);
+  assert.match(installer,/RMDir "\$INSTDIR\\lu-research"/);
+  assert.match(host,/option_env!\("LU_RESEARCH_CURL_SHA256"\)/);
+  assert.match(host,/verified_file\(&self\.curl,sha\)/);
+  const lifecycle=readFileSync(new URL('../../scripts/m3-windows-nsis-cycle.ps1',import.meta.url),'utf8');
+  assert.match(lifecycle,/ExpectedResearchSha256/);
+  assert.match(lifecycle,/installedResearchClient='PASS_SHA256'/);
+  assert.match(lifecycle,/if\(\$researchExe\)\{\$watchPaths/);
+});

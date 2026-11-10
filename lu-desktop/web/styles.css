@@ -457,3 +457,107 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .recoveryProvenanceOperation strong{font-size:12px}
 .recoveryProvenance .recoveryProvenanceWarning{color:#ffd0a3}
 .recoveryProvenance .recoveryProvenanceDigest{font:11px/1.5 Consolas,"Cascadia Code",monospace;overflow-wrap:anywhere;color:#b2cce3}
+
+/* P0 physical alpha acceptance: full-window navigation and chat-first layout. */
+.luWindowBackdrop{position:fixed;inset:0;z-index:80;background:rgba(3,9,18,.88);display:flex;align-items:stretch;justify-content:center;padding:16px;box-sizing:border-box}
+.luFullWindow{width:min(1320px,100%);height:100%;display:flex;flex-direction:column;min-width:0;border:1px solid #42617f;background:#152131;color:#e5edf5;border-radius:15px;overflow:hidden;box-shadow:0 18px 60px #070c19}
+.luFullWindowHeader{padding:18px 24px;border-bottom:1px solid #344860;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.luFullWindowHeader h2{font-size:22px;margin:0 0 5px}
+.luFullWindowHeader small{color:#afc0d3}
+.luFullWindowBody{flex:1;overflow:auto;padding:22px 28px;display:flex;flex-direction:column;gap:22px}
+.luFullWindowBody .observePilot{max-width:none;margin:0}
+.luSettingsIntro,.luSettingsGroup,.luFullWindowBody .chatAppearanceSettings{max-width:100%;padding:18px;border:1px solid #2e465f;border-radius:12px;background:#1b2a3c}
+.luSettingsIntro p{margin:8px 0 0;color:#afc0d3}
+.luSettingsGroup select{display:block;max-width:460px;margin-top:9px}
+.luModelTabs{display:flex;gap:8px;padding:12px 24px;border-bottom:1px solid #2a3e54}
+.luModelTabs button[aria-current=page]{background:#3b6796;color:white}
+.luModelSearchRow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.luModelSearchRow input{flex:1 1 350px;min-width:200px;padding:12px}
+.luModelGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.luModelCard{min-width:0;min-height:116px;display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:16px;text-align:left;background:#20334b;border:1px solid #35536c;border-radius:11px}
+.luModelCard strong{font-size:15px;overflow-wrap:anywhere}
+.luModelCard small{color:#bdcfe0}.luModelCard span{margin-top:auto}
+.luModelCard.selected{border-color:#71a5e3;background:#284464}
+.luModelDetail{padding:18px;background:#1b2c41;border:1px solid #3e5974;border-radius:12px;overflow-wrap:anywhere}
+.luModelDetail p{margin:8px 0}.luModelDetail h3{margin:0 0 10px}
+.luModelCaution{color:#e6c38e}.luModelError{color:#f4aab7}
+.chatToolsDrawer{min-width:82px;align-self:center}
+.chatToolsDrawer summary{cursor:pointer;display:list-item;padding:9px;border:1px solid #47637c;border-radius:8px}
+.chatToolsDrawer[open]{flex-basis:100%;order:1}
+.chatToolsGrid{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:12px;background:#172536;border:1px solid #354a63;border-radius:12px;margin-top:8px}
+.chatToolsDrawer[open]~button[type=submit]{order:2}
+.messageReactions{display:flex;flex-direction:column;align-items:flex-start;gap:8px;width:100%}
+.messageReactions .reactionTrigger{font-size:17px;min-width:42px}
+.messageReactions .reactionPicker{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px;background:#1a2b3d;border:1px solid #51708e;border-radius:12px}
+.messageReactions .reactionPicker button{font-size:21px;padding:5px 8px}
+@media(max-width:700px){.luWindowBackdrop{padding:0}.luFullWindow{border-radius:0}.luFullWindowBody{padding:14px}.luModelGrid{grid-template-columns:1fr}.luFullWindowHeader{padding:14px}}
+
+/* P0 native screenshot review: consistent settings/model controls, no browser-default white widgets. */
+.luFullWindow button:not(.quietIcon):not(.luModelCard){
+  border:1px solid #456785;background:#233a52;color:#eaf4ff;
+  border-radius:8px;padding:9px 14px;cursor:pointer;line-height:1.35}
+.luFullWindow button:not(.quietIcon):not(.luModelCard):hover:not(:disabled){
+  background:#305577;border-color:#7097bb}
+.luFullWindow button:not(.quietIcon):not(.luModelCard):disabled{
+  opacity:.48;cursor:not-allowed}
+.luFullWindow button:focus-visible,.luFullWindow input:focus-visible,
+.luFullWindow select:focus-visible{outline:2px solid #9bcaff;outline-offset:2px}
+.luModelTabs{flex-wrap:wrap}
+.luModelTabs button{min-width:100px}
+.luModelTabs button[aria-current=page]{background:#355f89!important;border-color:#83aede!important}
+.luModelSearchRow input,.luSettingsGroup select{
+  color:#edf5ff;background:#102137;border:1px solid #456681;border-radius:8px;
+  padding:10px 12px;min-height:40px;box-sizing:border-box}
+.luModelSearchRow input::placeholder{color:#98afc6}
+.luModelEmpty{padding:16px 18px;margin:0;color:#bdcbdc;background:#1b2e44;
+  border:1px dashed #486887;border-radius:10px}
+.luFullWindowBody .luSettingsGroup h3{margin:0 0 10px}
+.luFullWindowBody .luSettingsGroup p{color:#bdccdc}
+@media(max-width:700px){.luModelSearchRow{align-items:stretch}
+  .luModelSearchRow input{flex-basis:100%;width:100%}}
+
+
+/* P0-NATIVE-WINDOW: real independent Tauri WebviewWindow surfaces.
+   Deliberately not a modal overlay inside Lu chat. */
+.nativeWindowRoot{height:100vh;min-height:0;display:flex;flex-direction:column;background:#151f2d;color:#e2edf7;overflow:hidden}
+.nativeWindowHeader{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 24px;background:#101b2a;border-bottom:1px solid #344a61}
+.nativeWindowHeader h1{font-size:21px;margin:0 0 4px}
+.nativeWindowHeader small{color:#a8bfd3}
+.nativeWindowSplit{flex:1;min-height:0;min-width:0;display:grid;grid-template-columns:minmax(180px,240px) minmax(0,1fr)}
+.nativeSettingsNavigation{min-height:0;overflow:auto;background:#172536;border-right:1px solid #324760;padding:16px 10px;display:flex;flex-direction:column;gap:4px}
+.nativeSettingsNavigation button{width:100%;text-align:left;border:1px solid transparent;border-radius:8px;color:#cbdced;background:transparent;padding:12px 11px;font-size:13px}
+.nativeSettingsNavigation button:hover,.nativeSettingsNavigation button.selected{background:#304b67;border-color:#496887;color:#fff}
+.nativeSettingsContent,.nativeModelContent{flex:1;min-width:0;min-height:0;overflow:auto;padding:25px clamp(17px,3vw,42px);scrollbar-gutter:stable}
+.nativeSettingsContent{display:block}
+.nativePreferenceSection{max-width:950px;min-width:0;background:#1c2c40;border:1px solid #38516b;border-radius:13px;padding:24px;line-height:1.6}
+.nativePreferenceSection h2{font-size:20px;margin:0 0 15px}
+.nativePreferenceSection h3{overflow-wrap:anywhere}
+.nativePreferenceSection p,.nativePreferenceSection small{color:#b6c8d9;overflow-wrap:anywhere}
+.nativePreferenceSection p{font-size:13px;line-height:1.65}
+.nativeField{display:flex;flex-direction:column;gap:7px;margin:18px 0;font-size:12px;font-weight:600}
+.nativeField select,.nativeModelContent input{max-width:100%;min-width:0;padding:10px 12px;border-radius:7px;border:1px solid #597694;background:#132137;color:#e0edf9}
+.nativeChoiceRow{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:16px 0}
+.nativeChoiceRow button,.nativeOption button,.nativeModelTabs button{background:#274460;border:1px solid #537494;border-radius:8px;color:#e1edfc;padding:10px 13px}
+.nativeChoiceRow button:hover:not(:disabled),.nativeOption button:hover:not(:disabled){background:#376188}
+.nativeOptionList{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px}
+.nativeOption{border:1px solid #35516b;background:#15283a;border-radius:9px;padding:16px;min-width:0}
+.nativeOption strong{display:block;margin-bottom:6px;font-size:14px}
+.nativeReadiness{font-size:11px;color:#9acfe8}
+.nativeModelTabs{display:flex;padding:12px 22px;border-bottom:1px solid #34506a;gap:10px}
+.nativeModelTabs button[aria-current=page]{background:#446d91;border-color:#90b8dd}
+.nativeModelContent{display:block}
+.nativeModelGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:12px;margin:18px 0}
+.nativeModelCard{display:flex;flex-direction:column;text-align:left;gap:10px;min-width:0;background:#20354c;border:1px solid #466887;border-radius:10px;color:#e4eef8;padding:16px}
+.nativeModelCard strong,.nativeModelCard small{word-break:break-word}
+.nativeModelCard small{color:#a9c4dd}
+.nativeModelCard.selected{border-color:#9bc7ed;background:#335979}
+.nativeModelContent .nativePreferenceSection{margin-top:18px}
+.nativeError,.nativeNotice{padding:12px 16px;border-radius:8px;margin:0 0 16px;word-break:break-word}
+.nativeError{background:#492d39;color:#ffd5d7;border:1px solid #aa6875}
+.nativeNotice{background:#263e55;color:#c7e6ff;border:1px solid #507795}
+@media(max-width:760px){.nativeWindowSplit{grid-template-columns:150px minmax(0,1fr)}.nativeSettingsNavigation{padding:7px}.nativeSettingsNavigation button{font-size:11px;padding:10px 7px}.nativeSettingsContent,.nativeModelContent{padding:14px}.nativePreferenceSection{padding:15px}}
+
+/* Measured model-transfer bytes, not model-loading or GPU inference progress. */
+.nativeTransferProgress{height:9px;margin:10px 0 12px;border:1px solid #4b6784;border-radius:99px;background:#102337;overflow:hidden}
+.nativeTransferProgress span{display:block;height:100%;background:#4dbf86;transition:width 0.16s linear}
+.nativeModelContent .nativeOption{overflow-wrap:anywhere}

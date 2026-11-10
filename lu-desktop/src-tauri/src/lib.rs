@@ -10,6 +10,7 @@ pub use file_scan_worker::run_file_scan_worker;
 mod generation_queue;
 mod background_context;
 mod environment_context;
+mod host_clock;
 mod vision_context;
 mod observe_desktop;
 #[cfg(target_os="linux")]
@@ -17,8 +18,10 @@ mod observe_linux_auth;
 mod native_browser_host;
 mod browser_model_desktop;
 mod research_desktop;
+mod model_transfer_desktop;
 mod image_workspace_desktop;
 mod load_trace;
+mod engine_memory;
 mod native_host_read;
 mod read_proposal;
 mod write_proposal;
@@ -421,6 +424,173 @@ async fn lu_model_provider_review(
         host.research.model_provider_review(&repo_id,&revision)
     ).await.map_err(|_|"Model provider review worker stopped")?
 }
+/// P05 reviewed immutable Hugging Face transfer. Only the Model Library
+/// native window can ask. The host independently re-fetches the provider
+/// SHA, size and license, then shows a fresh OS confirmation. Model output,
+/// WebView metadata, imported files and untrusted URLs are NOT grants.
+#[tauri::command]
+async fn lu_model_transfer_start(
+    app:AppHandle,caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>,
+    repo_id:String,revision:String,filename:String,sha256:String,bytes:u64,
+)->Result<Option<model_transfer_desktop::ModelTransferView>,String>{
+    if caller.label()!="model-library"{
+        return Err("Only the native Model Library may request model downloads".into())
+    }
+    let owner=Arc::clone(state.inner());
+    owner.observe.deny_unscoped_network_while_observing()?;
+    let requested_repo=repo_id.clone();let requested_rev=revision.clone();
+    let review=tauri::async_runtime::spawn_blocking({
+        let owner=Arc::clone(&owner);
+        move||owner.research.model_provider_review(&requested_repo,&requested_rev)
+    }).await.map_err(|_|"HF metadata review worker unavailable")??;
+    if review.repo_id!=repo_id||review.revision!=revision||
+        !review.files.iter().any(|f|
+            f.name==filename&&f.bytes==bytes&&f.sha256==sha256.to_ascii_lowercase()){
+        return Err("HF immutable model digest or metadata changed; restart review".into())
+    }
+    let plan=lu_core::model_provider_staging::ExactFilePlan{
+        repo_id,revision,filename,sha256:sha256.to_ascii_lowercase(),
+        expected_bytes:bytes,
+    };
+    plan.validated().map_err(|_|"Untrusted HF file identity")?;
+    let client=owner.research.pinned_transfer_client()?;
+    let modal=format!(
+        "Download this exact Hugging Face GGUF into Lu's private model library?\n\n\
+         Repository: {}\nImmutable commit: {}\nAsset: {}\n\
+         Expected bytes: {}\nSHA-256: {}\nProvider license: {}\n\n\
+         You must read and accept the provider's full license and access terms. \
+         This operation downloads remote bytes using an independently pinned HTTPS client, \
+         does NOT load the model and never grants the AI network access. \
+         Cancel retains no download. Interrupted bytes remain in private staging \
+         until you separately review and resume them.",
+        plan.repo_id,plan.revision,plan.filename,
+        plan.expected_bytes,plan.sha256,review.license_label
+    );
+    let accepted=tauri::async_runtime::spawn_blocking(move||
+        app.dialog().message(modal)
+            .title("Lu — Authorize exact HF model download")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Accept terms and start verified download".into(),"Cancel".into()
+            )).blocking_show()
+    ).await.map_err(|_|"Native HF approval dialog unavailable")?;
+    if !accepted{return Ok(None)}
+    owner.observe.deny_unscoped_network_while_observing()?;
+    let id=next_id("hf-");
+    let viewed=owner.model_transfers.stage(&id,plan,&review.license_label)?;
+    let worker=Arc::clone(&owner.model_transfers);
+    tauri::async_runtime::spawn_blocking(move||{
+        // Status and exact errors are persisted. No silent retry on failure
+        // or restart. The model never receives this task ID as a tool grant.
+        let _=worker.execute_reviewed(&id,&client);
+    });
+    Ok(Some(viewed))
+}
+/// Resume ONLY a previously interrupted transfer after a NEW provider
+/// recheck and native human approval. The original SHA/size/license cannot
+/// be modified by the renderer or by a stale user turn.
+#[tauri::command]
+async fn lu_model_transfer_resume(
+    app:AppHandle,caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>,transfer_id:String
+)->Result<Option<model_transfer_desktop::ModelTransferView>,String>{
+    if caller.label()!="model-library"{
+        return Err("Only Model Library may resume an HF transfer".into())
+    }
+    let owner=Arc::clone(state.inner());
+    owner.observe.deny_unscoped_network_while_observing()?;
+    let (plan,license)=owner.model_transfers.reviewed_plan(&transfer_id)?;
+    let info=owner.model_transfers.status(&transfer_id)?;
+    let repo=plan.repo_id.clone();let rev=plan.revision.clone();
+    let reviewed=tauri::async_runtime::spawn_blocking({
+        let owner=Arc::clone(&owner);
+        move||owner.research.model_provider_review(&repo,&rev)
+    }).await.map_err(|_|"HF resume metadata worker unavailable")??;
+    if reviewed.repo_id!=plan.repo_id||
+        reviewed.revision!=plan.revision||reviewed.license_label!=license||
+        !reviewed.files.iter().any(|f|
+            f.name==plan.filename&&f.bytes==plan.expected_bytes&&
+            f.sha256==plan.sha256){
+        return Err("Pinned HF identity or license changed; resume refused".into())
+    }
+    let client=owner.research.pinned_transfer_client()?;
+    let message=format!(
+        "Resume only the prior, INCOMPLETE Lu model download?\n\n\
+         ID: {}\nRepo: {}\nFile: {}\n\
+         Already staged: {} / {} bytes\nExpected SHA-256: {}\n\
+         Full original license remains accepted only for this separately reviewed attempt.\n\
+         The server MUST return exact 206 Content-Range. Every byte is rehashed \
+         before atomic publication; no automatic import/load.",
+        transfer_id,plan.repo_id,plan.filename,
+        info.received_bytes,plan.expected_bytes,plan.sha256
+    );
+    let approved=tauri::async_runtime::spawn_blocking(move||
+        app.dialog().message(message)
+            .title("Lu — Separately authorize HF resume")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Approve exact resume".into(),"Keep interrupted".into()
+            )).blocking_show()
+    ).await.map_err(|_|"HF native resume review failed")?;
+    if !approved{return Ok(None)}
+    owner.observe.deny_unscoped_network_while_observing()?;
+    let worker=Arc::clone(&owner.model_transfers);
+    let id=transfer_id.clone();
+    tauri::async_runtime::spawn_blocking(move||{
+        let _=worker.execute_reviewed(&id,&client);
+    });
+    owner.model_transfers.status(&transfer_id).map(Some)
+}
+#[tauri::command]
+fn lu_model_transfer_cancel(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,transfer_id:String
+)->Result<bool,String>{
+    if caller.label()!="model-library"{
+        return Err("Only native Model Library may cancel transfers".into())
+    }
+    state.model_transfers.cancel(&transfer_id)
+}
+#[tauri::command]
+fn lu_model_transfer_status(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,transfer_id:String
+)->Result<model_transfer_desktop::ModelTransferView,String>{
+    if caller.label()!="model-library"{
+        return Err("HF transfer details are available only inside Model Library".into())
+    }
+    state.model_transfers.status(&transfer_id)
+}
+/// This checks the exact installed Lu HTTPS-client digest, not the
+/// presence of a PATH binary or a provider result.
+#[tauri::command]
+fn lu_model_transfer_ready(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>
+)->Result<bool,String>{
+    if caller.label()!="model-library"{
+        return Err("Only Model Library may inspect transfer readiness".into())
+    }
+    Ok(state.research.available())
+}
+#[tauri::command]
+fn lu_model_transfer_recent(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>
+)->Result<Vec<model_transfer_desktop::ModelTransferView>,String>{
+    if caller.label()!="model-library"{
+        return Err("HF transfer history is available only inside Model Library".into())
+    }
+    state.model_transfers.recent(16)
+}
+#[tauri::command]
+async fn lu_model_transfer_verify(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,transfer_id:String
+)->Result<model_transfer_desktop::ModelTransferView,String>{
+    if caller.label()!="model-library"{
+        return Err("Only native Model Library may verify a published model".into())
+    }
+    let manager=Arc::clone(&state.model_transfers);
+    tauri::async_runtime::spawn_blocking(move||
+        manager.verify_published_now(&transfer_id)
+    ).await.map_err(|_|"HF independent disk readback worker unavailable")?
+}
+
 /// Reviewed P03 transfer INTENT only. The host independently fetches and
 /// checks the exact public revision and digest again before showing a real
 /// native operator confirmation. No network write or model-load follows.
@@ -567,6 +737,7 @@ struct DesktopState {
     browser_authority: lu_core::conversation_authority::ConversationAuthority,
     browser_grant: Mutex<Option<ActiveBrowserGrant>>,
     research: Arc<research_desktop::ResearchDesktop>,
+    model_transfers: Arc<model_transfer_desktop::ModelTransferManager>,
     _owner: lu_core::desktop_owner::DesktopOwner,
     effects: lu_core::journal::EffectJournal,
     read_approval_ledger: lu_core::read_approval_ledger::ReadApprovalLedger,
@@ -1056,7 +1227,9 @@ impl DesktopState {
             background_tasks,
             reader_generations:Mutex::new(HashMap::new()),
             source_reuse:lu_core::ai_operations::SourceReuseIndex::new(),
-            models_dir,
+            // Keep this path available for the separately initialized HF
+            // transfer custody manager later in the same struct literal.
+            models_dir:models_dir.clone(),
             catalog_path,
             chats,
             operational_assets:lu_core::operational_asset_ledger::OperationalAssetLedger::open(
@@ -1099,6 +1272,12 @@ impl DesktopState {
                 app.path().resource_dir().map_err(|e|format!("Research resource path unavailable: {e}"))?,
                 root.clone(),
             )),
+            // Model transfer IDs become first-level Lu model folders.
+            // A verified GGUF is discoverable only after explicit rescan;
+            // no transfer can load a model automatically.
+            model_transfers:Arc::new(
+                model_transfer_desktop::ModelTransferManager::new(models_dir.clone())?
+            ),
             _owner: owner,
             effects,
             read_approval_ledger: approvals,
@@ -1484,6 +1663,7 @@ fn lu_environment_status(
 struct VisionCapabilityView{
     session_id:Option<String>,
     model_ref:Option<String>,
+    evidence_id:Option<String>,
     status:&'static str,
     detail:&'static str,
 }
@@ -1508,6 +1688,7 @@ fn lu_vision_capability(
     let evidence=vision_context::probe_evidence(loaded,projector,passed);
     Ok(VisionCapabilityView{
         session_id:runtime.session_id,model_ref:runtime.model_ref,
+        evidence_id:None,
         status:vision_context::availability_label(evidence),
         detail:if !loaded{
             "No loaded model. Native visual understanding unavailable."
@@ -2181,6 +2362,8 @@ async fn lu_vision_run_probe(
         let mut order=[0usize,1,2,3];
         order.shuffle(&mut rand::rngs::OsRng);
         let mut passed=0u32;
+        let mut trials=Vec::<vision_context::VisionProbeTrial>::new();
+        let evidence_id=next_id("vp-");
         for index in order{
             let current=owner.supervisor.status()
                 .map_err(|_|"Loaded model status changed during visual probe")?;
@@ -2189,13 +2372,14 @@ async fn lu_vision_run_probe(
                 return Err("Model changed during vision probe".into());
             }
             let image=vision_context::image_for_probe(index)?;
+            let pixel_sha256=format!("{:x}",Sha256::digest(&image.bytes));
             let gid=next_id("g-");
             let rid=next_id("req-");
             let (ticket,_)=owner.generation_queue.enqueue(&sid,&chat_id,&gid)?;
             ticket.wait_for_slot()?;
             if ticket.cancelled(){return Err("Vision probe cancelled".into());}
             owner.supervisor.reserve_generation_images_with_history(
-                &sid,&gid,&rid,PROBE_PROMPT,32,&[image.clone()],&[]
+                &sid,&gid,&rid,PROBE_PROMPT,512,&[image.clone()],&[]
             ).map_err(|e|format!("Vision native reservation refused: {e:?}"))?;
             if ticket.cancelled(){
                 let _=owner.supervisor.cancel(&sid,&gid,&next_id("req-"));
@@ -2213,15 +2397,38 @@ async fn lu_vision_run_probe(
                 Ok(())
             };
             owner.supervisor.run_reserved_images_with_history(
-                &sid,&gid,&rid,PROBE_PROMPT.to_owned(),32,vec![image],vec![],emit
+                &sid,&gid,&rid,PROBE_PROMPT.to_owned(),512,vec![image],vec![],emit
             ).map_err(|e|format!("Native image inference failed: {e:?}"))?;
             // Case folding is allowed; explanatory text or extra words
             // invalidate the response instead of being treated as correct.
-            if answer.trim().eq_ignore_ascii_case(PROBE_COLORS[index].0){
-                passed+=1;
-            }
+            let correct=answer.trim().eq_ignore_ascii_case(PROBE_COLORS[index].0);
+            if correct{passed+=1;}
+            trials.push(vision_context::VisionProbeTrial{
+                challenge_id:gid,
+                image_sha256:pixel_sha256,
+                expected_color:PROBE_COLORS[index].0.into(),
+                model_reply:answer,
+                passed:correct,
+            });
         }
-        let verified=passed==4;
+        // Persist original local-model replies and exact private image hashes.
+        // This must succeed BEFORE any UI view can claim semantic verification.
+        // A fresh app session never inherits this runtime attestation.
+        let parent=owner.models_dir.parent()
+            .ok_or("Owner app-data root unavailable for vision receipts")?;
+        let evidence_dir=parent.join("lu-native-vision-probes");
+        vision_context::persist_native_vision_receipt(
+            &evidence_dir,&evidence_id,&sid,&model,&trials
+        )?;
+        // Never present a green vision indicator merely because a JSON
+        // writer returned success. Independently reopen the durable original,
+        // regenerate each PNG and re-check the four actual model replies.
+        let (checked_passed,verified)=vision_context::review_native_vision_receipt(
+            &evidence_dir,&evidence_id,&sid,&model
+        )?;
+        if checked_passed!=passed as usize||verified!=(passed==4){
+            return Err("Native image replies differ from independent on-disk review".into())
+        }
         let receipt=VisionProbeReceipt{
             session_id:sid.clone(),model_ref:model.clone(),
             challenges_passed:passed,total_challenges:4,passed:verified,
@@ -2231,9 +2438,10 @@ async fn lu_vision_run_probe(
         *slot=Some(receipt);
         Ok(VisionCapabilityView{
             session_id:Some(sid),model_ref:Some(model),
+            evidence_id:Some(evidence_id),
             status:if verified{"verified"}else{"unverified"},
             detail:if verified{
-                "Native image probe passed 4/4 private pixel challenges for this exact loaded session. Not an independent accuracy benchmark."
+                "Four original image replies and PNG hashes independently rechecked from durable receipt. Not a general accuracy benchmark or GPU-attestation."
             }else{
                 "Native image probe failed at least one of four color challenges. Image understanding remains unverified."
             },
@@ -3578,6 +3786,29 @@ fn lu_load_diagnostics(state: State<'_, Arc<DesktopState>>) -> Result<LoadTraceV
     let trace = state.load_trace.lock().map_err(|_| "load trace poisoned")?;
     Ok(trace.snapshot())
 }
+#[tauri::command]
+fn lu_load_memory_sample(
+    state:State<'_,Arc<DesktopState>>
+)->Result<engine_memory::EngineMemorySample,String>{
+    // No WebView-supplied PID. Only the currently host-owned engine is
+    // sampled, and data is observational, not an inferred tensor progress %.
+    let runtime=state.supervisor.status()
+        .map_err(|_|"Active engine status unavailable")?;
+    let trace=state.load_trace.lock().map_err(|_|"Load trace unavailable")?;
+    let snapshot=trace.snapshot();
+    let id=snapshot.events.last().map(|e|e.operation_id.as_str());
+    let pid=snapshot.events.iter().rev()
+        .find(|e|Some(e.operation_id.as_str())==id&&e.phase=="engine_spawned")
+        .and_then(|e|e.pid);
+    let latest_model=snapshot.events.last().map(|e|e.model_ref.as_str());
+    if !snapshot.loading && (runtime.session_id.is_none()||
+        runtime.model_ref.as_deref()!=latest_model){
+        return Ok(engine_memory::EngineMemorySample::unavailable());
+    }
+    drop(trace);
+    Ok(pid.map(engine_memory::sample_host_engine)
+        .unwrap_or_else(engine_memory::EngineMemorySample::unavailable))
+}
 
 #[tauri::command]
 async fn lu_load_model(
@@ -4260,6 +4491,54 @@ async fn lu_generate(
         return generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
             prompt,image_refs,max_new_tokens,GenerationOrigin::Human,true).await
     }
+    // CPU-only read-only host utility: the native device clock is the
+    // authoritative current observation, not Qwen's training cutoff or
+    // a string hallucinated during inference. No model process, shell,
+    // network or OS permission grant is created.
+    if image_refs.is_empty() && !read_only_workspace.unwrap_or(false)
+        && host_clock::explicit_current_time_request(&prompt){
+        if !(1..=4096).contains(&max_new_tokens){
+            return Err("Invalid current-time request limits".into());
+        }
+        let owner=Arc::clone(state.inner());
+        if owner.supervisor.status().map_err(|_|"Model unavailable")?
+            .session_id.as_deref()!=Some(session_id.as_str()){
+            return Err("Loaded model session changed".into());
+        }
+        return tauri::async_runtime::spawn_blocking(move||{
+            owner.chats.history(&chat_id)?;
+            let gid=next_id("g-");
+            let answer=host_clock::fresh_local_clock_answer();
+            owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            let _=app.emit("lu-generation-queued",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"queued",position:0
+            });
+            let _=app.emit("lu-generation-start",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"running",position:0
+            });
+            owner.chats.append_progress(&chat_id,&gid,&answer)?;
+            owner.chats.complete(&chat_id,&gid)?;
+            let _=app.emit("lu-generation-finish",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid,phase:"finished",
+                position:0
+            });
+            Ok(answer)
+        }).await.map_err(|_|"Native current-time utility interrupted")?;
+    }
+    // Ordinary explicit human requests for one public HTTPS URL may enter
+    // the already-existing scoped native browser tool loop. Lu still requires
+    // a verified, separately packaged browser and new native human approval
+    // for the exact origin; URLs in prompt text confer no authority.
+    if !read_only_workspace.unwrap_or(false) && image_refs.is_empty()
+        && max_new_tokens==512 {
+        if let Some(origin)=browser_model_desktop::explicit_browse_origin(&prompt){
+            return browser_model_desktop::lu_generate_browser(
+                app,state,session_id,chat_id,prompt,origin,512
+            ).await;
+        }
+    }
     // Git inspection is a separate read-only, host-scoped capability.
     // It is never inferred from retrieved text, background turns, or a
     // general workspace grant. The native picker is still mandatory.
@@ -4294,6 +4573,15 @@ async fn lu_generate(
         return reader_desktop::ask_reader_for_chat(
             app,Arc::clone(state.inner()),session_id,chat_id,prompt,
         ).await?.ok_or_else(||"Reader document was not selected".into())
+    }
+    // Media inspection is now a normal-chat, model-neutral capability route.
+    // Text only triggers the native file-picker request; it supplies no
+    // filepath, command, tool ID, effect result or durable grant.
+    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty()
+        &&max_new_tokens==512&&reviewed_app_desktop::explicit_media_metadata_request(&prompt){
+        return reviewed_app_desktop::lu_reviewed_app_ask(
+            app,state,session_id,chat_id,prompt,"media".into()
+        ).await?.ok_or_else(||"Media file was not selected".into())
     }
     generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
         prompt,image_refs,max_new_tokens,GenerationOrigin::Human,false).await
@@ -4849,6 +5137,11 @@ async fn generate_internal(
                 model_prompt.push_str(
                     &environment_context::fresh_environment_snapshot()
                 );
+            }
+            // Host clock is observed anew on every ordinary human turn.
+            // It is read-only context, NEVER permission to invoke a shell or other tools.
+            if origin==GenerationOrigin::Human {
+                model_prompt.push_str(&host_clock::fresh_local_clock_context());
             }
             let runtime = supervisor.status().map_err(|e| format!("status: {e:?}"))?;
             if runtime.session_id.as_deref() != Some(sid.as_str()) {
@@ -8097,6 +8390,170 @@ fn lu_observe_capture_available()->bool{
     { false }
 }
 
+// Both secondary windows reuse the exact same packaged index.html that the
+// main installed WebView2 already loads. Role selection is by Tauri's native
+// window label, not an app-asset URL query which produced a blank white window.
+// The two secondary UI surfaces use fixed, host-created Tauri WebviewWindows.
+// Neither a model nor a renderer-supplied URL/label can create a new window.
+// The main chat React component never mounts in these secondary roots.
+#[derive(Clone,Copy)]
+struct AuxiliaryWindowSpec{
+    label:&'static str,title:&'static str,asset:&'static str,
+    width:f64,height:f64,
+}
+fn auxiliary_window_spec(caller:&str,kind:&str)->Option<AuxiliaryWindowSpec>{
+    match (caller,kind){
+        ("main","settings")=>Some(AuxiliaryWindowSpec{
+            label:"settings",title:"Lu — Settings",
+            asset:"index.html",width:1050.0,height:760.0
+        }),
+        ("main"|"settings","model-library")=>Some(AuxiliaryWindowSpec{
+            label:"model-library",title:"Lu — Model Library",
+            asset:"index.html",width:1160.0,height:780.0
+        }),
+        _=>None,
+    }
+}
+#[tauri::command]
+fn lu_open_aux_window(
+    app:AppHandle,caller:tauri::WebviewWindow,kind:String
+)->Result<(),String>{
+    let spec=auxiliary_window_spec(caller.label(),&kind)
+        .ok_or("Only the Lu chat or Settings window may open approved auxiliary windows")?;
+    if let Some(existing)=app.get_webview_window(spec.label){
+        return existing.set_focus().map_err(|_|"Cannot focus native Lu window".into());
+    }
+    tauri::WebviewWindowBuilder::new(
+        &app,spec.label,tauri::WebviewUrl::App(spec.asset.into())
+    ).title(spec.title)
+     .inner_size(spec.width,spec.height)
+     .min_inner_size(720.0,540.0)
+     .center()
+     .build()
+     .map_err(|_|"Unable to create independent native Lu window")?;
+    Ok(())
+}
+#[tauri::command]
+fn lu_close_aux_window(caller:tauri::WebviewWindow)->Result<(),String>{
+    if !matches!(caller.label(),"settings"|"model-library"){
+        return Err("Main conversation window cannot be closed by an auxiliary command".into())
+    }
+    caller.close().map_err(|_|"Native auxiliary window could not be closed".into())
+}
+
+// This is ONLY a potential-route inventory for Settings, not
+// NativeCapabilityView from a granted model turn. Actual tool names/schemas
+// come from lu_core::native_capability_inventory with the original per-turn
+// ConversationAuthority and registered codecs. Nothing here grants a tool.
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct LuNativeRouteView{
+    id:&'static str,name:&'static str,
+    status:&'static str,description:&'static str,authorization:&'static str,
+}
+#[tauri::command]
+fn lu_native_route_catalog()->Vec<LuNativeRouteView>{
+    const AUTH:&str="Fresh native resource selection and original-human-turn authorization are required. Discovery alone never executes a tool.";
+    vec![
+        LuNativeRouteView{
+            id:"host.clock",name:"Device time",
+            status:"Host deterministic read; not a model tool grant",
+            description:"Exact native local time and UTC epoch in original human chat; no shell or network.",
+            authorization:"No privileged device access or executable worker."
+        },
+        LuNativeRouteView{
+            id:"workspace.read",name:"Workspace search and reading",
+            status:"Conditional: native directory picker and read-only turn",
+            description:"Host-scoped file discovery, directory listing and text inspection offered to the loaded model after approval.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"reader.document",name:"Reader/OCR",
+            status:"Conditional: native document or image admission",
+            description:"Bounded content inspection. Supported formats and model multimodality must be verified separately.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"reviewed.git",name:"Reviewed Git",
+            status:"Conditional: native repository picker and reviewed executable",
+            description:"Read-only Git facts and independently verified effects; the model chooses an advertised typed tool.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"reviewed.media",name:"Reviewed media/FFprobe",
+            status:"Conditional: approved WAV/MP4 file and installed FFprobe",
+            description:"Native model-selected media metadata; independently verify original media bytes and source identity.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"files.transaction_review",name:"File copy, move, trash & create/edit",
+            status:"Model-selected INERT review proposal; native transaction approval required",
+            description:"Lu checks the original human request against the model-proposed action. Its actual source and destination are chosen by OS pickers; exact bytes and conflict-safe no-clobber effects require separate one-use consent.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"archives.transaction_review",name:"Archive extraction, batch & multipart",
+            status:"Model-selected INERT review proposal; supervised archive worker required",
+            description:"A complete native manifest, expansion bounds, new output destination and original-source recheck precede any authorized extraction. Interrupted writes require reconciliation, not auto-retry.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"office.transaction_review",name:"Office documents and revisions",
+            status:"Model-selected bounded drafts; full native preview and separate approval required",
+            description:"DOCX/PPTX creation and exact source-checked Word/PowerPoint/Excel revisions are human-reviewed; original package and unaffected parts remain untouched.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"hf.transfer_integrity",name:"Hugging Face verified model transfer",
+            status:"Local digest/readback staging implemented; trusted HTTPS worker NOT integrated",
+            description:"Immutable revision, license review and SHA-256/size must precede transfer. Only a separately approved, bounded and independently verified network worker may supply staged bytes. No model installation or download is enabled.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"browser.read",name:"Supervised browser",
+            status:"Unavailable unless a fully reviewed browser bundle is installed",
+            description:"Model-proposed read-only operations against newly approved HTTPS origins; no ambient browser fallback.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"vision",name:"Multimodal vision",
+            status:"Conditional: compatible loaded GGUF and admitted MMProj",
+            description:"Real pixel-result acceptance is required; filename or projector metadata is insufficient.",
+            authorization:AUTH
+        }
+    ]
+}
+#[cfg(test)]
+mod auxiliary_window_tests{
+    use super::*;
+    #[test]
+    fn windows_are_fixed_labels_and_have_no_renderer_selected_urls(){
+        let settings=auxiliary_window_spec("main","settings").unwrap();
+        assert_eq!(settings.label,"settings");
+        assert_eq!(settings.asset,"index.html");
+        let library=auxiliary_window_spec("settings","model-library").unwrap();
+        assert_eq!(library.label,"model-library");
+        assert_eq!(library.asset,"index.html");
+        assert!(auxiliary_window_spec("model-library","settings").is_none());
+        assert!(auxiliary_window_spec("settings","settings").is_none());
+        assert!(auxiliary_window_spec("main","https://evil.example").is_none());
+        assert!(auxiliary_window_spec("main","chat").is_none());
+    }
+    #[test]
+    fn route_inventory_is_not_an_authorization_or_work_receipt(){
+        let views=lu_native_route_catalog();
+        assert!(views.iter().all(|v|!v.authorization.is_empty()));
+        assert!(views.iter().any(|v|v.id=="reviewed.git"));
+        assert!(views.iter().any(|v|v.id=="office.transaction_review"
+            &&v.status.contains("INERT")==false &&v.status.contains("native preview")));
+        assert!(views.iter().any(|v|v.id=="hf.transfer_integrity"
+            &&v.status.contains("NOT integrated")));
+        assert!(views.iter().any(|v|v.id=="browser.read"
+            &&v.status.starts_with("Unavailable")));
+        assert!(views.iter().all(|v|!v.status.contains("VERIFIED_EFFECT")));
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -8108,6 +8565,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            lu_open_aux_window,
+            lu_close_aux_window,
+            lu_native_route_catalog,
             lu_status,
             lu_list_models,
             lu_model_preflight,
@@ -8116,6 +8576,13 @@ pub fn run() {
             lu_model_provider_search,
             lu_model_provider_review,
             lu_model_prepare_transfer,
+            lu_model_transfer_start,
+            lu_model_transfer_resume,
+            lu_model_transfer_cancel,
+            lu_model_transfer_status,
+            lu_model_transfer_recent,
+            lu_model_transfer_ready,
+            lu_model_transfer_verify,
             lu_import_model,
             lu_attach_projector,
             lu_pick_image,
@@ -8123,6 +8590,7 @@ pub fn run() {
             lu_release_image,
             lu_load_model,
             lu_load_diagnostics,
+            lu_load_memory_sample,
             lu_vision_capability,
             lu_vision_run_probe,
             lu_ocr_read_selected_image,

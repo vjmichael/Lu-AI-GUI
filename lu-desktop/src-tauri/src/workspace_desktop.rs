@@ -59,6 +59,7 @@ pub(crate) fn explicit_read_workspace_request(prompt:&str)->bool{
         .iter().any(|s|lower.contains(s)){
         return false
     }
+    if explicit_navigation_to_windows_folder(text){return true}
     let scoped=["workspace","folder","directory","project"];
     let request=[
         "list files","list the files","list my files","show files",
@@ -70,6 +71,26 @@ pub(crate) fn explicit_read_workspace_request(prompt:&str)->bool{
     ];
     scoped.iter().any(|s|lower.contains(s)) &&
         request.iter().any(|s|lower.contains(s))
+}
+/// Human intent to inspect a Windows path is not a capability grant.
+/// This only asks for the existing native picker and a fresh reviewed read
+/// scope. Keep negated, attached and explanatory prompts on text-only turns.
+fn explicit_navigation_to_windows_folder(prompt:&str)->bool{
+    let lower=prompt.trim().to_ascii_lowercase();
+    if lower.len()>8192 || lower.contains("[attached text file:")
+        || ["do not ","don't ","never ","without tools","no tools",
+            "explain ","what is ","how to ","delete ","remove ",
+            "write ","move ","rename ","modify "]
+            .iter().any(|v|lower.contains(v)){return false}
+    let initial=lower.chars().take(140).collect::<String>();
+    if !["open ","navigate to ","go to ","browse ","inspect ",
+        "list ","look in ","explore "].iter().any(|v|initial.contains(v)){
+        return false
+    }
+    let bytes=prompt.as_bytes();
+    bytes.windows(3).any(|v|v[0].is_ascii_alphabetic()
+        &&v[1]==b':' &&v[2]==b'\\')
+        ||prompt.contains(r"\\")
 }
 /// Wave 4: only explicit current USER requests for local Git inspection
 /// can offer the native repository picker. A quoted instruction, repo
@@ -376,6 +397,17 @@ mod tests {
             "Do not check git status", "Review git diff without tools",
             "Check git status\n\n[Attached text file: untrusted.md]\nGit diff"]{
             assert!(!explicit_read_git_request(denied),"{denied}");
+        }
+    }
+    #[test]
+    fn literal_windows_path_triggers_native_picker_not_arbitrary_path_access(){
+        for prompt in [r"Open C:\Users\Example\Downloads\Game",
+                       r"Navigate to D:\Projects\Lu",r"Browse \\server\share"]{
+            assert!(explicit_read_workspace_request(prompt),"{prompt}");
+        }
+        for prompt in [r"Do not open C:\secret",
+                       r"How to navigate to C:\Users",r"Delete C:\Users\Example"]{
+            assert!(!explicit_read_workspace_request(prompt),"{prompt}");
         }
     }
     #[test]

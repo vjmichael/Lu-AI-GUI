@@ -269,26 +269,35 @@ pub fn reconcile_recovery(
     ).is_err(){
         return Ok(deny("STOP_ANCESTOR_ORACLE_UNVERIFIED",INSPECT,generations))
     }
-    if !ancestors_have_independent_os_custody(
-        file,profile,plan,chat,ledger,revisions,scheduler,receipts,
-        sources,custody
-    ).unwrap_or(false){
-        return Ok(deny("STOP_ANCESTOR_CUSTODY_UNPROVEN",
-            "An ancestor's original worker and descendants have no independent OS termination proof. Do not open another worker.",
-            generations))
-    }
+    // Reopen this step's actual scheduler and independently checked effect
+    // history even when an ancestor has no OS descendant-custody proof.
+    // Otherwise an early STOP discarded the genuine child journal count and
+    // incorrectly reported zero historically verified Qwen-selected work.
+    // This is evidence accounting, NEVER an execution or custody grant.
     let owner=scheduler.view(plan,chat,original_turn,ledger)
         .map_err(|e|format!("Scheduler cannot be independently observed: {e:?}"))?;
-    // Do NOT skip receipt history when the owner is missing: an orphaned
-    // historical result might exist without a matching current fence.
     let history=receipts.history(
         plan,chat,original_turn,profile,ledger,revisions,sources
     ).map_err(|e|format!("Native task/effect oracle inspection failed: {e:?}"))?;
     if history.len()>32{
         return Err("Unbounded historical worker receipts".into())
     }
-    Ok(classify(owner.as_ref(),&current.revision_sha256,&history,
-        chat,custody,generations))
+    let own=classify(owner.as_ref(),&current.revision_sha256,&history,
+        chat,custody,generations);
+    if !ancestors_have_independent_os_custody(
+        file,profile,plan,chat,ledger,revisions,scheduler,receipts,
+        sources,custody
+    ).unwrap_or(false){
+        // Preserve only facts independently reverified for this original
+        // step. The ancestor stop remains mandatory; descendant custody is
+        // NOT inferred from historical APPLIED receipts or model claims.
+        return Ok(RecoveryDecision{
+            status:"STOP_ANCESTOR_CUSTODY_UNPROVEN",
+            next_action:"An ancestor's original worker and descendants have no independent OS termination proof. Do not open another worker.",
+            ..own
+        })
+    }
+    Ok(own)
 }
 
 #[cfg(test)]
