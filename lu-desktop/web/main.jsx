@@ -3122,9 +3122,21 @@ function App() {
         case 'move_file':await reviewNativeFileTransfer('move');break;
         case 'trash_file':await reviewNativeTrashFile();break;
         case 'extract_archive':await reviewArchiveTree();break;
-        case 'create_document':setDocumentComposerOpen(true);break;
-        case 'revise_office':setOfficeRevisionOpen(true);break;
-        case 'batch_office':setOfficeBatchOpen(true);break;
+        case 'extract_archive_batch':await reviewArchiveBatch();break;
+        case 'split_archive':await runP08Multipart('split');break;
+        case 'create_document':
+          if(approved.documentDraft) setDocumentDraft({
+            format:approved.documentDraft.format,
+            title:approved.documentDraft.title,
+            content:approved.documentDraft.content
+          });
+          setDocumentComposerOpen(true);break;
+        case 'revise_office':
+          if(approved.officePatch)setOfficePatch(approved.officePatch);
+          setOfficeRevisionOpen(true);break;
+        case 'batch_office':
+          if(approved.officeBatch)setOfficeBatchDraft(approved.officeBatch);
+          setOfficeBatchOpen(true);break;
         default:throw Error('Unrecognized native operation review');
       }
     }catch(error){setError(String(error));}

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 879,
+  "trackedFileCount": 880,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "de779537800689557717169c33c803aa35859c39"
+      "blob": "8713d524b471ea36874969543c53c7ac9558ff3d"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -1289,7 +1289,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
-      "blob": "ef5241161a8328ab980fb7c010e094f7ecb83c2b"
+      "blob": "2c45b2a13d0e837e4f2a67e07318f6f6b5263c9a"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",
@@ -1329,7 +1329,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/prompt_context.rs",
-      "blob": "2ebb92a17aab24ef9e9ed00b142fec96d7b0c9ad"
+      "blob": "f93827bc928bb2c3c97636aa0e5ec3682169ee2c"
     },
     {
       "path": "lu-desktop/src-tauri/src/read_proposal.rs",
@@ -1669,7 +1669,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
-      "blob": "f9a5601660c0cbe37ab6ea6a0403b9a455447199"
+      "blob": "7799910e70fae3af34e2eb50fb0249f73f09af8f"
     },
     {
       "path": "lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs",
@@ -1861,7 +1861,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "8d025a9c22d5617cf3bdc04572f3f29d65acd159"
+      "blob": "aa068d658bcc40214542ed31e8e2d6ed9e8b87ed"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -2449,7 +2449,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "d5c0a26ebc407647d0bf07a8a967c45a5210fa1d"
+      "blob": "63b327957ee013c6443a3ac031dd31ff8da2a450"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -2486,6 +2486,10 @@
     {
       "path": "src-tauri/lu-core/src/model_provider_catalog.rs",
       "blob": "57c87b4b8b2fd737ff48be650cc969728a994bac"
+    },
+    {
+      "path": "src-tauri/lu-core/src/model_provider_staging.rs",
+      "blob": "bfb43a622bd826a57498bfe2d67ac0d3b86a5ad8"
     },
     {
       "path": "src-tauri/lu-core/src/model_turn_journal.rs",

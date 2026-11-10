@@ -17,7 +17,7 @@ test('physical alpha preserves model load, queue, eject and conversation',()=>{
 
 test('one gear launches native Settings; Model Library and chat are distinct Tauri roots',()=>{
   const windows=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
-  const capability=readFileSync(new URL('../src-tauri/capabilities/default.json',import.meta.url),'utf8');
+  const capability=JSON.parse(readFileSync(new URL('../src-tauri/capabilities/default.json',import.meta.url),'utf8'));
   assert.match(ui,/className="quietSettings" title="Settings"/);
   assert.match(ui,/invoke\('lu_open_aux_window',\{kind:'settings'\}\)/);
   assert.match(ui,/invoke\('lu_open_aux_window',\{kind:'model-library'\}\)/);
@@ -26,7 +26,7 @@ test('one gear launches native Settings; Model Library and chat are distinct Tau
   assert.match(rust,/fn lu_open_aux_window\(/);
   assert.match(rust,/WebviewWindowBuilder::new/);
   assert.match(rust,/spec\.query/);
-  assert.match(capability,/"windows": \["main", "settings", "model-library"\]/);
+  assert.deepEqual(capability.windows,['main','settings','model-library']);
   assert.match(windows,/aria-label="Lu settings"/);
   assert.match(windows,/aria-label="Model Library"/);
   assert.match(windows,/Model-specific settings/);
@@ -66,6 +66,20 @@ test('specialist manual buttons are not mounted in composer; host native routes 
   assert.match(rust,/reviewed_app_desktop::explicit_media_metadata_request/);
   assert.match(rust,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
   assert.doesNotMatch(ui,/routeExplicitLocalFolderRequest\(input\)/);
+});
+
+test('model-proposed Office and document drafts remain inert until separate native preview and user consent',()=>{
+  const action=readFileSync(new URL('../src-tauri/src/native_action_proposal.rs',import.meta.url),'utf8');
+  assert.match(action,/pub struct NativeDocumentDraft/);
+  assert.match(action,/pub struct NativeOfficePatch/);
+  assert.match(action,/fn valid_patch\(/);
+  assert.match(action,/model_drafts_are_bounded_inert_and_action_specific/);
+  assert.match(ui,/if\(approved\.documentDraft\)/);
+  assert.match(ui,/if\(approved\.officePatch\)/);
+  assert.match(ui,/if\(approved\.officeBatch\)/);
+  assert.match(rust,/fn lu_confirm_document_create\(/);
+  assert.match(rust,/fn lu_confirm_office_revision\(/);
+  assert.match(rust,/fn lu_confirm_office_batch\(/);
 });
 
 test('fake elapsed timer is absent; actual memory loading percent remains explicitly unverified',()=>{

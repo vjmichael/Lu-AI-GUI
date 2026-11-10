@@ -1013,6 +1013,8 @@ jobs:
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib p0_browse_intent_tests -- --nocapture 2>&1 | tee p0-native-evidence/browser-intent-native.log
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib literal_windows_path_triggers_native_picker -- --nocapture 2>&1 | tee p0-native-evidence/folder-intent-native.log
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib agent_memory_reasoning::tests -- --nocapture 2>&1 | tee p0-native-evidence/ansf-regression.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib native_action_proposal::tests -- --nocapture 2>&1 | tee p0-native-evidence/model-action-review.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml model_provider_staging::tests -- --nocapture 2>&1 | tee p0-native-evidence/hf-integrity-native.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml multimodal_http::tests -- --nocapture 2>&1 | tee p0-native-evidence/mm-http-native.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml multimodal_saved_turn::tests -- --nocapture 2>&1 | tee p0-native-evidence/mm-json-native.log
       - name: Preserve actual built React UI for independent screenshot review
