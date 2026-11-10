@@ -389,6 +389,20 @@ impl DapSession {
         });
         Ok(wire)
     }
+    #[cfg(feature = "dev046c-ci-control")]
+    pub fn ci_scope_ready(&self) -> bool {
+        self.phase == DapPhase::Stopped
+            && self.pending.is_empty()
+            && self.ci_control.is_none()
+            && self.ci_variable_probe.as_ref().is_some_and(|probe| {
+                !probe.variables_requested
+                    && probe.redacted.is_none()
+                    && probe.scope_reference.is_some()
+                    && self.last_source_candidate.as_ref().map(|s| s.frame_id)
+                        == Some(probe.frame_id)
+                    && self.last_stopped_thread.is_some()
+            })
+    }
     /// Only the previously correlated Locals/Arguments scope may be read.
     /// No child expansion, evaluate, setVariable, memory reads or watch
     /// expressions are available. The adapter's values are never returned.
@@ -1114,6 +1128,36 @@ mod tests {
         assert_eq!(session.stack_trace(0).unwrap_err(), DapError::InvalidPhase);
         let request = String::from_utf8(session.stack_trace(15).unwrap()).unwrap();
         assert!(request.contains(r#""threadId":15"#));
+    }
+
+    #[cfg(feature = "dev046c-ci-control")]
+    #[test]
+    fn g04_scope_ready_requires_same_stop_and_exact_response() {
+        let mut s = DapSession::new();
+        s.phase = DapPhase::Stopped;
+        s.last_stopped_thread = Some(11);
+        s.last_source_candidate = Some(SourceLineCandidate {
+            frame_id: 9, line: 7, column: None,
+            adapter_path: "/workspace/src/main.rs".into(),
+            instruction_address: Some(0x140001000),
+        });
+        assert!(!s.ci_scope_ready());
+        s.ci_scopes(9).unwrap();
+        assert!(!s.ci_scope_ready());
+        s.receive(&framed(json!({
+            "seq":1,"type":"response","request_seq":1,"command":"scopes",
+            "success":true,"body":{"scopes":[
+                {"name":"Locals","variablesReference":77,"expensive":false}
+            ]}
+        }))).unwrap();
+        assert!(s.ci_scope_ready());
+        s.ci_variables().unwrap();
+        assert!(!s.ci_scope_ready());
+        s.receive(&framed(json!({
+            "seq":2,"type":"event","event":"continued"
+        }))).unwrap();
+        assert!(!s.ci_scope_ready());
+        assert!(s.ci_take_redacted_variables().is_none());
     }
 
     #[cfg(feature = "dev046c-ci-control")]

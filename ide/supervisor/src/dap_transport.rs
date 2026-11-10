@@ -291,6 +291,31 @@ impl DapGateway {
             .map_err(protocol_denied)?;
         self.send(&frame)
     }
+    /// One OS-scoped, previously consumed and reviewed read-only inspection.
+    /// The gateway does not mint a grant: WindowsDapSession must bind the
+    /// originating frame to the same OS-owned stopped RIP/PDB/Job receipt,
+    /// durable one-use approval, and unchanged source before either call.
+    /// Never available to the ordinary installed/release IDE.
+    #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
+    pub(crate) fn ci_send_scopes(&mut self, frame_id: u64) -> Result<(), SupervisorError> {
+        let frame = self.session.ci_scopes(frame_id).map_err(protocol_denied)?;
+        self.send(&frame)
+    }
+    #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
+    pub(crate) fn ci_scopes_ready(&self) -> bool {
+        self.session.ci_scope_ready()
+    }
+    #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
+    pub(crate) fn ci_send_variables(&mut self) -> Result<(), SupervisorError> {
+        let frame = self.session.ci_variables().map_err(protocol_denied)?;
+        self.send(&frame)
+    }
+    #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
+    pub(crate) fn ci_take_redacted_variables(
+        &mut self,
+    ) -> Option<lu_ide_workspace::dap_session::CiVariableReview> {
+        self.session.ci_take_redacted_variables()
+    }
     /// The LLDB response is correlation ONLY. It does not prove source
     /// breakpoint installation or completed stepping.
     #[cfg(all(windows, debug_assertions, feature = "dev046c-ci-control"))]
