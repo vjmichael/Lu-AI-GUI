@@ -27,6 +27,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+          fetch-depth: 0 # ancestry check requires the full local commit chain
       - name: Exact checked-out SHA
         shell: bash
         run: |
