@@ -60,6 +60,26 @@ fn civil_from_days(days:i64)->(i64,i64,i64){
     (y,m,d)
 }
 
+/// Only the original CURRENT human request can select this host utility.
+/// Never route quoted instructions, attachments or time estimates.
+pub(crate) fn explicit_current_time_request(prompt:&str)->bool{
+    let s=prompt.trim().to_ascii_lowercase();
+    if s.len()>256 || s.contains("[attached text file:") || s.contains("<|")
+        || ["don't","do not","without","how to","what is time complexity",
+            "time travel","time zone difference","timing estimate"]
+            .iter().any(|bad|s.contains(bad)){return false}
+    ["what time is it","what's the time","what is the current time",
+     "what time is it right now","tell me the time",
+     "give me the current time","what is my local time",
+     "what's the current time","what's the local time"]
+        .iter().any(|q|s.starts_with(q))
+}
+pub(crate) fn fresh_local_clock_answer()->String{
+    let observed=device_clock().unwrap_or_else(||
+        "Device clock unavailable; Lu cannot report a verified current time".to_owned());
+    format!("{observed}\n\nSource: Lu's native operating-system clock, observed for this request. No model guess, network lookup, or shell execution was used.")
+}
+
 pub(crate) fn fresh_local_clock_context()->String{
     let observed=device_clock().unwrap_or_else(||"Device clock unavailable. Do not infer an exact local time.".to_owned());
     let utc_epoch=SystemTime::now().duration_since(UNIX_EPOCH)
@@ -72,6 +92,19 @@ pub(crate) fn fresh_local_clock_context()->String{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn explicit_current_time_intent_is_narrow_and_host_only(){
+        for input in ["What is the current time?","What's the time?",
+                      "what time is it right now?","Tell me the time"]{
+            assert!(explicit_current_time_request(input),"{input}");
+        }
+        for input in ["Explain time travel","How to tell the time",
+                      "Don't tell me the time","Time complexity of mergesort"]{
+            assert!(!explicit_current_time_request(input),"{input}");
+        }
+        let answer=fresh_local_clock_answer();
+        assert!(answer.contains("Source: Lu's native operating-system clock"));
+    }
     #[test]
     fn fresh_clock_has_bounded_read_only_context(){
         let s=fresh_local_clock_context();

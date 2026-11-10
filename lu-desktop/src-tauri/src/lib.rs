@@ -4285,6 +4285,42 @@ async fn lu_generate(
         return generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
             prompt,image_refs,max_new_tokens,GenerationOrigin::Human,true).await
     }
+    // CPU-only read-only host utility: the native device clock is the
+    // authoritative current observation, not Qwen's training cutoff or
+    // a string hallucinated during inference. No model process, shell,
+    // network or OS permission grant is created.
+    if image_refs.is_empty() && !read_only_workspace.unwrap_or(false)
+        && host_clock::explicit_current_time_request(&prompt){
+        if !(1..=4096).contains(&max_new_tokens){
+            return Err("Invalid current-time request limits".into());
+        }
+        let owner=Arc::clone(state.inner());
+        if owner.supervisor.status().map_err(|_|"Model unavailable")?
+            .session_id.as_deref()!=Some(session_id.as_str()){
+            return Err("Loaded model session changed".into());
+        }
+        return tauri::async_runtime::spawn_blocking(move||{
+            owner.chats.history(&chat_id)?;
+            let gid=next_id("g-");
+            let answer=host_clock::fresh_local_clock_answer();
+            owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            let _=app.emit("lu-generation-queued",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"queued",position:0
+            });
+            let _=app.emit("lu-generation-start",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"running",position:0
+            });
+            owner.chats.append_progress(&chat_id,&gid,&answer)?;
+            owner.chats.complete(&chat_id,&gid)?;
+            let _=app.emit("lu-generation-finish",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid,phase:"finished",
+                position:0
+            });
+            Ok(answer)
+        }).await.map_err(|_|"Native current-time utility interrupted")?;
+    }
     // Ordinary explicit human requests for one public HTTPS URL may enter
     // the already-existing scoped native browser tool loop. Lu still requires
     // a verified, separately packaged browser and new native human approval
