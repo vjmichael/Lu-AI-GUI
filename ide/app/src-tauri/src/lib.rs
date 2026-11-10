@@ -405,6 +405,44 @@ async fn ide_git_cancel_partial_stage(
 
 /// Read-only durable journal reconciliation across native process restart.
 /// Never guess an interrupted index write can be rolled back automatically.
+/// On fresh native OS confirmation, recheck durable Git evidence and
+/// append only a terminal receipt. Never delete index.lock or roll back data.
+#[tauri::command]
+async fn ide_git_reconcile_partial_stage(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_partial_stage::PartialStageRecovery, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let status = registry.inspect_partial_stage_recovery(&project_id)
+            .map_err(str::to_owned)?;
+        if !status.operator_reconciliation_required {
+            return Ok(status);
+        }
+        if status.pending_git_lock {
+            return Err("G06B_STAGE_STALE_LOCK_REQUIRES_MANUAL_GIT_REVIEW".into());
+        }
+        let approved = app.dialog()
+            .message(format!(
+                "Review interrupted partial Git stage for registered project {}?\n\nState: {}\nLast journal phase: {}\n\nLu will independently verify HEAD, Git index bytes, original tracked source, and the intended staged Git blob before appending a terminal receipt. It will NOT change or delete the Git index, remove a lock, or authorize another stage.",
+                project_id, status.state, status.last_phase
+            ))
+            .title("Lu IDE · Review interrupted partial Git stage")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Verify and reconcile receipt".into(),
+                "Deny / Cancel".into(),
+            ))
+            .blocking_show();
+        if !approved { return Err("G06B_STAGE_RECOVERY_HUMAN_DENIED".into()); }
+        registry.reconcile_partial_stage_journal(&project_id)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06B_STAGE_RECOVERY_HOST_INTERRUPTED".to_owned())?
+}
+
 #[tauri::command]
 async fn ide_git_partial_stage_recovery(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
@@ -2316,6 +2354,7 @@ pub fn run() {
             ide_git_stage_selected_hunks,
             ide_git_cancel_partial_stage,
             ide_git_partial_stage_recovery,
+            ide_git_reconcile_partial_stage,
             ide_git_review_file,
             ide_git_stage_reviewed,
             ide_git_commit_reviewed,
