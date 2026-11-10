@@ -868,7 +868,6 @@ function App() {
   const [reviewedAppNextSend,setReviewedAppNextSend] = useState(null);
   // Explicit one-turn Browser opt-in; native dialog remains the grant.
   const [browserResearchNextSend,setBrowserResearchNextSend]=useState(false);
-  const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [modelLoadTrace, setModelLoadTrace] = useState(null);
   const [lastHostLoadReply, setLastHostLoadReply] = useState(0);
   const [error, setError] = useState('');
@@ -930,6 +929,9 @@ function App() {
   const [wave2RecoveryByChat,setWave2RecoveryByChat] = useState({});
   const [wave2RecoveryBusy,setWave2RecoveryBusy] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [modelLibraryOpen,setModelLibraryOpen] = useState(false);
+  const [modelLibraryTab,setModelLibraryTab] = useState('installed');
+  const [reactionPickerSeq,setReactionPickerSeq] = useState(null);
   const [folderDraft, setFolderDraft] = useState(false);
   const [folderName, setFolderName] = useState('');
   const [expandedFolders, setExpandedFolders] = useState([]);
@@ -974,13 +976,6 @@ function App() {
   const displayedHistory = visibleJob ? history.filter((entry,i) =>
     !(i === history.length - 1 && entry.role === 'assistant' && entry.interrupted && !entry.cancelled)) : history;
   useEffect(() => { draftText.current = prompt; draftImages.current = images; draftFiles.current = textFiles; }, [prompt, images, textFiles]);
-  useEffect(() => {
-    if (!(working && activity.startsWith('Loading'))) { setModelLoadSeconds(0); return; }
-    const started = Date.now();
-    setModelLoadSeconds(0);
-    const timer = setInterval(() => setModelLoadSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
-    return () => clearInterval(timer);
-  }, [working, activity]);
   useEffect(() => {
     if (!(working && activity.startsWith('Loading'))) {
       setModelLoadTrace(null);
@@ -1866,7 +1861,7 @@ function App() {
   },[settingsOpen]);
 
   useEffect(()=>{
-    if (!settingsOpen || !selectedModel) { setModelInspection(null); return; }
+    if ((!settingsOpen && !modelLibraryOpen) || !selectedModel) { setModelInspection(null); return; }
     let alive=true;
     setModelInspection(null);
     invoke('lu_model_backend_options').then(options=>{
@@ -1879,7 +1874,7 @@ function App() {
         detail:'Native model compatibility inspection failed. No model was loaded.'
       });});
     return()=>{alive=false;};
-  },[settingsOpen,selectedModel,models]);
+  },[settingsOpen,modelLibraryOpen,selectedModel,models]);
 
   async function refreshCatalog() {
     const [knownModels, status] = await Promise.all([invoke('lu_list_models'), invoke('lu_status')]);
@@ -4128,7 +4123,6 @@ function App() {
         <button className="settingsButton" onClick={() => setBackgroundPaneOpen(true)}>
           ◷ Background Tasks {activeBackgroundTasks.length ? '· '+activeBackgroundTasks.length : ''}
         </button>
-        <button className="settingsButton" onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
       </div>
     </aside>
     {historyPaneOpen&&chatId&&<AnsfHistoryPane activeChatId={chatId}
@@ -4144,7 +4138,7 @@ function App() {
         <div className="chatTitle"><h1>{activeChat?.title && activeChat.title !== 'New chat' ? activeChat.title : 'Chat'}</h1>
           <p>{loaded ? 'Ready to chat · local model' : 'Choose a local GGUF to start'}</p></div>
         <div className="headerControls">
-          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model… {modelLoadSeconds}s elapsed · {lastHostLoadReply && Date.now() - lastHostLoadReply < 5000 ? 'Host responding' : 'Host response pending'}{modelLoadTrace?.loading && modelLoadTrace.events?.length > 0 ? ' · ' + modelLoadTrace.events[modelLoadTrace.events.length - 1].phase.replaceAll('_', ' ') : ''}</span>}
+          {working && activity.startsWith('Loading') && <span className="busyHint" role="status" aria-live="polite"><span className="spinner" aria-hidden="true"></span> Loading model · {modelLoadTrace?.loading&&modelLoadTrace.events?.length ? modelLoadTrace.events[modelLoadTrace.events.length-1].phase.replaceAll('_',' ') : 'Reading model and initializing backend'} · Memory allocation percentage unavailable until real backend telemetry</span>
           <div className="modelSwitcherWrap" ref={modelMenuRef}>
             <button className="modelSwitcher" onClick={() => setModelMenuOpen(v => !v)} aria-expanded={modelMenuOpen} title="Quick model selection">
               <span className="modelText">{selectModelText}</span> <span>⌄</span></button>
@@ -4157,7 +4151,7 @@ function App() {
               {!models.length && <div className="asideHelp">Put GGUF files in Lu's models directory or import them from Settings.</div>}
               <div className="modelMenuActions">
                 <button className="primaryButton" disabled={busy || loaded || !selected?.available} onClick={loadModel}>Load selected</button>
-                <button className="subtleButton" onClick={() => {setModelMenuOpen(false);setSettingsOpen(true);}}>Manage models</button>
+                <button className="subtleButton" onClick={() => {setModelMenuOpen(false);setModelLibraryTab("installed");setModelLibraryOpen(true);}}>Manage models</button>
               </div>
               {loaded && <button className="subtleButton full" disabled={busy} onClick={() => {setModelMenuOpen(false);unloadModel();}}>⏏ Unload active model</button>}
             </div>}
@@ -4294,14 +4288,19 @@ function App() {
                 </button>
               </>}
               <div className="messageReactions" role="group" aria-label="React to this message">
-                {MESSAGE_REACTIONS.map(emoji=>
-                  <button type="button" key={emoji}
-                    disabled={messageDecorationBusy}
-                    aria-pressed={chatReactions[entry.seq]===emoji}
+                <button type="button" className="reactionTrigger"
+                  aria-label="Open emoji reactions" aria-expanded={reactionPickerSeq===entry.seq}
+                  onClick={()=>setReactionPickerSeq(v=>v===entry.seq?null:entry.seq)}>
+                  ☺ {chatReactions[entry.seq]||''}
+                </button>
+                {reactionPickerSeq===entry.seq&&<div className="reactionPicker" role="group" aria-label="Choose a reaction below this message">
+                  {MESSAGE_REACTIONS.map(emoji=><button type="button" key={emoji}
+                    disabled={messageDecorationBusy} aria-pressed={chatReactions[entry.seq]===emoji}
                     aria-label={'React '+emoji}
-                    onClick={()=>void setChatMessageReaction(entry,emoji)}>
+                    onClick={()=>{void setChatMessageReaction(entry,emoji);setReactionPickerSeq(null);}}>
                     {emoji}
                   </button>)}
+                </div>}
               </div>
             </div>}
         </div>;
@@ -4480,151 +4479,7 @@ function App() {
           <span className="composerHandle">···</span>
           <button type="button" className="collapseComposer" onPointerDown={e => e.stopPropagation()} onClick={() => setComposerCollapsed(v => !v)}>{composerCollapsed ? 'Expand' : 'Collapse'} composer</button>
         </div>
-        {chatId && <section className="observePilot" aria-label="Observe and Learn — Lu-only pilot">
-          <div className="observePilotTop">
-            <strong>Observe & Learn · Lu UI only</strong>
-            <span role="status" className={'observeIndicator mode-'+observeView.mode}>
-              {observeView.mode==='active'?'● Observing Lu UI events':
-               observeView.mode==='paused'?'Paused':'Off'}
-            </span>
-          </div>
-          <small>Experimental · OFF by default · two native confirmations to enable · Linux administrator authentication.
-            Observe & Learn data is marked LOCAL ONLY; Lu's network tools must never transmit it.
-            You choose what the screen exposes. No remote viewing interface.</small>
-          <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
-            An additionally approved Windows foreground-window capture rechecks HWND, PID and process creation time;
-            the general picker can select a monitor but cannot independently identify the selected OS source. Receipt-only capture fully blanks the frame. Separate user-approved local-GGUF image modes retain one private bounded frame for a deliberate second Attach action.</small>
-          <div className="settingsActions">
-            {observeView.mode==='off' &&
-              <button type="button" onClick={()=>observeAction('start')}>Enable experimental Observe & Learn</button>}
-            {observeView.mode==='active' &&
-              <button type="button" onClick={()=>observeAction('pause')}>Pause</button>}
-            {observeView.mode==='paused' &&
-              <button type="button" onClick={()=>observeAction('resume')}>Resume</button>}
-            {observeView.mode==='active' && captureWorkerReady &&
-              <>
-                <button type="button" disabled={captureStarting}
-                  onClick={()=>observeCaptureOneShot(true)}>
-                  {captureStarting?'Capturing…':'Capture selected foreground app (4s)'}
-                </button>
-                <button type="button" disabled={captureStarting}
-                  onClick={()=>observeCaptureOneShot(false,true)}>
-                  Capture primary display (OS-identified, full screen)
-                </button>
-                <button type="button" disabled={captureStarting}
-                  onClick={()=>observeCaptureOneShot(false)}>
-                  Select window/display · capture one frame
-                </button>
-                <button type="button" disabled={captureStarting}
-                  onClick={()=>observeCaptureOneShot(true,false,true)}>
-                  Capture foreground app for local GGUF image
-                </button>
-                <button type="button" disabled={captureStarting}
-                  onClick={()=>observeCaptureOneShot(false,true,true)}>
-                  Capture primary display for local GGUF image
-                </button>
-              </>}
-            {observeView.mode!=='off' &&
-              <button type="button" onClick={()=>observeAction('stop')}>Stop observation</button>}
-          </div>
-          {observeView.mode==='off' &&
-            <button type="button" className="subtleButton"
-              onClick={()=>void forgetObserveNotes()}>
-              Forget saved observation notes for this chat
-            </button>}
-          {observeView.mode==='active' && !captureWorkerReady &&
-            <small>Windows Graphics Capture is unavailable until the signed-off capture worker is installed with Lu.</small>}
-          {captureTaskId && <div aria-label="Native one-shot capture evidence">
-            <small role="status">One-shot WGC task: {captureTaskId}.
-              Receipts are fully redacted. An explicitly approved local-image
-              capture can temporarily hold one bounded frame in native RAM;
-              it has no network destination and requires a second action to attach.</small>
-            <button type="button" onClick={()=>void reviewCaptureReceipt()}>
-              Inspect native frame receipt
-            </button>
-            {captureLocalTaskId===captureTaskId
-              &&captureReceipt?.chatId===chatId
-              &&captureReceipt.frameObserved
-              &&captureReceipt.sourceIdentityAttested
-              &&observeView.mode==='active' &&
-              <button type="button" disabled={captureStarting}
-                onClick={()=>void attachLocalObservedFrame()}>
-                Attach approved frame to this local multimodal chat
-              </button>}
-            {captureReceipt?.chatId===chatId&&
-              <small>Capture state: {captureReceipt.state}.
-                {captureReceipt.frameObserved?' WGC frame observed; receipt is fully blanked.':''}
-                {captureReceipt.pixelsRetained
-                  ?' A private local-only frame is temporarily held in native RAM pending Attach or cancellation.'
-                  :''}
-                {captureReceipt.frameSha256
-                  ?' Fully redacted frame receipt SHA-256: '+captureReceipt.frameSha256
-                  :' No completed frame digest.'}
-                {captureReceipt.sourceIdentityAttested
-                  ?' Native foreground HWND or primary display identity checked.'
-                  :' Selected source identity is not attested.'}
-                {captureReceipt.fullyRedactedReceipt
-                  ?' Entire captured frame was blanked before receipt output.'
-                  :' No verified redacted frame receipt.'}
-                This is not an image preview, GUI test verdict or model visual understanding.</small>}
-          </div>}
-          {observeView.mode!=='off'&&
-            <small>Observed state-change hints: {observeView.nativeEventCount||0}.
-              Durable awareness notes: {observeView.notesLogged||0}.
-              No automatically saved learning, GPU inference or GUI test verdict.</small>}
-          {observeView.mode!=='off'&&
-            <div className="observeNotations" aria-label="Local awareness notations">
-              <strong>Awareness notes · native-only</strong>
-              {observeNotes.length===0
-                ? <small>No issues noted in this observation session.</small>
-                : <ul>{observeNotes.slice(0,8).map(n=>
-                  <li key={n.sequence}>
-                    {n.kind==='error_indicator'?'Error indicator observed (not verified)':
-                      n.kind==='verified_test_failure'?'Independently verified test failure':
-                      n.kind} · {n.source==='renderer_hint'?'UI hint':n.source}
-                    · {n.priority}
-                  </li>
-                )}</ul>}
-              <button type="button" disabled={observeNotes.length===0}
-                onClick={reviewObserveHandoff}>Prepare large-model review handoff</button>
-              <button type="button" className="subtleButton"
-                onClick={()=>void forgetObserveNotes()}>
-                Forget observation notes for this chat
-              </button>
-              <small>Diagnostic codes expire after seven days. Forgetting clears Lu's
-                stored notes and current review summary, not existing chat messages,
-                exported text, or durable task-operation receipts. No observation data
-                is automatically promoted to memory or model training.</small>
-              {observeHandoff?.sessionId===observeView.sessionId&&
-                <div role="status" className="observeHandoff">
-                  <strong>Observed evidence prepared for human review</strong>
-                  <small>{observeHandoff.sourceNoteCount} bounded native records.
-                    Independently verified test failures: {observeHandoff.verifiedFailures};
-                    unverified indicators: {observeHandoff.unverifiedIndicators}.</small>
-                  <small>Review SHA-256: {observeHandoff.reviewSha256}</small>
-                  <textarea readOnly rows={8} aria-label="Read-only native observation handoff"
-                    value={observeHandoff.reviewDraft}/>
-                  <div className="settingsActions">
-                    <button type="button" disabled={!chatId||working||chatBusy}
-                      onClick={()=>{
-                        const draft=observeHandoff.reviewDraft;
-                        if(!draft||observeHandoff.sessionId!==observeView.sessionId)return;
-                        setPrompt(prev=>prev?(prev+'\n\n'+draft):draft);
-                        setObserveHandoff(null);
-                        setActivity('Observation briefing added to chat draft. Review and press Send when ready.');
-                      }}>
-                      Add observed evidence to chat draft
-                    </button>
-                    <button type="button" onClick={()=>setObserveHandoff(null)}>
-                      Dismiss briefing
-                    </button>
-                  </div>
-                  <small>Nothing is sent automatically. These records never establish
-                    verified GUI correctness or grant source editing, OS access,
-                    or further tools; ordinary per-turn approval still applies.</small>
-                </div>}
-            </div>}
-        </section>}
+
         {wave2FileBusy && <section className="readProposalCard" role="status"
           aria-live="polite" aria-label="Native file operation in progress">
           <strong>Native file operation in progress</strong>
@@ -5799,6 +5654,7 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <details className="chatToolsDrawer"><summary>Tools</summary><div className="chatToolsGrid">
             <button type="button" className="subtleButton" disabled={!loaded}
               title="Inspect native vision status without claiming MMProj presence proves visual understanding"
               onClick={()=>void invoke('lu_vision_capability')
@@ -6020,6 +5876,7 @@ function App() {
             </button>
             <span className="composerHelp">Explicit workspace searches and document-reading requests open native pickers; Git status, log and diff require selecting a repository · No automatic file permission</span>
             <span className="composerHelp">Paste or drop images and text · Enter to send · Shift+Enter for newline</span>
+            </div></details>
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
               : <button className="primaryButton" type="submit" disabled={working || !loaded || !prompt.trim()}>Send</button>}
@@ -6468,7 +6325,7 @@ function App() {
         </footer>
       </aside>
     </div>}
-    {settingsOpen && <div className="settingsBackdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
+    {false && settingsOpen && <div className="settingsBackdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
       <div className="settingsPane" role="dialog" aria-label="Lu settings" aria-modal="true" onClick={e => e.stopPropagation()}>
         <header><div><h2>Settings</h2><small>Local model management and chat appearance</small></div><button className="quietIcon" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></header>
         <section className="chatAppearanceSettings" aria-label="Conversation appearance">
@@ -7227,6 +7084,280 @@ function App() {
         </section>
         <p className="settingsNotice">A remote search result never installs, imports or loads a model. Use the existing native GGUF import picker for files you have downloaded and checked. The pinned engine requests Vulkan on Windows; driver/offload verification remains a separate physical gate.</p>
       </div>
+    </div>}
+
+    {settingsOpen&&<div className="luWindowBackdrop" role="presentation" onClick={()=>setSettingsOpen(false)}>
+      <section className="luFullWindow" role="dialog" aria-modal="true" aria-label="Lu settings" onClick={e=>e.stopPropagation()}>
+        <header className="luFullWindowHeader"><div><h2>Settings</h2><small>Preferences and privacy · tools remain available through Lu's chat</small></div>
+          <button type="button" className="quietIcon" aria-label="Close settings" onClick={()=>setSettingsOpen(false)}>×</button></header>
+        <div className="luFullWindowBody">
+          <div className="luSettingsIntro"><strong>Lu's workspace stays in Chat.</strong>
+            <p>Settings contain preferences and privacy controls, not research forms or manual document editors.</p></div>
+                  <section className="chatAppearanceSettings" aria-label="Conversation appearance">
+          <h3>Conversation appearance</h3>
+          <small>Colors belong only to this chat. They never alter model input or
+            the original saved messages.</small>
+          {!chatId?<p>Select a conversation to customize it.</p>:<>
+            <div className="appearancePresetRow" role="group" aria-label="Color presets">
+              {CHAT_APPEARANCE_PRESETS.map(preset=>
+                <button type="button" key={preset.name}
+                  disabled={messageDecorationBusy}
+                  onClick={()=>void saveChatAppearance(preset)}
+                  title={'Apply '+preset.name+' colors'}>
+                  {preset.name}
+                </button>)}
+            </div>
+            <div className="chatColorInputs">
+              <label>Chat background
+                <input type="color" value={chatAppearance.background}
+                  disabled={messageDecorationBusy}
+                  onChange={event=>void saveChatAppearance({
+                    ...chatAppearance,background:event.target.value
+                  })}/>
+              </label>
+              <label>Your message bubbles
+                <input type="color" value={chatAppearance.userBubble}
+                  disabled={messageDecorationBusy}
+                  onChange={event=>void saveChatAppearance({
+                    ...chatAppearance,userBubble:event.target.value
+                  })}/>
+              </label>
+              <label>Lu's message bubbles
+                <input type="color" value={chatAppearance.assistantBubble}
+                  disabled={messageDecorationBusy}
+                  onChange={event=>void saveChatAppearance({
+                    ...chatAppearance,assistantBubble:event.target.value
+                  })}/>
+              </label>
+            </div>
+          </>}
+        </section>
+                  {chatId && <section className="observePilot" aria-label="Observe and Learn — Lu-only pilot">
+          <div className="observePilotTop">
+            <strong>Observe & Learn · Lu UI only</strong>
+            <span role="status" className={'observeIndicator mode-'+observeView.mode}>
+              {observeView.mode==='active'?'● Observing Lu UI events':
+               observeView.mode==='paused'?'Paused':'Off'}
+            </span>
+          </div>
+          <small>Experimental · OFF by default · two native confirmations to enable · Linux administrator authentication.
+            Observe & Learn data is marked LOCAL ONLY; Lu's network tools must never transmit it.
+            You choose what the screen exposes. No remote viewing interface.</small>
+          <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
+            An additionally approved Windows foreground-window capture rechecks HWND, PID and process creation time;
+            the general picker can select a monitor but cannot independently identify the selected OS source. Receipt-only capture fully blanks the frame. Separate user-approved local-GGUF image modes retain one private bounded frame for a deliberate second Attach action.</small>
+          <div className="settingsActions">
+            {observeView.mode==='off' &&
+              <button type="button" onClick={()=>observeAction('start')}>Enable experimental Observe & Learn</button>}
+            {observeView.mode==='active' &&
+              <button type="button" onClick={()=>observeAction('pause')}>Pause</button>}
+            {observeView.mode==='paused' &&
+              <button type="button" onClick={()=>observeAction('resume')}>Resume</button>}
+            {observeView.mode==='active' && captureWorkerReady &&
+              <>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(true)}>
+                  {captureStarting?'Capturing…':'Capture selected foreground app (4s)'}
+                </button>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(false,true)}>
+                  Capture primary display (OS-identified, full screen)
+                </button>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(false)}>
+                  Select window/display · capture one frame
+                </button>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(true,false,true)}>
+                  Capture foreground app for local GGUF image
+                </button>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(false,true,true)}>
+                  Capture primary display for local GGUF image
+                </button>
+              </>}
+            {observeView.mode!=='off' &&
+              <button type="button" onClick={()=>observeAction('stop')}>Stop observation</button>}
+          </div>
+          {observeView.mode==='off' &&
+            <button type="button" className="subtleButton"
+              onClick={()=>void forgetObserveNotes()}>
+              Forget saved observation notes for this chat
+            </button>}
+          {observeView.mode==='active' && !captureWorkerReady &&
+            <small>Windows Graphics Capture is unavailable until the signed-off capture worker is installed with Lu.</small>}
+          {captureTaskId && <div aria-label="Native one-shot capture evidence">
+            <small role="status">One-shot WGC task: {captureTaskId}.
+              Receipts are fully redacted. An explicitly approved local-image
+              capture can temporarily hold one bounded frame in native RAM;
+              it has no network destination and requires a second action to attach.</small>
+            <button type="button" onClick={()=>void reviewCaptureReceipt()}>
+              Inspect native frame receipt
+            </button>
+            {captureLocalTaskId===captureTaskId
+              &&captureReceipt?.chatId===chatId
+              &&captureReceipt.frameObserved
+              &&captureReceipt.sourceIdentityAttested
+              &&observeView.mode==='active' &&
+              <button type="button" disabled={captureStarting}
+                onClick={()=>void attachLocalObservedFrame()}>
+                Attach approved frame to this local multimodal chat
+              </button>}
+            {captureReceipt?.chatId===chatId&&
+              <small>Capture state: {captureReceipt.state}.
+                {captureReceipt.frameObserved?' WGC frame observed; receipt is fully blanked.':''}
+                {captureReceipt.pixelsRetained
+                  ?' A private local-only frame is temporarily held in native RAM pending Attach or cancellation.'
+                  :''}
+                {captureReceipt.frameSha256
+                  ?' Fully redacted frame receipt SHA-256: '+captureReceipt.frameSha256
+                  :' No completed frame digest.'}
+                {captureReceipt.sourceIdentityAttested
+                  ?' Native foreground HWND or primary display identity checked.'
+                  :' Selected source identity is not attested.'}
+                {captureReceipt.fullyRedactedReceipt
+                  ?' Entire captured frame was blanked before receipt output.'
+                  :' No verified redacted frame receipt.'}
+                This is not an image preview, GUI test verdict or model visual understanding.</small>}
+          </div>}
+          {observeView.mode!=='off'&&
+            <small>Observed state-change hints: {observeView.nativeEventCount||0}.
+              Durable awareness notes: {observeView.notesLogged||0}.
+              No automatically saved learning, GPU inference or GUI test verdict.</small>}
+          {observeView.mode!=='off'&&
+            <div className="observeNotations" aria-label="Local awareness notations">
+              <strong>Awareness notes · native-only</strong>
+              {observeNotes.length===0
+                ? <small>No issues noted in this observation session.</small>
+                : <ul>{observeNotes.slice(0,8).map(n=>
+                  <li key={n.sequence}>
+                    {n.kind==='error_indicator'?'Error indicator observed (not verified)':
+                      n.kind==='verified_test_failure'?'Independently verified test failure':
+                      n.kind} · {n.source==='renderer_hint'?'UI hint':n.source}
+                    · {n.priority}
+                  </li>
+                )}</ul>}
+              <button type="button" disabled={observeNotes.length===0}
+                onClick={reviewObserveHandoff}>Prepare large-model review handoff</button>
+              <button type="button" className="subtleButton"
+                onClick={()=>void forgetObserveNotes()}>
+                Forget observation notes for this chat
+              </button>
+              <small>Diagnostic codes expire after seven days. Forgetting clears Lu's
+                stored notes and current review summary, not existing chat messages,
+                exported text, or durable task-operation receipts. No observation data
+                is automatically promoted to memory or model training.</small>
+              {observeHandoff?.sessionId===observeView.sessionId&&
+                <div role="status" className="observeHandoff">
+                  <strong>Observed evidence prepared for human review</strong>
+                  <small>{observeHandoff.sourceNoteCount} bounded native records.
+                    Independently verified test failures: {observeHandoff.verifiedFailures};
+                    unverified indicators: {observeHandoff.unverifiedIndicators}.</small>
+                  <small>Review SHA-256: {observeHandoff.reviewSha256}</small>
+                  <textarea readOnly rows={8} aria-label="Read-only native observation handoff"
+                    value={observeHandoff.reviewDraft}/>
+                  <div className="settingsActions">
+                    <button type="button" disabled={!chatId||working||chatBusy}
+                      onClick={()=>{
+                        const draft=observeHandoff.reviewDraft;
+                        if(!draft||observeHandoff.sessionId!==observeView.sessionId)return;
+                        setPrompt(prev=>prev?(prev+'\n\n'+draft):draft);
+                        setObserveHandoff(null);
+                        setActivity('Observation briefing added to chat draft. Review and press Send when ready.');
+                      }}>
+                      Add observed evidence to chat draft
+                    </button>
+                    <button type="button" onClick={()=>setObserveHandoff(null)}>
+                      Dismiss briefing
+                    </button>
+                  </div>
+                  <small>Nothing is sent automatically. These records never establish
+                    verified GUI correctness or grant source editing, OS access,
+                    or further tools; ordinary per-turn approval still applies.</small>
+                </div>}
+            </div>}
+        </section>}
+          <section className="luSettingsGroup" aria-label="Browser preference">
+            <h3>Browser privacy and visibility</h3>
+            <p>Browser access requires separate authorization for each scoped task. Setting a preference does not launch it.</p>
+            <label>Browser window visibility
+              <select value={browserVisibility} onChange={e=>invoke('lu_set_browser_visibility',{mode:e.target.value}).then(setBrowserVisibility).catch(error=>setBrowserPreferenceError(String(error)))}>
+                <option value="automatic_hidden">Automatic · visible when human approval is needed</option>
+                <option value="always_visible">Always visible</option>
+              </select>
+            </label>
+            {browserPreferenceError&&<small role="alert">{browserPreferenceError}</small>}
+            {browserRuntime?.reason&&<small>Runtime: {browserRuntime.reason}</small>}
+          </section>
+        </div>
+      </section>
+    </div>}
+    {modelLibraryOpen&&<div className="luWindowBackdrop" role="presentation" onClick={()=>setModelLibraryOpen(false)}>
+      <section className="luFullWindow" role="dialog" aria-modal="true" aria-label="Model Library" onClick={e=>e.stopPropagation()}>
+        <header className="luFullWindowHeader"><div><h2>Model Library</h2><small>Browse local GGUF models or inspect public model repositories</small></div>
+          <button type="button" className="quietIcon" onClick={()=>setModelLibraryOpen(false)} aria-label="Close model library">×</button></header>
+        <nav className="luModelTabs" aria-label="Model library tabs">
+          <button type="button" aria-current={modelLibraryTab==='installed'?'page':undefined} onClick={()=>setModelLibraryTab('installed')}>Installed</button>
+          <button type="button" aria-current={modelLibraryTab==='discover'?'page':undefined} onClick={()=>setModelLibraryTab('discover')}>Discover · Hugging Face</button>
+        </nav>
+        <div className="luFullWindowBody">
+          {modelLibraryTab==='installed'&&<>
+            <div className="luModelSearchRow">
+              <input type="search" value={modelSearch} maxLength={100} placeholder="Search local models by filename…" aria-label="Search local models" onChange={e=>setModelSearch(e.target.value)}/>
+              <button type="button" disabled={busy||loaded} onClick={rescanModels}>Rescan</button>
+              <button type="button" disabled={busy} onClick={importModel}>Import GGUF</button>
+            </div>
+            <div className="luModelGrid">
+              {models.filter(m=>m.filename.toLocaleLowerCase().includes(modelSearch.trim().toLocaleLowerCase())).map(m=><button type="button"
+                key={m.modelRef} className={'luModelCard '+(selectedModel===m.modelRef?'selected':'')} onClick={()=>setSelectedModel(m.modelRef)}>
+                <strong>{m.filename}</strong><small>{m.projectorAttached?'GGUF + MMProj':'GGUF'} · {m.available?'Available':'Missing file'}</small>
+                <span>{selectedModel===m.modelRef?'● Selected':'Inspect model'}</span>
+              </button>)}
+            </div>
+            {selected&&<div className="luModelDetail" aria-label="Selected model details">
+              <h3>{selected.filename}</h3>
+              {modelInspection?.modelRef===selectedModel&&<>
+                <p>{modelInspection.detail}</p>
+                <p>Architecture: {modelInspection.architecture||'not reported'} · GGUF v{modelInspection.ggufVersion||'?'} ·
+                  Size: {modelInspection.fileBytes!=null?(modelInspection.fileBytes/1073741824).toFixed(2)+' GiB':'unknown'} ·
+                  Context: {modelInspection.reportedContextLength||'not reported'}</p>
+                <p>Preflight: {modelInspection.status} · Backend: {modelInspection.backendRequested}</p>
+              </>}
+              <div className="settingsActions">
+                <button type="button" disabled={busy||loaded||selected.projectorAttached} onClick={attachProjector}>Attach MMProj…</button>
+                <button type="button" disabled={busy||loaded||!selected.available||!modelInspection?.loadAllowed||modelInspection.modelRef!==selectedModel}
+                  onClick={()=>{setModelLibraryOpen(false);void loadModel();}}>Load selected model</button>
+                <button type="button" disabled={busy||!loaded} onClick={()=>{setModelLibraryOpen(false);void unloadModel();}}>Unload active model</button>
+              </div>
+            </div>}
+          </>}
+          {modelLibraryTab==='discover'&&<>
+            <div className="luModelSearchRow">
+              <input aria-label="Search Hugging Face public GGUF repositories" type="search" placeholder="Model or author, e.g. Qwen3.8"
+                value={providerQuery} maxLength={96} onChange={e=>setProviderQuery(e.target.value)}/>
+              <button type="button" disabled={providerBusy||!providerQuery.trim()} onClick={()=>void searchPublicModels()}>
+                {providerBusy?'Searching…':'Search catalog'}</button>
+            </div>
+            <p className="luModelCaution">This build's provider lookup is experimental. In-app downloads are not implemented;
+              catalog lookup failure is reported explicitly rather than presented as a working installer.</p>
+            {providerFailure&&<p role="alert" className="luModelError">Catalog unavailable: {providerFailure}</p>}
+            <div className="luModelGrid">
+              {providerHits.map(lead=><button type="button" className="luModelCard" key={lead.repoId+lead.revision} onClick={()=>void inspectPublicModel(lead)}>
+                <strong>{lead.repoId}</strong><small>Provider-reported license: {lead.licenseLabel||'unknown'}</small>
+                <span>Revision {lead.revision?.slice(0,12)||'unknown'} · Show files</span>
+              </button>)}
+            </div>
+            {providerReview&&<div className="luModelDetail" aria-label="Public model file details">
+              <h3>{providerReview.repoId}</h3><p>Revision {providerReview.revision} · License {providerReview.licenseLabel}</p>
+              {providerReview.files.map(file=><p key={file.name}>
+                <strong>{file.name}</strong> · {(file.bytes/1073741824).toFixed(2)} GiB · SHA-256 {file.sha256}
+              </p>)}
+              <p>Read-only listing. Download, resume, import, integrity verification and install require a native transfer manager before activation.</p>
+              <a href={providerReview.sourceUrl} rel="noopener noreferrer" target="_blank">View repository on Hugging Face</a>
+            </div>}
+          </>}
+        </div>
+      </section>
     </div>}
   </div>;
 }

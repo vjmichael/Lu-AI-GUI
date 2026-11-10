@@ -1817,7 +1817,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "1a7666a4bd0755f3cf1c8e6c9f4115fcd046a8a8"
+      "blob": "7635e3dfbede0de88a3abc4bcebd47e905f68968"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1849,7 +1849,7 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "f5624e1b3681f493c1ec4db984db1f749e0425bf"
+      "blob": "a5124b9f003476e20c3fa3c60033af704386fded"
     },
     {
       "path": "scripts/build-agent01g-physical-windows-nsis.ps1",
