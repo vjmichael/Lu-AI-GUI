@@ -157,6 +157,31 @@ try{
   )
   $manifest|ConvertTo-Json -Depth 7|Set-Content -LiteralPath $manifestFile -Encoding utf8
   Write-Host "Both CPU and Vulkan binaries built and SHA-verified; SDK: $sdk"
+  # A browser runtime must be supplied as one out-of-band reviewed bundle
+  # with a manifest digest. No ambient Edge/Chrome, PATH Node, or automatic
+  # network installation can become a browser grant.
+  $browserBundle=''
+  if($env:LU_BROWSER_PACKAGE_DIR -or $env:LU_BROWSER_MANIFEST_SHA256){
+    if(-not($env:LU_BROWSER_PACKAGE_DIR -and $env:LU_BROWSER_MANIFEST_SHA256)){
+      throw 'Reviewed Browser needs BOTH LU_BROWSER_PACKAGE_DIR and LU_BROWSER_MANIFEST_SHA256'
+    }
+    Push-Location (Join-Path $repo 'lu-desktop')
+    try {
+      & node scripts/stage-browser-runtime.mjs
+      if($LASTEXITCODE -ne 0){throw 'Pinned Browser package staging failed'}
+    }finally{Pop-Location}
+    $browserBundle=Join-Path $repo 'lu-desktop/src-tauri/resources/lu-browser'
+    if(-not(Test-Path -LiteralPath (Join-Path $browserBundle 'manifest.json') -PathType Leaf)){
+      throw 'Reviewed Browser manifest missing after staging'
+    }
+    $browserDigest=(Get-FileHash -LiteralPath (Join-Path $browserBundle 'manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+    if($browserDigest -cne $env:LU_BROWSER_MANIFEST_SHA256.ToLowerInvariant()){
+      throw 'Staged Browser digest mismatch'
+    }
+    Write-Host 'Verified reviewed Browser bundle staged (Chromium, Node, Playwright and worker)'
+  }elseif($env:LU_REQUIRE_BROWSER -eq '1'){
+    throw 'Browser required for release but reviewed runtime was not provided'
+  }
   # Ephemeral CI-only test identity. Never save modified config in Git.
   $confPath=Join-Path $repo 'lu-desktop/src-tauri/tauri.conf.json'
   $originalConfig=[IO.File]::ReadAllText($confPath)
@@ -172,6 +197,7 @@ try{
     'resources/lu-inference/manifest.json'='lu-inference/manifest.json'
     'resources/lu-native-codecs'='lu-native-codecs'
   }
+  if($browserBundle){$conf.bundle.resources['resources/lu-browser']='lu-browser'}
   $conf|ConvertTo-Json -Depth 32|Set-Content -LiteralPath $confPath -Encoding utf8
   Push-Location (Join-Path $repo 'lu-desktop')
   try{
@@ -208,6 +234,7 @@ try{
     vulkanEngineSha256=$vkHash;vulkanEngineBytes=$vkBytes
     engineUpstreamCommit=$upstream;engineBackend='two-source-built-cpu-and-vulkan-gpu-unproven'
     engineDigestEmbeddedIntoApp=$true;modelBundled=$false
+    browserRuntime=if($browserBundle){'REVIEWED_AND_STAGED'}else{'NOT_PACKAGED'}
     installedUiAcceptance='NOT_TESTED'
     realGgufBrokerAcceptance='NOT_TESTED'
     windowsJobObjectDescendantRecovery='NOT_TESTED'
@@ -223,7 +250,9 @@ try{
     if(-not(Test-Path $candidate)){throw 'Pinned NSIS makensis.exe missing'}
     $compiler=$candidate
   }else{$compiler=$makensis.Source}
-  & $compiler "-DLU_APP_EXE=$app" "-DLU_ENGINE_EXE=$(Join-Path $stage 'llama-server.exe')" "-DLU_VULKAN_ENGINE_EXE=$(Join-Path $stage 'llama-server-vulkan.exe')" "-DLU_ENGINE_MANIFEST=$manifestFile" "-DLU_TEST_README=$readme" "-DLU_CODECS_DIR=$(Join-Path $repo 'lu-desktop/src-tauri/resources/lu-native-codecs')" "-DLU_BUILD_PROVENANCE=$provenance" "-DLU_INSTALLER_OUTPUT=$installer" $nsi
+  $definitions=@("-DLU_APP_EXE=$app","-DLU_ENGINE_EXE=$(Join-Path $stage 'llama-server.exe')","-DLU_VULKAN_ENGINE_EXE=$(Join-Path $stage 'llama-server-vulkan.exe')","-DLU_ENGINE_MANIFEST=$manifestFile","-DLU_TEST_README=$readme","-DLU_CODECS_DIR=$(Join-Path $repo 'lu-desktop/src-tauri/resources/lu-native-codecs')","-DLU_BUILD_PROVENANCE=$provenance","-DLU_INSTALLER_OUTPUT=$installer")
+  if($browserBundle){$definitions+=("-DLU_BROWSER_DIR=$browserBundle")}
+  & $compiler @definitions $nsi
   if($LASTEXITCODE -ne 0 -or -not(Test-Path $installer)){throw 'NSIS failed; no distributable artifact'}
   $installerHash=(Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
   [ordered]@{

@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const build=readFileSync(new URL('../../scripts/build-current-windows-nsis.ps1',import.meta.url),'utf8');
+const nsi=readFileSync(new URL('../packaging/NSIS_CURRENT_DEV_PREVIEW.nsi',import.meta.url),'utf8');
+const stage=readFileSync(new URL('../scripts/stage-browser-runtime.mjs',import.meta.url),'utf8');
+const host=readFileSync(new URL('../src-tauri/src/native_browser_host.rs',import.meta.url),'utf8');
+test('browser bundle is optional but can never become trusted from ambient PATH or arbitrary on-disk files',()=>{
+  assert.match(build,/LU_BROWSER_PACKAGE_DIR/);
+  assert.match(build,/LU_BROWSER_MANIFEST_SHA256/);
+  assert.match(build,/LU_REQUIRE_BROWSER/);
+  assert.match(build,/scripts\/stage-browser-runtime\.mjs/);
+  assert.match(build,/REVIEWED_AND_STAGED/);
+  assert.match(nsi,/!ifdef LU_BROWSER_DIR/);
+  assert.match(nsi,/RMDir \/r "\$INSTDIR\\lu-browser"/);
+  assert.match(stage,/manifest\.files/);
+  assert.match(stage,/hash\.digest\('hex'\)!==f\.sha256/);
+  assert.match(host,/package_verified\(\)/);
+  assert.match(host,/EMBEDDED_BROWSER_MANIFEST/);
+});

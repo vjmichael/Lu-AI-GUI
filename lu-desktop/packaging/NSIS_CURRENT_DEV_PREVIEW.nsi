@@ -49,6 +49,13 @@ Section "Lu Current-source Windows development preview" SEC_TEST
   File /oname=manifest.json "${LU_ENGINE_MANIFEST}"
   SetOutPath "$INSTDIR\lu-native-codecs"
   File /r "${LU_CODECS_DIR}\*.*"
+!ifdef LU_BROWSER_DIR
+  ; Only a reviewed content-pinned Chromium/Node/Playwright runtime may be
+  ; packaged. The native host re-verifies the embedded complete manifest
+  ; before any process launch or network authorization.
+  SetOutPath "$INSTDIR\lu-browser"
+  File /r "${LU_BROWSER_DIR}\*.*"
+!endif
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\UninstallLuCurrentPreview.exe"
   CreateDirectory "$SMPROGRAMS\Lu Current Preview"
@@ -76,5 +83,7 @@ Section "Uninstall"
   Delete "$INSTDIR\lu-inference\manifest.json"
   RMDir "$INSTDIR\lu-inference"
   RMDir /r "$INSTDIR\lu-native-codecs"
+  ; App-owned binary runtime only. Never touch model store, AppData or chats.
+  RMDir /r "$INSTDIR\lu-browser"
   RMDir "$INSTDIR"
 SectionEnd

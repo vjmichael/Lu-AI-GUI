@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 870,
+  "trackedFileCount": 871,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -1025,7 +1025,7 @@
     },
     {
       "path": "lu-desktop/packaging/NSIS_CURRENT_DEV_PREVIEW.nsi",
-      "blob": "3badbc63dfb947d4b31370d461e7274713753e5b"
+      "blob": "b42231024dbe8e8d3944cfe5d92e67ba52c025af"
     },
     {
       "path": "lu-desktop/packaging/NSIS_DEV_EVAL_NOT_ALPHA.nsi",
@@ -1644,6 +1644,10 @@
       "blob": "221ee8cf7cb216d433666ffc27655b6cab448d99"
     },
     {
+      "path": "lu-desktop/tests/p0-browser-bundle.test.mjs",
+      "blob": "4cc4480724918fa804a391fe73ab4d1700702309"
+    },
+    {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
       "blob": "6f81cb5cf27d35b0f26655bd690c57563d26a3ae"
     },
@@ -1881,7 +1885,7 @@
     },
     {
       "path": "scripts/build-current-windows-nsis.ps1",
-      "blob": "f43f3cb40853b8b702ee8854d886086a81649938"
+      "blob": "2d59f9628931dd1574285e5a2acfdad0dbf38e88"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
