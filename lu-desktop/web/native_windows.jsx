@@ -77,6 +77,7 @@ export function SettingsWindow(){
   const [captureReceipt,setCaptureReceipt]=useState(null);
   const [observeNotes,setObserveNotes]=useState([]);
   const [observeHandoff,setObserveHandoff]=useState(null);
+  const [projectBaseline,setProjectBaseline]=useState(null);
 
   async function refresh(){
     const results=await Promise.allSettled([
@@ -284,6 +285,48 @@ export function SettingsWindow(){
               <small>{cap.authorization}</small>
             </article>)}
           </div>
+          <Section title="Inspect a local project · PLAN-01">
+            <p>Choose a project directory using the native OS picker. Lu scans bounded local metadata and selected requirement documents without loading a model, opening a network connection, granting a native effect, or changing the repository.</p>
+            <button type="button" disabled={busy}
+              onClick={()=>void act('Read-only project inventory collected; no acceptance authority granted.',async()=>{
+                setProjectBaseline(null);
+                const result=await invoke('lu_project_discover');
+                if(result?.schema!=='lu-project-baseline-v1'&&result!==null){
+                  throw Error('Project baseline schema was not recognized');
+                }
+                setProjectBaseline(result);return result;
+              })}>Inspect project folder…</button>
+            {projectBaseline&&<section className="nativeOption" aria-label="Read-only project baseline">
+              <strong>Local project evidence · {projectBaseline.inspectionComplete?'bounded scan complete':'partial inspection'}</strong>
+              <p>Native source: {projectBaseline.root}</p>
+              <p>Local branch: {projectBaseline.repository?.branch||'not verified / detached'} · HEAD: {projectBaseline.repository?.headCommit||'not verified'}</p>
+              <p>Worktree: {projectBaseline.repository?.statusComplete
+                ?projectBaseline.repository.dirty?'modified / untracked':'clean at observation'
+                :'unavailable'} · Checked at Unix {projectBaseline.inspectedAtUnix}</p>
+              <p>{projectBaseline.indexedFiles} file entries · {projectBaseline.indexedDirectories} directories · {projectBaseline.documentFilesRead} source documents read · {projectBaseline.requirements.length} document requirement leads.</p>
+              <p>Remote issues/PRs/CI: NOT INSPECTED. Checklist boxes and comments do not prove implementation or acceptance.</p>
+              <details>
+                <summary>Requirement leads (untrusted source reports)</summary>
+                <div className="nativeOptionList">{projectBaseline.requirements.slice(0,32).map((lead,index)=>
+                  <article key={lead.sourcePath+':'+lead.line+':'+index} className="nativeOption">
+                    <strong>{lead.disposition} · {lead.sourcePath}:{lead.line}</strong>
+                    <p>{lead.statement}</p>
+                    <small>Original document SHA-256: {lead.sourceSha256}</small>
+                  </article>)}</div>
+              </details>
+              <details>
+                <summary>Scoped source inventory</summary>
+                <div className="nativeOptionList">{projectBaseline.sources.slice(0,40).map((lead,index)=>
+                  <article key={lead.relativePath+':'+index} className="nativeOption">
+                    <strong>{lead.role} · {lead.relativePath}</strong>
+                    <small>{lead.evidenceState} · {lead.observedSha256||'content not hashed'}</small>
+                  </article>)}</div>
+              </details>
+              {projectBaseline.limitations.map((limitation,index)=>
+                <p key={index}>{limitation}</p>)}
+              <small>This inspection produces neither a project verdict nor an executable task list. PLAN-02/03/04 are separate engineering groups.</small>
+            </section>}
+          </Section>
           <p>Worker execution requires original-turn authorization, bounded input/output, cancellation, durable receipts and independent verification. Not every provider implements Lu's current tool-response protocol.</p>
         </Section>}
         {section==='research'&&<Section title="Browser & research">

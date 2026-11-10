@@ -239,6 +239,79 @@ impl ApprovedGit {
     }
 }
 
+/// PLAN-01 host-scoped repository identity, reusing the approved, fixed-argv
+/// read-only Git process wrapper. These facts are a local observation only:
+/// no network, remote PR claims, CI claims, write permission or model tools.
+#[derive(Clone,Debug,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct GitBaseline{
+    pub head_commit:String,
+    pub branch:Option<String>,
+    pub detached:bool,
+    pub tracked_changed_paths:u32,
+    pub untracked_paths:u32,
+    pub dirty:bool,
+    pub status_complete:bool,
+}
+fn parse_original_head(bytes:&str)->Result<Option<String>,String>{
+    let value=bytes.trim_end_matches(['\r','\n']);
+    if let Some(branch)=value.strip_prefix("ref: refs/heads/"){
+        if branch.is_empty()||branch.len()>240||
+            branch.split('/').any(|part|part.is_empty()||part=="."||part=="..")||
+            branch.chars().any(|c|c.is_control()||matches!(c,'\\'|':')){
+            return Err("Local Git HEAD branch identity malformed".into())
+        }
+        return Ok(Some(branch.to_owned()))
+    }
+    if matches!(value.len(),40|64)&&value.bytes().all(|b|b.is_ascii_hexdigit()){
+        return Ok(None)
+    }
+    Err("Local Git HEAD is not a supported direct or symbolic ref".into())
+}
+pub fn inspect_repository_baseline(
+    approved_root:&Path,trusted_git_exe:&Path
+)->Result<GitBaseline,String>{
+    let repo=ApprovedGit::open(approved_root,trusted_git_exe)?;
+    let head_path=repo.git_dir.join("HEAD");
+    let head_meta=fs::symlink_metadata(&head_path)
+        .map_err(|_|"Local Git HEAD disappeared")?;
+    if !head_meta.file_type().is_file()||head_meta.len()>512{
+        return Err("Local Git HEAD was replaced or exceeds limits".into())
+    }
+    let head_text=fs::read_to_string(&head_path)
+        .map_err(|_|"Cannot read original local Git HEAD")?;
+    let branch=parse_original_head(&head_text)?;
+    let (bytes,cap)=repo.run(&["rev-parse".into(),"--verify".into(),
+            "HEAD".into()],512)
+        .map_err(|e|format!("Approved Git commit lookup failed: {e:?}"))?;
+    if cap{return Err("Local Git commit hash overflow".into())}
+    let head=String::from_utf8(bytes)
+        .map_err(|_|"Local Git commit identity is not text")?
+        .trim().to_owned();
+    if !matches!(head.len(),40|64)||!head.bytes().all(|b|b.is_ascii_hexdigit()){
+        return Err("Local Git commit identity malformed".into())
+    }
+    let (status,cap)=repo.run(&["status".into(),"--porcelain=v1".into(),
+        "-z".into(),"--no-renames".into(),"--untracked-files=all".into(),
+        "--ignore-submodules=none".into()],MAX_STATUS_CAPTURE)
+        .map_err(|e|format!("Original Git worktree status unavailable: {e:?}"))?;
+    if cap{return Err("Local Git worktree status exceeded bounded capture".into())}
+    let mut changed=0u32;
+    let mut untracked=0u32;
+    for row in status.split(|b|*b==0).filter(|row|!row.is_empty()){
+        if row.len()<4||row[2]!=b' '{
+            return Err("Original Git status record malformed".into())
+        }
+        if row[..2]==*b"??"{untracked=untracked.saturating_add(1)}
+        else{changed=changed.saturating_add(1)}
+    }
+    Ok(GitBaseline{
+        head_commit:head,detached:branch.is_none(),branch,
+        tracked_changed_paths:changed,untracked_paths:untracked,
+        dirty:changed>0||untracked>0,status_complete:true,
+    })
+}
+
 fn status(repo: &ApprovedGit, max_entries: u32) -> Result<ToolOutput, ToolFailure> {
     if !(1..=MAX_STATUS_ENTRIES).contains(&max_entries) {
         return Err(denied("INVALID_LIMIT", "invalid Git status entry limit"));
@@ -502,4 +575,19 @@ pub fn register_git_inspection_tools(
         }).map_err(|e| format!("Git model schema refused: {e:?}"))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod project_baseline_tests{
+    use super::*;
+    #[test]
+    fn head_ref_cannot_be_interpreted_as_tool_authority(){
+        assert_eq!(parse_original_head("ref: refs/heads/feature/plan01\n").unwrap(),
+            Some("feature/plan01".into()));
+        assert_eq!(parse_original_head(&format!("{}\n","a".repeat(40))).unwrap(),None);
+        for bad in ["ref: refs/heads/../escape","ref: refs/heads/x\nexecute",
+            "ref: refs/heads/a\\b","ref: refs/tags/v1","ref: refs/heads/"]{
+            assert!(parse_original_head(bad).is_err());
+        }
+    }
 }
