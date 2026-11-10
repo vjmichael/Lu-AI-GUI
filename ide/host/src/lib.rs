@@ -21,6 +21,7 @@ pub mod git_batch_review;
 pub mod git_evidence;
 pub mod git_file_history;
 pub mod git_hunk_review;
+pub mod git_partial_stage;
 pub mod git_inventory;
 pub mod git_refs_health;
 pub mod git_status;
