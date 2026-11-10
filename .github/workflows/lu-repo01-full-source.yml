@@ -1225,3 +1225,55 @@ jobs:
           path: e1-p07-gguf-evidence/
           retention-days: 14
           if-no-files-found: warn
+
+  p0-hf-real-transfer:
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 205 && github.event.pull_request.head.ref == 'lu/p0-installed-ux-agent-acceptance-20261110' && contains(github.event.pull_request.body, format('LU_P0_HF_LIVE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_HF_LIVE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Original frozen source and test-only public asset permission
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          node scripts/verify-source-tree.mjs
+          mkdir -p hf-p05-real-evidence
+          printf 'SOURCE_SHA=%s\n' "$EXPECTED_HEAD" > hf-p05-real-evidence/source.txt
+          command -v curl
+          curl --version | head -n 1 | tee hf-p05-real-evidence/client-version.txt
+      - name: Actual immutable public-HF HTTPS 200, partial 206 and SHA-256 readback
+        shell: bash
+        env:
+          LU_HF_P05_REAL_TEST: ci-test-only
+        run: |
+          set -euo pipefail
+          export LU_HF_P05_TEST_CURL="$(command -v curl)"
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test hf_p05_real_network \
+            hf_p05_real_network_download_cancel_resume_publish_sha \
+            -- --ignored --nocapture \
+            2>&1 | tee hf-p05-real-evidence/live-transfer.log
+          grep -Fq 'HF_P05_REAL_NETWORK_VERIFIED' hf-p05-real-evidence/live-transfer.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' hf-p05-real-evidence/live-transfer.log
+          echo 'Actual public-HF immutable GGUF 200+206 and full SHA passed. This is a CI fixture and does not attest human desktop approval, real mid-stream cancellation or installed model inference.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve actual network evidence even on refusal
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-hf-p05-real-transfer-${{ github.event.pull_request.head.sha }}
+          path: hf-p05-real-evidence/
+          retention-days: 14
+          if-no-files-found: warn
