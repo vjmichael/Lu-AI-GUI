@@ -128,3 +128,51 @@ impl IdeWorkspaceRegistry {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{IdeError, NativeDirectoryPicker};
+    use git2::Signature;
+    use std::path::PathBuf;
+    struct Picker(PathBuf);
+    impl NativeDirectoryPicker for Picker {
+        fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+    struct Fixture(PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    }
+    #[test]
+    fn local_refs_and_remote_aliases_never_return_credential_url() {
+        let path = std::env::temp_dir().join(format!("ide-g06a-refs-{:032x}", rand::random::<u128>()));
+        let _fixture = Fixture(path.clone());
+        let root = path.join("root");
+        fs::create_dir_all(&root).unwrap();
+        let repo = Repository::init(&root).unwrap();
+        fs::write(root.join("source.rs"), b"hello\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("source.rs")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
+        let oid = repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+        repo.reference("refs/tags/v1", oid, false, "test tag").unwrap();
+        repo.remote("origin", "https://secret-user:secret-token@example.invalid/org/repo.git").unwrap();
+        drop(tree);
+        drop(index);
+        drop(repo);
+        let registry = IdeWorkspaceRegistry::open(path.join("catalog.json")).unwrap();
+        let id = registry.register_from_native_picker(&mut Picker(root)).unwrap().unwrap().project_id;
+        let result = registry.inspect_git_refs_health(&id).unwrap();
+        assert!(result.local_refs.iter().any(|r| r.name == "v1" && r.kind == "tag"));
+        assert_eq!(result.remote_aliases, vec!["origin"]);
+        let encoded = serde_json::to_string(&result).unwrap();
+        assert!(!encoded.contains("secret-token"));
+        assert!(!encoded.contains("example.invalid"));
+        assert!(!result.remote_url_exposed && !result.network_queried && !result.git_process_started);
+        assert_eq!(result.health.index_conflicts, Some(false));
+    }
+}
