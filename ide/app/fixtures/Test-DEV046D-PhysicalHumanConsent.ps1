@@ -10,7 +10,7 @@ param(
   [Parameter(Mandatory=$true)][string]$ExpectedDesktopExecutable,
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ExpectedDesktopSha256,
   [Parameter(Mandatory=$true)]
-  [ValidateSet('ApproveStep','RefuseStep','CancelWhilePrompted','ApproveBreakpoint')]
+  [ValidateSet('ApproveStep','RefuseStep','CancelWhilePrompted','ApproveBreakpoint','TimeoutOperation')]
   [string]$Scenario
 )
 Set-StrictMode -Version Latest
@@ -74,6 +74,10 @@ switch($Scenario) {
   'ApproveBreakpoint' {
     Write-Host 'Approve launch then approve the same-line breakpoint; an LLDB ACK is NOT a verified hit.'
   }
+  'TimeoutOperation' {
+    Write-Host 'Approve launch. Do NOT touch the operation native dialog for at least 35 seconds.'
+    Write-Host 'A timeout MUST deny without Approved or Consumed, including any late OS reply.'
+  }
 }
 $ack=Read-Host 'After interacting with the real native dialogs, enter WITNESSED to inspect receipts'
 if ($ack -cne 'WITNESSED') { Deny 'no_human_witness_confirmation' }
@@ -121,6 +125,12 @@ switch($Scenario) {
     if ($consumed.Count -ne 0 -or $approved.Count -ne 0 -or
         $terminal -notin @('Denied','Revoked')) {
       Deny 'cancelled_human_prompt_granted_or_left_live'
+    }
+  }
+  'TimeoutOperation' {
+    if ($consumed.Count -ne 0 -or $approved.Count -ne 0 -or
+        $terminal -notin @('Denied','Revoked')) {
+      Deny 'timed_out_native_dialog_granted_or_left_live'
     }
   }
 }

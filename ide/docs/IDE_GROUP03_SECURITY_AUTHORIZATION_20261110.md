@@ -163,3 +163,34 @@ The next single grouped exact-head Windows/Linux run is required to
 verify AppContainer source-owner staging and avoid extrapolating from
 compile or synthetic approval tests. Do not promote Group 3 as closed
 if the positive native child or human approval remains absent.
+
+## Group 3 hardening continuation — explicit MIC and physical timeout
+
+At source `40e3ab7f73ce780eb9ac4ffdcc58e3ba3ceb00e2`, [native run 42858583612](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42858583612)
+independently verified a real Ubuntu 24.04 systemd-delegated CPU/memory/PID
+parent, pre-exec child/grandchild membership, `cgroup.kill` and
+`populated 0`, and Bubblewrap denied source write/rename/delete,
+exposed only loopback and hid the host home. This is **true native
+kernel and namespace evidence**, not an installed supervised worker or
+physical approval.
+
+Windows source auditor now additionally **requires** an explicit
+medium-integrity SACL mandatory-label ACE with `NW` (no-write-up)
+and rejects absent/wrong/inherited/unreadable label. The disposable
+CI fixture sets explicit source/executable medium labels and private
+output low labels via native `LABEL_SECURITY_INFORMATION`.
+A genuine NTFS source reparse link must be independently rejected
+before the native AppContainer child is launched. This is a *new
+hardening requirement*, not evidence until a new exact-head Windows
+native result passes. The production Windows package worker remains
+default **NoContainment** denied; this read-only source check alone
+does not enable it. Windows privileges are never silently escalated
+to obtain SACL evidence.
+
+Developer-only physical OS action witness now includes a **real
+30-second native operation timeout** negative test with a human
+leaving the dialog untouched (and a 35-second observer window).
+Late OS replies cannot grant or consume the operation. This
+is source-level test infrastructure, NOT a CI-simulated human click.
+Stale-source, wrong-scope, replay and installed production human
+package-worker approval must still be physically attested.

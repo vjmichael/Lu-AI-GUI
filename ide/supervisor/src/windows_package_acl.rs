@@ -21,7 +21,8 @@ use windows_sys::Win32::{
         Authorization::{ConvertStringSidToSidW, GetNamedSecurityInfoW, SE_FILE_OBJECT},
         EqualSid, GetAce, GetAclInformation, GetSecurityDescriptorControl, GetTokenInformation,
         TokenUser, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION,
-        OWNER_SECURITY_INFORMATION, SE_DACL_PROTECTED, TOKEN_QUERY, TOKEN_USER,
+        LABEL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION, SE_DACL_PROTECTED, TOKEN_QUERY,
+        TOKEN_USER,
     },
     System::Threading::{GetCurrentProcess, OpenProcessToken},
 };
@@ -32,6 +33,8 @@ const REPARSE_ATTRIBUTE: u32 = 0x400;
 const OBJECT_AND_CONTAINER_INHERIT: u8 = 0x03;
 const INHERITED_ACE: u8 = 0x10;
 const MAX_NODES: usize = 60_000;
+const MANDATORY_LABEL_ACE_TYPE: u8 = 0x11;
+const MANDATORY_NO_WRITE_UP: u32 = 0x01;
 
 fn denied() -> SupervisorError {
     SupervisorError::NoContainment
@@ -68,6 +71,71 @@ fn parse_system_sid() -> Result<OwnedLocal, SupervisorError> {
     }
     Ok(OwnedLocal(sid))
 }
+/// Inspect an explicit native MEDIUM no-write-up mandatory-integrity SACL.
+ /// An implicit default-medium label is not accepted for sealed untrusted
+ /// source; the observer never grants token privileges or changes the label.
+fn require_explicit_medium_integrity_label(path: &Path) -> Result<(), SupervisorError> {
+    let mut sacl = ptr::null_mut();
+    let mut descriptor = ptr::null_mut();
+    let status = unsafe {
+        GetNamedSecurityInfoW(
+            wide(path.as_os_str()).as_ptr(),
+            SE_FILE_OBJECT,
+            LABEL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &mut sacl,
+            &mut descriptor,
+        )
+    };
+    if status != 0 || descriptor.is_null() || sacl.is_null() {
+        return Err(denied());
+    }
+    let _descriptor = OwnedLocal(descriptor);
+    let mut info = ACL_SIZE_INFORMATION::default();
+    if unsafe {
+        GetAclInformation(
+            sacl,
+            (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32,
+            AclSizeInformation,
+        )
+    } == 0
+        || info.AceCount != 1
+    {
+        return Err(denied());
+    }
+    let mut raw = ptr::null_mut();
+    if unsafe { GetAce(sacl, 0, &mut raw) } == 0 || raw.is_null() {
+        return Err(denied());
+    }
+    // Mandatory label ACE has the same header/mask/SidStart layout as an
+    // access-allowed ACE. The type and mask are independently required.
+    let label = unsafe { &*(raw as *const ACCESS_ALLOWED_ACE) };
+    if label.Header.AceType != MANDATORY_LABEL_ACE_TYPE
+        || label.Header.AceFlags & INHERITED_ACE != 0
+        || label.Mask != MANDATORY_NO_WRITE_UP
+        || label.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16
+    {
+        return Err(denied());
+    }
+    let mut medium = ptr::null_mut();
+    if unsafe {
+        ConvertStringSidToSidW(wide(OsStr::new("S-1-16-8192")).as_ptr(), &mut medium)
+    } == 0
+        || medium.is_null()
+    {
+        return Err(denied());
+    }
+    let _medium = OwnedLocal(medium);
+    let sid = (&label.SidStart as *const u32).cast_mut().cast();
+    if unsafe { EqualSid(sid, medium) } == 0 {
+        return Err(denied());
+    }
+    Ok(())
+}
+
 fn owner_token_sid() -> Result<(OwnedToken, Vec<usize>), SupervisorError> {
     let mut raw = ptr::null_mut();
     if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 || raw.is_null()
@@ -198,6 +266,7 @@ fn inspect_one(
         }
     }
     if package && host && system {
+        require_explicit_medium_integrity_label(path)?;
         Ok(())
     } else {
         Err(denied())
