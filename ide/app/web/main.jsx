@@ -72,6 +72,10 @@ function App() {
   const [workflowRuns, setWorkflowRuns] = useState([]);
   const [workflowRunBusy, setWorkflowRunBusy] = useState(false);
   const [gitReviewPath, setGitReviewPath] = useState('');
+  const [gitBatchPaths, setGitBatchPaths] = useState('');
+  const [gitBatchReview, setGitBatchReview] = useState(null);
+  const [gitBatchBusy, setGitBatchBusy] = useState(false);
+  const gitBatchRequest = useRef(0);
   const [gitReview, setGitReview] = useState(null);
   const [gitStageReceipt, setGitStageReceipt] = useState(null);
   const [gitCommitReceipt, setGitCommitReceipt] = useState(null);
@@ -1254,6 +1258,51 @@ function App() {
     } finally {
       if (serial === workflowRequest.current) setWorkflowBusy(false);
     }
+  }
+
+  async function previewGitBatch() {
+    if (!activeProject || gitBatchBusy) return;
+    const requested = gitBatchPaths.split(/[\n,]+/).map(x => x.trim()).filter(Boolean);
+    if (!requested.length || requested.length > 8) {
+      setProblem('Select between one and eight tracked relative files for a read-only batch review.');
+      return;
+    }
+    const projectId = activeProject.projectId;
+    const request = ++gitBatchRequest.current;
+    setGitBatchBusy(true);
+    setGitBatchReview(null);
+    setProblem('');
+    try {
+      const preview = await invoke('ide_git_preview_batch', {
+        projectId, relativePaths: requested,
+      });
+      if (request === gitBatchRequest.current && preview.projectId === projectId)
+        setGitBatchReview(preview);
+    } catch (error) {
+      if (request === gitBatchRequest.current)
+        setProblem('Read-only Git batch preview denied: ' + String(error));
+    } finally { if (request === gitBatchRequest.current) setGitBatchBusy(false); }
+  }
+
+  async function revalidateGitBatch() {
+    if (!activeProject || !gitBatchReview || gitBatchBusy ||
+        gitBatchReview.projectId !== activeProject.projectId) return;
+    const request = ++gitBatchRequest.current;
+    setGitBatchBusy(true);
+    setProblem('');
+    try {
+      const verified = await invoke('ide_git_verify_batch_review', {
+        expected: gitBatchReview,
+      });
+      if (request === gitBatchRequest.current &&
+          verified.projectId === activeProject.projectId)
+        setGitBatchReview(verified);
+    } catch (error) {
+      if (request === gitBatchRequest.current) {
+        setGitBatchReview(null);
+        setProblem('Git batch review changed; inspect files again: ' + String(error));
+      }
+    } finally { if (request === gitBatchRequest.current) setGitBatchBusy(false); }
   }
 
   async function reviewGitFileForStage() {
@@ -4818,6 +4867,32 @@ function App() {
               Tracking information is locally stored and may be stale.
             </p>
             {!activeProject && <p>Open a project to inspect its source control.</p>}
+            {activeProject && <div className="continuityDocument" aria-label="Reviewed Git batch planning only">
+              <h3>Advanced staging · multi-file review preview</h3>
+              <p>Choose up to eight already tracked regular files, separated by newlines or commas.
+                This compares exact current source SHA, HEAD and index for a future independently approved
+                multi-file stage. Preview and revalidation do not modify Git, stage files, or grant commit rights.</p>
+              <label htmlFor="g06b-batch-paths">Tracked project-relative files</label>
+              <textarea id="g06b-batch-paths" value={gitBatchPaths} rows={3}
+                disabled={gitBatchBusy} placeholder="src/main.rs&#10;src/lib.rs"
+                onChange={event => { setGitBatchPaths(event.target.value); setGitBatchReview(null); }} />
+              <button type="button" className="ghostBtn" disabled={gitBatchBusy || !gitBatchPaths.trim()}
+                onClick={() => previewGitBatch()}>Preview selected files (no stage)</button>
+              {gitBatchReview && gitBatchReview.projectId === activeProject.projectId && <div>
+                <p>Exact HEAD: <code>{gitBatchReview.headSha}</code>
+                  {' · '}Files: {gitBatchReview.files.length}
+                  {' · '}Total bytes: {gitBatchReview.totalSourceBytes}</p>
+                <p>Index: <code>{gitBatchReview.indexFingerprint}</code></p>
+                {gitBatchReview.files.map(item => <article key={item.relativePath} className="continuityEvent">
+                  <strong>{item.relativePath}</strong>
+                  <p>SHA256: <code>{item.worktreeSha256}</code> · {item.fileSize} bytes</p>
+                </article>)}
+                <button type="button" className="ghostBtn" disabled={gitBatchBusy}
+                  onClick={() => revalidateGitBatch()}>Revalidate exact source (no stage)</button>
+                <p>Stage authorized: <strong>No</strong>. Commit authorized: <strong>No</strong>.
+                  This is a review plan, not an executable grant.</p>
+              </div>}
+            </div>}
             {activeProject && <div className="continuityDocument" aria-label="Reviewed local Git staging and commit">
               <h3>Review, stage, commit one tracked file</h3>
               <p>Only a tracked, regular file under your OS-picker-selected project.
@@ -4950,7 +5025,7 @@ function App() {
                     <p role="status">File history or blame has been truncated.</p>}
                 </div>}
             </div>}
-            {gitBusy && <p role="status">Inspecting local Git state…</p>
+            {gitBusy && <p role="status">Inspecting local Git state…</p>}
             {!gitBusy && gitStatus && <div className="continuityBody">
               <p><strong>{gitStatus.state.replaceAll('_', ' ')}</strong>
                 {' · '} Branch: <code>{gitStatus.branch || 'Unknown or detached'}</code>
