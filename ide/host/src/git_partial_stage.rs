@@ -211,13 +211,13 @@ fn selected_index_bytes(
     Ok(output)
 }
 
-fn verified_repo(registry: &IdeWorkspaceRegistry, project_id: &str) -> Result<(Repository, PathBuf, PathBuf), &'static str> {
+fn verified_repo(registry: &IdeWorkspaceRegistry, project_id: &str, for_write: bool) -> Result<(Repository, PathBuf, PathBuf), &'static str> {
     let root = registry.registered_git_root(project_id)
         .map_err(|_| "G06B_STAGE_PROJECT_NOT_ACTIVE")?;
     let repo = Repository::open(&root).map_err(|_| "G06B_STAGE_REPOSITORY_MISSING")?;
-    if repo.is_worktree() || repo.head_detached().unwrap_or(true)
-        || repo.state() != git2::RepositoryState::Clean
-        || repo.is_bare()
+    if repo.is_worktree() || repo.is_bare()
+        || (for_write && (repo.head_detached().unwrap_or(true)
+            || repo.state() != git2::RepositoryState::Clean))
     { return Err("G06B_STAGE_GIT_OPERATION_OR_WORKTREE_DENIED"); }
     let actual = fs::canonicalize(repo.workdir().ok_or("G06B_STAGE_BARE_DENIED")?)
         .map_err(|_| "G06B_STAGE_ROOT_INVALID")?;
@@ -260,7 +260,7 @@ impl IdeWorkspaceRegistry {
     pub fn inspect_partial_stage_recovery(
         &self, project_id: &str,
     ) -> Result<PartialStageRecovery, &'static str> {
-        let (repo, _root, gitdir) = verified_repo(self, project_id)?;
+        let (repo, _root, gitdir) = verified_repo(self, project_id, false)?;
         let path = journal_path(self, project_id)?;
         let last = last_journal(&path)?;
         let lock_exists = fs::symlink_metadata(gitdir.join("index.lock")).is_ok();
@@ -310,7 +310,7 @@ impl IdeWorkspaceRegistry {
             || fresh.selected_ids != reviewed.selected_ids {
             return Err("G06B_STAGE_SELECTION_STALE_OR_FORGED");
         }
-        let (repo, _root, gitdir) = verified_repo(self, &fresh.plan.project_id)?;
+        let (repo, _root, gitdir) = verified_repo(self, &fresh.plan.project_id, true)?;
         let old_index_path = gitdir.join("index");
         let path = journal_path(self, &fresh.plan.project_id)?;
         if let Some(last) = last_journal(&path)? {
@@ -400,6 +400,15 @@ impl IdeWorkspaceRegistry {
         { return Err("G06B_STAGE_RACE_BEFORE_PUBLICATION"); }
         lock.write_all(&prepared_bytes).and_then(|_| lock.sync_all())
             .map_err(|_| "G06B_STAGE_INDEX_LOCK_WRITE_FAILED")?;
+        // One final OS-capability reread before the irreversible boundary.
+        // A concurrent source change refuses without publishing the index.
+        let current_source = self.reread_reviewed_git_source_bytes(
+            &fresh.plan.project_id, &fresh.plan.relative_path)?;
+        if sha(&current_source) != fresh.plan.source_sha256 {
+            journal.phase = "cancelled".into();
+            journal_append(&path, &journal)?;
+            return Err("G06B_STAGE_SOURCE_CHANGED_BEFORE_PUBLICATION");
+        }
         if cancel.load(Ordering::SeqCst) != 0 {
             journal.phase = "cancelled".into();
             journal_append(&path, &journal)?;
