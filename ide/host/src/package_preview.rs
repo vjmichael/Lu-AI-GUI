@@ -735,9 +735,7 @@ mod tests {
             Err("IDE052_VCPKG_DEPENDENCIES_UNSUPPORTED")
         ));
         fs::write(dir.join("vcpkg.json"), br#"{"dependencies":["fmt"]}"#).unwrap();
-        let safe = registry
-            .preview_package_operation(&id, sync)
-            .unwrap();
+        let safe = registry.preview_package_operation(&id, sync).unwrap();
         assert_eq!(
             safe.proposed_changes[0].observed_direct_declaration,
             "not_applicable_to_sync"
