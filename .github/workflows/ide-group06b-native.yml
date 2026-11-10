@@ -1,0 +1,88 @@
+# IDE Group 6B preview-only gate. No Git write authority or operator acceptance.
+name: IDE Group 6B reviewed batch source (not release)
+on:
+  push:
+    branches: [ide/group06b-advanced-staging-20261110]
+    paths:
+      - '.github/workflows/ide-group06b-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-g06b-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verified-preview:
+    name: Exact-source bounded Git batch preview / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify pinned source and independent Group 6B lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor 119830a167c335a76a3ae7389ca4be47985c88eb HEAD
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Linux native Tauri build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Human batch review UI boundary and web bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/g06b_reviewed_batch_preview.test.mjs
+          npm run build
+      - name: Native reviewed-batch bounded validation and formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_batch_review
+          rustfmt --edition 2021 --check ide/host/src/git_batch_review.rs
+          echo IDE_G06B_BATCH_REVIEW=TESTED_READ_ONLY_NOT_STAGE_AUTHORIZED
+      - name: Tauri read-only route compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ]; then
+            python ide/app/fixtures/make_g04d_ci_icon.py
+          fi
+          cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+          echo IDE_G06B_TAURI=COMPILED_NOT_INSTALLED
+      - name: Bound source receipt, not operator approval
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .ide-g06b-receipts
+          printf 'source_sha=%s\nos=%s\ngit_batch_stage=DENIED\ngit_batch_commit=DENIED\nphysical_operator=OPEN\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" > .ide-g06b-receipts/source.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-g06b-${{ matrix.os }}-${{ github.sha }}
+          path: .ide-g06b-receipts/
+          if-no-files-found: error
+          retention-days: 30
