@@ -15,7 +15,7 @@ import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.m
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryAnchor} from './history_window_geometry.mjs';
 import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppearance,textForBackground,visibleReactionBySeq} from './message_interactions.mjs';
-import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget} from './message_revisions.mjs';
+import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget,correctedMessageFollowUp} from './message_revisions.mjs';
 
 function MessageText({text, role='assistant'}) {
   if (role === 'user') return <div className="messageContent userText">{text}</div>;
@@ -4368,6 +4368,22 @@ function App() {
           </header>
           <small>Authenticated ANSF originals are retained even after a display correction.
             A human correction is not a new model answer or tool-execution receipt.</small>
+          <div className="settingsActions">
+            <button type="button" disabled={revisionActionBusy||!
+              correctedMessageFollowUp(messageProvenance.entry,messageProvenance.revision)}
+              onClick={()=>{
+                const prepared=correctedMessageFollowUp(
+                  messageProvenance.entry,messageProvenance.revision);
+                if(!prepared)return;
+                setLinkedReplyTarget({...prepared.target,chatId});
+                setLinkedReplyText(prepared.draft);
+                setMessageProvenance(null);
+              }}>
+              Prepare human follow-up from correction
+            </button>
+          </div>
+          <small>This only opens a NEW human reply draft pinned to the current corrected
+            version. Posting it does not trigger inference or inherit earlier approval.</small>
           <div className="messageProvenanceVersions">
             <section>
               <strong>Original ANSF text · version 0</strong>

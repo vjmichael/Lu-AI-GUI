@@ -61,3 +61,13 @@ test('Windows runner only uploads real built installer on success and distinguis
   assert.match(workflow,/if-no-files-found: error/);
   assert.match(readme,/does not prove AMD Vulkan\/ROCm GPU offload/);
 });
+
+test('hosted NSIS lifecycle proves isolated AppData sentinel survives uninstall, not rollback',()=>{
+  const cycle=get('../../scripts/m3-windows-nsis-cycle.ps1');
+  assert.match(cycle,/org\.lu\.agent01g\.devtest/);
+  assert.match(cycle,/profilePreservation='NOT_TESTED'/);
+  assert.match(cycle,/PASS_UNTOUCHED_APPDATA_SENTINEL/);
+  assert.match(cycle,/Get-FileHash -LiteralPath \$marker -Algorithm SHA256/);
+  assert.match(cycle,/NOT_TESTED_REQUIRES_TWO_DISTINCT_INSTALLERS/);
+  assert.doesNotMatch(cycle,/Remove-Item[^\n]*\$profile/);
+});

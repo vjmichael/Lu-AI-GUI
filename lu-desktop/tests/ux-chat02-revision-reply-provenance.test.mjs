@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
   isSha,canEdit,provenanceLabel,draftReplyTarget,
-  revisionsBySequence
+  revisionsBySequence,correctedMessageFollowUp
 } from '../web/message_revisions.mjs';
 
 const source=file=>readFileSync(new URL(file,import.meta.url),'utf8');
@@ -94,4 +94,27 @@ test('central Lu design explicitly carries provenance and display-only constrain
   assert.match(design,/reply relationships/i);
   assert.match(design,/human display correction/i);
   assert.match(design,/not rewrite.*tool author/i);
+});
+
+test('display correction can be prepared as an explicit NEW human follow-up, never executed',()=>{
+  const entry={seq:32,role:'assistant'};
+  const revision={
+    currentVersion:2,currentSha256:'c'.repeat(64),
+    originalSha256:'a'.repeat(64),currentText:'Corrected source-backed answer'
+  };
+  const prepared=correctedMessageFollowUp(entry,revision);
+  assert.equal(prepared.target.seq,32);
+  assert.equal(prepared.target.version,2);
+  assert.equal(prepared.target.sha,revision.currentSha256);
+  assert.match(prepared.draft,/NEW human follow-up/);
+  assert.match(prepared.draft,/Corrected source-backed answer/);
+  assert.equal(correctedMessageFollowUp(entry,{...revision,currentVersion:0}),null);
+  assert.equal(correctedMessageFollowUp(entry,{...revision,currentSha256:'invalid'}),null);
+  assert.equal(correctedMessageFollowUp(entry,{...revision,currentSha256:revision.originalSha256}),null);
+  assert.equal(correctedMessageFollowUp(entry,{...revision,currentText:'☕'.repeat(7000)}),null);
+  assert.match(ui,/Prepare human follow-up from correction/);
+  assert.match(ui,/setLinkedReplyTarget\(\{\.\.\.prepared\.target,chatId\}\)/);
+  assert.match(ui,/setLinkedReplyText\(prepared\.draft\)/);
+  assert.match(ui,/Posting it does not trigger inference or inherit earlier approval/);
+  assert.doesNotMatch(rust,/run_journaled_observed|Command::new|\.spawn\(/);
 });

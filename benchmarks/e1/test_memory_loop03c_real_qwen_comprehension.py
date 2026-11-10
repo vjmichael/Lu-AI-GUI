@@ -134,6 +134,24 @@ class Memory03cBoundary(unittest.TestCase):
         self.assertIn('"status":"NO_CURRENTLY_REVALIDATED_VERIFIED_PROCEDURE"', b["prompt"])
         self.assertNotIn('"reuseOldPermission":', a["prompt"])
 
+
+    def test_json_schema_interface_constrains_format_not_a_correct_answer(self):
+        row=synthetic_fixture()["cases"][0]
+        raw=m.model_payload(row,"host_classified",20261109,"raw")
+        structured=m.model_payload(row,"host_classified",20261109,"json_schema")
+        self.assertNotIn("json_schema",raw)
+        self.assertEqual(raw["seed"],structured["seed"])
+        self.assertEqual(raw["prompt"],structured["prompt"])
+        schema=structured["json_schema"]
+        self.assertEqual(set(schema["required"]),m.ANSWER_KEYS)
+        self.assertFalse(schema["additionalProperties"])
+        self.assertEqual(schema["properties"]["status"],{"type":"string"})
+        self.assertEqual(schema["properties"]["reuseOldPermission"],{"type":"boolean"})
+        self.assertNotIn("enum",json.dumps(schema))
+        self.assertFalse(m.grade(answer(reuse=True),row["capsule"])["allPass"])
+        with self.assertRaises(ValueError):
+            m.model_payload(row,"host_classified",0,"unknown")
+
     def test_missing_real_engine_and_model_must_never_report_a_pass(self):
         with tempfile.TemporaryDirectory() as temp:
             p = Path(temp)

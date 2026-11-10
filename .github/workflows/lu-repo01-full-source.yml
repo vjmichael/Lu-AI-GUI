@@ -404,3 +404,111 @@ jobs:
           path: custody-evidence/
           if-no-files-found: warn
           retention-days: 14
+
+
+  native-r00-capability:
+    # Opt-in once after the entire task group; never a push/PR-sync fanout.
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 200 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/r00-core-convergence-20261109' && contains(github.event.pull_request.body, format('LU_R00_CAPABILITY_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_R00_CAPABILITY_GATE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Authenticate one exact-head capability task-group marker and source lock
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          REQUEST_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p r00-capability-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python3 - <<'PY'
+          import os,re
+          markers=re.findall(r"(?m)^LU_R00_CAPABILITY_GATE_SHA=([0-9a-f]{40})$",os.environ["REQUEST_BODY"])
+          if markers!=[os.environ["EXPECTED_SHA"]]:
+              raise SystemExit("CAPABILITY_GATE_REFUSED: wrong exact-head task group")
+          PY
+          node scripts/verify-source-tree.mjs | tee r00-capability-evidence/source-lock.log
+          printf 'SOURCE_SHA=%s\nOS=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > r00-capability-evidence/provenance.txt
+      - name: Edited-message follow-up, agent authority, NSIS and genuine-model source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test lu-desktop/tests/ux-chat02-revision-reply-provenance.test.mjs \
+            lu-desktop/tests/agent01g-physical-installer-contract.test.mjs \
+            lu-desktop/tests/agent01g-approved-step-integration.test.mjs \
+            lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs \
+            2>&1 | tee r00-capability-evidence/source-contracts.log
+          grep -Fq '# fail 0' r00-capability-evidence/source-contracts.log
+          python3 -m unittest discover -s benchmarks/e1 -p test_memory_loop03c_real_qwen_comprehension.py -v \
+            2>&1 | tee r00-capability-evidence/kiaf-protocol-unit-tests.log
+          grep -Fq 'OK' r00-capability-evidence/kiaf-protocol-unit-tests.log
+      - name: Native ANSF original-message revision, linked reply and crash recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib chat_message_revisions::tests -- --nocapture \
+            2>&1 | tee r00-capability-evidence/native-ux-revisions.log
+          grep -Fq 'test result: ok. 5 passed; 0 failed;' r00-capability-evidence/native-ux-revisions.log
+          cargo test --manifest-path lu-desktop/tests/native-chat/Cargo.toml \
+            --lib chat_message_interactions::tests -- --nocapture \
+            2>&1 | tee r00-capability-evidence/native-ux-interactions.log
+          ! grep -Fq 'test result: FAILED.' r00-capability-evidence/native-ux-interactions.log
+      - name: Install real Linux desktop and FFprobe dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf ffmpeg
+          test -x "$(command -v git)"
+          test -x "$(command -v ffprobe)"
+      - name: Real loaded Qwen, two fresh reviewed Git approvals, ANSF/CCM memory and KIAF
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/r00-capability-linux.sh 2>&1 | tee r00-capability-evidence/linux-real-model-group.log
+      - name: Real Windows source-pinned CPU engine, NSIS install/uninstall and profile retention
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          & scripts/r00-capability-windows.ps1 -SourceSha $env:EXPECTED_SHA
+          if($LASTEXITCODE -ne 0){throw 'Native Windows installer/recovery gate failed'}
+      - name: Declare unproven physical and two-version rollback separately
+        if: always()
+        shell: bash
+        run: |
+          echo 'This one grouped native task gate does not prove 7B+/Qwen27B AMD Vulkan physical operation, installed GGUF turn, actual Windows human picker, or two-distinct-version rollback. Real small-model classifications may fail while benchmark measurement is valid.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-r00-capability-native-${{ matrix.os }}
+          path: r00-capability-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows' && success()
+        with:
+          name: lu-r00-source-pinned-windows-cpu-nsis-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/lu-r00-capability-nsis/
+          retention-days: 14
+          if-no-files-found: error

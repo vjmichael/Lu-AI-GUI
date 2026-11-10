@@ -52,6 +52,24 @@ POLICY = (
     "Only an actual independently observed historical receipt can be HISTORICAL verified."
 )
 MAX_RESPONSE = 8192
+# Interface experiment: constrain only JSON syntax and field types, NEVER
+# the correct memory verdict or authority status. Otherwise passing would
+# be a grammar answer key instead of genuine Qwen comprehension.
+ANSWER_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "status": {"type": "string"},
+        "humanReviewRequired": {"type": "boolean"},
+        "historicallyVerifiedDataAvailable": {"type": "boolean"},
+        "currentSourceFreshness": {"type": "string"},
+        "oldOsCustodyNotImplied": {"type": "boolean"},
+        "reuseOldPermission": {"type": "boolean"},
+        "automaticRetry": {"type": "boolean"},
+        "modelMayOverrideHostDecision": {"type": "boolean"},
+    },
+    "required": sorted(ANSWER_KEYS),
+    "additionalProperties": False,
+}
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -158,7 +176,7 @@ def grade(answer: dict, capsule: dict) -> dict:
     return {"checks": checks, "classification": cause, "allPass": cause == "PASS"}
 
 
-def model_payload(row: dict, arm: str, seed: int) -> dict:
+def model_payload(row: dict, arm: str, seed: int, protocol: str = "raw") -> dict:
     capsule = row["capsule"]
     if arm == "source_only":
         context = {
@@ -181,9 +199,17 @@ def model_payload(row: dict, arm: str, seed: int) -> dict:
               "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n")
     # Prefill an empty Qwen3 reasoning block in both arms. The token
     # budget is for the scored JSON, and the scorer stays unchanged.
-    return {"prompt": prompt, "n_predict": 192, "temperature": 0,
-            "seed": seed, "stream": False, "cache_prompt": False,
-            "stop": ["<|im_end|>"]}
+    payload = {"prompt": prompt, "n_predict": 192, "temperature": 0,
+               "seed": seed, "stream": False, "cache_prompt": False,
+               "stop": ["<|im_end|>"]}
+    if protocol == "json_schema":
+        # llama.cpp /completion converts this schema to a token grammar.
+        # It does not inject a verdict into the prompt. Every boolean and
+        # string value remains model-selected and independently graded.
+        payload["json_schema"] = ANSWER_JSON_SCHEMA
+    elif protocol != "raw":
+        raise ValueError("Unknown model interface protocol")
+    return payload
 
 
 def completion(port: int, payload: dict) -> tuple[str, dict, float]:
@@ -209,7 +235,7 @@ def run(args: argparse.Namespace) -> int:
         "schema": "lu-memory-loop03c-real-model-comparison-v1",
         "benchmarks": "SOURCE_ONLY_VS_HOST_CLASSIFIED",
         "nativeFixtureProvenance": PROVENANCE,
-        "responseProtocol": "QWEN3_EMPTY_THINK_PREFILL_V1",
+        "responseProtocol": ("LLAMA_COMPLETION_JSON_SCHEMA_V1" if getattr(args, "response_protocol", "raw") == "json_schema" else "QWEN3_EMPTY_THINK_PREFILL_V1"),
         "installedLu": False, "realOsCustodyProven": False,
         "liveExternalSourceFreshnessProven": False,
         "hasVerifiedPositiveProcedureCase": False,
@@ -298,7 +324,7 @@ def run(args: argparse.Namespace) -> int:
                     item = {"caseId": row["caseId"], "arm": arm, "repetition": rep}
                     try:
                         raw, metadata, elapsed = completion(
-                            args.port, model_payload(row, arm, 20261109 + rep))
+                            args.port, model_payload(row, arm, 20261109 + rep, getattr(args, "response_protocol", "raw")))
                         report["observedModelGenerations"] += 1
                         item["latencySeconds"] = round(elapsed, 3)
                         item["promptTokens"] = metadata.get("tokens_evaluated")
@@ -366,6 +392,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=18983)
     parser.add_argument("--repetitions", type=int, default=2)
     parser.add_argument("--validate-fixture-only", action="store_true")
+    parser.add_argument("--response-protocol", choices=("raw", "json_schema"), default="raw")
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535 or not 1 <= args.repetitions <= 10:
         parser.error("Invalid port or repetition count")

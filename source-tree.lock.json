@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "8ee33e39699556fcfcd1e84bf0bfd3db4556d60f",
-  "trackedFileCount": 840,
+  "trackedFileCount": 844,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "f34254134af2d9dc2a4e267c702d01a5050b11b5"
+      "blob": "4ce4dad71c6814696a8912e83886fceecb14fa6b"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -353,11 +353,15 @@
     },
     {
       "path": "benchmarks/e1/memory_loop03c_real_qwen_comprehension.py",
-      "blob": "8455899e79c7f7e59bc2ede4287b31126f122782"
+      "blob": "b09f6def945414d9977217135c288dd0be8536ce"
     },
     {
       "path": "benchmarks/e1/memory_loop03c_reviewed_worker_cases.py",
       "blob": "e55c00715a891971926a679aace1d1359c78f3eb"
+    },
+    {
+      "path": "benchmarks/e1/r00_genuine_kiaf_comparison.py",
+      "blob": "51570cccebecf93b081035c3763b80fa8426b5af"
     },
     {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
@@ -385,7 +389,7 @@
     },
     {
       "path": "benchmarks/e1/test_memory_loop03c_real_qwen_comprehension.py",
-      "blob": "17336d8cbc383b7687d3e012b2995b619a05e360"
+      "blob": "9edf3c2f52cbe830b7643cbc9593192a626819c3"
     },
     {
       "path": "benchmarks/e1/test_memory_loop03c_reviewed_workers.py",
@@ -790,6 +794,10 @@
     {
       "path": "docs/LU_P11_GIT_CORE.md",
       "blob": "1a3a4c52eef7669a1507002d52ddeade0f4f5ed4"
+    },
+    {
+      "path": "docs/LU_R00_CAPABILITY_CONSOLIDATION_20261109.md",
+      "blob": "0d6ea8e7fa09586b1c02e1b1cc04b462ce8c9986"
     },
     {
       "path": "docs/LU_R16_MODEL_FOLDERS_AND_REPO_EXTRACTION.md",
@@ -1353,7 +1361,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01g-physical-installer-contract.test.mjs",
-      "blob": "13d464a310dc169dff681e7a7873e6f882e86000"
+      "blob": "93123fb8d25f2a6aba60111602738b482ba627ba"
     },
     {
       "path": "lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs",
@@ -1661,7 +1669,7 @@
     },
     {
       "path": "lu-desktop/tests/ux-chat02-revision-reply-provenance.test.mjs",
-      "blob": "044aa00bb581682e7179e48a0c36d97d1cdb7989"
+      "blob": "2f3e5411baccb120280e0037154d259ccb0de09f"
     },
     {
       "path": "lu-desktop/tests/windows-physical/Lu_R13_Vision_Test_Fixture.png",
@@ -1745,7 +1753,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "b1cb96a7ad44f5d85d95fceac5cf3e6c3764652e"
+      "blob": "375050e53dfed526c0d76f14c356d2e89139a4cf"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1761,7 +1769,7 @@
     },
     {
       "path": "lu-desktop/web/message_revisions.mjs",
-      "blob": "64a5203e46f823923eb39f82ca87ac2041c9cf19"
+      "blob": "a9de257bde90ba5a6f0a1930e0faf63be80097a0"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -1829,7 +1837,7 @@
     },
     {
       "path": "scripts/m3-windows-nsis-cycle.ps1",
-      "blob": "d7da5eb88ac3df849228a45178d48a618ba355e0"
+      "blob": "85514ae9cdab45d95f62c62ffc962037e1aecf34"
     },
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",
@@ -1850,6 +1858,14 @@
     {
       "path": "scripts/probe-observe-sensitive-window-windows.ps1",
       "blob": "d8ec9b29c17e4d7f65488cd1f6966290cee75cf2"
+    },
+    {
+      "path": "scripts/r00-capability-linux.sh",
+      "blob": "ab5f219bc8cdb9e26655ba1b0b16f3ad7b3b3018"
+    },
+    {
+      "path": "scripts/r00-capability-windows.ps1",
+      "blob": "3e3b52841d7a9069e806931d074799783e42d4ee"
     },
     {
       "path": "scripts/source-identity.mjs",

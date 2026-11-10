@@ -49,6 +49,8 @@ $record=[ordered]@{
   activeModelWorkersReaped='NOT_TESTED'
   webViewUiAndModelInference='NOT_TESTED'
   installationStateUncertain=$false
+  profilePreservation='NOT_TESTED'
+  versionedRollback='NOT_TESTED_REQUIRES_TWO_DISTINCT_INSTALLERS'
   failureStage=$null
   errors=@()
 }
@@ -66,6 +68,16 @@ try{
   $existing=@(Get-Process -Name 'Lu','lu-desktop' -ErrorAction SilentlyContinue)
   if($existing.Count -gt 0){throw 'Another Lu instance is running; refuse collision'}
   if(Test-Path -LiteralPath $target){throw 'Disposable target unexpectedly exists'}
+  # New isolated profile sentinel: the uninstaller must NEVER erase creator
+  # SQLite/models in AppData. This does not launch GGUF or prove actual
+  # historical profile migrations. Refuse an existing profile in CI.
+  $profile=Join-Path $env:APPDATA 'org.lu.agent01g.devtest'
+  if(Test-Path -LiteralPath $profile){throw 'Refuse preexisting test profile'}
+  $null=New-Item -ItemType Directory -Path $profile
+  $marker=Join-Path $profile 'lifecycle-retain-this-data.txt'
+  $nonce=[guid]::NewGuid().ToString('N')
+  [IO.File]::WriteAllText($marker,$nonce)
+  $markerSha=(Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash
   $stage='install'
   Invoke-Reviewed-Child $installer @('/S',('/D='+$target))
   $record.installer='PASS_REAL_NATIVE_PROCESS_EXIT'
@@ -100,6 +112,11 @@ try{
     throw 'Installed program or live Lu process survived uninstall'
   }
   $record.packageRemoval='PASS_BINARIES_ABSENT'
+  if(-not(Test-Path -LiteralPath $marker -PathType Leaf) -or
+    (Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash -cne $markerSha){
+    throw 'NSIS uninstall altered isolated AppData sentinel'
+  }
+  $record.profilePreservation='PASS_UNTOUCHED_APPDATA_SENTINEL'
   $record.activeModelWorkersReaped='INCONCLUSIVE_NO_MODEL_LAUNCH_IN_THIS_CYCLE'
 }catch{
   $record.failureStage=$stage

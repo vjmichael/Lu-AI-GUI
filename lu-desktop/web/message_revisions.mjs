@@ -41,3 +41,24 @@ export function draftReplyTarget(entry,revision){
     displayText:revision.currentText.slice(0,1200)
   };
 }
+
+// Explicit bridge from a human DISPLAY correction to a *new* authenticated
+// user reply. This only stages local composer data; the existing native
+// lu_post_linked_reply command rechecks current parent version/SHA under an
+// exclusive SQLite transaction. No old ANSF/model/tool turn is rewritten.
+export function correctedMessageFollowUp(entry,revision){
+  const target=draftReplyTarget(entry,revision);
+  if(!target||!Number.isSafeInteger(revision.currentVersion)
+    ||revision.currentVersion<1||revision.currentVersion>MAX_VISIBLE_REVISIONS
+    ||!isSha(revision.originalSha256)
+    ||revision.originalSha256===revision.currentSha256
+    ||typeof revision.currentText!=='string'
+    ||revision.currentText.trim().length===0)return null;
+  const draft='Human correction to saved message #'+entry.seq+
+    ' (display revision '+revision.currentVersion+'). '+
+    'Please treat the following as a NEW human follow-up, not a change to '+
+    'any earlier model answer or tool result:\n\n'+revision.currentText;
+  // The native reply cap is in bytes, not JavaScript UTF-16 code units.
+  if(new TextEncoder().encode(draft).byteLength>MAX_EDIT_BYTES)return null;
+  return {target,draft};
+}
