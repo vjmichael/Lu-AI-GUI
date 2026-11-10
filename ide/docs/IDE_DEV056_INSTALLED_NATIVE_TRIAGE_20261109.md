@@ -145,3 +145,34 @@ actual native positive tests and physical approval witness exist.
 **Pending:** next exact-head grouped Windows/Ubuntu+delegated Linux source gate
 and NSIS/Debian installed group. Full Task 5 remains open until the real
 installed checks pass and separately all human/Windows ACL gates pass.
+
+## Exact installed gate 42751072907 (2026-11-10 UTC)
+
+The Windows NSIS job **PASSED** including source-resolved licenses, actual
+installed WebView2 UIA shell/navigation/native picker, source edit and
+explicit save, read-only Jobs discovery, default-disabled debugger,
+persisted restart, external edit/draft conflict preservation and real
+NSIS uninstall. The source-level React missing-project guard fix at
+`c32d2c1b345a82a02f84c4df70c41ee7169679c1` therefore has independent
+native installed Windows acceptance. The default unsigned app still does
+**not** demonstrate protected worker execution, independent real human
+consent or Windows AppContainer ACL positive acceptance.
+
+Linux built, installed, launched under GTK/X11, verified license inventory,
+failed-upgrade rollback and user-state preservation, but its OS file chooser
+**FAILED** exact project selection. Detailed logs:
+`P04_GTK_PARENT_LOCATION=exact_native_parent_submitted`;
+`P04_GTK_FIXTURE_DIRECTORY_CANDIDATES=0`;
+`P04_GTK_CHILD_TYPEAHEAD=native_keyboard_attempt_not_witness`;
+`P04_GTK_EXACT_PATH_ENTRY=reasserted_and_submitted_in_native_chooser`;
+`P04_GTK_NATIVE_CONFIRM_KEY=alt_select`;
+`P04_NATIVE_GTK_FOLDER_ACCEPT=visible_dialog_still_open_after_bounded_real_actions`.
+The fixture navigated back inside the target after detecting zero AT-SPI
+rows **before** attempting native Select. Follow-up preserves the candidate
+at parent-level until native confirmation; exact chooser closure and
+registered project are still mandatory. No acceptance from a keystroke.
+
+The Windows package ACL code remains deliberately fail-closed prior to
+AppContainer creation. A separate read-only DACL inspection module is
+a *diagnostic* and cannot grant execution; it requires additional
+effective access checks and real hostile child proof before promotion.

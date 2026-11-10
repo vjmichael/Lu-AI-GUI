@@ -484,13 +484,18 @@ def _native_parent_and_exact_child():
     print("P04_GTK_PARENT_LOCATION=exact_native_parent_submitted", flush=True)
     if _select_real_fixture_directory():
         return True
-    # Some GTK file list providers omit AT-SPI rows; try a bounded native
-    # file-list typeahead, but never invent a selected child from a keystroke.
+    # Some GTK file lists omit AT-SPI rows even when X11 keyboard typeahead
+    # highlights the exact child. The prior fixture immediately navigated
+    # back into ROOT whenever the inaccessible row could not be enumerated,
+    # undoing the candidate selection BEFORE GtkFileChooser could confirm it.
+    # Leave GTK showing the actual parent and issue its native confirmation
+    # keys next. True means "native attempt dispatched", NOT selected folder;
+    # caller still MUST prove native dialog closure and exact project row.
     key("Tab")
     type_text(ROOT.name)
-    key("space")
-    print("P04_GTK_CHILD_TYPEAHEAD=native_keyboard_attempt_not_witness", flush=True)
-    return _select_real_fixture_directory()
+    print("P04_GTK_CHILD_TYPEAHEAD=native_candidate_preserved_until_real_confirmation",
+          flush=True)
+    return True
 
 
 def select_native_folder():

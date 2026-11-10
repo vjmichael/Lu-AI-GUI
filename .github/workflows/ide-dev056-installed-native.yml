@@ -1,3 +1,7 @@
+# IDE-05.6 GROUP-DISPATCH (2026-11-10): Linux GTK parent-child
+# selection-state repair, exact source native NSIS/Debian group.
+# Real previous Windows NSIS passed, Linux GTK picker failed; re-run both
+# only as a single group for one exact current SHA. NOT production approval.
 # IDE-05.6 GROUP-DISPATCH (2026-11-10):
 # Exact source-tree at prior code commit c32d2c1b345a82a02f84c4df70c41ee7169679c1.
 # One grouped NSIS+Debian native install/launch/edit/restart/uninstall acceptance

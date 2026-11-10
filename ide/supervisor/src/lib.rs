@@ -39,6 +39,8 @@ pub mod snapshot;
 pub mod windows_broker;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_cap_tree;
+#[cfg(all(target_os = "windows", feature = "windows-worker"))]
+mod windows_package_acl;
 #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
 mod windows_event_owner;
 #[cfg(all(windows, feature = "dap-transport"))]

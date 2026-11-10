@@ -54,7 +54,16 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertIn("def _native_chooser_diagnostics():", fixture)
         self.assertIn("def _native_parent_and_exact_child():", fixture)
         self.assertIn("P04_GTK_PARENT_LOCATION=exact_native_parent_submitted", fixture)
-        self.assertIn("P04_GTK_CHILD_TYPEAHEAD=native_keyboard_attempt_not_witness", fixture)
+        self.assertIn(
+            "P04_GTK_CHILD_TYPEAHEAD=native_candidate_preserved_until_real_confirmation",
+            fixture)
+        block=fixture.split("def _native_parent_and_exact_child():",1)[1].split(
+            "def select_native_folder():",1)[0]
+        self.assertIn("return True", block)
+        self.assertNotIn("return _select_real_fixture_directory()", block)
+        self.assertNotIn('key("space")', block)
+        self.assertIn('if not _registered_native_project_is_exposed():', fixture)
+        self.assertIn('deny("native_folder_chooser_did_not_register_project")', fixture)
         self.assertIn("if not _registered_native_project_is_exposed():", fixture)
         self.assertIn("_native_chooser_diagnostics()", fixture)
         self.assertIn("P04_GTK_NATIVE_CHOOSER_INVENTORY=", fixture)
