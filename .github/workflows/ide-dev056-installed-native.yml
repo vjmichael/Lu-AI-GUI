@@ -1,3 +1,8 @@
+# IDE-05.6 GROUP-DISPATCH (2026-11-10, selection-fix v2):
+# One exact-head grouped Windows NSIS plus Linux Debian real install
+# acceptance after bounded native GTK list-focus/deeper AT-SPI repair.
+# Native source Rust formatting now matches exact prior runner diff.
+# Test gates remain fail-closed; no real human or ACL positive claim.
 # IDE-05.6 GROUP-DISPATCH (2026-11-10): Linux GTK parent-child
 # selection-state repair, exact source native NSIS/Debian group.
 # Real previous Windows NSIS passed, Linux GTK picker failed; re-run both

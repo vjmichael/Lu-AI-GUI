@@ -176,3 +176,47 @@ The Windows package ACL code remains deliberately fail-closed prior to
 AppContainer creation. A separate read-only DACL inspection module is
 a *diagnostic* and cannot grant execution; it requires additional
 effective access checks and real hostile child proof before promotion.
+
+## Follow-up actual native results at 687cadc (2026-11-10 UTC)
+
+- [Native run 42752511242](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42752511242):
+  Windows and Ubuntu frontend, Rust host, supervisor tests and Tauri
+  compilation **passed**. The native consolidation deliberately **failed**
+  `cargo fmt --check` for the new independent Windows read-only ACL audit
+  module, and the dependent real Linux protected-worker job was skipped.
+  Windows actually ran both new fail-closed ACL negative tests successfully,
+  but this is not a positive OS AppContainer file-write-denial witness.
+  The next patch applies the runner's **exact rustfmt diffs** to the two
+  affected Rust files without altering behavior or granting package authority.
+- [Installed run 42752511262](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42752511262):
+  **Windows NSIS installed UI, editing, restart, conflict and uninstall PASS**;
+  **Linux Debian** install, native graphical launch, license retrieval and
+  hostile upgrade rollback PASS, yet GTK selected folder **FAIL**. New
+  log confirms the fixture left the candidate in the native parent dialog
+  and delivered actual GTK Enter, Alt+S and Alt+O, but no folder row was
+  reported from shallow (13-level) AT-SPI discovery and the chooser stayed
+  open. Thus the prior parent-reset issue is fixed but the actual list
+  focus/selection remains unresolved.
+
+### Next bounded GTK discovery correction
+
+Expand only the *visible OS-native GTK chooser subtree* to a deeper,
+bounded AT-SPI walk (up to 16 nested children / 6000 elements), with
+up to 14 genuine OS Tab presses to find the actual native file-list focus
+before typing the exact temporary child. A selected real AT-SPI row is
+preferred when available. If the list cannot be focused, selection
+must remain denied. An OS keyboard event does not establish success:
+the harness still requires authentic chooser closure plus the exact
+registered project row, explicit save, conflict recovery and uninstall.
+
+### Windows ACL and human controls
+
+The new `windows_package_acl` observer checks protected DACLs and exact
+package-SID read/execute rights on a bounded, non-reparse staged tree;
+two Windows-native negative tests passed. It is **not a positive
+security authorization** and does not test hostile child writes,
+mandatory integrity or ownership/rename escape. The default Windows
+package execution path **still returns NoContainment before any
+AppContainer profile or approval**. Genuine independent human approval,
+refusal, timeout, stale-plan and signed-installed operator evidence
+remain separate, unaccepted Task 5 gates.

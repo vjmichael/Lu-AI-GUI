@@ -54,6 +54,11 @@ class ChooserPolicyTests(unittest.TestCase):
         self.assertIn("def _native_chooser_diagnostics():", fixture)
         self.assertIn("def _native_parent_and_exact_child():", fixture)
         self.assertIn("P04_GTK_PARENT_LOCATION=exact_native_parent_submitted", fixture)
+        self.assertIn("def _deep_visible_gtk_chooser_nodes():", fixture)
+        self.assertIn("def _focus_native_gtk_file_list():", fixture)
+        self.assertIn("P04_GTK_NATIVE_FILE_LIST_FOCUS=", fixture)
+        self.assertIn("for node in _deep_visible_gtk_chooser_nodes():", fixture)
+        self.assertIn("if not _focus_native_gtk_file_list():", fixture)
         self.assertIn(
             "P04_GTK_CHILD_TYPEAHEAD=native_candidate_preserved_until_real_confirmation",
             fixture)

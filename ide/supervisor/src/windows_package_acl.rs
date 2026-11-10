@@ -19,10 +19,9 @@ use windows_sys::Win32::{
     Security::{
         AclSizeInformation,
         Authorization::{ConvertStringSidToSidW, GetNamedSecurityInfoW, SE_FILE_OBJECT},
-        EqualSid, GetAce, GetAclInformation, GetSecurityDescriptorControl,
-        GetTokenInformation, TokenUser, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
-        DACL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION, SE_DACL_PROTECTED,
-        TOKEN_QUERY, TOKEN_USER,
+        EqualSid, GetAce, GetAclInformation, GetSecurityDescriptorControl, GetTokenInformation,
+        TokenUser, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION,
+        OWNER_SECURITY_INFORMATION, SE_DACL_PROTECTED, TOKEN_QUERY, TOKEN_USER,
     },
     System::Threading::{GetCurrentProcess, OpenProcessToken},
 };
@@ -44,7 +43,9 @@ struct OwnedLocal(*mut c_void);
 impl Drop for OwnedLocal {
     fn drop(&mut self) {
         if !self.0.is_null() {
-            unsafe { LocalFree(self.0); }
+            unsafe {
+                LocalFree(self.0);
+            }
         }
     }
 }
@@ -52,7 +53,9 @@ struct OwnedToken(HANDLE);
 impl Drop for OwnedToken {
     fn drop(&mut self) {
         if !self.0.is_null() {
-            unsafe { CloseHandle(self.0); }
+            unsafe {
+                CloseHandle(self.0);
+            }
         }
     }
 }
@@ -67,21 +70,27 @@ fn parse_system_sid() -> Result<OwnedLocal, SupervisorError> {
 }
 fn owner_token_sid() -> Result<(OwnedToken, Vec<usize>), SupervisorError> {
     let mut raw = ptr::null_mut();
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0
-        || raw.is_null()
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 || raw.is_null()
     {
         return Err(denied());
     }
     let handle = OwnedToken(raw);
     let mut length = 0u32;
-    unsafe { GetTokenInformation(handle.0, TokenUser, ptr::null_mut(), 0, &mut length); }
+    unsafe {
+        GetTokenInformation(handle.0, TokenUser, ptr::null_mut(), 0, &mut length);
+    }
     if length < size_of::<TOKEN_USER>() as u32 || length > 4096 {
         return Err(denied());
     }
     let mut aligned = vec![0usize; (length as usize).div_ceil(size_of::<usize>())];
     if unsafe {
-        GetTokenInformation(handle.0, TokenUser, aligned.as_mut_ptr().cast(),
-                            length, &mut length)
+        GetTokenInformation(
+            handle.0,
+            TokenUser,
+            aligned.as_mut_ptr().cast(),
+            length,
+            &mut length,
+        )
     } == 0
     {
         return Err(denied());
@@ -89,10 +98,12 @@ fn owner_token_sid() -> Result<(OwnedToken, Vec<usize>), SupervisorError> {
     Ok((handle, aligned))
 }
 
-fn inspect_one(path: &Path, package_sid: *mut c_void,
-               host_user_sid: *mut c_void, system_sid: *mut c_void)
-    -> Result<(), SupervisorError>
-{
+fn inspect_one(
+    path: &Path,
+    package_sid: *mut c_void,
+    host_user_sid: *mut c_void,
+    system_sid: *mut c_void,
+) -> Result<(), SupervisorError> {
     let metadata = fs::symlink_metadata(path).map_err(|_| denied())?;
     if metadata.file_attributes() & REPARSE_ATTRIBUTE != 0
         || (!metadata.is_file() && !metadata.is_dir())
@@ -113,7 +124,10 @@ fn inspect_one(path: &Path, package_sid: *mut c_void,
             ptr::null_mut(),
             &mut descriptor,
         )
-    } != 0 || descriptor.is_null() || owner.is_null() || dacl.is_null()
+    } != 0
+        || descriptor.is_null()
+        || owner.is_null()
+        || dacl.is_null()
     {
         return Err(denied());
     }
@@ -130,10 +144,14 @@ fn inspect_one(path: &Path, package_sid: *mut c_void,
     }
     let mut info = ACL_SIZE_INFORMATION::default();
     if unsafe {
-        GetAclInformation(dacl, (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
-                          size_of::<ACL_SIZE_INFORMATION>() as u32,
-                          AclSizeInformation)
-    } == 0 || info.AceCount != 3
+        GetAclInformation(
+            dacl,
+            (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32,
+            AclSizeInformation,
+        )
+    } == 0
+        || info.AceCount != 3
     {
         return Err(denied());
     }
@@ -153,8 +171,7 @@ fn inspect_one(path: &Path, package_sid: *mut c_void,
             return Err(denied());
         }
         if metadata.is_dir()
-            && ace.Header.AceFlags & OBJECT_AND_CONTAINER_INHERIT
-                != OBJECT_AND_CONTAINER_INHERIT
+            && ace.Header.AceFlags & OBJECT_AND_CONTAINER_INHERIT != OBJECT_AND_CONTAINER_INHERIT
         {
             return Err(denied());
         }
@@ -229,9 +246,14 @@ mod tests {
     #[test]
     fn unsealed_host_staging_cannot_be_accepted_as_readonly_appcontainer() {
         let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let path = std::env::temp_dir()
-            .join(format!("ide056-acl-negative-{}-{}", std::process::id(), stamp));
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "ide056-acl-negative-{}-{}",
+            std::process::id(),
+            stamp
+        ));
         fs::create_dir(&path).unwrap();
         fs::write(path.join("source.rs"), b"immutable source fixture").unwrap();
         let sid = parse_system_sid().unwrap();
@@ -244,8 +266,7 @@ mod tests {
     }
     #[test]
     fn exact_read_execute_mask_does_not_grant_mutation_or_dacl_control() {
-        const WRITE_DELETE_OWNER_DAC: u32 = 0x0001_0116 | 0x0004_0000 | 0x0008_0000
-            | 0x0001_0000;
+        const WRITE_DELETE_OWNER_DAC: u32 = 0x0001_0116 | 0x0004_0000 | 0x0008_0000 | 0x0001_0000;
         assert_eq!(FILE_READ_EXECUTE_MASK & WRITE_DELETE_OWNER_DAC, 0);
         assert_eq!(OBJECT_AND_CONTAINER_INHERIT, 3);
     }

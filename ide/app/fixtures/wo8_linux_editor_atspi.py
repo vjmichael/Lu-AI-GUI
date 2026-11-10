@@ -142,7 +142,7 @@ def _native_dialog_ancestor(node):
     # Inspect an actual AT-SPI modal/file-chooser ancestry, not an unrelated
     # app button named Open or Select. No web JS, IPC or synthetic picker.
     current = node
-    for _ in range(10):
+    for _ in range(20):
         try:
             current = current.parent
             if current is None:
@@ -434,12 +434,64 @@ def _registered_native_project_is_exposed():
     return False
 
 
+def _deep_visible_gtk_chooser_nodes():
+    """Bounded native AT-SPI subtree traversal, never a WebView shortcut.
+
+    GTK's directory list may be deeper than the desktop's 13-level cap.
+    Descend only within independently visible native file-chooser subtrees.
+    """
+    seen = 0
+    for chooser in elements():
+        try:
+            if "file chooser" not in (chooser.getRoleName() or "").casefold():
+                continue
+            state = chooser.getState()
+            if not (state.contains(pyatspi.STATE_SHOWING) and
+                    state.contains(pyatspi.STATE_VISIBLE)):
+                continue
+            stack = [(chooser, 0)]
+            while stack and seen < 6000:
+                node, depth = stack.pop()
+                seen += 1
+                yield node
+                if depth < 16:
+                    stack.extend((child, depth + 1)
+                                 for child in children_of(node))
+        except Exception:
+            continue
+
+
+def _focus_native_gtk_file_list():
+    """Only send typeahead after native GTK's real file list owns focus."""
+    for turn in range(14):
+        for node in _deep_visible_gtk_chooser_nodes():
+            try:
+                if not _native_dialog_ancestor(node):
+                    continue
+                state = node.getState()
+                if not state.contains(pyatspi.STATE_FOCUSED):
+                    continue
+                role = (node.getRoleName() or "").casefold()
+                if any(x in role for x in
+                       ("table", "tree", "list", "icon", "grid", "cell")):
+                    print("P04_GTK_NATIVE_FILE_LIST_FOCUS=verified;tabs=" +
+                          str(turn), flush=True)
+                    return True
+            except Exception:
+                continue
+        key("Tab")
+        time.sleep(0.12)
+    print("P04_GTK_NATIVE_FILE_LIST_FOCUS=not_visible_after_bounded_tabs",
+          flush=True)
+    return False
+
+
 def _select_real_fixture_directory():
     # SELECT_FOLDER accepts a *selected* directory, not necessarily the
     # directory currently visible. Navigate to its parent via GTK's native
     # location entry, then select the exact ephemeral fixture child.
     exact=0
-    for node in elements():
+    for node in _deep_visible_gtk_chooser_nodes():
         try:
             if (node.name or "").strip() != ROOT.name or not _native_dialog_ancestor(node):
                 continue
@@ -484,17 +536,18 @@ def _native_parent_and_exact_child():
     print("P04_GTK_PARENT_LOCATION=exact_native_parent_submitted", flush=True)
     if _select_real_fixture_directory():
         return True
-    # Some GTK file lists omit AT-SPI rows even when X11 keyboard typeahead
-    # highlights the exact child. The prior fixture immediately navigated
-    # back into ROOT whenever the inaccessible row could not be enumerated,
-    # undoing the candidate selection BEFORE GtkFileChooser could confirm it.
-    # Leave GTK showing the actual parent and issue its native confirmation
-    # keys next. True means "native attempt dispatched", NOT selected folder;
-    # caller still MUST prove native dialog closure and exact project row.
-    key("Tab")
+    # The real Ubuntu GTK chooser did not expose a row at 13 AT-SPI
+    # levels. Scan only its bounded native subtree and focus the actual
+    # file-list control before typing the exact ephemeral folder name.
+    if not _focus_native_gtk_file_list():
+        return False
+    if _select_real_fixture_directory():
+        return True
     type_text(ROOT.name)
     print("P04_GTK_CHILD_TYPEAHEAD=native_candidate_preserved_until_real_confirmation",
           flush=True)
+    # This is only a native keyboard attempt; modal closure and exact
+    # project registration are still required by the caller.
     return True
 
 
