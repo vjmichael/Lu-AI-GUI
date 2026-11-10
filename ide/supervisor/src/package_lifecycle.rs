@@ -455,6 +455,14 @@ impl PackageLifecycleLedger {
         self.append(body)
     }
     pub fn verify_discard(&self, status: &PackageLifecycleStatus) -> Result<(), SupervisorError> {
+        // A stale pre-cleanup observation cannot be used to advance the
+        // journal to destroyed. This remains only a journal transition;
+        // callers must independently verify OS child cleanup and bytes.
+        if status.state != "private_output_cleanup_pending"
+            || !status.requires_explicit_private_cleanup
+        {
+            return Err(SupervisorError::InvalidTransition);
+        }
         let body = PackageLifecycleBody {
             version: 1,
             sequence: 0,
@@ -532,6 +540,28 @@ mod tests {
         let done = final_reopen.statuses().unwrap().pop().unwrap();
         assert_eq!(done.state, "private_output_destroyed");
         assert!(!done.requires_explicit_private_cleanup);
+    }
+    #[test]
+    fn stale_pre_discard_status_cannot_claim_verified_cleanup() {
+        let (_temp, ledger) = fixture();
+        let (project, job, plan, terminal, tree, audit) = ids();
+        ledger.record_prepared(&project, &job, &plan).unwrap();
+        ledger
+            .record_audit(&project, &job, &plan, &terminal, &tree, Some(&audit))
+            .unwrap();
+        let stale = ledger.statuses().unwrap().pop().unwrap();
+        assert!(matches!(
+            ledger.verify_discard(&stale),
+            Err(SupervisorError::InvalidTransition)
+        ));
+        ledger.prepare_discard(&stale).unwrap();
+        assert!(matches!(
+            ledger.verify_discard(&stale),
+            Err(SupervisorError::InvalidTransition)
+        ));
+        let pending = ledger.statuses().unwrap().pop().unwrap();
+        assert_eq!(pending.state, "private_output_cleanup_pending");
+        assert!(!pending.may_execute_or_retry_worker);
     }
     #[test]
     fn tampered_or_partial_journal_refuses_replay() {
