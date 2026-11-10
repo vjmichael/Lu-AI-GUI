@@ -113,6 +113,14 @@ fn valid_patch(p:&NativeOfficePatch)->bool{
         && p.slide_number.is_none_or(|v|(1..=100_000).contains(&v))
         && p.sheet_number.is_none_or(|v|(1..=100_000).contains(&v))
 }
+#[derive(Clone,Debug,Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+struct ModelActionProposal{
+    kind:String,action:NativeAction,purpose:String,
+    #[serde(default)]document_draft:Option<NativeDocumentDraft>,
+    #[serde(default)]office_patch:Option<NativeOfficePatch>,
+    #[serde(default)]office_batch:Option<Vec<NativeOfficePatch>>,
+}
 #[derive(Clone,Debug,Serialize,PartialEq,Eq)]
 #[serde(rename_all="camelCase")]
 pub struct ActionProposalView{
@@ -213,133 +221,6 @@ impl ActionProposalQueue{
         Ok(before-pending.len())
     }
 }
-#[cfg(test)]
-mod tests{
-    use super::*;
-    #[test]
-    fn explicit_human_intent_is_required_and_has_one_action(){
-        assert_eq!(classify_current_user_action("Copy file notes.txt"),Some(NativeAction::CopyFile));
-        assert_eq!(classify_current_user_action("Please move the file"),Some(NativeAction::MoveFile));
-        assert_eq!(classify_current_user_action("Extract this zip archive"),Some(NativeAction::ExtractArchive));
-        assert_eq!(classify_current_user_action("Extract multiple archives as batch"),Some(NativeAction::ExtractArchiveBatch));
-        assert_eq!(classify_current_user_action("Split this archive"),Some(NativeAction::SplitArchive));
-        assert_eq!(classify_current_user_action("Create a Word document"),Some(NativeAction::CreateDocument));
-        assert_eq!(classify_current_user_action("Revise an Excel spreadsheet"),Some(NativeAction::ReviseOffice));
-        for input in ["How do I copy a file?", "Do not delete a file",
-            "Copy and move the file", "Tell me about archives",
-            "Do not split this archive",
-            "Explain how to modify a Word document",
-            "Copy the file\n\n[Attached text file: note.txt]\nsecret"]{
-            assert!(classify_current_user_action(input).is_none(),"{input}")
-        }
-    }
-    #[test]
-    fn model_proposals_never_upgrade_human_action_or_chat(){
-        let q=ActionProposalQueue::default();
-        let good=r#"{"kind":"propose_native_action","action":"copy_file","purpose":"Select the source file for an approved copy review"}"#;
-        let view=q.stage("p-1","c-1","g-1","Copy the file",good).unwrap();
-        assert_eq!(view.action,"copy_file");
-        assert!(view.document_draft.is_none());
-        assert!(view.office_patch.is_none());
-        assert!(view.office_batch.is_none());
-        assert_eq!(q.consume("p-1","c-2"),Err(ProposalError::WrongConversation));
-        assert_eq!(q.consume("p-1","c-1").unwrap(),view);
-        assert_eq!(q.consume("p-1","c-1"),Err(ProposalError::Missing));
-        for (i,bad) in [
-            r#"{"kind":"propose_native_action","action":"move_file","purpose":"wrong scope"}"#,
-            r#"{"kind":"propose_native_action","action":"copy_file","purpose":"ok","purpose":"overwrite"}"#,
-            r#"{"kind":"propose_native_action","action":"copy_file","purpose":"ok","path":"C:\\secret"}"#,
-            r#"{"kind":"propose_native_action","action":"copy_file","purpose":"ok","permission":true}"#,
-        ].iter().enumerate(){
-            assert!(q.stage(&format!("p-{i}"),"c-1","g-1","Copy the file",bad).is_err())
-        }
-        assert_eq!(q.clear_chat("c-1").unwrap(),0);
-    }
-}
-))
-        && p.text_index.is_none_or(|v|v<=100_000)
-        && p.slide_number.is_none_or(|v|(1..=100_000).contains(&v))
-        && p.sheet_number.is_none_or(|v|(1..=100_000).contains(&v))
-}
-#[derive(Clone,Debug,Deserialize)]
-#[serde(rename_all="camelCase",deny_unknown_fields)]
-struct ModelActionProposal{
-    kind:String,action:NativeAction,purpose:String,
-    #[serde(default)]document_draft:Option<NativeDocumentDraft>,
-    #[serde(default)]office_patch:Option<NativeOfficePatch>,
-    #[serde(default)]office_batch:Option<Vec<NativeOfficePatch>>,
-}
-#[derive(Clone,Debug,Serialize,PartialEq,Eq)]
-#[serde(rename_all="camelCase")]
-pub struct ActionProposalView{
-    pub chat_id:String,pub proposal_id:String,
-    pub action:String,pub purpose:String,
-}
-#[derive(Debug,Clone,PartialEq,Eq)]
-pub enum ProposalError{
-    Invalid,ActionMismatch,Full,Duplicate,Missing,WrongConversation,Unavailable,
-}
-struct Pending{
-    chat_id:String,origin_generation_id:String,view:ActionProposalView,
-}
-#[derive(Default)]
-pub struct ActionProposalQueue{pending:Mutex<HashMap<String,Pending>>}
-fn valid_id(s:&str)->bool{
-    !s.is_empty()&&s.len()<=128&&s.bytes().all(|c|
-        c.is_ascii_alphanumeric()||matches!(c,b'-'|b'_'))
-}
-impl ActionProposalQueue{
-    /// May be called only by the trusted host immediately after completion
-    /// of its own model generation and persisted assistant journal checkpoint.
-    pub fn stage(&self,id:&str,chat:&str,generation:&str,
-        current_user_text:&str,model_output:&str)
-        ->Result<ActionProposalView,ProposalError>{
-        if !valid_id(id)||!valid_id(chat)||!valid_id(generation)||
-            model_output.len()>MAX_BYTES{return Err(ProposalError::Invalid)}
-        let expected=classify_current_user_action(current_user_text)
-            .ok_or(ProposalError::ActionMismatch)?;
-        let object=lu_core::model_json_boundary::parse_exact_boundary_object(
-            model_output,MAX_BYTES).map_err(|_|ProposalError::Invalid)?;
-        let p:ModelActionProposal=serde_json::from_value(
-            serde_json::Value::Object(object)).map_err(|_|ProposalError::Invalid)?;
-        if p.kind!="propose_native_action"||p.action!=expected||
-            p.purpose.trim().is_empty()||p.purpose.len()>240||
-            p.purpose.chars().any(char::is_control){
-            return Err(ProposalError::Invalid)
-        }
-        let view=ActionProposalView{
-            chat_id:chat.into(),proposal_id:id.into(),
-            action:p.action.as_str().into(),purpose:p.purpose,
-        };
-        let mut pending=self.pending.lock().map_err(|_|ProposalError::Unavailable)?;
-        if pending.contains_key(id){return Err(ProposalError::Duplicate)}
-        if pending.len()>=MAX_PENDING{return Err(ProposalError::Full)}
-        pending.insert(id.into(),Pending{
-            chat_id:chat.into(),origin_generation_id:generation.into(),
-            view:view.clone(),
-        });
-        Ok(view)
-    }
-    /// Consuming a proposal merely opens an existing human-driven review
-    /// workflow. It does not open a tool grant, select a path or dispatch.
-    pub fn consume(&self,id:&str,chat:&str)->Result<ActionProposalView,ProposalError>{
-        let mut pending=self.pending.lock().map_err(|_|ProposalError::Unavailable)?;
-        let entry=pending.get(id).ok_or(ProposalError::Missing)?;
-        if entry.chat_id!=chat{return Err(ProposalError::WrongConversation)}
-        if !valid_id(&entry.origin_generation_id){return Err(ProposalError::Invalid)}
-        Ok(pending.remove(id).ok_or(ProposalError::Missing)?.view)
-    }
-    pub fn deny(&self,id:&str,chat:&str)->Result<(),ProposalError>{
-        self.consume(id,chat).map(|_|())
-    }
-    pub fn clear_chat(&self,chat:&str)->Result<usize,ProposalError>{
-        let mut pending=self.pending.lock().map_err(|_|ProposalError::Unavailable)?;
-        let before=pending.len();
-        pending.retain(|_,p|p.chat_id!=chat);
-        Ok(before-pending.len())
-    }
-}
-#[cfg(test)]
 mod tests{
     use super::*;
     #[test]
