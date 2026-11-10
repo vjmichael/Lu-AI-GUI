@@ -699,6 +699,7 @@ mod tests {
         fs::write(root.join("tracked.txt"), b"later independently staged bytes\n").unwrap();
         index.add_path(Path::new("tracked.txt")).unwrap();
         index.write().unwrap();
+        drop(head);
         drop(tree);
         drop(index);
         drop(repo);
