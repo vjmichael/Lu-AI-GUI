@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 868,
+  "trackedFileCount": 870,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -1216,6 +1216,10 @@
       "blob": "cd43312fff8784a870ff1f60c408f52ada739bb7"
     },
     {
+      "path": "lu-desktop/src-tauri/src/engine_memory.rs",
+      "blob": "ed985feb5f870784da89c5a0b0405a588ed17005"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/environment_context.rs",
       "blob": "74e0c5aa5282d2ae1538ead3c2b39407d8be4475"
     },
@@ -1249,7 +1253,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "ac6c3560a0508331684dad786c88b497ab4f6f87"
+      "blob": "23d599d11b20fe1420cbb50de04cd8fb9d40e5e5"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1640,6 +1644,10 @@
       "blob": "221ee8cf7cb216d433666ffc27655b6cab448d99"
     },
     {
+      "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
+      "blob": "6f81cb5cf27d35b0f26655bd690c57563d26a3ae"
+    },
+    {
       "path": "lu-desktop/tests/p0-native-intent.test.mjs",
       "blob": "db04a97e39f3fd70cc3fd804b5bc3e8600d00a32"
     },
@@ -1829,7 +1837,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "7400ec1d90c4dfe8b3095d08d4e1eb1b689ffb0c"
+      "blob": "c289ad09430e4234ee9495e86e5c8d986ade3e56"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",

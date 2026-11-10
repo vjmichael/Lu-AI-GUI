@@ -20,6 +20,7 @@ mod browser_model_desktop;
 mod research_desktop;
 mod image_workspace_desktop;
 mod load_trace;
+mod engine_memory;
 mod native_host_read;
 mod read_proposal;
 mod write_proposal;
@@ -3578,6 +3579,29 @@ fn lu_set_browser_visibility(
 fn lu_load_diagnostics(state: State<'_, Arc<DesktopState>>) -> Result<LoadTraceView, String> {
     let trace = state.load_trace.lock().map_err(|_| "load trace poisoned")?;
     Ok(trace.snapshot())
+}
+#[tauri::command]
+fn lu_load_memory_sample(
+    state:State<'_,Arc<DesktopState>>
+)->Result<engine_memory::EngineMemorySample,String>{
+    // No WebView-supplied PID. Only the currently host-owned engine is
+    // sampled, and data is observational, not an inferred tensor progress %.
+    let runtime=state.supervisor.status()
+        .map_err(|_|"Active engine status unavailable")?;
+    let trace=state.load_trace.lock().map_err(|_|"Load trace unavailable")?;
+    let snapshot=trace.snapshot();
+    let id=snapshot.events.last().map(|e|e.operation_id.as_str());
+    let pid=snapshot.events.iter().rev()
+        .find(|e|Some(e.operation_id.as_str())==id&&e.phase=="engine_spawned")
+        .and_then(|e|e.pid);
+    let latest_model=snapshot.events.last().map(|e|e.model_ref.as_str());
+    if !snapshot.loading && (runtime.session_id.is_none()||
+        runtime.model_ref.as_deref()!=latest_model){
+        return Ok(engine_memory::EngineMemorySample::unavailable());
+    }
+    drop(trace);
+    Ok(pid.map(engine_memory::sample_host_engine)
+        .unwrap_or_else(engine_memory::EngineMemorySample::unavailable))
 }
 
 #[tauri::command]
@@ -8129,6 +8153,7 @@ pub fn run() {
             lu_release_image,
             lu_load_model,
             lu_load_diagnostics,
+            lu_load_memory_sample,
             lu_vision_capability,
             lu_vision_run_probe,
             lu_ocr_read_selected_image,
