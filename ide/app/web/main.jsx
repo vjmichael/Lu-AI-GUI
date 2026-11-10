@@ -76,6 +76,12 @@ function App() {
   const [gitBatchReview, setGitBatchReview] = useState(null);
   const [gitBatchBusy, setGitBatchBusy] = useState(false);
   const gitBatchRequest = useRef(0);
+  const [gitHunkPath, setGitHunkPath] = useState('');
+  const [gitHunkPlan, setGitHunkPlan] = useState(null);
+  const [gitSelectedHunkIds, setGitSelectedHunkIds] = useState([]);
+  const [gitHunkSelection, setGitHunkSelection] = useState(null);
+  const [gitHunkBusy, setGitHunkBusy] = useState(false);
+  const gitHunkRequest = useRef(0);
   const [gitReview, setGitReview] = useState(null);
   const [gitStageReceipt, setGitStageReceipt] = useState(null);
   const [gitCommitReceipt, setGitCommitReceipt] = useState(null);
@@ -403,6 +409,14 @@ function App() {
     setGitFileHistory(null);
     setGitFileBusy(false);
     gitSnapshotRequest.current += 1;
+    gitBatchRequest.current += 1;
+    setGitBatchReview(null);
+    setGitBatchBusy(false);
+    gitHunkRequest.current += 1;
+    setGitHunkPlan(null);
+    setGitSelectedHunkIds([]);
+    setGitHunkSelection(null);
+    setGitHunkBusy(false);
     setGithubComparison(null);
     exactCiRequest.current += 1;
     setExactCi(null);
@@ -1257,6 +1271,57 @@ function App() {
       }
     } finally {
       if (serial === workflowRequest.current) setWorkflowBusy(false);
+    }
+  }
+
+  async function previewGitHunks() {
+    if (!activeProject?.projectId || !gitHunkPath.trim() || gitHunkBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = ++gitHunkRequest.current;
+    setGitHunkPlan(null);
+    setGitHunkSelection(null);
+    setGitSelectedHunkIds([]);
+    setGitHunkBusy(true);
+    setProblem('');
+    try {
+      const plan = await invoke('ide_git_preview_hunks', {
+        projectId, relativePath: gitHunkPath.trim(),
+      });
+      if (ticket === gitHunkRequest.current && plan.projectId === projectId)
+        setGitHunkPlan(plan);
+    } catch (error) {
+      if (ticket === gitHunkRequest.current)
+        setProblem('Git hunk preview refused: ' + String(error));
+    } finally {
+      if (ticket === gitHunkRequest.current) setGitHunkBusy(false);
+    }
+  }
+
+  async function confirmSelectedGitHunks() {
+    if (!activeProject?.projectId || !gitHunkPlan ||
+        gitHunkPlan.projectId !== activeProject.projectId ||
+        gitSelectedHunkIds.length === 0 || gitHunkBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = ++gitHunkRequest.current;
+    setGitHunkBusy(true);
+    setGitHunkSelection(null);
+    setProblem('');
+    try {
+      const selected = await invoke('ide_git_select_reviewed_hunks', {
+        expected: gitHunkPlan, selectedIds: gitSelectedHunkIds,
+      });
+      if (ticket === gitHunkRequest.current &&
+          selected.plan.projectId === projectId &&
+          !selected.stageAuthorized && !selected.operationPerformed)
+        setGitHunkSelection(selected);
+    } catch (error) {
+      if (ticket === gitHunkRequest.current) {
+        setGitHunkPlan(null);
+        setGitSelectedHunkIds([]);
+        setProblem('Hunk plan changed or could not be verified: ' + String(error));
+      }
+    } finally {
+      if (ticket === gitHunkRequest.current) setGitHunkBusy(false);
     }
   }
 
@@ -4867,6 +4932,61 @@ function App() {
               Tracking information is locally stored and may be stale.
             </p>
             {!activeProject && <p>Open a project to inspect its source control.</p>}
+            {activeProject && <div className="continuityDocument" aria-label="Read-only reviewed hunk selection">
+              <h3>Advanced staging · select exact diff hunks (review only)</h3>
+              <p>Inspect local changes for one tracked text file. Every hunk is bound to
+                the registered project, clean Git index, original blob, source digest, and HEAD.
+                Selecting hunks does not stage, apply, commit, or authorize a Git operation.</p>
+              <label htmlFor="g06b-hunk-path">Tracked project-relative text file</label>
+              <input id="g06b-hunk-path" type="text" maxLength={240}
+                placeholder="src/main.rs" value={gitHunkPath} disabled={gitHunkBusy}
+                onChange={event => {
+                  setGitHunkPath(event.target.value);
+                  setGitHunkPlan(null); setGitSelectedHunkIds([]); setGitHunkSelection(null);
+                  gitHunkRequest.current += 1;
+                }} />
+              <button type="button" className="ghostBtn"
+                disabled={!gitHunkPath.trim() || gitHunkBusy}
+                onClick={() => previewGitHunks()}>
+                {gitHunkBusy ? 'Checking native diff…' : 'Review exact hunks (no stage)'}
+              </button>
+              {gitHunkPlan && gitHunkPlan.projectId === activeProject.projectId && <div>
+                <p>HEAD: <code>{gitHunkPlan.headSha}</code>
+                  {' · '}Index: <code>{gitHunkPlan.indexBlobOid}</code></p>
+                <p>Source SHA-256: <code>{gitHunkPlan.sourceSha256}</code>
+                  {' · '}Hunks: {gitHunkPlan.hunks.length}</p>
+                {gitHunkPlan.hunks.length === 0 && <p>No unstaged text hunks were detected.</p>}
+                {gitHunkPlan.hunks.map(hunk => <article className="continuityEvent" key={hunk.id}>
+                  <label>
+                    <input type="checkbox" disabled={gitHunkBusy}
+                      checked={gitSelectedHunkIds.includes(hunk.id)}
+                      onChange={event => {
+                        setGitSelectedHunkIds(previous => event.target.checked
+                          ? [...previous, hunk.id] : previous.filter(id => id !== hunk.id));
+                        setGitHunkSelection(null);
+                      }} />
+                    {' '}Select hunk {hunk.position + 1}: <code>{hunk.id.slice(0, 14)}</code>
+                  </label>
+                  <p>Old lines {hunk.oldStart} (+{hunk.oldLines}) ·
+                    New lines {hunk.newStart} (+{hunk.newLines})</p>
+                  <pre className="sourcePreview" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>
+                    {hunk.header + hunk.lines.map(line => line.origin + line.text).join('')}
+                  </pre>
+                </article>)}
+                <button type="button" className="ghostBtn"
+                  disabled={gitHunkBusy || gitSelectedHunkIds.length === 0}
+                  onClick={() => confirmSelectedGitHunks()}>
+                  Reverify selected hunks (no stage)
+                </button>
+                {gitHunkSelection && <p role="status">
+                  Reviewed {gitHunkSelection.selectedIds.length} hunk(s).
+                  Selection SHA-256: <code>{gitHunkSelection.selectionSha256}</code>
+                </p>}
+                <p>Stage authorized: <strong>No</strong>.
+                  Commit authorized: <strong>No</strong>.
+                  No Git index or source operation was performed.</p>
+              </div>}
+            </div>}
             {activeProject && <div className="continuityDocument" aria-label="Reviewed Git batch planning only">
               <h3>Advanced staging · multi-file review preview</h3>
               <p>Choose up to eight already tracked regular files, separated by newlines or commas.
