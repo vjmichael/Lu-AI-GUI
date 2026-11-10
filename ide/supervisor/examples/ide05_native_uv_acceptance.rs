@@ -258,6 +258,25 @@ wheels = [
             return Err("IDE055_OFFLINE_MISS_CAUSE_NOT_EVIDENCED".into());
         }
     }
+    // Task 4 CI-only positive case: expose a bounded native diagnostic from
+    // the *fixed synthetic* package when uv exits nonzero. Never turn this
+    // diagnostic into an execution receipt or expose general project stderr.
+    if positive && result.exit_code != Some(0) {
+        let diagnostic = stream
+            .page(0)
+            .chunks
+            .iter()
+            .map(|chunk| chunk.text.as_str())
+            .collect::<String>();
+        eprintln!(
+            "IDE055_CI_POSITIVE_UV_FAILURE=phase:{:?},exit:{:?},category:{},output_bounded:{},diagnostic:{}",
+            result.summary.phase,
+            result.exit_code,
+            result.stderr_category,
+            !result.output_limit_hit,
+            diagnostic.chars().take(1000).collect::<String>().replace('\n', " ")
+        );
+    }
     let expected = if cancel_before_launch {
         JobPhase::Cancelled
     } else if positive {
