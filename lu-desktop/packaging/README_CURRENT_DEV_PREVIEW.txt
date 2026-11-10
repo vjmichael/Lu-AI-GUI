@@ -3,7 +3,8 @@ LU CURRENT DEVELOPMENT PREVIEW — NOVEMBER 2026 SOURCE-LOCKED NSIS
 
 This is a NEW exact-current-commit desktop build, not the older alpha
 installer or AGENT-01G one-operation demo. It contains the current Lu Core
-Phase 1/2/3 implementation and a source-pinned newer llama.cpp server.
+Phase 1/2/3 implementation and TWO source-pinned llama.cpp servers:
+CPU and Vulkan.
 
 PRODUCT IDENTITY
   Name: Lu Current Development Preview
@@ -13,9 +14,14 @@ PRODUCT IDENTITY
 
 What it does NOT include
   - No GGUF weights, private documents or Qwen model bundled.
-  - Bundled inference engine is a genuine, newer CPU baseline, built from
-    llama.cpp commit e0f142d5ddc1461ce721644d92af33db23545105,
-    which supports Qwen3.8 qwen35 / MTP model metadata.
+  - Bundled inference engines include BOTH genuine source-built CPU and
+    Vulkan llama-server executables from pinned llama.cpp commit
+    e0f142d5ddc1461ce721644d92af33db23545105, supporting Qwen3.8.
+  - Both engine digests and exact byte lengths are verified at Lu startup;
+    model prompts cannot change executable paths.
+  - On Windows, Vulkan is the default backend. In Lu Settings > Inference
+    backends, select CPU or Vulkan; RESTART Lu to apply the new setting.
+    Switching a setting does not grant a tool permission or execute a model.
   - No proof of AMD Radeon AI PRO R9700 Vulkan acceleration.
   - No third-party cloud inference or automatic tool approval.
   - Unsigned test preview, not production, not a finalized v1.0.
@@ -26,13 +32,14 @@ YOUR QWEN3.8-27B HANDOFF
   2. If vision is needed, use the model provider's MATCHING MMProj GGUF.
      The axteam text GGUF lacks a vision projector.
   3. Use scripts/run-qwen38-27b-local.ps1 to test a real model response
-     on the physical PC, optionally compiling a Vulkan llama-server from
-     the same pinned source with -BuildVulkan. This is a SEPARATE local
-     inference diagnostic and does NOT bypass Lu's sealed engine identity.
-  4. Install this preview in its isolated directory. Load/import your
-     local GGUF through Lu's model interface. Start with text-only and a
-     disposable read-only Git repo. The bundled CPU inference may be slow
-     on 27B models. Do not mistake a CPU response for GPU offload.
+     using the bundled Vulkan llama-server. You may compile another pinned
+     Vulkan engine with -BuildVulkan for a SEPARATE diagnostic. This does
+     not bypass Lu's sealed per-backend engine identities.
+  4. Install the preview in its isolated directory and load/import a
+     local GGUF through Lu. Select Vulkan in Settings and restart before
+     first loading Qwen3.8; use CPU if the Vulkan driver is unavailable.
+     Begin with text-only and a disposable read-only Git repository.
+     Do not mistake a successful CPU fallback for proven GPU offload.
   5. In Lu, test goal/clarification, draft/review-only plan, separately
      reviewed step, source oracle, repeated multi-step child-plan approval,
      replan without grants, memory source/contradiction and restart recovery.

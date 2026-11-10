@@ -4,7 +4,7 @@
 [CmdletBinding()]
 param(
  [Parameter(Mandatory=$true)][string]$ModelPath,
- [string]$ServerPath="$env:LOCALAPPDATA\Programs\LuCurrentPreview\lu-inference\llama-server.exe",
+ [string]$ServerPath="$env:LOCALAPPDATA\Programs\LuCurrentPreview\lu-inference\llama-server-vulkan.exe",
  [string]$MmprojPath="",
  [switch]$BuildVulkan,
  [int]$Context=8192,

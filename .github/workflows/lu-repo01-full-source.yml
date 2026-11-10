@@ -811,11 +811,12 @@ jobs:
           PY
           node scripts/verify-source-tree.mjs 2>&1 | tee phase3-evidence/source-lock.log
           printf 'SOURCE_SHA=%s\n' "$SOURCE" > phase3-evidence/identity.txt
-      - name: Memory/reasoning integration and no-grant regressions
+      - name: Memory/reasoning, dual-engine and strict PE resource contracts
         shell: bash
         run: |
           set -euo pipefail
-          node --test lu-desktop/tests/phase3-agent-memory.test.mjs 2>&1 | tee phase3-evidence/source-contract.log
+          node --test lu-desktop/tests/phase3-agent-memory.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs 2>&1 | tee phase3-evidence/source-contract.log
+          python3 -m unittest discover -s lu-desktop/scripts -p 'test_verify_win_v6_manifest.py' -v 2>&1 | tee phase3-evidence/pe-manifest-decode.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib ansf_belief_revision::tests -- --nocapture 2>&1 | tee phase3-evidence/ansf-belief.log
       - name: Install Linux Tauri dependencies
         if: runner.os == 'Linux'
@@ -849,7 +850,22 @@ jobs:
           if(-not(Test-Path $exe)){choco install nsis --version=3.11.0 --yes --no-progress --limit-output; if($LASTEXITCODE -ne 0){throw 'NSIS install failed'}}
           & $exe /VERSION
           if($LASTEXITCODE -ne 0){throw 'NSIS unusable'}
-      - name: Build CURRENT source Lu Preview with Qwen3.8-compatible CPU engine
+      - name: Pin native Windows Vulkan SDK for dual llama.cpp backend compilation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          choco install vulkan-sdk --version=1.4.350 --yes --no-progress --limit-output
+          if($LASTEXITCODE -ne 0){throw 'Pinned Vulkan SDK 1.4.350 install failed'}
+          $candidates=@(Get-ChildItem 'C:\VulkanSDK' -Directory -ErrorAction Stop |
+            Where-Object { Test-Path (Join-Path $_.FullName 'Bin\glslc.exe') })
+          if($candidates.Count -ne 1){throw 'Ambiguous or missing pinned Vulkan shader compiler'}
+          $sdk=$candidates[0].FullName
+          "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
+          (Join-Path $sdk 'Bin') >> $env:GITHUB_PATH
+          & (Join-Path $sdk 'Bin\glslc.exe') --version
+          if($LASTEXITCODE -ne 0){throw 'Pinned glslc unavailable'}
+      - name: Build CURRENT Lu Preview with source-pinned CPU AND Vulkan llama.cpp backends
         if: runner.os == 'Windows'
         shell: pwsh
         timeout-minutes: 145
@@ -867,7 +883,7 @@ jobs:
           if($sha -cne $f.installerSha256 -or $f.sourceSha -cne $env:SOURCE){throw 'Installer/source hash mismatch'}
           "CURRENT_LU_PREVIEW_SHA=$env:SOURCE" >> $env:GITHUB_STEP_SUMMARY
           "CURRENT_LU_PREVIEW_INSTALLER_SHA256=$sha" >> $env:GITHUB_STEP_SUMMARY
-          "CPU engine built from e0f142d5ddc1461ce721644d92af33db23545105; physical AMD/Vulkan/GGUF NOT TESTED." >> $env:GITHUB_STEP_SUMMARY
+          "CPU and Vulkan engines built from e0f142d5ddc1461ce721644d92af33db23545105; actual AMD offload/GGUF NOT TESTED." >> $env:GITHUB_STEP_SUMMARY
       - name: Windows installed NSIS lifecycle
         if: runner.os == 'Windows'
         shell: pwsh
@@ -876,7 +892,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $out=Join-Path $env:RUNNER_TEMP 'lu-current-preview-nsis'
           $f=Get-Content (Join-Path $out 'installer-checksums.json') -Raw|ConvertFrom-Json
-          & scripts/m3-windows-nsis-cycle.ps1 -InstallerPath (Join-Path $out $f.installerName) -InstallerSha256 $f.installerSha256 -ExpectedLuSha256 $f.appSha256 -ExpectedEngineSha256 $f.engineSha256 -UninstallerName 'UninstallLuCurrentPreview.exe' -DisposableWindowsConfirmed -EvidenceDir (Join-Path $out 'native-nsis-cycle-evidence')
+          & scripts/m3-windows-nsis-cycle.ps1 -InstallerPath (Join-Path $out $f.installerName) -InstallerSha256 $f.installerSha256 -ExpectedLuSha256 $f.appSha256 -ExpectedEngineSha256 $f.engineSha256 -ExpectedVulkanSha256 $f.vulkanEngineSha256 -ProfileIdentifier 'org.lu.current.devpreview' -UninstallerName 'UninstallLuCurrentPreview.exe' -DisposableWindowsConfirmed -EvidenceDir (Join-Path $out 'native-nsis-cycle-evidence')
           if($LASTEXITCODE -ne 0){throw 'Native installed-preview cycle failed'}
       - name: Preserve exact-current-source artifact and evidence
         if: always()

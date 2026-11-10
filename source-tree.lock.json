@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 860,
+  "trackedFileCount": 864,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "d7565444b488d8315a7296189d92e30d3bae23fe"
+      "blob": "e9371026719c1ac9865d5f4d5eb4b831e98aaa45"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -590,6 +590,10 @@
     {
       "path": "docs/LU_CORE_TOOLS_SCOPE_AND_PRIORITY_20261106.md",
       "blob": "49edcf883abaa852b901de6ddfc0aa4da5122a4c"
+    },
+    {
+      "path": "docs/LU_CURRENT_PREVIEW_CPU_VULKAN_DUAL_ENGINE_20261109.md",
+      "blob": "c1664658ded245a3df6041114e42587f49550200"
     },
     {
       "path": "docs/LU_DECISION_MEMORY_REGISTER_20261107.md",
@@ -1021,7 +1025,7 @@
     },
     {
       "path": "lu-desktop/packaging/NSIS_CURRENT_DEV_PREVIEW.nsi",
-      "blob": "0df4da415c2babd7d3b0f9b4aafce71802a5c305"
+      "blob": "3badbc63dfb947d4b31370d461e7274713753e5b"
     },
     {
       "path": "lu-desktop/packaging/NSIS_DEV_EVAL_NOT_ALPHA.nsi",
@@ -1033,7 +1037,7 @@
     },
     {
       "path": "lu-desktop/packaging/README_CURRENT_DEV_PREVIEW.txt",
-      "blob": "03a0ecf25a0770e7dad6b36ffe8d91b2454c8576"
+      "blob": "17d3be1c4682720073a1698c974e6b96e31696ea"
     },
     {
       "path": "lu-desktop/packaging/README_NOT_ALPHA.txt",
@@ -1080,8 +1084,12 @@
       "blob": "3c96dd03924865ccf30a8b37cf40ac33c462498c"
     },
     {
+      "path": "lu-desktop/scripts/test_verify_win_v6_manifest.py",
+      "blob": "d53d4ac733e5688cd169167994aa4294fdf6e7e4"
+    },
+    {
       "path": "lu-desktop/scripts/verify_win_v6_manifest.py",
-      "blob": "aa6b739d9018e47b4b1d269aa7b386b85d284f7a"
+      "blob": "f5355f550a16e11f6ab19406aeb5a6d24f5aee68"
     },
     {
       "path": "lu-desktop/src-tauri/Cargo.lock",
@@ -1237,7 +1245,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "b89e69661c747ed590bffb8538ac2f07bc2893f2"
+      "blob": "b376b79abb28f2816e338e1a0130357fedf60eff"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1302,6 +1310,10 @@
     {
       "path": "lu-desktop/src-tauri/src/office_revision_desktop.rs",
       "blob": "196fa1c770f9800aa39858a05ec7952fed5e6bc8"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/preview_engine_choice.rs",
+      "blob": "536f7b29726e4152518f38f4ab26a1999bb323df"
     },
     {
       "path": "lu-desktop/src-tauri/src/prompt_context.rs",
@@ -1656,6 +1668,10 @@
       "blob": "f20c54e4949223746dca1347902f128c726a7c55"
     },
     {
+      "path": "lu-desktop/tests/preview-dual-backend.test.mjs",
+      "blob": "f69e00c7ca9150a25055c6eeba7e5ccdf2c8370f"
+    },
+    {
       "path": "lu-desktop/tests/r17-interface.test.mjs",
       "blob": "5f7a2ff0b8fc2d326e3e030d03f4e6289e6b6935"
     },
@@ -1801,7 +1817,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "2ff82020a85eeb78e0ce5c70e4614f781cfa61b3"
+      "blob": "1a7666a4bd0755f3cf1c8e6c9f4115fcd046a8a8"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
@@ -1841,7 +1857,7 @@
     },
     {
       "path": "scripts/build-current-windows-nsis.ps1",
-      "blob": "2a2c585b5df01cb06415c21f457a7b2ae4e8e720"
+      "blob": "9ed6c0fdcc544ab07f9884e50c04b26cb4af47f5"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
@@ -1889,7 +1905,7 @@
     },
     {
       "path": "scripts/m3-windows-nsis-cycle.ps1",
-      "blob": "85514ae9cdab45d95f62c62ffc962037e1aecf34"
+      "blob": "70a6d27534428d96b2c2aefb532098c98121fc0f"
     },
     {
       "path": "scripts/m4-windows-installed-memory-acceptance.ps1",
@@ -1925,7 +1941,7 @@
     },
     {
       "path": "scripts/run-qwen38-27b-local.ps1",
-      "blob": "a30b6e1f97e6e046c1016109c1dee21057ab8b5b"
+      "blob": "6b2be09b124f522e1d28a0fbd58cac49983dd54c"
     },
     {
       "path": "scripts/source-identity.mjs",

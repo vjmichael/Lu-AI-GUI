@@ -6,6 +6,8 @@ param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$InstallerSha256,
   [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedLuSha256,
   [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedEngineSha256,
+  [string]$ExpectedVulkanSha256='',
+  [string]$ProfileIdentifier='org.lu.agent01g.devtest',
   [Parameter(Mandatory=$true)][ValidatePattern('^[A-Za-z0-9._-]+\.exe$')][string]$UninstallerName,
   [switch]$DisposableWindowsConfirmed,
   [ValidateRange(30,1800)][int]$TimeoutSeconds=480,
@@ -40,6 +42,8 @@ $record=[ordered]@{
   installerSha256=$InstallerSha256.ToLowerInvariant()
   luSha256=$ExpectedLuSha256.ToLowerInvariant()
   engineSha256=$ExpectedEngineSha256.ToLowerInvariant()
+  vulkanEngineSha256=$ExpectedVulkanSha256
+  installedVulkanEngine='NOT_TESTED'
   windowsEnvironment='OPERATOR_CONFIRMED_DISPOSABLE'
   installer='NOT_TESTED'
   installedApp='NOT_TESTED'
@@ -71,7 +75,8 @@ try{
   # New isolated profile sentinel: the uninstaller must NEVER erase creator
   # SQLite/models in AppData. This does not launch GGUF or prove actual
   # historical profile migrations. Refuse an existing profile in CI.
-  $profile=Join-Path $env:APPDATA 'org.lu.agent01g.devtest'
+  if($ProfileIdentifier -cnotmatch '^org\.lu\.[A-Za-z0-9._-]+$'){throw 'Invalid isolated Lu profile identity'}
+  $profile=Join-Path $env:APPDATA $ProfileIdentifier
   if(Test-Path -LiteralPath $profile){throw 'Refuse preexisting test profile'}
   $null=New-Item -ItemType Directory -Path $profile
   $marker=Join-Path $profile 'lifecycle-retain-this-data.txt'
@@ -93,6 +98,13 @@ try{
   $record.installedApp='PASS_SHA256'
   $engine=Verified-Exe (Join-Path $target 'lu-inference\llama-server.exe') $ExpectedEngineSha256
   $record.installedRealEngine='PASS_SHA256'
+  $vulkanEngine=$null
+  if($ExpectedVulkanSha256){
+    if($ExpectedVulkanSha256 -notmatch '^[0-9a-fA-F]{64}$'){throw 'Invalid reviewed Vulkan SHA256'}
+    $vulkanEngine=Verified-Exe (Join-Path $target 'lu-inference\llama-server-vulkan.exe') $ExpectedVulkanSha256
+    if($vulkanEngine -ieq $engine){throw 'CPU/Vulkan paths must be distinct'}
+    $record.installedVulkanEngine='PASS_SHA256'
+  }
   $stage='uninstall'
   $uninstaller=Join-Path $target $UninstallerName
   if(-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)){
@@ -108,6 +120,7 @@ try{
   Invoke-Reviewed-Child $uninstaller @('/S')
   $record.uninstaller='PASS_REAL_NATIVE_PROCESS_EXIT'
   if((Test-Path -LiteralPath $app) -or (Test-Path -LiteralPath $engine) -or
+    ($vulkanEngine -and (Test-Path -LiteralPath $vulkanEngine)) -or
     @(Get-Process -Name 'Lu','lu-desktop' -ErrorAction SilentlyContinue).Count -gt 0){
     throw 'Installed program or live Lu process survived uninstall'
   }

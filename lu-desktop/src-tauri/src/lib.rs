@@ -44,6 +44,7 @@ mod agent_plan_replan_desktop;
 mod agent_recovery_desktop;
 mod agent_memory_handoff;
 mod agent_memory_reasoning;
+mod preview_engine_choice;
 mod agent_verified_feedback;
 mod host_safe_continuation;
 mod agent_recovery_provenance;
@@ -122,12 +123,24 @@ const ENGINE_FILES: [(&str, &str, u64); 4] = [
  // statically linked CPU engine with its SHA embedded at compilation. No
  // arbitrary operator or model-provided manifest can waive this digest.
  #[cfg(feature = "physical_win_cpu_eval")]
+ const VULKAN_ENGINE_SHA256: &str = env!("LU_PREVIEW_VULKAN_ENGINE_SHA256");
+
+ #[cfg(feature = "physical_win_cpu_eval")]
  fn runtime_engine_files() -> Vec<(&'static str, &'static str, u64)> {
-     let size: u64 = env!("LU_01G_PHYSICAL_CPU_ENGINE_BYTES")
+     let cpu_bytes: u64 = env!("LU_01G_PHYSICAL_CPU_ENGINE_BYTES")
          .parse().expect("Build-time CPU engine byte count must be u64");
-     assert!(size>1_000_000 && size<250_000_000,
-         "Implausible source-built physical Windows engine size");
-     vec![("llama-server.exe",ENGINE_SHA256,size)]
+     let vulkan_bytes: u64 = env!("LU_PREVIEW_VULKAN_ENGINE_BYTES")
+         .parse().expect("Build-time Vulkan engine byte count must be u64");
+     assert!((1_000_000..250_000_000).contains(&cpu_bytes),
+         "Implausible source-built CPU engine size");
+     assert!((1_000_000..250_000_000).contains(&vulkan_bytes),
+         "Implausible source-built Vulkan engine size");
+     assert_ne!(ENGINE_SHA256,VULKAN_ENGINE_SHA256,
+         "CPU and Vulkan engine binary identities cannot be identical");
+     vec![
+         ("llama-server.exe",ENGINE_SHA256,cpu_bytes),
+         ("llama-server-vulkan.exe",VULKAN_ENGINE_SHA256,vulkan_bytes),
+     ]
  }
  #[cfg(not(feature = "physical_win_cpu_eval"))]
  fn runtime_engine_files() -> Vec<(&'static str, &'static str, u64)> {
@@ -295,30 +308,90 @@ struct BackendOptionView{
     gpu_execution_verified:bool,
     selectable:bool,
     detail:&'static str,
+    selected_on_next_start:bool,
 }
 /// These are package/route *availability* facts, not benchmarks, driver
 /// measurements, generic GPU memory telemetry or additional runnable engines.
 /// The currently pinned llama.cpp engine is the only implemented local route.
 #[tauri::command]
-fn lu_model_backend_options()->Vec<BackendOptionView>{
-    vec![
+fn lu_model_backend_options(
+    state:State<'_,Arc<DesktopState>>
+)->Result<Vec<BackendOptionView>,String>{
+    #[cfg(feature="physical_win_cpu_eval")]
+    let preference=preview_engine_choice::read_choice(
+        state.catalog_path.parent().ok_or("Lu profile directory unavailable")?
+    )?;
+    #[cfg(not(feature="physical_win_cpu_eval"))]
+    let preference=preview_engine_choice::BackendChoice::Cpu;
+    #[cfg(feature="physical_win_cpu_eval")]
+    let bundled_dual=true;
+    #[cfg(not(feature="physical_win_cpu_eval"))]
+    let bundled_dual=false;
+    Ok(vec![
         BackendOptionView{
-            backend:if cfg!(windows){"vulkan"}else{"cpu"},
-            engine:"pinned llama.cpp",
-            packaged:true,runtime_inference_verified:false,
-            gpu_execution_verified:false,selectable:true,
-            detail:"Pinned package identity is checked by the desktop at startup. Actual model inference/offload must be observed after load.",
+            backend:"cpu",engine:"source-pinned llama.cpp",
+            packaged:bundled_dual || !cfg!(windows),
+            runtime_inference_verified:false,gpu_execution_verified:false,
+            selectable:bundled_dual,
+            selected_on_next_start:preference==preview_engine_choice::BackendChoice::Cpu,
+            detail:"CPU-only backend; model inference still requires a real loaded GGUF.",
         },
-        BackendOptionView{backend:"rocm",engine:"llama.cpp",packaged:false,
+        BackendOptionView{
+            backend:"vulkan",engine:"source-pinned llama.cpp",
+            packaged:bundled_dual || cfg!(windows),
             runtime_inference_verified:false,gpu_execution_verified:false,
-            selectable:false,detail:"Not packaged or independently verified."},
-        BackendOptionView{backend:"cuda",engine:"llama.cpp",packaged:false,
+            selectable:bundled_dual,
+            selected_on_next_start:preference==preview_engine_choice::BackendChoice::Vulkan,
+            detail:"Packaged Vulkan backend; actual Radeon offload requires a real model and driver. Choose then restart Lu.",
+        },
+        BackendOptionView{
+            backend:"rocm",engine:"llama.cpp",packaged:false,
             runtime_inference_verified:false,gpu_execution_verified:false,
-            selectable:false,detail:"Not packaged or independently verified."},
-        BackendOptionView{backend:"vllm",engine:"vLLM",packaged:false,
+            selectable:false,selected_on_next_start:false,
+            detail:"Not packaged or independently verified."
+        },
+        BackendOptionView{
+            backend:"cuda",engine:"llama.cpp",packaged:false,
             runtime_inference_verified:false,gpu_execution_verified:false,
-            selectable:false,detail:"Provider adapter not yet installed or authorized."},
-    ]
+            selectable:false,selected_on_next_start:false,
+            detail:"Not packaged or independently verified."
+        },
+        BackendOptionView{
+            backend:"vllm",engine:"vLLM",packaged:false,
+            runtime_inference_verified:false,gpu_execution_verified:false,
+            selectable:false,selected_on_next_start:false,
+            detail:"Provider adapter not installed."
+        },
+    ])
+}
+#[tauri::command]
+async fn lu_model_select_backend(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,backend:String
+)->Result<bool,String>{
+    #[cfg(not(feature="physical_win_cpu_eval"))]
+    {let _=(app,state,backend);
+        return Err("CPU/Vulkan switch requires the dual-engine Lu preview".into())}
+    #[cfg(feature="physical_win_cpu_eval")]
+    {
+        let requested=preview_engine_choice::BackendChoice::from_id(&backend)?;
+        let root=state.catalog_path.parent()
+            .ok_or("Lu model profile unavailable")?.to_path_buf();
+        tauri::async_runtime::spawn_blocking(move ||{
+            let approved=app.dialog().message(format!(
+                "Use the packaged, source-pinned {} engine on NEXT Lu start?\n\n\
+                 Existing inference sessions are not switched or restarted.\n\
+                 This choice never grants tool permissions, downloads models\n\
+                 or proves AMD GPU offload. Choose Vulkan for Radeon and CPU\n\
+                 if the Vulkan driver is unavailable.",requested.id()
+            )).title("Lu — Select local inference backend")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Save backend for next start".into(),"Cancel".into()
+            )).blocking_show();
+            if !approved{return Ok(false)}
+            preview_engine_choice::write_choice(&root,requested)?;
+            Ok(true)
+        }).await.map_err(|_|"Backend selection dialog interrupted")?
+    }
 }
 /// Search/read actions are initiated only by a Settings user gesture. No
 /// model, WebView-supplied URL, arbitrary origin, or downloader is admitted.
@@ -854,7 +927,28 @@ impl DesktopState {
         for (name, sha, bytes) in runtime_engine_files() {
             check_file(&engine_dir.join(name), sha, bytes)?;
         }
-        let executable = engine_dir.join("llama-server.exe");
+        // The packaged preview has TWO separately source-pinned binaries.
+        // The user chooses CPU/Vulkan in Settings and restarts Lu; the model
+        // cannot choose an executable, filesystem path or backend grant.
+        #[cfg(feature = "physical_win_cpu_eval")]
+        let selected_engine=preview_engine_choice::read_choice(&root)?;
+        #[cfg(not(feature = "physical_win_cpu_eval"))]
+        let selected_engine=preview_engine_choice::BackendChoice::Cpu;
+        #[cfg(feature = "physical_win_cpu_eval")]
+        let (executable,selected_engine_sha,backend_label) = match selected_engine {
+            preview_engine_choice::BackendChoice::Cpu=>(
+                engine_dir.join("llama-server.exe"),
+                ENGINE_SHA256,"llama-cpu-preview"
+            ),
+            preview_engine_choice::BackendChoice::Vulkan=>(
+                engine_dir.join("llama-server-vulkan.exe"),
+                VULKAN_ENGINE_SHA256,"llama-vulkan-preview"
+            )
+        };
+        #[cfg(not(feature = "physical_win_cpu_eval"))]
+        let (executable,selected_engine_sha,backend_label)=(
+            engine_dir.join("llama-server.exe"),ENGINE_SHA256,"llama-pinned"
+        );
         let catalog_path = root.join("model-index.json");
         let mut models = checked_catalog(&catalog_path)?;
         if scan_unindexed_models(&models_dir, &mut models)? > 0 {
@@ -890,11 +984,7 @@ impl DesktopState {
         let supervisor = TrustedInferenceSupervisor::new(
             // Explicit test-only installed CPU package must not claim AMD
             // Vulkan offload; normal desktop builds retain Vulkan identity.
-            (if cfg!(feature="physical_win_cpu_eval") {
-                "llama-cpu-physical-eval"
-            } else {
-                "llama-vulkan"
-            }).into(),
+            backend_label.into(),
             4096,
             admitted_models,
             move || {
@@ -904,7 +994,7 @@ impl DesktopState {
                 let engine_trace_for_load = Arc::clone(&engine_trace);
                 PersistentLlamaBackend::new(PersistentEngineConfig {
                     executable: executable.clone(),
-                    expected_sha256: decode_sha(ENGINE_SHA256)?,
+                    expected_sha256: decode_sha(selected_engine_sha)?,
                     threads: NonZeroUsize::new(4).unwrap(),
                     context_tokens: 4096,
                     startup_timeout: Duration::from_secs(180),
@@ -8016,6 +8106,7 @@ pub fn run() {
             lu_list_models,
             lu_model_preflight,
             lu_model_backend_options,
+            lu_model_select_backend,
             lu_model_provider_search,
             lu_model_provider_review,
             lu_model_prepare_transfer,

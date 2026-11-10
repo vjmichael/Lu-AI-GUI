@@ -120,13 +120,47 @@ class PE:
         return names
 
 
+def parse_manifest_resource(xml: bytes) -> ET.Element:
+    """Decode only unambiguous Windows RT_MANIFEST text encodings.
+
+    Not a lax XML repair: arbitrary padding, malformed XML, missing SxS
+    dependency, invalid PE and missing TaskDialogIndirect still fail.
+    """
+    original = xml
+    utf16 = xml.startswith(b'\xff\xfe') or xml.startswith(b'<\x00?\x00') or xml.startswith(b'<\x00a\x00')
+    if utf16:
+        if len(xml) % 2:
+            raise ManifestError('odd-length UTF-16LE RT_MANIFEST')
+        if xml.endswith(b'\x00\x00'):
+            xml=xml[:-2]
+        try:
+            raw=xml.decode('utf-16' if xml.startswith(b'\xff\xfe') else 'utf-16-le')
+        except UnicodeDecodeError as err:
+            raise ManifestError('invalid UTF-16LE RT_MANIFEST') from err
+    else:
+        if xml.endswith(b'\x00'):
+            xml=xml[:-1]
+        try:
+            raw=xml.decode('utf-8-sig')
+        except UnicodeDecodeError as err:
+            raise ManifestError('invalid UTF-8 RT_MANIFEST') from err
+    if not raw or '\x00' in raw or raw.count('<?xml')>1:
+        raise ManifestError('RT_MANIFEST contains embedded NUL or duplicate XML declaration')
+    try:
+        return ET.fromstring(raw)
+    except ET.ParseError as err:
+        # Strict failure, but expose bounded resource diagnostics so the
+        # real Windows linker/resource discrepancy can be resolved.
+        raise ManifestError(
+            'embedded manifest not valid XML '
+            f'(resource_bytes={len(original)}, '
+            f'prefix={original[:48].hex()}, suffix={original[-48:].hex()})'
+        ) from err
+
+
 def verify(path: Path, *, require_taskdialog: bool=True) -> str:
     exe=PE(path)
-    xml=exe.manifest()
-    try:
-        root=ET.fromstring(xml)
-    except ET.ParseError as err:
-        raise ManifestError('embedded manifest not valid XML') from err
+    root=parse_manifest_resource(exe.manifest())
     ns='{urn:schemas-microsoft-com:asm.v1}'
     if root.tag != ns+'assembly':
         raise ManifestError('not a Win32 assembly manifest')

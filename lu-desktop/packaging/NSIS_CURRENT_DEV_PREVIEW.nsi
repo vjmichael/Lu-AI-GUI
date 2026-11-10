@@ -1,11 +1,14 @@
 ; Lu current-source Lu engineering preview installer.
-; CURRENT SOURCE, CPU baseline, unsigned. Not historical alpha, not production..
+; CURRENT SOURCE, CPU + Vulkan source-built backends, unsigned. Not historical alpha, not production..
 Unicode true
 !ifndef LU_APP_EXE
   !error "Set LU_APP_EXE to the exact-head compiled Windows desktop"
 !endif
 !ifndef LU_ENGINE_EXE
   !error "Set LU_ENGINE_EXE to source-built, checksum-pinned llama-server.exe"
+!endif
+!ifndef LU_VULKAN_ENGINE_EXE
+  !error "Set LU_VULKAN_ENGINE_EXE to separately built source-pinned Vulkan server"
 !endif
 !ifndef LU_ENGINE_MANIFEST
   !error "Set LU_ENGINE_MANIFEST to the engine manifest"
@@ -42,6 +45,7 @@ Section "Lu Current-source Windows development preview" SEC_TEST
   File /oname=BUILD_PROVENANCE.json "${LU_BUILD_PROVENANCE}"
   SetOutPath "$INSTDIR\lu-inference"
   File /oname=llama-server.exe "${LU_ENGINE_EXE}"
+  File /oname=llama-server-vulkan.exe "${LU_VULKAN_ENGINE_EXE}"
   File /oname=manifest.json "${LU_ENGINE_MANIFEST}"
   SetOutPath "$INSTDIR\lu-native-codecs"
   File /r "${LU_CODECS_DIR}\*.*"
@@ -68,6 +72,7 @@ Section "Uninstall"
   Delete "$INSTDIR\README_CURRENT_PREVIEW.txt"
   Delete "$INSTDIR\BUILD_PROVENANCE.json"
   Delete "$INSTDIR\lu-inference\llama-server.exe"
+  Delete "$INSTDIR\lu-inference\llama-server-vulkan.exe"
   Delete "$INSTDIR\lu-inference\manifest.json"
   RMDir "$INSTDIR\lu-inference"
   RMDir /r "$INSTDIR\lu-native-codecs"

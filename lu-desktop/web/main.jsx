@@ -7205,10 +7205,25 @@ function App() {
           <h4>Inference backends</h4>
           {modelBackends.map(item=><div className="modelInspection" key={item.backend}>
             <strong>{item.engine} — {item.backend}</strong>
-            <small>{item.selectable?'Current pinned engine path':'Unavailable; not selectable'} ·
+            <small>{item.packaged?'Packaged':'Not packaged'} ·
+              {item.selectedOnNextStart?' Selected for next start':' Not selected'} ·
               {item.gpuExecutionVerified?' GPU proven':' GPU not proven'} · {item.detail}</small>
+            {item.selectable&&!item.selectedOnNextStart&&
+              <button type="button" className="subtleButton"
+                disabled={working||chatBusy}
+                onClick={async()=>{
+                  try{
+                    const saved=await invoke('lu_model_select_backend',{backend:item.backend});
+                    if(saved){
+                      setModelBackends(await invoke('lu_model_backend_options'));
+                      setActivity('Saved '+item.backend+' backend for the next Lu restart. Existing model and approval remain unchanged.');
+                    }
+                  }catch(error){setError('Backend preference not saved: '+String(error))}
+                }}>
+                Use {item.backend} on next Lu restart
+              </button>}
           </div>)}
-          <small>Only the currently packaged pinned engine is available. Lu will not silently switch to ROCm, CUDA, vLLM or CPU on a strict backend request.</small>
+          <small>Both CPU and Vulkan binaries are bundled in the current Windows preview. A backend change needs a restart; real Radeon offload requires a loaded GGUF and driver. Lu will not silently grant model tools or switch to uninstalled backends.</small>
         </section>
         <p className="settingsNotice">A remote search result never installs, imports or loads a model. Use the existing native GGUF import picker for files you have downloaded and checked. The pinned engine requests Vulkan on Windows; driver/offload verification remains a separate physical gate.</p>
       </div>
