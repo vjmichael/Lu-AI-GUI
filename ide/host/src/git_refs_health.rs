@@ -7,6 +7,7 @@ use serde::Serialize;
 use std::fs;
 
 const MAX_REFS: usize = 120;
+const MAX_SCANNED_REFS: usize = 3000;
 const MAX_REMOTES: usize = 32;
 const MAX_NAME_BYTES: usize = 200;
 
@@ -70,8 +71,11 @@ impl IdeWorkspaceRegistry {
         let mut refs = Vec::new();
         let mut refs_truncated = false;
         let iterator = repo.references().map_err(|_| "G06A_REFS_UNAVAILABLE")?;
-        for item in iterator {
-            if refs.len() >= MAX_REFS { refs_truncated = true; break; }
+        for (scanned, item) in iterator.enumerate() {
+            if refs.len() >= MAX_REFS || scanned >= MAX_SCANNED_REFS {
+                refs_truncated = true;
+                break;
+            }
             let reference = item.map_err(|_| "G06A_REF_UNVERIFIABLE")?;
             let Some(raw) = reference.name() else { continue; };
             let (kind, name) = if let Some(rest) = raw.strip_prefix("refs/heads/") {
