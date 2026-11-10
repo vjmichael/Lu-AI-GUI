@@ -11,7 +11,9 @@ test('Ask Workspace is native-folder-picked and never accepts WebView file paths
   assert.match(route,/is_real_directory\(&root\)/);
   assert.match(route,/WorkspaceReadTurnSession::new\(/);
   assert.match(ui,/invoke\('lu_workspace_ask_directory',\{/);
-  assert.match(ui,/Ask Workspace<\/button>/);
+  // Chat-first UX removed the old specialist button. Host intent and picker remain.
+  assert.match(host,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
+  assert.doesNotMatch(ui,/Ask Workspace<\/button>/);
   assert.ok(!ui.includes("invoke('lu_workspace_ask_directory',{path:"));
   assert.ok(!ui.includes("invoke('lu_workspace_ask_directory',{folder:"));
 });
@@ -32,8 +34,11 @@ test('workspace selection is opt-in and normal Send remains a separate path',()=
   assert.match(ui,/async function askWorkspaceDirectory\(\)/);
   assert.match(ui,/async function askReaderDocument\(\)/);
   assert.match(ui,/async function send\(e\)/);
-  assert.match(ui,/onClick=\{\(\)=>void askWorkspaceDirectory\(\)\}/);
-  assert.match(ui,/Choose a folder and let Lu discover files by name/);
+  assert.match(host,/workspace_desktop::ask_workspace_for_chat\(/);
+  assert.match(route,/append_user_with_turn_id\(&chat_id,&generation_id,&prompt\)/);
+  assert.match(route,/blocking_pick_folder\(\)/);
+  assert.match(host,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
+  assert.match(route,/read_workspace/);
 });
 
 test('P01 native filename/metadata discovery is advertised only in a scoped workspace turn',()=>{
@@ -41,7 +46,9 @@ test('P01 native filename/metadata discovery is advertised only in a scoped work
   assert.match(route,/indexed discovery tool before repeatedly traversing folders/);
   assert.match(route,/WorkspaceReadTurnSession::new\(/);
   assert.doesNotMatch(route,/register_discovery_tool\(/);
-  assert.match(ui,/Choose a folder and let Lu discover files by name/);
+  assert.match(route,/blocking_pick_folder\(\)/);
+  assert.match(host,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
+  assert.match(route,/read_workspace/);
 });
 
 test('PLAN-01 uses native picker and existing host-bound read-only Git',()=>{

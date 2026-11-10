@@ -1841,7 +1841,7 @@
     },
     {
       "path": "lu-desktop/tests/workspace-desktop.test.mjs",
-      "blob": "1c5d1fb6b6c22c9f21f116a7181ab272766375e3"
+      "blob": "1ce9802df76e03746b3f14d4cc2af8c1ef4c63a8"
     },
     {
       "path": "lu-desktop/tests/write-01e-edit-ux.test.mjs",
