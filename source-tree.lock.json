@@ -61,7 +61,7 @@
     },
     {
       "path": ".github/workflows/lu-browser-research-acceptance.yml",
-      "blob": "c8468f8fb2f44692928efe2ad9e332419984dfba"
+      "blob": "4af7e5e797321f2d88dc39cdc6b0cea24c57ab95"
     },
     {
       "path": ".github/workflows/lu-ci.yml",

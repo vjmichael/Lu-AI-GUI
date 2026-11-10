@@ -18,13 +18,27 @@ jobs:
           node-version: '22'
       - run: node scripts/verify-source-tree.mjs
       - run: node --test lu-desktop/tests/p0-browser-real-ci-gate.test.mjs
-      - run: node --test lu-desktop/tests/research-source-route.test.mjs
-      - run: node --test lu-desktop/tests/browser-research-evidence.test.mjs
-      - run: node --test lu-desktop/tests/research-citation-enforcement.test.mjs
-      - run: node --test lu-desktop/tests/research-roadmap-acceptance.test.mjs
       - run: node --test lu-desktop/tests/browser-model-read.test.mjs
       - run: node --test lu-desktop/tests/browser-staging.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs
       - run: node --test tests/lu-browser-worker.test.mjs
+  research-ui-regression:
+    # Retain the original OpenAlex/Crossref source acceptance, including
+    # missing legacy controls, as its own failing evidence—not a browser
+    # runtime prerequisite and not a silent waiver.
+    needs: source
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/verify-source-tree.mjs
+      - name: Original research UI and independent citation contracts
+        run: node --test lu-desktop/tests/research-source-route.test.mjs lu-desktop/tests/browser-research-evidence.test.mjs lu-desktop/tests/research-citation-enforcement.test.mjs lu-desktop/tests/research-roadmap-acceptance.test.mjs
+
   browser-candidate:
     needs: source
     strategy:
