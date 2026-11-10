@@ -25,7 +25,10 @@ test('network chunk cannot publish until exact range and independent full-file S
   assert.match(stage,/pub fn publish_verified_part/);
   assert.match(stage,/independent_readback/);
   assert.match(stage,/digest!=plan\.sha256/);
-  assert.match(stage,/fs::rename\(&part,&destination\)/);
+  assert.match(stage,/fs::hard_link\(&part,&destination\)/);
+  assert.match(stage,/fs::remove_file\(&part\)/);
+  assert.match(desktop,/pub fn verify_published_now/);
+  assert.match(desktop,/torn_publication_requires_explicit_independent_sha_recovery/);
   assert.match(desktop,/model_provider_staging::publish_verified_part/);
 });
 test('native operator grants each original/resumed transfer and recovery never auto-replays',()=>{

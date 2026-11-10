@@ -117,7 +117,12 @@ pub fn receive_verified_stream<R:Read>(
     // The nonce directory was created NEW and the destination cannot be
     // supplied by the model. A second destination is never overwritten.
     if final_path.exists(){return Err(TransferError::AlreadyExists)}
-    fs::rename(&temp,&final_path).map_err(|_|TransferError::Publication)?;
+    // hard_link is an atomic no-clobber publication. Unlike rename,
+    // it never replaces a target created after the existence check.
+    fs::hard_link(&temp,&final_path).map_err(|_|TransferError::Publication)?;
+    // If the process dies here, the private .part and published file share
+    // exact bytes; restart treats the journal as interrupted until reviewed.
+    fs::remove_file(&temp).map_err(|_|TransferError::Publication)?;
     // Reopen after atomic publication: directory metadata and exact file
     // hash are not inferred from an earlier in-memory digest.
     let (published_bytes,published_sha)=independent_readback(&final_path,plan.expected_bytes)?;
@@ -151,7 +156,8 @@ pub fn publish_verified_part(
     let destination=folder.join(&plan.filename);
     if destination.exists(){return Err(TransferError::AlreadyExists)}
     // Same-directory rename is atomic and never overwrites a previous target.
-    fs::rename(&part,&destination).map_err(|_|TransferError::Publication)?;
+    fs::hard_link(&part,&destination).map_err(|_|TransferError::Publication)?;
+    fs::remove_file(&part).map_err(|_|TransferError::Publication)?;
     // Cancellation after rename cannot un-publish data. Return an exact
     // readback result rather than inventing a failed/rolled-back operation.
     let (published_bytes,published_digest)=
@@ -194,6 +200,20 @@ mod tests{
         assert_eq!(result.sha256,plan(bytes).sha256);
         assert_eq!(result.status,"verified_local_bytes_not_gguf_admitted");
         assert_eq!(fs::read(result.file).unwrap(),bytes);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn destination_can_never_be_overwritten_even_if_created_during_review(){
+        let root=root();let bytes=b"real verified bytes";
+        let approved=plan(bytes);
+        let dir=root.join("freshnonce0000008");
+        fs::create_dir(&dir).unwrap();
+        fs::write(dir.join("received.part"),bytes).unwrap();
+        fs::write(dir.join(&approved.filename),b"existing must survive").unwrap();
+        assert_eq!(publish_verified_part(&root,"freshnonce0000008",
+            &approved,&AtomicBool::new(false)),Err(TransferError::AlreadyExists));
+        assert_eq!(fs::read(dir.join(&approved.filename)).unwrap(),b"existing must survive");
+        assert_eq!(fs::read(dir.join("received.part")).unwrap(),bytes);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

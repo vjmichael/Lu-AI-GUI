@@ -1289,7 +1289,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/model_transfer_desktop.rs",
-      "blob": "ab93e5700e31685cdec2826a0c5b6a431fae6f15"
+      "blob": "b8eecf745d633b3329871c66ccb51a6e6339472e"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
@@ -1657,7 +1657,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-hf-transfer-transaction.test.mjs",
-      "blob": "ec5fe0d2e1b8d7458dd571e609d41cdb8f441cb5"
+      "blob": "a3b644215827d8c1d72812b4567e2e66f724ed8a"
     },
     {
       "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
@@ -1893,7 +1893,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "3403c4b6aed4b0953c00786b5b63ffcb09490150"
+      "blob": "22b40d4feb92560fa68cec29126207624759a689"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2497,7 +2497,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/model_provider_staging.rs",
-      "blob": "164c809c215e3dafc7c32ff1ea8ebe73d42dbf2c"
+      "blob": "8dc81fb5bef9c4a1bad498e92d1c64fa1620d715"
     },
     {
       "path": "src-tauri/lu-core/src/model_provider_transport.rs",

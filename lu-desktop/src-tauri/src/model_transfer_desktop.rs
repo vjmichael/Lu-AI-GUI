@@ -262,15 +262,32 @@ impl ModelTransferManager{
     /// Independently re-read the published file before presenting the path
     /// as currently usable for a separate native GGUF import.
     pub fn verify_published_now(&self,id:&str)->Result<ModelTransferView,String>{
-        let record=self.load(id)?;
-        if record.state!="VERIFIED_AT_PUBLICATION"{
-            return Err("No completed transfer receipt".into())
+        let mut record=self.load(id)?;
+        if self.active.lock().map_err(|_|"Transfer ownership unavailable")?
+            .contains_key(id){
+            return Err("Active download cannot be reconciled during execution".into())
+        }
+        if !matches!(record.state.as_str(),
+            "RUNNING"|"INTERRUPTED"|"VERIFIED_AT_PUBLICATION"){
+            return Err("No existing download bytes to reconcile".into())
         }
         let file=self.folder(id)?.join(&record.plan.filename);
         let (bytes,digest)=checked_digest(&file,record.plan.expected_bytes)?;
-        if bytes!=record.plan.expected_bytes||digest!=record.plan.sha256 ||
-            record.verified_sha256.as_deref()!=Some(digest.as_str()){
-            return Err("Published file changed since transfer; no valid import proof".into())
+        if bytes!=record.plan.expected_bytes||digest!=record.plan.sha256 {
+            return Err("Published model bytes do not match immutable approved asset".into())
+        }
+        if record.state=="VERIFIED_AT_PUBLICATION"{
+            if record.verified_sha256.as_deref()!=Some(digest.as_str()){
+                return Err("Recorded published receipt changed".into())
+            }
+        }else{
+            // The process may have died AFTER atomic file publication but
+            // BEFORE writing its durable receipt. Only this explicit
+            // readback request may reconcile that torn handoff; it never
+            // resumes the network, imports the GGUF or starts inference.
+            record.state="VERIFIED_AT_PUBLICATION".into();
+            record.verified_sha256=Some(digest);
+            self.store(id,&record)?;
         }
         self.status(id)
     }
@@ -310,6 +327,32 @@ mod tests{
         let (identity,_)=restarted.reviewed_plan("hf-originalnonce000001").unwrap();
         assert_eq!(identity.expected_bytes,1024);
         assert!(!restarted.cancel("hf-originalnonce000001").unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn torn_publication_requires_explicit_independent_sha_recovery(){
+        let root=sandbox();
+        let manager=ModelTransferManager::new(root.join("transfers")).unwrap();
+        let bytes=b"GGUF-published-before-crash";
+        let mut approved=plan();
+        approved.expected_bytes=bytes.len() as u64;
+        approved.sha256=format!("{:x}",Sha256::digest(bytes));
+        let id="hf-tornreceipt00000001";
+        manager.stage(id,approved.clone(),"apache-2.0").unwrap();
+        let folder=manager.folder(id).unwrap();
+        fs::write(folder.join(&approved.filename),bytes).unwrap();
+        let mut stored=manager.load(id).unwrap();
+        stored.state="RUNNING".into();manager.store(id,&stored).unwrap();
+        drop(manager);
+        let restarted=ModelTransferManager::new(root.join("transfers")).unwrap();
+        assert_eq!(restarted.status(id).unwrap().state,"INTERRUPTED_REVIEW_REQUIRED");
+        let recovered=restarted.verify_published_now(id).unwrap();
+        assert_eq!(recovered.state,"VERIFIED_AT_PUBLICATION");
+        assert_eq!(recovered.verified_sha256,Some(approved.sha256));
+        assert!(!recovered.needs_new_human_review);
+        assert!(restarted.verify_published_now(id).is_ok());
+        fs::write(folder.join(&approved.filename),b"tampered").unwrap();
+        assert!(restarted.verify_published_now(id).is_err());
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

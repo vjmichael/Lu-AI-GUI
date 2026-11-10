@@ -552,6 +552,11 @@ export function ModelLibraryWindow(){
                     const signaled=await invoke('lu_model_transfer_cancel',{transferId:t.transferId});
                     await refreshTransfers();return signaled;
                   })}>Cancel download</button>}
+                {interrupted&&<button type="button" disabled={busy}
+                  onClick={()=>void act('Interrupted publication independently rechecked; no network or auto-load.',async()=>{
+                    const result=await invoke('lu_model_transfer_verify',{transferId:t.transferId});
+                    await refreshTransfers();return result;
+                  })}>Recheck published bytes after interruption</button>}
                 {interrupted&&<button type="button" disabled={busy||!transferReady}
                   onClick={()=>void act('Separately reviewed immutable transfer resume.',async()=>{
                     const resumed=await invoke('lu_model_transfer_resume',{transferId:t.transferId});
