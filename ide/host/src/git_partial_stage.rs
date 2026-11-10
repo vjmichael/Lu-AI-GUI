@@ -66,6 +66,7 @@ struct JournalLine {
     intended_index_sha256: String,
     intended_blob_oid: String,
     intended_blob_sha256: String,
+    source_sha256: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -274,17 +275,28 @@ impl IdeWorkspaceRegistry {
                 let old = digest == j.previous_index_sha256;
                 let intended = digest == j.intended_index_sha256;
                 let original_head = head.as_deref() == Some(j.head_sha.as_str());
-                let state = if !original_head { "head_changed_since_journal" }
-                    else if j.phase == "verified" && intended { "verified_receipt_observed" }
-                    else if j.phase == "cancelled" && old { "cancelled_index_unchanged" }
-                    else if intended { "index_published_requires_reconciliation" }
-                    else if old { "index_not_published_or_external_change" }
-                    else { "index_drift_or_unverifiable" };
+                // Terminal journal receipts are historical facts. A later
+                // authorized Git commit naturally changes the index bytes;
+                // that does not retroactively turn a finished operation
+                // into an interrupted one.
+                let state = if j.phase == "verified" {
+                    if intended { "verified_receipt_observed" }
+                    else { "verified_receipt_followed_by_git_changes" }
+                } else if j.phase == "cancelled" {
+                    if old { "cancelled_index_unchanged" }
+                    else { "cancelled_receipt_followed_by_git_changes" }
+                } else if !original_head { "head_changed_since_journal" }
+                else if intended { "index_published_requires_reconciliation" }
+                else if old { "index_not_published_or_external_change" }
+                else { "index_drift_or_unverifiable" };
                 (state, j.phase, old, intended, original_head)
             }
         };
         let requires = lock_exists || !matches!(state,
-            "no_journal" | "verified_receipt_observed" | "cancelled_index_unchanged");
+            "no_journal" | "verified_receipt_observed"
+                | "verified_receipt_followed_by_git_changes"
+                | "cancelled_index_unchanged"
+                | "cancelled_receipt_followed_by_git_changes");
         Ok(PartialStageRecovery {
             schema_version: 1, project_id: project_id.to_owned(), state,
             last_phase, index_matches_original: old, index_matches_intended: intended,
@@ -292,6 +304,72 @@ impl IdeWorkspaceRegistry {
             operator_reconciliation_required: requires, auto_delete_git_lock: false,
             auto_rollback_index: false, write_authority_granted: false,
         })
+    }
+
+    /// Explicitly reconcile a journal after process restart. No Git index
+    /// mutation is ever done here. Only an independently checked terminal
+    /// receipt is appended, and foreign/stale index locks remain untouched.
+    /// Tauri must require separate genuine OS operator consent.
+    pub fn reconcile_partial_stage_journal(
+        &self, project_id: &str,
+    ) -> Result<PartialStageRecovery, &'static str> {
+        let (repo, _root, gitdir) = verified_repo(self, project_id, false)?;
+        if repo.state() != git2::RepositoryState::Clean {
+            return Err("G06B_STAGE_RECOVERY_GIT_OPERATION_IN_PROGRESS");
+        }
+        let path = journal_path(self, project_id)?;
+        let mut last = last_journal(&path)?
+            .ok_or("G06B_STAGE_RECOVERY_NO_JOURNAL")?;
+        if last.project_id != project_id {
+            return Err("G06B_STAGE_RECOVERY_DIFFERENT_PROJECT");
+        }
+        if matches!(last.phase.as_str(), "verified" | "cancelled") {
+            return self.inspect_partial_stage_recovery(project_id);
+        }
+        if fs::symlink_metadata(gitdir.join("index.lock")).is_ok() {
+            return Err("G06B_STAGE_RECOVERY_GIT_LOCK_REQUIRES_OPERATOR");
+        }
+        let head = repo.head().ok().and_then(|h| h.target()).map(|o| o.to_string());
+        if head.as_deref() != Some(last.head_sha.as_str()) {
+            return Err("G06B_STAGE_RECOVERY_HEAD_CHANGED");
+        }
+        let current_sha = sha(&index_bytes(&gitdir.join("index"))?);
+        if current_sha == last.previous_index_sha256
+            && matches!(last.phase.as_str(), "prepared" | "publishing")
+        {
+            last.phase = "cancelled".into();
+            journal_append(&path, &last)?;
+            return self.inspect_partial_stage_recovery(project_id);
+        }
+        if current_sha != last.intended_index_sha256
+            || !matches!(last.phase.as_str(), "publishing" | "published")
+        {
+            return Err("G06B_STAGE_RECOVERY_AMBIGUOUS_INDEX");
+        }
+        let index = repo.index().map_err(|_| "G06B_STAGE_RECOVERY_INDEX_UNAVAILABLE")?;
+        if index.has_conflicts() {
+            return Err("G06B_STAGE_RECOVERY_CONFLICTED_INDEX");
+        }
+        let entry = index.get_path(Path::new(&last.relative_path), 0)
+            .ok_or("G06B_STAGE_RECOVERY_STAGED_FILE_MISSING")?;
+        if entry.id.to_string() != last.intended_blob_oid {
+            return Err("G06B_STAGE_RECOVERY_BLOB_OID_MISMATCH");
+        }
+        let blob = repo.find_blob(entry.id)
+            .map_err(|_| "G06B_STAGE_RECOVERY_BLOB_MISSING")?;
+        if sha(blob.content()) != last.intended_blob_sha256 {
+            return Err("G06B_STAGE_RECOVERY_STAGED_BYTES_MISMATCH");
+        }
+        let original_source = self.reread_reviewed_git_source_bytes(
+            project_id, &last.relative_path)?;
+        if sha(&original_source) != last.source_sha256 {
+            return Err("G06B_STAGE_RECOVERY_SOURCE_CHANGED");
+        }
+        // Index, object, source, HEAD, and lock absence independently
+        // verified; a durable terminal receipt is now safe to append.
+        last.phase = "verified".into();
+        journal_append(&path, &last)?;
+        self.inspect_partial_stage_recovery(project_id)
     }
 
     /// Only trusted native host calls this after a fresh physical OS dialog.
@@ -386,6 +464,7 @@ impl IdeWorkspaceRegistry {
             selection_sha256: fresh.selection_sha256.clone(),
             previous_index_sha256: old_sha.clone(), intended_index_sha256: intended_sha.clone(),
             intended_blob_oid: oid.to_string(), intended_blob_sha256: staged_sha.clone(),
+            source_sha256: fresh.plan.source_sha256.clone(),
         };
         if cancel.load(Ordering::SeqCst) != 0 { return Err("G06B_STAGE_CANCELLED_BEFORE_JOURNAL"); }
         journal_append(&path, &journal)?;
@@ -587,6 +666,7 @@ mod tests {
             intended_index_sha256: "b".repeat(64),
             intended_blob_oid: "c".repeat(40),
             intended_blob_sha256: "d".repeat(64),
+            source_sha256: "e".repeat(64),
         }).unwrap();
         fs::write(root.join(".git/index.lock"), b"ambiguous").unwrap();
         let recovery = registry.inspect_partial_stage_recovery(&id).unwrap();
