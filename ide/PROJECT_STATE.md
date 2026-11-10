@@ -1,5 +1,20 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 4 implementation/evidence boundary (Nov 10)
+
+The Group4 branch now contains original Cargo terminal binding, all-links-
+accounted ELF/DWARF reader, Windows exact VS instance selection, strict
+stale DAP source/frame invalidation and a feature-gated redacted variable
+protocol bound to a native owner/PDB verified frame. Actual Linux Cargo
+check/test/build Completed at historical `bec4eb0`; a second DWARF
+readback failure was repaired in later source but not yet retested.
+Actual Linux LLDB launch is still rejected after successful initialize.
+The grouped Windows pinned LLVM owner job at older source is not
+finished. Group 4 installed Build/Test/LLDB and real human per-action
+approvals are **NOT ACCEPTED**. Use
+`ide/docs/IDE_GROUP04_PROTECTED_BUILD_TEST_LLDB_20261110.md` for the
+full evidence matrix; do not count pending CI or source changes as PASS.
+
 ## Group 4B — independent DWARF reader enclosed alias repair (2026-11-10)
 
 Native run 42866653321 proved contained Cargo check/test/build completed;

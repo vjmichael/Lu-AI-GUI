@@ -1,5 +1,23 @@
 # IDE Group 4 — Protected Build/Test and LLDB (2026-11-10)
 
+## Group 4 task-boundary handoff (latest native evidence, Nov 10)
+
+**Branch source:** work stacked on Group 3; no Lu Core bridge or release entitlement. Current source edits are NOT a native acceptance because the last four-lane run checked an earlier SHA.
+
+| Gate | Observed original evidence | Status |
+|---|---|---|
+| G04B-Cargo check/test/build | Real systemd delegated/Bwrap `Completed` and exit zero for each mode at `bec4eb0`; independent artifact debug sections failed afterward | **Partial native, not accepted** |
+| G04B-artifacts | Original executable alias readback passed; second DWARF hardlink reader denied, repaired in source via same all-links-inside-private-output check | **Rerun required** |
+| G04B-cancel/crash/restart | Earlier genuine Linux fixed-LLDB crash/restart passed; Build/Test extended normal/cancel and Windows exact-head worker not fully observed on corrected source | **Open** |
+| G04C-Windows LLDB | Owner-event/pinned LLVM branch compiled in existing gate; new four-lane Windows patched LLVM build from run [42868873025](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42868873025) was in progress at this checkpoint | **Open, not a success claim** |
+| G04C-Linux LLDB | Genuine systemd-delegated adapter initialized; correlated launch returned failure, terminal quarantined; no ptrace/permission bypass applied | **Real native failure unresolved** |
+| G04C-breakpoint | One-use native DAP setBreakpoints ACK is `ResultUncertain`; independently witnessed breakpoint *hit* and re-stop not yet completed | **Open** |
+| G04C-step | Native isolated Windows step owner-event/PDB code and fixture exist, but physical human and installed evidence not obtained | **Open** |
+| G04D-variable frame | Original OS RIP/PDB/owner receipt now independently binds correlated DAP frame ID; redacted one-scope/16-variable protocol and hostile tests source-implemented | **Source-only, native dispatch and consent open** |
+| Installed protected Build/Test/LLDB | No signed/pinned protected worker bundle accepted in installed NSIS/Debian and no independent physical operator approval/restart | **Open** |
+
+**Do not rerun superseded source, reuse a stale D3 permission, lower kernel scope, substitute a DAP acknowledgement for OS proof, or infer installed authorization from CI.** The next exact-source grouped run must validate the recent `read_attested` fix, native frame/one-use tests and pinned VS side-by-side selection, and must separately diagnose the Linux DAP launch failure. Preserve the still-running expensive LLVM build from prior SHA rather than prematurely cancelling it. Frontend remains nonexecuting by default.
+
 **Status:** Started, code-only first gate. **Not accepted.**
 **Branch:** `ide/group04-protected-build-test-lldb-20261110`, based on
 Group 3 exact parent `9dec923748bcdaa4df6f78aae104e07b653f6509`.
