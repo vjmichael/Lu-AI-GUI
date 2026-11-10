@@ -853,7 +853,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1','scripts/p0-windows-installed-gui-smoke.ps1')){
+          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1','scripts/p0-windows-installed-gui-smoke.ps1','scripts/p0-qwen38-radeon-physical.ps1')){
             $tokens=$null;$errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path,[ref]$tokens,[ref]$errors)|Out-Null
             if($errors.Count){
@@ -962,7 +962,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --test lu-desktop/tests/p0-physical-ux-contract.test.mjs lu-desktop/tests/p0-native-intent.test.mjs lu-desktop/tests/p0-memory-telemetry.test.mjs lu-desktop/tests/p0-browser-bundle.test.mjs lu-desktop/tests/p0-research-provider-bundle.test.mjs lu-desktop/tests/p0-installed-gui-smoke.test.mjs lu-desktop/tests/ux-chat01-message-interactions.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs 2>&1 | tee p0-native-evidence/p0-source-tests.log
+          node --test lu-desktop/tests/p0-physical-ux-contract.test.mjs lu-desktop/tests/p0-native-intent.test.mjs lu-desktop/tests/p0-memory-telemetry.test.mjs lu-desktop/tests/p0-browser-bundle.test.mjs lu-desktop/tests/p0-research-provider-bundle.test.mjs lu-desktop/tests/p0-installed-gui-smoke.test.mjs lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs lu-desktop/tests/ux-chat01-message-interactions.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs 2>&1 | tee p0-native-evidence/p0-source-tests.log
       - name: Native Linux desktop WebView dependencies
         if: runner.os == 'Linux'
         shell: bash
@@ -975,7 +975,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1','scripts/p0-windows-installed-gui-smoke.ps1')){
+          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1','scripts/p0-windows-installed-gui-smoke.ps1','scripts/p0-qwen38-radeon-physical.ps1')){
             $tokens=$null;$errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path,[ref]$tokens,[ref]$errors)|Out-Null
             if($errors.Count){
@@ -1042,9 +1042,10 @@ jobs:
     env:
       LU_E1_P07_LLAMA_PORT: '18972'
       MODEL_SHA256: 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
-      # Generic grammar allows either final or tool, never names a tool.
-      # The Qwen response remains unmodified and native authority still
-      # rejects final-only guesses for tasks requiring real observations.
+      # In a separately human-approved observation test, the FIRST GGUF
+      # answer is tool-shaped (but the model must pick NAME and arguments).
+      # Later replies allow either tool or final. No host-selected tool
+      # identity, argument, result, authority or synthetic success.
       LU_E1_P07_RESPONSE_PROTOCOL: json_schema
     steps:
       - uses: actions/checkout@v4
@@ -1075,6 +1076,8 @@ jobs:
           echo "LU_E1_P07_GIT=$(command -v git)" >> "$GITHUB_ENV"
           echo "LU_E1_P07_FFPROBE=$(command -v ffprobe)" >> "$GITHUB_ENV"
           python3 -m py_compile benchmarks/e1/e1_p07_llama_completion.py benchmarks/e1/agent01g_qwen_plan_probe.py
+          python3 -m unittest discover -s benchmarks/e1 -p 'test_e1_p07_llama_completion.py' -v \
+            2>&1 | tee e1-p07-gguf-evidence/qwen-json-decoder-tests.log
           python3 -m unittest discover -s benchmarks/e1 -p test_agent01g_qwen_plan_probe.py -v \
             2>&1 | tee e1-p07-gguf-evidence/agent01g-plan-boundary-tests.log
           grep -Fq 'Ran 8 tests' e1-p07-gguf-evidence/agent01g-plan-boundary-tests.log
