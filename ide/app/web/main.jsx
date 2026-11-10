@@ -4950,7 +4950,7 @@ function App() {
                     <p role="status">File history or blame has been truncated.</p>}
                 </div>}
             </div>}
-            {gitBusy && <p role="status">Inspecting local Git state…</p>
+            {gitBusy && <p role="status">Inspecting local Git state…</p>}
             {!gitBusy && gitStatus && <div className="continuityBody">
               <p><strong>{gitStatus.state.replaceAll('_', ' ')}</strong>
                 {' · '} Branch: <code>{gitStatus.branch || 'Unknown or detached'}</code>
