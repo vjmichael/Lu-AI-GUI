@@ -20,7 +20,7 @@ test('G06B02 hunk bytes come only from registered native project and clean index
 });
 
 test('G06B02 rejects binary, oversize, duplicate IDs and stale or tampered selection', () => {
-  assert.match(native, /old\.contains\(&0\) \|\| new\.contains\(&0\)/);
+  assert.match(native, /old\.contains\(&0\)\s*\|\|\s*new\.contains\(&0\)/);
   assert.match(native, /MAX_HUNKS: usize = 48/);
   assert.match(native, /MAX_LINES_PER_HUNK: usize = 256/);
   assert.match(native, /MAX_PATCH_BYTES: usize = 96 \* 1024/);
