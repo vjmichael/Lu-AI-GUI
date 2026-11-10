@@ -853,7 +853,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1')){
+          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1','scripts/p0-windows-installed-gui-smoke.ps1')){
             $tokens=$null;$errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path,[ref]$tokens,[ref]$errors)|Out-Null
             if($errors.Count){
@@ -962,7 +962,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --test lu-desktop/tests/p0-physical-ux-contract.test.mjs lu-desktop/tests/p0-native-intent.test.mjs lu-desktop/tests/p0-memory-telemetry.test.mjs lu-desktop/tests/p0-browser-bundle.test.mjs lu-desktop/tests/p0-research-provider-bundle.test.mjs lu-desktop/tests/ux-chat01-message-interactions.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs 2>&1 | tee p0-native-evidence/p0-source-tests.log
+          node --test lu-desktop/tests/p0-physical-ux-contract.test.mjs lu-desktop/tests/p0-native-intent.test.mjs lu-desktop/tests/p0-memory-telemetry.test.mjs lu-desktop/tests/p0-browser-bundle.test.mjs lu-desktop/tests/p0-research-provider-bundle.test.mjs lu-desktop/tests/p0-installed-gui-smoke.test.mjs lu-desktop/tests/ux-chat01-message-interactions.test.mjs lu-desktop/tests/preview-dual-backend.test.mjs 2>&1 | tee p0-native-evidence/p0-source-tests.log
       - name: Native Linux desktop WebView dependencies
         if: runner.os == 'Linux'
         shell: bash
@@ -975,7 +975,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1')){
+          foreach($file in @('scripts/build-current-windows-nsis.ps1','scripts/m3-windows-nsis-cycle.ps1','scripts/stage-research-windows.ps1','scripts/p0-windows-installed-gui-smoke.ps1')){
             $tokens=$null;$errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path,[ref]$tokens,[ref]$errors)|Out-Null
             if($errors.Count){

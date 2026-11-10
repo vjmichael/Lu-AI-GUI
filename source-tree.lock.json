@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "a24af5ddddceab2512b135ebe3fcb4995937570c"
+      "blob": "f8b578a5289e7dca42846bdd93bc91e5a30ceb15"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
