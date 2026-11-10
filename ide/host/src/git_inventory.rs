@@ -283,6 +283,47 @@ mod tests {
         assert!(result.branches.is_empty() && result.worktrees.is_empty());
     }
     #[test]
+    fn detached_head_is_classified_without_branch_write_authority() {
+        let (_temp, registry, id, dir) = fixture();
+        let repo = Repository::open(&dir).unwrap();
+        let head = repo.head().unwrap().target().unwrap();
+        repo.set_head_detached(head).unwrap();
+        let snapshot = registry.inspect_git_repository_inventory(&id);
+        assert_eq!(snapshot.head_state, "detached");
+        assert_eq!(snapshot.current_branch, None);
+        assert!(!snapshot.refs_or_files_modified);
+    }
+    #[test]
+    fn unborn_repository_is_not_misreported_as_clean_committed_branch() {
+        let (temp, registry, _id, _dir) = fixture();
+        let unborn = temp.0.join("unborn-project");
+        fs::create_dir(&unborn).unwrap();
+        Repository::init(&unborn).unwrap();
+        let id = registry
+            .register_from_native_picker(&mut Picker(unborn))
+            .unwrap()
+            .unwrap()
+            .project_id;
+        let snapshot = registry.inspect_git_repository_inventory(&id);
+        assert_eq!(snapshot.head_state, "unborn");
+        assert!(snapshot.current_head_sha.is_none());
+        assert!(snapshot.branches.is_empty());
+    }
+    #[test]
+    fn parent_git_discovery_does_not_escape_selected_nested_project() {
+        let (_temp, registry, _id, dir) = fixture();
+        let nested = dir.join("nested-project");
+        fs::create_dir(&nested).unwrap();
+        let id = registry
+            .register_from_native_picker(&mut Picker(nested))
+            .unwrap()
+            .unwrap()
+            .project_id;
+        let snapshot = registry.inspect_git_repository_inventory(&id);
+        assert_eq!(snapshot.state, "repository_not_eligible");
+        assert!(snapshot.branches.is_empty() && snapshot.worktrees.is_empty());
+    }
+    #[test]
     fn linked_worktree_is_listed_without_authorizing_external_root() {
         let (temp, registry, id, dir) = fixture();
         let repo = Repository::open(&dir).unwrap();
