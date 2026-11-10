@@ -1649,7 +1649,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-installed-gui-smoke.test.mjs",
-      "blob": "8dd1ea955bde1a5fbb62e24b36d3e7ac94705010"
+      "blob": "3ec710a158d59c402f54ba588728bd89b4f28c5d"
     },
     {
       "path": "lu-desktop/tests/p0-memory-telemetry.test.mjs",
@@ -1953,7 +1953,7 @@
     },
     {
       "path": "scripts/p0-windows-installed-gui-smoke.ps1",
-      "blob": "ce0f041292170624adce03bdcfb481420840a3af"
+      "blob": "e741a7cc89d111b3f0343ba3798424084c93ad8e"
     },
     {
       "path": "scripts/p02-native-windows-evidence.ps1",

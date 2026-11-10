@@ -24,3 +24,13 @@ test('GUI smoke is independent from strict real install-uninstall/AppData and on
   assert.match(ui,/className="quietSettings" title="Settings" aria-label="Settings"/);
   assert.match(ui,/className="modelSwitcher" aria-label="Choose a model"/);
 });
+
+test('WebView2 accessibility activates through supported UIA or independently verified OS click, never simulation',()=>{
+  assert.match(script,/TryGetCurrentPattern\(\[System\.Windows\.Automation\.InvokePattern\]::Pattern/);
+  assert.match(script,/TryGetCurrentPattern\(\[System\.Windows\.Automation\.LegacyIAccessiblePattern\]::Pattern/);
+  assert.match(script,/GetClickablePoint\(\)/);
+  assert.match(script,/WebView clickable point not within reviewed installed native window/);
+  assert.match(script,/SetCursorPos/);
+  assert.match(script,/activationMethods/);
+  assert.match(script,/Wait-Element \$window 'Model Library'/);
+});

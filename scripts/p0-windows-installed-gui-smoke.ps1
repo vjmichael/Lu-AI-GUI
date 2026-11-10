@@ -31,6 +31,7 @@ $report=[ordered]@{
   genuineGgufInference='NOT_TESTED'
   activeGpuOffload='NOT_TESTED'
   result='NOT_ACCEPTED'
+  activationMethods=@()
   errors=@()
 }
 $process=$null
@@ -52,10 +53,53 @@ function Wait-Element([System.Windows.Automation.AutomationElement]$window,[stri
   }while([DateTime]::UtcNow -lt $deadline)
   throw "Installed WebView2 did not expose UI Automation element: $label"
 }
+# WebView2 Chromium controls can be accessible Button elements while not
+# advertising InvokePattern. Try the supported UIA contracts first, then
+# verified on-screen physical input. Never synthesize a successful dialog.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class LuP0Mouse {
+  [DllImport("user32.dll", SetLastError=true)]
+  public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll", SetLastError=true)]
+  public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+}
+'@
 function Invoke-UIA([System.Windows.Automation.AutomationElement]$element){
-  $invoke=$element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-  if($null -eq $invoke){throw 'Genuine UIA invoke pattern absent'}
-  $invoke.Invoke()
+  if($null -eq $element){throw 'No trusted WebView UIA element to activate'}
+  $pattern=$null
+  if($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)){
+    ([System.Windows.Automation.InvokePattern]$pattern).Invoke()
+    return 'UIA_INVOKE'
+  }
+  $pattern=$null
+  if($element.TryGetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern,[ref]$pattern)){
+    ([System.Windows.Automation.LegacyIAccessiblePattern]$pattern).DoDefaultAction()
+    return 'UIA_LEGACY_DEFAULT'
+  }
+  # Last resort on a disposable, interactive runner only: click the point
+  # that the CURRENT genuine UIA element says is reachable. The parent
+  # native process identity was verified before calling this function.
+  if($element.Current.IsOffscreen){throw 'Installed WebView control is offscreen'}
+  $rect=$element.Current.BoundingRectangle
+  $windowRect=$script:window.Current.BoundingRectangle
+  $point=$element.GetClickablePoint()
+  if($rect.Width -lt 3 -or $rect.Height -lt 3 -or
+     $point.X -lt $rect.Left -or $point.X -ge $rect.Right -or
+     $point.Y -lt $rect.Top -or $point.Y -ge $rect.Bottom -or
+     $point.X -lt $windowRect.Left -or $point.X -ge $windowRect.Right -or
+     $point.Y -lt $windowRect.Top -or $point.Y -ge $windowRect.Bottom){
+    throw 'WebView clickable point not within reviewed installed native window'
+  }
+  $x=[int][Math]::Round($point.X)
+  $y=[int][Math]::Round($point.Y)
+  if(-not([LuP0Mouse]::SetCursorPos($x,$y))){
+    throw 'Could not position desktop pointer at genuine WebView UIA element'
+  }
+  [LuP0Mouse]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero)
+  [LuP0Mouse]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero)
+  return 'UIA_VERIFIED_POINT_OS_CLICK'
 }
 function Save-Visible-Desktop([string]$name){
   Add-Type -AssemblyName System.Windows.Forms
@@ -108,17 +152,17 @@ try{
   }
   if($settingsButtons -ne 1){throw "Expected exactly one Settings button; observed $settingsButtons"}
   $report.singleSettingsEntry='PASS_ONLY_TOP_RIGHT_GEAR'
-  Invoke-UIA $settings
+  $report.activationMethods+=@(Invoke-UIA $settings)
   $null=Wait-Element $window 'Lu settings'
   $report.independentSettingsWindow='PASS_NATIVE_WEBVIEW_DIALOG'
   $report.settingsScreenshot=Save-Visible-Desktop 'installed-settings.png'
-  Invoke-UIA (Wait-Element $window 'Close settings' $true)
-  Invoke-UIA (Wait-Element $window 'Choose a model' $true)
-  Invoke-UIA (Wait-Element $window 'Manage models' $true)
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Close settings' $true))
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Choose a model' $true))
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Manage models' $true))
   $null=Wait-Element $window 'Model Library'
   $report.independentModelLibrary='PASS_NATIVE_WEBVIEW_DIALOG'
   $report.modelLibraryScreenshot=Save-Visible-Desktop 'installed-model-library.png'
-  Invoke-UIA (Wait-Element $window 'Close model library' $true)
+  $report.activationMethods+=@(Invoke-UIA (Wait-Element $window 'Close model library' $true))
   $report.result='PASS_INSTALLED_NATIVE_WINDOW_AND_BOTH_DIALOGS'
 }catch{
   $report.errors=@($report.errors)+@($_.Exception.Message)
