@@ -136,3 +136,30 @@ Require a new native Windows run to prove the result; otherwise keep
 the AppContainer gate OPEN. Windows SCM service loss native observer
 already passed at the first run, but separate host-crash and original
 Job proof must be inspected before positive acceptance.
+
+## Native Group 3 first real results and AppContainer retest
+
+[Native run 42855823301](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42855823301)
+at `d304bb8cddb549ba8f950be68043c450ee465789`:
+- Linux supervisor **87/87** and sandbox **3/3** tests PASSED.
+  Actual hosted Linux kernel cgroup probe **DENIED** because the runner
+  was not in a dedicated Lu IDE delegated parent. This is correct
+  fail-closed admission, **not** a native delegated-worker PASS.
+- Windows SCM hostile **Loss PASS**: service death reaped the worker and
+  a missing Job stayed unrecoverable.
+- Windows SCM hostile **Crash PASS**: separately protected SCM service
+  killed the original child, proved kernel Job empty, fsynced recovery,
+  authenticated retry and bounded release.
+- Windows supervisor **100/100** source/native tests PASS but test-only
+  AppContainer positive example failed with generic
+  `SUPERVISOR_OS_CONTAINMENT_NOT_VERIFIED` before positive receipts.
+  The fixture set a DACL but did not pin the file owner. This mismatch
+  is now addressed without relaxing the independent native source ACL
+  audit; fixed-stage markers will localize any further denial.
+- Physical native human approval and production package-worker
+  execution remain **NOT ACCEPTED**.
+
+The next single grouped exact-head Windows/Linux run is required to
+verify AppContainer source-owner staging and avoid extrapolating from
+compile or synthetic approval tests. Do not promote Group 3 as closed
+if the positive native child or human approval remains absent.

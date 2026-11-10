@@ -227,7 +227,9 @@ mod native {
         if unsafe { ConvertStringSidToSidW(owner_text.as_ptr(), &mut owner_sid) } == 0
             || owner_sid.is_null()
         {
-            unsafe { LocalFree(descriptor); }
+            unsafe {
+                LocalFree(descriptor);
+            }
             return Err(fail("IDE056_EXACT_OWNER_SID_INVALID").into());
         }
         let mut name = wide(path.as_os_str());
