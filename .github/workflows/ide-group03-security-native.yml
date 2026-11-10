@@ -152,3 +152,63 @@ jobs:
           fi
           echo IDE_G03_LINUX_FULL_CGROUP_BWRAP_WORKER=NOT_ACCEPTED
           echo IDE_G03_PHYSICAL_HUMAN_APPROVAL=NOT_ACCEPTED
+
+  linux-real-delegated-hostile:
+    name: Genuine Linux systemd cgroup and Bubblewrap hostile (not installed)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Exact source and Linux kernel preflight (no Docker, no namespace bypass)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -f /sys/fs/cgroup/cgroup.controllers
+          test -x /usr/bin/systemd-run
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils
+          profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          test -r "$profile"
+          sudo install -o root -g root -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          /usr/bin/bwrap --unshare-all --ro-bind /usr /usr \
+            --ro-bind-try /bin /bin --ro-bind-try /lib /lib \
+            --ro-bind-try /lib64 /lib64 --proc /proc --dev /dev -- /usr/bin/true
+          echo IDE_G03_LINUX_GENUINE_BWRAP_KERNEL_PREFLIGHT=PASS
+      - name: Compile fixed kernel pre-exec child/grandchild witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_native_witness
+          cargo build --manifest-path ide/sandbox/Cargo.toml --bin linux_cgroup_prepare --bin linux_cgroup_native_witness
+          bash -n ide/sandbox/fixtures/Test-G03NativeDelegatedHost.sh
+          python3 -m py_compile ide/sandbox/fixtures/test_g03_bwrap_hostile.py
+      - name: Real delegated cgroup kill, Bubblewrap source and network denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_file="$RUNNER_TEMP/g03-immutable.txt"
+          printf 'immutable-g03-source\n' > "$source_file"
+          prep="$(realpath ide/sandbox/target/debug/linux_cgroup_prepare)"
+          witness="$(realpath ide/sandbox/target/debug/linux_cgroup_native_witness)"
+          host="$(realpath ide/sandbox/fixtures/Test-G03NativeDelegatedHost.sh)"
+          hostile="$(realpath ide/sandbox/fixtures/test_g03_bwrap_hostile.py)"
+          sudo /usr/bin/systemd-run --wait --collect --pipe \
+            --unit=lu-ide-delegated \
+            --property=Type=exec \
+            --property=User=runner \
+            --property=Group=runner \
+            --property='Delegate=cpu memory pids' \
+            --property=DelegateSubgroup=lu-ide-host \
+            /usr/bin/bash "$host" "$prep" "$witness" "$hostile" "$source_file"
+          test "$(cat "$source_file")" = immutable-g03-source
+          echo IDE_G03_LINUX_ORIGINAL_SOURCE_UNCHANGED=PASS
+          echo IDE_G03_LINUX_REAL_DELEGATED_AND_BWRAP_NATIVE=PASS
+          echo IDE_G03_LINUX_RESTART_RECEIPTS_AND_PHYSICAL_APPROVAL=OPEN
