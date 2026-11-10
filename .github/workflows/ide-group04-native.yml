@@ -1,3 +1,4 @@
+# G04 genuine Windows LLVM failure: windows-2025 lacked VS2022 generator. Preserve reviewed VS17.14/MSVC14.44/SDK pin on windows-2022.
 # G04 third exact-head attempt: host and supervisor rustfmt repaired.
 # Group 4 exact-head native rerun after demonstrated rustfmt correction.
 name: IDE Group 4 exact-head native Build Test and LLDB (NOT installed)
@@ -14,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   native-windows-fixed-debugger:
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -444,7 +445,7 @@ jobs:
   # distinct from the basic DAP/SCM and Linux protected jobs above. A compiled
   # disposable CI worker does not count as physical installed human consent.
   windows-pinned-llvm18-native:
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4

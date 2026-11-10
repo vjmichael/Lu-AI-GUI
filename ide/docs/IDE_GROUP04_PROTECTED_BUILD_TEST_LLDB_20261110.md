@@ -214,3 +214,7 @@ thread. Even a numerically valid frame ID from another thread may not
 be reused. No renderer input, grant, or installed debugger command was
 added. This is protocol-only until native OS/consent and installed
 acceptance pass.
+
+## Exact native Windows LLVM generator failure — runner repair
+
+[Four-lane run 42868873025](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42868873025) finished FAILURE. The pinned-LLVM source build obtained and overlaid LLVM18, but CMake's reviewed `Visual Studio 17 2022` generator reported `could not find any instance of Visual Studio` on hosted `windows-2025`. The separate fixed Windows lane had reached only the source-format gate. Both Group 4 Windows lanes now use `windows-2022` **without altering** LLVM 18.1.8, Rust 1.99.1, required VS17.14/MSVC14.44/SDK 10.0.26100.0, kernel containment, grant scope or checksum checks. The revised workflow must actually prove these pins exist; otherwise deny and keep native acceptance open.
