@@ -7,6 +7,60 @@ const store = readFileSync(new URL('../src-tauri/src/chat_store.rs', import.meta
 const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
 const js = readFileSync(new URL('../dist/assets/app.js', import.meta.url), 'utf8');
 const tests = [
+  ['Image Workspace only exports immutable native-approved PNG revisions from host-pinned images',
+    host.includes('async fn lu_image_workspace_export(') &&
+    host.includes('native_image_revision::transform_admitted_image') &&
+    host.includes('blocking_save_file()') &&
+    ui.includes("invoke('lu_image_workspace_export',{") &&
+    ui.includes('Original stays unchanged') &&
+    css.includes('.imageRevisionForm')],
+  ['Background task view is scoped to an existing selected chat before querying SQLite',
+    host.includes('dashboard_for_workspace(&chat_id,100)') &&
+    ui.includes("invoke('lu_background_tasks',{chatId})")],
+  ['Runtime Environment diagnostics never claim unproven vision or GPU inference',
+    host.includes('fn lu_environment_status(') &&
+    host.includes('environment_context::runtime_view(')],
+  ['Research OpenAlex discovery is human-approved, per-chat, and never represented as verified citations',
+    host.includes('async fn lu_research_openalex(') &&
+    host.includes('fn lu_research_available(') &&
+    ui.includes("invoke('lu_research_openalex',{chatId:sourceChat,query:researchQuery,page:selectedPage})") &&
+    ui.includes('discovered sources · UNVERIFIED') &&
+    ui.includes('Research network runtime is not bundled')],
+  ['Browser runtime is native-owned, permit-gated, and host-verified with no ambient model navigation',
+    host.includes('async fn lu_browser_runtime_status(') &&
+    host.includes('async fn lu_browser_start(') &&
+    host.includes('owner.browser_authority.open_user_task(') &&
+    host.includes('owner.browser_runtime.require_launch_ready()?') &&
+    ui.includes("browserOperation('lu_browser_start',{chatId,origins:browserOrigins})") &&
+    ui.includes('Authorize read-only Browser')],
+  ['Observe awareness lane logs scoped native hints and prepares a no-execution handoff',
+    host.includes('fn lu_observe_notes(') &&
+    host.includes('fn lu_observe_handoff(') &&
+    host.includes('lu_observe_notes,') &&
+    ui.includes("invoke('lu_observe_notes',{chatId})") &&
+    ui.includes('Prepare large-model review handoff') &&
+    ui.includes('Main-model handoff prepared · not executed') &&
+    css.includes('.observeNotations')],
+  ['Observe WGC one-shot is explicit, pinned, supervised, user-selected and does not claim visual understanding',
+    host.includes('async fn lu_observe_capture_one_shot(') &&
+    host.includes('LU_OBSERVE_CAPTURE_WORKER_SHA256') &&
+    host.includes('observer.launch_one_shot(&chat_id,plan)') &&
+    host.includes('lu_observe_capture_available,') &&
+    ui.includes("invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly})") &&
+    ui.includes('Select window/display · capture one frame') &&
+    ui.includes('Capture selected foreground app (4s)') &&
+    host.includes('--lu-observe-foreground-one-shot') &&
+    ui.includes("if(action==='pause'||action==='stop')setCaptureTaskId(null)") &&
+    ui.includes('No image pixels are retained or sent to the model')],
+  ['Observe pilot is native-approved, scoped to Lu events and never claims desktop capture',
+    host.includes('fn lu_observe_self_signal(') &&
+    host.includes('fn lu_observe_status(') &&
+    host.includes('lu_observe_start,') &&
+    ui.includes('Observe & Learn · Lu UI only') &&
+    ui.includes('Neither gives the model its pixels.') &&
+    ui.includes("observeAction('stop')") &&
+    host.includes('notice.task_id.starts_with("obs-")') &&
+    css.includes('.observePilot')],
   ['Wave 4 browser preference remains a host-only render setting without navigation authority',
     host.includes('fn lu_browser_visibility(') &&
     host.includes('fn lu_set_browser_visibility(') &&
@@ -18,9 +72,9 @@ const tests = [
     ui.includes("invoke('lu_vision_capability')") &&
     ui.includes('Vision: {visionCapability.status}')],
   ['Wave 4 Image Workspace opens only a read-only local draft preview without model edit effects',
-    ui.includes('Image Workspace · read-only preview') &&
+    ui.includes('Image Workspace') &&
     ui.includes('setImageViewer({imageRef:im.imageRef,zoom:1})') &&
-    ui.includes('Crop, resize, annotations and AI edits are not enabled') &&
+    ui.includes('Original stays unchanged') &&
     css.includes('.imageViewerDialog')],
   ['Wave 4 explicit Git inspections reuse an OS picker, bounded typed tools and no general Git authority',
     host.includes('workspace_desktop::explicit_read_git_request(&prompt)') &&

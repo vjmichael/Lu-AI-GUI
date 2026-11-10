@@ -281,6 +281,8 @@ mod tests{
         assert_eq!(taken.view().review_id,id);
         assert_eq!(fs::read(root.join("source.docx")).unwrap(),original);
         assert_eq!(fs::read_dir(root.join("revisions")).unwrap().count(),0);
+        drop(taken);
+        drop(queue);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

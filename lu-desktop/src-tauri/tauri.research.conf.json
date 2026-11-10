@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "resources/lu-research/curl.exe": "lu-research/curl.exe"
+    }
+  }
+}

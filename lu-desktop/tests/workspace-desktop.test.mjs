@@ -23,7 +23,7 @@ test('authenticated human turn, queued cancellation and final answer remain host
   assert.match(route,/ReaderRunControl\{/);
   assert.match(route,/reader_generations\.lock\(\)/);
   assert.match(route,/ModelTurnJournal::open\(/);
-  assert.match(route,/run_journaled\(/);
+  assert.match(route,/run_journaled_observed\(/);
   assert.match(route,/result.tool_calls==0/);
   assert.match(route,/host.chats.complete\(&chat_id,&gid\)/);
 });

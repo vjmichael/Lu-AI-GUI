@@ -675,3 +675,12 @@ message OfficeBatchRevisionRequest {
   string approved_revised_sha256 = 4;
   repeated OfficeBatchPatch patches = 5;
 }
+
+// TOOLS-10 typed Browser and Research wire contracts; network grants remain host-owned.
+message BrowserOperationRequest { string operation = 1; bytes arguments_json = 2; }
+message BrowserOperationResult { bytes result_json = 1; }
+message WebFetchRequest { string url = 1; }
+message WebFetchResult { string source_url = 1; uint32 http_status = 2; string content = 3; string content_sha256 = 4; bool truncated = 5; }
+message WebAcademicSearchRequest { string query = 1; uint32 page = 2; }
+message WebAcademicSearchLead { string provider = 1; string provider_id = 2; string doi = 3; string title = 4; string authors = 5; string catalog_url = 6; }
+message WebAcademicSearchResult { repeated WebAcademicSearchLead leads = 1; uint32 page = 2; optional uint32 next_page = 3; string observed_sha256 = 4; bool leads_verified = 5; }

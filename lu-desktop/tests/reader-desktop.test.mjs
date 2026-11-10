@@ -44,7 +44,7 @@ test('Ask Reader routes exactly one native-picker document through the supervise
   assert.ok(!readerHost.includes('messages.last().cloned()'));
 
   assert.ok(readerHost.includes('ModelTurnJournal::open('));
-  assert.ok(readerHost.includes('run_journaled('));
+  assert.ok(readerHost.includes('run_journaled_observed('));
   assert.ok(readerHost.includes('if result.tool_calls==0'));
   assert.ok(readerHost.includes('ticket.wait_for_slot()?'));
   assert.ok(host.includes('reader.cancellation.cancel()'));

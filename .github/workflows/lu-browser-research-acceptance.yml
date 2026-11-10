@@ -1,0 +1,173 @@
+name: Lu Browser and Research Native Acceptance Candidates
+on:
+  pull_request:
+    paths:
+      - 'lu-desktop/scripts/assemble-browser-ci-candidate.mjs'
+      - 'lu-desktop/scripts/stage-browser-runtime.mjs'
+      - 'scripts/stage-research-windows.ps1'
+      - 'lu-desktop/src-tauri/src/research_desktop.rs'
+      - 'lu-desktop/tests/research-source-route.test.mjs'
+      - 'lu-desktop/src-tauri/src/lib.rs'
+      - 'lu-desktop/web/main.jsx'
+      - 'src-tauri/lu-core/src/web_research_evidence.rs'
+      - 'lu-desktop/tests/browser-model-read.test.mjs'
+      - 'lu-desktop/tests/browser-research-evidence.test.mjs'
+      - 'lu-desktop/tests/research-citation-enforcement.test.mjs'
+      - 'lu-desktop/tests/research-roadmap-acceptance.test.mjs'
+      - 'src-tauri/lu-core/src/web_research_document.rs'
+      - 'src-tauri/lu-core/src/web_research_report.rs'
+      - 'src-tauri/lu-core/tests/web_research_roadmap_acceptance.rs'
+      - 'src-tauri/lu-core/src/web_research_citation.rs'
+      - 'src-tauri/lu-core/tests/web_research_citation_acceptance.rs'
+      - 'src-tauri/lu-core/src/web_research_evidence.rs'
+      - 'lu-desktop/src-tauri/src/browser_model_desktop.rs'
+      - 'src-tauri/lu-core/src/inference_host.rs'
+      - 'src-tauri/lu-core/src/inference_bridge.rs'
+      - 'src-tauri/lu-core/src/inference_supervisor.rs'
+      - 'src-tauri/lu-core/src/persistent_llama_backend.rs'
+      - 'src-tauri/lu-core/src/multimodal_http.rs'
+      - 'lu-desktop/tests/browser-ci-candidate.test.mjs'
+      - 'lu-desktop/tests/browser-ci-executable.test.mjs'
+      - 'src-tauri/lu-core/workers/lu_browser_worker.mjs'
+      - 'src-tauri/lu-core/src/native_web_research.rs'
+      - 'src-tauri/lu-core/src/web_*'
+      - '.github/workflows/lu-browser-research-acceptance.yml'
+      - 'source-tree.lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/verify-source-tree.mjs
+      - run: node --test lu-desktop/tests/research-source-route.test.mjs
+      - run: node --test lu-desktop/tests/browser-research-evidence.test.mjs
+      - run: node --test lu-desktop/tests/research-citation-enforcement.test.mjs
+      - run: node --test lu-desktop/tests/research-roadmap-acceptance.test.mjs
+      - run: node --test lu-desktop/tests/browser-model-read.test.mjs
+      - run: node --test lu-desktop/tests/browser-staging.test.mjs lu-desktop/tests/browser-native-authorization.test.mjs
+      - run: node --test tests/lu-browser-worker.test.mjs
+  browser-candidate:
+    needs: source
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Provision precise headed Playwright/Chromium for candidate verification
+        shell: bash
+        run: |
+          npm install --prefix src-tauri/lu-core/workers --no-save --no-package-lock playwright@1.64.1
+          node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --no-shell chromium
+      - name: Install X11 prerequisites on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool
+          sudo env "PATH=$PATH" node src-tauri/lu-core/workers/node_modules/playwright/cli.js install-deps chromium
+          echo "LU_BROWSER_XDOTOOL=$(command -v xdotool)" >> "$GITHUB_ENV"
+      - name: Assemble content-hashed UNAPPROVED candidate
+        run: node lu-desktop/scripts/assemble-browser-ci-candidate.mjs
+      - name: Verify candidate manifest and every component hash
+        env:
+          LU_BROWSER_REQUIRE_CANDIDATE: '1'
+        run: node --test lu-desktop/tests/browser-ci-candidate.test.mjs
+      - name: Exercise bundled headed Chromium on Windows
+        if: runner.os == 'Windows'
+        env:
+          LU_BROWSER_REQUIRE_CANDIDATE: '1'
+        run: node --test lu-desktop/tests/browser-ci-executable.test.mjs
+      - name: Exercise bundled headed Chromium in Xvfb on Linux
+        if: runner.os == 'Linux'
+        env:
+          LU_BROWSER_REQUIRE_CANDIDATE: '1'
+        run: xvfb-run -a node --test lu-desktop/tests/browser-ci-executable.test.mjs
+      - name: Publish short-lived candidate manifest, NOT an approved runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: lu-browser-candidate-${{ runner.os }}-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            out/lu-browser-candidate/manifest.json
+            out/lu-browser-candidate/manifest.sha256
+            out/lu-browser-candidate/candidate-summary.json
+  research-evidence:
+    needs: source
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib multimodal_http::tests::browser_tool_stream_accepts_clean_stop_but_not_bare_done
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_citation_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test web_research_roadmap_acceptance
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_evidence
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_citation
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_document
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_report
+      - run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib web_research_sufficiency
+  research-runtime-windows:
+    needs: source
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Stage inert compile-only Lu inference dependencies
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach ($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')) {
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - working-directory: lu-desktop
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund
+          npm run build
+      - name: Stage only Microsoft-signed Windows System32 curl
+        shell: pwsh
+        run: ./scripts/stage-research-windows.ps1
+      - name: Check staged HTTPS runtime executes with pinned digest
+        shell: pwsh
+        run: |
+          $exe='lu-desktop/src-tauri/resources/lu-research/curl.exe'
+          $digest=(Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()
+          if($digest -cne $env:LU_RESEARCH_CURL_SHA256){throw 'Research HTTPS client digest mismatch'}
+          & $exe --version
+          if($LASTEXITCODE -ne 0){throw 'Research HTTPS client did not execute'}
+      - name: Verify research native host with compiled-in client digest
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib research_desktop::tests
+      - name: Compile and test scoped native Browser model dispatch on Windows
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib browser_model_desktop::tests

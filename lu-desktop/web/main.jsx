@@ -29,10 +29,52 @@ function App() {
   const [history, setHistory] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]);
-  const [imageViewer,setImageViewer] = useState(null); // read-only draft preview, not an edit grant
+  const [imageViewer,setImageViewer] = useState(null);
+  const [imageEdit,setImageEdit]=useState({mode:'resize',x:'0',y:'0',width:'',height:''});
+  const [imageExportBusy,setImageExportBusy]=useState(false);
+  const [imageExportReceipt,setImageExportReceipt]=useState(null);
+  const [imageHistoryView,setImageHistoryView]=useState({chatId:null,rows:[]});
+  const [imageHistoryBusy,setImageHistoryBusy]=useState(false);
   const [visionCapability,setVisionCapability] = useState(null); // session diagnostic only, no model attestation
+  const [observeView,setObserveView] = useState({mode:'off'}); // Lu-only semantic hints
+  const [observeNotes,setObserveNotes] = useState([]);
+  const [observeHandoff,setObserveHandoff] = useState(null);
+  const [captureWorkerReady,setCaptureWorkerReady]=useState(false);
+  const [captureTaskId,setCaptureTaskId]=useState(null);
+  const [captureStarting,setCaptureStarting]=useState(false);
   const [browserVisibility,setBrowserVisibility] = useState('automatic_hidden');
   const [browserPreferenceError,setBrowserPreferenceError] = useState('');
+  const [browserRuntime,setBrowserRuntime] = useState(null);
+  const [browserOrigins,setBrowserOrigins]=useState('https://example.org');
+  const [browserBusy,setBrowserBusy]=useState(false);
+  const [browserReadBusy,setBrowserReadBusy]=useState(false);
+  const [browserReadResult,setBrowserReadResult]=useState(null);
+  const [browserReadError,setBrowserReadError]=useState('');
+  const [researchAvailable,setResearchAvailable]=useState(false);
+  const [researchQuery,setResearchQuery]=useState('');
+  const [researchBusy,setResearchBusy]=useState(false);
+  const [researchResult,setResearchResult]=useState(null);
+  const [researchMetadataByChat,setResearchMetadataByChat]=useState({});
+  const [researchDocumentsByChat,setResearchDocumentsByChat]=useState({});
+  const [researchCampaignsByChat,setResearchCampaignsByChat]=useState({});
+  const [researchCampaignCeiling,setResearchCampaignCeiling]=useState(120);
+  const [researchCampaignBusy,setResearchCampaignBusy]=useState(false);
+  const [researchClaimDraft,setResearchClaimDraft]=useState({
+    sourceId:'',claim:'',quote:'',stance:'COMPLICATES',reasoning:''
+  });
+  const [researchClaimsByChat,setResearchClaimsByChat]=useState({});
+  const [researchReportTitle,setResearchReportTitle]=useState('Research evidence report');
+  const [researchReportSavedByChat,setResearchReportSavedByChat]=useState({});
+  const [researchReportBusy,setResearchReportBusy]=useState(false);
+  const [researchDocumentQuotes,setResearchDocumentQuotes]=useState({});
+  const [researchDocumentPassages,setResearchDocumentPassages]=useState({});
+  const [researchError,setResearchError]=useState('');
+  const [browserEvidenceByChat,setBrowserEvidenceByChat]=useState({});
+  const [browserEvidenceBusy,setBrowserEvidenceBusy]=useState(false);
+  const [researchQuoteDraftByKey,setResearchQuoteDraftByKey]=useState({});
+  const [researchQuoteSourceByKey,setResearchQuoteSourceByKey]=useState({});
+  const [researchQuoteProofByKey,setResearchQuoteProofByKey]=useState({});
+  const [researchQuoteBusy,setResearchQuoteBusy]=useState(false);
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
@@ -62,6 +104,8 @@ function App() {
   // An opt-in for exactly one ordinary Send. This boolean is never authority:
   // the host still requires an actual native directory picker.
   const [workspaceToolsNextSend,setWorkspaceToolsNextSend] = useState(false);
+  // Explicit one-turn Browser opt-in; native dialog remains the grant.
+  const [browserResearchNextSend,setBrowserResearchNextSend]=useState(false);
   const [modelLoadSeconds, setModelLoadSeconds] = useState(0);
   const [modelLoadTrace, setModelLoadTrace] = useState(null);
   const [lastHostLoadReply, setLastHostLoadReply] = useState(0);
@@ -198,6 +242,330 @@ function App() {
   useEffect(()=>{
     if(!settingsOpen)return;
     let active=true;
+    invoke('lu_browser_runtime_status')
+      .then(v=>{if(active)setBrowserRuntime(v);})
+      .catch(e=>{if(active)setBrowserPreferenceError(String(e));});
+    return()=>{active=false;};
+  },[settingsOpen]);
+  useEffect(()=>{
+    if(!settingsOpen)return;
+    invoke('lu_research_available')
+      .then(v=>setResearchAvailable(Boolean(v)))
+      .catch(()=>setResearchAvailable(false));
+  },[settingsOpen]);
+  async function runResearchDiscovery(page=1){
+    const selectedPage=Number.isInteger(page)?page:1;
+    if(!chatId||researchBusy||!researchAvailable
+      ||selectedPage<1||selectedPage>5)return;
+    const sourceChat=chatId;
+    setResearchBusy(true);
+    setResearchError('');
+    setResearchResult(null);
+    try{
+      const result=await invoke('lu_research_openalex',{chatId:sourceChat,query:researchQuery,page:selectedPage});
+      // Preserve the requesting chat as part of the displayed evidence scope.
+      setResearchResult({...result,chatId:sourceChat});
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchBusy(false);}
+  }
+  async function checkResearchMetadata(sourceId){
+    if(!chatId||!researchAvailable||researchBusy||!sourceId)return;
+    const sourceChat=chatId;
+    setResearchBusy(true);setResearchError('');
+    try{
+      const result=await invoke('lu_research_crossref',{chatId:sourceChat,sourceId});
+      setResearchMetadataByChat(old=>({
+        ...old,[sourceChat+'|'+sourceId]:result
+      }));
+    }catch(e){setResearchError(String(e));}
+    finally{setResearchBusy(false);}
+  }
+  async function refreshResearchClaims(selectedChat=chatId){
+    if(!selectedChat)return;
+    try{
+      const claims=await invoke('lu_research_claims',{chatId:selectedChat});
+      setResearchClaimsByChat(old=>({...old,[selectedChat]:claims}));
+    }catch(error){setResearchError(String(error));}
+  }
+  async function submitResearchClaim(){
+    if(!chatId||researchReportBusy)return;
+    const sourceChat=chatId;
+    const {sourceId,claim,quote,stance,reasoning}=researchClaimDraft;
+    if(!sourceId.trim()||!claim.trim()||!quote.trim()||!reasoning.trim())return;
+    setResearchReportBusy(true);setResearchError('');
+    try{
+      const result=await invoke('lu_research_add_claim',{
+        chatId:sourceChat,sourceId:sourceId.trim(),claim:claim.trim(),
+        quote:quote.trim(),stance,reasoning:reasoning.trim()
+      });
+      setResearchClaimsByChat(old=>({...old,[sourceChat]:result}));
+    }catch(error){setResearchError(String(error));}
+    finally{setResearchReportBusy(false);}
+  }
+  async function exportResearchReport(format){
+    if(!chatId||researchReportBusy||!researchReportTitle.trim())return;
+    const sourceChat=chatId;
+    setResearchReportBusy(true);setResearchError('');
+    try{
+      const result=await invoke('lu_research_export_report',{
+        chatId:sourceChat,title:researchReportTitle.trim(),format
+      });
+      if(result)setResearchReportSavedByChat(old=>({...old,[sourceChat]:result}));
+    }catch(error){setResearchError(String(error));}
+    finally{setResearchReportBusy(false);}
+  }
+  async function refreshResearchCampaigns(selectedChat=chatId){
+    if(!selectedChat)return;
+    try{
+      const result=await invoke('lu_research_campaigns',{chatId:selectedChat});
+      setResearchCampaignsByChat(old=>({...old,[selectedChat]:result}));
+    }catch(error){setResearchError(String(error));}
+  }
+  async function runResearchCampaign(){
+    if(!chatId||researchCampaignBusy||!researchAvailable||!researchQuery.trim())return;
+    const selectedChat=chatId;
+    setResearchCampaignBusy(true);setResearchError('');
+    try{
+      const result=await invoke('lu_research_campaign_start',{
+        chatId:selectedChat,query:researchQuery.trim(),
+        candidateCeiling:researchCampaignCeiling
+      });
+      setResearchCampaignsByChat(old=>({
+        ...old,[selectedChat]:[result,...(old[selectedChat]||[])
+          .filter(existing=>existing.campaignId!==result.campaignId)]
+      }));
+    }catch(error){setResearchError(String(error));}
+    finally{
+      setResearchCampaignBusy(false);
+      await refreshResearchCampaigns(selectedChat);
+    }
+  }
+  async function resumeResearchCampaign(campaignId){
+    if(!chatId||researchCampaignBusy)return;
+    const selectedChat=chatId;
+    setResearchCampaignBusy(true);setResearchError('');
+    try{
+      await invoke('lu_research_campaign_resume',{chatId:selectedChat,campaignId});
+    }catch(error){setResearchError(String(error));}
+    finally{
+      setResearchCampaignBusy(false);
+      await refreshResearchCampaigns(selectedChat);
+    }
+  }
+  async function cancelResearchCampaign(campaignId){
+    if(!chatId||researchCampaignBusy)return;
+    const selectedChat=chatId;
+    setResearchCampaignBusy(true);setResearchError('');
+    try{
+      await invoke('lu_research_campaign_cancel',{chatId:selectedChat,campaignId});
+    }catch(error){setResearchError(String(error));}
+    finally{
+      setResearchCampaignBusy(false);
+      await refreshResearchCampaigns(selectedChat);
+    }
+  }
+  async function retrieveResearchDocument(sourceId){
+    if(!chatId||researchBusy||!researchAvailable)return;
+    const selectedChat=chatId;
+    setResearchBusy(true);setResearchError('');
+    try{
+      const document=await invoke('lu_research_retrieve_document',{
+        chatId:selectedChat,sourceId
+      });
+      setResearchDocumentsByChat(old=>({
+        ...old,[selectedChat+'|'+sourceId]:document
+      }));
+    }catch(error){setResearchError(String(error));}
+    finally{setResearchBusy(false);}
+  }
+  async function verifyResearchDocumentPassage(sourceId){
+    if(!chatId||researchBusy)return;
+    const selectedChat=chatId;
+    const key=selectedChat+'|'+sourceId;
+    const quote=(researchDocumentQuotes[key]||'').trim();
+    if(quote.length<4||quote.length>4096)return;
+    setResearchBusy(true);setResearchError('');
+    try{
+      const proof=await invoke('lu_research_verify_document_passage',{
+        chatId:selectedChat,sourceId,quote
+      });
+      setResearchDocumentPassages(old=>({...old,[key]:proof}));
+    }catch(error){
+      setResearchDocumentPassages(old=>({...old,[key]:null}));
+      setResearchError(String(error));
+    }finally{setResearchBusy(false);}
+  }
+  async function reviewBrowserEvidence(){
+    if(!chatId||browserEvidenceBusy)return;
+    const selectedChat=chatId;
+    setBrowserEvidenceBusy(true);setResearchError('');
+    try{
+      const list=await invoke('lu_research_browser_evidence',{chatId:selectedChat});
+      // Keep the host's read-only records scoped to the selected conversation.
+      setBrowserEvidenceByChat(old=>({...old,[selectedChat]:list}));
+    }catch(e){setResearchError(String(e));}
+    finally{setBrowserEvidenceBusy(false);}
+  }
+  async function verifyObservedQuote(item){
+    if(!chatId||researchQuoteBusy)return;
+    const sourceChat=chatId;
+    const key=sourceChat+'|'+item.generationId+'|'+item.callId;
+    const quote=(researchQuoteDraftByKey[key]||'').trim();
+    if(quote.length<4||quote.length>2048)return;
+    setResearchQuoteBusy(true);setResearchError('');
+    try{
+      const publisherId=(researchQuoteSourceByKey[key]||'').trim();
+      const result=await invoke('lu_research_verify_quote',{
+        chatId:sourceChat,generationId:item.generationId,callId:item.callId,
+        quote,publisherSourceId:publisherId||null
+      });
+      setResearchQuoteProofByKey(old=>({...old,[key]:result}));
+    }catch(e){
+      setResearchQuoteProofByKey(old=>({...old,[key]:null}));
+      setResearchError(String(e));
+    }finally{setResearchQuoteBusy(false);}
+  }
+  async function inspectWithBrowserModel(){
+    if(!chatId||!runtime.sessionId||!browserRuntime?.running||browserReadBusy)return;
+    const selectedChat=chatId;
+    setBrowserReadBusy(true);setBrowserReadError('');setBrowserReadResult(null);
+    try{
+      const result=await invoke('lu_browser_model_read',{
+        sessionId:runtime.sessionId,chatId:selectedChat
+      });
+      setBrowserReadResult(result);
+      setBrowserRuntime(await invoke('lu_browser_runtime_status'));
+    }catch(error){
+      setBrowserReadError(String(error));
+      await invoke('lu_browser_runtime_status')
+        .then(setBrowserRuntime).catch(()=>{});
+    }finally{setBrowserReadBusy(false);}
+  }
+  async function browserOperation(name,args={}){
+    if(browserBusy)return;
+    setBrowserBusy(true);
+    try{
+      const result=await invoke(name,args);
+      if(name==='lu_browser_stop')setBrowserRuntime(await invoke('lu_browser_runtime_status'));
+      else setBrowserRuntime(result);
+      setBrowserPreferenceError('');
+    }catch(e){setBrowserPreferenceError(String(e));}
+    finally{setBrowserBusy(false);}
+  }
+  useEffect(()=>{
+    invoke('lu_observe_capture_available')
+      .then(v=>setCaptureWorkerReady(Boolean(v)))
+      .catch(()=>setCaptureWorkerReady(false));
+  },[]);
+  useEffect(()=>{
+    setCaptureTaskId(null);
+    if(!chatId){
+      // Telling the native host that there is no active chat revokes any
+      // Lu-UI observation lease rather than letting it run unseen.
+      invoke('lu_observe_status',{chatId:''}).catch(()=>{});
+      setObserveView({mode:'off'});return;
+    }
+    let active=true;
+    invoke('lu_observe_status',{chatId})
+      .then(v=>{if(active)setObserveView(v);})
+      .catch(()=>{if(active)setObserveView({mode:'off'});});
+    // An OS-owned clock/watchdog may expire consent while Lu is idle.
+    const timer=setInterval(()=>{
+      invoke('lu_observe_status',{chatId})
+        .then(v=>{if(active)setObserveView(v);}).catch(()=>{});
+    },5000);
+    return()=>{active=false;clearInterval(timer);};
+  },[chatId]);
+  useEffect(()=>{
+    if(!chatId||observeView.chatId!==chatId||observeView.mode==='off'){
+      setObserveNotes([]);setObserveHandoff(null);return;
+    }
+    let active=true;
+    invoke('lu_observe_notes',{chatId})
+      .then(notes=>{if(active)setObserveNotes(notes);})
+      .catch(()=>{if(active)setObserveNotes([]);});
+    return()=>{active=false;};
+  },[chatId,observeView.sessionId,observeView.mode,observeView.notesLogged]);
+  useEffect(()=>{
+    // Report only enum hints from Lu itself. No text, pixels, clipboard,
+    // keystrokes, external app content, or native test PASS/FAIL.
+    if(!chatId||observeView.mode!=='active'||observeView.chatId!==chatId)return;
+    invoke('lu_observe_self_signal',{chatId,kind:'ui_changed'})
+      .then(v=>setObserveView(v))
+      .catch(()=>{});
+  },[chatId,runtime.phase,observeView.mode]);
+  useEffect(()=>{
+    if(!chatId||!error||observeView.mode!=='active'||observeView.chatId!==chatId)return;
+    invoke('lu_observe_self_signal',{chatId,kind:'error_indicator'})
+      .then(v=>setObserveView(v)).catch(()=>{});
+  },[chatId,error,observeView.mode]);
+  async function loadImageRevisionHistory(){
+    if(!chatId||imageHistoryBusy)return;
+    const sourceChat=chatId;
+    setImageHistoryBusy(true);
+    try{
+      const rows=await invoke('lu_image_workspace_history',{chatId:sourceChat});
+      setImageHistoryView({chatId:sourceChat,rows:Array.isArray(rows)?rows:[]});
+    }catch(e){setError(String(e));}
+    finally{setImageHistoryBusy(false);}
+  }
+  async function exportImageRevision(){
+    if(!chatId||!imageViewer?.imageRef||imageExportBusy)return;
+    const width=Number(imageEdit.width),height=Number(imageEdit.height);
+    const x=Number(imageEdit.x),y=Number(imageEdit.y);
+    if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||
+       width<1||height<1||width>8192||height>8192||
+       width*height>32000000||
+       (imageEdit.mode==='crop'&&(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||
+           x<0||y<0||x+width>imageViewer.width||y+height>imageViewer.height))){
+      setError('Choose valid image dimensions or a crop region within the original.');
+      return;
+    }
+    setImageExportBusy(true);
+    setImageExportReceipt(null);
+    try{
+      const saved=await invoke('lu_image_workspace_export',{
+        chatId,imageRef:imageViewer.imageRef,operation:imageEdit.mode,
+        x:imageEdit.mode==='crop'?x:null,y:imageEdit.mode==='crop'?y:null,
+        width,height
+      });
+      if(saved){
+        setImageExportReceipt(saved);
+        // Review-only receipts: history does not claim this file still exists.
+        await loadImageRevisionHistory();
+      }
+    }catch(e){setError(String(e));}
+    finally{setImageExportBusy(false);}
+  }
+  async function observeCaptureOneShot(foregroundOnly=false){
+    if(!chatId||!captureWorkerReady||observeView.mode!=='active'||captureStarting)return;
+    setCaptureStarting(true);
+    try{
+      const id=await invoke('lu_observe_capture_one_shot',{chatId,foregroundOnly});
+      if(id){setCaptureTaskId(id);setBackgroundPaneOpen(true);}
+    }catch(e){setError(String(e));}
+    finally{setCaptureStarting(false);}
+  }
+  async function reviewObserveHandoff(){
+    if(!chatId||observeView.mode==='off')return;
+    try{
+      const handoff=await invoke('lu_observe_handoff',{chatId});
+      setObserveHandoff(handoff);
+    }catch(e){setError(String(e));}
+  }
+  function observeAction(action){
+    if(!chatId)return;
+    invoke('lu_observe_'+action,{chatId})
+      .then(v=>{
+        setObserveView(v);
+        if(action==='pause'||action==='stop')setCaptureTaskId(null);
+        setError('');
+      })
+      .catch(e=>setError(String(e)));
+  }
+  useEffect(()=>{
+    if(!settingsOpen)return;
+    let active=true;
     invoke('lu_browser_visibility')
       .then(mode=>{if(active){setBrowserVisibility(mode);setBrowserPreferenceError('');}})
       .catch(e=>{if(active)setBrowserPreferenceError(String(e));});
@@ -260,7 +628,8 @@ function App() {
   }
   async function refreshBackgroundTasks() {
     try {
-      const items=await invoke('lu_background_tasks');
+      if(!chatId){setBackgroundTasks([]);return;}
+      const items=await invoke('lu_background_tasks',{chatId});
       setBackgroundTasks(Array.isArray(items)?items:[]);
       setBackgroundError('');
     } catch (error) {
@@ -276,7 +645,7 @@ function App() {
     // Future host event pushes can replace this lightweight refresh.
     const timer=setInterval(refresh,2500);
     return ()=>{alive=false;clearInterval(timer);};
-  },[backgroundPaneOpen]);
+  },[backgroundPaneOpen,chatId]);
 
   async function refreshChats() {
     const list = await invoke('lu_chats');
@@ -312,7 +681,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {}, stopBrowserChallenge = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -330,6 +699,12 @@ function App() {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => startedJob(prev,e.payload));
     }).then(fn => { if (alive) stopStart = fn; else fn(); });
+    listen('lu-browser-needs-human',e=>{
+      if(!alive||!e.payload?.chatId)return;
+      invoke('lu_browser_runtime_status')
+        .then(v=>{if(alive)setBrowserRuntime(v);})
+        .catch(()=>{});
+    }).then(fn=>{if(alive)stopBrowserChallenge=fn;else fn();});
     listen('lu-token', e => {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => tokenForJob(prev,e.payload));
@@ -395,7 +770,7 @@ function App() {
       setBackgroundTerminalNotice(e.payload);
       if (backgroundPaneOpen) void refreshBackgroundTasks();
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); };
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
@@ -1385,6 +1760,13 @@ function App() {
     if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
     const input = prompt.trim();
     const useWorkspaceTools=workspaceToolsNextSend;
+    const useBrowserResearch=browserResearchNextSend;
+    if(useWorkspaceTools&&useBrowserResearch){
+      setError('Choose either workspace tools or Browser research for this turn.');return;
+    }
+    if(useBrowserResearch&&(images.length||textFiles.length||input.length>12*1024)){
+      setError('Browser research requires a text-only question of at most 12 KiB.');return;
+    }
     if (useWorkspaceTools && (images.length || textFiles.length)){
       setError('Workspace tools require a text-only question. Remove attachments or turn off workspace tools.');return;
     }
@@ -1407,6 +1789,7 @@ function App() {
     // A workspace opt-in is consumed on this Send even if the picker is
     // denied/cancelled. No future conversation inherits a filesystem grant.
     if (useWorkspaceTools) setWorkspaceToolsNextSend(false);
+    if (useBrowserResearch) setBrowserResearchNextSend(false);
     setImageViewer(null);
     // Capture the submitted turn immediately; leave the composer available
     // for drafting the next prompt while inference runs.
@@ -1423,11 +1806,16 @@ function App() {
     let completed = false;
     let cancelled = false;
     try {
-      const output = await invoke('lu_generate', {
-        sessionId: runtime.sessionId, chatId: activeId,
-        prompt: submitted, imageRefs: refs, maxNewTokens: 512,
-        readOnlyWorkspace: useWorkspaceTools
-      });
+      const output = useBrowserResearch
+        ? await invoke('lu_generate_browser', {
+            sessionId:runtime.sessionId,chatId:activeId,
+            prompt:input,origins:browserOrigins,maxNewTokens:512
+          })
+        : await invoke('lu_generate', {
+            sessionId: runtime.sessionId, chatId: activeId,
+            prompt: submitted, imageRefs: refs, maxNewTokens: 512,
+            readOnlyWorkspace: useWorkspaceTools
+          });
       if (typeof output !== 'string') throw Error('Lu did not return a text response');
       completed = true;
     } catch (error) {
@@ -1715,6 +2103,73 @@ function App() {
           <span className="composerHandle">···</span>
           <button type="button" className="collapseComposer" onPointerDown={e => e.stopPropagation()} onClick={() => setComposerCollapsed(v => !v)}>{composerCollapsed ? 'Expand' : 'Collapse'} composer</button>
         </div>
+        {chatId && <section className="observePilot" aria-label="Observe and Learn — Lu-only pilot">
+          <div className="observePilotTop">
+            <strong>Observe & Learn · Lu UI only</strong>
+            <span role="status" className={'observeIndicator mode-'+observeView.mode}>
+              {observeView.mode==='active'?'● Observing Lu UI events':
+               observeView.mode==='paused'?'Paused':'Off'}
+            </span>
+          </div>
+          <small>Lu UI event pilot: semantic state changes only · AI prompts issued: 0.
+            An additionally approved Windows foreground-window capture rechecks HWND and PID;
+            the general picker can select a monitor. Neither gives the model its pixels.</small>
+          <div className="settingsActions">
+            {observeView.mode==='off' &&
+              <button type="button" onClick={()=>observeAction('start')}>Start observing Lu</button>}
+            {observeView.mode==='active' &&
+              <button type="button" onClick={()=>observeAction('pause')}>Pause</button>}
+            {observeView.mode==='paused' &&
+              <button type="button" onClick={()=>observeAction('resume')}>Resume</button>}
+            {observeView.mode==='active' && captureWorkerReady &&
+              <>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(true)}>
+                  {captureStarting?'Capturing…':'Capture selected foreground app (4s)'}
+                </button>
+                <button type="button" disabled={captureStarting}
+                  onClick={()=>observeCaptureOneShot(false)}>
+                  Select window/display · capture one frame
+                </button>
+              </>}
+            {observeView.mode!=='off' &&
+              <button type="button" onClick={()=>observeAction('stop')}>Stop observation</button>}
+          </div>
+          {observeView.mode==='active' && !captureWorkerReady &&
+            <small>Windows Graphics Capture is unavailable until the signed-off capture worker is installed with Lu.</small>}
+          {captureTaskId && <small role="status">
+            One-shot Windows frame capture task: {captureTaskId}.
+            Check Background Tasks for the frame receipt. No image pixels are retained or sent to the model.
+          </small>}
+          {observeView.mode!=='off'&&
+            <small>Observed state-change hints: {observeView.nativeEventCount||0}.
+              Durable awareness notes: {observeView.notesLogged||0}.
+              No automatically saved learning, GPU inference or GUI test verdict.</small>}
+          {observeView.mode!=='off'&&
+            <div className="observeNotations" aria-label="Local awareness notations">
+              <strong>Awareness notes · native-only</strong>
+              {observeNotes.length===0
+                ? <small>No issues noted in this observation session.</small>
+                : <ul>{observeNotes.slice(0,8).map(n=>
+                  <li key={n.sequence}>
+                    {n.kind==='error_indicator'?'Error indicator observed (not verified)':
+                      n.kind==='verified_test_failure'?'Independently verified test failure':
+                      n.kind} · {n.source==='renderer_hint'?'UI hint':n.source}
+                    · {n.priority}
+                  </li>
+                )}</ul>}
+              <button type="button" disabled={observeNotes.length===0}
+                onClick={reviewObserveHandoff}>Prepare large-model review handoff</button>
+              {observeHandoff&&<div role="status" className="observeHandoff">
+                <strong>Main-model handoff prepared · not executed</strong>
+                <small>Verified failures: {observeHandoff.verifiedFailures} ·
+                  Unverified indicators: {observeHandoff.unverifiedIndicators}.
+                  {observeHandoff.recommendation}.</small>
+                <small>The main model has not run. Source changes, tests and
+                  application control still require separate host authorization.</small>
+              </div>}
+            </div>}
+        </section>}
         {wave2FileBusy && <section className="readProposalCard" role="status"
           aria-live="polite" aria-label="Native file operation in progress">
           <strong>Native file operation in progress</strong>
@@ -2572,12 +3027,27 @@ function App() {
               aria-pressed={workspaceToolsNextSend}
               disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
               title="On the next normal Send, choose a folder in the native picker and let Lu use approved read-only tools for that one turn"
-              onClick={()=>setWorkspaceToolsNextSend(value=>!value)}>
+              onClick={()=>{setBrowserResearchNextSend(false);setWorkspaceToolsNextSend(value=>!value);}}>
               {workspaceToolsNextSend?'Workspace tools: next Send ✓':'Use workspace tools on Send'}
             </button>
             {workspaceToolsNextSend && <span className="composerHelp" role="status">
               Next Send will open a native folder picker. Read-only access is granted for that turn only.
             </span>}
+            <button type="button" className="subtleButton"
+              aria-pressed={browserResearchNextSend}
+              disabled={!loaded||chatBusy||working||Boolean(images.length)||Boolean(textFiles.length)}
+              title="Next Send: request native approval for exact HTTPS origins, use a supervised read-only Browser and return a journaled answer"
+              onClick={()=>{setWorkspaceToolsNextSend(false);setBrowserResearchNextSend(v=>!v);}}>
+              {browserResearchNextSend?'Browser research: next Send ✓':'Research with Lu browser (read only)'}
+            </button>
+            {browserResearchNextSend&&<label className="composerHelp">
+              Research HTTPS origins (exact public sites)
+              <input value={browserOrigins} maxLength={2048}
+                onChange={e=>setBrowserOrigins(e.target.value)}
+                placeholder="https://example.org" />
+              <small>Lu asks for native approval of the entire list.
+                Text-only, read-only, one conversation turn.</small>
+            </label>}
             <button type="button" className="subtleButton"
               disabled={!chatId}
               title="Inspect actual persisted Reader/Workspace model tool loops without replaying effects"
@@ -2597,13 +3067,20 @@ function App() {
       <section className="imageViewerDialog" role="dialog" aria-modal="true"
         aria-label="Image Workspace preview" onClick={e=>e.stopPropagation()}>
         <header>
-          <strong>Image Workspace · read-only preview</strong>
+          <strong>Image Workspace · original and immutable revision export</strong>
           <button type="button" aria-label="Close image preview"
             onClick={()=>setImageViewer(null)}>×</button>
         </header>
         <small>{viewedDraftImage.name||'Attached image'} · {viewedDraftImage.detectedMimeType||viewedDraftImage.mimeType||'Verified image'}</small>
         <div className="imageViewerViewport" aria-label="Zoomable original draft image">
           <img src={viewedDraftImage.previewUrl} alt="Original attached image, unmodified"
+            onLoad={e=>{
+              const width=e.currentTarget.naturalWidth,height=e.currentTarget.naturalHeight;
+              setImageViewer(v=>v&&v.imageRef===viewedDraftImage.imageRef
+                ?({...v,width,height}):v);
+              setImageEdit({mode:'resize',x:'0',y:'0',width:String(width),height:String(height)});
+              setImageExportReceipt(null);
+            }}
             style={{transform:'scale('+imageViewer.zoom+')'}}/>
         </div>
         <footer>
@@ -2614,7 +3091,51 @@ function App() {
             onClick={()=>setImageViewer(v=>v&&({...v,zoom:Math.min(3,+(v.zoom+0.25).toFixed(2))}))}>Zoom in</button>
           <button type="button" onClick={()=>setImageViewer(null)}>Close</button>
         </footer>
-        <small>Original image only. Crop, resize, annotations and AI edits are not enabled until native revision and approval support is verified.</small>
+        <div className="imageRevisionForm" aria-label="Deterministic image revision export">
+          <small>Original stays unchanged. Native approval and a NEW PNG destination are required.
+            No AI edits, annotations, masks, undo or automatic image overwrite.</small>
+          <label>Operation
+            <select value={imageEdit.mode} disabled={imageExportBusy}
+              onChange={e=>setImageEdit(v=>({...v,mode:e.target.value}))}>
+              <option value="resize">Resize</option>
+              <option value="crop">Crop</option>
+            </select>
+          </label>
+          {imageEdit.mode==='crop'&&<div className="imageRevisionDimensions">
+            <label>X <input type="number" min="0" value={imageEdit.x}
+              onChange={e=>setImageEdit(v=>({...v,x:e.target.value}))}/></label>
+            <label>Y <input type="number" min="0" value={imageEdit.y}
+              onChange={e=>setImageEdit(v=>({...v,y:e.target.value}))}/></label>
+          </div>}
+          <div className="imageRevisionDimensions">
+            <label>Width <input type="number" min="1" max="8192" value={imageEdit.width}
+              onChange={e=>setImageEdit(v=>({...v,width:e.target.value}))}/></label>
+            <label>Height <input type="number" min="1" max="8192" value={imageEdit.height}
+              onChange={e=>setImageEdit(v=>({...v,height:e.target.value}))}/></label>
+          </div>
+          <button type="button" disabled={!chatId||!imageViewer?.width||imageExportBusy}
+            onClick={()=>void exportImageRevision()}>
+            {imageExportBusy?'Awaiting native approval…':'Save new PNG revision…'}
+          </button>
+          {imageExportReceipt&&<small role="status">
+            New image version saved: {imageExportReceipt.fileName} ·
+            {imageExportReceipt.width} × {imageExportReceipt.height} ·
+            SHA-256 {imageExportReceipt.revisionSha256}. Original retained.
+          </small>}
+          <button type="button" disabled={!chatId||imageHistoryBusy}
+            onClick={()=>void loadImageRevisionHistory()}>
+            {imageHistoryBusy?'Reading history…':'Review saved revision history'}
+          </button>
+          {imageHistoryView.chatId===chatId&&
+            <div aria-label="Historical image revision receipts">
+              <small>Historical exports only. This list does not prove files still exist.
+                Uncertain exports are never automatically retried.</small>
+              <ul>{imageHistoryView.rows.map(record=><li key={record.id}>
+                {record.fileName} · {record.width} × {record.height} ·
+                {record.state} · SHA-256 {record.revisionSha256}
+              </li>)}</ul>
+            </div>}
+        </div>
       </section>
     </div>}
     {dragActive && <div className="appDropHint" role="status" aria-live="polite">Drop image or text files to attach to this conversation</div>}
@@ -2741,7 +3262,285 @@ function App() {
             <option value="always_visible">Always visible</option>
           </select>
           {browserPreferenceError&&<small role="alert">{browserPreferenceError}</small>}
-          <small>The Chromium/Playwright runtime and real visibility handoff are not yet packaged or native-accepted.</small>
+          <small>{browserRuntime?.reason||'Checking native browser runtime admission…'}</small>
+          <div className="settingsActions">
+            <button type="button" className="subtleButton"
+              disabled={browserBusy} onClick={()=>browserOperation('lu_browser_runtime_status')}>
+              Check Browser runtime
+            </button>
+          </div>
+          <label htmlFor="browserTrustedOrigins">HTTPS origins for a new read-only task</label>
+          <input id="browserTrustedOrigins" value={browserOrigins}
+            onChange={e=>setBrowserOrigins(e.target.value)} disabled={browserBusy||browserRuntime?.running}
+            placeholder="https://example.org" />
+          <div className="settingsActions">
+            {!browserRuntime?.running &&
+              <button type="button" disabled={browserBusy||!chatId||!browserRuntime?.launchReady}
+                onClick={()=>browserOperation('lu_browser_start',{chatId,origins:browserOrigins})}>
+                Authorize read-only Browser
+              </button>}
+            {browserRuntime?.running && <>
+              <button type="button" disabled={browserBusy||browserReadBusy||!runtime.sessionId
+                  ||browserRuntime.humanVerificationRequired}
+                onClick={()=>void inspectWithBrowserModel()}>
+                {browserReadBusy?'Running supervised Browser model read…':
+                  'Let Lu inspect this approved browser'}
+              </button>
+
+              <button type="button" disabled={browserBusy}
+                onClick={()=>browserOperation('lu_browser_set_visible',{visible:true})}>
+                Show browser
+              </button>
+              <button type="button" disabled={browserBusy}
+                onClick={()=>browserOperation('lu_browser_set_visible',{visible:false})}>
+                Hide browser
+              </button>
+              {browserRuntime.humanVerificationRequired &&
+                <button type="button" disabled={browserBusy}
+                  onClick={()=>browserOperation('lu_browser_human_verified')}>
+                  I've completed verification
+                </button>}
+              <button type="button" disabled={browserBusy}
+                onClick={()=>browserOperation('lu_browser_stop')}>Stop browser</button>
+            </>}
+          </div>
+          <small>Browser navigation requires a currently authenticated human conversation and separate native approval.
+            Lu's supervised read-only inspection uses the same approved turn and exact origins. It grants no form, click, typing or additional network authority.</small>
+          {browserReadError&&<small role="alert">{browserReadError}</small>}
+          {browserReadResult?.chatId===chatId&&<section aria-label="Model-guided browser observations">
+            <strong>{browserReadResult.proposalsExecuted} supervised Browser operations</strong>
+            <small>{browserReadResult.message}</small>
+            <ul>{browserReadResult.observations.map((page,index)=><li key={index}>
+              <strong>{page.status}</strong>
+              {page.url&&<small>{page.url}</small>}
+              {page.excerpt&&<pre>{page.excerpt}</pre>}
+              {page.truncated&&<small>Page excerpt truncated.</small>}
+            </li>)}</ul>
+          </section>}
+        </section>
+        <section className="advancedDocumentSettings" aria-label="Research discovery">
+          <h3>Research · verified-evidence workflow</h3>
+          <p>OpenAlex discovery is a separately approved read-only operation. Search results are
+             unverified leads, never citations, until registry and document evidence are checked.</p>
+          <div className="settingsActions">
+            <button type="button" disabled={!chatId||browserEvidenceBusy}
+              onClick={()=>void reviewBrowserEvidence()}>
+              {browserEvidenceBusy?'Reading evidence…':'Review observed Browser evidence'}
+            </button>
+          </div>
+          <small>Browser reads are local, untrusted observations, not independently
+            corroborated sources or verified academic citations. Their exact
+            post-redirect URLs and text digests come from Lu's supervised worker.</small>
+          {Array.isArray(browserEvidenceByChat[chatId])&&
+            <div className="researchResults" aria-label="Observed Browser evidence">
+              <strong>{browserEvidenceByChat[chatId].length} recent Browser observations · UNCORROBORATED</strong>
+              <ul>{browserEvidenceByChat[chatId].map(item=><li key={item.callId}>
+                <strong>{item.sourceUrl}</strong>
+                <small>Observed SHA-256: {item.observedSha256}</small>
+                <small>{item.verificationStatus} · citation verified: no</small>
+                <pre>{item.excerpt.slice(0,1500)}</pre>
+                {item.excerptTruncated&&<small>Excerpt incomplete; only saved text can be checked.</small>}
+                <label>Exact passage from this observed excerpt
+                  <input value={researchQuoteDraftByKey[chatId+'|'+item.generationId+'|'+item.callId]||''}
+                    onChange={e=>{
+                      const key=chatId+'|'+item.generationId+'|'+item.callId;
+                      setResearchQuoteDraftByKey(old=>({...old,[key]:e.target.value}));
+                      setResearchQuoteProofByKey(old=>({...old,[key]:null}));
+                    }} placeholder="Paste a verbatim quotation" />
+                </label>
+                <label>Optional independently corroborated OpenAlex source ID
+                  <input value={researchQuoteSourceByKey[chatId+'|'+item.generationId+'|'+item.callId]||''}
+                    onChange={e=>{
+                      const key=chatId+'|'+item.generationId+'|'+item.callId;
+                      setResearchQuoteSourceByKey(old=>({...old,[key]:e.target.value}));
+                      setResearchQuoteProofByKey(old=>({...old,[key]:null}));
+                    }} placeholder="Only if Crossref metadata was checked" />
+                </label>
+                <button type="button" disabled={researchQuoteBusy||
+                  (researchQuoteDraftByKey[chatId+'|'+item.generationId+'|'+item.callId]||'').trim().length<4}
+                  onClick={()=>void verifyObservedQuote(item)}>
+                  Check exact source passage
+                </button>
+                {researchQuoteProofByKey[chatId+'|'+item.generationId+'|'+item.callId]&&
+                  <small>{researchQuoteProofByKey[chatId+'|'+item.generationId+'|'+item.callId].message}</small>}
+              </li>)}</ul>
+            </div>}
+          <label htmlFor="researchQuery">Research question or subject</label>
+          <input id="researchQuery" value={researchQuery} disabled={researchBusy}
+            onChange={e=>{setResearchQuery(e.target.value);setResearchResult(null);}}
+            placeholder="e.g., spatial reasoning and GUI automation" />
+          <div className="settingsActions">
+            <button type="button" disabled={!chatId||!researchAvailable||researchBusy||!researchQuery.trim()}
+              onClick={runResearchDiscovery}>
+              {researchBusy?'Searching reviewed source…':'Search OpenAlex'}
+            </button>
+          </div>
+          <small>{researchAvailable?'Pinned HTTPS research runtime available. Native consent required.'
+            :'Research network runtime is not bundled in this build; discovery remains disabled.'}</small>
+          <label>Maximum distinct DOI leads (up to 120)
+            <input type="number" min="1" max="120" value={researchCampaignCeiling}
+              onChange={e=>setResearchCampaignCeiling(Math.min(120,Math.max(1,
+                Number(e.target.value)||1)))} />
+          </label>
+          <div className="settingsActions">
+            <button type="button" disabled={!chatId||!researchAvailable||
+              !researchQuery.trim()||researchCampaignBusy}
+              onClick={()=>void runResearchCampaign()}>
+              {researchCampaignBusy?'Researching in approved catalog…':'Run bounded Research campaign'}
+            </button>
+            <button type="button" disabled={!chatId||researchCampaignBusy}
+              onClick={()=>void refreshResearchCampaigns()}>
+              Restore saved research jobs
+            </button>
+          </div>
+          {Array.isArray(researchCampaignsByChat[chatId])&&
+            <div className="researchResults" aria-label="Durable research campaigns">
+              <ul>{researchCampaignsByChat[chatId].map(job=><li key={job.campaignId}>
+                <strong>{job.query}</strong>
+                <small>{job.state} · {job.distinctDois}/{job.candidateCeiling}
+                  distinct DOI leads · {job.completedPages} pages checkpointed</small>
+                <small>{job.message}</small>
+                {job.blockedReason&&<small>Blocker: {job.blockedReason}</small>}
+                {['PAUSED','BLOCKED','RUNNING'].includes(job.state)&&
+                  <button type="button" disabled={researchCampaignBusy||!researchAvailable}
+                    onClick={()=>void resumeResearchCampaign(job.campaignId)}>
+                    Reauthorize and resume
+                  </button>}
+                {!['DONE','CANCELLED'].includes(job.state)&&
+                  <button type="button" disabled={researchCampaignBusy}
+                    onClick={()=>void cancelResearchCampaign(job.campaignId)}>
+                    Cancel campaign
+                  </button>}
+              </li>)}</ul>
+            </div>}
+          <div className="researchResults" aria-label="Source-linked claim matrix">
+            <strong>Document-backed claim and counterevidence review</strong>
+            <small>Only a previously verified full-text PDF passage can enter this matrix.
+              Your interpretation is recorded as human-reviewed, not as established fact.</small>
+            <input aria-label="Verified research source ID"
+              placeholder="Crossref-corroborated OpenAlex source ID"
+              value={researchClaimDraft.sourceId}
+              onChange={e=>setResearchClaimDraft(old=>({...old,sourceId:e.target.value}))}/>
+            <input aria-label="Claim under analysis" placeholder="Specific claim"
+              value={researchClaimDraft.claim}
+              onChange={e=>setResearchClaimDraft(old=>({...old,claim:e.target.value}))}/>
+            <textarea aria-label="Verified quote for research claim"
+              placeholder="Exact verified PDF passage" value={researchClaimDraft.quote}
+              onChange={e=>setResearchClaimDraft(old=>({...old,quote:e.target.value}))}/>
+            <label>Evidence relationship
+              <select value={researchClaimDraft.stance}
+                onChange={e=>setResearchClaimDraft(old=>({...old,stance:e.target.value}))}>
+                <option value="SUPPORTS">Supports</option>
+                <option value="CHALLENGES">Challenges</option>
+                <option value="COMPLICATES">Qualifies or complicates</option>
+              </select>
+            </label>
+            <input aria-label="Reasoning for interpretation"
+              placeholder="Why this quote relates to the claim"
+              value={researchClaimDraft.reasoning}
+              onChange={e=>setResearchClaimDraft(old=>({...old,reasoning:e.target.value}))}/>
+            <div className="settingsActions">
+              <button type="button" disabled={!chatId||researchReportBusy||
+                !researchClaimDraft.sourceId.trim()||!researchClaimDraft.claim.trim()||
+                !researchClaimDraft.quote.trim()||!researchClaimDraft.reasoning.trim()}
+                onClick={()=>void submitResearchClaim()}>
+                Save my evidence interpretation
+              </button>
+              <button type="button" disabled={!chatId||researchReportBusy}
+                onClick={()=>void refreshResearchClaims()}>
+                Review saved claims
+              </button>
+            </div>
+            {Array.isArray(researchClaimsByChat[chatId])&&
+              <ul>{researchClaimsByChat[chatId].map(item=><li key={item.claim}>
+                <strong>{item.claim}</strong>
+                <small>Support: {item.supports} · Challenge: {item.challenges}
+                  · Qualification: {item.complicates}
+                  · Source IDs: {item.distinctCatalogSources}</small>
+                {item.unresolvedDisagreement&&
+                  <small>Unresolved: contrary or qualifying evidence remains</small>}
+                <small>{item.reasonCodes.join(', ')}</small>
+              </li>)}</ul>}
+            <label>Verified evidence report title
+              <input value={researchReportTitle}
+                onChange={e=>setResearchReportTitle(e.target.value)}/>
+            </label>
+            <div className="settingsActions">
+              <button type="button" disabled={!chatId||researchReportBusy}
+                onClick={()=>void exportResearchReport('markdown')}>
+                Save Markdown report
+              </button>
+              <button type="button" disabled={!chatId||researchReportBusy}
+                onClick={()=>void exportResearchReport('json')}>
+                Save evidence JSON
+              </button>
+            </div>
+            {researchReportSavedByChat[chatId]&&
+              <small>Saved {researchReportSavedByChat[chatId].format}:
+                {' '}{researchReportSavedByChat[chatId].savedPath}
+                {' '}· SHA-256: {researchReportSavedByChat[chatId].savedSha256}
+                {' '}· {researchReportSavedByChat[chatId].checkedPassages}
+                verified passages. Interpretations are not independently certified.</small>}
+          </div>
+          {researchError&&<small role="alert">{researchError}</small>}
+          {researchResult?.chatId===chatId&&<div className="researchResults" aria-label="Research evidence leads">
+            <strong>{researchResult.sourceCount} discovered sources · UNVERIFIED</strong>
+            <small>{researchResult.message}</small>
+            <ul>{researchResult.leads.slice(0,25).map(l=><li key={l.sourceId}>
+              <strong>{l.title}</strong>
+              <small>Source ID: {l.sourceId}</small>
+              <small>{l.authors} · DOI {l.doi} · {
+                researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus || l.verificationStatus
+              }</small>
+              <button type="button" disabled={researchBusy||!researchAvailable}
+                onClick={()=>void checkResearchMetadata(l.sourceId)}>
+                Check independent Crossref metadata
+              </button>
+              {researchMetadataByChat[chatId+'|'+l.sourceId]&&
+                <small>{researchMetadataByChat[chatId+'|'+l.sourceId].message}</small>}
+              {researchMetadataByChat[chatId+'|'+l.sourceId]?.verificationStatus==='metadata_corroborated'&&
+                <button type="button" disabled={researchBusy||!researchAvailable}
+                  onClick={()=>void retrieveResearchDocument(l.sourceId)}>
+                  Retrieve bounded PDF/HTML document
+                </button>}
+              {researchDocumentsByChat[chatId+'|'+l.sourceId]&&
+                <div className="researchResults" aria-label="Retrieved research document">
+                  <small>{researchDocumentsByChat[chatId+'|'+l.sourceId].message}</small>
+                  <small>Final HTTPS URL: {researchDocumentsByChat[chatId+'|'+l.sourceId].finalUrl}</small>
+                  <small>Redirect-chain SHA-256: {researchDocumentsByChat[chatId+'|'+l.sourceId].redirectChainSha256}</small>
+                  <small>{researchDocumentsByChat[chatId+'|'+l.sourceId].format} · {researchDocumentsByChat[chatId+'|'+l.sourceId].documentAccessed?'Document text accessed':'Unverified document candidate'}</small>
+                  <pre>{researchDocumentsByChat[chatId+'|'+l.sourceId].excerpt}</pre>
+                  {researchDocumentsByChat[chatId+'|'+l.sourceId].documentAccessed&&
+                    <>
+                      <input aria-label="Exact quote from retrieved document"
+                        value={researchDocumentQuotes[chatId+'|'+l.sourceId]||''}
+                        onChange={e=>{
+                          const key=chatId+'|'+l.sourceId;
+                          setResearchDocumentQuotes(old=>({...old,[key]:e.target.value}));
+                          setResearchDocumentPassages(old=>({...old,[key]:null}));
+                        }} placeholder="Copy an exact PDF passage" />
+                      <button type="button" disabled={researchBusy||
+                        !(researchDocumentQuotes[chatId+'|'+l.sourceId]||'').trim()}
+                        onClick={()=>void verifyResearchDocumentPassage(l.sourceId)}>
+                        Verify stored PDF passage
+                      </button>
+                      {researchDocumentPassages[chatId+'|'+l.sourceId]&&
+                        <small>Passage verified against stored PDF text; model interpretation remains unverified.</small>}
+                    </>}
+                </div>}
+            </li>)}</ul>
+            <div className="settingsActions">
+              <button type="button" disabled={researchBusy||researchResult.page<=1}
+                onClick={()=>void runResearchDiscovery(researchResult.page-1)}>
+                Previous discovery page
+              </button>
+              <small>Page {researchResult.page} of at most 5 · leads are not citations</small>
+              <button type="button" disabled={researchBusy||!researchResult.nextPage}
+                onClick={()=>void runResearchDiscovery(researchResult.nextPage)}>
+                Next discovery page
+              </button>
+            </div>
+          </div>}
         </section>
         <h3>Models</h3><p>GGUF files in Lu's models folder are discovered at startup, but <strong>never loaded automatically</strong>.</p>
         <button className="subtleButton full" onClick={rescanModels} disabled={busy || loaded}>Rescan models folder</button>

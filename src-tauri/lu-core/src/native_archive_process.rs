@@ -175,9 +175,23 @@ mod tests{
         fs::create_dir_all(tmp.join("parent")).unwrap();
         let pinned=Dir::open_ambient_dir(tmp.join("parent"),ambient_authority()).unwrap();
         let expected=opened_directory_identity(&pinned).unwrap();
-        fs::rename(tmp.join("parent"),tmp.join("old-parent")).unwrap();
-        fs::create_dir(tmp.join("parent")).unwrap();
-        let substituted=Dir::open_ambient_dir(tmp.join("parent"),ambient_authority()).unwrap();
+        // Linux permits renaming an opened directory while preserving the
+        // opened handle. Windows cap-std opens this directory without
+        // FILE_SHARE_DELETE, so rename must fail with ERROR_SHARING_VIOLATION.
+        // Exercise the actual path-swap proof on Unix and the distinct opened
+        // directory identity invariant on Windows without invalid Win32 IO.
+        #[cfg(unix)]
+        {
+            fs::rename(tmp.join("parent"),tmp.join("old-parent")).unwrap();
+            fs::create_dir(tmp.join("parent")).unwrap();
+        }
+        #[cfg(windows)]
+        fs::create_dir(tmp.join("replacement-parent")).unwrap();
+        #[cfg(windows)]
+        let replacement=tmp.join("replacement-parent");
+        #[cfg(not(windows))]
+        let replacement=tmp.join("parent");
+        let substituted=Dir::open_ambient_dir(replacement,ambient_authority()).unwrap();
         assert_ne!(opened_directory_identity(&substituted).unwrap(),expected);
         assert_eq!(opened_directory_identity(&pinned).unwrap(),expected);
         drop(substituted);drop(pinned);fs::remove_dir_all(&tmp).unwrap();

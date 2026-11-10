@@ -10,9 +10,9 @@ test('background pane uses local persistent host task query, not model monitorin
   assert.ok(host.includes('lu-background-tasks.sqlite'));
   assert.ok(host.includes('background_tasks.reconcile_interrupted()'));
   assert.ok(host.includes('fn lu_background_tasks('));
-  assert.ok(host.includes('state.background_tasks.dashboard(100)'));
+  assert.ok(host.includes('state.background_tasks.dashboard_for_workspace(&chat_id,100)'));
   assert.ok(host.includes('lu_background_tasks,'));
-  assert.ok(ui.includes("await invoke('lu_background_tasks')"));
+  assert.ok(ui.includes("await invoke('lu_background_tasks',{chatId})"));
   assert.ok(ui.includes('setInterval(refresh,2500)'));
   assert.ok(ui.includes("await invoke('lu_background_cancel', {taskId})"));
 });

@@ -148,11 +148,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci
+      - run: npm install --no-save --package-lock=false --no-audit --no-fund
       - name: Build actual React bundle
         run: npm run build
       - name: Verify Wave 2 native approval wiring
         run: npm run check
+      - name: Compile real Rust file-scan worker integration fixture
+        run: cargo build --manifest-path tests/native-file-scan/Cargo.toml
       - name: Test React UI interaction utilities
         run: npm run test:ui
   desktop-native-windows:
@@ -184,7 +186,7 @@ jobs:
       - name: Build desktop frontend for Tauri validation
         working-directory: lu-desktop
         run: |
-          npm ci
+          npm install --no-save --package-lock=false --no-audit --no-fund
           npm run build
       - name: Compile actual Tauri desktop host including archive approvals
         run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
