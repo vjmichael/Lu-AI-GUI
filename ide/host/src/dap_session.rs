@@ -1137,7 +1137,9 @@ mod tests {
         s.phase = DapPhase::Stopped;
         s.last_stopped_thread = Some(11);
         s.last_source_candidate = Some(SourceLineCandidate {
-            frame_id: 9, line: 7, column: None,
+            frame_id: 9,
+            line: 7,
+            column: None,
             adapter_path: "/workspace/src/main.rs".into(),
             instruction_address: Some(0x140001000),
         });
@@ -1149,13 +1151,15 @@ mod tests {
             "success":true,"body":{"scopes":[
                 {"name":"Locals","variablesReference":77,"expensive":false}
             ]}
-        }))).unwrap();
+        })))
+        .unwrap();
         assert!(s.ci_scope_ready());
         s.ci_variables().unwrap();
         assert!(!s.ci_scope_ready());
         s.receive(&framed(json!({
             "seq":2,"type":"event","event":"continued"
-        }))).unwrap();
+        })))
+        .unwrap();
         assert!(!s.ci_scope_ready());
         assert!(s.ci_take_redacted_variables().is_none());
     }
