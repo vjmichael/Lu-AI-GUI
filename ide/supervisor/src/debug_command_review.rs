@@ -117,6 +117,8 @@ pub(crate) fn review_from_verified_native_owner_for_ci(
     if !witness.lldb_event_loop_owner_attested
         || !witness.protected_pe_pdb_verified
         || !witness.durable_receipt_verified
+        || witness.verified_frame_id == 0
+        || witness.verified_frame_id > 1_000_000
         || witness.debugger_commands_authorized
         || witness.installed_app_accepted
     {
@@ -137,7 +139,7 @@ pub(crate) fn review_from_verified_native_owner_for_ci(
         thread_id: witness.debuggee_thread_id,
         rip: witness.stopped_rip,
         event_sequence: witness.owner_sequence,
-        verified_frame_id: None,
+        verified_frame_id: Some(witness.verified_frame_id),
     })
 }
 

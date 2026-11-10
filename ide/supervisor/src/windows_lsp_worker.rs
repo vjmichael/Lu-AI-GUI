@@ -1401,6 +1401,10 @@ pub struct WindowsOwnerEventAccepted {
     pub lldb_owner_thread_id: u32,
     pub stopped_rip: u64,
     pub verified_source_line: u32,
+    // Correlated top DAP stack frame, independently mapped to the same
+    // stopped OS RIP and compiler PE/PDB line before this witness is issued.
+    // This is NOT by itself permission to request scopes or values.
+    pub verified_frame_id: u64,
     pub lldb_event_loop_owner_attested: bool,
     pub protected_pe_pdb_verified: bool,
     pub durable_receipt_verified: bool,
@@ -1833,6 +1837,17 @@ impl WindowsDapSession {
         {
             return Err(SupervisorError::NoContainment);
         }
+        let verified_frame_id = self
+            .gateway
+            .source_candidate()
+            .filter(|frame| {
+                frame.frame_id > 0
+                    && frame.frame_id <= 1_000_000
+                    && frame.line == line.source_line
+                    && frame.instruction_address == Some(owner.rip)
+            })
+            .map(|frame| frame.frame_id)
+            .ok_or(SupervisorError::NoContainment)?;
         target.verify()?;
         verify_input(&self.source_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
         let debug = supervisor.receipt_history(job_id)?;
@@ -1866,6 +1881,7 @@ impl WindowsDapSession {
             lldb_owner_thread_id: owner.owner_tid,
             stopped_rip: owner.rip,
             verified_source_line: line.source_line,
+            verified_frame_id,
             lldb_event_loop_owner_attested: true,
             protected_pe_pdb_verified: true,
             durable_receipt_verified: true,

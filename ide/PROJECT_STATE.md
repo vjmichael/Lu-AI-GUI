@@ -1,5 +1,13 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 4D — OS-bound frame ID for one-use variable review (2026-11-10)
+
+Extended genuine Windows D5 kernel/PDB/owner evidence with top correlated
+DAP frame ID, matching OS RIP and source line. Variable review requires
+this native frame, and its consumed claim cannot be reused across
+operations or wrong frame. No installed scope dispatch or release-enabled
+variable inspection. Native exact-head acceptance remains OPEN.
+
 ## Group 4C/4D — guarded DAP and redacted variable protocol (2026-11-10)
 
 Revalidated protected Windows project target before one-use DAP job grant.

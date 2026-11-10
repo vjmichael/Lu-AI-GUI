@@ -133,3 +133,21 @@ jobs must pass at one SHA. A queued/failed/absent job is NOT ACCEPTED.
 ### Second consolidated native preflight
 
 [Run 42866301600](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42866301600), SHA `ef3365b913b351970b585e0794e24f2c73ebca70`, independently reached the supervisor rustfmt gate after the host redaction-path formatting was corrected. It found four exact formatter differences in the new Unix hardlink and D3 receipt regression tests; the native jobs did not reach OS execution. Only those exact formatting changes were applied. Native Build/Test and LLDB runtime acceptance remain OPEN pending a later exact-SHA rerun.
+
+## Group 4D — independent Windows frame-id binding before scope review
+
+The existing real D5 native OS stop acceptance already rechecks the actual
+protected thread RIP, compiler PE/PDB/source line, first-party LLDB event
+owner and both durable receipt chains. It now also captures the **exact
+correlated top DAP stack frame ID** from that same accepted stopped OS RIP
+and source line, rejects missing/out-of-range frame IDs, and carries the
+bound frame ID in the private nonserialized owner witness. Only that
+witness can make `InspectVariables` reviewable in a native developer
+session. The consumed one-use variables claim must match this exact
+frame, plan/source/native event and cannot be replayed or borrowed from
+a step/breakpoint consent.
+
+This is **source-only authorization plumbing**, not yet an accepted
+variable read: the consumed claim is not wired to installed Rust/OS
+scopes dispatch, and the redacted protocol's bounds do not establish
+verified variable values. No WebView path or release execution is enabled.

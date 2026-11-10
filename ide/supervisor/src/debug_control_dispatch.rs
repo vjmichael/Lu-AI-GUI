@@ -44,6 +44,7 @@ pub(crate) struct NativeControlStop {
     thread_id: u32,
     rip: u64,
     line: u32,
+    frame_id: u64,
     owner_sequence: u64,
     has_independent_pdb: bool,
     has_kernel_owner: bool,
@@ -72,6 +73,7 @@ pub(crate) fn native_control_stop_from_owner(
         thread_id: value.debuggee_thread_id,
         rip: value.stopped_rip,
         line: value.verified_source_line,
+        frame_id: value.verified_frame_id,
         owner_sequence: value.owner_sequence,
         has_independent_pdb: true,
         has_kernel_owner: true,
@@ -90,6 +92,8 @@ fn valid_stop(s: &NativeControlStop) -> bool {
         && s.thread_id != 0
         && s.rip != 0
         && s.line > 0
+        && s.frame_id > 0
+        && s.frame_id <= 1_000_000
         && s.owner_sequence > 0
         && s.has_independent_pdb
         && s.has_kernel_owner
@@ -122,6 +126,13 @@ pub(crate) struct CiStepDispatch {
 pub(crate) struct CiBreakpointDispatch {
     claim: ConsumedControlClaim,
     from: NativeControlStop,
+}
+/// A source-bound read-only VARIABLES request needs its OWN consumed action.
+/// It cannot reuse a step/breakpoint claim or a DAP-only frame ID.
+#[derive(Debug)]
+pub(crate) struct CiVariablesDispatch {
+    from: NativeControlStop,
+    claim: ConsumedControlClaim,
 }
 impl CiControlSlot {
     pub(crate) fn admit(
@@ -195,8 +206,35 @@ impl CiControlSlot {
             _ => Err(ControlDenial::WrongOperation),
         }
     }
+    pub(crate) fn take_variables(&mut self) -> Result<CiVariablesDispatch, ControlDenial> {
+        let claim = self.claim.take().ok_or(ControlDenial::AlreadyConsumed)?;
+        match claim.operation {
+            DebugReviewIntent::InspectVariables { frame_id }
+                if frame_id == self.current.frame_id =>
+            {
+                Ok(CiVariablesDispatch {
+                    from: self.current.clone(),
+                    claim,
+                })
+            }
+            _ => Err(ControlDenial::WrongOperation),
+        }
+    }
     pub(crate) fn has_unconsumed_slot(&self) -> bool {
         self.claim.is_some()
+    }
+}
+impl CiVariablesDispatch {
+    pub(crate) fn frame_id(&self) -> u64 {
+        self.from.frame_id
+    }
+    pub(crate) fn action_id_sha256(&self) -> &str {
+        &self.claim.action_id_sha256
+    }
+    /// Consumed only. Never an installed read, native OS result, grant
+    /// to expand references or permission to evaluate program expressions.
+    pub(crate) fn installed_accepted(&self) -> bool {
+        false
     }
 }
 impl CiStepDispatch {
@@ -310,6 +348,7 @@ mod tests {
             thread_id: 22,
             rip: if seq > 1 { 0x140001004 } else { 0x140001000 },
             line: if seq > 1 { 8 } else { 7 },
+            frame_id: 9,
             owner_sequence: seq,
             has_independent_pdb: true,
             has_kernel_owner: true,
@@ -451,6 +490,30 @@ mod tests {
             }
         )
         .is_err());
+    }
+    #[test]
+    fn g04_variable_scope_requires_original_native_frame_and_its_own_one_use_claim() {
+        let mut exact = claim();
+        exact.operation = DebugReviewIntent::InspectVariables { frame_id: 9 };
+        exact.operation_sha256 = op_digest(&exact.operation);
+        let mut slot = CiControlSlot::admit(exact, stop(1)).unwrap();
+        let read = slot.take_variables().unwrap();
+        assert_eq!(read.frame_id(), 9);
+        assert_eq!(read.action_id_sha256().len(), 64);
+        assert!(!read.installed_accepted());
+        assert!(matches!(
+            slot.take_variables(),
+            Err(ControlDenial::AlreadyConsumed)
+        ));
+        let mut wrong = claim();
+        wrong.operation = DebugReviewIntent::InspectVariables { frame_id: 10 };
+        wrong.operation_sha256 = op_digest(&wrong.operation);
+        let mut slot = CiControlSlot::admit(wrong, stop(1)).unwrap();
+        assert!(matches!(
+            slot.take_variables(),
+            Err(ControlDenial::WrongOperation)
+        ));
+        assert!(!slot.has_unconsumed_slot());
     }
     #[test]
     fn breakpoint_adapter_approval_is_not_independent_memory_evidence() {

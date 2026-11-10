@@ -1,5 +1,13 @@
 # Lu IDE — Development changelog
 
+- **Group 4D real Windows stopped-frame binding (Nov 10):** Private D5
+  kernel/PDB/owner witness now retains its correlated top DAP frame ID
+  only after matching the original OS RIP and compiler line. The review
+  layer accepts variable previews only for that frame, and a separate
+  consumed one-use action slot binds the frame before any potential
+  scope request. No installed DAP scope dispatch, plain-value exposure,
+  arbitrary evaluate or release authorization is enabled.
+
 - **Group 4C/4D stopped-source and variable-protocol boundary (Nov 10):**
   Windows protected DAP rechecks the exact private target immediately
   before consuming the one-use native grant. Each new DAP stop revokes
