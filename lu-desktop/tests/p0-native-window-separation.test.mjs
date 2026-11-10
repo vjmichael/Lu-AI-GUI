@@ -22,7 +22,7 @@ test('native windows mount instead of Chat App and keep distinct focus, no backg
   assert.match(windows,/invoke\('lu_close_aux_window'\)/);
   assert.match(windows,/aria-label="Settings sections"/);
   assert.match(windows,/aria-label="Model library tabs"/);
-  assert.match(chat,/\{false && <details className="chatToolsDrawer"/);
+  assert.doesNotMatch(chat,/chatToolsDrawer|settingsBackdrop|modelLibraryOpen&&/);
 });
 test('settings inventory is model-neutral but never a tool grant or verification claim',()=>{
   assert.match(rust,/fn lu_native_route_catalog\(\)->Vec<LuNativeRouteView>/);

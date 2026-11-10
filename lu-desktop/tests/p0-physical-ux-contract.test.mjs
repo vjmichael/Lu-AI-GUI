@@ -45,7 +45,7 @@ test('Observe & Learn and configuration are mounted only in an independent nativ
   assert.match(windows,/lu_observe_forget_notes/);
   assert.match(windows,/Request native consent/);
   assert.match(windows,/OFF by default/);
-  assert.match(ui,/false && <details className="chatToolsDrawer"/);
+  assert.doesNotMatch(ui,/chatToolsDrawer|settingsBackdrop|modelLibraryOpen&&/);
   assert.match(ui,/window\.location\.search/);
   assert.match(ui,/<SettingsWindow\/>/);
   assert.match(ui,/<ModelLibraryWindow\/>/);
@@ -60,8 +60,7 @@ test('emoji reactions are contextual and open a picker below message',()=>{
 });
 
 test('specialist manual buttons are not mounted in composer; host native routes remain',()=>{
-  assert.match(ui,/false && <details className="chatToolsDrawer"><summary>Tools<\/summary>/);
-  assert.match(ui,/<\/div><\/details>\}/);
+  assert.doesNotMatch(ui,/chatToolsDrawer|<summary>Tools<\/summary>/);
   assert.match(rust,/fn lu_native_route_catalog\(/);
   assert.match(rust,/reviewed_app_desktop::explicit_media_metadata_request/);
   assert.match(rust,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);

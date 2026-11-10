@@ -8277,6 +8277,30 @@ fn lu_native_route_catalog()->Vec<LuNativeRouteView>{
             authorization:AUTH
         },
         LuNativeRouteView{
+            id:"files.transaction_review",name:"File copy, move, trash & create/edit",
+            status:"Model-selected INERT review proposal; native transaction approval required",
+            description:"Lu checks the original human request against the model-proposed action. Its actual source and destination are chosen by OS pickers; exact bytes and conflict-safe no-clobber effects require separate one-use consent.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"archives.transaction_review",name:"Archive extraction, batch & multipart",
+            status:"Model-selected INERT review proposal; supervised archive worker required",
+            description:"A complete native manifest, expansion bounds, new output destination and original-source recheck precede any authorized extraction. Interrupted writes require reconciliation, not auto-retry.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"office.transaction_review",name:"Office documents and revisions",
+            status:"Model-selected bounded drafts; full native preview and separate approval required",
+            description:"DOCX/PPTX creation and exact source-checked Word/PowerPoint/Excel revisions are human-reviewed; original package and unaffected parts remain untouched.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
+            id:"hf.transfer_integrity",name:"Hugging Face verified model transfer",
+            status:"Local digest/readback staging implemented; trusted HTTPS worker NOT integrated",
+            description:"Immutable revision, license review and SHA-256/size must precede transfer. Only a separately approved, bounded and independently verified network worker may supply staged bytes. No model installation or download is enabled.",
+            authorization:AUTH
+        },
+        LuNativeRouteView{
             id:"browser.read",name:"Supervised browser",
             status:"Unavailable unless a fully reviewed browser bundle is installed",
             description:"Model-proposed read-only operations against newly approved HTTPS origins; no ambient browser fallback.",
@@ -8311,6 +8335,10 @@ mod auxiliary_window_tests{
         let views=lu_native_route_catalog();
         assert!(views.iter().all(|v|!v.authorization.is_empty()));
         assert!(views.iter().any(|v|v.id=="reviewed.git"));
+        assert!(views.iter().any(|v|v.id=="office.transaction_review"
+            &&v.status.contains("INERT")==false &&v.status.contains("native preview")));
+        assert!(views.iter().any(|v|v.id=="hf.transfer_integrity"
+            &&v.status.contains("NOT integrated")));
         assert!(views.iter().any(|v|v.id=="browser.read"
             &&v.status.starts_with("Unavailable")));
         assert!(views.iter().all(|v|!v.status.contains("VERIFIED_EFFECT")));

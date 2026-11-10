@@ -69,6 +69,12 @@ export function SettingsWindow(){
   const [modelList,setModelList]=useState([]);
   const [memorySample,setMemorySample]=useState(null);
   const [capabilityStatus,setCapabilityStatus]=useState([]);
+  const [captureWorkerReady,setCaptureWorkerReady]=useState(false);
+  const [captureTaskId,setCaptureTaskId]=useState(null);
+  const [captureLocalTaskId,setCaptureLocalTaskId]=useState(null);
+  const [captureReceipt,setCaptureReceipt]=useState(null);
+  const [observeNotes,setObserveNotes]=useState([]);
+  const [observeHandoff,setObserveHandoff]=useState(null);
 
   async function refresh(){
     const results=await Promise.allSettled([
@@ -83,7 +89,11 @@ export function SettingsWindow(){
       setError('Native Lu settings are unavailable. No preference was changed.');
     }
   }
-  useEffect(()=>{void refresh();},[]);
+  useEffect(()=>{
+    void refresh();
+    void invoke('lu_observe_capture_available').then(setCaptureWorkerReady)
+      .catch(()=>setCaptureWorkerReady(false));
+  },[]);
   useEffect(()=>{
     let alive=true;
     if(!chatId){setObservation(null);setAppearance(null);return ()=>{alive=false};}
@@ -119,6 +129,57 @@ export function SettingsWindow(){
     await act('Native observation status updated.',async()=>{
       const view=await invoke('lu_observe_'+action,{chatId});
       setObservation(view);return view;
+    });
+  }
+  async function captureOneShot(foregroundOnly=false,primaryDisplay=false,localImage=false){
+    if(!chatId||!captureWorkerReady||observation?.mode!=='active'||busy)return;
+    await act('One-shot capture requested; read the native receipt before trusting any result.',async()=>{
+      const id=await invoke('lu_observe_capture_one_shot',{
+        chatId,foregroundOnly,primaryDisplay,localImage
+      });
+      setCaptureTaskId(id);
+      setCaptureLocalTaskId(localImage?id:null);
+      setCaptureReceipt(null);
+      return id;
+    });
+  }
+  async function inspectCapture(){
+    if(!chatId||!captureTaskId)return;
+    await act('Original capture receipt checked.',async()=>{
+      const receipt=await invoke('lu_observe_capture_receipt',{chatId});
+      setCaptureReceipt(receipt);
+      return receipt;
+    });
+  }
+  async function attachLocalCapture(){
+    if(!chatId||captureLocalTaskId!==captureTaskId||
+       observation?.mode!=='active'||
+       !captureReceipt?.sourceIdentityAttested||
+       !captureReceipt?.pixelsRetained)return;
+    await act('Approved frame sent to this conversation as a local-only attachment.',async()=>{
+      const image=await invoke('lu_observe_capture_local_image',{chatId});
+      if(!image?.imageRef)throw Error('Native image transfer did not return an admitted image');
+      // This renderer event grants nothing; lu_generate independently checks
+      // host-owned imageRef, conversation ownership and local egress policy.
+      await emit('lu-observed-image-admitted',{
+        chatId,imageRef:image.imageRef,mimeType:image.mimeType
+      });
+      setCaptureLocalTaskId(null);
+      return image;
+    });
+  }
+  async function inspectAwareness(){
+    if(!chatId)return;
+    await act('Original local awareness notes reloaded.',async()=>{
+      const notes=await invoke('lu_observe_notes',{chatId});
+      setObserveNotes(notes);return notes;
+    });
+  }
+  async function inspectHandoff(){
+    if(!chatId)return;
+    await act('Read-only observation handoff prepared for human review.',async()=>{
+      const handoff=await invoke('lu_observe_handoff',{chatId});
+      setObserveHandoff(handoff);return handoff;
     });
   }
   async function changeAppearance(preset){
@@ -231,7 +292,46 @@ export function SettingsWindow(){
               return invoke('lu_observe_forget_notes',{chatId});
             })}>Review forgetting notes</button>
           </div>}
-          <small>One-shot capture, image attachment and export still require their own reviewed native controls; no screenshot is taken automatically.</small>
+          {observation?.mode==='active'&&captureWorkerReady&&<>
+            <h3>One-shot Windows capture · additional consent required</h3>
+            <p>Each button opens a fresh OS review. A receipt-only frame is fully redacted. Local multimodal images are never uploaded or shared with research.</p>
+            <div className="nativeChoiceRow">
+              <button type="button" disabled={busy} onClick={()=>void captureOneShot(true,false,false)}>Capture selected foreground app (4s)</button>
+              <button type="button" disabled={busy} onClick={()=>void captureOneShot(false,true,false)}>Capture primary display (redacted)</button>
+              <button type="button" disabled={busy} onClick={()=>void captureOneShot(false,false,false)}>Select window/display · capture one frame</button>
+            </div>
+            <div className="nativeChoiceRow">
+              <button type="button" disabled={busy} onClick={()=>void captureOneShot(true,false,true)}>Capture foreground app for local GGUF image</button>
+              <button type="button" disabled={busy} onClick={()=>void captureOneShot(false,true,true)}>Capture primary display for local GGUF image</button>
+            </div>
+          </>}
+          {!captureWorkerReady&&<p>Verified Windows capture worker not installed. Lu cannot start screen capture.</p>}
+          {captureTaskId&&<div className="nativeOption">
+            <strong>Capture task: {captureTaskId}</strong>
+            <button type="button" disabled={busy} onClick={()=>void inspectCapture()}>Inspect original native frame receipt</button>
+            {captureReceipt&&<p>State: {captureReceipt.state||'unavailable'}.
+              {captureReceipt.fullyRedactedReceipt?' Receipt-only pixels fully blanked.':''}
+              {captureReceipt.sourceIdentityAttested?' Foreground window/display identity checked.':' Source identity not independently attested.'}
+              No result here proves visual understanding.</p>}
+            {captureLocalTaskId===captureTaskId&&captureReceipt?.pixelsRetained&&
+              captureReceipt?.sourceIdentityAttested&&observation?.mode==='active'&&
+              <button type="button" disabled={busy} onClick={()=>void attachLocalCapture()}>
+                Attach approved local frame to chat
+              </button>}
+          </div>}
+          <h3>Local awareness notes</h3>
+          <div className="nativeChoiceRow">
+            <button type="button" disabled={busy||!chatId} onClick={()=>void inspectAwareness()}>Review notes</button>
+            <button type="button" disabled={busy||!chatId} onClick={()=>void inspectHandoff()}>Prepare large-model review handoff</button>
+          </div>
+          {observeNotes.length>0&&<p>{observeNotes.length} local awareness entries. Unverified UI hints are not test outcomes or automatic learning.</p>}
+          {observeHandoff&&<section className="nativeOption">
+            <strong>Read-only original-source handoff</strong>
+            <textarea aria-label="Original observation handoff" readOnly rows={6}
+              value={observeHandoff.reviewDraft||''}/>
+            <p>Nothing is sent automatically. Copy and approve in the conversation before using any of these observations.</p>
+          </section>}
+          <small>One-shot capture requires genuine Windows Graphics Capture, OS-confirmed source and the separately reviewed worker. No screenshot is taken automatically.</small>
         </Section>}
         {section==='huggingface'&&<Section title="Hugging Face model discovery">
           <p>Browse remote GGUF metadata in the separate Model Library. Search and repository review are read-only. Download/resume/install are unavailable until the independently verified transfer manager is integrated.</p>
