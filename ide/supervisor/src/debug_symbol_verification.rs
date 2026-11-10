@@ -3,9 +3,12 @@
 //! Read-only and fail-closed. No target execution, DAP launch or OS grant.
 use crate::{
     debug_binary_witness::DebugBinaryWitness,
+    
     wo6_output_evidence::{ArtifactEntry, OutputWitness},
     SupervisorError,
 };
+#[cfg(unix)]
+use crate::debug_binary_witness::verify_enclosed_private_hardlinks;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -84,6 +87,7 @@ fn checked_dir(path: &Path) -> Result<(), SupervisorError> {
 pub(crate) fn read_attested(
     root: &Path,
     entry: &ArtifactEntry,
+    witness: &OutputWitness,
 ) -> Result<Vec<u8>, SupervisorError> {
     if !root.is_absolute() || entry.bytes < 4 || entry.bytes > MAX_FILE {
         return Err(denied());
@@ -114,7 +118,7 @@ pub(crate) fn read_attested(
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if before.nlink() != 1 {
+        if before.nlink() == 0 {
             return Err(denied());
         }
     }
@@ -140,10 +144,11 @@ pub(crate) fn read_attested(
         use std::os::unix::fs::MetadataExt;
         if open_meta.dev() != before.dev()
             || open_meta.ino() != before.ino()
-            || open_meta.nlink() != 1
+            || open_meta.nlink() != before.nlink()
         {
             return Err(denied());
         }
+        verify_enclosed_private_hardlinks(root, witness, entry, &open_meta)?;
     }
     let mut data = Vec::with_capacity(entry.bytes as usize);
     opened
@@ -588,7 +593,7 @@ pub fn verify_build_debug_symbols(
     if entries.len() != 1 {
         return Ok(None);
     }
-    let executable = read_attested(root, entries[0])?;
+    let executable = read_attested(root, entries[0], output)?;
     #[cfg(target_os = "linux")]
     let observation = {
         let Some(sym_hash) = elf64_dwarf_sections(&executable) else {
@@ -624,7 +629,7 @@ pub fn verify_build_debug_symbols(
         if pdbs.len() != 1 {
             return Ok(None);
         }
-        let pdb = read_attested(root, pdbs[0])?;
+        let pdb = read_attested(root, pdbs[0], output)?;
         if !pdb_info_dbi(&pdb, &rsds) {
             return Ok(None);
         }
@@ -923,6 +928,34 @@ mod tests {
         assert!(fs::read_dir(&private).unwrap().next().is_none());
         fs::remove_dir_all(root).unwrap();
     }
+    #[cfg(unix)]
+    #[test]
+    fn g04_enclosed_cargo_elf_dwarf_alias_is_valid_but_external_alias_denied() {
+        use crate::{
+            debug_binary_witness::audit_debug_binary_candidate,
+            wo6_output_evidence::audit_published_output,
+        };
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("lu-g04-dwarf-{:032x}", rand::random::<u128>()));
+        fs::create_dir_all(root.join("target/debug/deps")).unwrap();
+        let image = root.join("target/debug/fixture");
+        fs::write(&image, minimal_dwarf_elf()).unwrap();
+        fs::set_permissions(&image, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::hard_link(&image, root.join("target/debug/deps/fixture-fixed")).unwrap();
+        let witness = audit_published_output(&root).unwrap();
+        let candidate = audit_debug_binary_candidate(&root, &witness).unwrap().unwrap();
+        assert!(verify_build_debug_symbols(&root, &witness, &candidate)
+            .unwrap()
+            .is_some());
+        let outside = std::env::temp_dir().join(format!("lu-g04-dwarf-escape-{:032x}", rand::random::<u128>()));
+        fs::hard_link(&image, &outside).unwrap();
+        // Neither the executable nor the DWARF reader can accept missing
+        // link provenance outside the original protected output inventory.
+        assert!(verify_build_debug_symbols(&root, &witness, &candidate).is_err());
+        fs::remove_file(outside).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(windows)]
     #[test]
     fn full_native_output_manifest_pe_pdb_witness_rehashes_both_files() {

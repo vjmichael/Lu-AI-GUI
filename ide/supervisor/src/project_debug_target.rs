@@ -214,7 +214,7 @@ pub fn seal_project_debug_target(
             if total > MAX_BYTES {
                 return Err(denied());
             }
-            let data = read_attested(output_root, entry)?;
+            let data = read_attested(output_root, entry, &output)?;
             let out = dest.join(rel);
             let parent = out.parent().ok_or_else(denied)?;
             fs::create_dir_all(parent).map_err(|_| denied())?;

@@ -76,6 +76,42 @@ fn is_reparse(meta: &fs::Metadata) -> bool {
         false
     }
 }
+
+#[cfg(unix)]
+pub(crate) fn verify_enclosed_private_hardlinks(
+    root: &Path,
+    witness: &OutputWitness,
+    entry: &ArtifactEntry,
+    opened: &fs::Metadata,
+) -> Result<(), SupervisorError> {
+    use std::os::unix::fs::MetadataExt;
+    if witness.truncated || witness.file_count != witness.files.len() || opened.nlink() == 0 {
+        return Err(denied());
+    }
+    let mut enclosed_links = 0u64;
+    for alias in &witness.files {
+        let relative = Path::new(&alias.relative_path);
+        if !relative.components().all(|c| matches!(c, Component::Normal(_))) {
+            return Err(denied());
+        }
+        let meta = fs::symlink_metadata(root.join(relative)).map_err(|_| denied())?;
+        if meta.dev() == opened.dev() && meta.ino() == opened.ino() {
+            if !meta.is_file()
+                || meta.file_type().is_symlink()
+                || alias.bytes != entry.bytes
+                || alias.sha256 != entry.sha256
+                || meta.len() != entry.bytes
+            {
+                return Err(denied());
+            }
+            enclosed_links = enclosed_links.checked_add(1).ok_or_else(denied)?;
+        }
+    }
+    if enclosed_links != opened.nlink() {
+        return Err(denied());
+    }
+    Ok(())
+}
 fn checked_file(
     root: &Path,
     entry: &ArtifactEntry,
@@ -133,36 +169,9 @@ fn checked_file(
         {
             return Err(denied());
         }
-        // Cargo may hard-link the executable in target/debug to the
-        // same bytes under target/debug/deps. Permit that only when EVERY
-        // kernel-reported link is accounted for inside the independently
-        // hashed private output inventory. A link outside the tree or a
-        // mismatched alias still fails closed.
-        let mut enclosed_links = 0u64;
-        for alias in &witness.files {
-            let relative = Path::new(&alias.relative_path);
-            if !relative
-                .components()
-                .all(|c| matches!(c, Component::Normal(_)))
-            {
-                return Err(denied());
-            }
-            let meta = fs::symlink_metadata(root.join(relative)).map_err(|_| denied())?;
-            if meta.dev() == opened.dev() && meta.ino() == opened.ino() {
-                if !meta.is_file()
-                    || meta.file_type().is_symlink()
-                    || alias.bytes != entry.bytes
-                    || alias.sha256 != entry.sha256
-                    || meta.len() != entry.bytes
-                {
-                    return Err(denied());
-                }
-                enclosed_links = enclosed_links.checked_add(1).ok_or_else(denied)?;
-            }
-        }
-        if enclosed_links != opened.nlink() {
-            return Err(denied());
-        }
+        // All kernel hardlinks must be accounted for inside this one
+        // independently hashed private output tree; no external aliases.
+        verify_enclosed_private_hardlinks(root, witness, entry, &opened)?;
     }
     let mut prefix = [0u8; 4];
     file.read_exact(&mut prefix).map_err(|_| denied())?;

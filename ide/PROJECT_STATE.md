@@ -1,5 +1,13 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 4B — independent DWARF reader enclosed alias repair (2026-11-10)
+
+Native run 42866653321 proved contained Cargo check/test/build completed;
+the ELF/DWARF `read_attested` still denied Cargo's legitimate same-inode
+internal alias. Both binary and symbol readers now share all-links-
+accounted sealed-output verification, denying external aliases. Native
+rerun, independent LLDB and installed acceptance remain OPEN.
+
 ## Group 4D — OS-bound frame ID for one-use variable review (2026-11-10)
 
 Extended genuine Windows D5 kernel/PDB/owner evidence with top correlated

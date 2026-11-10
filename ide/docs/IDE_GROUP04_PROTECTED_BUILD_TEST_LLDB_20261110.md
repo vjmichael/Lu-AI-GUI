@@ -151,3 +151,16 @@ This is **source-only authorization plumbing**, not yet an accepted
 variable read: the consumed claim is not wired to installed Rust/OS
 scopes dispatch, and the redacted protocol's bounds do not establish
 verified variable values. No WebView path or release execution is enabled.
+
+## Group 4B — genuine completed build exposed second auditor hardlink defect
+
+[Native run 42866653321](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/42866653321) at `bec4eb037493550891ee8ba0bf2e20dec1ab240e`:
+Linux Cargo check/test/build each reached genuine sandbox `Completed`
+results. The original readback is now accepted, but the independent
+DWARF verifier rejected the same Cargo-linked executable because its
+`read_attested` still required `nlink == 1`. This was a second actual
+same-inode policy conflict, not altered source evidence. Both auditors
+now share the exact enclosed-hardlink proof and reject any foreign alias;
+private debug target sealing passes the original complete inventory.
+A new cross-layer ELF/DWARF alias-vs-external-alias regression was added.
+**Native rerun required**; no symbol/LLDB success asserted yet.

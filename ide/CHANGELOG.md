@@ -1,5 +1,11 @@
 # Lu IDE — Development changelog
 
+- **Group 4B native DWARF auditor correction (Nov 10):** Real delegated
+  Linux Cargo Build passed the first hardlink check but failed a second
+  ELF/DWARF reader's `nlink == 1` rule. Reused the strict all-kernel-links-
+  accounted private-output hash proof in both readers and target sealing,
+  with an external alias hostile test. Actual exact-head native rerun open.
+
 - **Group 4D real Windows stopped-frame binding (Nov 10):** Private D5
   kernel/PDB/owner witness now retains its correlated top DAP frame ID
   only after matching the original OS RIP and compiler line. The review
