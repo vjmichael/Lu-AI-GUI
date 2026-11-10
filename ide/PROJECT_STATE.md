@@ -1,5 +1,19 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## IDE Group 6A current engineering state — 2026-11-10
+
+Native registered-root modules now provide bounded local committed
+file blame/first-parent history, local ref/remote-alias inventory and
+health. The Source Control UI has read-only commands and stale
+project-switch handling. Fixtures cover tracked-file blame, path
+traversal and non-exposure of credential-bearing remote URLs.
+Windows/Linux installed operator scripts exist for future physical
+project-switch and restart evidence. CI push-run logs cannot be
+retrieved through the current commit workflow lookup, so new exact-head
+native and installed acceptance are **not** claimed. Worktree and
+branch mutation, remote credentials, fetch/push and Lu bridge remain
+disabled. See `ide/docs/IDE_GROUP06A_GIT_REPOSITORY_AUDIT_20261110.md`.
+
 ## Group 6A continued — native read-only Git history/refs/health (Nov 10)
 
 Implemented bounded committed tracked-file blame and first-parent
