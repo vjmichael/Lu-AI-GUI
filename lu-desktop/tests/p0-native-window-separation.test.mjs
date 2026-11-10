@@ -42,3 +42,14 @@ test('ordinary user chat includes a conservative media route with native review 
   assert.match(rust,/browser_model_desktop::explicit_browse_origin/);
   assert.match(rust,/reader_desktop::explicit_reader_document_request/);
 });
+
+test('real pixel trials require a durable local receipt, never only a model/projector flag',()=>{
+  const vision=readFileSync(new URL('../src-tauri/src/vision_context.rs',import.meta.url),'utf8');
+  const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+  assert.match(vision,/persist_native_vision_receipt/);
+  assert.match(vision,/image_sha256/);
+  assert.match(vision,/model_reply/);
+  assert.match(vision,/create_new\(true\)/);
+  assert.match(host,/vision_context::persist_native_vision_receipt/);
+  assert.match(host,/let verified=passed==4/);
+});

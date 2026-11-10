@@ -1663,6 +1663,7 @@ fn lu_environment_status(
 struct VisionCapabilityView{
     session_id:Option<String>,
     model_ref:Option<String>,
+    evidence_id:Option<String>,
     status:&'static str,
     detail:&'static str,
 }
@@ -1687,6 +1688,7 @@ fn lu_vision_capability(
     let evidence=vision_context::probe_evidence(loaded,projector,passed);
     Ok(VisionCapabilityView{
         session_id:runtime.session_id,model_ref:runtime.model_ref,
+        evidence_id:None,
         status:vision_context::availability_label(evidence),
         detail:if !loaded{
             "No loaded model. Native visual understanding unavailable."
@@ -2360,6 +2362,8 @@ async fn lu_vision_run_probe(
         let mut order=[0usize,1,2,3];
         order.shuffle(&mut rand::rngs::OsRng);
         let mut passed=0u32;
+        let mut trials=Vec::<vision_context::VisionProbeTrial>::new();
+        let evidence_id=next_id("vp-");
         for index in order{
             let current=owner.supervisor.status()
                 .map_err(|_|"Loaded model status changed during visual probe")?;
@@ -2368,6 +2372,7 @@ async fn lu_vision_run_probe(
                 return Err("Model changed during vision probe".into());
             }
             let image=vision_context::image_for_probe(index)?;
+            let pixel_sha256=format!("{:x}",Sha256::digest(&image.bytes));
             let gid=next_id("g-");
             let rid=next_id("req-");
             let (ticket,_)=owner.generation_queue.enqueue(&sid,&chat_id,&gid)?;
@@ -2396,10 +2401,25 @@ async fn lu_vision_run_probe(
             ).map_err(|e|format!("Native image inference failed: {e:?}"))?;
             // Case folding is allowed; explanatory text or extra words
             // invalidate the response instead of being treated as correct.
-            if answer.trim().eq_ignore_ascii_case(PROBE_COLORS[index].0){
-                passed+=1;
-            }
+            let correct=answer.trim().eq_ignore_ascii_case(PROBE_COLORS[index].0);
+            if correct{passed+=1;}
+            trials.push(vision_context::VisionProbeTrial{
+                challenge_id:gid,
+                image_sha256:pixel_sha256,
+                expected_color:PROBE_COLORS[index].0.into(),
+                model_reply:answer,
+                passed:correct,
+            });
         }
+        // Persist original local-model replies and exact private image hashes.
+        // This must succeed BEFORE any UI view can claim semantic verification.
+        // A fresh app session never inherits this runtime attestation.
+        let parent=owner.models_dir.parent()
+            .ok_or("Owner app-data root unavailable for vision receipts")?;
+        vision_context::persist_native_vision_receipt(
+            &parent.join("lu-native-vision-probes"),
+            &evidence_id,&sid,&model,&trials
+        )?;
         let verified=passed==4;
         let receipt=VisionProbeReceipt{
             session_id:sid.clone(),model_ref:model.clone(),
@@ -2410,6 +2430,7 @@ async fn lu_vision_run_probe(
         *slot=Some(receipt);
         Ok(VisionCapabilityView{
             session_id:Some(sid),model_ref:Some(model),
+            evidence_id:Some(evidence_id),
             status:if verified{"verified"}else{"unverified"},
             detail:if verified{
                 "Native image probe passed 4/4 private pixel challenges for this exact loaded session. Not an independent accuracy benchmark."

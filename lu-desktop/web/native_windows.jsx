@@ -248,6 +248,7 @@ export function SettingsWindow(){
           <div className="nativeOption">
             <strong>Actual multimodal inference</strong>
             <p role="status">Vision: {vision?.status||'unverified'} — {vision?.detail||'No native result is available.'}</p>
+            <p>Exact loaded-model pixel receipt: {vision?.evidenceId||'Not yet durably observed in this session'}. An emitted receipt records actual synthetic PNG hashes and bounded model text in Lu app data; it never proves Radeon GPU offload.</p>
             <label className="nativeField">Conversation for independently witnessed pixel probe
               <select value={chatId} onChange={e=>setChatId(e.target.value)}>
                 <option value="">Select conversation…</option>
