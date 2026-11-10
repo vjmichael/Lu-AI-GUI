@@ -1,5 +1,18 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 6A continued — native read-only Git history/refs/health (Nov 10)
+
+Implemented bounded committed tracked-file blame and first-parent
+history, local ref/tag/stored-tracking enumeration, redacted remote
+aliases and repository health without authorizing Git operations.
+Tauri has project-ID-only routes; the Source Control panel shows
+local metadata, request-specific file history and cleared stale
+state on project switching. Native hostile fixtures and operator
+Windows/Linux installed witness scripts are added. No native
+exact-head compiler/CI results or physical installed acceptance
+are established at the new source head. See
+`ide/docs/IDE_GROUP06A_GIT_REPOSITORY_AUDIT_20261110.md`.
+
 ## Group 6A-01/02 — read-only Git inventory source (Nov 10, 2026)
 
 Dedicated `ide/group06a-git-repository-audit-20261110` branch now
