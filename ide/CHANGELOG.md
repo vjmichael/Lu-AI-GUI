@@ -1,5 +1,15 @@
 # Lu IDE — Development changelog
 
+## 2026-11-10 — IDE Group 6B-02 read-only hunk selection
+
+Added native libgit2 exact index-vs-capability-source hunk preview,
+bounded diff lines and byte-hash identities, fresh selection checks
+that reject stale/tampered/duplicate hunks, and project-scoped Tauri
+plus Source Control UX. No patch apply, write, Git hook, commit or
+operator approval grant introduced. Consolidated native tests are
+pending exact-head verification; NSIS/Debian physical acceptance open.
+
+
 ## 2026-11-10 — IDE Group 6B source-only reviewed batch staging preview
 
 Started independent advanced Git staging with a read-only, 1–8 tracked
