@@ -1249,7 +1249,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "5fbc656f71bd9a8b2d99f4ea98423056db036558"
+      "blob": "ac6c3560a0508331684dad786c88b497ab4f6f87"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -2449,11 +2449,11 @@
     },
     {
       "path": "src-tauri/lu-core/src/multimodal_http.rs",
-      "blob": "038222d1fafc80c3100557e982cdd52f60a7b886"
+      "blob": "63d2eddb8f95005aa70196fdfde91001ea337c1f"
     },
     {
       "path": "src-tauri/lu-core/src/multimodal_saved_turn.rs",
-      "blob": "46d3c4105580551056209132db2bd3c30510726b"
+      "blob": "6dc0cea3501ad31ffcfd106b1be423f8b281a446"
     },
     {
       "path": "src-tauri/lu-core/src/native_app_adapter.rs",

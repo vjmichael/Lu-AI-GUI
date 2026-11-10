@@ -2196,7 +2196,7 @@ async fn lu_vision_run_probe(
             ticket.wait_for_slot()?;
             if ticket.cancelled(){return Err("Vision probe cancelled".into());}
             owner.supervisor.reserve_generation_images_with_history(
-                &sid,&gid,&rid,PROBE_PROMPT,32,&[image.clone()],&[]
+                &sid,&gid,&rid,PROBE_PROMPT,512,&[image.clone()],&[]
             ).map_err(|e|format!("Vision native reservation refused: {e:?}"))?;
             if ticket.cancelled(){
                 let _=owner.supervisor.cancel(&sid,&gid,&next_id("req-"));
@@ -2214,7 +2214,7 @@ async fn lu_vision_run_probe(
                 Ok(())
             };
             owner.supervisor.run_reserved_images_with_history(
-                &sid,&gid,&rid,PROBE_PROMPT.to_owned(),32,vec![image],vec![],emit
+                &sid,&gid,&rid,PROBE_PROMPT.to_owned(),512,vec![image],vec![],emit
             ).map_err(|e|format!("Native image inference failed: {e:?}"))?;
             // Case folding is allowed; explanatory text or extra words
             // invalidate the response instead of being treated as correct.
