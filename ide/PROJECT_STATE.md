@@ -1,5 +1,18 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 5 provenance/discard continuation — November 10, 2026
+
+Group 5 now checks independent wheel RECORD member completeness and
+SHA256/size against the selected downloaded archive (`6789b9f`,
+`1a96ddf`) and refuses to fsync a private-output
+`discard_verified` journal transition until a supplied absolute
+private output path is actually absent (`e0188cf`). These are
+source-only changes, not native runtime or proof of OS cleanup.
+The Group 5 consolidated exact-head Windows/Linux run is not yet
+verified terminal; physical Windows NSIS/Linux Debian human approval
+and installed restart were not performed. Production Windows package
+execution stays denied. No change to Group 4 LLVM branch.
+
 ## Group 5 — runner-bound continuation (November 10, 2026)
 
 New Group 5 upstream uv evidence input read now compares path identity
