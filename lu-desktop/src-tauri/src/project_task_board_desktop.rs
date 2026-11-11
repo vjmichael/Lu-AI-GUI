@@ -185,8 +185,9 @@ fn write(profile:&Path,id:&str,expected_board:&str,expected_source:&str,
             // A source-changed task is not safe to approve as a current plan
             // until its exact original requirement was explicitly re-reviewed.
             if last.needs_human_reconciliation&&r.events.iter().rev()
-                .find(|e|e.revision.task_id==*task_id)
-                .is_some_and(|e|e.kind==register::RevisionKind::SourceChanged){
+                .filter(|e|e.revision.task_id==*task_id)
+                .take_while(|e|e.kind!=register::RevisionKind::HumanRevalidated)
+                .any(|e|e.kind==register::RevisionKind::SourceChanged){
                 return Err("PLAN06_SOURCE_DRIFT_REQUIRES_HUMAN_RECONCILIATION".into())
             }
         }
@@ -343,6 +344,12 @@ fn save_json_new(path:&Path,bytes:&[u8])->Result<String,String>{
     let meta=fs::symlink_metadata(parent).map_err(|_|"PLAN06_EXPORT_PARENT_MISSING")?;
     if !meta.is_dir()||meta.file_type().is_symlink(){
         return Err("PLAN06_EXPORT_UNSAFE_PARENT".into())
+    }
+    #[cfg(windows)]{
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes()&0x400!=0{
+            return Err("PLAN06_EXPORT_UNSAFE_REPARSE_PARENT".into())
+        }
     }
     let mut file=std::fs::OpenOptions::new().write(true).create_new(true).open(path)
         .map_err(|_|"PLAN06_EXPORT_CREATE_NEW_FAILED")?;
