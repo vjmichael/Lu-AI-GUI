@@ -8330,7 +8330,33 @@ function App() {
               <p className="treeCaution">Empty directory.</p>}
           </div>
           <div className="sourcePreview" role="region" aria-label="Source code editor">
-            <div className="editorLayoutToolbar">
+            <div className="editorLayoutToolbar" role="toolbar"
+              aria-label="Source editor navigation and workspace actions">
+              <button type="button" className="ghostBtn"
+                aria-label="Focus primary editor (Ctrl+1)"
+                disabled={!activeTab || explorerPending}
+                onClick={()=>requestEditorFocus('primary')}>
+                Focus first editor · Ctrl+1
+              </button>
+              <button type="button" className="ghostBtn"
+                aria-label="Focus secondary editor (Ctrl+2)"
+                disabled={!splitEditorOpen || !secondaryTab || explorerPending}
+                onClick={()=>requestEditorFocus('secondary')}>
+                Focus second editor · Ctrl+2
+              </button>
+              <button type="button" className="ghostBtn"
+                aria-controls="projectProblemsPanel"
+                aria-expanded={projectProblemsOpen}
+                disabled={!activeProject}
+                onClick={()=>showProjectProblems()}>
+                Problems · {problemsForProject.errors+problemsForProject.warnings+
+                  problemsForProject.infos}
+              </button>
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject}
+                onClick={()=>{setSection('tasks');void refreshIntents();}}>
+                Jobs · view progress
+              </button>
               <button type="button" className="ghostBtn"
                 aria-label="Check open tabs for external disk changes"
                 disabled={!activeProject || !projectTabs.length || diskAuditBusy ||
@@ -8375,6 +8401,10 @@ function App() {
                 Close clean tabs
               </button>
               {splitEditorOpen && <>
+                <span className="editorFocusLabel" role="status">
+                  Focused: {focusedEditorPane==='secondary' && secondaryTab
+                    ? 'second editor' : 'first editor'}
+                </span>
                 <label htmlFor="secondary-editor-select">Second editor</label>
                 <select id="secondary-editor-select" aria-label="Second editor file"
                   value={secondaryTab?.key || ''}
@@ -8813,8 +8843,16 @@ function App() {
                 </div>}
               </div>}
               <div className={'splitEditorGrid' + (splitEditorOpen ? ' enabled' : ' single')}>
-                <div className="splitPrimaryPane" data-ide-editor-pane="primary">
+                <div className={'splitPrimaryPane' +
+                    (focusedEditorPane==='primary'?' focused':'')}
+                  data-ide-editor-pane="primary" role="region"
+                  aria-label={'First editor, '+activeTab.relativePath}>
               <CodeEditor
+                pane="primary"
+                projectId={activeTab.projectId}
+                label={'First editor: '+activeTab.relativePath}
+                focusRequest={editorFocusRequest}
+                onFocused={onEditorFocused}
                 diagnostics={activeLspDiagnostics}
                 jumpRequest={lspJumpRequest}
                 completionApplyRequest={lspCompletionApplyRequest}
@@ -8846,8 +8884,13 @@ function App() {
               />
 
                 </div>
-                {splitEditorOpen && <div className="splitSecondaryPane"
-                  data-ide-editor-pane="secondary" aria-label="Secondary source editor">
+                {splitEditorOpen && <div
+                  className={'splitSecondaryPane' +
+                    (focusedEditorPane==='secondary'?' focused':'')}
+                  data-ide-editor-pane="secondary" role="region"
+                  aria-label={secondaryTab
+                    ? 'Second editor, '+secondaryTab.relativePath
+                    : 'Second editor, select a file'}>
                   {secondaryTab ? <>
                     <div className="splitSecondaryHeader">
                       <strong title={secondaryTab.relativePath}>{secondaryTab.relativePath}</strong>
@@ -8863,6 +8906,11 @@ function App() {
                       </button>
                     </div>
                     <CodeEditor
+                      pane="secondary"
+                      projectId={secondaryTab.projectId}
+                      label={'Second editor: '+secondaryTab.relativePath}
+                      focusRequest={editorFocusRequest}
+                      onFocused={onEditorFocused}
                       key={secondaryTab.key + ':' + secondaryTab.generation + ':secondary'}
                       tabIdentity={secondaryTab.key + ':' + secondaryTab.generation}
                       editorState={editorStates.current.get(secondaryTab.key)}
@@ -8885,7 +8933,8 @@ function App() {
               </div>
               {projectProblemsOpen && <section id="projectProblemsPanel"
                 aria-label="Open-project verified language-server problems"
-                className="lspProjectProblems">
+                className="lspProjectProblems" tabIndex={-1}
+                ref={projectProblemsPanelRef}>
                 <div className="lspProjectProblemsHeading">
                   <strong>Problems across open files</strong>
                   <button className="ghostBtn" type="button"
