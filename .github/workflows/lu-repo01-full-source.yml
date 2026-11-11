@@ -1791,3 +1791,257 @@ jobs:
           path: plan04-real-evidence/
           retention-days: 14
           if-no-files-found: warn
+
+
+  native-plan05-register:
+    # Exact-SHA admission; task model outputs cannot authorize CI.
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.head.ref == 'lu/plan05-durable-project-task-register-20261110' && contains(github.event.pull_request.body, format('LU_PLAN05_NATIVE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN05_NATIVE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact SHA, frozen source and explicit test admission
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p plan05-native-evidence
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python - <<'PY'
+          import os,re
+          assert re.findall(r'(?m)^LU_PLAN05_NATIVE_SHA=([0-9a-f]{40})$',os.environ['BODY'])==[os.environ['HEAD_SHA']]
+          PY
+          node scripts/verify-source-tree.mjs | tee plan05-native-evidence/source-integrity.log
+          printf 'HEAD=%s\nOS=%s\n' "$HEAD_SHA" "$RUNNER_OS" > plan05-native-evidence/identity.txt
+      - name: Linux native Tauri prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf
+      - name: Windows test-only placeholder resources
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($n in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $n) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Native frontend, host and ANSF register
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
+          node --test lu-desktop/tests/workspace-desktop.test.mjs 2>&1 | tee plan05-native-evidence/settings.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib project_task_register::tests -- --nocapture 2>&1 | tee plan05-native-evidence/core.log
+          grep -Fq 'test result: ok. 3 passed; 0 failed;' plan05-native-evidence/core.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib project_register_desktop::tests -- --nocapture 2>&1 | tee plan05-native-evidence/desktop.log
+          grep -Fq 'test result: ok. 2 passed; 0 failed;' plan05-native-evidence/desktop.log
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | tee plan05-native-evidence/tauri-check.log
+          echo 'PLAN05_NATIVE_REGISTER_GATES_PASSED' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Installed approval and physical Radeon/Qwen checks remain separate.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-plan05-native-${{ matrix.os }}-${{ github.event.pull_request.head.sha }}
+          path: plan05-native-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  installed-plan05-windows:
+    needs: verify-source
+    if: ${{ github.event.pull_request.head.ref == 'lu/plan05-durable-project-task-register-20261110' && contains(github.event.pull_request.body, format('LU_PLAN05_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN05_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source, immutable PR admission, and native test contract
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:SOURCE_SHA){throw 'Exact checkout wrong'}
+          $matches=[regex]::Matches($env:PR_BODY,'(?m)^LU_PLAN05_INSTALLED_SHA=([0-9a-f]{40})$')
+          if($matches.Count -ne 1 -or $matches[0].Groups[1].Value -cne $env:SOURCE_SHA){
+            throw 'PLAN05 installed test approval not bound to this exact source'
+          }
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'Source-lock mismatch'}
+          $dir=Join-Path $env:RUNNER_TEMP 'plan05-installed-evidence'
+          New-Item -ItemType Directory -Force -Path $dir|Out-Null
+          @{"schema"="lu-plan05-exact-head-install-v1";"sourceSha"=$env:SOURCE_SHA;"os"="windows-2025";"fixtureGguf"=$false}|
+            ConvertTo-Json|Set-Content -LiteralPath (Join-Path $dir 'source.json') -Encoding UTF8
+      - name: Require pinned NSIS 3.11
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $compiler=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
+          if(-not(Test-Path -LiteralPath $compiler -PathType Leaf)){
+            choco install nsis --version=3.11.0 --yes --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'Pinned NSIS install failed'}
+          }
+          & $compiler /VERSION
+          if($LASTEXITCODE -ne 0){throw 'Reviewed NSIS compiler refused'}
+      - name: Build real exact-head x64 NSIS with pinned genuine CPU engine
+        shell: pwsh
+        timeout-minutes: 150
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $folder=Join-Path $env:RUNNER_TEMP 'plan05-genuine-installer'
+          & scripts/build-agent01g-physical-windows-nsis.ps1 -SourceSha $env:SOURCE_SHA -OutputDirectory $folder
+          if($LASTEXITCODE -ne 0){throw 'Exact source genuine NSIS build failed'}
+          $check=Get-Content -LiteralPath (Join-Path $folder 'installer-checksums.json') -Raw | ConvertFrom-Json
+          if($check.sourceSha -cne $env:SOURCE_SHA -or -not $check.genuineInstallerProduced){
+            throw 'Plan05 installer source not authentic'
+          }
+          $installer=Join-Path $folder $check.installerName
+          if((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -cne $check.installerSha256){
+            throw 'Actual installer byte digest mismatch'
+          }
+          Copy-Item -LiteralPath (Join-Path $folder 'installer-checksums.json') -Destination (Join-Path $env:RUNNER_TEMP 'plan05-installed-evidence\installer-checksums.json')
+      - name: Install true NSIS package into disposable Windows directory
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference='Stop'
+          $folder=Join-Path $env:RUNNER_TEMP 'plan05-genuine-installer'
+          $check=Get-Content -LiteralPath (Join-Path $folder 'installer-checksums.json') -Raw | ConvertFrom-Json
+          $installer=Join-Path $folder $check.installerName
+          $target=Join-Path $env:RUNNER_TEMP 'plan05-installed-Lu'
+          if(Test-Path -LiteralPath $target){throw 'Refuse pre-existing installation'}
+          $process=Start-Process -FilePath $installer -ArgumentList @('/S',("/D="+$target)) -PassThru
+          if(-not $process.WaitForExit(600000)){ $process.Kill($true); throw 'Installer timed out' }
+          $process.Refresh()
+          if($process.ExitCode -ne 0){throw "Actual NSIS installer exited $($process.ExitCode)"}
+          $app=Join-Path $target 'lu-desktop.exe'
+          if(-not(Test-Path -LiteralPath $app -PathType Leaf)){throw 'Installed native Lu.exe missing'}
+          if((Get-FileHash -LiteralPath $app -Algorithm SHA256).Hash.ToLowerInvariant() -cne $check.appSha256){
+            throw 'Installed native executable differs from original build'
+          }
+          $engine=Join-Path $target 'lu-inference\llama-server.exe'
+          if((Get-FileHash -LiteralPath $engine -Algorithm SHA256).Hash.ToLowerInvariant() -cne $check.engineSha256){
+            throw 'Original pinned genuine engine absent from installed app'
+          }
+          "LU_PLAN05_INSTALLED_EXE=$app" >> $env:GITHUB_ENV
+          "LU_PLAN05_INSTALLED_SHA=$($check.appSha256)" >> $env:GITHUB_ENV
+          "LU_PLAN05_INSTALL_FOLDER=$target" >> $env:GITHUB_ENV
+          $data=@{sourceSha=$check.sourceSha;appSha256=$check.appSha256;engineSha256=$check.engineSha256;installedExe=$app;installerSha256=$check.installerSha256}
+          $data|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'plan05-installed-evidence\real-install.json') -Encoding UTF8
+      - name: Materialize AUDITED original test-only task in disposable ANSF profile
+        shell: pwsh
+        timeout-minutes: 25
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:LU_PLAN05_INSTALLED_PROFILE=Join-Path $env:APPDATA 'org.lu.agent01g.devtest'
+          $env:LU_PLAN05_INSTALLED_PROJECT=Join-Path $env:RUNNER_TEMP 'plan05-original-project'
+          $env:LU_PLAN05_INSTALLED_SEED_RECEIPT=Join-Path $env:RUNNER_TEMP 'plan05-installed-evidence\original-seed.json'
+          if(Test-Path $env:LU_PLAN05_INSTALLED_PROFILE){throw 'Refuse reuse of existing app data'}
+          # The RELEASE installer is built and hash-verified above. The separate
+          # debug-mode fixture cargo test reads the unchanged source config,
+          # which expects MSVC runtime resource paths. Supply explicitly inert
+          # CI-only fixture files AFTER the real NSIS build, NEVER in the
+          # production installer or as substitute inference evidence.
+          $inference=Join-Path (Get-Location) 'lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $inference | Out-Null
+          foreach($dll in @('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            $target=Join-Path $inference $dll
+            if(Test-Path -LiteralPath $target){throw "Refuse to shadow genuine reviewed runtime: $dll"}
+            Set-Content -LiteralPath $target -Value 'NOT_AN_ENGINE_PLAN05_TEST_FIXTURE' -NoNewline
+          }
+          & cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib project_register_desktop::tests::export_original_installed_ui_test_fixture -- --ignored --exact --nocapture
+          if($LASTEXITCODE -ne 0){throw 'Native original-data fixture construction failed'}
+          if(-not(Test-Path $env:LU_PLAN05_INSTALLED_SEED_RECEIPT)){throw 'Original fixture not materialized'}
+          & python scripts/plan05-readonly-ansf-witness.py --profile $env:LU_PLAN05_INSTALLED_PROFILE --seed $env:LU_PLAN05_INSTALLED_SEED_RECEIPT --output (Join-Path $env:RUNNER_TEMP 'plan05-installed-evidence\independent-seed-readback.json')
+          if($LASTEXITCODE -ne 0){throw 'Original native ANSF fixture not independently audited'}
+          "LU_PLAN05_INSTALLED_PROFILE=$env:LU_PLAN05_INSTALLED_PROFILE" >> $env:GITHUB_ENV
+          "LU_PLAN05_INSTALLED_SEED_RECEIPT=$env:LU_PLAN05_INSTALLED_SEED_RECEIPT" >> $env:GITHUB_ENV
+      - name: Real Win32 UIA refusal approval correction and restart
+        shell: pwsh
+        timeout-minutes: 18
+        run: |
+          $ErrorActionPreference='Stop'
+          $ui=Join-Path $env:RUNNER_TEMP 'plan05-installed-evidence\human-acceptance'
+          & scripts/plan05-windows-installed-acceptance.ps1 -InstalledExe $env:LU_PLAN05_INSTALLED_EXE -ExpectedSha256 $env:LU_PLAN05_INSTALLED_SHA -ProfileDir $env:LU_PLAN05_INSTALLED_PROFILE -SeedReceipt $env:LU_PLAN05_INSTALLED_SEED_RECEIPT -EvidenceDir $ui -DisposableWindowsConfirmed
+          if($LASTEXITCODE -ne 0){throw 'Real installed human interaction and restart NOT accepted'}
+          $evidence=Get-Content -LiteralPath (Join-Path $ui 'plan05-installed-ui.json') -Raw|ConvertFrom-Json
+          if($evidence.acceptance -cne 'PASS_INSTALLED_HUMAN_ACTIONS_AND_RESTART' -or $evidence.testFixtureNotGguf -cne $true){
+            throw 'Native installed acceptance oracle mismatch'
+          }
+          echo 'Real x64 installed PLAN05 OS dialogs, refusal, approved revision and restart passed; synthetic original task fixture, not real GGUF generation.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Verify real NSIS uninstaller and preserve saved ANSF user data
+        shell: pwsh
+        timeout-minutes: 12
+        run: |
+          $ErrorActionPreference='Stop'
+          $target=$env:LU_PLAN05_INSTALL_FOLDER
+          $uninstaller=Join-Path $target 'UninstallLuAGENT01GPhysicalTest.exe'
+          if(-not(Test-Path -LiteralPath $uninstaller)){throw 'Actual NSIS uninstaller missing'}
+          $before=Join-Path $env:RUNNER_TEMP 'plan05-installed-evidence\human-acceptance\ansf-after-restart-independent-readback.json'
+          if(-not(Test-Path -LiteralPath $before)){throw 'No installed restart ANSF evidence to preserve'}
+          $data=Get-Content -LiteralPath $before -Raw|ConvertFrom-Json
+          $proc=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru
+          if(-not $proc.WaitForExit(180000)){ $proc.Kill($true); throw 'Uninstaller timed out'}
+          $proc.Refresh()
+          if($proc.ExitCode -ne 0){throw 'Uninstaller returned nonzero'}
+          $deadline=[DateTime]::UtcNow.AddSeconds(30)
+          do{
+            if(-not(Test-Path $env:LU_PLAN05_INSTALLED_EXE) -and -not(Test-Path $uninstaller) -and -not(Test-Path $target)){break}
+            Start-Sleep -Milliseconds 300
+          }while([DateTime]::UtcNow -lt $deadline)
+          if(Test-Path $env:LU_PLAN05_INSTALLED_EXE -or Test-Path $uninstaller -or Test-Path $target){throw 'Actual NSIS uninstall left installed files'}
+          & python scripts/plan05-readonly-ansf-witness.py --profile $env:LU_PLAN05_INSTALLED_PROFILE --seed $env:LU_PLAN05_INSTALLED_SEED_RECEIPT --output (Join-Path $env:RUNNER_TEMP 'plan05-installed-evidence\after-nsis-uninstall.json')
+          if($LASTEXITCODE -ne 0){throw 'ANSF profile did not survive native uninstall'}
+          $after=Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'plan05-installed-evidence\after-nsis-uninstall.json') -Raw|ConvertFrom-Json
+          if($before -eq $null -or $data.latestSha256 -cne $after.latestSha256 -or $after.taskVersion -ne 2){throw 'NSIS uninstall changed durable task register'}
+          echo 'Real NSIS uninstall removed application binaries and preserved original ANSF task revisions.' >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-plan05-installed-original-windows-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/plan05-installed-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-plan05-exact-head-nsis-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/plan05-genuine-installer/
+          retention-days: 14
+          if-no-files-found: warn

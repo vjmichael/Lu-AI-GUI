@@ -16,7 +16,7 @@ fn scan_and_classify(root:&Path)
     classifier::audit(&r,&g)?;
     Ok((g,r))
 }
-fn persist_proposal(profile:&Path,g:&graph::EvidenceGraph,
+pub(crate) fn persist_proposal(profile:&Path,g:&graph::EvidenceGraph,
     status:&classifier::StatusReport,p:&synthesis::ProjectTaskProposal,
     raw_reply:&str)->Result<(),String>{
     synthesis::audit_proposal(p,g,status)?;

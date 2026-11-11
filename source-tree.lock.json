@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 897,
+  "sourceCommitBeforeLock": "ecd06fdaf2f408d615a6e2860ff926b335602726",
+  "trackedFileCount": 902,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "3fcbad99d3200e0431ee809cd451d71aed9d403b"
+      "blob": "f6e9158ad9722a0bdc51dfdd02f30617a615e4f2"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -840,6 +840,10 @@
       "blob": "c793f45fb7dea8492b883cec84d750d25cd22321"
     },
     {
+      "path": "docs/LU_PLAN05_DURABLE_TASK_REGISTER_20261110.md",
+      "blob": "de26c5d1f35a83830ba34278738fc2fed7143ab5"
+    },
+    {
       "path": "docs/LU_R00_CAPABILITY_CONSOLIDATION_20261109.md",
       "blob": "0d6ea8e7fa09586b1c02e1b1cc04b462ce8c9986"
     },
@@ -1277,7 +1281,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "a676c6232a8988847772cfec4ae5b90ec85f2951"
+      "blob": "5b2ea9540348c0132bd51bbd480592427eeeb69b"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1360,12 +1364,16 @@
       "blob": "2bdcf92526541aecdd01f34811f1dd22076db2fa"
     },
     {
+      "path": "lu-desktop/src-tauri/src/project_register_desktop.rs",
+      "blob": "6b4c0ceeadbafd4e54dad34e472d2221ca03b93f"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/project_status_desktop.rs",
-      "blob": "35cb5b4bff9355b0797be2b033ca43c6e01c34ad"
+      "blob": "100bc21aa5c2c9ff3ab03d662387f1b2846b5be4"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_desktop.rs",
-      "blob": "049682868d84ad7cbff386b421a572506ce8c366"
+      "blob": "c68c0cc40d668ddc132b54c23ebc6f500f372670"
     },
     {
       "path": "lu-desktop/src-tauri/src/prompt_context.rs",
@@ -1861,7 +1869,7 @@
     },
     {
       "path": "lu-desktop/tests/workspace-desktop.test.mjs",
-      "blob": "83a1d3a28c1d2066e14c505df832f9670cf26104"
+      "blob": "eea16e61b94c7e49039cefa3e2fba60edab8e6e8"
     },
     {
       "path": "lu-desktop/tests/write-01e-edit-ux.test.mjs",
@@ -1933,7 +1941,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "b1e4602536579e558aba7eebb367cfad26d61db0"
+      "blob": "1bb086966ef7fa1b41c88f0fb51fecc17a36a4cc"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2030,6 +2038,14 @@
     {
       "path": "scripts/package-observe-capture-windows.ps1",
       "blob": "371a8d9da5a64fbebdb4fa91ee5c541d09581847"
+    },
+    {
+      "path": "scripts/plan05-readonly-ansf-witness.py",
+      "blob": "2fc419500a634da31af3f301ab750b6ebdf9a8c0"
+    },
+    {
+      "path": "scripts/plan05-windows-installed-acceptance.ps1",
+      "blob": "eae89c1b0cd73cddb4eb4316b6c09237c0bdf595"
     },
     {
       "path": "scripts/probe-observe-sensitive-window-windows.ps1",
@@ -2497,7 +2513,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "52a3f113e71e34a951e56b5ee821de3819abda2c"
+      "blob": "69bedd29167772497c2112d986a2e4a0a36025d5"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -2930,6 +2946,10 @@
     {
       "path": "src-tauri/lu-core/src/project_status_classifier.rs",
       "blob": "68168751411bb9327f2e18ec8ecde5be8f9ee860"
+    },
+    {
+      "path": "src-tauri/lu-core/src/project_task_register.rs",
+      "blob": "c34b9829d0008ca733f348ef589c06d1f259c774"
     },
     {
       "path": "src-tauri/lu-core/src/project_task_synthesis.rs",

@@ -144,3 +144,53 @@ test('PLAN-04 uses actual loaded GGUF reservation and strict citation-validated 
   assert.doesNotMatch(bridge,/Command::new|reqwest|git fetch|run_plan|human.*autoApprove/);
   assert.doesNotMatch(settings,/invoke\('lu_project_generate_tasks',\{.*root/);
 });
+
+
+test('PLAN-05 keeps operator corrections, source reconciliation and acceptance history outside model authority',()=>{
+  const screen=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+  const core=readFileSync(new URL('../../src-tauri/lu-core/src/project_task_register.rs',import.meta.url),'utf8');
+  const bridge=readFileSync(new URL('../src-tauri/src/project_register_desktop.rs',import.meta.url),'utf8');
+  assert.match(host,/mod project_register_desktop;/);
+  for(const command of ['lu_project_register_proposal','lu_project_list_registers',
+      'lu_project_revise_task','lu_project_reconcile_register','lu_project_revalidate_task']){
+    assert.match(host,new RegExp('project_register_desktop::'+command+','));
+    assert.match(screen,new RegExp("invoke\\('"+command+"'"));
+  }
+  assert.match(bridge,/settings_only\(&caller\)/);
+  assert.match(bridge,/blocking_pick_folder\(\)/);
+  assert.match(bridge,/blocking_show\(\)/);
+  assert.match(bridge,/TransactionBehavior::Immediate/);
+  assert.match(bridge,/ansf_project_task_register_revisions/);
+  assert.match(bridge,/PLAN05_HISTORICAL_REVISIONS_OVERWRITTEN/);
+  assert.match(core,/PLAN05_REVISIONS_CANNOT_REWRITE_PROVENANCE/);
+  assert.match(core,/PLAN05_CORRECTION_CANNOT_CHANGE_EVIDENCE/);
+  assert.match(core,/PLAN05_STALE_EDIT_EXPECTED_VERSION/);
+  assert.match(core,/independently_verified_requirement/);
+  assert.match(core,/execution_authorized:false/);
+  assert.match(screen,/Durable acceptance history/);
+  assert.doesNotMatch(bridge,/supervisor\.run_reserved|grant_execution|Command::new|reqwest/);
+  assert.doesNotMatch(screen,/invoke\('lu_project_reconcile_register',\{.*root/);
+});
+
+
+test('PLAN-05 installed Windows acceptance requires true OS dialog controls and original SQLite restart evidence',()=>{
+  const fixture=readFileSync(new URL('../src-tauri/src/project_register_desktop.rs',import.meta.url),'utf8');
+  const ui=readFileSync(new URL('../../scripts/plan05-windows-installed-acceptance.ps1',import.meta.url),'utf8');
+  const readback=readFileSync(new URL('../../scripts/plan05-readonly-ansf-witness.py',import.meta.url),'utf8');
+  const workflow=readFileSync(new URL('../../.github/workflows/lu-repo01-full-source.yml',import.meta.url),'utf8');
+  assert.match(fixture,/export_original_installed_ui_test_fixture/);
+  assert.match(fixture,/TEST_ONLY_SYNTHETIC_MODEL_RAW_JSON_NOT_GGUF/);
+  assert.match(ui,/Lu — Confirm human task correction/);
+  assert.match(ui,/Confirm review only/);
+  assert.match(ui,/Cancel/);
+  assert.match(ui,/UIAutomationClient/);
+  assert.match(ui,/PASS_BYTE_IDENTICAL_REGISTER_HEAD/);
+  assert.match(ui,/after-restart-independent-readback/);
+  assert.match(readback,/PRAGMA query_only=ON/);
+  assert.match(readback,/previous!=before/);
+  assert.match(readback,/originalReplySha256/);
+  assert.match(workflow,/build-agent01g-physical-windows-nsis\.ps1/);
+  assert.match(workflow,/exact-head-nsis/);
+  assert.match(workflow,/LU_PLAN05_INSTALLED_SHA/);
+  assert.doesNotMatch(ui,/run_reserved|grant_execution|model\.infer|allowAutoApprove/);
+});
