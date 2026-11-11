@@ -1348,7 +1348,13 @@ mod tests {
             let mut index = repo.index().unwrap();
             index.read(true).unwrap();
             assert_eq!(published.tree_id(), index.write_tree_to(&repo).unwrap());
-            assert!(!root.join(".git/index.lock").exists());
+            // A real hard abort bypasses RemoveOwnLock::drop and leaves the
+            // Git index.lock. Its ownership CANNOT be independently proven
+            // from an empty lock after restart. Treat it as ambiguous, even
+            // though this disposable test knows the child was its creator.
+            let stranded_lock = root.join(".git/index.lock");
+            let stranded_lock_bytes = fs::read(&stranded_lock).unwrap();
+            assert!(stranded_lock_bytes.is_empty());
             let journal = last_journal(&journal_path(&registry, id).unwrap())
                 .unwrap()
                 .unwrap();
@@ -1360,7 +1366,18 @@ mod tests {
             let pending = registry.inspect_reviewed_commit_recovery(id).unwrap();
             assert_eq!(pending.state, "ref_published_requires_verification");
             assert!(pending.operator_reconciliation_required);
+            assert!(pending.git_index_lock_present);
             assert!(!pending.automatic_retry && !pending.automatic_ref_rewrite);
+            assert_eq!(
+                registry.reconcile_reviewed_commit_journal(id).unwrap_err(),
+                "G06B_COMMIT_RECOVERY_LOCK_REQUIRES_MANUAL_REVIEW"
+            );
+            assert_eq!(fs::read(&stranded_lock).unwrap(), stranded_lock_bytes);
+            assert_eq!(repo.head().unwrap().target(), Some(new_head));
+            // TEST-ONLY cleanup, only for this disposable known-child fixture,
+            // models a later separately reviewed operator intervention. This
+            // production recovery function NEVER removes unidentified locks.
+            fs::remove_file(&stranded_lock).unwrap();
             // Actual host-native verification of an interrupted CAS after
             // a fresh registry process. The installed GUI must separately
             // obtain real native OS authorization before invoking this call.
