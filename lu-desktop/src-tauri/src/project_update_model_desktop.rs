@@ -292,7 +292,10 @@ mod tests{
             &profile,&proposal,&imported,None).unwrap();
         let preview=project_updates_desktop::analyze_selected(
             &profile,&root,&registered.register_id).unwrap();
-        let p=suggestions::prompt(&preview,&g,&s).unwrap();
+        let (_checked,_,_,current_g,current_s)=
+            project_updates_desktop::reload_audited(
+                &profile,&preview.digest_sha256).unwrap();
+        let p=suggestions::prompt(&preview,&current_g,&current_s).unwrap();
         let candidate=&preview.candidates[0];
         let raw=serde_json::json!({
             "schema":suggestions::RAW_SCHEMA,
