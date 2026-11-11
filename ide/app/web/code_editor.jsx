@@ -120,9 +120,12 @@ export function createEditorState(text, filename, onChange, onSelectionChange) {
 export function CodeEditor({ editorState, tabIdentity, findRequest, replaceRequest,
   mergeApplyRequest, onMergeApplied,
   diagnostics = EMPTY_DIAGNOSTICS, jumpRequest, completionApplyRequest,
-  onCursorLine, onCursorPosition, onReplaceApplied, onCompletionApplied }) {
+  onCursorLine, onCursorPosition, onReplaceApplied, onCompletionApplied,
+  pane = 'primary', projectId, label, onFocused, focusRequest }) {
   const container = useRef(null);
   const viewRef = useRef(null);
+  const onFocusedRef = useRef(onFocused);
+  onFocusedRef.current = onFocused;
   const cursorCallback = useRef(onCursorLine);
   cursorCallback.current = onCursorLine;
   const replaceCallback = useRef(onReplaceApplied);
@@ -140,6 +143,11 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
       parent: container.current,
     });
     viewRef.current = view;
+    if (typeof label === 'string' && label.length<=1100) {
+      view.contentDOM.setAttribute('aria-label',label);
+    }
+    const reportFocus=()=>onFocusedRef.current?.(pane,tabIdentity);
+    view.dom.addEventListener('focusin',reportFocus);
     const reportLine = () => {
       const head = view.state.selection.main.head;
       const line = view.state.doc.lineAt(head);
@@ -151,6 +159,7 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     view.dom.addEventListener('mouseup', reportLine);
     reportLine();
     return () => {
+      view.dom.removeEventListener('focusin',reportFocus);
       view.dom.removeEventListener('keyup', reportLine);
       view.dom.removeEventListener('mouseup', reportLine);
       viewRef.current = null;
@@ -158,6 +167,16 @@ export function CodeEditor({ editorState, tabIdentity, findRequest, replaceReque
     };
     // tabIdentity is the mount boundary; typing does not recreate EditorView.
   }, [tabIdentity]);
+  useEffect(() => {
+    const view = viewRef.current;
+    // A focus command is an explicit current-project navigation decision.
+    // Never steal focus from another project or a different tab identity.
+    if (!view || !focusRequest ||
+        focusRequest.pane!==pane ||
+        focusRequest.projectId!==projectId ||
+        focusRequest.tabIdentity!==tabIdentity) return;
+    view.focus();
+  },[focusRequest,tabIdentity,pane,projectId]);
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !findRequest || findRequest.to > view.state.doc.length) return;
