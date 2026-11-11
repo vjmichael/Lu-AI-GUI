@@ -264,3 +264,36 @@ test('PLAN-06 installed native task list requires independent real Windows appro
   assert.match(workflow,/plan06-windows-installed-acceptance\.ps1/);
   assert.doesNotMatch(uia,/grant_execution|model\.infer|allowAutoApprove|run_reserved/);
 });
+
+
+test('PLAN-07A evidence delta is host-verified and never self-authorizes completion',()=>{
+  const core=readFileSync(new URL('../../src-tauri/lu-core/src/project_task_updates.rs',import.meta.url),'utf8');
+  const host=readFileSync(new URL('../src-tauri/src/project_updates_desktop.rs',import.meta.url),'utf8');
+  const ui=readFileSync(new URL('../web/task_board.jsx',import.meta.url),'utf8');
+  const app=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+  assert.match(app,/project_updates_desktop::lu_project_update_inspect,/);
+  assert.match(app,/project_updates_desktop::lu_project_update_apply,/);
+  assert.match(ui,/invoke\('lu_project_update_inspect'/);
+  assert.match(ui,/invoke\('lu_project_update_apply'/);
+  assert.match(ui,/Exact criterion review candidates/);
+  assert.match(core,/project_task_register as register/);
+  assert.match(core,/same_observed_sources/);
+  assert.match(core,/PLAN07_WRONG_SELECTED_PROJECT_SCOPE/);
+  assert.match(core,/Disposition::RequirementMissing/);
+  assert.match(core,/Disposition::ExactCriterionReviewCandidate/);
+  assert.match(core,/task_complete:false/);
+  assert.match(core,/execution_authorized:false/);
+  assert.match(core,/human_review_required:true/);
+  assert.match(host,/PLAN07_REQUIRES_INDEPENDENT_HUMAN_TASK_WINDOW/);
+  assert.match(host,/blocking_pick_folder\(\)/);
+  assert.match(host,/project_status_desktop::classify_selected\(root\)/);
+  assert.match(host,/ansf_project_task_refresh_observations/);
+  assert.match(host,/TransactionBehavior::Immediate/);
+  assert.match(host,/PLAN07_REGISTER_CHANGED_AFTER_PREVIEW/);
+  assert.match(host,/PLAN07_SOURCE_CHANGED_AFTER_OPERATOR_REVIEW/);
+  assert.match(host,/register::source_changed\(/);
+  assert.match(host,/project_register_desktop::persist\(/);
+  assert.match(host,/Lu — Review changed native task evidence/);
+  assert.doesNotMatch(host,/supervisor\.run_reserved|grant_execution|Command::new|reqwest|auto_accept|git commit/);
+  assert.doesNotMatch(ui,/invoke\('lu_agent_run_reviewed_step'/);
+});
