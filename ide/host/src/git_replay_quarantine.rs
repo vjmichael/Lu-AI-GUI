@@ -409,6 +409,30 @@ mod tests {
         assert_eq!(snapshot(&f),before);
     }
     #[test]
+    fn same_path_divergence_yields_real_merge_conflicts_without_writing_source(){
+        let f=fixture();
+        let repo=Repository::open(&f.root).unwrap();
+        let prior=repo.find_commit(local_commit(&repo,"feature").unwrap()).unwrap();
+        let old_tree=prior.tree().unwrap();
+        let mut builder=repo.treebuilder(Some(&old_tree)).unwrap();
+        let blob=repo.blob(b"feature conflicting main\n").unwrap();
+        builder.insert("main.txt",blob,0o100644).unwrap();
+        let tree=repo.find_tree(builder.write().unwrap()).unwrap();
+        let sig=Signature::now("Fixture","fixture@localhost.invalid").unwrap();
+        repo.commit(Some("refs/heads/feature"),&sig,&sig,
+            "feature modifies same main path",&tree,&[&prior]).unwrap();
+        drop(repo);
+        let before=snapshot(&f);
+        let prospective=f.registry.preview_prospective_replay(
+            &f.id,ReplayReviewKind::CherryPickLocalTip,"feature").unwrap();
+        assert!(prospective.conflict_count>0);
+        assert!(prospective.blockers.contains(&"actual_three_way_conflicts"));
+        assert!(prospective.prospective_head.is_none());
+        assert!(prospective.prospective_tree.is_none());
+        assert!(!prospective.execution_route_available);
+        assert_eq!(snapshot(&f),before);
+    }
+    #[test]
     fn stale_and_dirty_sources_never_return_an_execution_capability(){
         let f=fixture();
         fs::write(f.root.join(".git/index.lock"),b"foreign").unwrap();
