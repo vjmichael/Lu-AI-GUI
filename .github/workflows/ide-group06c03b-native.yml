@@ -1,0 +1,59 @@
+name: IDE Group 6C03B isolated divergent verification
+on:
+  push:
+    branches: [ide/group06c03b-divergent-merge-20261111]
+    paths:
+      - '.github/workflows/ide-group06c03b-native.yml'
+      - 'ide/host/src/git_divergent_verify.rs'
+      - 'ide/host/src/lib.rs'
+      - 'ide/app/src-tauri/src/lib.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-g06c03b-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - name: Linux desktop build prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Native conflict/sandbox fixtures and compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_divergent_verify -- --nocapture
+          cargo check --locked --manifest-path ide/host/Cargo.toml --all-targets
+          rustfmt --edition 2021 --check ide/host/src/git_divergent_verify.rs
+      - name: Tauri exact-head route compiler check
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ] && [ ! -f ide/app/src-tauri/icons/icon.ico ]; then
+            python ide/app/fixtures/make_g04d_ci_icon.py
+          fi
+          cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+      - name: Explicit acceptance limits
+        if: always()
+        shell: bash
+        run: |
+          printf 'head=%s\nos=%s\ndivergent_publication=NOT_IMPLEMENTED\nhuman_consent=DEFERRED\nrelease=NOT_AUTHORIZED\n' "$GITHUB_SHA" "$RUNNER_OS"
