@@ -20,6 +20,7 @@ import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppeara
 import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget,correctedMessageFollowUp} from './message_revisions.mjs';
 import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from './agent_replan.mjs';
 import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
+import {TaskBoardWindow} from './task_board.jsx';
 
 function MessageText({text, role='assistant'}) {
   if (role === 'user') return <div className="messageContent userText">{text}</div>;
@@ -4191,6 +4192,10 @@ function App() {
           <button type="button" className="subtleButton" title="Open independent ANSF history"
             disabled={!chatId} aria-expanded={historyPaneOpen}
             onClick={()=>setHistoryPaneOpen(v=>!v)}>History library</button>
+          <button type="button" className="subtleButton" title="Open independently reviewed project task list"
+            onClick={()=>void invoke('lu_open_aux_window',{kind:'task-list'}).catch(error=>setError(String(error)))}>
+            Project tasks
+          </button>
           <button className="quietSettings" title="Settings" aria-label="Settings"
             onClick={()=>void invoke('lu_open_aux_window',{kind:'settings'}).catch(error=>setError(String(error)))}>⚙</button>
         </div>
@@ -6148,5 +6153,6 @@ const luWindow=window.__TAURI_INTERNALS__
   : new URLSearchParams(window.location.search).get('lu-window');
 createRoot(document.getElementById('root')).render(
   luWindow==='settings'?<SettingsWindow/>:
-  luWindow==='model-library'?<ModelLibraryWindow/>:<App/>
+  luWindow==='model-library'?<ModelLibraryWindow/>:
+  luWindow==='task-list'?<TaskBoardWindow/>:<App/>
 );
