@@ -1033,4 +1033,34 @@ mod tests {
         );
         assert!(!root.join(".git/index.lock").exists());
     }
+    #[test]
+    fn restart_restores_exact_staged_receipt_but_never_reuses_os_commit_grant() {
+        let (temp, registry, id, root) = fixture();
+        let original_head = Repository::open(&root)
+            .unwrap()
+            .head()
+            .unwrap()
+            .target()
+            .unwrap();
+        let staged = review_two_edits(&registry, &id, &root);
+        drop(registry);
+        let reopened = IdeWorkspaceRegistry::open(temp.0.join("catalog.json")).unwrap();
+        reopened.reopen(&id).unwrap();
+        let restored = reopened.restore_verified_partial_stage_receipt(&id).unwrap();
+        assert_eq!(restored, staged);
+        let plan = preview(&reopened, &restored, ReviewedCommitMode::Create);
+        assert_eq!(plan.previous_head, original_head.to_string());
+        assert!(!plan.commit_granted && !plan.amend_granted && !plan.published);
+        assert_eq!(
+            reopened.execute_approved_reviewed_commit(&plan, &AtomicU8::new(2))
+                .unwrap_err(),
+            "G06B_COMMIT_INVALID_OR_CANCELLED_PLAN"
+        );
+        assert_eq!(
+            Repository::open(&root).unwrap().head().unwrap().target(),
+            Some(original_head)
+        );
+    }
+
+
 }
