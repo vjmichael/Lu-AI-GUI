@@ -96,8 +96,12 @@ fn stage(repo: &Repository, entry: Option<&IndexEntry>)
     }))
 }
 fn fence(repo: &Repository) -> Result<(String, String, String), &'static str> {
-    if repo.is_shallow() || repo.head_detached().unwrap_or(true)
-        || fs::symlink_metadata(repo.path().join("index.lock")).is_ok() {
+    let lock = match fs::symlink_metadata(repo.path().join("index.lock")) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => return Err("G06D01_LOCK_STATUS_UNVERIFIABLE"),
+    };
+    if repo.is_shallow() || repo.head_detached().unwrap_or(true) || lock {
         return Err("G06D01_UNSAFE_REPOSITORY");
     }
     let head = repo.head().map_err(|_| "G06D01_HEAD_UNAVAILABLE")?;
@@ -261,6 +265,7 @@ mod tests {
         ] {
             let mut entry = ancestor.clone();
             entry.id = repo.blob(bytes).unwrap();
+            entry.file_size = bytes.len() as u32;
             entry.flags = (entry.flags & !0x3000) | (stage << 12);
             index.add(&entry).unwrap();
         }
