@@ -374,6 +374,15 @@ impl IdeWorkspaceRegistry {
         {
             return Err("G06B_COMMIT_STAGE_JOURNAL_MISMATCH");
         }
+        let head_tree = repo.head().and_then(|h| h.peel_to_tree())
+            .map_err(|_| "G06B_COMMIT_HEAD_TREE_UNAVAILABLE")?;
+        let original = head_tree.get_path(Path::new(&last.relative_path))
+            .map_err(|_| "G06B_COMMIT_ORIGINAL_FILE_UNAVAILABLE")?;
+        if !matches!(original.filemode(), 0o100644 | 0o100755)
+            || original.id().to_string() != claimed.old_blob_oid
+        {
+            return Err("G06B_COMMIT_ORIGINAL_BLOB_RECEIPT_FORGED");
+        }
         let bytes = index_bytes(&gitdir.join("index"))?;
         if sha(&bytes) != last.intended_index_sha256
             || fs::symlink_metadata(gitdir.join("index.lock")).is_ok()
