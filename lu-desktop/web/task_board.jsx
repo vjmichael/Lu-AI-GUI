@@ -16,6 +16,7 @@ export function TaskBoardWindow(){
   const [taskId,setTaskId]=useState('');
   const [evidence,setEvidence]=useState(null);
   const [edit,setEdit]=useState(null);
+  const [updatePreview,setUpdatePreview]=useState(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
@@ -38,7 +39,7 @@ export function TaskBoardWindow(){
     }).catch(e=>{if(live)setError(errorText(e));});
     return ()=>{live=false};
   },[]);
-  useEffect(()=>{setTaskId('');setEvidence(null);setEdit(null)},[registerId]);
+  useEffect(()=>{setTaskId('');setEvidence(null);setEdit(null);setUpdatePreview(null)},[registerId]);
   async function act(message,fn){
     if(busy)return;
     setBusy(true);setError('');setNotice('');
@@ -95,6 +96,26 @@ export function TaskBoardWindow(){
       if(saved)await reload();return saved;
     });
   }
+  async function refreshEvidence(){
+    if(!current)return;
+    await act('Native source comparison recorded for human review; no task status was changed.',async()=>{
+      const preview=await invoke('lu_project_update_inspect',{
+        registerId:current.board.registerId
+      });
+      if(preview)setUpdatePreview(preview);
+      return preview;
+    });
+  }
+  async function reconcileEvidence(){
+    if(!current||!updatePreview)return;
+    await act('Source-change review appended; all new completion claims still require independent human verification.',async()=>{
+      const result=await invoke('lu_project_update_apply',{
+        previewSha256:updatePreview.digestSha256
+      });
+      if(result){setUpdatePreview(null);await reload();setEvidence(null);}
+      return result;
+    });
+  }
   async function exportPlan(){
     if(!current)return;
     await act('Evidence-bound plan exported to a new operator-selected JSON file.',async()=>{
@@ -136,6 +157,47 @@ export function TaskBoardWindow(){
           <small>Source register: {current.sourceRegisterSha256}</small>
           <small>Plan revision {current.board.sequence} · {current.eventCount} task-history events · {current.historicalApprovalCount} historical plan reviews</small>
         </div>
+        <section className="plan07Refresh" aria-label="Evidence-driven task update review">
+          <div className="plan07RefreshHeader">
+            <strong>Evidence refresh · PLAN-07A</strong>
+            <button type="button" disabled={busy}
+              onClick={()=>void refreshEvidence()}>
+              Recheck project source using native folder picker…
+            </button>
+          </div>
+          <small>The host rereads the actual selected source and exact Git HEAD,
+            compares audited evidence, and proposes review candidates only.
+            Old acceptance remains historical. This is an evidence delta over
+            complete bounded scans, not a filesystem watcher or an execution grant.</small>
+          {updatePreview&&<details open>
+            <summary>Current audited source comparison · {updatePreview.semanticChange?
+              'source review needed':'no semantic source change'}</summary>
+            <p>HEAD: {updatePreview.previousHead||'not verified'} → {updatePreview.currentHead||'not verified'}.
+              Changed native evidence nodes: {updatePreview.changedEvidenceNodes}.
+              Source scan: {updatePreview.scanComplete?'bounded complete':'incomplete'}.
+              Exact criterion review candidates: {updatePreview.exactCriterionReviewCandidates}.</p>
+            <small>Register lease: {updatePreview.expectedRegisterSha256}.
+              Current graph SHA-256: {updatePreview.currentGraphSha256}.
+              No task completion or model-derived source proof.</small>
+            <div className="plan07Candidates">
+              {updatePreview.candidates.map(candidate=><article key={candidate.taskId}>
+                <strong>{candidate.taskId} · {candidate.disposition.replaceAll('_',' ')}</strong>
+                <p>{candidate.explanation}</p>
+                <small>Original requirement: {candidate.originalRequirementId} ·
+                  Previous: {candidate.previousStatus} ·
+                  Current: {candidate.currentStatus||'MISSING'} ·
+                  Native health: {candidate.evidenceHealth||'insufficient'} ·
+                  Task complete: NO</small>
+              </article>)}
+            </div>
+            {updatePreview.changedListTruncated&&<p>Source-delta display is truncated;
+              archived original evidence and task identities remain authoritative.</p>}
+            <button type="button" disabled={busy||!updatePreview.semanticChange}
+              onClick={()=>void reconcileEvidence()}>
+              Review native source changes and append revisions…
+            </button>
+          </details>}
+        </section>
         <div className="plan06Columns">
           <section className="plan06Tasks" aria-label="Categorized project tasks">
             <div className="plan06Search">
