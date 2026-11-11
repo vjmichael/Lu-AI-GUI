@@ -144,6 +144,16 @@ pub(crate) fn compute_in_sandbox(
     let mut conflict_count = 0usize;
     let mut conflicts = Vec::new();
     let mut blockers = Vec::new();
+    // Only the *absence of an actual replay result* and the *missing native
+    // OS consent* are expected at the original read-only A-stage. Every
+    // source-safety blocker is carried forward and remains non-authorizable.
+    for original_blocker in &plan.blockers {
+        if !matches!(*original_blocker,
+            "merge_result_unverified" | "replay_resulting_trees_not_verified"
+            | "one_use_native_os_authorization_not_issued") {
+            add(&mut blockers, original_blocker);
+        }
+    }
     for evidence in &plan.replay_commits {
         let original_id = Oid::from_str(&evidence.original_commit)
             .map_err(|_| "G06C04B_ORIGINAL_COMMIT_INVALID")?;
@@ -403,7 +413,7 @@ mod tests {
         let f=fixture();
         fs::write(f.root.join(".git/index.lock"),b"foreign").unwrap();
         let r=f.registry.preview_prospective_replay(&f.id,ReplayReviewKind::CherryPickLocalTip,"feature").unwrap();
-        assert!(!r.original_project_unchanged==false || !r.execution_route_available);
+        assert!(r.blockers.contains(&"git_index_lock_requires_manual_review"));
         assert!(!r.execution_route_available);
         assert_eq!(fs::read(f.root.join(".git/index.lock")).unwrap(),b"foreign");
     }
