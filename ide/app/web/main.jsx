@@ -4,6 +4,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState, isLargeSourceEditor } from './code_editor.jsx';
 import { secondaryEditor, initialSecondaryKey, canSaveFocusedPane } from './editor_layout.js';
 import { captureProjectView, restoreProjectView } from './editor_project_view.js';
+import { captureLiveEditorIntent, stillCurrentEditorIntent,
+  reconcileSavedEditorTab } from './editor_live_write.js';
 import { planCleanBackgroundTabClosure } from './editor_clean_tab_reclamation.js';
 import { rememberedWorkspaceFromTabs, checkedRememberedWorkspace,
   revalidatedResumeDecision } from './workspace_layout.js';
@@ -178,6 +180,8 @@ function App() {
   const [splitEditorOpen, setSplitEditorOpen] = useState(false);
   const [secondaryTabKey, setSecondaryTabKey] = useState(null);
   const [savingKey, setSavingKey] = useState(null);
+  // Synchronous reservation: React state cannot stop same-tick duplicate Saves.
+  const savingKeyRef = useRef(null);
   const [review, setReview] = useState(null);
   const [reviewPending, setReviewPending] = useState(false);
   const [proposalInput, setProposalInput] = useState('');
@@ -4819,89 +4823,139 @@ function App() {
     } finally { finishExplorerIo(ticket); }
   }
 
-  async function saveTab(tab) {
-    if (!tab || !tab.dirty || savingKey || mergeBusy || mergeApplyRequest ||
-        explorerPending || explorerIoTicket.current || workspaceLayoutOp.current) return;
-    const content = tab.draft;
-    const base = tab.revision;
+  async function saveTab(tab, expectedReviewedIntent=null) {
+    if (!tab || savingKey || savingKeyRef.current || mergeBusy ||
+        mergeApplyRequest || explorerPending || explorerIoTicket.current ||
+        workspaceLayoutOp.current) return false;
+    // CodeMirror is authoritative. The React draft/dirty flag can lag the
+    // current edit transaction, so never save tab.draft from a stale render.
+    const started = captureLiveEditorIntent(tab,
+      bufferIdentities.current.get(tab.key), editorStates.current.get(tab.key),
+      activeProjectIdRef.current);
+    if (started.status !== 'current') {
+      setProblem('Cannot Save: editor identity or saved file revision is stale.');
+      return false;
+    }
+    if (!started.dirty) {
+      setHint('No unsaved changes in the current editor buffer.');
+      return false;
+    }
+    if (expectedReviewedIntent && !stillCurrentEditorIntent(expectedReviewedIntent,
+        tab, bufferIdentities.current.get(tab.key),
+        editorStates.current.get(tab.key), activeProjectIdRef.current)) {
+      setReview(null);
+      setProblem('Reviewed source changed. Review the live editor text again before saving.');
+      return false;
+    }
     const saveStartedBuffer=bufferIdentities.current.get(tab.key);
+    savingKeyRef.current=tab.key;
     setSavingKey(tab.key);
     setProblem('');
     setHint('');
     try {
       const saved = await invoke('ide_save_source_file', {
-        projectId: tab.projectId,
-        relativePath: tab.relativePath,
-        expectedRevision: base,
-        text: content,
+        projectId: started.projectId,
+        relativePath: started.relativePath,
+        expectedRevision: started.savedRevision,
+        text: started.text,
       });
-      // A native Save does not authorize rebasing a replaced editor identity.
+      if (saved?.projectId !== started.projectId ||
+          saved?.relativePath !== started.relativePath ||
+          !/^[a-f0-9]{64}$/i.test(saved.revision || '') ||
+          saved.text !== started.text) {
+        throw Error('SAVE_RECEIPT_SOURCE_MISMATCH');
+      }
+      // Saving does NOT authorize rebasing a replaced editor instance.
       const currentBuffer=bufferIdentities.current.get(tab.key);
       const rebased=rebaseBufferAfterSave(currentBuffer,saveStartedBuffer,saved.revision);
       if (rebased.status!=='rebased') {
-        setHint('A previous editor instance was saved; current draft was not altered.');
-        return true;
+        setHint('Original editor buffer was saved, but the newer or reopened editor was untouched.');
+        return false;
       }
       bufferIdentities.current.set(tab.key,rebased.identity);
       setMergeReview(previous=>previous?.tabKey===tab.key ? null : previous);
-      // If typing continued during the save, the newer draft is kept dirty.
-      setTabs(previous => previous.map(item => item.key === tab.key ? {
-        ...item, revision: saved.revision, savedText: content,
-        dirty: item.draft !== content,
-      } : item));
+      setReview(previous=>previous?.tabKey===tab.key ? null : previous);
+      // The live CodeMirror buffer may have advanced while native Save ran.
+      // Keep those newer edits dirty, and rebase only this exact saved base.
+      setTabs(previous => previous.map(item => {
+        if (item.key!==tab.key) return item;
+        return reconcileSavedEditorTab(item,started,saved.revision,
+          bufferIdentities.current.get(tab.key),
+          editorStates.current.get(tab.key)) || item;
+      }));
       if (lspSession?.projectId === tab.projectId &&
           lspSession.relativePath === tab.relativePath) {
         await stopLspSession();
       }
-      setHint('Saved ' + tab.relativePath + ' to disk.');
+      setHint('Saved ' + tab.relativePath + ' to disk. Any edits made during Save remain unsaved.');
       return true;
     } catch (error) {
       if (String(error).includes('FILE_CHANGED_ON_DISK')) {
-        setProblem('File changed on disk. This file was updated outside Lu IDE. ' +
-          'Your unsaved edits are preserved in the tab. Compare the changes before reloading.');
+        setProblem('File changed on disk. Your live unsaved editor buffer was preserved. ' +
+          'Compare the changes before reloading or saving.');
       } else {
-        setProblem(String(error));
+        setProblem('Save failed: '+String(error));
       }
-    } finally { setSavingKey(null); }
+    } finally {
+      if (savingKeyRef.current===tab.key) savingKeyRef.current=null;
+      setSavingKey(null);
+    }
     return false;
   }
 
   async function reviewTab(tab) {
-    if (!tab || !tab.dirty || reviewPending || mergeBusy ||
-        mergeApplyRequest || explorerPending ||
-        explorerIoTicket.current || savingKey) return;
+    if (!tab || reviewPending || savingKey || savingKeyRef.current ||
+        mergeBusy || mergeApplyRequest || explorerPending ||
+        explorerIoTicket.current) return;
+    const intent=captureLiveEditorIntent(tab,
+      bufferIdentities.current.get(tab.key),editorStates.current.get(tab.key),
+      activeProjectIdRef.current);
+    if (intent.status!=='current' || !intent.dirty) {
+      setProblem('No current unsaved editor change is available for review.');
+      return;
+    }
     setReviewPending(true);
     setProblem('');
     try {
       const proposal = await invoke('ide_review_source_change', {
-        projectId: tab.projectId,
-        relativePath: tab.relativePath,
-        expectedRevision: tab.revision,
-        proposedText: tab.draft,
+        projectId: intent.projectId,
+        relativePath: intent.relativePath,
+        expectedRevision: intent.savedRevision,
+        proposedText: intent.text,
       });
-      setReview({
-        ...proposal,
-        tabKey: tab.key,
-        draft: tab.draft,
-      });
+      if (!stillCurrentEditorIntent(intent,
+          tabsRef.current.find(item=>item.key===intent.key),
+          bufferIdentities.current.get(intent.key),
+          editorStates.current.get(intent.key),activeProjectIdRef.current) ||
+          proposal.projectId!==intent.projectId ||
+          proposal.relativePath!==intent.relativePath ||
+          proposal.expectedRevision!==intent.savedRevision) {
+        throw Error('REVIEW_SOURCE_CHANGED_DURING_NATIVE_READ');
+      }
+      setReview({ ...proposal, tabKey:intent.key,
+        draft:intent.text, liveIntent:intent });
     } catch (error) {
+      setReview(null);
       setProblem(String(error).includes('FILE_CHANGED_ON_DISK')
-        ? 'File changed on disk. The source was updated outside Lu IDE. Your unsaved edits are safe.'
-        : String(error));
+        ? 'File changed externally. Your editor draft is preserved.'
+        : 'Cannot review editor changes: '+String(error));
     } finally { setReviewPending(false); }
   }
 
   async function saveReviewedChange() {
-    if (!review || review.truncated || savingKey || reviewPending) return;
-    const tab = tabs.find(item => item.key === review.tabKey);
-    if (!tab || !tab.dirty || tab.draft !== review.draft ||
-        tab.revision !== review.expectedRevision ||
-        tab.projectId !== review.projectId) {
+    if (!review || review.truncated || savingKey || savingKeyRef.current ||
+        reviewPending) return;
+    const tab = tabsRef.current.find(item => item.key === review.tabKey);
+    if (!tab || tab.revision !== review.expectedRevision ||
+        tab.projectId !== review.projectId ||
+        !stillCurrentEditorIntent(review.liveIntent,tab,
+          bufferIdentities.current.get(review.tabKey),
+          editorStates.current.get(review.tabKey),activeProjectIdRef.current)) {
       setReview(null);
-      setProblem('The reviewed edit changed. Review the latest draft before saving.');
+      setProblem('The reviewed edit changed. Review the current live buffer before saving.');
       return;
     }
-    const saved = await saveTab(tab);
+    const saved = await saveTab(tab, review.liveIntent);
     if (saved) setReview(null);
   }
 
