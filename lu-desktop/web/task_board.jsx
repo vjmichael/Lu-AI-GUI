@@ -526,6 +526,10 @@ export function TaskBoardWindow(){
                     onClick={()=>void reopenAgentLinks()}>
                     Reopen original agent-plan links…
                   </button>
+                  <button type="button" disabled={busy}
+                    onClick={()=>void refreshEvidence()}>
+                    Independently recheck project source for evidence review…
+                  </button>
                 </div>
                 {!current.reviewCurrent&&<small>Review the current task-board order and wording first;
                   stale board approval is not usable as a source lease.</small>}
@@ -543,6 +547,22 @@ export function TaskBoardWindow(){
                         Host custody: {link.supervisorState} ·
                         Historical witness: {link.historicalWitnessLinked?'linked, not present-day proof':'none'}.</small>
                       <p>{link.nextSafeAction}</p>
+                      {link.independentlyAuditedOutcomes?.length>0&&
+                        <div role="region" aria-label="Original independent agent outcome receipts">
+                          {link.independentlyAuditedOutcomes.map(result=><article
+                            key={result.receiptSha256+':'+result.stepIndex}>
+                            <strong>Original step {result.stepIndex+1} · {result.historicalVerdict}</strong>
+                            <p>Installed reviewed adapter: {result.toolId} ·
+                              Native oracle: {result.independentMethod}</p>
+                            <small>Original effect receipt: {result.receiptSha256} ·
+                              Independently observed: {result.observedSha256}.</small>
+                            <p>{result.reviewEligible?
+                              'Eligible for a NEW native PLAN-07 evidence review only; criterion is not accepted.':
+                              'Historical/stale or uncertain evidence: reconciliation is required.'}</p>
+                            <small>Original requirement: {result.originalRequirementId} ·
+                              Full task completed: NO · Execution permission: NO.</small>
+                          </article>)}
+                        </div>}
                       <small>Task complete: NO · Execution authorized by this link: NO.
                         Open the dedicated conversation in Lu to review the agent plan
                         and separately authorize any supported native operation.</small>

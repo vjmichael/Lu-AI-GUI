@@ -31,7 +31,10 @@
    the task's source/criterion. It creates a review-only agent plan using
    AGENT-01F's *existing* ledger, immutable revision and host-owned IDs.
 6. The source link is PREPARED in the same original ANSF SQLite library before
-   appending the new conversation's turn, goal and draft; it becomes STAGED
+   appending the new conversation's turn, goal and draft. The host then
+   initializes the original AGENT-01D scheduler and AGENT-01C deliverable
+   receipt schemas (without making a claim or grant) so an initial empty
+   plan can be reopened in the existing agent progress UI; it becomes STAGED
    only after a real agent revision is durably recorded and read back.
    Each task version admits one link. Interrupted PREPARED links are shown
    as requiring **manual reconciliation**, never automatically executed or
@@ -40,8 +43,15 @@
    chat list without stealing a different conversation's focus. The task
    board displays its original link, task/source lease validity, plan review,
    host custody and historical witness presence from existing read-only
-   agent progress. No task status or original requirement acceptance is
-   changed by an agent link.
+   agent progress.
+8. The task board can also reopen AGENT-01C historical deliverables, which
+   independently check the **original reviewed worker, effect journal and
+   method-specific oracle**. A VERIFIED_AT_OBSERVATION receipt is displayed
+   as a review candidate only when the original task register, board and
+   plan revision remain linked. The operator can then invoke the existing
+   PLAN-07 native source refresh and separate exact-criterion review.
+   Even verified past receipts **never** update the task register, mark a
+   full task complete, issue a new tool grant, or bypass fresh source review.
 
 **Security invariant:** A PLAN-06 board approval is not a plan review; agent
 plan approval is not a per-step tool grant; model text or historical memory is
@@ -68,10 +78,12 @@ effect validity. No OS tool runs from these new commands.
   implement useful source collection, analysis and artifacts; review-only
   plan steps are deliberately inert today. Map task types to admissible
   verified methods instead of recasting arbitrary project tasks as Git checks.
-- **P0-Next follow-on:** Promote independently witnessed task deliverables
-  only into **review candidates** and run PLAN-07A/C fresh evidence scanning,
-  original criterion matching and distinct human task acceptance. Never infer
-  task completion from a model plan or broker "APPLIED" state.
+- **P0-Next follow-on:** The initial read-only cross-link of historical
+  independently witnessed deliverables to current task revision and the
+  native PLAN-07 source refresh is implemented. Still needed: a bounded
+  **typed criterion-to-method matcher** and new operator-approved
+  task-specific review candidate journal; no raw Git or FFprobe receipt
+  automatically establishes an arbitrary task's acceptance criterion.
 - **Crash recovery:** PREPARED links need a dedicated operator reconciliation
   path that can inspect a partially created ANSF book/goal/plan without
   reissuing a previous permission or worker. Initial implementation fails
@@ -91,7 +103,8 @@ effect validity. No OS tool runs from these new commands.
 ## Task-group handoff
 
 **Implemented in source:** A fresh native-confirmed, source-rechecked,
-durable ANSF project-task -> agent-plan handoff and progress projection,
+durable ANSF project-task -> agent-plan handoff, progress projection and
+original independently witnessed outcome-to-review candidate display,
 without execution authority.
 
 **Not implemented:** Unrestricted project-wide execution, automatic

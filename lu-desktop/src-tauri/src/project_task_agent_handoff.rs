@@ -6,7 +6,10 @@ use super::*;
 use lu_core::{
     ansf_goals::{GoalEvent,GoalEventKind},
     agent_plan_ledger::PlanStepKind,
-    agent_plan_revisions::ExpectedDeliverable,
+    agent_plan_revisions::{ExpectedDeliverable,AgentPlanRevisionStore},
+    agent_plan_ledger::AgentPlanLedger,
+    agent_host_scheduler::AgentHostScheduler,
+    agent_deliverable_receipts::AgentDeliverableReceipts,
     project_task_register as register,
     project_task_synthesis as synthesis,
 };
@@ -45,6 +48,21 @@ struct Anchor {
 
 #[derive(Clone,Debug,Serialize)]
 #[serde(rename_all="camelCase")]
+pub(crate) struct TaskAgentEvidenceCandidate{
+    step_index:u8,
+    tool_id:String,
+    independent_method:String,
+    receipt_sha256:String,
+    observed_sha256:String,
+    historical_verdict:String,
+    review_eligible:bool,
+    original_requirement_id:String,
+    task_completed:bool,
+    execution_authorized:bool,
+}
+
+#[derive(Clone,Debug,Serialize)]
+#[serde(rename_all="camelCase")]
 pub(crate) struct TaskAgentHandoffView{
     schema:&'static str,
     handoff_id:String,
@@ -61,6 +79,7 @@ pub(crate) struct TaskAgentHandoffView{
     plan_state:String,
     supervisor_state:String,
     historical_witness_linked:bool,
+    independently_audited_outcomes:Vec<TaskAgentEvidenceCandidate>,
     next_safe_action:String,
     task_complete:bool,
     execution_authorized:bool,
@@ -279,6 +298,7 @@ fn list(profile:&Path,register_id:&str,task_id:&str,
             revision_sha256:revision.clone(),source_lease_current:current,
             plan_review:"NOT_YET_STAGED".into(),plan_state:"PREPARED".into(),
             supervisor_state:"NOT_CLAIMED".into(),historical_witness_linked:false,
+            independently_audited_outcomes:Vec::new(),
             next_safe_action:"Human reconciliation required after prepared handoff; never replay automatically.".into(),
             task_complete:false,execution_authorized:false,
         };
@@ -302,10 +322,43 @@ fn list(profile:&Path,register_id:&str,task_id:&str,
             view.supervisor_state=progress.supervisor_state;
             view.historical_witness_linked=progress.steps.iter()
                 .any(|s|s.historical_witness_linked);
+            // Independent history reopens ORIGINAL worker, effect and oracle
+            // receipts. A scheduler state or a plan's own witness flag is
+            // NEVER sufficient to create a project completion claim.
+            let file=agent_plan_review::existing_plan_file(profile)?;
+            let ledger=AgentPlanLedger::open_existing_readonly(&file)
+                .map_err(|_|"P0_NEXT_PLAN_HISTORY_UNAVAILABLE")?;
+            let revisions=AgentPlanRevisionStore::open_existing_readonly(&file)
+                .map_err(|_|"P0_NEXT_REVISION_HISTORY_UNAVAILABLE")?;
+            let receipts=AgentDeliverableReceipts::open_existing_readonly(&file)
+                .map_err(|_|"P0_NEXT_INDEPENDENT_RECEIPTS_UNAVAILABLE")?;
+            let sources=agent_plan_review::OriginalChatGoalSources{chats};
+            let original=receipts.history(plan.as_deref().ok_or("P0_NEXT_PLAN_LOST")?,
+                    &chat,&turn,profile,&ledger,&revisions,&sources)
+                .map_err(|_|"P0_NEXT_ORIGINAL_EFFECT_ORACLE_HISTORY_INVALID")?;
+            for item in original{
+                let eligible=current&&same_revision
+                    &&item.status=="VERIFIED_AT_OBSERVATION";
+                view.independently_audited_outcomes.push(TaskAgentEvidenceCandidate{
+                    step_index:item.step_index,
+                    tool_id:item.tool_id,
+                    independent_method:item.independent_method,
+                    receipt_sha256:item.receipt_sha256,
+                    observed_sha256:item.observed_sha256,
+                    historical_verdict:item.status.into(),
+                    review_eligible:eligible,
+                    original_requirement_id:a.requirement_id.clone(),
+                    task_completed:false,execution_authorized:false,
+                });
+            }
+            let has_review_candidate=view.independently_audited_outcomes.iter()
+                .any(|o|o.review_eligible);
             view.next_safe_action=if !same_revision{
                 "Agent plan revision changed. This original task link is historical; review the current plan from the original chat and grant no inherited authority.".into()
             }else if !current{
                 "Source register/board changed. Review current project evidence and independently replan; do not inherit previous grants.".into()
+            }else if has_review_candidate{
+                "One or more ORIGINAL independent historical outcomes are eligible for a NEW human source/criterion review. Use PLAN-07 native evidence refresh; the task is NOT complete.".into()
             }else{progress.continuation_preview.required_action.into()};
         }
         items.push(view);
@@ -447,6 +500,14 @@ pub(crate) async fn lu_project_task_prepare_agent_plan(
         let draft=stage_initial_draft(
             &profile,&host.chats,&a.chat_id,&turn,&mode_steps(&mode)?
         )?;
+        // A newly created plan must have the same real scheduler and
+        // independent-receipt schemas expected by the existing read-only
+        // progress UI. Opening these stores issues NO claim or worker grant.
+        let plan_file=agent_plan_review::existing_plan_file(&profile)?;
+        AgentHostScheduler::open(&plan_file)
+            .map_err(|_|"P0_NEXT_SCHEDULER_SCHEMA_NOT_AVAILABLE")?;
+        AgentDeliverableReceipts::open(&plan_file)
+            .map_err(|_|"P0_NEXT_DELIVERABLE_SCHEMA_NOT_AVAILABLE")?;
         publish(&profile,&a,&draft.plan_id,&draft.revision_sha256)?;
         let result=list(&profile,&register_id,&task_id,&host.chats)?;
         let found=result.into_iter().find(|v|v.handoff_id==a.handoff_id)
