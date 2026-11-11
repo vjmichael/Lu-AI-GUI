@@ -330,6 +330,83 @@ impl Drop for RemoveOnDrop {
 }
 
 impl IdeWorkspaceRegistry {
+    /// Verify an untrusted WebView receipt against durable private native
+    /// journal evidence and the live staged Git index. This does NOT authorize
+    /// a commit and deliberately cannot reissue a 6B-03 staging grant.
+    pub(crate) fn verify_partial_stage_for_commit(
+        &self,
+        claimed: &PartialStageReceipt,
+    ) -> Result<(), &'static str> {
+        if claimed.schema_version != 1
+            || !claimed.git_index_independently_verified
+            || !claimed.durable_journal_verified
+            || claimed.recovery_required
+            || claimed.source_file_modified
+            || claimed.git_hooks_executed
+            || claimed.git_process_started
+            || claimed.remote_updated
+            || claimed.commit_created
+            || claimed.selected_hunks == 0
+            || claimed.selected_hunks > MAX_SELECTED_HUNKS
+        {
+            return Err("G06B_COMMIT_UNTRUSTED_STAGE_RECEIPT");
+        }
+        let (repo, _root, gitdir) = verified_repo(self, &claimed.project_id, true)?;
+        let last = last_journal(&journal_path(self, &claimed.project_id)?)?
+            .ok_or("G06B_COMMIT_STAGE_JOURNAL_ABSENT")?;
+        if last.phase != "verified"
+            || last.project_id != claimed.project_id
+            || last.relative_path != claimed.relative_path
+            || last.head_sha != claimed.previous_head
+            || last.selection_sha256 != claimed.selection_sha256
+            || last.previous_index_sha256 != claimed.old_index_sha256
+            || last.intended_index_sha256 != claimed.new_index_sha256
+            || last.intended_blob_oid != claimed.staged_blob_oid
+            || last.intended_blob_sha256 != claimed.staged_blob_sha256
+            || last.source_sha256 != sha(&self.reread_reviewed_git_source_bytes(
+                &claimed.project_id, &claimed.relative_path)?)
+            || last.head_sha != repo.head().ok().and_then(|h| h.target())
+                .map(|h| h.to_string()).unwrap_or_default()
+        {
+            return Err("G06B_COMMIT_STAGE_JOURNAL_MISMATCH");
+        }
+        let bytes = index_bytes(&gitdir.join("index"))?;
+        if sha(&bytes) != last.intended_index_sha256
+            || fs::symlink_metadata(gitdir.join("index.lock")).is_ok()
+        {
+            return Err("G06B_COMMIT_STAGE_INDEX_CHANGED_OR_LOCKED");
+        }
+        let mut index = repo.index().map_err(|_| "G06B_COMMIT_INDEX_UNAVAILABLE")?;
+        index.read(true).map_err(|_| "G06B_COMMIT_INDEX_RELOAD_FAILED")?;
+        if index.has_conflicts() || index.len() > 8192 || index.version() > 3 {
+            return Err("G06B_COMMIT_COMPLEX_INDEX_DENIED");
+        }
+        let entry = index.get_path(Path::new(&last.relative_path), 0)
+            .ok_or("G06B_COMMIT_TRACKED_STAGED_ENTRY_MISSING")?;
+        if !matches!(entry.mode, 0o100644 | 0o100755)
+            || entry.id.to_string() != last.intended_blob_oid
+        {
+            return Err("G06B_COMMIT_STAGED_ENTRY_CHANGED");
+        }
+        let blob = repo.find_blob(entry.id)
+            .map_err(|_| "G06B_COMMIT_STAGED_BLOB_UNAVAILABLE")?;
+        if sha(blob.content()) != last.intended_blob_sha256 {
+            return Err("G06B_COMMIT_STAGED_BYTES_CHANGED");
+        }
+        // No unreviewed staged content can accompany the approved hunks.
+        let head_tree = repo.head().and_then(|h| h.peel_to_tree())
+            .map_err(|_| "G06B_COMMIT_HEAD_TREE_UNAVAILABLE")?;
+        let diff = repo.diff_tree_to_index(Some(&head_tree), Some(&index), None)
+            .map_err(|_| "G06B_COMMIT_DIFF_UNAVAILABLE")?;
+        if diff.deltas().count() != 1
+            || diff.deltas().next().and_then(|d| d.new_file().path())
+                != Some(Path::new(&claimed.relative_path))
+        {
+            return Err("G06B_COMMIT_UNREVIEWED_STAGED_PATHS");
+        }
+        Ok(())
+    }
+
     /// Read-only native recovery classification, also available after restart.
     /// Never delete an unknown index.lock or rewrite an ambiguous index.
     pub fn inspect_partial_stage_recovery(
