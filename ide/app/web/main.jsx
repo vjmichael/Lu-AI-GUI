@@ -23,7 +23,8 @@ import { safeProjectRunProfileDiscovery,
 import { planReviewedAdapterRequest,
   checkedReviewedAdapterContract } from './reviewed_adapters.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
-  visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, INITIAL_VISIBLE_TREE_ENTRIES,
+  visibleTreeEntries, MAX_OPEN_TABS_PER_PROJECT, MAX_OPEN_TABS_TOTAL,
+  INITIAL_VISIBLE_TREE_ENTRIES,
   TREE_ENTRY_PAGE, verifiedRelativeSourcePath, lateSourceOpenDecision,
   lateReloadCanCommit } from './editor_working_set.js';
 import { locateMatches, planReplacement } from './find_replace.js';
@@ -174,6 +175,8 @@ function App() {
   const [directory, setDirectory] = useState('');
   const [relativeOpenPath, setRelativeOpenPath] = useState('');
   const [quickOpenQuery, setQuickOpenQuery] = useState('');
+  const quickOpenInputRef = useRef(null);
+  const [quickOpenFocusRequest,setQuickOpenFocusRequest] = useState(0);
   const [quickOpenResults, setQuickOpenResults] = useState(null);
   const [quickOpenBusy, setQuickOpenBusy] = useState(false);
   const quickOpenBusyRef = useRef(false);
@@ -621,7 +624,8 @@ function App() {
   const visibleTree = visibleTreeEntries(listing?.entries,visibleTreeCount);
   const projectTabCount = projectTabs.length;
   const workingSetNotice = projectTabCount + ' / ' + MAX_OPEN_TABS_PER_PROJECT +
-    ' open tabs in this project; clean background tabs can be closed manually.';
+    ' tabs in this project · ' + tabs.length + ' / ' + MAX_OPEN_TABS_TOTAL +
+    ' across workspaces. Clean background tabs can be closed manually.';
   useEffect(() => {
     // An external source hit, diagnostic or programmatic tab selection must
     // make that tab reachable. Manual paging itself never changes selection.
@@ -4359,6 +4363,26 @@ function App() {
       finishExplorerIo(ticket);
     }
   }
+
+  useEffect(()=>{
+    // Ctrl/Cmd+P is navigation, not printing and not a build command.
+    // Focus the exact active project's filename finder without running it.
+    const onQuickOpenShortcut=event=>{
+      if ((event.ctrlKey||event.metaKey)&&!event.shiftKey&&!event.altKey &&
+          event.key?.toLowerCase()==='p' && activeProjectIdRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSection('explorer');
+        setQuickOpenFocusRequest(previous=>previous+1);
+      }
+    };
+    window.addEventListener('keydown',onQuickOpenShortcut,true);
+    return ()=>window.removeEventListener('keydown',onQuickOpenShortcut,true);
+  },[]);
+  useEffect(()=>{
+    if (section==='explorer'&&quickOpenFocusRequest>0)
+      quickOpenInputRef.current?.focus();
+  },[section,quickOpenFocusRequest]);
 
   async function searchQuickOpen() {
     const projectId=activeProjectIdRef.current;
@@ -8157,8 +8181,18 @@ function App() {
             <form className="sourceGoToFile" onSubmit={event=>{
               event.preventDefault(); void searchQuickOpen();
             }}>
-              <input aria-label="Quick Open filename search" spellCheck={false}
+              <input ref={quickOpenInputRef}
+                aria-label="Quick Open filename search" spellCheck={false}
                 maxLength={128} value={quickOpenQuery}
+                onKeyDown={event=>{
+                  if(event.key==='Escape'){
+                    quickOpenSerial.current+=1;
+                    quickOpenBusyRef.current=false;
+                    setQuickOpenBusy(false);
+                    setQuickOpenResults(null);
+                    quickOpenInputRef.current?.blur();
+                  }
+                }}
                 placeholder="Quick Open: filename or path"
                 onChange={event=>{
                   quickOpenSerial.current+=1;
