@@ -2699,6 +2699,37 @@ async fn ide_list_source_directory(
     .map_err(|_| "BROWSER_TASK_UNAVAILABLE".to_string())?
 }
 
+/// IDE-INT01E: on-demand read-only, bounded filename discovery.
+/// No file contents, executable processes or arbitrary roots.
+#[tauri::command]
+async fn ide_quick_open_source_paths(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    query: String,
+) -> Result<lu_ide_workspace::quick_open::QuickOpenResult, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.quick_open_source_paths(&project_id, &query)
+            .map_err(|error| error.code().to_owned())
+    }).await.map_err(|_| "INT01E_QUICK_OPEN_TASK_UNAVAILABLE".to_owned())?
+}
+
+/// IDE-INT01E: independently re-enumerate one directory for a sorted page.
+/// Cursor is a filename only, not a filesystem authorization.
+#[tauri::command]
+async fn ide_list_source_directory_page(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_dir: String,
+    after: Option<String>,
+) -> Result<lu_ide_workspace::quick_open::DirectoryPage, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.list_source_directory_page(&project_id, &relative_dir, after.as_deref())
+            .map_err(|error| error.code().to_owned())
+    }).await.map_err(|_| "INT01E_DIRECTORY_PAGE_TASK_UNAVAILABLE".to_owned())?
+}
+
 /// B3: registered project, bounded literal saved-source search.
 /// Reads only under the native picker capability. No scripts or writes.
 #[tauri::command]
@@ -3178,6 +3209,8 @@ pub fn run() {
             ide_close_project,
             ide_unregister_project,
             ide_list_source_directory,
+            ide_list_source_directory_page,
+            ide_quick_open_source_paths,
             ide_find_in_project,
             ide_draft_checkpoint,
             ide_draft_latest,
