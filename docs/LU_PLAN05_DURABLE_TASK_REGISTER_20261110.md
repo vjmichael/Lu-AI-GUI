@@ -1,0 +1,27 @@
+# PLAN-05 — Durable project task register and revisions
+
+**Repository:** Lu Core and the standard Lu desktop Settings window. Stacked on PLAN-04 draft PR #210. No Lu IDE, new repository, auto-issue creation, external write, task execution, or model authorization.
+
+## Host-owned lifecycle
+
+1. **Proposal is not a register.** PLAN-04 persists the original raw local GGUF reply, validated task proposal, original evidence graph and PLAN-03 status in the existing ANSF SQLite library. The operator can import a saved proposal only through the Settings window, an OS confirmation and a native project-directory picker. The host reconstructs the saved proposal from the original raw model reply and checks its source provenance; it refuses to import if the newly inspected project facts changed.
+2. **Append-only task identities and revisions.** The register stores the model proposal digest, scope SHA, immutable task IDs, original requirement IDs, source citations and dependency IDs. Every task begins with a version-1 import event. Human correction appends a version with editable summary, description, priority, blocker, and future acceptance criterion; original source IDs cannot be silently overwritten. Caller supplies expected task version; stale editors fail. All revisions have a SHA-256 chain, a human-readable reason and \`executionAuthorized=false\`.
+3. **Durable ANSF history.** \`ansf_project_task_register_revisions\` in the already-existing \`ansf/library.db\` stores immutable, sequential register snapshots, original proposal digest, latest event SHA and previous snapshot linkage. Writes are within a SQLite immediate transaction with original-byte readback; reopening audits every event hash and previous revision prefix, rejects gaps, malicious rewrites and missing originals, and preserves unrelated ANSF tables.
+4. **Reinspect source, do not automatically repair its acceptance.** A native folder picker and host-reviewed evidence/classifier refresh precede reconciliation. Current source is compared semantically rather than by the scan timestamp alone. Changed Git HEAD, source files or findings create conservative \`source_changed\` events with \`needsHumanReconciliation=true\`; earlier acceptance remains historical. Missing source requirements remain unresolved; human review cannot forge a replacement requirement.
+5. **Independently observed acceptance is narrower than task completion.** After an explicit human OS-dialog confirmation and fresh native project scan, Lu can append a \`human_revalidated\` record. The record distinguishes *exact requirement independently verified* only if the current PLAN-03 finding is ACCEPTED, the bounded graph and report are complete, evidence is current, and no conflicts exist. The record does not claim the full task was executed, built, installed, or merged. UNVERIFIED and other statuses are recorded as not independently accepted.
+6. **Review in Settings.** The normal Settings window can reload registers across restarts, inspect original source and accepted/unverified review history, edit bounded human fields, reconcile selected project and review individual acceptance. Every mutation is mediated by a native operator action; the API has no task execution or grant path.
+
+## Security invariants
+
+- The model may **propose** a task in PLAN-04 but cannot import, amend, reconcile, accept, authorize, schedule or execute a task in PLAN-05.
+- Human edits never rewrite requirement IDs, source citations, dependencies or historical accepted evidence. No status can become accepted from arbitrary task text.
+- A native PLAN-03 acceptance is a *specific proven requirement*, not evidence of every integration or installed-user workflow.
+- Reconciliation is restricted to the original selected project scope and refreshed native Git observation. Repository documents, model replies and report claims remain untrusted data.
+- ANSF is the only task ledger database. No separate IDE workspace, new database or model-owned tool permission is introduced.
+- Event digest checks provide tamper detection, not protection against an adversary who can directly rewrite the entire local profile/database and recompute every hash. Execution policy is completely separate.
+
+## Acceptance and open gates
+
+The source branch contains Core unit tests for human correction version conflicts, source drift, event tampering and refusal of model-sourced authority; desktop tests cover library refusal and restart/readback; frontend contract tests ensure only Settings exposes review controls. A dedicated SHA-pinned Windows/Linux native matrix must verify real Rust Core, Tauri, Node and source-lock checks before claiming native acceptance.
+
+**Not yet independently accepted:** actual installed NSIS dialog approve/refuse/cancel, physical Radeon R9700 with Qwen3.8-27B, original-project multi-session recovery, external integration and code changes, and an end-to-end full real-world task acceptance. PLAN-06 full register UX/editor and PLAN-07 incremental graph refresh remain separate.
