@@ -546,9 +546,7 @@ impl IdeWorkspaceRegistry {
         #[cfg(test)]
         {
             if let Some(test_gitdir) = std::env::var_os("IDE_G06B05_ABORT_AFTER_REF_CAS") {
-                let fixture_marker = gitdir
-                    .parent()
-                    .map(|p| p.join(".g06b05-abort-fixture"));
+                let fixture_marker = gitdir.parent().map(|p| p.join(".g06b05-abort-fixture"));
                 if PathBuf::from(test_gitdir) == gitdir
                     && gitdir.starts_with(std::env::temp_dir())
                     && gitdir
@@ -1240,7 +1238,11 @@ mod tests {
         let mode = std::env::var("G06B05_CRASH_CHILD_MODE").unwrap();
         assert!(mode == "create" || mode == "amend");
         let (_guard, registry, id, root) = fixture();
-        fs::write(root.join("unrelated.keep"), b"untouched, untracked fixture\n").unwrap();
+        fs::write(
+            root.join("unrelated.keep"),
+            b"untouched, untracked fixture\n",
+        )
+        .unwrap();
         let staged = review_two_edits(&registry, &id, &root);
         let plan = if mode == "create" {
             preview(&registry, &staged, ReviewedCommitMode::Create)
@@ -1251,7 +1253,9 @@ mod tests {
             registry
                 .execute_approved_reviewed_commit(&first, &AtomicU8::new(0))
                 .unwrap();
-            let second = registry.preview_reviewed_git_hunks(&id, "tracked.txt").unwrap();
+            let second = registry
+                .preview_reviewed_git_hunks(&id, "tracked.txt")
+                .unwrap();
             assert_eq!(second.hunks.len(), 1);
             let selection = registry
                 .select_reviewed_git_hunks(&second, &[second.hunks[0].id.clone()])
@@ -1333,7 +1337,10 @@ mod tests {
             let repo = Repository::open(&root).unwrap();
             let new_head = repo.head().unwrap().target().unwrap();
             assert_ne!(new_head.to_string(), old_head);
-            assert_eq!(sha(&fs::read(root.join(".git/index")).unwrap()), original_index);
+            assert_eq!(
+                sha(&fs::read(root.join(".git/index")).unwrap()),
+                original_index
+            );
             assert_eq!(
                 sha(&fs::read(root.join("tracked.txt")).unwrap()),
                 original_source
@@ -1405,5 +1412,4 @@ mod tests {
             fs::remove_dir_all(&handoff_dir).unwrap();
         }
     }
-
 }
