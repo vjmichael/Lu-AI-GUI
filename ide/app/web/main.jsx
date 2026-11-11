@@ -9,8 +9,8 @@ import { planProjectPaneSelection, planProjectSwitchView,
 import { captureLiveEditorIntent, stillCurrentEditorIntent,
   reconcileSavedEditorTab } from './editor_live_write.js';
 import { planCleanBackgroundTabClosure } from './editor_clean_tab_reclamation.js';
-import { rememberedWorkspaceFromTabs, checkedRememberedWorkspace,
-  revalidatedResumeDecision } from './workspace_layout.js';
+import { rememberedWorkspaceFromTabs, checkedRememberedWorkspace } from './workspace_layout.js';
+import { checkedPrivateDraftHead, planRestartReconciliation } from './editor_restart_reconciliation.js';
 import { diskAuditTargets, classifyDiskAudit,
   summarizeExternalDifference } from './editor_disk_drift.js';
 import { planThreeWayMerge, renderReviewedMerge,
@@ -156,6 +156,7 @@ function App() {
   // Never persist CodeMirror EditorState, source content or B2 private drafts.
   const [rememberedLayout, setRememberedLayout] = useState(null);
   const [workspaceLayoutBusy, setWorkspaceLayoutBusy] = useState(false);
+  const [workspaceRecoveryReport, setWorkspaceRecoveryReport] = useState(null);
   const [diskAuditReport, setDiskAuditReport] = useState(null);
   const [diskComparison, setDiskComparison] = useState(null);
   const [diskAuditBusy, setDiskAuditBusy] = useState(false);
@@ -406,6 +407,7 @@ function App() {
     const projectId=activeProject?.projectId;
     const serial=++workspaceLayoutReadVersion.current;
     setRememberedLayout(null);
+    setWorkspaceRecoveryReport(null);
     if (!projectId) return () => {workspaceLayoutReadVersion.current++;};
     void invoke('ide_workspace_layout_read',{projectId}).then(layout=>{
       if (serial!==workspaceLayoutReadVersion.current ||
@@ -3729,7 +3731,7 @@ function App() {
   async function stageProposal(item) {
     if (inboxBusy || pending || savingKey || savingKeyRef.current ||
         explorerPending || explorerIoTicket.current ||
-        workspaceTransitionRef.current) return;
+        workspaceLayoutOp.current || workspaceTransitionRef.current) return;
     const project=projects.find(entry=>entry.projectId===item.projectId && entry.active);
     if (!project) {
       setProblem('Open this registered project before staging its proposed edits.');
@@ -3966,7 +3968,7 @@ function App() {
 
   async function openDirectory(project, path) {
     if (explorerPending || mergeBusy || mergeApplyRequest ||
-        workspaceTransitionRef.current || !project?.active ||
+        workspaceLayoutOp.current || workspaceTransitionRef.current || !project?.active ||
         !projects.some(row=>row.projectId===project.projectId && row.active)) return;
     const ticket=beginExplorerIo();
     if (!ticket) return;
@@ -4388,6 +4390,7 @@ function App() {
           activeProjectIdRef.current!==projectId) return;
       workspaceLayoutReadVersion.current++;
       setRememberedLayout(checkedRememberedWorkspace(stored,projectId));
+      setWorkspaceRecoveryReport(null);
       setHint('Remembered '+stored.files.length+
         ' file paths and pane positions privately. No source or unsaved text was saved.');
     } catch(error) {
@@ -4415,6 +4418,7 @@ function App() {
           activeProjectIdRef.current===projectId) {
         workspaceLayoutReadVersion.current++;
         setRememberedLayout(null);
+        setWorkspaceRecoveryReport(null);
         setHint('Forgot saved tab navigation only. Editor drafts and project files were kept.');
       }
     } catch(error) {
@@ -4431,86 +4435,140 @@ function App() {
   async function resumeRememberedWorkspace() {
     const projectId=activeProjectIdRef.current;
     if (!projectId || !rememberedLayout || mergeBusy || mergeApplyRequest ||
-        workspaceLayoutOp.current ||
+        workspaceLayoutOp.current || workspaceTransitionRef.current ||
         explorerPending || explorerIoTicket.current || savingKey ||
-        draftRecoveryBusy || reviewPending) return;
+        savingKeyRef.current || draftRecoveryBusy || reviewPending || inboxBusy) return;
     let layout;
-    try {layout=checkedRememberedWorkspace(rememberedLayout,projectId);}
-    catch(error){setProblem('Remembered workspace cannot be trusted: '+String(error));return;}
+    try { layout=checkedRememberedWorkspace(rememberedLayout,projectId); }
+    catch(error) {
+      setProblem('Remembered workspace cannot be trusted: '+String(error));
+      return;
+    }
+    // Persisted navigation contains no source/drafts. Reopening even the
+    // saved version of a formerly dirty file needs an explicit decision.
     if (layout.files.some(file=>file.wasDirty) && !window.confirm(
-      'Some files previously had unsaved changes. Restore only their latest SAVED '+ 
-      'disk content? Existing dirty tabs will not be overwritten. Use Preserve/Recover '+ 
-      'draft separately for any private checkpoints.'))
+      'This saved layout included unsaved editor files. Reopen only their '+
+      'current SAVED disk versions and separately inspect private draft '+
+      'checkpoints? Existing unsaved editor buffers will not be replaced.'))
       return;
     const ticket=beginExplorerIo();
     if (!ticket) return;
-    const token=Symbol('b9-resume');
+    const token=Symbol('ide-int01d-restart-reconciliation');
     workspaceLayoutOp.current=token;
+    workspaceTransitionRef.current=token;
+    const originalEpoch=projectNavigationEpoch.current;
+    const initialWitness=projectEditorWitness(projectId);
     setWorkspaceLayoutBusy(true);
+    setWorkspaceRecoveryReport(null);
     setProblem('');
-    const initiallyOpen=new Set(tabsRef.current.map(tab=>tab.key));
-    let unavailable=0,changed=0,previouslyDirty=0;
-    const verified=[];
+    const observations=[];
     try {
-      // Every restored file is separately read through the ORIGINAL registered
-      // cap-std source browser. Saved paths are not arbitrary OS path grants.
+      // Each path is verified through native registered-project source I/O.
+      // An unreadable source is reported rather than recreated from a draft.
       for (const entry of layout.files) {
-        let preview;
+        let preview=null, draft=null, draftUnavailable=false;
         try {
           preview=await invoke('ide_preview_source_file',{
             projectId,relativePath:entry.relativePath,
           });
         } catch {
-          unavailable++;
-          continue; // Deleted, moved, inaccessible or no longer a text file.
+          // Deletion, permission denial, binary/large file, etc. are not
+          // permission to repair or write any file.
         }
         if (workspaceLayoutOp.current!==token ||
+            workspaceTransitionRef.current!==token ||
             explorerIoTicket.current!==ticket ||
+            projectNavigationEpoch.current!==originalEpoch ||
             activeProjectIdRef.current!==projectId) return;
-        const decision=revalidatedResumeDecision(layout,entry,preview,projectId);
-        if (decision.action!=='open_saved') {
-          unavailable++;
-          continue;
+        if (preview?.projectId===projectId &&
+            preview.relativePath===entry.relativePath &&
+            typeof preview.text==='string' &&
+            /^[a-f0-9]{64}$/i.test(preview.revision||'')) {
+          try {
+            const result=await invoke('ide_draft_latest',{
+              projectId,relativePath:entry.relativePath,
+            });
+            draft=checkedPrivateDraftHead(result,projectId,entry.relativePath);
+          } catch {
+            draftUnavailable=true;
+          }
         }
-        if (decision.changedOnDisk) changed++;
-        if (decision.hadUnsavedDraft) previouslyDirty++;
-        verified.push(preview);
+        if (workspaceLayoutOp.current!==token ||
+            workspaceTransitionRef.current!==token ||
+            explorerIoTicket.current!==ticket ||
+            projectNavigationEpoch.current!==originalEpoch ||
+            activeProjectIdRef.current!==projectId) return;
+        observations.push({
+          relativePath:entry.relativePath,preview,draft,draftUnavailable,
+        });
       }
-      if ([...initiallyOpen].some(key=>!tabsRef.current.some(tab=>tab.key===key)))
-        throw Error('B9_OPEN_TABS_CHANGED_DURING_RESUME');
-      if (!verified.length) {
-        setHint('No remembered files could be verified. Current editor tabs were not changed.');
+      const plan=planRestartReconciliation(layout,observations,tabsRef.current,
+        key=>bufferIdentities.current.get(key),
+        key=>editorStates.current.get(key));
+      // Before any UI tab admission, verify that all preexisting live source
+      // buffers are still the same. Another transaction cannot silently win.
+      if (projectEditorWitnessChanged(projectId,initialWitness))
+        throw Error('INT01D_EDITOR_CHANGED_DURING_RESTART_RECONCILIATION');
+      const freshPreviews=plan.toOpen;
+      if (!admitOpenTabs(tabsRef.current,projectId,
+          freshPreviews.map(file=>keyFor(projectId,file.relativePath))).allowed)
+        throw Error('INT01D_TAB_BUDGET: close unused tabs before reopening saved files');
+      // Show disk drift BEFORE opening anything; the user can decline while
+      // keeping the source-free summary available for a later decision.
+      if (plan.summary.changedOnDisk && !window.confirm(
+        plan.summary.changedOnDisk+' remembered file(s) changed on disk. '+
+        'Open their CURRENT saved versions without restoring or overwriting '+
+        'any old draft? No project files will be modified.')) {
+        setWorkspaceRecoveryReport({projectId,rows:plan.rows,
+          summary:plan.summary,restoredCount:0,action:'inspection_only'});
+        setHint('Inspected remembered files. No editor tabs were reopened.');
         return;
       }
-      const added=verified.filter(preview=>!tabsRef.current.some(tab=>
-        tab.key===keyFor(projectId,preview.relativePath)));
-      if (!admitOpenTabs(tabsRef.current,projectId,
-          added.map(file=>keyFor(projectId,file.relativePath))).allowed)
-        throw Error('B9_TAB_BUDGET: close unused tabs before restoring');
       if (workspaceLayoutOp.current!==token ||
+          workspaceTransitionRef.current!==token ||
           explorerIoTicket.current!==ticket ||
-          activeProjectIdRef.current!==projectId) return;
-      const freshTabs=added.map(opened=>{
+          projectNavigationEpoch.current!==originalEpoch ||
+          activeProjectIdRef.current!==projectId ||
+          projectEditorWitnessChanged(projectId,initialWitness)) return;
+      // A file may change after the first preview. Re-read every proposed
+      // new editor file immediately before accepting its saved snapshot.
+      for (const opened of freshPreviews) {
+        const latest=await invoke('ide_preview_source_file',{
+          projectId,relativePath:opened.relativePath,
+        });
+        if (workspaceLayoutOp.current!==token ||
+            workspaceTransitionRef.current!==token ||
+            explorerIoTicket.current!==ticket ||
+            projectNavigationEpoch.current!==originalEpoch ||
+            activeProjectIdRef.current!==projectId ||
+            projectEditorWitnessChanged(projectId,initialWitness)) return;
+        if (latest?.projectId!==projectId ||
+            latest.relativePath!==opened.relativePath ||
+            latest.revision!==opened.revision || latest.text!==opened.text)
+          throw Error('INT01D_SOURCE_CHANGED_DURING_RESTART');
+      }
+      if (projectEditorWitnessChanged(projectId,initialWitness))
+        throw Error('INT01D_EDITOR_CHANGED_DURING_RESTART_RECONCILIATION');
+      // Create only verified clean CodeMirror states. The separate B2 vault
+      // remains unchanged; recovery below is an explicit second user action.
+      const freshTabs=freshPreviews.map(opened=>{
         const key=keyFor(projectId,opened.relativePath);
-        const tab={
-          key,projectId,relativePath:opened.relativePath,
-          revision:opened.revision,savedText:opened.text,
-          draft:opened.text,dirty:false,generation:0,bufferRevision:0,
-        };
+        const tab={key,projectId,relativePath:opened.relativePath,
+          revision:opened.revision,savedText:opened.text,draft:opened.text,
+          dirty:false,generation:0,bufferRevision:0};
         clearPrivateDraftSession(key);
         resetBufferIdentity(key,projectId,opened.relativePath,opened.revision);
         editorStates.current.set(key,createEditorState(
           opened.text,opened.relativePath,
           (state,draft)=>onEditorChange(key,state,draft),
-          state=>onEditorSelection(key,state)
-        ));
+          state=>onEditorSelection(key,state)));
         return tab;
       });
       const visible=[...tabsRef.current,...freshTabs];
       const rememberedView={
         schemaVersion:1,projectId,
-        primaryKey:layout.primaryPath ? keyFor(projectId,layout.primaryPath):null,
-        secondaryKey:layout.secondaryPath ? keyFor(projectId,layout.secondaryPath):null,
+        primaryKey:layout.primaryPath?keyFor(projectId,layout.primaryPath):null,
+        secondaryKey:layout.secondaryPath?keyFor(projectId,layout.secondaryPath):null,
         splitOpen:layout.splitOpen,tabWindowStart:layout.tabWindowStart,
       };
       const focus=restoreProjectView(visible,projectId,rememberedView);
@@ -4519,24 +4577,41 @@ function App() {
         const keys=new Set(previous.map(tab=>tab.key));
         return [...previous,...freshTabs.filter(tab=>!keys.has(tab.key))];
       });
+      // Metadata only: do not copy checkpoint text into the report or editor.
+      // A later explicit Recover action independently loads verified bytes.
+      const metadata={};
+      for (const observation of observations) {
+        if (!observation.draft) continue;
+        const key=keyFor(projectId,observation.relativePath);
+        const activeHead=draftHeadByTab.current.get(key);
+        if (activeHead && activeHead!==observation.draft.checkpointId)
+          continue; // Another live draft checkpoint superseded this lookup.
+        draftHeadByTab.current.set(key,observation.draft.checkpointId);
+        metadata[key]=observation.draft;
+      }
+      if (Object.keys(metadata).length)
+        setDraftRecoveryByTab(previous=>({...previous,...metadata}));
       setActiveTabKey(focus.primaryKey);
       setSecondaryTabKey(focus.secondaryKey);
       setSplitEditorOpen(focus.splitOpen);
       setTabWindowStart(focus.tabWindowStart);
       setSection('explorer');
-      for (const tab of freshTabs) void checkExistingDraft(tab);
-      setHint('Revalidated '+verified.length+' saved files; opened '+
-        freshTabs.length+' missing tabs; '+changed+' disk revisions changed; '+
-        unavailable+' unavailable. '+previouslyDirty+
-        ' were previously unsaved—only explicit B2 draft recovery can restore their edits.');
+      projectNavigationEpoch.current+=1;
+      setWorkspaceRecoveryReport({projectId,rows:plan.rows,
+        summary:plan.summary,restoredCount:freshTabs.length,action:'reopened_saved'});
+      setHint('Reopened '+freshTabs.length+' verified saved files. '+
+        plan.summary.changedOnDisk+' changed on disk, '+
+        plan.summary.missing+' unavailable, '+
+        plan.summary.checkpoints+' private checkpoints found. '+
+        'Unsaved recovery requires a separate explicit action.');
     } catch(error) {
       if (workspaceLayoutOp.current===token)
         setProblem('Saved workspace was not restored: '+String(error));
     } finally {
-      if (workspaceLayoutOp.current===token) {
-        workspaceLayoutOp.current=null;
-        setWorkspaceLayoutBusy(false);
-      }
+      if (workspaceLayoutOp.current===token) workspaceLayoutOp.current=null;
+      if (workspaceTransitionRef.current===token)
+        workspaceTransitionRef.current=null;
+      setWorkspaceLayoutBusy(false);
       finishExplorerIo(ticket);
     }
   }
