@@ -50,6 +50,8 @@ try {
   if ((Get-Item -LiteralPath $app).Length -le 1048576) {
     throw 'DENIED: installed desktop binary unexpectedly small'
   }
+  Write-Host ('G06B05_NSIS_INSTALLED_EXE_SHA256=' +
+    (Get-FileHash -Algorithm SHA256 -LiteralPath $app).Hash.ToLowerInvariant())
   if (Test-Path -LiteralPath (Join-Path $installPath 'language-servers')) {
     throw 'DENIED: default unsigned IDE unexpectedly bundled language servers'
   }
