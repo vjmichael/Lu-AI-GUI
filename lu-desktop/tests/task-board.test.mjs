@@ -28,7 +28,8 @@ test('task list filters do not reinterpret claimed or stale ACCEPTED as completi
   assert.match(taskStatus(tasks[4]),/Needs human/);
   assert.deepEqual(shownTasks(tasks,'Broken','').map(x=>x.taskId),['a']);
   assert.deepEqual(shownTasks(tasks,'Not integrated','').map(x=>x.taskId),['b']);
-  assert.deepEqual(shownTasks(tasks,'Unverified','').map(x=>x.taskId),['c']);
+  assert.deepEqual(shownTasks(tasks,'Unverified','').map(x=>x.taskId),['c','e']);
+  assert.equal(taskKind(tasks[4]),'Unverified');
   assert.deepEqual(shownTasks(tasks,'Completed','').map(x=>x.taskId),['d']);
   assert.deepEqual(shownTasks(tasks,'All','source').map(x=>x.taskId),['a','c','e']);
 });
