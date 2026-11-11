@@ -1,10 +1,13 @@
 # G06C04B-D genuine isolated results and OS-gated original-history publication. Human consent is deferred.
-name: IDE Group 6C04 protected rebase and cherry-pick source plus installers
+name: IDE 6C03B protected divergent and 6C04 regression source plus installers
 on:
   push:
-    branches: [ide/group06c04-rebase-cherrypick-20261110]
+    branches: [ide/group06c03b-divergent-merge-20261111]
     paths:
       - '.github/workflows/ide-group06c04-native.yml'
+      - '.github/workflows/ide-group06c03b-native.yml'
+      - 'ide/host/src/git_divergent_verify.rs'
+      - 'ide/host/src/git_protected_divergent_merge.rs'
       - 'ide/host/src/git_rebase_cherry_plan.rs'
       - 'ide/host/src/git_replay_quarantine.rs'
       - 'ide/host/src/git_protected_replay.rs'
@@ -66,8 +69,10 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml --lib git_rebase_cherry_plan -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --lib git_replay_quarantine -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_replay -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_divergent_verify -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_divergent_merge -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_merge
-          rustfmt --edition 2021 --check ide/host/src/git_rebase_cherry_plan.rs ide/host/src/git_replay_quarantine.rs ide/host/src/git_protected_replay.rs
+          rustfmt --edition 2021 --check ide/host/src/git_rebase_cherry_plan.rs ide/host/src/git_replay_quarantine.rs ide/host/src/git_protected_replay.rs ide/host/src/git_divergent_verify.rs ide/host/src/git_protected_divergent_merge.rs
           echo G06C04_LOCAL_ORIGINAL_REPLAY=SOURCE_REVIEW_ONLY
       - name: Hostile UI source-boundary checks and desktop build
         shell: bash
