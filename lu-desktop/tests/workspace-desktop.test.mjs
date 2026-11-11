@@ -177,7 +177,7 @@ test('PLAN-05 installed Windows acceptance requires true OS dialog controls and 
   const fixture=readFileSync(new URL('../src-tauri/src/project_register_desktop.rs',import.meta.url),'utf8');
   const ui=readFileSync(new URL('../../scripts/plan05-windows-installed-acceptance.ps1',import.meta.url),'utf8');
   const readback=readFileSync(new URL('../../scripts/plan05-readonly-ansf-witness.py',import.meta.url),'utf8');
-  const workflow=readFileSync(new URL('../../.github/workflows/lu-plan05-installed-windows.yml',import.meta.url),'utf8');
+  const workflow=readFileSync(new URL('../../.github/workflows/lu-repo01-full-source.yml',import.meta.url),'utf8');
   assert.match(fixture,/export_original_installed_ui_test_fixture/);
   assert.match(fixture,/TEST_ONLY_SYNTHETIC_MODEL_RAW_JSON_NOT_GGUF/);
   assert.match(ui,/Lu — Confirm human task correction/);
