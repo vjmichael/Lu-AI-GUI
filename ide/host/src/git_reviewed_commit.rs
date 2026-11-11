@@ -1034,6 +1034,34 @@ mod tests {
         assert!(!root.join(".git/index.lock").exists());
     }
     #[test]
+    fn another_writer_moving_branch_denies_stale_commit_and_amend_plan() {
+        let (_temp, registry, id, root) = fixture();
+        let stage = review_two_edits(&registry, &id, &root);
+        let expected = preview(&registry, &stage, ReviewedCommitMode::Create);
+        let repo = Repository::open(&root).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        let tree = head.tree().unwrap();
+        let signature = Signature::now("Other Git writer", "other@localhost.invalid").unwrap();
+        let competing_oid = repo
+            .commit(
+                None, &signature, &signature,
+                "independent concurrent local commit", &tree, &[&head],
+            )
+            .unwrap();
+        repo.reference_matching(
+            &expected.branch_ref, competing_oid, true, head.id(),
+            "competing local Git ref update",
+        ).unwrap();
+        drop(tree);
+        drop(head);
+        drop(repo);
+        assert!(registry.execute_approved_reviewed_commit(
+            &expected, &AtomicU8::new(0)).is_err());
+        let reopened = Repository::open(&root).unwrap();
+        assert_eq!(reopened.head().unwrap().target(), Some(competing_oid));
+    }
+
+    #[test]
     fn restart_restores_exact_staged_receipt_but_never_reuses_os_commit_grant() {
         let (temp, registry, id, root) = fixture();
         let original_head = Repository::open(&root)
