@@ -2310,6 +2310,9 @@ struct LanguageWorkerStatus {
     /// Only languages whose native executor AND exact release pins were verified.
     /// The general LSP catalog is not a runnable language list.
     supported_languages: Vec<String>,
+    /// Exact release-pinned providers that also offer semantic operations.
+    /// Python is absent here when the installed provider is Ruff-only.
+    semantic_languages: Vec<String>,
 }
 
 /// Native admission is deliberately NOT represented by the presence of an
@@ -2337,6 +2340,7 @@ async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
                 ready: true, code: "LSP_REVIEWED_INSTALLATION_AVAILABLE",
                 detail: "Reviewed native language server installed; human consent and actual OS worker containment are required for every session.",
                 supported_languages: supported,
+                semantic_languages: lsp_backend::installed_semantic_languages(&app),
             };
         }
     }
@@ -2347,6 +2351,7 @@ async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
         code: "LSP_PROTECTED_WORKER_UNVERIFIED",
         detail: "Protected language servers are unavailable in this build or have unverified release evidence.",
         supported_languages: Vec::new(),
+        semantic_languages: Vec::new(),
     }
 }
 
