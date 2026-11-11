@@ -202,3 +202,121 @@ impl IdeWorkspaceRegistry {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{IdeError, NativeDirectoryPicker};
+    use git2::{Repository, Signature};
+    use std::path::PathBuf;
+
+    struct Picker(PathBuf);
+    impl NativeDirectoryPicker for Picker {
+        fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+    struct Fixture {
+        base: PathBuf, root: PathBuf, id: String, registry: IdeWorkspaceRegistry,
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.base); }
+    }
+    fn fixture(conflict: bool) -> Fixture {
+        let base = std::env::temp_dir().join(format!("ide-g06c03b-{:032x}", rand::random::<u128>()));
+        let root = base.join("repo");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("one.txt"), b"base one\n").unwrap();
+        fs::write(root.join("two.txt"), b"base two\n").unwrap();
+        let repo = Repository::init(&root).unwrap();
+        let sig = Signature::now("Local operator", "local@localhost.invalid").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("one.txt")).unwrap();
+        index.add_path(Path::new("two.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let base_id = repo.commit(Some("HEAD"), &sig, &sig, "base", &tree, &[]).unwrap();
+        let original = repo.find_commit(base_id).unwrap();
+        repo.branch("feature", &original, false).unwrap();
+        let original_tree = original.tree().unwrap();
+        let mut builder = repo.treebuilder(Some(&original_tree)).unwrap();
+        let feature_blob = repo.blob(b"feature one\n").unwrap();
+        builder.insert("one.txt", feature_blob, 0o100644).unwrap();
+        let feature_tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        repo.commit(Some("refs/heads/feature"), &sig, &sig, "feature", &feature_tree, &[&original]).unwrap();
+        drop(feature_tree);
+        drop(builder);
+        let mut builder = repo.treebuilder(Some(&original_tree)).unwrap();
+        let main_blob = repo.blob(if conflict { b"main one\n" } else { b"main two\n" }).unwrap();
+        builder.insert(if conflict { "one.txt" } else { "two.txt" }, main_blob, 0o100644).unwrap();
+        let main_tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "main", &main_tree, &[&original]).unwrap();
+        drop(main_tree);
+        drop(builder);
+        drop(original_tree);
+        drop(original);
+        drop(tree);
+        drop(index);
+        drop(repo);
+        fs::write(root.join(if conflict { "one.txt" } else { "two.txt" }),
+            if conflict { b"main one\n" } else { b"main two\n" }).unwrap();
+        let repo = Repository::open(&root).unwrap();
+        let mut index = repo.index().unwrap();
+        index.read_tree(&repo.head().unwrap().peel_to_tree().unwrap()).unwrap();
+        index.write().unwrap();
+        drop(index);
+        drop(repo);
+        let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
+        let id = registry.register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap().unwrap().project_id;
+        Fixture { base, root, id, registry }
+    }
+    fn snapshot(root: &Path) -> (Vec<u8>, Vec<u8>, Vec<u8>, String, String) {
+        let repo = Repository::open(root).unwrap();
+        (
+            fs::read(root.join("one.txt")).unwrap(),
+            fs::read(root.join("two.txt")).unwrap(),
+            fs::read(root.join(".git/index")).unwrap(),
+            repo.head().unwrap().target().unwrap().to_string(),
+            repo.refname_to_id("refs/heads/feature").unwrap().to_string(),
+        )
+    }
+    #[test]
+    fn disjoint_divergence_is_native_verified_without_original_mutation_or_grant() {
+        let x = fixture(false);
+        let before = snapshot(&x.root);
+        let plan = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        let verified = x.registry.verify_divergent_merge_result(
+            &x.id, "feature", &plan.evidence_sha256).unwrap();
+        assert!(verified.publishable_candidate);
+        assert_eq!(verified.conflict_count, 0);
+        assert_eq!(verified.first_parent, plan.current_head);
+        assert_eq!(verified.second_parent, plan.selected_tip);
+        assert!(!verified.authority_granted);
+        assert_eq!(before, snapshot(&x.root));
+    }
+    #[test]
+    fn same_path_content_conflicts_fail_closed() {
+        let x = fixture(true);
+        let before = snapshot(&x.root);
+        let plan = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        let verified = x.registry.verify_divergent_merge_result(
+            &x.id, "feature", &plan.evidence_sha256).unwrap();
+        assert!(!verified.publishable_candidate);
+        assert!(verified.conflict_count > 0);
+        assert!(verified.conflicts.contains(&"one.txt".to_owned()));
+        assert_eq!(before, snapshot(&x.root));
+    }
+    #[test]
+    fn stale_review_and_foreign_lock_fail_without_touching_lock() {
+        let x = fixture(false);
+        let plan = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        assert!(x.registry.verify_divergent_merge_result(
+            &x.id, "feature", &"0".repeat(64)).is_err());
+        let lock = x.root.join(".git/index.lock");
+        fs::write(&lock, b"NOT_OURS").unwrap();
+        assert!(x.registry.verify_divergent_merge_result(
+            &x.id, "feature", &plan.evidence_sha256).is_err());
+        assert_eq!(fs::read(lock).unwrap(), b"NOT_OURS");
+    }
+}
