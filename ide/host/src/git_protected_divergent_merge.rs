@@ -555,3 +555,223 @@ fn abort_disposable(root: &Path, gitdir: &Path, variable: &str) {
         std::process::abort();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{IdeError, NativeDirectoryPicker};
+    use git2::Repository;
+
+    struct Picker(PathBuf);
+    impl NativeDirectoryPicker for Picker {
+        fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+    struct Fixture {
+        base: PathBuf, root: PathBuf, id: String, registry: IdeWorkspaceRegistry,
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.base); }
+    }
+    fn fixture(conflict: bool) -> Fixture {
+        let base = std::env::temp_dir().join(
+            format!("ide-g06c03b-{:032x}", rand::random::<u128>()));
+        let root = base.join("repo");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("one.txt"), b"base one\n").unwrap();
+        fs::write(root.join("two.txt"), b"base two\n").unwrap();
+        fs::write(root.join("unrelated.keep"), b"NEVER ALTER\n").unwrap();
+        let repo = Repository::init(&root).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Local fixture operator").unwrap();
+        config.set_str("user.email", "local@localhost.invalid").unwrap();
+        drop(config);
+        let sig = repo.signature().unwrap();
+        let mut index = repo.index().unwrap();
+        for name in ["one.txt", "two.txt", "unrelated.keep"] {
+            index.add_path(Path::new(name)).unwrap();
+        }
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let first = repo.commit(Some("HEAD"), &sig, &sig, "base", &tree, &[]).unwrap();
+        let original = repo.find_commit(first).unwrap();
+        repo.branch("feature", &original, false).unwrap();
+        let initial_tree = original.tree().unwrap();
+        let mut builder = repo.treebuilder(Some(&initial_tree)).unwrap();
+        builder.insert("one.txt", repo.blob(b"feature one\n").unwrap(), 0o100644).unwrap();
+        let feature_tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        repo.commit(Some("refs/heads/feature"), &sig, &sig, "feature",
+            &feature_tree, &[&original]).unwrap();
+        drop(feature_tree);
+        drop(builder);
+        let mut builder = repo.treebuilder(Some(&initial_tree)).unwrap();
+        let main_file = if conflict { "one.txt" } else { "two.txt" };
+        let main_bytes: &[u8] = if conflict { b"main one\n" } else { b"main two\n" };
+        builder.insert(main_file, repo.blob(main_bytes).unwrap(), 0o100644).unwrap();
+        let main_tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "main", &main_tree, &[&original]).unwrap();
+        drop(main_tree);
+        drop(builder);
+        drop(initial_tree);
+        drop(original);
+        drop(tree);
+        drop(index);
+        drop(repo);
+        fs::write(root.join(if conflict { "one.txt" } else { "two.txt" }),
+            if conflict { b"main one\n" } else { b"main two\n" }).unwrap();
+        let repo = Repository::open(&root).unwrap();
+        let mut idx = repo.index().unwrap();
+        idx.read_tree(&repo.head().unwrap().peel_to_tree().unwrap()).unwrap();
+        idx.write().unwrap();
+        drop(idx);
+        drop(repo);
+        let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
+        let id = registry.register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap().unwrap().project_id;
+        Fixture { base, root, id, registry }
+    }
+    fn evidence(x: &Fixture) -> (String, String) {
+        let p = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        let result = x.registry.verify_divergent_merge_result(
+            &x.id, "feature", &p.evidence_sha256).unwrap();
+        (p.evidence_sha256, result.result_sha256)
+    }
+    #[test]
+    fn two_parents_and_worktree_are_independently_verified() {
+        let x = fixture(false);
+        let repo = Repository::open(&x.root).unwrap();
+        let old = repo.head().unwrap().target().unwrap().to_string();
+        let selected = local_commit(&repo, "feature").unwrap().to_string();
+        let unrelated = fs::read(x.root.join("unrelated.keep")).unwrap();
+        drop(repo);
+        let (p, r) = evidence(&x);
+        let receipt = x.registry.execute_os_approved_divergent_merge(
+            &x.id, "feature", &p, &r, &AtomicU8::new(0)).unwrap();
+        assert!(receipt.parent_count_verified && receipt.exact_old_head_cas);
+        assert_eq!(receipt.first_parent, old);
+        assert_eq!(receipt.second_parent, selected);
+        assert_eq!(fs::read(x.root.join("one.txt")).unwrap(), b"feature one\n");
+        assert_eq!(fs::read(x.root.join("two.txt")).unwrap(), b"main two\n");
+        assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
+        let repo = Repository::open(&x.root).unwrap();
+        assert_eq!(repo.head().unwrap().target().unwrap().to_string(),
+            receipt.published_merge_commit);
+        assert!(merge_parents(&repo, &receipt.published_merge_commit,
+            &old, &selected, &receipt.resulting_tree).unwrap());
+        assert!(repo.statuses(None).unwrap().is_empty());
+        assert_eq!(x.registry.inspect_protected_divergent_recovery(&x.id)
+            .unwrap().state, "historical_verified_divergent_merge");
+    }
+    #[test]
+    fn conflicting_native_result_and_stale_digest_cannot_write() {
+        let x = fixture(true);
+        let repo = Repository::open(&x.root).unwrap();
+        let old = repo.head().unwrap().target().unwrap().to_string();
+        let original_index = fs::read(x.root.join(".git/index")).unwrap();
+        drop(repo);
+        let (p, r) = evidence(&x);
+        assert!(x.registry.execute_os_approved_divergent_merge(
+            &x.id, "feature", &p, &r, &AtomicU8::new(0)).is_err());
+        assert_eq!(old, Repository::open(&x.root).unwrap()
+            .head().unwrap().target().unwrap().to_string());
+        assert_eq!(original_index, fs::read(x.root.join(".git/index")).unwrap());
+        assert_eq!(x.registry.inspect_protected_divergent_recovery(&x.id)
+            .unwrap().state, "no_journal");
+    }
+    #[test]
+    fn preapproved_cancellation_and_foreign_index_lock_deny_mutation() {
+        let x = fixture(false);
+        let (p, r) = evidence(&x);
+        let denied = x.registry.execute_os_approved_divergent_merge(
+            &x.id, "feature", &p, &r, &AtomicU8::new(2)).unwrap_err();
+        assert_eq!(denied, "G06C03B_CANCELLED");
+        let lock = x.root.join(".git/index.lock");
+        fs::write(&lock, b"ANOTHER_PROCESS").unwrap();
+        assert!(x.registry.execute_os_approved_divergent_merge(
+            &x.id, "feature", &p, &r, &AtomicU8::new(0)).is_err());
+        assert_eq!(fs::read(lock).unwrap(), b"ANOTHER_PROCESS");
+        assert_eq!(x.registry.inspect_protected_divergent_recovery(&x.id)
+            .unwrap().state, "no_journal");
+    }
+    #[test]
+    fn child_abort_entry() {
+        let Some(root) = std::env::var_os("IDE_G06C03B_CHILD_ROOT") else { return; };
+        let root = PathBuf::from(root);
+        let id = std::env::var("IDE_G06C03B_CHILD_ID").unwrap();
+        let registry = IdeWorkspaceRegistry::open(root.parent().unwrap().join("catalog.json")).unwrap();
+        registry.reopen(&id).unwrap();
+        let plan = registry.preview_reviewed_local_merge(&id, "feature").unwrap();
+        let candidate = registry.verify_divergent_merge_result(
+            &id, "feature", &plan.evidence_sha256).unwrap();
+        let _ = registry.execute_os_approved_divergent_merge(
+            &id, "feature", &plan.evidence_sha256, &candidate.result_sha256, &AtomicU8::new(0));
+        panic!("G06C03B child returned without genuine abort");
+    }
+    fn spawn_abort(x: &Fixture, phase: &str) {
+        fs::write(x.root.join(".git/g06c03b-disposable-marker"),
+            b"G06C03B_TEST_ONLY\n").unwrap();
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("git_protected_divergent_merge::tests::child_abort_entry")
+            .arg("--nocapture")
+            .env("IDE_G06C03B_CHILD_ROOT", &x.root)
+            .env("IDE_G06C03B_CHILD_ID", &x.id)
+            .env(phase, &x.root)
+            .output().unwrap();
+        assert!(!result.status.success(), "child must actually abort");
+        assert!(!String::from_utf8_lossy(&result.stderr)
+            .contains("returned without genuine abort"),
+            "child must reach native abort point");
+    }
+    #[test]
+    fn real_abort_after_checkout_preserves_old_ref_and_requires_manual_repair() {
+        if std::env::var_os("IDE_G06C03B_CHILD_ROOT").is_some() { return; }
+        let x = fixture(false);
+        let old = Repository::open(&x.root).unwrap().head().unwrap()
+            .target().unwrap().to_string();
+        spawn_abort(&x, "IDE_G06C03B_ABORT_AFTER_CHECKOUT");
+        let repo = Repository::open(&x.root).unwrap();
+        assert_eq!(repo.head().unwrap().target().unwrap().to_string(), old);
+        assert_eq!(fs::read(x.root.join("one.txt")).unwrap(), b"feature one\n");
+        assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), b"NEVER ALTER\n");
+        let j = last(&path_for(&x.registry, &x.id).unwrap()).unwrap().unwrap();
+        assert_eq!(j.phase, "checkout_verified");
+        let restarted = IdeWorkspaceRegistry::open(x.base.join("catalog.json")).unwrap();
+        restarted.reopen(&x.id).unwrap();
+        let recovery = restarted.inspect_protected_divergent_recovery(&x.id).unwrap();
+        assert_eq!(recovery.state, "checkout_without_ref_publication_manual_repair");
+        assert!(recovery.operator_reconciliation_required);
+        assert!(restarted.reconcile_protected_divergent_receipt(&x.id).is_err());
+        assert!(!recovery.automatic_retry && !recovery.automatic_ref_rewrite
+            && !recovery.automatic_checkout && !recovery.automatic_rollback);
+    }
+    #[test]
+    fn real_abort_after_cas_allows_receipt_only_with_original_parents() {
+        if std::env::var_os("IDE_G06C03B_CHILD_ROOT").is_some() { return; }
+        let x = fixture(false);
+        let old = Repository::open(&x.root).unwrap().head().unwrap()
+            .target().unwrap().to_string();
+        spawn_abort(&x, "IDE_G06C03B_ABORT_AFTER_CAS");
+        let repo = Repository::open(&x.root).unwrap();
+        let head = repo.head().unwrap().target().unwrap().to_string();
+        let selected = local_commit(&repo, "feature").unwrap().to_string();
+        assert_ne!(head, old);
+        let j = last(&path_for(&x.registry, &x.id).unwrap()).unwrap().unwrap();
+        assert_eq!(j.phase, "publishing");
+        assert!(merge_parents(&repo, &head, &old, &selected, &j.resulting_tree).unwrap());
+        assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), b"NEVER ALTER\n");
+        drop(repo);
+        let restarted = IdeWorkspaceRegistry::open(x.base.join("catalog.json")).unwrap();
+        restarted.reopen(&x.id).unwrap();
+        let state = restarted.inspect_protected_divergent_recovery(&x.id).unwrap();
+        assert_eq!(state.state, "published_requires_independent_receipt");
+        assert!(state.operator_reconciliation_required);
+        // Unit-test simulation of separately approved receipt, not physical OS consent.
+        let completed = restarted.reconcile_protected_divergent_receipt(&x.id).unwrap();
+        assert_eq!(completed.state, "historical_verified_divergent_merge");
+        assert!(!completed.operator_reconciliation_required);
+        assert_eq!(Repository::open(&x.root).unwrap().head().unwrap()
+            .target().unwrap().to_string(), head);
+    }
+}
