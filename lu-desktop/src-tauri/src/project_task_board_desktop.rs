@@ -66,11 +66,11 @@ fn verify_board(b:&TaskBoard,r:&register::TaskRegister)->Result<(),String>{
     }
     Ok(())
 }
-fn baseline(r:&register::TaskRegister)->Result<TaskBoard,String>{
+fn baseline_at(r:&register::TaskRegister,source_sha:&str)->Result<TaskBoard,String>{
     let mut b=TaskBoard{
         schema:BOARD_SCHEMA.into(),register_id:r.register_id.clone(),
         scope_sha256:r.scope_sha256.clone(),
-        source_register_sha256:r.latest_sha256.clone(),
+        source_register_sha256:source_sha.into(),
         sequence:0,ordered_task_ids:ids(r),review_state:"draft".into(),
         reason:"Imported original PLAN05 task order, not human approved".into(),
         previous_sha256:None,sha256:String::new(),
@@ -79,6 +79,9 @@ fn baseline(r:&register::TaskRegister)->Result<TaskBoard,String>{
     b.sha256=digest(&b)?;
     verify_board(&b,r)?;
     Ok(b)
+}
+fn baseline(r:&register::TaskRegister)->Result<TaskBoard,String>{
+    baseline_at(r,&r.latest_sha256)
 }
 fn init(conn:&Connection)->Result<(),String>{
     conn.execute_batch("CREATE TABLE IF NOT EXISTS ansf_project_task_board_revisions(
@@ -110,6 +113,11 @@ fn read(conn:&Connection,r:&register::TaskRegister)->Result<TaskBoard,String>{
         let bytes:Vec<u8>=row.get(4).map_err(|_|"PLAN06_BOARD_BYTES")?;
         let no_exec:i64=row.get(5).map_err(|_|"PLAN06_BOARD_AUTHORITY")?;
         n+=1;
+        // Board sequence zero is anchored to the source register at the
+        // FIRST review, not its possibly newer revision after later edits.
+        // Otherwise a subsequent PLAN05 correction makes valid historical
+        // board snapshots fail audit at startup.
+        if n==1{prior=baseline_at(r,&source)?;}
         if n>1024||seq!=n as i64||no_exec!=1||bytes.len()>131072{
             return Err("PLAN06_INVALID_BOARD_ROW".into())
         }
@@ -252,7 +260,7 @@ fn load_views(profile:&Path)->Result<Vec<BoardView>,String>{
         let mut v=view(&r,board)?;
         v.historical_approval_count=conn.query_row(
             "SELECT COUNT(*) FROM ansf_project_task_board_revisions
-             WHERE register_id=?1 AND snapshot_json LIKE ?2",
+             WHERE register_id=?1 AND CAST(snapshot_json AS TEXT) LIKE ?2",
             params![id,"%\"reviewState\":\"human_approved\"%"],|row|row.get::<_,i64>(0)
         ).map_err(|_|"PLAN06_HISTORY_COUNT_FAILED")?.max(0) as usize;
         out.push(v)
@@ -500,7 +508,7 @@ mod tests{
         assert_eq!(base.review_state,"draft");
         let approved=next_board(&r,&base,vec![],"human_approved",
             "Human reviewed task order, no execution").unwrap();
-        assert!(!approved.no_execution_authority==false);
+        assert!(approved.no_execution_authority);
         assert_eq!(approved.previous_sha256,Some(base.sha256.clone()));
         verify_board(&approved,&r).unwrap();
         let mut malicious=approved.clone();malicious.no_execution_authority=false;
