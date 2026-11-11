@@ -73,7 +73,7 @@ $script:main=$null
 $script:settings=$null
 function Read-Original([string]$phase){
   $output=Join-Path $EvidenceDir ("ansf-"+$phase+".json")
-  & python scripts/plan05-readonly-ansf-witness.py --profile $ProfileDir --seed $SeedReceipt --output $output
+  $probeOutput=@(& python scripts/plan05-readonly-ansf-witness.py --profile $ProfileDir --seed $SeedReceipt --output $output)
   if($LASTEXITCODE -ne 0 -or -not(Test-Path $output -PathType Leaf)){
     throw "PLAN05 independent on-disk readback failed: $phase"
   }
