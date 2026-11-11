@@ -40,7 +40,7 @@ fn equal_native(a:&(graph::EvidenceGraph,status::StatusReport),
         serde_json::to_value(&a.1.findings).map_err(|_|"PLAN07B_OLD_STATUS_ENCODE")?==
         serde_json::to_value(&b.1.findings).map_err(|_|"PLAN07B_NEW_STATUS_ENCODE")?)
 }
-fn persist(profile:&Path,proof:&suggestions::ModelSuggestion,
+pub(super) fn persist(profile:&Path,proof:&suggestions::ModelSuggestion,
     exact_prompt:&str,raw:&str)->Result<(),String>{
     let (preview,register,_,g,s)=project_updates_desktop::reload_audited(
         profile,&proof.preview_sha256)?;
