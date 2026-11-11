@@ -22,7 +22,7 @@ test('G06B04 only a private verified staged-hunk journal may be committed', () =
   const previewOnly = native.split('pub fn preview_reviewed_partial_commit(')[1]
     .split('pub fn execute_approved_reviewed_commit(')[0];
   assert.doesNotMatch(previewOnly, /\.write_tree_to\(/);
-  assert.match(native, /let tree_oid = index\.write_tree_to\(&repo\)/);
+  assert.match(native, /let tree_oid = index\s*\.write_tree_to\(&repo\)/);
   assert.match(ui, /Materialized only after separate native OS approval/);
   assert.match(native, /G06B_COMMIT_STALE_OR_FORGED_PLAN/);
   assert.match(native, /G06B_COMMIT_INDEX_TREE_CHANGED/);
