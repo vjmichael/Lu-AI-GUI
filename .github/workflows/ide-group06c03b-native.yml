@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/ide-group06c03b-native.yml'
       - 'ide/host/src/git_divergent_verify.rs'
+      - 'ide/app/tests/g06c03b_protected_divergent.test.mjs'
       - 'ide/host/src/git_protected_divergent_merge.rs'
       - 'ide/host/src/lib.rs'
       - 'ide/app/src-tauri/src/lib.rs'
@@ -46,6 +47,14 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_divergent_merge -- --nocapture
           cargo check --locked --manifest-path ide/host/Cargo.toml --all-targets
           rustfmt --edition 2021 --check ide/host/src/git_divergent_verify.rs ide/host/src/git_protected_divergent_merge.rs
+      - name: Hostile divergent authorization source checks and WebView build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/g06c03b_protected_divergent.test.mjs
+          npm run build
       - name: Tauri exact-head route compiler check
         shell: bash
         run: |
