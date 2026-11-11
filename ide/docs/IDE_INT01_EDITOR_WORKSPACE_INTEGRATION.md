@@ -43,9 +43,19 @@ A source analysis of `ide/app/web/main.jsx` found that Save/Review relied on `ta
 
 **Implementation status:** INT01-D source is committed. This does **not** imply native Windows/Linux, installed restart, accessibility, regression, permission or security acceptance. No tests/CI were run and no PR-verification work was started. Deferred future batch cases include missing/renamed files, changed disk SHA, stale checkpoint, user refusal, edited tabs during asynchronous native reads, cross-project navigation, and restart with partial draft vault access.
 
+## INT01-E — Large-project working set and navigation (source implemented)
+
+- Added `ide/host/src/quick_open.rs` with bounded cap-std native filename-only discovery: on-demand breadth-first traversal from the registered project, no symlink-follow, generated-dependency directory exclusions, maximum 30,000 entries / 3,000 directories / 24 levels, and up to 60 ranked path hits. The service never reads source text, executes a process, modifies the worktree or accesses a remote.
+- Added sorted native directory paging with a 120-name page, a validated filename-only next cursor and bounded enumeration. The cursor is a transient observation, not a persistent directory snapshot or any authority. When a folder exceeds the scan cap the user is warned that the listing is partial rather than assured of completeness.
+- Added Tauri read-only commands `ide_quick_open_source_paths` and `ide_list_source_directory_page`, plus `quick_open_view.js` to check project scope, bounded responses, filenames and page cursor before UI presentation.
+- Integrated the Explorer Quick Open form, explicit Find files, ranked filename results, separate handling for files larger than the existing 512-KiB editor admission limit, Ctrl/Cmd+P keyboard focus, and progressive Load next 120 names. All selected files use the existing native source preview, late response guard and per-project tab admission, not an implicit file grant.
+- Preserved bounded CodeMirror working sets (48 tabs per project, 96 globally) and existing light-weight display for large admitted files. Added visible working-set counts; `Close clean tabs` remains a direct user action and uses the existing live-text proof to preserve both visible panes, dirty/unknown buffers, private draft activity and active language service buffers. No automatic eviction or source changes.
+- Directory first-load and proposal-staging folder navigation now use the paginated host source. Project-switch epochs, explicit draft recovery, and protected native tasks retain their earlier custody boundaries.
+
+**Implementation status:** INT01-E source committed without running tests, CI, PR verification or installed acceptance. The deferred future batch should cover 30k-entry cutoff, huge folders, Unicode ordering, deep generated folders, symlink/permission refusal, stale page cursor, cross-project results, Quick Open at full tab budget, and live Undo preservation on clean-tab reclamation.
+
 ## Remaining INT01 work (implementation/integration gaps, not CI tasks)
 
-- **INT01-E — Working set and large projects:** bounded tree paging and search, quick-open navigation, async file admission, verified clean background tab reclamation and memory limits for thousands of files.
 - **INT01-F — Unified editor UX:** keyboard/split-pane focus, external file-change comparison and conflict path, accessibility and consistent project switching.
 
 ## Deferred batch-regression plan
@@ -54,4 +64,4 @@ After the implementation work is complete, run the staged `int01_live_editor_wri
 
 ## Next task
 
-**INT01-E — Large-project working set and navigation**. Improve bounded project-tree paging, quick-open, asynchronous file admission, clean background-tab reclamation and memory controls. INT01-F unified editor UX follows. Keep regression and CI gates paused until backlog implementation is finished.
+**INT01-F — Unified editor UX and accessibility**. Finish keyboard/split-pane focus behavior, Problems/Jobs/source navigation consistency, external-disk-change review, accessible status/progress and responsive project-switch presentation. Keep native and regression acceptance postponed until backlog implementation is finished.
