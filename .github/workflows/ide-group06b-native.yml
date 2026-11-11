@@ -10,6 +10,7 @@ on:
       - 'ide/host/src/git_reviewed_commit.rs'
       - 'ide/app/fixtures/g06b05_git_oracle.py'
       - 'ide/app/fixtures/test_g06b05_git_oracle.py'
+      - 'ide/app/fixtures/g06b05_physical_installed_acceptance.py'
       - 'ide/app/fixtures/Test-G06B05InstalledDebSmoke.sh'
       - 'ide/app/src-tauri/tauri.g06b05.windows.conf.json'
       - 'ide/app/src-tauri/tauri.g06b05.linux.conf.json'
@@ -63,6 +64,7 @@ jobs:
           set -euo pipefail
           python -m unittest discover -s ide/app/fixtures -p 'test_g06b05_git_oracle.py' -v
           python -m py_compile ide/app/fixtures/g06b05_git_oracle.py
+          python -m py_compile ide/app/fixtures/g06b05_physical_installed_acceptance.py
           bash -n ide/app/fixtures/Test-G06B05InstalledDebSmoke.sh
           echo G06B05_ORACLE=REAL_GIT_TESTS_NOT_INSTALLED_CONSENT
       - name: Human batch review UI boundary and web bundle
