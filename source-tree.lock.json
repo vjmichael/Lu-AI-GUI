@@ -149,7 +149,7 @@
     },
     {
       "path": ".github/workflows/lu-g02-workspace-inference.yml",
-      "blob": "283e2f5248ec68f768e379ba744d91a1df282438"
+      "blob": "0482515bbbb35110e43a1553fbef035b017110c0"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",

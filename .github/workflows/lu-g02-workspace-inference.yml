@@ -1,9 +1,6 @@
 name: G02 generic Lu Workspace inference native gate
 
 on:
-  push:
-    branches:
-      - lu/g02-generic-workspace-inference-gate-20261110
   workflow_dispatch:
 
 permissions:
