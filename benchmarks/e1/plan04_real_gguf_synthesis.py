@@ -12,6 +12,41 @@ import json
 import pathlib
 import urllib.request
 
+
+# The pinned llama.cpp server supports strict GBNF for complete JSON.
+# A generic JSON grammar constrains serialization only: it does not supply
+# requirement IDs, source statuses, task descriptions, priorities or criteria.
+# The model must generate those values; Lu Core independently checks them.
+_JSON_GRAMMAR=r'''
+root ::= object
+value ::= object | array | string | number | ("true" | "false" | "null") ws
+object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws
+array ::= "[" ws (value ("," ws value)*)? "]" ws
+string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws
+number ::= ("-"? ([0-9] | [1-9] [0-9]{0,15})) ("." [0-9]+)? ([eE] [-+]? [0-9] [1-9]{0,15})? ws
+ws ::= | " " | "\n" [ \t]{0,20}
+'''
+
+def verify_decoder_gbnf(port):
+    """A genuine Qwen reply is not accepted if grammar transport is ignored."""
+    probe={
+        "prompt":"<|im_start|>user\nSay HELLO in a plain sentence.\n<|im_end|>\n<|im_start|>assistant\n",
+        "n_predict":32,"stream":False,"temperature":0,"cache_prompt":False,
+        "grammar":'root ::= "LU_PLAN04_GBNF_VERIFIED"'
+    }
+    request=urllib.request.Request(
+        f"http://127.0.0.1:{port}/completion",
+        data=json.dumps(probe).encode(),method="POST",
+        headers={"Content-Type":"application/json"})
+    with urllib.request.urlopen(request,timeout=90) as reply:
+        data=reply.read(262145)
+    if len(data)>262144:
+        raise ValueError("Oversized original decoder preflight")
+    result=json.loads(data)
+    if result.get("content")!="LU_PLAN04_GBNF_VERIFIED":
+        raise ValueError("Original loaded llama.cpp did not honor exact grammar")
+    print("PLAN04_GBNF_NATIVE_PRECHECK_VERIFIED=1")
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--fixture",required=True)
@@ -34,10 +69,12 @@ def main():
         +prompt+
         "\n<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
     )
+    verify_decoder_gbnf(args.port)
     payload=json.dumps({
         "prompt":wrapper,"n_predict":3072,"temperature":0,
         "cache_prompt":False,"stream":False,
         "stop":["<|im_end|>"],
+        "grammar":_JSON_GRAMMAR,
     }).encode()
     request=urllib.request.Request(
         f"http://127.0.0.1:{args.port}/completion",data=payload,

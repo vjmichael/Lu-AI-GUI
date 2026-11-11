@@ -15,7 +15,7 @@
 
 ## Limits and exclusions
 
-Only the first 24 bounded actionable requirement leads can enter one model prompt and at most 16 task suggestions can be emitted. A larger project remains explicitly incomplete; no silent whole-project completeness is claimed. A model may produce fewer suggestions than requirements; their omission is disclosed, not silently marked done. A correct typed proposal is NOT proof that its tasks are correct. Only native criteria with independently observed results can be marked accepted by PLAN-03; no model can alter that.
+Up to 24 ranked unresolved requirement leads (BROKEN → BLOCKED → NOT_INTEGRATED → PARTIAL → MISSING → UNVERIFIED → UNKNOWN, then original document line) and at most 16 task suggestions can enter one model proposal. Input also has a strict 10 KiB requirement-content budget; counts of omitted and already-accepted requirements are included in the source capsule. A larger project remains explicitly incomplete; no silent whole-project completeness is claimed. A model may produce fewer suggestions than requirements; their omission is disclosed, not silently marked done. A correct typed proposal is NOT proof that its tasks are correct. Only native criteria with independently observed results can be marked accepted by PLAN-03; no model can alter that.
 
 ## Required acceptance
 
@@ -27,3 +27,7 @@ Only the first 24 bounded actionable requirement leads can enter one model promp
 ## Next (separate task group)
 
 **PLAN-05:** durable versioned project task register, human corrections and source-change reconciliation, without reusing model/worker authority. PLAN-06 desktop task-list editor and PLAN-07 incremental evidence refresh follow.
+
+### Actual first-model evidence and protocol repair
+
+The first pinned real Qwen3-0.6B execution reached a healthy model and generated a 573-byte response (SHA-256 `c3ad0a704c7f48135bb86821ccfd9cddac740ea18f4850bb8129a5977ab14bb2`) but included Markdown fences and copied exemplar fields; the original Lu Core JSON parser **rejected it**. This is an actual model-quality/serialization failure, not a model pass. A subsequent reviewed test-only protocol uses the pinned llama.cpp **generic JSON GBNF** (after a literal decoder preflight) and the exact host-created requirement/status hints. The grammar constrains syntax only, never fills task ID, status, source evidence, or acceptance outcome. The same strict host validator remains authoritative. A passing source or mock test does not close the real GGUF gate.

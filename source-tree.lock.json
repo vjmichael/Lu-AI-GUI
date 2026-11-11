@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "843b7c8fc1875a5e4b7d1dd5224b79edd771e39d"
+      "blob": "3fcbad99d3200e0431ee809cd451d71aed9d403b"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -361,7 +361,7 @@
     },
     {
       "path": "benchmarks/e1/plan04_real_gguf_synthesis.py",
-      "blob": "29ef73968b55f0839f8f3771593a851f459af7a7"
+      "blob": "183ec814ac9693e51995540f5e5687deee780d99"
     },
     {
       "path": "benchmarks/e1/r00_genuine_kiaf_comparison.py",
@@ -837,7 +837,7 @@
     },
     {
       "path": "docs/LU_PLAN04_GENUINE_GGUF_TASK_SYNTHESIS_20261110.md",
-      "blob": "1e0028f8a28c08a33d88ed1d21f49eb5ada3f9b4"
+      "blob": "c793f45fb7dea8492b883cec84d750d25cd22321"
     },
     {
       "path": "docs/LU_R00_CAPABILITY_CONSOLIDATION_20261109.md",
@@ -2933,7 +2933,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/project_task_synthesis.rs",
-      "blob": "c180ecef35403688271803dd107a4d35580cbdce"
+      "blob": "e25eb06d989922b423559afe1146893ca8d54a19"
     },
     {
       "path": "src-tauri/lu-core/src/projector_identity.rs",
