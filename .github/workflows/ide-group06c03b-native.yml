@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/ide-group06c03b-native.yml'
       - 'ide/host/src/git_divergent_verify.rs'
+      - 'ide/host/src/git_protected_divergent_merge.rs'
       - 'ide/host/src/lib.rs'
       - 'ide/app/src-tauri/src/lib.rs'
   workflow_dispatch:
@@ -42,8 +43,9 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           cargo test --manifest-path ide/host/Cargo.toml --lib git_divergent_verify -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_divergent_merge -- --nocapture
           cargo check --locked --manifest-path ide/host/Cargo.toml --all-targets
-          rustfmt --edition 2021 --check ide/host/src/git_divergent_verify.rs
+          rustfmt --edition 2021 --check ide/host/src/git_divergent_verify.rs ide/host/src/git_protected_divergent_merge.rs
       - name: Tauri exact-head route compiler check
         shell: bash
         run: |
@@ -56,4 +58,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          printf 'head=%s\nos=%s\ndivergent_publication=NOT_IMPLEMENTED\nhuman_consent=DEFERRED\nrelease=NOT_AUTHORIZED\n' "$GITHUB_SHA" "$RUNNER_OS"
+          printf 'head=%s\nos=%s\ndivergent_publication=SOURCE_IMPLEMENTED_NOT_NATIVE_ACCEPTED\nhuman_consent=DEFERRED\nrelease=NOT_AUTHORIZED\n' "$GITHUB_SHA" "$RUNNER_OS"
