@@ -1058,6 +1058,188 @@ async fn ide_git_reconcile_protected_merge_receipt(
     result?
 }
 
+/// 6C-04A: strictly read-only commit graph and original change identity.
+/// No replay, no OS approval, no local index or ref change, and no remote.
+#[tauri::command]
+async fn ide_git_review_rebase_cherry_pick(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    operation: lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind,
+    selected_branch: String,
+) -> Result<lu_ide_workspace::git_rebase_cherry_plan::ReviewedReplayPlan, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.review_local_rebase_cherry_pick(&project_id, operation, &selected_branch)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06C04_REPLAY_REVIEW_HOST_INTERRUPTED".to_owned())?
+}
+
+/// G06C-04B: build prospective commits ONLY in disposable bare Git ODB.
+#[tauri::command]
+async fn ide_git_preview_isolated_replay(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    operation: lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind,
+    selected_branch: String,
+) -> Result<lu_ide_workspace::git_replay_quarantine::ProspectiveReplayResult, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.preview_prospective_replay(&project_id, operation, &selected_branch)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06C04B_QUARANTINE_REVIEW_HOST_INTERRUPTED".to_owned())?
+}
+
+/// No page or AI model can issue these one-use grants: an independent
+/// blocking operating-system dialog re-validates exact Git refs/results.
+async fn g06c04_execute_with_native_consent(
+    app: AppHandle,
+    registry: Arc<IdeWorkspaceRegistry>,
+    sessions: Arc<PartialStageSessions>,
+    project_id: String,
+    selected_branch: String,
+    evidence_sha256: String,
+    operation: lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind,
+) -> Result<lu_ide_workspace::git_protected_replay::ApprovedReplayReceipt, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let cancel = sessions.begin(&project_id)?;
+    let session_id = project_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let plan = registry.revalidate_protected_replay(
+            &project_id, operation, &selected_branch, &evidence_sha256,
+        ).map_err(str::to_owned)?;
+        if cancel.load(Ordering::SeqCst) != 0 {
+            return Err("G06C04_CANCELLED_BEFORE_OS_CONSENT".into());
+        }
+        let new_head = plan.prospective_head.as_deref().ok_or("G06C04_MISSING_HEAD")?;
+        let new_tree = plan.prospective_tree.as_deref().ok_or("G06C04_MISSING_TREE")?;
+        let (caption, warning, action) = match operation {
+            lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind::CherryPickLocalTip => (
+                "Lu IDE · One-use local cherry-pick consent",
+                "CHERRY-PICK will append a NEW local commit with original HEAD as parent. This is NOT a rebase grant. No remote push.",
+                "Authorize this exact cherry-pick only",
+            ),
+            lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind::RebaseCurrentOntoLocal => (
+                "Lu IDE · EXTRA history-rewrite consent for local rebase",
+                "WARNING: REBASE REWRITES CURRENT LOCAL BRANCH HISTORY. Its previous tip will be preserved under a dedicated refs/lu-ide/g06c04/original/* ref before checkout. This does NOT authorize force-push or any remote rewrite.",
+                "Authorize local history rewrite only",
+            ),
+        };
+        let approved = app.dialog().message(format!(
+            "{warning}\n\nProject ID: {project_id}\nOriginal current HEAD: {}\nSelected local branch: {selected_branch}\nExact selected tip: {}\nNew resulting HEAD: {new_head}\nNew tree: {new_tree}\nResult SHA-256: {}\nChanged paths: {}\nOriginal commits: {}\n\nThe Git working tree/index changes before the branch-ref CAS. Interruption may require manual recovery; cancellation is possible only BEFORE object publication. OS consent is one use and valid only for this reviewed evidence.",
+            plan.current_head, plan.selected_tip, plan.evidence_sha256,
+            plan.candidate_change_paths, plan.result_steps.len(),
+        )).title(caption)
+          .buttons(MessageDialogButtons::OkCancelCustom(
+            action.into(), "Deny / Cancel".into()
+          )).blocking_show();
+        if !approved { return Err("G06C04_HUMAN_DENIED".into()); }
+        if cancel.load(Ordering::SeqCst) != 0 {
+            return Err("G06C04_CANCELLED_AFTER_OS_CONSENT".into());
+        }
+        registry.execute_os_approved_replay(
+            &project_id, operation, &selected_branch, &plan.evidence_sha256, &cancel,
+        ).map_err(str::to_owned)
+    }).await.map_err(|_| "G06C04_OS_APPROVED_HOST_INTERRUPTED".to_owned());
+    sessions.end(&session_id);
+    result?
+}
+
+/// 6C-04C: append exactly the selected local branch-tip original commit.
+#[tauri::command]
+async fn ide_git_execute_cherry_pick(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+    selected_branch: String,
+    evidence_sha256: String,
+) -> Result<lu_ide_workspace::git_protected_replay::ApprovedReplayReceipt, String> {
+    g06c04_execute_with_native_consent(
+        app, Arc::clone(state.inner()), Arc::clone(sessions.inner()),
+        project_id, selected_branch, evidence_sha256,
+        lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind::CherryPickLocalTip,
+    ).await
+}
+/// 6C-04D: separate native OS consent explicitly warns about history rewrite.
+#[tauri::command]
+async fn ide_git_execute_rebase(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+    selected_branch: String,
+    evidence_sha256: String,
+) -> Result<lu_ide_workspace::git_protected_replay::ApprovedReplayReceipt, String> {
+    g06c04_execute_with_native_consent(
+        app, Arc::clone(state.inner()), Arc::clone(sessions.inner()),
+        project_id, selected_branch, evidence_sha256,
+        lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind::RebaseCurrentOntoLocal,
+    ).await
+}
+
+#[tauri::command]
+async fn ide_git_cancel_protected_replay(
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+) -> Result<&'static str, String> {
+    sessions.cancel(&project_id)
+}
+
+#[tauri::command]
+async fn ide_git_inspect_replay_recovery(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_protected_replay::ReplayRecovery, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_protected_replay_recovery(&project_id)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06C04_REPLAY_RECOVERY_HOST_INTERRUPTED".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_git_reconcile_replay_receipt(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_protected_replay::ReplayRecovery, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let _cancel = sessions.begin(&project_id)?;
+    let session_id = project_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let observed = registry.inspect_protected_replay_recovery(&project_id)
+            .map_err(str::to_owned)?;
+        if observed.state != "published_ref_requires_separate_receipt"
+            || !observed.operator_reconciliation_required
+            || observed.index_lock_present || !observed.backup_ref_verified {
+            return Err("G06C04_RECONCILIATION_UNSAFE_STATE".into());
+        }
+        let approved = app.dialog().message(format!(
+            "Independently verify historical {} replay receipt for project {}?\n\nOriginal HEAD: {}\nPublished HEAD: {}\nJournal phase: {}\n\nThis operation ONLY appends a verified receipt after native reread of exact branch, output tree/index, source branch and preserved original history. It NEVER reruns a replay, changes refs, deletes locks, checks out or rolls back files.",
+            match observed.operation {
+                Some(lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind::RebaseCurrentOntoLocal)
+                    => "REBASE history rewrite",
+                _ => "cherry-pick",
+            },
+            project_id, observed.original_head, observed.candidate_head, observed.last_phase,
+        )).title("Lu IDE · Independent one-use replay recovery receipt consent")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+              "Verify historical receipt only".into(), "Deny / Cancel".into(),
+          )).blocking_show();
+        if !approved { return Err("G06C04_RECONCILIATION_HUMAN_DENIED".into()); }
+        registry.reconcile_protected_replay_receipt(&project_id).map_err(str::to_owned)
+    }).await.map_err(|_| "G06C04_RECONCILIATION_HOST_INTERRUPTED".to_owned());
+    sessions.end(&session_id);
+    result?
+}
+
 /// On explicit human request, compare local work with current public GitHub
 /// branch evidence. HTTPS to fixed api.github.com only; no token or Git fetch.
 #[tauri::command]
@@ -2679,6 +2861,13 @@ pub fn run() {
             ide_read_git_refs_health,
             ide_git_review_branch_operation,
             ide_git_preview_local_merge,
+            ide_git_review_rebase_cherry_pick,
+            ide_git_preview_isolated_replay,
+            ide_git_execute_cherry_pick,
+            ide_git_execute_rebase,
+            ide_git_cancel_protected_replay,
+            ide_git_inspect_replay_recovery,
+            ide_git_reconcile_replay_receipt,
             ide_git_execute_fast_forward,
             ide_git_cancel_protected_merge,
             ide_git_inspect_protected_merge_recovery,
