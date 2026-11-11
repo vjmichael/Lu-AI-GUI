@@ -408,4 +408,76 @@ mod tests{
         assert!(!dir.join("ansf/library.db").exists());
         fs::remove_dir_all(&dir).unwrap();
     }
+    #[test]
+    fn actual_ansf_append_restart_correction_and_corruption_detection(){
+        let profile=std::env::temp_dir().join(format!(
+            "lu-plan05-register-{}",std::process::id()));
+        let repo=profile.join("project");
+        let _=fs::remove_dir_all(&profile);
+        fs::create_dir_all(repo.join("docs")).unwrap();
+        fs::create_dir_all(profile.join("ansf")).unwrap();
+        fs::write(repo.join("docs/requirements.md"),
+            "# Requirements\n- [ ] Implement source-backed planning\n").unwrap();
+        let db=profile.join("ansf/library.db");
+        let conn=Connection::open(&db).unwrap();
+        conn.execute_batch("CREATE TABLE preserved_memory(x INTEGER);
+                            INSERT INTO preserved_memory VALUES(19);").unwrap();
+        drop(conn);
+        let (g,s)=classify_selected(&repo).unwrap();
+        let cap=synthesis::build_capsule(&g,&s).unwrap();
+        let req=&cap.requirements[0];
+        let raw=serde_json::json!({"schema":synthesis::RAW_SCHEMA,"tasks":[{
+            "requirementId":req.requirement_id,"status":req.status,
+            "summary":"Inspect current source evidence",
+            "description":"Inspect original source and determine missing acceptance coverage",
+            "priority":"P1","group":"01 Source verification",
+            "evidenceIds":[req.requirement_id],"dependencyIndices":[],
+            "acceptanceCriteria":"Independently verify original current project behavior",
+            "blockedBy":"Missing original acceptance receipt"
+        }]}).to_string();
+        let proposal=synthesis::validate_model_response(&g,&s,&raw,
+            &synthesis::model_prompt(&cap).unwrap(),"m-native","s-native","g-native")
+            .unwrap();
+        project_task_desktop::persist_proposal(&profile,&g,&s,&proposal,&raw).unwrap();
+        let imported=register::import(&proposal).unwrap();
+        let saved=persist(&profile,&proposal,&imported,None).unwrap();
+        drop(saved);
+        let conn=library(&profile).unwrap();
+        let (_,reopened,version)=load_register(&conn,&imported.register_id)
+            .unwrap().unwrap();
+        assert_eq!(version,1);
+        assert_eq!(reopened.events.len(),1);
+        assert_eq!(reopened.latest_sha256,imported.latest_sha256);
+        let x:i64=conn.query_row("SELECT x FROM preserved_memory",[],|row|row.get(0)).unwrap();
+        assert_eq!(x,19);
+        drop(conn);
+        let task_id=&proposal.tasks[0].task_id;
+        let changed=register::human_correct(&reopened,&proposal,task_id,1,
+            &register::HumanCorrection{
+                summary:"Correct the task with human evidence".into(),
+                description:"Human reviewed original task and specified independent source checks".into(),
+                priority:"P0".into(),
+                blocked_by:"Awaiting native acceptance".into(),
+                acceptance_criteria:"Run current native project acceptance with exact source receipts".into(),
+                reason:"Human clarified evidence scope".into(),
+            }).unwrap();
+        persist(&profile,&proposal,&changed,Some(&reopened.latest_sha256)).unwrap();
+        let conn=library(&profile).unwrap();
+        let (_,again,version)=load_register(&conn,&changed.register_id).unwrap().unwrap();
+        assert_eq!((version,again.events.len()),(2,2));
+        assert_eq!(register::latest(&again,task_id).unwrap().version,2);
+        assert!(!register::latest(&again,task_id).unwrap().independently_verified_requirement);
+        assert_eq!(conn.query_row::<i64,_,_>(
+            "SELECT COUNT(*) FROM ansf_project_task_register_revisions",[],|row|row.get(0)
+        ).unwrap(),2);
+        // A corrupted byte cannot be treated as a verified historical event.
+        conn.execute(
+            "UPDATE ansf_project_task_register_revisions SET register_json=?1
+             WHERE register_id=?2 AND register_revision=1",
+            params![b"{corrupted".as_slice(),changed.register_id]
+        ).unwrap();
+        assert!(load_register(&conn,&changed.register_id).is_err());
+        drop(conn);
+        fs::remove_dir_all(profile).unwrap();
+    }
 }
