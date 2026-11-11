@@ -348,7 +348,7 @@ impl IdeWorkspaceRegistry {
             commit_oid: String::new(), parent_oid: fresh.resulting_parent.clone(),
             tree_oid: fresh.staged_tree_oid.clone(), index_sha256: fresh.index_sha256.clone(),
             plan_sha256: fresh.plan_sha256.clone(),
-            source_sha256: fresh.stage.staged_blob_sha256.clone(),
+            source_sha256: fresh.stage.source_sha256.clone(),
             relative_path: fresh.stage.relative_path.clone(),
         };
         if cancel.load(Ordering::SeqCst) != 0 {
@@ -380,6 +380,12 @@ impl IdeWorkspaceRegistry {
         if index_sha(&gitdir)? != fresh.index_sha256 {
             return Err("G06B_COMMIT_INDEX_CHANGED_BEFORE_CAS");
         }
+        if sha(&self.reread_reviewed_git_source_bytes(
+            &fresh.stage.project_id, &fresh.stage.relative_path)?)
+            != fresh.stage.source_sha256
+        {
+            return Err("G06B_COMMIT_SOURCE_CHANGED_BEFORE_CAS");
+        }
         repo.reference_matching(
             &fresh.branch_ref, oid, true,
             Oid::from_str(&fresh.previous_head).map_err(|_| "G06B_COMMIT_BAD_HEAD")?,
@@ -404,7 +410,7 @@ impl IdeWorkspaceRegistry {
         { return Err("G06B_COMMIT_PUBLISHED_TREE_OR_PARENT_MISMATCH"); }
         let source_after = self.reread_reviewed_git_source_bytes(
             &fresh.stage.project_id, &fresh.stage.relative_path)?;
-        if sha(&source_after) != fingerprint_source(&fresh.stage)? {
+        if sha(&source_after) != fresh.stage.source_sha256 {
             return Err("G06B_COMMIT_SOURCE_CHANGED_AFTER_REF_UPDATE");
         }
         journal.phase = "verified".into();
@@ -454,11 +460,4 @@ impl IdeWorkspaceRegistry {
             automatic_ref_rewrite: false, automatic_retry: false, network_queried: false,
         })
     }
-}
-
-// 6B-03 private stage journal stores source SHA-256 but does not expose that
-// hash in the public partial-stage receipt. Do not confuse staged blob bytes
-// (which intentionally omit unselected changes) with original worktree bytes.
-fn fingerprint_source(_stage: &PartialStageReceipt) -> Result<String, &'static str> {
-    Err("G06B_COMMIT_PRIVATE_SOURCE_HASH_REQUIRED")
 }
