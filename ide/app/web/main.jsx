@@ -293,6 +293,9 @@ function App() {
   const [divergentRecovery, setDivergentRecovery] = useState(null);
   const [divergentRecoveryBusy, setDivergentRecoveryBusy] = useState(false);
   const divergentRequest = useRef(0);
+  const [nativeConflicts, setNativeConflicts] = useState(null);
+  const [nativeConflictsBusy, setNativeConflictsBusy] = useState(false);
+  const nativeConflictsRequest = useRef(0);
   const [gitFileHistory, setGitFileHistory] = useState(null);
   const [gitFilePath, setGitFilePath] = useState('');
   const [gitFileBusy, setGitFileBusy] = useState(false);
@@ -477,6 +480,9 @@ function App() {
     setDivergentReceipt(null);
     setDivergentRecovery(null);
     setDivergentRecoveryBusy(false);
+    nativeConflictsRequest.current += 1;
+    setNativeConflicts(null);
+    setNativeConflictsBusy(false);
     setGitFileHistory(null);
     setGitFileBusy(false);
     gitSnapshotRequest.current += 1;
@@ -2117,6 +2123,37 @@ function App() {
     }
   }
 
+  async function inspectUnresolvedNativeConflicts() {
+    if (!activeProject?.projectId || nativeConflictsBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = ++nativeConflictsRequest.current;
+    setNativeConflictsBusy(true);
+    setNativeConflicts(null);
+    setProblem('');
+    try {
+      const result = await invoke('ide_git_inspect_native_conflicts', { projectId });
+      if (ticket !== nativeConflictsRequest.current) return;
+      if (result?.schemaVersion !== 1 || result.projectId !== projectId ||
+          result.sourceRechecked !== true ||
+          result.authorityGranted !== false || result.resolutionWritten !== false ||
+          result.indexOrWorktreeModified !== false || result.branchRefModified !== false ||
+          result.remoteContacted !== false || result.gitProcessStarted !== false ||
+          !Array.isArray(result.conflicts) ||
+          result.conflictCount !== result.conflicts.length ||
+          !/^[a-f0-9]{64}$/.test(result.indexSha256) ||
+          !/^[a-f0-9]{64}$/.test(result.evidenceSha256)) {
+        throw Error('G06D01_NATIVE_CONFLICT_EVIDENCE_UNTRUSTED');
+      }
+      setNativeConflicts(result);
+    } catch (error) {
+      if (ticket === nativeConflictsRequest.current) {
+        setProblem('Read-only native Git conflict inspection unavailable: ' + String(error));
+      }
+    } finally {
+      if (ticket === nativeConflictsRequest.current) setNativeConflictsBusy(false);
+    }
+  }
+
   async function verifyDivergentMergeResult() {
     if (!activeProject?.projectId || divergentBusy || divergentExecBusy ||
         branchReviewKind !== 'merge' || mergePlan?.classification !== 'divergent_merge_candidate' ||
@@ -2413,6 +2450,9 @@ function App() {
     setDivergentReceipt(null);
     setDivergentRecovery(null);
     setDivergentRecoveryBusy(false);
+    nativeConflictsRequest.current += 1;
+    setNativeConflicts(null);
+    setNativeConflictsBusy(false);
     branchReviewRequest.current += 1;
     setBranchReview(null);
     setBranchReviewBusy(false);
@@ -6533,6 +6573,45 @@ function App() {
                       onClick={() => void reconcileReplayReceipt()}>
                       Ask OS permission to verify historical receipt only
                     </button>}
+                </article>}
+            </div>}
+            {activeProject && <div className="continuityDocument"
+              aria-label="G06D01 native unresolved three-way conflict inspection">
+              <h3>Conflict resolution · exact unresolved Git index stages</h3>
+              <p>Read-only inspection of genuine stage 1 (base), stage 2 (ours),
+                and stage 3 (theirs) Git entries. Source blob identities and
+                bounded previews are shown without modifying files, staging,
+                creating a commit, or granting resolution authority.</p>
+              <button type="button" className="ghostBtn"
+                disabled={nativeConflictsBusy}
+                onClick={() => void inspectUnresolvedNativeConflicts()}>
+                {nativeConflictsBusy ? 'Inspecting original index objects…' :
+                  'Inspect unresolved Git conflicts (read only)'}
+              </button>
+              {nativeConflicts?.projectId === activeProject.projectId &&
+                <article role="status" className="continuityEvent">
+                  <p>Branch: {nativeConflicts.currentBranch}
+                    {' · '}Unresolved files: {nativeConflicts.conflictCount}</p>
+                  <p>Index SHA-256: <code>{nativeConflicts.indexSha256}</code></p>
+                  <p>Review SHA-256: <code>{nativeConflicts.evidenceSha256}</code></p>
+                  {nativeConflicts.conflicts.map(entry =>
+                    <article className="continuityEvent" key={entry.relativePath}>
+                      <strong>{entry.relativePath}</strong>
+                      <p>Classification: {entry.classification.replaceAll('_',' ')}
+                        {' · '}Human resolution required</p>
+                      {[['Base · stage 1', entry.ancestor],
+                        ['Ours · stage 2', entry.ours],
+                        ['Theirs · stage 3', entry.theirs]].map(([name, value]) =>
+                          <div key={name}>
+                            <p>{name}: {value ? <code>{value.oid}</code> : 'absent'}</p>
+                            {value?.binaryOrNonUtf8 &&
+                              <p>Binary or non-UTF8 data: preview withheld</p>}
+                            {value?.preview != null &&
+                              <pre className="continuityEvent">{value.preview}
+                                {value.previewTruncated ? ' [truncated]' : ''}</pre>}
+                          </div>)}
+                    </article>)}
+                  <p>No resolution applied. No checkout, commit, ref update or remote contact.</p>
                 </article>}
             </div>}
             {activeProject && <div className="continuityDocument"
