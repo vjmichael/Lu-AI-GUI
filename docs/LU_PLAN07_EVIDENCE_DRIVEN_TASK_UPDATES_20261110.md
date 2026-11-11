@@ -1,0 +1,42 @@
+# Lu PLAN-07 — Evidence-driven task updates (Phase 07A)
+
+**Work scope:** Lu Core only. This branch is stacked on PLAN-06 native project task board PR #216, itself stacked on PLAN-05. Existing Windows installed/UIA acceptance remains separate. Do not mix Lu IDE work or begin PLAN-08.
+
+## Agreed PLAN-07 goal
+
+After independent engineering work changes a project, Lu must reconcile new **host-verified facts** against human-reviewed durable tasks without guessing that the work is done. Local GGUF may later suggest status/completion updates, but model text can never establish evidence, acceptance, approval or execution authority. PLAN-07A supplies the prerequisite native evidence-refresh and safe reconciliation layer; model-generated candidate synthesis and end-to-end GGUF evidence-admission are subsequent PLAN-07 work.
+
+## 07A — Current implementation
+
+1. A person opens Lu's independent **Project Tasks** native window and selects one original PLAN-05 register. They choose a local project through the operating-system folder picker. No raw filesystem path is accepted from the renderer or model.
+2. The existing PLAN-02/03 pipeline performs an actual bounded source/Git/requirement scan, checks exact HEAD before returning, and classifies original requirements. It compares this audit to the last **original ANSF-backed** task-source snapshot; this is an **incremental evidence delta**, *not* a claim that filesystem scanning is incremental or implemented by a watcher.
+3. The result contains the exact prior/current graph and classifier SHA-256, selected HEAD, changed native evidence node locators (up to 64 displayed), task identity, prior/current status, health, original version, conservative disposition, and an independent-review requirement.
+4. A new \`ansf_project_task_refresh_observations\` table in the existing ANSF library stores immutable, SHA-verified preview bytes. Both original and new graph/classifier snapshots are archived by the existing PLAN-02/03 code. The preview does **not** write task revisions.
+5. If original source identity disappeared, Lu reports **requirement missing** and refuses inferred remapping. If exact native metadata proves the original literal criterion, the preview says **exact criterion review candidate**, never **task completed**. Runtime, integration, installed and human acceptance remain separate.
+6. To reconcile the source delta, the human must see the exact task/source review in a real OS confirmation and choose the **same project** again with a second native picker. The host independently rescans actual source after approval, denies foreign scopes, stale register head, manipulated preview, changed exact HEAD or mismatch with originally reviewed facts, and then appends PLAN-05 \`SourceChanged\` revisions through its immutable native transaction.
+7. New source revisions preserve the original model proposal, all previous human corrections, task mapping and history while setting \`needsHumanReconciliation=true\` and \`independentlyVerifiedRequirement=false\`. No code execution, network request, issue, Git effect, task worker or completion is authorized.
+
+### Status boundaries
+
+- **UNCHANGED:** no semantic source change. Old acceptance remains historical; no new task completion.
+- **REVIEW_SOURCE_CHANGE:** current selected native facts changed. Keep all prior receipt history and require operator review.
+- **REQUIREMENT_MISSING:** exact immutable requirement identity is no longer present. Never auto-remap.
+- **EXACT_CRITERION_REVIEW_CANDIDATE:** strong, current, complete host evidence may support only a literal exact requirement after new human revalidation. No workflow or full-task completion.
+- **NEEDS_INDEPENDENT_EVIDENCE:** incomplete or human-corrected task requires review; model statements cannot promote it.
+
+### Admission and acceptance
+
+- Source lock at an immutable exact HEAD.
+- Native Windows and Linux matrix: React build, Node UI/authority tests, Rust core delta tests, real ANSF SQLite host recheck/restart/foreign-folder/stale-token/tamper tests, and native desktop compile.
+- A structured **no model tools/no execution authority** invariant is enforced in source and host tests.
+- A separate installed NSIS/real Windows UIA and physical-human acceptance gate remains required; passing native tests cannot substitute for it.
+
+### Remaining PLAN-07 groups
+
+**07B — Actual GGUF completion/status suggestions.** Ask a genuinely loaded local model to propose *only* review candidates over host-provided new evidence, with strict bounded schema, original prompt/reply/model/session/generation provenance and no completion claims without independently verified receipts. Reject invented citations and stale source. Maintain the difference between a model suggestion and independently accepted functionality.
+
+**07C — Human reconciliation in the complete workflow.** Show both deterministic and model proposals with versioned refusal/approval and native refresh, preserve corrected original wording, check source again after decision, and durably recover interrupted/stale updates.
+
+**07D — Grouped acceptance and installed release gate.** Independently run genuine GGUF and cross-platform native tests, then installed NSIS UIA human/refusal/project-switch/restart/ANSF preservation and creator-machine acceptance. Keep all existing PLAN-05/06 gates separate.
+
+No autonomous completion, no CI-pass-to-ACCEPTED shortcut, and no PLAN-08 work.
