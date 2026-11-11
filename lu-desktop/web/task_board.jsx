@@ -18,6 +18,8 @@ export function TaskBoardWindow(){
   const [edit,setEdit]=useState(null);
   const [updatePreview,setUpdatePreview]=useState(null);
   const [modelSuggestion,setModelSuggestion]=useState(null);
+  const [modelBusy,setModelBusy]=useState(false);
+  const [modelCancelBusy,setModelCancelBusy]=useState(false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
@@ -118,14 +120,28 @@ export function TaskBoardWindow(){
     });
   }
   async function suggestUpdatesWithGGUF(){
-    if(!updatePreview)return;
-    await act('Original local GGUF suggestions admitted as review-only evidence; no tasks were accepted.',async()=>{
-      const result=await invoke('lu_project_update_model_suggest',{
-        previewSha256:updatePreview.digestSha256
+    if(!updatePreview||busy)return;
+    setModelBusy(true);
+    try{
+      await act('Original local GGUF suggestions admitted as review-only evidence; no tasks were accepted.',async()=>{
+        const result=await invoke('lu_project_update_model_suggest',{
+          previewSha256:updatePreview.digestSha256
+        });
+        if(result)setModelSuggestion(result);
+        return result;
       });
-      if(result)setModelSuggestion(result);
-      return result;
-    });
+    }finally{setModelBusy(false)}
+  }
+  async function cancelGgufSuggestions(){
+    if(!modelBusy||modelCancelBusy)return;
+    setModelCancelBusy(true);
+    try{
+      const canceled=await invoke('lu_project_update_model_cancel');
+      setNotice(canceled
+        ?'Native cancellation requested; no model suggestion will be accepted from the interrupted generation.'
+        :'No PLAN-07B generation currently queued or active. A pending OS dialog cannot be canceled by this control.');
+    }catch(e){setError(errorText(e))}
+    finally{setModelCancelBusy(false)}
   }
   async function reloadOriginalModelReceipt(){
     if(!updatePreview)return;
@@ -224,6 +240,10 @@ export function TaskBoardWindow(){
                 <button type="button" disabled={busy}
                   onClick={()=>void reloadOriginalModelReceipt()}>
                   Reopen audited original GGUF receipt…
+                </button>
+                <button type="button" disabled={!modelBusy||modelCancelBusy}
+                  onClick={()=>void cancelGgufSuggestions()}>
+                  {modelCancelBusy?'Canceling local GGUF…':'Cancel queued/active GGUF generation…'}
                 </button>
               </div>
               {modelSuggestion?.previewSha256===updatePreview.digestSha256&&
