@@ -386,7 +386,15 @@ function App() {
     return identity;
   }
   function onEditorSelection(key, state) {
-    editorStates.current.set(key, state);
+    editorStates.current.set(key,state);
+    const position=state.selection.main.head;
+    const line=state.doc.lineAt(position);
+    setCursorPositions(previous=>{
+      const next={line:line.number-1,character:position-line.from};
+      const prior=previous[key];
+      return prior?.line===next.line&&prior?.character===next.character
+        ? previous : {...previous,[key]:next};
+    });
   }
   function clearPrivateDraftSession(key) {
     const timer = draftTimers.current.get(key);
@@ -4427,6 +4435,13 @@ function App() {
     setTabs(previous => previous.map(tab =>
       tab.key === key ? { ...tab, draft, dirty: draft !== tab.savedText,
         bufferRevision: (tab.bufferRevision ?? 0) + 1 } : tab));
+    // Native diagnostics and feature results describe the previous exact
+    // CodeMirror revision. Hide them immediately, before React catches up.
+    setLspNativeDiagnostics(previous=>{
+      if(!Object.prototype.hasOwnProperty.call(previous,key)) return previous;
+      const next={...previous};delete next[key];return next;
+    });
+    ++lspFeatureSerial.current;
     setLspCompletions(null);
     setLspHover(null);
   }
