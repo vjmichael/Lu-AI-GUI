@@ -374,4 +374,187 @@ mod tests{
         assert_eq!(old.unwrap().0,b"{nope");
         fs::remove_dir_all(profile).unwrap();
     }
+    #[test]
+    #[ignore="requires explicit disposable original ANSF and real pinned GGUF later"]
+    fn export_real_qwen_original_ansf_prompt_fixture(){
+        let profile=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_PROFILE")
+            .expect("Requires disposable original ANSF profile"));
+        let fixture=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_FIXTURE")
+            .expect("Requires an unused original fixture output path"));
+        assert_eq!(std::env::var("LU_PLAN07B_REAL_DISPOSABLE").unwrap(),"YES");
+        assert!(!profile.exists()&&!fixture.exists(),"Never overwrite a real operator ANSF");
+        let root=profile.join("original-project");
+        fs::create_dir_all(root.join("docs")).unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(profile.join("ansf")).unwrap();
+        let requirement=b"# Original project requirements\n- [ ] Must include src/critical.rs\n";
+        fs::write(root.join("docs/REQUIREMENTS.md"),requirement).unwrap();
+        let c=Connection::open(profile.join("ansf/library.db")).unwrap();
+        c.execute_batch("CREATE TABLE saved_human_memory(value TEXT NOT NULL);
+            INSERT INTO saved_human_memory VALUES('KEEP_REAL_QWEN_07B');").unwrap();
+        drop(c);
+        let (g,s)=project_status_desktop::classify_selected(&root).unwrap();
+        let capsule=synth::build_capsule(&g,&s).unwrap();
+        assert_eq!(capsule.requirements.len(),1);
+        let req=&capsule.requirements[0];
+        // This is explicitly a SYNTHETIC BASELINE PLAN-05 proposal
+        // imported only to construct a disposable task register. It is NOT
+        // a claimed genuine model response to PLAN-07B.
+        let baseline=serde_json::json!({"schema":synth::RAW_SCHEMA,"tasks":[{
+            "requirementId":req.requirement_id,"status":req.status,
+            "summary":"Review exact required source",
+            "description":"Examine the original source and independent verification",
+            "priority":"P1","group":"01 Source inspection",
+            "evidenceIds":[req.requirement_id],"dependencyIndices":[],
+            "acceptanceCriteria":"Verify the original named source file through a native recheck",
+            "blockedBy":"Original required file not yet present"
+        }]}).to_string();
+        let proposal=synth::validate_model_response(&g,&s,&baseline,
+            &synth::model_prompt(&capsule).unwrap(),
+            "m-test-only-synthetic-baseline","s-test-only","g-test-only").unwrap();
+        project_task_desktop::persist_proposal(&profile,&g,&s,&proposal,&baseline).unwrap();
+        let initial=register::import(&proposal).unwrap();
+        let saved=project_register_desktop::persist(
+            &profile,&proposal,&initial,None).unwrap();
+        assert_eq!(saved.events.len(),1);
+        // Actual original filesystem transition (not a model-reported
+        // success). New source triggers a PLAN-07A native delta.
+        fs::write(root.join("src/critical.rs"),b"fn critical_source() {}\n").unwrap();
+        let preview=project_updates_desktop::analyze_selected(
+            &profile,&root,&saved.register_id).unwrap();
+        assert!(preview.semantic_change,"Real source evidence must differ");
+        let (_,still,_,new_g,new_s)=project_updates_desktop::reload_audited(
+            &profile,&preview.digest_sha256).unwrap();
+        assert_eq!(still.latest_sha256,saved.latest_sha256);
+        let prompt=suggestions::prompt(&preview,&new_g,&new_s).unwrap();
+        let output=serde_json::json!({
+            "schema":"lu-plan07b-genuine-qwen-original-ansf-fixture-v1",
+            "baselineOriginalModel":"SYNTHETIC_BASELINE_NOT_A_GENUINE_MODEL_OUTPUT",
+            "prompt":prompt,
+            "sourceScopeSha256":saved.scope_sha256,
+            "sourceGraphSha256":new_g.sha256,
+            "sourceStatusSha256":new_s.digest_sha256,
+            "sourceHead":new_g.selected_head,
+            "previewSha256":preview.digest_sha256,
+            "registerId":saved.register_id,
+            "registerSha256":saved.latest_sha256,
+            "originalTaskIds":proposal.tasks.iter()
+                .map(|t|t.task_id.clone()).collect::<Vec<_>>(),
+            "taskEventsBefore":saved.events.len(),
+            "originalModelOutputNotYetGenerated":true,
+            "noCompletionAuthority":true,
+            "noExecutionAuthority":true
+        });
+        let file=std::fs::OpenOptions::new().write(true).create_new(true)
+            .open(&fixture).unwrap();
+        serde_json::to_writer_pretty(file,&output).unwrap();
+        println!("PLAN07B_REAL_GGUF_ORIGINAL_HOST_FIXTURE_READY=1");
+    }
+    #[test]
+    #[ignore="requires a genuine loaded-GGUF reply, original ANSF and cancellation receipt"]
+    fn verify_real_qwen_reply_cancellation_and_original_ansf_no_task_acceptance(){
+        let profile=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_PROFILE")
+            .expect("Original disposable ANSF profile required"));
+        let fixture=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_FIXTURE")
+            .expect("Original native fixture required"));
+        let reply=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_REPLY")
+            .expect("Real llama.cpp reply required"));
+        let cancelled=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_CANCEL")
+            .expect("Actual aborted streaming request receipt required"));
+        let oracle=std::path::PathBuf::from(std::env::var("LU_PLAN07B_REAL_ORACLE")
+            .expect("Independent acceptance receipt output required"));
+        assert_eq!(std::env::var("LU_PLAN07B_REAL_DISPOSABLE").unwrap(),"YES");
+        assert!(!oracle.exists(),"Never overwrite original acceptance proof");
+        let f:serde_json::Value=serde_json::from_slice(&fs::read(fixture).unwrap()).unwrap();
+        assert_eq!(f["schema"],"lu-plan07b-genuine-qwen-original-ansf-fixture-v1");
+        assert_eq!(f["baselineOriginalModel"],
+            "SYNTHETIC_BASELINE_NOT_A_GENUINE_MODEL_OUTPUT");
+        let cancellation:serde_json::Value=serde_json::from_slice(
+            &fs::read(cancelled).unwrap()).unwrap();
+        assert_eq!(cancellation["schema"],"lu-plan07b-real-qwen-stream-cancel-v1");
+        assert_eq!(cancellation["realEngineHealthAfterAbort"],true);
+        assert_eq!(cancellation["realStreamingHttpRequestObserved"],true);
+        assert_eq!(cancellation["clientClosedOriginalStreamBeforeCompletion"],true);
+        assert_eq!(cancellation["noSyntheticModelResponse"],true);
+        let raw=String::from_utf8(fs::read(&reply).unwrap()).unwrap();
+        assert!(!raw.is_empty(),"Genuine original model reply absent");
+        let id=f["previewSha256"].as_str().unwrap();
+        let (preview,register,_,g,s)=project_updates_desktop::reload_audited(
+            &profile,id).unwrap();
+        let prompt=f["prompt"].as_str().unwrap();
+        assert_eq!(suggestions::prompt(&preview,&g,&s).unwrap(),prompt);
+        assert_eq!(f["registerSha256"],register.latest_sha256);
+        assert_eq!(f["sourceScopeSha256"],register.scope_sha256);
+        assert_eq!(f["sourceGraphSha256"],g.sha256);
+        assert_eq!(f["sourceStatusSha256"],s.digest_sha256);
+        let before=project_register_desktop::library(&profile).unwrap();
+        let old:i64=before.query_row(
+            "SELECT COUNT(*) FROM ansf_project_task_register_revisions
+             WHERE register_id=?1",
+            [&register.register_id],|r|r.get(0)).unwrap();
+        assert_eq!(old,1);
+        let before_model:i64=before.query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type='table' AND name='ansf_project_task_update_model_suggestions'",
+            [],|r|r.get(0)).unwrap();
+        if before_model==1{
+            let count:i64=before.query_row(
+                "SELECT COUNT(*) FROM ansf_project_task_update_model_suggestions",
+                [],|r|r.get(0)).unwrap();
+            assert_eq!(count,0,"Cancelled stream must not write Lu model receipt");
+        }
+        drop(before);
+        // A REAL model reply can be rejected by host validation. This is
+        // acceptance, not an occasion to rewrite/fix synthetic JSON.
+        let proof=suggestions::validate(&preview,&g,&s,&raw,prompt,
+            "m-pinned-real-qwen3-0.6b","s-real-llama-cpu","g-real-qwen-output").unwrap();
+        suggestions::audit(&proof,&preview,&g,&s,&raw).unwrap();
+        assert!(proof.suggestions.iter().all(|x|x.suggested_only&&
+            !x.independently_accepted&&!x.task_complete&&!x.execution_authorized));
+        persist(&profile,&proof,prompt,&raw).unwrap();
+        let reopened=read_latest(&profile,id).unwrap().unwrap();
+        assert_eq!(reopened.digest_sha256,proof.digest_sha256);
+        assert_eq!(reopened.original_reply_sha256,
+            format!("{:x}",Sha256::digest(raw.as_bytes())));
+        assert!(reopened.no_completion_authority&&reopened.no_execution_authority);
+        let conn=project_register_desktop::library(&profile).unwrap();
+        let after_count:i64=conn.query_row(
+            "SELECT COUNT(*) FROM ansf_project_task_register_revisions
+             WHERE register_id=?1",
+            [&register.register_id],|r|r.get(0)).unwrap();
+        assert_eq!(after_count,old,"Real model must never revise task acceptance");
+        let (_,after,_)=project_register_desktop::load_register(
+            &conn,&register.register_id).unwrap().unwrap();
+        assert_eq!(after.latest_sha256,register.latest_sha256);
+        let revision=register::latest(&after,&proof.suggestions[0].task_id).unwrap();
+        assert!(!revision.independently_verified_requirement);
+        assert!(!revision.execution_authorized);
+        let keep:String=conn.query_row(
+            "SELECT value FROM saved_human_memory",[],|r|r.get(0)).unwrap();
+        assert_eq!(keep,"KEEP_REAL_QWEN_07B");
+        drop(conn);
+        assert_eq!(reopened.original_prompt_sha256,
+            format!("{:x}",Sha256::digest(prompt.as_bytes())));
+        let output=serde_json::json!({
+            "schema":"lu-plan07b-independent-real-qwen-ansf-oracle-v1",
+            "realGgufOutputObserved":true,
+            "originalReplySha256":proof.original_reply_sha256,
+            "originalPromptSha256":proof.original_prompt_sha256,
+            "suggestionSha256":proof.digest_sha256,
+            "originalRegisterSha256":register.latest_sha256,
+            "registerSha256After":after.latest_sha256,
+            "registerRevisionsBefore":old,
+            "registerRevisionsAfter":after_count,
+            "originalMemoryPreserved":true,
+            "streamAbortedBeforeCompletion":true,
+            "acceptedTasks":0,"executedTasks":0,
+            "originalGgufReplyNotReplaced":true,
+            "noCompletionAuthority":true,"noExecutionAuthority":true
+        });
+        let file=std::fs::OpenOptions::new().create_new(true).write(true)
+            .open(oracle).unwrap();
+        serde_json::to_writer_pretty(file,&output).unwrap();
+        println!("PLAN07B_REAL_GGUF_ORIGINAL_ANSF_CANCEL_AND_NO_COMPLETION_PASS=1");
+    }
+
 }
