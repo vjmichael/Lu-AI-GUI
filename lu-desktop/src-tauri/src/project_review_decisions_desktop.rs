@@ -80,17 +80,18 @@ fn original(c:&Connection,id:&str)->Result<Vec<ReviewEvent>,String>{
     }
     init(c)?;
     let mut st=c.prepare("SELECT event_json,event_sha256,previous_sha256,
-        no_completion_authority,no_execution_authority FROM
+        no_completion_authority,no_execution_authority,sequence,register_id FROM
         ansf_project_task_update_review_events
         WHERE review_id=?1 ORDER BY sequence")
         .map_err(|_|"PLAN07C_EVENT_QUERY_FAILED")?;
     let raw=st.query_map([id],|r|Ok((
         r.get::<_,Vec<u8>>(0)?,r.get::<_,String>(1)?,
-        r.get::<_,Option<String>>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?
+        r.get::<_,Option<String>>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?,
+        r.get::<_,i64>(5)?,r.get::<_,String>(6)?
     ))).map_err(|_|"PLAN07C_EVENT_STREAM_FAILED")?;
     let mut events=Vec::new();
     for row in raw{
-        let (bytes,digest,previous,complete,execute)=row
+        let (bytes,digest,previous,complete,execute,seq,scope)=row
             .map_err(|_|"PLAN07C_EVENT_ROW_INVALID")?;
         if bytes.len()>8192||complete!=1||execute!=1{
             return Err("PLAN07C_EVENT_BYTES_OR_AUTHORITY_INVALID".into())
@@ -99,6 +100,7 @@ fn original(c:&Connection,id:&str)->Result<Vec<ReviewEvent>,String>{
             .map_err(|_|"PLAN07C_EVENT_JSON_TAMPERED")?;
         valid(&e)?;
         if e.review_id!=id||e.sha256!=digest||e.previous_sha256!=previous||
+           e.sequence!=seq as u64||e.register_id!=scope||
            e.sequence!=events.len() as u64+1||
            e.previous_sha256!=events.last().map(|x:&ReviewEvent|x.sha256.clone()){
             return Err("PLAN07C_EVENT_HISTORY_OR_SHA_TAMPERED".into())
@@ -280,6 +282,12 @@ fn decide(profile:&Path,pending:&ReviewEvent,phase:Phase,root:Option<&Path>)
 }
 fn review_ids(c:&Connection,id:&str)->Result<Vec<String>,String>{
     init(c)?;
+    let count:i64=c.query_row("SELECT COUNT(DISTINCT review_id) FROM
+        ansf_project_task_update_review_events WHERE register_id=?1",
+        [id],|r|r.get(0)).map_err(|_|"PLAN07C_REVIEW_HISTORY_COUNT")?;
+    if count<0||count>MAX_EVENTS as i64{
+        return Err("PLAN07C_BOUNDED_JOURNAL_CAPACITY_EXCEEDED".into())
+    }
     let mut st=c.prepare("SELECT DISTINCT review_id FROM
         ansf_project_task_update_review_events WHERE register_id=?1
         ORDER BY review_id LIMIT ?2")
