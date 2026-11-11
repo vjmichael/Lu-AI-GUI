@@ -230,4 +230,69 @@ mod tests {
         drop(repo);
         fs::remove_dir_all(root).unwrap();
     }
+    struct Picker(PathBuf);
+    impl crate::NativeDirectoryPicker for Picker {
+        fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, crate::IdeError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+
+    #[test]
+    fn real_unresolved_stage_one_two_three_is_inspected_without_mutation() {
+        let base = std::env::temp_dir().join(
+            format!("ide-g06d01-{:032x}", rand::random::<u128>()));
+        let root = base.join("repo");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("conflict.txt"), b"original\n").unwrap();
+        let repo = Repository::init(&root).unwrap();
+        let sig = git2::Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("conflict.txt")).unwrap();
+        index.write().unwrap();
+        let ancestor = index.get_path(Path::new("conflict.txt"), 0).unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "baseline", &tree, &[]).unwrap();
+        drop(tree);
+        index.clear().unwrap();
+        for (stage, bytes) in [
+            (1u16, b"original\n".as_slice()),
+            (2u16, b"ours\n".as_slice()),
+            (3u16, b"theirs\n".as_slice()),
+        ] {
+            let mut entry = ancestor.clone();
+            entry.id = repo.blob(bytes).unwrap();
+            entry.flags = (entry.flags & !0x3000) | (stage << 12);
+            index.add(&entry).unwrap();
+        }
+        index.write().unwrap();
+        assert!(index.has_conflicts());
+        drop(index);
+        drop(repo);
+        let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
+        let id = registry.register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap().unwrap().project_id;
+        let original_index = fs::read(root.join(".git/index")).unwrap();
+        let original_worktree = fs::read(root.join("conflict.txt")).unwrap();
+        let inspection = registry.inspect_native_git_conflicts(&id).unwrap();
+        assert_eq!(inspection.conflict_count, 1);
+        assert_eq!(inspection.conflicts[0].relative_path, "conflict.txt");
+        assert_eq!(inspection.conflicts[0].classification, "three_way_text_conflict");
+        assert_eq!(inspection.conflicts[0].ancestor.as_ref().unwrap().preview.as_deref(),
+            Some("original\n"));
+        assert_eq!(inspection.conflicts[0].ours.as_ref().unwrap().preview.as_deref(),
+            Some("ours\n"));
+        assert_eq!(inspection.conflicts[0].theirs.as_ref().unwrap().preview.as_deref(),
+            Some("theirs\n"));
+        assert!(inspection.source_rechecked);
+        assert!(!inspection.authority_granted && !inspection.resolution_written);
+        assert_eq!(fs::read(root.join(".git/index")).unwrap(), original_index);
+        assert_eq!(fs::read(root.join("conflict.txt")).unwrap(), original_worktree);
+        assert_eq!(
+            registry.inspect_native_git_conflicts(&id).unwrap().evidence_sha256,
+            inspection.evidence_sha256
+        );
+        drop(registry);
+        fs::remove_dir_all(base).unwrap();
+    }
+
 }
