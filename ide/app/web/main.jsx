@@ -3744,6 +3744,7 @@ function App() {
     const token=Symbol('ide-int01c-proposal-stage');
     workspaceTransitionRef.current=token;
     const originalProjectId=activeProjectIdRef.current;
+    const originalEpoch=projectNavigationEpoch.current;
     setInboxBusy(true);
     setProblem('');
     try {
@@ -3751,7 +3752,8 @@ function App() {
         inboxId:item.inboxId,expectedDigest:item.digest,
       });
       if (workspaceTransitionRef.current!==token ||
-          activeProjectIdRef.current!==originalProjectId) return;
+          activeProjectIdRef.current!==originalProjectId ||
+          projectNavigationEpoch.current!==originalEpoch) return;
       if (!Array.isArray(approved?.edits) || approved.edits.length===0 ||
           approved.edits.some(edit=>!verifiedRelativeSourcePath(edit.relativePath) ||
             typeof edit.proposedText!=='string'))
@@ -3776,6 +3778,7 @@ function App() {
         throw Error('PROPOSAL_PROJECT_LISTING_UNTRUSTED');
       if (workspaceTransitionRef.current!==token ||
           activeProjectIdRef.current!==originalProjectId ||
+          projectNavigationEpoch.current!==originalEpoch ||
           projectEditorWitnessChanged(item.projectId,witness))
         throw Error('PROPOSAL_TARGET_EDITOR_CHANGED_DURING_REVIEW');
       const incoming=approved.edits.map(edit=>keyFor(item.projectId,edit.relativePath));
@@ -4199,6 +4202,7 @@ function App() {
         workspaceTransitionRef.current ||
         projectSearchResults?.projectId !== projectId) return;
     const generation = projectSearchGeneration.current;
+    const navigationEpoch=projectNavigationEpoch.current;
     const key = keyFor(projectId, match.relativePath);
     if (!admitOpenTabs(tabsRef.current,projectId,[key]).allowed) {
       setProblem('Open-file limit ('+MAX_OPEN_TABS_PER_PROJECT+
@@ -4215,6 +4219,7 @@ function App() {
       });
       if (explorerIoTicket.current !== ticket ||
           activeProjectIdRef.current !== projectId ||
+          navigationEpoch!==projectNavigationEpoch.current ||
           generation !== projectSearchGeneration.current)
         return; // A different project, read or search took over.
       if (opened.projectId !== projectId || opened.relativePath !== match.relativePath ||
@@ -4266,7 +4271,8 @@ function App() {
           bufferRevision: 0,
         }]);
       }
-      setActiveTabKey(key);
+      if (existing) selectPrimaryEditorTab(key);
+      else setActiveTabKey(key);
       if (!existing) void checkExistingDraft({key,projectId,
         relativePath:opened.relativePath});
       setFindRequest({ tabKey: key, from, to,
@@ -4313,12 +4319,14 @@ function App() {
       }
       const ticket = beginExplorerIo();
       if (!ticket) return;
+      const navigationEpoch=projectNavigationEpoch.current;
       setProblem('');
       try {
         const opened = await invoke('ide_preview_source_file', {
           projectId, relativePath: entry.relativePath,
         });
-        if (explorerIoTicket.current !== ticket) return;
+        if (explorerIoTicket.current !== ticket ||
+            navigationEpoch!==projectNavigationEpoch.current) return;
         const decision = lateSourceOpenDecision(tabsRef.current,projectId,
           entry.relativePath,opened,activeProjectIdRef.current,key);
         if (decision.action === 'discard_stale') return;
