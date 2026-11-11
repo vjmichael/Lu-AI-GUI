@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "377e40bddc2d70956f42e453904895f8b189d35e",
+  "sourceCommitBeforeLock": "e3efccafbd19fce0608c77f0ebdd5986b9e3c0dc",
   "trackedFileCount": 900,
   "files": [
     {
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "6e2f34aa8fc0d8473dd6bb02f49817d5e0e8cd24"
+      "blob": "1f61b9f28aa741be8a6868cbf8bf8cf8be9fab56"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -1365,7 +1365,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_register_desktop.rs",
-      "blob": "b4ad93a551c421d7e6d5b544b57a3eaa87517e85"
+      "blob": "0b181d0a5ce1cd00c9277406d63eb2c8b872e49d"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_status_desktop.rs",
@@ -2941,7 +2941,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/project_task_register.rs",
-      "blob": "1e7dc323075aef86c53413257eea02dde6cd9cc0"
+      "blob": "ab9ec8adfa9f733ca97eab2cac76a5a0d2a6cc86"
     },
     {
       "path": "src-tauri/lu-core/src/project_task_synthesis.rs",
