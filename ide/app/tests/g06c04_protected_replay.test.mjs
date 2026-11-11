@@ -16,7 +16,7 @@ test('6C04B prospective replay uses isolated bare ODB, no original project mutat
   assert.match(quarantine,/\.cherrypick_commit\(/);
   assert.match(quarantine,/idx\.has_conflicts\(\)/);
   assert.match(quarantine,/\.write_tree_to\(quarantine\)/);
-  assert.match(quarantine,/quarantine\.commit\(None,/);
+  assert.match(quarantine,/quarantine\s*\.commit\(\s*None,/);
   assert.match(quarantine,/G06C04B_SOURCE_CHANGED_DURING_QUARANTINE/);
   assert.match(quarantine,/original_project_unchanged: true/);
   assert.match(quarantine,/project_odb_modified: false/);
