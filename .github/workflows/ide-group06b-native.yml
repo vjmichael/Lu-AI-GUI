@@ -1,4 +1,4 @@
-# Group 6B-03 final source gate: formatter-safe Node assertions, six real native receipt/cancel tests, one-use OS consent.
+# Group 6B-04 exact-head: reviewed local commits and separately OS-authorized amendments, branch CAS and durable recovery.
 # Preserve real frontend-built icon; no CI-only icon may overwrite a valid app resource.
 # No Git write authority or operator acceptance.
 name: IDE Group 6B reviewed batch source (not release)
@@ -56,7 +56,7 @@ jobs:
           set -euo pipefail
           cd ide/app
           npm ci --ignore-scripts --no-audit --no-fund
-          node --test tests/g06b_reviewed_batch_preview.test.mjs tests/g06b_reviewed_hunk_selection.test.mjs tests/g06b_protected_partial_stage.test.mjs
+          node --test tests/g06b_reviewed_batch_preview.test.mjs tests/g06b_reviewed_hunk_selection.test.mjs tests/g06b_protected_partial_stage.test.mjs tests/g06b_reviewed_commits_amend.test.mjs
           npm run build
       - name: Native reviewed-batch bounded validation and formatting
         shell: bash
@@ -65,8 +65,9 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml --lib git_batch_review
           cargo test --manifest-path ide/host/Cargo.toml --lib git_hunk_review
           cargo test --manifest-path ide/host/Cargo.toml --lib git_partial_stage
-          rustfmt --edition 2021 --check ide/host/src/git_batch_review.rs ide/host/src/git_hunk_review.rs ide/host/src/reviewed_git.rs ide/host/src/git_partial_stage.rs
-          echo IDE_G06B_PROTECTED_STAGE=TESTED_SOURCE_NOT_PHYSICAL_HUMAN_APPROVAL
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_reviewed_commit
+          rustfmt --edition 2021 --check ide/host/src/git_batch_review.rs ide/host/src/git_hunk_review.rs ide/host/src/reviewed_git.rs ide/host/src/git_partial_stage.rs ide/host/src/git_reviewed_commit.rs
+          echo IDE_G06B_REVIEWED_COMMIT_AMEND=TESTED_SOURCE_NOT_PHYSICAL_HUMAN_APPROVAL
       - name: Tauri read-only route compilation
         shell: bash
         run: |
@@ -83,7 +84,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p .ide-g06b-receipts
-          printf 'source_sha=%s\nos=%s\nmulti_file_batch_stage=DENIED\npartial_hunk_stage=REQUIRES_ONE_USE_NATIVE_OS_DIALOG\ngit_commit=NOT_PERFORMED\nphysical_operator=NOT_EXECUTED_IN_CI\n' \
+          printf 'source_sha=%s\nos=%s\nmulti_file_batch_stage=DENIED\npartial_hunk_stage=REQUIRES_ONE_USE_NATIVE_OS_DIALOG\ngit_commit=REQUIRES_SEPARATE_ONE_USE_OS_DIALOG\namend=REQUIRES_EXPLICIT_ADDITIONAL_HISTORY_REWRITE_OS_DIALOG\nphysical_operator=NOT_EXECUTED_IN_CI\n' \
             "$GITHUB_SHA" "$RUNNER_OS" > .ide-g06b-receipts/source.txt
       - uses: actions/upload-artifact@v4
         if: always()
