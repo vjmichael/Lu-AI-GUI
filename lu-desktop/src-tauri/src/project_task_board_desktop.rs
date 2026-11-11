@@ -530,4 +530,95 @@ mod tests{
         assert!(save_json_new(&dir.join("plan.exe"),bytes).is_err());
         fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn ansf_approval_restart_source_revision_and_corruption_matrix(){
+        let profile=std::env::temp_dir().join(format!(
+            "lu-plan06-native-board-{}",std::process::id()));
+        let root=profile.join("original-project");
+        let _=fs::remove_dir_all(&profile);
+        fs::create_dir_all(root.join("docs")).unwrap();
+        fs::create_dir_all(profile.join("ansf")).unwrap();
+        fs::write(root.join("docs/REQUIREMENTS.md"),
+            "# Requirements\n- [ ] Must include src/missing.rs\n").unwrap();
+        let conn=Connection::open(profile.join("ansf/library.db")).unwrap();
+        conn.execute_batch("CREATE TABLE preserved_memory(x INTEGER);
+            INSERT INTO preserved_memory VALUES(606);").unwrap();
+        drop(conn);
+        let (g,s)=project_status_desktop::classify_selected(&root).unwrap();
+        let cap=synthesis::build_capsule(&g,&s).unwrap();
+        let req=&cap.requirements[0];
+        let raw=serde_json::json!({"schema":synthesis::RAW_SCHEMA,"tasks":[{
+            "requirementId":req.requirement_id,"status":req.status,
+            "summary":"Verify original source",
+            "description":"Human review of the exact original requirement and source",
+            "priority":"P1","group":"01 Source checks",
+            "evidenceIds":[req.requirement_id],"dependencyIndices":[],
+            "acceptanceCriteria":"Verify exact original source file using native metadata",
+            "blockedBy":"Missing accepted original source receipt"
+        }]}).to_string();
+        let proposal=synthesis::validate_model_response(
+            &g,&s,&raw,&synthesis::model_prompt(&cap).unwrap(),
+            "m-actual-contract","s-test","g-test").unwrap();
+        project_task_desktop::persist_proposal(&profile,&g,&s,&proposal,&raw).unwrap();
+        let imported=register::import(&proposal).unwrap();
+        let saved=project_register_desktop::persist(
+            &profile,&proposal,&imported,None).unwrap();
+        let conn=project_register_desktop::library(&profile).unwrap();
+        let board=read(&conn,&saved).unwrap();
+        assert_eq!(board.sequence,0);
+        assert!(!view(&saved,board.clone()).unwrap().review_current);
+        drop(conn);
+        let approved=write(&profile,&saved.register_id,&board.sha256,
+            &saved.latest_sha256,board.ordered_task_ids.clone(),true).unwrap();
+        assert_eq!(approved.sequence,1);
+        let conn=project_register_desktop::library(&profile).unwrap();
+        let reread=read(&conn,&saved).unwrap();
+        assert_eq!(reread.sha256,approved.sha256);
+        assert!(view(&saved,reread).unwrap().review_current);
+        let source=evidence(&profile,&saved.register_id,
+            &proposal.tasks[0].task_id).unwrap();
+        assert!(source["finding"]["requirementId"].is_string());
+        let exported=export_bytes(&profile,&saved.register_id,
+            &approved.sha256,&saved.latest_sha256).unwrap();
+        let json:serde_json::Value=serde_json::from_slice(&exported).unwrap();
+        assert_eq!(json["humanApprovalCurrent"],true);
+        assert_eq!(json["noExecutionAuthority"],true);
+        assert_eq!(json["acceptedTaskExecution"],false);
+        drop(conn);
+        let changed=register::human_correct(&saved,&proposal,
+            &proposal.tasks[0].task_id,1,&register::HumanCorrection{
+                summary:"Human reviewed task name".into(),
+                description:"Human clarifies source and acceptance without execution".into(),
+                priority:"P0".into(),blocked_by:"Native evidence still missing".into(),
+                acceptance_criteria:"Independently review selected source HEAD and native proof".into(),
+                reason:"Human clarified order and original acceptance scope".into()
+            }).unwrap();
+        let corrected=project_register_desktop::persist(
+            &profile,&proposal,&changed,Some(&saved.latest_sha256)).unwrap();
+        let conn=project_register_desktop::library(&profile).unwrap();
+        let stale=read(&conn,&corrected).unwrap();
+        assert_eq!(stale.sha256,approved.sha256);
+        assert!(!view(&corrected,stale.clone()).unwrap().review_current);
+        assert!(write(&profile,&saved.register_id,&stale.sha256,
+            &saved.latest_sha256,stale.ordered_task_ids.clone(),true).is_err());
+        drop(conn);
+        let rebase=write(&profile,&corrected.register_id,&stale.sha256,
+            &corrected.latest_sha256,stale.ordered_task_ids.clone(),false).unwrap();
+        assert_eq!(rebase.review_state,"draft");
+        let accepted=write(&profile,&corrected.register_id,&rebase.sha256,
+            &corrected.latest_sha256,rebase.ordered_task_ids.clone(),true).unwrap();
+        assert_eq!(accepted.sequence,3);
+        let conn=project_register_desktop::library(&profile).unwrap();
+        assert_eq!(read(&conn,&corrected).unwrap().sha256,accepted.sha256);
+        let intact:i64=conn.query_row(
+            "SELECT x FROM preserved_memory",[],|row|row.get(0)).unwrap();
+        assert_eq!(intact,606);
+        conn.execute("UPDATE ansf_project_task_board_revisions
+            SET snapshot_json=X'7b6f6f7073' WHERE register_id=?1 AND sequence=1",
+            [&corrected.register_id]).unwrap();
+        assert!(read(&conn,&corrected).is_err());
+        drop(conn);
+        fs::remove_dir_all(profile).unwrap();
+    }
+
 }
