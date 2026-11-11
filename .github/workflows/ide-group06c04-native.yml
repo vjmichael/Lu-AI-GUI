@@ -7,6 +7,7 @@ on:
       - '.github/workflows/ide-group06c04-native.yml'
       - '.github/workflows/ide-group06c03b-native.yml'
       - 'ide/host/src/git_divergent_verify.rs'
+      - 'ide/app/tests/g06c03b_protected_divergent.test.mjs'
       - 'ide/host/src/git_protected_divergent_merge.rs'
       - 'ide/host/src/git_rebase_cherry_plan.rs'
       - 'ide/host/src/git_replay_quarantine.rs'
@@ -80,7 +81,7 @@ jobs:
           set -euo pipefail
           cd ide/app
           npm ci --ignore-scripts --no-audit --no-fund
-          node --test tests/g06c04_original_replay_review.test.mjs tests/g06c04_protected_replay.test.mjs
+          node --test tests/g06c04_original_replay_review.test.mjs tests/g06c04_protected_replay.test.mjs tests/g06c03b_protected_divergent.test.mjs
           npm run build
           echo G06C04_WEB=NATIVE_ONE_USE_OS_APPROVAL_ONLY
       - name: Native Tauri typed replay route compile
