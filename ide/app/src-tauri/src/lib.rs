@@ -454,6 +454,180 @@ async fn ide_git_partial_stage_recovery(
     }).await.map_err(|_| "G06B_STAGE_RECOVERY_HOST_UNAVAILABLE".to_owned())?
 }
 
+/// Separate from staging: a reviewed staged-hunk index alone cannot
+/// authorize either a new commit or a history rewrite.
+#[tauri::command]
+async fn ide_git_preview_reviewed_commit(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    stage: lu_ide_workspace::git_partial_stage::PartialStageReceipt,
+    mode: lu_ide_workspace::git_reviewed_commit::ReviewedCommitMode,
+    message: String,
+    author_name: String,
+    author_email: String,
+) -> Result<lu_ide_workspace::git_reviewed_commit::ReviewedCommitPlan, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.preview_reviewed_partial_commit(
+            &stage, mode, &message, &author_name, &author_email)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06B_COMMIT_PREVIEW_HOST_UNAVAILABLE".to_owned())?
+}
+
+fn perform_reviewed_commit_with_os_approval(
+    app: AppHandle,
+    registry: Arc<IdeWorkspaceRegistry>,
+    expected: lu_ide_workspace::git_reviewed_commit::ReviewedCommitPlan,
+    required_mode: lu_ide_workspace::git_reviewed_commit::ReviewedCommitMode,
+    cancel: Arc<AtomicU8>,
+) -> Result<lu_ide_workspace::git_reviewed_commit::ReviewedCommitReceipt, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    use lu_ide_workspace::git_reviewed_commit::ReviewedCommitMode;
+    if expected.mode != required_mode {
+        return Err("G06B_COMMIT_MODE_NOT_AUTHORIZED".into());
+    }
+    let fresh = registry.preview_reviewed_partial_commit(
+        &expected.stage, expected.mode.clone(), &expected.message,
+        &expected.author_name, &expected.author_email).map_err(str::to_owned)?;
+    if fresh != expected {
+        return Err("G06B_COMMIT_REVIEW_CHANGED".into());
+    }
+    if cancel.load(Ordering::SeqCst) != 0 {
+        return Err("G06B_COMMIT_CANCELLED_BEFORE_CONSENT".into());
+    }
+    let mode_label = if required_mode == ReviewedCommitMode::Amend {
+        "REWRITE LAST LOCAL COMMIT" } else { "CREATE NEW LOCAL COMMIT" };
+    let allowed = app.dialog().message(format!(
+        "{}?\n\nProject: {}\nBranch: {}\nCurrent HEAD: {}\nNext parent: {}\nFile: {}\nStaged tree: {}\nIndex SHA-256: {}\nPlan SHA-256: {}\nAuthor: {} <{}>\nMessage: {}\n\nThis approval is one-use. No hook, Git CLI, network, push, or source edit.",
+        mode_label, fresh.stage.project_id, fresh.branch_ref,
+        fresh.previous_head, fresh.resulting_parent, fresh.stage.relative_path,
+        fresh.staged_tree_oid, fresh.index_sha256, fresh.plan_sha256,
+        fresh.author_name, fresh.author_email, fresh.message,
+    )).title("Lu IDE · One-use local Git commit authorization")
+      .buttons(MessageDialogButtons::OkCancelCustom(
+        if required_mode == ReviewedCommitMode::Amend {
+            "Review history rewrite".into()
+        } else { "Create this exact commit".into() },
+        "Deny / Cancel".into(),
+      )).blocking_show();
+    if !allowed { return Err("G06B_COMMIT_HUMAN_DENIED".into()); }
+    if required_mode == ReviewedCommitMode::Amend {
+        // History rewrite is an independently acknowledged destructive act,
+        // not an implied side effect of the ordinary commit approval.
+        let rewrite = app.dialog().message(format!(
+            "FINAL HISTORY-REWRITE CONSENT\n\nReplace local commit {} on {} with a NEW commit whose parent is {}?\n\nThe previous commit will no longer be branch HEAD. This may invalidate clones, tags, approvals, published links, or collaborators. Lu cannot verify remote publication offline. No force-push is performed. Deny unless you intend to replace this exact local commit.",
+            fresh.previous_head, fresh.branch_ref, fresh.resulting_parent
+        )).title("Lu IDE · Explicit amend/rewrite authorization")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+            "Rewrite exact local HEAD".into(), "Deny / Cancel".into()
+          )).blocking_show();
+        if !rewrite { return Err("G06B_AMEND_HUMAN_DENIED".into()); }
+    }
+    if cancel.load(Ordering::SeqCst) != 0 {
+        return Err("G06B_COMMIT_CANCELLED_AFTER_CONSENT".into());
+    }
+    registry.execute_approved_reviewed_commit(&fresh, &cancel)
+        .map_err(str::to_owned)
+}
+
+#[tauri::command]
+async fn ide_git_commit_selected_hunks(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    expected: lu_ide_workspace::git_reviewed_commit::ReviewedCommitPlan,
+) -> Result<lu_ide_workspace::git_reviewed_commit::ReviewedCommitReceipt, String> {
+    use lu_ide_workspace::git_reviewed_commit::ReviewedCommitMode;
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let project_id = expected.stage.project_id.clone();
+    let cancel = sessions.begin(&project_id)?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        perform_reviewed_commit_with_os_approval(
+            app, registry, expected, ReviewedCommitMode::Create, cancel)
+    }).await.map_err(|_| "G06B_COMMIT_HOST_INTERRUPTED".to_owned());
+    sessions.end(&project_id);
+    result?
+}
+
+#[tauri::command]
+async fn ide_git_amend_reviewed_commit(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    expected: lu_ide_workspace::git_reviewed_commit::ReviewedCommitPlan,
+) -> Result<lu_ide_workspace::git_reviewed_commit::ReviewedCommitReceipt, String> {
+    use lu_ide_workspace::git_reviewed_commit::ReviewedCommitMode;
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let project_id = expected.stage.project_id.clone();
+    let cancel = sessions.begin(&project_id)?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        perform_reviewed_commit_with_os_approval(
+            app, registry, expected, ReviewedCommitMode::Amend, cancel)
+    }).await.map_err(|_| "G06B_AMEND_HOST_INTERRUPTED".to_owned());
+    sessions.end(&project_id);
+    result?
+}
+
+/// Safe before the native commit's branch-ref compare-and-swap fence.
+#[tauri::command]
+async fn ide_git_cancel_reviewed_commit(
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+) -> Result<&'static str, String> {
+    sessions.cancel(&project_id)
+}
+
+#[tauri::command]
+async fn ide_git_inspect_commit_recovery(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_reviewed_commit::ReviewedCommitRecovery, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_reviewed_commit_recovery(&project_id)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06B_COMMIT_RECOVERY_HOST_UNAVAILABLE".to_owned())?
+}
+
+/// Separate physical OS approval to reconcile a journal, never a hidden
+/// automatic retry, ref update, force push, index change, or lock deletion.
+#[tauri::command]
+async fn ide_git_reconcile_commit_receipt(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_reviewed_commit::ReviewedCommitRecovery, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let _token = sessions.begin(&project_id)?;
+    let selected_id = project_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let observed = registry.inspect_reviewed_commit_recovery(&selected_id)
+            .map_err(str::to_owned)?;
+        if !observed.operator_reconciliation_required {
+            return Ok(observed);
+        }
+        if observed.git_index_lock_present {
+            return Err("G06B_COMMIT_LOCK_REQUIRES_MANUAL_REVIEW".into());
+        }
+        let approved = app.dialog().message(format!(
+            "Reconcile original local Git commit journal for registered project {}?\n\nObserved: {}\nPhase: {}\n\nLu will independently inspect the Git index, branch HEAD, parent, tree and original file before recording a terminal receipt. It will NOT retry a commit, rewrite a ref, delete a Git lock, or push.",
+            selected_id, observed.state, observed.last_phase,
+        )).title("Lu IDE · Approve commit receipt reconciliation")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+            "Verify journal only".into(), "Deny / Cancel".into()
+          )).blocking_show();
+        if !approved { return Err("G06B_COMMIT_RECOVERY_DENIED".into()); }
+        registry.reconcile_reviewed_commit_journal(&selected_id)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06B_COMMIT_RECOVERY_HOST_INTERRUPTED".to_owned());
+    sessions.end(&project_id);
+    result?
+}
+
 #[tauri::command]
 async fn ide_git_review_file(
     state: State<'_, Arc<IdeWorkspaceRegistry>>,
@@ -2355,6 +2529,12 @@ pub fn run() {
             ide_git_cancel_partial_stage,
             ide_git_partial_stage_recovery,
             ide_git_reconcile_partial_stage,
+            ide_git_preview_reviewed_commit,
+            ide_git_commit_selected_hunks,
+            ide_git_amend_reviewed_commit,
+            ide_git_cancel_reviewed_commit,
+            ide_git_inspect_commit_recovery,
+            ide_git_reconcile_commit_receipt,
             ide_git_review_file,
             ide_git_stage_reviewed,
             ide_git_commit_reviewed,
