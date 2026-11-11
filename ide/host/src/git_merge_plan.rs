@@ -371,7 +371,7 @@ impl IdeWorkspaceRegistry {
         let mut path_digest = Sha256::new();
         for path in all_paths {
             let p = inspect_path(
-                path,
+                path.clone(),
                 base_entries.get(&path),
                 current_entries.get(&path),
                 selected_entries.get(&path),
