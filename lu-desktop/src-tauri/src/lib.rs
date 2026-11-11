@@ -41,6 +41,7 @@ mod project_task_desktop;
 mod project_register_desktop;
 mod project_task_board_desktop;
 mod project_updates_desktop;
+mod project_update_model_desktop;
 mod reviewed_app_desktop;
 mod reviewed_memory_evidence;
 mod reviewed_app_recovery;
@@ -8596,6 +8597,8 @@ pub fn run() {
             project_task_board_desktop::lu_project_board_export,
             project_updates_desktop::lu_project_update_inspect,
             project_updates_desktop::lu_project_update_apply,
+            project_update_model_desktop::lu_project_update_model_suggest,
+            project_update_model_desktop::lu_project_update_model_latest,
             lu_status,
             lu_list_models,
             lu_model_preflight,
