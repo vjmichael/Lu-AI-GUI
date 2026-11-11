@@ -77,7 +77,9 @@ fn fingerprint(parts: &[&str]) -> String {
 }
 
 fn add(v: &mut Vec<&'static str>, code: &'static str) {
-    if !v.contains(&code) { v.push(code); }
+    if !v.contains(&code) {
+        v.push(code);
+    }
 }
 
 /// This object must drop its Git handles before deleting its own scratchdir.
@@ -94,23 +96,24 @@ impl Drop for ReplaySandbox {
 }
 impl ReplaySandbox {
     pub(crate) fn open(original: &Repository) -> Result<Self, &'static str> {
-        let root = std::env::temp_dir().join(
-            format!("ide-g06c04-replay-{:032x}", rand::random::<u128>())
-        );
+        let root =
+            std::env::temp_dir().join(format!("ide-g06c04-replay-{:032x}", rand::random::<u128>()));
         fs::create_dir(&root).map_err(|_| "G06C04B_SCRATCH_CREATE_FAILED")?;
         let mut sandbox = Self { repo: None, root };
-        let scratch = Repository::init_bare(&sandbox.root)
-            .map_err(|_| "G06C04B_SCRATCH_GIT_INIT_FAILED")?;
+        let scratch =
+            Repository::init_bare(&sandbox.root).map_err(|_| "G06C04B_SCRATCH_GIT_INIT_FAILED")?;
         let objects = original.path().join("objects");
-        let meta = fs::symlink_metadata(&objects)
-            .map_err(|_| "G06C04B_ORIGINAL_ODB_UNAVAILABLE")?;
+        let meta =
+            fs::symlink_metadata(&objects).map_err(|_| "G06C04B_ORIGINAL_ODB_UNAVAILABLE")?;
         if !meta.is_dir() || meta.file_type().is_symlink() {
             return Err("G06C04B_ORIGINAL_ODB_UNTRUSTED");
         }
-        let canonical = fs::canonicalize(objects)
-            .map_err(|_| "G06C04B_ORIGINAL_ODB_UNVERIFIABLE")?;
+        let canonical =
+            fs::canonicalize(objects).map_err(|_| "G06C04B_ORIGINAL_ODB_UNVERIFIABLE")?;
         let path = canonical.to_str().ok_or("G06C04B_NON_UTF8_OBJECT_STORE")?;
-        scratch.odb().map_err(|_| "G06C04B_SCRATCH_ODB_UNAVAILABLE")?
+        scratch
+            .odb()
+            .map_err(|_| "G06C04B_SCRATCH_ODB_UNAVAILABLE")?
             .add_disk_alternate(path)
             .map_err(|_| "G06C04B_READONLY_ALTERNATE_FAILED")?;
         sandbox.repo = Some(scratch);
@@ -130,7 +133,8 @@ pub(crate) struct ReplayBuild {
 /// The resulting in-memory index is converted to a tree and commit in the
 /// SCRATCH bare repository only; original object database remains untouched.
 pub(crate) fn compute_in_sandbox(
-    original: &Repository, plan: &ReviewedReplayPlan,
+    original: &Repository,
+    plan: &ReviewedReplayPlan,
     project_id: &str,
 ) -> Result<ReplayBuild, &'static str> {
     let scratch = ReplaySandbox::open(original)?;
@@ -148,35 +152,50 @@ pub(crate) fn compute_in_sandbox(
     // OS consent* are expected at the original read-only A-stage. Every
     // source-safety blocker is carried forward and remains non-authorizable.
     for original_blocker in &plan.blockers {
-        if !matches!(*original_blocker,
-            "merge_result_unverified" | "replay_resulting_trees_not_verified"
-            | "one_use_native_os_authorization_not_issued") {
+        if !matches!(
+            *original_blocker,
+            "merge_result_unverified"
+                | "replay_resulting_trees_not_verified"
+                | "one_use_native_os_authorization_not_issued"
+        ) {
             add(&mut blockers, original_blocker);
         }
     }
     for evidence in &plan.replay_commits {
         let original_id = Oid::from_str(&evidence.original_commit)
             .map_err(|_| "G06C04B_ORIGINAL_COMMIT_INVALID")?;
-        let picked = quarantine.find_commit(original_id)
+        let picked = quarantine
+            .find_commit(original_id)
             .map_err(|_| "G06C04B_ORIGINAL_COMMIT_UNAVAILABLE")?;
         if picked.parent_count() != 1
-            || picked.parent_id(0).map_err(|_| "G06C04B_PARENT_UNAVAILABLE")?.to_string()
+            || picked
+                .parent_id(0)
+                .map_err(|_| "G06C04B_PARENT_UNAVAILABLE")?
+                .to_string()
                 != evidence.original_parent
-            || picked.tree_id().to_string() != evidence.original_tree {
+            || picked.tree_id().to_string() != evidence.original_tree
+        {
             return Err("G06C04B_ORIGINAL_GRAPH_STALE");
         }
-        let parent = quarantine.find_commit(cursor)
+        let parent = quarantine
+            .find_commit(cursor)
             .map_err(|_| "G06C04B_REPLAY_PARENT_UNAVAILABLE")?;
-        let mut idx = quarantine.cherrypick_commit(&picked, &parent, 0, None)
+        let mut idx = quarantine
+            .cherrypick_commit(&picked, &parent, 0, None)
             .map_err(|_| "G06C04B_REPLAY_MERGE_FAILED")?;
         if idx.has_conflicts() {
             let mut n = 0usize;
-            let paths = idx.conflicts().map_err(|_| "G06C04B_CONFLICT_ITER_UNAVAILABLE")?;
+            let paths = idx
+                .conflicts()
+                .map_err(|_| "G06C04B_CONFLICT_ITER_UNAVAILABLE")?;
             for path in paths {
                 let conflict = path.map_err(|_| "G06C04B_CONFLICT_UNREADABLE")?;
                 n = n.saturating_add(1);
                 if conflicts.len() < MAX_OUTPUT_PATHS {
-                    let first = conflict.our.or(conflict.their).or(conflict.ancestor)
+                    let first = conflict
+                        .our
+                        .or(conflict.their)
+                        .or(conflict.ancestor)
                         .ok_or("G06C04B_CONFLICT_PATH_MISSING")?;
                     let raw = std::str::from_utf8(&first.path)
                         .map_err(|_| "G06C04B_CONFLICT_PATH_UNSAFE")?;
@@ -188,14 +207,17 @@ pub(crate) fn compute_in_sandbox(
             break;
         }
         // This writes only into a fresh scratch bare repo, NEVER original.
-        let tree_id = idx.write_tree_to(quarantine)
+        let tree_id = idx
+            .write_tree_to(quarantine)
             .map_err(|_| "G06C04B_QUARANTINE_TREE_FAILED")?;
-        let tree = quarantine.find_tree(tree_id)
+        let tree = quarantine
+            .find_tree(tree_id)
             .map_err(|_| "G06C04B_RESULT_TREE_NOT_FOUND")?;
         let message = picked.message().ok_or("G06C04B_ORIGINAL_MESSAGE_NONUTF8")?;
         let author: Signature<'_> = picked.author();
         let committer: Signature<'_> = picked.committer();
-        let result_id = quarantine.commit(None, &author, &committer, message, &tree, &[&parent])
+        let result_id = quarantine
+            .commit(None, &author, &committer, message, &tree, &[&parent])
             .map_err(|_| "G06C04B_QUARANTINE_COMMIT_FAILED")?;
         records.push(ReplayResultStep {
             ordinal: records.len() + 1,
@@ -217,20 +239,29 @@ pub(crate) fn compute_in_sandbox(
     if plan.replay_commits.len() != records.len() {
         add(&mut blockers, "replay_incomplete_or_conflicted");
     }
-    let old = original.find_commit(
-        Oid::from_str(&plan.current_head).map_err(|_| "G06C04B_HEAD_INVALID")?
-    ).map_err(|_| "G06C04B_HEAD_UNAVAILABLE")?;
+    let old = original
+        .find_commit(Oid::from_str(&plan.current_head).map_err(|_| "G06C04B_HEAD_INVALID")?)
+        .map_err(|_| "G06C04B_HEAD_UNAVAILABLE")?;
     let new_tree_oid = if conflict_count == 0 && !records.is_empty() {
-        Some(records.last().ok_or("G06C04B_EMPTY_RESULT")?.resulting_tree.clone())
-    } else { None };
+        Some(
+            records
+                .last()
+                .ok_or("G06C04B_EMPTY_RESULT")?
+                .resulting_tree
+                .clone(),
+        )
+    } else {
+        None
+    };
     // Re-examine candidate output relative to original HEAD in quarantine.
     let mut changed = 0usize;
     if let Some(ref oid) = new_tree_oid {
-        let future = quarantine.find_tree(Oid::from_str(oid)
-            .map_err(|_| "G06C04B_OUTPUT_TREE_INVALID")?)
+        let future = quarantine
+            .find_tree(Oid::from_str(oid).map_err(|_| "G06C04B_OUTPUT_TREE_INVALID")?)
             .map_err(|_| "G06C04B_OUTPUT_TREE_NOT_FOUND")?;
         let initial = old.tree().map_err(|_| "G06C04B_CURRENT_TREE_UNAVAILABLE")?;
-        let diff = quarantine.diff_tree_to_tree(Some(&initial), Some(&future), None)
+        let diff = quarantine
+            .diff_tree_to_tree(Some(&initial), Some(&future), None)
             .map_err(|_| "G06C04B_OUTPUT_DIFF_UNAVAILABLE")?;
         changed = diff.deltas().len();
         if changed > MAX_OUTPUT_PATHS {
@@ -242,44 +273,70 @@ pub(crate) fn compute_in_sandbox(
             for item in [&old, &new] {
                 if let Some(path) = item.path() {
                     let name = path.to_str().ok_or("G06C04B_OUTPUT_PATH_NONUTF8")?;
-                    if name.len() > 240 || name.contains('\\') || name.chars().any(char::is_control) {
+                    if name.len() > 240 || name.contains('\\') || name.chars().any(char::is_control)
+                    {
                         add(&mut blockers, "unsafe_output_path");
                     }
                 }
             }
-            if !matches!(delta.status(), git2::Delta::Added
-                | git2::Delta::Deleted | git2::Delta::Modified) {
+            if !matches!(
+                delta.status(),
+                git2::Delta::Added | git2::Delta::Deleted | git2::Delta::Modified
+            ) {
                 add(&mut blockers, "unsupported_output_delta");
             }
-            if !matches!(new.mode(), git2::FileMode::Blob | git2::FileMode::BlobExecutable
-                    | git2::FileMode::Unreadable)
-                || !matches!(old.mode(), git2::FileMode::Blob | git2::FileMode::BlobExecutable
-                    | git2::FileMode::Unreadable) {
+            if !matches!(
+                new.mode(),
+                git2::FileMode::Blob | git2::FileMode::BlobExecutable | git2::FileMode::Unreadable
+            ) || !matches!(
+                old.mode(),
+                git2::FileMode::Blob | git2::FileMode::BlobExecutable | git2::FileMode::Unreadable
+            ) {
                 add(&mut blockers, "unsupported_output_file_mode");
             }
         }
     }
     if plan.possible_overlap_count > 0 {
-        add(&mut blockers, "original_path_overlap_requires_manual_review");
+        add(
+            &mut blockers,
+            "original_path_overlap_requires_manual_review",
+        );
     }
-    if !plan.replay_commits.iter().all(|c| c.unsupported_delta_count == 0) {
+    if !plan
+        .replay_commits
+        .iter()
+        .all(|c| c.unsupported_delta_count == 0)
+    {
         add(&mut blockers, "unsupported_original_deltas");
     }
     let mut ledger = Vec::new();
     for x in &records {
-        ledger.push(format!("{}:{}:{}:{}:{}",x.original_commit,
-            x.original_parent, x.resulting_parent, x.resulting_tree, x.resulting_commit));
+        ledger.push(format!(
+            "{}:{}:{}:{}:{}",
+            x.original_commit,
+            x.original_parent,
+            x.resulting_parent,
+            x.resulting_tree,
+            x.resulting_commit
+        ));
     }
     let chain = fingerprint(&ledger.iter().map(String::as_str).collect::<Vec<_>>());
     let head = if conflict_count == 0 && records.len() == plan.replay_commits.len() {
         Some(cursor.to_string())
-    } else { None };
+    } else {
+        None
+    };
     let digest = fingerprint(&[
-        project_id,&plan.evidence_sha256,&plan.current_head,&plan.selected_tip,
-        &plan.original_index_sha256,&chain,
+        project_id,
+        &plan.evidence_sha256,
+        &plan.current_head,
+        &plan.selected_tip,
+        &plan.original_index_sha256,
+        &chain,
         head.as_deref().unwrap_or(""),
         new_tree_oid.as_deref().unwrap_or(""),
-        &conflict_count.to_string(),&format!("{:?}",blockers),
+        &conflict_count.to_string(),
+        &format!("{:?}", blockers),
     ]);
     let result = ProspectiveReplayResult {
         schema_version: 1,
@@ -311,21 +368,28 @@ pub(crate) fn compute_in_sandbox(
         remote_queried: false,
         execution_route_available: false,
     };
-    Ok(ReplayBuild {sandbox:scratch,result})
+    Ok(ReplayBuild {
+        sandbox: scratch,
+        result,
+    })
 }
 
 impl IdeWorkspaceRegistry {
     pub fn preview_prospective_replay(
-        &self, project_id:&str, kind:ReplayReviewKind, selected_branch:&str,
+        &self,
+        project_id: &str,
+        kind: ReplayReviewKind,
+        selected_branch: &str,
     ) -> Result<ProspectiveReplayResult, &'static str> {
-        let before = self.review_local_rebase_cherry_pick(project_id,kind,selected_branch)?;
-        let repo = exact_repo(self,project_id)?;
-        let build = compute_in_sandbox(&repo,&before,project_id)?;
-        let after = self.review_local_rebase_cherry_pick(project_id,kind,selected_branch)?;
+        let before = self.review_local_rebase_cherry_pick(project_id, kind, selected_branch)?;
+        let repo = exact_repo(self, project_id)?;
+        let build = compute_in_sandbox(&repo, &before, project_id)?;
+        let after = self.review_local_rebase_cherry_pick(project_id, kind, selected_branch)?;
         if before.evidence_sha256 != after.evidence_sha256
             || before.current_head != after.current_head
             || before.selected_tip != after.selected_tip
-            || local_commit(&repo,selected_branch)?.to_string()!=before.selected_tip {
+            || local_commit(&repo, selected_branch)?.to_string() != before.selected_tip
+        {
             return Err("G06C04B_SOURCE_CHANGED_DURING_QUARANTINE");
         }
         Ok(build.result)
@@ -334,115 +398,208 @@ impl IdeWorkspaceRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{IdeError,NativeDirectoryPicker};
-    use git2::{Repository,Signature};
-    use std::{fs,path::{Path,PathBuf}};
+    use crate::{IdeError, NativeDirectoryPicker};
+    use git2::{Repository, Signature};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
     struct Picker(PathBuf);
     impl NativeDirectoryPicker for Picker {
-        fn choose_project_directory(&mut self)->Result<Option<PathBuf>,IdeError>{Ok(Some(self.0.clone()))}
+        fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> {
+            Ok(Some(self.0.clone()))
+        }
     }
-    struct Fixture{base:PathBuf,root:PathBuf,id:String,registry:IdeWorkspaceRegistry}
-    impl Drop for Fixture{fn drop(&mut self){let _=fs::remove_dir_all(&self.base);}}
-    fn fixture()->Fixture{
-        let base=std::env::temp_dir().join(format!("ide-g06c04b-{:032x}",rand::random::<u128>()));
-        let root=base.join("repo");fs::create_dir_all(&root).unwrap();
-        fs::write(root.join("stable.keep"),b"keep\n").unwrap();
-        fs::write(root.join("main.txt"),b"base\n").unwrap();
-        let repo=Repository::init(&root).unwrap();
-        repo.config().unwrap().set_bool("core.autocrlf",false).unwrap();
-        let sig=Signature::now("Fixture","fixture@localhost.invalid").unwrap();
-        let mut idx=repo.index().unwrap();
-        for p in ["stable.keep","main.txt"]{idx.add_path(Path::new(p)).unwrap();}
+    struct Fixture {
+        base: PathBuf,
+        root: PathBuf,
+        id: String,
+        registry: IdeWorkspaceRegistry,
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.base);
+        }
+    }
+    fn fixture() -> Fixture {
+        let base =
+            std::env::temp_dir().join(format!("ide-g06c04b-{:032x}", rand::random::<u128>()));
+        let root = base.join("repo");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("stable.keep"), b"keep\n").unwrap();
+        fs::write(root.join("main.txt"), b"base\n").unwrap();
+        let repo = Repository::init(&root).unwrap();
+        repo.config()
+            .unwrap()
+            .set_bool("core.autocrlf", false)
+            .unwrap();
+        let sig = Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
+        let mut idx = repo.index().unwrap();
+        for p in ["stable.keep", "main.txt"] {
+            idx.add_path(Path::new(p)).unwrap();
+        }
         idx.write().unwrap();
-        let tree=repo.find_tree(idx.write_tree().unwrap()).unwrap();
-        let root_commit=repo.commit(Some("HEAD"),&sig,&sig,"root",&tree,&[]).unwrap();
-        let base_commit=repo.find_commit(root_commit).unwrap();
-        repo.branch("feature",&base_commit,false).unwrap();
+        let tree = repo.find_tree(idx.write_tree().unwrap()).unwrap();
+        let root_commit = repo
+            .commit(Some("HEAD"), &sig, &sig, "root", &tree, &[])
+            .unwrap();
+        let base_commit = repo.find_commit(root_commit).unwrap();
+        repo.branch("feature", &base_commit, false).unwrap();
         // Existing feature tip changes an independent path.
-        let mut builder=repo.treebuilder(Some(&tree)).unwrap();
-        let blob=repo.blob(b"selected\n").unwrap();
-        builder.insert("new-feature.txt",blob,0o100644).unwrap();
-        let feature_tree=repo.find_tree(builder.write().unwrap()).unwrap();
-        repo.commit(Some("refs/heads/feature"),&sig,&sig,"selected",&feature_tree,&[&base_commit]).unwrap();
+        let mut builder = repo.treebuilder(Some(&tree)).unwrap();
+        let blob = repo.blob(b"selected\n").unwrap();
+        builder.insert("new-feature.txt", blob, 0o100644).unwrap();
+        let feature_tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        repo.commit(
+            Some("refs/heads/feature"),
+            &sig,
+            &sig,
+            "selected",
+            &feature_tree,
+            &[&base_commit],
+        )
+        .unwrap();
         // Current HEAD changes a second independent path.
-        fs::write(root.join("main.txt"),b"current\n").unwrap();
-        idx.add_path(Path::new("main.txt")).unwrap();idx.write().unwrap();
-        let current_tree=repo.find_tree(idx.write_tree().unwrap()).unwrap();
-        repo.commit(Some("HEAD"),&sig,&sig,"current",&current_tree,&[&base_commit]).unwrap();
-        drop(current_tree);drop(feature_tree);drop(builder);drop(base_commit);drop(tree);drop(idx);drop(repo);
-        let registry=IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
-        let id=registry.register_from_native_picker(&mut Picker(root.clone())).unwrap().unwrap().project_id;
-        Fixture{base,root,id,registry}
+        fs::write(root.join("main.txt"), b"current\n").unwrap();
+        idx.add_path(Path::new("main.txt")).unwrap();
+        idx.write().unwrap();
+        let current_tree = repo.find_tree(idx.write_tree().unwrap()).unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "current",
+            &current_tree,
+            &[&base_commit],
+        )
+        .unwrap();
+        drop(current_tree);
+        drop(feature_tree);
+        drop(builder);
+        drop(base_commit);
+        drop(tree);
+        drop(idx);
+        drop(repo);
+        let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
+        let id = registry
+            .register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap()
+            .unwrap()
+            .project_id;
+        Fixture {
+            base,
+            root,
+            id,
+            registry,
+        }
     }
-    fn snapshot(f:&Fixture)->(String,Vec<u8>,Vec<u8>,Vec<u8>){
-        let r=Repository::open(&f.root).unwrap();
-        let head=r.head().unwrap().target().unwrap().to_string();
-        (head,fs::read(f.root.join(".git/index")).unwrap(),
-         fs::read(f.root.join("main.txt")).unwrap(),
-         fs::read(f.root.join("stable.keep")).unwrap())
+    fn snapshot(f: &Fixture) -> (String, Vec<u8>, Vec<u8>, Vec<u8>) {
+        let r = Repository::open(&f.root).unwrap();
+        let head = r.head().unwrap().target().unwrap().to_string();
+        (
+            head,
+            fs::read(f.root.join(".git/index")).unwrap(),
+            fs::read(f.root.join("main.txt")).unwrap(),
+            fs::read(f.root.join("stable.keep")).unwrap(),
+        )
     }
     #[test]
-    fn cherry_pick_preview_isolated_and_preserves_all_original_git_bytes(){
-        let f=fixture();let before=snapshot(&f);
-        let r=f.registry.preview_prospective_replay(&f.id,ReplayReviewKind::CherryPickLocalTip,"feature").unwrap();
-        assert_eq!(r.conflict_count,0);
-        assert_eq!(r.result_steps.len(),1);
-        assert_eq!(r.candidate_change_paths,1);
-        assert!(r.prospective_tree.is_some()&&r.prospective_head.is_some());
+    fn cherry_pick_preview_isolated_and_preserves_all_original_git_bytes() {
+        let f = fixture();
+        let before = snapshot(&f);
+        let r = f
+            .registry
+            .preview_prospective_replay(&f.id, ReplayReviewKind::CherryPickLocalTip, "feature")
+            .unwrap();
+        assert_eq!(r.conflict_count, 0);
+        assert_eq!(r.result_steps.len(), 1);
+        assert_eq!(r.candidate_change_paths, 1);
+        assert!(r.prospective_tree.is_some() && r.prospective_head.is_some());
         assert!(r.blockers.is_empty());
-        assert!(r.original_project_unchanged&&r.quarantine_only_result_objects);
-        assert!(!r.project_ref_modified&&!r.project_index_or_worktree_modified&&!r.project_odb_modified);
-        assert_eq!(snapshot(&f),before);
-        let original=Repository::open(&f.root).unwrap();
-        assert!(original.find_commit(Oid::from_str(r.prospective_head.as_deref().unwrap()).unwrap()).is_err(),
-            "prospective Git commit MUST be absent from source object database during preview");
+        assert!(r.original_project_unchanged && r.quarantine_only_result_objects);
+        assert!(
+            !r.project_ref_modified
+                && !r.project_index_or_worktree_modified
+                && !r.project_odb_modified
+        );
+        assert_eq!(snapshot(&f), before);
+        let original = Repository::open(&f.root).unwrap();
+        assert!(
+            original
+                .find_commit(Oid::from_str(r.prospective_head.as_deref().unwrap()).unwrap())
+                .is_err(),
+            "prospective Git commit MUST be absent from source object database during preview"
+        );
     }
     #[test]
-    fn rebase_preview_isolated_and_result_uses_selected_tip_as_parent(){
-        let f=fixture();let before=snapshot(&f);
-        let r=f.registry.preview_prospective_replay(&f.id,ReplayReviewKind::RebaseCurrentOntoLocal,"feature").unwrap();
-        assert_eq!(r.result_steps.len(),1);
-        assert_eq!(r.result_steps[0].resulting_parent,r.selected_tip);
-        assert_eq!(r.conflict_count,0);
-        assert_eq!(r.candidate_change_paths,1);
+    fn rebase_preview_isolated_and_result_uses_selected_tip_as_parent() {
+        let f = fixture();
+        let before = snapshot(&f);
+        let r = f
+            .registry
+            .preview_prospective_replay(&f.id, ReplayReviewKind::RebaseCurrentOntoLocal, "feature")
+            .unwrap();
+        assert_eq!(r.result_steps.len(), 1);
+        assert_eq!(r.result_steps[0].resulting_parent, r.selected_tip);
+        assert_eq!(r.conflict_count, 0);
+        assert_eq!(r.candidate_change_paths, 1);
         assert!(r.blockers.is_empty());
-        assert_eq!(snapshot(&f),before);
+        assert_eq!(snapshot(&f), before);
     }
     #[test]
-    fn same_path_divergence_yields_real_merge_conflicts_without_writing_source(){
-        let f=fixture();
-        let repo=Repository::open(&f.root).unwrap();
-        let prior=repo.find_commit(local_commit(&repo,"feature").unwrap()).unwrap();
-        let old_tree=prior.tree().unwrap();
-        let mut builder=repo.treebuilder(Some(&old_tree)).unwrap();
-        let blob=repo.blob(b"feature conflicting main\n").unwrap();
-        builder.insert("main.txt",blob,0o100644).unwrap();
-        let tree=repo.find_tree(builder.write().unwrap()).unwrap();
-        let sig=Signature::now("Fixture","fixture@localhost.invalid").unwrap();
-        repo.commit(Some("refs/heads/feature"),&sig,&sig,
-            "feature modifies same main path",&tree,&[&prior]).unwrap();
+    fn same_path_divergence_yields_real_merge_conflicts_without_writing_source() {
+        let f = fixture();
+        let repo = Repository::open(&f.root).unwrap();
+        let prior = repo
+            .find_commit(local_commit(&repo, "feature").unwrap())
+            .unwrap();
+        let old_tree = prior.tree().unwrap();
+        let mut builder = repo.treebuilder(Some(&old_tree)).unwrap();
+        let blob = repo.blob(b"feature conflicting main\n").unwrap();
+        builder.insert("main.txt", blob, 0o100644).unwrap();
+        let tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        let sig = Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
+        repo.commit(
+            Some("refs/heads/feature"),
+            &sig,
+            &sig,
+            "feature modifies same main path",
+            &tree,
+            &[&prior],
+        )
+        .unwrap();
         drop(tree);
         drop(builder);
         drop(old_tree);
         drop(prior);
         drop(repo);
-        let before=snapshot(&f);
-        let prospective=f.registry.preview_prospective_replay(
-            &f.id,ReplayReviewKind::CherryPickLocalTip,"feature").unwrap();
-        assert!(prospective.conflict_count>0);
+        let before = snapshot(&f);
+        let prospective = f
+            .registry
+            .preview_prospective_replay(&f.id, ReplayReviewKind::CherryPickLocalTip, "feature")
+            .unwrap();
+        assert!(prospective.conflict_count > 0);
         assert!(prospective.blockers.contains(&"actual_three_way_conflicts"));
         assert!(prospective.prospective_head.is_none());
         assert!(prospective.prospective_tree.is_none());
         assert!(!prospective.execution_route_available);
-        assert_eq!(snapshot(&f),before);
+        assert_eq!(snapshot(&f), before);
     }
     #[test]
-    fn stale_and_dirty_sources_never_return_an_execution_capability(){
-        let f=fixture();
-        fs::write(f.root.join(".git/index.lock"),b"foreign").unwrap();
-        let r=f.registry.preview_prospective_replay(&f.id,ReplayReviewKind::CherryPickLocalTip,"feature").unwrap();
-        assert!(r.blockers.contains(&"git_index_lock_requires_manual_review"));
+    fn stale_and_dirty_sources_never_return_an_execution_capability() {
+        let f = fixture();
+        fs::write(f.root.join(".git/index.lock"), b"foreign").unwrap();
+        let r = f
+            .registry
+            .preview_prospective_replay(&f.id, ReplayReviewKind::CherryPickLocalTip, "feature")
+            .unwrap();
+        assert!(r
+            .blockers
+            .contains(&"git_index_lock_requires_manual_review"));
         assert!(!r.execution_route_available);
-        assert_eq!(fs::read(f.root.join(".git/index.lock")).unwrap(),b"foreign");
+        assert_eq!(
+            fs::read(f.root.join(".git/index.lock")).unwrap(),
+            b"foreign"
+        );
     }
 }
