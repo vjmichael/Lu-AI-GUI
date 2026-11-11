@@ -203,6 +203,7 @@ function App() {
   const focusNonce = useRef(0);
   const projectProblemsPanelRef = useRef(null);
   const [problemsFocusRequest,setProblemsFocusRequest] = useState(0);
+  const rovingTabFocusRef = useRef(null);
   const [savingKey, setSavingKey] = useState(null);
   // Synchronous reservation: React state cannot stop same-tick duplicate Saves.
   const savingKeyRef = useRef(null);
@@ -698,6 +699,36 @@ function App() {
     setProjectProblemsOpen(true);
     setProblemsFocusRequest(previous=>previous+1);
     setSection('explorer');
+  }
+  useEffect(()=>{
+    const target=rovingTabFocusRef.current;
+    if (!target || target.projectId!==activeProject?.projectId ||
+        target.key!==activeTabKey) return;
+    const element=[...document.querySelectorAll(
+      'button[role="tab"][data-ide-tab-key]')]
+      .find(node=>node.getAttribute('data-ide-tab-key')===target.key);
+    if (element) {
+      rovingTabFocusRef.current=null;
+      element.focus();
+    }
+  },[activeTabKey,visibleEditorTabs.start,activeProject?.projectId]);
+  function selectKeyboardTab(event) {
+    const origin=event.target?.closest?.('button[role="tab"][data-ide-tab-key]');
+    if (!origin || !projectTabs.length || !activeProject?.projectId ||
+        !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+    const current=projectTabs.findIndex(tab=>
+      tab.key===origin.getAttribute('data-ide-tab-key'));
+    if(current<0) return;
+    event.preventDefault();
+    let index=current;
+    if(event.key==='ArrowLeft') index=(current-1+projectTabs.length)%projectTabs.length;
+    if(event.key==='ArrowRight') index=(current+1)%projectTabs.length;
+    if(event.key==='Home') index=0;
+    if(event.key==='End') index=projectTabs.length-1;
+    const next=projectTabs[index];
+    if (!next || next.projectId!==activeProject.projectId) return;
+    rovingTabFocusRef.current={key:next.key,projectId:next.projectId};
+    selectPrimaryEditorTab(next.key);
   }
   function selectPrimaryEditorTab(key) {
     if (mergeBusy || mergeApplyRequest || !activeProject?.projectId) return;
@@ -8582,7 +8613,8 @@ function App() {
                   )}
                 </div>
               </section>}
-            <div className="editorTabs" role="tablist" aria-label="Open source files">
+            <div className="editorTabs" role="tablist" aria-label="Open source files"
+              aria-orientation="horizontal" onKeyDown={selectKeyboardTab}>
               <button type="button" className="editorTabPage"
                 aria-label="Earlier open source tabs" disabled={!visibleEditorTabs.hiddenBefore}
                 onClick={()=>setTabWindowStart(previous=>
@@ -8603,6 +8635,8 @@ function App() {
               {visibleEditorTabs.visible.map(tab => <div className={'editorTab' +
                 (tab.key === activeTabKey ? ' selected' : '')} key={tab.key}>
                 <button type="button" role="tab" aria-selected={tab.key === activeTabKey}
+                  data-ide-tab-key={tab.key}
+                  tabIndex={tab.key===activeTabKey?0:-1}
                   aria-label={(tab.dirty ? 'Unsaved source tab ' : 'Saved source tab ') +
                     tab.relativePath}
                   className="editorTabSelect" title={tab.relativePath}
