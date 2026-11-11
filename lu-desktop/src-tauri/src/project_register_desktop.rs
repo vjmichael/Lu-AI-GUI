@@ -4,7 +4,6 @@ use super::*;
 use lu_core::{project_evidence_graph as graph,project_status_classifier as status,
     project_task_synthesis as synthesis,project_task_register as register};
 use rusqlite::{Connection,OpenFlags,params,OptionalExtension,TransactionBehavior};
-use std::collections::BTreeMap;
 
 fn library(profile:&Path)->Result<Connection,String>{
     let db=profile.join("ansf/library.db");
@@ -286,9 +285,12 @@ pub(crate) async fn lu_project_revise_task(
     }
     let message=format!(
         "Manually correct task {task_id} at version {expected_version}?\n\n\
-         New summary: {}\nReason: {}\n\nThis preserves the original model proposal \
-         and evidence history. It does not accept outcomes, authorize execution or \
-         operate on the project.",correction.summary,correction.reason);
+         Summary: {}\nDescription: {}\nPriority: {}\nAcceptance criterion: {}\n\
+         Blocked by: {}\nReason: {}\n\nThis is a human correction only. \
+         The original model, source evidence, and old versions are preserved. \
+         Nothing is executed or authorized.",
+        correction.summary,correction.description,correction.priority,
+        correction.acceptance_criteria,correction.blocked_by,correction.reason);
     if !confirm(&app,"Lu — Confirm human task correction",message).await?{
         return Ok(None)
     }
@@ -304,9 +306,14 @@ pub(crate) async fn lu_project_revise_task(
         Ok(Some(saved))
     }).await.map_err(|_|"PLAN05_CORRECTION_THREAD_INTERRUPTED")?
 }
-fn review_selected(profile:&Path,root:&Path,id:&str,task:Option<(&str,u64)>)
+fn review_selected(profile:&Path,root:&Path,id:&str,task:Option<(&str,u64)>,
+    expected_observation:Option<&(graph::EvidenceGraph,status::StatusReport)>)
  ->Result<register::TaskRegister,String>{
     let current=classify_selected(root)?;
+    if expected_observation.is_some_and(|preview|
+        !observations_equal(preview,&current).unwrap_or(false)){
+        return Err("PLAN05_SOURCE_CHANGED_AFTER_HUMAN_REVIEW".into())
+    }
     let conn=library(profile)?;
     let (p,old,_)=load_register(&conn,id)?.ok_or("PLAN05_REGISTER_NOT_FOUND")?;
     if old.scope_sha256!=current.0.project_scope_sha256{
@@ -318,11 +325,6 @@ fn review_selected(profile:&Path,root:&Path,id:&str,task:Option<(&str,u64)>)
         if v.version!=*expected{return Err("PLAN05_STALE_TASK_REVIEW".into())}
         Some((v.graph_sha256.clone(),v.status_sha256.clone()))
     }else{None};
-    let mut old_snapshots=BTreeMap::new();
-    for event in &old.events{
-        let v=&event.revision;
-        old_snapshots.insert((v.graph_sha256.clone(),v.status_sha256.clone()),());
-    }
     let last=old.events.last().ok_or("PLAN05_REGISTER_EMPTY")?;
     let previous=archived_evidence(&conn,&last.revision.graph_sha256,
         &last.revision.status_sha256)?;
@@ -370,7 +372,7 @@ pub(crate) async fn lu_project_reconcile_register(
     let Some(root)=pick(&app).await? else{return Ok(None)};
     let profile=profile(state.inner())?;
     tauri::async_runtime::spawn_blocking(move||
-        review_selected(&profile,&root,&register_id,None).map(Some)
+        review_selected(&profile,&root,&register_id,None,None).map(Some)
     ).await.map_err(|_|"PLAN05_RECONCILIATION_THREAD_INTERRUPTED")?
 }
 #[tauri::command]
@@ -383,17 +385,60 @@ pub(crate) async fn lu_project_revalidate_task(
     if !register_id.starts_with("lu-register-")||!task_id.starts_with("lu-task-"){
         return Err("PLAN05_INVALID_TASK_REVIEW_IDS".into())
     }
-    if !confirm(&app,"Lu — Review current independent acceptance",
-        format!("Review task {task_id} version {expected_version} against a freshly \
-        selected original project and native status evidence? Only the exact \
-        independently verified requirement can be marked verified. A human \
-        correction or model claim never constitutes execution authorization.")
-        ).await?{return Ok(None)}
     let Some(root)=pick(&app).await? else{return Ok(None)};
     let profile=profile(state.inner())?;
+    // Show the ACTUAL current native classifier result in the OS dialog,
+    // not merely a pre-scan promise that an unknown status is accepted.
+    let root_preview=root.clone();
+    let profile_preview=profile.clone();
+    let register_preview=register_id.clone();
+    let task_preview=task_id.clone();
+    let (observation,message)=tauri::async_runtime::spawn_blocking(move||{
+        let observed=classify_selected(&root_preview)?;
+        let conn=library(&profile_preview)?;
+        let (p,r,_)=load_register(&conn,&register_preview)?
+            .ok_or("PLAN05_REGISTER_NOT_FOUND")?;
+        let old=register::latest(&r,&task_preview)
+            .ok_or("PLAN05_TASK_NOT_FOUND")?;
+        if old.version!=expected_version||
+            p.project_scope_sha256!=observed.0.project_scope_sha256{
+            return Err("PLAN05_STALE_OR_FOREIGN_NATIVE_REVIEW".into())
+        }
+        let finding=observed.1.findings.iter()
+            .find(|f|f.requirement_id==old.source_requirement_id);
+        let status_name=finding.map(|f|format!("{:?}",f.primary))
+            .unwrap_or_else(||"SOURCE REQUIREMENT NOT FOUND".into());
+        let exact_accepted=finding.is_some_and(|f|
+            observed.0.complete&&observed.1.complete&&
+            f.primary==status::Status::Accepted&&
+            f.evidence_health==status::EvidenceHealth::Current&&
+            !f.conflicting_claims);
+        let message=format!(
+            "Review task {} version {} against ACTUAL selected source?\n\n\
+             Task: {}\nAcceptance criterion: {}\n\
+             Original requirement: {}\n\
+             Native classifier: {}\n\
+             Exact selected HEAD: {}\n\
+             Graph SHA-256: {}\n\
+             Independently verified exact requirement: {}\n\n\
+             This never establishes that the task was executed, installed, \
+             merged, scheduled, or authorized. If the source has changed, Lu \
+             will append a needs-review revision rather than reuse acceptance.",
+            task_preview,old.version,old.summary,old.acceptance_criteria,
+            old.source_requirement_id,status_name,
+            observed.0.selected_head.as_deref().unwrap_or("not verified"),
+            observed.0.sha256,exact_accepted
+        );
+        Ok::<_,String>((observed,message))
+    }).await.map_err(|_|"PLAN05_REVIEW_PREVIEW_INTERRUPTED")??;
+    if !confirm(&app,"Lu — Review exact native evidence",message).await?{
+        return Ok(None)
+    }
+    // A second native inspection after approval must agree semantically with
+    // what the human saw. No TOCTOU acceptance of modified source.
     tauri::async_runtime::spawn_blocking(move||
-        review_selected(&profile,&root,&register_id,Some((&task_id,expected_version)))
-            .map(Some)
+        review_selected(&profile,&root,&register_id,
+            Some((&task_id,expected_version)),Some(&observation)).map(Some)
     ).await.map_err(|_|"PLAN05_REVALIDATION_THREAD_INTERRUPTED")?
 }
 #[cfg(test)]
