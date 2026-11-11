@@ -151,6 +151,13 @@ fn append(profile:&Path,mut event:ReviewEvent)->Result<ReviewEvent,String>{
             return Err("PLAN07C_REVIEW_REPLAY_OR_REPLACED_SOURCE".into())
         }
     }else{return Err("PLAN07C_BAD_REVIEW_SEQUENCE".into())}
+    if event.phase==Phase::ApprovedForReview{
+        let (_,now,_)=project_register_desktop::load_register(&tx,&event.register_id)?
+            .ok_or("PLAN07C_OPERATOR_REGISTER_DISAPPEARED")?;
+        if now.latest_sha256!=event.expected_register_sha256{
+            return Err("PLAN07C_SOURCE_REGISTER_CHANGED_DURING_APPROVAL".into())
+        }
+    }
     if event.sha256.is_empty(){event.sha256=hash(&event)?}
     valid(&event)?;
     let json=serde_json::to_vec(&event)
@@ -177,16 +184,6 @@ fn snapshot(profile:&Path,preview_id:&str,task_id:&str,
         return Err("PLAN07C_HUMAN_NOTE_REQUIRED".into())
     }
     let (p,r,_,g,s)=project_updates_desktop::reload_audited(profile,preview_id)?;
-    updates::audit(&p,&r,&project_register_desktop::load_register(
-        &project_register_desktop::library(profile)?,&p.register_id)?
-        .ok_or("PLAN07C_ORIGINAL_REGISTER_MISSING")?.0,
-        &project_register_desktop::archived_evidence(
-            &project_register_desktop::library(profile)?,
-            &p.previous_graph_sha256,&p.previous_status_sha256)?.0,
-        &project_register_desktop::archived_evidence(
-            &project_register_desktop::library(profile)?,
-            &p.previous_graph_sha256,&p.previous_status_sha256)?.1,
-        &g,&s)?;
     let candidate=p.candidates.iter().find(|x|x.task_id==task_id)
         .ok_or("PLAN07C_ORIGINAL_TASK_NOT_IN_PREVIEW")?;
     let v=register::latest(&r,task_id).ok_or("PLAN07C_ORIGINAL_TASK_MISSING")?;
@@ -258,6 +255,22 @@ fn decide(profile:&Path,pending:&ReviewEvent,phase:Phase,root:Option<&Path>)
            serde_json::to_value(&current.1.findings)
                 .map_err(|_|"PLAN07C_NEW_FINDINGS_ENCODE")?{
             return Err("PLAN07C_HUMAN_REVIEW_SOURCE_CHANGED".into())
+        }
+        // Model suggestions must still be the exact unmodified original.
+        // A changed/corrupted original model receipt after confirmation is
+        // denied, not silently downgraded to deterministic evidence.
+        if let Some(model_sha)=pending.model_suggestion_sha256.as_deref(){
+            let proof=project_update_model_desktop::read_latest(
+                profile,&pending.preview_sha256)?
+                .ok_or("PLAN07C_APPROVED_MODEL_RECEIPT_DISAPPEARED")?;
+            if proof.digest_sha256!=model_sha||
+               !proof.suggestions.iter().any(|item|
+                   item.task_id==pending.task_id&&
+                   item.original_requirement_id==pending.original_requirement_id&&
+                   item.expected_version==pending.expected_task_version&&
+                   Some(item.action)==pending.model_action){
+                return Err("PLAN07C_APPROVED_MODEL_RECEIPT_CHANGED".into())
+            }
         }
         // Approval of evidence FOLLOW-UP never appends PLAN05 revisions:
         // only the separate source-reconcile and exact-criterion review
