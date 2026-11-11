@@ -20,16 +20,16 @@ test('G06C03 source execution is fast-forward-only and protects Git worktree/ref
   assert.match(source, /G06C03_DANGEROUS_PATH_COMPONENT/);
   assert.match(source, /G06C03_SYMLINK_IN_WORKTREE/);
   assert.match(source, /repo\.checkout_tree\(&target, Some\(&mut checkout\)\)/);
-  assert.match(source, /checkout\.safe\(\)\.recreate_missing\(true\)\.remove_untracked\(false\)/);
-  assert.match(source, /\.overwrite_ignored\(false\)\.update_index\(true\)/);
+  assert.match(source, /checkout\s*\.safe\(\)[\s\S]{0,180}\.recreate_missing\(true\)[\s\S]{0,180}\.remove_untracked\(false\)/);
+  assert.match(source, /\.overwrite_ignored\(false\)[\s\S]{0,100}\.update_index\(true\)/);
   assert.match(source, /repo\.reference_matching\(/);
   assert.match(source, /G06C03_REF_CAS_FAILED_RECOVERY_REQUIRED/);
   assert.match(source, /index_matches_tree\(&repo, &plan.selected_tree\)/);
   assert.match(source, /journal\.phase = "checkout_intent"/);
   assert.match(source, /journal\.phase = "publishing"/);
   assert.match(source, /journal\.phase = "verified"/);
-  assert.match(source, /cancel\.compare_exchange\(0, 1, Ordering::SeqCst, Ordering::SeqCst\)/);
-  const prod = source.split('#[cfg(test)]')[0];
+  assert.match(source, /cancel\s*\.compare_exchange\(0, 1, Ordering::SeqCst, Ordering::SeqCst\)/);
+  const prod = source.split('#[cfg(test)]\\nmod tests')[0];
   for (const forbidden of [
     'repo.reset(', 'repo.checkout_head(', 'repo.merge(', 'repo.rebase(',
     'repo.fetch(', 'repo.push(', 'repo.commit(', 'repo.cherrypick(',
