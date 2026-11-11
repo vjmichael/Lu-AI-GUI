@@ -354,8 +354,17 @@ pub fn inspect_local_branch_membership(
             let output=repo.run(&["merge-base".into(),
                 "--".into(),tip.into(),selected_head.into()],256);
             match output{
-                Ok((bytes,false))=>String::from_utf8_lossy(&bytes).trim()==tip,
-                _=>false,
+                Ok((bytes,false))=>{
+                    let base=String::from_utf8(bytes)
+                        .map_err(|_|"Native merge-base result was not UTF-8")?;
+                    let sha=base.trim();
+                    if !matches!(sha.len(),40|64)||
+                        !sha.bytes().all(|b|b.is_ascii_hexdigit()){
+                        return Err("Native merge-base result malformed".into())
+                    }
+                    sha==tip
+                },
+                _=>return Err("Native merge-base ancestry check failed; non-containment is not proven".into()),
             }
         };
         out.push(LocalBranchMembership{

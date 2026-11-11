@@ -79,6 +79,7 @@ export function SettingsWindow(){
   const [observeHandoff,setObserveHandoff]=useState(null);
   const [projectBaseline,setProjectBaseline]=useState(null);
   const [projectGraph,setProjectGraph]=useState(null);
+  const [projectStatus,setProjectStatus]=useState(null);
 
   async function refresh(){
     const results=await Promise.allSettled([
@@ -363,6 +364,37 @@ export function SettingsWindow(){
               </details>
               {projectGraph.limitations.map((warning,i)=><p key={i}>{warning}</p>)}
               <small>Read-only graph only. PLAN-03 classifier, PLAN-04 GGUF task synthesis, and executable work plans remain separate.</small>
+            </section>}
+          </Section>
+          <Section title="Evidence-based project status · PLAN-03">
+            <p>Choose the project again in the native folder picker. Lu compares the original evidence graph with bounded native file-path observations and local Git branch ancestry. A missing path is not proof that a feature is missing; reports do not establish independent acceptance.</p>
+            <button type="button" disabled={busy}
+              onClick={()=>void act('Conservative project status recorded in ANSF.',async()=>{
+                setProjectStatus(null);
+                const result=await invoke('lu_project_classify');
+                if(result!==null&&result?.schema!=='lu-project-status-v1'){
+                  throw Error('Unrecognized project classification');
+                }
+                setProjectStatus(result);return result;
+              })}>Classify selected project…</button>
+            {projectStatus&&<section className="nativeOption" aria-label="Source-grounded project statuses">
+              <strong>Status report · {projectStatus.status.complete?'bounded scan complete':'partial scan'}</strong>
+              <p>Classification SHA-256: {projectStatus.status.digestSha256}</p>
+              <p>Evidence graph: {projectStatus.graphSha256} · Exact local HEAD: {projectStatus.status.selectedHead||'not verified'}</p>
+              <p>Requirements inspected: {projectStatus.status.findings.length} · No model generation or execution authorization granted.</p>
+              <div className="nativeOptionList">
+                {projectStatus.status.findings.slice(0,64).map(f=>
+                  <article className="nativeOption" key={f.requirementId}>
+                    <strong>{f.primary} · {f.confidence} confidence</strong>
+                    <p>{f.requirement}</p>
+                    <small>{f.sourcePath} · {f.evidenceHealth} evidence</small>
+                    <p>{f.explanation}</p>
+                    <small>Next evidence: {f.nextEvidence||'None established'}</small>
+                    <small>Dimensions: {f.dimensions.join(', ')} · Target path checks: {f.observedTargets}/{f.requiredTargets}</small>
+                  </article>)}
+              </div>
+              {projectStatus.status.limitations.map((limitation,i)=><p key={i}>{limitation}</p>)}
+              <small>Unverified results are not accepted implementation, and reports cannot create BROKEN/ACCEPTED. PLAN-04 task synthesis is separate.</small>
             </section>}
           </Section>
           <p>Worker execution requires original-turn authorization, bounded input/output, cancellation, durable receipts and independent verification. Not every provider implements Lu's current tool-response protocol.</p>

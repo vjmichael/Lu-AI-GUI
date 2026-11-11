@@ -1492,3 +1492,110 @@ jobs:
           path: plan02-native-evidence/
           retention-days: 14
           if-no-files-found: warn
+
+  native-plan03-status:
+    # Only explicitly SHA-admitted PLAN-03 draft PR edit runs this one grouped
+    # Windows/Linux test. No per-push CI fanout, no auto promotion or merge.
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.head.ref == 'lu/plan03-evidence-status-classifier-20261110' && contains(github.event.pull_request.body, format('LU_PLAN03_NATIVE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN03_NATIVE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact PLAN-03 source and admission guard
+        shell: bash
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p plan03-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          python - <<'PY'
+          import os,re
+          markers=re.findall(r'(?m)^LU_PLAN03_NATIVE_SHA=([0-9a-f]{40})$',os.environ['BODY'])
+          assert markers==[os.environ['EXPECTED']],'PLAN03 immutable admission not present'
+          PY
+          node scripts/verify-source-tree.mjs | tee plan03-evidence/source-integrity.log
+          printf 'HEAD=%s\nOS=%s\n' "$EXPECTED" "$RUNNER_OS" > plan03-evidence/identity.txt
+      - name: Linux native Tauri support
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf
+      - name: Windows test-only nonfunctional model file placeholder
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($n in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $n) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build actual frontend before Tauri macro and check separate Settings route
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
+          node --test lu-desktop/tests/workspace-desktop.test.mjs 2>&1 | tee plan03-evidence/settings-contract.log
+      - name: Host-only graph and classifier unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib project_evidence_graph::tests -- --nocapture 2>&1 | tee plan03-evidence/graph-regression.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib project_status_classifier::tests -- --nocapture 2>&1 | tee plan03-evidence/classifier.log
+          grep -Fq 'test result: ok. 10 passed; 0 failed;' plan03-evidence/classifier.log
+      - name: Original Git ancestry witness (real test-only local repository)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,shutil
+          exe=shutil.which('git.exe' if os.name=='nt' else 'git')
+          if not exe: raise SystemExit('Real Git binary unavailable')
+          real=os.path.realpath(exe)
+          if not os.path.isfile(real): raise SystemExit('Real Git not a file')
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as env:
+              env.write('LU_PLAN01_TEST_GIT='+real+'\n')
+          PY
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib native_git_inspect::plan02_local_topology_tests -- --ignored --nocapture 2>&1 | tee plan03-evidence/git-native.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' plan03-evidence/git-native.log
+      - name: Real Tauri scoped classification, native JSON and ANSF restart tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib project_status_desktop::tests -- --nocapture 2>&1 | tee plan03-evidence/desktop-status.log
+          grep -Fq 'test result: ok. 3 passed; 0 failed;' plan03-evidence/desktop-status.log
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | tee plan03-evidence/tauri-check.log
+          echo 'PLAN03_NATIVE_STATUS_CLASSIFIER_VERIFIED' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Installed-app and independent external outcome adapters remain separate.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-plan03-native-${{ matrix.os }}-${{ github.event.pull_request.head.sha }}
+          path: plan03-evidence/
+          retention-days: 14
+          if-no-files-found: warn
