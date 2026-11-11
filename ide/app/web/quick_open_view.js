@@ -6,6 +6,17 @@ const MAX_FILENAME_RESULTS=60;
 const MAX_DIRECTORY_PAGE=120;
 const MAX_VISITED=30000;
 const validNonnegative=value=>Number.isSafeInteger(value)&&value>=0;
+const utf8Order=(left,right)=>{
+  // Rust's String/BTreeSet order is UTF-8 lexical, not JavaScript UTF-16.
+  // Compare scalar code points so valid non-ASCII project names page safely.
+  const a=Array.from(left),b=Array.from(right);
+  for(let i=0;i<Math.min(a.length,b.length);i++){
+    const delta=a[i].codePointAt(0)-b[i].codePointAt(0);
+    if(delta!==0)return delta;
+  }
+  return a.length-b.length;
+};
+
 const validProject=value=>typeof value==='string'&&/^ide-[a-f0-9]{32}$/.test(value);
 const validName=value=>typeof value==='string'&&value.length>0&&
   value.length<=255&&verifiedRelativeSourcePath(value)===value&&!value.includes('/');
@@ -49,7 +60,7 @@ export function checkedDirectoryPage(raw,projectId,relativeDir,after) {
   let last=after||'';
   const seen=new Set();
   for(const entry of raw.entries){
-    if (!validName(entry?.name)||entry.name<=last||
+    if (!validName(entry?.name)||utf8Order(entry.name,last)<=0||
         seen.has(entry.name)||
         entry.relativePath!==(relativeDir?relativeDir+'/'+entry.name:entry.name)||
         !['directory','file','symlink','other'].includes(entry.kind)||
