@@ -49,7 +49,8 @@ provides an interactive, one-scenario-at-a-time witness on a machine with an
 **actually installed and running** Lu IDE. It refuses GitHub Actions/headless
 sessions, requires the running process ID to match the exact installed executable,
 checks that the test source checkout matches the explicitly supplied 40-digit
-commit SHA and creates an entirely new fixture/evidence directory. Human operator
+commit SHA **and that the running installed executable SHA-256 equals the separately
+recorded exact-source CI package witness** and creates an entirely new fixture/evidence directory. Human operator
 actions must be performed in the **real native OS dialogs**; the script never
 issues approval through the WebView or an IPC test hook.
 
@@ -59,6 +60,7 @@ For example, from the repository checkout matching the installer source:
 python ide/app/fixtures/g06b05_physical_installed_acceptance.py \
   --installed-executable /usr/bin/lu-ide-desktop \
   --source-sha YOUR_EXACT_40_DIGIT_COMMIT_SHA \
+  --expected-installed-sha256 EXACT_CI_VERIFIED_64_DIGIT_EXE_DIGEST \
   --scenario commit-approve \
   --evidence-directory /tmp/g06b05-one-scenario-evidence
 ```
