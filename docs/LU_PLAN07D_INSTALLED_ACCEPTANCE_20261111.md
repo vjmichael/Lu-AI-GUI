@@ -140,8 +140,8 @@ created at 2026-11-11 16:59Z at `d913acbd`. At inspection, both OS jobs
 remained **queued** without compiler, UIA, or AT-SPI steps and without any
 uploaded evidence artifacts. This is a scheduler/queue state, *not* a test
 failure or a PASS. Numerous preceding source-only PR synchronizations ended
-`cancelled`, providing no installation proof. The new full-Debian matrix is
-added to the same grouped gate and must be read at the **next exact head**.
+`cancelled`, providing no installation proof. The new full-Debian matrix and the separately identifiable genuine small-GGUF
+host test are added to the same grouped gate and must be read at the **next exact head**.
 Do not trigger per-file CI or falsely attribute stale receipts to a newer SHA.
 
 ### Genuine GGUF reconciliation
@@ -153,8 +153,12 @@ and read-only independent no-auto-acceptance oracle. That is a separate host
 model test, **not** the installed Lu normal FIFO path and **not** the owner's
 Qwen3.8-27B/Radeon test. No current-head genuine model PASS receipt is
 available in the inspected PR-branch runs; the earlier exact SHA marker alone
-is not test evidence. The single consolidated PLAN-07D workflow may include
-its own genuine host model job; it must preserve this distinction.
+is not test evidence. The single consolidated PLAN-07D workflow **now includes** its own
+`hosted-genuine-gguf-original` job using the existing exact-pinned real Qwen
+script and independent native/SQLite model oracle. That run still must
+produce its **original model, cancellation and ANSF evidence** before any
+PASS can be claimed. It cannot satisfy installed production FIFO cancellation
+or Qwen3.8 27B physical acceptance.
 
 ### Owner physical Windows boundary
 

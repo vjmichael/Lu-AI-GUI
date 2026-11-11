@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d913acbd4352b3daa3f6628451c9c56accf39406",
+  "sourceCommitBeforeLock": "feffa0fe10643216bead8a6a8855b1ac56907272",
   "trackedFileCount": 925,
   "files": [
     {
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-plan07d-installed.yml",
-      "blob": "d20f7af7de9ff48be5efc1b8480659c1a63c69b2"
+      "blob": "e6fb2ef454c50d0cd53f1fba6e565115cdc92f3b"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -861,7 +861,7 @@
     },
     {
       "path": "docs/LU_PLAN07D_INSTALLED_ACCEPTANCE_20261111.md",
-      "blob": "3f2830da5bc2ab5a4c01775c8f6a5b2812034ba6"
+      "blob": "d8d1e51d9afd7eae5a5b8362bfa081e7ed4c0c2f"
     },
     {
       "path": "docs/LU_PLAN07_EVIDENCE_DRIVEN_TASK_UPDATES_20261110.md",

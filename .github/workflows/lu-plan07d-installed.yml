@@ -258,3 +258,73 @@ jobs:
           path: plan07d-debian-evidence/
           if-no-files-found: warn
           retention-days: 14
+  hosted-genuine-gguf-original:
+    # One exact SHA and the SAME consolidated PLAN-07D approval event.
+    # Real loaded Qwen3-0.6B/ANSF host evidence is separate from installed UI,
+    # production FIFO cancellation, physical Qwen3.8 27B and AMD Vulkan.
+    if: ${{ github.event.pull_request.number == 219 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110' && contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 160
+    env:
+      PLAN07B_REAL_HEAD: ${{ github.event.pull_request.head.sha }}
+      PLAN07B_REAL_MODEL_SHA: 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
+      PLAN07B_REAL_PORT: '18987'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: One current source and exact grouped model admission
+        shell: bash
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PLAN07B_REAL_HEAD"
+          python3 - <<'PY'
+          import os,re
+          expected=os.environ["PLAN07B_REAL_HEAD"]
+          markers=re.findall(r'(?m)^LU_PLAN07D_INSTALLED_SHA=([0-9a-f]{40})$',os.environ["BODY"])
+          if markers!=[expected]:
+              raise SystemExit("PLAN07D_GENUINE_MODEL_EXACT_HEAD_REFUSED")
+          PY
+          node scripts/verify-source-tree.mjs
+      - name: Install real source-pinned llama.cpp and native ANSF test prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends cmake build-essential curl libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf
+      - name: Actual pinned Qwen GGUF generation source-citation validation cancelled stream and independent SQLite witness
+        shell: bash
+        timeout-minutes: 130
+        run: |
+          set -euo pipefail
+          bash scripts/plan07b-real-gguf-acceptance.sh
+          test -s plan07b-real-evidence/original-inference.json
+          test -s plan07b-real-evidence/real-model-reply.txt
+          test -s plan07b-real-evidence/real-stream-cancel.json
+          test -s plan07b-real-evidence/independent-final-oracle.json
+          echo '07D paired original Qwen3-0.6B loaded GGUF host receipts passed; do not infer installed Lu model FIFO or physical Windows Radeon 27B acceptance.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Explicitly preserve rejected and unexecuted genuine-model status
+        if: always()
+        shell: bash
+        run: |
+          if test -s plan07b-real-evidence/original-inference.json; then
+            echo 'The actual original inference evidence exists. Inspect independent native parser, cancellation and SQLite witness before claiming success.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No complete real GGUF generation receipt: genuine host model gate OPEN.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-plan07d-genuine-gguf-original-qwen-${{ github.event.pull_request.head.sha }}
+          path: plan07b-real-evidence/
+          retention-days: 14
+          if-no-files-found: warn
