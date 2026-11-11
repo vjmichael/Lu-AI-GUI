@@ -26,7 +26,7 @@ fn create_table(conn:&Connection)->Result<(),String>{
         current_status_sha256 TEXT NOT NULL,
         preview_json BLOB NOT NULL,
         no_execution_authority INTEGER NOT NULL CHECK(no_execution_authority=1)
-    );").map_err(|_|"PLAN07_ANSF_REFRESH_SCHEMA_FAILED")
+    );").map_err(|_|"PLAN07_ANSF_REFRESH_SCHEMA_FAILED".to_string())
 }
 fn saved_preview(profile:&Path,preview_sha256:&str)
  ->Result<updates::Preview,String>{
