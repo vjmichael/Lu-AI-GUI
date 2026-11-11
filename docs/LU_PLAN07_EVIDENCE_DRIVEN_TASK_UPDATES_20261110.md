@@ -59,3 +59,44 @@ Native tests use **explicit synthetic model JSON** to test schema, citation, sta
 - Installed Windows human approval/restart evidence still required separately under PLAN-07D.
 
 PLAN-07C (full operator reconciliation/recovery) and PLAN-07D (installed release gate) remain unstarted.
+
+
+### Exact-head genuine model and cancellation acceptance extension
+
+- \`scripts/plan07b-real-gguf-acceptance.sh\` builds the reviewed llama.cpp
+  source (commit \`2bc46baa9207d098d03741ac394e7faaf1a955b6\`), verifies the
+  pinned Qwen3-0.6B Q4_K_M GGUF SHA-256, and produces an original real
+  \`/completion\` response. The native host first creates an actual disposable
+  ANSF register from original project files. Its *initial* PLAN-05 proposal
+  is an **explicitly synthetic test baseline**, never represented as model
+  generation.
+- \`benchmarks/e1/plan07b_real_gguf_task_updates.py\` preflights actual GBNF,
+  interrupts a genuine streaming model HTTP request, and preserves exact
+  request/reply hashes, original model/engine SHA, generation tokens and
+  cancellation evidence. It does not manufacture a model reply or force a
+  successful completion if the actual 0.6B model produces invalid output.
+  Source identifiers are grammar-constrained solely to prevent citation
+  fabrication. The real model must still generate the suggested action,
+  reason and requested future independent evidence.
+- Two explicit \`#[ignore]\` Rust tests bridge original actual ANSF source to
+  the real Qwen inference. The second test rejects altered source or reply,
+  reconstructs exact model suggestions from the **original raw reply**,
+  verifies the saved original prompt/reply, and independently proves the
+  PLAN-05 register's immutable source/revision SHA was unchanged.
+- \`scripts/plan07b-independent-original-ansf-oracle.py\` reads SQLite in
+  read-only mode and checks original source tasks, saved user memory,
+  original model bytes, no completion/authorization and cancelled-stream
+  receipts. It does not rely on a Rust test printing PASS.
+- Actual **Lu production FIFO scoped cancellation** now has its own native
+  task-window command \`lu_project_update_model_cancel\`, a non-renderer-
+  controlled lookup of the exact reserved queue label, queued/active cancel
+  behavior, supervisor cancel for active generations, and cancel checks
+  before persistence. Cross-chat isolation and active cancellation have
+  independent native regression tests. However, external streaming
+  interruption and isolated queue tests do **not yet constitute a combined
+  loaded-GGUF + installed Lu UI cancellation matrix**; that still needs
+  physical Windows operator acceptance.
+
+The exact-PR-head \`genuine-plan07b-gguf\` job in REPO-01 and the
+\`native-plan07b-model\` Windows/Linux matrix are separately SHA-admitted.
+A queued job, source check, or synthetic fixture is not a genuine-model PASS.
