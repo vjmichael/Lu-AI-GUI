@@ -1,5 +1,17 @@
 # Lu IDE — Development changelog
 
+## 2026-11-10 — Group 6B-04 reviewed commits and explicit amend
+
+Added durable, separately OS-authorized staged-hunk commit and
+history-rewrite paths with exact HEAD/index/source verification and
+branch-ref compare-and-swap. Amend requires an additional destructive
+rewrite dialog; denies nonlocal/ambiguous upstream and merge/root
+history. Added restart-stage receipt recovery, commit journal
+reconciliation, native real-Git tests and Source Control review UI.
+No hooks, push, remote operations, implicit staging authority or
+physical installed operator acceptance are claimed.
+
+
 ## 2026-11-10 — Group 6B-03 native partial Git staging
 
 Implemented a native-only OS-confirmed selected-hunk stage operation
