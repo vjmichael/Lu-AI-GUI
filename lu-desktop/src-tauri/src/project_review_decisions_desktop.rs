@@ -405,3 +405,132 @@ pub(crate) async fn lu_project_update_review_decide(
         }
     }
 }
+
+
+fn same_source(
+    a:&(graph::EvidenceGraph,status::StatusReport),
+    b:&(graph::EvidenceGraph,status::StatusReport)
+)->Result<bool,String>{
+    Ok(a.0.project_scope_sha256==b.0.project_scope_sha256&&
+        synthesis::same_observed_sources(&a.0,&b.0)?&&
+        a.1.complete==b.1.complete&&
+        serde_json::to_value(&a.1.findings)
+            .map_err(|_|"PLAN07C_PRIOR_CLASSIFIER_ENCODE")?==
+        serde_json::to_value(&b.1.findings)
+            .map_err(|_|"PLAN07C_CURRENT_CLASSIFIER_ENCODE")?)
+}
+fn exact_preflight(profile:&Path,root:&Path,register_id:&str,task_id:&str,
+    expected_version:u64)->Result<(graph::EvidenceGraph,status::StatusReport,String),String>{
+    let conn=project_register_desktop::library(profile)?;
+    let (p,r,_)=project_register_desktop::load_register(&conn,register_id)?
+        .ok_or("PLAN07C_EXACT_ORIGINAL_REGISTER_MISSING")?;
+    let task=register::latest(&r,task_id)
+        .ok_or("PLAN07C_EXACT_TASK_NOT_IN_ORIGINAL_REGISTER")?;
+    if task.version!=expected_version{
+        return Err("PLAN07C_EXACT_TASK_VERSION_STALE".into())
+    }
+    let original=project_register_desktop::archived_evidence(
+        &conn,&task.graph_sha256,&task.status_sha256)?;
+    let observed=project_status_desktop::classify_selected(root)?;
+    if p.project_scope_sha256!=observed.0.project_scope_sha256||
+       !same_source(&original,&observed)?{
+        return Err("PLAN07C_RECONCILE_NATIVE_SOURCE_BEFORE_HUMAN_REVALIDATION".into())
+    }
+    let f=observed.1.findings.iter()
+        .find(|x|x.requirement_id==task.source_requirement_id)
+        .ok_or("PLAN07C_EXACT_ORIGINAL_REQUIREMENT_MISSING")?;
+    let native_only=observed.0.complete&&observed.1.complete&&
+        f.primary==status::Status::Accepted&&
+        f.evidence_health==status::EvidenceHealth::Current&&
+        f.confidence==status::Confidence::Grounded&&
+        !f.conflicting_claims;
+    let message=format!(
+        "Independently revalidate the EXACT original requirement against \
+         current native project evidence?\n\n\
+         Task: {} v{}\nOriginal wording: {}\n\
+         Human acceptance criterion: {}\n\
+         Original requirement ID: {}\n\
+         Native classifier status: {:?}\n\
+         Native source health: {:?}\n\
+         Exact native criterion currently verifiable: {}\n\
+         Exact HEAD: {}\nGraph SHA: {}\n\
+         Current register SHA: {}\n\n\
+         Approval writes ONE HUMAN REVALIDATION revision of only this \
+         requirement. It never establishes the broader engineering task is \
+         complete, installed, merged, human-tested or authorized for a tool. \
+         Model suggestions are NOT part of this decision. Refusal writes \
+         no task revision; the original register is preserved.",
+         task_id,task.version,task.summary,task.acceptance_criteria,
+         task.source_requirement_id,f.primary,f.evidence_health,native_only,
+         observed.0.selected_head.as_deref().unwrap_or("unverified"),
+         observed.0.sha256,r.latest_sha256
+    );
+    Ok((observed.0,observed.1,message))
+}
+fn exact_commit(profile:&Path,root:&Path,register_id:&str,task_id:&str,
+    expected_version:u64,reviewed:&(graph::EvidenceGraph,status::StatusReport))
+ ->Result<register::TaskRegister,String>{
+    let now=project_status_desktop::classify_selected(root)?;
+    if !same_source(reviewed,&now)?{
+        return Err("PLAN07C_EXACT_SOURCE_CHANGED_AFTER_OS_APPROVAL".into())
+    }
+    let c=project_register_desktop::library(profile)?;
+    let (p,r,_)=project_register_desktop::load_register(&c,register_id)?
+        .ok_or("PLAN07C_REVALIDATION_REGISTER_GONE")?;
+    let old=register::latest(&r,task_id)
+        .ok_or("PLAN07C_REVALIDATION_TASK_GONE")?;
+    if old.version!=expected_version||
+       old.source_requirement_id.is_empty(){
+        return Err("PLAN07C_REVALIDATION_TASK_CHANGED".into())
+    }
+    let original=project_register_desktop::archived_evidence(
+        &c,&old.graph_sha256,&old.status_sha256)?;
+    drop(c);
+    if !same_source(&original,&now)?{
+        return Err("PLAN07C_RECONCILIATION_REQUIRED_BEFORE_REVALIDATION".into())
+    }
+    let next=register::human_revalidate(
+        &r,&p,task_id,expected_version,&now.0,&now.1)?;
+    if next.events.len()!=r.events.len()+1||
+       next.events.last().is_none_or(|e|
+           e.kind!=register::RevisionKind::HumanRevalidated||
+           e.revision.execution_authorized||
+           e.revision.source_requirement_id!=old.source_requirement_id||
+           e.revision.summary!=old.summary||
+           e.revision.acceptance_criteria!=old.acceptance_criteria){
+        return Err("PLAN07C_EXACT_REVALIDATION_CHANGED_ORIGINAL_PROVENANCE".into())
+    }
+    project_register_desktop::persist(profile,&p,&next,Some(&r.latest_sha256))
+}
+#[tauri::command]
+pub(crate) async fn lu_project_update_review_exact_requirement(
+    app:AppHandle,caller:tauri::WebviewWindow,
+    state:State<'_,Arc<DesktopState>>,
+    register_id:String,task_id:String,expected_version:u64
+)->Result<Option<register::TaskRegister>,String>{
+    operator_window(&caller)?;
+    if !register_id.starts_with("lu-register-")||
+       !task_id.starts_with("lu-task-")||expected_version==0{
+        return Err("PLAN07C_INVALID_EXACT_HUMAN_REVIEW_IDS".into())
+    }
+    let chooser=app.clone();
+    let selected=tauri::async_runtime::spawn_blocking(move||
+        chooser.dialog().file().blocking_pick_folder()
+    ).await.map_err(|_|"PLAN07C_EXACT_NATIVE_PICKER_INTERRUPTED")?;
+    let Some(selected)=selected else{return Ok(None)};
+    let root=selected.into_path().map_err(|_|"PLAN07C_EXACT_PATH_INVALID")?;
+    let profile=project_register_desktop::profile(state.inner())?;
+    let preview_root=root.clone();let preview_profile=profile.clone();
+    let preview_register=register_id.clone();let preview_task=task_id.clone();
+    let (graph,stat,message)=tauri::async_runtime::spawn_blocking(move||
+        exact_preflight(&preview_profile,&preview_root,&preview_register,
+            &preview_task,expected_version)
+    ).await.map_err(|_|"PLAN07C_EXACT_NATIVE_PREFLIGHT_INTERRUPTED")??;
+    if !project_register_desktop::confirm(
+        &app,"Lu — Independently verify exact native requirement",message
+    ).await?{return Ok(None)}
+    tauri::async_runtime::spawn_blocking(move||
+        exact_commit(&profile,&root,&register_id,&task_id,expected_version,
+            &(graph,stat)).map(Some)
+    ).await.map_err(|_|"PLAN07C_EXACT_NATIVE_COMMIT_INTERRUPTED")?
+}
