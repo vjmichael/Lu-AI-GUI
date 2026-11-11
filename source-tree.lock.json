@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "6622b83e976a4714142c036078503e8aab6f6711"
+      "blob": "7ecbe150d020bab13589e175e18dcbd6d9d81e81"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -1353,7 +1353,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_status_desktop.rs",
-      "blob": "2e5df360649f3d66a2627349722d87f081dae4fa"
+      "blob": "ff739a5e6d71bc3addf79b2ab1f7f77fa0b77c25"
     },
     {
       "path": "lu-desktop/src-tauri/src/prompt_context.rs",
@@ -2917,7 +2917,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/project_status_classifier.rs",
-      "blob": "a65d623863ee4c8d11899b1e9110fc88ee3a2022"
+      "blob": "4aeff14bb97f87fe4db3460d85aac9cf2d2ebe43"
     },
     {
       "path": "src-tauri/lu-core/src/projector_identity.rs",

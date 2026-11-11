@@ -4,6 +4,7 @@ use crate::project_evidence_graph as eg;
 use serde::{Serialize,Deserialize};
 use sha2::{Sha256,Digest};
 use std::collections::{BTreeSet,BTreeMap};
+use std::io::Read;
 pub const SCHEMA:&str="lu-project-status-v1";
 #[derive(Clone,Copy,Debug,Eq,PartialEq,Serialize,Deserialize)]
 #[serde(rename_all="SCREAMING_SNAKE_CASE")]
@@ -129,6 +130,11 @@ pub fn classify(g:&eg::EvidenceGraph,facts:&[ScopedPathFact])->Result<StatusRepo
         }
         let (stale,pass,fail,runs)=reported_runs(g,req);
         supporting.extend(runs);
+        let source_drift=targets.iter().any(|target|{
+            paths.get(target).is_some_and(|f|f.observation==PathObservation::Absent)&&
+            g.nodes.iter().any(|n|n.locator==*target&&
+                n.evidence==eg::EvidenceState::Inspected&&n.digest.is_some())
+        });
         let conflicting=pass&&fail;
         let mut not_integrated=false;
         for branch in g.nodes.iter().filter(|n|n.kind==eg::NodeKind::IntegrationPath){
@@ -140,7 +146,7 @@ pub fn classify(g:&eg::EvidenceGraph,facts:&[ScopedPathFact])->Result<StatusRepo
             }
         }
         supporting.sort();supporting.dedup();
-        let health=if conflicting{EvidenceHealth::Conflicting}
+        let health=if conflicting||source_drift{EvidenceHealth::Conflicting}
             else if stale{EvidenceHealth::Historical}
             else if !origin{EvidenceHealth::Insufficient}
             else{EvidenceHealth::Current};
@@ -167,10 +173,16 @@ pub fn classify(g:&eg::EvidenceGraph,facts:&[ScopedPathFact])->Result<StatusRepo
             dimensions.push(Status::Unknown);
             reason.push("Original requirement document hash is not currently proven.");
             needed.push("Reopen the original requirements document and compare source SHA.");
-        }else if conflicting{
+        }else if conflicting||source_drift{
             dimensions.push(Status::Unknown);
-            reason.push("Untrusted current-head reports contradict each other.");
-            needed.push("Obtain independent exact-head test outcome receipts.");
+            if conflicting{
+                reason.push("Untrusted current-head reports contradict each other.");
+                needed.push("Obtain independent exact-head test outcome receipts.");
+            }
+            if source_drift{
+                reason.push("Original graph hashed a source that the native metadata probe now finds absent; observation changed mid-inspection.");
+                needed.push("Rescan the same selected project and exact Git HEAD; never infer MISSING from conflicting observations.");
+            }
         }else{
             if branch_gate{
                 dimensions.push(Status::Accepted);
@@ -237,7 +249,7 @@ pub fn classify(g:&eg::EvidenceGraph,facts:&[ScopedPathFact])->Result<StatusRepo
             Status::Unverified=>6,Status::Unknown=>7,
         });
         dimensions.dedup();
-        let confidence=if !origin||conflicting{Confidence::Insufficient}
+        let confidence=if !origin||conflicting||source_drift{Confidence::Insufficient}
             else if complete_targets&&g.complete||not_integrated||branch_gate{Confidence::Grounded}
             else{Confidence::Limited};
         findings.push(Finding{
@@ -245,7 +257,7 @@ pub fn classify(g:&eg::EvidenceGraph,facts:&[ScopedPathFact])->Result<StatusRepo
             line:req.line,requirement:req.label.clone(),primary:dimensions[0],
             dimensions,confidence,evidence_health:health,
             observed_targets:seen,required_targets:targets.len(),
-            supporting_node_ids:supporting,conflicting_claims:conflicting,
+            supporting_node_ids:supporting,conflicting_claims:conflicting||source_drift,
             explanation:reason.join(" "),next_evidence:needed.join(" "),
         });
     }
@@ -255,7 +267,7 @@ pub fn classify(g:&eg::EvidenceGraph,facts:&[ScopedPathFact])->Result<StatusRepo
     let mut result=StatusReport{
         schema:SCHEMA.into(),project_scope_sha256:g.project_scope_sha256.clone(),
         graph_sha256:g.sha256.clone(),selected_head:g.selected_head.clone(),
-        inspected_at_unix:g.observed_at_unix,complete:g.complete,
+        observed_at_unix:g.observed_at_unix,complete:g.complete,
         findings,limitations,no_execution_authority:true,digest_sha256:String::new(),
     };
     result.digest_sha256=hash(&result)?;
@@ -271,7 +283,7 @@ pub fn audit(r:&StatusReport,g:&eg::EvidenceGraph)->Result<(),String>{
     if r.schema!=SCHEMA||!r.no_execution_authority||
         r.project_scope_sha256!=g.project_scope_sha256||
         r.graph_sha256!=g.sha256||r.selected_head!=g.selected_head||
-        r.inspected_at_unix!=g.observed_at_unix||r.complete!=g.complete||
+        r.observed_at_unix!=g.observed_at_unix||r.complete!=g.complete||
         r.findings.len()>128||hash(r)?!=r.digest_sha256{
         return Err("PLAN03_CLASSIFICATION_CHANGED_OR_STALE".into())
     }
@@ -318,7 +330,15 @@ pub fn observe_project_paths(root:&std::path::Path,g:&eg::EvidenceGraph)
                     }
                     #[cfg(windows)]{
                         use std::os::windows::fs::MetadataExt;
-                        if m.file_attributes()&0x400!=0{
+                        // cap_std Metadata does not expose the OS's reparse
+                        // attribute. Inspect the original Windows metadata
+                        // for every capability-validated relative component.
+                        // A failed or changed check is UNKNOWN, never absent.
+                        let reparse=std::fs::symlink_metadata(
+                            canonical.join(&portion)
+                        ).map(|m|m.file_attributes()&0x400!=0)
+                            .unwrap_or(true);
+                        if reparse{
                             observation=PathObservation::Unavailable;break
                         }
                     }
@@ -388,12 +408,32 @@ mod tests{
     }
     #[test]
     fn missing_requires_scoped_negative_probe(){
-        let g=input("src/absent.rs");
+        // The audited source inventory did NOT contain this file. This is
+        // distinct from a previously hashed source disappearing mid-scan.
+        let g=eg::assemble(eg::GraphInput{
+            project_scope_sha256:"f".repeat(64),
+            selected_head:Some("a".repeat(40)),observed_at_unix:3,
+            complete:true,host_git_checked:true,
+            files:vec![eg::FileInput{path:"docs/REQUIREMENTS.md".into(),
+                role:"project_document".into(),sha256:Some("b".repeat(64))}],
+            requirements:vec![eg::RequirementInput{
+                path:"docs/REQUIREMENTS.md".into(),sha256:"b".repeat(64),
+                line:2,statement:"Must implement src/absent.rs".into()}],
+            runs:vec![],branches:vec![],extra_limitations:vec![],
+        }).unwrap();
         assert_ne!(classify(&g,&[]).unwrap().findings[0].primary,Status::Missing);
         let r=classify(&g,&[fact(&g,"src/absent.rs",PathObservation::Absent)]).unwrap();
         assert_eq!(r.findings[0].primary,Status::Missing);
         let mut tampered=r.clone();tampered.findings[0].primary=Status::Accepted;
         assert!(audit(&tampered,&g).is_err());
+    }
+    #[test]
+    fn original_hashed_source_vanishing_is_conflict_not_missing(){
+        let g=input("src/core.rs");
+        let r=classify(&g,&[fact(&g,"src/core.rs",PathObservation::Absent)]).unwrap();
+        assert_eq!(r.findings[0].primary,Status::Unknown);
+        assert!(r.findings[0].conflicting_claims);
+        assert_eq!(r.findings[0].confidence,Confidence::Insufficient);
     }
     #[test]
     fn foreign_proof_denied(){
@@ -430,7 +470,7 @@ mod tests{
     fn separate_branch_is_not_current_head_integration(){
         let head="a".repeat(40);
         let g=eg::assemble(eg::GraphInput{
-            project_scope_sha256:"f".repeat(64),selected_head:Some(head),
+            project_scope_sha256:"f".repeat(64),selected_head:Some(head.clone()),
             observed_at_unix:9,complete:true,host_git_checked:true,
             files:vec![eg::FileInput{path:"docs/REQUIREMENTS.md".into(),
                 role:"project_document".into(),sha256:Some("b".repeat(64))}],
@@ -457,7 +497,7 @@ mod tests{
             outcome:result.into(),artifact_path:None,artifact_sha256:None,
         };
         let g=eg::assemble(eg::GraphInput{
-            project_scope_sha256:"f".repeat(64),selected_head:Some(head),
+            project_scope_sha256:"f".repeat(64),selected_head:Some(head.clone()),
             observed_at_unix:9,complete:true,host_git_checked:true,
             files:vec![
                 eg::FileInput{path:"docs/REQUIREMENTS.md".into(),role:"project_document".into(),sha256:Some("b".repeat(64))},

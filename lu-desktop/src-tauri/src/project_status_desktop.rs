@@ -67,7 +67,7 @@ fn store_status(profile:&Path,g:&graph::EvidenceGraph,
          (classification_sha256,graph_sha256,scope_sha256,exact_head,
           created_unix,snapshot_json) VALUES (?1,?2,?3,?4,?5,?6)",
         params![r.digest_sha256,r.graph_sha256,r.project_scope_sha256,
-            r.selected_head,r.inspected_at_unix as i64,bytes]
+            r.selected_head,r.observed_at_unix as i64,bytes]
     ).map_err(|_|"PLAN03_APPEND_FAILED")?;
     let readback:Vec<u8>=tx.query_row(
         "SELECT snapshot_json FROM ansf_project_status_snapshots
