@@ -626,19 +626,30 @@ function App() {
   const lspCapabilities = languageServiceCapabilities(currentLanguageId);
   const lspProviderForTab = lspCapabilities?.provider || 'unavailable language provider';
   const lspSupportsNavigation = languageMethodAvailable(currentLanguageId, 'definition');
-  const lspRunningForTab = !!lspSession && !!activeTab &&
-    lspSession.projectId === activeTab.projectId &&
-    lspSession.relativePath === activeTab.relativePath;
+  const lspRunningForTab = !!activeTab && !lspSession?.cleanupRequired &&
+    sourceMatchesSession(
+      captureLiveLspSource(activeTab,
+        bufferIdentities.current.get(activeTab.key),
+        editorStates.current.get(activeTab.key),
+        activeProject?.projectId),lspSession);
 
   const activeLspDiagnostics = useMemo(() => activeTab
     ? visibleDiagnostics(activeTab, lspNativeDiagnostics[activeTab.key]) : [],
     [activeTab, lspNativeDiagnostics]);
-  const activeLspCompletions = useMemo(() => activeTab && lspCompletions?.tabKey === activeTab.key
-    ? visibleCompletions(activeTab, lspCompletions.response) : [],
-    [activeTab, lspCompletions]);
-  const activeLspHover = useMemo(() => activeTab && lspHover?.tabKey === activeTab.key
-    ? visibleHover(activeTab, lspHover.response) : '',
-    [activeTab, lspHover]);
+  const activeLspCompletions = useMemo(() => activeTab &&
+      lspCompletions?.tabKey===activeTab.key &&
+      stillCurrentLspSource(lspCompletions.source,activeTab,
+        bufferIdentities.current.get(activeTab.key),
+        editorStates.current.get(activeTab.key),activeProject?.projectId)
+    ? visibleCompletions(activeTab,lspCompletions.response) : [],
+    [activeTab,lspCompletions,activeProject?.projectId]);
+  const activeLspHover = useMemo(() => activeTab &&
+      lspHover?.tabKey===activeTab.key &&
+      stillCurrentLspSource(lspHover.source,activeTab,
+        bufferIdentities.current.get(activeTab.key),
+        editorStates.current.get(activeTab.key),activeProject?.projectId)
+    ? visibleHover(activeTab,lspHover.response) : '',
+    [activeTab,lspHover,activeProject?.projectId]);
 
   const projectTabs = useMemo(() => tabs.filter(tab =>
     tab.projectId === activeProject?.projectId),[tabs,activeProject?.projectId]);
@@ -8834,10 +8845,13 @@ function App() {
                     title={'Require native human consent, then start isolated '+lspProviderForTab}
                     onClick={() => void startLspSession()}>
                     {lspBusy ? 'Starting…' : 'Start '+lspProviderForTab}</button>}
-                  {lspRunningForTab && <button type="button"
+                  {!!lspSession && <button type="button"
                     className="ghostBtn editorToolButton" disabled={lspBusy}
                     onClick={() => void stopLspSession()}>
-                    {lspBusy ? 'Stopping…' : 'Stop '+lspProviderForTab}</button>}
+                    {lspBusy ? 'Stopping…' : lspSession.cleanupRequired
+                      ? 'Retry protected worker cleanup' :
+                      lspRunningForTab ? 'Stop '+lspProviderForTab :
+                      'Stop previous language session'}</button>}
                   <button type="button" className="ghostBtn editorToolButton"
                     disabled={!lspRunningForTab || lspBusy || !lspSupportsNavigation}
                     title={lspRunningForTab ? 'Ask protected '+lspProviderForTab+' for completions' :
