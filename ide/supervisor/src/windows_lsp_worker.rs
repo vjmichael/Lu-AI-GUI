@@ -2972,6 +2972,9 @@ impl WindowsLspSession {
     ) -> Result<(), SupervisorError> {
         self.gateway.changed(current, next, text)
     }
+    pub fn close_document(&mut self, source: &DiagnosticSource) -> Result<(), SupervisorError> {
+        self.gateway.close_document(source)
+    }
     pub fn query(
         &mut self,
         kind: &str,

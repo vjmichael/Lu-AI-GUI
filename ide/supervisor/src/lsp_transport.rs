@@ -216,6 +216,10 @@ impl LspGateway {
             .map_err(protocol_denied)?;
         self.send(&data)
     }
+    pub(crate) fn close_document(&mut self, source: &DiagnosticSource) -> Result<(), SupervisorError> {
+        let frame = self.session.close_document(source).map_err(protocol_denied)?;
+        self.send(&frame)
+    }
     pub(crate) fn query(
         &mut self,
         kind: &str,

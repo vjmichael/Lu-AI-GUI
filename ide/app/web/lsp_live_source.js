@@ -16,7 +16,7 @@ export function captureLiveLspSource(tab,identity,editorState,projectId) {
       encodedByteLength(live.text)>MAX_LSP_TEXT_BYTES ||
       !Number.isSafeInteger(live.bufferRevision) || live.bufferRevision<0)
     return null;
-  return Object.freeze({...live,languageId});
+  return Object.freeze({...live,languageId,generation:tab.generation});
 }
 
 export function stillCurrentLspSource(source,tab,identity,editorState,projectId) {
@@ -57,11 +57,41 @@ export function lspRequestForSource(source,kind=null,position=null) {
   };
 }
 
+// One approved, single-project process may own a bounded set of live
+// CodeMirror buffers. Provider ownership is fixed when the native OS grants
+// the sealed workspace; this never authorizes a new provider or project.
+export function providerServesLanguage(provider, languageId) {
+  return (provider==='rust-analyzer' && languageId==='rust') ||
+    (provider==='clangd' && (languageId==='c'||languageId==='cpp')) ||
+    ((provider==='pyright'||provider==='ruff') && languageId==='python');
+}
+export function sessionMemberForSource(source) {
+  if (!source || typeof source.key!=='string') return null;
+  return Object.freeze({
+    key:source.key, projectId:source.projectId,
+    relativePath:source.relativePath,languageId:source.languageId,
+    bufferId:source.bufferId,savedRevision:source.savedRevision,
+    generation:source.generation,
+  });
+}
 export function sourceMatchesSession(source,session) {
-  return !!source && !!session &&
-    session.projectId===source.projectId &&
-    session.relativePath===source.relativePath &&
-    session.languageId===source.languageId &&
-    session.bufferId===source.bufferId &&
-    session.savedRevision===source.savedRevision;
+  if (!source || !session || session.cleanupRequired ||
+      source.projectId!==session.projectId ||
+      !providerServesLanguage(session.providerId,source.languageId)) return false;
+  const member=session.members?.[source.key];
+  return !!member && member.projectId===source.projectId &&
+    member.relativePath===source.relativePath &&
+    member.languageId===source.languageId &&
+    member.bufferId===source.bufferId &&
+    member.savedRevision===source.savedRevision &&
+    member.generation===source.generation;
+}
+export function sessionCloseRequest(member) {
+  if (!member || typeof member.projectId!=='string' ||
+      typeof member.relativePath!=='string') return null;
+  return {
+    projectId:member.projectId,relativePath:member.relativePath,
+    expectedRevision:member.savedRevision,bufferRevision:0,
+    languageId:member.languageId,text:'',kind:null,position:null,
+  };
 }

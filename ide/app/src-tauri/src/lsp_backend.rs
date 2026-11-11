@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeMap,
     fs::{self, File},
     io::Read,
     path::{Path, PathBuf},
@@ -34,7 +35,7 @@ type NativeLspSession = WindowsLspSession;
 type NativeLspSession = LinuxLspSession;
 use lu_ide_workspace::{
     lsp::DiagnosticSource,
-    lsp_session::{Completion, Definition, Diagnostic, LspEvent, Position},
+    lsp_session::{position_to_utf16, Completion, Definition, Diagnostic, LspEvent, Position},
 };
 
 // Pins are embedded at build time by the reviewed installer release job.
@@ -191,6 +192,7 @@ pub struct SourceCoordinate {
 #[serde(rename_all = "camelCase")]
 pub struct DefinitionCoordinate {
     relative_path: String,
+    disk_sha256: String,
     range: lu_ide_workspace::lsp_session::Span,
 }
 #[derive(Serialize)]
@@ -203,78 +205,225 @@ pub struct LspReply {
     hover: Option<String>,
     definition: Option<DefinitionCoordinate>,
 }
-struct Active {
+
+const MAX_OPEN_LSP_FILES: usize = 16;
+const MAX_SESSION_LSP_BYTES: usize = 2 * 1024 * 1024;
+
+// Strict canonical staged-relative URI reconstruction. The server's URI is
+// never passed to the filesystem API; only host-minted project paths are.
+fn encoded_relative(path: &str) -> Option<String> {
+    if path.is_empty() || path.len() > 1024 || path.contains(':') ||
+        path.contains('\\') || path.chars().any(char::is_control) ||
+        path.split('/').any(|part| part.is_empty() || part == "." || part == "..") {
+        return None;
+    }
+    let mut encoded = String::new();
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() ||
+            matches!(byte, b'/' | b'.' | b'-' | b'_' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    Some(encoded)
+}
+fn staged_uri_prefix<'a>(native_uri: &'a str, relative: &str) -> Option<&'a str> {
+    let suffix = encoded_relative(relative)?;
+    let prefix = native_uri.strip_suffix(&suffix)?;
+    (prefix.starts_with("file:///") && prefix.ends_with('/')).then_some(prefix)
+}
+fn staged_relative_from_uri(primary_uri: &str, primary_path: &str,
+    candidate: &str) -> Option<String> {
+    let prefix = staged_uri_prefix(primary_uri, primary_path)?;
+    let encoded = candidate.strip_prefix(prefix)?;
+    if encoded.is_empty() || encoded.len() > 2048 { return None; }
+    let raw = encoded.as_bytes();
+    let mut bytes = Vec::with_capacity(encoded.len());
+    let mut i = 0;
+    while i < raw.len() {
+        if raw[i] == b'%' {
+            let pair = raw.get(i + 1..i + 3)?;
+            let hex = |byte: u8| match byte {
+                b'0'..=b'9' => Some(byte - b'0'),
+                b'A'..=b'F' => Some(byte - b'A' + 10),
+                _ => None,
+            };
+            bytes.push((hex(pair[0])? << 4) | hex(pair[1])?);
+            i += 3;
+        } else {
+            if raw[i] == b'?' || raw[i] == b'#' { return None; }
+            bytes.push(raw[i]);
+            i += 1;
+        }
+    }
+    let relative = String::from_utf8(bytes).ok()?;
+    (encoded_relative(&relative)?.as_str() == encoded).then_some(relative)
+}
+fn valid_provider_path(provider: &str, path: &str, language: &str) -> bool {
+    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match provider {
+        "rust-analyzer" => language == "rust" && ext == "rs",
+        "clangd" => matches!(language, "c" | "cpp") &&
+            matches!(ext.as_str(), "c" | "h" | "cc" | "cpp" | "cxx" | "hpp" | "hxx"),
+        "pyright" | "ruff" => language == "python" && matches!(ext.as_str(), "py" | "pyi"),
+        _ => false,
+    }
+}
+fn snapshot_file_sha256(path: &Path, root: &Path) -> Option<String> {
+    let info = fs::symlink_metadata(path).ok()?;
+    if !info.file_type().is_file() || info.len() > 512 * 1024 { return None; }
+    let canonical_root = fs::canonicalize(root).ok()?;
+    let canonical_file = fs::canonicalize(path).ok()?;
+    if !canonical_file.starts_with(&canonical_root) { return None; }
+    let mut reader = File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut block = [0_u8; 32 * 1024];
+    loop {
+        let size = reader.read(&mut block).ok()?;
+        if size == 0 { break; }
+        hasher.update(&block[..size]);
+    }
+    Some(format!("{:x}", hasher.finalize()))
+}
+fn file_id(relative: &str) -> String {
+    let digest = format!("file_{:x}", Sha256::digest(relative.as_bytes()));
+    digest[..37].to_string()
+}
+#[derive(Clone)]
+struct ActiveDocument {
     source: DiagnosticSource,
-    project_id: String,
     relative_path: String,
     saved_revision: String,
+    native_uri: String,
     text: String,
     diagnostics: Vec<Diagnostic>,
+}
+struct Active {
+    project_id: String,
+    approved_native_root: PathBuf,
+    sealed_root: PathBuf,
+    primary_path: String,
+    primary_uri: String,
     provider: &'static str,
+    documents: BTreeMap<String, ActiveDocument>,
+    // This single process and its pipes are owned by the OS supervisor.
+    // All operations on all registered documents hold the same host mutex.
     session: NativeLspSession,
 }
+fn bind_registered_definition(active: &Active, origin: &ActiveDocument,
+    registry: &IdeWorkspaceRegistry, candidate: &Definition) -> Option<DefinitionCoordinate> {
+    if candidate.uri == origin.native_uri {
+        return Some(DefinitionCoordinate {
+            relative_path: origin.relative_path.clone(),
+            disk_sha256: origin.saved_revision.clone(),
+            range: candidate.range.clone(),
+        });
+    }
+    let relative = staged_relative_from_uri(
+        &active.primary_uri, &active.primary_path, &candidate.uri)?;
+    if !valid_provider_path(active.provider, &relative,
+        match active.provider {
+            "rust-analyzer" => "rust", "clangd" => "cpp",
+            "ruff" | "pyright" => "python", _ => return None,
+        }) { return None; }
+    // A server's location becomes usable only when the native project
+    // registry and the sealed read-only worker source agree on exact bytes.
+    let target = registry.preview_source_file(&active.project_id, &relative).ok()?;
+    if target.project_id != active.project_id ||
+        target.relative_path != relative ||
+        snapshot_file_sha256(&active.sealed_root.join(&relative), &active.sealed_root)?
+            != target.revision { return None; }
+    let from = position_to_utf16(&target.text, &candidate.range.start)?;
+    let to = position_to_utf16(&target.text, &candidate.range.end)?;
+    if from > to { return None; }
+    Some(DefinitionCoordinate {
+        relative_path: relative,
+        disk_sha256: target.revision,
+        range: candidate.range.clone(),
+    })
+}
 impl Active {
-    fn output(&self) -> LspReply {
-        LspReply {
+    fn output(&self, path: &str) -> Result<LspReply, String> {
+        let doc = self.documents.get(path).ok_or("LSP_DOCUMENT_NOT_OPEN")?;
+        Ok(LspReply {
             provider_id: self.provider,
             source: SourceCoordinate {
                 project_id: self.project_id.clone(),
-                relative_path: self.relative_path.clone(),
-                disk_sha256: self.saved_revision.clone(),
-                buffer_revision: self.source.buffer_revision,
-                language_id: self.source.language_id.clone(),
+                relative_path: doc.relative_path.clone(),
+                disk_sha256: doc.saved_revision.clone(),
+                buffer_revision: doc.source.buffer_revision,
+                language_id: doc.source.language_id.clone(),
             },
-            diagnostics: self.diagnostics.clone(),
+            diagnostics: doc.diagnostics.clone(),
             completions: vec![],
             hover: None,
             definition: None,
-        }
+        })
     }
-    fn receive(&mut self, kind: &str) -> Result<LspReply, String> {
-        let start = Instant::now();
-        let mut result = self.output();
-        let read_result = |event: &LspEvent, kind: &str| match (event, kind) {
-            (LspEvent::Completions(_), "completion") => true,
-            (LspEvent::Hover(_), "hover") => true,
-            (LspEvent::Definition(_), "definition") => true,
-            _ => false,
-        };
-        while start.elapsed() < Duration::from_secs(if kind == "diagnostics" { 1 } else { 8 }) {
+    fn receive(&mut self, kind: &str, path: &str,
+        registry: &IdeWorkspaceRegistry) -> Result<LspReply, String> {
+        let started = Instant::now();
+        let mut result = self.output(path)?;
+        while started.elapsed() < Duration::from_secs(if kind == "diagnostics" { 1 } else { 8 }) {
             for event in self.session.poll().map_err(|e| e.code())? {
-                match &event {
-                    LspEvent::Diagnostics(value) => {
-                        self.diagnostics = value.clone();
-                        result.diagnostics = value.clone();
+                let completed = matches!(
+                    (&event, kind),
+                    (LspEvent::Completions(_), "completion") |
+                    (LspEvent::Hover(_), "hover") |
+                    (LspEvent::Definition(_), "definition")
+                );
+                match event {
+                    // The single-file legacy notification is only emitted
+                    // when the protocol has exactly one open document.
+                    LspEvent::Diagnostics(values) if self.documents.len() == 1 => {
+                        if let Some(doc) = self.documents.values_mut().next() {
+                            doc.diagnostics = values;
+                        }
                     }
-                    LspEvent::Completions(value) if kind == "completion" => {
-                        result.completions = value.clone()
+                    LspEvent::ScopedDiagnostics { source, diagnostics } => {
+                        if let Some(doc) = self.documents.values_mut()
+                            .find(|doc| doc.source.same_revision(&source)) {
+                            doc.diagnostics = diagnostics;
+                        }
                     }
-                    LspEvent::Hover(value) if kind == "hover" => result.hover = Some(value.clone()),
-                    LspEvent::Definition(Some(value)) if kind == "definition" => {
-                        result.definition = Some(DefinitionCoordinate {
-                            relative_path: self.relative_path.clone(),
-                            range: value.range.clone(),
-                        });
+                    LspEvent::Completions(values) if kind == "completion" => {
+                        result.completions = values;
+                    }
+                    LspEvent::Hover(value) if kind == "hover" => {
+                        result.hover = Some(value);
+                    }
+                    LspEvent::Definition(Some(candidate)) if kind == "definition" => {
+                        if let Some(origin) = self.documents.get(path) {
+                            result.definition = bind_registered_definition(
+                                self, origin, registry, &candidate);
+                        }
                     }
                     _ => {}
                 }
-                if read_result(&event, kind) {
+                if completed {
+                    result.diagnostics = self.output(path)?.diagnostics;
                     return Ok(result);
                 }
             }
             thread::sleep(Duration::from_millis(30));
         }
         if kind == "diagnostics" {
+            result.diagnostics = self.output(path)?.diagnostics;
             Ok(result)
         } else {
             Err("LSP_REQUEST_TIMEOUT".into())
         }
     }
 }
+
 pub struct NativeLspRuntime {
     supervisor: Arc<Supervisor>,
     stage: PathBuf,
     active: Mutex<Option<Active>>,
+    // A failed OS worker close is never interpreted as an exited process.
+    // INT02-F must reconcile that native journal before further admission.
+    cleanup_uncertain: Mutex<bool>,
 }
 impl NativeLspRuntime {
     pub fn new(app: &AppHandle) -> Result<Self, String> {
@@ -291,6 +440,7 @@ impl NativeLspRuntime {
             supervisor: Arc::new(supervisor),
             stage,
             active: Mutex::new(None),
+            cleanup_uncertain: Mutex::new(false),
         })
     }
     fn validated_registered_text(
@@ -321,12 +471,13 @@ impl NativeLspRuntime {
         registry: &IdeWorkspaceRegistry,
         request: LspRequest,
     ) -> Result<Value, String> {
-        if self
-            .active
-            .lock()
-            .map_err(|_| "LSP_HOST_UNAVAILABLE")?
-            .is_some()
-        {
+        // Reserve the native owner for the full admission and OS consent.
+        // A concurrent window cannot spawn a second worker before publish.
+        let mut holder = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
+        if *self.cleanup_uncertain.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")? {
+            return Err("LSP_NATIVE_CLEANUP_UNVERIFIED".into());
+        }
+        if holder.is_some() {
             return Err("LSP_SESSION_ALREADY_ACTIVE".into());
         }
         let base_server =
@@ -437,107 +588,157 @@ impl NativeLspRuntime {
         session
             .open(source.clone(), &native_uri, &request.text)
             .map_err(|e| e.code())?;
-        let active = Active {
-            project_id: request.project_id,
-            relative_path: request.relative_path,
-            source,
-            saved_revision,
-            text: request.text,
-            diagnostics: vec![],
-            provider: server_id,
-            session,
+        let project_id = request.project_id;
+        let relative_path = request.relative_path;
+        let first = ActiveDocument {
+            source, relative_path: relative_path.clone(),
+            saved_revision, native_uri: native_uri.clone(),
+            text: request.text, diagnostics: vec![],
         };
-        let result =
-            serde_json::to_value(active.output()).map_err(|_| "LSP_RESPONSE_UNAVAILABLE")?;
-        let mut holder = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
-        if holder.is_some() {
-            return Err("LSP_SESSION_ALREADY_ACTIVE".into());
-        }
+        let mut documents = BTreeMap::new();
+        documents.insert(relative_path.clone(), first);
+        let active = Active {
+            project_id, approved_native_root: root,
+            sealed_root: input.root.clone(),
+            primary_path: relative_path.clone(), primary_uri: native_uri,
+            provider: server_id, documents, session,
+        };
+        let result = serde_json::to_value(active.output(&relative_path)?)
+            .map_err(|_| "LSP_RESPONSE_UNAVAILABLE")?;
         *holder = Some(active);
         Ok(result)
     }
-    fn use_active<F>(
-        &self,
-        registry: &IdeWorkspaceRegistry,
-        request: LspRequest,
-        mut action: F,
-    ) -> Result<Value, String>
-    where
-        F: FnMut(&mut Active, &LspRequest) -> Result<LspReply, String>,
-    {
+
+    pub fn open_document(&self, registry: &IdeWorkspaceRegistry,
+        request: LspRequest) -> Result<Value, String> {
         let mut lock = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
         let active = lock.as_mut().ok_or("LSP_SESSION_NOT_STARTED")?;
-        if active.project_id != request.project_id
-            || active.relative_path != request.relative_path
-            || active.saved_revision != request.expected_revision
-            || active.source.language_id != request.language_id
-            || request.buffer_revision < active.source.buffer_revision
-        {
+        if active.project_id != request.project_id ||
+            !valid_provider_path(active.provider, &request.relative_path, &request.language_id) ||
+            active.documents.len() >= MAX_OPEN_LSP_FILES ||
+            active.documents.contains_key(&request.relative_path) {
+            return Err("LSP_DOCUMENT_SCOPE_DENIED".into());
+        }
+        let (root, revision) = Self::validated_registered_text(registry, &request)?;
+        if root != active.approved_native_root ||
+            snapshot_file_sha256(&active.sealed_root.join(&request.relative_path),
+                &active.sealed_root).as_deref() != Some(revision.as_str()) ||
+            active.documents.values().map(|doc| doc.text.len()).sum::<usize>()
+                .saturating_add(request.text.len()) > MAX_SESSION_LSP_BYTES {
+            return Err("LSP_DOCUMENT_OUTSIDE_APPROVED_SNAPSHOT".into());
+        }
+        let prefix = staged_uri_prefix(&active.primary_uri, &active.primary_path)
+            .ok_or("LSP_NATIVE_URI_UNAVAILABLE")?;
+        let native_uri = format!("{}{}", prefix,
+            encoded_relative(&request.relative_path).ok_or("LSP_INVALID_ACTIVE_SOURCE")?);
+        if native_uri.len() > 2048 { return Err("LSP_NATIVE_URI_UNAVAILABLE".into()); }
+        let source = DiagnosticSource {
+            project_id: request.project_id,
+            file_id: file_id(&request.relative_path),
+            disk_sha256: revision.clone(),
+            buffer_revision: request.buffer_revision,
+            language_id: request.language_id,
+        };
+        active.session.open(source.clone(), &native_uri, &request.text)
+            .map_err(|e| e.code())?;
+        let path = request.relative_path;
+        active.documents.insert(path.clone(), ActiveDocument {
+            source, relative_path: path.clone(), saved_revision: revision,
+            native_uri, text: request.text, diagnostics: vec![],
+        });
+        serde_json::to_value(active.output(&path)?)
+            .map_err(|_| "LSP_RESPONSE_UNAVAILABLE".into())
+    }
+    pub fn close_document(&self, request: LspRequest) -> Result<(), String> {
+        let mut lock = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
+        let active = lock.as_mut().ok_or("LSP_SESSION_NOT_STARTED")?;
+        let doc = active.documents.get(&request.relative_path)
+            .ok_or("LSP_DOCUMENT_NOT_OPEN")?;
+        if request.project_id != active.project_id ||
+            request.expected_revision != doc.saved_revision ||
+            request.language_id != doc.source.language_id {
+            return Err("LSP_DOCUMENT_SCOPE_DENIED".into());
+        }
+        active.session.close_document(&doc.source).map_err(|e| e.code())?;
+        active.documents.remove(&request.relative_path);
+        Ok(())
+    }
+    fn use_active<F>(&self, registry: &IdeWorkspaceRegistry,
+        request: LspRequest, mut action: F) -> Result<Value, String>
+    where F: FnMut(&mut Active, &LspRequest) -> Result<LspReply, String> {
+        let mut lock = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
+        let active = lock.as_mut().ok_or("LSP_SESSION_NOT_STARTED")?;
+        let doc = active.documents.get(&request.relative_path)
+            .ok_or("LSP_DOCUMENT_NOT_OPEN")?;
+        if request.project_id != active.project_id ||
+            request.expected_revision != doc.saved_revision ||
+            request.language_id != doc.source.language_id ||
+            request.buffer_revision < doc.source.buffer_revision {
             return Err("LSP_SOURCE_SCOPE_MISMATCH".into());
         }
-        Self::validated_registered_text(registry, &request)?;
-        if request.buffer_revision > active.source.buffer_revision {
-            let mut next = active.source.clone();
+        let (root, _) = Self::validated_registered_text(registry, &request)?;
+        if root != active.approved_native_root {
+            return Err("LSP_PROJECT_SCOPE_CHANGED".into());
+        }
+        let old_source = doc.source.clone();
+        let old_text = doc.text.clone();
+        if request.buffer_revision > old_source.buffer_revision {
+            if active.documents.values().map(|doc| doc.text.len()).sum::<usize>()
+                .saturating_sub(old_text.len()).saturating_add(request.text.len())
+                > MAX_SESSION_LSP_BYTES {
+                return Err("LSP_SESSION_TEXT_LIMIT".into());
+            }
+            let mut next = old_source.clone();
             next.buffer_revision = request.buffer_revision;
-            active
-                .session
-                .changed(&active.source, next.clone(), &request.text)
+            active.session.changed(&old_source, next.clone(), &request.text)
                 .map_err(|e| e.code())?;
-            active.source = next;
-            active.text = request.text.clone();
-            active.diagnostics.clear();
-        } else if active.text != request.text {
+            let doc = active.documents.get_mut(&request.relative_path)
+                .ok_or("LSP_DOCUMENT_NOT_OPEN")?;
+            doc.source = next;
+            doc.text = request.text.clone();
+            doc.diagnostics.clear();
+        } else if old_text != request.text {
             return Err("LSP_BUFFER_REVISION_MISMATCH".into());
         }
         let result = action(active, &request)?;
         serde_json::to_value(result).map_err(|_| "LSP_RESPONSE_UNAVAILABLE".into())
     }
-    pub fn feature(
-        &self,
-        registry: &IdeWorkspaceRegistry,
-        request: LspRequest,
-    ) -> Result<Value, String> {
+    pub fn feature(&self, registry: &IdeWorkspaceRegistry,
+        request: LspRequest) -> Result<Value, String> {
         self.use_active(registry, request, |active, req| {
             let kind = req.kind.as_deref().ok_or("LSP_METHOD_REQUIRED")?;
-            if !matches!(kind, "completion" | "hover" | "definition")
-                || (active.source.language_id == "python"
-                    && active.provider != "pyright")
-            {
-                // Ruff-only Python sessions must not execute semantic
-                // methods. The protected Pyright provider is separately
-                // installer-pinned and consented to by the native OS dialog.
+            let doc = active.documents.get(&req.relative_path)
+                .ok_or("LSP_DOCUMENT_NOT_OPEN")?;
+            if !matches!(kind, "completion" | "hover" | "definition") ||
+                (doc.source.language_id == "python" && active.provider != "pyright") {
                 return Err("LSP_METHOD_DENIED".into());
             }
-            let pos = req.position.clone().ok_or("LSP_POSITION_REQUIRED")?;
-            active
-                .session
-                .query(kind, &active.source, pos)
-                .map_err(|e| e.code())?;
-            active.receive(kind)
+            let position = req.position.clone().ok_or("LSP_POSITION_REQUIRED")?;
+            active.session.query(kind, &doc.source, position).map_err(|e| e.code())?;
+            active.receive(kind, &req.relative_path, registry)
         })
     }
-    pub fn diagnostics(
-        &self,
-        registry: &IdeWorkspaceRegistry,
-        request: LspRequest,
-    ) -> Result<Value, String> {
-        self.use_active(registry, request, |active, _| active.receive("diagnostics"))
+    pub fn diagnostics(&self, registry: &IdeWorkspaceRegistry,
+        request: LspRequest) -> Result<Value, String> {
+        self.use_active(registry, request, |active, req|
+            active.receive("diagnostics", &req.relative_path, registry))
     }
-    pub fn change(
-        &self,
-        registry: &IdeWorkspaceRegistry,
-        request: LspRequest,
-    ) -> Result<Value, String> {
-        self.use_active(registry, request, |active, _| Ok(active.output()))
+    pub fn change(&self, registry: &IdeWorkspaceRegistry,
+        request: LspRequest) -> Result<Value, String> {
+        self.use_active(registry, request, |active, req|
+            active.output(&req.relative_path))
     }
+
     pub fn stop(&self) -> Result<(), String> {
-        let active = self
-            .active
-            .lock()
-            .map_err(|_| "LSP_HOST_UNAVAILABLE")?
-            .take();
-        if let Some(active) = active {
-            active.session.close().map_err(|e| e.code())?;
+        let mut lock = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
+        let mut uncertain = self.cleanup_uncertain.lock()
+            .map_err(|_| "LSP_HOST_UNAVAILABLE")?;
+        if *uncertain { return Err("LSP_NATIVE_CLEANUP_UNVERIFIED".into()); }
+        if let Some(active) = lock.take() {
+            if let Err(error) = active.session.close() {
+                *uncertain = true;
+                return Err(error.code());
+            }
         }
         Ok(())
     }

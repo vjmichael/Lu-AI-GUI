@@ -2386,6 +2386,52 @@ async fn ide_lsp_start_session(
     }
 }
 #[tauri::command]
+async fn ide_lsp_open_document(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
+    {
+        let state = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+            .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
+        let native = Arc::clone(state.inner());
+        let registry = Arc::clone(registry.inner());
+        let typed = serde_json::from_value::<lsp_backend::LspRequest>(request)
+            .map_err(|_| "LSP_INVALID_REQUEST")?;
+        return tauri::async_runtime::spawn_blocking(move ||
+            native.open_document(&registry, typed)).await
+            .map_err(|_| "LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
+    {
+        let _ = (app, registry, request);
+        Err("LSP_NATIVE_WORKER_UNAVAILABLE".into())
+    }
+}
+#[tauri::command]
+async fn ide_lsp_close_document(
+    app: AppHandle,
+    request: serde_json::Value,
+) -> Result<(), String> {
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
+    {
+        let state = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+            .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
+        let native = Arc::clone(state.inner());
+        let typed = serde_json::from_value::<lsp_backend::LspRequest>(request)
+            .map_err(|_| "LSP_INVALID_REQUEST")?;
+        return tauri::async_runtime::spawn_blocking(move ||
+            native.close_document(typed)).await
+            .map_err(|_| "LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
+    {
+        let _ = (app, request);
+        Err("LSP_NATIVE_WORKER_UNAVAILABLE".into())
+    }
+}
+#[tauri::command]
 async fn ide_lsp_change_document(
     app: AppHandle,
     registry: State<'_, Arc<IdeWorkspaceRegistry>>,
@@ -3112,6 +3158,8 @@ pub fn run() {
             ide_list_language_servers,
             ide_lsp_worker_status,
             ide_lsp_start_session,
+            ide_lsp_open_document,
+            ide_lsp_close_document,
             ide_lsp_change_document,
             ide_lsp_feature,
             ide_lsp_read_diagnostics,

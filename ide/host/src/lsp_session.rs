@@ -10,7 +10,8 @@ use std::collections::BTreeMap;
 const MAX_TEXT_BYTES: usize = 512 * 1024;
 const MAX_DIAGNOSTICS: usize = 200;
 const MAX_SUGGESTIONS: usize = 100;
-const MAX_PENDING: usize = 24;
+const MAX_OPEN_DOCUMENTS: usize = 16;
+const MAX_SESSION_TEXT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_DETAIL: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +102,7 @@ pub struct Definition {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum LspEvent {
     Diagnostics(Vec<Diagnostic>),
+    ScopedDiagnostics { source: DiagnosticSource, diagnostics: Vec<Diagnostic> },
     Completions(Vec<Completion>),
     Hover(String),
     Definition(Option<Definition>),
@@ -138,7 +140,7 @@ pub struct LspSession {
     next_id: u64,
     initialize_id: Option<u64>,
     pending: BTreeMap<u64, Pending>,
-    doc: Option<OpenDocument>,
+    docs: BTreeMap<String, OpenDocument>,
 }
 impl LspSession {
     pub fn new(server_id: &str) -> Result<Self, LspError> {
@@ -155,7 +157,7 @@ impl LspSession {
             next_id: 1,
             initialize_id: None,
             pending: BTreeMap::new(),
-            doc: None,
+            docs: BTreeMap::new(),
         })
     }
     pub fn phase(&self) -> LspPhase {
@@ -167,7 +169,7 @@ impl LspSession {
     pub fn stop_uncertain(&mut self) {
         self.phase = LspPhase::Failed;
         self.pending.clear();
-        self.doc = None;
+        self.docs.clear();
         self.parser.reset();
     }
     fn next_request(&mut self) -> Result<u64, LspError> {
@@ -224,7 +226,12 @@ impl LspSession {
             || native_uri.len() > 2048
             || native_uri.contains('\n')
             || text.len() > MAX_TEXT_BYTES
-            || self.doc.is_some()
+            || self.docs.contains_key(native_uri)
+            || self.docs.len() >= MAX_OPEN_DOCUMENTS
+            || self.docs.values().any(|doc| doc.source.file_id == source.file_id ||
+                doc.source.project_id != source.project_id)
+            || self.docs.values().map(|doc| doc.text.len()).sum::<usize>()
+                .saturating_add(text.len()) > MAX_SESSION_TEXT_BYTES
         {
             return Err(LspError::UntrustedUri);
         }
@@ -239,7 +246,7 @@ impl LspSession {
             "params":{"textDocument":{"uri":native_uri,"languageId":source.language_id,
             "version":version,"text":text}}});
         let frame = encode_frame(&value)?;
-        self.doc = Some(doc);
+        self.docs.insert(native_uri.to_owned(), doc);
         Ok(frame)
     }
     pub fn did_change(
@@ -251,7 +258,8 @@ impl LspSession {
         if self.phase != LspPhase::Ready {
             return Err(LspError::NotReady);
         }
-        let doc = self.doc.as_ref().ok_or(LspError::NotReady)?;
+        let doc = self.docs.values().find(|doc| doc.source.file_id == expected.file_id)
+            .ok_or(LspError::NotReady)?;
         if !doc.source.same_revision(expected)
             || !next.valid()
             || next.project_id != expected.project_id
@@ -261,7 +269,9 @@ impl LspSession {
         {
             return Err(LspError::StaleRevision);
         }
-        if text.len() > MAX_TEXT_BYTES {
+        if text.len() > MAX_TEXT_BYTES ||
+            self.docs.values().map(|item| item.text.len()).sum::<usize>()
+                .saturating_sub(doc.text.len()).saturating_add(text.len()) > MAX_SESSION_TEXT_BYTES {
             return Err(LspError::Capacity);
         }
         let version = doc.version.checked_add(1).ok_or(LspError::Capacity)?;
@@ -269,11 +279,12 @@ impl LspSession {
             "params":{"textDocument":{"uri":doc.uri,"version":version},
             "contentChanges":[{"text":text}]}});
         let frame = encode_frame(&value)?;
-        let doc = self.doc.as_mut().ok_or(LspError::NotReady)?;
+        let uri = doc.uri.clone();
+        let doc = self.docs.get_mut(&uri).ok_or(LspError::NotReady)?;
         doc.source = next;
         doc.text = text.to_owned();
         doc.version = version;
-        self.pending.clear(); // All old LSP requests are now stale.
+        self.pending.retain(|_, pending| pending.uri != uri);
         Ok(frame)
     }
     pub fn request(
@@ -285,15 +296,13 @@ impl LspSession {
         if self.phase != LspPhase::Ready {
             return Err(LspError::NotReady);
         }
-        let doc = self.doc.as_ref().ok_or(LspError::NotReady)?;
+        let doc = self.docs.values().find(|doc| doc.source.file_id == expected.file_id)
+            .ok_or(LspError::NotReady)?;
         if !doc.source.same_revision(expected) {
             return Err(LspError::StaleRevision);
         }
         if position_to_utf16(&doc.text, &pos).is_none() {
             return Err(LspError::StaleRevision);
-        }
-        if self.pending.len() >= MAX_PENDING {
-            return Err(LspError::Capacity);
         }
         let (method, request_kind) = match kind {
             "completion" => ("textDocument/completion", PendingKind::Completion),
@@ -306,6 +315,9 @@ impl LspSession {
         let value = json!({"jsonrpc":"2.0","id":id,"method":method,
             "params":{"textDocument":{"uri":uri},"position":pos}});
         let frame = encode_frame(&value)?;
+        // Native host owns a single in-flight semantic request.
+        // Late timed-out responses from other files must be discarded.
+        self.pending.clear();
         self.pending.insert(
             id,
             Pending {
@@ -318,14 +330,16 @@ impl LspSession {
         Ok(frame)
     }
     pub fn close_document(&mut self, expected: &DiagnosticSource) -> Result<Vec<u8>, LspError> {
-        let doc = self.doc.as_ref().ok_or(LspError::NotReady)?;
+        let doc = self.docs.values().find(|doc| doc.source.file_id == expected.file_id)
+            .ok_or(LspError::NotReady)?;
         if !doc.source.same_revision(expected) {
             return Err(LspError::StaleRevision);
         }
+        let uri = doc.uri.clone();
         let frame = encode_frame(&json!({"jsonrpc":"2.0","method":"textDocument/didClose",
-            "params":{"textDocument":{"uri":doc.uri}}}))?;
-        self.pending.clear();
-        self.doc = None;
+            "params":{"textDocument":{"uri":uri}}}))?;
+        self.pending.retain(|_, pending| pending.uri != uri);
+        self.docs.remove(&uri);
         Ok(frame)
     }
     pub fn shutdown(&mut self) -> Result<Vec<u8>, LspError> {
@@ -335,7 +349,7 @@ impl LspSession {
         let id = self.next_request()?;
         self.phase = LspPhase::Closing;
         self.pending.clear();
-        self.doc = None;
+        self.docs.clear();
         Ok(encode_frame(
             &json!({"jsonrpc":"2.0","id":id,"method":"shutdown"}),
         )?)
@@ -390,8 +404,12 @@ impl LspSession {
                 } else if method == "textDocument/publishDiagnostics"
                     && self.phase == LspPhase::Ready
                 {
-                    if let Some(value) = self.parse_diagnostics(&message["params"]) {
-                        events.push(LspEvent::Diagnostics(value));
+                    if let Some((source, diagnostics)) = self.parse_diagnostics(&message["params"]) {
+                        if self.docs.len() == 1 {
+                            events.push(LspEvent::Diagnostics(diagnostics));
+                        } else {
+                            events.push(LspEvent::ScopedDiagnostics { source, diagnostics });
+                        }
                     }
                 }
                 continue;
@@ -416,7 +434,7 @@ impl LspSession {
             let Some(pending) = self.pending.remove(&id) else {
                 continue;
             };
-            let Some(doc) = self.doc.as_ref() else {
+            let Some(doc) = self.docs.get(&pending.uri) else {
                 continue;
             };
             if !doc.source.same_revision(&pending.source) || doc.uri != pending.uri {
@@ -437,11 +455,8 @@ impl LspSession {
         }
         Ok((events, replies))
     }
-    fn parse_diagnostics(&self, params: &Value) -> Option<Vec<Diagnostic>> {
-        let doc = self.doc.as_ref()?;
-        if params["uri"].as_str()? != doc.uri {
-            return None;
-        }
+    fn parse_diagnostics(&self, params: &Value) -> Option<(DiagnosticSource, Vec<Diagnostic>)> {
+        let doc = self.docs.get(params["uri"].as_str()?)?;
         // LSP allows a missing version, but an unversioned asynchronous
         // notification after didChange could refer to stale bytes. Accept it
         // only before the first edit; require an exact version thereafter.
@@ -480,7 +495,7 @@ impl LspSession {
                 to_utf16: end,
             });
         }
-        Some(diagnostics)
+        Some((doc.source.clone(), diagnostics))
     }
 }
 

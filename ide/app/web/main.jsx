@@ -37,7 +37,8 @@ import {
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
 import { languageForPath, matchesSource, lspPositionOffset, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition, visibleCrossFileDefinition } from './lsp_editor.js';
 import { captureLiveLspSource, stillCurrentLspSource, lspNativeReplyMatches,
-  lspRequestForSource, sourceMatchesSession } from './lsp_live_source.js';
+  lspRequestForSource, sourceMatchesSession, providerServesLanguage,
+  sessionMemberForSource, sessionCloseRequest } from './lsp_live_source.js';
 import { projectProblems, stillCurrentProblem } from './lsp_problems.js';
 import { languageServiceCapabilities, languageMethodAvailable } from './lsp_language_capabilities.js';
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
@@ -625,8 +626,14 @@ function App() {
     lspWorker.supportedLanguages.includes(currentLanguageId);
   const lspCapabilities = languageServiceCapabilities(currentLanguageId,lspWorker);
   const lspProviderForTab = lspSession?.projectId===activeTab?.projectId &&
-    lspSession?.relativePath===activeTab?.relativePath
+    providerServesLanguage(lspSession.providerId,currentLanguageId)
     ? lspSession.providerId : (lspCapabilities?.provider || 'unavailable language provider');
+  const lspMayAddCurrentFile = !!activeTab && !!lspSession &&
+    !lspSession.cleanupRequired &&
+    lspSession.projectId===activeTab.projectId &&
+    providerServesLanguage(lspSession.providerId,currentLanguageId) &&
+    !lspSession.members?.[activeTab.key] &&
+    Object.keys(lspSession.members||{}).length<16 && lspAvailableForTab;
   const lspSupportsNavigation = languageMethodAvailable(currentLanguageId,
     'definition',lspWorker) &&
     (currentLanguageId!=='python' || !lspSession ||
@@ -1157,9 +1164,9 @@ function App() {
             bufferIdentities.current.get(tab.key),
             editorStates.current.get(tab.key),activeProjectIdRef.current))
         throw Error('INT01D_EDITOR_CHANGED_AFTER_RECOVERY_CONSENT');
-      if (lspSession?.projectId===tab.projectId &&
-          lspSession.relativePath===tab.relativePath)
-        await stopLspSession();
+      if (lspSessionRef.current?.members?.[tab.key] &&
+          !await closeLspDocument(tab.key))
+        throw Error('LSP_DOCUMENT_CLEANUP_REQUIRED');
       if (workspaceTransitionRef.current!==token ||
           projectNavigationEpoch.current!==epoch ||
           !stillCurrentEditorIntent(original,
@@ -4264,11 +4271,13 @@ function App() {
         nativeStarted=false;
         throw Error('LSP_SOURCE_CHANGED_DURING_NATIVE_CONSENT');
       }
+      const firstMember=sessionMemberForSource(source);
       const session=Object.freeze({
         projectId:source.projectId,relativePath:source.relativePath,
         languageId:source.languageId,bufferId:source.bufferId,
         savedRevision:source.savedRevision,key:source.key,
         providerId:response.providerId,
+        members:Object.freeze({[source.key]:firstMember}),
       });
       lspSessionRef.current=session;
       setLspSession(session);
@@ -4285,6 +4294,7 @@ function App() {
             languageId:source.languageId,bufferId:source.bufferId,
             savedRevision:source.savedRevision,key:source.key,
             providerId:'cleanup_unverified',cleanupRequired:true,
+            members:Object.freeze({}),
           });
           setLspSession(lspSessionRef.current);
           setProblem('Language worker cleanup requires manual retry: '+
@@ -4293,6 +4303,104 @@ function App() {
         }
       }
       setProblem('Language service was not started: '+String(error));
+    } finally {
+      lspBusyRef.current=false;
+      setLspBusy(false);
+    }
+  }
+
+  async function addLspDocument() {
+    const tab=activeTab;
+    const session=lspSessionRef.current;
+    if (!tab || !session || !lspMayAddCurrentFile ||
+        lspBusyRef.current || workspaceTransitionRef.current ||
+        activeProjectIdRef.current!==session.projectId) return false;
+    const source=liveLspSourceForTab(tab);
+    const member=sessionMemberForSource(source);
+    const request=lspRequestForSource(source);
+    if (!member || !request || !providerServesLanguage(session.providerId,source.languageId)) {
+      setProblem('Cannot analyze a stale editor or an unsupported language in this session.');
+      return false;
+    }
+    const epoch=lspLifecycleEpoch.current;
+    ++lspFeatureSerial.current;
+    ++lspSyncSerial.current;
+    lspBusyRef.current=true;
+    setLspBusy(true);
+    let opened=false;
+    try {
+      const response=await invoke('ide_lsp_open_document',{request});
+      opened=true;
+      if (!isCurrentLspReply(source,response,epoch) ||
+          lspSessionRef.current!==session) {
+        throw Error('LSP_DOCUMENT_CHANGED_DURING_NATIVE_ADMISSION');
+      }
+      const revised=Object.freeze({...session,members:Object.freeze({
+        ...session.members,[source.key]:member})});
+      lspSessionRef.current=revised;
+      setLspSession(revised);
+      setLspNativeDiagnostics(previous=>({...previous,[source.key]:response}));
+      setHint('Added '+source.relativePath+' to the existing protected language session.');
+      return true;
+    } catch(error) {
+      if (opened) {
+        try {
+          await invoke('ide_lsp_close_document',{request:sessionCloseRequest(member)});
+          opened=false;
+        } catch(cleanupError) {
+          const uncertain=Object.freeze({...session,cleanupRequired:true});
+          lspSessionRef.current=uncertain;
+          setLspSession(uncertain);
+          setProblem('Protected worker needs cleanup after file admission: '+
+            String(cleanupError));
+          return false;
+        }
+      }
+      setProblem('Could not add this file to the protected language session: '+String(error));
+      return false;
+    } finally {
+      lspBusyRef.current=false;
+      setLspBusy(false);
+    }
+  }
+  async function closeLspDocument(key) {
+    const session=lspSessionRef.current;
+    const member=session?.members?.[key];
+    if (!member) return true;
+    if (lspBusyRef.current || session.cleanupRequired) {
+      setProblem('Finish or stop the protected language operation before closing this file.');
+      return false;
+    }
+    const request=sessionCloseRequest(member);
+    if (!request) return false;
+    lspBusyRef.current=true;
+    const epoch=++lspLifecycleEpoch.current;
+    ++lspFeatureSerial.current;
+    ++lspSyncSerial.current;
+    setLspBusy(true);
+    try {
+      await invoke('ide_lsp_close_document',{request});
+      if (epoch!==lspLifecycleEpoch.current) return false;
+      const current=lspSessionRef.current;
+      if (!current || current.projectId!==member.projectId) return false;
+      const members={...current.members};
+      delete members[key];
+      const revised=Object.freeze({...current,members:Object.freeze(members)});
+      lspSessionRef.current=revised;
+      setLspSession(revised);
+      setLspNativeDiagnostics(previous=>{
+        const next={...previous}; delete next[key]; return next;
+      });
+      setLspCompletions(null);
+      setLspHover(null);
+      return true;
+    } catch(error) {
+      // Do not assume a failed didClose released the native source or worker.
+      const uncertain=Object.freeze({...session,cleanupRequired:true});
+      lspSessionRef.current=uncertain;
+      setLspSession(uncertain);
+      setProblem('Protected document close was not confirmed. Stop the worker: '+String(error));
+      return false;
     } finally {
       lspBusyRef.current=false;
       setLspBusy(false);
@@ -4328,13 +4436,20 @@ function App() {
   }
   useEffect(() => {
     const session=lspSessionRef.current;
-    if (!session || lspBusyRef.current) return;
-    const current=activeTab && liveLspSourceForTab(activeTab);
-    if (!sourceMatchesSession(current,session)) {
+    if (!session || lspBusyRef.current || session.cleanupRequired) return;
+    if (session.projectId!==activeProject?.projectId) {
       void stopLspSession();
+      return;
     }
-  },[lspSession,activeTabKey,activeProject?.projectId,
-    activeTab?.revision,activeTab?.generation]);
+    // The session is project-owned, not tab-owned: switching between tabs
+    // never stops the OS worker. A replaced, saved or closed member does
+    // lose its own document identity and must be detached.
+    const invalid=Object.values(session.members||{}).find(member=>{
+      const tab=tabsRef.current.find(item=>item.key===member.key);
+      return !sourceMatchesSession(liveLspSourceForTab(tab),session);
+    });
+    if (invalid) void closeLspDocument(invalid.key);
+  },[lspSession,tabs,activeProject?.projectId,lspBusy]);
   useEffect(() => {
     const session=lspSessionRef.current;
     const source=liveLspSourceForTab(activeTab);
@@ -4482,12 +4597,47 @@ function App() {
     }
     const epoch=lspLifecycleEpoch.current;
     const serial=++lspFeatureSerial.current;
+    // Cross-file semantics must observe *every* attached CodeMirror buffer
+    // at its exact revision, not just the currently selected editor.
+    // This is a read-only sync through the already supervised, mutex-owned
+    // worker. The source checks after every awaited IPC catch later edits.
+    const session=lspSessionRef.current;
+    const sources=Object.values(session.members||{}).map(member=>{
+      const tab=tabsRef.current.find(item=>item.key===member.key);
+      return liveLspSourceForTab(tab);
+    });
+    if (sources.some(item=>!sourceMatchesSession(item,session))) {
+      setProblem('An analyzed file was replaced or closed. Refresh the language session.');
+      return;
+    }
     try {
+      for (const item of sources) {
+        const sync=lspRequestForSource(item);
+        if (!sync) throw Error('LSP_MEMBER_SOURCE_UNAVAILABLE');
+        const synced=await invoke('ide_lsp_change_document',{request:sync});
+        if (serial!==lspFeatureSerial.current ||
+            !isCurrentLspReply(item,synced,epoch) ||
+            !sourceMatchesSession(item,lspSessionRef.current)) return;
+      }
+      // The worker never answers a multi-file feature against drafts changed
+      // during the synchronization sequence.
+      if (sources.some(item=>{
+        const tab=tabsRef.current.find(candidate=>candidate.key===item.key);
+        return !stillCurrentLspSource(item,tab,
+          bufferIdentities.current.get(item.key),
+          editorStates.current.get(item.key),activeProjectIdRef.current);
+      })) return;
       const response=await invoke(kind==='diagnostics' ?
         'ide_lsp_read_diagnostics':'ide_lsp_feature',{request});
       if (serial!==lspFeatureSerial.current ||
           !isCurrentLspReply(source,response,epoch) ||
-          !sourceMatchesSession(source,lspSessionRef.current)) return;
+          !sourceMatchesSession(source,lspSessionRef.current) ||
+          sources.some(item=>{
+            const tab=tabsRef.current.find(candidate=>candidate.key===item.key);
+            return !stillCurrentLspSource(item,tab,
+              bufferIdentities.current.get(item.key),
+              editorStates.current.get(item.key),activeProjectIdRef.current);
+          })) return;
       if (kind==='diagnostics') {
         setLspNativeDiagnostics(previous=>({...previous,[source.key]:response}));
       } else if (kind==='completion') {
@@ -5396,8 +5546,8 @@ function App() {
     setDiskComparison(null);
     setDiskAuditReport(null);
     setReview(null);
-    if (lspSession?.projectId===req.projectId &&
-        lspSession.relativePath===req.relativePath) void stopLspSession();
+    if (lspSessionRef.current?.members?.[req.tabKey])
+      void closeLspDocument(req.tabKey);
     setHint('Applied reviewed merge to the editor only. '+
       'Original draft remains in CodeMirror Undo. Source Save is still explicit.');
   }
@@ -5416,8 +5566,7 @@ function App() {
     for (const key of draftInFlight.current) protectedKeys.add(key);
     for (const key of draftTimers.current.keys()) protectedKeys.add(key);
     for (const tab of tabsRef.current) {
-      if (lspSession?.projectId===tab.projectId &&
-          lspSession.relativePath===tab.relativePath) protectedKeys.add(tab.key);
+      if (lspSession?.members?.[tab.key]) protectedKeys.add(tab.key);
     }
     const plan=planCleanBackgroundTabClosure(tabsRef.current,projectId,
       protectedKeys,key=>editorStates.current.get(key)?.sliceDoc());
@@ -5437,7 +5586,7 @@ function App() {
       'unsaved drafts and project files were preserved.');
   }
 
-  function closeTab(key) {
+  async function closeTab(key) {
     const selected = tabsRef.current.find(tab => tab.key === key);
     if (!selected) return;
     if (savingKey === key || savingKeyRef.current === key ||
@@ -5450,9 +5599,18 @@ function App() {
       selected.projectId);
     if ((live.status !== 'current' || live.dirty) && !window.confirm(
       'Discard unsaved changes in ' + selected.relativePath + '?')) return;
-    if (lspSession?.projectId === selected.projectId &&
-        lspSession.relativePath === selected.relativePath) {
-      void stopLspSession();
+    if (lspSessionRef.current?.members?.[key] &&
+        !await closeLspDocument(key)) return;
+    // Closing a native document can await a worker round trip. An editor
+    // changed during that wait may no longer inherit the old discard consent.
+    if (live.status!=='current' ||
+        activeProjectIdRef.current!==selected.projectId ||
+        !stillCurrentEditorIntent(live,
+          tabsRef.current.find(item=>item.key===key),
+          bufferIdentities.current.get(key),editorStates.current.get(key),
+          activeProjectIdRef.current)) {
+      setProblem('File changed during analysis cleanup. Close was cancelled; draft preserved.');
+      return;
     }
     editorStates.current.delete(key);
     setMergeReview(previous=>previous?.tabKey===key ? null : previous);
@@ -5482,10 +5640,8 @@ function App() {
       'Discard your live unsaved edits and reload from disk?')) return;
     // A confirmation cannot authorize deleting edits made while an LSP stop
     // or filesystem read was in flight.
-    if (lspSession?.projectId === tab.projectId &&
-        lspSession.relativePath === tab.relativePath) {
-      await stopLspSession();
-    }
+    if (lspSessionRef.current?.members?.[tab.key] &&
+        !await closeLspDocument(tab.key)) return;
     if (!stillCurrentEditorIntent(original,
         tabsRef.current.find(item=>item.key===tab.key),
         bufferIdentities.current.get(tab.key),editorStates.current.get(tab.key),
@@ -5592,9 +5748,10 @@ function App() {
           bufferIdentities.current.get(tab.key),
           editorStates.current.get(tab.key)) || item;
       }));
-      if (lspSession?.projectId === tab.projectId &&
-          lspSession.relativePath === tab.relativePath) {
-        await stopLspSession();
+      if (lspSessionRef.current?.members?.[tab.key] &&
+          !await closeLspDocument(tab.key)) {
+        // The Save receipt is durable even if LSP cleanup is uncertain.
+        return true;
       }
       setHint('Saved ' + tab.relativePath + ' to disk. Any edits made during Save remain unsaved.');
       return true;
@@ -8440,7 +8597,7 @@ function App() {
             <p className="capabilityNotice" role="status">
               <strong>{lspSession
                 ? 'A protected language session is '+(lspBusy?'changing state':'active')+
-                    ' for '+lspSession.relativePath+'.'
+                    ' for '+Object.keys(lspSession.members||{}).length+' project file(s).'
                 : lspWorker?.ready
                   ? 'Reviewed local server assets are available; none started automatically.'
                   : 'Language servers are not running.'}</strong>
@@ -8449,8 +8606,9 @@ function App() {
             </p>
             {lspSession && <div className="capabilityNotice">
               <p role={lspSession.cleanupRequired?'alert':'status'}>
-                Project: {lspSession.projectId} · File: {lspSession.relativePath}
-                {' · '}Provider: {lspSession.languageId}
+                Project: {lspSession.projectId}
+                {' · '}Files: {Object.keys(lspSession.members||{}).length}
+                {' · '}Provider: {lspSession.providerId}
                 {lspSession.cleanupRequired &&
                   ' · Native worker cleanup not independently confirmed'}
               </p>
@@ -8997,12 +9155,18 @@ function App() {
                     title={'Require native human consent, then start isolated '+lspProviderForTab}
                     onClick={() => void startLspSession()}>
                     {lspBusy ? 'Starting…' : 'Start '+lspProviderForTab}</button>}
+                  {lspMayAddCurrentFile && <button type="button"
+                    className="ghostBtn editorToolButton" disabled={lspBusy}
+                    title="Analyze this open file within the approved read-only project snapshot"
+                    onClick={() => void addLspDocument()}>
+                    {lspBusy ? 'Adding…' : 'Analyze this file'}</button>}
                   {!!lspSession && <button type="button"
                     className="ghostBtn editorToolButton" disabled={lspBusy}
-                    onClick={() => void stopLspSession()}>
-                    {lspBusy ? 'Stopping…' : lspSession.cleanupRequired
+                    onClick={() => void (lspRunningForTab ?
+                      closeLspDocument(activeTab.key) : stopLspSession())}>
+                    {lspBusy ? 'Updating…' : lspSession.cleanupRequired
                       ? 'Retry protected worker cleanup' :
-                      lspRunningForTab ? 'Stop '+lspProviderForTab :
+                      lspRunningForTab ? 'Close file analysis' :
                       'Stop previous language session'}</button>}
                   <button type="button" className="ghostBtn editorToolButton"
                     disabled={!lspRunningForTab || lspBusy || !lspSupportsNavigation}
