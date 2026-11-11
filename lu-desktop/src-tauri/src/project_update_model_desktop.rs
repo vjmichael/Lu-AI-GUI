@@ -96,7 +96,7 @@ fn persist(profile:&Path,proof:&suggestions::ModelSuggestion,
     tx.commit().map_err(|_|"PLAN07B_RECEIPT_TRANSACTION_FAILED")?;
     Ok(())
 }
-fn read_latest(profile:&Path,preview_id:&str)
+pub(super) fn read_latest(profile:&Path,preview_id:&str)
  ->Result<Option<suggestions::ModelSuggestion>,String>{
     let (preview,register,_,g,s)=project_updates_desktop::reload_audited(
         profile,preview_id)?;
