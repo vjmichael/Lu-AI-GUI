@@ -38,6 +38,7 @@ pub mod git_reviewed_commit;
 pub mod git_status;
 pub mod github_ci;
 pub mod github_live;
+pub mod github_pull_review;
 pub mod inbox;
 pub mod inventory;
 pub mod inventory_history;
