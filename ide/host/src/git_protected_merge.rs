@@ -742,6 +742,12 @@ mod tests {
         fs::write(root.join("tracked.txt"), b"original\n").unwrap();
         fs::write(root.join("unrelated.keep"), b"not touched\n").unwrap();
         let repo = Repository::init(&root).unwrap();
+        // Deterministic cross-platform byte evidence: the disposable native
+        // fixture disables Windows runner default CRLF checkout conversion.
+        // Production honors the actual selected repository's Git settings.
+        let mut config = repo.config().unwrap();
+        config.set_bool("core.autocrlf", false).unwrap();
+        drop(config);
         let mut index = repo.index().unwrap();
         index.add_path(Path::new("tracked.txt")).unwrap();
         index.add_path(Path::new("unrelated.keep")).unwrap();
