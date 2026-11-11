@@ -45,7 +45,22 @@ pub fn model_native_action_hint(prompt:&str)->String{
     if crate::native_action_proposal::classify_current_user_action(prompt).is_none(){
         return prompt.to_owned()
     }
-    const HINT:&str="\n\n[Lu native file-operation REVIEW proposal, unprivileged]\nIf you can help with the user's explicitly requested operation, output exactly one JSON object with only these fields: {\"kind\":\"propose_native_action\",\"action\":\"copy_file|move_file|trash_file|extract_archive|extract_archive_batch|split_archive|create_document|revise_office|batch_office\",\"purpose\":\"brief description\"}. Optional only for create_document: \"documentDraft\":{\"format\":\"docx or pptx\",\"title\":\"short title\",\"content\":\"complete bounded content\"}; optional only for revise_office: \"officePatch\":{\"kind\":\"word_text|slide_text|cell_number|cell_boolean|cell_text\",\"textIndex\":0,\"slideNumber\":1,\"sheetNumber\":1,\"address\":\"A1\",\"expectedOld\":\"exact original text\",\"newValue\":\"replacement\"}; optional only for batch_office: \"officeBatch\" list (2-8 such exact changes). Only provide these structured drafts if you KNOW the exact original content, otherwise ask the human to fill the review form. Model drafts are never trusted source bytes or a grant. Choose exactly the action the user requested; action is one enum value, not the pipe-separated alternatives. Do NOT include a path, actual filename, permission, tool ID, arguments or executable code. This is NOT execution. Lu will ask the human to choose a target with native dialogs, show a complete review and obtain explicit separate approval before any write. Never claim an action succeeded from a proposal. [/Lu native operation review proposal]";
+    const HINT:&str=r#"
+
+[Lu native file-operation REVIEW proposal, unprivileged]
+If the human explicitly requested one supported operation and you have enough information, output one exact JSON object ONLY:
+{"kind":"propose_native_action","action":"ONE_ACTION","purpose":"brief original user reason"}
+ONE_ACTION must equal exactly one of: copy_file, move_file, trash_file, extract_archive, extract_archive_batch, split_archive, create_document, revise_office, batch_office, create_text_file, edit_text_file. It cannot be a list.
+For create_text_file or edit_text_file, additionally include exactly:
+"textFileDraft":{"fileName":"safe-basename.ext","content":"COMPLETE UTF-8 contents"}
+This is whole-file text, not a patch, path or selection of an OS directory. Use a format-consistent basename and syntactically correct JSON if the file is .json. For edit_text_file NEVER invent the old text or a partial replacement: if you cannot provide the entire correct new file, ask the human for it.
+For create_document only, optionally supply:
+"documentDraft":{"format":"docx","title":"short title","content":"complete text"} (or pptx).
+For revise_office only, optionally supply:
+"officePatch":{"kind":"word_text","textIndex":0,"slideNumber":1,"sheetNumber":1,"address":"A1","expectedOld":"exact original text","newValue":"replacement"}
+For batch_office only, optionally supply "officeBatch" as 2-8 such changes.
+Do NOT include a path, OS directory, permission, grant, tool ID, command, arguments or executable code. The ONLY filename allowed is the untrusted textFileDraft.fileName, validated again by Lu; for all other actions the human chooses the exact source using a native picker. A proposal does NOT make or authorize a filesystem change. Lu will show a separate human review, native OS selection, exact source bytes and hashes, and one-use native approval with independently checked journal results. If details are uncertain, give a normal answer or ask a question, not fabricated proposal JSON.
+[/Lu native operation review proposal]"#;
     if prompt.len()+HINT.len()>16*1024{return prompt.to_owned()}
     format!("{prompt}{HINT}")
 }
@@ -99,6 +114,15 @@ mod tests {
             "What is a tar archive?"]{
             assert_eq!(model_native_action_hint(text),text);
         }
+    }
+    #[test]
+    fn native_text_file_hint_is_review_only_and_has_no_direct_effect_permission(){
+        let hint=model_native_action_hint("Edit notes.md");
+        assert!(hint.contains("edit_text_file"));
+        assert!(hint.contains("textFileDraft"));
+        assert!(hint.contains("Do NOT include a path"));
+        assert!(!hint.contains("automatic execution granted"));
+        assert_eq!(model_native_action_hint("Do not edit notes.md"),"Do not edit notes.md");
     }
     #[test]
     fn file_tool_hint_only_on_explicit_create_save_requests() {

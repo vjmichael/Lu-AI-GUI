@@ -28,6 +28,7 @@ mod write_proposal;
 mod native_host_write;
 mod edit_proposal;
 mod native_action_proposal;
+mod model_file_effect_handoff;
 mod native_host_edit;
 mod rollback_review;
 mod prompt_context;
@@ -5879,12 +5880,22 @@ async fn lu_inspect_text_file(
 /// durable authorization path.
 #[tauri::command]
 fn lu_accept_native_action_proposal(
+    app:AppHandle,
     state:State<'_,Arc<DesktopState>>,
     chat_id:String,proposal_id:String,
 )->Result<native_action_proposal::ActionProposalView,String>{
     state.chats.history(&chat_id)?;
-    state.native_actions.consume(&proposal_id,&chat_id)
-        .map_err(|e|format!("Native review proposal unavailable: {e:?}"))
+    // Consuming a model proposal is still ONLY consent to an inert preview.
+    // Never transfer an old authority grant. For text drafts, rebind the
+    // original persisted human turn into the EXISTING reviewed create/edit
+    // staging and approval ledgers; native pickers and one-use broker remain.
+    let (view,original_turn)=state.native_actions
+        .consume_with_origin(&proposal_id,&chat_id)
+        .map_err(|e|format!("Native review proposal unavailable: {e:?}"))?;
+    model_file_effect_handoff::stage_existing_text_review(
+        &app,state.inner(),&chat_id,&original_turn,&view
+    )?;
+    Ok(view)
 }
 #[tauri::command]
 fn lu_deny_native_action_proposal(

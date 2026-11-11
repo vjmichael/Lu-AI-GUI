@@ -3128,6 +3128,12 @@ function App() {
       // This is NOT effect approval. Every branch opens an existing native
       // picker or a complete draft editor and requires an independent consent.
       switch(approved.action){
+        case 'create_text_file':
+          setActivity('Complete model draft moved to the existing New file review. Choose a destination and separately confirm; nothing was written.');
+          break;
+        case 'edit_text_file':
+          setActivity('Complete model replacement moved to the existing Edit file review. Select the exact original, review the full diff and separately confirm; nothing was changed.');
+          break;
         case 'copy_file':await reviewNativeFileTransfer('copy');break;
         case 'move_file':await reviewNativeFileTransfer('move');break;
         case 'trash_file':await reviewNativeTrashFile();break;
@@ -4563,6 +4569,17 @@ function App() {
               role="group" aria-label="Lu suggested native action review">
               <strong>Review suggested action: {proposal.action.replaceAll('_',' ')}</strong>
               <p>{proposal.purpose}</p>
+              {proposal.textFileDraft&&<details>
+                <summary>View full model-proposed text (not written)</summary>
+                <strong>Suggested basename: {proposal.textFileDraft.fileName}</strong>
+                <pre className="editFullText" aria-label="Whole proposed file text">
+                  {proposal.textFileDraft.content}
+                </pre>
+                <small>This is unverified model text. Lu will validate its
+                  format again. For an edit, the entire original file and
+                  replacement must be inspected and confirmed separately.
+                  The model cannot select the operating-system path.</small>
+              </details>}
               <small>This model suggestion cannot change files. The native
                 picker and a separate approval are required before execution.</small>
               <div className="settingsActions">

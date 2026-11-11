@@ -2,6 +2,12 @@
 
 **Owner direction:** November 8, 2026. **Status:** binding current prioritization, NOT a production acceptance claim. Based on [canonical K/I/A/F](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md), [memory-first user-centered policy](LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md), [tool scope audit](LU_AI_EXECUTION_TOOL_REVIEW_20261107.md), and [v1.0 task ledger](LU_V1_0_TASKS.md).
 
+## November 11, 2026 — P0-TOOLS-02 typed model-to-effect native review handoff (source candidate)
+
+The existing Lu desktop already had actual separate, journaled write/edit/copy/move/reversible-trash/archive implementations. The outstanding *interface* gap was that \`propose_native_action\` lacked whole-file text creation/editing, requiring a separate model-output format. P0-TOOLS-02 adds two typed, completed-model native review actions (\`create_text_file\` and \`edit_text_file\`) and bounded full-content \`textFileDraft\`, with conservative original-human intent matching, one-use chat/generation identity and no OS path/model grant. A trusted host-only bridge checks that the original ANSF human turn is still the latest, then stages the existing WriteProposalQueue/EditProposalQueue and durable approval ledgers. The operator still selects the real resource with the OS picker, reviews full bytes/hash/diff and approves in an independent native dialog; existing effect journal, receipts, cancellation and manual uncertainty recovery own the actual file operation. Prior copy/move/trash/archives stay on their preexisting reviewed operation paths.
+
+**State: source only; CI/PR/native compiler/regression and physical installed acceptance deferred per owner.** No new arbitrary OS command executor, edit replay or automatic project task completion. See [P0-TOOLS-02 engineering handoff](LU_P0_TOOLS02_REVIEWED_FILE_EFFECTS_20261111.md). Next model interface group: P0-TOOLS-03 browser/Reader/OCR/Observe source continuity.
+
 ## November 11, 2026 — P0-TOOLS-01 source integration (acceptance deferred)
 
 **Owner workflow:** finish Lu implementation and integration first. GitHub is a source repository, not a per-task CI/PR verification gate. No additional CI, PR checking or regression campaign until application development is complete under the owner's NVP-directed hold.
