@@ -9,6 +9,7 @@ import { planProjectPaneSelection, planProjectSwitchView,
 import { captureLiveEditorIntent, stillCurrentEditorIntent,
   reconcileSavedEditorTab } from './editor_live_write.js';
 import { planCleanBackgroundTabClosure } from './editor_clean_tab_reclamation.js';
+import { checkedQuickOpenResult, checkedDirectoryPage } from './quick_open_view.js';
 import { rememberedWorkspaceFromTabs, checkedRememberedWorkspace } from './workspace_layout.js';
 import { checkedPrivateDraftHead, planRestartReconciliation } from './editor_restart_reconciliation.js';
 import { diskAuditTargets, classifyDiskAudit,
@@ -172,6 +173,12 @@ function App() {
   const workspaceLayoutReadVersion = useRef(0);
   const [directory, setDirectory] = useState('');
   const [relativeOpenPath, setRelativeOpenPath] = useState('');
+  const [quickOpenQuery, setQuickOpenQuery] = useState('');
+  const [quickOpenResults, setQuickOpenResults] = useState(null);
+  const [quickOpenBusy, setQuickOpenBusy] = useState(false);
+  const quickOpenBusyRef = useRef(false);
+  const quickOpenSerial = useRef(0);
+  const [directoryPageBusy, setDirectoryPageBusy] = useState(false);
   const [listing, setListing] = useState(null);
   const [visibleTreeCount, setVisibleTreeCount] = useState(INITIAL_VISIBLE_TREE_ENTRIES);
   const [explorerPending, setExplorerPending] = useState(false);
@@ -402,6 +409,17 @@ function App() {
   editorVisibleRef.current=section==='explorer';
 
   useEffect(() => {
+    // Filename lookup is an observation scoped to one active project only.
+    // A new project discards pending results and untrusted old paths.
+    quickOpenSerial.current += 1;
+    quickOpenBusyRef.current = false;
+    setQuickOpenBusy(false);
+    setQuickOpenResults(null);
+    setQuickOpenQuery('');
+    setDirectoryPageBusy(false);
+  }, [activeProject?.projectId]);
+
+  useEffect(() => {
     // Load only a navigation hint for the active registered project. No
     // sources are opened and no private draft recovery is automatic.
     const projectId=activeProject?.projectId;
@@ -601,6 +619,9 @@ function App() {
   const visibleEditorTabs = useMemo(() => tabWindow(projectTabs,tabWindowStart),
     [projectTabs,tabWindowStart]);
   const visibleTree = visibleTreeEntries(listing?.entries,visibleTreeCount);
+  const projectTabCount = projectTabs.length;
+  const workingSetNotice = projectTabCount + ' / ' + MAX_OPEN_TABS_PER_PROJECT +
+    ' open tabs in this project; clean background tabs can be closed manually.';
   useEffect(() => {
     // An external source hit, diagnostic or programmatic tab selection must
     // make that tab reachable. Manual paging itself never changes selection.
@@ -3820,9 +3841,10 @@ function App() {
             originals[index]?.revision!==approved.edits[index].expectedRevision)
           throw Error('PROPOSAL_SOURCE_CHANGED_ON_DISK');
       }
-      const rootListing=await invoke('ide_list_source_directory',{
-        projectId:item.projectId,relativeDir:'',
+      const rootRaw=await invoke('ide_list_source_directory_page',{
+        projectId:item.projectId,relativeDir:'',after:null,
       });
+      const rootListing=checkedDirectoryPage(rootRaw,item.projectId,'',null);
       if (rootListing?.projectId!==item.projectId ||
           rootListing?.relativeDir!=='' || !Array.isArray(rootListing.entries))
         throw Error('PROPOSAL_PROJECT_LISTING_UNTRUSTED');
@@ -4027,9 +4049,10 @@ function App() {
       toProjectId:project.projectId,relativeDir:path};
     setProblem('');
     try {
-      const result=await invoke('ide_list_source_directory',{
-        projectId:project.projectId,relativeDir:path,
+      const raw=await invoke('ide_list_source_directory_page',{
+        projectId:project.projectId,relativeDir:path,after:null,
       });
+      const result=checkedDirectoryPage(raw,project.projectId,path,null);
       if (workspaceTransitionRef.current!==token ||
           explorerIoTicket.current!==ticket ||
           !mayCommitProjectNavigation(request,result,{
@@ -4333,6 +4356,93 @@ function App() {
           generation === projectSearchGeneration.current)
         setProblem('Cannot open that saved search hit: ' + String(error));
     } finally {
+      finishExplorerIo(ticket);
+    }
+  }
+
+  async function searchQuickOpen() {
+    const projectId=activeProjectIdRef.current;
+    const query=quickOpenQuery.trim();
+    if (!projectId || !query || query.length>128 ||
+        quickOpenBusyRef.current || explorerIoTicket.current ||
+        workspaceTransitionRef.current || workspaceLayoutOp.current) return;
+    const serial=++quickOpenSerial.current;
+    const epoch=projectNavigationEpoch.current;
+    quickOpenBusyRef.current=true;
+    setQuickOpenBusy(true);
+    setQuickOpenResults(null);
+    setProblem('');
+    try {
+      const raw=await invoke('ide_quick_open_source_paths',{projectId,query});
+      if (serial!==quickOpenSerial.current ||
+          activeProjectIdRef.current!==projectId ||
+          epoch!==projectNavigationEpoch.current) return;
+      const result=checkedQuickOpenResult(raw,projectId,query);
+      setQuickOpenResults(result);
+      if (result.truncated)
+        setHint('Quick Open reached a bounded scan or result limit. Narrow the filename; results are partial.');
+    } catch(error) {
+      if (serial===quickOpenSerial.current &&
+          activeProjectIdRef.current===projectId)
+        setProblem('Could not search project filenames: '+String(error));
+    } finally {
+      if (serial===quickOpenSerial.current) {
+        quickOpenBusyRef.current=false;
+        setQuickOpenBusy(false);
+      }
+    }
+  }
+
+  async function openQuickOpenMatch(hit) {
+    if (!activeProject?.projectId || !quickOpenResults ||
+        quickOpenResults.projectId!==activeProject.projectId ||
+        !quickOpenResults.matches.some(entry=>entry.relativePath===hit?.relativePath) ||
+        hit.size>512*1024 ||
+        explorerIoTicket.current || workspaceTransitionRef.current) return;
+    // This is just a source-relative filename suggestion. Reuse the exact
+    // native preview + late-admission path; no filename search grants read/write.
+    await selectEntry({kind:'file',relativePath:hit.relativePath,
+      name:hit.relativePath.split('/').pop()});
+  }
+
+  async function loadNextSourceDirectoryPage() {
+    const projectId=activeProjectIdRef.current;
+    const current=listing;
+    if (!projectId || !current || current.projectId!==projectId ||
+        !current.nextAfter || directoryPageBusy || explorerIoTicket.current ||
+        workspaceTransitionRef.current || workspaceLayoutOp.current) return;
+    const ticket=beginExplorerIo();
+    if (!ticket) return;
+    const epoch=projectNavigationEpoch.current;
+    const after=current.nextAfter;
+    setDirectoryPageBusy(true);
+    setProblem('');
+    try {
+      const raw=await invoke('ide_list_source_directory_page',{
+        projectId,relativeDir:current.relativeDir,after,
+      });
+      if (explorerIoTicket.current!==ticket ||
+          epoch!==projectNavigationEpoch.current ||
+          activeProjectIdRef.current!==projectId) return;
+      const page=checkedDirectoryPage(raw,projectId,current.relativeDir,after);
+      if (!page.entries.length)
+        throw Error('INT01E_EMPTY_DIRECTORY_PAGE');
+      setListing(previous=>{
+        if (previous?.projectId!==projectId ||
+            previous.relativeDir!==current.relativeDir ||
+            previous.nextAfter!==after) return previous;
+        return {...previous,
+          entries:[...previous.entries,...page.entries],
+          nextAfter:page.nextAfter,truncated:page.truncated,
+          scanLimited:page.scanLimited,
+          entriesExamined:page.entriesExamined};
+      });
+      setVisibleTreeCount(previous=>previous+page.entries.length);
+    } catch(error) {
+      if (explorerIoTicket.current===ticket)
+        setProblem('Additional directory entries unavailable: '+String(error));
+    } finally {
+      setDirectoryPageBusy(false);
       finishExplorerIo(ticket);
     }
   }
@@ -4954,7 +5064,8 @@ function App() {
 
   function closeCleanBackgroundTabs() {
     const projectId=activeProjectIdRef.current;
-    if (!projectId || savingKey || mergeBusy || mergeApplyRequest ||
+    if (!projectId || savingKey || savingKeyRef.current ||
+        mergeBusy || mergeApplyRequest || workspaceTransitionRef.current ||
         explorerPending || explorerIoTicket.current ||
         workspaceLayoutOp.current || draftRecoveryBusy || reviewPending || inboxBusy) return;
     // An editor transaction can be newer than the last React tab render.
