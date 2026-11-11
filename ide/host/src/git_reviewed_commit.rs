@@ -547,8 +547,18 @@ impl IdeWorkspaceRegistry {
         {
             if let Some(test_gitdir) = std::env::var_os("IDE_G06B05_ABORT_AFTER_REF_CAS") {
                 let fixture_marker = gitdir.parent().map(|p| p.join(".g06b05-abort-fixture"));
-                if PathBuf::from(test_gitdir) == gitdir
-                    && gitdir.starts_with(std::env::temp_dir())
+                // Windows native picker stores a canonical \\?\ form, whereas
+                // the child harness may supply a short TEMP path. Compare
+                // filesystem-canonical directories, never lexical strings.
+                let claimed = fs::canonicalize(PathBuf::from(test_gitdir)).ok();
+                let actual = fs::canonicalize(&gitdir).ok();
+                let temp = fs::canonicalize(std::env::temp_dir()).ok();
+                if actual.is_some()
+                    && claimed == actual
+                    && actual
+                        .as_ref()
+                        .zip(temp.as_ref())
+                        .is_some_and(|(git, tmp)| git.starts_with(tmp))
                     && gitdir
                         .parent()
                         .and_then(|p| p.parent())
@@ -1326,6 +1336,13 @@ mod tests {
                 serde_json::from_slice(&fs::read(&handoff).unwrap()).unwrap();
             let base = PathBuf::from(data["base"].as_str().unwrap());
             let root = base.join("repo");
+            assert!(
+                base.join("catalog.json").is_file() && root.join(".git").is_dir(),
+                "g06b05 {mode}: child did not hard-abort at the intended CAS, status={:?}; stdout={}; stderr={}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
             let id = data["project_id"].as_str().unwrap();
             let old_head = data["previous_head"].as_str().unwrap();
             let parent = data["resulting_parent"].as_str().unwrap();
