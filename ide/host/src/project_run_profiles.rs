@@ -2,7 +2,9 @@
 //!
 //! A filename is not an approved manifest; a Git HEAD is not a snapshot;
 //! a package.json script is untrusted project code. The existing WO6
-//! isolated, approved Cargo worker is the only execution route.
+//! supervised Cargo worker and separately pinned, feature-gated native
+//! multilang adapters are the only fixed execution routes. This discovery
+//! endpoint cannot attest whether those native runtimes are installed.
 use crate::{browser::BrowserError, IdeWorkspaceRegistry};
 use serde::Serialize;
 use std::io::ErrorKind;
@@ -68,7 +70,7 @@ const SPECS: [Spec; MAX_PROFILE_COUNT] = [
     },
     Spec {
         id: "python_pytest",
-        title: "Python · pytest (not yet runnable)",
+        title: "Python · offline pytest (native runtime required)",
         language: "python",
         operation: "test",
         manifest: "pyproject.toml",
@@ -76,7 +78,7 @@ const SPECS: [Spec; MAX_PROFILE_COUNT] = [
     },
     Spec {
         id: "js_tests",
-        title: "JavaScript · tests (not yet runnable)",
+        title: "JavaScript · offline tests (native runtime required)",
         language: "javascript",
         operation: "test",
         manifest: "package.json",
@@ -84,7 +86,7 @@ const SPECS: [Spec; MAX_PROFILE_COUNT] = [
     },
     Spec {
         id: "cpp_cmake_build",
-        title: "C/C++ · CMake (not yet runnable)",
+        title: "C/C++ · offline CMake (native runtime required)",
         language: "cpp",
         operation: "build",
         manifest: "CMakeLists.txt",

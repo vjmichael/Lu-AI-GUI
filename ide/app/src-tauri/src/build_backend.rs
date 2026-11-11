@@ -64,6 +64,18 @@ const MULTILANG_RECIPES: [&str; 4] = [
     "cpp_cmake_build",
     "uv_sync_offline",
 ];
+/// INT03: An explicit reviewed profile binds exactly one saved manifest,
+/// never a caller-submitted path, script, shell argument or toolchain.
+fn profile_manifest(recipe: &str) -> Option<&'static str> {
+    match recipe {
+        "rust_check" | "rust_build" | "rust_tests" => Some("Cargo.toml"),
+        "lu_ide_host_tests" => Some("ide/host/Cargo.toml"),
+        "python_pytest" => Some("pyproject.toml"),
+        "js_tests" => Some("package.json"),
+        "cpp_cmake_build" => Some("CMakeLists.txt"),
+        _ => None,
+    }
+}
 
 /// Audit the exact frozen copy, not just live-source SHA evidence.
 /// The worker may not receive a manifest or lock swapped between the
@@ -420,6 +432,9 @@ pub struct ActiveView {
 #[serde(rename_all = "camelCase")]
 pub struct BuildStatus {
     ready: bool,
+    /// Separate native Cargo proof. A pinned Python/Node/CMake bundle
+    /// must never make the uninstalled Cargo recipe appear runnable.
+    cargo_ready: bool,
     multilang_ready: Vec<MultilangProfileReadiness>,
     code: String,
     description: &'static str,
@@ -626,12 +641,21 @@ impl NativeBuildRuntime {
                 return Err("IDE054_AUDIT_TERMINAL_RECEIPT_UNVERIFIED".into());
             }
         }
+        let cargo_ready = availability.is_ok();
+        let any_native_profile_ready = cargo_ready ||
+            multilang_ready.iter().any(|profile| {
+                profile.profile_id != "uv_sync_offline" && profile.ready
+            });
         Ok(BuildStatus {
-            ready: availability.is_ok(),
+            ready: any_native_profile_ready,
+            cargo_ready,
             multilang_ready,
-            code: match availability {
-                Ok(()) => "BUILD_RELEASE_RESOURCES_VERIFIED_ADMISSION_PER_JOB".into(),
-                Err(code) => code,
+            code: if cargo_ready {
+                "BUILD_RELEASE_RESOURCES_VERIFIED_ADMISSION_PER_JOB".into()
+            } else if any_native_profile_ready {
+                "BUILD_MULTILANG_RELEASE_PINS_VERIFIED_ADMISSION_PER_JOB".into()
+            } else {
+                availability.err().unwrap_or_else(|| "BUILD_NATIVE_RUNTIME_ABSENT".into())
             },
             description: "Pinned resources are not execution proof. Native Job/cgroup \
                 admission, human approval and terminal OS cleanup are checked for each job.",
@@ -763,7 +787,39 @@ impl NativeBuildRuntime {
         {
             return Err("BUILD_RECIPE_DENIED".into());
         }
-        self.run_with_review(app, registry, project_id, recipe_id, None)
+        self.run_with_review(app, registry, project_id, recipe_id, None, None)
+    }
+
+    /// INT03: the user explicitly selects an already-discovered profile
+    /// whose saved manifest SHA is carried through native freezing and fresh
+    /// OS approval. No old review is a substitute for worker permission.
+    pub fn run_profile(
+        &self,
+        app: &AppHandle,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+        recipe_id: &str,
+        expected_manifest_sha256: &str,
+    ) -> Result<BuildRunView, String> {
+        let manifest = profile_manifest(recipe_id).ok_or("INT03_PROFILE_NOT_ALLOWLISTED")?;
+        if !VALID_RECIPES.contains(&recipe_id) &&
+            !(cfg!(feature = "native-multilang") &&
+              MULTILANG_RECIPES.contains(&recipe_id)) {
+            return Err("INT03_NATIVE_ADAPTER_UNAVAILABLE".into());
+        }
+        if expected_manifest_sha256.len() != 64 ||
+            !expected_manifest_sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("INT03_MANIFEST_SHA_INVALID".into());
+        }
+        let saved = registry.preview_source_file(project_id, manifest)
+            .map_err(|_| "INT03_MANIFEST_NOT_REGISTERED")?;
+        if saved.project_id != project_id ||
+            saved.relative_path != manifest ||
+            saved.revision != expected_manifest_sha256 {
+            return Err("INT03_DISCOVERED_MANIFEST_STALE".into());
+        }
+        self.run_with_review(app, registry, project_id, recipe_id, None,
+            Some(expected_manifest_sha256))
     }
 
     /// Only the separately named native package entrypoint can choose the
@@ -802,6 +858,7 @@ impl NativeBuildRuntime {
                 preview_sha256: expected_preview_sha256.to_owned(),
                 evidence_fingerprint: expected_evidence_fingerprint.to_owned(),
             }),
+            None,
         )
     }
 
@@ -812,6 +869,7 @@ impl NativeBuildRuntime {
         project_id: &str,
         recipe_id: &str,
         reviewed: Option<ReviewedPackageSync>,
+        expected_profile_sha: Option<&str>,
     ) -> Result<BuildRunView, String> {
         if recipe_id == "uv_sync_offline" {
             #[cfg(feature = "native-package-uv")]
@@ -854,6 +912,7 @@ impl NativeBuildRuntime {
             &requested,
             &output,
             reviewed.as_ref(),
+            expected_profile_sha,
         );
         let mut locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
         let finished_output = locked.current.as_ref().and_then(|active| {
@@ -887,7 +946,15 @@ impl NativeBuildRuntime {
         requested: &Arc<AtomicBool>,
         output: &Arc<LiveOutput>,
         reviewed: Option<&ReviewedPackageSync>,
+        expected_profile_sha: Option<&str>,
     ) -> Result<BuildRunView, String> {
+        // No Build/Test start may overlap an unresolved OS process tree.
+        // A green recipe listing, cached editor plan or new approval dialog
+        // is not proof that a previous native worker was reaped.
+        if self.supervisor.inspect().map_err(|e| e.code().to_owned())?
+            .iter().any(|job| job.requires_reconciliation) {
+            return Err("INT03_PRIOR_KERNEL_RECONCILIATION_REQUIRED".into());
+        }
         #[cfg(feature = "native-multilang")]
         let installed = if MULTILANG_RECIPES.contains(&recipe_id) {
             installation_multilang(app, recipe_id)?
@@ -931,6 +998,15 @@ impl NativeBuildRuntime {
         let input = publish_input(&source_root, &self.staged, recipe_id)
             .map_err(|e| e.code().to_owned())?;
         verify_input(&input).map_err(|e| e.code().to_owned())?;
+        if let Some(expected) = expected_profile_sha {
+            // Rebind the user-selected saved source revision to bytes
+            // independently rehashed in the immutable native worker input.
+            if input.seal.manifest_relative_path != profile_manifest(recipe_id)
+                    .ok_or("INT03_PROFILE_NOT_ALLOWLISTED")? ||
+                input.seal.manifest_sha256 != expected {
+                return Err("INT03_FROZEN_MANIFEST_MISMATCH".into());
+            }
+        }
         #[cfg(feature = "native-package-uv")]
         if let Some(review) = native_package_review.as_ref() {
             let py = review
@@ -1114,6 +1190,17 @@ impl NativeBuildRuntime {
                         &reviewed.evidence_fingerprint,
                     )
                     .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+            }
+            if let Some(expected) = expected_profile_sha {
+                let manifest = profile_manifest(recipe_id)
+                    .ok_or(SupervisorError::InvalidApproval)?;
+                let fresh = registry.preview_source_file(project_id, manifest)
+                    .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+                if fresh.project_id != project_id ||
+                   fresh.relative_path != manifest || fresh.revision != expected ||
+                   input.seal.manifest_sha256 != expected {
+                    return Err(SupervisorError::WrongProjectOrSource);
+                }
             }
             if requested.load(Ordering::SeqCst) {
                 return Err(SupervisorError::InvalidApproval);
@@ -1726,7 +1813,25 @@ impl NativeBuildRuntime {
         if entry.project_id != project_id || !entry.requires_reconciliation {
             return Err("BUILD_RECOVERY_SCOPE_DENIED".into());
         }
-        let install = installation(app)?;
+        // Recovery must not depend on Cargo being installed. The Windows
+        // broker is the SAME original independently pinned SCM service for
+        // all fixed native recipes; the native installer is still measured
+        // against its reviewed binary hash. Linux uses original cgroup
+        // custody and does not require any executable toolchain at cleanup.
+        #[cfg(windows)]
+        let install = installation(app).or_else(|_| {
+            #[cfg(feature = "native-multilang")]
+            {
+                ["python_pytest", "js_tests", "cpp_cmake_build"]
+                    .iter()
+                    .find_map(|&recipe| installation_multilang(app, recipe).ok())
+                    .ok_or_else(|| "INT03_PINNED_RECOVERY_BROKER_UNAVAILABLE".into())
+            }
+            #[cfg(not(feature = "native-multilang"))]
+            {
+                Err("INT03_PINNED_RECOVERY_BROKER_UNAVAILABLE".into())
+            }
+        })?;
         let choice = app
             .dialog()
             .message(format!(
@@ -1749,11 +1854,8 @@ impl NativeBuildRuntime {
             reconcile_windows_interrupted_via_service(&self.supervisor, job_id, &install.broker)
                 .map_err(|e| e.code().to_owned())?;
         #[cfg(target_os = "linux")]
-        let summary = {
-            let _ = install;
-            reconcile_linux_interrupted(&self.supervisor, job_id)
-                .map_err(|e| e.code().to_owned())?
-        };
+        let summary = reconcile_linux_interrupted(&self.supervisor, job_id)
+            .map_err(|e| e.code().to_owned())?;
         if summary.phase != JobPhase::Cancelled || summary.requires_reconciliation {
             return Err("BUILD_RECOVERY_REMAINS_QUARANTINED".into());
         }
@@ -1772,6 +1874,31 @@ mod dev035_native_lifecycle_tests {
         assert!(VALID_RECIPES.contains(&"rust_check"));
         // Generic ide_build_start still cannot reach the new recipe:
         // run() explicitly refuses uv_sync_offline.
+    }
+    #[test]
+    fn int03_run_profiles_never_accept_webview_executable_or_package_sync() {
+        for (recipe, manifest) in [
+            ("rust_check", "Cargo.toml"),
+            ("rust_build", "Cargo.toml"),
+            ("rust_tests", "Cargo.toml"),
+            ("lu_ide_host_tests", "ide/host/Cargo.toml"),
+            ("python_pytest", "pyproject.toml"),
+            ("js_tests", "package.json"),
+            ("cpp_cmake_build", "CMakeLists.txt"),
+        ] {
+            assert_eq!(profile_manifest(recipe), Some(manifest));
+        }
+        for hostile in [
+            "uv_sync_offline",
+            "../Cargo.toml",
+            "sh -c echo bad",
+            "npm test",
+            "pytest -q",
+            "python_pytest;id",
+            "",
+        ] {
+            assert_eq!(profile_manifest(hostile), None);
+        }
     }
     #[test]
     fn cancellation_and_recovery_phase_names_match_durable_supervisor_schema() {

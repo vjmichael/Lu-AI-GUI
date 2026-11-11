@@ -2052,6 +2052,40 @@ async fn ide_package_discard_private_output(
     }
 }
 
+/// INT03: explicit project Build/Test profile execution. The renderer supplies
+/// only a fixed recipe ID and the exact previously reviewed saved manifest
+/// SHA-256; the native runner freezes and independently rechecks that identity,
+/// then requires a NEW OS human confirmation for the original worker job.
+#[tauri::command]
+async fn ide_build_run_profile(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    recipe_id: String,
+    expected_manifest_sha256: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
+    {
+        let runtime = app
+            .try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("INT03_PROTECTED_RUNTIME_UNAVAILABLE")?;
+        let native = Arc::clone(runtime.inner());
+        let registry = Arc::clone(registry.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            native.run_profile(&app, &registry, &project_id,
+                &recipe_id, &expected_manifest_sha256)
+        })
+        .await
+        .map_err(|_| "INT03_NATIVE_EXECUTION_TASK_UNAVAILABLE")??;
+        return serde_json::to_value(result).map_err(|_| "INT03_RECEIPT_SERIALIZATION_DENIED".into());
+    }
+    #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
+    {
+        let _ = (app, registry, project_id, recipe_id, expected_manifest_sha256);
+        Err("INT03_PROTECTED_RUNTIME_UNAVAILABLE".into())
+    }
+}
+
 #[tauri::command]
 async fn ide_build_start(
     app: AppHandle,
@@ -3235,6 +3269,7 @@ pub fn run() {
             ide_review_multilang_adapter,
             ide_build_status,
             ide_build_read_output,
+            ide_build_run_profile,
             ide_build_start,
             ide_package_run_reviewed_uv,
             ide_package_discard_private_output,

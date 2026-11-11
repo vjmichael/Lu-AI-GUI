@@ -46,7 +46,7 @@ test('seven fixed profiles and exactly four existing protected Cargo recipes',()
     'lu_ide_host_tests');
 });
 
-test('Python, JS and CMake have no runnable adapter even when manifests exist',()=>{
+test('read-only profile discovery alone cannot authorize Python, JS or CMake',()=>{
   const safe=safeProjectRunProfileDiscovery(fixture(),project);
   for (const id of ['python_pytest','js_tests','cpp_cmake_build']) {
     assert.throws(()=>selectExistingProtectedRecipe(safe,id,project),
@@ -165,5 +165,7 @@ test('native source reads fixed known manifests, no untrusted path or executable
   assert.match(observed,/invoke\('ide_discover_project_run_profiles',\{projectId\}\)/);
   assert.doesNotMatch(observed,/ide_build_start|ide_prepare_execution_intent|eval\(|spawn\(/);
   assert.match(ui,/aria-label="DEV-03 project build and test profiles"/);
-  assert.match(ui,/Select existing protected Cargo recipe/);
+  assert.match(ui,/Select reviewed protected profile/);
+  assert.match(ui,/ide_build_run_profile/);
+  assert.match(ui,/expectedManifestSha256/);
 });

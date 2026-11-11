@@ -18,8 +18,9 @@ import { planThreeWayMerge, renderReviewedMerge,
   conflictExcerpt, mergeCanApply } from './editor_conflict_merge.js';
 import { planTaskSourceLink, sourceLinkDisplay,
   checkedSourceReobservation } from './task_source_evidence.js';
-import { safeProjectRunProfileDiscovery,
-  selectExistingProtectedRecipe } from './project_run_profiles.js';
+import { safeProjectRunProfileDiscovery } from './project_run_profiles.js';
+import { nativeProfileAvailability, planProtectedBuildProfile,
+  isCurrentProtectedBuildPlan, protectedBuildOutcome } from './protected_build_profiles.js';
 import { planReviewedAdapterRequest,
   checkedReviewedAdapterContract } from './reviewed_adapters.js';
 import { admitOpenTabs, tabWindow, pageTabWindow, centerSelectedTab,
@@ -53,6 +54,7 @@ import { safeDebugBinaryEvidence } from './debug_binary_evidence.js';
 import { safeDebugSymbolEvidence } from './debug_symbol_evidence.js';
 import { checkedProjectDebugWitness } from './project_debug_authority.js';
 import { acceptNativeOutput } from './native_build_output.js';
+import { boundedBuildTestHints } from './build_test_output_hints.js';
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
@@ -251,9 +253,12 @@ function App() {
   const [intentRecipe, setIntentRecipe] = useState('lu_ide_host_tests');
   const [intentBusy, setIntentBusy] = useState(false);
   const [buildStatus, setBuildStatus] = useState(null);
-  // DEV-03.1: per-project read-only profile discovery. The only effect of
-  // choosing a profile is selecting an existing approved Cargo recipe ID.
+  // IDE-INT03: a selected read-only manifest SHA is not an OS grant.
+  // Native freezes and remeasures the same fixed recipe and source before
+  // any separate per-job human consent.
   const [projectRunProfiles,setProjectRunProfiles] = useState(null);
+  const [selectedBuildPlan,setSelectedBuildPlan] = useState(null);
+  const [verifiedBuildOutcome,setVerifiedBuildOutcome] = useState(null);
   const [testDiscovery,setTestDiscovery] = useState(null);
   const [testDiscoveryBusy,setTestDiscoveryBusy] = useState(false);
   const testDiscoveryTicket=useRef(0);
@@ -269,6 +274,10 @@ function App() {
   const [buildResult, setBuildResult] = useState(null);
   const [jobProgressEvents, setJobProgressEvents] = useState([]);
   const [nativeJobOutput,setNativeJobOutput] = useState(null);
+  const buildOutputHints=useMemo(()=>
+    boundedBuildTestHints(nativeJobOutput,
+      activeProject?.projectId,nativeJobOutput?.jobId),
+    [nativeJobOutput,activeProject?.projectId]);
   const nativeOutputCursor = useRef({projectId:null,jobId:null,sequence:0});
   const nativeOutputPending = useRef(false);
   const nativeJobOutputRef = useRef(null);
@@ -545,6 +554,8 @@ function App() {
     profileDiscoveryRequest.current += 1;
     adapterReviewRequest.current += 1;
     setProjectRunProfiles(null);
+    setSelectedBuildPlan(null);
+    setVerifiedBuildOutcome(null);
     setProfileDiscoveryBusy(false);
     packageInspectionRequest.current += 1;
     setPackageInspection(null);
@@ -3305,6 +3316,7 @@ function App() {
     setAdapterReview(null);
     setAdapterReviewBusy(false);
     setProfileDiscoveryBusy(true);
+    setSelectedBuildPlan(null);
     setProblem('');
     try {
       const observed=await invoke('ide_discover_project_run_profiles',{projectId});
@@ -3366,15 +3378,18 @@ function App() {
   function chooseProjectRunProfile(profileId) {
     const projectId=activeProjectIdRef.current;
     try {
-      const selected=selectExistingProtectedRecipe(
-        projectRunProfiles,profileId,projectId);
-      // An immutable recipe selector is NOT an OS confirmation or grant.
-      // Existing startProtectedBuild still gates with pinned release
-      // resources, a frozen input snapshot and fresh native OS approval.
-      setIntentRecipe(selected);
-      setHint('Selected existing protected Cargo recipe '+selected+
-        '. No process started; native approval remains required.');
-    } catch(error) { setProblem('Profile is not runnable: '+String(error)); }
+      const selected=planProtectedBuildProfile(
+        projectRunProfiles,buildStatus,projectId,profileId);
+      setSelectedBuildPlan(selected);
+      // D1 intent selection remains a separate non-executable review path.
+      // The INT03 Build/Test request carries the exact selected manifest SHA.
+      setHint('Selected '+selected.recipeId+' at saved manifest '+
+        selected.expectedManifestSha256.slice(0,12)+
+        '…. No process started; a separate native approval is still required.');
+    } catch(error) {
+      setSelectedBuildPlan(null);
+      setProblem('Profile not available for protected Build/Test: '+String(error));
+    }
   }
 
   async function refreshProtectedBuildStatus() {
@@ -3403,10 +3418,16 @@ function App() {
 
   async function startProtectedBuild() {
     const projectId = activeProject?.projectId;
+    const plan = selectedBuildPlan;
     if (!projectId || buildBusy || !buildStatus?.ready ||
-        buildStatus.current || !['rust_check', 'rust_build', 'rust_tests', 'lu_ide_host_tests'].includes(intentRecipe)) return;
+        buildStatus.current ||
+        !isCurrentProtectedBuildPlan(plan,projectRunProfiles,buildStatus,projectId)) {
+      setProblem('Select an available, source-verified Build/Test profile first.');
+      return;
+    }
     setBuildBusy(true);
     setBuildResult(null);
+    setVerifiedBuildOutcome(null);
     nativeJobOutputRef.current=null;
     nativeOutputCursor.current={projectId:null,jobId:null,sequence:0};
     setNativeJobOutput(null);
@@ -3414,13 +3435,19 @@ function App() {
     try {
       // This is a REQUEST, not an execution grant. A separate native OS
       // confirmation follows sealed-source and release-pin admission.
-      const outcome = await invoke('ide_build_start', {
-        projectId, recipeId: intentRecipe
+      const outcome = await invoke('ide_build_run_profile', {
+        projectId, recipeId:plan.recipeId,
+        expectedManifestSha256:plan.expectedManifestSha256,
       });
       if (activeProjectIdRef.current !== projectId) return;
-      if (!outcome || outcome.projectId !== projectId ||
-          outcome.recipeId !== intentRecipe || !/^[a-f0-9]{64}$/.test(outcome.planSha256))
-        throw Error('BUILD_RESULT_SCOPE_DENIED');
+      const checked = protectedBuildOutcome(outcome,plan,projectId);
+      if (!isCurrentProtectedBuildPlan(plan,projectRunProfiles,buildStatus,projectId)) {
+        // The original result belongs to an older, subsequently changed
+        // selection; it cannot become the current editor's test status.
+        setProblem('Build/Test finished, but its reviewed profile changed. Native journal retained.');
+        return;
+      }
+      setVerifiedBuildOutcome(checked);
       setBuildResult(outcome);
       // One final drain after the native terminal receipt; this never
       // substitutes output text for completed/cancelled state.
@@ -3448,7 +3475,8 @@ function App() {
       } catch {
         // Terminal receipt remains authoritative if the advisory log fails.
       }
-      setHint('Protected worker returned a durable result. Native and installed acceptance are separate gates.');
+      setHint('Native Build/Test receipt: '+checked.disposition.replaceAll('_',' ')+
+        '. Installed acceptance and test assertion counts remain separate.');
     } catch (error) {
       if (activeProjectIdRef.current === projectId)
         setProblem('Protected build/test was denied or failed: ' + String(error));
@@ -6118,17 +6146,30 @@ function App() {
                         <p>Example paths:
                           {' '}{profile.hints.slice(0,4).join(', ')}
                           {profile.hints.length>4 && ' …'}</p>}
-                      {profile.existingRecipe
-                        ? <button type="button" className="ghostBtn"
-                            disabled={profile.manifestState!==
-                              'saved_file_sha_observed_not_validated' ||
-                              !!buildStatus?.current || buildBusy}
-                            onClick={()=>chooseProjectRunProfile(profile.id)}>
-                            Select existing protected Cargo recipe
-                          </button>
-                        : <div className="dev03AdapterReview">
-                            <p role="status">No reviewed native worker adapter.
-                              Execution unavailable; project scripts are untrusted.</p>
+                      <p role="status">Protected runtime:
+                        {' '}{nativeProfileAvailability(buildStatus,profile.id)
+                          .replaceAll('_',' ')}
+                      </p>
+                      {nativeProfileAvailability(buildStatus,profile.id)==='reviewable_native' &&
+                        <button type="button" className="ghostBtn"
+                          aria-pressed={selectedBuildPlan?.recipeId===profile.id &&
+                            selectedBuildPlan?.expectedManifestSha256===profile.sha}
+                          disabled={profile.manifestState!==
+                            'saved_file_sha_observed_not_validated' ||
+                            !!buildStatus?.current || buildBusy}
+                          onClick={()=>chooseProjectRunProfile(profile.id)}>
+                          {selectedBuildPlan?.recipeId===profile.id &&
+                            selectedBuildPlan?.expectedManifestSha256===profile.sha
+                            ? 'Selected for protected Build/Test'
+                            : 'Select reviewed protected profile'}
+                        </button>}
+                      {!profile.existingRecipe &&
+                        <div className="dev03AdapterReview">
+                            <p role="status">
+                              {nativeProfileAvailability(buildStatus,profile.id)==='reviewable_native'
+                                ? 'Offline native adapter is pinned; fresh protected OS approval remains required.'
+                                : 'No currently approved native runtime; project scripts are not executed.'}
+                            </p>
                             <button type="button" className="ghostBtn"
                               disabled={adapterReviewBusy || profileDiscoveryBusy ||
                                 !profile.sha || buildBusy}
@@ -6159,9 +6200,11 @@ function App() {
                           </div>}
                     </article>)}
                 </div>}
-              <p>The existing protected Cargo runner still independently
-                verifies its own source snapshot, toolchain and OS admission.
-                Selecting a recipe here never starts work.</p>
+              <p>Each profile is bound to its native-observed saved manifest
+                SHA-256. Rust Cargo and optionally pinned Python, JavaScript,
+                and C/C++ adapters share the existing OS-protected worker.
+                Selecting a profile never starts work; the native host
+                independently freezes and rechecks source before fresh approval.</p>
             </section>
             <section className="continuityDocument" aria-label="DEV-03.4 bounded test discovery">
               <div className="capabilityHeading">
@@ -6196,18 +6239,32 @@ function App() {
                 </>}
             </section>
             <div className="continuityDocument jobIntentComposer" aria-label="Protected native build and test">
-              <h3>Protected Run / Test</h3>
-              <p>Only approved offline Cargo recipes can be executed from a frozen source snapshot
-                inside a restricted OS worker. A fresh native confirmation is required for each run.
-                The default desktop and machines without pinned toolchains cannot launch one.</p>
-              <p>Native worker: <strong>{buildStatus?.ready ? 'Release resources verified; OS admission checked on every run' :
-                (buildStatus?.code || 'Checking trusted native admission…')}</strong></p>
+              <h3>Protected Build / Test</h3>
+              <p>Select a reviewed project profile above. Native execution uses
+                its exact saved manifest, a frozen whole-project copy, an offline
+                pinned toolchain and a fresh OS confirmation for each job.
+                Nothing runs automatically or writes into original project files.</p>
+              <p>Native worker: <strong>{buildStatus?.ready
+                ? 'One or more pinned offline recipes available; OS admission required'
+                : (buildStatus?.code || 'Checking native availability…')}</strong></p>
               <p>{buildStatus?.description || 'No unprotected fallback is provided.'}</p>
+              <p role="status" aria-live="polite">
+                {isCurrentProtectedBuildPlan(selectedBuildPlan,projectRunProfiles,
+                  buildStatus,activeProject?.projectId)
+                  ? <>Selected: <code>{selectedBuildPlan.recipeId}</code> ·
+                      Saved manifest <code>{selectedBuildPlan.expectedManifestSha256.slice(0,16)}…</code></>
+                  : 'No current runnable saved-source profile selected.'}
+              </p>
+              {buildStatus?.quarantined?.some(row=>row.requiresReconciliation) &&
+                <p role="alert">A previous worker needs OS cleanup reconciliation.
+                  New protected Build/Test jobs are blocked.</p>}
               <button className="primaryBtn" type="button"
-                disabled={!activeProject || !buildStatus?.ready || !!buildStatus.current || buildBusy ||
-                  !['rust_check','rust_build','rust_tests','lu_ide_host_tests'].includes(intentRecipe)}
+                disabled={!activeProject || !!buildStatus?.current || buildBusy ||
+                  !isCurrentProtectedBuildPlan(selectedBuildPlan,projectRunProfiles,
+                    buildStatus,activeProject?.projectId)}
                 onClick={() => startProtectedBuild()}>
-                {buildBusy ? 'Protected job in progress…' : 'Request protected Run / Test'}
+                {buildBusy ? 'Protected job in progress…' :
+                  'Request protected '+(selectedBuildPlan?.recipeId || 'Build/Test')}
               </button>
               {belongsToSelectedProject(activeProject, buildStatus?.current) && <>
                 <p role="status">Active protected job: {buildStatus.current.recipeId} ·
@@ -6240,6 +6297,20 @@ function App() {
                     </pre>
                   </>
                   : <p>No native worker output has been observed for this project.</p>}
+                {buildOutputHints.length>0 &&
+                  <section aria-label="Advisory compiler and test output hints"
+                    className="int03AdvisoryFindings">
+                    <h5>Compiler/test log hints · unverified</h5>
+                    <p>These are bounded untrusted text excerpts, not source-verified
+                      diagnostics or individual test assertion receipts. They cannot
+                      open files, execute commands, or authorize task completion.</p>
+                    <ol>{buildOutputHints.map((item,index)=>
+                      <li key={index}>
+                        {item.relativePath &&
+                          <code>{item.relativePath}:{item.line} · </code>}
+                        {item.message}
+                      </li>)}</ol>
+                  </section>}
               </section>
               <section aria-label="DEV-03.3 live native job phase timeline"
                 className="continuityDocument">
@@ -6289,6 +6360,19 @@ function App() {
                       </li>)}
                   </ol>}
               </section>
+              {belongsToSelectedProject(activeProject, verifiedBuildOutcome) &&
+                <section className="continuityDocument"
+                  aria-label="INT03 source-pinned native Build/Test outcome"
+                  role="status">
+                  <h4>Native Build/Test result</h4>
+                  <p>Disposition: <strong>{verifiedBuildOutcome.disposition.replaceAll('_',' ')}</strong></p>
+                  <p>Profile: <code>{verifiedBuildOutcome.recipeId}</code> ·
+                    Original terminal receipt:
+                    <code> {verifiedBuildOutcome.originalTerminalReceiptSha256}</code></p>
+                  <p>Successful native exit alone does not certify individual
+                    test assertions, installed application acceptance, or a
+                    human task acceptance decision.</p>
+                </section>}
               {belongsToSelectedProject(activeProject, buildResult) && <div role="status">
                 <p>Last worker result: <strong>{buildResult.phase}</strong> · Job {buildResult.jobId}</p>
                 <p>Native exit: {String(buildResult.nativeExitCode ?? 'unknown')} ·

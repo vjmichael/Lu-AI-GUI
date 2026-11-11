@@ -2,7 +2,7 @@
 // No subprocess output, grants, paths, or source bytes may enter this timeline.
 export const MAX_JOB_PROGRESS_EVENTS = 96;
 const TOKEN = /^[a-zA-Z0-9_-]{1,96}$/;
-const RECIPE = /^(rust_check|rust_build|rust_tests|lu_ide_host_tests)$/;
+const RECIPE = /^(rust_check|rust_build|rust_tests|lu_ide_host_tests|python_pytest|js_tests|cpp_cmake_build)$/;
 const PHASES = new Set(['preparing','prepared','authorized','admission_pending',
   'running','release_pending','cancel_requested','cancelled','completed','failed',
   'denied','recovery_required','uncertain']);
