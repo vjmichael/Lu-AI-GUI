@@ -60,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --locked --manifest-path ide/host/Cargo.toml --lib git_branch_operations
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_branch_operations
           rustfmt --edition 2021 --check ide/host/src/git_branch_operations.rs
           echo IDE_G06C01_LOCAL_BRANCH_GRAPH=ACTUAL_TESTED_NO_WRITES
       - name: WebView hostile invocation boundary and frontend bundle
@@ -94,3 +94,4 @@ jobs:
           name: ide-g06c01-${{ matrix.os }}-${{ github.sha }}
           path: .ide-g06c01-receipts/
           retention-days: 7
+          include-hidden-files: true
