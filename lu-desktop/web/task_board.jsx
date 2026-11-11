@@ -16,6 +16,14 @@ export function TaskBoardWindow(){
   const [taskId,setTaskId]=useState('');
   const [evidence,setEvidence]=useState(null);
   const [edit,setEdit]=useState(null);
+  const [updatePreview,setUpdatePreview]=useState(null);
+  const [modelSuggestion,setModelSuggestion]=useState(null);
+  const [reviewHistory,setReviewHistory]=useState([]);
+  const [reviewTaskId,setReviewTaskId]=useState('');
+  const [reviewMode,setReviewMode]=useState('native');
+  const [reviewNote,setReviewNote]=useState('');
+  const [modelBusy,setModelBusy]=useState(false);
+  const [modelCancelBusy,setModelCancelBusy]=useState(false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
@@ -38,7 +46,17 @@ export function TaskBoardWindow(){
     }).catch(e=>{if(live)setError(errorText(e));});
     return ()=>{live=false};
   },[]);
-  useEffect(()=>{setTaskId('');setEvidence(null);setEdit(null)},[registerId]);
+  useEffect(()=>{
+    setTaskId('');setEvidence(null);setEdit(null);setUpdatePreview(null);
+    setModelSuggestion(null);setReviewTaskId('');setReviewMode('native');
+    setReviewNote('');setReviewHistory([]);
+    if(!registerId)return;
+    let live=true;
+    void invoke('lu_project_update_review_history',{registerId})
+      .then(rows=>{if(live)setReviewHistory(Array.isArray(rows)?rows:[])})
+      .catch(e=>{if(live)setError(errorText(e))});
+    return ()=>{live=false};
+  },[registerId]);
   async function act(message,fn){
     if(busy)return;
     setBusy(true);setError('');setNotice('');
@@ -95,6 +113,121 @@ export function TaskBoardWindow(){
       if(saved)await reload();return saved;
     });
   }
+  async function refreshEvidence(){
+    if(!current)return;
+    await act('Native source comparison recorded for human review; no task status was changed.',async()=>{
+      const preview=await invoke('lu_project_update_inspect',{
+        registerId:current.board.registerId
+      });
+      if(preview){setUpdatePreview(preview);setModelSuggestion(null);
+        setReviewTaskId(preview.candidates[0]?.taskId||'');
+        setReviewMode('native');setReviewNote('');
+      }
+      return preview;
+    });
+  }
+  async function reconcileEvidence(){
+    if(!current||!updatePreview)return;
+    await act('Source-change review appended; all new completion claims still require independent human verification.',async()=>{
+      const result=await invoke('lu_project_update_apply',{
+        previewSha256:updatePreview.digestSha256
+      });
+      if(result){setUpdatePreview(null);setModelSuggestion(null);await reload();setEvidence(null);}
+      return result;
+    });
+  }
+  async function suggestUpdatesWithGGUF(){
+    if(!updatePreview||busy)return;
+    setModelBusy(true);
+    try{
+      await act('Original local GGUF suggestions admitted as review-only evidence; no tasks were accepted.',async()=>{
+        const result=await invoke('lu_project_update_model_suggest',{
+          previewSha256:updatePreview.digestSha256
+        });
+        if(result)setModelSuggestion(result);
+        return result;
+      });
+    }finally{setModelBusy(false)}
+  }
+  async function cancelGgufSuggestions(){
+    if(!modelBusy||modelCancelBusy)return;
+    setModelCancelBusy(true);
+    try{
+      const canceled=await invoke('lu_project_update_model_cancel');
+      setNotice(canceled
+        ?'Native cancellation requested; no model suggestion will be accepted from the interrupted generation.'
+        :'No PLAN-07B generation currently queued or active. A pending OS dialog cannot be canceled by this control.');
+    }catch(e){setError(errorText(e))}
+    finally{setModelCancelBusy(false)}
+  }
+  async function reloadOriginalModelReceipt(){
+    if(!updatePreview)return;
+    await act('Reopened and independently verified the original GGUF receipt from ANSF.',async()=>{
+      const original=await invoke('lu_project_update_model_latest',{
+        previewSha256:updatePreview.digestSha256
+      });
+      if(original)setModelSuggestion(original);
+      return original;
+    });
+  }
+  async function reviewSuggestion(){
+    if(!current||!updatePreview||reviewNote.trim().length<5||busy)return;
+    const task=reviewTaskId||updatePreview.candidates[0]?.taskId;
+    if(!task)return;
+    const original=modelSuggestion?.suggestions?.find(s=>s.taskId===task);
+    if(reviewMode==='model'&&(!original||
+      modelSuggestion.previewSha256!==updatePreview.digestSha256)){
+      setError('Reopen the original matching GGUF suggestion before reviewing it.');
+      return;
+    }
+    await act('Native human evidence-review decision recorded; no task completion or execution authorized.',async()=>{
+      const decision=await invoke('lu_project_update_review_decide',{
+        previewSha256:updatePreview.digestSha256,taskId:task,
+        modelSuggestionSha256:reviewMode==='model'?modelSuggestion.digestSha256:null,
+        operatorNote:reviewNote.trim()
+      });
+      if(decision){
+        const rows=await invoke('lu_project_update_review_history',{
+          registerId:current.board.registerId
+        });
+        setReviewHistory(rows);
+        setReviewNote('');
+        setNotice('Recorded '+decision.phase.replaceAll('_',' ')+' for '+decision.taskId+
+          '. The task register and source requirements remain unchanged.');
+      }
+      return decision;
+    });
+  }
+  async function revalidateExactOriginalRequirement(){
+    if(!current||busy)return;
+    const selected=reviewTaskId||updatePreview?.candidates[0]?.taskId;
+    const revision=all.find(t=>t.taskId===selected);
+    if(!revision){
+      setError('Choose a current original task before independent verification.');
+      return;
+    }
+    await act('Exact original native criterion independently revalidated by a person; no whole-task completion or tools authorized.',async()=>{
+      const result=await invoke('lu_project_update_review_exact_requirement',{
+        registerId:current.board.registerId,
+        taskId:revision.taskId,expectedVersion:revision.version
+      });
+      if(result){
+        setUpdatePreview(null);setModelSuggestion(null);setReviewNote('');
+        await reload();setEvidence(null);
+      }
+      return result;
+    });
+  }
+  async function refreshReviewHistory(){
+    if(!current)return;
+    await act('Original approval/refusal/restart history independently audited.',async()=>{
+      const rows=await invoke('lu_project_update_review_history',{
+        registerId:current.board.registerId
+      });
+      setReviewHistory(rows);
+      return rows;
+    });
+  }
   async function exportPlan(){
     if(!current)return;
     await act('Evidence-bound plan exported to a new operator-selected JSON file.',async()=>{
@@ -136,6 +269,156 @@ export function TaskBoardWindow(){
           <small>Source register: {current.sourceRegisterSha256}</small>
           <small>Plan revision {current.board.sequence} · {current.eventCount} task-history events · {current.historicalApprovalCount} historical plan reviews</small>
         </div>
+        <section className="plan07Refresh" aria-label="Evidence-driven task update review">
+          <div className="plan07RefreshHeader">
+            <strong>Evidence refresh · PLAN-07A</strong>
+            <button type="button" disabled={busy}
+              onClick={()=>void refreshEvidence()}>
+              Recheck project source using native folder picker…
+            </button>
+          </div>
+          <small>The host rereads the actual selected source and exact Git HEAD,
+            compares audited evidence, and proposes review candidates only.
+            Old acceptance remains historical. This is an evidence delta over
+            complete bounded scans, not a filesystem watcher or an execution grant.</small>
+          {updatePreview&&<details open>
+            <summary>Current audited source comparison · {updatePreview.semanticChange?
+              'source review needed':'no semantic source change'}</summary>
+            <p>HEAD: {updatePreview.previousHead||'not verified'} → {updatePreview.currentHead||'not verified'}.
+              Changed native evidence nodes: {updatePreview.changedEvidenceNodes}.
+              Source scan: {updatePreview.scanComplete?'bounded complete':'incomplete'}.
+              Exact criterion review candidates: {updatePreview.exactCriterionReviewCandidates}.</p>
+            <small>Register lease: {updatePreview.expectedRegisterSha256}.
+              Current graph SHA-256: {updatePreview.currentGraphSha256}.
+              No task completion or model-derived source proof.</small>
+            <div className="plan07Candidates">
+              {updatePreview.candidates.map(candidate=><article key={candidate.taskId}>
+                <strong>{candidate.taskId} · {candidate.disposition.replaceAll('_',' ')}</strong>
+                <p>{candidate.explanation}</p>
+                <small>Original requirement: {candidate.originalRequirementId} ·
+                  Previous: {candidate.previousStatus} ·
+                  Current: {candidate.currentStatus||'MISSING'} ·
+                  Native health: {candidate.evidenceHealth||'insufficient'} ·
+                  Task complete: NO</small>
+              </article>)}
+            </div>
+            {updatePreview.changedListTruncated&&<p>Source-delta display is truncated;
+              archived original evidence and task identities remain authoritative.</p>}
+            <div className="plan07ModelSuggestions" aria-label="Local GGUF evidence review suggestions">
+              <h3>Local GGUF suggestions · PLAN-07B</h3>
+              <p>Optional original-model suggestions only. Native citations and status
+                are checked by the host; no result completes or executes a task.</p>
+              <div className="plan06Actions">
+                <button type="button" disabled={busy} onClick={()=>void suggestUpdatesWithGGUF()}>
+                  Ask loaded local GGUF for evidence suggestions…
+                </button>
+                <button type="button" disabled={busy}
+                  onClick={()=>void reloadOriginalModelReceipt()}>
+                  Reopen audited original GGUF receipt…
+                </button>
+                <button type="button" disabled={!modelBusy||modelCancelBusy}
+                  onClick={()=>void cancelGgufSuggestions()}>
+                  {modelCancelBusy?'Canceling local GGUF…':'Cancel queued/active GGUF generation…'}
+                </button>
+              </div>
+              {modelSuggestion?.previewSha256===updatePreview.digestSha256&&
+                <section aria-label="Original model suggestions, not accepted work">
+                  <small>Model: {modelSuggestion.originalModelRef}.
+                    Session: {modelSuggestion.originalSessionId}.
+                    Original reply SHA-256: {modelSuggestion.originalReplySha256}.
+                    Source register SHA-256: {modelSuggestion.expectedRegisterSha256}.
+                  </small>
+                  {modelSuggestion.suggestions.map(t=><article key={t.taskId}>
+                    <strong>{t.taskId} · {t.action.replaceAll('_',' ')}
+                      · SUGGESTED, NOT ACCEPTED</strong>
+                    <p>{t.reason}</p>
+                    <p><strong>Future independent evidence:</strong> {t.nextEvidence}</p>
+                    <small>Original requirement: {t.originalRequirementId}.
+                      Host status: {t.hostStatus||'missing'}.
+                      Citations: {t.evidenceIds.join(', ')}.
+                      Task completed: NO. Execution authorized: NO.
+                    </small>
+                  </article>)}
+                </section>}
+            </div>
+            <button type="button" disabled={busy||!updatePreview.semanticChange}
+              onClick={()=>void reconcileEvidence()}>
+              Review native source changes and append revisions…
+            </button>
+          </details>}
+        </section>
+        <section className="plan07HumanReview" aria-label="Human evidence-review decision journal">
+          <div className="plan07HumanHeader">
+            <h3>Human evidence decisions · PLAN-07C</h3>
+            <button type="button" disabled={busy||!current} onClick={()=>void refreshReviewHistory()}>
+              Reopen original decision and restart history…
+            </button>
+          </div>
+          <p>Approve or refuse the NEXT EVIDENCE REVIEW only. Approval cannot mark a
+            requirement accepted, complete the engineering task, or run tools.
+            Changes to original task wording remain human-owned through the
+            separate task correction form. Native source reconciliation is
+            separately authorized above.</p>
+          {updatePreview&&<>
+            <label>Original task to review
+              <select aria-label="Original task for human evidence review"
+                value={reviewTaskId||updatePreview.candidates[0]?.taskId||''}
+                onChange={e=>setReviewTaskId(e.target.value)}>
+                {updatePreview.candidates.map(t=><option key={t.taskId} value={t.taskId}>
+                  {t.taskId} · {t.disposition.replaceAll('_',' ')}
+                </option>)}
+              </select>
+            </label>
+            <fieldset>
+              <legend>What are you reviewing?</legend>
+              <label><input type="radio" name="plan07c-review-origin" value="native"
+                checked={reviewMode==='native'}
+                onChange={()=>setReviewMode('native')}/> Native deterministic evidence</label>
+              <label><input type="radio" name="plan07c-review-origin" value="model"
+                checked={reviewMode==='model'}
+                disabled={!modelSuggestion?.suggestions?.some(t=>
+                  t.taskId===(reviewTaskId||updatePreview.candidates[0]?.taskId))}
+                onChange={()=>setReviewMode('model')}/> Original GGUF suggestion (untrusted)</label>
+            </fieldset>
+            <label>Your independent review note (5–250 characters)
+              <textarea aria-label="Reason for human evidence decision"
+                value={reviewNote} maxLength={250} rows={3}
+                onChange={e=>setReviewNote(e.target.value)}
+                placeholder="What independent evidence should be examined or why refuse?"/>
+            </label>
+            <button type="button" disabled={busy||reviewNote.trim().length<5}
+              onClick={()=>void reviewSuggestion()}>
+              Open native OS approve/refuse decision…
+            </button>
+            <div className="plan07ExactRevalidation">
+              <button type="button" disabled={busy||!current}
+                onClick={()=>void revalidateExactOriginalRequirement()}>
+                Independently review EXACT native requirement (separate approval)…
+              </button>
+              <small>This second OS approval is distinct from accepting a model
+                suggestion. The host compares the current original source with
+                the latest accepted register snapshot, repeats the scan after
+                approval and writes an exact-criterion-only human revision.
+                Changed or unreconciled source is refused until the separate
+                source reconciliation above has been completed.</small>
+            </div>
+            <small>The host commits a pending receipt before the OS dialog.
+              Approval requires selecting the same original project again and
+              a fresh source scan; refusal, cancellation, stale evidence, and
+              interrupted reviews remain durably recorded.</small>
+          </>}
+          <div className="plan07ReviewHistory" role="region" aria-label="Original human review history">
+            {reviewHistory.length===0?<small>No human PLAN-07C review decisions yet.</small>:
+              reviewHistory.slice(-24).reverse().map(e=><article key={e.reviewId}>
+                <strong>{e.taskId} v{e.expectedTaskVersion} · {e.phase.replaceAll('_',' ')}</strong>
+                <p>{e.operatorNote}</p>
+                <small>Original source: {e.originalRequirementId} ·
+                  Review SHA: {e.sha256} · Register lease: {e.expectedRegisterSha256} ·
+                  Model suggestion: {e.modelSuggestionSha256||'none'} ·
+                  Completed work: NO · Execution authority: NO</small>
+              </article>)}
+          </div>
+        </section>
         <div className="plan06Columns">
           <section className="plan06Tasks" aria-label="Categorized project tasks">
             <div className="plan06Search">

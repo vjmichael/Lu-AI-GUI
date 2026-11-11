@@ -98,6 +98,29 @@ impl GenerationQueue {
         self.ready.notify_all();
         Ok(status)
     }
+    /// Cancel only the uniquely registered generation for a specific
+    /// host-owned conversation label, without accepting an arbitrary
+    /// generation ID from the renderer. Used by PLAN-07B's task window.
+    pub fn cancel_for_chat(
+        &self,chat_id:&str
+    )->Result<Option<(String,String,CancelState)>,String>{
+        let mut state=self.state.lock()
+            .map_err(|_|"generation queue poisoned")?;
+        let Some((generation_id,session_id))=state.jobs.iter()
+            .find(|(_,job)|job.chat_id==chat_id)
+            .map(|(id,job)|(id.clone(),job.session_id.clone())) else{
+            return Ok(None)
+        };
+        let job=state.jobs.get_mut(&generation_id)
+            .ok_or("generation disappeared during scoped cancellation")?;
+        job.cancelled=true;
+        let phase=if state.active.as_deref()==Some(generation_id.as_str()){
+            CancelState::Active
+        }else{CancelState::Queued};
+        self.ready.notify_all();
+        Ok(Some((session_id,generation_id,phase)))
+    }
+
     pub fn has_jobs(&self) -> bool {
         self.state
             .lock()
@@ -223,4 +246,30 @@ mod tests {
         assert_eq!(gate.cancel("s", "g").unwrap(), CancelState::Active);
         assert!(a.cancelled());
     }
+    #[test]
+    fn plan07b_scoped_cancel_cannot_touch_unrelated_active_chat(){
+        let queue=Arc::new(GenerationQueue::default());
+        let (normal,_)=queue.enqueue("s","normal-user-chat","g-normal").unwrap();
+        normal.wait_for_slot().unwrap();
+        let (task,_)=queue.enqueue("s","lu-plan07b-host-suggestions","g-plan07b").unwrap();
+        let hit=queue.cancel_for_chat("lu-plan07b-host-suggestions").unwrap().unwrap();
+        assert_eq!(hit,("s".into(),"g-plan07b".into(),CancelState::Queued));
+        assert!(task.wait_for_slot().is_err());
+        assert!(!normal.cancelled());
+        assert!(queue.cancel_for_chat("nonexistent").unwrap().is_none());
+        drop(task);drop(normal);
+        assert!(!queue.has_jobs());
+    }
+    #[test]
+    fn plan07b_scoped_active_cancel_marks_ticket_before_model_storage(){
+        let queue=Arc::new(GenerationQueue::default());
+        let (task,_)=queue.enqueue("s","lu-plan07b-host-suggestions","g-plan07b").unwrap();
+        task.wait_for_slot().unwrap();
+        let hit=queue.cancel_for_chat("lu-plan07b-host-suggestions").unwrap().unwrap();
+        assert_eq!(hit,("s".into(),"g-plan07b".into(),CancelState::Active));
+        assert!(task.cancelled());
+        drop(task);
+        assert!(queue.cancel_for_chat("lu-plan07b-host-suggestions").unwrap().is_none());
+    }
+
 }

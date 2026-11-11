@@ -607,3 +607,48 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .plan06Empty{margin:30px auto;padding:25px;max-width:540px}
 .plan06Layout button:focus-visible,.plan06Layout input:focus-visible,.plan06Layout select:focus-visible,.plan06Layout textarea:focus-visible{outline:2px solid #bde2ff;outline-offset:2px}
 @media(max-width:800px){.plan06Columns{grid-template-columns:1fr;overflow:auto}.plan06Tasks,.plan06Details{overflow:visible}.plan06Tasks{border-right:0;border-bottom:1px solid #58718c}.plan06Layout{overflow:auto}}
+
+
+/* PLAN-07A native evidence-delta review remains separate from execution. */
+.plan07Refresh{background:#172c40;border-bottom:1px solid #4b6986;padding:13px 22px;max-height:38vh;overflow:auto;scrollbar-gutter:stable}
+.plan07RefreshHeader{display:flex;align-items:center;gap:14px;justify-content:space-between;flex-wrap:wrap}
+.plan07Refresh strong{font-size:13px}
+.plan07Refresh button{background:#264b6d;color:#e8f3ff;border:1px solid #638ab0;border-radius:8px;padding:10px 12px}
+.plan07Refresh button:disabled{opacity:.55}
+.plan07Refresh small{display:block;color:#acc7d8;overflow-wrap:anywhere}
+.plan07Refresh details{margin:12px 0 0;padding:10px;border:1px solid #405f7a;border-radius:9px;background:#10243a}
+.plan07Refresh summary{font-size:13px;cursor:pointer;font-weight:600}
+.plan07Refresh p{font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.plan07Candidates{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:8px;max-height:23vh;overflow:auto;margin:12px 0}
+.plan07Candidates article{padding:10px;background:#1c354d;border:1px solid #466380;border-radius:7px;min-width:0}
+.plan07Candidates article strong{font-size:12px;overflow-wrap:anywhere}
+.plan07Candidates article p{margin:6px 0}
+
+
+/* PLAN-07B: visually segregate suggestions from independently reviewed work. */
+.plan07ModelSuggestions{margin-top:15px;padding:12px;border:1px solid #58768d;border-radius:8px;background:#182d42}
+.plan07ModelSuggestions h3{font-size:13px;margin:0 0 8px}
+.plan07ModelSuggestions p{font-size:12px;line-height:1.5}
+.plan07ModelSuggestions section{margin-top:12px;padding:8px;background:#15273b;border-radius:6px}
+.plan07ModelSuggestions article{margin:10px 0;border-top:1px solid #39546d;padding:9px 0}
+.plan07ModelSuggestions strong{font-size:12px;overflow-wrap:anywhere}
+.plan07ModelSuggestions small{overflow-wrap:anywhere;display:block}
+
+
+/* PLAN-07C: operator-owned evidence decisions, separate from model authority. */
+.plan07HumanReview{padding:14px 22px;border-bottom:1px solid #58778e;background:#16283a;max-height:44vh;overflow:auto;scrollbar-gutter:stable}
+.plan07HumanHeader{display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.plan07HumanReview h3{font-size:14px;margin:0}
+.plan07HumanReview p{font-size:12px;line-height:1.5;max-width:850px}
+.plan07HumanReview label{display:block;margin:9px 0;font-size:12px}
+.plan07HumanReview select,.plan07HumanReview textarea{display:block;width:100%;max-width:700px;margin-top:6px;background:#0d1d2b;color:#e2efff;border:1px solid #7894ac;border-radius:6px;padding:8px}
+.plan07HumanReview fieldset{display:flex;align-items:center;gap:15px;flex-wrap:wrap;border:1px solid #4a718b;border-radius:7px;max-width:700px;padding:8px 12px}
+.plan07HumanReview fieldset label{display:flex;align-items:center;gap:7px;margin:0}
+.plan07HumanReview fieldset input{accent-color:#73ade0}
+.plan07HumanReview button{border:1px solid #7f9bb7;background:#254765;color:#f1f7fe;border-radius:7px;padding:10px 13px;cursor:pointer}
+.plan07HumanReview button:disabled{opacity:.5;cursor:not-allowed}
+.plan07HumanReview small{display:block;font-size:11px;color:#b6ccda;overflow-wrap:anywhere;margin:8px 0}
+.plan07ExactRevalidation{max-width:900px;border-top:1px solid #46637a;padding-top:10px;margin-top:10px}
+.plan07ReviewHistory{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(290px,100%),1fr));gap:8px;max-height:17vh;overflow:auto;margin-top:10px}
+.plan07ReviewHistory article{border:1px solid #4f6a80;border-radius:6px;padding:10px;background:#20364a}
+.plan07ReviewHistory article strong{font-size:12px;overflow-wrap:anywhere}
