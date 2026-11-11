@@ -5296,7 +5296,7 @@ function App() {
                   <p>Branch: <code>{reviewedCommitPlan.branchRef}</code></p>
                   <p>Previous HEAD: <code>{reviewedCommitPlan.previousHead}</code></p>
                   <p>New parent: <code>{reviewedCommitPlan.resultingParent}</code></p>
-                  <p>Tree: <code>{reviewedCommitPlan.stagedTreeOid}</code></p>
+                  <p>Commit tree: <strong>Materialized only after separate native OS approval</strong></p>
                   <p>Index SHA-256: <code>{reviewedCommitPlan.indexSha256}</code></p>
                   <p>Review SHA-256: <code>{reviewedCommitPlan.planSha256}</code></p>
                   <p>No commit authority follows from preview; the native OS dialog decides.</p>
