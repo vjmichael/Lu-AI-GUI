@@ -61,13 +61,18 @@ def reviewed_native_resources(row: dict, root: pathlib.Path, platform: str):
         raise ValueError("complete independently reviewed native resource manifest required")
     entries = declared[platform]
     if not isinstance(entries, dict) or len(entries) > 490 or (
-        row.get("id") == "clangd" and not entries
+        row.get("id") in {"clangd", "pyright"} and not entries
     ):
-        raise ValueError("clangd requires reviewed original LLVM resources and file quota")
+        raise ValueError("clangd/Pyright require a complete reviewed original dependency closure")
     result = []
-    seen = {"bin/" + ("clangd.exe" if platform.startswith("windows") else "clangd")
-            if row.get("id") == "clangd" else
-            "bin/" + row["id"] + (".exe" if platform.startswith("windows") else "")}
+    executable = {
+        "pyright": "pyright-langserver",
+        "clangd": "clangd",
+        "rust-analyzer": "rust-analyzer",
+        "ruff": "ruff",
+    }.get(row["id"], row["id"])
+    seen = {("bin/" + executable +
+            (".exe" if platform.startswith("windows") else "")).casefold()}
     total = 0
     for relative, item in entries.items():
         if not isinstance(relative,str) or not relative or len(relative)>1024 or (
@@ -136,6 +141,13 @@ def verify(manifest: pathlib.Path, root: pathlib.Path, release: bool = False) ->
             if row.get("assetByPlatform") or row.get("sha256ByPlatform"):
                 raise ValueError("unapproved executable bytes cannot be staged")
             continue
+        # Protected worker recipes launch only fixed, pinned native binaries.
+        # Node/npm installers, PATH wrappers or dynamically fetched scripts
+        # cannot become a production provider by changing "mode" alone.
+        if row.get("category") != "native":
+            raise ValueError(f"{ident}: production needs reviewed offline standalone executable")
+        if ident == "pyright" and row.get("offlineStandaloneReviewed") is not True:
+            raise ValueError("Pyright standalone runtime/dependency closure not independently reviewed")
         if not row.get("copyrightReviewed") or not row.get("dependenciesAudited") \
                 or not row.get("releaseVersion"):
             raise ValueError(f"{ident}: release provenance/notice not approved")

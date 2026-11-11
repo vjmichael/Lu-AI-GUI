@@ -253,6 +253,13 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
   flex-direction:column;gap:8px;color:#dce8f3;font-size:12px}
 .lspProjectProblemsHeading{display:flex;justify-content:space-between;
   flex-wrap:wrap;align-items:center;gap:8px}
+.lspProjectProblemsHeading h3{font-size:13px;margin:0;line-height:1.35;
+  color:#e6f1fd;flex:1 1 190px}
+.lspResultPanel pre:focus-visible{outline:2px solid #b6e1ff;
+  outline-offset:3px}
+.lspRecoveryNotice{display:inline-flex;align-items:center;padding:4px 8px;
+  border:1px solid #ce976e;border-radius:4px;color:#ffdda9;
+  font-size:12px;font-weight:650;max-width:280px;line-height:1.4}
 .lspProjectProblemsFilters{display:flex;gap:8px;flex-wrap:wrap;
   align-items:center}
 .lspProjectProblemsFilters label{font-size:11px;color:#bcd1e5}

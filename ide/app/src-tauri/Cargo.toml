@@ -37,6 +37,8 @@ dev046d-native-dialog = ["native-project-debug", "lu-ide-execution-supervisor/de
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
+sha2 = "0.10"
+serde_json = "1"
 
 [dependencies]
 tauri = { version = "=2.12.5", features = [] }

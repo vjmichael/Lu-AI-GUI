@@ -162,7 +162,7 @@ fn validate_plan(value: &JobPlan) -> bool {
             || (cfg!(feature = "lsp-transport")
                 && matches!(
                     value.recipe_id.as_str(),
-                    "lsp_rust_analyzer" | "lsp_clangd" | "lsp_ruff"
+                    "lsp_rust_analyzer" | "lsp_clangd" | "lsp_ruff" | "lsp_pyright"
                 ))
             || (cfg!(feature = "dap-transport")
                 && matches!(

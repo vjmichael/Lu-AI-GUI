@@ -115,6 +115,7 @@ def stage(
                 "clangd": "clangd.exe",
                 "rust-analyzer": "rust-analyzer.exe",
                 "ruff": "ruff.exe",
+                "pyright": "pyright-langserver.exe",
             }.get(ident)
             if name is None:
                 raise ValueError(f"unsupported executable-bearing LSP: {ident}")
@@ -152,6 +153,7 @@ def stage(
                     "clangd": "LU_IDE_E2_CLANGD_BUNDLE_SHA256",
                     "rust-analyzer": "LU_IDE_E2_RUST_ANALYZER_BUNDLE_SHA256",
                     "ruff": "LU_IDE_E2_RUFF_BUNDLE_SHA256",
+                    "pyright": "LU_IDE_E2_PYRIGHT_BUNDLE_SHA256",
                 }[ident],
                 # Rust MUST independently remeasure the entire installed
                 # tree before it consumes the one-shot protected grant.

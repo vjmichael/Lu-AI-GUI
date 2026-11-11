@@ -147,6 +147,11 @@ pub fn installed_semantic_languages(app: &AppHandle) -> Vec<String> {
 pub fn installed_worker_ready(app: &AppHandle) -> bool {
     !installed_languages(app).is_empty()
 }
+pub fn installed_provider_ids(app: &AppHandle) -> Vec<String> {
+    ["rust-analyzer", "clangd", "ruff", "pyright"]
+        .into_iter().filter(|id| installation(app, id).is_ok())
+        .map(ToOwned::to_owned).collect()
+}
 fn language_server_for_path(path: &str, language_id: &str) -> Result<&'static str, String> {
     if path.len() > 1024
         || path.contains('\\')
@@ -436,12 +441,79 @@ impl NativeLspRuntime {
         fs::create_dir_all(&stage).map_err(|_| "LSP_PROFILE_UNWRITABLE")?;
         let supervisor =
             Supervisor::open(root.join("lsp-job-receipts.jsonl")).map_err(|e| e.code())?;
+        // Journal replay is authoritative: process handles and permission
+        // grants are never resurrected after an IDE restart. Any unclosed
+        // protected job stays quarantined until an independent native broker
+        // proves descendant cleanup. Do not discard or rewrite that receipt.
+        let interrupted = supervisor.inspect().map_err(|e| e.code())?
+            .iter().any(|job| job.requires_reconciliation);
         Ok(Self {
             supervisor: Arc::new(supervisor),
             stage,
             active: Mutex::new(None),
-            cleanup_uncertain: Mutex::new(false),
+            cleanup_uncertain: Mutex::new(interrupted),
         })
+    }
+    pub fn poll_status(&self) -> &'static str {
+        // A lightweight native worker heartbeat. Poll owns the same mutex as
+        // changes/features, so a WebView status request cannot race a pipe
+        // write or steal a response from an in-flight query.
+        let mut failure = false;
+        if let Ok(mut lock) = self.active.lock() {
+            if let Some(active) = lock.as_mut() {
+                match active.session.poll() {
+                    Ok(events) => {
+                        for event in events {
+                            match event {
+                                LspEvent::ScopedDiagnostics { source, diagnostics } => {
+                                    if let Some(doc) = active.documents.values_mut().find(
+                                        |doc| doc.source.same_revision(&source)) {
+                                        doc.diagnostics = diagnostics;
+                                    }
+                                }
+                                LspEvent::Diagnostics(diagnostics)
+                                    if active.documents.len() == 1 => {
+                                    if let Some(doc) = active.documents.values_mut().next() {
+                                        doc.diagnostics = diagnostics;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        let stopped = lock.take();
+                        drop(stopped);
+                        failure = true;
+                    }
+                }
+            }
+        } else {
+            failure = true;
+        }
+        if failure {
+            if let Ok(mut uncertain) = self.cleanup_uncertain.lock() {
+                *uncertain = true;
+            }
+        }
+        self.runtime_state()
+    }
+    pub fn runtime_state(&self) -> &'static str {
+        // Status is diagnostic only. No GUI-supplied state can authorize
+        // another worker or resolve an interrupted native job.
+        let uncertain = match self.cleanup_uncertain.lock() {
+            Ok(value) => *value,
+            Err(_) => return "reconciliation_required",
+        };
+        let quarantine = self.supervisor.inspect()
+            .map(|jobs| jobs.iter().any(|job| job.requires_reconciliation))
+            .unwrap_or(true);
+        if uncertain || quarantine { return "reconciliation_required"; }
+        match self.active.lock() {
+            Ok(active) if active.is_some() => "running",
+            Ok(_) => "idle",
+            Err(_) => "reconciliation_required",
+        }
     }
     fn validated_registered_text(
         registry: &IdeWorkspaceRegistry,
@@ -466,6 +538,26 @@ impl NativeLspRuntime {
         Ok((root, saved.revision))
     }
     pub fn start(
+        &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
+        request: LspRequest,
+    ) -> Result<Value, String> {
+        let result = self.start_approved(app, registry, request);
+        if result.is_err() {
+            // Admission can fail after a genuine OS process was spawned.
+            // The supervisor journal, not the caller's boolean, determines
+            // whether a subsequent session is safe.
+            let uncertain = self.supervisor.inspect()
+                .map(|jobs| jobs.iter().any(|job| job.requires_reconciliation))
+                .unwrap_or(true);
+            if uncertain {
+                if let Ok(mut state) = self.cleanup_uncertain.lock() {
+                    *state = true;
+                }
+            }
+        }
+        result
+    }
+    fn start_approved(
         &self,
         app: &AppHandle,
         registry: &IdeWorkspaceRegistry,
@@ -659,7 +751,15 @@ impl NativeLspRuntime {
             request.language_id != doc.source.language_id {
             return Err("LSP_DOCUMENT_SCOPE_DENIED".into());
         }
-        active.session.close_document(&doc.source).map_err(|e| e.code())?;
+        let result = active.session.close_document(&doc.source).map_err(|e| e.code());
+        if let Err(code) = result {
+            let stale = lock.take();
+            drop(stale);
+            if let Ok(mut uncertain) = self.cleanup_uncertain.lock() {
+                *uncertain = true;
+            }
+            return Err(code);
+        }
         active.documents.remove(&request.relative_path);
         Ok(())
     }
@@ -700,8 +800,24 @@ impl NativeLspRuntime {
         } else if old_text != request.text {
             return Err("LSP_BUFFER_REVISION_MISMATCH".into());
         }
-        let result = action(active, &request)?;
-        serde_json::to_value(result).map_err(|_| "LSP_RESPONSE_UNAVAILABLE".into())
+        let outcome = action(active, &request);
+        match outcome {
+            Ok(reply) => serde_json::to_value(reply)
+                .map_err(|_| "LSP_RESPONSE_UNAVAILABLE".into()),
+            Err(code) => {
+                if code.starts_with("SUPERVISOR_") ||
+                    matches!(code.as_str(), "LSP_REQUEST_TIMEOUT" | "LSP_INITIALIZE_TIMEOUT") {
+                    // Kill/drop the original supervised session rather than
+                    // accepting later responses with stale source revisions.
+                    let stale = lock.take();
+                    drop(stale);
+                    if let Ok(mut uncertain) = self.cleanup_uncertain.lock() {
+                        *uncertain = true;
+                    }
+                }
+                Err(code)
+            }
+        }
     }
     pub fn feature(&self, registry: &IdeWorkspaceRegistry,
         request: LspRequest) -> Result<Value, String> {
@@ -727,6 +843,46 @@ impl NativeLspRuntime {
         request: LspRequest) -> Result<Value, String> {
         self.use_active(registry, request, |active, req|
             active.output(&req.relative_path))
+    }
+
+    /// One read-only snapshot of verified diagnostics for every attached file.
+    /// The caller may only DISPLAY these results for its exact live buffers.
+    /// No server URI is ever returned and no filesystem access is delegated.
+    pub fn project_diagnostics(&self,
+        registry: &IdeWorkspaceRegistry) -> Result<Value, String> {
+        let mut lock = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
+        let active = lock.as_mut().ok_or("LSP_SESSION_NOT_STARTED")?;
+        let root = registry.trusted_native_worker_root(&active.project_id)
+            .map_err(|_| "LSP_PROJECT_NOT_ACTIVE")?;
+        if root != active.approved_native_root {
+            return Err("LSP_PROJECT_SCOPE_CHANGED".into());
+        }
+        let first = active.documents.keys().next().cloned();
+        if let Some(first) = first {
+            // Poll and store all source/version-bound notifications under
+            // the one native pipe mutex before reading document snapshots.
+            let outcome = active.receive("diagnostics", &first, registry);
+            if let Err(code) = outcome {
+                if code.starts_with("SUPERVISOR_") {
+                    let stale = lock.take();
+                    drop(stale);
+                    if let Ok(mut uncertain) = self.cleanup_uncertain.lock() {
+                        *uncertain = true;
+                    }
+                }
+                return Err(code);
+            }
+        }
+        let mut replies = Vec::new();
+        for doc in active.documents.values() {
+            let saved = registry.preview_source_file(&active.project_id,
+                &doc.relative_path).map_err(|_| "LSP_SOURCE_UNAVAILABLE")?;
+            if saved.revision != doc.saved_revision {
+                continue; // Stale disk base is not a verified diagnostic.
+            }
+            replies.push(active.output(&doc.relative_path)?);
+        }
+        serde_json::to_value(replies).map_err(|_| "LSP_RESPONSE_UNAVAILABLE".into())
     }
 
     pub fn stop(&self) -> Result<(), String> {

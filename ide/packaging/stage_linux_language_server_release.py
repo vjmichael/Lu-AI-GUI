@@ -25,11 +25,13 @@ EXECUTABLES = {
     "rust-analyzer": "rust-analyzer",
     "clangd": "clangd",
     "ruff": "ruff",
+    "pyright": "pyright-langserver",
 }
 ENV_PINS = {
     "rust-analyzer": "LU_IDE_E2_RUST_ANALYZER_BUNDLE_SHA256",
     "clangd": "LU_IDE_E2_CLANGD_BUNDLE_SHA256",
     "ruff": "LU_IDE_E2_RUFF_BUNDLE_SHA256",
+    "pyright": "LU_IDE_E2_PYRIGHT_BUNDLE_SHA256",
 }
 
 

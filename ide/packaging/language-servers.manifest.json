@@ -53,6 +53,7 @@
       "id": "pyright",
       "category": "node",
       "mode": "deferred",
+      "offlineStandaloneReviewed": false,
       "licenseExpression": "MIT",
       "noticeUpstream": "https://github.com/microsoft/pyright",
       "dependencies": [

@@ -4,17 +4,17 @@ export const LANGUAGE_SERVICE_CAPABILITIES = Object.freeze({
   rust: Object.freeze({
     provider: 'rust-analyzer',
     diagnostics: true, completion: true, hover: true, definition: true,
-    status: 'Protected rust-analyzer: diagnostics, completion, hover and same-file definition after native consent.',
+    status: 'Protected rust-analyzer: diagnostics, completion, hover and source-verified project definitions after native consent.',
   }),
   c: Object.freeze({
     provider: 'clangd',
     diagnostics: true, completion: true, hover: true, definition: true,
-    status: 'Protected clangd: diagnostics, completion, hover and same-file definition after native consent.',
+    status: 'Protected clangd: diagnostics, completion, hover and source-verified project definitions after native consent.',
   }),
   cpp: Object.freeze({
     provider: 'clangd',
     diagnostics: true, completion: true, hover: true, definition: true,
-    status: 'Protected clangd: diagnostics, completion, hover and same-file definition after native consent.',
+    status: 'Protected clangd: diagnostics, completion, hover and source-verified project definitions after native consent.',
   }),
   python: Object.freeze({
     provider: 'Ruff',
@@ -24,7 +24,7 @@ export const LANGUAGE_SERVICE_CAPABILITIES = Object.freeze({
 });
 const VERIFIED_PYRIGHT_CAPABILITIES=Object.freeze({
   provider:'Pyright',diagnostics:true,completion:true,hover:true,definition:true,
-  status:'Separately pinned native Pyright: Python diagnostics, completion, hover and same-file definition after protected OS approval.',
+  status:'Separately pinned native Pyright: Python diagnostics, completion, hover and source-verified project definitions after protected OS approval.',
 });
 export function languageServiceCapabilities(languageId,workerStatus=null) {
   if (languageId==='python' && workerStatus?.ready===true &&

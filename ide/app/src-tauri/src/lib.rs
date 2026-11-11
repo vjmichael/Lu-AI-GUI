@@ -2313,6 +2313,10 @@ struct LanguageWorkerStatus {
     /// Exact release-pinned providers that also offer semantic operations.
     /// Python is absent here when the installed provider is Ruff-only.
     semantic_languages: Vec<String>,
+    /// Release pins are verified byte-for-byte before a provider appears.
+    installed_providers: Vec<String>,
+    /// Idle, running, unavailable or durable recovery required.
+    session_state: &'static str,
 }
 
 /// Native admission is deliberately NOT represented by the presence of an
@@ -2321,27 +2325,57 @@ struct LanguageWorkerStatus {
 /// A future E2 host broker will replace this fail-closed status only after
 /// independently attested process + permission evidence.
 #[tauri::command]
+async fn ide_lsp_runtime_state(app: AppHandle) -> String {
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
+    {
+        if let Some(state) = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>() {
+            let native = Arc::clone(state.inner());
+            return tauri::async_runtime::spawn_blocking(move ||
+                native.poll_status().to_owned()).await
+                .unwrap_or_else(|_| "reconciliation_required".into());
+        }
+    }
+    let _ = app;
+    "unavailable".into()
+}
+#[tauri::command]
 async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
     #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
     {
-        let installed = app
-            .try_state::<Arc<lsp_backend::NativeLspRuntime>>()
-            .is_some();
-        let (supported, semantic) = tauri::async_runtime::spawn_blocking(move || {
-            if !installed {
-                return (Vec::new(), Vec::new());
-            }
-            (lsp_backend::installed_languages(&app),
-                lsp_backend::installed_semantic_languages(&app))
-        })
-        .await
-        .unwrap_or_default();
+        let native = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+            .map(|state| Arc::clone(state.inner()));
+        let (supported, semantic, providers, phase) =
+            tauri::async_runtime::spawn_blocking(move || {
+                if let Some(native) = native {
+                    (lsp_backend::installed_languages(&app),
+                     lsp_backend::installed_semantic_languages(&app),
+                     lsp_backend::installed_provider_ids(&app),
+                     native.poll_status())
+                } else {
+                    (Vec::new(), Vec::new(), Vec::new(), "unavailable")
+                }
+            }).await.unwrap_or_default();
+        if phase == "reconciliation_required" {
+            return LanguageWorkerStatus {
+                ready: false,
+                code: "LSP_NATIVE_RECOVERY_REQUIRED",
+                detail: "An earlier protected worker was interrupted or its OS cleanup is unverified. No new session may start until independent native reconciliation.",
+                supported_languages: Vec::new(),
+                semantic_languages: Vec::new(),
+                installed_providers: providers,
+                session_state: phase,
+            };
+        }
         if !supported.is_empty() {
             return LanguageWorkerStatus {
-                ready: true, code: "LSP_REVIEWED_INSTALLATION_AVAILABLE",
-                detail: "Reviewed native language server installed; human consent and actual OS worker containment are required for every session.",
+                ready: true,
+                code: if phase == "running" { "LSP_PROTECTED_SESSION_ACTIVE" }
+                      else { "LSP_REVIEWED_INSTALLATION_AVAILABLE" },
+                detail: "Local reviewed provider bytes verified. Actual protected language analysis still requires native OS approval and worker containment.",
                 supported_languages: supported,
                 semantic_languages: semantic,
+                installed_providers: providers,
+                session_state: phase,
             };
         }
     }
@@ -2350,9 +2384,11 @@ async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
     LanguageWorkerStatus {
         ready: false,
         code: "LSP_PROTECTED_WORKER_UNVERIFIED",
-        detail: "Protected language servers are unavailable in this build or have unverified release evidence.",
+        detail: "Reviewed offline language-server bundles are not installed or native LSP support is disabled in this build.",
         supported_languages: Vec::new(),
         semantic_languages: Vec::new(),
+        installed_providers: Vec::new(),
+        session_state: "unavailable",
     }
 }
 
@@ -2504,6 +2540,27 @@ async fn ide_lsp_read_diagnostics(
     {
         let _ = (app, registry, request);
         Err("LSP_PROTECTED_WORKER_UNVERIFIED".into())
+    }
+}
+#[tauri::command]
+async fn ide_lsp_project_diagnostics(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
+    {
+        let state = app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+            .ok_or("LSP_NATIVE_WORKER_UNAVAILABLE")?;
+        let native = Arc::clone(state.inner());
+        let registry = Arc::clone(registry.inner());
+        return tauri::async_runtime::spawn_blocking(move ||
+            native.project_diagnostics(&registry)).await
+            .map_err(|_| "LSP_NATIVE_THREAD_UNAVAILABLE".to_owned())?;
+    }
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "native-lsp")))]
+    {
+        let _ = (app, registry);
+        Err("LSP_NATIVE_WORKER_UNAVAILABLE".into())
     }
 }
 #[tauri::command]
@@ -3157,12 +3214,14 @@ pub fn run() {
             ide_list_capabilities,
             ide_list_language_servers,
             ide_lsp_worker_status,
+            ide_lsp_runtime_state,
             ide_lsp_start_session,
             ide_lsp_open_document,
             ide_lsp_close_document,
             ide_lsp_change_document,
             ide_lsp_feature,
             ide_lsp_read_diagnostics,
+            ide_lsp_project_diagnostics,
             ide_lsp_stop_session,
             ide_prepare_execution_intent,
             ide_decide_execution_intent,

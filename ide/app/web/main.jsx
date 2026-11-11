@@ -40,6 +40,8 @@ import { captureLiveLspSource, stillCurrentLspSource, lspNativeReplyMatches,
   lspRequestForSource, sourceMatchesSession, providerServesLanguage,
   sessionMemberForSource, sessionCloseRequest } from './lsp_live_source.js';
 import { projectProblems, stillCurrentProblem } from './lsp_problems.js';
+import { checkedLspWorkerStatus, invalidateNativeLspPresentation,
+  checkedProjectDiagnosticReplies, accessibleDiagnosticLabel } from './lsp_runtime_ui.js';
 import { languageServiceCapabilities, languageMethodAvailable } from './lsp_language_capabilities.js';
 import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 import { belongsToSelectedProject } from './job_render_guard.js';
@@ -205,6 +207,7 @@ function App() {
   const [editorFocusRequest,setEditorFocusRequest] = useState(null);
   const focusNonce = useRef(0);
   const projectProblemsPanelRef = useRef(null);
+  const projectProblemsTriggerRef = useRef(null);
   const [problemsFocusRequest,setProblemsFocusRequest] = useState(0);
   const rovingTabFocusRef = useRef(null);
   const [savingKey, setSavingKey] = useState(null);
@@ -231,6 +234,8 @@ function App() {
   });
   const [lspNativeDiagnostics, setLspNativeDiagnostics] = useState({});
   const [projectProblemsOpen, setProjectProblemsOpen] = useState(false);
+  const [projectProblemsBusy, setProjectProblemsBusy] = useState(false);
+  const projectProblemsSerial = useRef(0);
   const [projectProblemSeverity, setProjectProblemSeverity] = useState('all');
   const [projectProblemSearch, setProjectProblemSearch] = useState('');
   const problemJumpNonce = useRef(0);
@@ -417,10 +422,7 @@ function App() {
     Promise.all([invoke('ide_list_language_servers'), invoke('ide_lsp_worker_status')])
       .then(([servers, worker]) => {
         setLanguageServers(Array.isArray(servers) ? servers.slice(0, 16) : []);
-        setLspWorker(worker && typeof worker.ready === 'boolean' ? worker : {
-          ready: false, code: 'LSP_HOST_UNAVAILABLE',
-          detail: 'Native language-service status is not a trusted response.'
-        });
+        setLspWorker(checkedLspWorkerStatus(worker));
       })
       .catch(() => setLspWorker({
         ready: false, code: 'LSP_HOST_UNAVAILABLE',
@@ -428,6 +430,47 @@ function App() {
       }));
   }, []);
 
+
+  function quarantineLspPresentation(nativeState) {
+    if (!invalidateNativeLspPresentation(
+      nativeState,lspSessionRef.current,lspBusyRef.current)) return;
+    // A dead OS worker cannot retain a visual appearance of valid analysis.
+    // The host journal owns recovery; the WebView can only invalidate display.
+    ++lspLifecycleEpoch.current;
+    ++lspFeatureSerial.current;
+    ++lspSyncSerial.current;
+    const session=lspSessionRef.current;
+    lspSessionRef.current=Object.freeze({...session,cleanupRequired:true});
+    setLspSession(lspSessionRef.current);
+    setLspNativeDiagnostics({});
+    setLspCompletions(null);
+    setLspHover(null);
+    setLspJumpRequest(null);
+    setLspCompletionApplyRequest(null);
+    setLspWorker(previous=>({...previous,ready:false,
+      code:'LSP_NATIVE_RECOVERY_REQUIRED',
+      detail:'An earlier protected language worker stopped unexpectedly or its cleanup is unverified. Your source files and drafts are unchanged.',
+      supportedLanguages:[],semanticLanguages:[],
+      sessionState:'reconciliation_required'}));
+    setProblem('Language analysis interrupted. Existing results were hidden. '+
+      'The protected worker requires native recovery before analysis resumes.');
+  }
+  useEffect(()=>{
+    if (!lspSession || lspSession.cleanupRequired) return;
+    let alive=true;
+    const check=async()=>{
+      if (lspBusyRef.current) return;
+      try {
+        const state=await invoke('ide_lsp_runtime_state');
+        if (alive) quarantineLspPresentation(state);
+      } catch {
+        if (alive) quarantineLspPresentation('reconciliation_required');
+      }
+    };
+    const interval=setInterval(()=>{void check();},4000);
+    return ()=>{alive=false;clearInterval(interval);};
+  },[lspSession?.projectId,lspSession?.providerId,
+     lspSession?.cleanupRequired]);
   const activeProjectIdRef = useRef(null);
   activeProjectIdRef.current = activeProject?.projectId ?? null;
   const selectedMergeTabRef = useRef(null);
@@ -732,11 +775,58 @@ function App() {
     if (!projectProblemsOpen || !problemsFocusRequest) return;
     projectProblemsPanelRef.current?.focus();
   },[projectProblemsOpen,problemsFocusRequest]);
+  async function refreshProjectLspProblems() {
+    const session=lspSessionRef.current;
+    if (!session || session.cleanupRequired || lspBusyRef.current ||
+        activeProjectIdRef.current!==session.projectId) return;
+    const serial=++projectProblemsSerial.current;
+    const epoch=lspLifecycleEpoch.current;
+    const sources=Object.values(session.members||{}).map(member=>{
+      const tab=tabsRef.current.find(item=>item.key===member.key);
+      return liveLspSourceForTab(tab);
+    });
+    if (sources.some(source=>!sourceMatchesSession(source,session))) {
+      setProblem('An analyzed source changed. Refresh its file before collecting Problems.');
+      return;
+    }
+    setProjectProblemsBusy(true);
+    try {
+      for (const source of sources) {
+        const request=lspRequestForSource(source);
+        if (!request) throw Error('LSP_PROBLEMS_SOURCE_UNAVAILABLE');
+        const result=await invoke('ide_lsp_change_document',{request});
+        if (serial!==projectProblemsSerial.current ||
+            epoch!==lspLifecycleEpoch.current ||
+            lspSessionRef.current!==session ||
+            !isCurrentLspReply(source,result,epoch)) return;
+      }
+      const replies=await invoke('ide_lsp_project_diagnostics');
+      if (serial!==projectProblemsSerial.current ||
+          epoch!==lspLifecycleEpoch.current ||
+          lspSessionRef.current!==session ||
+          activeProjectIdRef.current!==session.projectId) return;
+      const response=checkedProjectDiagnosticReplies(replies,session,relativePath=>{
+        const tab=tabsRef.current.find(item=>
+          item.projectId===session.projectId && item.relativePath===relativePath);
+        return tab ? liveLspSourceForTab(tab) : null;
+      });
+      setLspNativeDiagnostics(response);
+      setHint('Verified Problems refreshed for '+Object.keys(response).length+
+        ' currently analyzed file(s).');
+    } catch(error) {
+      if (serial===projectProblemsSerial.current &&
+          epoch===lspLifecycleEpoch.current)
+        setProblem('Cannot refresh protected project Problems: '+String(error));
+    } finally {
+      if (serial===projectProblemsSerial.current) setProjectProblemsBusy(false);
+    }
+  }
   function showProjectProblems() {
     if (!activeProject?.projectId) return;
     setProjectProblemsOpen(true);
     setProblemsFocusRequest(previous=>previous+1);
     setSection('explorer');
+    void refreshProjectLspProblems();
   }
   useEffect(()=>{
     const target=rovingTabFocusRef.current;
@@ -4303,6 +4393,17 @@ function App() {
         }
       }
       setProblem('Language service was not started: '+String(error));
+      // Failed native admission may leave a quarantined worker. Reinspect
+      // genuine host receipts before offering another Start control.
+      try {
+        const worker=checkedLspWorkerStatus(await invoke('ide_lsp_worker_status'));
+        setLspWorker(worker);
+      } catch {
+        setLspWorker(previous=>({...previous,ready:false,
+          sessionState:'reconciliation_required',
+          code:'LSP_NATIVE_STATUS_UNVERIFIED',
+          detail:'Native worker state cannot be verified after failed admission.'}));
+      }
     } finally {
       lspBusyRef.current=false;
       setLspBusy(false);
@@ -4396,6 +4497,9 @@ function App() {
       return true;
     } catch(error) {
       // Do not assume a failed didClose released the native source or worker.
+      setLspNativeDiagnostics({});
+      setLspCompletions(null);
+      setLspHover(null);
       const uncertain=Object.freeze({...session,cleanupRequired:true});
       lspSessionRef.current=uncertain;
       setLspSession(uncertain);
@@ -4425,9 +4529,20 @@ function App() {
       setHint('Protected language-server session stopped.');
       return true;
     } catch(error) {
-      // A failed stop is not proof the worker exited; retain the ability to
-      // retry, and do not start a second native worker over the old one.
-      setProblem('Language-server cleanup is unverified. Retry Stop: '+String(error));
+      // This failure occurs while the busy reservation is held. Invalidate
+      // directly: the normal heartbeat deliberately skips busy transitions.
+      const previous=lspSessionRef.current;
+      lspSessionRef.current=Object.freeze({...previous,cleanupRequired:true});
+      setLspSession(lspSessionRef.current);
+      setLspNativeDiagnostics({});
+      setLspCompletions(null);
+      setLspHover(null);
+      setLspJumpRequest(null);
+      setLspWorker(current=>({...current,ready:false,
+        sessionState:'reconciliation_required',
+        code:'LSP_NATIVE_RECOVERY_REQUIRED',
+        detail:'The protected worker did not prove final OS cleanup.'}));
+      setProblem('Language-server cleanup remains unverified: '+String(error));
       return false;
     } finally {
       lspBusyRef.current=false;
@@ -4480,6 +4595,9 @@ function App() {
             String(error).includes('LSP_BUFFER_REVISION') ||
             String(error).includes('LSP_SOURCE_SCOPE_MISMATCH')) return;
         setProblem('Language service could not synchronize this editor: '+String(error));
+        void invoke('ide_lsp_runtime_state')
+          .then(state=>quarantineLspPresentation(state))
+          .catch(()=>quarantineLspPresentation('reconciliation_required'));
       }
     },400);
     return ()=>clearTimeout(timer);
@@ -4661,6 +4779,9 @@ function App() {
       if (epoch!==lspLifecycleEpoch.current ||
           serial!==lspFeatureSerial.current) return;
       setProblem('Protected language service unavailable: '+String(error));
+      void invoke('ide_lsp_runtime_state')
+        .then(state=>quarantineLspPresentation(state))
+        .catch(()=>quarantineLspPresentation('reconciliation_required'));
     }
   }
   function applyLspCompletion(item) {
@@ -8592,7 +8713,7 @@ function App() {
         ? <section className="workspaceContent capabilityWorkspace" aria-label="Language services">
             <div className="sectionHeading">
               <h2>Language server providers</h2>
-              <span>{languageServers.length} catalogued · {lspWorker?.ready ? 'Pinned binaries verified · OS admission on start' : 'Execution gated'}</span>
+              <span>{languageServers.length} catalogued · {lspWorker?.installedProviders?.length || 0} offline providers verified · {lspWorker?.sessionState==='reconciliation_required' ? 'Recovery required' : lspWorker?.ready ? 'Native consent required' : 'Installation unavailable'}</span>
             </div>
             <p className="capabilityNotice" role="status">
               <strong>{lspSession
@@ -8613,13 +8734,20 @@ function App() {
                   ' · Native worker cleanup not independently confirmed'}
               </p>
               <button type="button" className="ghostBtn"
-                disabled={lspBusy}
+                disabled={lspBusy || lspSession.cleanupRequired}
                 onClick={()=>void stopLspSession()}>
                 {lspBusy?'Stopping worker…':lspSession.cleanupRequired
-                  ? 'Retry protected worker cleanup'
+                  ? 'Native reconciliation required'
                   : 'Stop protected language session'}
               </button>
             </div>}
+            <p className="capabilityNotice" role="status" aria-live="polite">
+              Offline installed and SHA-256 verified:
+              {' '}{lspWorker?.installedProviders?.length
+                ? lspWorker.installedProviders.join(', ')
+                : 'no approved providers in this installation'}.
+              {' '}Protected state: {lspWorker?.sessionState || 'unavailable'}.
+            </p>
             <p className="capabilityNotice">
               Native verified semantic languages:
               {' '}{lspWorker?.semanticLanguages?.length
@@ -8846,6 +8974,7 @@ function App() {
               <button type="button" className="ghostBtn"
                 aria-controls="projectProblemsPanel"
                 aria-expanded={projectProblemsOpen}
+                ref={projectProblemsTriggerRef}
                 disabled={!activeProject}
                 onClick={()=>showProjectProblems()}>
                 Problems · {problemsForProject.errors+problemsForProject.warnings+
@@ -9155,6 +9284,10 @@ function App() {
                     title={'Require native human consent, then start isolated '+lspProviderForTab}
                     onClick={() => void startLspSession()}>
                     {lspBusy ? 'Starting…' : 'Start '+lspProviderForTab}</button>}
+                  {lspWorker?.sessionState==='reconciliation_required' &&
+                    <span className="lspRecoveryNotice" role="alert">
+                      Protected language analysis interrupted. Native recovery required.
+                    </span>}
                   {lspMayAddCurrentFile && <button type="button"
                     className="ghostBtn editorToolButton" disabled={lspBusy}
                     title="Analyze this open file within the approved read-only project snapshot"
@@ -9462,13 +9595,29 @@ function App() {
                 </div>}
               </div>
               {projectProblemsOpen && <section id="projectProblemsPanel"
-                aria-label="Open-project verified language-server problems"
+                aria-labelledby="verifiedLspProblemsHeading"
                 className="lspProjectProblems" tabIndex={-1}
+                onKeyDown={event=>{
+                  if (event.key==='Escape') {
+                    event.preventDefault();
+                    setProjectProblemsOpen(false);
+                    projectProblemsTriggerRef.current?.focus();
+                  }
+                }}
                 ref={projectProblemsPanelRef}>
                 <div className="lspProjectProblemsHeading">
-                  <strong>Problems across open files</strong>
+                  <h3 id="verifiedLspProblemsHeading">Problems across open files</h3>
                   <button className="ghostBtn" type="button"
-                    onClick={() => setProjectProblemsOpen(false)}>Close problems</button>
+                    disabled={projectProblemsBusy || !lspSession ||
+                      lspSession.cleanupRequired}
+                    onClick={()=>void refreshProjectLspProblems()}>
+                    {projectProblemsBusy ? 'Refreshing Problems…' : 'Refresh Problems'}
+                  </button>
+                  <button className="ghostBtn" type="button"
+                    onClick={()=>{
+                      setProjectProblemsOpen(false);
+                      projectProblemsTriggerRef.current?.focus();
+                    }}>Close problems</button>
                 </div>
                 <div className="lspProjectProblemsFilters">
                   <label htmlFor="projectProblemSeverity">Severity</label>
@@ -9483,7 +9632,8 @@ function App() {
                     onChange={event => setProjectProblemSearch(event.target.value)}
                     placeholder="Filename or diagnostic message"/>
                 </div>
-                <p className="lspProblemCounts" role="status">
+                <p className="lspProblemCounts" role="status"
+                  aria-live="polite" aria-atomic="true">
                   {problemsForProject.errors} errors · {problemsForProject.warnings} warnings ·
                   {' '}{problemsForProject.infos} info ·
                   {' '}{problemsForProject.verifiedTabs} source-verified open tabs
@@ -9507,7 +9657,7 @@ function App() {
                     <button type="button" key={item.tabKey+':'+item.from+':'+index}
                       className="lspProjectProblem"
                       onClick={() => navigateProjectProblem(item)}
-                      aria-label={item.kind+' in '+item.relativePath+' line '+item.line}>
+                      aria-label={accessibleDiagnosticLabel(item.relativePath,item)}>
                       <span>{item.kind} · {item.relativePath}:{item.line}</span>
                       <span>{item.message}</span>
                     </button>)}
@@ -9518,10 +9668,11 @@ function App() {
                 <strong>Problems · {activeLspDiagnostics.length}</strong>
                 {activeLspDiagnostics.map((diagnostic, index) =>
                   <button key={index} className="lspDiagnostic" type="button"
+                    aria-label={'Go to '+accessibleDiagnosticLabel(activeTab.relativePath,diagnostic)}
                     onClick={() => setLspJumpRequest({
                       from:diagnostic.from, to:diagnostic.to,
                       tabIdentity:activeTab.key + ':' + activeTab.generation,
-                      nonce:Date.now()
+                      nonce:++problemJumpNonce.current
                     })}>
                     <span>{diagnostic.severity === 1 ? 'Error' :
                       diagnostic.severity === 2 ? 'Warning' : 'Info'} · {diagnostic.line}</span>
@@ -9533,6 +9684,8 @@ function App() {
                 <strong>Suggestions</strong>
                 {activeLspCompletions.slice(0, 20).map((item, index) =>
                   <button type="button" key={index} className="lspSuggestion"
+                    aria-label={'Insert completion '+item.label+
+                      (item.detail ? ': '+item.detail.slice(0,160) : '')}
                     onClick={() => applyLspCompletion(item)}>
                     <code>{item.label}</code> <span>{item.detail}</span>
                   </button>)}
@@ -9540,7 +9693,9 @@ function App() {
               {activeLspHover && <section className="lspResultPanel"
                 aria-label="Language server hover information">
                 <strong>Symbol information</strong>
-                <pre>{activeLspHover}</pre>
+                <pre tabIndex={0} role="note"
+                  aria-label={'Read-only symbol information for '+activeTab.relativePath}>
+                  {activeLspHover}</pre>
               </section>}
               <div className="draftRecoveryReferenceBar">
                 <label htmlFor="b2-persistent-draft-reference">Recover exact private draft reference</label>
