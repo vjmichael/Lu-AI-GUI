@@ -40,3 +40,22 @@ After independent engineering work changes a project, Lu must reconcile new **ho
 **07D — Grouped acceptance and installed release gate.** Independently run genuine GGUF and cross-platform native tests, then installed NSIS UIA human/refusal/project-switch/restart/ANSF preservation and creator-machine acceptance. Keep all existing PLAN-05/06 gates separate.
 
 No autonomous completion, no CI-pass-to-ACCEPTED shortcut, and no PLAN-08 work.
+
+
+## PLAN-07B — Genuine local GGUF evidence-backed suggestions (implemented, acceptance pending)
+
+The independently hosted Project Tasks UI can ask an **actually loaded local GGUF** for review steps based solely on the original native PLAN-07A source snapshot. The native command refuses if no real ready inference session exists, requires a human-reviewed OS consent dialog and OS folder selection, then uses the existing normal-chat FIFO generation queue and \`TrustedInferenceSupervisor\` reserved-generation protocol. The request passes **empty history**, no browser, tools or worker authority. Both before and after inference, the host rechecks the selected source/HEAD/status and the model/session identity. Interrupted, cancelled or changed-source inference refuses to persist a suggestion.
+
+The strict raw output must contain only \`schema\`, \`previewSha256\` and \`candidates\` (1–16). Every candidate must have exactly seven keys: \`taskId\`, \`requirementId\`, \`status\`, \`action\`, \`evidenceIds\`, \`reason\`, \`nextEvidence\`. IDs, status and citations must be exact host-provided facts from that *same original task*, with duplicate/foreign citations rejected. \`review_exact_criterion\` is permitted only when the host has an independently supported candidate. Completion, acceptance, approval or execution fields are rejected outright, including if invented by the model. The host seals a separate \`ModelSuggestion\` object with \`suggestedOnly=true\`, \`independentlyAccepted=false\`, \`taskComplete=false\`, and \`executionAuthorized=false\`.
+
+A new table \`ansf_project_task_update_model_suggestions\` in the **same existing ANSF SQLite library** stores the original prompt and raw model reply byte-for-byte together with exact prompt/reply digests, model ref, session/generation IDs, preview, register and current graph/status digests. An IMMEDIATE transaction rechecks the latest register source lease before insert. Restart retrieval independently reconstructs the result from original raw bytes and archived audited source facts; a rehashed JSON claim cannot replace the genuine original. A saved suggestion never edits PLAN-05 register, PLAN-06 plan or tool permissions.
+
+Native tests use **explicit synthetic model JSON** to test schema, citation, stale source, tampering and SQLite proof preservation. These tests do not claim that actual GGUF inference has passed. The real generation path is connected and must be independently exercised with a loaded GGUF on the physical Windows system and in a separately admitted integration test; any model returning extra words or non-JSON fails closed.
+
+### B remaining acceptance boundary
+
+- Exact-head Windows/Linux Rust core and Tauri/React native test matrix, including immutable prompt/reply readback, provenance checks and original model replies.
+- Genuine GGUF end-to-end acceptance with the owner's Qwen GGUF (or separately pinned real GGUF model): verify selected source, actual inference events, strict JSON parse, original reply, cancellation and no execution.
+- Installed Windows human approval/restart evidence still required separately under PLAN-07D.
+
+PLAN-07C (full operator reconciliation/recovery) and PLAN-07D (installed release gate) remain unstarted.
