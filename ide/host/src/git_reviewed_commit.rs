@@ -1103,4 +1103,99 @@ mod tests {
             Some(original_head)
         );
     }
+
+    #[test]
+    fn interrupted_after_ref_cas_restarts_then_reconciles_without_another_ref_write() {
+        let (temp, registry, id, root) = fixture();
+        let staged = review_two_edits(&registry, &id, &root);
+        let worktree_before = fs::read(root.join("tracked.txt")).unwrap();
+        let plan = preview(&registry, &staged, ReviewedCommitMode::Create);
+        let repo = Repository::open(&root).unwrap();
+        let mut index = repo.index().unwrap();
+        index.read(true).unwrap();
+        let tree_oid = index.write_tree_to(&repo).unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        let previous = repo
+            .find_commit(Oid::from_str(&plan.previous_head).unwrap())
+            .unwrap();
+        let signature = Signature::now("Fixture Author", "fixture@localhost.invalid").unwrap();
+        let new_oid = repo
+            .commit(
+                None,
+                &signature,
+                &signature,
+                &plan.message,
+                &tree,
+                &[&previous],
+            )
+            .unwrap();
+        let journal_file = journal_path(&registry, &id).unwrap();
+        append_journal(
+            &journal_file,
+            &CommitJournal {
+                schema_version: 1,
+                operation_id: "post-cas-crash-fixture".into(),
+                project_id: id.clone(),
+                phase: "publishing".into(),
+                mode: ReviewedCommitMode::Create,
+                branch_ref: plan.branch_ref.clone(),
+                old_head: plan.previous_head.clone(),
+                commit_oid: new_oid.to_string(),
+                parent_oid: plan.resulting_parent.clone(),
+                tree_oid: tree_oid.to_string(),
+                index_sha256: plan.index_sha256.clone(),
+                plan_sha256: plan.plan_sha256.clone(),
+                source_sha256: staged.source_sha256.clone(),
+                relative_path: staged.relative_path.clone(),
+            },
+        )
+        .unwrap();
+        // Simulate the actual one-way branch CAS occurring after the durable
+        // publishing entry but before ref_published/verified is recorded.
+        repo.reference_matching(
+            &plan.branch_ref,
+            new_oid,
+            true,
+            previous.id(),
+            "G06B05 interrupted after CAS fixture",
+        )
+        .unwrap();
+        drop(index);
+        drop(tree);
+        drop(previous);
+        drop(repo);
+        drop(registry);
+
+        let reopened = IdeWorkspaceRegistry::open(temp.0.join("catalog.json")).unwrap();
+        reopened.reopen(&id).unwrap();
+        let pending = reopened.inspect_reviewed_commit_recovery(&id).unwrap();
+        assert_eq!(pending.state, "ref_published_requires_verification");
+        assert_eq!(pending.last_phase, "publishing");
+        assert!(pending.branch_matches_intended);
+        assert!(pending.operator_reconciliation_required);
+        assert!(!pending.automatic_retry && !pending.automatic_ref_rewrite);
+        assert_eq!(fs::read(root.join("tracked.txt")).unwrap(), worktree_before);
+
+        // A separate native-OS approval is required by the Tauri wrapper.
+        // This direct host test supplies no operator grant and only checks
+        // that reconciliation verifies the existing ref without writing it.
+        let reconciled = reopened.reconcile_reviewed_commit_journal(&id).unwrap();
+        assert_eq!(reconciled.state, "verified_historical_commit");
+        assert_eq!(reconciled.last_phase, "verified");
+        assert!(!reconciled.operator_reconciliation_required);
+        assert!(!reconciled.automatic_retry && !reconciled.automatic_ref_rewrite);
+        let actual = Repository::open(&root).unwrap();
+        assert_eq!(actual.head().unwrap().target(), Some(new_oid));
+        let published = actual.find_commit(new_oid).unwrap();
+        assert_eq!(published.tree_id(), tree_oid);
+        assert_eq!(published.parent_id(0).unwrap().to_string(), plan.previous_head);
+        assert_eq!(fs::read(root.join("tracked.txt")).unwrap(), worktree_before);
+        // A second inspection or reconciliation must not duplicate the commit.
+        assert_eq!(
+            reopened.reconcile_reviewed_commit_journal(&id).unwrap().state,
+            "verified_historical_commit"
+        );
+        assert_eq!(actual.head().unwrap().target(), Some(new_oid));
+    }
+
 }
