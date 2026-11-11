@@ -539,6 +539,32 @@ impl IdeWorkspaceRegistry {
             },
         )
         .map_err(|_| "G06B_COMMIT_CONCURRENT_REF_UPDATE_DENIED")?;
+        // TEST BINARY ONLY: real abrupt child-process termination immediately
+        // after a successful native libgit2 branch CAS, before the durable
+        // ref_published journal append. Not compiled into installed/release code.
+        // The named throwaway fixture and exact Git directory must both match.
+        #[cfg(test)]
+        {
+            if let Some(test_gitdir) = std::env::var_os("IDE_G06B05_ABORT_AFTER_REF_CAS") {
+                let fixture_marker = gitdir
+                    .parent()
+                    .map(|p| p.join(".g06b05-abort-fixture"));
+                if PathBuf::from(test_gitdir) == gitdir
+                    && gitdir.starts_with(std::env::temp_dir())
+                    && gitdir
+                        .parent()
+                        .and_then(|p| p.parent())
+                        .and_then(|p| p.file_name())
+                        .map(|name| name.to_string_lossy().starts_with("ide-g06b04-"))
+                        .unwrap_or(false)
+                    && fixture_marker.as_ref().is_some_and(|marker| {
+                        fs::read(marker).ok().as_deref() == Some(b"G06B05_DISPOSABLE_ONLY\n")
+                    })
+                {
+                    std::process::abort();
+                }
+            }
+        }
         journal.phase = "ref_published".into();
         append_journal(&journal_file, &journal)?;
         if branch(&repo)? != (fresh.branch_ref.clone(), oid.to_string()) {
@@ -1203,4 +1229,164 @@ mod tests {
         );
         assert_eq!(actual.head().unwrap().target(), Some(new_oid));
     }
+
+    #[test]
+    fn g06b05_actual_process_abort_child() {
+        let Some(handoff) = std::env::var_os("G06B05_CRASH_CHILD_HANDOFF") else {
+            // Normal test invocation is harmless; this test runs in a distinct
+            // child test binary only when the real parent fixture prepares it.
+            return;
+        };
+        let mode = std::env::var("G06B05_CRASH_CHILD_MODE").unwrap();
+        assert!(mode == "create" || mode == "amend");
+        let (_guard, registry, id, root) = fixture();
+        fs::write(root.join("unrelated.keep"), b"untouched, untracked fixture\n").unwrap();
+        let staged = review_two_edits(&registry, &id, &root);
+        let plan = if mode == "create" {
+            preview(&registry, &staged, ReviewedCommitMode::Create)
+        } else {
+            // Commit the first selected hunk with the normal libgit2 path,
+            // then amend it with the independent second selected-hunk stage.
+            let first = preview(&registry, &staged, ReviewedCommitMode::Create);
+            registry
+                .execute_approved_reviewed_commit(&first, &AtomicU8::new(0))
+                .unwrap();
+            let second = registry.preview_reviewed_git_hunks(&id, "tracked.txt").unwrap();
+            assert_eq!(second.hunks.len(), 1);
+            let selection = registry
+                .select_reviewed_git_hunks(&second, &[second.hunks[0].id.clone()])
+                .unwrap();
+            let staged_again = registry
+                .apply_approved_partial_stage(&selection, &AtomicU8::new(0))
+                .unwrap();
+            preview(&registry, &staged_again, ReviewedCommitMode::Amend)
+        };
+        fs::write(
+            root.join(".g06b05-abort-fixture"),
+            b"G06B05_DISPOSABLE_ONLY\n",
+        )
+        .unwrap();
+        let gitdir = root.join(".git");
+        let base = root.parent().unwrap();
+        let prior_index_sha = sha(&fs::read(gitdir.join("index")).unwrap());
+        let witness = serde_json::json!({
+            "base": base.to_string_lossy(),
+            "project_id": id,
+            "mode": mode,
+            "previous_head": plan.previous_head,
+            "resulting_parent": plan.resulting_parent,
+            "index_sha256": prior_index_sha,
+            "source_sha256": sha(&fs::read(root.join("tracked.txt")).unwrap()),
+            "unrelated_sha256": sha(&fs::read(root.join("unrelated.keep")).unwrap()),
+            "planned_tree_original": plan.staged_tree_oid,
+        });
+        let mut file = File::create(handoff).unwrap();
+        file.write_all(serde_json::to_string(&witness).unwrap().as_bytes())
+            .unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        // Deliberately not OS approval evidence. This child uses the genuine
+        // source-level native commit routine and dies by SIGABRT after its CAS.
+        std::env::set_var("IDE_G06B05_ABORT_AFTER_REF_CAS", &gitdir);
+        registry
+            .execute_approved_reviewed_commit(&plan, &AtomicU8::new(0))
+            .unwrap();
+        panic!("G06B05 expected hard process abort immediately after real CAS");
+    }
+
+    #[test]
+    fn g06b05_real_native_process_abort_after_cas_recovers_create_and_amend() {
+        use std::process::Command;
+
+        for mode in ["create", "amend"] {
+            let handoff_dir = std::env::temp_dir().join(format!(
+                "ide-g06b05-native-abort-{:032x}",
+                rand::random::<u128>()
+            ));
+            fs::create_dir_all(&handoff_dir).unwrap();
+            let handoff = handoff_dir.join("crash-witness.json");
+            let output = Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("git_reviewed_commit::tests::g06b05_actual_process_abort_child")
+                .arg("--nocapture")
+                .env("G06B05_CRASH_CHILD_HANDOFF", &handoff)
+                .env("G06B05_CRASH_CHILD_MODE", mode)
+                .output()
+                .unwrap();
+            assert!(
+                !output.status.success(),
+                "g06b05 {mode}: child unexpectedly survived native ref CAS: {}",
+                String::from_utf8_lossy(&output.stdout)
+            );
+            let data: serde_json::Value =
+                serde_json::from_slice(&fs::read(&handoff).unwrap()).unwrap();
+            let base = PathBuf::from(data["base"].as_str().unwrap());
+            let root = base.join("repo");
+            let id = data["project_id"].as_str().unwrap();
+            let old_head = data["previous_head"].as_str().unwrap();
+            let parent = data["resulting_parent"].as_str().unwrap();
+            let original_index = data["index_sha256"].as_str().unwrap();
+            let original_source = data["source_sha256"].as_str().unwrap();
+            let original_unrelated = data["unrelated_sha256"].as_str().unwrap();
+            let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
+            registry.reopen(id).unwrap();
+            let repo = Repository::open(&root).unwrap();
+            let new_head = repo.head().unwrap().target().unwrap();
+            assert_ne!(new_head.to_string(), old_head);
+            assert_eq!(sha(&fs::read(root.join(".git/index")).unwrap()), original_index);
+            assert_eq!(
+                sha(&fs::read(root.join("tracked.txt")).unwrap()),
+                original_source
+            );
+            assert_eq!(
+                sha(&fs::read(root.join("unrelated.keep")).unwrap()),
+                original_unrelated
+            );
+            assert!(repo.find_commit(Oid::from_str(old_head).unwrap()).is_ok());
+            let published = repo.find_commit(new_head).unwrap();
+            assert_eq!(published.parent_id(0).unwrap().to_string(), parent);
+            let mut index = repo.index().unwrap();
+            index.read(true).unwrap();
+            assert_eq!(published.tree_id(), index.write_tree_to(&repo).unwrap());
+            assert!(!root.join(".git/index.lock").exists());
+            let journal = last_journal(&journal_path(&registry, id).unwrap())
+                .unwrap()
+                .unwrap();
+            assert_eq!(journal.phase, "publishing");
+            assert_eq!(journal.old_head, old_head);
+            assert_eq!(journal.commit_oid, new_head.to_string());
+            assert_eq!(journal.tree_oid, published.tree_id().to_string());
+            assert_eq!(journal.mode.label(), mode);
+            let pending = registry.inspect_reviewed_commit_recovery(id).unwrap();
+            assert_eq!(pending.state, "ref_published_requires_verification");
+            assert!(pending.operator_reconciliation_required);
+            assert!(!pending.automatic_retry && !pending.automatic_ref_rewrite);
+            // Actual host-native verification of an interrupted CAS after
+            // a fresh registry process. The installed GUI must separately
+            // obtain real native OS authorization before invoking this call.
+            let recovered = registry.reconcile_reviewed_commit_journal(id).unwrap();
+            assert_eq!(recovered.state, "verified_historical_commit");
+            assert!(!recovered.operator_reconciliation_required);
+            assert!(!recovered.automatic_retry && !recovered.automatic_ref_rewrite);
+            assert_eq!(repo.head().unwrap().target(), Some(new_head));
+            let verified = last_journal(&journal_path(&registry, id).unwrap())
+                .unwrap()
+                .unwrap();
+            assert_eq!(verified.phase, "verified");
+            assert_eq!(verified.commit_oid, new_head.to_string());
+            // An additional recovery inspection must never create a ref.
+            assert_eq!(
+                registry.inspect_reviewed_commit_recovery(id).unwrap().state,
+                "verified_historical_commit"
+            );
+            assert_eq!(repo.head().unwrap().target(), Some(new_head));
+            drop(index);
+            drop(published);
+            drop(repo);
+            drop(registry);
+            fs::remove_dir_all(&base).unwrap();
+            fs::remove_dir_all(&handoff_dir).unwrap();
+        }
+    }
+
 }
