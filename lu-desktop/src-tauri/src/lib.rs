@@ -40,6 +40,7 @@ mod project_status_desktop;
 mod project_task_desktop;
 mod project_register_desktop;
 mod project_task_board_desktop;
+mod project_updates_desktop;
 mod reviewed_app_desktop;
 mod reviewed_memory_evidence;
 mod reviewed_app_recovery;
@@ -8593,6 +8594,8 @@ pub fn run() {
             project_task_board_desktop::lu_project_board_correct,
             project_task_board_desktop::lu_project_board_approve,
             project_task_board_desktop::lu_project_board_export,
+            project_updates_desktop::lu_project_update_inspect,
+            project_updates_desktop::lu_project_update_apply,
             lu_status,
             lu_list_models,
             lu_model_preflight,
