@@ -137,7 +137,7 @@ impl IdeWorkspaceRegistry {
         let ours = Oid::from_str(&plan.current_head).map_err(|_| "G06C03B_BAD_HEAD")?;
         let theirs = Oid::from_str(&plan.selected_tip).map_err(|_| "G06C03B_BAD_TIP")?;
         let bases = repo.merge_bases(ours, theirs).map_err(|_| "G06C03B_BASE_CHECK_FAILED")?;
-        if bases.len() != 1 || bases.get(0) != Some(base) {
+        if bases.len() != 1 || bases.get(0) != Some(&base) {
             return Err("G06C03B_BASE_CHANGED");
         }
         let base_tree = repo.find_commit(base).and_then(|c| c.tree())
@@ -291,12 +291,14 @@ mod tests {
     }
     fn snapshot(root: &Path) -> (Vec<u8>, Vec<u8>, Vec<u8>, String, String) {
         let repo = Repository::open(root).unwrap();
+        let head = repo.head().unwrap().target().unwrap().to_string();
+        let feature = repo.refname_to_id("refs/heads/feature").unwrap().to_string();
         (
             fs::read(root.join("one.txt")).unwrap(),
             fs::read(root.join("two.txt")).unwrap(),
             fs::read(root.join(".git/index")).unwrap(),
-            repo.head().unwrap().target().unwrap().to_string(),
-            repo.refname_to_id("refs/heads/feature").unwrap().to_string(),
+            head,
+            feature,
         )
     }
     #[test]
