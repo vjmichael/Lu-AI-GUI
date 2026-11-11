@@ -941,6 +941,25 @@ async fn ide_git_preview_local_merge(
     .map_err(|_| "G06C02_MERGE_PREVIEW_HOST_UNAVAILABLE".to_owned())?
 }
 
+/// 6C-03B: actual native three-way merge preview, with new blobs confined
+/// to a temporary isolated ODB. This deliberately has NO publication route.
+#[tauri::command]
+async fn ide_git_verify_divergent_merge(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    selected_branch: String,
+    evidence_sha256: String,
+) -> Result<lu_ide_workspace::git_divergent_verify::VerifiedDivergentMerge, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.verify_divergent_merge_result(
+            &project_id, &selected_branch, &evidence_sha256,
+        ).map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06C03B_PREVIEW_HOST_UNAVAILABLE".to_owned())?
+}
+
 /// 6C-03A native one-use OS-confirmed local fast-forward. The frontend
 /// supplies only selection and a claim to exact source evidence, NEVER a grant.
 /// A divergent merge is intentionally unavailable until its output is verified.
@@ -2861,6 +2880,7 @@ pub fn run() {
             ide_read_git_refs_health,
             ide_git_review_branch_operation,
             ide_git_preview_local_merge,
+            ide_git_verify_divergent_merge,
             ide_git_review_rebase_cherry_pick,
             ide_git_preview_isolated_replay,
             ide_git_execute_cherry_pick,
