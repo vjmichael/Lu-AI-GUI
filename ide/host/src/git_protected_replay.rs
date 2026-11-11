@@ -344,6 +344,16 @@ impl IdeWorkspaceRegistry {
             !clean_tree(&repo,&candidate.current_tree)?{
             return Err("G06C04_DIRTY_OR_STALE_INDEX_WORKTREE");
         }
+        // Validate every actual changed output path and existing worktree
+        // component against the production 6C03 safe-path policy while the
+        // predicted trees remain in the isolated Git ODB. Deny unsafe sources
+        // BEFORE any object writes or original-history recovery refs.
+        let prospective_tree=candidate.prospective_tree.as_deref()
+            .ok_or("G06C04_NO_VERIFIED_OUTPUT_TREE")?;
+        ensure_changed_paths_safe(
+            &root,build.sandbox.repository()?,
+            &candidate.current_tree,prospective_tree
+        )?;
         let journal_file=journal_path(self,id)?;
         if let Some(last)=read_last(&journal_file)?{
             if !matches!(last.phase.as_str(),"verified"|"cancelled") {
