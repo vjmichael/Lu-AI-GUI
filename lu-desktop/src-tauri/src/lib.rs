@@ -8603,6 +8603,7 @@ pub fn run() {
             project_update_model_desktop::lu_project_update_model_cancel,
             project_review_decisions_desktop::lu_project_update_review_history,
             project_review_decisions_desktop::lu_project_update_review_decide,
+            project_review_decisions_desktop::lu_project_update_review_exact_requirement,
             lu_status,
             lu_list_models,
             lu_model_preflight,
