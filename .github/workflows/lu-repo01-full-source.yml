@@ -2371,10 +2371,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib project_task_updates::tests -- --nocapture 2>&1 | tee plan07-native-evidence/plan05-core.log
-          grep -Fq 'test result: ok. 3 passed; 0 failed;' plan07-native-evidence/plan05-core.log
-          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib project_updates_desktop::tests -- --nocapture 2>&1 | tee plan07-native-evidence/ansf-board.log
-          grep -Fq 'test result: ok. 1 passed; 0 failed;' plan07-native-evidence/ansf-board.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib project_task_updates::tests -- --nocapture 2>&1 | tee plan07-native-evidence/delta-core.log
+          grep -Fq 'test result: ok. 4 passed; 0 failed;' plan07-native-evidence/delta-core.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib project_updates_desktop::tests -- --nocapture 2>&1 | tee plan07-native-evidence/ansf-refresh.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' plan07-native-evidence/ansf-refresh.log
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | tee plan07-native-evidence/tauri-build.log
           echo 'PLAN07A_EXACT_HEAD_NATIVE_PASS; genuine GGUF and installed Windows acceptance remain independent' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
