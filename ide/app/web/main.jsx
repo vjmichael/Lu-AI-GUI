@@ -8154,6 +8154,50 @@ function App() {
               <button type="submit" disabled={!activeProject || !relativeOpenPath.trim() ||
                 explorerPending || !!savingKey}>Open file</button>
             </form>
+            <form className="sourceGoToFile" onSubmit={event=>{
+              event.preventDefault(); void searchQuickOpen();
+            }}>
+              <input aria-label="Quick Open filename search" spellCheck={false}
+                maxLength={128} value={quickOpenQuery}
+                placeholder="Quick Open: filename or path"
+                onChange={event=>{
+                  quickOpenSerial.current+=1;
+                  quickOpenBusyRef.current=false;
+                  setQuickOpenBusy(false);
+                  setQuickOpenQuery(event.target.value);
+                  setQuickOpenResults(null);
+                }}/>
+              <button type="submit"
+                disabled={!activeProject || !quickOpenQuery.trim() ||
+                  quickOpenBusy || explorerPending || !!savingKey ||
+                  !!workspaceTransitionRef.current}>
+                {quickOpenBusy ? 'Finding files…' : 'Find files'}
+              </button>
+            </form>
+            {quickOpenResults?.projectId===activeProject?.projectId &&
+              <section className="sourceQuickOpenResults"
+                aria-label="Quick Open filename results">
+                <p role="status">{quickOpenResults.matches.length} filename match(es)
+                  {' · '}{quickOpenResults.entriesExamined} entries examined
+                  {' · '}{quickOpenResults.directoriesExamined} directories.
+                  {quickOpenResults.truncated &&
+                    ' Partial scan/results; narrow the filename for better coverage.'}
+                </p>
+                {quickOpenResults.matches.map(hit=>
+                  <button type="button" className="fileRow"
+                    key={hit.relativePath} title={hit.relativePath}
+                    disabled={explorerPending || !!workspaceTransitionRef.current ||
+                      hit.size>512*1024}
+                    onClick={()=>void openQuickOpenMatch(hit)}>
+                    <span aria-hidden="true" className="fileGlyph">⌕</span>
+                    <span className="fileName">{hit.relativePath}</span>
+                    {hit.size>512*1024 ? ' · exceeds current editor admission limit' : ''}
+                  </button>)}
+                {projectTabCount>=MAX_OPEN_TABS_PER_PROJECT &&
+                  <p className="treeCaution">Open-tab budget reached.
+                    Close verified clean background tabs below or close a file
+                    before opening another. No unsaved edit is evicted automatically.</p>}
+              </section>}
             <div className="sourcePath" title={directory || '/'}>
               <button type="button" className="pathLink" disabled={explorerPending}
                 onClick={() => activeProject && openDirectory(activeProject, '')}>
@@ -8179,10 +8223,19 @@ function App() {
               Show next {Math.min(TREE_ENTRY_PAGE,visibleTree.remaining)} entries
               · {visibleTree.total} loaded from native directory
             </button>}
+            {listing?.nextAfter && <button type="button"
+              className="fileRow treeLoadMore"
+              disabled={explorerPending || directoryPageBusy ||
+                !!workspaceTransitionRef.current}
+              onClick={()=>void loadNextSourceDirectoryPage()}>
+              {directoryPageBusy ? 'Reading another page…' :
+                'Load next 120 names from this directory'}
+            </button>}
             {listing?.truncated && <p className="treeCaution">
-              Native directory result is partial (400-entry limit). Additional files
-              can be opened by entering their registered project-relative path above.
-              No completeness claim.
+              {listing.scanLimited
+                ? 'This directory exceeds the bounded native scan. Its list is partial; use Quick Open or a project-relative path.'
+                : 'More directory entries are available. Load another native page to continue.'}
+              {' '}Folder entries may change between pages; refresh when needed.
             </p>}
             {!explorerPending && listing && listing.entries.length === 0 &&
               <p className="treeCaution">Empty directory.</p>}
@@ -8221,6 +8274,9 @@ function App() {
                 onClick={toggleSplitEditor}>
                 {splitEditorOpen ? 'Close split' : 'Split editor'}
               </button>
+              <span role="status" className="editorWorkingSetNotice">
+                {workingSetNotice}
+              </span>
               <button type="button" className="ghostBtn"
                 aria-label="Close clean background tabs"
                 disabled={!activeProject || projectTabs.length<2 || !!savingKey ||
