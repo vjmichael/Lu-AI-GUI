@@ -1,9 +1,6 @@
 name: IDE G06D01 real index conflict inventory native acceptance
+# Deliberately manual-only: stage all 6D work, then run ONE consolidated gate.
 on:
-  push:
-    branches: [ide/group06d01-conflict-inventory-20261111]
-  pull_request:
-    branches: [ide/group06c03b-divergent-merge-20261111]
   workflow_dispatch:
 permissions:
   contents: read
@@ -60,7 +57,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "G06D01_SOURCE_SHA=$SOURCE_SHA"
+          echo "G06D_GROUP_SOURCE_SHA=$SOURCE_SHA"
           echo 'G06D01_NATIVE_INDEX_CONFLICTS=READ_ONLY'
           echo 'G06D01_APPLY_AUTHORITY=NOT_IMPLEMENTED'
           echo 'G06D01_HUMAN_ACCEPTANCE=DEFERRED'
