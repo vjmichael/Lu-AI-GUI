@@ -662,4 +662,82 @@ mod tests{
         fs::remove_dir_all(profile).unwrap();
     }
 
+    #[test]
+    #[ignore="only a disposable installed Windows profile; synthetic model reply explicitly labeled"]
+    fn export_dual_project_installed_ui_fixture(){
+        let profile=PathBuf::from(std::env::var("LU_PLAN06_INSTALLED_PROFILE")
+            .expect("PLAN06 disposable profile required"));
+        let projects=PathBuf::from(std::env::var("LU_PLAN06_INSTALLED_PROJECTS")
+            .expect("PLAN06 disposable project root required"));
+        let receipt=PathBuf::from(std::env::var("LU_PLAN06_INSTALLED_SEED_RECEIPT")
+            .expect("PLAN06 evidence destination required"));
+        assert!(!profile.exists()&&!projects.exists()&&!receipt.exists(),
+            "Refuse existing ANSF, selected projects or receipt");
+        fs::create_dir_all(profile.join("ansf")).unwrap();
+        fs::create_dir_all(&projects).unwrap();
+        let conn=Connection::open(profile.join("ansf/library.db")).unwrap();
+        conn.execute_batch("CREATE TABLE preserved_user_data(marker TEXT NOT NULL);
+            INSERT INTO preserved_user_data VALUES('PLAN06_KEEP_606');").unwrap();
+        drop(conn);
+        let mut records=Vec::new();
+        for (num,label) in [(1,"north"),(2,"south")]{
+            let root=projects.join(label);
+            fs::create_dir_all(root.join("docs")).unwrap();
+            fs::write(root.join("docs/REQUIREMENTS.md"),
+                format!("# Original {label} source requirements\n\
+                - [ ] Must include src/required_{label}.rs\n\
+                - [ ] Must include src/secondary_{label}.rs\n")).unwrap();
+            let (g,s)=project_status_desktop::classify_selected(&root).unwrap();
+            graph::audit(&g).unwrap();status::audit(&s,&g).unwrap();
+            let cap=synthesis::build_capsule(&g,&s).unwrap();
+            assert_eq!(cap.requirements.len(),2,"fixture must have two original requirements");
+            let raw=serde_json::json!({"schema":synthesis::RAW_SCHEMA,
+                "tasks":cap.requirements.iter().enumerate().map(|(i,req)|
+                    serde_json::json!({
+                        "requirementId":req.requirement_id,"status":req.status,
+                        "summary":format!("Review {label} source requirement {}",i+1),
+                        "description":"Independently review the original named project source and acceptance",
+                        "priority":if i==0{"P1"}else{"P2"},
+                        "group":format!("0{} Original {label} source",i+1),
+                        "evidenceIds":[req.requirement_id],
+                        "dependencyIndices":[],
+                        "acceptanceCriteria":"Verify the named project file under independently checked source HEAD",
+                        "blockedBy":"Original exact requirement has no accepted native evidence"
+                    })
+                ).collect::<Vec<_>>()
+            }).to_string();
+            let proposal=synthesis::validate_model_response(&g,&s,&raw,
+                &synthesis::model_prompt(&cap).unwrap(),
+                "m-plan06-test-only","s-plan06-fixture","g-plan06-fixture").unwrap();
+            project_task_desktop::persist_proposal(&profile,&g,&s,&proposal,&raw).unwrap();
+            let imported=register::import(&proposal).unwrap();
+            let saved=project_register_desktop::persist(
+                &profile,&proposal,&imported,None).unwrap();
+            assert_eq!(saved.events.len(),2);
+            records.push(serde_json::json!({
+                "project":label,
+                "sourceScopeSha256":g.project_scope_sha256,
+                "originalProposalSha256":proposal.digest_sha256,
+                "registerId":saved.register_id,
+                "registerSha256":saved.latest_sha256,
+                "taskIds":proposal.tasks.iter().map(|x|x.task_id.clone()).collect::<Vec<_>>(),
+                "registerEvents":saved.events.len(),
+                "notGenuineGguf":true,
+                "noExecutionAuthority":true
+            }));
+            assert_eq!(num,records.len());
+        }
+        let views=load_views(&profile).unwrap();
+        assert_eq!(views.len(),2);
+        assert!(views.iter().all(|v|v.tasks.len()==2&&
+            v.board.sequence==0&&!v.review_current));
+        let receipt_json=serde_json::json!({
+            "schema":"lu-plan06-disposable-dual-project-fixture-v1",
+            "source":"TEST_ONLY_SYNTHETIC_ORIGINAL_MODEL_REPLY_NOT_GGUF",
+            "projects":records,"noExecutionAuthority":true
+        });
+        fs::write(&receipt,
+            serde_json::to_vec_pretty(&receipt_json).unwrap()).unwrap();
+    }
+
 }
