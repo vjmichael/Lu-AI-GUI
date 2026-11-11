@@ -1,6 +1,10 @@
-# Group 6D batched verification: NO per-commit triggers, no queue fanout.
+# Group 6D batched verification: marker-only push trigger; no per-commit fanout.
 name: IDE Group 6D consolidated native and installed acceptance
 on:
+  push:
+    branches: [ide/group06d01-conflict-inventory-20261111]
+    paths:
+      - '.github/ide-group06d-batch-trigger.txt'
   workflow_dispatch:
 permissions:
   contents: read
