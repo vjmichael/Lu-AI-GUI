@@ -11,7 +11,7 @@ pub(crate) struct ClassifiedProject{
     graph_sha256:String,project_scope_sha256:String,
     status:classifier::StatusReport,
 }
-fn classify_selected(root:&Path)->Result<(graph::EvidenceGraph,classifier::StatusReport),String>{
+pub(crate) fn classify_selected(root:&Path)->Result<(graph::EvidenceGraph,classifier::StatusReport),String>{
     // PLAN-02 owns the exact native project scan and report provenance.
     let evidence=project_evidence_desktop::assemble_from_selected(root)?;
     let facts=classifier::observe_project_paths(root,&evidence)?;
