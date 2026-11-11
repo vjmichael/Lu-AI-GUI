@@ -2457,6 +2457,8 @@ jobs:
           grep -Fq 'test result: ok. 3 passed; 0 failed;' plan07b-native-evidence/model-core.log
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib project_update_model_desktop::tests -- --nocapture 2>&1 | tee plan07b-native-evidence/model-original-ansf.log
           grep -Fq 'test result: ok. 1 passed; 0 failed;' plan07b-native-evidence/model-original-ansf.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib generation_queue::tests::plan07b_scoped -- --nocapture 2>&1 | tee plan07b-native-evidence/scoped-cancel.log
+          grep -Fq 'test result: ok. 2 passed; 0 failed;' plan07b-native-evidence/scoped-cancel.log
           cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | tee plan07b-native-evidence/tauri-build.log
           echo 'PLAN07B_NATIVE_MODEL_ADMISSION_PASS; real loaded GGUF and physical installed Windows acceptance remain independent' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
