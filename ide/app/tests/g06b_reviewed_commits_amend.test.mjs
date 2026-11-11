@@ -30,12 +30,12 @@ test('G06B04 only a private verified staged-hunk journal may be committed', () =
 });
 
 test('G06B04 exact branch ref CAS, authored tree and explicit amend parent', () => {
-  assert.match(native, /pub enum ReviewedCommitMode \{ Create, Amend \}/);
+  assert.match(native, /pub enum ReviewedCommitMode\s*\{\s*Create,\s*Amend,?\s*\}/);
   assert.match(native, /G06B_AMEND_ROOT_OR_MERGE_DENIED/);
   assert.match(native, /G06B_AMEND_UPSTREAM_UNVERIFIABLE/);
-  assert.match(native, /repo\.reference_matching\(/);
+  assert.match(native, /repo\s*\.reference_matching\(/);
   assert.match(native, /G06B_COMMIT_CONCURRENT_REF_UPDATE_DENIED/);
-  assert.match(native, /repo\.commit\(None,/);
+  assert.match(native, /repo\s*\.commit\(\s*None\s*,/);
   assert.match(native, /G06B_COMMIT_PUBLISHED_TREE_OR_PARENT_MISMATCH/);
   assert.match(native, /local_commit_contains_only_selected_hunk_with_unchanged_worktree/);
   assert.match(native, /amend_requires_distinct_review_and_rewrites_only_exact_current_head/);
