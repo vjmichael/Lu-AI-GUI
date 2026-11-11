@@ -34,7 +34,7 @@ export function NativeWindowFrame({title,subtitle,children}){
     <header className="nativeWindowHeader">
       <div><h1>{title}</h1><small>{subtitle}</small></div>
       <button type="button" className="subtleButton" disabled={closing}
-        aria-label={'Close '+(title==='Settings'?'settings':'model library')}
+        aria-label={'Close '+(title==='Settings'?'settings':title==='Project Tasks'?'project task list':'model library')}
         onClick={async()=>{
           setClosing(true);
           try{await invoke('lu_close_aux_window');}
