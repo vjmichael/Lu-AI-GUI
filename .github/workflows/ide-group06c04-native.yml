@@ -1,5 +1,5 @@
-# 6C-04A original replay review only: no rebase/cherry-pick execution.
-name: IDE G06C04 native original rebase and cherry-pick review
+# G06C04B-D genuine isolated results and OS-gated original-history publication. Human consent is deferred.
+name: IDE Group 6C04 protected rebase and cherry-pick source plus installers
 on:
   push:
     branches: [ide/group06c04-rebase-cherrypick-20261110]
@@ -7,10 +7,12 @@ on:
       - '.github/workflows/ide-group06c04-native.yml'
       - 'ide/host/src/git_rebase_cherry_plan.rs'
       - 'ide/host/src/git_replay_quarantine.rs'
+      - 'ide/host/src/git_protected_replay.rs'
       - 'ide/host/src/lib.rs'
       - 'ide/app/src-tauri/src/lib.rs'
       - 'ide/app/web/main.jsx'
       - 'ide/app/tests/g06c04_original_replay_review.test.mjs'
+      - 'ide/app/tests/g06c04_protected_replay.test.mjs'
       - 'ide/docs/IDE_GROUP06C04_REBASE_CHERRYPICK_20261110.md'
   workflow_dispatch:
 permissions:
@@ -20,7 +22,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   exact-native:
-    name: G06C04 exact read-only Git replay and Tauri / ${{ matrix.os }}
+    name: G06C04 original, quarantine, native protected replay / ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -63,8 +65,9 @@ jobs:
           set -euo pipefail
           cargo test --manifest-path ide/host/Cargo.toml --lib git_rebase_cherry_plan -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --lib git_replay_quarantine -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_replay -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_merge
-          rustfmt --edition 2021 --check ide/host/src/git_rebase_cherry_plan.rs ide/host/src/git_replay_quarantine.rs
+          rustfmt --edition 2021 --check ide/host/src/git_rebase_cherry_plan.rs ide/host/src/git_replay_quarantine.rs ide/host/src/git_protected_replay.rs
           echo G06C04_LOCAL_ORIGINAL_REPLAY=SOURCE_REVIEW_ONLY
       - name: Hostile UI source-boundary checks and desktop build
         shell: bash
@@ -72,9 +75,9 @@ jobs:
           set -euo pipefail
           cd ide/app
           npm ci --ignore-scripts --no-audit --no-fund
-          node --test tests/g06c04_original_replay_review.test.mjs
+          node --test tests/g06c04_original_replay_review.test.mjs tests/g06c04_protected_replay.test.mjs
           npm run build
-          echo G06C04_WEB=REVIEW_ONLY
+          echo G06C04_WEB=NATIVE_ONE_USE_OS_APPROVAL_ONLY
       - name: Native Tauri typed replay route compile
         shell: bash
         run: |
@@ -83,13 +86,13 @@ jobs:
             python ide/app/fixtures/make_g04d_ci_icon.py
           fi
           cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
-          echo G06C04_TAURI=COMPILED_NO_EXECUTION_GRANT
+          echo G06C04_TAURI=COMPILED_SOURCE_NOT_PHYSICAL_INSTALLED_OPERATOR_CONSENT
       - name: Explicitly record deferred execution and human gates
         if: always()
         shell: bash
         run: |
           mkdir -p ide-g06c04-receipts
-          printf 'head=%s\nos=%s\noriginal_replay=READ_ONLY\nresulting_trees=NOT_COMPUTED\nrebase_authorized=NO\ncherrypick_authorized=NO\nphysical_approval=DEFERRED\ninstalled_acceptance=DEFERRED\n' \
+          printf 'head=%s\nos=%s\noriginal_review=READ_ONLY\nquarantine_trees=SEPARATE_BARE_OBJECT_DATABASE\nrebase_authorization=REQUIRES_DISTINCT_NATIVE_OS_DIALOG\ncherrypick_authorization=REQUIRES_DISTINCT_NATIVE_OS_DIALOG\nref_updates=EXACT_OLD_HEAD_CAS_ONLY\nphysical_approval=DEFERRED\ninstalled_human_acceptance=DEFERRED\n' \
             "$GITHUB_SHA" "$RUNNER_OS" > ide-g06c04-receipts/source.txt
       - uses: actions/upload-artifact@v4
         if: always()
