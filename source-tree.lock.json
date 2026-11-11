@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3bddf91fe2739b99081516acc64eabe47618ca75",
-  "trackedFileCount": 918,
+  "sourceCommitBeforeLock": "e3482edb9055c49380edc2b1d16099e22532c382",
+  "trackedFileCount": 919,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "24ee3d18f77b6e3bc9bc18957b5113d0efd6f11b"
+      "blob": "0d70ebdc7b7949a7e296b2b3d23e1b3cdb9aa548"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -857,7 +857,7 @@
     },
     {
       "path": "docs/LU_PLAN07_EVIDENCE_DRIVEN_TASK_UPDATES_20261110.md",
-      "blob": "23b580865c3ffd68e1fe879e0ace214a6cbe7742"
+      "blob": "e5c77449642a24d192e3ed1401fd0891b9da0fbd"
     },
     {
       "path": "docs/LU_R00_CAPABILITY_CONSOLIDATION_20261109.md",
@@ -1297,7 +1297,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "183bc98ac377499381a5893fa324d3ffaf514152"
+      "blob": "5afcc13ee4b6e0a14a8143ca5f1738abcbb98c3f"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1384,6 +1384,10 @@
       "blob": "0e87d969e357b1e36b106830a480bed8a008a752"
     },
     {
+      "path": "lu-desktop/src-tauri/src/project_review_decisions_desktop.rs",
+      "blob": "a4de43cdc91dc792c662b06edc716e575ac826b0"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/project_status_desktop.rs",
       "blob": "100bc21aa5c2c9ff3ab03d662387f1b2846b5be4"
     },
@@ -1397,7 +1401,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
-      "blob": "a6c4060bffa203f4cfae1d6bbd7dd5c10c71eb4b"
+      "blob": "86de8d1223bf3fc0004f9736964319aec9d039bb"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_updates_desktop.rs",
@@ -1901,7 +1905,7 @@
     },
     {
       "path": "lu-desktop/tests/workspace-desktop.test.mjs",
-      "blob": "afbbf29388401c22dcc0e6049d040bdd96e74936"
+      "blob": "01de269418e9a98ecdb14a131274f415184caa60"
     },
     {
       "path": "lu-desktop/tests/write-01e-edit-ux.test.mjs",
@@ -1989,11 +1993,11 @@
     },
     {
       "path": "lu-desktop/web/styles.css",
-      "blob": "5ee63b1c7c4811e9cc7a6f0a789b2585e2bc329e"
+      "blob": "3a28ae9743a528e89cb708d25fbd57f486a1d987"
     },
     {
       "path": "lu-desktop/web/task_board.jsx",
-      "blob": "4833f7544b6380a6be8f6913ca10f6df24fcb95b"
+      "blob": "a37bdc550c901e207ef4f567765b9e26954390f0"
     },
     {
       "path": "lu-desktop/web/task_board_model.mjs",
