@@ -296,6 +296,8 @@ function App() {
   const [nativeConflicts, setNativeConflicts] = useState(null);
   const [nativeConflictsBusy, setNativeConflictsBusy] = useState(false);
   const nativeConflictsRequest = useRef(0);
+  const [conflictDraft, setConflictDraft] = useState(null);
+  const [conflictDraftMode, setConflictDraftMode] = useState('manual');
   const [gitFileHistory, setGitFileHistory] = useState(null);
   const [gitFilePath, setGitFilePath] = useState('');
   const [gitFileBusy, setGitFileBusy] = useState(false);
@@ -482,6 +484,8 @@ function App() {
     setDivergentRecoveryBusy(false);
     nativeConflictsRequest.current += 1;
     setNativeConflicts(null);
+    setConflictDraft(null);
+    setConflictDraftMode('manual');
     setNativeConflictsBusy(false);
     setGitFileHistory(null);
     setGitFileBusy(false);
@@ -2123,12 +2127,38 @@ function App() {
     }
   }
 
+  function selectConflictDraft(entry, source) {
+    if (!nativeConflicts || nativeConflicts.projectId !== activeProject?.projectId ||
+        !nativeConflicts.conflicts.some(row => row.relativePath === entry.relativePath)) return;
+    const selected = source === 'ours' ? entry.ours :
+      source === 'theirs' ? entry.theirs : null;
+    // A truncated or binary preview can NEVER be accepted as whole-file text.
+    if (selected && (selected.binaryOrNonUtf8 || selected.previewTruncated ||
+        typeof selected.preview !== 'string')) {
+      setProblem('G06D02_INCOMPLETE_OR_BINARY_BLOB_REQUIRES_FULL_REVIEW');
+      return;
+    }
+    const draftText = selected ? selected.preview : '';
+    setConflictDraft({
+      projectId: nativeConflicts.projectId,
+      currentHead: nativeConflicts.currentHead,
+      indexSha256: nativeConflicts.indexSha256,
+      evidenceSha256: nativeConflicts.evidenceSha256,
+      relativePath: entry.relativePath,
+      candidateText: draftText,
+      origin: source
+    });
+    setConflictDraftMode(source);
+  }
+
   async function inspectUnresolvedNativeConflicts() {
     if (!activeProject?.projectId || nativeConflictsBusy) return;
     const projectId = activeProject.projectId;
     const ticket = ++nativeConflictsRequest.current;
     setNativeConflictsBusy(true);
     setNativeConflicts(null);
+    setConflictDraft(null);
+    setConflictDraftMode('manual');
     setProblem('');
     try {
       const result = await invoke('ide_git_inspect_native_conflicts', { projectId });
@@ -2144,6 +2174,8 @@ function App() {
           !/^[a-f0-9]{64}$/.test(result.evidenceSha256)) {
         throw Error('G06D01_NATIVE_CONFLICT_EVIDENCE_UNTRUSTED');
       }
+      setConflictDraft(null);
+      setConflictDraftMode('manual');
       setNativeConflicts(result);
     } catch (error) {
       if (ticket === nativeConflictsRequest.current) {
@@ -2452,6 +2484,8 @@ function App() {
     setDivergentRecoveryBusy(false);
     nativeConflictsRequest.current += 1;
     setNativeConflicts(null);
+    setConflictDraft(null);
+    setConflictDraftMode('manual');
     setNativeConflictsBusy(false);
     branchReviewRequest.current += 1;
     setBranchReview(null);
@@ -6611,6 +6645,61 @@ function App() {
                                 {value.previewTruncated ? ' [truncated]' : ''}</pre>}
                           </div>)}
                     </article>)}
+                  <div aria-label="G06D02 offline three-way conflict draft editor">
+                    <h4>Review a proposed resolution · local draft only</h4>
+                    <p>A proposal is never written to disk. Only a complete, readable
+                      stage preview may be copied. Truncated/binary stages are blocked;
+                      manual drafts start empty. A new inspection invalidates the draft.</p>
+                    {nativeConflicts.conflicts.map(entry =>
+                      <div key={'draft-' + entry.relativePath}>
+                        <strong>{entry.relativePath}</strong>
+                        <div>
+                          <button type="button" className="ghostBtn"
+                            disabled={!entry.ours || entry.ours.binaryOrNonUtf8 ||
+                              entry.ours.previewTruncated || entry.ours.preview == null}
+                            onClick={() => selectConflictDraft(entry, 'ours')}>
+                            Draft from complete ours
+                          </button>
+                          <button type="button" className="ghostBtn"
+                            disabled={!entry.theirs || entry.theirs.binaryOrNonUtf8 ||
+                              entry.theirs.previewTruncated || entry.theirs.preview == null}
+                            onClick={() => selectConflictDraft(entry, 'theirs')}>
+                            Draft from complete theirs
+                          </button>
+                          <button type="button" className="ghostBtn"
+                            onClick={() => selectConflictDraft(entry, 'manual')}>
+                            Draft manually from empty
+                          </button>
+                        </div>
+                      </div>)}
+                    {conflictDraft?.projectId === activeProject.projectId &&
+                      conflictDraft.indexSha256 === nativeConflicts.indexSha256 &&
+                      conflictDraft.evidenceSha256 === nativeConflicts.evidenceSha256 &&
+                      nativeConflicts.conflicts.some(
+                        e => e.relativePath === conflictDraft.relativePath) &&
+                      <article className="continuityEvent" role="status">
+                        <p>Unsaved resolution candidate: <strong>{conflictDraft.relativePath}</strong>
+                          {' · '}Basis: {conflictDraftMode}</p>
+                        <label htmlFor="g06d02-proposed-text">
+                          Proposed full replacement text (not applied)
+                        </label>
+                        <textarea id="g06d02-proposed-text" rows={12}
+                          value={conflictDraft.candidateText}
+                          maxLength={1048576}
+                          spellCheck={false}
+                          onChange={e => setConflictDraft(old =>
+                            old ? { ...old, candidateText: e.target.value } : null)} />
+                        <p>Bound to Git HEAD <code>{conflictDraft.currentHead}</code>
+                          {' · '}Original index <code>{conflictDraft.indexSha256}</code></p>
+                        <p role="alert">Uncommitted local editor draft. No index stage,
+                          file replacement, branch publication, or authority has been granted.
+                          Closing/restarting this view discards the draft.</p>
+                        <button type="button" className="ghostBtn"
+                          onClick={() => setConflictDraft(null)}>
+                          Discard local resolution draft
+                        </button>
+                      </article>}
+                  </div>
                   <p>No resolution applied. No checkout, commit, ref update or remote contact.</p>
                 </article>}
             </div>}
