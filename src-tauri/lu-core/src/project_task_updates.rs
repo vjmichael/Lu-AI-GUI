@@ -298,4 +298,71 @@ mod tests{
         assert!(!result.candidates[0].exact_criterion_candidate);
         std::fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn fresh_original_native_accepted_criterion_is_only_a_review_candidate(){
+        let root=std::env::temp_dir().join(format!("lu-plan07-accepted-{}",
+            std::process::id()));
+        let _=std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        let doc=b"# Requirements\n- [ ] Must include src/required.rs\n";
+        std::fs::write(root.join("docs/REQUIREMENTS.md"),doc).unwrap();
+        let canonical=root.canonicalize().unwrap();
+        let scope=format!("{:x}",Sha256::digest(
+            canonical.to_string_lossy().as_bytes()));
+        let doc_hash=format!("{:x}",Sha256::digest(doc));
+        let scan=|ts:u64,source_hash:Option<String>|{
+            let mut files=vec![graph::FileInput{
+                path:"docs/REQUIREMENTS.md".into(),role:"project_document".into(),
+                sha256:Some(doc_hash.clone())
+            }];
+            if let Some(source)=source_hash{
+                files.push(graph::FileInput{path:"src/required.rs".into(),
+                    role:"source_path".into(),sha256:Some(source)});
+            }
+            graph::assemble(graph::GraphInput{
+                project_scope_sha256:scope.clone(),selected_head:None,
+                observed_at_unix:ts,complete:true,host_git_checked:false,
+                files,requirements:vec![graph::RequirementInput{
+                    path:"docs/REQUIREMENTS.md".into(),sha256:doc_hash.clone(),
+                    line:2,statement:"- [ ] Must include src/required.rs".into()}],
+                runs:vec![],branches:vec![],extra_limitations:vec![],
+            }).unwrap()
+        };
+        let g=scan(42,None);
+        let s=status::classify(&g,
+            &status::observe_project_paths(&root,&g).unwrap()).unwrap();
+        assert_eq!(s.findings[0].primary,status::Status::Missing);
+        let capsule=synthesis::build_capsule(&g,&s).unwrap();
+        let req=&capsule.requirements[0];
+        let raw=serde_json::json!({"schema":synthesis::RAW_SCHEMA,"tasks":[{
+            "requirementId":req.requirement_id,"status":req.status,
+            "summary":"Verify exact named source file",
+            "description":"Check original required file using native host evidence",
+            "priority":"P1","group":"01 Source",
+            "evidenceIds":[req.requirement_id],"dependencyIndices":[],
+            "acceptanceCriteria":"Host independently inspects named source path metadata",
+            "blockedBy":"Original file absent before implementation"
+        }]}).to_string();
+        let proposal=synthesis::validate_model_response(&g,&s,&raw,
+            &synthesis::model_prompt(&capsule).unwrap(),
+            "m-test-local","s-test-native","g-test-native").unwrap();
+        let register=register::import(&proposal).unwrap();
+        let body=b"fn actual_source(){}";
+        std::fs::write(root.join("src/required.rs"),body).unwrap();
+        let current_g=scan(55,Some(format!("{:x}",Sha256::digest(body))));
+        let current_s=status::classify(&current_g,
+            &status::observe_project_paths(&root,&current_g).unwrap()).unwrap();
+        assert_eq!(current_s.findings[0].primary,status::Status::Accepted);
+        let preview=analyze(&register,&proposal,&g,&s,&current_g,&current_s).unwrap();
+        assert_eq!(preview.exact_criterion_review_candidates,1);
+        assert_eq!(preview.candidates[0].disposition,
+            Disposition::ExactCriterionReviewCandidate);
+        assert!(preview.candidates[0].exact_criterion_candidate);
+        assert!(!preview.candidates[0].task_complete);
+        assert!(!preview.candidates[0].execution_authorized);
+        audit(&preview,&register,&proposal,&g,&s,&current_g,&current_s).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
 }
