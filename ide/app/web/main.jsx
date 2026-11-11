@@ -4413,8 +4413,9 @@ function App() {
   async function rememberWorkspaceForRestart() {
     const projectId=activeProjectIdRef.current;
     if (!projectId || mergeBusy || mergeApplyRequest ||
-        workspaceLayoutOp.current || explorerPending ||
-        explorerIoTicket.current || savingKey || draftRecoveryBusy) return;
+        workspaceLayoutOp.current || workspaceTransitionRef.current ||
+        explorerPending || explorerIoTicket.current ||
+        savingKey || savingKeyRef.current || draftRecoveryBusy) return;
     let layout;
     try {
       layout=rememberedWorkspaceFromTabs(tabsRef.current,projectId,
@@ -4454,7 +4455,8 @@ function App() {
 
   async function forgetRememberedWorkspace() {
     const projectId=activeProjectIdRef.current;
-    if (!projectId || workspaceLayoutOp.current || !rememberedLayout ||
+    if (!projectId || workspaceLayoutOp.current ||
+        workspaceTransitionRef.current || !rememberedLayout ||
         !window.confirm('Forget the saved tab layout? Source files and B2 private drafts stay intact.'))
       return;
     const token=Symbol('b9-forget');
