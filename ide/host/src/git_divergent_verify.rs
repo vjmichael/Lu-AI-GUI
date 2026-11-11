@@ -154,7 +154,7 @@ impl IdeWorkspaceRegistry {
         let ours_tree = quarantine.find_tree(ours_tree.id()).map_err(|_| "G06C03B_OURS_IN_QUARANTINE")?;
         let theirs_tree = quarantine.find_tree(theirs_tree.id()).map_err(|_| "G06C03B_THEIRS_IN_QUARANTINE")?;
         let mut opts = MergeOptions::new();
-        let merged = quarantine.merge_trees(&base_tree, &ours_tree, &theirs_tree, Some(&mut opts))
+        let mut merged = quarantine.merge_trees(&base_tree, &ours_tree, &theirs_tree, Some(&mut opts))
             .map_err(|_| "G06C03B_CONTENT_MERGE_FAILED")?;
         let mut conflicts = Vec::new();
         let mut count = 0usize;
