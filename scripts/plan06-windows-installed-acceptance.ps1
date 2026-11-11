@@ -227,10 +227,18 @@ function Switch-Project(){
   $selector.SetFocus()
   # Real keyboard events, not a synthetic web-document attribute.
   [System.Windows.Forms.SendKeys]::SendWait('{HOME}')
-  [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
   [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-  Start-Sleep -Milliseconds 850
+  Start-Sleep -Milliseconds 650
   $after=@(Visible-Project-Names)
+  if($after.Count -eq 1 -and $after[0] -ceq $before[0]){
+    # Previously selected project was already first: choose the second.
+    $selector=Find-Control $script:board 'Project selector' '' 10
+    $selector.SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    Start-Sleep -Milliseconds 650
+    $after=@(Visible-Project-Names)
+  }
   if($after.Count -ne 1 -or $after[0] -ceq $before[0]){
     Dump-Tree 'project-switch-not-observed' $script:board
     throw 'PLAN06 UIA did not demonstrate distinct source-project switching'
