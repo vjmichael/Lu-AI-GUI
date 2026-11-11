@@ -260,6 +260,43 @@ mod tests {
         assert_eq!(gate.verify(&task,WorkspaceInferenceAction::ObserveModel,&yes),
             Err(WorkspaceInferenceError::MissingOrInactiveWorkspace));
     }
+
+    struct NoEngine;
+    impl InferenceBackend for NoEngine {
+        fn load(&mut self, _: &crate::model_admission::AdmittedModel)
+            -> Result<(), String> { Ok(()) }
+        fn unload(&mut self) {}
+        fn generate(
+            &mut self,
+            _: &crate::inference_host::GenerationRequest,
+            _: &crate::inference_host::Cancellation,
+            _: &mut dyn FnMut(
+                crate::inference_host::TokenChunk
+            ) -> Result<(), crate::inference_host::EngineError>,
+        ) -> Result<(), String> { Err("no approved model loaded".into()) }
+    }
+
+    #[test]
+    fn unmounted_model_is_observed_without_authorizing_inference_or_cancel() {
+        let (host, task) = fixture();
+        let gate = WorkspaceInferenceGate::new(host);
+        let policy = Policy { allow: true, required_project: "project-01" };
+        let supervisor = TrustedInferenceSupervisor::<NoEngine>::new(
+            "bundled-runtime".into(), 1024, Vec::new(), || Ok(NoEngine)
+        ).unwrap();
+        let (state, count) = gate.model_status(&task, &policy, &supervisor).unwrap();
+        assert_eq!(state.phase, EnginePhase::Idle);
+        assert_eq!(count, 0);
+        assert_eq!(gate.reserve_generation(
+            &task, &policy, &supervisor, "absent-session",
+            "host-generation", "host-request", "Write a scene", 100,
+        ), Err(WorkspaceInferenceError::WrongSession));
+        assert_eq!(gate.cancel_generation(
+            &task, &policy, &supervisor, "absent-session",
+            "host-generation", "host-request",
+        ), Err(WorkspaceInferenceError::WrongSession));
+        assert_eq!(supervisor.model_ids().len(), 0);
+    }
     #[test]
     fn no_browser_created_workspace_or_empty_project_task() {
         let (host,task)=fixture();
