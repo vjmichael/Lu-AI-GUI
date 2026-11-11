@@ -205,6 +205,7 @@ pub mod project_status_classifier;
 pub mod project_task_synthesis;
 pub mod project_task_register;
 pub mod project_task_updates;
+pub mod project_task_update_model;
 pub mod native_files;
 pub mod native_atomic_write;
 pub mod native_create_new;
