@@ -454,6 +454,20 @@ async fn ide_git_partial_stage_recovery(
     }).await.map_err(|_| "G06B_STAGE_RECOVERY_HOST_UNAVAILABLE".to_owned())?
 }
 
+/// Read-only reactivation of an independently verified staged-hunk
+/// receipt after installed IDE restart. This does NOT grant a commit.
+#[tauri::command]
+async fn ide_git_restore_reviewed_stage_receipt(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_partial_stage::PartialStageReceipt, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.restore_verified_partial_stage_receipt(&project_id)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06B_STAGE_RESTORE_HOST_UNAVAILABLE".to_owned())?
+}
+
 /// Separate from staging: a reviewed staged-hunk index alone cannot
 /// authorize either a new commit or a history rewrite.
 #[tauri::command]
@@ -2529,6 +2543,7 @@ pub fn run() {
             ide_git_cancel_partial_stage,
             ide_git_partial_stage_recovery,
             ide_git_reconcile_partial_stage,
+            ide_git_restore_reviewed_stage_receipt,
             ide_git_preview_reviewed_commit,
             ide_git_commit_selected_hunks,
             ide_git_amend_reviewed_commit,
