@@ -628,6 +628,22 @@ function App() {
     tab.projectId === activeProject?.projectId),[tabs,activeProject?.projectId]);
   const visibleEditorTabs = useMemo(() => tabWindow(projectTabs,tabWindowStart),
     [projectTabs,tabWindowStart]);
+  const diskAuditCounts = useMemo(()=>{
+    if (diskAuditReport?.projectId!==activeProject?.projectId)
+      return {changed:0,current:0,unavailable:0,stale:0,unsaved:0};
+    const totals={changed:0,current:0,unavailable:0,stale:0,unsaved:0};
+    for(const row of diskAuditReport.rows){
+      if (row.status==='changed') totals.changed+=1;
+      else if (row.status==='current') totals.current+=1;
+      else if (row.status==='unavailable') totals.unavailable+=1;
+      else totals.stale+=1;
+      if(row.liveUnsaved) totals.unsaved+=1;
+    }
+    return totals;
+  },[diskAuditReport,activeProject?.projectId]);
+  const currentJobEvents=useMemo(()=>
+    visibleJobProgress(jobProgressEvents,activeProject?.projectId),
+    [jobProgressEvents,activeProject?.projectId]);
   const visibleTree = visibleTreeEntries(listing?.entries,visibleTreeCount);
   const projectTabCount = projectTabs.length;
   const workingSetNotice = projectTabCount + ' / ' + MAX_OPEN_TABS_PER_PROJECT +
@@ -4129,6 +4145,10 @@ function App() {
       setDirectory(path);
       setListing(result);
       setSection('explorer');
+      if (request.fromProjectId!==project.projectId) {
+        setHint('Opened '+project.displayName+' with its own source tabs and pane layout. '+
+          'Other projects and unsaved editor drafts remain available.');
+      }
     } catch (error) {
       if (workspaceTransitionRef.current===token &&
           explorerIoTicket.current===ticket)
@@ -8218,7 +8238,8 @@ function App() {
             Saving is explicit and revision-checked. This alpha does not execute scripts,
             install packages, or run a language server.</div>
         </section>
-        : <section className="sourceWorkspace" aria-label="Source explorer and editor">
+        : <section className="sourceWorkspace" aria-label="Source explorer and editor"
+          aria-busy={explorerPending || workspaceLayoutBusy || draftRecoveryBusy}>
           <div className="sourceTree">
             <div className="sourceTreeHeader">
               <strong>Files</strong><span>Project</span>
@@ -8330,6 +8351,16 @@ function App() {
               <p className="treeCaution">Empty directory.</p>}
           </div>
           <div className="sourcePreview" role="region" aria-label="Source code editor">
+            <p className="sourceWorkspaceStatus" role="status" aria-live="polite">
+              {explorerPending ? 'Opening project files…' :
+                workspaceLayoutBusy ? 'Restoring saved workspace navigation…' :
+                draftRecoveryBusy ? 'Reviewing private draft recovery…' :
+                activeProject
+                  ? 'Project: '+activeProject.displayName+
+                    ' · '+projectTabs.length+' open files · '+
+                    (splitEditorOpen ? 'two editor panes' : 'one editor pane')
+                  : 'Select a registered project to open source files'}
+            </p>
             <div className="editorLayoutToolbar" role="toolbar"
               aria-label="Source editor navigation and workspace actions">
               <button type="button" className="ghostBtn"
@@ -8355,7 +8386,8 @@ function App() {
               <button type="button" className="ghostBtn"
                 disabled={!activeProject}
                 onClick={()=>{setSection('tasks');void refreshIntents();}}>
-                Jobs · view progress
+                Jobs · {currentJobEvents.length
+                  ? currentJobEvents.length+' updates' : 'view progress'}
               </button>
               <button type="button" className="ghostBtn"
                 aria-label="Check open tabs for external disk changes"
@@ -8501,6 +8533,13 @@ function App() {
                     aria-label="Dismiss external disk report"
                     onClick={()=>setDiskAuditReport(null)}>Dismiss</button>
                 </div>
+                <p role="status" aria-live="polite">
+                  {diskAuditCounts.changed} changed on disk ·
+                  {' '}{diskAuditCounts.current} unchanged ·
+                  {' '}{diskAuditCounts.unavailable} unavailable ·
+                  {' '}{diskAuditCounts.stale} stale or unverified ·
+                  {' '}{diskAuditCounts.unsaved} with unsaved edits.
+                </p>
                 <p>Read-only inspection of {diskAuditReport.rows.length} open files.
                   Disk files may change after inspection; compare again before acting.
                   No automatic reload, merge, or Save.</p>
@@ -8509,7 +8548,16 @@ function App() {
                     <div className="diskAuditRow" key={row.key}>
                       <code>{row.relativePath}</code>
                       <strong>{row.status.replaceAll('_',' ')}</strong>
-                      {row.liveUnsaved && <span> · Unsaved editor</span>}
+                      {row.liveUnsaved && <span> · Unsaved editor retained</span>}
+                      {row.status==='changed' && row.liveUnsaved &&
+                        <span role="alert">Disk and unsaved editor both differ.
+                          Compare before reloading or saving.</span>}
+                      {row.status==='unavailable' &&
+                        <span role="status">Source could not be read; no
+                          automatic restore or replacement.</span>}
+                      {row.status==='stale' &&
+                        <span role="status">Editor identity changed during
+                          inspection; refresh before deciding.</span>}
                       {row.status==='changed' &&
                         <button className="ghostBtn" type="button"
                           disabled={diskAuditBusy || explorerPending}
