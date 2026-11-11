@@ -310,7 +310,7 @@ mod tests{
                 "nextEvidence":"Collect a native original file presence and test receipt"
             }]
         }).to_string();
-        let proof=suggestions::validate(&preview,&g,&s,&raw,&p,
+        let proof=suggestions::validate(&preview,&current_g,&current_s,&raw,&p,
             "m-test-not-a-genuine-model","s-test","g-test").unwrap();
         persist(&profile,&proof,&p,&raw).unwrap();
         persist(&profile,&proof,&p,&raw).unwrap();
