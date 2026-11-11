@@ -941,6 +941,19 @@ async fn ide_git_preview_local_merge(
     .map_err(|_| "G06C02_MERGE_PREVIEW_HOST_UNAVAILABLE".to_owned())?
 }
 
+/// 6D-01: inspect REAL unresolved stage 1/2/3 entries in the Git index.
+/// Read-only; no stage, checkout, resolution, commit or authorization route.
+#[tauri::command]
+async fn ide_git_inspect_native_conflicts(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_conflict_inventory::NativeConflictInventory, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_native_git_conflicts(&project_id).map_err(str::to_owned)
+    }).await.map_err(|_| "G06D01_NATIVE_INSPECTION_HOST_UNAVAILABLE".to_owned())?
+}
+
 /// 6C-03B: actual native three-way merge preview, with new blobs confined
 /// to a temporary isolated ODB. This deliberately has NO publication route.
 #[tauri::command]
@@ -2974,6 +2987,7 @@ pub fn run() {
             ide_git_review_branch_operation,
             ide_git_preview_local_merge,
             ide_git_verify_divergent_merge,
+            ide_git_inspect_native_conflicts,
             ide_git_execute_divergent_merge,
             ide_git_inspect_divergent_recovery,
             ide_git_reconcile_divergent_receipt,
