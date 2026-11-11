@@ -146,15 +146,29 @@ def cancel_real_stream(port, cancelled_path, model_sha, engine_sha):
     finally:
         # Terminate the actual model HTTP body before any server stop event.
         stream.close()
-    health=get_json(f"http://127.0.0.1:{port}/health",30)
-    if health.get("status") not in ("ok","no slot available"):
-        raise ValueError("Original llama.cpp server unhealthy after stream interrupt")
+    # With one admitted llama.cpp slot, wait for actual idle recovery,
+    # not merely for an HTTP socket to have been closed client-side.
+    health=None
+    deadline=time.monotonic()+25
+    while time.monotonic()<deadline:
+        try:
+            probe=get_json(f"http://127.0.0.1:{port}/health",3)
+            if probe.get("status")=="ok":
+                health=probe
+                break
+        except urllib.error.HTTPError as error:
+            if error.code not in (429,503):
+                raise
+        time.sleep(0.4)
+    if health is None:
+        raise ValueError("Real single-slot llama.cpp worker did not recover after aborted stream")
     # Never assert scheduler-level cancellation from mere socket closure.
     report={
         "schema":"lu-plan07b-real-qwen-stream-cancel-v1",
         "realStreamingHttpRequestObserved":True,
         "clientClosedOriginalStreamBeforeCompletion":True,
         "realEngineHealthAfterAbort":True,
+        "singleModelSlotRecoveredIdleAfterAbort":True,
         "noSyntheticModelResponse":True,
         "requestSha256":sha(request_data),
         "observedFirstChunkSha256":sha(first["content"].encode()),
