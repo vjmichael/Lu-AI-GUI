@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8d252c1ae65b402da0cfcd33e940e01d0879f321",
+  "sourceCommitBeforeLock": "c1b4ec6583dc4b2576a52bce6aecc9f1e79198f4",
   "trackedFileCount": 902,
   "files": [
     {
@@ -2041,11 +2041,11 @@
     },
     {
       "path": "scripts/plan05-readonly-ansf-witness.py",
-      "blob": "301ee80cd713183ba839aeb732cd4bbb84047545"
+      "blob": "2fc419500a634da31af3f301ab750b6ebdf9a8c0"
     },
     {
       "path": "scripts/plan05-windows-installed-acceptance.ps1",
-      "blob": "f4fca0309da27215329ade1627910c5166704caa"
+      "blob": "09393ade97f1747117d1f246801af1e8d6b1a1e1"
     },
     {
       "path": "scripts/probe-observe-sensitive-window-windows.ps1",
