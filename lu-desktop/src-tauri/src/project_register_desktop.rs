@@ -227,7 +227,7 @@ fn settings_only(caller:&tauri::WebviewWindow)->Result<(),String>{
     }
     Ok(())
 }
-async pub(super) fn confirm(app:&AppHandle,title:&str,message:String)
+pub(super) async fn confirm(app:&AppHandle,title:&str,message:String)
  ->Result<bool,String>{
     let dialog=app.clone();let title=title.to_string();
     tauri::async_runtime::spawn_blocking(move||
