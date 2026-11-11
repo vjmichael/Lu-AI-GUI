@@ -233,3 +233,34 @@ test('PLAN-06 isolated task-list surface never turns operator plan review into e
   assert.doesNotMatch(native,/supervisor\.run_reserved|grant_execution|Command::new|reqwest|create_task_worker/);
   assert.doesNotMatch(screen,/invoke\('lu_agent_run_reviewed_step'/);
 });
+
+
+test('PLAN-06 installed native task list requires independent real Windows approval/refusal, dual-project switch and restart receipts',()=>{
+  const host=readFileSync(new URL('../src-tauri/src/project_task_board_desktop.rs',import.meta.url),'utf8');
+  const workflow=readFileSync(new URL('../../.github/workflows/lu-repo01-full-source.yml',import.meta.url),'utf8');
+  const uia=readFileSync(new URL('../../scripts/plan06-windows-installed-acceptance.ps1',import.meta.url),'utf8');
+  const witness=readFileSync(new URL('../../scripts/plan06-readonly-ansf-witness.py',import.meta.url),'utf8');
+  assert.match(host,/export_dual_project_installed_ui_fixture/);
+  assert.match(host,/TEST_ONLY_SYNTHETIC_ORIGINAL_MODEL_REPLY_NOT_GGUF/);
+  assert.match(host,/preserved_user_data/);
+  assert.match(uia,/PASS_DISTINCT_AUTHENTIC_TASK_LIST_HWND/);
+  assert.match(uia,/Lu — Reorder human plan/);
+  assert.match(uia,/Lu — Approve task plan only/);
+  assert.match(uia,/Confirm review only/);
+  assert.match(uia,/PASS_REAL_NATIVE_REFUSAL_NO_APPROVAL/);
+  assert.match(uia,/UIAutomationClient/);
+  assert.match(uia,/project-switch-not-observed/);
+  assert.match(uia,/after-installed-app-restart/);
+  assert.match(uia,/PASS_ORIGINAL_SQLITE_SHA_AND_APPROVAL_CHAIN/);
+  assert.match(uia,/PASS_NATIVE_OS_EXPORT_CANCEL_NO_WRITE/);
+  assert.match(witness,/mode=ro/);
+  assert.match(witness,/PRAGMA query_only=ON/);
+  assert.match(witness,/PLAN06 immutable task revision history overwritten/);
+  assert.match(witness,/PLAN06 board row invalid/);
+  assert.match(workflow,/installed-plan06-windows:/);
+  assert.match(workflow,/LU_PLAN06_INSTALLED_SHA/);
+  assert.match(workflow,/build-agent01g-physical-windows-nsis\.ps1/);
+  assert.match(workflow,/export_dual_project_installed_ui_fixture/);
+  assert.match(workflow,/plan06-windows-installed-acceptance\.ps1/);
+  assert.doesNotMatch(uia,/grant_execution|model\.infer|allowAutoApprove|run_reserved/);
+});
