@@ -4168,8 +4168,15 @@ function App() {
         setProblem('Open-file limit reached while loading this result; existing drafts preserved.');
         return;
       }
-      if (existing && (existing.dirty || existing.revision !== opened.revision ||
-                        existing.savedText !== opened.text)) {
+      // Search offsets refer to the persisted disk snapshot. A newer live
+      // CodeMirror edit can precede React's dirty flag: never apply saved
+      // coordinates to that different in-memory buffer.
+      const existingLive = existing ? captureLiveEditorIntent(existing,
+        bufferIdentities.current.get(key),editorStates.current.get(key),projectId)
+        : null;
+      if (existing && (existingLive.status !== 'current' || existingLive.dirty ||
+                       existing.revision !== opened.revision ||
+                       existing.savedText !== opened.text)) {
         setActiveTabKey(key);
         setSection('explorer');
         setProblem('Search refers to saved disk bytes. The existing editor draft differs. ' +
