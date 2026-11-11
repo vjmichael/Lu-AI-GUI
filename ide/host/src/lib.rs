@@ -48,6 +48,7 @@ pub mod package_manager;
 pub mod package_preview;
 pub mod project_run_profiles;
 pub mod project_search;
+pub mod quick_open;
 pub mod proposal;
 pub mod resource_probe;
 pub mod review;
