@@ -12,10 +12,10 @@ use crate::{
     git_rebase_cherry_plan::{ReplayReviewKind, ReviewedReplayPlan},
     IdeWorkspaceRegistry,
 };
-use git2::{Oid, Repository, ObjectType, Signature, StatusOptions};
+use git2::{Oid, Repository, Signature};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::{fs, path::{Path, PathBuf}};
+use std::{fs, path::PathBuf};
 const MAX_OUTPUT_PATHS: usize = 80;
 
 #[derive(Debug, Clone, Serialize)]
@@ -239,7 +239,7 @@ pub(crate) fn compute_in_sandbox(
         for delta in diff.deltas() {
             let old = delta.old_file();
             let new = delta.new_file();
-            for item in [old, new] {
+            for item in [&old, &new] {
                 if let Some(path) = item.path() {
                     let name = path.to_str().ok_or("G06C04B_OUTPUT_PATH_NONUTF8")?;
                     if name.len() > 240 || name.contains('\\') || name.chars().any(char::is_control) {
