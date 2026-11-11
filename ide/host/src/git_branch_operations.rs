@@ -395,11 +395,12 @@ mod tests {
 
     fn snapshot(root: &Path) -> (Vec<u8>, Vec<u8>, Vec<u8>, String) {
         let repo = Repository::open(root).unwrap();
+        let head_sha = repo.head().unwrap().target().unwrap().to_string();
         (
             fs::read(root.join("tracked.txt")).unwrap(),
             fs::read(root.join("unrelated.keep")).unwrap(),
             fs::read(root.join(".git/index")).unwrap(),
-            repo.head().unwrap().target().unwrap().to_string(),
+            head_sha,
         )
     }
 
