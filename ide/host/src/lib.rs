@@ -24,6 +24,7 @@ pub mod git_hunk_review;
 pub mod git_partial_stage;
 pub mod git_inventory;
 pub mod git_refs_health;
+pub mod git_reviewed_commit;
 pub mod git_status;
 pub mod github_ci;
 pub mod github_live;
