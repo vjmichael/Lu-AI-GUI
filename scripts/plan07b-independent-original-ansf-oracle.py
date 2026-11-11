@@ -28,6 +28,7 @@ if cancel.get("schema")!="lu-plan07b-real-qwen-stream-cancel-v1" or not (
     cancel.get("realStreamingHttpRequestObserved") and
     cancel.get("clientClosedOriginalStreamBeforeCompletion") and
     cancel.get("realEngineHealthAfterAbort") and
+    cancel.get("singleModelSlotRecoveredIdleAfterAbort") and
     cancel.get("noSyntheticModelResponse")):
     raise SystemExit("PLAN07B cancelled genuine stream not evidenced")
 if inference.get("streamCancellationReceiptSha256")!=sha(read(a.cancel)):
