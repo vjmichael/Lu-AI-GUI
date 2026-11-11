@@ -33,8 +33,8 @@ fn sha(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PartialStageReceipt {
     pub schema_version: u32,
     pub project_id: String,
@@ -46,6 +46,7 @@ pub struct PartialStageReceipt {
     pub old_blob_oid: String,
     pub staged_blob_oid: String,
     pub staged_blob_sha256: String,
+    pub source_sha256: String,
     pub selected_hunks: usize,
     pub git_index_independently_verified: bool,
     pub source_file_modified: bool,
@@ -72,6 +73,7 @@ struct JournalLine {
     intended_blob_oid: String,
     intended_blob_sha256: String,
     source_sha256: String,
+    selected_hunks: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -363,6 +365,8 @@ impl IdeWorkspaceRegistry {
             || last.intended_index_sha256 != claimed.new_index_sha256
             || last.intended_blob_oid != claimed.staged_blob_oid
             || last.intended_blob_sha256 != claimed.staged_blob_sha256
+            || last.source_sha256 != claimed.source_sha256
+            || last.selected_hunks != claimed.selected_hunks
             || last.source_sha256 != sha(&self.reread_reviewed_git_source_bytes(
                 &claimed.project_id, &claimed.relative_path)?)
             || last.head_sha != repo.head().ok().and_then(|h| h.target())
@@ -701,6 +705,7 @@ impl IdeWorkspaceRegistry {
             intended_blob_oid: oid.to_string(),
             intended_blob_sha256: staged_sha.clone(),
             source_sha256: fresh.plan.source_sha256.clone(),
+            selected_hunks: fresh.selected_ids.len(),
         };
         if cancel.load(Ordering::SeqCst) != 0 {
             return Err("G06B_STAGE_CANCELLED_BEFORE_JOURNAL");
@@ -810,6 +815,7 @@ impl IdeWorkspaceRegistry {
             old_blob_oid: fresh.plan.index_blob_oid.clone(),
             staged_blob_oid: oid.to_string(),
             staged_blob_sha256: staged_sha,
+            source_sha256: fresh.plan.source_sha256.clone(),
             selected_hunks: fresh.selected_ids.len(),
             git_index_independently_verified: true,
             source_file_modified: false,
@@ -981,6 +987,7 @@ mod tests {
                 intended_blob_oid: "c".repeat(40),
                 intended_blob_sha256: "d".repeat(64),
                 source_sha256: sha(&fs::read(root.join("tracked.txt")).unwrap()),
+            selected_hunks: 1,
             },
         )
         .unwrap();
@@ -1058,6 +1065,7 @@ mod tests {
                 intended_blob_oid: "c".repeat(40),
                 intended_blob_sha256: "d".repeat(64),
                 source_sha256: "e".repeat(64),
+            selected_hunks: 1,
             },
         )
         .unwrap();
