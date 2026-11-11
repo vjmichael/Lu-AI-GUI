@@ -49,6 +49,8 @@ fn fixed_server(
             &["--log=error", "--background-index=false", "-j=1"],
         )),
         "lsp_ruff" => Ok(("ruff", "ruff", &["server"])),
+        // Only an independently pinned, offline standalone executable bundle.
+        "lsp_pyright" => Ok(("pyright", "pyright-langserver", &["--stdio"])),
         _ => Err(SupervisorError::InvalidPlan),
     }
 }
@@ -152,6 +154,7 @@ pub fn native_lsp_bundle_digest(root: &Path, recipe: &str) -> Result<String, Sup
         "lsp_rust_analyzer" => "rust-analyzer",
         "lsp_clangd" => "clangd",
         "lsp_ruff" => "ruff",
+        "lsp_pyright" => "pyright-langserver",
         #[cfg(feature = "dap-transport")]
         "dap_lldb_fixed" => "lldb-dap",
         #[cfg(feature = "dap-transport")]
