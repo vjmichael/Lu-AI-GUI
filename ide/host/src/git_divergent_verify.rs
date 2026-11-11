@@ -34,7 +34,7 @@ pub struct VerifiedDivergentMerge {
     pub source_plan_sha256: String,
     pub conflicts: Vec<String>,
     pub conflict_count: usize,
-    pub publishable_candidate: bool,
+    pub conflict_free_preview: bool,
     pub source_objects_written: bool,
     pub source_index_or_worktree_written: bool,
     pub authority_granted: bool,
@@ -196,7 +196,7 @@ impl IdeWorkspaceRegistry {
             proposed_entry_count: entries,
             resulting_index_sha256: format!("{:x}", digest.finalize()),
             source_plan_sha256: plan.evidence_sha256,
-            conflicts, conflict_count: count, publishable_candidate: count == 0,
+            conflicts, conflict_count: count, conflict_free_preview: count == 0,
             source_objects_written: false, source_index_or_worktree_written: false,
             authority_granted: false,
         })
@@ -288,7 +288,7 @@ mod tests {
         let plan = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
         let verified = x.registry.verify_divergent_merge_result(
             &x.id, "feature", &plan.evidence_sha256).unwrap();
-        assert!(verified.publishable_candidate);
+        assert!(verified.conflict_free_preview);
         assert_eq!(verified.conflict_count, 0);
         assert_eq!(verified.first_parent, plan.current_head);
         assert_eq!(verified.second_parent, plan.selected_tip);
@@ -302,7 +302,7 @@ mod tests {
         let plan = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
         let verified = x.registry.verify_divergent_merge_result(
             &x.id, "feature", &plan.evidence_sha256).unwrap();
-        assert!(!verified.publishable_candidate);
+        assert!(!verified.conflict_free_preview);
         assert!(verified.conflict_count > 0);
         assert!(verified.conflicts.contains(&"one.txt".to_owned()));
         assert_eq!(before, snapshot(&x.root));
