@@ -133,10 +133,10 @@ jobs:
           path: ${{ runner.temp }}/plan07d-installed-evidence/
           if-no-files-found: warn
           retention-days: 14
-  hosted-debian-smoke:
+  hosted-debian-installed-human:
     if: ${{ github.event.pull_request.number == 219 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110' && contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
@@ -161,6 +161,7 @@ jobs:
           assert re.findall(r'(?m)^LU_PLAN07D_INSTALLED_SHA=([0-9a-f]{40})$',os.environ['BODY']) == [os.environ['HEAD_SHA']]
           PY
           node scripts/verify-source-tree.mjs
+          python3 -m py_compile scripts/plan07d-debian-installed-human.py scripts/plan07d-debian-installed-smoke.py scripts/plan07d-readonly-ansf-witness.py
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf libatspi2.0-dev gir1.2-atspi-2.0 python3-gi xvfb dbus-x11 at-spi2-core xdotool
       - name: Build genuine native Linux ELF and a real dpkg-installed Debian test application
@@ -216,9 +217,29 @@ jobs:
         run: |
           set -euo pipefail
           export XDG_DATA_HOME="$RUNNER_TEMP/plan07d-linux-xdg"
-          export NO_AT_BRIDGE=0
+          export NO_AT_BRIDGE=0 GDK_BACKEND=x11 GTK_MODULES=gail:atk-bridge
           xvfb-run -a dbus-run-session -- /usr/bin/python3 scripts/plan07d-debian-installed-smoke.py --installed-exe /usr/lib/lu-plan07d/lu-desktop --profile "$XDG_DATA_HOME/org.lu.desktop" --seed "$GITHUB_WORKSPACE/plan07d-debian-evidence/original-seed.json" --evidence-dir "$GITHUB_WORKSPACE/plan07d-debian-evidence/atspi"
-          echo 'Debian hosted installed task-window and restart smoke only: genuine operator approval, OS picker and GGUF on Linux remain OPEN.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Debian installed smoke completed; full human decision matrix follows independently, not yet accepted.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Real installed Debian human approval refusal cancellation project switch and process restart
+        shell: bash
+        timeout-minutes: 35
+        run: |
+          set -euo pipefail
+          export XDG_DATA_HOME="$RUNNER_TEMP/plan07d-linux-xdg"
+          export NO_AT_BRIDGE=0 GDK_BACKEND=x11 GTK_MODULES=gail:atk-bridge
+          xvfb-run -a dbus-run-session -- /usr/bin/python3 scripts/plan07d-debian-installed-human.py \
+            --installed-exe /usr/lib/lu-plan07d/lu-desktop \
+            --profile "$XDG_DATA_HOME/org.lu.desktop" \
+            --seed "$GITHUB_WORKSPACE/plan07d-debian-evidence/original-seed.json" \
+            --projects-dir "$RUNNER_TEMP/plan07d-linux-original-projects" \
+            --evidence-dir "$GITHUB_WORKSPACE/plan07d-debian-evidence/human-matrix"
+          python3 scripts/plan07d-readonly-ansf-witness.py \
+            --profile "$XDG_DATA_HOME/org.lu.desktop" \
+            --seed plan07d-debian-evidence/original-seed.json \
+            --output plan07d-debian-evidence/pre-removal.json \
+            --require-phase refused --require-phase cancelled \
+            --require-phase approved_for_review --require-phase interrupted
+          echo 'Installed Debian real AT-SPI native operator matrix and original ANSF review history verified on hosted Linux; no real GGUF or physical-owner acceptance implied.' >> "$GITHUB_STEP_SUMMARY"
       - name: Real dpkg removal, preserving original ANSF
         shell: bash
         run: |
@@ -226,14 +247,14 @@ jobs:
           export XDG_DATA_HOME="$RUNNER_TEMP/plan07d-linux-xdg"
           sudo dpkg -r lu-plan07d
           test ! -e /usr/lib/lu-plan07d/lu-desktop
-          python3 scripts/plan07d-readonly-ansf-witness.py --profile "$XDG_DATA_HOME/org.lu.desktop" --seed plan07d-debian-evidence/original-seed.json --output plan07d-debian-evidence/after-removal.json
-          cmp -s plan07d-debian-evidence/before-ui.json plan07d-debian-evidence/after-removal.json || {
-            echo 'ANSF changed: compare actual original source and decision receipts';exit 2;
+          python3 scripts/plan07d-readonly-ansf-witness.py --profile "$XDG_DATA_HOME/org.lu.desktop" --seed plan07d-debian-evidence/original-seed.json --output plan07d-debian-evidence/after-removal.json --require-phase refused --require-phase cancelled --require-phase approved_for_review --require-phase interrupted
+          cmp -s plan07d-debian-evidence/pre-removal.json plan07d-debian-evidence/after-removal.json || {
+            echo 'ANSF changed across real dpkg removal: preserve actual original source and all human decision receipts';exit 2;
           }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lu-plan07d-debian-installed-smoke-${{ github.event.pull_request.head.sha }}
+          name: lu-plan07d-debian-installed-human-${{ github.event.pull_request.head.sha }}
           path: plan07d-debian-evidence/
           if-no-files-found: warn
           retention-days: 14

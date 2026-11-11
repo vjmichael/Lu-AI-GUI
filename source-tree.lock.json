@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2d46a9ad4c72b2976d90f9b785a8720747ecd7c2",
-  "trackedFileCount": 924,
+  "sourceCommitBeforeLock": "d913acbd4352b3daa3f6628451c9c56accf39406",
+  "trackedFileCount": 925,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-plan07d-installed.yml",
-      "blob": "80bc990579f83fb11d7ee468ce293e9b22c0ad8a"
+      "blob": "d20f7af7de9ff48be5efc1b8480659c1a63c69b2"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -861,7 +861,7 @@
     },
     {
       "path": "docs/LU_PLAN07D_INSTALLED_ACCEPTANCE_20261111.md",
-      "blob": "27d8357010d061528d8194b441f8287e31d18dde"
+      "blob": "3f2830da5bc2ab5a4c01775c8f6a5b2812034ba6"
     },
     {
       "path": "docs/LU_PLAN07_EVIDENCE_DRIVEN_TASK_UPDATES_20261110.md",
@@ -2114,6 +2114,10 @@
     {
       "path": "scripts/plan07b-real-gguf-acceptance.sh",
       "blob": "1e4ebbc38b12145135aee8f3613bdda1a37e3137"
+    },
+    {
+      "path": "scripts/plan07d-debian-installed-human.py",
+      "blob": "585a8b4c18fee640a4f9dc4cab3a4a9e8530c838"
     },
     {
       "path": "scripts/plan07d-debian-installed-smoke.py",
