@@ -197,6 +197,7 @@ pub struct DefinitionCoordinate {
 #[serde(rename_all = "camelCase")]
 pub struct LspReply {
     source: SourceCoordinate,
+    provider_id: &'static str,
     diagnostics: Vec<Diagnostic>,
     completions: Vec<Completion>,
     hover: Option<String>,
@@ -215,6 +216,7 @@ struct Active {
 impl Active {
     fn output(&self) -> LspReply {
         LspReply {
+            provider_id: self.provider,
             source: SourceCoordinate {
                 project_id: self.project_id.clone(),
                 relative_path: self.relative_path.clone(),
