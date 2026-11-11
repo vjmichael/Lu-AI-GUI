@@ -6,6 +6,7 @@
 use crate::{
     git_branch_operations::{exact_repo, local_commit, safe_local_name},
     git_merge_plan::ReviewedMergePlan,
+    git_replay_quarantine::ReplaySandbox,
     IdeWorkspaceRegistry,
 };
 use git2::{MergeOptions, Oid, Repository, RepositoryState, StatusOptions};
@@ -131,8 +132,8 @@ impl IdeWorkspaceRegistry {
             .map_err(|_| "G06C03B_BAD_BASE")?;
         let ours = Oid::from_str(&plan.current_head).map_err(|_| "G06C03B_BAD_HEAD")?;
         let theirs = Oid::from_str(&plan.selected_tip).map_err(|_| "G06C03B_BAD_TIP")?;
-        if repo.merge_bases(ours, theirs).map_err(|_| "G06C03B_BASE_CHECK_FAILED")?
-            .iter().collect::<Vec<_>>() != vec![&base] {
+        let bases = repo.merge_bases(ours, theirs).map_err(|_| "G06C03B_BASE_CHECK_FAILED")?;
+        if bases.len() != 1 || bases.get(0) != Some(base) {
             return Err("G06C03B_BASE_CHANGED");
         }
         let base_tree = repo.find_commit(base).and_then(|c| c.tree())
@@ -141,8 +142,15 @@ impl IdeWorkspaceRegistry {
             .map_err(|_| "G06C03B_OURS_TREE_MISSING")?;
         let theirs_tree = repo.find_commit(theirs).and_then(|c| c.tree())
             .map_err(|_| "G06C03B_THEIRS_TREE_MISSING")?;
+        // The result may contain newly auto-merged blob objects. Compute it
+        // only in a separate bare object store with source as a read-only alternate.
+        let scratch = ReplaySandbox::open(&repo)?;
+        let quarantine = scratch.repository()?;
+        let base_tree = quarantine.find_tree(base_tree.id()).map_err(|_| "G06C03B_BASE_IN_QUARANTINE")?;
+        let ours_tree = quarantine.find_tree(ours_tree.id()).map_err(|_| "G06C03B_OURS_IN_QUARANTINE")?;
+        let theirs_tree = quarantine.find_tree(theirs_tree.id()).map_err(|_| "G06C03B_THEIRS_IN_QUARANTINE")?;
         let mut opts = MergeOptions::new();
-        let merged = repo.merge_trees(&base_tree, &ours_tree, &theirs_tree, Some(&mut opts))
+        let merged = quarantine.merge_trees(&base_tree, &ours_tree, &theirs_tree, Some(&mut opts))
             .map_err(|_| "G06C03B_CONTENT_MERGE_FAILED")?;
         let mut conflicts = Vec::new();
         let mut count = 0usize;
