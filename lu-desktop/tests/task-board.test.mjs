@@ -29,7 +29,7 @@ test('task list filters do not reinterpret claimed or stale ACCEPTED as completi
   assert.deepEqual(shownTasks(tasks,'Broken','').map(x=>x.taskId),['a']);
   assert.deepEqual(shownTasks(tasks,'Not integrated','').map(x=>x.taskId),['b']);
   assert.deepEqual(shownTasks(tasks,'Unverified','').map(x=>x.taskId),['c']);
-  assert.deepEqual(shownTasks(tasks,'Completed','').map(x=>x.taskId),['d','e']);
+  assert.deepEqual(shownTasks(tasks,'Completed','').map(x=>x.taskId),['d']);
   assert.deepEqual(shownTasks(tasks,'All','source').map(x=>x.taskId),['a','c','e']);
 });
 test('task group rendering preserves human ordered list and respects original group',()=>{
