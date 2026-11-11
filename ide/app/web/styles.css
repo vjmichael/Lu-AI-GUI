@@ -389,3 +389,31 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .dev03AdapterReceipt>strong{color:#f1cf9a}
 .dev03AdapterReceipt p{font-size:11px;overflow-wrap:anywhere;margin:0;color:#bed0df}
 .dev03AdapterReceipt code{color:#e5edf5;white-space:normal;overflow-wrap:anywhere}
+
+/* IDE-INT01-F: visible keyboard focus/working status without extra editor mounts. */
+.sourceWorkspaceStatus{margin:0;padding:7px 12px;background:#172b41;
+  border-bottom:1px solid #3d5872;color:#c5ddef;line-height:1.45;
+  font-size:12px;overflow-wrap:anywhere;flex-shrink:0}
+.editorFocusLabel{font-size:12px;font-weight:650;padding:5px 8px;
+  background:#26435f;color:#ebf6ff;border-radius:6px}
+.splitPrimaryPane.focused,.splitSecondaryPane.focused{
+  box-shadow:inset 0 0 0 2px #8fcfff}
+.splitPrimaryPane:focus-within,.splitSecondaryPane:focus-within{
+  box-shadow:inset 0 0 0 2px #b6e1ff}
+.lspProjectProblems:focus-visible{outline:2px solid #b6e1ff;
+  outline-offset:-3px}
+.ideJobsSourceReturn{display:flex;align-items:center;flex-wrap:wrap;
+  gap:10px;margin:4px 0 17px;padding:11px 13px;background:#152b40;
+  border:1px solid #385c7b;border-radius:8px}
+.ideJobsSourceReturn p{flex:1 1 300px;font-size:12px;line-height:1.5;
+  margin:0;color:#bcd3e6}
+.editorLayoutToolbar[role="toolbar"]{align-content:center}
+.editorLayoutToolbar .ghostBtn:focus-visible,
+.ideJobsSourceReturn .ghostBtn:focus-visible{
+  outline:3px solid #b6e1ff;outline-offset:3px}
+@media (max-width:850px){
+  .sourceWorkspaceStatus{font-size:11px}
+  .ideJobsSourceReturn{flex-direction:column;align-items:flex-start}
+  .editorLayoutToolbar[role="toolbar"]{gap:6px}
+  .editorLayoutToolbar[role="toolbar"] .ghostBtn{white-space:normal}
+}
