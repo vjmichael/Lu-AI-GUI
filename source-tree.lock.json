@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 897,
+  "trackedFileCount": 899,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -146,6 +146,10 @@
     {
       "path": ".github/workflows/lu-e1-p15-conversation-recovery.yml",
       "blob": "1eeae0189fac88b5b38251c8e1db3f33d7bf4bf4"
+    },
+    {
+      "path": ".github/workflows/lu-g02-workspace-inference.yml",
+      "blob": "0482515bbbb35110e43a1553fbef035b017110c0"
     },
     {
       "path": ".github/workflows/lu-kiaf-execution.yml",
@@ -2497,7 +2501,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "52a3f113e71e34a951e56b5ee821de3819abda2c"
+      "blob": "caece11afa1d1368752261a193412228ef53b5d3"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -3046,6 +3050,10 @@
     {
       "path": "src-tauri/lu-core/src/workspace.rs",
       "blob": "317c326c8e3975ab87d8f69f42079e0471e708c0"
+    },
+    {
+      "path": "src-tauri/lu-core/src/workspace_inference.rs",
+      "blob": "181be100d5b270ede1f09480a1281ea53d1255e7"
     },
     {
       "path": "src-tauri/lu-core/src/workspace_quarantine.rs",
