@@ -414,22 +414,29 @@ export function SettingsWindow(){
               <p>Source HEAD: {projectTasks.selectedHead||'unknown'} · Model: {projectTasks.originalModelRef}</p>
               <small>Graph SHA-256: {projectTasks.graphSha256} · Classifier SHA-256: {projectTasks.statusSha256} · Original reply SHA-256: {projectTasks.originalReplySha256}</small>
               <p>{projectTasks.tasks.length} proposed tasks · {projectTasks.incomplete?'Incomplete coverage':'Bounded requirements included'} · No tasks approved or scheduled.</p>
-              <div className="nativeOptionList">
-                {projectTasks.tasks.map(task=><article className="nativeOption" key={task.taskId}>
-                  <strong>{task.priority} · {task.group} · {task.status}</strong>
-                  <p>{task.summary}</p>
-                  <p>{task.description}</p>
-                  <small>Proposal ID: {task.taskId} · Requirement: {task.sourceRequirementId}</small>
-                  <small>Evidence: {task.evidenceIds.join(', ')}</small>
-                  <small>Depends on: {task.dependsOn.length?task.dependsOn.join(', '):'none'}</small>
-                  <p>Acceptance to obtain: {task.acceptanceCriteria}</p>
-                  <small>Blocked by: {task.blockedBy}</small>
-                </article>)}
-              </div>
+              {projectTasks.limitations.slice(-3).map((x,i)=><p key={i}>{x}</p>)}
+              <small>Read-only model proposal. Previously accepted requirements are excluded from new work. Corrections and durable task-register revisions are PLAN-05; execution requires a separate original-turn human authorization.</small>
+              {['MISSING','PARTIAL','BROKEN','NOT_INTEGRATED','UNVERIFIED','BLOCKED','UNKNOWN'].map(kind=>{
+                const matching=projectTasks.tasks.filter(task=>task.status===kind);
+                if(!matching.length)return null;
+                return <section key={kind} className="nativeOption">
+                  <strong>{kind} · {matching.length} evidence-linked proposals</strong>
+                  <div className="nativeOptionList">
+                    {matching.map(task=><article className="nativeOption" key={task.taskId}>
+                      <strong>{task.priority} · {task.group}</strong>
+                      <p>{task.summary}</p>
+                      <p>{task.description}</p>
+                      <small>Proposal ID: {task.taskId} · Requirement: {task.sourceRequirementId}</small>
+                      <small>Evidence: {task.evidenceIds.join(', ')}</small>
+                      <small>Depends on: {task.dependsOn.length?task.dependsOn.join(', '):'none'}</small>
+                      <p>Acceptance to obtain: {task.acceptanceCriteria}</p>
+                      <small>Blocked by: {task.blockedBy}</small>
+                    </article>)}
+                  </div>
+                </section>;
+              })}
               <strong>Updated engineering priorities (proposed)</strong>
               <ol>{projectTasks.updatedEngineeringPriorities.map((p,i)=><li key={i}>{p}</li>)}</ol>
-              {projectTasks.limitations.slice(-3).map((x,i)=><p key={i}>{x}</p>)}
-              <small>Read-only model proposal. Human corrections/task-register revisions are PLAN-05; execution requires separate original-turn authorization.</small>
             </section>}
           </Section>
           <p>Worker execution requires original-turn authorization, bounded input/output, cancellation, durable receipts and independent verification. Not every provider implements Lu's current tool-response protocol.</p>

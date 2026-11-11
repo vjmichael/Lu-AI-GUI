@@ -1723,8 +1723,8 @@ jobs:
           assert re.findall(r'(?m)^LU_PLAN04_MODEL_SHA=([0-9a-f]{40})$',os.environ['BODY'])==[os.environ['SHA']]
           PY
           node scripts/verify-source-tree.mjs
-          export LU_PLAN04_PROMPT_OUT=plan04-real-evidence/original-graph-prompt.json
-          export LU_PLAN04_REAL_REPLY_FILE=plan04-real-evidence/original-gguf-reply.txt
+          export LU_PLAN04_PROMPT_OUT="$GITHUB_WORKSPACE/plan04-real-evidence/original-graph-prompt.json"
+          export LU_PLAN04_REAL_REPLY_FILE="$GITHUB_WORKSPACE/plan04-real-evidence/original-gguf-reply.txt"
           printf 'LU_PLAN04_PROMPT_OUT=%s\n' "$LU_PLAN04_PROMPT_OUT" >> "$GITHUB_ENV"
           printf 'LU_PLAN04_REAL_REPLY_FILE=%s\n' "$LU_PLAN04_REAL_REPLY_FILE" >> "$GITHUB_ENV"
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
