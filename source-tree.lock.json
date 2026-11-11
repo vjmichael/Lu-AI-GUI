@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "dba436dbfe0cbbfd347c99552b852374a3548a3c",
+  "sourceCommitBeforeLock": "c6953ff9b61f23abc68eea00de29f83ee33e97e0",
   "trackedFileCount": 909,
   "files": [
     {
@@ -2073,7 +2073,7 @@
     },
     {
       "path": "scripts/plan06-windows-installed-acceptance.ps1",
-      "blob": "144835f6531b072eeab3afcd1beced6b21882fc1"
+      "blob": "f328b1fb1dd6efea339cf1e4704d544bb03807f4"
     },
     {
       "path": "scripts/probe-observe-sensitive-window-windows.ps1",
