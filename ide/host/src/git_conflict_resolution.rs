@@ -62,6 +62,7 @@ struct Journal {
     phase: String,
     relative_path: String,
     original_head: String,
+    original_branch: String,
     original_index_sha256: String,
     original_worktree_sha256: String,
     other_index_entries_sha256: String,
@@ -186,7 +187,12 @@ fn journal_last(path: &Path) -> Result<Option<Journal>, &'static str> {
         !valid_hex(&j.original_worktree_sha256) ||
         !valid_hex(&j.other_index_entries_sha256) ||
         !valid_hex(&j.proposed_content_sha256) ||
-        !valid_hex(&j.review_sha256) {
+        !valid_hex(&j.review_sha256) ||
+        (!j.candidate_blob_oid.is_empty() &&
+            (j.candidate_blob_oid.len() != 40 ||
+                !j.candidate_blob_oid.bytes().all(|c| c.is_ascii_hexdigit()))) ||
+        (!j.resulting_index_sha256.is_empty() &&
+            !valid_hex(&j.resulting_index_sha256)) {
         return Err("G06D04_JOURNAL_INVALID_RECORD");
     }
     Ok(Some(j))
@@ -217,6 +223,10 @@ fn journal_append(path: &Path, j: &Journal) -> Result<(), &'static str> {
 }
 fn head_matches(repo: &Repository, expected: &str) -> bool {
     repo.head().ok().and_then(|h| h.target()).is_some_and(|oid| oid.to_string() == expected)
+}
+fn branch_matches(repo: &Repository, branch: &str) -> bool {
+    repo.head().ok().and_then(|h| h.name().map(str::to_owned))
+        .as_deref() == Some(format!("refs/heads/{branch}").as_str())
 }
 fn stage0_matches(repo: &Repository, relative: &str, candidate: &str) -> bool {
     let Ok(oid) = Oid::from_str(candidate) else { return false; };
@@ -350,7 +360,8 @@ impl IdeWorkspaceRegistry {
         let before = worktree_bytes(&root, relative)?;
         if sha(&before) != reviewed.original_worktree_sha256 ||
             index_hash(&repo)? != reviewed.original_index_sha256 ||
-            !head_matches(&repo, &reviewed.current_head) {
+            !head_matches(&repo, &reviewed.current_head) ||
+            !branch_matches(&repo, &reviewed.current_branch) {
             return Err("G06D04_STALE_BEFORE_JOURNAL");
         }
         let mut j = Journal {
@@ -358,6 +369,7 @@ impl IdeWorkspaceRegistry {
             operation_id: format!("{:032x}", rand::random::<u128>()),
             phase: "prepared".to_owned(), relative_path: relative.to_owned(),
             original_head: reviewed.current_head.clone(),
+            original_branch: reviewed.current_branch.clone(),
             original_index_sha256: reviewed.original_index_sha256.clone(),
             original_worktree_sha256: reviewed.original_worktree_sha256.clone(),
             other_index_entries_sha256: reviewed.other_index_entries_sha256.clone(),
@@ -384,7 +396,8 @@ impl IdeWorkspaceRegistry {
         journal_append(&journal, &j)?;
         if index_hash(&repo)? != j.original_index_sha256 ||
             sha(&worktree_bytes(&root, relative)?) != j.original_worktree_sha256 ||
-            !head_matches(&repo, &j.original_head) {
+            !head_matches(&repo, &j.original_head) ||
+            !branch_matches(&repo, &j.original_branch) {
             return Err("G06D04_SOURCE_CHANGED_BEFORE_WORKTREE");
         }
         no_foreign_lock(&repo)?;
@@ -405,7 +418,8 @@ impl IdeWorkspaceRegistry {
             .map_err(|_| "G06D04_TEMPFILE_MODE_FAILED_MANUAL_REVIEW")?;
         if sha(&worktree_bytes(&root, relative)?) != j.original_worktree_sha256 ||
             index_hash(&repo)? != j.original_index_sha256 ||
-            !head_matches(&repo, &j.original_head) {
+            !head_matches(&repo, &j.original_head) ||
+            !branch_matches(&repo, &j.original_branch) {
             return Err("G06D04_DRIFT_BEFORE_WORKTREE_REPLACE_MANUAL_REVIEW");
         }
         no_foreign_lock(&repo)?;
@@ -422,7 +436,8 @@ impl IdeWorkspaceRegistry {
         #[cfg(test)]
         test_abort(&root, repo.path(), "IDE_G06D04_ABORT_AFTER_WORKTREE");
         if index_hash(&repo)? != j.original_index_sha256 ||
-            !head_matches(&repo, &j.original_head) {
+            !head_matches(&repo, &j.original_head) ||
+            !branch_matches(&repo, &j.original_branch) {
             return Err("G06D04_SOURCE_CHANGED_BEFORE_INDEX_MANUAL_REVIEW");
         }
         no_foreign_lock(&repo)?;
@@ -442,6 +457,7 @@ impl IdeWorkspaceRegistry {
         #[cfg(test)]
         test_abort(&root, repo.path(), "IDE_G06D04_ABORT_AFTER_INDEX");
         if !head_matches(&repo, &j.original_head) ||
+            !branch_matches(&repo, &j.original_branch) ||
             other_entries_sha(&repo, relative)? != j.other_index_entries_sha256 ||
             !stage0_matches(&repo, relative, &j.candidate_blob_oid) ||
             sha(&worktree_bytes(&root, relative)?) != j.proposed_content_sha256 ||
@@ -486,7 +502,8 @@ impl IdeWorkspaceRegistry {
         let root = self.registered_git_root(id).map_err(|_| "G06D04_PROJECT_CLOSED")?;
         changed_path_is_plain_safe(&root, &j.relative_path)?;
         let lock = no_foreign_lock(&repo).is_err();
-        let head_ok = head_matches(&repo, &j.original_head);
+        let head_ok = head_matches(&repo, &j.original_head) &&
+            branch_matches(&repo, &j.original_branch);
         let original_index = index_hash(&repo).ok().as_deref() == Some(&j.original_index_sha256);
         let staged = !j.candidate_blob_oid.is_empty() &&
             stage0_matches(&repo, &j.relative_path, &j.candidate_blob_oid);
@@ -495,8 +512,11 @@ impl IdeWorkspaceRegistry {
         let new_wt = wt.as_ref().is_some_and(|bytes| sha(bytes) == j.proposed_content_sha256);
         let other_preserved = other_entries_sha(&repo, &j.relative_path).ok()
             .as_deref() == Some(&j.other_index_entries_sha256);
+        let index_record_matches = j.resulting_index_sha256.is_empty() ||
+            index_hash(&repo).ok().as_deref() == Some(&j.resulting_index_sha256);
         let phase = j.phase.clone();
-        let state = if !lock && head_ok && other_preserved && staged && new_wt {
+        let state = if !lock && head_ok && other_preserved && index_record_matches &&
+            staged && new_wt {
             if j.phase == "verified" { "verified_resolved_stage" }
             else { "resolved_requires_independent_receipt" }
         } else if !lock && head_ok && other_preserved && original_index && old_wt &&
