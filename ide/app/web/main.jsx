@@ -5654,7 +5654,17 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isPackages ? (inspectPackageManagers(), readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
+            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isPackages ? (inspectPackageManagers(), readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? Promise.all([
+                invoke('ide_list_language_servers'),
+                invoke('ide_lsp_worker_status'),
+              ]).then(([servers,worker])=>{
+                setLanguageServers(Array.isArray(servers)?servers.slice(0,16):[]);
+                setLspWorker(worker && typeof worker.ready==='boolean'
+                  ? worker : {ready:false,supportedLanguages:[],semanticLanguages:[],
+                    detail:'Native language-service status unavailable.'});
+              }).catch(()=>setLspWorker({ready:false,
+                supportedLanguages:[],semanticLanguages:[],
+                detail:'Native language-service status unavailable.'})) : isProposals ? refreshProposals() : isExplorer && activeProject ? openDirectory(activeProject, directory) : refresh()}>
             ↻ Refresh</button>
           <button className="primaryBtn" disabled={pending || explorerPending || !!savingKey}
             onClick={() => operation('ide_choose_project')}>+ Open folder</button>
@@ -8324,9 +8334,37 @@ function App() {
               <span>{languageServers.length} catalogued · {lspWorker?.ready ? 'Pinned binaries verified · OS admission on start' : 'Execution gated'}</span>
             </div>
             <p className="capabilityNotice" role="status">
-              <strong>{lspWorker?.ready ? 'Reviewed local server assets available; none auto-started.' : 'Language servers are not running.'}</strong>
+              <strong>{lspSession
+                ? 'A protected language session is '+(lspBusy?'changing state':'active')+
+                    ' for '+lspSession.relativePath+'.'
+                : lspWorker?.ready
+                  ? 'Reviewed local server assets are available; none started automatically.'
+                  : 'Language servers are not running.'}</strong>
               {' '}{lspWorker?.detail || 'Worker state unavailable.'}
               {' '}Server discovery does not grant execution or install packages.
+            </p>
+            {lspSession && <div className="capabilityNotice">
+              <p role={lspSession.cleanupRequired?'alert':'status'}>
+                Project: {lspSession.projectId} · File: {lspSession.relativePath}
+                {' · '}Provider: {lspSession.languageId}
+                {lspSession.cleanupRequired &&
+                  ' · Native worker cleanup not independently confirmed'}
+              </p>
+              <button type="button" className="ghostBtn"
+                disabled={lspBusy}
+                onClick={()=>void stopLspSession()}>
+                {lspBusy?'Stopping worker…':lspSession.cleanupRequired
+                  ? 'Retry protected worker cleanup'
+                  : 'Stop protected language session'}
+              </button>
+            </div>}
+            <p className="capabilityNotice">
+              Native verified semantic languages:
+              {' '}{lspWorker?.semanticLanguages?.length
+                ? lspWorker.semanticLanguages.join(', ')
+                : 'none presently observed'}.
+              {' '}Python semantic features require the separately pinned
+              offline Pyright bundle. Ruff alone provides diagnostics only.
             </p>
             <div className="capabilityGrid">
               {languageServers.map(server => <article className="capabilityCard" key={server.id}>
@@ -8337,8 +8375,16 @@ function App() {
                 <dl>
                   <dt>License</dt><dd>{server.license}</dd>
                   <dt>Launcher hint</dt><dd><code>{server.executableBasename}</code></dd>
-                  <dt>Availability</dt><dd>{server.lifecycle === 'catalog_only'
-                    ? 'Catalogued only · Installed binary not verified' : server.lifecycle}</dd>
+                  <dt>Availability</dt><dd>{
+                    lspWorker?.ready && Array.isArray(lspWorker.supportedLanguages) &&
+                    server.languageIds?.some(id=>lspWorker.supportedLanguages.includes(id)) &&
+                    (server.id!=='pyright' ||
+                      lspWorker.semanticLanguages?.includes('python')) &&
+                    (server.id!=='ruff' ||
+                      !lspWorker.semanticLanguages?.includes('python'))
+                      ? 'Verified as available by native host; explicit OS approval required'
+                      : 'Catalogue entry only · Installed executable not verified'
+                  }</dd>
                   <dt>Source</dt><dd><a href={server.upstream} target="_blank"
                     rel="noreferrer">Publisher documentation</a></dd>
                 </dl>
@@ -8346,8 +8392,9 @@ function App() {
             </div>
             <p className="capabilityNotice">
               Installer candidates: native rust-analyzer, clangd and Ruff;
-              Node-dependent Pyright and TypeScript are separate license and dependency
-              reviews. No binary is packaged or downloaded by the current alpha.
+              Pyright must be supplied as an independently reviewed, fully offline
+              executable bundle and exact installer pin; user Node/Python runtimes
+              and package downloads are not accepted. No binary is downloaded by the current alpha.
             </p>
           </section>
         : !isExplorer
