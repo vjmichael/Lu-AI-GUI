@@ -491,6 +491,78 @@ pub(crate) async fn lu_project_revalidate_task(
 #[cfg(test)]
 mod tests{
     use super::*;
+
+    // This test-only native fixture does not represent a GGUF inference or
+    // substitute for any installed-app user approval. It materializes the
+    // same audited original ANSF records for a disposable Windows UIA trial.
+    #[test]
+    #[ignore="requires explicit disposable profile/project/evidence environment"]
+    fn export_original_installed_ui_test_fixture(){
+        let profile=std::path::PathBuf::from(
+            std::env::var("LU_PLAN05_INSTALLED_PROFILE").expect("profile required"));
+        let root=std::path::PathBuf::from(
+            std::env::var("LU_PLAN05_INSTALLED_PROJECT").expect("project required"));
+        let receipt=std::path::PathBuf::from(
+            std::env::var("LU_PLAN05_INSTALLED_SEED_RECEIPT").expect("receipt required"));
+        assert!(!profile.exists(),"refuse prior persisted profile");
+        assert!(!root.exists(),"refuse prior source project");
+        assert!(!receipt.exists(),"refuse prior seed receipt");
+        fs::create_dir_all(profile.join("ansf")).unwrap();
+        fs::create_dir_all(root.join("docs")).unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("docs/REQUIREMENTS.md"),
+            b"# Requirements\n- [ ] Must implement src/required.rs\n").unwrap();
+        fs::write(root.join("src/required.rs"),b"pub fn presence_only() {}\n").unwrap();
+        let conn=Connection::open(profile.join("ansf/library.db")).unwrap();
+        conn.execute_batch("CREATE TABLE untouched_user_data(x TEXT NOT NULL);
+            INSERT INTO untouched_user_data VALUES('PRESERVE_19');").unwrap();
+        drop(conn);
+        let (g,s)=classify_selected(&root).unwrap();
+        graph::audit(&g).unwrap();status::audit(&s,&g).unwrap();
+        let cap=synthesis::build_capsule(&g,&s).unwrap();
+        assert_eq!(cap.requirements.len(),1);
+        let f=&cap.requirements[0];
+        assert_eq!(f.status,status::Status::Unverified);
+        let raw=serde_json::json!({
+            "schema":synthesis::RAW_SCHEMA,
+            "tasks":[{
+                "requirementId":f.requirement_id,"status":f.status,
+                "summary":"Inspect original PLAN05 source",
+                "description":"Check the named source and obtain independent acceptance evidence",
+                "priority":"P1","group":"01 Original source verification",
+                "evidenceIds":[f.requirement_id],"dependencyIndices":[],
+                "acceptanceCriteria":"Independently verify source behavior in original project",
+                "blockedBy":"Native end-to-end evidence not available"
+            }]
+        }).to_string();
+        let prompt=synthesis::model_prompt(&cap).unwrap();
+        let p=synthesis::validate_model_response(&g,&s,&raw,&prompt,
+            "m-plan05-test-fixture","s-test-only","g-test-only").unwrap();
+        project_task_desktop::persist_proposal(&profile,&g,&s,&p,&raw).unwrap();
+        let imported=register::import(&p).unwrap();
+        let saved=persist(&profile,&p,&imported,None).unwrap();
+        let conn=library(&profile).unwrap();
+        let (orig,reopened,version)=load_register(&conn,&saved.register_id)
+            .unwrap().unwrap();
+        assert_eq!(version,1);
+        assert_eq!(reopened.latest_sha256,saved.latest_sha256);
+        assert_eq!(orig.digest_sha256,p.digest_sha256);
+        let evidence=serde_json::json!({
+            "schema":"lu-plan05-installed-seed-fixture-v1",
+            "source":"TEST_ONLY_SYNTHETIC_MODEL_RAW_JSON_NOT_GGUF",
+            "registerId":saved.register_id,
+            "taskId":saved.events[0].revision.task_id,
+            "originalProposalSha256":p.digest_sha256,
+            "initialRevisionSha256":saved.latest_sha256,
+            "initialTaskVersion":1,
+            "sourceScopeSha256":g.project_scope_sha256,
+            "sourceHead":g.selected_head,
+            "libraryBytesSha256":format!("{:x}",Sha256::digest(
+                fs::read(profile.join("ansf/library.db")).unwrap())),
+            "noExecutionAuthority":true
+        });
+        fs::write(&receipt,serde_json::to_vec_pretty(&evidence).unwrap()).unwrap();
+    }
     #[test]
     fn absent_library_is_not_replaced_with_new_database(){
         let dir=std::env::temp_dir().join(format!("plan05-unmounted-{}",std::process::id()));
