@@ -249,14 +249,12 @@ pub fn same_observed_sources(a:&graph::EvidenceGraph,b:&graph::EvidenceGraph)
     graph::audit(a)?;graph::audit(b)?;
     if a.project_scope_sha256!=b.project_scope_sha256||
         a.selected_head!=b.selected_head||a.complete!=b.complete{return Ok(false)}
-    let relevant=|g:&graph::EvidenceGraph|{
-        g.nodes.iter()
-            .map(|n|(&n.kind,&n.locator,&n.digest,&n.commit,&n.label,&n.evidence))
-            .collect::<Vec<_>>()
-    };
-    Ok(relevant(a)==relevant(b)&&
+    Ok(
+        serde_json::to_value(&a.nodes).map_err(|_|"PLAN04_NODE_SERIALIZE")?==
+        serde_json::to_value(&b.nodes).map_err(|_|"PLAN04_NODE_SERIALIZE")? &&
         serde_json::to_value(&a.edges).map_err(|_|"PLAN04_EDGE_SERIALIZE")?==
-        serde_json::to_value(&b.edges).map_err(|_|"PLAN04_EDGE_SERIALIZE")?)
+        serde_json::to_value(&b.edges).map_err(|_|"PLAN04_EDGE_SERIALIZE")?
+    )
 }
 #[cfg(test)]
 mod tests{

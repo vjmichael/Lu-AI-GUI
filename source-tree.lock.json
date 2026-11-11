@@ -2933,7 +2933,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/project_task_synthesis.rs",
-      "blob": "7f8369b8a39e0aee40d64d4822ddc56d50cc665c"
+      "blob": "c180ecef35403688271803dd107a4d35580cbdce"
     },
     {
       "path": "src-tauri/lu-core/src/projector_identity.rs",
