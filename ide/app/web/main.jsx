@@ -624,9 +624,13 @@ function App() {
     !!currentLanguageId && Array.isArray(lspWorker.supportedLanguages) &&
     lspWorker.supportedLanguages.includes(currentLanguageId);
   const lspCapabilities = languageServiceCapabilities(currentLanguageId,lspWorker);
-  const lspProviderForTab = lspCapabilities?.provider || 'unavailable language provider';
+  const lspProviderForTab = lspSession?.projectId===activeTab?.projectId &&
+    lspSession?.relativePath===activeTab?.relativePath
+    ? lspSession.providerId : (lspCapabilities?.provider || 'unavailable language provider');
   const lspSupportsNavigation = languageMethodAvailable(currentLanguageId,
-    'definition',lspWorker);
+    'definition',lspWorker) &&
+    (currentLanguageId!=='python' || !lspSession ||
+      lspSession.providerId==='pyright');
   const lspRunningForTab = !!activeTab && !lspSession?.cleanupRequired &&
     sourceMatchesSession(
       captureLiveLspSource(activeTab,
@@ -4226,7 +4230,9 @@ function App() {
   }
   function isCurrentLspReply(source,response,epoch) {
     if (epoch!==lspLifecycleEpoch.current ||
-        !lspNativeReplyMatches(source,response)) return false;
+        !lspNativeReplyMatches(source,response) ||
+        (lspSessionRef.current &&
+          response.providerId!==lspSessionRef.current.providerId)) return false;
     const latest=tabsRef.current.find(tab=>tab.key===source.key);
     return stillCurrentLspSource(source,latest,
       bufferIdentities.current.get(source.key),
@@ -4262,6 +4268,7 @@ function App() {
         projectId:source.projectId,relativePath:source.relativePath,
         languageId:source.languageId,bufferId:source.bufferId,
         savedRevision:source.savedRevision,key:source.key,
+        providerId:response.providerId,
       });
       lspSessionRef.current=session;
       setLspSession(session);
@@ -4277,7 +4284,7 @@ function App() {
             projectId:source.projectId,relativePath:source.relativePath,
             languageId:source.languageId,bufferId:source.bufferId,
             savedRevision:source.savedRevision,key:source.key,
-            cleanupRequired:true,
+            providerId:'cleanup_unverified',cleanupRequired:true,
           });
           setLspSession(lspSessionRef.current);
           setProblem('Language worker cleanup requires manual retry: '+
@@ -4370,7 +4377,9 @@ function App() {
     const source=liveLspSourceForTab(tab);
     if (!sourceMatchesSession(source,lspSessionRef.current) ||
         lspSessionRef.current?.cleanupRequired) return;
-    if (!languageMethodAvailable(source.languageId,kind,lspWorker)) {
+    if (!languageMethodAvailable(source.languageId,kind,lspWorker) ||
+        (source.languageId==='python' && kind!=='diagnostics' &&
+          lspSessionRef.current?.providerId!=='pyright')) {
       setHint('The protected '+source.languageId+' provider does not offer '+
         kind+' for this file. No unapproved language server will start.');
       return;
@@ -8915,8 +8924,9 @@ function App() {
                     title={lspCapabilities.status}
                     aria-label={'Language server capabilities: ' + lspCapabilities.status}>
                     {currentLanguageId === 'python' &&
-                      !lspWorker?.semanticLanguages?.includes('python') ?
-                      'Ruff · diagnostics only (Pyright bundle not installed)' :
+                      (lspSession?.providerId==='ruff' ||
+                        !lspWorker?.semanticLanguages?.includes('python')) ?
+                      'Ruff · diagnostics only (Pyright bundle not active)' :
                       lspProviderForTab + ' · diagnostics / completion / hover / definition'}
                   </span>}
                   <button type="button" className="ghostBtn editorToolButton"
