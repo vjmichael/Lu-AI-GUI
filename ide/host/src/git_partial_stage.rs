@@ -367,16 +367,27 @@ impl IdeWorkspaceRegistry {
             || last.intended_blob_sha256 != claimed.staged_blob_sha256
             || last.source_sha256 != claimed.source_sha256
             || last.selected_hunks != claimed.selected_hunks
-            || last.source_sha256 != sha(&self.reread_reviewed_git_source_bytes(
-                &claimed.project_id, &claimed.relative_path)?)
-            || last.head_sha != repo.head().ok().and_then(|h| h.target())
-                .map(|h| h.to_string()).unwrap_or_default()
+            || last.source_sha256
+                != sha(&self.reread_reviewed_git_source_bytes(
+                    &claimed.project_id,
+                    &claimed.relative_path,
+                )?)
+            || last.head_sha
+                != repo
+                    .head()
+                    .ok()
+                    .and_then(|h| h.target())
+                    .map(|h| h.to_string())
+                    .unwrap_or_default()
         {
             return Err("G06B_COMMIT_STAGE_JOURNAL_MISMATCH");
         }
-        let head_tree = repo.head().and_then(|h| h.peel_to_tree())
+        let head_tree = repo
+            .head()
+            .and_then(|h| h.peel_to_tree())
             .map_err(|_| "G06B_COMMIT_HEAD_TREE_UNAVAILABLE")?;
-        let original = head_tree.get_path(Path::new(&last.relative_path))
+        let original = head_tree
+            .get_path(Path::new(&last.relative_path))
             .map_err(|_| "G06B_COMMIT_ORIGINAL_FILE_UNAVAILABLE")?;
         if !matches!(original.filemode(), 0o100644 | 0o100755)
             || original.id().to_string() != claimed.old_blob_oid
@@ -390,26 +401,33 @@ impl IdeWorkspaceRegistry {
             return Err("G06B_COMMIT_STAGE_INDEX_CHANGED_OR_LOCKED");
         }
         let mut index = repo.index().map_err(|_| "G06B_COMMIT_INDEX_UNAVAILABLE")?;
-        index.read(true).map_err(|_| "G06B_COMMIT_INDEX_RELOAD_FAILED")?;
+        index
+            .read(true)
+            .map_err(|_| "G06B_COMMIT_INDEX_RELOAD_FAILED")?;
         if index.has_conflicts() || index.len() > 8192 || index.version() > 3 {
             return Err("G06B_COMMIT_COMPLEX_INDEX_DENIED");
         }
-        let entry = index.get_path(Path::new(&last.relative_path), 0)
+        let entry = index
+            .get_path(Path::new(&last.relative_path), 0)
             .ok_or("G06B_COMMIT_TRACKED_STAGED_ENTRY_MISSING")?;
         if !matches!(entry.mode, 0o100644 | 0o100755)
             || entry.id.to_string() != last.intended_blob_oid
         {
             return Err("G06B_COMMIT_STAGED_ENTRY_CHANGED");
         }
-        let blob = repo.find_blob(entry.id)
+        let blob = repo
+            .find_blob(entry.id)
             .map_err(|_| "G06B_COMMIT_STAGED_BLOB_UNAVAILABLE")?;
         if sha(blob.content()) != last.intended_blob_sha256 {
             return Err("G06B_COMMIT_STAGED_BYTES_CHANGED");
         }
         // No unreviewed staged content can accompany the approved hunks.
-        let head_tree = repo.head().and_then(|h| h.peel_to_tree())
+        let head_tree = repo
+            .head()
+            .and_then(|h| h.peel_to_tree())
             .map_err(|_| "G06B_COMMIT_HEAD_TREE_UNAVAILABLE")?;
-        let diff = repo.diff_tree_to_index(Some(&head_tree), Some(&index), None)
+        let diff = repo
+            .diff_tree_to_index(Some(&head_tree), Some(&index), None)
             .map_err(|_| "G06B_COMMIT_DIFF_UNAVAILABLE")?;
         if diff.deltas().count() != 1
             || diff.deltas().next().and_then(|d| d.new_file().path())
@@ -1038,7 +1056,7 @@ mod tests {
                 intended_blob_oid: "c".repeat(40),
                 intended_blob_sha256: "d".repeat(64),
                 source_sha256: sha(&fs::read(root.join("tracked.txt")).unwrap()),
-            selected_hunks: 1,
+                selected_hunks: 1,
             },
         )
         .unwrap();
@@ -1116,7 +1134,7 @@ mod tests {
                 intended_blob_oid: "c".repeat(40),
                 intended_blob_sha256: "d".repeat(64),
                 source_sha256: "e".repeat(64),
-            selected_hunks: 1,
+                selected_hunks: 1,
             },
         )
         .unwrap();
