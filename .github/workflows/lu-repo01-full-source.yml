@@ -1973,6 +1973,18 @@ jobs:
           $env:LU_PLAN05_INSTALLED_PROJECT=Join-Path $env:RUNNER_TEMP 'plan05-original-project'
           $env:LU_PLAN05_INSTALLED_SEED_RECEIPT=Join-Path $env:RUNNER_TEMP 'plan05-installed-evidence\original-seed.json'
           if(Test-Path $env:LU_PLAN05_INSTALLED_PROFILE){throw 'Refuse reuse of existing app data'}
+          # The RELEASE installer is built and hash-verified above. The separate
+          # debug-mode fixture cargo test reads the unchanged source config,
+          # which expects MSVC runtime resource paths. Supply explicitly inert
+          # CI-only fixture files AFTER the real NSIS build, NEVER in the
+          # production installer or as substitute inference evidence.
+          $inference=Join-Path (Get-Location) 'lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $inference | Out-Null
+          foreach($dll in @('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            $target=Join-Path $inference $dll
+            if(Test-Path -LiteralPath $target){throw "Refuse to shadow genuine reviewed runtime: $dll"}
+            Set-Content -LiteralPath $target -Value 'NOT_AN_ENGINE_PLAN05_TEST_FIXTURE' -NoNewline
+          }
           & cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib project_register_desktop::tests::export_original_installed_ui_test_fixture -- --ignored --exact --nocapture
           if($LASTEXITCODE -ne 0){throw 'Native original-data fixture construction failed'}
           if(-not(Test-Path $env:LU_PLAN05_INSTALLED_SEED_RECEIPT)){throw 'Original fixture not materialized'}
