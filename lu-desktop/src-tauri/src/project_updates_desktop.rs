@@ -96,7 +96,7 @@ fn analyze_selected(profile:&Path,root:&Path,register_id:&str)
     tx.commit().map_err(|_|"PLAN07_PREVIEW_COMMIT_FAILED")?;
     Ok(preview)
 }
-fn reload_audited(profile:&Path,preview_id:&str)
+pub(super) fn reload_audited(profile:&Path,preview_id:&str)
  ->Result<(updates::Preview,register::TaskRegister,
     lu_core::project_task_synthesis::ProjectTaskProposal,
     graph::EvidenceGraph,status::StatusReport),String>{
