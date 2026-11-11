@@ -52,15 +52,18 @@ fn digest(preview:&Preview)->Result<String,String>{
 }
 fn source_diff(old:&graph::EvidenceGraph,new:&graph::EvidenceGraph)
  ->Result<(usize,Vec<String>,bool),String>{
+    // Multiple historical versions may legitimately use the same locator.
+    // Node IDs incorporate original source versions, so use their unique
+    // audited identity rather than treating repeated paths as malformed.
     let index=|g:&graph::EvidenceGraph|
-     ->Result<BTreeMap<(String,String),String>,String>{
+     ->Result<BTreeMap<String,(String,String)>,String>{
         let mut values=BTreeMap::new();
         for n in &g.nodes{
-            let key=(format!("{:?}",n.kind),n.locator.clone());
             let value=serde_json::to_string(n)
                 .map_err(|_|"PLAN07_NODE_SERIALIZATION_FAILED")?;
-            if values.insert(key,value).is_some(){
-                return Err("PLAN07_AMBIGUOUS_SOURCE_NODE_IDENTITY".into())
+            if values.insert(n.id.clone(),
+                (format!("{:?}:{}",n.kind,n.locator),value)).is_some(){
+                return Err("PLAN07_DUPLICATE_EVIDENCE_NODE_ID".into())
             }
         }
         Ok(values)
@@ -70,7 +73,9 @@ fn source_diff(old:&graph::EvidenceGraph,new:&graph::EvidenceGraph)
     let mut changed=Vec::new();
     for key in keys{
         if old.get(&key)!=new.get(&key){
-            changed.push(format!("{}:{}",key.0,key.1));
+            let label=new.get(&key).or_else(||old.get(&key))
+                .ok_or("PLAN07_NODE_DIFF_DISAPPEARED")?;
+            changed.push(label.0.clone());
         }
     }
     let total=changed.len();changed.truncate(MAX_CHANGED);
