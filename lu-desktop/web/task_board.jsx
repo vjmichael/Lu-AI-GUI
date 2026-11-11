@@ -198,6 +198,26 @@ export function TaskBoardWindow(){
       return decision;
     });
   }
+  async function revalidateExactOriginalRequirement(){
+    if(!current||busy)return;
+    const selected=reviewTaskId||updatePreview?.candidates[0]?.taskId;
+    const revision=all.find(t=>t.taskId===selected);
+    if(!revision){
+      setError('Choose a current original task before independent verification.');
+      return;
+    }
+    await act('Exact original native criterion independently revalidated by a person; no whole-task completion or tools authorized.',async()=>{
+      const result=await invoke('lu_project_update_review_exact_requirement',{
+        registerId:current.board.registerId,
+        taskId:revision.taskId,expectedVersion:revision.version
+      });
+      if(result){
+        setUpdatePreview(null);setModelSuggestion(null);setReviewNote('');
+        await reload();setEvidence(null);
+      }
+      return result;
+    });
+  }
   async function refreshReviewHistory(){
     if(!current)return;
     await act('Original approval/refusal/restart history independently audited.',async()=>{
@@ -370,6 +390,18 @@ export function TaskBoardWindow(){
               onClick={()=>void reviewSuggestion()}>
               Open native OS approve/refuse decision…
             </button>
+            <div className="plan07ExactRevalidation">
+              <button type="button" disabled={busy||!current}
+                onClick={()=>void revalidateExactOriginalRequirement()}>
+                Independently review EXACT native requirement (separate approval)…
+              </button>
+              <small>This second OS approval is distinct from accepting a model
+                suggestion. The host compares the current original source with
+                the latest accepted register snapshot, repeats the scan after
+                approval and writes an exact-criterion-only human revision.
+                Changed or unreconciled source is refused until the separate
+                source reconciliation above has been completed.</small>
+            </div>
             <small>The host commits a pending receipt before the OS dialog.
               Approval requires selecting the same original project again and
               a fresh source scan; refusal, cancellation, stale evidence, and
