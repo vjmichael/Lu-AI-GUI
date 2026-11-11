@@ -33,3 +33,36 @@ Native Rust tests cover approval/reorder hash invariants, actual ANSF SQLite per
 - PLAN-05's pending installed acceptance is independent and must not be called complete based on PLAN-06 testing.
 
 No PLAN-07 work is introduced.
+
+
+## Installed Windows NSIS acceptance (separate exact-head gate)
+
+The grouped REPO-01 workflow also contains an explicitly SHA-admitted
+\`installed-plan06-windows\` job. It requires:
+
+1. A **genuine pinned CPU engine** and authentic exact-head x64 NSIS installer
+   with build, installer, installed app, and engine byte digests verified.
+   Test-only DLL resource placeholders are created only *after* the authentic
+   package is finished, for a separate Rust test fixture build.
+2. Two distinct disposable original project scopes in the same **real ANSF
+   SQLite** profile, with two source-backed tasks per register. The fixture
+   explicitly labels its model JSON as synthetic, never real GGUF inference.
+3. The native **Project Tasks** Win32 HWND opened from the installed chat
+   window. UI Automation requires the real source/filters, an actual cancel
+   of the OS reorder dialog with **no database write**, and an actual OS
+   confirmation with exactly one board revision.
+4. A second native OS approval *refusal*, then actual human-review confirmation
+   of plan order, checked against independent SQLite read-only evidence.
+5. A demonstrated change of **displayed source project** via the native
+   selector (sending keys without observing the switch is not acceptance).
+6. Graceful real installed process exit and restart, reopening the task-list
+   HWND and verifying the identical original ANSF revision/approval SHA chain,
+   plus cancellation of the native export confirmation without a write.
+7. Genuine NSIS uninstall with original user memory, both source projects,
+   all proposal bytes and human review chains still preserved.
+
+The acceptance script writes an explicit non-PASS receipt on any failure
+(including unavailable Win32 UI Automation on hosted Windows, fake HWND,
+misidentified OS dialogs, stale receipts or missing original project).
+A hosted UIA run is *not* an assertion of acceptance on the creator's physical
+Radeon-equipped machine; physical human testing remains separate.
