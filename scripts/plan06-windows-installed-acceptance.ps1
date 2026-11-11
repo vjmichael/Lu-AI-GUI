@@ -58,6 +58,7 @@ $script:report=[ordered]@{
   applicationRestart='NOT_RUN'
   restartExactAnsfdurableReadback='NOT_RUN'
   noAutomaticExecution='NOT_RUN'
+  exportRefusal='NOT_RUN'
   acceptance='NOT_ACCEPTED'
   evidence=@()
   errors=@()
@@ -205,15 +206,35 @@ function Wait-Sequence([string]$register,[int]$want,[string]$phase){
   }while([DateTime]::UtcNow -lt $deadline)
   throw "PLAN06 no independently verified board revision $want"
 }
+function Visible-Project-Names(){
+  $all=$script:board.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.Condition]::TrueCondition)
+  $names=@()
+  foreach($el in $all){
+    try{
+      if($el.Current.ControlType.ProgrammaticName -ceq 'ControlType.Button' -and
+         $el.Current.Name -match 'Review (north|south) source requirement'){
+        $names+=@($Matches[1])
+      }
+    }catch{}
+  }
+  return @($names|Select-Object -Unique)
+}
 function Switch-Project(){
+  $before=@(Visible-Project-Names)
+  if($before.Count -ne 1){throw 'PLAN06 could not identify displayed original project before switch'}
   $selector=Find-Control $script:board 'Project selector' '' 10
   $selector.SetFocus()
-  # HTML native select receives genuine keyboard selection, not an injected
-  # DOM value; the independent ANSF witness verifies the two source scopes.
+  # Real keyboard events, not a synthetic web-document attribute.
   [System.Windows.Forms.SendKeys]::SendWait('{HOME}')
   [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
   [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-  Start-Sleep -Milliseconds 800
+  Start-Sleep -Milliseconds 850
+  $after=@(Visible-Project-Names)
+  if($after.Count -ne 1 -or $after[0] -ceq $before[0]){
+    Dump-Tree 'project-switch-not-observed' $script:board
+    throw 'PLAN06 UIA did not demonstrate distinct source-project switching'
+  }
 }
 try{
   $before=Witness 'before-installed-launch'
@@ -230,13 +251,9 @@ try{
   $null=Find-Control $script:board 'Edit task wording…' 'ControlType.Button' 15
   $null=Find-Control $script:board 'Evidence details' '' 15
   $script:report.nativeSourceAndFilters='PASS_VISIBLE_ORIGINAL_SOURCE_AND_CATEGORY_FILTERS'
-  $first=$selected.Current.Name
-  # Task list has exactly two original tasks; move the first task down.
-  $move=Find-Control $script:board 'Move ' 'ControlType.Button' 12 -Contains
-  if(-not $move.Current.Name.EndsWith(' down')){
-    $selectedName=$first.Split([char]0x00B7)[1].Trim()
-    $move=Find-Control $script:board ' down' 'ControlType.Button' 12 -Contains
-  }
+  # Native UIA movement must target an enabled real down button.
+  $move=Find-Control $script:board ' down' 'ControlType.Button' 12 -Contains
+  if(-not $move.Current.IsEnabled){throw 'PLAN06 first task down control disabled'}
   Click $move $script:board
   Dialog-Decision 'Lu — Reorder human plan' 'Cancel'
   $afterCancel=Witness 'after-reorder-refusal'
@@ -283,6 +300,14 @@ try{
     throw 'PLAN06 installed application restart lost original ANSF approval chain'
   }
   Dump-Tree 'after-actual-installed-restart' $script:board
+  Click (Find-Control $script:board 'Export evidence-bound JSON plan…' 'ControlType.Button') $script:board
+  Dialog-Decision 'Lu — Export reviewed plan' 'Cancel'
+  $afterExportRefusal=Witness 'after-export-native-refusal'
+  $r2=$afterExportRefusal.projects|Where-Object {$_.registerId -ceq $edited}
+  if($r2.boardSha256 -cne $r.boardSha256){
+    throw 'Refused native export changed original plan approval'
+  }
+  $script:report.exportRefusal='PASS_NATIVE_OS_EXPORT_CANCEL_NO_WRITE'
   $script:report.applicationRestart='PASS_REAL_INSTALLED_PROCESS_EXIT_RESTART'
   $script:report.restartExactAnsfdurableReadback='PASS_ORIGINAL_SQLITE_SHA_AND_APPROVAL_CHAIN'
   $script:report.noAutomaticExecution='PASS_BOTH_PROJECTS_NO_EXECUTION_AUTHORITY'
