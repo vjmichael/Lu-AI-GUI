@@ -139,6 +139,28 @@ pub(crate) async fn lu_project_update_model_latest(
         .await.map_err(|_|"PLAN07B_REOPEN_RECEIPT_INTERRUPTED")?
 }
 #[tauri::command]
+pub(crate) fn lu_project_update_model_cancel(
+    caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>
+)->Result<bool,String>{
+    task_window_only(&caller)?;
+    // A renderer cannot supply chat, generation or session identity.
+    // The host owns the exact PLAN-07B queue label.
+    let Some((session_id,generation_id,phase))=
+        state.generation_queue.cancel_for_chat(
+            "lu-plan07b-host-suggestions"
+        )? else{return Ok(false)};
+    if phase==CancelState::Active{
+        match state.supervisor.cancel(
+            &session_id,&generation_id,&next_id("req-")
+        ){
+            Ok(())|Err(SupervisorError::WrongGeneration)=>{},
+            Err(e)=>return Err(format!("PLAN07B_CANCEL_SUPERVISOR_ERROR: {e:?}")),
+        }
+    }
+    Ok(true)
+}
+
+#[tauri::command]
 pub(crate) async fn lu_project_update_model_suggest(
     app:AppHandle,caller:tauri::WebviewWindow,
     state:State<'_,Arc<DesktopState>>,preview_sha256:String
@@ -246,6 +268,9 @@ pub(crate) async fn lu_project_update_model_suggest(
         if current.session_id.as_deref()!=Some(sid.as_str())||
            current.model_ref.as_deref()!=Some(model.as_str()){
             return Err("PLAN07B_GGUF_SESSION_CHANGED_AFTER_GENERATION".into())
+        }
+        if ticket.cancelled(){
+            return Err("PLAN07B_CANCELLED_BEFORE_IMMUTABLE_PERSIST".into())
         }
         persist(&profile,&validated,&prompt,&raw)?;
         Ok(Some(validated))
