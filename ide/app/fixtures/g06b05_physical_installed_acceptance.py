@@ -115,6 +115,9 @@ def main():
     print('Do not point the installed IDE at a real project during this run.')
     acknowledge('Use the INSTALLED app native OS folder picker to register this NEW disposable fixture. '
                 'Confirm Source Control shows two separate hunks in reviewed.txt and the unrelated file.')
+    if checkpoint == 'initial':
+        acknowledge('Select the FIRST reviewed hunk and reverify the selection (NO staging yet). '
+                    'The actual OS dialog must be triggered by the upcoming action.')
     if checkpoint == 'selected':
         acknowledge('Select the FIRST reviewed hunk only, reverify the selection and approve '
                     'the separate native OS stage dialog. DO NOT create a commit or amend yet.')
