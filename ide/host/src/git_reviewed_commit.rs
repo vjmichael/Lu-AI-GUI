@@ -430,6 +430,61 @@ impl IdeWorkspaceRegistry {
         })
     }
 
+    /// A second, separately OS-authorized action after restart. It only
+    /// appends a terminal fact after independently checking the branch ref,
+    /// index, commit object, parent, tree and original worktree. It never
+    /// retries a commit or rewrites a ref.
+    pub fn reconcile_reviewed_commit_journal(
+        &self, project_id: &str,
+    ) -> Result<ReviewedCommitRecovery, &'static str> {
+        let (repo, gitdir) = safe_repo(self, project_id)?;
+        let path = journal_path(self, project_id)?;
+        let mut journal = last_journal(&path)?
+            .ok_or("G06B_COMMIT_RECOVERY_NO_JOURNAL")?;
+        if journal.project_id != project_id {
+            return Err("G06B_COMMIT_RECOVERY_WRONG_PROJECT");
+        }
+        if matches!(journal.phase.as_str(), "verified" | "cancelled") {
+            return self.inspect_reviewed_commit_recovery(project_id);
+        }
+        if fs::symlink_metadata(gitdir.join("index.lock")).is_ok() {
+            return Err("G06B_COMMIT_RECOVERY_LOCK_REQUIRES_MANUAL_REVIEW");
+        }
+        if index_sha(&gitdir)? != journal.index_sha256 {
+            return Err("G06B_COMMIT_RECOVERY_INDEX_CHANGED");
+        }
+        let (branch_name, actual_head) = branch(&repo)?;
+        if branch_name != journal.branch_ref {
+            return Err("G06B_COMMIT_RECOVERY_BRANCH_CHANGED");
+        }
+        if actual_head == journal.old_head {
+            if !matches!(journal.phase.as_str(),
+                "prepared" | "object_written" | "publishing")
+            { return Err("G06B_COMMIT_RECOVERY_AMBIGUOUS_UNPUBLISHED"); }
+            journal.phase = "cancelled".into();
+            append_journal(&path, &journal)?;
+            return self.inspect_reviewed_commit_recovery(project_id);
+        }
+        if journal.commit_oid.is_empty() || actual_head != journal.commit_oid
+            || !matches!(journal.phase.as_str(),
+                "publishing" | "ref_published")
+        { return Err("G06B_COMMIT_RECOVERY_REF_DRIFT"); }
+        let published = repo.find_commit(
+            Oid::from_str(&journal.commit_oid).map_err(|_| "G06B_COMMIT_RECOVERY_BAD_OBJECT")?)
+            .map_err(|_| "G06B_COMMIT_RECOVERY_COMMIT_MISSING")?;
+        if published.tree_id().to_string() != journal.tree_oid
+            || published.parent_count() != 1
+            || published.parent_id(0).map_err(|_| "G06B_COMMIT_RECOVERY_PARENT_MISSING")?
+                .to_string() != journal.parent_oid
+        { return Err("G06B_COMMIT_RECOVERY_TREE_PARENT_MISMATCH"); }
+        if sha(&self.reread_reviewed_git_source_bytes(
+            project_id, &journal.relative_path)?) != journal.source_sha256
+        { return Err("G06B_COMMIT_RECOVERY_SOURCE_CHANGED"); }
+        journal.phase = "verified".into();
+        append_journal(&path, &journal)?;
+        self.inspect_reviewed_commit_recovery(project_id)
+    }
+
     pub fn inspect_reviewed_commit_recovery(
         &self, project_id: &str,
     ) -> Result<ReviewedCommitRecovery, &'static str> {
