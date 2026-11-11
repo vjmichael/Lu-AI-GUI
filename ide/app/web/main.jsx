@@ -3808,17 +3808,33 @@ function App() {
 
   useEffect(() => { void refresh(); }, []);
 
+  // A project close/unregister may complete after the user typed in a pane.
+  // Capture ALL live editor identities before native IPC, not React dirty flags.
+  function projectEditorWitness(projectId) {
+    return tabsRef.current.filter(tab=>tab.projectId===projectId)
+      .map(tab=>({key:tab.key,intent:captureLiveEditorIntent(tab,
+        bufferIdentities.current.get(tab.key),
+        editorStates.current.get(tab.key),projectId)}));
+  }
+  function projectEditorWitnessChanged(projectId, before) {
+    const current=tabsRef.current.filter(tab=>tab.projectId===projectId);
+    if (current.length!==before.length) return true;
+    return before.some(entry=>!stillCurrentEditorIntent(entry.intent,
+      current.find(tab=>tab.key===entry.key),
+      bufferIdentities.current.get(entry.key),
+      editorStates.current.get(entry.key),projectId));
+  }
   function discardProjectTabs(projectId) {
-    // A closed/unregistered workspace's stored view is no longer trustworthy.
+    // Only invoked after the native close succeeds AND the editor witness
+    // remains unchanged. No source file is ever deleted by this operation.
     projectEditorViews.current.delete(projectId);
     setReview(previous => previous?.projectId === projectId ? null : previous);
-    const affected = tabs.filter(tab => tab.projectId === projectId);
+    const affected = tabsRef.current.filter(tab => tab.projectId === projectId);
     affected.forEach(tab => {
       editorStates.current.delete(tab.key);
       clearPrivateDraftSession(tab.key);
     });
     setTabs(previous => previous.filter(tab => tab.projectId !== projectId));
-    // Unregistering an INACTIVE project must not collapse the visible split.
     if (activeProjectIdRef.current === projectId) {
       setSecondaryTabKey(null);
       setSplitEditorOpen(false);
@@ -3829,27 +3845,37 @@ function App() {
   }
 
   async function operation(command, args) {
-    if (pending || savingKey || mergeBusy || mergeApplyRequest ||
-        explorerPending || explorerIoTicket.current ||
+    if (pending || savingKey || savingKeyRef.current || mergeBusy ||
+        mergeApplyRequest || explorerPending || explorerIoTicket.current ||
         workspaceLayoutOp.current) return;
-    if (command === 'ide_close_project' &&
-      tabs.some(tab => tab.projectId === args.projectId && tab.dirty) &&
-      !window.confirm('Discard unsaved changes in this project?')) return;
+    const closing=command==='ide_close_project' ||
+      command==='ide_unregister_project';
+    const witness=closing ? projectEditorWitness(args.projectId) : null;
+    if (command==='ide_close_project' &&
+        witness.some(entry=>entry.intent.status!=='current' || entry.intent.dirty) &&
+        !window.confirm('Discard the current unsaved editor buffers in this project?'))
+      return;
     setPending(true);
     setProblem('');
     setHint('');
     try {
       const next = await invoke(command, args);
       setProjects(next);
-      // Do not discard unsaved buffers until the native close succeeds.
-      if (command === 'ide_close_project' || command === 'ide_unregister_project') {
-        discardProjectTabs(args.projectId);
+      if (closing) {
+        if (projectEditorWitnessChanged(args.projectId,witness)) {
+          // The native project lifecycle already completed; retain the live
+          // in-memory drafts instead of deleting edits made during that IPC.
+          setProblem('Project was closed or unregistered, but editor buffers changed '+
+            'during the operation. Live drafts were kept in memory; reopen or '+
+            'register the project again before saving or dismissing these tabs.');
+        } else {
+          discardProjectTabs(args.projectId);
+        }
       }
       if (command === 'ide_choose_project') {
         setHint('Project selection complete. No scripts or project tools were executed.');
       }
-      if ((command === 'ide_close_project' || command === 'ide_unregister_project') &&
-        activeProject?.projectId === args?.projectId) {
+      if (closing && activeProject?.projectId === args?.projectId) {
         setActiveProject(null);
         setListing(null);
         setSection('projects');
@@ -3861,13 +3887,17 @@ function App() {
   // This operation only removes the IDE's registration. It never issues a
   // filesystem deletion; the native host cannot accept an OS path from here.
   function confirmUnregister(project) {
-    if (pending || savingKey || explorerPending || workspaceLayoutOp.current) return;
-    const hasDirty = tabs.some(tab => tab.projectId === project.projectId && tab.dirty);
-    const message = 'Remove "' + project.displayName + '" from Lu IDE?\n\n' +
+    if (pending || savingKey || savingKeyRef.current || explorerPending ||
+        workspaceLayoutOp.current) return;
+    const witness=projectEditorWitness(project.projectId);
+    const hasDirty=witness.some(entry=>entry.intent.status!=='current' ||
+      entry.intent.dirty);
+    const message = 'Remove "' + project.displayName + '" from Lu IDE?\\n\\n' +
       'The original project folder and ALL files on disk will be kept. ' +
-      'Only the IDE registration will be removed.\n\n' +
+      'Only the IDE registration will be removed.\\n\\n' +
       'You can add the folder again using Open folder.' +
-      (hasDirty ? '\n\nWARNING: Unsaved edits in its open tabs will be discarded.' : '');
+      (hasDirty ? '\\n\\nWARNING: Unsaved live editor changes will be discarded unless ' +
+        'they were preserved separately as private draft checkpoints.' : '');
     if (window.confirm(message)) {
       void operation('ide_unregister_project', { projectId: project.projectId });
     }
