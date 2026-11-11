@@ -362,3 +362,39 @@ test('PLAN-07B native cancellation is scoped to its own GGUF job; real acceptanc
   assert.match(python,/luNativeFifoCancellationTested/);
   assert.doesNotMatch(host,/auto.*complete|grant_worker_execution|start_native_tools/);
 });
+
+
+test('PLAN-07C original ANSF operator review preserves refusal, stale denial, restart recovery and exact criterion authority boundary',()=>{
+  const host=readFileSync(new URL('../src-tauri/src/project_review_decisions_desktop.rs',import.meta.url),'utf8');
+  const model=readFileSync(new URL('../src-tauri/src/project_update_model_desktop.rs',import.meta.url),'utf8');
+  const lib=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+  const ui=readFileSync(new URL('../web/task_board.jsx',import.meta.url),'utf8');
+  assert.match(lib,/project_review_decisions_desktop::lu_project_update_review_history,/);
+  assert.match(lib,/project_review_decisions_desktop::lu_project_update_review_decide,/);
+  assert.match(lib,/project_review_decisions_desktop::lu_project_update_review_exact_requirement,/);
+  assert.match(ui,/invoke\('lu_project_update_review_history'/);
+  assert.match(ui,/invoke\('lu_project_update_review_decide'/);
+  assert.match(ui,/invoke\('lu_project_update_review_exact_requirement'/);
+  assert.match(ui,/Original task for human evidence review/);
+  assert.match(ui,/Native deterministic evidence/);
+  assert.match(ui,/Original GGUF suggestion \(untrusted\)/);
+  assert.match(ui,/Open native OS approve\/refuse decision/);
+  assert.match(host,/ansf_project_task_update_review_events/);
+  assert.match(host,/Phase::Refused/);
+  assert.match(host,/Phase::Cancelled/);
+  assert.match(host,/Phase::StaleRejected/);
+  assert.match(host,/Phase::Interrupted/);
+  assert.match(host,/TransactionBehavior::Immediate/);
+  assert.match(host,/PLAN07C_REVIEW_DECISION_CHANGED_ORIGINAL_FACTS/);
+  assert.match(host,/PLAN07C_APPROVED_MODEL_RECEIPT_CHANGED/);
+  assert.match(host,/PLAN07C_HUMAN_REVIEW_SOURCE_CHANGED/);
+  assert.match(host,/PLAN07C_REVIEW_TOKEN_REPLAY/);
+  assert.match(host,/PLAN07C_RECONCILIATION_REQUIRED_BEFORE_REVALIDATION/);
+  assert.match(host,/register::human_revalidate/);
+  assert.match(host,/register::RevisionKind::HumanRevalidated/);
+  assert.match(host,/fn original_ansf_refusal_approval_cancel_and_crash_recovery_never_accept_work/);
+  assert.match(host,/fn exact_human_requirement_requires_reconciled_native_source_and_preserves_correction/);
+  assert.match(host,/fn original_gguf_model_suggestion_is_review_only_and_receipt_tamper_denied/);
+  assert.match(model,/pub\(super\) fn read_latest/);
+  assert.doesNotMatch(host,/Command::new|grant_execution|git commit|auto_accept|start_worker|run_reserved_with_history/);
+});
