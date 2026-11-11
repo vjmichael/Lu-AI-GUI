@@ -509,10 +509,221 @@ impl IdeWorkspaceRegistry {
 
 #[cfg(test)]
 fn test_abort(root: &Path, gitdir: &Path, env_key: &str) {
-    if std::env::var(env_key).ok().as_deref() == Some("1") &&
-        root.to_string_lossy().contains("ide-g06d04-disposable-") &&
-        gitdir.starts_with(root) &&
-        root.join(".ide-g06d04-disposable-fixture").is_file() {
+    let Some(configured) = std::env::var_os(env_key) else { return; };
+    let given = fs::canonicalize(PathBuf::from(configured)).ok();
+    let actual = fs::canonicalize(root).ok();
+    let tmp = fs::canonicalize(std::env::temp_dir()).ok();
+    if given == actual && actual.as_ref().zip(tmp.as_ref())
+        .is_some_and(|(a, t)| a.starts_with(t))
+        && root.file_name().is_some_and(|x| x == "repo")
+        && root.parent().and_then(|x| x.file_name())
+            .is_some_and(|x| x.to_string_lossy().starts_with("ide-g06d04-disposable-"))
+        && fs::read(gitdir.join("g06d04-disposable-marker")).ok().as_deref()
+            == Some(b"G06D04_TEST_ONLY\n") {
         std::process::abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{IdeError, NativeDirectoryPicker};
+    use git2::Repository;
+
+    struct Picker(PathBuf);
+    impl NativeDirectoryPicker for Picker {
+        fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+    struct Fixture {
+        base: PathBuf, root: PathBuf, id: String, registry: IdeWorkspaceRegistry,
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.base); }
+    }
+
+    fn fixture() -> Fixture {
+        let base = std::env::temp_dir().join(
+            format!("ide-g06d04-disposable-{:032x}", rand::random::<u128>()));
+        let root = base.join("repo");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("conflict.txt"), b"base\n").unwrap();
+        fs::write(root.join("unrelated.keep"), b"NEVER TOUCH\n").unwrap();
+        let repo = Repository::init(&root).unwrap();
+        let sig = git2::Signature::now("Fixture Operator", "fixture@localhost.invalid").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("conflict.txt")).unwrap();
+        index.add_path(Path::new("unrelated.keep")).unwrap();
+        index.write().unwrap();
+        let mut original = index.get_path(Path::new("conflict.txt"), 0).unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "base", &tree, &[]).unwrap();
+        drop(tree);
+        index.clear().unwrap();
+        index.add_path(Path::new("unrelated.keep")).unwrap();
+        for (number, bytes) in [
+            (1u16, b"base\n".as_slice()),
+            (2u16, b"ours\n".as_slice()),
+            (3u16, b"theirs\n".as_slice()),
+        ] {
+            original.id = repo.blob(bytes).unwrap();
+            original.file_size = bytes.len() as u32;
+            original.flags = (original.flags & !0x3000) | (number << 12);
+            index.add(&original).unwrap();
+        }
+        index.write().unwrap();
+        assert!(index.has_conflicts());
+        drop(index);
+        drop(repo);
+        let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
+        let id = registry.register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap().unwrap().project_id;
+        Fixture { base, root, id, registry }
+    }
+    fn review(x: &Fixture, text: &str) -> ConflictResolutionReview {
+        let current = x.registry.inspect_native_git_conflicts(&x.id).unwrap();
+        x.registry.review_native_conflict_resolution(
+            &x.id, "conflict.txt", &current.evidence_sha256,
+            &current.index_sha256, text).unwrap()
+    }
+    fn apply(x: &Fixture, text: &str) -> ProtectedResolutionReceipt {
+        let current = x.registry.inspect_native_git_conflicts(&x.id).unwrap();
+        let proof = review(x, text);
+        x.registry.apply_os_approved_conflict_resolution(
+            &x.id, "conflict.txt", &current.evidence_sha256,
+            &current.index_sha256, text, &proof.review_sha256, &AtomicU8::new(0)).unwrap()
+    }
+    #[test]
+    fn review_is_read_only_and_stale_or_forged_claims_are_refused() {
+        let x = fixture();
+        let original_index = fs::read(x.root.join(".git/index")).unwrap();
+        let original_worktree = fs::read(x.root.join("conflict.txt")).unwrap();
+        let r = review(&x, "resolved\n");
+        assert_eq!(r.proposed_bytes, 9);
+        assert!(r.requires_separate_native_os_approval);
+        assert!(!r.authority_granted && !r.index_or_worktree_modified);
+        assert_eq!(fs::read(x.root.join(".git/index")).unwrap(), original_index);
+        assert_eq!(fs::read(x.root.join("conflict.txt")).unwrap(), original_worktree);
+        let inventory = x.registry.inspect_native_git_conflicts(&x.id).unwrap();
+        assert!(x.registry.review_native_conflict_resolution(
+            &x.id, "conflict.txt", &inventory.evidence_sha256,
+            &inventory.index_sha256, "modified\n").is_ok());
+        assert!(x.registry.apply_os_approved_conflict_resolution(
+            &x.id, "conflict.txt", &inventory.evidence_sha256,
+            &inventory.index_sha256, "forged\n", &r.review_sha256, &AtomicU8::new(0)).is_err());
+        assert!(x.registry.inspect_protected_conflict_recovery(&x.id).unwrap().state == "no_journal");
+        assert!(x.registry.review_native_conflict_resolution(
+            &x.id, "../escape", &inventory.evidence_sha256,
+            &inventory.index_sha256, "x").is_err());
+    }
+    #[test]
+    fn approved_resolution_stages_exact_blob_preserves_head_and_other_paths() {
+        let x = fixture();
+        let old = Repository::open(&x.root).unwrap().head().unwrap()
+            .target().unwrap().to_string();
+        let unrelated = fs::read(x.root.join("unrelated.keep")).unwrap();
+        let r = apply(&x, "accepted\n");
+        let repo = Repository::open(&x.root).unwrap();
+        assert_eq!(repo.head().unwrap().target().unwrap().to_string(), old);
+        assert_eq!(r.final_head, old);
+        assert!(!r.branch_ref_modified && !r.commit_created && !r.remote_contacted);
+        assert_eq!(fs::read(x.root.join("conflict.txt")).unwrap(), b"accepted\n");
+        assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
+        let idx = repo.index().unwrap();
+        assert_eq!(idx.get_path(Path::new("conflict.txt"), 0).unwrap().id.to_string(),
+            r.candidate_blob_oid);
+        assert!((1..=3).all(|stage| idx.get_path(Path::new("conflict.txt"), stage).is_none()));
+        assert_eq!(repo.find_blob(Oid::from_str(&r.candidate_blob_oid).unwrap())
+            .unwrap().content(), b"accepted\n");
+        assert_eq!(x.registry.inspect_protected_conflict_recovery(&x.id)
+            .unwrap().state, "verified_resolved_stage");
+    }
+    #[test]
+    fn cancellation_and_external_git_lock_preserve_everything() {
+        let x = fixture();
+        let inventory = x.registry.inspect_native_git_conflicts(&x.id).unwrap();
+        let r = review(&x, "accepted\n");
+        let original_index = fs::read(x.root.join(".git/index")).unwrap();
+        let original_wt = fs::read(x.root.join("conflict.txt")).unwrap();
+        assert!(x.registry.apply_os_approved_conflict_resolution(
+            &x.id, "conflict.txt", &inventory.evidence_sha256,
+            &inventory.index_sha256, "accepted\n", &r.review_sha256,
+            &AtomicU8::new(2)).is_err());
+        fs::write(x.root.join(".git/index.lock"), b"OTHER_GIT_PROCESS").unwrap();
+        assert!(x.registry.apply_os_approved_conflict_resolution(
+            &x.id, "conflict.txt", &inventory.evidence_sha256,
+            &inventory.index_sha256, "accepted\n", &r.review_sha256,
+            &AtomicU8::new(0)).is_err());
+        assert_eq!(fs::read(x.root.join(".git/index.lock")).unwrap(), b"OTHER_GIT_PROCESS");
+        assert_eq!(fs::read(x.root.join(".git/index")).unwrap(), original_index);
+        assert_eq!(fs::read(x.root.join("conflict.txt")).unwrap(), original_wt);
+    }
+    #[test]
+    fn child_abort_entry() {
+        let Some(raw) = std::env::var_os("IDE_G06D04_CHILD_ROOT") else { return; };
+        let root = PathBuf::from(raw);
+        let id = std::env::var("IDE_G06D04_CHILD_ID").unwrap();
+        let registry = IdeWorkspaceRegistry::open(root.parent().unwrap().join("catalog.json"))
+            .unwrap();
+        registry.reopen(&id).unwrap();
+        let inventory = registry.inspect_native_git_conflicts(&id).unwrap();
+        let review = registry.review_native_conflict_resolution(
+            &id, "conflict.txt", &inventory.evidence_sha256,
+            &inventory.index_sha256, "accepted\n").unwrap();
+        let _ = registry.apply_os_approved_conflict_resolution(
+            &id, "conflict.txt", &inventory.evidence_sha256,
+            &inventory.index_sha256, "accepted\n",
+            &review.review_sha256, &AtomicU8::new(0));
+        panic!("G06D04 child returned without genuine abort");
+    }
+    fn spawn_crash(x: &Fixture, phase: &str) {
+        fs::write(x.root.join(".git/g06d04-disposable-marker"),
+            b"G06D04_TEST_ONLY\n").unwrap();
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("git_conflict_resolution::tests::child_abort_entry")
+            .arg("--nocapture")
+            .env("IDE_G06D04_CHILD_ROOT", &x.root)
+            .env("IDE_G06D04_CHILD_ID", &x.id)
+            .env(phase, &x.root)
+            .output().unwrap();
+        assert!(!result.status.success());
+        assert!(!String::from_utf8_lossy(&result.stderr)
+            .contains("returned without genuine abort"),
+            "child must abort at the requested boundary");
+    }
+    #[test]
+    fn genuine_abort_after_file_replace_is_manual_repair_only() {
+        if std::env::var_os("IDE_G06D04_CHILD_ROOT").is_some() { return; }
+        let x = fixture();
+        let old = fs::read(x.root.join(".git/index")).unwrap();
+        spawn_crash(&x, "IDE_G06D04_ABORT_AFTER_WORKTREE");
+        assert_eq!(fs::read(x.root.join("conflict.txt")).unwrap(), b"accepted\n");
+        assert_eq!(fs::read(x.root.join(".git/index")).unwrap(), old);
+        let restarted = IdeWorkspaceRegistry::open(x.base.join("catalog.json")).unwrap();
+        restarted.reopen(&x.id).unwrap();
+        let state = restarted.inspect_protected_conflict_recovery(&x.id).unwrap();
+        assert_eq!(state.state, "partial_or_drifted_manual_repair");
+        assert!(state.operator_review_required && !state.automatic_retry);
+        assert!(restarted.reconcile_protected_conflict_receipt(&x.id).is_err());
+    }
+    #[test]
+    fn genuine_abort_after_index_write_requires_receipt_only() {
+        if std::env::var_os("IDE_G06D04_CHILD_ROOT").is_some() { return; }
+        let x = fixture();
+        let old = Repository::open(&x.root).unwrap().head().unwrap()
+            .target().unwrap().to_string();
+        spawn_crash(&x, "IDE_G06D04_ABORT_AFTER_INDEX");
+        let restarted = IdeWorkspaceRegistry::open(x.base.join("catalog.json")).unwrap();
+        restarted.reopen(&x.id).unwrap();
+        let state = restarted.inspect_protected_conflict_recovery(&x.id).unwrap();
+        assert_eq!(state.state, "resolved_requires_independent_receipt");
+        assert!(state.operator_review_required);
+        assert!(state.candidate_index_entry_matches && state.proposed_worktree_matches);
+        let after_receipt = restarted.reconcile_protected_conflict_receipt(&x.id).unwrap();
+        assert_eq!(after_receipt.state, "verified_resolved_stage");
+        assert_eq!(Repository::open(&x.root).unwrap().head().unwrap()
+            .target().unwrap().to_string(), old);
     }
 }
