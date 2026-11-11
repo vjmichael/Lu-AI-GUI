@@ -308,6 +308,7 @@ impl ChatStore {
              INSERT OR IGNORE INTO ansf_desktop_state(name,value) VALUES('legacy_cutover',0);"
         ).map_err(to_err)?;
         crate::ansf_source_evidence::initialize(&conn)?;
+        crate::p0_auth_custody::initialize(&conn)?;
         let mut store=Self{root:root.to_owned(),library,catalog:Mutex::new(conn),
             hot_books:Mutex::new(VecDeque::new())};
         store.reconcile_legacy_cutover()?;
@@ -1066,6 +1067,22 @@ impl ChatStore {
         crate::ansf_source_evidence::local_model_context(&items)
     }
 
+    /// P0-AUTH: host-only original cancellation intent/outcome, stored
+    /// next to original ANSF chat/source state. No model, WebView or
+    /// recovered permission can insert or authorize a task through this.
+    pub(crate) fn append_p0_auth_cancel(
+        &self,event:&crate::p0_auth_custody::HostCancelEvent
+    )->Result<(),String>{
+        self.require(&event.chat_id)?;
+        let conn=self.catalog.lock().map_err(to_err)?;
+        crate::p0_auth_custody::append(&conn,event)
+    }
+    pub(crate) fn p0_auth_cancel_history(&self,chat:&str)
+        ->Result<Vec<crate::p0_auth_custody::HostCancelHistory>,String>{
+        self.require(chat)?;
+        let conn=self.catalog.lock().map_err(to_err)?;
+        crate::p0_auth_custody::recent(&conn,chat,16)
+    }
     pub fn memory_events(&self,chat_id:&str)->Result<Vec<GoalEvent>,String>{
         self.require(chat_id)?.native_goal_records(chat_id).map_err(to_err)
     }

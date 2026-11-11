@@ -329,13 +329,6 @@ impl TypedGitReadBroker{
             &self.authority,host_policy
         ).map_err(|_|GitReadError::NotAuthorizedOrChanged)?;
         let repo=check_repo_root(&entry.repository_root)?;
-        match self.effects.prepare(execute)
-            .map_err(|_|GitReadError::JournalUnavailable)?{
-            PrepareOutcome::New=>{},
-            PrepareOutcome::Existing(_)=>return Err(GitReadError::DuplicateEffect),
-        }
-        self.effects.mark_executing(&execute.call_id)
-            .map_err(|_|GitReadError::JournalUnavailable)?;
         let plan=TrustedWorkerPlan{
             task_id:execute.call_id.clone(),
             workspace_id:entry.executable.workspace_id.clone(),
@@ -344,19 +337,35 @@ impl TypedGitReadBroker{
             args:entry.operation.args(&repo),progress_protocol:false,
             max_runtime_seconds:Some(entry.timeout_seconds),
         };
-        if self.workers.start_host_approved_git_read(
-            plan,entry.stdout_limit
-        ).is_err(){
-            let _=self.effects.mark_uncertain(&execute.call_id);
-            return Err(GitReadError::WorkerStartFailed)
-        }
-        gate.tasks.insert(origin.task_id.clone(),ActiveGitRead{
-            call_id:execute.call_id.clone(),
-            workspace_id:entry.executable.workspace_id,
-            origin:origin.clone(),operation:entry.operation,
-            limit:entry.stdout_limit,revoked:false,
-        });
-        Ok(())
+        // P0-AUTH: hold the SAME exact read+execute authority fence while
+        // launching AND registering the protected OS child. A concurrent
+        // revoke must wait until the child is visible to the registered
+        // revocation listener; it cannot slip between grant and ownership.
+        self.authority.with_authorized_worker_launch(
+            origin,read,read_descriptor,execute,execute_descriptor,
+            host_policy,||{
+                match self.effects.prepare(execute)
+                    .map_err(|_|GitReadError::JournalUnavailable)?{
+                    PrepareOutcome::New=>{},
+                    PrepareOutcome::Existing(_)=>return Err(GitReadError::DuplicateEffect),
+                }
+                self.effects.mark_executing(&execute.call_id)
+                    .map_err(|_|GitReadError::JournalUnavailable)?;
+                if self.workers.start_host_approved_git_read(
+                    plan,entry.stdout_limit
+                ).is_err(){
+                    let _=self.effects.mark_uncertain(&execute.call_id);
+                    return Err(GitReadError::WorkerStartFailed)
+                }
+                gate.tasks.insert(origin.task_id.clone(),ActiveGitRead{
+                    call_id:execute.call_id.clone(),
+                    workspace_id:entry.executable.workspace_id,
+                    origin:origin.clone(),operation:entry.operation,
+                    limit:entry.stdout_limit,revoked:false,
+                });
+                Ok(())
+            }
+        ).map_err(|_|GitReadError::NotAuthorizedOrChanged)?
     }
     pub fn poll(&self)->Result<usize,GitReadError>{
         let mut gate=self.gate.lock().map_err(|_|GitReadError::LockUnavailable)?;

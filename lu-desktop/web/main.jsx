@@ -834,6 +834,8 @@ function App() {
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
   const [nativeSourcesByChat,setNativeSourcesByChat]=useState({});
   const [nativeSourceBusy,setNativeSourceBusy]=useState(false);
+  const [authorityPostureByChat,setAuthorityPostureByChat]=useState({});
+  const [authorityBusy,setAuthorityBusy]=useState(false);
   const [reviewedMemoryRecoveryByChat,setReviewedMemoryRecoveryByChat]=useState({});
   const [agentProgressByChat,setAgentProgressByChat]=useState({});
   const [agentRecoveryByPlan,setAgentRecoveryByPlan]=useState({});
@@ -1842,6 +1844,44 @@ function App() {
       const handoff=await invoke('lu_observe_handoff',{chatId});
       setObserveHandoff(handoff);
     }catch(e){setError(String(e));}
+  }
+  async function refreshAuthorityPosture(targetChat=chatId){
+    if(!targetChat||authorityBusy)return;
+    setAuthorityBusy(true);setError('');
+    try{
+      const inspected=await invoke('lu_p0_authority_posture',{
+        chatId:targetChat
+      });
+      setAuthorityPostureByChat(old=>({...old,[targetChat]:inspected}));
+    }catch(error){
+      setError('Native authority/custody status unavailable: '+String(error));
+    }finally{setAuthorityBusy(false)}
+  }
+  async function stopChatNativeWork(targetChat=chatId){
+    if(!targetChat||authorityBusy)return;
+    setAuthorityBusy(true);setError('');
+    try{
+      // The native OS confirmation, not the WebView click, authorizes
+      // the scoped stop. A result is a historical request/outcome record,
+      // NOT proof the original OS descendants were all reaped.
+      const examined=await invoke('lu_p0_cancel_chat_operations',{
+        chatId:targetChat
+      });
+      if(examined){
+        setAuthorityPostureByChat(old=>({...old,[targetChat]:examined}));
+        setActivity('Stop requests recorded in the original ANSF audit. Reopen native custody and any uncertain-effect receipts before new work.');
+      }else{
+        setActivity('Native stop consent was declined. No cancellation was requested.');
+      }
+    }catch(error){
+      setError('Native stop uncertain; inspect original ANSF authority record: '+String(error));
+      try{
+        const inspected=await invoke('lu_p0_authority_posture',{
+          chatId:targetChat
+        });
+        setAuthorityPostureByChat(old=>({...old,[targetChat]:inspected}));
+      }catch(_){}
+    }finally{setAuthorityBusy(false)}
   }
   async function refreshNativeSourceHistory(targetChat=chatId){
     if(!targetChat||nativeSourceBusy)return;
@@ -4634,6 +4674,56 @@ function App() {
                   onClick={()=>void rejectNativeActionProposal(proposal)}>Deny</button>
               </div>
             </section>)}
+        {toolActivityOpen && <section className="readProposalCard"
+          role="region" aria-label="P0-AUTH native execution and recovery ownership">
+          <strong>Native task authority · scoped to this conversation</strong>
+          <small>Reads original Lu-owned session, worker and ANSF recovery
+            records. Neither a completed tool response nor a cancellation
+            request proves that every OS descendant was reaped or that an
+            interrupted effect is safe to retry. No permissions are restored.</small>
+          <div className="settingsActions">
+            <button type="button" className="subtleButton"
+              disabled={authorityBusy||!chatId}
+              onClick={()=>void refreshAuthorityPosture(chatId)}>
+              {authorityBusy?'Inspecting…':'Inspect current native custody…'}
+            </button>
+            <button type="button" className="subtleButton"
+              disabled={authorityBusy||!chatId}
+              onClick={()=>void stopChatNativeWork(chatId)}>
+              Revoke and stop this chat's native work…
+            </button>
+          </div>
+          {authorityPostureByChat[chatId]&&<div role="region"
+            aria-label="Original native authority/cancellation status">
+            <small>Local model: {authorityPostureByChat[chatId].modelGeneration}
+              {' '}· Browser grant: {authorityPostureByChat[chatId].browserHostGrant?'Present':'None'}
+              {' '}· Observe: {authorityPostureByChat[chatId].observeMode}
+              {' '}· OCR cancellation: {authorityPostureByChat[chatId].offlineOcrCancellable?'Available':'None'}</small>
+            <small>Scheduled jobs eligible for cancellation:
+              {' '+authorityPostureByChat[chatId].scheduledCancellable}
+              {' '}· Native worker handles visible:
+              {' '+authorityPostureByChat[chatId].nativeWorkersCancellable}
+              {' '}· Interrupted original native tasks:
+              {' '+authorityPostureByChat[chatId].interruptedOrUncertainNativeTasks}
+              {authorityPostureByChat[chatId].scheduledWindowTruncated&&
+                ' · Additional schedule rows not inspected'}</small>
+            <small>Original reviewed recovery:
+              {' '+authorityPostureByChat[chatId].originalReviewedRecoveryStatus}
+              {' '}· Prior permissions reusable: NO
+              {' '}· Automatic retry: NO
+              {' '}· Independent past OS custody proven here: NO.</small>
+            {(authorityPostureByChat[chatId].originalHostCancelEvents||[]).map(entry=>
+              <article className="recoveryProvenanceOperation" key={entry.attemptId}>
+                <strong>{entry.status.replaceAll('_',' ')}</strong>
+                <small>Original cancellation intent: {entry.attemptId}
+                  {' '}· SHA-256 {entry.sourceSha256}</small>
+                {(entry.domains||[]).map(item=>
+                  <small key={item.name}>{item.name}: {item.state.replaceAll('_',' ')}</small>)}
+                <small>Original OS custody independently verified: NO ·
+                  Permission restored: NO · Automatic retry: NO.</small>
+              </article>)}
+          </div>}
+        </section>}
         {toolActivityOpen && <section className="readProposalCard"
           role="region" aria-label="Read-only native tool activity">
           <strong>Native tool activity</strong>

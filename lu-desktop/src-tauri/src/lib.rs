@@ -14,6 +14,8 @@ mod host_clock;
 mod vision_context;
 mod observe_desktop;
 mod ansf_source_evidence;
+mod p0_auth_custody;
+mod p0_auth_desktop;
 #[cfg(target_os="linux")]
 mod observe_linux_auth;
 mod native_browser_host;
@@ -8722,6 +8724,8 @@ pub fn run() {
             project_task_agent_handoff::lu_project_task_prepare_agent_plan,
             project_task_verified_evidence::lu_project_task_criterion_evidence_history,
             project_task_verified_evidence::lu_project_task_review_independent_witness,
+            p0_auth_desktop::lu_p0_authority_posture,
+            p0_auth_desktop::lu_p0_cancel_chat_operations,
             project_updates_desktop::lu_project_update_inspect,
             project_updates_desktop::lu_project_update_apply,
             project_update_model_desktop::lu_project_update_model_suggest,

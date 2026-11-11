@@ -317,6 +317,24 @@ impl ObserveHost {
         }
         Ok(())
     }
+    /// P0-AUTH: scope-preserving lookup for unified operator cancellation.
+    /// Unlike status(), reading an unrelated conversation MUST NOT revoke
+    /// that conversation's active Observe consent as a side effect.
+    pub(crate) fn owned_status(&self,chat_id:&str)
+        ->Result<Option<ObserveView>,String>{
+        let mut session=self.inner.lock()
+            .map_err(|_|"Observe ownership lock unavailable")?;
+        if session.chat_id.as_deref()!=Some(chat_id){
+            return Ok(None)
+        }
+        self.refresh_expiry(&mut session)?;
+        if session.controller.mode()==Mode::Off{
+            self.reconcile_revoked(&mut session)?;
+        }else{
+            self.release_guardian_when_reaped(&mut session);
+        }
+        Ok(Some(Self::view(&session)))
+    }
     pub(crate) fn status(&self,chat_id:&str)->Result<ObserveView,String>{
         let mut session=self.inner.lock().map_err(|_|"Observer lock unavailable")?;
         self.refresh_expiry(&mut session)?;

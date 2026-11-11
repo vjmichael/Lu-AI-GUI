@@ -258,12 +258,6 @@ impl TypedSpecialistBroker{
             .is_ok_and(|n|n<=32*1024*1024){
             return Err(SpecialistError::Unauthorized)
         }
-        match self.journal.prepare(execute).map_err(|_|SpecialistError::Journal)?{
-            PrepareOutcome::New=>(),
-            PrepareOutcome::Existing(_)=>return Err(SpecialistError::EffectExists),
-        }
-        self.journal.mark_executing(&execute.call_id)
-            .map_err(|_|SpecialistError::Journal)?;
         let plan=TrustedWorkerPlan{
             task_id:execute.call_id.clone(),workspace_id:scope.to_owned(),
             executable:approved.executable.executable.clone(),
@@ -272,19 +266,35 @@ impl TypedSpecialistBroker{
             progress_protocol:false,
             max_runtime_seconds:Some(approved.timeout_seconds),
         };
-        if self.supervisor.start_host_approved_specialist_probe(
-            plan,approved.stdout_limit,&approved.input_sha256,approved.kind.name()
-        ).is_err(){
-            let _=self.journal.mark_uncertain(&execute.call_id);
-            return Err(SpecialistError::Spawn)
-        }
-        gate.running.insert(origin.task_id.clone(),Active{
-            call:execute.call_id.clone(),workspace:scope.into(),
-            origin:origin.clone(),input:approved.approved_input,
-            sha:approved.input_sha256,kind:approved.kind,
-            max_stdout:approved.stdout_limit,revoked:false
-        });
-        Ok(())
+        // P0-AUTH: source+executable preflight and BOTH independent native
+        // capabilities are followed by one atomic host launch fence.
+        // Revocation cannot run its OS kill callback before the child is
+        // registered. Nothing inside the fence waits for process completion.
+        self.authority.with_authorized_worker_launch(
+            origin,read,read_desc,execute,descriptor,policy,||{
+                match self.journal.prepare(execute)
+                    .map_err(|_|SpecialistError::Journal)?{
+                    PrepareOutcome::New=>(),
+                    PrepareOutcome::Existing(_)=>return Err(SpecialistError::EffectExists),
+                }
+                self.journal.mark_executing(&execute.call_id)
+                    .map_err(|_|SpecialistError::Journal)?;
+                if self.supervisor.start_host_approved_specialist_probe(
+                    plan,approved.stdout_limit,&approved.input_sha256,
+                    approved.kind.name()
+                ).is_err(){
+                    let _=self.journal.mark_uncertain(&execute.call_id);
+                    return Err(SpecialistError::Spawn)
+                }
+                gate.running.insert(origin.task_id.clone(),Active{
+                    call:execute.call_id.clone(),workspace:scope.into(),
+                    origin:origin.clone(),input:approved.approved_input,
+                    sha:approved.input_sha256,kind:approved.kind,
+                    max_stdout:approved.stdout_limit,revoked:false
+                });
+                Ok(())
+            }
+        ).map_err(|_|SpecialistError::Unauthorized)?
     }
     pub fn poll(&self)->Result<usize,SpecialistError>{
         let mut gate=self.gate.lock().map_err(|_|SpecialistError::Lock)?;

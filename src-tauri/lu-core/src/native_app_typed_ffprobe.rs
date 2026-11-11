@@ -301,13 +301,6 @@ impl TypedMediaProbeBroker{
         ).map_err(|_|MediaProbeError::UnauthorizedOrChanged)?;
         verified_media_input(&profile.approved_media_path,&profile.media_sha256)
             .map_err(|_|MediaProbeError::UnauthorizedOrChanged)?;
-        match self.journal.prepare(execute)
-            .map_err(|_|MediaProbeError::JournalUnavailable)?{
-            PrepareOutcome::New=>{},
-            PrepareOutcome::Existing(_)=>return Err(MediaProbeError::DuplicateEffect),
-        }
-        self.journal.mark_executing(&execute.call_id)
-            .map_err(|_|MediaProbeError::JournalUnavailable)?;
         let plan=TrustedWorkerPlan{
             task_id:execute.call_id.clone(),
             workspace_id:profile.executable.workspace_id.clone(),
@@ -317,22 +310,37 @@ impl TypedMediaProbeBroker{
             progress_protocol:false,
             max_runtime_seconds:Some(profile.timeout_seconds),
         };
-        if self.supervisor.start_host_approved_media_probe(
-            plan,profile.stdout_limit,&profile.media_sha256
-        ).is_err(){
-            let _=self.journal.mark_uncertain(&execute.call_id);
-            return Err(MediaProbeError::WorkerStartFailed)
-        }
-        gate.tasks.insert(origin.task_id.clone(),ActiveMediaProbe{
-            call_id:execute.call_id.clone(),
-            workspace:profile.executable.workspace_id,
-            origin:origin.clone(),
-            media_path:profile.approved_media_path,
-            media_sha256:profile.media_sha256,
-            max_stdout:profile.stdout_limit,
-            revoked:false,
-        });
-        Ok(())
+        // P0-AUTH: do not permit a revoked task to spawn after the
+        // synchronous revocation listener has already scanned ownership.
+        // This read+execute lease ends as soon as the OS child is registered.
+        self.authority.with_authorized_worker_launch(
+            origin,read,read_descriptor,execute,execute_descriptor,
+            host_policy,||{
+                match self.journal.prepare(execute)
+                    .map_err(|_|MediaProbeError::JournalUnavailable)?{
+                    PrepareOutcome::New=>{},
+                    PrepareOutcome::Existing(_)=>return Err(MediaProbeError::DuplicateEffect),
+                }
+                self.journal.mark_executing(&execute.call_id)
+                    .map_err(|_|MediaProbeError::JournalUnavailable)?;
+                if self.supervisor.start_host_approved_media_probe(
+                    plan,profile.stdout_limit,&profile.media_sha256
+                ).is_err(){
+                    let _=self.journal.mark_uncertain(&execute.call_id);
+                    return Err(MediaProbeError::WorkerStartFailed)
+                }
+                gate.tasks.insert(origin.task_id.clone(),ActiveMediaProbe{
+                    call_id:execute.call_id.clone(),
+                    workspace:profile.executable.workspace_id,
+                    origin:origin.clone(),
+                    media_path:profile.approved_media_path,
+                    media_sha256:profile.media_sha256,
+                    max_stdout:profile.stdout_limit,
+                    revoked:false,
+                });
+                Ok(())
+            }
+        ).map_err(|_|MediaProbeError::UnauthorizedOrChanged)?
     }
     pub fn poll(&self)->Result<usize,MediaProbeError>{
         let mut gate=self.gate.lock().map_err(|_|MediaProbeError::LockUnavailable)?;

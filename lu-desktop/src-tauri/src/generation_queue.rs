@@ -121,6 +121,15 @@ impl GenerationQueue {
         Ok(Some((session_id,generation_id,phase)))
     }
 
+    /// P0-AUTH: read-only, exact-chat observation for native operator
+    /// custody/cancel UI. No model/PID/workspace identity leaks out.
+    pub fn scoped_job_active(&self,chat_id:&str)
+        ->Result<Option<bool>,String>{
+        let state=self.state.lock()
+            .map_err(|_|"generation queue poisoned")?;
+        Ok(state.jobs.iter().find(|(_,job)|job.chat_id==chat_id)
+            .map(|(id,_)|state.active.as_deref()==Some(id.as_str())))
+    }
     pub fn has_jobs(&self) -> bool {
         self.state
             .lock()
