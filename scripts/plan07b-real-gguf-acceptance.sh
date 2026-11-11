@@ -13,6 +13,10 @@ mkdir -p plan07b-real-evidence
 echo "SOURCE_SHA=$PLAN07B_REAL_HEAD" > plan07b-real-evidence/source.txt
 python3 -m py_compile benchmarks/e1/plan07b_real_gguf_task_updates.py \
     scripts/plan07b-independent-original-ansf-oracle.py
+python3 -m unittest discover -s benchmarks/e1 -p test_plan07b_real_gguf_task_updates.py -v \
+    2>&1 | tee plan07b-real-evidence/model-grammar-source-tests.log
+grep -Fq 'Ran 3 tests' plan07b-real-evidence/model-grammar-source-tests.log
+grep -Fq 'OK' plan07b-real-evidence/model-grammar-source-tests.log
 export LU_PLAN07B_REAL_PROFILE="$RUNNER_TEMP/plan07b-original-ansf"
 export LU_PLAN07B_REAL_FIXTURE="$GITHUB_WORKSPACE/plan07b-real-evidence/original-native-prompt.json"
 export LU_PLAN07B_REAL_REPLY="$GITHUB_WORKSPACE/plan07b-real-evidence/real-model-reply.txt"
