@@ -6435,6 +6435,57 @@ function App() {
                         </button>
                       </div>}
                     </div>}
+                  {mergePlan.classification === 'divergent_merge_candidate' &&
+                    <div aria-label="G06C03B quarantined real divergent merge">
+                      <h4>Verified two-parent divergent merge · native Git content</h4>
+                      <p>The earlier path-overlap plan is NOT an execution grant.
+                        This separate check computes the actual three-way result in an
+                        isolated bare Git object store and independently verifies its
+                        unique base, both parents, output tree and conflict paths.</p>
+                      <button type="button" className="ghostBtn"
+                        disabled={divergentBusy || divergentExecBusy}
+                        onClick={() => void verifyDivergentMergeResult()}>
+                        {divergentBusy ? 'Testing actual content conflicts…' :
+                          'Verify divergent result in quarantine (read-only)'}
+                      </button>
+                      {divergentResult && divergentResult.projectId === activeProject.projectId &&
+                        divergentResult.sourcePlanSha256 === mergePlan.evidenceSha256 &&
+                        <article className="continuityEvent" role="status">
+                          <p>First parent: <code>{divergentResult.firstParent}</code></p>
+                          <p>Second parent: <code>{divergentResult.secondParent}</code></p>
+                          <p>Quarantined prospective tree:
+                            {' '}<code>{divergentResult.prospectiveTree || 'no conflict-free tree'}</code></p>
+                          <p>Actual Git conflicts: {divergentResult.conflictCount}
+                            {' · '}Result entries: {divergentResult.proposedEntryCount}</p>
+                          {divergentResult.conflictCount > 0 &&
+                            <p role="alert">Execution denied. Conflicting paths:
+                              {' '}{divergentResult.conflicts.join(', ')}</p>}
+                          <p>Native result evidence:
+                            {' '}<code>{divergentResult.resultSha256}</code></p>
+                          <p>No authorization was created by this preview.
+                            Conflicts require manual Git resolution outside this operation.</p>
+                          {divergentResult.conflictFreePreview === true &&
+                            divergentResult.conflictCount === 0 &&
+                            divergentResult.prospectiveTree &&
+                            <div aria-label="G06C03B separate native OS two-parent merge consent">
+                              <p role="alert">Publication creates a NEW two-parent local
+                                merge commit. The OS must grant a distinct one-use approval.
+                                The source branch is retained. Checkout and ref publication
+                                use a durable journal; interruption may require manual repair.</p>
+                              <button type="button" className="primaryBtn"
+                                disabled={divergentExecBusy || divergentBusy}
+                                onClick={() => void executeProtectedDivergentMerge()}>
+                                {divergentExecBusy ? 'Awaiting native approval / publishing…' :
+                                  'Request separate OS approval for exact two-parent merge'}
+                              </button>
+                              {divergentExecBusy &&
+                                <button type="button" className="ghostBtn"
+                                  onClick={() => void cancelProtectedDivergentMerge()}>
+                                  Request cancellation before object publication
+                                </button>}
+                            </div>}
+                        </article>}
+                    </div>}
                       <p>Evidence digest: <code>{mergePlan.evidenceSha256}</code></p>
                       <p>Source rechecked: {String(mergePlan.sourceRechecked)}.
                         Authorization: none. Execution route: unavailable.
@@ -6481,6 +6532,49 @@ function App() {
                     <button type="button" className="ghostBtn" disabled={replayRecoveryBusy}
                       onClick={() => void reconcileReplayReceipt()}>
                       Ask OS permission to verify historical receipt only
+                    </button>}
+                </article>}
+            </div>}
+            {activeProject && <div className="continuityDocument"
+              aria-label="G06C03B two-parent divergent merge durable recovery">
+              <h3>Divergent merge · two-parent custody and restart recovery</h3>
+              <p>Exact Git parent and tree readback. No automatic merge retry, ref rewrite,
+                checkout, rollback or deletion of another process's Git lock.
+                Physical-human OS consent and installed acceptance remain deferred.</p>
+              <button type="button" className="ghostBtn"
+                disabled={divergentRecoveryBusy || divergentExecBusy}
+                onClick={() => void inspectDivergentRecovery()}>
+                {divergentRecoveryBusy ? 'Re-reading native Git journal…' :
+                  'Inspect divergent merge journal and interrupted state'}
+              </button>
+              {divergentReceipt?.projectId === activeProject.projectId &&
+                <article className="continuityEvent" role="status">
+                  <strong>Two-parent protected merge independently verified</strong>
+                  <p>First parent: <code>{divergentReceipt.firstParent}</code></p>
+                  <p>Second parent: <code>{divergentReceipt.secondParent}</code></p>
+                  <p>Published merge commit:
+                    {' '}<code>{divergentReceipt.publishedMergeCommit}</code></p>
+                  <p>Result tree: <code>{divergentReceipt.resultingTree}</code></p>
+                  <p>Operation: <code>{divergentReceipt.operationId}</code></p>
+                </article>}
+              {divergentRecovery?.projectId === activeProject.projectId &&
+                <article className="continuityEvent" role="status">
+                  <strong>{divergentRecovery.state.replaceAll('_', ' ')}</strong>
+                  <p>Journal phase: {divergentRecovery.phase}
+                    {' · '}Foreign lock: {String(divergentRecovery.foreignIndexLockPresent)}</p>
+                  <p>Original HEAD: {String(divergentRecovery.originalHeadMatches)}
+                    {' · '}Candidate HEAD: {String(divergentRecovery.candidateHeadMatches)}
+                    {' · '}Selected branch preserved:
+                    {' '}{String(divergentRecovery.selectedBranchPreserved)}</p>
+                  {divergentRecovery.operatorReconciliationRequired &&
+                    <p role="alert">Operator review required. No unattended mutation is allowed.</p>}
+                  {['published_requires_independent_receipt',
+                    'unpublished_no_index_change_needs_review'].includes(divergentRecovery.state) &&
+                    !divergentRecovery.foreignIndexLockPresent &&
+                    <button type="button" className="ghostBtn"
+                      disabled={divergentRecoveryBusy}
+                      onClick={() => void reconcileDivergentReceipt()}>
+                      Request distinct OS consent for receipt-only reconciliation
                     </button>}
                 </article>}
             </div>}
