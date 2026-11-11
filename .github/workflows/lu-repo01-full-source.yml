@@ -1857,7 +1857,7 @@ jobs:
           node --test lu-desktop/tests/workspace-desktop.test.mjs 2>&1 | tee plan05-native-evidence/settings.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
             --lib project_task_register::tests -- --nocapture 2>&1 | tee plan05-native-evidence/core.log
-          grep -Fq 'test result: ok. 2 passed; 0 failed;' plan05-native-evidence/core.log
+          grep -Fq 'test result: ok. 3 passed; 0 failed;' plan05-native-evidence/core.log
           cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
             --lib project_register_desktop::tests -- --nocapture 2>&1 | tee plan05-native-evidence/desktop.log
           grep -Fq 'test result: ok. 2 passed; 0 failed;' plan05-native-evidence/desktop.log
