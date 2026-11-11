@@ -67,7 +67,7 @@ pub struct BranchOperationReview {
     pub repository_modified: bool,
 }
 
-fn safe_local_name(name: &str) -> bool {
+pub(crate) fn safe_local_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= MAX_BRANCH_BYTES
         && name != "HEAD"
@@ -82,7 +82,7 @@ fn safe_local_name(name: &str) -> bool {
         && Reference::is_valid_name(&format!("refs/heads/{name}"))
 }
 
-fn exact_repo(
+pub(crate) fn exact_repo(
     registry: &IdeWorkspaceRegistry,
     project_id: &str,
 ) -> Result<Repository, &'static str> {
@@ -150,7 +150,7 @@ fn digest(parts: &[&str]) -> String {
     format!("{:x}", hash.finalize())
 }
 
-fn local_commit(repo: &Repository, name: &str) -> Result<Oid, &'static str> {
+pub(crate) fn local_commit(repo: &Repository, name: &str) -> Result<Oid, &'static str> {
     let branch = repo
         .find_branch(name, BranchType::Local)
         .map_err(|_| "G06C_LOCAL_BRANCH_NOT_FOUND")?;

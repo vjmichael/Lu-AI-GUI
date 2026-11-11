@@ -924,6 +924,23 @@ async fn ide_git_review_branch_operation(
     .map_err(|_| "G06C_REVIEW_HOST_UNAVAILABLE".to_owned())?
 }
 
+/// G06C-02: read-only merge plan. No ref writes or user-approved grant.
+#[tauri::command]
+async fn ide_git_preview_local_merge(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    selected_branch: String,
+) -> Result<lu_ide_workspace::git_merge_plan::ReviewedMergePlan, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry
+            .preview_reviewed_local_merge(&project_id, &selected_branch)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06C02_MERGE_PREVIEW_HOST_UNAVAILABLE".to_owned())?
+}
+
 /// On explicit human request, compare local work with current public GitHub
 /// branch evidence. HTTPS to fixed api.github.com only; no token or Git fetch.
 #[tauri::command]
@@ -2544,6 +2561,7 @@ pub fn run() {
             ide_read_git_file_history,
             ide_read_git_refs_health,
             ide_git_review_branch_operation,
+            ide_git_preview_local_merge,
             ide_read_git_diff,
             ide_probe_project_resource,
             ide_read_git_history,
