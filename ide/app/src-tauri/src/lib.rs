@@ -960,6 +960,99 @@ async fn ide_git_verify_divergent_merge(
     .map_err(|_| "G06C03B_PREVIEW_HOST_UNAVAILABLE".to_owned())?
 }
 
+/// 6C-03B: distinct one-use native OS authorization to publish a verified
+/// two-parent local merge. The WebView supplies ONLY source-bound review data.
+#[tauri::command]
+async fn ide_git_execute_divergent_merge(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+    selected_branch: String,
+    evidence_sha256: String,
+    result_sha256: String,
+) -> Result<lu_ide_workspace::git_protected_divergent_merge::ApprovedDivergentMergeReceipt, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let cancel = sessions.begin(&project_id)?;
+    let selected_id = project_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let verified = registry.revalidate_protected_divergent_merge(
+            &selected_id, &selected_branch, &evidence_sha256, &result_sha256,
+        ).map_err(str::to_owned)?;
+        if cancel.load(Ordering::SeqCst) != 0 {
+            return Err("G06C03B_CANCELLED_BEFORE_DIALOG".into());
+        }
+        let approved = app.dialog().message(format!(
+            "PUBLISH A NEW TWO-PARENT LOCAL MERGE COMMIT?\\n\\nProject: {}\\nSelected local branch: {}\\nFirst parent/current HEAD: {}\\nSecond parent/selected tip: {}\\nUnique base: {}\\nVerified merge tree: {}\\nMerge result SHA-256: {}\\nSource plan SHA-256: {}\\n\\nThis operation writes local Git objects, changes tracked work files and the index, then advances the current local branch using exact old-HEAD compare-and-swap. A crash before the ref update can require manual Git repair. A crash after publication needs separate receipt-only approval. This approval is ONE USE, specific to these exact parents and verified tree. No hooks, Git CLI, remote push or network access. Deny if another Git process is active.",
+            selected_id, selected_branch, verified.first_parent,
+            verified.second_parent, verified.merge_base,
+            verified.prospective_tree.as_deref().unwrap_or("NONE"),
+            verified.result_sha256, verified.source_plan_sha256,
+        )).title("Lu IDE · Separate native two-parent divergent merge consent")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+            "Publish this exact two-parent merge".into(), "Deny / Cancel".into(),
+          )).blocking_show();
+        if !approved { return Err("G06C03B_HUMAN_REFUSED".into()); }
+        if cancel.load(Ordering::SeqCst) != 0 {
+            return Err("G06C03B_CANCELLED_AFTER_DIALOG".into());
+        }
+        registry.execute_os_approved_divergent_merge(
+            &selected_id, &selected_branch, &evidence_sha256, &result_sha256, &cancel,
+        ).map_err(str::to_owned)
+    }).await.map_err(|_| "G06C03B_NATIVE_EXECUTION_INTERRUPTED".to_owned());
+    sessions.end(&project_id);
+    result?
+}
+
+#[tauri::command]
+async fn ide_git_inspect_divergent_recovery(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_protected_divergent_merge::DivergentMergeRecovery, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_protected_divergent_recovery(&project_id).map_err(str::to_owned)
+    }).await.map_err(|_| "G06C03B_RECOVERY_HOST_UNAVAILABLE".to_owned())?
+}
+
+#[tauri::command]
+async fn ide_git_reconcile_divergent_receipt(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_protected_divergent_merge::DivergentMergeRecovery, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let _lock = sessions.begin(&project_id)?;
+    let selected_id = project_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let observed = registry.inspect_protected_divergent_recovery(&selected_id)
+            .map_err(str::to_owned)?;
+        if !observed.operator_reconciliation_required { return Ok(observed); }
+        if observed.foreign_index_lock_present || !matches!(observed.state,
+            "published_requires_independent_receipt" |
+            "unpublished_no_index_change_needs_review") {
+            return Err("G06C03B_PHYSICAL_MANUAL_REPAIR_REQUIRED".into());
+        }
+        let approved = app.dialog().message(format!(
+            "INDEPENDENT DIVERGENT MERGE RECOVERY RECEIPT\\n\\nProject: {}\\nObserved state: {}\\nJournal phase: {}\\n\\nRe-read the original and candidate Git objects, both parents, branch ref, index and worktree, and append ONLY a receipt? This will never replay the merge, modify files, write refs, delete Git locks or silently repair an interrupted checkout.",
+            selected_id, observed.state, observed.phase,
+        )).title("Lu IDE · Separate native receipt-only reconciliation")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+            "Verify and record receipt only".into(), "Deny / Cancel".into(),
+          )).blocking_show();
+        if !approved { return Err("G06C03B_RECOVERY_HUMAN_REFUSED".into()); }
+        registry.reconcile_protected_divergent_receipt(&selected_id)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06C03B_RECOVERY_HOST_INTERRUPTED".to_owned());
+    sessions.end(&project_id);
+    result?
+}
+
 /// 6C-03A native one-use OS-confirmed local fast-forward. The frontend
 /// supplies only selection and a claim to exact source evidence, NEVER a grant.
 /// A divergent merge is intentionally unavailable until its output is verified.
@@ -2881,6 +2974,9 @@ pub fn run() {
             ide_git_review_branch_operation,
             ide_git_preview_local_merge,
             ide_git_verify_divergent_merge,
+            ide_git_execute_divergent_merge,
+            ide_git_inspect_divergent_recovery,
+            ide_git_reconcile_divergent_receipt,
             ide_git_review_rebase_cherry_pick,
             ide_git_preview_isolated_replay,
             ide_git_execute_cherry_pick,
