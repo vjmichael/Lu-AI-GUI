@@ -333,3 +333,32 @@ test('PLAN-07B genuine local GGUF proposal remains original-evidence-only, never
   assert.doesNotMatch(host,/lu_agent_run_reviewed_step|git commit|Command::new|grant_execution|model_approved_task/);
   assert.doesNotMatch(screen,/setTaskComplete|autoApprove|invoke\('lu_agent_run_reviewed_step'/);
 });
+
+
+test('PLAN-07B native cancellation is scoped to its own GGUF job; real acceptance distinguishes external stream abort from Lu FIFO',()=>{
+  const queue=readFileSync(new URL('../src-tauri/src/generation_queue.rs',import.meta.url),'utf8');
+  const host=readFileSync(new URL('../src-tauri/src/project_update_model_desktop.rs',import.meta.url),'utf8');
+  const lib=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+  const ui=readFileSync(new URL('../web/task_board.jsx',import.meta.url),'utf8');
+  const workflow=readFileSync(new URL('../../.github/workflows/lu-repo01-full-source.yml',import.meta.url),'utf8');
+  const bash=readFileSync(new URL('../../scripts/plan07b-real-gguf-acceptance.sh',import.meta.url),'utf8');
+  const python=readFileSync(new URL('../../benchmarks/e1/plan07b_real_gguf_task_updates.py',import.meta.url),'utf8');
+  assert.match(queue,/pub fn cancel_for_chat/);
+  assert.match(queue,/plan07b_scoped_cancel_cannot_touch_unrelated_active_chat/);
+  assert.match(queue,/plan07b_scoped_active_cancel_marks_ticket_before_model_storage/);
+  assert.match(host,/fn lu_project_update_model_cancel\(/);
+  assert.match(host,/cancel_for_chat\(\s*"lu-plan07b-host-suggestions"/);
+  assert.match(host,/CancelState::Active/);
+  assert.match(host,/PLAN07B_CANCELLED_BEFORE_IMMUTABLE_PERSIST/);
+  assert.match(lib,/project_update_model_desktop::lu_project_update_model_cancel,/);
+  assert.match(ui,/invoke\('lu_project_update_model_cancel'\)/);
+  assert.match(ui,/Cancel queued\/active GGUF generation/);
+  assert.match(workflow,/genuine-plan07b-gguf:/);
+  assert.match(workflow,/LU_PLAN07B_REAL_SHA/);
+  assert.match(workflow,/native-plan07b-model:/);
+  assert.match(bash,/project_update_model_desktop::tests::verify_real_qwen_reply_cancellation_and_original_ansf_no_task_acceptance/);
+  assert.match(bash,/PLAN07B_INDEPENDENT_REAL_GGUF_NO_AUTO_ACCEPTANCE_PASS=1/);
+  assert.match(python,/clientClosedOriginalStreamBeforeCompletion/);
+  assert.match(python,/luNativeFifoCancellationTested/);
+  assert.doesNotMatch(host,/auto.*complete|grant_worker_execution|start_native_tools/);
+});
