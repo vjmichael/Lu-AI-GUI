@@ -452,7 +452,10 @@ impl IdeWorkspaceRegistry {
         let repo = exact_repo(self, project_id)?;
         let last = read_latest(&journal_file(self, project_id)?)?;
         let index_lock = fs::symlink_metadata(repo.path().join("index.lock")).is_ok();
-        let head = repo.head().ok().and_then(|reference| reference.target())
+        let head_ref = repo.head().ok();
+        let active_ref = head_ref.as_ref().and_then(|reference| reference.name())
+            .map(str::to_owned);
+        let head = head_ref.as_ref().and_then(|reference| reference.target())
             .map(|oid| oid.to_string());
         let index_sha = exact_index_sha(repo.path()).ok();
         let (state, phase, match_old, match_new, index_old, index_new) = match last {
@@ -461,8 +464,13 @@ impl IdeWorkspaceRegistry {
                 return Err("G06C03_RECOVERY_WRONG_PROJECT");
             }
             Some(j) => {
-                let old = head.as_deref() == Some(&j.previous_head);
-                let new = head.as_deref() == Some(&j.selected_tip);
+                let correct_branch = active_ref.as_deref() == Some(j.branch_ref.as_str());
+                let correct_selected = local_commit(&repo, &j.selected_local_branch)
+                    .ok().is_some_and(|oid| oid.to_string() == j.selected_tip);
+                let old = correct_branch && correct_selected &&
+                    head.as_deref() == Some(j.previous_head.as_str());
+                let new = correct_branch && correct_selected &&
+                    head.as_deref() == Some(j.selected_tip.as_str());
                 let old_index = index_sha.as_deref() == Some(&j.original_index_sha256);
                 let new_index = !j.selected_index_sha256.is_empty()
                     && index_sha.as_deref() == Some(&j.selected_index_sha256);
@@ -770,6 +778,24 @@ mod tests {
         assert_eq!(final_repo.head().unwrap().target().unwrap().to_string(), selected);
         assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
         assert!(final_repo.statuses(None).unwrap().is_empty());
+    }
+    #[test]
+    fn restart_does_not_confuse_a_different_local_branch_at_the_same_commit() {
+        let x = fixture();
+        let digest = reviewed(&x);
+        let receipt = x.registry.execute_os_approved_fast_forward(
+            &x.id, "feature", &digest, &AtomicU8::new(0)).unwrap();
+        let repo = Repository::open(&x.root).unwrap();
+        let commit = repo.find_commit(Oid::from_str(&receipt.resulting_head).unwrap()).unwrap();
+        repo.branch("another", &commit, false).unwrap();
+        repo.set_head("refs/heads/another").unwrap();
+        assert!(repo.statuses(None).unwrap().is_empty());
+        let state = x.registry.inspect_protected_merge_recovery(&x.id).unwrap();
+        assert_eq!(state.state, "ambiguous_merge_files_or_ref_drift");
+        assert!(state.operator_reconciliation_required);
+        assert_eq!(x.registry.reconcile_protected_merge_receipt(&x.id).unwrap_err(),
+            "G06C03_RECOVERY_MANUAL_REPAIR_REQUIRED");
+        assert_eq!(repo.head().unwrap().name(), Some("refs/heads/another"));
     }
     #[test]
     fn real_child_process_abort_after_checkout_refuses_replay_and_preserves_original_ref() {
