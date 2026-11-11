@@ -40,6 +40,7 @@ mod project_status_desktop;
 mod project_task_desktop;
 mod project_register_desktop;
 mod project_task_board_desktop;
+mod project_task_agent_handoff;
 mod project_updates_desktop;
 mod project_update_model_desktop;
 mod project_review_decisions_desktop;
@@ -8596,6 +8597,8 @@ pub fn run() {
             project_task_board_desktop::lu_project_board_correct,
             project_task_board_desktop::lu_project_board_approve,
             project_task_board_desktop::lu_project_board_export,
+            project_task_agent_handoff::lu_project_task_agent_handoffs,
+            project_task_agent_handoff::lu_project_task_prepare_agent_plan,
             project_updates_desktop::lu_project_update_inspect,
             project_updates_desktop::lu_project_update_apply,
             project_update_model_desktop::lu_project_update_model_suggest,

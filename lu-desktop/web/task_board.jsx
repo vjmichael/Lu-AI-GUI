@@ -19,6 +19,8 @@ export function TaskBoardWindow(){
   const [updatePreview,setUpdatePreview]=useState(null);
   const [modelSuggestion,setModelSuggestion]=useState(null);
   const [reviewHistory,setReviewHistory]=useState([]);
+  const [agentMode,setAgentMode]=useState('review_only');
+  const [agentLinks,setAgentLinks]=useState([]);
   const [reviewTaskId,setReviewTaskId]=useState('');
   const [reviewMode,setReviewMode]=useState('native');
   const [reviewNote,setReviewNote]=useState('');
@@ -49,7 +51,7 @@ export function TaskBoardWindow(){
   useEffect(()=>{
     setTaskId('');setEvidence(null);setEdit(null);setUpdatePreview(null);
     setModelSuggestion(null);setReviewTaskId('');setReviewMode('native');
-    setReviewNote('');setReviewHistory([]);
+    setReviewNote('');setReviewHistory([]);setAgentLinks([]);
     if(!registerId)return;
     let live=true;
     void invoke('lu_project_update_review_history',{registerId})
@@ -69,12 +71,44 @@ export function TaskBoardWindow(){
   }
   async function selectTask(t){
     if(!current)return;
-    setTaskId(t.taskId);setEvidence(null);setEdit(null);
+    setTaskId(t.taskId);setEvidence(null);setEdit(null);setAgentLinks([]);
     try{
-      const detail=await invoke('lu_project_board_evidence',{
-        registerId:current.board.registerId,taskId:t.taskId});
-      setEvidence(detail);
+      const [detail,links]=await Promise.all([
+        invoke('lu_project_board_evidence',{
+          registerId:current.board.registerId,taskId:t.taskId}),
+        invoke('lu_project_task_agent_handoffs',{
+          registerId:current.board.registerId,taskId:t.taskId})
+      ]);
+      setEvidence(detail);setAgentLinks(links);
     }catch(e){setError(errorText(e))}
+  }
+  async function reopenAgentLinks(){
+    if(!current||!active)return;
+    await act('Reopened original task-to-agent plan links; no task completed.',async()=>{
+      const links=await invoke('lu_project_task_agent_handoffs',{
+        registerId:current.board.registerId,taskId:active.taskId
+      });
+      setAgentLinks(links);return links;
+    });
+  }
+  async function prepareAgentPlan(){
+    if(!current||!active||busy||!current.reviewCurrent||
+       active.needsHumanReconciliation)return;
+    await act('Created a separately reviewed source-linked agent draft. Open its dedicated conversation in the main Lu window. No worker executed.',async()=>{
+      const link=await invoke('lu_project_task_prepare_agent_plan',{
+        registerId:current.board.registerId,taskId:active.taskId,
+        expectedBoardSha256:current.board.sha256,
+        expectedRegisterSha256:current.sourceRegisterSha256,
+        expectedTaskVersion:active.version,mode:agentMode
+      });
+      if(link){
+        const links=await invoke('lu_project_task_agent_handoffs',{
+          registerId:current.board.registerId,taskId:active.taskId
+        });
+        setAgentLinks(links);
+      }
+      return link;
+    });
   }
   async function reorder(task,delta){
     if(!current||filter!=='All'||search.trim())return;
@@ -470,6 +504,51 @@ export function TaskBoardWindow(){
               <p><strong>Classification:</strong> {taskStatus(active)}</p>
               <p><strong>Acceptance criterion:</strong> {active.acceptanceCriteria}</p>
               <p><strong>Blocker:</strong> {active.blockedBy}</p>
+              <section className="plan06AgentHandoff" aria-label="Selected task agent planning handoff">
+                <h3>Agent plan from selected task · P0-Next</h3>
+                <p>This creates a separate ANSF conversation and human-review-only agent plan
+                  from the original task and a freshly selected native project source.
+                  Task-board approval is not tool approval; the task is never marked complete.</p>
+                <label>Agent draft mode
+                  <select aria-label="Agent task plan mode" value={agentMode}
+                    disabled={busy} onChange={e=>setAgentMode(e.target.value)}>
+                    <option value="review_only">Review-only source, analysis and human decision (no installed worker adapter)</option>
+                    <option value="reviewed_git_media_check">One independently reviewed Git/media source check (separate native tool approval required)</option>
+                  </select>
+                </label>
+                <div className="plan06Actions">
+                  <button type="button" disabled={busy||!current.reviewCurrent||
+                    active.needsHumanReconciliation}
+                    onClick={()=>void prepareAgentPlan()}>
+                    Review source and prepare separate agent draft…
+                  </button>
+                  <button type="button" disabled={busy}
+                    onClick={()=>void reopenAgentLinks()}>
+                    Reopen original agent-plan links…
+                  </button>
+                </div>
+                {!current.reviewCurrent&&<small>Review the current task-board order and wording first;
+                  stale board approval is not usable as a source lease.</small>}
+                {active.needsHumanReconciliation&&<small>Resolve the original source-change
+                  reconciliation before creating a new plan draft.</small>}
+                {agentLinks.length===0?<p>No agent-plan handoff recorded for this task.</p>:
+                  <div role="region" aria-label="Original agent task handoffs">
+                    {agentLinks.map(link=><article key={link.handoffId}>
+                      <strong>Task v{link.taskVersion} · {link.phase} ·
+                        {link.sourceLeaseCurrent?' current register lease':' historical/stale lease'}</strong>
+                      <p>Conversation: <code>{link.chatId}</code></p>
+                      <p>Agent plan: <code>{link.planId||'Prepared only — manual recovery required'}</code></p>
+                      <small>Revision: {link.revisionSha256||'not staged'} ·
+                        Human review: {link.planReview} ·
+                        Host custody: {link.supervisorState} ·
+                        Historical witness: {link.historicalWitnessLinked?'linked, not present-day proof':'none'}.</small>
+                      <p>{link.nextSafeAction}</p>
+                      <small>Task complete: NO · Execution authorized by this link: NO.
+                        Open the dedicated conversation in Lu to review the agent plan
+                        and separately authorize any supported native operation.</small>
+                    </article>)}
+                  </div>}
+              </section>
               <p><strong>Exact HEAD:</strong> {active.selectedHead||'unverified'}</p>
               <p><strong>Original requirement:</strong> {active.sourceRequirementId}</p>
               <button type="button" disabled={busy}

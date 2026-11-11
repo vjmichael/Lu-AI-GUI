@@ -96,7 +96,7 @@ fn init(conn:&Connection)->Result<(),String>{
     );").map_err(|_|"PLAN06_BOARD_SCHEMA_FAILED")?;
     Ok(())
 }
-fn read(conn:&Connection,r:&register::TaskRegister)->Result<TaskBoard,String>{
+pub(super) fn read(conn:&Connection,r:&register::TaskRegister)->Result<TaskBoard,String>{
     init(conn)?;
     let mut stmt=conn.prepare("SELECT sequence,source_register_sha256,previous_sha256,
         snapshot_sha256,snapshot_json,no_execution_authority

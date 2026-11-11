@@ -2167,7 +2167,7 @@ function App() {
   }
   useEffect(() => {
     let alive = true;
-    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {}, stopBrowserChallenge = () => {}, stopPlanAdmission = () => {}, stopAgentWitness = () => {};
+    let stopQueued = () => {}, stopStart = () => {}, stopToken = () => {}, stopReadProposal = () => {}, stopWriteProposal = () => {}, stopEditProposal = () => {}, stopNativeAction = () => {}, stopToolProgress = () => {}, stopTurnCapabilities = () => {}, stopBackground = () => {}, stopFinished = () => {}, stopBrowserChallenge = () => {}, stopPlanAdmission = () => {}, stopAgentWitness = () => {}, stopTaskHandoff = () => {};
     (async () => {
       try {
         const [list] = await Promise.all([refreshChats(), refreshCatalog()]);
@@ -2238,6 +2238,20 @@ function App() {
         setError('No plan was admitted: '+String(result.reason||'Invalid model plan'));
       }
     }).then(fn=>{if(alive)stopPlanAdmission=fn;else fn();});
+    listen('lu-project-agent-handoff-created',e=>{
+      const link=e.payload;
+      if(!alive||!link?.chatId||!link?.taskId)return;
+      // Do not steal another conversation's input focus or current model
+      // session. Refresh the Lu-owned ANSF chat list; navigation stays human.
+      void refreshChats().then(rows=>{
+        if(alive&&rows.some(c=>c.chatId===link.chatId)){
+          setActivity('A new source-linked agent plan draft is available for task '+
+            link.taskId+'. Select its dedicated conversation to review it. No worker executed.');
+        }
+      }).catch(err=>{
+        if(alive)setError('New project task conversation list refresh failed: '+String(err));
+      });
+    }).then(fn=>{if(alive)stopTaskHandoff=fn;else fn();});
     listen('lu-agent-step-verified',e=>{
       const result=e.payload;
       if(!alive||!result?.chatId||!result?.planId)return;
@@ -2275,7 +2289,7 @@ function App() {
       setBackgroundTerminalNotice(e.payload);
       if (backgroundPaneOpen) void refreshBackgroundTasks();
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
-    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); stopPlanAdmission(); stopAgentWitness(); };
+    return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); stopPlanAdmission(); stopAgentWitness(); stopTaskHandoff(); };
   }, []);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
