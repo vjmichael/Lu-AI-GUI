@@ -399,10 +399,11 @@ impl IdeWorkspaceRegistry {
         no_foreign_lock(&repo)?;
         let mut idx = repo.index().map_err(|_| "G06D04_INDEX_OPEN_FAILED")?;
         idx.read(true).map_err(|_| "G06D04_INDEX_REFRESH_FAILED")?;
-        let basis: IndexEntry = (1..=3).find_map(|s| idx.get_path(Path::new(relative), s))
+        let mut basis: IndexEntry = (1..=3).find_map(|s| idx.get_path(Path::new(relative), s))
             .ok_or("G06D04_CONFLICT_ENTRY_DISAPPEARED_MANUAL_REVIEW")?;
         j.phase = "index_intent".to_owned();
         journal_append(&journal, &j)?;
+        basis.flags &= !0x3000; // The resolution must be stage zero, not another conflict entry.
         idx.add_frombuffer(&basis, candidate.as_bytes())
             .map_err(|_| "G06D04_INDEX_STAGE_FAILED_MANUAL_REVIEW")?;
         idx.write().map_err(|_| "G06D04_INDEX_WRITE_FAILED_MANUAL_REVIEW")?;
