@@ -9,9 +9,13 @@ on:
       - 'ide/host/src/git_protected_divergent_merge.rs'
       - 'ide/host/src/lib.rs'
       - 'ide/app/src-tauri/src/lib.rs'
+  pull_request:
+    branches: [ide/group06c04-rebase-cherrypick-20261110]
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 concurrency:
   group: ide-g06c03b-${{ github.ref }}
   cancel-in-progress: true
@@ -26,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -42,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           cargo test --manifest-path ide/host/Cargo.toml --lib git_divergent_verify -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_divergent_merge -- --nocapture
           cargo check --locked --manifest-path ide/host/Cargo.toml --all-targets
@@ -67,7 +71,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          printf 'head=%s\nos=%s\ndivergent_publication=SOURCE_IMPLEMENTED_NOT_NATIVE_ACCEPTED\nhuman_consent=DEFERRED\nrelease=NOT_AUTHORIZED\n' "$GITHUB_SHA" "$RUNNER_OS"
+          printf 'head=%s\nos=%s\ndivergent_publication=SOURCE_IMPLEMENTED_NOT_NATIVE_ACCEPTED\nhuman_consent=DEFERRED\nrelease=NOT_AUTHORIZED\n' "$SOURCE_SHA" "$RUNNER_OS"
 
   # Automated INSTALLED-package smoke only. No OS dialog is auto-approved.
   # Physical user-operated one-use consent remains DEFERRED (issue #212).
@@ -78,7 +82,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -91,7 +95,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
@@ -102,8 +106,8 @@ jobs:
           set -euo pipefail
           npm ci --prefix ide/app --ignore-scripts --no-audit --no-fund
           cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
-          python ide/packaging/upstream_notice_receipt.py --repo-root . --source-sha "$GITHUB_SHA" --output ide/app/src-tauri/upstream-notice-receipt.json
-          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha "$GITHUB_SHA" --upstream-receipt ide/app/src-tauri/upstream-notice-receipt.json
+          python ide/packaging/upstream_notice_receipt.py --repo-root . --source-sha "$SOURCE_SHA" --output ide/app/src-tauri/upstream-notice-receipt.json
+          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha "$SOURCE_SHA" --upstream-receipt ide/app/src-tauri/upstream-notice-receipt.json
           cd ide/app
           npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.g06b05.linux.conf.json --bundles deb
       - name: Verify license payload and exercise real Debian installation
@@ -113,14 +117,14 @@ jobs:
           shopt -s nullglob
           packages=(ide/app/src-tauri/target/release/bundle/deb/*.deb)
           [[ "${#packages[@]}" -eq 1 ]] || { echo G06C03B_DEB_DENIED:package_count >&2; exit 2; }
-          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha "$GITHUB_SHA" --require-upstream --artifact "${packages[0]}" --receipt ide/app/src-tauri/verification-package-receipt.json
-          bash ide/app/fixtures/Test-G06B05InstalledDebSmoke.sh "${packages[0]}" "$GITHUB_SHA"
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha "$SOURCE_SHA" --require-upstream --artifact "${packages[0]}" --receipt ide/app/src-tauri/verification-package-receipt.json
+          bash ide/app/fixtures/Test-G06B05InstalledDebSmoke.sh "${packages[0]}" "$SOURCE_SHA"
           sha256sum "${packages[0]}"
           echo G06C03B_LINUX_INSTALLED_SMOKE=NOT_HUMAN_CONSENT
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: ide-g06c03b-deb-${{ github.sha }}
+          name: ide-g06c03b-deb-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             ide/app/src-tauri/target/release/bundle/deb/*.deb
             ide/app/src-tauri/verification-notices/**
@@ -135,7 +139,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -148,11 +152,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           npm ci --prefix ide/app --ignore-scripts --no-audit --no-fund
           cargo fetch --locked --manifest-path ide/app/src-tauri/Cargo.toml
-          python ide/packaging/upstream_notice_receipt.py --repo-root . --source-sha "$GITHUB_SHA" --output ide/app/src-tauri/upstream-notice-receipt.json
-          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha "$GITHUB_SHA" --upstream-receipt ide/app/src-tauri/upstream-notice-receipt.json
+          python ide/packaging/upstream_notice_receipt.py --repo-root . --source-sha "$SOURCE_SHA" --output ide/app/src-tauri/upstream-notice-receipt.json
+          python ide/packaging/collect_verification_licenses.py --repo-root . --output ide/app/src-tauri/verification-notices --source-sha "$SOURCE_SHA" --upstream-receipt ide/app/src-tauri/upstream-notice-receipt.json
           if [ ! -f ide/app/src-tauri/icons/icon.ico ]; then python ide/app/fixtures/make_g04d_ci_icon.py; fi
           cd ide/app
           npx --yes @tauri-apps/cli@2.12.4 build --config src-tauri/tauri.g06b05.windows.conf.json --bundles nsis
@@ -162,7 +166,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $setup=@(Get-ChildItem 'ide/app/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File)
           if ($setup.Count -ne 1) { throw 'G06C03B_NSIS_DENIED:installer_count' }
-          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:GITHUB_SHA --require-upstream --artifact $setup[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
+          python ide/packaging/verify_p04_license_bundle.py --license-root ide/app/src-tauri/verification-notices --source-sha $env:SOURCE_SHA --require-upstream --artifact $setup[0].FullName --receipt ide/app/src-tauri/verification-package-receipt.json
           if ($LASTEXITCODE -ne 0) { throw 'G06C03B_NSIS_DENIED:unverified_licenses' }
           $fixture=Join-Path $env:RUNNER_TEMP 'g06c03b-disposable-git'
           $manifest=Join-Path $env:RUNNER_TEMP 'g06c03b-git-before.json'
@@ -178,7 +182,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: ide-g06c03b-nsis-${{ github.sha }}
+          name: ide-g06c03b-nsis-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
             ide/app/src-tauri/verification-notices/**
