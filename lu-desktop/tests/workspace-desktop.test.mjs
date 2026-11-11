@@ -194,3 +194,73 @@ test('PLAN-05 installed Windows acceptance requires true OS dialog controls and 
   assert.match(workflow,/LU_PLAN05_INSTALLED_SHA/);
   assert.doesNotMatch(ui,/run_reserved|grant_execution|model\.infer|allowAutoApprove/);
 });
+
+
+test('PLAN-06 isolated task-list surface never turns operator plan review into execution',()=>{
+  const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+  const native=readFileSync(new URL('../src-tauri/src/project_task_board_desktop.rs',import.meta.url),'utf8');
+  const screen=readFileSync(new URL('../web/task_board.jsx',import.meta.url),'utf8');
+  const shell=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
+  const settings=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+  assert.match(host,/label:"task-list",title:"Lu — Project Tasks"/);
+  assert.match(host,/project_task_board_desktop::lu_project_board_list,/);
+  for(const name of ['lu_project_board_evidence','lu_project_board_reorder',
+    'lu_project_board_correct','lu_project_board_approve','lu_project_board_export']){
+    assert.match(host,new RegExp('project_task_board_desktop::'+name+','));
+    assert.match(screen,new RegExp("invoke\\('"+name+"'"));
+  }
+  assert.match(shell,/luWindow==='task-list'\?<TaskBoardWindow\/>/);
+  assert.match(settings,/kind:'task-list'/);
+  assert.match(native,/ansf_project_task_board_revisions/);
+  assert.match(native,/TransactionBehavior::Immediate/);
+  assert.match(native,/PLAN06_STALE_BOARD_HEAD/);
+  assert.match(native,/PLAN06_STALE_REGISTER_HEAD/);
+  assert.match(native,/PLAN06_BOARD_CHAIN_BROKEN/);
+  assert.match(native,/PLAN06_EXPORT_REFUSES_OVERWRITE/);
+  assert.match(native,/blocking_save_file\(\)/);
+  assert.match(native,/human_approved/);
+  assert.match(native,/fn preview_order/);
+  assert.match(native,/Review and save this EXACT sequence/);
+  assert.match(native,/Description: \{\}/);
+  assert.match(native,/PLAN06_REVIEWED_ORDER_NOT_EXACT_PERMUTATION/);
+  assert.match(native,/no_execution_authority:true/);
+  assert.match(native,/refuse|refusal|refuses|NO_ORDER_CHANGE/i);
+  assert.match(screen,/Task status filters/);
+  assert.match(screen,/Evidence details/);
+  assert.match(screen,/Review correction in OS dialog/);
+  assert.match(screen,/Approve plan wording and order only/);
+  assert.match(screen,/Export evidence-bound JSON plan/);
+  assert.doesNotMatch(native,/supervisor\.run_reserved|grant_execution|Command::new|reqwest|create_task_worker/);
+  assert.doesNotMatch(screen,/invoke\('lu_agent_run_reviewed_step'/);
+});
+
+
+test('PLAN-06 installed native task list requires independent real Windows approval/refusal, dual-project switch and restart receipts',()=>{
+  const host=readFileSync(new URL('../src-tauri/src/project_task_board_desktop.rs',import.meta.url),'utf8');
+  const workflow=readFileSync(new URL('../../.github/workflows/lu-repo01-full-source.yml',import.meta.url),'utf8');
+  const uia=readFileSync(new URL('../../scripts/plan06-windows-installed-acceptance.ps1',import.meta.url),'utf8');
+  const witness=readFileSync(new URL('../../scripts/plan06-readonly-ansf-witness.py',import.meta.url),'utf8');
+  assert.match(host,/export_dual_project_installed_ui_fixture/);
+  assert.match(host,/TEST_ONLY_SYNTHETIC_ORIGINAL_MODEL_REPLY_NOT_GGUF/);
+  assert.match(host,/preserved_user_data/);
+  assert.match(uia,/PASS_DISTINCT_AUTHENTIC_TASK_LIST_HWND/);
+  assert.match(uia,/Lu — Reorder human plan/);
+  assert.match(uia,/Lu — Approve task plan only/);
+  assert.match(uia,/Confirm review only/);
+  assert.match(uia,/PASS_REAL_NATIVE_REFUSAL_NO_APPROVAL/);
+  assert.match(uia,/UIAutomationClient/);
+  assert.match(uia,/project-switch-not-observed/);
+  assert.match(uia,/after-installed-app-restart/);
+  assert.match(uia,/PASS_ORIGINAL_SQLITE_SHA_AND_APPROVAL_CHAIN/);
+  assert.match(uia,/PASS_NATIVE_OS_EXPORT_CANCEL_NO_WRITE/);
+  assert.match(witness,/mode=ro/);
+  assert.match(witness,/PRAGMA query_only=ON/);
+  assert.match(witness,/PLAN06 immutable task revision history overwritten/);
+  assert.match(witness,/PLAN06 board row invalid/);
+  assert.match(workflow,/installed-plan06-windows:/);
+  assert.match(workflow,/LU_PLAN06_INSTALLED_SHA/);
+  assert.match(workflow,/build-agent01g-physical-windows-nsis\.ps1/);
+  assert.match(workflow,/export_dual_project_installed_ui_fixture/);
+  assert.match(workflow,/plan06-windows-installed-acceptance\.ps1/);
+  assert.doesNotMatch(uia,/grant_execution|model\.infer|allowAutoApprove|run_reserved/);
+});

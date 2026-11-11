@@ -18,7 +18,7 @@ const SETTINGS_SECTIONS=[
   ['diagnostics','Diagnostics']
 ];
 const errorText=error=>String(error?.message||error||'Native operation unavailable');
-function NativeWindowFrame({title,subtitle,children}){
+export function NativeWindowFrame({title,subtitle,children}){
   const [closing,setClosing]=useState(false);
   useEffect(()=>{
     const handle=event=>{
@@ -34,7 +34,7 @@ function NativeWindowFrame({title,subtitle,children}){
     <header className="nativeWindowHeader">
       <div><h1>{title}</h1><small>{subtitle}</small></div>
       <button type="button" className="subtleButton" disabled={closing}
-        aria-label={'Close '+(title==='Settings'?'settings':'model library')}
+        aria-label={'Close '+(title==='Settings'?'settings':title==='Project Tasks'?'project task list':'model library')}
         onClick={async()=>{
           setClosing(true);
           try{await invoke('lu_close_aux_window');}
@@ -445,6 +445,10 @@ export function SettingsWindow(){
           </Section>
 
           <Section title="Durable project task register · PLAN-05">
+            <button type="button" disabled={busy}
+              onClick={()=>void invoke('lu_open_aux_window',{kind:'task-list'}).catch(e=>setError(errorText(e)))}>
+              Open project task list · PLAN-06
+            </button>
             <p>Import a reviewed proposal, correct its task wording, and compare it against current native evidence. All revisions are preserved in your existing ANSF library. Importing and editing never grants permission to execute work.</p>
             <button type="button" disabled={busy||!projectTasks}
               onClick={()=>void act('Human-reviewed proposal imported into the durable register.',async()=>{

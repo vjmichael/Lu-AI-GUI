@@ -561,3 +561,49 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .nativeTransferProgress{height:9px;margin:10px 0 12px;border:1px solid #4b6784;border-radius:99px;background:#102337;overflow:hidden}
 .nativeTransferProgress span{display:block;height:100%;background:#4dbf86;transition:width 0.16s linear}
 .nativeModelContent .nativeOption{overflow-wrap:anywhere}
+
+
+/* PLAN-06: independent native project-task window. Simple accessible
+   grouped list plus source panel; no technical execution controls. */
+.plan06Layout{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;overflow:hidden;color:#d9e9f8}
+.plan06Toolbar{display:flex;align-items:end;gap:13px;flex-wrap:wrap;padding:17px 23px;border-bottom:1px solid #36506a;background:#1a2d40}
+.plan06Toolbar label{display:flex;flex-direction:column;gap:5px;min-width:260px;flex:1;max-width:560px;font-size:12px}
+.plan06Toolbar select,.plan06Toolbar button,.plan06Search input,.plan06Editor input,.plan06Editor textarea,.plan06Editor select{padding:10px;border-radius:7px;border:1px solid #587796;background:#14253a;color:#e6f0ff;min-width:0;max-width:100%}
+.plan06Toolbar button,.plan06Actions button{padding:10px 14px;border:1px solid #587b9d;border-radius:8px;background:#294965;color:#e3edff}
+.plan06State{font-size:12px;color:#a9d7eb}
+.plan06Provenance{display:flex;gap:7px 20px;flex-wrap:wrap;padding:9px 23px;background:#112338;border-bottom:1px solid #2f4864;font-size:11px}
+.plan06Provenance small{overflow-wrap:anywhere;max-width:100%}
+.plan06Columns{display:grid;grid-template-columns:minmax(330px,1.05fr) minmax(340px,1fr);min-height:0;flex:1;overflow:hidden}
+.plan06Tasks,.plan06Details{min-height:0;overflow:auto;scrollbar-gutter:stable;padding:20px;overflow-wrap:anywhere}
+.plan06Tasks{border-right:1px solid #38516a;background:#14273a}
+.plan06Details{background:#1b2e40;font-size:13px;line-height:1.6}
+.plan06Search label,.plan06Editor label{display:flex;flex-direction:column;gap:5px;font-size:12px}
+.plan06Filters{display:flex;flex-wrap:wrap;gap:6px;margin:13px 0}
+.plan06Filters button{padding:8px 10px;border:1px solid #4c6a89;border-radius:7px;background:#29435e;color:#d9e9f8;font-size:11px}
+.plan06Filters button.selected{background:#49779f;border-color:#a5cfee}
+.plan06Search small,.plan06Provenance small,.plan06Details small,.plan06Footer small{color:#b6c6d7}
+.plan06Groups h2{font-size:14px;margin:18px 0 8px;border-bottom:1px solid #38536d;padding-bottom:7px;color:#e0eafd}
+.plan06Task{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px;background:#1e364b;border:1px solid #405d78;border-radius:9px;margin-bottom:9px;overflow:hidden}
+.plan06Task>button{display:flex;flex-direction:column;text-align:left;gap:7px;border:0;background:transparent;color:#e4f0ff;padding:12px}
+.plan06Task>button.selected,.plan06Task>button:hover{background:#335771}
+.plan06Task button span{font-size:11px;color:#bad3e5}
+.plan06Task button small{font-size:11px;color:#9fbfd9}
+.plan06TaskOrder button:disabled{opacity:.5}
+.plan06Order{display:flex;flex-direction:column;gap:4px;padding:5px}
+.plan06Order button{width:33px;flex:1;min-height:27px;border:1px solid #55738f;border-radius:6px;background:#24415d;color:#ebf5ff}
+.plan06Details h2{font-size:18px;margin:0 0 12px}
+.plan06Details h3{font-size:14px}
+.plan06Details>button,.plan06Editor button{border:1px solid #54799b;border-radius:7px;background:#2a4b6a;color:#e3f1ff;padding:9px 12px}
+.plan06Editor{border:1px solid #496981;border-radius:9px;padding:14px;background:#14283b;display:flex;flex-direction:column;gap:12px;margin:18px 0}
+.plan06Editor label{font-weight:600}
+.plan06Sources{border-top:1px solid #56708b;margin-top:20px;padding-top:15px}
+.plan06Sources article{border-bottom:1px solid #36506b;padding:9px 0}
+.plan06Sources article strong{display:block}
+.plan06Sources article p{margin:4px 0}
+.plan06Sources details{margin:15px 0}
+.plan06Sources summary{cursor:pointer;font-weight:600}
+.plan06Footer{display:flex;flex-direction:column;gap:9px;padding:14px 22px;border-top:1px solid #43617f;background:#162b3e}
+.plan06Actions{display:flex;flex-wrap:wrap;gap:9px}
+.plan06Empty{margin:30px auto;padding:25px;max-width:540px}
+.plan06Layout button:focus-visible,.plan06Layout input:focus-visible,.plan06Layout select:focus-visible,.plan06Layout textarea:focus-visible{outline:2px solid #bde2ff;outline-offset:2px}
+@media(max-width:800px){.plan06Columns{grid-template-columns:1fr;overflow:auto}.plan06Tasks,.plan06Details{overflow:visible}.plan06Tasks{border-right:0;border-bottom:1px solid #58718c}.plan06Layout{overflow:auto}}
