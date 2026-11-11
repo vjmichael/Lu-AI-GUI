@@ -79,7 +79,7 @@ task-value ::= TASK
 requirement-value ::= REQUIREMENT
 status-value ::= STATUS
 action-value ::= ACTION
-string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws
+string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\bfnrt] | "u" [0-9a-fA-F]{4})){10,180} "\"" ws
 ws ::= | " " | "\n" [ \t]{0,20}
 '''.strip()
       .replace("SCHEMA",literal("lu-project-task-update-model-v1"))
@@ -208,6 +208,8 @@ def main():
     content=result.get("content")
     if not isinstance(content,str) or not content.strip() or len(content.encode())>16384:
         raise ValueError("Genuine local GGUF did not produce bounded original JSON")
+    if not isinstance(result.get("tokens_predicted"),int) or result["tokens_predicted"]<=0:
+        raise ValueError("Original llama.cpp did not report actual generated model tokens")
     # Original bytes MUST be preserved even if strict Rust host later rejects.
     with pathlib.Path(args.reply).open("xb") as output:
         output.write(content.encode("utf-8"))
