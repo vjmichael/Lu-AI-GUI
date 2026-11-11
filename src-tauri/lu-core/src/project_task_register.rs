@@ -387,6 +387,30 @@ mod tests{
         assert!(audit(&tampered,&p).is_err());
     }
     #[test]
+    fn only_fresh_native_presence_criterion_can_be_marked_accepted(){
+        let (g,_old,p)=fixture();
+        let root=std::env::temp_dir().join(format!(
+            "lu-plan05-presence-{}",std::process::id()));
+        let _=std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/required.rs"),b"fn required() {}").unwrap();
+        let facts=status::observe_project_paths(&root,&g).unwrap();
+        let fresh=status::classify(&g,&facts).unwrap();
+        status::audit(&fresh,&g).unwrap();
+        assert_eq!(fresh.findings[0].primary,status::Status::Accepted);
+        let original=import(&p).unwrap();
+        let confirmed=human_revalidate(&original,&p,&p.tasks[0].task_id,
+            1,&g,&fresh).unwrap();
+        let event=confirmed.events.last().unwrap();
+        assert_eq!(event.kind,RevisionKind::HumanRevalidated);
+        assert!(event.revision.independently_verified_requirement);
+        assert!(!event.revision.execution_authorized);
+        // Prior verified acceptance is not a model grant or a permanent verdict.
+        let old=latest(&confirmed,&p.tasks[0].task_id).unwrap();
+        assert!(!old.needs_human_reconciliation);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn source_change_never_inherits_old_acceptance(){
         let (g,s,p)=fixture();let r=import(&p).unwrap();
         let mut newer=g.clone();
