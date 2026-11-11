@@ -175,24 +175,176 @@ function Click-Control([System.Windows.Automation.AutomationElement]$control,
 function Set-Reviewed-Text([System.Windows.Automation.AutomationElement]$owner,
     [string]$label,[string]$value){
   $el=Find-Named $owner $label 'ControlType.Edit'
+  # ValuePattern.SetValue does not reliably fire input/change events in
+  # controlled React textboxes, so a visible value can differ from the
+  # state actually submitted to Rust. Require real focus + OS keystrokes.
+  # The current fixture uses only conservative alphanumeric/underscore text.
+  if($el.Current.IsOffscreen){throw "Installed input not reachable: $label"}
+  if($value -cnotmatch '^[A-Z0-9_]+
+}
+function Wait-No-Dialog([string]$title){
+  Start-Sleep -Milliseconds 700
+  $top=[System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+    [System.Windows.Automation.TreeScope]::Children,
+    [System.Windows.Automation.Condition]::TrueCondition)
+  foreach($w in $top){
+    try{
+      if($w.Current.Name -ceq $title -and
+        [int64]$w.Current.ProcessId -eq [int64]$script:process.Id){
+        throw "Previously closed OS modal dialog remains active: $title"
+      }
+    }catch{
+      if($_.Exception.Message -like 'Previously closed*'){throw}
+    }
+  }
+}
+function Start-Lu(){
+  $script:process=Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName -PassThru
+  $deadline=[DateTime]::UtcNow.AddSeconds(50)
+  do{
+    $script:process.Refresh()
+    if($script:process.HasExited){throw 'Genuine installed Lu process exited before UI window'}
+    if($script:process.MainWindowHandle -ne [IntPtr]::Zero){break}
+    Start-Sleep -Milliseconds 250
+  }while([DateTime]::UtcNow -lt $deadline)
+  if($script:process.MainWindowHandle -eq [IntPtr]::Zero){
+    throw 'Installed Lu process failed to create native window'
+  }
+  $script:main=[System.Windows.Automation.AutomationElement]::FromHandle(
+    $script:process.MainWindowHandle)
+  if($null -eq $script:main -or
+    [int64]$script:main.Current.ProcessId -ne [int64]$script:process.Id){
+    throw 'Installed native main UIA process identity mismatch'
+  }
+  $script:report.exactInstalledProcess='PASS_EXACT_EXE_WIN32_UIA'
+}
+function Open-Settings(){
+  $button=Find-Named $script:main 'Settings' 'ControlType.Button'
+  $null=Click-Control $button $script:main
+  $script:settings=Find-NativeWindow 'Lu — Settings'
+  if($script:settings.Current.NativeWindowHandle -eq $script:main.Current.NativeWindowHandle){
+    throw 'Settings is an overlay, not separate native Tauri window'
+  }
+  try{$script:settings.SetFocus()}catch{}
+  $null=Click-Control (Find-Named $script:settings 'Tools & permissions' 'ControlType.Button') $script:settings
+  $script:report.nativeSettingsWindow='PASS_DISTINCT_SETTINGS_HWND'
+  $null=Click-Control (Find-Named $script:settings 'Reload saved task registers' 'ControlType.Button') $script:settings
+  $null=Find-Named $script:settings 'Correct task…' 'ControlType.Button' 35
+  $script:report.savedRegisterUia='PASS_ACTUAL_ANSF_LIST_REOPENED'
+}
+function Close-Lu(){
+  $script:process.Refresh()
+  if($script:process.HasExited){throw 'Installed Lu crashed before graceful close'}
+  $null=Click-Control (Find-Named $script:settings 'Close settings' 'ControlType.Button') $script:settings
+  if(-not $script:process.CloseMainWindow()){throw 'Installed Lu rejected WM_CLOSE'}
+  if(-not $script:process.WaitForExit(20000)){throw 'Installed Lu never exited after graceful close'}
+  $script:process.Refresh()
+  if($script:process.ExitCode -ne 0){throw "Installed Lu exited nonzero: $($script:process.ExitCode)"}
+  $script:main=$null;$script:settings=$null;$script:process=$null
+}
+try{
+  $before=Read-Original 'before-installed-start'
+  if($before.rowCount -ne 1 -or $before.taskVersion -ne 1 -or
+    $before.latestSha256 -cne $seed.initialRevisionSha256){
+    throw 'Installed profile not backed by original source-verified fixture revision'
+  }
+  Start-Lu
+  Open-Settings
+  Save-UIATree 'first-settings' $script:settings
+  $null=Click-Control (Find-Named $script:settings 'Correct task…' 'ControlType.Button') $script:settings
+  Set-Reviewed-Text $script:settings 'Reason for correction' 'PLAN05_OPERATOR_REVIEWED_INSTALL_TEST'
+  $null=Click-Control (Find-Named $script:settings 'Confirm correction in native dialog…' 'ControlType.Button') $script:settings
+  $dialog=Find-NativeWindow 'Lu — Confirm human task correction'
+  Save-UIATree 'native-correction-refusal-dialog' $dialog
+  $null=Click-Control (Find-Named $dialog 'Cancel' 'ControlType.Button') $dialog
+  Wait-No-Dialog 'Lu — Confirm human task correction'
+  $afterRefusal=Read-Original 'after-refused-native-dialog'
+  if($afterRefusal.rowCount -ne 1 -or $afterRefusal.latestSha256 -cne $before.latestSha256){
+    throw 'OS native refusal changed durable ANSF history'
+  }
+  $report.refusalNativeDialog='PASS_REAL_OS_CANCEL_CLICK'
+  $report.refusalNoDatabaseWrite='PASS_BYTE_IDENTICAL_REGISTER_HEAD'
+  $null=Click-Control (Find-Named $script:settings 'Confirm correction in native dialog…' 'ControlType.Button') $script:settings
+  $dialog=Find-NativeWindow 'Lu — Confirm human task correction'
+  Save-UIATree 'native-correction-approval-dialog' $dialog
+  $null=Click-Control (Find-Named $dialog 'Confirm review only' 'ControlType.Button') $dialog
+  Wait-No-Dialog 'Lu — Confirm human task correction'
+  $deadline=[DateTime]::UtcNow.AddSeconds(30)
+  do{
+    Start-Sleep -Milliseconds 350
+    $approved=Read-Original ("approval-probe-"+([guid]::NewGuid().ToString('N')))
+    if($approved.rowCount -eq 2){break}
+  }while([DateTime]::UtcNow -lt $deadline)
+  if($approved.rowCount -ne 2 -or $approved.taskVersion -ne 2 -or
+     $approved.latestEventKind -ne 'human_correction' -or
+     $approved.latestCorrectionReason -cne 'PLAN05_OPERATOR_REVIEWED_INSTALL_TEST' -or
+     $approved.executionAuthorized){
+    throw 'Human approved native dialog did not produce exactly one audited revision'
+  }
+  $report.approvedNativeDialog='PASS_REAL_OS_HUMAN_REVIEW_CLICK'
+  $report.approvedCorrectionPersisted='PASS_VERSION_2_ORIGINALS_PRESERVED'
+  $null=Find-Named $script:settings 'Correct task…' 'ControlType.Button' 15
+  $null=Click-Control (Find-Named $script:settings 'Reconcile against selected source…' 'ControlType.Button') $script:settings
+  $dialog=Find-NativeWindow 'Lu — Recheck original project'
+  $null=Click-Control (Find-Named $dialog 'Cancel' 'ControlType.Button') $dialog
+  Wait-No-Dialog 'Lu — Recheck original project'
+  $afterSecondRefusal=Read-Original 'after-refused-source-reconciliation'
+  if($afterSecondRefusal.rowCount -ne 2 -or
+     $afterSecondRefusal.latestSha256 -cne $approved.latestSha256){
+    throw 'Native source review refusal changed existing acceptance history'
+  }
+  $report.secondaryRefusal='PASS_REAL_OS_CANCEL_NO_SOURCE_REWRITE'
+  Close-Lu
+  $afterClose=Read-Original 'after-graceful-app-close'
+  if($afterClose.latestSha256 -cne $approved.latestSha256){
+    throw 'Closing installed app changed original ANSF history'
+  }
+  Start-Lu
+  Open-Settings
+  $afterRestart=Read-Original 'after-restart-independent-readback'
+  if($afterRestart.rowCount -ne 2 -or $afterRestart.taskVersion -ne 2 -or
+     $afterRestart.latestSha256 -cne $approved.latestSha256){
+    throw 'True installed-app restart failed to preserve exact immutable task revisions'
+  }
+  $null=Find-Named $script:settings 'Correct task…' 'ControlType.Button'
+  Save-UIATree 'restarted-settings-register' $script:settings
+  $report.restartOriginalSameSha='PASS_ORIGINAL_SQLITE_SHA_CHAIN'
+  $report.restartSettingsReadback='PASS_REAL_SETTINGS_UIA_AFTER_RESTART'
+  $report.noExecutionAuthority='PASS_ORIGINAL_AND_REVISED_NO_GRANT'
+  Close-Lu
+  $report.acceptance='PASS_INSTALLED_HUMAN_ACTIONS_AND_RESTART'
+}catch{
+  $report.errors+=@($_.Exception.ToString())
+  Write-Warning ('PLAN05 genuine installed acceptance incomplete: '+$_.Exception.Message)
+}finally{
+  if($null -ne $script:process){
+    try{
+      $script:process.Refresh()
+      if(-not $script:process.HasExited){
+        if(-not $script:process.CloseMainWindow() -or
+           -not $script:process.WaitForExit(12000)){
+          $script:process.Kill($true)
+          $null=$script:process.WaitForExit(5000)
+        }
+      }
+    }catch{$report.errors+=@('Owned Lu process cleanup failed: '+$_.Exception.Message)}
+  }
+  $report|ConvertTo-Json -Depth 8|
+    Set-Content -LiteralPath (Join-Path $EvidenceDir 'plan05-installed-ui.json') -Encoding UTF8
+}
+if($report.acceptance -ne 'PASS_INSTALLED_HUMAN_ACTIONS_AND_RESTART'){exit 2}
+exit 0
+){
+    throw "Refuse unsafe test keystroke payload for $label"
+  }
+  $el.SetFocus()
+  [System.Windows.Forms.SendKeys]::SendWait('^a')
+  [System.Windows.Forms.SendKeys]::SendWait($value)
+  Start-Sleep -Milliseconds 350
   $p=$null
-  if($el.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$p)){
-    ([System.Windows.Automation.ValuePattern]$p).SetValue($value)
-    Start-Sleep -Milliseconds 350
-    if(([System.Windows.Automation.ValuePattern]$p).Current.Value -cne $value){
-      throw "Installed text edit did not retain native UIA value for $label"
-    }
-  }else{
-    if($el.Current.IsOffscreen){throw "Installed input not reachable: $label"}
-    $el.SetFocus()
-    [System.Windows.Forms.SendKeys]::SendWait('^a')
-    [System.Windows.Forms.SendKeys]::SendWait($value)
-    Start-Sleep -Milliseconds 350
-    $p=$null
-    if(-not $el.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$p) -or
-       ([System.Windows.Automation.ValuePattern]$p).Current.Value -cne $value){
-      throw "Independent UIA readback of edited $label unavailable"
-    }
+  if(-not $el.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$p) -or
+     ([System.Windows.Automation.ValuePattern]$p).Current.Value -cne $value){
+    throw "Independent UIA readback of OS-typed $label unavailable"
   }
 }
 function Wait-No-Dialog([string]$title){
