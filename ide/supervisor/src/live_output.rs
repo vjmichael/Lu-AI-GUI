@@ -82,6 +82,25 @@ impl LiveOutput {
             }
         }
     }
+    /// Native host-only bounded capture AFTER the original process has
+    /// returned its terminal OS receipt. Does not persist output or reconstitute
+    /// any result after restart. Never exposes raw source or a worker grant.
+    pub fn bounded_native_snapshot(&self) -> OutputPage {
+        match self.state.lock() {
+            Ok(state) => OutputPage {
+                chunks: state.chunks.iter().cloned().collect(),
+                last_sequence: state.last_sequence,
+                truncated: state.truncated,
+                live_unverified: true,
+            },
+            Err(_) => OutputPage {
+                chunks: Vec::new(),
+                last_sequence: 0,
+                truncated: true,
+                live_unverified: true,
+            },
+        }
+    }
     /// A cursor only pages existing untrusted text, never authorizes work.
     pub fn page(&self, after: u64) -> OutputPage {
         match self.state.lock() {

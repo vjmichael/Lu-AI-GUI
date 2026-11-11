@@ -22,6 +22,7 @@ use lu_ide_execution_supervisor::{
     },
 };
 use lu_ide_workspace::IdeWorkspaceRegistry;
+use crate::test_case_evidence::{reported_cases, TestCaseReport};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -410,6 +411,8 @@ pub struct BuildRunView {
     pub artifact_files: Vec<ArtifactEntry>,
     pub artifact_count: usize,
     pub artifact_truncated: bool,
+    /// INT03-E: bounded framework-reported rows, never test assertion proof.
+    pub test_case_evidence: Option<TestCaseReport>,
     pub timed_out: bool,
     pub requires_reconciliation: bool,
     pub installed_app_accepted: bool,
@@ -456,6 +459,23 @@ pub struct RecoveryView {
     plan_sha256: String,
     phase: String,
     requires_reconciliation: bool,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestTargetReview {
+    pub project_id: String,
+    pub job_id: String,
+    pub plan_sha256: String,
+    pub terminal_receipt_sha256: String,
+    pub case_id: String,
+    pub relative_path: String,
+    pub disk_sha256: String,
+    pub line: u32,
+    pub character_utf16: u32,
+    /// Fresh host source hash only; location still originates from reporter.
+    pub saved_source_verified: bool,
+    pub test_assertion_independently_verified: bool,
+    pub task_accepted: bool,
 }
 struct Running {
     project_id: String,
@@ -1507,6 +1527,25 @@ impl NativeBuildRuntime {
             .lock()
             .map_err(|_| "BUILD_HOST_UNAVAILABLE")?
             .debug_target = private_debug_target;
+        let test_case_evidence = if matches!(
+            recipe_id, "rust_tests" | "lu_ide_host_tests" |
+                "python_pytest" | "js_tests" | "cpp_cmake_build"
+        ) {
+            // The ORIGINAL native worker returned its terminal result. Output
+            // is still project-controlled, so these are reported observations.
+            let native_terminated = matches!(
+                native.summary.phase, JobPhase::Completed | JobPhase::Failed
+            ) && !evidence.requires_reconciliation &&
+                exit_code.is_some() && !native.timed_out;
+            Some(reported_cases(
+                registry, &input, &output.bounded_native_snapshot(),
+                project_id, &prepared.job_id, recipe_id,
+                &prepared.plan_sha256, &evidence.terminal_receipt_hash,
+                &head, &plan.toolchain_sha256, native_terminated,
+            ))
+        } else {
+            None
+        };
         let artifact_evidence_state = if published.is_some() {
             "read_only_post_termination_tree_hashed"
         } else {
@@ -1544,6 +1583,7 @@ impl NativeBuildRuntime {
             artifact_files,
             artifact_count,
             artifact_truncated,
+            test_case_evidence,
             timed_out: native.timed_out,
             requires_reconciliation: evidence.requires_reconciliation,
             // A native worker reply is NOT independently installed-app
@@ -1784,6 +1824,96 @@ impl NativeBuildRuntime {
             .verify_discard(&pending_identity)
             .map_err(|e| e.code().to_owned())?;
         Ok("IDE054_PRIVATE_PACKAGE_OUTPUT_DISCARDED_NO_PROJECT_MUTATION".into())
+    }
+
+    /// Read-only review of one ORIGINAL current-process native test-case
+    /// source candidate. The WebView supplies only an opaque case ID; never
+    /// the reported path or source hash. Native verifies exact journal and
+    /// current registered saved source before returning a navigation hint.
+    pub fn review_test_case_target(
+        &self,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+        job_id: &str,
+        plan_sha256: &str,
+        case_id: &str,
+    ) -> Result<TestTargetReview, String> {
+        if !job_id.starts_with("job-") || job_id.len()!=36 ||
+           !job_id[4..].bytes().all(|b| b.is_ascii_hexdigit()) ||
+           plan_sha256.len()!=64 ||
+           !plan_sha256.bytes().all(|b| b.is_ascii_hexdigit()) ||
+           !case_id.starts_with("case_") || case_id.len()!=69 ||
+           !case_id[5..].bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("INT03E_TARGET_IDENTITY_DENIED".into());
+        }
+        // There is deliberately NO path in this request. The only source
+        // identity comes from the original receipt-linked in-memory report.
+        let locked=self.store.lock().map_err(|_| "INT03E_JOB_STATE_UNAVAILABLE")?;
+        let observed=locked.recent.get(job_id)
+            .cloned().ok_or("INT03E_ORIGINAL_CURRENT_PROCESS_RESULT_MISSING")?;
+        drop(locked); // Native journal and disk rechecks cannot hold the UI job lock.
+        if observed.project_id!=project_id || observed.plan_sha256!=plan_sha256 ||
+           observed.requires_reconciliation ||
+           !matches!(observed.phase.as_str(),"completed"|"failed") {
+            return Err("INT03E_JOB_NOT_RECONCILED_OR_SCOPE_CHANGED".into());
+        }
+        let report=observed.test_case_evidence.as_ref()
+            .ok_or("INT03E_NO_STRUCTURED_TEST_CASES")?;
+        if report.project_id!=project_id ||
+           report.job_id!=job_id || report.plan_sha256!=plan_sha256 ||
+           report.terminal_receipt_sha256!=observed.terminal_receipt_sha256 ||
+           report.input_snapshot_sha256!=observed.input_snapshot_sha256 ||
+           report.toolchain_sha256!=observed.toolchain_sha256 ||
+           report.manifest_sha256!=observed.manifest_sha256 ||
+           report.evidence_state!="native_terminal_framework_reported_not_assertion_verified" {
+            return Err("INT03E_ORIGINAL_RECEIPT_SCOPE_DENIED".into());
+        }
+        let case=report.cases.iter().find(|row|row.case_id==case_id)
+            .ok_or("INT03E_CASE_ID_NOT_RECORDED")?;
+        if case.status!="reported_fail" {
+            return Err("INT03E_ONLY_FAILING_CASES_HAVE_TARGETS".into());
+        }
+        let source=case.source.as_ref().ok_or("INT03E_NO_SOURCE_ANCHOR")?;
+        let durable=self.supervisor.inspect().map_err(|e|e.code().to_owned())?
+            .into_iter().find(|row|row.job_id==job_id)
+            .ok_or("INT03E_ORIGINAL_SUPERVISOR_JOB_MISSING")?;
+        if durable.project_id!=project_id ||
+           durable.plan_sha256!=plan_sha256 ||
+           durable.requires_reconciliation ||
+           !matches!(durable.phase,JobPhase::Completed|JobPhase::Failed) {
+            return Err("INT03E_DURABLE_NATIVE_JOB_CHANGED".into());
+        }
+        let history=self.supervisor.receipt_history(job_id)
+            .map_err(|e|e.code().to_owned())?;
+        let last=history.last().ok_or("INT03E_TERMINAL_RECEIPT_MISSING")?;
+        if last.entry_hash!=report.terminal_receipt_sha256 ||
+           last.body.project_id!=project_id ||
+           last.body.plan_sha256!=plan_sha256 ||
+           !matches!(last.body.phase,JobPhase::Completed|JobPhase::Failed) {
+            return Err("INT03E_TERMINAL_RECEIPT_MISMATCH".into());
+        }
+        // Verify an exact native-registered saved-file digest again *now*.
+        // If disk drifted or registry switched projects, no navigation.
+        let saved=registry.preview_source_file(project_id,&source.relative_path)
+            .map_err(|_| "INT03E_SAVED_SOURCE_NOT_AVAILABLE")?;
+        if saved.project_id!=project_id ||
+           saved.relative_path!=source.relative_path ||
+           saved.revision!=source.disk_sha256 {
+            return Err("INT03E_SAVED_SOURCE_CHANGED".into());
+        }
+        if source.line==0 || source.line as usize > saved.text.lines().count().max(1) {
+            return Err("INT03E_SOURCE_POSITION_STALE".into());
+        }
+        Ok(TestTargetReview {
+            project_id:project_id.to_owned(),job_id:job_id.to_owned(),
+            plan_sha256:plan_sha256.to_owned(),
+            terminal_receipt_sha256:report.terminal_receipt_sha256.clone(),
+            case_id:case_id.to_owned(),relative_path:source.relative_path.clone(),
+            disk_sha256:source.disk_sha256.clone(),line:source.line,
+            character_utf16:source.character_utf16,
+            saved_source_verified:true,
+            test_assertion_independently_verified:false,task_accepted:false,
+        })
     }
 
     /// Never automatically resumes a crashed job. The user must explicitly

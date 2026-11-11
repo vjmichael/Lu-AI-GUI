@@ -28,11 +28,20 @@
 - The interrupted-worker cleanup path no longer requires a Cargo runtime to be installed when the original job was Python/Node/CMake: Windows can reuse the **same original independently pinned** protected SCM recovery broker from a verified native multilang bundle; Linux uses its original OS-owned interrupted-job reconciliation. Neither route automatically relaunches project code or assumes an orphan is dead.
 - UI distinguishes `reconciliation required` from a valid completed receipt and blocks new work while a quarantined job remains.
 
+## INT03-E — Original-job reported cases and safe source navigation (source implemented)
+
+- Original native provenance: BuildRunView gains bounded TestCaseReport bound to project, job, plan, source snapshot, manifest, toolchain and independently replayable terminal receipt SHA-256. The host captures its own bounded stdout/stderr window after the original OS job returns. The capture SHA is a text fingerprint, not independent test assertion proof.
+- Fixed format parsing: Cargo libtest, pytest, Node TAP and CTest reporting patterns yield at most 128 distinct case records, with explicit truncated/incomplete flags, reported pass/fail/skip and no automated acceptance. Interruption, timeouts or unreconciled jobs suppress case reports; no new executable, arbitrary command or grant is introduced.
+- Native source anchoring: unique Python pytest failure traceback lines may provide a source path and line only after immutable project snapshot verification, exact frozen file SHA, live registered saved-file digest and bounded line check. Rust/Node/CTest rows without reliable verified line coordinates are non-navigable.
+- User-triggered review: ide_build_review_test_target accepts opaque original case ID, exact job/plan and project, never a client-supplied path. It cross-checks the in-memory original result and terminal supervisor receipt chain and rechecks the live registered file SHA and line. The editor independently previews and checks exact saved bytes, declines stale/dirty CodeMirror buffers, protects draft/Undo history and refuses project-switch or tab-budget races.
+- Accessibility: an ordered, scroll-bounded Jobs list filters reported failed/pass/skipped cases; missing source and truncated output are explicit. Source links exist only when a native anchor was created and require a new native review before opening saved text.
+- Verification limits: Added native parser and hostile UI contract test source. Per-test statuses remain framework-controlled output observations, not independently attested assertion results; no test count, saved ledger completion, CI, physical acceptance or release authority is inferred.
+
 ## Deferred / open
 
 - **Physical/compiled native acceptance:** Windows AppContainer/SCM and Linux delegated cgroup/Bubblewrap normal, failing, cancelled and crash/restart paths on the final exact head. No GitHub Actions or PR verification initiated during this build-first pass.
 - **Release assets:** Reviewed offline Cargo, Python, Node, CMake/Ninja/CTest binaries and dependency closure, exact installer pins and actual installed-app entitlement. Without real approved resources, the UI correctly keeps a profile disabled.
-- **Structured test evidence:** Per-test identities/assertion counts/framework-specific machine-readable results and verified source-linked failure navigation remain a possible subsequent INT03 task slice; the present bounded stdout/stderr hints explicitly do not assert these facts. The task evidence/acceptance register must not infer human completion from a successful native exit.
+- **Structured test acceptance:** Original-job reported identities and source-reviewed failure navigation are now source-implemented. Independent assertion counts, signed framework machine-readable proofs and physical/native acceptance remain open; neither stdout nor a native zero exit authorizes task completion.
 - **Physical UI acceptance:** Restart, keyboard/assistive presentation, progress/cancellation, original files and human consent. Signing and merges remain separately governed.
 
-**Next implementation option:** INT03-E — source-verified structured test-case evidence and failure navigation, if desired, before proceeding to INT04 debugger integration. Existing prior DEV-04 project debugger work should be reused, not reimplemented.
+**Next implementation group:** IDE-INT04 — debugger integration, reusing the existing protected LLDB work. INT03 A–E are source-implemented with offline native acceptance and release resources separately open.

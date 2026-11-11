@@ -2056,6 +2056,42 @@ async fn ide_package_discard_private_output(
 /// only a fixed recipe ID and the exact previously reviewed saved manifest
 /// SHA-256; the native runner freezes and independently rechecks that identity,
 /// then requires a NEW OS human confirmation for the original worker job.
+/// INT03-E: read-only exact-job source review for a previously reported
+/// failing test. No URI, source path, reporter text or navigation permission
+/// comes from JavaScript. Only the native original in-memory result can
+/// identify the source; OS receipts and current saved bytes are rechecked.
+#[tauri::command]
+async fn ide_build_review_test_target(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    job_id: String,
+    plan_sha256: String,
+    case_id: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
+    {
+        let runtime = app
+            .try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("INT03E_NATIVE_EVIDENCE_UNAVAILABLE")?;
+        let native = Arc::clone(runtime.inner());
+        let registry = Arc::clone(registry.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            native.review_test_case_target(
+                &registry,&project_id,&job_id,&plan_sha256,&case_id)
+        })
+        .await
+        .map_err(|_| "INT03E_REVIEW_THREAD_UNAVAILABLE")??;
+        return serde_json::to_value(result)
+            .map_err(|_| "INT03E_REVIEW_SERIALIZATION_UNAVAILABLE".into());
+    }
+    #[cfg(not(all(feature = "native-build", any(windows, target_os = "linux"))))]
+    {
+        let _=(app,registry,project_id,job_id,plan_sha256,case_id);
+        Err("INT03E_NATIVE_EVIDENCE_UNAVAILABLE".into())
+    }
+}
+
 #[tauri::command]
 async fn ide_build_run_profile(
     app: AppHandle,
@@ -3270,6 +3306,7 @@ pub fn run() {
             ide_build_status,
             ide_build_read_output,
             ide_build_run_profile,
+            ide_build_review_test_target,
             ide_build_start,
             ide_package_run_reviewed_uv,
             ide_package_discard_private_output,

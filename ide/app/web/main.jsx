@@ -55,6 +55,8 @@ import { safeDebugSymbolEvidence } from './debug_symbol_evidence.js';
 import { checkedProjectDebugWitness } from './project_debug_authority.js';
 import { acceptNativeOutput } from './native_build_output.js';
 import { boundedBuildTestHints } from './build_test_output_hints.js';
+import { visibleStructuredTestEvidence,
+  reviewedTestFailureTarget } from './structured_test_evidence.js';
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
@@ -259,6 +261,9 @@ function App() {
   const [projectRunProfiles,setProjectRunProfiles] = useState(null);
   const [selectedBuildPlan,setSelectedBuildPlan] = useState(null);
   const [verifiedBuildOutcome,setVerifiedBuildOutcome] = useState(null);
+  const testNavigationSerial=useRef(0);
+  const [testNavigationBusy,setTestNavigationBusy]=useState(false);
+  const [testCaseFilter,setTestCaseFilter]=useState('failed');
   const [testDiscovery,setTestDiscovery] = useState(null);
   const [testDiscoveryBusy,setTestDiscoveryBusy] = useState(false);
   const testDiscoveryTicket=useRef(0);
@@ -556,6 +561,8 @@ function App() {
     setProjectRunProfiles(null);
     setSelectedBuildPlan(null);
     setVerifiedBuildOutcome(null);
+    ++testNavigationSerial.current;
+    setTestNavigationBusy(false);
     setProfileDiscoveryBusy(false);
     packageInspectionRequest.current += 1;
     setPackageInspection(null);
@@ -737,6 +744,9 @@ function App() {
   const currentJobEvents=useMemo(()=>
     visibleJobProgress(jobProgressEvents,activeProject?.projectId),
     [jobProgressEvents,activeProject?.projectId]);
+  const structuredTestReport=useMemo(()=>
+    visibleStructuredTestEvidence(buildResult,activeProject?.projectId),
+    [buildResult,activeProject?.projectId]);
   const visibleTree = visibleTreeEntries(listing?.entries,visibleTreeCount);
   const projectTabCount = projectTabs.length;
   const workingSetNotice = projectTabCount + ' / ' + MAX_OPEN_TABS_PER_PROJECT +
@@ -3425,6 +3435,7 @@ function App() {
       setProblem('Select an available, source-verified Build/Test profile first.');
       return;
     }
+    ++testNavigationSerial.current;
     setBuildBusy(true);
     setBuildResult(null);
     setVerifiedBuildOutcome(null);
@@ -3483,6 +3494,108 @@ function App() {
     } finally {
       setBuildBusy(false);
       await refreshProtectedBuildStatus();
+    }
+  }
+
+  async function navigateReportedTestFailure(caseId) {
+    const projectId=activeProjectIdRef.current;
+    const report=visibleStructuredTestEvidence(buildResult,projectId);
+    const candidate=report?.cases?.find(item=>item.id===caseId);
+    if (!projectId || !report || !candidate?.source ||
+        buildBusy || testNavigationBusy || explorerIoTicket.current ||
+        workspaceTransitionRef.current || mergeBusy || mergeApplyRequest)
+      return;
+    const ticket=beginExplorerIo();
+    if (!ticket) return;
+    const serial=++testNavigationSerial.current;
+    const epoch=projectNavigationEpoch.current;
+    setTestNavigationBusy(true);
+    try {
+      // No file URI or reporter-provided path crosses this IPC. Only the
+      // original opaque case ID is looked up in native receipt-linked state.
+      const native=await invoke('ide_build_review_test_target',{
+        projectId,jobId:report.jobId,
+        planSha256:report.planSha256,caseId,
+      });
+      if(serial!==testNavigationSerial.current ||
+         epoch!==projectNavigationEpoch.current ||
+         explorerIoTicket.current!==ticket ||
+         activeProjectIdRef.current!==projectId) return;
+      const target=reviewedTestFailureTarget(report,caseId,native);
+      if(!target) throw Error('INT03E_TARGET_RECEIPT_OR_SOURCE_MISMATCH');
+      const key=keyFor(projectId,target.relativePath);
+      if(!admitOpenTabs(tabsRef.current,projectId,[key]).allowed)
+        throw Error('INT03E_OPEN_TAB_BUDGET_EXCEEDED');
+      const opened=await invoke('ide_preview_source_file',{
+        projectId,relativePath:target.relativePath,
+      });
+      if(serial!==testNavigationSerial.current ||
+         epoch!==projectNavigationEpoch.current ||
+         explorerIoTicket.current!==ticket ||
+         activeProjectIdRef.current!==projectId) return;
+      if(!opened || opened.projectId!==projectId ||
+         opened.relativePath!==target.relativePath ||
+         opened.revision!==target.diskSha256)
+        throw Error('INT03E_ORIGINAL_SAVED_FILE_CHANGED');
+      const offset=lspPositionOffset(opened.text,{
+        line:target.line-1,character:target.characterUtf16,
+      });
+      if(offset===null) throw Error('INT03E_TARGET_LINE_INVALID');
+      const existing=tabsRef.current.find(tab=>tab.key===key);
+      const decision=lateSourceOpenDecision(tabsRef.current,projectId,
+        target.relativePath,opened,activeProjectIdRef.current,key);
+      if(decision.action==='discard_stale') return;
+      if(decision.action==='deny') throw Error('INT03E_SOURCE_OPEN_DENIED');
+      const current=existing ? captureLiveEditorIntent(existing,
+        bufferIdentities.current.get(key),
+        editorStates.current.get(key),projectId) : null;
+      // The path/line came from a framework report, so a saved-file cursor
+      // must NEVER apply to a changed/unsaved CodeMirror buffer.
+      if(existing && (current?.status!=='current' || current.dirty ||
+          current.text!==opened.text ||
+          existing.savedText!==opened.text ||
+          existing.revision!==target.diskSha256)) {
+        setProblem('Test output refers to earlier saved source. The existing '+
+          'unsaved or newer editor buffer was preserved; no cursor was moved.');
+        return;
+      }
+      const editorState=existing ? editorStates.current.get(key) :
+        createEditorState(opened.text,opened.relativePath,
+          (state,draft)=>onEditorChange(key,state,draft),
+          state=>onEditorSelection(key,state));
+      if(!editorState || editorState.sliceDoc()!==opened.text ||
+         offset>editorState.doc.length)
+        throw Error('INT03E_EDITOR_SOURCE_IDENTITY_CHANGED');
+      if(!existing){
+        clearPrivateDraftSession(key);
+        resetBufferIdentity(key,projectId,opened.relativePath,opened.revision);
+        editorStates.current.set(key,editorState);
+        setTabs(previous=>[...previous,{
+          key,projectId,relativePath:opened.relativePath,
+          revision:opened.revision,savedText:opened.text,draft:opened.text,
+          dirty:false,generation:0,bufferRevision:0,
+        }]);
+      }
+      if(existing) selectPrimaryEditorTab(key);
+      else setActiveTabKey(key);
+      setSection('explorer');
+      setLspJumpRequest({
+        from:offset,to:offset,
+        tabIdentity:key+':'+(existing?.generation||0),
+        nonce:++problemJumpNonce.current,
+      });
+      if(!existing) void checkExistingDraft({key,projectId,
+        relativePath:opened.relativePath});
+      setHint('Opened saved source at a framework-reported test failure line. '+
+        'The test assertion and fault location are not independently proven.');
+    } catch(error) {
+      if(serial===testNavigationSerial.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Protected test failure navigation denied: '+String(error));
+    } finally {
+      if(serial===testNavigationSerial.current)
+        setTestNavigationBusy(false);
+      finishExplorerIo(ticket);
     }
   }
 
@@ -6372,6 +6485,68 @@ function App() {
                   <p>Successful native exit alone does not certify individual
                     test assertions, installed application acceptance, or a
                     human task acceptance decision.</p>
+                </section>}
+              {belongsToSelectedProject(activeProject,structuredTestReport) &&
+                <section className="continuityDocument int03TestCases"
+                  aria-label="INT03-E original-job structured reported test cases">
+                  <div className="capabilityHeading">
+                    <h4>Test cases reported by the protected runner</h4>
+                    <label>Show
+                      <select value={testCaseFilter}
+                        onChange={event=>setTestCaseFilter(event.target.value)}>
+                        <option value="failed">Reported failures</option>
+                        <option value="all">All reported cases</option>
+                        <option value="passed">Reported passes</option>
+                        <option value="skipped">Reported skips</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p role="status" aria-live="polite">
+                    {structuredTestReport.cases.length} bounded test-case records
+                    {' · '}{structuredTestReport.recipeId}
+                    {' · '}Original job <code>{structuredTestReport.jobId}</code>
+                    {' · '}Status: {structuredTestReport.state.replaceAll('_',' ')}
+                    {structuredTestReport.captureTruncated &&
+                      ' · Output incomplete or a trailing line was not terminated'}
+                    {structuredTestReport.casesTruncated &&
+                      ' · Case count exceeded 128; view is partial'}
+                  </p>
+                  <p>Test names and outcomes are reported by project-controlled
+                    framework output observed in the original native worker.
+                    Even with a matched terminal receipt, individual assertions
+                    are <strong>not independently verified</strong>.
+                    Saved-source locations are rechecked on click, and no task
+                    is automatically approved.</p>
+                  {structuredTestReport.cases.length===0 &&
+                    <p>No bounded framework-reported cases were observed.
+                      This does not prove there are no tests.</p>}
+                  <ol className="int03TestCaseList">
+                    {structuredTestReport.cases
+                      .filter(row=>testCaseFilter==='all' ||
+                        (testCaseFilter==='failed' && row.status==='reported_fail') ||
+                        (testCaseFilter==='passed' && row.status==='reported_pass') ||
+                        (testCaseFilter==='skipped' && row.status==='reported_skip'))
+                      .map(row=>
+                        <li key={row.id} className="int03TestCase">
+                          <span>
+                            <strong>{row.status.replaceAll('_',' ')}</strong>
+                            {' · '}{row.name}
+                          </span>
+                          {row.status==='reported_fail' && row.source ?
+                            <button type="button" className="ghostBtn"
+                              disabled={testNavigationBusy || buildBusy ||
+                                explorerPending || !!buildStatus?.current}
+                              aria-label={'Review protected failure source '+
+                                row.source.relativePath+' line '+row.source.line}
+                              onClick={()=>void navigateReportedTestFailure(row.id)}>
+                              {testNavigationBusy ? 'Reviewing source…' :
+                                'Review saved source · '+row.source.relativePath+':'+row.source.line}
+                            </button>
+                          : row.status==='reported_fail' &&
+                            <small>No source revision and line verified;
+                              navigation unavailable.</small>}
+                        </li>)}
+                  </ol>
                 </section>}
               {belongsToSelectedProject(activeProject, buildResult) && <div role="status">
                 <p>Last worker result: <strong>{buildResult.phase}</strong> · Job {buildResult.jobId}</p>
