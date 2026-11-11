@@ -44,6 +44,10 @@ const APPROVED_CLANGD_BUNDLE: Option<&str> = option_env!("LU_IDE_E2_CLANGD_BUNDL
 const APPROVED_RUST_ANALYZER_BUNDLE: Option<&str> =
     option_env!("LU_IDE_E2_RUST_ANALYZER_BUNDLE_SHA256");
 const APPROVED_RUFF_BUNDLE: Option<&str> = option_env!("LU_IDE_E2_RUFF_BUNDLE_SHA256");
+// An installer-reviewed, wholly offline standalone Pyright language-server
+// executable bundle. No user Node/Python interpreter, PATH or npm download.
+const APPROVED_PYRIGHT_BUNDLE: Option<&str> =
+    option_env!("LU_IDE_E2_PYRIGHT_BUNDLE_SHA256");
 #[cfg(windows)]
 const APPROVED_SERVICE: Option<&str> = option_env!("LU_IDE_E2_D7D_SERVICE_SHA256");
 
@@ -79,6 +83,7 @@ fn installation(app: &AppHandle, server_id: &str) -> Result<Installation, String
         "clangd" => ("lsp_clangd", APPROVED_CLANGD_BUNDLE),
         "rust-analyzer" => ("lsp_rust_analyzer", APPROVED_RUST_ANALYZER_BUNDLE),
         "ruff" => ("lsp_ruff", APPROVED_RUFF_BUNDLE),
+        "pyright" => ("lsp_pyright", APPROVED_PYRIGHT_BUNDLE),
         _ => return Err("LSP_SERVER_NOT_APPROVED".into()),
     };
     let root = app
@@ -121,10 +126,22 @@ pub fn installed_languages(app: &AppHandle) -> Vec<String> {
     if installation(app, "rust-analyzer").is_ok() {
         result.push("rust".into());
     }
-    if installation(app, "ruff").is_ok() {
+    if installation(app, "pyright").is_ok() || installation(app, "ruff").is_ok() {
         result.push("python".into());
     }
     result
+}
+/// Only a review-pinned standalone Pyright executable enables semantic Python
+/// operations; Ruff alone cannot provide completion/hover/definitions.
+pub fn installed_semantic_languages(app: &AppHandle) -> Vec<String> {
+    let mut languages=Vec::new();
+    if installation(app, "rust-analyzer").is_ok() { languages.push("rust".into()); }
+    if installation(app, "clangd").is_ok() {
+        languages.push("c".into());
+        languages.push("cpp".into());
+    }
+    if installation(app, "pyright").is_ok() { languages.push("python".into()); }
+    languages
 }
 pub fn installed_worker_ready(app: &AppHandle) -> bool {
     !installed_languages(app).is_empty()
@@ -192,6 +209,7 @@ struct Active {
     saved_revision: String,
     text: String,
     diagnostics: Vec<Diagnostic>,
+    provider: &'static str,
     session: NativeLspSession,
 }
 impl Active {
@@ -309,7 +327,14 @@ impl NativeLspRuntime {
         {
             return Err("LSP_SESSION_ALREADY_ACTIVE".into());
         }
-        let server_id = language_server_for_path(&request.relative_path, &request.language_id)?;
+        let base_server =
+            language_server_for_path(&request.relative_path, &request.language_id)?;
+        // A reviewed Pyright bundle takes priority for full Python semantics.
+        // If it is absent, the only Python fallback is reviewed Ruff linting.
+        let server_id = if request.language_id == "python"
+            && installation(app, "pyright").is_ok() {
+            "pyright"
+        } else { base_server };
         let install = installation(app, server_id)?;
         let (root, saved_revision) = Self::validated_registered_text(registry, &request)?;
         // This is a genuine native OS confirmation, not a client boolean
@@ -417,6 +442,7 @@ impl NativeLspRuntime {
             saved_revision,
             text: request.text,
             diagnostics: vec![],
+            provider: server_id,
             session,
         };
         let result =
@@ -472,11 +498,12 @@ impl NativeLspRuntime {
         self.use_active(registry, request, |active, req| {
             let kind = req.kind.as_deref().ok_or("LSP_METHOD_REQUIRED")?;
             if !matches!(kind, "completion" | "hover" | "definition")
-                || active.source.language_id == "python"
+                || (active.source.language_id == "python"
+                    && active.provider != "pyright")
             {
-                // Ruff handles linting/diagnostics, not Pyright's symbol
-                // navigation or intelligent completion. This is a native
-                // authorization boundary, not merely a disabled UI control.
+                // Ruff-only Python sessions must not execute semantic
+                // methods. The protected Pyright provider is separately
+                // installer-pinned and consented to by the native OS dialog.
                 return Err("LSP_METHOD_DENIED".into());
             }
             let pos = req.position.clone().ok_or("LSP_POSITION_REQUIRED")?;
