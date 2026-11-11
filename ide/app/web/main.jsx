@@ -271,6 +271,11 @@ function App() {
   const [mergePlan, setMergePlan] = useState(null);
   const [mergePlanBusy, setMergePlanBusy] = useState(false);
   const mergePlanRequest = useRef(0);
+  const [mergeExecBusy, setMergeExecBusy] = useState(false);
+  const [mergeExecReceipt, setMergeExecReceipt] = useState(null);
+  const mergeExecRequest = useRef(0);
+  const [mergeRecovery, setMergeRecovery] = useState(null);
+  const [mergeRecoveryBusy, setMergeRecoveryBusy] = useState(false);
   const [gitFileHistory, setGitFileHistory] = useState(null);
   const [gitFilePath, setGitFilePath] = useState('');
   const [gitFileBusy, setGitFileBusy] = useState(false);
@@ -433,6 +438,11 @@ function App() {
     mergePlanRequest.current += 1;
     setMergePlan(null);
     setMergePlanBusy(false);
+    mergeExecRequest.current += 1;
+    setMergeExecBusy(false);
+    setMergeExecReceipt(null);
+    setMergeRecovery(null);
+    setMergeRecoveryBusy(false);
     setGitFileHistory(null);
     setGitFileBusy(false);
     gitSnapshotRequest.current += 1;
@@ -1758,6 +1768,8 @@ function App() {
     const operation = branchReviewKind;
     const selectedBranch = operation === 'stash' ? null : branchReviewTarget;
     const ticket = ++branchReviewRequest.current;
+    mergeExecRequest.current += 1;
+    setMergeExecReceipt(null);
     mergePlanRequest.current += 1;
     setMergePlan(null);
     setMergePlanBusy(false);
@@ -1836,7 +1848,127 @@ function App() {
     }
   }
 
+  async function executeReviewedFastForward() {
+    if (!activeProject?.projectId || mergeExecBusy || mergePlanBusy ||
+        branchReviewKind !== 'merge' || mergePlan?.projectId !== activeProject.projectId ||
+        mergePlan.classification !== 'fast_forward_candidate' ||
+        mergePlan.blockers.length !== 0 ||
+        mergePlan.changedPathCount < 1 || mergePlan.changedPathCount > 80 ||
+        mergePlan.omittedPathCount !== 0 ||
+        mergePlan.possibleConflictCount !== 0 ||
+        mergePlan.selectedLocalBranch !== branchReviewTarget ||
+        mergePlan.upstreamReviewSha256 !== branchReview?.evidenceSha256) return;
+    const projectId = activeProject.projectId;
+    const selectedBranch = branchReviewTarget;
+    const original = mergePlan;
+    const ticket = ++mergeExecRequest.current;
+    setMergeExecBusy(true);
+    setMergeExecReceipt(null);
+    setProblem('');
+    try {
+      const receipt = await invoke('ide_git_execute_fast_forward', {
+        projectId, selectedBranch, evidenceSha256: original.evidenceSha256,
+      });
+      if (ticket !== mergeExecRequest.current) return;
+      if (receipt?.schemaVersion !== 1 || receipt.projectId !== projectId ||
+          receipt.previousHead !== original.currentHead ||
+          receipt.resultingHead !== original.selectedTip ||
+          receipt.selectedTip !== original.selectedTip ||
+          receipt.resultingTree !== original.selectedTree ||
+          receipt.planSha256 !== original.evidenceSha256 ||
+          receipt.worktreeAndIndexVerified !== true ||
+          receipt.exactRefCasVerified !== true ||
+          receipt.recoveryJournalVerified !== true ||
+          receipt.originalHistoryRetained !== true ||
+          receipt.oneUseOsApprovalRequired !== true ||
+          receipt.hooksExecuted !== false || receipt.remoteUpdated !== false) {
+        throw Error('G06C03_FAST_FORWARD_RECEIPT_UNTRUSTED');
+      }
+      await refreshGitStatus();
+      setMergeExecReceipt(receipt);
+      setHint('One-use OS-approved local fast-forward independently verified; remote unchanged.');
+    } catch (error) {
+      if (ticket === mergeExecRequest.current) {
+        setMergeExecReceipt(null);
+        setProblem('Protected fast-forward refused or interrupted: ' + String(error));
+      }
+    } finally {
+      if (ticket === mergeExecRequest.current) setMergeExecBusy(false);
+    }
+  }
+
+  async function cancelProtectedFastForward() {
+    if (!activeProject?.projectId || !mergeExecBusy) return;
+    try {
+      const state = await invoke('ide_git_cancel_protected_merge', {
+        projectId: activeProject.projectId,
+      });
+      setHint('Native cancellation: ' + state.replaceAll('_', ' '));
+    } catch (error) {
+      setProblem('Cannot cancel after the checkout commit point: ' + String(error));
+    }
+  }
+
+  async function inspectProtectedMergeRecovery() {
+    if (!activeProject?.projectId || mergeRecoveryBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = ++mergeExecRequest.current;
+    setMergeRecoveryBusy(true);
+    setMergeRecovery(null);
+    try {
+      const status = await invoke('ide_git_inspect_protected_merge_recovery', { projectId });
+      if (ticket !== mergeExecRequest.current) return;
+      if (status?.schemaVersion !== 1 || status.projectId !== projectId ||
+          status.automaticRetry !== false ||
+          status.automaticRefRewrite !== false ||
+          status.automaticCheckout !== false ||
+          status.automaticLockDeletion !== false) {
+        throw Error('G06C03_RECOVERY_UNTRUSTED_RESPONSE');
+      }
+      setMergeRecovery(status);
+    } catch (error) {
+      if (ticket === mergeExecRequest.current) {
+        setProblem('Protected merge recovery unavailable: ' + String(error));
+      }
+    } finally {
+      if (ticket === mergeExecRequest.current) setMergeRecoveryBusy(false);
+    }
+  }
+
+  async function reconcileProtectedMergeReceipt() {
+    if (!activeProject?.projectId || !mergeRecovery?.operatorReconciliationRequired ||
+        mergeRecovery.gitIndexLockPresent || mergeRecoveryBusy ||
+        !['published_ref_requires_operator_receipt',
+          'prepublication_no_index_change_pending_review'].includes(mergeRecovery.state)) return;
+    const projectId = activeProject.projectId;
+    const ticket = ++mergeExecRequest.current;
+    setMergeRecoveryBusy(true);
+    setProblem('');
+    try {
+      const result = await invoke('ide_git_reconcile_protected_merge_receipt', { projectId });
+      if (ticket !== mergeExecRequest.current) return;
+      if (result?.projectId !== projectId || result.operatorReconciliationRequired !== false ||
+          result.automaticRetry !== false || result.automaticRefRewrite !== false ||
+          result.automaticCheckout !== false || result.automaticLockDeletion !== false) {
+        throw Error('G06C03_RECOVERY_RECEIPT_UNTRUSTED');
+      }
+      setMergeRecovery(result);
+      setHint('Only the independently verified historical journal receipt was reconciled.');
+    } catch (error) {
+      if (ticket === mergeExecRequest.current) {
+        setProblem('Recovery review was denied, interrupted, or unverified: ' + String(error));
+      }
+    } finally {
+      if (ticket === mergeExecRequest.current) setMergeRecoveryBusy(false);
+    }
+  }
+
   async function refreshGitStatus() {
+    mergeExecRequest.current += 1;
+    setMergeExecReceipt(null);
+    setMergeRecovery(null);
+    setMergeExecBusy(false);
+    setMergeRecoveryBusy(false);
     branchReviewRequest.current += 1;
     setBranchReview(null);
     setBranchReviewBusy(false);
@@ -5587,6 +5719,8 @@ function App() {
                 onChange={event => {
                   branchReviewRequest.current += 1;
                   setBranchReviewKind(event.target.value);
+                  mergeExecRequest.current += 1;
+                  setMergeExecReceipt(null);
                   setBranchReview(null);
                   setBranchReviewBusy(false);
                   mergePlanRequest.current += 1;
@@ -5607,6 +5741,8 @@ function App() {
                   onChange={event => {
                     branchReviewRequest.current += 1;
                     setBranchReviewTarget(event.target.value);
+                    mergeExecRequest.current += 1;
+                    setMergeExecReceipt(null);
                     setBranchReview(null);
                     setBranchReviewBusy(false);
                     mergePlanRequest.current += 1;
@@ -5701,6 +5837,32 @@ function App() {
                             {' · '}Selected: <code>{item.selectedOid || 'absent'}</code></p>
                         </article>)}
                       </div>
+                  {mergePlan.classification === 'fast_forward_candidate' &&
+                    mergePlan.blockers.length === 0 &&
+                    mergePlan.changedPathCount > 0 &&
+                    mergePlan.changedPathCount <= 80 &&
+                    mergePlan.omittedPathCount === 0 &&
+                    mergePlan.possibleConflictCount === 0 &&
+                    <div aria-label="G06C03 OS protected fast-forward execution">
+                      <p>Fast-forward candidate only: execution requires a NEW,
+                        one-use native OS confirmation. Local working files and
+                        index change before the exact branch-ref update; interruption
+                        may leave a worktree requiring manual review. This review
+                        digest alone never grants execution.</p>
+                      <button type="button" className="primaryBtn"
+                        disabled={mergeExecBusy || mergePlanBusy}
+                        onClick={() => void executeReviewedFastForward()}>
+                        Request OS permission to fast-forward this exact local branch
+                      </button>
+                      {mergeExecBusy && <div role="status">
+                        Native approval/checkout in progress. Cancellation is possible
+                        only before initial worktree mutation.
+                        <button type="button" className="ghostBtn"
+                          onClick={() => void cancelProtectedFastForward()}>
+                          Request pre-checkout cancellation
+                        </button>
+                      </div>}
+                    </div>}
                       <p>Evidence digest: <code>{mergePlan.evidenceSha256}</code></p>
                       <p>Source rechecked: {String(mergePlan.sourceRechecked)}.
                         Authorization: none. Execution route: unavailable.
@@ -5708,6 +5870,52 @@ function App() {
                         process launch, or network operations.</p>
                     </article>}
                 </div>}
+            </div>}
+            {activeProject && <div className="continuityDocument"
+              aria-label="G06C03 native protected merge and restart recovery">
+              <h3>Protected merge · installed recovery inspection</h3>
+              <p>Read-only inspection of durable native merge journal and exact local
+                Git state. No automatic checkout, branch rewrite, rollback or lock deletion.
+                Physical operator and installed application acceptance remain deferred.</p>
+              <button type="button" className="ghostBtn"
+                disabled={mergeRecoveryBusy || mergeExecBusy}
+                onClick={() => void inspectProtectedMergeRecovery()}>
+                {mergeRecoveryBusy ? 'Inspecting durable Git evidence…' :
+                  'Inspect interrupted merge / restart receipt'}
+              </button>
+              {mergeExecReceipt && mergeExecReceipt.projectId === activeProject.projectId &&
+                <article className="continuityEvent" role="status">
+                  <strong>Fast-forward independently verified</strong>
+                  <p>Previous HEAD: <code>{mergeExecReceipt.previousHead}</code></p>
+                  <p>Current HEAD: <code>{mergeExecReceipt.resultingHead}</code></p>
+                  <p>Tree: <code>{mergeExecReceipt.resultingTree}</code></p>
+                  <p>Native operation: <code>{mergeExecReceipt.operationId}</code></p>
+                  <p>Source plan: <code>{mergeExecReceipt.planSha256}</code></p>
+                  <p>Original Git history preserved. No network request or Git hook.</p>
+                </article>}
+              {mergeRecovery && mergeRecovery.projectId === activeProject.projectId &&
+                <article className="continuityEvent" role="status">
+                  <strong>{mergeRecovery.state.replaceAll('_', ' ')}</strong>
+                  <p>Journal phase: {mergeRecovery.lastPhase || 'none'}
+                    {' · '}Index locked: {String(mergeRecovery.gitIndexLockPresent)}
+                    {' · '}Worktree vs index: {String(mergeRecovery.worktreeMatchesCurrentIndex)}</p>
+                  <p>Original HEAD: {String(mergeRecovery.branchMatchesOriginal)}
+                    {' · '}Selected HEAD: {String(mergeRecovery.branchMatchesSelected)}</p>
+                  {mergeRecovery.operatorReconciliationRequired &&
+                    <p role="alert">Operator review required. Uncertain effects must
+                      be repaired separately; Lu will not retry the merge or
+                      delete a foreign lock.</p>}
+                  {mergeRecovery.operatorReconciliationRequired &&
+                    !mergeRecovery.gitIndexLockPresent &&
+                    ['published_ref_requires_operator_receipt',
+                     'prepublication_no_index_change_pending_review']
+                      .includes(mergeRecovery.state) &&
+                    <button type="button" className="ghostBtn"
+                      disabled={mergeRecoveryBusy}
+                      onClick={() => void reconcileProtectedMergeReceipt()}>
+                      Ask OS consent to verify the historical receipt only
+                    </button>}
+                </article>}
             </div>}
             {gitInventory && gitInventory.projectId === activeProject?.projectId &&
               <div className="continuityDocument" aria-label="Local branches and linked worktrees">
