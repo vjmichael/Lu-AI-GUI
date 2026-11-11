@@ -72,7 +72,8 @@ export function planRestartReconciliation(layout, observations, existingTabs,
       currentDiskRevision:diskRevision,
       diskChanged:verified && decision.changedOnDisk,
       wasDirtyBeforeRestart:file.wasDirty,
-      draftStatus:!draft?'no_checkpoint_observed':
+      draftStatus:observation.draftUnavailable===true?'checkpoint_inspection_unavailable':
+        !draft?'no_checkpoint_observed':
         !verified?'checkpoint_source_unavailable':
           draft.baseDiskRevision===diskRevision?'checkpoint_same_disk_base':
             'checkpoint_disk_changed',
@@ -87,6 +88,8 @@ export function planRestartReconciliation(layout, observations, existingTabs,
     changedOnDisk:rows.filter(row=>row.diskChanged).length,
     previousUnsaved:rows.filter(row=>row.wasDirtyBeforeRestart).length,
     checkpoints:rows.filter(row=>row.checkpointId!==null).length,
+    draftChecksUnavailable:rows.filter(row=>
+      row.draftStatus==='checkpoint_inspection_unavailable').length,
     existingEditorsPreserved:rows.filter(row=>row.status.startsWith('existing_')).length,
   });
   return Object.freeze({projectId:selected.projectId,rows,summary,toOpen});
