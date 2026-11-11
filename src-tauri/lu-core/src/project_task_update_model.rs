@@ -107,7 +107,7 @@ fn original_context(preview:&updates::Preview,g:&graph::EvidenceGraph,
             original_requirement_id:task.original_requirement_id.clone(),
             expected_version:task.expected_version,status:task.current_status,
             host_disposition:task.disposition,evidence_health:task.evidence_health,
-            allowed_evidence_ids:citations.into_iter().collect(),
+            allowed_evidence_ids:bounded,
             next_native_evidence:f.map(|f|f.next_evidence.clone()).unwrap_or_else(||
                 "Locate exact original requirement in current native graph".into()),
             exact_criterion_candidate:task.exact_criterion_candidate,
