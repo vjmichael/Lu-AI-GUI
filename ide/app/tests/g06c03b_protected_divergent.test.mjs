@@ -36,8 +36,8 @@ test('6C03B merge construction is two-parent, exact CAS and journal-first', () =
 
 test('6C03B quarantines the merged tree and never authorizes from a preview', () => {
   assert.match(verifier, /ReplaySandbox::open\(\&repo\)/);
-  assert.match(verifier, /quarantine\.merge_trees\(/);
-  assert.match(verifier, /merged\.write_tree_to\(quarantine\)/);
+  assert.match(verifier, /quarantine\s*\.merge_trees\(/);
+  assert.match(verifier, /merged\s*\.write_tree_to\(quarantine\)/);
   assert.match(verifier, /authority_granted: false/);
   assert.match(verifier, /source_objects_written: false/);
   assert.match(native, /"G06C03B_NEW_CONFLICTS"/);
