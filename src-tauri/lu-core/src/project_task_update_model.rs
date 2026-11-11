@@ -96,7 +96,12 @@ fn original_context(preview:&updates::Preview,g:&graph::EvidenceGraph,
                 if g.nodes.iter().any(|n|n.id==*id){citations.insert(id.clone());}
             }
         }
-        if citations.len()>24{return Err("PLAN07B_EVIDENCE_CAP_EXCEEDED".into())}
+        // Keep model context bounded for projects with sixteen tasks.
+        // Original requirement citation is ALWAYS included, with at most
+        // seven additional independently-linked source IDs.
+        let mut bounded=vec![task.original_requirement_id.clone()];
+        bounded.extend(citations.iter().filter(|x|
+            *x!=&task.original_requirement_id).take(7).cloned());
         tasks.push(SourceTask{
             task_id:task.task_id.clone(),
             original_requirement_id:task.original_requirement_id.clone(),
