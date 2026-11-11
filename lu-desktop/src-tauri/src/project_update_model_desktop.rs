@@ -243,8 +243,7 @@ pub(crate) async fn lu_project_update_model_suggest(
         }
         let current=owner.supervisor.status()
             .map_err(|_|"PLAN07B_GGUF_STATUS_LOST")?;
-        if current.phase!=lu_core::inference_host::EnginePhase::Ready||
-           current.session_id.as_deref()!=Some(sid.as_str())||
+        if current.session_id.as_deref()!=Some(sid.as_str())||
            current.model_ref.as_deref()!=Some(model.as_str()){
             return Err("PLAN07B_GGUF_SESSION_CHANGED_AFTER_GENERATION".into())
         }
