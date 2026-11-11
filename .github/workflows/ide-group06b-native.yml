@@ -12,6 +12,7 @@ on:
       - 'ide/app/fixtures/test_g06b05_git_oracle.py'
       - 'ide/app/fixtures/g06b05_physical_installed_acceptance.py'
       - 'ide/app/fixtures/Test-G06B05InstalledDebSmoke.sh'
+      - 'ide/app/fixtures/Test-InstalledAlphaNsis.ps1'
       - 'ide/app/src-tauri/tauri.g06b05.windows.conf.json'
       - 'ide/app/src-tauri/tauri.g06b05.linux.conf.json'
       - 'ide/docs/IDE_GROUP06B05_INSTALLED_COMMIT_RECOVERY_20261110.md'
