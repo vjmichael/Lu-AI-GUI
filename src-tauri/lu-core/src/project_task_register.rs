@@ -388,12 +388,44 @@ mod tests{
     }
     #[test]
     fn only_fresh_native_presence_criterion_can_be_marked_accepted(){
-        let (g,_old,p)=fixture();
         let root=std::env::temp_dir().join(format!(
             "lu-plan05-presence-{}",std::process::id()));
         let _=std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        let requirement=b"# Requirements\n- [ ] Must include src/required.rs\n";
+        std::fs::write(root.join("docs/REQUIREMENTS.md"),requirement).unwrap();
         std::fs::write(root.join("src/required.rs"),b"fn required() {}").unwrap();
+        let canonical=root.canonicalize().unwrap();
+        let scope=format!("{:x}",Sha256::digest(
+            canonical.to_string_lossy().as_bytes()));
+        let doc_sha=format!("{:x}",Sha256::digest(requirement));
+        let g=graph::assemble(graph::GraphInput{
+            project_scope_sha256:scope,selected_head:None,
+            observed_at_unix:42,complete:true,host_git_checked:false,
+            files:vec![graph::FileInput{
+                path:"docs/REQUIREMENTS.md".into(),role:"project_document".into(),
+                sha256:Some(doc_sha.clone())}],
+            requirements:vec![graph::RequirementInput{
+                path:"docs/REQUIREMENTS.md".into(),sha256:doc_sha,
+                line:2,statement:"- [ ] Must include src/required.rs".into()}],
+            runs:vec![],branches:vec![],extra_limitations:vec![],
+        }).unwrap();
+        let original_status=status::classify(&g,&[]).unwrap();
+        let cap=synthesis::build_capsule(&g,&original_status).unwrap();
+        let req=&cap.requirements[0];
+        let raw=serde_json::json!({"schema":synthesis::RAW_SCHEMA,"tasks":[{
+            "requirementId":req.requirement_id,"status":req.status,
+            "summary":"Verify required original source",
+            "description":"Check the required file against native source evidence",
+            "priority":"P1","group":"01 Source work",
+            "evidenceIds":[req.requirement_id],"dependencyIndices":[],
+            "acceptanceCriteria":"Independently verify the exact required source file",
+            "blockedBy":"Native source check missing"
+        }]}).to_string();
+        let p=synthesis::validate_model_response(&g,&original_status,&raw,
+            &synthesis::model_prompt(&cap).unwrap(),
+            "m-qwen","s-live","g-real").unwrap();
         let facts=status::observe_project_paths(&root,&g).unwrap();
         let fresh=status::classify(&g,&facts).unwrap();
         status::audit(&fresh,&g).unwrap();
@@ -405,7 +437,6 @@ mod tests{
         assert_eq!(event.kind,RevisionKind::HumanRevalidated);
         assert!(event.revision.independently_verified_requirement);
         assert!(!event.revision.execution_authorized);
-        // Prior verified acceptance is not a model grant or a permanent verdict.
         let old=latest(&confirmed,&p.tasks[0].task_id).unwrap();
         assert!(!old.needs_human_reconciliation);
         std::fs::remove_dir_all(root).unwrap();
