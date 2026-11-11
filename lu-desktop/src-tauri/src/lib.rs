@@ -8599,6 +8599,7 @@ pub fn run() {
             project_updates_desktop::lu_project_update_apply,
             project_update_model_desktop::lu_project_update_model_suggest,
             project_update_model_desktop::lu_project_update_model_latest,
+            project_update_model_desktop::lu_project_update_model_cancel,
             lu_status,
             lu_list_models,
             lu_model_preflight,
