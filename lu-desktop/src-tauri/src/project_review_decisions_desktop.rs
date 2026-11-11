@@ -135,6 +135,13 @@ fn append(profile:&Path,mut event:ReviewEvent)->Result<ReviewEvent,String>{
     let previous=original(&tx,&event.review_id)?;
     if event.sequence==1{
         if !previous.is_empty(){return Err("PLAN07C_REVIEW_TOKEN_REPLAY".into())}
+        let count:i64=tx.query_row("SELECT COUNT(DISTINCT review_id) FROM
+            ansf_project_task_update_review_events WHERE register_id=?1",
+            [&event.register_id],|r|r.get(0))
+            .map_err(|_|"PLAN07C_REVIEW_CAPACITY_QUERY")?;
+        if count<0||count>=MAX_EVENTS as i64{
+            return Err("PLAN07C_ORIGINAL_REVIEW_JOURNAL_FULL".into())
+        }
     }else if event.sequence==2{
         if previous.len()!=1||previous[0].phase!=Phase::Prepared||
            event.previous_sha256!=Some(previous[0].sha256.clone())||
@@ -370,9 +377,7 @@ pub(crate) async fn lu_project_update_review_decide(
     let selected=prepared.model_suggestion_sha256.as_deref()
         .map(|x|format!("Original model suggestion SHA: {x}"))
         .unwrap_or_else(||"Deterministic native evidence suggestion only".into());
-    let approval=project_register_desktop::confirm(&app,
-        "Lu — Decide evidence follow-up only",
-        format!("Approve this task's NEXT HUMAN EVIDENCE FOLLOW-UP?\n\n\
+    let message=format!("Approve this task's NEXT HUMAN EVIDENCE FOLLOW-UP?\n\n\
             Original task: {} v{}\n\
             Original requirement: {}\n\
             Exact graph: {}\n\
@@ -386,8 +391,16 @@ pub(crate) async fn lu_project_update_review_decide(
             the native folder picker for a fresh after-decision source scan.",
             prepared.task_id,prepared.expected_task_version,
             prepared.original_requirement_id,prepared.original_graph_sha256,
-            prepared.expected_register_sha256,selected,prepared.operator_note)
-    ).await?;
+            prepared.expected_register_sha256,selected,prepared.operator_note);
+    let dialog=app.clone();
+    let approval=tauri::async_runtime::spawn_blocking(move||
+        dialog.dialog().message(message)
+            .title("Lu — Human evidence follow-up decision")
+            .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+                "Approve evidence review only".into(),
+                "Refuse evidence review".into()
+            )).blocking_show()
+    ).await.map_err(|_|"PLAN07C_REVIEW_OS_DIALOG_INTERRUPTED")?;
     if !approval{
         return decide(&profile,&prepared,Phase::Refused,None)
     }
