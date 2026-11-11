@@ -1378,8 +1378,14 @@ impl ChatStore {
         use lu_core::ansf_belief_revision::ClaimState;
         self.require(active_chat)?;
         self.require(primary_source_chat)?;
-        let mut chats=vec![primary_source_chat.to_string(),
-            active_chat.to_string()];
+        // Preserve the source and current conversations first, but never
+        // count the SAME chat twice. Otherwise a same-chat resume could
+        // truncate an actual older original book while reporting that all
+        // same-profile conversations were inspected.
+        let mut chats=vec![primary_source_chat.to_string()];
+        if active_chat!=primary_source_chat{
+            chats.push(active_chat.to_string());
+        }
         let total_original_chats:i64;
         {
             let conn=self.catalog.lock().map_err(to_err)?;

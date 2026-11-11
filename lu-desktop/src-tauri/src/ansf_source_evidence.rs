@@ -7,7 +7,7 @@ use serde::{Deserialize,Serialize};
 use sha2::{Digest,Sha256};
 
 pub(crate) const SCHEMA:&str="lu-ansf-native-sources-v1";
-const MAX_RETRIEVAL:usize=16;
+pub(crate) const MAX_RETRIEVAL:usize=16;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Serialize,Deserialize)]
 #[serde(rename_all="snake_case")]

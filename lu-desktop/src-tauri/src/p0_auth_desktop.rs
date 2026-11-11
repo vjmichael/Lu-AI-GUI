@@ -224,12 +224,23 @@ pub(crate) async fn lu_p0_cancel_chat_operations(
     app:AppHandle,state:State<'_,Arc<DesktopState>>,chat_id:String
 )->Result<Option<AuthorityPosture>,String>{
     state.chats.require(&chat_id)?;
+    // The renderer can display one chat while holding another chat ID.
+    // Resolve the ORIGINAL ANSF catalog identity and display that exact
+    // target in the native OS confirmation before affecting any resource.
+    let (original_chats,_)=state.chats.list()?;
+    let original=original_chats.into_iter()
+        .find(|c|c.chat_id==chat_id)
+        .ok_or("P0_AUTH_CANCEL_TARGET_NOT_IN_ORIGINAL_ANSF_CATALOG")?;
+    let confirmed_title=original.title.chars()
+        .filter(|c|!c.is_control()).take(100).collect::<String>();
+    let target_id=chat_id.clone();
     // Requiring a fresh native confirmation is independent of any
     // previously remembered capability, model plan or webview click.
     let dialog=app.clone();
     let approved=tauri::async_runtime::spawn_blocking(move||
-        dialog.dialog().message(
-            "Revoke the selected conversation's CURRENT Browser, Observe, \
+        dialog.dialog().message(format!(
+            "TARGET CONVERSATION: {}\nOriginal ANSF chat ID: {}\n\n\
+             Revoke ONLY this exact conversation's current Browser, Observe, \
              model, Reader and OCR operations, and stop its native scheduled \
              and unscheduled background workers?\n\n\
              Other conversations are not authorized targets. A stop request \
@@ -237,8 +248,9 @@ pub(crate) async fn lu_p0_cancel_chat_operations(
              interrupted file effects are safe to retry, or that old \
              permission can be reused.\n\n\
              Lu first writes a durable cancellation intent to the original \
-             ANSF audit. Any incomplete/uncertain stop will require review."
-        ).title("Lu — Stop only this conversation's native work")
+             ANSF audit. Any incomplete/uncertain stop will require review.",
+            confirmed_title,target_id
+        )).title("Lu — Stop only this conversation's native work")
         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
             "Revoke and stop work".into(),"Keep running".into()
         )).blocking_show()
@@ -272,8 +284,8 @@ mod tests{
     use super::*;
     #[test]
     fn stop_return_status_alone_is_never_an_independent_os_reap_proof(){
-        let result=result("browser","NATIVE_STOP_RETURNED_CUSTODY_RECHECK_REQUIRED");
-        assert_ne!(result.state,"OS_CUSTODY_INDEPENDENTLY_VERIFIED");
+        let observed=result("browser","NATIVE_STOP_RETURNED_CUSTODY_RECHECK_REQUIRED");
+        assert_ne!(observed.state,"OS_CUSTODY_INDEPENDENTLY_VERIFIED");
         let uncertain=result("ocr","CANCEL_REQUESTED_NOT_REAPED");
         assert_ne!(uncertain.state,"NATIVE_TERMINATION_REAP_RETURNED");
     }

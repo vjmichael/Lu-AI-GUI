@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "c5f644bc96974e6d8379fc3c6b3154c970960798",
-  "trackedFileCount": 941,
+  "sourceCommitBeforeLock": "afcb7ae235de8ae84d3fdc66c127bac6984fa33e",
+  "trackedFileCount": 942,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -701,7 +701,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "919cb6ca177d360a86451b9e7a34d1ba40377cfb"
+      "blob": "02a28646128ad3ba55d520a42e60f3ca3b72a29a"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -826,6 +826,10 @@
     {
       "path": "docs/LU_P0_NEXT_PROJECT_AGENT_HANDOFF_20261111.md",
       "blob": "a37ddd23fba1c6541fd4ddf1eee4127ce910b562"
+    },
+    {
+      "path": "docs/LU_P0_SOURCE_RECONCILIATION_REPAIRS_20261111.md",
+      "blob": "c0dcb37bd9a3b60cc8833b8fb7015680635842a9"
     },
     {
       "path": "docs/LU_P0_TOOLS01_MULTI_DOCUMENT_MODEL_LOOP_20261111.md",
@@ -1249,7 +1253,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "2d2d8dd63a80350520c280417c2fa5b1db071044"
+      "blob": "b9e2cdc92370f1f5a9dbdbebbdb97dc9fbe5960d"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -1257,7 +1261,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_source_evidence.rs",
-      "blob": "85ce30b4edd1ca1c03d555818a3fe6cba495e850"
+      "blob": "75b99d623d1691560ea87d6b5968f3be1102418c"
     },
     {
       "path": "lu-desktop/src-tauri/src/archive_batch_desktop.rs",
@@ -1421,11 +1425,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_auth_desktop.rs",
-      "blob": "fe0ac98515007a6da0f5b07ed09ac4079ea10a82"
+      "blob": "c1a7e8ed4af7ee0604334ca8bd1ff424c57608ba"
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_memory_continuity.rs",
-      "blob": "c5f357ef72ab2d8d37612856c792c9da307ef36e"
+      "blob": "87dfa416e11a1b047a5c0db8cc8ea093cc044197"
     },
     {
       "path": "lu-desktop/src-tauri/src/preview_engine_choice.rs",

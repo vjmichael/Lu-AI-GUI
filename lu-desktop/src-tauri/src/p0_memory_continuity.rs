@@ -57,14 +57,21 @@ fn omitted(reason:&str)->String{
 }
 fn verified_source_history(
     chats:&ChatStore,source_chat:&str
-)->Result<Vec<Value>,String>{
+)->Result<(Vec<Value>,bool),String>{
     let original=chats.native_source_history(source_chat)?;
+    // A full original bounded window does NOT prove there are no older
+    // historical Reader/Browser sources behind private OCR/Observe rows.
+    // Mark the source history as incomplete before filtering private rows.
+    let source_window_full=original.len()>=
+        crate::ansf_source_evidence::MAX_RETRIEVAL;
     // Browser and Reader historical metadata are useful; OCR transcription,
     // private Observe, screen/pixel/clipboard data NEVER enter this capsule.
-    Ok(original.into_iter().filter(|s|
+    let eligible=original.into_iter().filter(|s|
         s.eligible_for_local_model_metadata&&!s.local_only_private&&
         matches!(s.kind,SourceKind::Browser|SourceKind::Reader)
-    ).take(4).map(|s|json!({
+    ).collect::<Vec<_>>();
+    let more_native_observations=eligible.len()>4||source_window_full;
+    let sampled=eligible.into_iter().take(4).map(|s|json!({
         "sourceId":s.source_id,
         "kind":s.kind,
         "originalChatId":s.chat_id,
@@ -79,7 +86,8 @@ fn verified_source_history(
         "independentlyVerifiedFact":false,
         "currentSourceFreshness":"NOT_RECHECKED",
         "executionAuthorized":false
-    })).collect())
+    })).collect();
+    Ok((sampled,more_native_observations))
 }
 fn goal_context(chats:&ChatStore,original_chat:&str)
     ->Result<Value,String>{
@@ -137,7 +145,7 @@ pub(crate) fn for_current_human_turn(
     let change=chats.monitor_project_context(
         active_chat,&project,&task,continuity
     )?;
-    let original_sources=verified_source_history(
+    let (original_sources,more_native_sources)=verified_source_history(
         chats,&checkpoint.source_chat_id
     )?;
     let original_goal=goal_context(chats,&checkpoint.source_chat_id)?;
@@ -176,6 +184,17 @@ pub(crate) fn for_current_human_turn(
     let has_blockers=!checkpoint.blockers.is_empty();
     let correction_review=claims["humanReviewRequired"]==true;
     let goal_questions=original_goal["pendingCount"].as_u64().unwrap_or(0);
+    let missing_original_goal=original_goal["originalGoalId"].is_null()||
+        original_goal["originalGoalRevision"].is_null();
+    let pending_original_decision_review=
+        task_decisions["humanReviewRequired"]==true||
+        task_decisions["status"]=="ORIGINAL_TASK_CRITERION_AUDIT_UNAVAILABLE"||
+        task_decisions["decisions"].as_array().is_some_and(|items|
+            items.iter().any(|row|
+                row["originalWorkerOracleReopened"]==false||
+                row["sourceLeaseCurrent"]==false
+            ));
+    let truncated_original_ids=checkpoint.original_source_ids.len()>6;
     let capsule=json!({
         "schema":"lu-p0-memory-original-task-continuation-v1",
         "status":"HISTORICAL_ANSF_DATA_RECHECK_ORIGINAL_BEFORE_ACTION",
@@ -195,6 +214,7 @@ pub(crate) fn for_current_human_turn(
         },
         "goalAndClarifications":original_goal,
         "historicalNativeSources":original_sources,
+        "additionalNativeSourceObservationsNotDisplayed":more_native_sources,
         "nativeSourcesScopedToOriginalConversationNotNecessarilyThisTask":true,
         "originalSourceBytesNotIncluded":true,
         "sourceFreshness":"NOT_RECHECKED",
@@ -204,7 +224,10 @@ pub(crate) fn for_current_human_turn(
         "historicalVerifiedEffectReceiptSample":effects_sample,
         "moreIndependentReceiptsNotDisplayed":extra_witnesses,
         "humanReviewRequired":change_review||has_blockers||
-            correction_review||goal_questions>0,
+            correction_review||goal_questions>0||missing_original_goal||
+            more_native_sources||
+            truncated_original_ids||extra_witnesses||
+            pending_original_decision_review,
         "originalEvidenceCurrent":false,
         "historicalEvidenceIsNotIndependentTaskAcceptance":true,
         "allOriginalSourceBytesMustBeRecheckedBeforeEffect":true,
