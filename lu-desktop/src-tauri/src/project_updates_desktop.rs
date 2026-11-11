@@ -214,3 +214,91 @@ pub(crate) async fn lu_project_update_apply(
         recheck_and_commit(&profile,&root,&preview_sha256).map(Some)
     ).await.map_err(|_|"PLAN07_RECONCILIATION_INTERRUPTED")?
 }
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    #[test]
+    fn real_ansf_refresh_source_change_recheck_and_restart_preserve_history(){
+        let profile=std::env::temp_dir().join(format!(
+            "lu-plan07-native-{}",std::process::id()));
+        let root=profile.join("project");
+        let alien=profile.join("other");
+        let _=fs::remove_dir_all(&profile);
+        fs::create_dir_all(profile.join("ansf")).unwrap();
+        fs::create_dir_all(root.join("docs")).unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(alien.join("docs")).unwrap();
+        fs::write(root.join("docs/REQUIREMENTS.md"),
+            b"# Requirements\n- [ ] Must include src/required.rs\n").unwrap();
+        fs::write(alien.join("docs/REQUIREMENTS.md"),
+            b"# Requirements\n- [ ] Must include src/required.rs\n").unwrap();
+        let conn=Connection::open(profile.join("ansf/library.db")).unwrap();
+        conn.execute_batch("CREATE TABLE preserved_memory(v INTEGER);
+            INSERT INTO preserved_memory VALUES(707);").unwrap();
+        drop(conn);
+        let old=project_status_desktop::classify_selected(&root).unwrap();
+        let capsule=lu_core::project_task_synthesis::build_capsule(
+            &old.0,&old.1).unwrap();
+        let req=&capsule.requirements[0];
+        let raw=serde_json::json!({
+            "schema":lu_core::project_task_synthesis::RAW_SCHEMA,
+            "tasks":[{
+                "requirementId":req.requirement_id,"status":req.status,
+                "summary":"Verify original native source",
+                "description":"Review original project source against native evidence",
+                "priority":"P1","group":"01 Source check",
+                "evidenceIds":[req.requirement_id],"dependencyIndices":[],
+                "acceptanceCriteria":"Independently inspect the exact original required source file",
+                "blockedBy":"Independent original source evidence unavailable"
+            }]
+        }).to_string();
+        let p=lu_core::project_task_synthesis::validate_model_response(
+            &old.0,&old.1,&raw,
+            &lu_core::project_task_synthesis::model_prompt(&capsule).unwrap(),
+            "m-plan07-test-only","s-fixture","g-fixture").unwrap();
+        project_task_desktop::persist_proposal(
+            &profile,&old.0,&old.1,&p,&raw).unwrap();
+        let imported=register::import(&p).unwrap();
+        let saved=project_register_desktop::persist(
+            &profile,&p,&imported,None).unwrap();
+        let unchanged=analyze_selected(&profile,&root,&saved.register_id).unwrap();
+        assert!(!unchanged.semantic_change);
+        assert_eq!(unchanged.exact_criterion_review_candidates,0);
+        assert!(recheck_and_commit(&profile,&root,&unchanged.digest_sha256).is_err());
+        fs::write(root.join("src/required.rs"),b"fn required_source(){}").unwrap();
+        let updated=analyze_selected(&profile,&root,&saved.register_id).unwrap();
+        assert!(updated.semantic_change);
+        assert_eq!(updated.exact_criterion_review_candidates,1);
+        assert!(!updated.candidates[0].task_complete);
+        assert!(!updated.candidates[0].execution_authorized);
+        assert!(recheck_and_commit(&profile,&alien,&updated.digest_sha256).is_err());
+        // After scan and preview the original source may be changed without
+        // a new HEAD. Reinspection must deny that TOCTOU case.
+        fs::remove_file(root.join("src/required.rs")).unwrap();
+        assert!(recheck_and_commit(&profile,&root,&updated.digest_sha256).is_err());
+        fs::write(root.join("src/required.rs"),b"fn required_source(){}").unwrap();
+        let applied=recheck_and_commit(&profile,&root,&updated.digest_sha256).unwrap();
+        assert!(applied.events.len()>saved.events.len());
+        let current=register::latest(&applied,&p.tasks[0].task_id).unwrap();
+        assert!(current.needs_human_reconciliation);
+        assert!(!current.independently_verified_requirement);
+        assert!(!current.execution_authorized);
+        assert!(recheck_and_commit(&profile,&root,&updated.digest_sha256).is_err());
+        let conn=project_register_desktop::library(&profile).unwrap();
+        let (_p,reopened,_)=project_register_desktop::load_register(
+            &conn,&saved.register_id).unwrap().unwrap();
+        assert_eq!(applied.latest_sha256,reopened.latest_sha256);
+        let preserved:i64=conn.query_row(
+            "SELECT v FROM preserved_memory",[],|row|row.get(0)).unwrap();
+        assert_eq!(preserved,707);
+        // Immutable source receipts are not permitted to be silently mutated
+        // into a plausible second result, even after reloading the library.
+        conn.execute("UPDATE ansf_project_task_refresh_observations
+            SET preview_json=X'7b6f6f7073' WHERE preview_sha256=?1",
+            [&updated.digest_sha256]).unwrap();
+        assert!(saved_preview(&profile,&updated.digest_sha256).is_err());
+        drop(conn);
+        fs::remove_dir_all(profile).unwrap();
+    }
+}
