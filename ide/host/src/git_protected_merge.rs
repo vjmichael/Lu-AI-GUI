@@ -200,6 +200,7 @@ fn changed_path_is_plain_safe(root: &Path, path: &str) -> Result<(), &'static st
     for item in path.split('/') {
         let raw = item.split('.').next().unwrap_or("").to_ascii_uppercase();
         if item.is_empty() || item == "." || item == ".." || item.ends_with('.') ||
+            item.eq_ignore_ascii_case(".git") ||
             matches!(raw.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "COM1" | "COM2" |
               "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9" |
               "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9") {
@@ -623,6 +624,7 @@ mod tests {
         assert!(done.original_history_retained && done.one_use_os_approval_required);
         assert!(!done.hooks_executed && !done.remote_updated);
         let reopened = IdeWorkspaceRegistry::open(x.base.join("catalog.json")).unwrap();
+        reopened.reopen(&x.id).unwrap();
         let state = reopened.inspect_protected_merge_recovery(&x.id).unwrap();
         assert_eq!(state.state, "verified_historical_fast_forward");
         assert!(!state.operator_reconciliation_required);
@@ -692,6 +694,75 @@ mod tests {
         assert_eq!(x.registry.reconcile_protected_merge_receipt(&x.id).unwrap_err(),
                    "G06C03_RECOVERY_FOREIGN_LOCK");
         assert_eq!(fs::read(lock).unwrap(), b"foreign");
+    }
+    #[test]
+    fn g06c03_actual_process_abort_child() {
+        let Some(root) = std::env::var_os("IDE_G06C03_CHILD_ROOT") else { return; };
+        let Some(project_id) = std::env::var_os("IDE_G06C03_CHILD_ID") else { return; };
+        let root = PathBuf::from(root);
+        let registry = IdeWorkspaceRegistry::open(root.parent().unwrap()
+            .join("catalog.json")).unwrap();
+        let id = project_id.to_string_lossy().to_string();
+        registry.reopen(&id).unwrap();
+        let digest = registry.preview_reviewed_local_merge(&id, "feature")
+            .unwrap().evidence_sha256;
+        let _ = registry.execute_os_approved_fast_forward(
+            &id, "feature", &digest, &AtomicU8::new(0));
+        panic!("G06C03 child returned without deliberate process abort");
+    }
+    #[test]
+    fn real_child_process_abort_after_ref_cas_restarts_without_ref_replay() {
+        if std::env::var_os("IDE_G06C03_CHILD_ROOT").is_some() { return; }
+        let x = fixture();
+        let old_repo = Repository::open(&x.root).unwrap();
+        let old_head = old_repo.head().unwrap().target().unwrap().to_string();
+        let selected = local_commit(&old_repo, "feature").unwrap().to_string();
+        let unrelated = fs::read(x.root.join("unrelated.keep")).unwrap();
+        fs::write(x.root.join(".g06c03-abort-fixture"), b"G06C03_DISPOSABLE_ONLY\n").unwrap();
+        let test_bin = std::env::current_exe().unwrap();
+        let output = std::process::Command::new(test_bin)
+            .arg("--exact")
+            .arg("git_protected_merge::tests::g06c03_actual_process_abort_child")
+            .arg("--nocapture")
+            .env("IDE_G06C03_CHILD_ROOT", &x.root)
+            .env("IDE_G06C03_CHILD_ID", &x.id)
+            .env("IDE_G06C03_ABORT_AFTER_REF_CAS", &x.root)
+            .output().unwrap();
+        assert!(!output.status.success(), "test child must genuinely abort");
+        assert!(!String::from_utf8_lossy(&output.stderr)
+            .contains("returned without deliberate process abort"),
+            "failure must be the actual post-CAS abort");
+        let repo = Repository::open(&x.root).unwrap();
+        assert_eq!(repo.head().unwrap().target().unwrap().to_string(), selected);
+        assert_ne!(old_head, selected);
+        assert!(repo.statuses(None).unwrap().is_empty());
+        assert_eq!(fs::read(x.root.join("tracked.txt")).unwrap(), b"feature revision\n");
+        assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
+        let path = journal_file(&x.registry, &x.id).unwrap();
+        let pending = read_latest(&path).unwrap().unwrap();
+        assert_eq!(pending.phase, "publishing");
+        assert_eq!(pending.previous_head, old_head);
+        assert_eq!(pending.selected_tip, selected);
+        assert_eq!(pending.original_index_sha256.len(), 64);
+        assert_eq!(pending.selected_index_sha256.len(), 64);
+        assert!(!repo.path().join("index.lock").exists());
+        drop(repo);
+        let reopened = IdeWorkspaceRegistry::open(x.base.join("catalog.json")).unwrap();
+        reopened.reopen(&x.id).unwrap();
+        let state = reopened.inspect_protected_merge_recovery(&x.id).unwrap();
+        assert_eq!(state.state, "published_ref_requires_operator_receipt");
+        assert!(state.operator_reconciliation_required);
+        assert!(!state.automatic_retry && !state.automatic_ref_rewrite &&
+                 !state.automatic_checkout && !state.automatic_lock_deletion);
+        // The source-only test represents a separately approved reconciliation;
+        // no actual physical human OS dialog is claimed.
+        let reconciled = reopened.reconcile_protected_merge_receipt(&x.id).unwrap();
+        assert_eq!(reconciled.state, "verified_historical_fast_forward");
+        assert!(!reconciled.operator_reconciliation_required);
+        let final_repo = Repository::open(&x.root).unwrap();
+        assert_eq!(final_repo.head().unwrap().target().unwrap().to_string(), selected);
+        assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
+        assert!(final_repo.statuses(None).unwrap().is_empty());
     }
     #[test]
     fn signed_off_stale_tree_and_divergent_history_are_not_executed() {
