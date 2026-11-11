@@ -7,6 +7,7 @@ use crate::{
     git_branch_operations::{exact_repo, local_commit, safe_local_name},
     git_merge_plan::ReviewedMergePlan,
     git_replay_quarantine::ReplaySandbox,
+    git_protected_merge::changed_path_is_plain_safe,
     IdeWorkspaceRegistry,
 };
 use git2::{MergeOptions, Oid, Repository, RepositoryState, StatusOptions};
@@ -31,6 +32,8 @@ pub struct VerifiedDivergentMerge {
     pub second_parent: String,
     pub proposed_entry_count: usize,
     pub resulting_index_sha256: String,
+    pub prospective_tree: Option<String>,
+    pub result_sha256: String,
     pub source_plan_sha256: String,
     pub conflicts: Vec<String>,
     pub conflict_count: usize,
@@ -121,6 +124,7 @@ impl IdeWorkspaceRegistry {
             return Err("G06C03B_PLAN_BLOCKED");
         }
         let repo = exact_repo(self, project_id)?;
+        let root = self.registered_git_root(project_id).map_err(|_| "G06C03B_PROJECT_NOT_OPEN")?;
         let before_index = index_sha(repo.path())?;
         let before_fence = repo_fence(&repo)?;
         if before_fence.0 != plan.current_branch || before_fence.1 != plan.current_head
@@ -162,6 +166,7 @@ impl IdeWorkspaceRegistry {
                 let bytes = c.our.as_ref().or(c.their.as_ref()).or(c.ancestor.as_ref())
                     .ok_or("G06C03B_CONFLICT_WITHOUT_PATH")?.path.as_slice();
                 if !safe_path(bytes) { return Err("G06C03B_UNSAFE_CONFLICT_PATH"); }
+                changed_path_is_plain_safe(&root, std::str::from_utf8(bytes).map_err(|_| "G06C03B_UNSAFE_CONFLICT_PATH")?)?;
                 if conflicts.len() < MAX_CONFLICTS {
                     conflicts.push(std::str::from_utf8(bytes)
                         .map_err(|_| "G06C03B_CONFLICT_ENCODING")?.to_owned());
@@ -177,6 +182,7 @@ impl IdeWorkspaceRegistry {
             if !safe_path(&e.path) || !matches!(e.mode, 0o100644 | 0o100755) {
                 return Err("G06C03B_UNSUPPORTED_RESULT_ENTRY");
             }
+            changed_path_is_plain_safe(&root, std::str::from_utf8(&e.path).map_err(|_| "G06C03B_PATH_ENCODING")?)?;
             digest.update((e.path.len() as u64).to_le_bytes());
             digest.update(&e.path);
             digest.update(e.id.as_bytes());
@@ -184,6 +190,16 @@ impl IdeWorkspaceRegistry {
             digest.update(e.flags.to_le_bytes());
             digest.update(e.flags_extended.to_le_bytes());
         }
+        let tree = if count == 0 {
+            Some(merged.write_tree_to(quarantine).map_err(|_| "G06C03B_RESULT_TREE_FAILED")?)
+        } else { None };
+        let index_digest = format!("{:x}", digest.finalize());
+        let tree_string = tree.map(|oid| oid.to_string());
+        let result_sha256 = hex(format!(
+            "lu-ide-g06c03b-result-v1\\n{}\\n{}\\n{}\\n{}\\n{}\\n{}\\n{}",
+            project_id, plan.evidence_sha256, plan.current_head, plan.selected_tip,
+            before_index, index_digest, tree_string.as_deref().unwrap_or("CONFLICT")
+        ).as_bytes());
         if repo_fence(&repo)? != before_fence || index_sha(repo.path())? != before_index
             || local_commit(&repo, selected_branch)?.to_string() != plan.selected_tip {
             return Err("G06C03B_SOURCE_CHANGED_DURING_MERGE");
@@ -194,7 +210,9 @@ impl IdeWorkspaceRegistry {
             merge_base: plan.merge_base_commit.unwrap(),
             first_parent: plan.current_head, second_parent: plan.selected_tip,
             proposed_entry_count: entries,
-            resulting_index_sha256: format!("{:x}", digest.finalize()),
+            resulting_index_sha256: index_digest,
+            prospective_tree: tree_string,
+            result_sha256,
             source_plan_sha256: plan.evidence_sha256,
             conflicts, conflict_count: count, conflict_free_preview: count == 0,
             source_objects_written: false, source_index_or_worktree_written: false,
