@@ -43,6 +43,7 @@ mod project_task_desktop;
 mod project_register_desktop;
 mod project_task_board_desktop;
 mod project_task_agent_handoff;
+mod project_task_verified_evidence;
 mod project_updates_desktop;
 mod project_update_model_desktop;
 mod project_review_decisions_desktop;
@@ -8721,6 +8722,8 @@ pub fn run() {
             project_task_board_desktop::lu_project_board_export,
             project_task_agent_handoff::lu_project_task_agent_handoffs,
             project_task_agent_handoff::lu_project_task_prepare_agent_plan,
+            project_task_verified_evidence::lu_project_task_criterion_evidence_history,
+            project_task_verified_evidence::lu_project_task_review_independent_witness,
             project_updates_desktop::lu_project_update_inspect,
             project_updates_desktop::lu_project_update_apply,
             project_update_model_desktop::lu_project_update_model_suggest,

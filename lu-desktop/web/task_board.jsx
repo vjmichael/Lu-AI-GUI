@@ -21,6 +21,8 @@ export function TaskBoardWindow(){
   const [reviewHistory,setReviewHistory]=useState([]);
   const [agentMode,setAgentMode]=useState('review_only');
   const [agentLinks,setAgentLinks]=useState([]);
+  const [criterionReviews,setCriterionReviews]=useState([]);
+  const [criterionReason,setCriterionReason]=useState('');
   const [reviewTaskId,setReviewTaskId]=useState('');
   const [reviewMode,setReviewMode]=useState('native');
   const [reviewNote,setReviewNote]=useState('');
@@ -52,6 +54,7 @@ export function TaskBoardWindow(){
     setTaskId('');setEvidence(null);setEdit(null);setUpdatePreview(null);
     setModelSuggestion(null);setReviewTaskId('');setReviewMode('native');
     setReviewNote('');setReviewHistory([]);setAgentLinks([]);
+    setCriterionReviews([]);setCriterionReason('');
     if(!registerId)return;
     let live=true;
     void invoke('lu_project_update_review_history',{registerId})
@@ -71,15 +74,18 @@ export function TaskBoardWindow(){
   }
   async function selectTask(t){
     if(!current)return;
-    setTaskId(t.taskId);setEvidence(null);setEdit(null);setAgentLinks([]);
+    setTaskId(t.taskId);setEvidence(null);setEdit(null);
+    setAgentLinks([]);setCriterionReviews([]);setCriterionReason('');
     try{
-      const [detail,links]=await Promise.all([
+      const [detail,links,reviews]=await Promise.all([
         invoke('lu_project_board_evidence',{
           registerId:current.board.registerId,taskId:t.taskId}),
         invoke('lu_project_task_agent_handoffs',{
+          registerId:current.board.registerId,taskId:t.taskId}),
+        invoke('lu_project_task_criterion_evidence_history',{
           registerId:current.board.registerId,taskId:t.taskId})
       ]);
-      setEvidence(detail);setAgentLinks(links);
+      setEvidence(detail);setAgentLinks(links);setCriterionReviews(reviews);
     }catch(e){setError(errorText(e))}
   }
   async function reopenAgentLinks(){
@@ -89,6 +95,43 @@ export function TaskBoardWindow(){
         registerId:current.board.registerId,taskId:active.taskId
       });
       setAgentLinks(links);return links;
+    });
+  }
+  async function reopenCriterionReviews(){
+    if(!current||!active||busy)return;
+    await act('Original human criterion-evidence decisions reopened, not task acceptance.',async()=>{
+      const reviews=await invoke('lu_project_task_criterion_evidence_history',{
+        registerId:current.board.registerId,taskId:active.taskId
+      });
+      setCriterionReviews(reviews);return reviews;
+    });
+  }
+  async function reviewIndependentWitness(link,result,decision){
+    if(!current||!active||busy||!result.reviewEligible||
+       criterionReason.trim().length<10||
+       !current.reviewCurrent||active.needsHumanReconciliation)return;
+    await act('Human decision appended to original ANSF criterion-evidence journal. Task status and tool authority unchanged.',async()=>{
+      const entry=await invoke('lu_project_task_review_independent_witness',{
+        registerId:current.board.registerId,taskId:active.taskId,
+        expectedBoardSha256:current.board.sha256,
+        expectedRegisterSha256:current.sourceRegisterSha256,
+        expectedTaskVersion:active.version,
+        handoffId:link.handoffId,receiptSha256:result.receiptSha256,
+        decision,operatorReason:criterionReason.trim()
+      });
+      if(entry){
+        const [reviews,links]=await Promise.all([
+          invoke('lu_project_task_criterion_evidence_history',{
+            registerId:current.board.registerId,taskId:active.taskId
+          }),
+          invoke('lu_project_task_agent_handoffs',{
+            registerId:current.board.registerId,taskId:active.taskId
+          })
+        ]);
+        setCriterionReviews(reviews);setAgentLinks(links);
+        setCriterionReason('');
+      }
+      return entry;
     });
   }
   async function prepareAgentPlan(){
@@ -535,6 +578,38 @@ export function TaskBoardWindow(){
                   stale board approval is not usable as a source lease.</small>}
                 {active.needsHumanReconciliation&&<small>Resolve the original source-change
                   reconciliation before creating a new plan draft.</small>}
+                <label>Why does this independently observed result support
+                  or fail the EXACT acceptance criterion?
+                  <textarea rows={3} maxLength={500}
+                    aria-label="Operator reason for independently witnessed evidence"
+                    placeholder="Explain which part of this criterion the witness does or does not establish…"
+                    value={criterionReason}
+                    onChange={e=>setCriterionReason(e.target.value)}/>
+                </label>
+                <small>P0-TOOLS-05 requires at least 10 characters of HUMAN reasoning,
+                  a fresh OS-picked project source, reopened original native
+                  oracle receipts, and a separate native confirmation.
+                  Accepting evidence never completes the task.</small>
+                <button type="button" disabled={busy}
+                  onClick={()=>void reopenCriterionReviews()}>
+                  Reopen original human witness decisions…
+                </button>
+                {criterionReviews.length>0&&<div role="region"
+                  aria-label="Original independently audited human criterion decisions">
+                  {criterionReviews.map(row=><article key={row.eventId}>
+                    <strong>{row.decision.replaceAll('_',' ')} · task v{row.taskVersion}</strong>
+                    <p>{row.operatorReason}</p>
+                    <small>Method: {row.independentMethod} · Original receipt:
+                      {row.receiptSha256} · Independent source:
+                      {row.observedSha256}.</small>
+                    <p>{row.sourceLeaseCurrent?
+                      'Current task register lease; still historical source evidence.':
+                      'Task register/board revision changed; old acceptance is historical only.'}</p>
+                    <small>Exact criterion reviewed: {row.acceptanceCriterion}</small>
+                    <small>Human evidence decision recorded: YES ·
+                      Full task complete: NO · Execution authorized: NO.</small>
+                  </article>)}
+                </div>}
                 {agentLinks.length===0?<p>No agent-plan handoff recorded for this task.</p>:
                   <div role="region" aria-label="Original agent task handoffs">
                     {agentLinks.map(link=><article key={link.handoffId}>
@@ -561,6 +636,28 @@ export function TaskBoardWindow(){
                               'Historical/stale or uncertain evidence: reconciliation is required.'}</p>
                             <small>Original requirement: {result.originalRequirementId} ·
                               Full task completed: NO · Execution permission: NO.</small>
+                            {result.reviewEligible&&<div className="plan06Actions"
+                              aria-label="Native human criterion-witness evidence decision">
+                              <button type="button"
+                                disabled={busy||criterionReason.trim().length<10||
+                                  !current.reviewCurrent}
+                                onClick={()=>void reviewIndependentWitness(link,result,
+                                  'ACCEPTED_AS_SUPPORTING_EVIDENCE')}>
+                                Review and accept as supporting evidence…
+                              </button>
+                              <button type="button"
+                                disabled={busy||criterionReason.trim().length<10}
+                                onClick={()=>void reviewIndependentWitness(link,result,
+                                  'REJECTED_AS_IRRELEVANT')}>
+                                Review and reject relevance…
+                              </button>
+                              <button type="button"
+                                disabled={busy||criterionReason.trim().length<10}
+                                onClick={()=>void reviewIndependentWitness(link,result,
+                                  'NEEDS_MORE_INDEPENDENT_EVIDENCE')}>
+                                Review and request more evidence…
+                              </button>
+                            </div>}
                           </article>)}
                         </div>}
                       <small>Task complete: NO · Execution authorized by this link: NO.

@@ -123,7 +123,7 @@ fn init(conn:&Connection)->Result<(),String>{
     Ok(())
 }
 
-fn source_anchor(
+pub(super) fn source_anchor(
     profile:&Path,project:&Path,register_id:&str,task_id:&str,
     expected_board:&str,expected_register:&str,expected_version:u64,
 )->Result<register::TaskRevision,String>{
@@ -367,6 +367,62 @@ fn list(profile:&Path,register_id:&str,task_id:&str,
     Ok(items)
 }
 
+/// P0-TOOLS-05: read ONE original audited worker+oracle receipt from
+/// the existing AGENT plan ledger. This exposes no mutable task verdict.
+#[derive(Clone,Debug)]
+pub(super) struct ExactTaskWitness{
+    pub handoff_id:String,
+    pub tool_id:String,
+    pub independent_method:String,
+    pub receipt_sha256:String,
+    pub observed_sha256:String,
+    pub step_index:u8,
+}
+pub(super) fn compatible_independent_method(tool:&str,method:&str)->bool{
+    match tool{
+        "lu.reviewed.git.head"=>method=="GIT_HEAD_DIRECT_V1",
+        "lu.reviewed.git.status"=>method=="GIT_STATUS_INDEX_TREE_V1",
+        "lu.reviewed.git.branch"=>method=="GIT_BRANCH_DIRECT_V1",
+        "lu.reviewed.git.history"=>matches!(method,
+            "GIT_HISTORY_LOOSE_DAG_V1"|"GIT_HISTORY_OBJECT_DAG_V2"),
+        "lu.reviewed.media.facts"=>matches!(method,
+            "WAV_PCM_DIRECT_V1"|"MP4_BOXES_DIRECT_V1"),
+        // P0-TOOLS-04 specialist receipts are standalone until a NEW
+        // approved exact-method plan revision/criterion mapping is built.
+        // Never disguise those as an existing reviewed Git/media witness.
+        _=>false
+    }
+}
+pub(super) fn independently_verified_task_witness(
+    profile:&Path,register_id:&str,task_id:&str,handoff_id:&str,
+    receipt_sha256:&str,chats:&chat_store::ChatStore
+)->Result<ExactTaskWitness,String>{
+    let handoffs=list(profile,register_id,task_id,chats)?;
+    let link=handoffs.into_iter()
+        .find(|h|h.handoff_id==handoff_id)
+        .ok_or("P0_TOOLS05_HANDOFF_NOT_ORIGINAL")?;
+    if link.mode!="reviewed_git_media_check"||link.phase!="STAGED"||
+        !link.source_lease_current||link.plan_id.is_none()||
+        link.revision_sha256.is_none(){
+        return Err("P0_TOOLS05_HANDOFF_IS_STALE_OR_INERT".into())
+    }
+    let mut evidence=link.independently_audited_outcomes.into_iter()
+        .filter(|e|e.receipt_sha256==receipt_sha256);
+    let exact=evidence.next().ok_or("P0_TOOLS05_ORIGINAL_RECEIPT_NOT_FOUND")?;
+    if evidence.next().is_some()||!exact.review_eligible||
+        exact.historical_verdict!="VERIFIED_AT_OBSERVATION"||
+        !compatible_independent_method(&exact.tool_id,&exact.independent_method){
+        return Err("P0_TOOLS05_RECEIPT_IS_NOT_INDEPENDENTLY_AUDITED".into())
+    }
+    Ok(ExactTaskWitness{
+        handoff_id:link.handoff_id,tool_id:exact.tool_id,
+        independent_method:exact.independent_method,
+        receipt_sha256:exact.receipt_sha256,
+        observed_sha256:exact.observed_sha256,
+        step_index:exact.step_index,
+    })
+}
+
 #[tauri::command]
 pub(crate) async fn lu_project_task_agent_handoffs(
     caller:tauri::WebviewWindow,state:State<'_,Arc<DesktopState>>,
@@ -523,4 +579,25 @@ pub(crate) async fn lu_project_task_prepare_agent_plan(
         }));
         Ok(Some(found))
     }).await.map_err(|_|"P0_NEXT_PREPARATION_INTERRUPTED")?
+}
+#[cfg(test)]
+mod task_method_tests{
+    use super::*;
+    #[test]
+    fn only_independent_original_git_media_methods_are_candidates(){
+        assert!(compatible_independent_method(
+            "lu.reviewed.git.head","GIT_HEAD_DIRECT_V1"));
+        assert!(compatible_independent_method(
+            "lu.reviewed.media.facts","MP4_BOXES_DIRECT_V1"));
+        for (tool,method) in [
+            ("lu.reviewed.git.head","GIT_HISTORY_OBJECT_DAG_V2"),
+            ("lu.reviewed.git.status","GIT_STATUS_UNSUPPORTED_V1"),
+            ("lu.reviewed.pdf.info","PDFINFO_CLASSIC_PAGE_TREE_V1"),
+            ("lu.reviewed.image.info","EXIFTOOL_IMAGE_DIMENSIONS_V1"),
+            ("lu.reviewed.media.facts","WAV_UNSUPPORTED_V1")
+        ]{
+            assert!(!compatible_independent_method(tool,method),
+                "method not originally admitted for independent PLAN step");
+        }
+    }
 }

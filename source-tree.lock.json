@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2de2845eb4fac4382642b864971118379c56387c",
-  "trackedFileCount": 934,
+  "sourceCommitBeforeLock": "d7d769d4b0d5b7fa73fc787937109ab673c92e3b",
+  "trackedFileCount": 936,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -701,7 +701,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "9ca4183eb11728ee5833acb7b31d697fa4c21597"
+      "blob": "3d794f3da1ad83e585090c0ae1b6b19857e16b1c"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -834,6 +834,10 @@
     {
       "path": "docs/LU_P0_TOOLS04_SPECIALIST_ADAPTERS_20261111.md",
       "blob": "ee9c8bddbb0c5a1151e129b274e8889ebde2a572"
+    },
+    {
+      "path": "docs/LU_P0_TOOLS05_TASK_CRITERION_WITNESS_REVIEW_20261111.md",
+      "blob": "29dce3d7fa7e58b4b785524a22f870d76cb4bbea"
     },
     {
       "path": "docs/LU_P10_IMAGE_BASICS.md",
@@ -1329,7 +1333,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "e57ad1604e5a18158496ed1993707e2abb378cd8"
+      "blob": "ac7f123788c3f39aeef3f87a3a565f248fd70956"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1429,7 +1433,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_agent_handoff.rs",
-      "blob": "436f5bdc98440e39d58cae08c40dabfa7be7c88f"
+      "blob": "e2483d324d492f8d2ac2e7ee7098f7f0a14cdad7"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_board_desktop.rs",
@@ -1438,6 +1442,10 @@
     {
       "path": "lu-desktop/src-tauri/src/project_task_desktop.rs",
       "blob": "c68c0cc40d668ddc132b54c23ebc6f500f372670"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_task_verified_evidence.rs",
+      "blob": "4a1df9955bdf63eff075a53b05adb4217851d425"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
@@ -2037,7 +2045,7 @@
     },
     {
       "path": "lu-desktop/web/task_board.jsx",
-      "blob": "b8445e9d3a89249878a0e3909b75ef0cc4a12c15"
+      "blob": "bd5d8cb29453af00ec1e743de94cca388d35960f"
     },
     {
       "path": "lu-desktop/web/task_board_model.mjs",
