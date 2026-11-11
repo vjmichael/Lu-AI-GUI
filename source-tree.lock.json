@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d7d769d4b0d5b7fa73fc787937109ab673c92e3b",
-  "trackedFileCount": 936,
+  "sourceCommitBeforeLock": "ca6c3bc07c716cb8af43d28e48229f9b47b0de3a",
+  "trackedFileCount": 938,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -701,7 +701,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "3d794f3da1ad83e585090c0ae1b6b19857e16b1c"
+      "blob": "1740ae98c93dee3c92984cb576308c96c789cc9d"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -814,6 +814,10 @@
     {
       "path": "docs/LU_P09_OFFICE_BOUNDARY.md",
       "blob": "750100265d77f1e14c8e8140927b0a1630118d61"
+    },
+    {
+      "path": "docs/LU_P0_MEMORY_ORIGINAL_CROSS_SESSION_CONTINUITY_20261111.md",
+      "blob": "34a4a937eda58706b95c5a177d8c562db52123de"
     },
     {
       "path": "docs/LU_P0_NEXT_PROJECT_AGENT_HANDOFF_20261111.md",
@@ -1241,7 +1245,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "c7b465fb33e8548686665a035323c6bc71009c8a"
+      "blob": "f3cd6943434b56523dc3d20df3410735decd08b5"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -1333,7 +1337,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "ac7f123788c3f39aeef3f87a3a565f248fd70956"
+      "blob": "fcee632e41c6d2dc82b3b4a2225f0743e1a3fb37"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1408,6 +1412,10 @@
       "blob": "196fa1c770f9800aa39858a05ec7952fed5e6bc8"
     },
     {
+      "path": "lu-desktop/src-tauri/src/p0_memory_continuity.rs",
+      "blob": "c5f357ef72ab2d8d37612856c792c9da307ef36e"
+    },
+    {
       "path": "lu-desktop/src-tauri/src/preview_engine_choice.rs",
       "blob": "536f7b29726e4152518f38f4ab26a1999bb323df"
     },
@@ -1445,7 +1453,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_verified_evidence.rs",
-      "blob": "4a1df9955bdf63eff075a53b05adb4217851d425"
+      "blob": "241bd95ae3ec65d1c708ef56aeb31476045790ba"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
@@ -2373,7 +2381,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ansf_belief_revision.rs",
-      "blob": "46f652dc9bd7f2b20f4aac2510a07d7c191bb37d"
+      "blob": "395d1fcd1ba9b935b33170308947c648911bf34e"
     },
     {
       "path": "src-tauri/lu-core/src/ansf_embedding_worker.rs",

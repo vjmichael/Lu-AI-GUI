@@ -265,6 +265,62 @@ fn history(profile:&Path,reg:&str,task:&str)
         }
     }).collect())
 }
+/// P0-MEMORY read-only: reopen the immutable original task criterion
+/// decisions only for an exact current-profile register/task selector. These
+/// decisions do not prove a project source is CURRENT or a task completed.
+pub(super) fn original_review_history_for_memory(
+    profile:&Path,register:&str,task:&str,
+    chats:&chat_store::ChatStore
+)->Result<serde_json::Value,String>{
+    if !register.starts_with("lu-register-")||!task.starts_with("lu-task-")||
+        register.len()>128||task.len()>128||
+        !register.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'))||
+        !task.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_')){
+        return Err("P0_MEMORY_TASK_CRITERION_SELECTOR_INVALID".into())
+    }
+    let all=history(profile,register,task)?;
+    let decisions=all.iter().rev().take(4).map(|event|{
+        // A previous human review cannot be inherited by a newer task
+        // revision. Reopen original plan, worker and oracle only when the
+        // register/board lease still matches, but NEVER infer file freshness
+        // without a new OS-selected project source.
+        let original_reopened=event.source_lease_current&&
+            project_task_agent_handoff::independently_verified_task_witness(
+                profile,register,task,&event.handoff_id,
+                &event.receipt_sha256,chats
+            ).is_ok();
+        serde_json::json!({
+            "originalHumanDecisionId":event.event_id,
+            "taskVersion":event.task_version,
+            "decision":event.decision,
+            "operatorReason":event.operator_reason.chars()
+                .take(200).collect::<String>(),
+            "exactCriterion":event.acceptance_criterion.chars()
+                .take(300).collect::<String>(),
+            "method":event.independent_method,
+            "originalReceiptSha256":event.receipt_sha256,
+            "independentObservationSha256":event.observed_sha256,
+            "originalWorkerOracleReopened":original_reopened,
+            "sourceLeaseCurrent":event.source_lease_current,
+            "sourceFilesystemRescannedThisTurn":false,
+            "taskCompleted":false,"executionAuthorized":false,
+            "status":if original_reopened{
+                "HISTORICAL_HUMAN_EVIDENCE_DECISION_REQUIRES_FRESH_SOURCE"
+            }else{
+                "ORIGINAL_RECEIPT_OR_TASK_LEASE_RECONCILIATION_REQUIRED"
+            }
+        })
+    }).collect::<Vec<_>>();
+    Ok(serde_json::json!({
+        "schema":"lu-p0-memory-criterion-decision-snapshot-v1",
+        "originalDecisionCount":all.len(),
+        "moreDecisionsNotDisplayed":all.len()>4,
+        "decisions":decisions,
+        "taskStatusNotChanged":true,
+        "historicalHumanEvidenceReviewNotTaskCompletion":true,
+        "executionAuthorized":false
+    }))
+}
 #[tauri::command]
 pub(crate) async fn lu_project_task_criterion_evidence_history(
     caller:tauri::WebviewWindow,

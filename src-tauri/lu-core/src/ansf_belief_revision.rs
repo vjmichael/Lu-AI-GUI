@@ -257,6 +257,132 @@ impl AnsfStore{
         }
         Ok(())
     }
+    /// Every retraction/supersession must still be backed by a CURRENT,
+    /// HUMAN, later original ANSF message. If this original is edited,
+    /// missing, or ambiguous after restart, the old claim is STALE;
+    /// no previous verified claim is resurrected on uncertain corrections.
+    fn original_human_correction_intact(
+        &self,session:&str,claim_id:&str,claimed_source:i64,
+        supersession:bool
+    )->Result<bool,AnsfError>{
+        let sources={
+            let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+            if supersession{
+                let mut stmt=conn.prepare(
+                    "SELECT source_entry_id FROM ansf_verified_claims
+                     WHERE session_id=?1 AND supersedes_id=?2 LIMIT 2"
+                )?;
+                let rows=stmt.query_map(params![session,claim_id],
+                    |r|r.get::<_,i64>(0))?;
+                rows.collect::<Result<Vec<_>,_>>()?
+            }else{
+                let mut stmt=conn.prepare(
+                    "SELECT correction_entry_id FROM ansf_claim_retractions
+                     WHERE claim_id=?1 LIMIT 2"
+                )?;
+                let rows=stmt.query_map(params![claim_id],
+                    |r|r.get::<_,i64>(0))?;
+                rows.collect::<Result<Vec<_>,_>>()?
+            }
+        };
+        if sources.len()!=1||sources[0]<=claimed_source{
+            return Ok(false)
+        }
+        Ok(self.current_claim_source(session,sources[0])?
+            .is_some_and(|(_,is_human)|is_human))
+    }
+    /// Assess an original bounded claim set, rechecking each immutable
+    /// message source and any genuine independent effect+oracle receipt.
+    /// Historical verification never means the current task is complete.
+    fn assess_original_rows(
+        &self,session:&str,records:Vec<Stored>,
+        application_version:&str,continuity:&ContinuityStore,
+        journal:&EffectJournal,independent_verify:&impl Fn(&VerifiedEffectEvidence)->bool
+    )->Result<Vec<AssessedClaim>,AnsfError>{
+        if records.len()>MAX_SCAN{return Err(AnsfError::InvalidInput)}
+        let mut out=Vec::with_capacity(records.len());
+        let current=now()?;
+        for r in records{
+            let c=&r.claim;
+            let state=if r.retracted{
+                if self.original_human_correction_intact(
+                    session,&c.claim_id,c.source_entry_id,false
+                )?{ClaimState::Retracted}else{ClaimState::Stale}
+            }else if r.superseded{
+                if self.original_human_correction_intact(
+                    session,&c.claim_id,c.source_entry_id,true
+                )?{ClaimState::Superseded}else{ClaimState::Stale}
+            }else if c.expires_unix<=current||
+                c.application_version!=application_version||
+                self.current_claim_source(session,c.source_entry_id)?
+                    .map(|(hash,_)|hash)!=Some(r.source_sha.clone()){
+                ClaimState::Stale
+            }else if r.kind=="verified"{
+                if let (Some(proof),Some(digest))=(&r.proof,&r.receipt_sha){
+                    if self.claim_receipt_sha(c,proof,continuity,journal,
+                        &independent_verify)?.as_deref()==Some(digest.as_str()){
+                        ClaimState::IndependentlyVerified
+                    }else{ClaimState::Stale}
+                }else{ClaimState::Stale}
+            }else{ClaimState::Reported};
+            out.push(AssessedClaim{claim:r.claim,state,source_sha256:r.source_sha});
+        }
+        // Contradictions are scoped to the same exact subject/predicate.
+        // A project's unrelated observations must not contradict one another.
+        let mut distinct=std::collections::BTreeMap::<
+            (String,String),HashSet<String>
+        >::new();
+        for row in &out{
+            if matches!(row.state,
+                ClaimState::Reported|ClaimState::IndependentlyVerified){
+                distinct.entry((
+                    row.claim.subject_key.clone(),
+                    row.claim.predicate_key.clone()
+                )).or_default().insert(row.claim.value.clone());
+            }
+        }
+        for row in &mut out{
+            if matches!(row.state,
+                ClaimState::Reported|ClaimState::IndependentlyVerified)&&
+                distinct.get(&(row.claim.subject_key.clone(),
+                    row.claim.predicate_key.clone()))
+                  .is_some_and(|values|values.len()>1){
+                row.state=ClaimState::Contradicted
+            }
+        }
+        Ok(out)
+    }
+    /// P0-MEMORY: task-wide conservative correction/revision projection.
+    /// Enumerates ALL bounded original claim keys for this project/task
+    /// instead of trusting one model-selected subject or the newest claim.
+    /// Reuses the exact original source+oracle verifier of assess_claims.
+    pub fn assess_task_claims(
+        &self,session:&str,project:&str,task:&str,
+        application_version:&str,continuity:&ContinuityStore,
+        journal:&EffectJournal,
+        independent_verify:impl Fn(&VerifiedEffectEvidence)->bool
+    )->Result<Vec<AssessedClaim>,AnsfError>{
+        if !ident(session)||!ident(project)||!ident(task)||
+            !bounded(application_version,128){
+            return Err(AnsfError::InvalidInput)
+        }
+        let records={
+            let conn=self.conn.lock().map_err(|_|AnsfError::Locked)?;
+            initialize_claim_schema(&conn)?;
+            let mut stmt=conn.prepare(&format!(
+                "SELECT {COLS} FROM ansf_verified_claims c
+                 WHERE c.session_id=?1 AND c.project_id=?2 AND c.task_id=?3
+                 ORDER BY c.recorded_utc DESC,c.claim_id DESC LIMIT ?4"
+            ))?;
+            let rows=stmt.query_map(
+                params![session,project,task,(MAX_SCAN+1) as i64],
+                map_stored
+            )?.collect::<Result<Vec<_>,_>>()?;
+            rows
+        };
+        self.assess_original_rows(session,records,application_version,
+            continuity,journal,&independent_verify)
+    }
     /// Scan the FULL bounded set of claims on one exact subject+predicate.
     /// >128 results fails closed; contradictions are flagged, never voted away.
     pub fn assess_claims(&self,session:&str,project:&str,task:&str,subject:&str,
@@ -283,38 +409,8 @@ impl AnsfStore{
             rows
         };
         if records.len()>MAX_SCAN{return Err(AnsfError::InvalidInput)}
-        let mut out=Vec::with_capacity(records.len());
-        let current=now()?;
-        for r in records{
-            let c=&r.claim;
-            let state=if r.retracted{ClaimState::Retracted}
-            else if r.superseded{ClaimState::Superseded}
-            else if c.expires_unix<=current||
-                c.application_version!=application_version||
-                self.current_claim_source(session,c.source_entry_id)?
-                    .map(|(hash,_)|hash)!=Some(r.source_sha.clone()){
-                ClaimState::Stale
-            }else if r.kind=="verified"{
-                if let (Some(proof),Some(digest))=(&r.proof,&r.receipt_sha){
-                    if self.claim_receipt_sha(c,proof,continuity,journal,
-                        &independent_verify)?.as_deref()==Some(digest.as_str()){
-                        ClaimState::IndependentlyVerified
-                    }else{ClaimState::Stale}
-                }else{ClaimState::Stale}
-            }else{ClaimState::Reported};
-            out.push(AssessedClaim{claim:r.claim,state,source_sha256:r.source_sha});
-        }
-        let distinct=out.iter().filter(|r|matches!(r.state,
-            ClaimState::Reported|ClaimState::IndependentlyVerified)
-        ).map(|r|r.claim.value.as_str()).collect::<HashSet<_>>();
-        if distinct.len()>1{
-            for row in &mut out{
-                if matches!(row.state,ClaimState::Reported|ClaimState::IndependentlyVerified){
-                    row.state=ClaimState::Contradicted
-                }
-            }
-        }
-        Ok(out)
+        self.assess_original_rows(session,records,application_version,
+            continuity,journal,&independent_verify)
     }
 }
 
@@ -465,4 +561,53 @@ mod tests{
             &continuity,&journal,|_|true).unwrap()[0].state,ClaimState::Stale);
         drop(book);drop(journal);drop(continuity);fs::remove_dir_all(path).unwrap();
     }
+    #[test]
+    fn task_scope_corrections_reopen_original_human_source_after_restart(){
+        let path=fixture();fs::create_dir_all(&path).unwrap();
+        let file=path.join("claims.sqlite");
+        let book=AnsfStore::open(&file).unwrap();
+        book.create_session("chat-one","ws-one","Task claims").unwrap();
+        book.start_chapter("chat-one","Task").unwrap();
+        let first=book.append_entry("chat-one","old",EntryRole::User,
+            "Original","Initial belief about a backend").unwrap();
+        let second=book.append_entry("chat-one","unrelated",EntryRole::User,
+            "Other","A different decision").unwrap();
+        let correction=book.append_entry("chat-one","correct",EntryRole::User,
+            "Correction","That old belief is outdated").unwrap();
+        let continuity=ContinuityStore::open(&path.join("continuity.sqlite")).unwrap();
+        let journal=EffectJournal::open(&path.join("journal.sqlite")).unwrap();
+        let old=claim(first,"old-source","backend-a");
+        let mut other=claim(second,"other-source","different");
+        other.subject_key="language".into();
+        book.record_reported_claim(&old).unwrap();
+        book.record_reported_claim(&other).unwrap();
+        let task=book.assess_task_claims("chat-one","lu","memory","1.0",
+            &continuity,&journal,|_|false).unwrap();
+        assert_eq!(task.len(),2);
+        assert!(task.iter().all(|r|r.state==ClaimState::Reported));
+        book.retract_reported_or_verified_claim(
+            "old-source","chat-one",correction,"Human corrected prior fact"
+        ).unwrap();
+        drop(book);
+        let reopened=AnsfStore::open(&file).unwrap();
+        let reviewed=reopened.assess_task_claims("chat-one","lu","memory","1.0",
+            &continuity,&journal,|_|false).unwrap();
+        assert_eq!(reviewed.iter().filter(|r|
+            r.state==ClaimState::Retracted).count(),1);
+        reopened.append_edited_entry(
+            "chat-one","correct","Changed correction",
+            "The correction was edited after publication",
+            RevisionOrigin::VerifiedUser
+        ).unwrap();
+        // Original correction is no longer the current human source. Keep
+        // the prior claim stale; never resurrect it as verified.
+        let stale=reopened.assess_task_claims(
+            "chat-one","lu","memory","1.0",&continuity,&journal,|_|false
+        ).unwrap();
+        assert_eq!(stale.iter().filter(|r|
+            r.state==ClaimState::Stale).count(),1);
+        drop(reopened);drop(continuity);drop(journal);
+        fs::remove_dir_all(path).unwrap();
+    }
+
 }

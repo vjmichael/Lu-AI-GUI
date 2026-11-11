@@ -1349,6 +1349,146 @@ impl ChatStore {
         }).collect::<Result<Vec<_>,String>>()
     }
 
+    /// P0-MEMORY: reopen actual original ANSF claim books across *this
+    /// profile only*. Do not infer that newer model text revised a belief:
+    /// retractions and supersessions must be genuine immutable claim events
+    /// in those books. Use the original effect/oracle when verifying a claim.
+    pub(crate) fn task_claim_memory_for_continuation(
+        &self,active_chat:&str,primary_source_chat:&str,
+        project:&str,task:&str,application_version:&str,
+        continuity:&ContinuityStore,journal:&lu_core::journal::EffectJournal
+    )->Result<serde_json::Value,String>{
+        use lu_core::ansf_belief_revision::ClaimState;
+        self.require(active_chat)?;
+        self.require(primary_source_chat)?;
+        let mut chats=vec![primary_source_chat.to_string(),
+            active_chat.to_string()];
+        let total_original_chats:i64;
+        {
+            let conn=self.catalog.lock().map_err(to_err)?;
+            total_original_chats=conn.query_row(
+                "SELECT COUNT(*) FROM ansf_desktop_chats",[],
+                |r|r.get::<_,i64>(0)
+            ).map_err(to_err)?;
+            let mut stmt=conn.prepare(
+                "SELECT chat_id FROM ansf_desktop_chats
+                 ORDER BY updated_seq DESC,chat_id LIMIT 24"
+            ).map_err(to_err)?;
+            let rows=stmt.query_map([],|row|row.get::<_,String>(0))
+                .map_err(to_err)?;
+            for row in rows{
+                let id=row.map_err(to_err)?;
+                if !chats.contains(&id){chats.push(id)}
+            }
+        }
+        chats.truncate(24);
+        let more_chats_uninspected=total_original_chats<0||
+            total_original_chats as usize>chats.len();
+        let scanned_chats=chats.len();
+        let mut states=Vec::<serde_json::Value>::new();
+        let mut active_values=std::collections::BTreeMap::<
+            (String,String),std::collections::BTreeSet<String>
+        >::new();
+        let mut records=0usize;
+        let mut verified=0usize;
+        let mut reported=0usize;
+        let mut corrected=0usize;
+        let mut stale=0usize;
+        let mut contradicted=0usize;
+        for source_chat in chats{
+            let book=self.require(&source_chat)?;
+            let failed=std::cell::Cell::new(false);
+            let claims=book.assess_task_claims(
+                &source_chat,project,task,application_version,
+                continuity,journal,|receipt|{
+                    match journal.independent_verified_receipt(
+                        &receipt.call_id,&receipt.tool_id,&receipt.receipt_sha256
+                    ){
+                        Ok(proof)=>proof,
+                        Err(_)=>{failed.set(true);false},
+                    }
+                }
+            ).map_err(to_err)?;
+            if failed.get(){
+                return Err("P0_MEMORY_ORIGINAL_EFFECT_ORACLE_UNAVAILABLE".into())
+            }
+            records=records.saturating_add(claims.len());
+            if records>64{return Err("P0_MEMORY_TOO_MANY_ORIGINAL_CLAIMS".into())}
+            for claim in claims{
+                let status=match claim.state{
+                    ClaimState::Reported=>{reported+=1;"REPORTED_NOT_VERIFIED"},
+                    ClaimState::IndependentlyVerified=>{
+                        verified+=1;"HISTORICALLY_VERIFIED_SOURCE_RECHECK_REQUIRED"
+                    },
+                    ClaimState::Contradicted=>{
+                        contradicted+=1;"CONTRADICTED_REVIEW_REQUIRED"
+                    },
+                    ClaimState::Stale=>{stale+=1;"STALE_RECHECK_REQUIRED"},
+                    ClaimState::Retracted=>{
+                        corrected+=1;"RETRACTED_BY_HUMAN_NOT_CURRENT"
+                    },
+                    ClaimState::Superseded=>{
+                        corrected+=1;"SUPERSEDED_BY_LATER_SOURCE_NOT_CURRENT"
+                    },
+                };
+                if matches!(claim.state,
+                    ClaimState::Reported|ClaimState::IndependentlyVerified){
+                    active_values.entry((
+                        claim.claim.subject_key.clone(),
+                        claim.claim.predicate_key.clone()
+                    )).or_default().insert(claim.claim.value.clone());
+                }
+                if states.len()<8{
+                    let source=AnsfSourceId::new(
+                        source_chat.clone(),claim.claim.source_entry_id
+                    ).map_err(to_err)?.encode();
+                    // Original claims are untrusted DATA. Include an exact
+                    // source locator and bounded value, but NEVER infer the
+                    // latest value is correct or grant a tool from a claim.
+                    states.push(serde_json::json!({
+                        "originalSourceId":source,
+                        "sourceSha256":claim.source_sha256,
+                        "subject":claim.claim.subject_key,
+                        "predicate":claim.claim.predicate_key,
+                        "reportedValue":claim.claim.value.chars()
+                            .take(160).collect::<String>(),
+                        "status":status,
+                        "noExecutionAuthority":true
+                    }));
+                }
+            }
+        }
+        let conflict_keys=active_values.iter()
+            .filter(|(_,values)|values.len()>1)
+            .map(|((subject,predicate),_)|
+                serde_json::json!({"subject":subject,"predicate":predicate})
+            ).take(8).collect::<Vec<_>>();
+        let cross_chat_conflict=active_values.values().any(|values|
+            values.len()>1);
+        Ok(serde_json::json!({
+            "sourceScope":"CURRENT_PROFILE_ORIGINAL_ANSF_BOOKS",
+            "taskClaimsAudited":records,
+            "originalConversationsInspected":scanned_chats,
+            "moreConversationsNotInspected":more_chats_uninspected,
+            "sourceClaimSample":states,
+            "additionalClaimsNotDisplayed":records>8,
+            "historicallyVerifiedCount":verified,
+            "reportedUnverifiedCount":reported,
+            "humanCorrectedOrSupersededCount":corrected,
+            "staleCount":stale,
+            "withinBookConflicts":contradicted,
+            "crossConversationConflictingValues":cross_chat_conflict,
+            "conflictingKeys":conflict_keys,
+            "humanReviewRequired":cross_chat_conflict||contradicted>0||
+                corrected>0||stale>0||reported>0||records>8||
+                more_chats_uninspected,
+            "noSingleWinningBeliefInferred":true,
+            "modelMayOverrideHumanCorrection":false,
+            "currentSourceFreshness":"NOT_RECHECKED",
+            "executionAuthority":"NOT_AUTHORIZED_FOR_EXECUTION"
+        }))
+    }
+
     /// A human-confirmed operational checkpoint ties work to the ORIGINAL
     /// ANSF source entries of one host-profile-owned conversation. No message
     /// or remembered instruction becomes new turn/effect authority.
