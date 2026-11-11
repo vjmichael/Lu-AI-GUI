@@ -1,19 +1,9 @@
 import React,{useEffect,useMemo,useState} from 'react';
 import {invoke} from '@tauri-apps/api/core';
 import {NativeWindowFrame} from './native_windows.jsx';
+import {FILTERS,taskKind,taskStatus,shownTasks,taskGroups,movedOrder} from './task_board_model.mjs';
 
-const FILTERS=['All','Broken','Not integrated','Unverified','Completed'];
 const errorText=e=>String(e?.message||e||'Native task list unavailable');
-const kind=t=>t.independentlyVerifiedRequirement?'Completed':
-  t.observedStatus==='BROKEN'?'Broken':t.observedStatus==='NOT_INTEGRATED'?'Not integrated':'Unverified';
-const humanStatus=t=>t.needsHumanReconciliation?'Needs human source/wording review':
-  t.independentlyVerifiedRequirement?'Exact requirement verified · full task still unproven':
-  t.observedStatus.replaceAll('_',' ').toLowerCase()+' · not independently accepted';
-const grouped=tasks=>tasks.reduce((groups,task)=>{
-  let group=groups.find(g=>g.name===task.group);
-  if(!group){group={name:task.group,tasks:[]};groups.push(group);}
-  group.tasks.push(task);return groups;
-},[]);
 const correction=t=>({
   summary:t.summary,description:t.description,priority:t.priority,
   blockedBy:t.blockedBy,acceptanceCriteria:t.acceptanceCriteria,reason:''
@@ -32,11 +22,8 @@ export function TaskBoardWindow(){
   const current=boards.find(b=>b.board.registerId===(registerId||boards[0]?.board.registerId));
   const all=current?.tasks||[];
   const active=all.find(t=>t.taskId===taskId);
-  const shown=useMemo(()=>all.filter(t=>(filter==='All'||kind(t)===filter)&&
-    (!search.trim()||[t.summary,t.description,t.group,t.sourceRequirementId]
-      .some(s=>String(s).toLowerCase().includes(search.trim().toLowerCase())))),
-  [all,filter,search]);
-  const groups=useMemo(()=>grouped(shown),[shown]);
+  const shown=useMemo(()=>shownTasks(all,filter,search),[all,filter,search]);
+  const groups=useMemo(()=>taskGroups(shown),[shown]);
   async function reload(){
     const result=await invoke('lu_project_board_list');
     if(!Array.isArray(result))throw Error('Unrecognized native board response');
@@ -74,10 +61,8 @@ export function TaskBoardWindow(){
   async function reorder(task,delta){
     if(!current||filter!=='All'||search.trim())return;
     await act('Human ordering recorded as a draft in ANSF.',async()=>{
-      const order=[...current.board.orderedTaskIds];
-      const i=order.indexOf(task.taskId),target=i+delta;
-      if(i<0||target<0||target>=order.length)return null;
-      [order[i],order[target]]=[order[target],order[i]];
+      const order=movedOrder(current.board.orderedTaskIds,task.taskId,delta);
+      if(!order)return null;
       const saved=await invoke('lu_project_board_reorder',{
         registerId:current.board.registerId,
         expectedBoardSha256:current.board.sha256,
@@ -162,7 +147,7 @@ export function TaskBoardWindow(){
                 {FILTERS.map(label=><button type="button" key={label}
                   aria-pressed={filter===label} className={filter===label?'selected':''}
                   disabled={busy} onClick={()=>setFilter(label)}>
-                    {label} ({label==='All'?all.length:all.filter(t=>kind(t)===label).length})
+                    {label} ({label==='All'?all.length:all.filter(t=>taskKind(t)===label).length})
                   </button>)}
               </nav>
               <small>“Completed” filters only independently verified exact requirements;
@@ -178,7 +163,7 @@ export function TaskBoardWindow(){
                       aria-current={task.taskId===taskId?'true':undefined}
                       onClick={()=>void selectTask(task)}>
                       <strong>{task.priority} · {task.summary}</strong>
-                      <span>{humanStatus(task)}</span>
+                      <span>{taskStatus(task)}</span>
                       <small>v{task.version} · {task.sourceRequirementId.slice(0,16)}</small>
                     </button>
                     <div className="plan06Order" aria-label={'Reorder '+task.summary}>
@@ -199,7 +184,7 @@ export function TaskBoardWindow(){
               <h2>{active.summary}</h2>
               <small>{active.taskId} · v{active.version}</small>
               <p>{active.description}</p>
-              <p><strong>Classification:</strong> {humanStatus(active)}</p>
+              <p><strong>Classification:</strong> {taskStatus(active)}</p>
               <p><strong>Acceptance criterion:</strong> {active.acceptanceCriteria}</p>
               <p><strong>Blocker:</strong> {active.blockedBy}</p>
               <p><strong>Exact HEAD:</strong> {active.selectedHead||'unverified'}</p>
