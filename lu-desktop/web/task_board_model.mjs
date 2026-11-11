@@ -2,7 +2,7 @@
 // versioning, human review, execution authority and persisted ordering.
 export const FILTERS=Object.freeze(['All','Broken','Not integrated','Unverified','Completed']);
 export function taskKind(t){
-  if(t?.independentlyVerifiedRequirement===true)return 'Completed';
+  if(t?.independentlyVerifiedRequirement===true&&!t?.needsHumanReconciliation)return 'Completed';
   if(t?.observedStatus==='BROKEN')return 'Broken';
   if(t?.observedStatus==='NOT_INTEGRATED')return 'Not integrated';
   return 'Unverified';
