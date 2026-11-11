@@ -6,7 +6,7 @@ use lu_core::{project_evidence_graph as graph,project_status_classifier as statu
 use std::collections::BTreeMap;
 use rusqlite::{Connection,OpenFlags,params,OptionalExtension,TransactionBehavior};
 
-fn library(profile:&Path)->Result<Connection,String>{
+pub(super) fn library(profile:&Path)->Result<Connection,String>{
     let db=profile.join("ansf/library.db");
     let meta=fs::symlink_metadata(&db).map_err(|_|"PLAN05_ANSF_LIBRARY_MISSING")?;
     if !meta.is_file()||meta.file_type().is_symlink(){
@@ -34,7 +34,7 @@ fn library(profile:&Path)->Result<Connection,String>{
     );").map_err(|_|"PLAN05_SCHEMA_FAILED")?;
     Ok(conn)
 }
-fn archived_proposal(conn:&Connection,digest:&str)
+pub(super) fn archived_proposal(conn:&Connection,digest:&str)
  ->Result<synthesis::ProjectTaskProposal,String>{
     let (bytes,raw):(Vec<u8>,Vec<u8>)=conn.query_row(
         "SELECT proposal_json,original_reply_json FROM ansf_project_task_proposals WHERE proposal_sha256=?1",
@@ -57,7 +57,7 @@ fn archived_proposal(conn:&Connection,digest:&str)
     }
     Ok(p)
 }
-fn archived_evidence(conn:&Connection,graph_id:&str,status_id:&str)
+pub(super) fn archived_evidence(conn:&Connection,graph_id:&str,status_id:&str)
  ->Result<(graph::EvidenceGraph,status::StatusReport),String>{
     let original_graph:Vec<u8>=conn.query_row(
         "SELECT snapshot_json FROM ansf_project_evidence_snapshots WHERE graph_sha256=?1",
@@ -119,7 +119,7 @@ fn audit_revision_observations(conn:&Connection,r:&register::TaskRegister)
     }
     Ok(())
 }
-fn load_register(conn:&Connection,id:&str)
+pub(super) fn load_register(conn:&Connection,id:&str)
  ->Result<Option<(synthesis::ProjectTaskProposal,register::TaskRegister,u64)>,String>{
     let mut stmt=conn.prepare("SELECT register_revision,original_proposal_sha256,
         previous_sha256,latest_sha256,register_json,no_execution_authority
@@ -171,7 +171,7 @@ fn load_register(conn:&Connection,id:&str)
         _=>Err("PLAN05_PARTIAL_REGISTER".into())
     }
 }
-fn persist(profile:&Path,p:&synthesis::ProjectTaskProposal,
+pub(super) fn persist(profile:&Path,p:&synthesis::ProjectTaskProposal,
     next:&register::TaskRegister,expected:Option<&str>)
  ->Result<register::TaskRegister,String>{
     register::audit(next,p)?;
@@ -217,7 +217,7 @@ fn persist(profile:&Path,p:&synthesis::ProjectTaskProposal,
     tx.commit().map_err(|_|"PLAN05_FSYNC_COMMIT_FAILED")?;
     Ok(redecoded)
 }
-fn profile(state:&Arc<DesktopState>)->Result<std::path::PathBuf,String>{
+pub(super) fn profile(state:&Arc<DesktopState>)->Result<std::path::PathBuf,String>{
     state.catalog_path.parent()
         .map(Path::to_path_buf).ok_or("PLAN05_LU_PROFILE_MISSING".into())
 }
@@ -227,7 +227,7 @@ fn settings_only(caller:&tauri::WebviewWindow)->Result<(),String>{
     }
     Ok(())
 }
-async fn confirm(app:&AppHandle,title:&str,message:String)
+async pub(super) fn confirm(app:&AppHandle,title:&str,message:String)
  ->Result<bool,String>{
     let dialog=app.clone();let title=title.to_string();
     tauri::async_runtime::spawn_blocking(move||
