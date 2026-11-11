@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   exact-native:
-    name: G06D original, quarantine, native protected replay / ${{ matrix.os }}
+    name: G06D native review, resolution, replay and restart / ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -61,10 +61,12 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_replay -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --lib git_divergent_verify -- --nocapture
           cargo test --locked --manifest-path ide/host/Cargo.toml --lib git_conflict_inventory -- --nocapture
-          rustfmt --edition 2021 --check ide/host/src/git_conflict_inventory.rs
+          cargo test --locked --manifest-path ide/host/Cargo.toml --lib git_conflict_resolution -- --nocapture
+          rustfmt --edition 2021 --check ide/host/src/git_conflict_inventory.rs ide/host/src/git_conflict_resolution.rs
           cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_divergent_merge -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_merge
           rustfmt --edition 2021 --check ide/host/src/git_rebase_cherry_plan.rs ide/host/src/git_replay_quarantine.rs ide/host/src/git_protected_replay.rs ide/host/src/git_divergent_verify.rs ide/host/src/git_protected_divergent_merge.rs
+          echo G06D_NATIVE_CRASH_RECOVERY=CHECKED_BY_REAL_CHILD_PROCESS_TESTS
           echo G06D_LOCAL_ORIGINAL_REPLAY=SOURCE_REVIEW_ONLY
       - name: Hostile UI source-boundary checks and desktop build
         shell: bash
@@ -72,7 +74,7 @@ jobs:
           set -euo pipefail
           cd ide/app
           npm ci --ignore-scripts --no-audit --no-fund
-          node --test tests/g06c04_original_replay_review.test.mjs tests/g06c04_protected_replay.test.mjs tests/g06c03b_protected_divergent.test.mjs tests/g06d01_conflict_inventory.test.mjs tests/g06d02_three_way_editor.test.mjs
+          node --test tests/g06c04_original_replay_review.test.mjs tests/g06c04_protected_replay.test.mjs tests/g06c03b_protected_divergent.test.mjs tests/g06d01_conflict_inventory.test.mjs tests/g06d02_three_way_editor.test.mjs tests/g06d0304_protected_conflict_resolution.test.mjs
           npm run build
           echo G06D_WEB=NATIVE_ONE_USE_OS_APPROVAL_ONLY
       - name: Native Tauri typed replay route compile
@@ -88,18 +90,18 @@ jobs:
         if: always()
         shell: bash
         run: |
-          mkdir -p ide-g06c04-receipts
-          printf 'head=%s\nos=%s\noriginal_review=READ_ONLY\nquarantine_trees=SEPARATE_BARE_OBJECT_DATABASE\nrebase_authorization=REQUIRES_DISTINCT_NATIVE_OS_DIALOG\ncherrypick_authorization=REQUIRES_DISTINCT_NATIVE_OS_DIALOG\nref_updates=EXACT_OLD_HEAD_CAS_ONLY\nphysical_approval=DEFERRED\ninstalled_human_acceptance=DEFERRED\n' \
-            "$SOURCE_SHA" "$RUNNER_OS" > ide-g06c04-receipts/source.txt
+          mkdir -p ide-g06d-receipts
+          printf 'head=%s\nos=%s\noriginal_review=READ_ONLY\nquarantine_trees=SEPARATE_BARE_OBJECT_DATABASE\nrebase_authorization=REQUIRES_DISTINCT_NATIVE_OS_DIALOG\ncherrypick_authorization=REQUIRES_DISTINCT_NATIVE_OS_DIALOG\nref_updates=EXACT_OLD_HEAD_CAS_ONLY\nphysical_approval=DEFERRED\ninstalled_human_acceptance=DEFERRED\n6d04_file_index_recovery=NATIVE_TESTS_REQUIRED\n' \
+            "$SOURCE_SHA" "$RUNNER_OS" > ide-g06d-receipts/source.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ide-g06c04-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ide-g06c04-receipts/
+          name: ide-g06d-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ide-g06d-receipts/
           retention-days: 7
 
   # Automated INSTALLED-package smoke only. No OS dialog is auto-approved.
-  # Physical user-operated one-use consent remains DEFERRED (issue #212).
+  # Physical user-operated one-use consent remains DEFERRED (issue #218).
   installed-g06c04-debian-smoke:
     name: G06D exact-head Debian install, process restart, uninstall (not physical consent)
     runs-on: ubuntu-24.04
@@ -149,7 +151,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: ide-g06c04-deb-${{ github.event.pull_request.head.sha || github.sha }}
+          name: ide-g06d-deb-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             ide/app/src-tauri/target/release/bundle/deb/*.deb
             ide/app/src-tauri/verification-notices/**
@@ -207,7 +209,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: ide-g06c04-nsis-${{ github.event.pull_request.head.sha || github.sha }}
+          name: ide-g06d-nsis-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             ide/app/src-tauri/target/release/bundle/nsis/*setup.exe
             ide/app/src-tauri/verification-notices/**
