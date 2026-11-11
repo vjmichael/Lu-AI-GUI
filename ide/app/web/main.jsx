@@ -4,6 +4,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { CodeEditor, createEditorState, isLargeSourceEditor } from './code_editor.jsx';
 import { secondaryEditor, initialSecondaryKey, canSaveFocusedPane } from './editor_layout.js';
 import { captureProjectView, restoreProjectView } from './editor_project_view.js';
+import { planProjectPaneSelection, planProjectSwitchView,
+  mayCommitProjectNavigation } from './editor_project_navigation.js';
 import { captureLiveEditorIntent, stillCurrentEditorIntent,
   reconcileSavedEditorTab } from './editor_live_write.js';
 import { planCleanBackgroundTabClosure } from './editor_clean_tab_reclamation.js';
@@ -174,6 +176,10 @@ function App() {
   const [explorerPending, setExplorerPending] = useState(false);
   // Synchronous reservation; React state alone does not stop same-tick double opens.
   const explorerIoTicket = useRef(null);
+  // One workspace transition at a time, including asynchronous proposal
+  // staging. This is navigation custody, never execution authority.
+  const workspaceTransitionRef = useRef(null);
+  const projectNavigationEpoch = useRef(0);
   const [tabs, setTabs] = useState([]);
   const [activeTabKey, setActiveTabKey] = useState(null);
   const [tabWindowStart, setTabWindowStart] = useState(0);
@@ -344,6 +350,9 @@ function App() {
   // No localStorage, OS-path, background worker or implicit native file reopen.
   const projectEditorViews = useRef(new Map());
   tabsRef.current = tabs;
+  const paneSnapshotRef = useRef(null);
+  paneSnapshotRef.current = {primaryKey:activeTabKey,
+    secondaryKey:secondaryTabKey,splitOpen:splitEditorOpen,tabWindowStart};
   function resetBufferIdentity(key, projectId, relativePath, savedRevision) {
     const identity = newBufferIdentity(projectId, relativePath,
       savedRevision, crypto.randomUUID());
@@ -607,19 +616,30 @@ function App() {
       secondaryTab,lspNativeDiagnostics[secondaryTab.key]) : [],
     [secondaryTab,lspNativeDiagnostics]);
   function selectPrimaryEditorTab(key) {
-    if (mergeBusy || mergeApplyRequest) return;
+    if (mergeBusy || mergeApplyRequest || !activeProject?.projectId) return;
+    const choice=planProjectPaneSelection(tabsRef.current,
+      activeProject.projectId,activeTabKey,secondaryTabKey,splitEditorOpen,key);
+    if (!choice.allowed) {
+      setProblem('Cannot select a tab outside the current registered project.');
+      return;
+    }
     if (key!==activeTabKey) {
       setMergeReview(null);
       setMergeChoices({});
     }
     setTabWindowStart(previous=>centerSelectedTab(projectTabs,key,previous));
-    if (splitEditorOpen && key === secondaryTabKey && activeTabKey !== key)
-      setSecondaryTabKey(activeTabKey);
-    setActiveTabKey(key);
+    setSecondaryTabKey(choice.secondaryKey);
+    setActiveTabKey(choice.primaryKey);
   }
   function toggleSplitEditor() {
-    if (splitEditorOpen) { setSplitEditorOpen(false); return; }
-    setSecondaryTabKey(initialSecondaryKey(projectTabs,activeProject?.projectId,activeTabKey));
+    if (!activeProject?.projectId || !activeTab) return;
+    if (splitEditorOpen) {
+      setSplitEditorOpen(false);
+      setSecondaryTabKey(null);
+      return;
+    }
+    setSecondaryTabKey(initialSecondaryKey(projectTabs,
+      activeProject.projectId,activeTabKey));
     setSplitEditorOpen(true);
   }
   const problemsForProject = useMemo(() => projectProblems(
@@ -636,7 +656,7 @@ function App() {
       setProblem('Diagnostic became stale. Refresh the protected language session.');
       return;
     }
-    setActiveTabKey(tab.key);
+    selectPrimaryEditorTab(tab.key);
     setSection('explorer');
     setLspJumpRequest({
       from: item.from, to: item.to,
@@ -3917,42 +3937,56 @@ function App() {
   }
 
   async function openDirectory(project, path) {
-    if (explorerPending || mergeBusy || mergeApplyRequest || !project) return;
-    const ticket = beginExplorerIo();
+    if (explorerPending || mergeBusy || mergeApplyRequest ||
+        workspaceTransitionRef.current || !project?.active ||
+        !projects.some(row=>row.projectId===project.projectId && row.active)) return;
+    const ticket=beginExplorerIo();
     if (!ticket) return;
-    const originalProjectId = activeProjectIdRef.current;
+    const token=Symbol('ide-int01c-project-directory');
+    workspaceTransitionRef.current=token;
+    const request={epoch:++projectNavigationEpoch.current,
+      fromProjectId:activeProjectIdRef.current,
+      toProjectId:project.projectId,relativeDir:path};
     setProblem('');
     try {
-      const result = await invoke('ide_list_source_directory', {
-        projectId: project.projectId, relativeDir: path
+      const result=await invoke('ide_list_source_directory',{
+        projectId:project.projectId,relativeDir:path,
       });
-      if (explorerIoTicket.current !== ticket ||
-          activeProjectIdRef.current !== originalProjectId) return;
-      if (result?.projectId !== project.projectId || result?.relativeDir !== path ||
-          !Array.isArray(result.entries))
-        throw new Error('DIRECTORY_RESULT_NOT_SCOPED');
-      if (originalProjectId !== project.projectId) {
-        if (originalProjectId) {
-          const previousView = captureProjectView(tabsRef.current,
-            originalProjectId,activeTabKey,secondaryTabKey,
-            splitEditorOpen,tabWindowStart);
-          if (previousView)
-            projectEditorViews.current.set(originalProjectId,previousView);
-        }
-        const restoredView = restoreProjectView(tabsRef.current,
-          project.projectId,projectEditorViews.current.get(project.projectId));
-        setActiveTabKey(restoredView.primaryKey);
-        setSecondaryTabKey(restoredView.secondaryKey);
-        setSplitEditorOpen(restoredView.splitOpen);
-        setTabWindowStart(restoredView.tabWindowStart);
+      if (workspaceTransitionRef.current!==token ||
+          explorerIoTicket.current!==ticket ||
+          !mayCommitProjectNavigation(request,result,{
+            epoch:projectNavigationEpoch.current,
+            liveProjectId:activeProjectIdRef.current,
+            requestedProjectId:project.projectId,
+          })) return;
+      if (request.fromProjectId!==project.projectId) {
+        const pane=paneSnapshotRef.current;
+        const selection=planProjectSwitchView(tabsRef.current,
+          request.fromProjectId,project.projectId,
+          pane.primaryKey,pane.secondaryKey,pane.splitOpen,
+          pane.tabWindowStart,projectEditorViews.current.get(project.projectId));
+        if (!selection.allowed)
+          throw Error('PROJECT_VIEW_RECONCILIATION_REFUSED');
+        if (selection.leaving)
+          projectEditorViews.current.set(request.fromProjectId,selection.leaving);
+        setActiveTabKey(selection.primaryKey);
+        setSecondaryTabKey(selection.secondaryKey);
+        setSplitEditorOpen(selection.splitOpen);
+        setTabWindowStart(selection.tabWindowStart);
       }
       setActiveProject(project);
       setDirectory(path);
       setListing(result);
       setSection('explorer');
     } catch (error) {
-      if (explorerIoTicket.current === ticket) setProblem(String(error));
-    } finally { finishExplorerIo(ticket); }
+      if (workspaceTransitionRef.current===token &&
+          explorerIoTicket.current===ticket)
+        setProblem('Project directory could not be opened: '+String(error));
+    } finally {
+      if (workspaceTransitionRef.current===token)
+        workspaceTransitionRef.current=null;
+      finishExplorerIo(ticket);
+    }
   }
 
   async function startLspSession() {
@@ -4234,7 +4268,8 @@ function App() {
   }
 
   async function selectEntry(entry) {
-    if (!activeProject || explorerPending || explorerIoTicket.current) return;
+    if (!activeProject || explorerPending || explorerIoTicket.current ||
+        workspaceTransitionRef.current) return;
     if (entry.kind === 'directory') {
       await openDirectory(activeProject, entry.relativePath);
     } else if (entry.kind === 'file') {
@@ -4262,7 +4297,7 @@ function App() {
           entry.relativePath,opened,activeProjectIdRef.current,key);
         if (decision.action === 'discard_stale') return;
         if (decision.action === 'select_existing') {
-          setActiveTabKey(key); // Never replace another request's unsaved draft.
+          selectPrimaryEditorTab(key); // Keep pane ownership and its Undo state.
           return;
         }
         if (decision.action === 'deny') {
