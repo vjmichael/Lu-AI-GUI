@@ -498,6 +498,7 @@ mod tests{
             &fs::read(cancelled).unwrap()).unwrap();
         assert_eq!(cancellation["schema"],"lu-plan07b-real-qwen-stream-cancel-v1");
         assert_eq!(cancellation["realEngineHealthAfterAbort"],true);
+        assert_eq!(cancellation["singleModelSlotRecoveredIdleAfterAbort"],true);
         assert_eq!(cancellation["realStreamingHttpRequestObserved"],true);
         assert_eq!(cancellation["clientClosedOriginalStreamBeforeCompletion"],true);
         assert_eq!(cancellation["noSyntheticModelResponse"],true);
