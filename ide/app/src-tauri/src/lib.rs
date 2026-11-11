@@ -954,6 +954,121 @@ async fn ide_git_inspect_native_conflicts(
     }).await.map_err(|_| "G06D01_NATIVE_INSPECTION_HOST_UNAVAILABLE".to_owned())?
 }
 
+/// 6D-03: source-bound native proposal, explicitly NO execution authority.
+#[tauri::command]
+async fn ide_git_review_conflict_resolution(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    relative_path: String,
+    inventory_sha256: String,
+    index_sha256: String,
+    candidate_text: String,
+) -> Result<lu_ide_workspace::git_conflict_resolution::ConflictResolutionReview, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || registry
+        .review_native_conflict_resolution(&project_id, &relative_path,
+            &inventory_sha256, &index_sha256, &candidate_text)
+        .map_err(str::to_owned))
+        .await.map_err(|_| "G06D03_REVIEW_HOST_INTERRUPTED".to_owned())?
+}
+
+/// 6D-04: protected application requires a FRESH separate native OS dialog.
+/// A WebView review digest is only a stale-data claim, not authorization.
+#[tauri::command]
+async fn ide_git_apply_conflict_resolution(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+    relative_path: String,
+    inventory_sha256: String,
+    index_sha256: String,
+    candidate_text: String,
+    review_sha256: String,
+) -> Result<lu_ide_workspace::git_conflict_resolution::ProtectedResolutionReceipt, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let cancel = sessions.begin(&project_id)?;
+    let id_for_task = project_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let reviewed = registry.review_native_conflict_resolution(
+            &id_for_task, &relative_path, &inventory_sha256,
+            &index_sha256, &candidate_text).map_err(str::to_owned)?;
+        if reviewed.review_sha256 != review_sha256 {
+            return Err("G06D04_REVIEW_STALE_BEFORE_DIALOG".to_owned());
+        }
+        if cancel.load(Ordering::SeqCst) != 0 {
+            return Err("G06D04_CANCELLED_BEFORE_DIALOG".to_owned());
+        }
+        let approved = app.dialog().message(format!(
+            "APPLY EXACT CONFLICT RESOLUTION TO ONE LOCAL FILE?\n\nProject: {}\nFile: {}\nCurrent Git HEAD: {}\nOriginal index: {}\nProposed content SHA-256: {}\nCandidate bytes: {}\nReviewed evidence: {}\n\nThis separately authorized, one-use action replaces this tracked worktree file and stages its resolved blob into the Git index. It does NOT create a commit, merge, update a branch ref, run Git hooks or contact a remote. A crash between file replacement and index publication requires manual repair. Cancellation is possible only before mutation. Inspect the proposed text before accepting.",
+            id_for_task, reviewed.relative_path, reviewed.current_head,
+            reviewed.original_index_sha256, reviewed.proposed_content_sha256,
+            reviewed.proposed_bytes, reviewed.review_sha256,
+        )).title("Lu IDE · Separate native one-use conflict resolution consent")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+            "Apply this reviewed file resolution".into(), "Deny / Cancel".into(),
+          )).blocking_show();
+        if !approved { return Err("G06D04_NATIVE_HUMAN_REFUSED".to_owned()); }
+        if cancel.load(Ordering::SeqCst) != 0 {
+            return Err("G06D04_CANCELLED_AFTER_DIALOG".to_owned());
+        }
+        registry.apply_os_approved_conflict_resolution(
+            &id_for_task, &relative_path, &inventory_sha256,
+            &index_sha256, &candidate_text, &review_sha256, &cancel)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06D04_NATIVE_APPLY_HOST_INTERRUPTED".to_owned());
+    sessions.end(&project_id);
+    result?
+}
+
+#[tauri::command]
+async fn ide_git_inspect_conflict_recovery(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_conflict_resolution::ProtectedResolutionRecovery, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move ||
+        registry.inspect_protected_conflict_recovery(&project_id).map_err(str::to_owned))
+        .await.map_err(|_| "G06D04_RECOVERY_HOST_INTERRUPTED".to_owned())?
+}
+
+/// Receipt-only reconciliation: separate OS consent, no Git writes or retry.
+#[tauri::command]
+async fn ide_git_reconcile_conflict_receipt(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_conflict_resolution::ProtectedResolutionRecovery, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let _single_use = sessions.begin(&project_id)?;
+    let id_for_task = project_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let review = registry.inspect_protected_conflict_recovery(&id_for_task)
+            .map_err(str::to_owned)?;
+        if !matches!(review.state, "resolved_requires_independent_receipt" |
+            "unpublished_original_source_preserved") {
+            return Err("G06D04_RECOVERY_MANUAL_REPAIR_REQUIRED".to_owned());
+        }
+        let approved = app.dialog().message(format!(
+            "INDEPENDENT CONFLICT RESOLUTION RECOVERY RECEIPT\n\nProject: {}\nPath: {}\nOperation: {}\nObserved state: {}\n\nRecord a receipt only after rereading original Git HEAD, index and worktree? This does NOT apply the resolution, retry the stage, delete Git locks, replace a file, or change any branch.",
+            id_for_task, review.relative_path, review.operation_id, review.state,
+        )).title("Lu IDE · Separate native receipt-only reconciliation")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+            "Independently verify and record receipt".into(), "Deny / Cancel".into(),
+          )).blocking_show();
+        if !approved { return Err("G06D04_RECOVERY_HUMAN_REFUSED".to_owned()); }
+        registry.reconcile_protected_conflict_receipt(&id_for_task)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06D04_RECOVERY_HOST_INTERRUPTED".to_owned());
+    sessions.end(&project_id);
+    result?
+}
+
 /// 6C-03B: actual native three-way merge preview, with new blobs confined
 /// to a temporary isolated ODB. This deliberately has NO publication route.
 #[tauri::command]
@@ -2988,6 +3103,10 @@ pub fn run() {
             ide_git_preview_local_merge,
             ide_git_verify_divergent_merge,
             ide_git_inspect_native_conflicts,
+            ide_git_review_conflict_resolution,
+            ide_git_apply_conflict_resolution,
+            ide_git_inspect_conflict_recovery,
+            ide_git_reconcile_conflict_receipt,
             ide_git_execute_divergent_merge,
             ide_git_inspect_divergent_recovery,
             ide_git_reconcile_divergent_receipt,
