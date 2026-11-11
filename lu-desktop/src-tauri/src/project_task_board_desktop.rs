@@ -363,6 +363,22 @@ fn save_json_new(path:&Path,bytes:&[u8])->Result<String,String>{
     if actual!=bytes{return Err("PLAN06_EXPORT_INDEPENDENT_READBACK_FAILED".into())}
     Ok(format!("{:x}",Sha256::digest(bytes)))
 }
+fn preview_order(order:&[String],tasks:&[BoardTask])->Result<String,String>{
+    let indexed: BTreeMap<&str,&BoardTask>=tasks.iter()
+        .map(|t|(t.task_id.as_str(),t)).collect();
+    let distinct:BTreeSet<&str>=order.iter().map(String::as_str).collect();
+    if order.len()!=tasks.len()||distinct.len()!=tasks.len()||
+        indexed.len()!=tasks.len()||order.iter().any(|id|!indexed.contains_key(id.as_str())){
+        return Err("PLAN06_REVIEWED_ORDER_NOT_EXACT_PERMUTATION".into())
+    }
+    let mut lines=String::new();
+    for (i,id) in order.iter().enumerate(){
+        let task=indexed.get(id.as_str()).ok_or("PLAN06_REVIEW_TASK_MISSING")?;
+        lines.push_str(&format!("{}. {} · {} (v{})\n",
+            i+1,task.priority,task.summary,task.version));
+    }
+    Ok(lines)
+}
 fn require_board(caller:&tauri::WebviewWindow)->Result<(),String>{
     if caller.label()!="task-list"{
         return Err("PLAN06_REQUIRES_INDEPENDENT_OPERATOR_TASK_WINDOW".into())
@@ -405,10 +421,19 @@ pub(crate) async fn lu_project_board_reorder(
         !graph::valid_digest(&expected_register_sha256){
         return Err("PLAN06_INVALID_REORDER_REQUEST".into())
     }
+    let current=load_views(&profile)?.into_iter()
+        .find(|v|v.board.register_id==register_id)
+        .ok_or("PLAN06_REORDER_REGISTER_NOT_FOUND")?;
+    if current.board.sha256!=expected_board_sha256||
+        current.source_register_sha256!=expected_register_sha256{
+        return Err("PLAN06_REORDER_SOURCE_CHANGED_BEFORE_REVIEW".into())
+    }
+    let review=preview_order(&ordered_task_ids,&current.tasks)?;
     if !project_register_desktop::confirm(&app,"Lu — Reorder human plan",
-        format!("Save this reviewed sequence of {} tasks?\n\
-        This appends a durable draft revision. It does NOT accept a task, \
-        execute code, grant model tools or approve source changes.",ordered_task_ids.len())
+        format!("Review and save this EXACT sequence of {} tasks?\n\n{}\n\
+        This creates a durable DRAFT. It does NOT accept any task, \
+        execute code, grant model tools or approve source changes.",
+        ordered_task_ids.len(),review)
     ).await?{return Ok(None)}
     tauri::async_runtime::spawn_blocking(move||
         write(&profile,&register_id,&expected_board_sha256,
@@ -429,12 +454,13 @@ pub(crate) async fn lu_project_board_approve(
        review.source_register_sha256!=expected_register_sha256{
         return Err("PLAN06_PLAN_CHANGED_BEFORE_APPROVAL".into())
     }
-    let order=review.board.ordered_task_ids;
+    let order=review.board.ordered_task_ids.clone();
+    let preview=preview_order(&order,&review.tasks)?;
     if !project_register_desktop::confirm(&app,"Lu — Approve task plan only",
-        format!("Approve the ordering and wording of {} reviewed tasks?\n\
-        The tasks remain unexecuted; this DOES NOT grant an action, tool \
-        permission, scheduling, source acceptance or completion. \
-        Changes after this approval invalidate its current status.",order.len())
+        format!("Approve the EXACT human-reviewed ordering and wording of {} tasks?\n\n{}\n\
+        These tasks remain unexecuted; no action, native tool permission, \
+        scheduling, source acceptance or completion is granted. \
+        New source changes invalidate current approval.",order.len(),preview)
     ).await?{return Ok(None)}
     tauri::async_runtime::spawn_blocking(move||
         write(&profile,&register_id,&expected_board_sha256,
@@ -448,12 +474,20 @@ pub(crate) async fn lu_project_board_correct(
     expected_version:u64,correction:register::HumanCorrection
 )->Result<Option<BoardView>,String>{
     require_board(&caller)?;
+    if correction.summary.len()>100||correction.description.len()>300||
+        correction.blocked_by.len()>200||correction.acceptance_criteria.len()>300||
+        correction.reason.len()>250||correction.priority.len()>2{
+        return Err("PLAN06_OVERSIZED_HUMAN_CORRECTION".into())
+    }
     if !project_register_desktop::confirm(&app,"Lu — Confirm task wording",
-        format!("Save your own correction of {} version {}?\n\
-        Reason: {}\nSummary: {}\nAcceptance criterion: {}\n\
-        Original requirement and source evidence cannot be changed. \
-        This invalidates prior plan approval and NEVER authorizes execution.",
-        task_id,expected_version,correction.reason,correction.summary,correction.acceptance_criteria)
+        format!("Save your own correction of {} version {}?\n\n\
+        Reason: {}\nSummary: {}\nDescription: {}\nPriority: {}\n\
+        Blocked by: {}\nAcceptance criterion: {}\n\n\
+        Original requirement and source evidence cannot be rewritten. \
+        This invalidates current plan approval and NEVER authorizes execution.",
+        task_id,expected_version,correction.reason,correction.summary,
+        correction.description,correction.priority,correction.blocked_by,
+        correction.acceptance_criteria)
     ).await?{return Ok(None)}
     let profile=profile_for(state.inner())?;
     tauri::async_runtime::spawn_blocking(move||{
