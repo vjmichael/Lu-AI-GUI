@@ -4,7 +4,7 @@
 //! blob previews and the exact index bytes are bound to one observation digest.
 //! It never calls index.write, checkout, merge_trees, commit, or Git CLI.
 use crate::{git_branch_operations::exact_repo, git_protected_merge::changed_path_is_plain_safe, IdeWorkspaceRegistry};
-use git2::{IndexEntry, ObjectType, Oid, Repository};
+use git2::{IndexEntry, Repository};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path};
@@ -181,5 +181,53 @@ impl IdeWorkspaceRegistry {
             index_or_worktree_modified: false, branch_ref_modified: false,
             remote_contacted: false, git_process_started: false,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::Repository;
+    use std::path::PathBuf;
+
+    #[test]
+    fn content_preview_is_bounded_and_blob_identity_is_original() {
+        let root = std::env::temp_dir().join(
+            format!("ide-g06d01-{:032x}", rand::random::<u128>()));
+        fs::create_dir_all(&root).unwrap();
+        let repo = Repository::init(&root).unwrap();
+        fs::write(root.join("a.txt"), b"source line\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("a.txt")).unwrap();
+        index.write().unwrap();
+        let entry = index.get_path(Path::new("a.txt"), 0).unwrap();
+        let before = raw_index(repo.path()).unwrap();
+        let proof = stage(&repo, Some(&entry)).unwrap().unwrap();
+        assert_eq!(proof.preview.as_deref(), Some("source line\n"));
+        assert_eq!(proof.oid, entry.id.to_string());
+        assert_eq!(proof.mode, 0o100644);
+        assert!(!proof.binary_or_non_utf8 && !proof.preview_truncated);
+        assert_eq!(before, raw_index(repo.path()).unwrap());
+        drop(index);
+        drop(repo);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn binary_stage_is_not_exposed_as_utf8_text() {
+        let root = std::env::temp_dir().join(
+            format!("ide-g06d01-{:032x}", rand::random::<u128>()));
+        fs::create_dir_all(&root).unwrap();
+        let repo = Repository::init(&root).unwrap();
+        fs::write(root.join("binary.bin"), [0, 159, 255, 0]).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("binary.bin")).unwrap();
+        let entry = index.get_path(Path::new("binary.bin"), 0).unwrap();
+        let proof = stage(&repo, Some(&entry)).unwrap().unwrap();
+        assert!(proof.binary_or_non_utf8);
+        assert!(proof.preview.is_none());
+        drop(index);
+        drop(repo);
+        fs::remove_dir_all(root).unwrap();
     }
 }
