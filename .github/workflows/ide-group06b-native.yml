@@ -1,4 +1,4 @@
-# Group 6B-04 exact-head: reviewed local commits and separately OS-authorized amendments, branch CAS and durable recovery.
+# G06B-04 exact-head rerun after native create/amend/recovery tests passed; formatter repairs plus restart receipt restore.
 # Preserve real frontend-built icon; no CI-only icon may overwrite a valid app resource.
 # No Git write authority or operator acceptance.
 name: IDE Group 6B reviewed batch source (not release)
