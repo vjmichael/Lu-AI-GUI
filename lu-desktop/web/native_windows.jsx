@@ -78,6 +78,7 @@ export function SettingsWindow(){
   const [observeNotes,setObserveNotes]=useState([]);
   const [observeHandoff,setObserveHandoff]=useState(null);
   const [projectBaseline,setProjectBaseline]=useState(null);
+  const [projectGraph,setProjectGraph]=useState(null);
 
   async function refresh(){
     const results=await Promise.allSettled([
@@ -325,6 +326,43 @@ export function SettingsWindow(){
               {projectBaseline.limitations.map((limitation,index)=>
                 <p key={index}>{limitation}</p>)}
               <small>This inspection produces neither a project verdict nor an executable task list. PLAN-02/03/04 are separate engineering groups.</small>
+            </section>}
+          </Section>
+          <Section title="Host-verified evidence links · PLAN-02">
+            <p>Choose a project folder again with the native picker. Source hashes, local Git ancestry and bounded structured run-report claims are linked without running tests, downloading files, or asking a model. Each graph is appended to Lu's existing ANSF library.</p>
+            <button type="button" disabled={busy}
+              onClick={()=>void act('Read-only evidence graph saved in local ANSF.',async()=>{
+                setProjectGraph(null);
+                const graph=await invoke('lu_project_evidence_graph');
+                if(graph?.schema!=='lu-project-evidence-v1'&&graph!==null){
+                  throw Error('Unrecognized evidence graph schema');
+                }
+                setProjectGraph(graph);return graph;
+              })}>Inspect evidence graph…</button>
+            {projectGraph&&<section className="nativeOption" aria-label="Project evidence graph">
+              <strong>Evidence graph · {projectGraph.complete?'bounded local inventory':'partial local inventory'}</strong>
+              <p>Snapshot SHA-256: {projectGraph.sha256}</p>
+              <p>Selected local HEAD: {projectGraph.selectedHead||'not verified'} · {projectGraph.nodes.length} nodes · {projectGraph.edges.length} source-linked edges</p>
+              <p>Historical test reports and untrusted checklist claims cannot establish accepted behavior. Independently verified links are limited to native Git ancestry checks.</p>
+              <details><summary>Evidence by source, test and result</summary>
+                <div className="nativeOptionList">{projectGraph.nodes.slice(0,96).map(n=>
+                  <article key={n.id} className="nativeOption">
+                    <strong>{n.kind} · {n.evidence}</strong>
+                    <p>{n.label}</p>
+                    <small>{n.locator} {n.commit?'· commit '+n.commit:''} {n.digest?'· source '+n.digest:''}</small>
+                    <small>{n.reason}</small>
+                  </article>)}</div>
+              </details>
+              <details><summary>Explicit evidence edges</summary>
+                <div className="nativeOptionList">{projectGraph.edges.slice(0,120).map((edge,index)=>
+                  <article key={edge.from+edge.to+index} className="nativeOption">
+                    <strong>{edge.relation} · {edge.evidence}</strong>
+                    <small>{edge.from.slice(0,12)} → {edge.to.slice(0,12)}</small>
+                    <p>{edge.reason}</p>
+                  </article>)}</div>
+              </details>
+              {projectGraph.limitations.map((warning,i)=><p key={i}>{warning}</p>)}
+              <small>Read-only graph only. PLAN-03 classifier, PLAN-04 GGUF task synthesis, and executable work plans remain separate.</small>
             </section>}
           </Section>
           <p>Worker execution requires original-turn authorization, bounded input/output, cancellation, durable receipts and independent verification. Not every provider implements Lu's current tool-response protocol.</p>

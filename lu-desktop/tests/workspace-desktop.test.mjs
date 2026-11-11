@@ -11,7 +11,9 @@ test('Ask Workspace is native-folder-picked and never accepts WebView file paths
   assert.match(route,/is_real_directory\(&root\)/);
   assert.match(route,/WorkspaceReadTurnSession::new\(/);
   assert.match(ui,/invoke\('lu_workspace_ask_directory',\{/);
-  assert.match(ui,/Ask Workspace<\/button>/);
+  // Chat-first UX removed the old specialist button. Host intent and picker remain.
+  assert.match(host,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
+  assert.doesNotMatch(ui,/Ask Workspace<\/button>/);
   assert.ok(!ui.includes("invoke('lu_workspace_ask_directory',{path:"));
   assert.ok(!ui.includes("invoke('lu_workspace_ask_directory',{folder:"));
 });
@@ -32,8 +34,11 @@ test('workspace selection is opt-in and normal Send remains a separate path',()=
   assert.match(ui,/async function askWorkspaceDirectory\(\)/);
   assert.match(ui,/async function askReaderDocument\(\)/);
   assert.match(ui,/async function send\(e\)/);
-  assert.match(ui,/onClick=\{\(\)=>void askWorkspaceDirectory\(\)\}/);
-  assert.match(ui,/Choose a folder and let Lu discover files by name/);
+  assert.match(host,/workspace_desktop::ask_workspace_for_chat\(/);
+  assert.match(route,/append_user_with_turn_id\(&chat_id,&generation_id,&prompt\)/);
+  assert.match(route,/blocking_pick_folder\(\)/);
+  assert.match(host,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
+  assert.match(route,/read_workspace/);
 });
 
 test('P01 native filename/metadata discovery is advertised only in a scoped workspace turn',()=>{
@@ -41,7 +46,9 @@ test('P01 native filename/metadata discovery is advertised only in a scoped work
   assert.match(route,/indexed discovery tool before repeatedly traversing folders/);
   assert.match(route,/WorkspaceReadTurnSession::new\(/);
   assert.doesNotMatch(route,/register_discovery_tool\(/);
-  assert.match(ui,/Choose a folder and let Lu discover files by name/);
+  assert.match(route,/blocking_pick_folder\(\)/);
+  assert.match(host,/workspace_desktop::explicit_read_workspace_request\(&prompt\)/);
+  assert.match(route,/read_workspace/);
 });
 
 test('PLAN-01 uses native picker and existing host-bound read-only Git',()=>{
@@ -67,4 +74,25 @@ test('PLAN-01 uses native picker and existing host-bound read-only Git',()=>{
   assert.match(settings,/Remote issues\/PRs\/CI: NOT INSPECTED/);
   assert.doesNotMatch(scanner,/Command::new|reqwest|http:|https:|spawn\("llama/);
   assert.doesNotMatch(settings,/invoke\('lu_project_discover',\{.*path/);
+});
+
+test('PLAN-02 schema and native folder boundary remain host owned',()=>{
+  const screen=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+  const graph=readFileSync(new URL('../../src-tauri/lu-core/src/project_evidence_graph.rs',import.meta.url),'utf8');
+  const hostGraph=readFileSync(new URL('../src-tauri/src/project_evidence_desktop.rs',import.meta.url),'utf8');
+  assert.match(host,/mod project_evidence_desktop;/);
+  assert.match(host,/project_evidence_desktop::lu_project_evidence_graph,/);
+  assert.match(hostGraph,/caller\.label\(\)!="settings"/);
+  assert.match(hostGraph,/blocking_pick_folder\(\)/);
+  assert.match(hostGraph,/project_discovery_desktop::scan_selected/);
+  assert.match(hostGraph,/OpenFlags::SQLITE_OPEN_READ_WRITE/);
+  assert.match(hostGraph,/ansf_project_evidence_snapshots/);
+  assert.match(hostGraph,/INSERT OR IGNORE/);
+  assert.match(graph,/pub enum EvidenceState\{Reported,Inspected,IndependentlyVerified,Stale,Unknown\}/);
+  assert.match(graph,/PLAN02_FALSE_VERIFICATION/);
+  assert.match(graph,/PLAN02_SNAPSHOT_CHANGED/);
+  assert.match(screen,/invoke\('lu_project_evidence_graph'\)/);
+  assert.match(screen,/PLAN-03 classifier, PLAN-04 GGUF task synthesis/);
+  assert.doesNotMatch(hostGraph,/Command::new|reqwest|git fetch|model\.infer|run_plan/);
+  assert.doesNotMatch(screen,/invoke\('lu_project_evidence_graph',\{.*root/);
 });

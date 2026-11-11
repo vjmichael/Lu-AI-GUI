@@ -17,27 +17,27 @@ const MAX_TIME:Duration=Duration::from_secs(5);
 #[derive(Debug,Serialize)]
 #[serde(rename_all="camelCase")]
 pub(crate) struct ProjectSourceLead{
-    relative_path:String,role:&'static str,bytes:u64,
-    observed_sha256:Option<String>,evidence_state:&'static str,
+    pub(crate) relative_path:String,pub(crate) role:&'static str,pub(crate) bytes:u64,
+    pub(crate) observed_sha256:Option<String>,pub(crate) evidence_state:&'static str,
 }
 #[derive(Debug,Serialize)]
 #[serde(rename_all="camelCase")]
 pub(crate) struct ProjectRequirementLead{
-    source_path:String,source_sha256:String,line:u32,
-    disposition:&'static str,statement:String,evidence_state:&'static str,
+    pub(crate) source_path:String,pub(crate) source_sha256:String,pub(crate) line:u32,
+    pub(crate) disposition:&'static str,pub(crate) statement:String,pub(crate) evidence_state:&'static str,
 }
 #[derive(Debug,Serialize)]
 #[serde(rename_all="camelCase")]
 pub(crate) struct ProjectBaseline{
     schema:&'static str,project_kind:&'static str,selection:&'static str,
-    root:String,inspected_at_unix:u64,
-    repository:Option<lu_core::native_git_inspect::GitBaseline>,
-    repository_note:String,
+    pub(crate) root:String,pub(crate) inspected_at_unix:u64,
+    pub(crate) repository:Option<lu_core::native_git_inspect::GitBaseline>,
+    pub(crate) repository_note:String,
     indexed_directories:usize,indexed_files:usize,
     document_files_read:usize,document_bytes_read:u64,
     source_files:usize,test_files:usize,workflow_files:usize,
-    issue_template_files:usize,inspection_complete:bool,
-    sources:Vec<ProjectSourceLead>,requirements:Vec<ProjectRequirementLead>,
+    issue_template_files:usize,pub(crate) inspection_complete:bool,
+    pub(crate) sources:Vec<ProjectSourceLead>,pub(crate) requirements:Vec<ProjectRequirementLead>,
     limitations:Vec<String>,remote_issue_pr_state:&'static str,
     permission:&'static str,
 }
@@ -69,6 +69,10 @@ fn role(path:&str)->(&'static str,bool){
         return ("issue_or_pr_template",true)
     }
     if p.starts_with(".github/workflows/"){return ("workflow_metadata",false)}
+    if (p.starts_with("test-results/")||p.starts_with("reports/")||p.starts_with("evidence/"))&&
+        [".json",".log",".tap",".xml"].iter().any(|ext|p.ends_with(ext)){
+        return ("test_report",false)
+    }
     if p.starts_with("tests/")||p.contains("/tests/")||
         name.starts_with("test_")||name.contains(".test.")||
         name.ends_with("_test.rs"){return ("test_path",false)}
@@ -136,7 +140,7 @@ fn extract(path:&str,hash:&str,content:&str,
         });
     }
 }
-fn scan_selected(root:&Path)->Result<ProjectBaseline,String>{
+pub(crate) fn scan_selected(root:&Path)->Result<ProjectBaseline,String>{
     let meta=fs::symlink_metadata(root).map_err(|_|"Project folder unavailable")?;
     if !meta.file_type().is_dir()||meta.file_type().is_symlink(){
         return Err("Project folder must be a real directory".into())
@@ -159,7 +163,7 @@ fn scan_selected(root:&Path)->Result<ProjectBaseline,String>{
         let entries=match dir.read_dir("."){
             Ok(v)=>v,Err(_)=>{incomplete=true;continue},
         };
-        let mut names=Vec::new();
+        let mut names:Vec<String>=Vec::new();
         for entry in entries{
             if names.len()>MAX_FILES||began.elapsed()>MAX_TIME{
                 incomplete=true;break
@@ -209,7 +213,7 @@ fn scan_selected(root:&Path)->Result<ProjectBaseline,String>{
                 }else{
                     let read=dir.open(&name).and_then(|mut file|{
                         let mut buffer=Vec::new();
-                        file.by_ref().take(MAX_DOC_BYTES+1).read_to_end(&mut buffer)?;
+                        std::io::Read::by_ref(&mut file).take(MAX_DOC_BYTES+1).read_to_end(&mut buffer)?;
                         Ok(buffer)
                     });
                     match read{

@@ -200,6 +200,7 @@ pub mod native_file_transfer_tool;
 pub mod native_file_trash_tool;
 pub mod native_trash_custody;
 pub mod native_git_inspect;
+pub mod project_evidence_graph;
 pub mod native_files;
 pub mod native_atomic_write;
 pub mod native_create_new;

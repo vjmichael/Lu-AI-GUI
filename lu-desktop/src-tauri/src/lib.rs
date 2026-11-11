@@ -35,6 +35,7 @@ mod reader_desktop;
 use reader_desktop::{lu_reader_ask_document,ReaderRunControl};
 mod workspace_desktop;
 mod project_discovery_desktop;
+mod project_evidence_desktop;
 mod reviewed_app_desktop;
 mod reviewed_memory_evidence;
 mod reviewed_app_recovery;
@@ -8570,6 +8571,7 @@ pub fn run() {
             lu_close_aux_window,
             lu_native_route_catalog,
             project_discovery_desktop::lu_project_discover,
+            project_evidence_desktop::lu_project_evidence_graph,
             lu_status,
             lu_list_models,
             lu_model_preflight,
