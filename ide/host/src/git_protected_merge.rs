@@ -246,6 +246,28 @@ fn matching_commit(repo: &Repository, ref_name: &str) -> Result<Option<String>, 
         .target().map(|oid| oid.to_string()))
 }
 
+/// Test-only fatal injection guarded by the caller's exact canonical
+/// disposable repository root AND an on-disk marker under its private Gitdir.
+#[cfg(test)]
+fn abort_disposable_process_at(root: &Path, gitdir: &Path, variable: &str) {
+    let Some(requested) = std::env::var_os(variable) else { return; };
+    let canonical_root = fs::canonicalize(root).ok();
+    let claimed = fs::canonicalize(PathBuf::from(requested)).ok();
+    let temp = fs::canonicalize(std::env::temp_dir()).ok();
+    let marker = gitdir.join("g06c03-abort-fixture");
+    if canonical_root.is_some()
+        && claimed == canonical_root
+        && canonical_root.as_ref().zip(temp.as_ref())
+            .is_some_and(|(a, b)| a.starts_with(b))
+        && root.file_name().is_some_and(|name| name == "repo")
+        && root.parent().and_then(|p| p.file_name())
+            .is_some_and(|name| name.to_string_lossy().starts_with("ide-g06c03-"))
+        && fs::read(marker).ok().as_deref() == Some(b"G06C03_DISPOSABLE_ONLY\n")
+    {
+        std::process::abort();
+    }
+}
+
 fn approved_fast_forward_plan(
     registry: &IdeWorkspaceRegistry,
     project_id: &str,
@@ -370,6 +392,9 @@ impl IdeWorkspaceRegistry {
         journal.selected_index_sha256 = exact_index_sha(gitdir)?;
         journal.phase = "checkout_verified".into();
         append(&journal_path, &journal)?;
+        // TEST-ONLY: hard process death after disk checkout, before ref CAS.
+        #[cfg(test)]
+        abort_disposable_process_at(&root, gitdir, "IDE_G06C03_ABORT_AFTER_CHECKOUT");
         if matching_commit(&repo, &journal.branch_ref)?.as_deref() != Some(&journal.previous_head)
             || local_commit(&repo, selected_branch)?.to_string() != journal.selected_tip
             || exact_index_sha(gitdir)? != journal.selected_index_sha256 {
@@ -385,25 +410,7 @@ impl IdeWorkspaceRegistry {
             "Lu IDE: independently reviewed one-use OS-approved local fast-forward",
         ).map_err(|_| "G06C03_REF_CAS_FAILED_RECOVERY_REQUIRED")?;
         #[cfg(test)]
-        {
-            // Genuine abort only in a named child of the disposable G06C03
-            // fixture. Never available to production/release binaries.
-            if let Some(marker_path) = std::env::var_os("IDE_G06C03_ABORT_AFTER_REF_CAS") {
-                let root_canonical = fs::canonicalize(&root).ok();
-                let claimed = fs::canonicalize(PathBuf::from(marker_path)).ok();
-                let temp = fs::canonicalize(std::env::temp_dir()).ok();
-                let marker = gitdir.join("g06c03-abort-fixture");
-                if root_canonical.is_some() && claimed == root_canonical
-                    && root_canonical.as_ref().zip(temp.as_ref())
-                        .is_some_and(|(a,b)| a.starts_with(b))
-                    && root.file_name().is_some_and(|s| s == "repo")
-                    && root.parent().and_then(|p| p.file_name())
-                        .is_some_and(|s| s.to_string_lossy().starts_with("ide-g06c03-"))
-                    && fs::read(marker).ok().as_deref() == Some(b"G06C03_DISPOSABLE_ONLY\n") {
-                    std::process::abort();
-                }
-            }
-        }
+        abort_disposable_process_at(&root, gitdir, "IDE_G06C03_ABORT_AFTER_REF_CAS");
         journal.phase = "ref_published".into();
         append(&journal_path, &journal)?;
         if matching_commit(&repo, &journal.branch_ref)?.as_deref() != Some(&journal.selected_tip)
@@ -763,6 +770,55 @@ mod tests {
         assert_eq!(final_repo.head().unwrap().target().unwrap().to_string(), selected);
         assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
         assert!(final_repo.statuses(None).unwrap().is_empty());
+    }
+    #[test]
+    fn real_child_process_abort_after_checkout_refuses_replay_and_preserves_original_ref() {
+        if std::env::var_os("IDE_G06C03_CHILD_ROOT").is_some() { return; }
+        let x = fixture();
+        let before_repo = Repository::open(&x.root).unwrap();
+        let original_head = before_repo.head().unwrap().target().unwrap().to_string();
+        let selected_tip = local_commit(&before_repo, "feature").unwrap().to_string();
+        let selected_tree = before_repo.find_commit(
+            Oid::from_str(&selected_tip).unwrap()).unwrap().tree_id().to_string();
+        let unrelated = fs::read(x.root.join("unrelated.keep")).unwrap();
+        fs::write(x.root.join(".git/g06c03-abort-fixture"),
+            b"G06C03_DISPOSABLE_ONLY\n").unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("git_protected_merge::tests::g06c03_actual_process_abort_child")
+            .arg("--nocapture")
+            .env("IDE_G06C03_CHILD_ROOT", &x.root)
+            .env("IDE_G06C03_CHILD_ID", &x.id)
+            .env("IDE_G06C03_ABORT_AFTER_CHECKOUT", &x.root)
+            .output().unwrap();
+        assert!(!output.status.success(), "test child must really abort");
+        assert!(!String::from_utf8_lossy(&output.stderr)
+            .contains("returned without deliberate process abort"));
+        let repo = Repository::open(&x.root).unwrap();
+        assert_eq!(repo.head().unwrap().target().unwrap().to_string(), original_head);
+        assert_ne!(original_head, selected_tip);
+        assert!(index_matches_tree(&repo, &selected_tree).unwrap());
+        assert!(no_wt_changes(&repo).unwrap());
+        assert_eq!(fs::read(x.root.join("tracked.txt")).unwrap(), b"feature revision\n");
+        assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
+        assert!(!repo.path().join("index.lock").exists());
+        let journal = read_latest(&journal_file(&x.registry, &x.id).unwrap())
+            .unwrap().unwrap();
+        assert_eq!(journal.phase, "checkout_verified");
+        assert_eq!(journal.previous_head, original_head);
+        assert_eq!(journal.selected_tip, selected_tip);
+        let reopened = IdeWorkspaceRegistry::open(x.base.join("catalog.json")).unwrap();
+        reopened.reopen(&x.id).unwrap();
+        let state = reopened.inspect_protected_merge_recovery(&x.id).unwrap();
+        assert_eq!(state.state, "checkout_completed_ref_not_published");
+        assert!(state.operator_reconciliation_required);
+        assert!(!state.automatic_ref_rewrite && !state.automatic_retry
+            && !state.automatic_checkout && !state.automatic_lock_deletion);
+        assert_eq!(reopened.reconcile_protected_merge_receipt(&x.id).unwrap_err(),
+            "G06C03_RECOVERY_MANUAL_REPAIR_REQUIRED");
+        assert_eq!(Repository::open(&x.root).unwrap().head().unwrap().target()
+            .unwrap().to_string(), original_head);
+        assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
     }
     #[test]
     fn signed_off_stale_tree_and_divergent_history_are_not_executed() {
