@@ -76,11 +76,16 @@ fn safe_local_name(name: &str) -> bool {
         && name
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'_' | b'.'))
-        && !name.split('/').any(|part| part.is_empty() || part.starts_with('.'))
+        && !name
+            .split('/')
+            .any(|part| part.is_empty() || part.starts_with('.'))
         && Reference::is_valid_name(&format!("refs/heads/{name}"))
 }
 
-fn exact_repo(registry: &IdeWorkspaceRegistry, project_id: &str) -> Result<Repository, &'static str> {
+fn exact_repo(
+    registry: &IdeWorkspaceRegistry,
+    project_id: &str,
+) -> Result<Repository, &'static str> {
     let root = registry
         .registered_git_root(project_id)
         .map_err(|_| "G06C_PROJECT_NOT_OPEN")?;
@@ -123,10 +128,16 @@ fn dirty_state(repo: &Repository) -> Result<(usize, bool, bool), &'static str> {
     for entry in entries.iter() {
         if entry.status() != Status::CURRENT {
             count = count.saturating_add(1);
-            untracked |= entry.status().intersects(Status::WT_NEW | Status::INDEX_NEW);
+            untracked |= entry
+                .status()
+                .intersects(Status::WT_NEW | Status::INDEX_NEW);
         }
     }
-    Ok((count.min(MAX_DIRTY_COUNT), count > MAX_DIRTY_COUNT, untracked))
+    Ok((
+        count.min(MAX_DIRTY_COUNT),
+        count > MAX_DIRTY_COUNT,
+        untracked,
+    ))
 }
 
 fn digest(parts: &[&str]) -> String {
@@ -181,8 +192,7 @@ impl IdeWorkspaceRegistry {
             return Err("G06C_CURRENT_BRANCH_UNSUPPORTED");
         }
         let head = head_ref.target().ok_or("G06C_HEAD_NOT_DIRECT")?;
-        repo.find_commit(head)
-            .map_err(|_| "G06C_HEAD_NOT_COMMIT")?;
+        repo.find_commit(head).map_err(|_| "G06C_HEAD_NOT_COMMIT")?;
         let index = repo.index().map_err(|_| "G06C_INDEX_UNVERIFIABLE")?;
         let conflicted = index.has_conflicts();
         let index_lock = Path::new(repo.path()).join("index.lock").exists();
@@ -343,9 +353,7 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
-        let base = std::env::temp_dir().join(format!(
-            "ide-g06c01-{:032x}", rand::random::<u128>()
-        ));
+        let base = std::env::temp_dir().join(format!("ide-g06c01-{:032x}", rand::random::<u128>()));
         let root = base.join("repo");
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("tracked.txt"), b"initial\n").unwrap();
@@ -390,7 +398,12 @@ mod tests {
             .unwrap()
             .unwrap()
             .project_id;
-        Fixture { base, registry, id, root }
+        Fixture {
+            base,
+            registry,
+            id,
+            root,
+        }
     }
 
     fn snapshot(root: &Path) -> (Vec<u8>, Vec<u8>, Vec<u8>, String) {
@@ -447,13 +460,21 @@ mod tests {
             "",
             "feature\\evil",
         ] {
-            assert!(x.registry.review_local_branch_operation(
-                &x.id, BranchOperationKind::Merge, Some(other),
-            ).is_err(), "{other:?}");
+            assert!(
+                x.registry
+                    .review_local_branch_operation(&x.id, BranchOperationKind::Merge, Some(other),)
+                    .is_err(),
+                "{other:?}"
+            );
         }
-        assert!(x.registry.review_local_branch_operation(
-            &x.id, BranchOperationKind::Merge, Some("origin/feature"),
-        ).is_err());
+        assert!(x
+            .registry
+            .review_local_branch_operation(
+                &x.id,
+                BranchOperationKind::Merge,
+                Some("origin/feature"),
+            )
+            .is_err());
         assert_eq!(
             x.registry
                 .review_local_branch_operation(&x.id, BranchOperationKind::Merge, None)
@@ -466,8 +487,15 @@ mod tests {
                 .unwrap_err(),
             "G06C_STASH_TARGET_DENIED"
         );
-        let current = Repository::open(&x.root).unwrap().head().unwrap().shorthand().unwrap().to_owned();
-        let review = x.registry
+        let current = Repository::open(&x.root)
+            .unwrap()
+            .head()
+            .unwrap()
+            .shorthand()
+            .unwrap()
+            .to_owned();
+        let review = x
+            .registry
             .review_local_branch_operation(&x.id, BranchOperationKind::Merge, Some(&current))
             .unwrap();
         assert!(review.blockers.contains(&"same_branch"));
@@ -476,7 +504,8 @@ mod tests {
     #[test]
     fn stash_dirty_guard_and_foreign_lock_never_deleted() {
         let x = fixture();
-        let clean = x.registry
+        let clean = x
+            .registry
             .review_local_branch_operation(&x.id, BranchOperationKind::Stash, None)
             .unwrap();
         assert!(clean.blockers.contains(&"nothing_to_stash"));
@@ -484,28 +513,38 @@ mod tests {
         fs::write(x.root.join("scratch.tmp"), b"local untracked\n").unwrap();
         let lock = x.root.join(".git/index.lock");
         fs::write(&lock, b"FOREIGN_GIT_OWNER").unwrap();
-        let locked = x.registry
+        let locked = x
+            .registry
             .review_local_branch_operation(&x.id, BranchOperationKind::Merge, Some("feature"))
             .unwrap();
         assert!(locked.blockers.contains(&"worktree_or_index_dirty"));
-        assert!(locked.blockers.contains(&"git_index_lock_requires_manual_review"));
+        assert!(locked
+            .blockers
+            .contains(&"git_index_lock_requires_manual_review"));
         assert!(locked.dirty_entries > 0 && locked.untracked_present);
-        let stash = x.registry
+        let stash = x
+            .registry
             .review_local_branch_operation(&x.id, BranchOperationKind::Stash, None)
             .unwrap();
         assert!(stash.blockers.contains(&"untracked_stash_policy_unset"));
         assert_eq!(fs::read(lock).unwrap(), b"FOREIGN_GIT_OWNER");
-        assert_eq!(fs::read(x.root.join("tracked.txt")).unwrap(), b"edited, unsaved\n");
+        assert_eq!(
+            fs::read(x.root.join("tracked.txt")).unwrap(),
+            b"edited, unsaved\n"
+        );
         assert!(!stash.operation_authorized);
     }
 
     #[test]
     fn revert_requires_commit_reachable_in_selected_history() {
         let x = fixture();
-        let review = x.registry
+        let review = x
+            .registry
             .review_local_branch_operation(&x.id, BranchOperationKind::Revert, Some("feature"))
             .unwrap();
-        assert!(review.blockers.contains(&"revert_commit_not_in_current_history"));
+        assert!(review
+            .blockers
+            .contains(&"revert_commit_not_in_current_history"));
         let original = snapshot(&x.root);
         assert_eq!(snapshot(&x.root), original);
     }
@@ -515,14 +554,19 @@ mod tests {
         let x = fixture();
         let err = x
             .registry
-            .review_local_branch_operation("unknown-project", BranchOperationKind::Merge, Some("feature"))
+            .review_local_branch_operation(
+                "unknown-project",
+                BranchOperationKind::Merge,
+                Some("feature"),
+            )
             .unwrap_err();
         assert_eq!(err, "G06C_PROJECT_NOT_OPEN");
         let repo = Repository::open(&x.root).unwrap();
         let initial = repo.head().unwrap().target().unwrap();
         repo.set_head_detached(initial).unwrap();
         assert_eq!(
-            x.registry.review_local_branch_operation(&x.id, BranchOperationKind::Stash, None)
+            x.registry
+                .review_local_branch_operation(&x.id, BranchOperationKind::Stash, None)
                 .unwrap_err(),
             "G06C_DETACHED_HEAD_DENIED"
         );
