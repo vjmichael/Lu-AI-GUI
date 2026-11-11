@@ -18,6 +18,10 @@ export function TaskBoardWindow(){
   const [edit,setEdit]=useState(null);
   const [updatePreview,setUpdatePreview]=useState(null);
   const [modelSuggestion,setModelSuggestion]=useState(null);
+  const [reviewHistory,setReviewHistory]=useState([]);
+  const [reviewTaskId,setReviewTaskId]=useState('');
+  const [reviewMode,setReviewMode]=useState('native');
+  const [reviewNote,setReviewNote]=useState('');
   const [modelBusy,setModelBusy]=useState(false);
   const [modelCancelBusy,setModelCancelBusy]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -42,7 +46,17 @@ export function TaskBoardWindow(){
     }).catch(e=>{if(live)setError(errorText(e));});
     return ()=>{live=false};
   },[]);
-  useEffect(()=>{setTaskId('');setEvidence(null);setEdit(null);setUpdatePreview(null);setModelSuggestion(null)},[registerId]);
+  useEffect(()=>{
+    setTaskId('');setEvidence(null);setEdit(null);setUpdatePreview(null);
+    setModelSuggestion(null);setReviewTaskId('');setReviewMode('native');
+    setReviewNote('');setReviewHistory([]);
+    if(!registerId)return;
+    let live=true;
+    void invoke('lu_project_update_review_history',{registerId})
+      .then(rows=>{if(live)setReviewHistory(Array.isArray(rows)?rows:[])})
+      .catch(e=>{if(live)setError(errorText(e))});
+    return ()=>{live=false};
+  },[registerId]);
   async function act(message,fn){
     if(busy)return;
     setBusy(true);setError('');setNotice('');
@@ -105,7 +119,10 @@ export function TaskBoardWindow(){
       const preview=await invoke('lu_project_update_inspect',{
         registerId:current.board.registerId
       });
-      if(preview){setUpdatePreview(preview);setModelSuggestion(null);}
+      if(preview){setUpdatePreview(preview);setModelSuggestion(null);
+        setReviewTaskId(preview.candidates[0]?.taskId||'');
+        setReviewMode('native');setReviewNote('');
+      }
       return preview;
     });
   }
@@ -151,6 +168,44 @@ export function TaskBoardWindow(){
       });
       if(original)setModelSuggestion(original);
       return original;
+    });
+  }
+  async function reviewSuggestion(){
+    if(!current||!updatePreview||reviewNote.trim().length<5||busy)return;
+    const task=reviewTaskId||updatePreview.candidates[0]?.taskId;
+    if(!task)return;
+    const original=modelSuggestion?.suggestions?.find(s=>s.taskId===task);
+    if(reviewMode==='model'&&(!original||
+      modelSuggestion.previewSha256!==updatePreview.digestSha256)){
+      setError('Reopen the original matching GGUF suggestion before reviewing it.');
+      return;
+    }
+    await act('Native human evidence-review decision recorded; no task completion or execution authorized.',async()=>{
+      const decision=await invoke('lu_project_update_review_decide',{
+        previewSha256:updatePreview.digestSha256,taskId:task,
+        modelSuggestionSha256:reviewMode==='model'?modelSuggestion.digestSha256:null,
+        operatorNote:reviewNote.trim()
+      });
+      if(decision){
+        const rows=await invoke('lu_project_update_review_history',{
+          registerId:current.board.registerId
+        });
+        setReviewHistory(rows);
+        setReviewNote('');
+        setNotice('Recorded '+decision.phase.replaceAll('_',' ')+' for '+decision.taskId+
+          '. The task register and source requirements remain unchanged.');
+      }
+      return decision;
+    });
+  }
+  async function refreshReviewHistory(){
+    if(!current)return;
+    await act('Original approval/refusal/restart history independently audited.',async()=>{
+      const rows=await invoke('lu_project_update_review_history',{
+        registerId:current.board.registerId
+      });
+      setReviewHistory(rows);
+      return rows;
     });
   }
   async function exportPlan(){
@@ -271,6 +326,66 @@ export function TaskBoardWindow(){
               Review native source changes and append revisions…
             </button>
           </details>}
+        </section>
+        <section className="plan07HumanReview" aria-label="Human evidence-review decision journal">
+          <div className="plan07HumanHeader">
+            <h3>Human evidence decisions · PLAN-07C</h3>
+            <button type="button" disabled={busy||!current} onClick={()=>void refreshReviewHistory()}>
+              Reopen original decision and restart history…
+            </button>
+          </div>
+          <p>Approve or refuse the NEXT EVIDENCE REVIEW only. Approval cannot mark a
+            requirement accepted, complete the engineering task, or run tools.
+            Changes to original task wording remain human-owned through the
+            separate task correction form. Native source reconciliation is
+            separately authorized above.</p>
+          {updatePreview&&<>
+            <label>Original task to review
+              <select aria-label="Original task for human evidence review"
+                value={reviewTaskId||updatePreview.candidates[0]?.taskId||''}
+                onChange={e=>setReviewTaskId(e.target.value)}>
+                {updatePreview.candidates.map(t=><option key={t.taskId} value={t.taskId}>
+                  {t.taskId} · {t.disposition.replaceAll('_',' ')}
+                </option>)}
+              </select>
+            </label>
+            <fieldset>
+              <legend>What are you reviewing?</legend>
+              <label><input type="radio" name="plan07c-review-origin" value="native"
+                checked={reviewMode==='native'}
+                onChange={()=>setReviewMode('native')}/> Native deterministic evidence</label>
+              <label><input type="radio" name="plan07c-review-origin" value="model"
+                checked={reviewMode==='model'}
+                disabled={!modelSuggestion?.suggestions?.some(t=>
+                  t.taskId===(reviewTaskId||updatePreview.candidates[0]?.taskId))}
+                onChange={()=>setReviewMode('model')}/> Original GGUF suggestion (untrusted)</label>
+            </fieldset>
+            <label>Your independent review note (5–250 characters)
+              <textarea aria-label="Reason for human evidence decision"
+                value={reviewNote} maxLength={250} rows={3}
+                onChange={e=>setReviewNote(e.target.value)}
+                placeholder="What independent evidence should be examined or why refuse?"/>
+            </label>
+            <button type="button" disabled={busy||reviewNote.trim().length<5}
+              onClick={()=>void reviewSuggestion()}>
+              Open native OS approve/refuse decision…
+            </button>
+            <small>The host commits a pending receipt before the OS dialog.
+              Approval requires selecting the same original project again and
+              a fresh source scan; refusal, cancellation, stale evidence, and
+              interrupted reviews remain durably recorded.</small>
+          </>}
+          <div className="plan07ReviewHistory" role="region" aria-label="Original human review history">
+            {reviewHistory.length===0?<small>No human PLAN-07C review decisions yet.</small>:
+              reviewHistory.slice(-24).reverse().map(e=><article key={e.reviewId}>
+                <strong>{e.taskId} v{e.expectedTaskVersion} · {e.phase.replaceAll('_',' ')}</strong>
+                <p>{e.operatorNote}</p>
+                <small>Original source: {e.originalRequirementId} ·
+                  Review SHA: {e.sha256} · Register lease: {e.expectedRegisterSha256} ·
+                  Model suggestion: {e.modelSuggestionSha256||'none'} ·
+                  Completed work: NO · Execution authority: NO</small>
+              </article>)}
+          </div>
         </section>
         <div className="plan06Columns">
           <section className="plan06Tasks" aria-label="Categorized project tasks">
