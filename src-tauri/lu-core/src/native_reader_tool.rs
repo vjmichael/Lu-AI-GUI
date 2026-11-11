@@ -98,6 +98,31 @@ fn relative_path(raw:&str)->Result<PathBuf,ToolFailure>{
     }
     Ok(PathBuf::from(raw))
 }
+/// Reject linked intermediate directories before opening any workspace
+/// document. A cap-std directory handle still enforces the chosen root;
+/// this extra check keeps discovery and Reader consistent about symlinks.
+fn safe_workspace_components(root:&Dir,path:&Path)->Result<(),ToolFailure>{
+    let mut relative=PathBuf::new();
+    let parts=path.components().collect::<Vec<_>>();
+    if parts.is_empty(){return Err(failure("READER_INVALID_PATH"))}
+    for (index,part) in parts.iter().enumerate(){
+        if !matches!(part,std::path::Component::Normal(_)){
+            return Err(failure("READER_INVALID_PATH"))
+        }
+        relative.push(part.as_os_str());
+        let meta=root.symlink_metadata(&relative)
+            .map_err(|_|failure("READER_FILE_UNAVAILABLE"))?;
+        if meta.file_type().is_symlink(){
+            return Err(failure("READER_LINKED_COMPONENT_REFUSED"))
+        }
+        if index+1==parts.len(){
+            if !meta.is_file(){return Err(failure("READER_UNSAFE_FILE"))}
+        }else if !meta.is_dir(){
+            return Err(failure("READER_UNSAFE_PARENT"))
+        }
+    }
+    Ok(())
+}
 fn read_authorized(source:&ReaderSource,request:ReaderRequest)
     ->Result<ReaderResponse,ToolFailure>{
     // In-memory bytes were individually admitted by a native operator.
@@ -122,6 +147,7 @@ fn read_authorized(source:&ReaderSource,request:ReaderRequest)
     let path=relative_path(&request.path)?;
     let bytes=match source{
         ReaderSource::Workspace(root)=>{
+            safe_workspace_components(root,&path)?;
             let meta=root.symlink_metadata(&path)
                 .map_err(|_|failure("READER_FILE_UNAVAILABLE"))?;
             if meta.file_type().is_symlink()||!meta.is_file(){
@@ -292,6 +318,11 @@ impl ModelToolCodec for ReaderCodec{
 pub fn register_reader(
     registry:&NativeToolRegistry,approved_root:&Path
 )->Result<ModelToolCatalog,String>{
+    let original=std::fs::symlink_metadata(approved_root)
+        .map_err(|_|"Invalid Reader root")?;
+    if !original.is_dir()||original.file_type().is_symlink(){
+        return Err("Reader root must be a real directory".into())
+    }
     let root=approved_root.canonicalize().map_err(|_|"Invalid Reader root")?;
     if !root.is_dir(){return Err("Reader root is not a directory".into());}
     let root=Arc::new(Dir::open_ambient_dir(root,ambient_authority())
@@ -531,6 +562,23 @@ mod tests{
         req.input.bytes=next.encode_to_vec();
         assert!(registry.dispatch(req,&Allow).await.is_err());
         let _=std::fs::remove_dir_all(path);
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn workspace_reader_does_not_follow_nested_symlink_directories(){
+        let root=workspace();let _=std::fs::remove_dir_all(&root);
+        let outside=root.with_extension("external");
+        let _=std::fs::remove_dir_all(&outside);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.md"),"not a workspace file").unwrap();
+        std::os::unix::fs::symlink(&outside,root.join("external")).unwrap();
+        let registry=NativeToolRegistry::new();
+        let _catalog=register_reader(&registry,&root).unwrap();
+        assert!(registry.dispatch(invocation("external/secret.md"),&Allow)
+            .await.is_err());
+        let _=std::fs::remove_dir_all(root);
+        let _=std::fs::remove_dir_all(outside);
     }
     #[tokio::test]
     async fn registered_reader_is_scoped_and_no_ocr_is_claimed(){

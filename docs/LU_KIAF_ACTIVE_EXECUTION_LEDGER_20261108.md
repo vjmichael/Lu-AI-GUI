@@ -2,6 +2,14 @@
 
 **Owner direction:** November 8, 2026. **Status:** binding current prioritization, NOT a production acceptance claim. Based on [canonical K/I/A/F](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md), [memory-first user-centered policy](LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md), [tool scope audit](LU_AI_EXECUTION_TOOL_REVIEW_20261107.md), and [v1.0 task ledger](LU_V1_0_TASKS.md).
 
+## November 11, 2026 — P0-TOOLS-01 source integration (acceptance deferred)
+
+**Owner workflow:** finish Lu implementation and integration first. GitHub is a source repository, not a per-task CI/PR verification gate. No additional CI, PR checking or regression campaign until application development is complete under the owner's NVP-directed hold.
+
+**Source work:** linked the existing native Reader's Protobuf schema and real PDF/Office/plain-text extraction into the *same* live read-only workspace GGUF turn as source discovery, directory read, ZIP manifests and artifact inspection. Added conservative multi-document folder routing, genuine source SHA continuity, nested-link refusal and current-turn Reader ranking. This improves Lu I (interfaces), not A (authority), with no new model-controlled root, write, process or network permission. **Not a new app or fake tool.** See [P0-TOOLS-01 handoff](LU_P0_TOOLS01_MULTI_DOCUMENT_MODEL_LOOP_20261111.md).
+
+**Status:** source implementation only. Compiler/native/installed/real-model acceptance not executed and not claimed. **Next:** P0-TOOLS-02 typed model-proposed, operator-approved actual filesystem effects and durable independent verification; do not auto-complete PLAN-05 tasks or inherit any prior worker grant.
+
 ## Policy: model intelligence, Lu execution, user control
 
 Practical AI Capability = f(**K**: the selected model's knowledge/reasoning, **I**: actual available execution/observation interfaces, **A**: authenticated human-governed authority for the exact task/effect/resource, **F**: observed outcomes, independent verification, feedback and crash recovery). The user supplies the actual goal; Lu's ANSF-backed memory, provenance and clarification continuity allow the model to reason without repetitive recaps. This conceptual model is not a numerical score.

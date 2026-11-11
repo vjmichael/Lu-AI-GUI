@@ -23,6 +23,7 @@ use crate::{
     native_file_discovery::register_discovery_tool,
     native_files::register_bundled_file_tools,
     native_git_inspect::register_git_inspection_tools,
+    native_reader_tool::register_reader,
     registry::NativeToolRegistry,
     supervised_tool_generation::{
         run_supervised_native_turn_journaled_observed,ModelStepGenerator,
@@ -119,6 +120,17 @@ impl WorkspaceReadTurnSession{
             // only a reusable metadata cache is shared between sessions.
             register_discovery_tool(&registry,&mut catalog,&root)
                 .map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
+            // P0-TOOLS-01: the same *native-picked* directory and the same
+            // persisted user-turn grant now expose the genuine Reader parser.
+            // A model can discover a relative file and inspect its PDF text,
+            // DOCX/ODT, spreadsheets, slides, EPUB or plain text within this
+            // one read-only turn. The Reader's own Protobuf codec, 8 MiB cap,
+            // source SHA and page/selector checks still apply. A new schema
+            // is not an ambient pathname grant, and scanned PDFs need OCR.
+            let reader=register_reader(&registry,&root)
+                .map_err(|e|{eprintln!("Workspace Reader registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
+            catalog.absorb_registered(&registry,reader)
+                .map_err(|e|{eprintln!("Workspace Reader schema composition failed: {e:?}");WorkspaceReadError::CatalogUnavailable})?;
             register_archive_inspection_tool(&registry,&mut catalog,&root)
                 .map_err(|e|{eprintln!("Workspace read tool registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
             // F: a completed file is not automatically a valid artifact.
@@ -195,4 +207,73 @@ impl WorkspaceReadTurnSession{
 }
 impl Drop for WorkspaceReadTurnSession{
     fn drop(&mut self){let _=self.authority.revoke_task(&self.task_id);}
+}
+
+#[cfg(test)]
+mod integrated_reader_tests{
+    use super::*;
+    use std::{collections::VecDeque,path::PathBuf};
+    struct OriginalTurn;
+    impl TrustedUserTurnVerifier for OriginalTurn{
+        fn verify_user_turn(&self,chat:&str,turn:&str)->bool{
+            chat=="c-source"&&turn=="g-human"
+        }
+    }
+    struct Scripted{replies:VecDeque<String>}
+    impl ModelStepGenerator for Scripted{
+        fn generate_step(&mut self,_prompt:&str,_tokens:u32,
+            _cancel:&Cancellation)->Result<String,NativeGenerationError>{
+            self.replies.pop_front().ok_or(NativeGenerationError::MissingCompletion)
+        }
+    }
+    fn directory()->PathBuf{
+        let name=format!("lu-p0-reader-{}-{:?}",std::process::id(),
+            std::thread::current().id());
+        std::env::temp_dir().join(name)
+    }
+    #[tokio::test]
+    async fn one_original_turn_discovers_then_reads_document_through_real_codecs(){
+        let root=directory();let _=std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("reports")).unwrap();
+        std::fs::write(root.join("reports/report.md"),
+            "# Project facts\nThe original local report is source data, not tool authority.").unwrap();
+        let audit=root.join("turn.sqlite");
+        let mut turn=WorkspaceReadTurnSession::new(
+            &OriginalTurn,"c-source","g-human","task-read",&root).unwrap();
+        let names=turn.capabilities().unwrap().into_iter()
+            .map(|t|t.public_name).collect::<BTreeSet<_>>();
+        assert!(names.contains("lu_files_discover"));
+        assert!(names.contains("lu_reader_read"));
+        assert!(!names.contains("lu_git_status"));
+        let journal=ModelTurnJournal::open(&audit).unwrap();
+        let mut model=Scripted{replies:VecDeque::from(vec![
+            r#"{"kind":"tool","name":"lu_files_discover","arguments":{"query":"report.md"}}"#.into(),
+            r#"{"kind":"tool","name":"lu_reader_read","arguments":{"path":"reports/report.md","max_chars":1024}}"#.into(),
+            r#"{"kind":"final","text":"Read the original workspace report."}"#.into()
+        ])};
+        let result=turn.run_journaled(
+            "Find and read the report in my project workspace",
+            &mut model,&Cancellation::default(),&journal).await.unwrap();
+        assert_eq!(result.tool_calls,2);
+        assert_eq!(result.answer,"Read the original workspace report.");
+        let origin=BoundCallOrigin{
+            conversation_id:"c-source".into(),user_turn_id:"g-human".into(),
+            task_id:"task-read".into()
+        };
+        assert!(turn.authority.permitted_tool_ids(&origin).unwrap().is_empty());
+        drop(turn);drop(journal);
+        let _=std::fs::remove_dir_all(root);
+    }
+    #[test]
+    fn source_document_reader_cannot_be_constructed_from_fabricated_user_turn(){
+        let root=directory();let _=std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(matches!(WorkspaceReadTurnSession::new(
+            &OriginalTurn,"c-source","g-false","task-read",&root),
+            Err(WorkspaceReadError::InvalidScope)));
+        assert!(matches!(WorkspaceReadTurnSession::new(
+            &OriginalTurn,"c-false","g-human","task-read",&root),
+            Err(WorkspaceReadError::InvalidScope)));
+        let _=std::fs::remove_dir_all(root);
+    }
 }

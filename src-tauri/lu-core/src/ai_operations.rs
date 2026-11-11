@@ -37,15 +37,27 @@ pub fn recommended_read_tools(
         "contains ","inspect ","extract text","what does"];
     let archive=["archive","zip ","compressed","tar file"];
     let directory=["directory","folder","list files","show files"];
+    let document=["pdf","docx","odt","epub","xlsx","ods","pptx","odp",
+        "spreadsheet","slide","presentation","document","report"];
+    let document_work=["read ","summarize ","compare ","extract ",
+        "analyze ","review ","inspect ","find ","search "];
+    // These are preference hints over ALREADY authorized native codecs,
+    // not grants or promises that an unsupported scanned PDF has OCR.
+    // In a folder-scoped document query, prefer filename discovery followed
+    // by the Reader's independently hashed, paginated source extraction.
+    let wants_document=document.iter().any(|w|lower.contains(w))
+        &&document_work.iter().any(|w|lower.contains(w));
     let mut preferred=Vec::new();
-    if file_find.iter().any(|w|lower.contains(w)){
+    if file_find.iter().any(|w|lower.contains(w))||wants_document{
         preferred.push("lu_files_discover");
     }
     if git.iter().any(|w|lower.contains(w)){
         preferred.extend(["lu_git_status","lu_git_log","lu_git_diff"]);
     }
+    if wants_document{preferred.push("lu_reader_read");}
     if content.iter().any(|w|lower.contains(w)){
-        preferred.extend(["lu_files_read_text","lu_reader_read"]);
+        preferred.push("lu_files_read_text");
+        if !wants_document{preferred.push("lu_reader_read");}
     }
     if archive.iter().any(|w|lower.contains(w)){
         preferred.push("lu_archive_list");
@@ -258,6 +270,24 @@ mod tests{
         assert!(recommended_read_tools("Find files without tools",&list).is_empty());
         assert!(recommended_read_tools("List files",&list).is_empty());
         assert!(recommended_read_tools("Find config", &[]).is_empty());
+    }
+    #[test]
+    fn document_read_preference_is_only_for_current_granted_native_tools(){
+        let available=vec![
+            view("lu_files_discover","read_workspace"),
+            view("lu_reader_read","read_workspace"),
+            view("lu_files_read_text","read_workspace"),
+            view("lu_artifact_inspect","read_workspace"),
+            view("lu_git_status","execute_code"),
+        ];
+        let selected=recommended_read_tools(
+            "Summarize the reports in this project folder",&available);
+        assert_eq!(selected.iter().take(2).map(String::as_str)
+            .collect::<Vec<_>>(),vec!["lu_files_discover","lu_reader_read"]);
+        assert!(recommended_read_tools(
+            "Summarize the reports in this project folder",&[]).is_empty());
+        assert!(recommended_read_tools(
+            "Summarize the reports without tools",&available).is_empty());
     }
     #[test] fn source_reuse_rechecks_chat_session_epoch_digest(){
         let index=SourceReuseIndex::new();let hash="a".repeat(64);

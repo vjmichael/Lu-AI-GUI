@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3d1ea6e362ba6bd24dfb0b9e97e71f91a1ff03ca",
-  "trackedFileCount": 927,
+  "sourceCommitBeforeLock": "67f135b8f334eb0b11e8a4358d2a250331bd7184",
+  "trackedFileCount": 928,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -701,7 +701,7 @@
     },
     {
       "path": "docs/LU_KIAF_ACTIVE_EXECUTION_LEDGER_20261108.md",
-      "blob": "f53ff635272ea31ef8d96a69103d9d55cac15fce"
+      "blob": "f43076afda5323c21acdf55310ee36aeab92e9f7"
     },
     {
       "path": "docs/LU_KIAF_EXECUTION_P01_P12_IMPLEMENTATION_20261107.md",
@@ -818,6 +818,10 @@
     {
       "path": "docs/LU_P0_NEXT_PROJECT_AGENT_HANDOFF_20261111.md",
       "blob": "a37ddd23fba1c6541fd4ddf1eee4127ce910b562"
+    },
+    {
+      "path": "docs/LU_P0_TOOLS01_MULTI_DOCUMENT_MODEL_LOOP_20261111.md",
+      "blob": "c7a8e735d488e056403105161715380e4f105da5"
     },
     {
       "path": "docs/LU_P10_IMAGE_BASICS.md",
@@ -1473,7 +1477,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/workspace_desktop.rs",
-      "blob": "b09ede9175e4b6f0fc630324968d6f38d3cec339"
+      "blob": "7d276261d8d32d263068fe7649b407fead933a53"
     },
     {
       "path": "lu-desktop/src-tauri/src/write_proposal.rs",
@@ -2329,7 +2333,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/ai_operations.rs",
-      "blob": "7115785b3caa187babdce579bed7ef00affc0a61"
+      "blob": "59657714758f8188ef986fdb9c9377f45e33849a"
     },
     {
       "path": "src-tauri/lu-core/src/ansf.rs",
@@ -2945,7 +2949,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_reader_tool.rs",
-      "blob": "d1a0acec7d61f12a2e013ecc4f174c3d1efb6295"
+      "blob": "7d685396f603a9cda7835d7fc9a13a69fbfa1466"
     },
     {
       "path": "src-tauri/lu-core/src/native_reader_turn.rs",
@@ -2989,7 +2993,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_workspace_read_turn.rs",
-      "blob": "3f4cb36c04c58a8e73bdb46d35cda53c3f1035ce"
+      "blob": "3bf3d7039168b16ee4979969e5768369223eb92c"
     },
     {
       "path": "src-tauri/lu-core/src/native_zip_extract.rs",
