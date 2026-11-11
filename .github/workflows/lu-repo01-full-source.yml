@@ -2048,7 +2048,7 @@ jobs:
 
   installed-plan06-windows:
     needs: verify-source
-    if: ${{ github.event.pull_request.head.ref == 'lu/plan06-durable-project-task-register-20261110' && contains(github.event.pull_request.body, format('LU_PLAN06_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN06_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) }}
+    if: ${{ github.event.pull_request.head.ref == 'lu/plan06-native-task-list-20261110' && contains(github.event.pull_request.body, format('LU_PLAN06_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN06_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) }}
     runs-on: windows-2025
     timeout-minutes: 180
     steps:
