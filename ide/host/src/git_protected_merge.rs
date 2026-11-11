@@ -392,7 +392,7 @@ impl IdeWorkspaceRegistry {
                 let root_canonical = fs::canonicalize(&root).ok();
                 let claimed = fs::canonicalize(PathBuf::from(marker_path)).ok();
                 let temp = fs::canonicalize(std::env::temp_dir()).ok();
-                let marker = root.join(".g06c03-abort-fixture");
+                let marker = gitdir.join("g06c03-abort-fixture");
                 if root_canonical.is_some() && claimed == root_canonical
                     && root_canonical.as_ref().zip(temp.as_ref())
                         .is_some_and(|(a,b)| a.starts_with(b))
@@ -718,7 +718,7 @@ mod tests {
         let old_head = old_repo.head().unwrap().target().unwrap().to_string();
         let selected = local_commit(&old_repo, "feature").unwrap().to_string();
         let unrelated = fs::read(x.root.join("unrelated.keep")).unwrap();
-        fs::write(x.root.join(".g06c03-abort-fixture"), b"G06C03_DISPOSABLE_ONLY\n").unwrap();
+        fs::write(x.root.join(".git/g06c03-abort-fixture"), b"G06C03_DISPOSABLE_ONLY\n").unwrap();
         let test_bin = std::env::current_exe().unwrap();
         let output = std::process::Command::new(test_bin)
             .arg("--exact")
