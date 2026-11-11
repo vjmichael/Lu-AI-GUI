@@ -5534,6 +5534,19 @@ function App() {
               <h2>Build, test and job requests</h2>
               <span>WO6 · Native OS admission required</span>
             </div>
+            {activeProject && <div className="ideJobsSourceReturn">
+              <button type="button" className="ghostBtn"
+                onClick={()=>showProjectProblems()}>
+                Return to source Problems
+              </button>
+              <button type="button" className="ghostBtn"
+                onClick={()=>requestEditorFocus('primary')}>
+                Return to first editor
+              </button>
+              <p>Jobs are scoped to the selected project. Their progress does
+                not imply successful builds, cleanup, or permission to execute.
+                Source diagnostics remain separately verified.</p>
+            </div>}
             <section className="continuityDocument" aria-label="DEV-03 project build and test profiles">
               <div className="capabilityHeading">
                 <h3>DEV-03 · Project-specific build/test discovery</h3>
