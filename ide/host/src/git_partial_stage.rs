@@ -443,7 +443,8 @@ impl IdeWorkspaceRegistry {
     /// Every field is derived from the native journal, live HEAD tree and
     /// staged index, and then rechecked by the same commit provenance gate.
     pub fn restore_verified_partial_stage_receipt(
-        &self, project_id: &str,
+        &self,
+        project_id: &str,
     ) -> Result<PartialStageReceipt, &'static str> {
         let (repo, _root, _gitdir) = verified_repo(self, project_id, true)?;
         let previous = last_journal(&journal_path(self, project_id)?)?
@@ -451,15 +452,19 @@ impl IdeWorkspaceRegistry {
         if previous.phase != "verified" || previous.project_id != project_id {
             return Err("G06B_STAGE_RESTORE_NOT_TERMINAL");
         }
-        let tree = repo.head().and_then(|h| h.peel_to_tree())
+        let tree = repo
+            .head()
+            .and_then(|h| h.peel_to_tree())
             .map_err(|_| "G06B_STAGE_RESTORE_HEAD_TREE_UNAVAILABLE")?;
-        let entry = tree.get_path(Path::new(&previous.relative_path))
+        let entry = tree
+            .get_path(Path::new(&previous.relative_path))
             .map_err(|_| "G06B_STAGE_RESTORE_ORIGINAL_FILE_UNAVAILABLE")?;
         if !matches!(entry.filemode(), 0o100644 | 0o100755) {
             return Err("G06B_STAGE_RESTORE_NONREGULAR_ORIGINAL");
         }
         let reconstructed = PartialStageReceipt {
-            schema_version: 1, project_id: project_id.to_owned(),
+            schema_version: 1,
+            project_id: project_id.to_owned(),
             relative_path: previous.relative_path,
             selection_sha256: previous.selection_sha256,
             previous_head: previous.head_sha,
@@ -471,9 +476,12 @@ impl IdeWorkspaceRegistry {
             source_sha256: previous.source_sha256,
             selected_hunks: previous.selected_hunks,
             git_index_independently_verified: true,
-            source_file_modified: false, git_hooks_executed: false,
-            git_process_started: false, remote_updated: false,
-            commit_created: false, durable_journal_verified: true,
+            source_file_modified: false,
+            git_hooks_executed: false,
+            git_process_started: false,
+            remote_updated: false,
+            commit_created: false,
+            durable_journal_verified: true,
             recovery_required: false,
         };
         self.verify_partial_stage_for_commit(&reconstructed)?;
