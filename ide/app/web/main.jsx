@@ -317,6 +317,9 @@ function App() {
   const gitEvidenceRequest = useRef(0);
   const [githubBusy, setGithubBusy] = useState(false);
   const [githubComparison, setGithubComparison] = useState(null);
+  const [githubPulls, setGithubPulls] = useState(null);
+  const [githubPullsBusy, setGithubPullsBusy] = useState(false);
+  const githubPullsRequest = useRef(0);
   const [exactCi, setExactCi] = useState(null);
   const [exactCiBusy, setExactCiBusy] = useState(false);
   const exactCiRequest = useRef(0);
@@ -520,6 +523,9 @@ function App() {
     setReviewedCommitRecovery(null);
     setReviewedCommitRecoveryBusy(false);
     setGithubComparison(null);
+    githubPullsRequest.current += 1;
+    setGithubPulls(null);
+    setGithubPullsBusy(false);
     exactCiRequest.current += 1;
     setExactCi(null);
     setExactCiBusy(false);
@@ -2675,6 +2681,9 @@ function App() {
     setGitHistory(null);
     gitEvidenceRequest.current += 1;
     setGithubComparison(null); // A local refresh invalidates any prior live comparison.
+    githubPullsRequest.current += 1;
+    setGithubPulls(null);
+    setGithubPullsBusy(false);
     exactCiRequest.current += 1;
     setExactCi(null);
     setExactCiBusy(false);
@@ -2759,6 +2768,52 @@ function App() {
     } catch (error) {
       setProblem('Could not compare with GitHub: ' + String(error));
     } finally { setGithubBusy(false); }
+  }
+
+  async function inspectGithubPulls() {
+    if (!activeProject?.projectId || githubPullsBusy || gitBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = ++githubPullsRequest.current;
+    setGithubPullsBusy(true);
+    setGithubPulls(null);
+    setProblem('');
+    try {
+      const result = await invoke('ide_read_github_pull_requests', { projectId });
+      if (ticket !== githubPullsRequest.current ||
+          activeProjectIdRef.current !== projectId) return;
+      if (result?.schemaVersion !== 1 || result.projectId !== projectId ||
+          result.readOnly !== true || result.credentialsUsed !== false ||
+          result.remoteRefModified !== false || result.reviewSubmitted !== false ||
+          result.gitProcessStarted !== false || result.taskCompletionVerified !== false ||
+          !Array.isArray(result.pulls) || result.pulls.length > 20 ||
+          typeof result.state !== 'string') {
+        throw Error('G06E01_UNTRUSTED_PR_INSPECTION');
+      }
+      if (result.pulls.length > 0 &&
+          (result.sourceRechecked !== true ||
+            !/^[a-f0-9]{40}$/i.test(result.localHead || '') ||
+            !/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(result.repository || '') ||
+            !result.pulls.every(pr =>
+              Number.isSafeInteger(pr.number) && pr.number > 0 &&
+              typeof pr.title === 'string' && pr.title.length > 0 &&
+              pr.state === 'open' && typeof pr.draft === 'boolean' &&
+              /^[a-f0-9]{40}$/i.test(pr.headSha || '') &&
+              /^[a-f0-9]{40}$/i.test(pr.baseSha || '') &&
+              pr.headBranch === result.currentBranch &&
+              pr.url === `https://github.com/${result.repository}/pull/${pr.number}` &&
+              pr.reviewApprovalVerified === false && pr.checksVerified === false &&
+              pr.operationAuthorized === false))) {
+        throw Error('G06E01_PR_SOURCE_MISMATCH');
+      }
+      setGithubPulls(result);
+    } catch (error) {
+      if (ticket === githubPullsRequest.current &&
+          activeProjectIdRef.current === projectId) {
+        setProblem('Could not verify public pull-request metadata: ' + String(error));
+      }
+    } finally {
+      if (ticket === githubPullsRequest.current) setGithubPullsBusy(false);
+    }
   }
 
   async function inspectExactHeadCi() {
@@ -7197,6 +7252,43 @@ function App() {
               </div>
               <p>This explicitly checks the current head of a public GitHub origin branch.
                 It does not fetch files into your project, use credentials, or modify Git.</p>
+              <div className="continuityCapture">
+                <h3>GitHub pull requests · read-only source review</h3>
+                <button type="button" className="ghostBtn"
+                  disabled={!activeProject || githubPullsBusy || gitBusy}
+                  onClick={() => void inspectGithubPulls()}>
+                  {githubPullsBusy ? 'Checking public pull requests…' :
+                    'Inspect open PRs for this exact local branch'}
+                </button>
+              </div>
+              <p>Human-triggered, public GitHub metadata only. No credentials,
+                remote publication, review submissions or trusted execution rights.
+                Pull request metadata may become stale after this check.</p>
+              {githubPulls?.projectId === activeProject?.projectId &&
+                <div className="continuityDocument"
+                  aria-label="G06E01 exact origin read-only pull-request inspection">
+                  <h4>PR inspection: {githubPulls.state.replaceAll('_', ' ')}</h4>
+                  <p>Repository: {githubPulls.repository || 'unavailable'}
+                    {' · '}Branch: {githubPulls.currentBranch || 'unavailable'}</p>
+                  <p>Local HEAD: <code>{githubPulls.localHead || 'unavailable'}</code></p>
+                  {githubPulls.errorCode && <p role="status">
+                    Evidence unavailable: {githubPulls.errorCode}</p>}
+                  {githubPulls.listingPartial && <p role="alert">
+                    Partial result page: not a complete PR inventory</p>}
+                  {githubPulls.pulls.map(pr =>
+                    <article key={pr.number} className="continuityEvent">
+                      <strong>{pr.title}</strong>
+                      <p>PR #{pr.number}
+                        {' · '}{pr.draft ? 'Draft' : 'Open'}
+                        {' · '}Base: {pr.baseBranch}</p>
+                      <p>Remote PR HEAD: <code>{pr.headSha}</code>
+                        {' · '}Local comparison: {pr.localVsPrHead.replaceAll('_', ' ')}</p>
+                      <p>Approval and CI: not independently verified.
+                        Review is not permission to execute, publish or merge.</p>
+                      <p><a href={pr.url} target="_blank"
+                        rel="noreferrer">Open this pull request on GitHub</a></p>
+                    </article>)}
+                </div>}
               <div className="continuityCapture">
                 <h3>Exact-commit CI evidence</h3>
                 <button type="button" className="ghostBtn"
