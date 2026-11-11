@@ -287,9 +287,10 @@ fn validate_message(message: &str, author: &str, email: &str) -> Result<(), &'st
         || email.trim().is_empty()
         || email.len() > MAX_PERSON
         || !email.contains('@')
-        || [message, author, email]
-            .iter()
-            .any(|s| s.chars().any(char::is_control))
+        || message
+            .chars()
+            .any(|c| c.is_control() && c != '\n')
+        || [author, email].iter().any(|s| s.chars().any(char::is_control))
     {
         return Err("G06B_COMMIT_AUTHOR_OR_MESSAGE_INVALID");
     }
