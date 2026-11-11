@@ -42,6 +42,7 @@ mod project_register_desktop;
 mod project_task_board_desktop;
 mod project_updates_desktop;
 mod project_update_model_desktop;
+mod project_review_decisions_desktop;
 mod reviewed_app_desktop;
 mod reviewed_memory_evidence;
 mod reviewed_app_recovery;
