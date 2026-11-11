@@ -904,6 +904,26 @@ async fn ide_read_git_refs_health(
     }).await.map_err(|_| "G06A_REFS_HOST_UNAVAILABLE".to_owned())?
 }
 
+/// G06C-01: registered-project-only read-only local branch operation review.
+/// The enum is typed; branch names are validated in the native host. No
+/// operation executor, OS approval, Git CLI, remote or ref-write capability.
+#[tauri::command]
+async fn ide_git_review_branch_operation(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    operation: lu_ide_workspace::git_branch_operations::BranchOperationKind,
+    selected_branch: Option<String>,
+) -> Result<lu_ide_workspace::git_branch_operations::BranchOperationReview, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry
+            .review_local_branch_operation(&project_id, operation, selected_branch.as_deref())
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06C_REVIEW_HOST_UNAVAILABLE".to_owned())?
+}
+
 /// On explicit human request, compare local work with current public GitHub
 /// branch evidence. HTTPS to fixed api.github.com only; no token or Git fetch.
 #[tauri::command]
@@ -2523,6 +2543,7 @@ pub fn run() {
             ide_read_git_repository_inventory,
             ide_read_git_file_history,
             ide_read_git_refs_health,
+            ide_git_review_branch_operation,
             ide_read_git_diff,
             ide_probe_project_resource,
             ide_read_git_history,
