@@ -287,10 +287,10 @@ fn validate_message(message: &str, author: &str, email: &str) -> Result<(), &'st
         || email.trim().is_empty()
         || email.len() > MAX_PERSON
         || !email.contains('@')
-        || message
-            .chars()
-            .any(|c| c.is_control() && c != '\n')
-        || [author, email].iter().any(|s| s.chars().any(char::is_control))
+        || message.chars().any(|c| c.is_control() && c != '\n')
+        || [author, email]
+            .iter()
+            .any(|s| s.chars().any(char::is_control))
     {
         return Err("G06B_COMMIT_AUTHOR_OR_MESSAGE_INVALID");
     }
@@ -457,9 +457,11 @@ impl IdeWorkspaceRegistry {
         // Only the separately OS-approved execution may materialize a
         // Git tree object. The complete on-disk index SHA and approved
         // source were pinned before the exclusive Git index lock.
-        let tree_oid = index.write_tree_to(&repo)
+        let tree_oid = index
+            .write_tree_to(&repo)
             .map_err(|_| "G06B_COMMIT_TREE_UNAVAILABLE")?;
-        let tree = repo.find_tree(tree_oid)
+        let tree = repo
+            .find_tree(tree_oid)
             .map_err(|_| "G06B_COMMIT_TREE_MISSING")?;
         let parent = repo
             .find_commit(
@@ -1044,19 +1046,28 @@ mod tests {
         let signature = Signature::now("Other Git writer", "other@localhost.invalid").unwrap();
         let competing_oid = repo
             .commit(
-                None, &signature, &signature,
-                "independent concurrent local commit", &tree, &[&head],
+                None,
+                &signature,
+                &signature,
+                "independent concurrent local commit",
+                &tree,
+                &[&head],
             )
             .unwrap();
         repo.reference_matching(
-            &expected.branch_ref, competing_oid, true, head.id(),
+            &expected.branch_ref,
+            competing_oid,
+            true,
+            head.id(),
             "competing local Git ref update",
-        ).unwrap();
+        )
+        .unwrap();
         drop(tree);
         drop(head);
         drop(repo);
-        assert!(registry.execute_approved_reviewed_commit(
-            &expected, &AtomicU8::new(0)).is_err());
+        assert!(registry
+            .execute_approved_reviewed_commit(&expected, &AtomicU8::new(0))
+            .is_err());
         let reopened = Repository::open(&root).unwrap();
         assert_eq!(reopened.head().unwrap().target(), Some(competing_oid));
     }
@@ -1074,13 +1085,16 @@ mod tests {
         drop(registry);
         let reopened = IdeWorkspaceRegistry::open(temp.0.join("catalog.json")).unwrap();
         reopened.reopen(&id).unwrap();
-        let restored = reopened.restore_verified_partial_stage_receipt(&id).unwrap();
+        let restored = reopened
+            .restore_verified_partial_stage_receipt(&id)
+            .unwrap();
         assert_eq!(restored, staged);
         let plan = preview(&reopened, &restored, ReviewedCommitMode::Create);
         assert_eq!(plan.previous_head, original_head.to_string());
         assert!(!plan.commit_granted && !plan.amend_granted && !plan.published);
         assert_eq!(
-            reopened.execute_approved_reviewed_commit(&plan, &AtomicU8::new(2))
+            reopened
+                .execute_approved_reviewed_commit(&plan, &AtomicU8::new(2))
                 .unwrap_err(),
             "G06B_COMMIT_INVALID_OR_CANCELLED_PLAN"
         );
@@ -1089,6 +1103,4 @@ mod tests {
             Some(original_head)
         );
     }
-
-
 }
