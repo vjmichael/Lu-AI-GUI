@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e3efccafbd19fce0608c77f0ebdd5986b9e3c0dc",
+  "sourceCommitBeforeLock": "70f251c5b0f72f3a5acd3dcbef4942083bca47c2",
   "trackedFileCount": 900,
   "files": [
     {
@@ -841,7 +841,7 @@
     },
     {
       "path": "docs/LU_PLAN05_DURABLE_TASK_REGISTER_20261110.md",
-      "blob": "b236c756a3334180a07d77576039090db10a7a4e"
+      "blob": "13f80f3ef28d8dd9b91f42a7481478059e86fa86"
     },
     {
       "path": "docs/LU_R00_CAPABILITY_CONSOLIDATION_20261109.md",
@@ -1365,7 +1365,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_register_desktop.rs",
-      "blob": "0b181d0a5ce1cd00c9277406d63eb2c8b872e49d"
+      "blob": "f6e86362339b9f72530cba9d6044b42e0930d58e"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_status_desktop.rs",
@@ -2941,7 +2941,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/project_task_register.rs",
-      "blob": "ab9ec8adfa9f733ca97eab2cac76a5a0d2a6cc86"
+      "blob": "c34b9829d0008ca733f348ef589c06d1f259c774"
     },
     {
       "path": "src-tauri/lu-core/src/project_task_synthesis.rs",
