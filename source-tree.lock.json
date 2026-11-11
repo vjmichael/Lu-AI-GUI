@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d5967f46f94432e64bda223e9d7c7d16081567a2",
+  "sourceCommitBeforeLock": "ef704df720366b0d00bf2825badde0ce68fa2d94",
   "trackedFileCount": 907,
   "files": [
     {
@@ -1377,7 +1377,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_board_desktop.rs",
-      "blob": "3e6a829de783487938b6b3feda16ae8c9d793fdb"
+      "blob": "fc619816692c58afa688ad88249b06ca7ea13acb"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_task_desktop.rs",
@@ -1881,7 +1881,7 @@
     },
     {
       "path": "lu-desktop/tests/workspace-desktop.test.mjs",
-      "blob": "233c7b94f5cb7b4a5b40c7d35e40ea9629cfd407"
+      "blob": "0c819d15000f66dce564ed988f76f166d69c70a1"
     },
     {
       "path": "lu-desktop/tests/write-01e-edit-ux.test.mjs",
