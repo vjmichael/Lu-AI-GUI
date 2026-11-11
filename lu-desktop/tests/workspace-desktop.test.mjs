@@ -297,3 +297,39 @@ test('PLAN-07A evidence delta is host-verified and never self-authorizes complet
   assert.doesNotMatch(host,/supervisor\.run_reserved|grant_execution|Command::new|reqwest|auto_accept|git commit/);
   assert.doesNotMatch(ui,/invoke\('lu_agent_run_reviewed_step'/);
 });
+
+
+test('PLAN-07B genuine local GGUF proposal remains original-evidence-only, never completion or tool authority',()=>{
+  const host=readFileSync(new URL('../src-tauri/src/project_update_model_desktop.rs',import.meta.url),'utf8');
+  const core=readFileSync(new URL('../../src-tauri/lu-core/src/project_task_update_model.rs',import.meta.url),'utf8');
+  const main=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+  const screen=readFileSync(new URL('../web/task_board.jsx',import.meta.url),'utf8');
+  assert.match(main,/project_update_model_desktop::lu_project_update_model_suggest,/);
+  assert.match(main,/project_update_model_desktop::lu_project_update_model_latest,/);
+  assert.match(screen,/invoke\('lu_project_update_model_suggest'/);
+  assert.match(screen,/invoke\('lu_project_update_model_latest'/);
+  assert.match(screen,/SUGGESTED, NOT ACCEPTED/);
+  assert.match(host,/EnginePhase::Ready/);
+  assert.match(host,/generation_queue\.enqueue/);
+  assert.match(host,/ticket\.wait_for_slot/);
+  assert.match(host,/reserve_generation_with_history/);
+  assert.match(host,/run_reserved_with_history/);
+  assert.match(host,/TextChunk/);
+  assert.match(host,/let history=vec!\[\]/);
+  assert.match(host,/project_status_desktop::classify_selected\(&root\)/);
+  assert.match(host,/PLAN07B_SOURCE_CHANGED_DURING_GGUF/);
+  assert.match(host,/PLAN07B_REGISTER_EDITED_DURING_INFERENCE/);
+  assert.match(host,/original_reply_text BLOB NOT NULL/);
+  assert.match(host,/original_prompt_text BLOB NOT NULL/);
+  assert.match(host,/TransactionBehavior::Immediate/);
+  assert.match(host,/suggestions::audit/);
+  assert.match(core,/PLAN07B_INVENTED_DUPLICATE_OR_FOREIGN_CITATION/);
+  assert.match(core,/PLAN07B_MODEL_FABRICATED_ACCEPTANCE/);
+  assert.match(core,/PLAN07B_CANDIDATE_KEYS_NOT_EXACT/);
+  assert.match(core,/PLAN07B_MODEL_OUTPUT_NOT_RECONSTRUCTIBLE/);
+  assert.match(core,/no_completion_authority:true/);
+  assert.match(core,/task_complete:false/);
+  assert.match(core,/execution_authorized:false/);
+  assert.doesNotMatch(host,/lu_agent_run_reviewed_step|git commit|Command::new|grant_execution|model_approved_task/);
+  assert.doesNotMatch(screen,/setTaskComplete|autoApprove|invoke\('lu_agent_run_reviewed_step'/);
+});
