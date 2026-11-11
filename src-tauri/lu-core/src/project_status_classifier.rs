@@ -44,6 +44,22 @@ pub struct StatusReport{
     pub complete:bool,pub findings:Vec<Finding>,pub limitations:Vec<String>,
     pub no_execution_authority:bool,pub digest_sha256:String,
 }
+/// Compare only the literal obligation after ordinary Markdown checklist
+/// markers. Keep the immutable original text/line/hash in every finding.
+fn requirement_clause(original:&str)->&str{
+    let clean=original.trim();
+    for prefix in ["- [ ] ","- [x] ","- [X] ","* [ ] ",
+        "* [x] ","* [X] ","- ","* "]{
+        if let Some(rest)=clean.strip_prefix(prefix){return rest.trim()}
+    }
+    if let Some((number,rest))=clean.split_once(". "){
+        if !number.is_empty()&&number.len()<=3&&
+            number.bytes().all(|b|b.is_ascii_digit()){
+            return rest.trim()
+        }
+    }
+    clean
+}
 pub fn explicit_targets(statement:&str)->Vec<String>{
     let allowed=["src/","tests/","test/","docs/","config/",
         "assets/",".github/","lib/","app/","packages/"];
@@ -156,12 +172,12 @@ pub fn classify(g:&eg::EvidenceGraph,facts:&[ScopedPathFact])->Result<StatusRepo
         let mut needed=Vec::new();
         let exact_target=if targets.len()==1{Some(targets[0].as_str())}else{None};
         let syntax_gate=exact_target.is_some_and(|target|
-            req.label.trim()==format!("Must validate JSON syntax of {target}")&&
+            requirement_clause(&req.label)==format!("Must validate JSON syntax of {target}")&&
             target.ends_with(".json"));
         let presence_gate=exact_target.is_some_and(|target|
-            req.label.trim()==format!("Must include {target}"));
+            requirement_clause(&req.label)==format!("Must include {target}"));
         let branch_gate=g.nodes.iter().filter(|n|n.kind==eg::NodeKind::IntegrationPath)
-            .any(|branch|req.label.trim()==format!(
+            .any(|branch|requirement_clause(&req.label)==format!(
                     "Must contain refs/heads/{} in selected HEAD",branch.label)
                 &&g.edges.iter().any(|e|e.from==branch.id&&
                     e.relation==eg::Relation::ContainedInHead&&
@@ -608,6 +624,27 @@ mod tests{
         assert!(r.findings[0].explanation.contains("branch-inclusion"));
     }
 
+    #[test]
+    fn markdown_requirement_checklists_do_not_disable_strict_native_gates(){
+        let g=eg::assemble(eg::GraphInput{
+            project_scope_sha256:"f".repeat(64),selected_head:Some("a".repeat(40)),
+            observed_at_unix:10,complete:true,host_git_checked:true,
+            files:vec![eg::FileInput{path:"docs/REQUIREMENTS.md".into(),
+                role:"project_document".into(),sha256:Some("b".repeat(64))}],
+            requirements:vec![eg::RequirementInput{
+                path:"docs/REQUIREMENTS.md".into(),sha256:"b".repeat(64),line:2,
+                statement:"- [ ] Must validate JSON syntax of config/settings.json".into()}],
+            runs:vec![],branches:vec![],extra_limitations:vec![],
+        }).unwrap();
+        let broken=classify(&g,&[fact(&g,"config/settings.json",
+            PathObservation::InvalidJson)]).unwrap();
+        assert_eq!(broken.findings[0].primary,Status::Broken);
+        assert!(broken.findings[0].requirement.starts_with("- [ ]"));
+        assert_eq!(requirement_clause("12. Must include src/file.rs"),
+            "Must include src/file.rs");
+        assert_eq!(requirement_clause("* [x] Must include src/file.rs"),
+            "Must include src/file.rs");
+    }
     #[test]
     fn explicit_targets_are_not_unbounded_semantic_search(){
         assert!(explicit_targets("Make a good editor").is_empty());

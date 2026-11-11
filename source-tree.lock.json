@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "7ecbe150d020bab13589e175e18dcbd6d9d81e81"
+      "blob": "220d4c9ebbe8fd0d31089ff7aca23d593f5d6779"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -2917,7 +2917,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/project_status_classifier.rs",
-      "blob": "a983c8d472f8df4bd6385fa8c1f9e65ccddb7ca2"
+      "blob": "68168751411bb9327f2e18ec8ecde5be8f9ee860"
     },
     {
       "path": "src-tauri/lu-core/src/projector_identity.rs",

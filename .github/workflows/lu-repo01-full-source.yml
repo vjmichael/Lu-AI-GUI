@@ -1565,7 +1565,7 @@ jobs:
             --lib project_evidence_graph::tests -- --nocapture 2>&1 | tee plan03-evidence/graph-regression.log
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
             --lib project_status_classifier::tests -- --nocapture 2>&1 | tee plan03-evidence/classifier.log
-          grep -Fq 'test result: ok. 11 passed; 0 failed;' plan03-evidence/classifier.log
+          grep -Fq 'test result: ok. 12 passed; 0 failed;' plan03-evidence/classifier.log
       - name: Original Git ancestry witness (real test-only local repository)
         shell: bash
         run: |
