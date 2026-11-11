@@ -39,6 +39,7 @@ mod project_evidence_desktop;
 mod project_status_desktop;
 mod project_task_desktop;
 mod project_register_desktop;
+mod project_task_board_desktop;
 mod reviewed_app_desktop;
 mod reviewed_memory_evidence;
 mod reviewed_app_recovery;
@@ -8416,6 +8417,10 @@ fn auxiliary_window_spec(caller:&str,kind:&str)->Option<AuxiliaryWindowSpec>{
             label:"model-library",title:"Lu — Model Library",
             asset:"index.html",width:1160.0,height:780.0
         }),
+        ("main"|"settings","task-list")=>Some(AuxiliaryWindowSpec{
+            label:"task-list",title:"Lu — Project Tasks",
+            asset:"index.html",width:1260.0,height:840.0
+        }),
         _=>None,
     }
 }
@@ -8440,7 +8445,7 @@ fn lu_open_aux_window(
 }
 #[tauri::command]
 fn lu_close_aux_window(caller:tauri::WebviewWindow)->Result<(),String>{
-    if !matches!(caller.label(),"settings"|"model-library"){
+    if !matches!(caller.label(),"settings"|"model-library"|"task-list"){
         return Err("Main conversation window cannot be closed by an auxiliary command".into())
     }
     caller.close().map_err(|_|"Native auxiliary window could not be closed".into())
@@ -8582,6 +8587,12 @@ pub fn run() {
             project_register_desktop::lu_project_revise_task,
             project_register_desktop::lu_project_reconcile_register,
             project_register_desktop::lu_project_revalidate_task,
+            project_task_board_desktop::lu_project_board_list,
+            project_task_board_desktop::lu_project_board_evidence,
+            project_task_board_desktop::lu_project_board_reorder,
+            project_task_board_desktop::lu_project_board_correct,
+            project_task_board_desktop::lu_project_board_approve,
+            project_task_board_desktop::lu_project_board_export,
             lu_status,
             lu_list_models,
             lu_model_preflight,
