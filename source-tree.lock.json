@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "08e490da7b0e1a5fad7ee57f7c83e78d01df09f6",
-  "trackedFileCount": 914,
+  "sourceCommitBeforeLock": "94789902e6ffb64f446f46aa1771963ca11b33be",
+  "trackedFileCount": 917,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "bc8acda065804c08897719bf659a68751981ff3a"
+      "blob": "24ee3d18f77b6e3bc9bc18957b5113d0efd6f11b"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -362,6 +362,10 @@
     {
       "path": "benchmarks/e1/plan04_real_gguf_synthesis.py",
       "blob": "183ec814ac9693e51995540f5e5687deee780d99"
+    },
+    {
+      "path": "benchmarks/e1/plan07b_real_gguf_task_updates.py",
+      "blob": "7bb1553a5b640d16b671e412adf3be79061bca9f"
     },
     {
       "path": "benchmarks/e1/r00_genuine_kiaf_comparison.py",
@@ -849,7 +853,7 @@
     },
     {
       "path": "docs/LU_PLAN07_EVIDENCE_DRIVEN_TASK_UPDATES_20261110.md",
-      "blob": "86db519c89a6cfb4405a6d8f8a337684c3e09ed6"
+      "blob": "23b580865c3ffd68e1fe879e0ace214a6cbe7742"
     },
     {
       "path": "docs/LU_R00_CAPABILITY_CONSOLIDATION_20261109.md",
@@ -1273,7 +1277,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/generation_queue.rs",
-      "blob": "525d4316c9b1aa98f21ce5d3ef1c92cf001e5269"
+      "blob": "0952cefb7c377b57c56d69c5c2c03cd86ecfe2f0"
     },
     {
       "path": "lu-desktop/src-tauri/src/host_clock.rs",
@@ -1289,7 +1293,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "56ca1421828f4d6ff78fa246a75138a20f0b1f90"
+      "blob": "183bc98ac377499381a5893fa324d3ffaf514152"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1389,7 +1393,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
-      "blob": "ab0545f126a81f0ac2255579c308c6d5f8f7b58e"
+      "blob": "591d29f3260bcd019cd74fbc77f7f5706b840456"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_updates_desktop.rs",
@@ -1893,7 +1897,7 @@
     },
     {
       "path": "lu-desktop/tests/workspace-desktop.test.mjs",
-      "blob": "820549ae431e776033adad050a399e162f5ffc88"
+      "blob": "afbbf29388401c22dcc0e6049d040bdd96e74936"
     },
     {
       "path": "lu-desktop/tests/write-01e-edit-ux.test.mjs",
@@ -1985,7 +1989,7 @@
     },
     {
       "path": "lu-desktop/web/task_board.jsx",
-      "blob": "0ac387ce0590b017be17a8b18e51f438b4c091fc"
+      "blob": "4833f7544b6380a6be8f6913ca10f6df24fcb95b"
     },
     {
       "path": "lu-desktop/web/task_board_model.mjs",
@@ -2086,6 +2090,14 @@
     {
       "path": "scripts/plan06-windows-installed-acceptance.ps1",
       "blob": "f328b1fb1dd6efea339cf1e4704d544bb03807f4"
+    },
+    {
+      "path": "scripts/plan07b-independent-original-ansf-oracle.py",
+      "blob": "4ace09683aedf1adbe6c55fa720d5b5349f1e123"
+    },
+    {
+      "path": "scripts/plan07b-real-gguf-acceptance.sh",
+      "blob": "ddc6f25a47680cb8a09911bc3d96fe541df1316b"
     },
     {
       "path": "scripts/probe-observe-sensitive-window-windows.ps1",
