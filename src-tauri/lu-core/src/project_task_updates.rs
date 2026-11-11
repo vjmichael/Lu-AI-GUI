@@ -227,7 +227,8 @@ mod tests{
             "blockedBy":"Original source verification missing"
         }]}).to_string();
         let p=synthesis::validate_model_response(&g,&s,&raw,
-            &synthesis::model_prompt(&cap).unwrap(),"m","s","g").unwrap();
+            &synthesis::model_prompt(&cap).unwrap(),
+            "m-test-local","s-test-native","g-test-native").unwrap();
         let r=register::import(&p).unwrap();
         (g,s,p,r)
     }
