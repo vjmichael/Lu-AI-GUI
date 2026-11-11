@@ -938,13 +938,32 @@ function App() {
 
   async function restorePreservedDraft(tab,referenceOverride=null) {
     const record=referenceOverride || draftRecoveryByTab[tab?.key];
-    if (!tab || !record || draftRecoveryBusy || savingKey) return;
-    if (tab.dirty && !window.confirm(
-      'Replace this unsaved editor draft with the preserved recovery copy? Project files remain unchanged.'))
+    if (!tab || !record || draftRecoveryBusy || savingKey ||
+        savingKeyRef.current || workspaceLayoutOp.current ||
+        workspaceTransitionRef.current ||
+        activeProjectIdRef.current!==tab.projectId) return;
+    const original=captureLiveEditorIntent(tab,
+      bufferIdentities.current.get(tab.key),
+      editorStates.current.get(tab.key),tab.projectId);
+    if (original.status!=='current') {
+      setProblem('Cannot recover: current editor identity or saved base is stale.');
       return;
-    const currentIdentity=bufferIdentities.current.get(tab.key);
-    const currentDraft=editorStates.current.get(tab.key)?.sliceDoc();
-    const originalRevision=currentIdentity?.revision;
+    }
+    let claimed;
+    try {
+      claimed=checkedPrivateDraftHead(record,tab.projectId,tab.relativePath);
+      if (!claimed) throw Error('NO_PRIVATE_CHECKPOINT');
+    } catch(error) {
+      setProblem('Private draft identity is unavailable: '+String(error));
+      return;
+    }
+    if (original.dirty && !window.confirm(
+      'Replace this CURRENT unsaved editor draft with the private checkpoint? '+
+      'Project files remain untouched. Preserve your newer edits first if needed.'))
+      return;
+    const token=Symbol('ide-int01d-explicit-private-draft-recovery');
+    workspaceTransitionRef.current=token;
+    const epoch=projectNavigationEpoch.current;
     setDraftRecoveryBusy(true);
     setProblem('');
     try {
@@ -952,53 +971,82 @@ function App() {
         invoke('ide_preview_source_file',{projectId:tab.projectId,
           relativePath:tab.relativePath}),
         invoke('ide_draft_load',{projectId:tab.projectId,
-          relativePath:tab.relativePath,checkpointId:record.checkpointId}),
+          relativePath:tab.relativePath,checkpointId:claimed.checkpointId}),
       ]);
-      if (bufferIdentities.current.get(tab.key)?.bufferId!==currentIdentity?.bufferId ||
-          bufferIdentities.current.get(tab.key)?.revision!==originalRevision ||
-          editorStates.current.get(tab.key)?.sliceDoc()!==currentDraft ||
-          !tabsRef.current.some(x=>x.key===tab.key))
-        throw Error('BUFFER_CHANGED_DURING_DRAFT_RECOVERY');
-      if (disk.projectId!==tab.projectId || disk.relativePath!==tab.relativePath ||
-          recovered.checkpointId!==record.checkpointId ||
-          (record.draftSha256 && recovered.draftSha256!==record.draftSha256) ||
-          (record.bufferId && recovered.bufferId!==record.bufferId) ||
-          (record.bufferRevision!==undefined &&
-            recovered.bufferRevision!==record.bufferRevision))
-        throw Error('DRAFT_RECOVERY_SOURCE_MISMATCH');
-      if (draftRecoveryAssessment(recovered,tab.projectId,tab.relativePath,
-            disk.revision)==='disk_revision_changed' &&
-          !window.confirm('Saved source has changed since this draft was preserved. '+
-            'Recover it as an unsaved editor draft without writing to disk?'))
+      if (workspaceTransitionRef.current!==token ||
+          projectNavigationEpoch.current!==epoch ||
+          !stillCurrentEditorIntent(original,
+            tabsRef.current.find(item=>item.key===tab.key),
+            bufferIdentities.current.get(tab.key),
+            editorStates.current.get(tab.key),activeProjectIdRef.current))
+        throw Error('INT01D_EDITOR_CHANGED_DURING_PRIVATE_RECOVERY');
+      if (disk?.projectId!==tab.projectId ||
+          disk.relativePath!==tab.relativePath ||
+          !/^[a-f0-9]{64}$/i.test(disk.revision||'') ||
+          typeof disk.text!=='string' ||
+          typeof recovered?.text!=='string') {
+        throw Error('INT01D_UNVERIFIED_RECOVERY_SOURCE');
+      }
+      const checked=checkedPrivateDraftHead(recovered,tab.projectId,
+        tab.relativePath);
+      if (checked.checkpointId!==claimed.checkpointId ||
+          checked.draftSha256!==claimed.draftSha256 ||
+          checked.baseDiskRevision!==claimed.baseDiskRevision ||
+          checked.bufferId!==claimed.bufferId ||
+          checked.bufferRevision!==claimed.bufferRevision)
+        throw Error('INT01D_PRIVATE_CHECKPOINT_CHANGED');
+      if ((disk.revision!==original.savedRevision ||
+          claimed.baseDiskRevision!==disk.revision) && !window.confirm(
+        'The saved file or checkpoint base differs from this editor session. '+
+        'Recover the checkpoint only as an UNSAVED buffer against the '+
+        'current disk version? Review the differences before any Save.'))
         return;
+      if (workspaceTransitionRef.current!==token ||
+          projectNavigationEpoch.current!==epoch ||
+          !stillCurrentEditorIntent(original,
+            tabsRef.current.find(item=>item.key===tab.key),
+            bufferIdentities.current.get(tab.key),
+            editorStates.current.get(tab.key),activeProjectIdRef.current))
+        throw Error('INT01D_EDITOR_CHANGED_AFTER_RECOVERY_CONSENT');
       if (lspSession?.projectId===tab.projectId &&
           lspSession.relativePath===tab.relativePath)
         await stopLspSession();
-      // Stopping an LSP may yield; never restore over a buffer edited during
-      // the awaited side operation or after a tab was reopened.
-      if (bufferIdentities.current.get(tab.key)?.bufferId!==currentIdentity?.bufferId ||
-          bufferIdentities.current.get(tab.key)?.revision!==originalRevision ||
-          editorStates.current.get(tab.key)?.sliceDoc()!==currentDraft)
-        throw Error('BUFFER_CHANGED_DURING_DRAFT_RECOVERY');
+      if (workspaceTransitionRef.current!==token ||
+          projectNavigationEpoch.current!==epoch ||
+          !stillCurrentEditorIntent(original,
+            tabsRef.current.find(item=>item.key===tab.key),
+            bufferIdentities.current.get(tab.key),
+            editorStates.current.get(tab.key),activeProjectIdRef.current))
+        throw Error('INT01D_EDITOR_CHANGED_DURING_LSP_CLEANUP');
+      // New editor session, new disk base identity, no project file write.
       clearPrivateDraftSession(tab.key);
       resetBufferIdentity(tab.key,tab.projectId,tab.relativePath,disk.revision);
-      draftHeadByTab.current.set(tab.key,record.checkpointId);
+      draftHeadByTab.current.set(tab.key,checked.checkpointId);
       draftAutoPreserve.current.add(tab.key);
-      setDraftRecoveryByTab(previous=>({...previous,[tab.key]:recovered}));
+      setDraftRecoveryByTab(previous=>({...previous,[tab.key]:checked}));
       editorStates.current.set(tab.key,createEditorState(
         recovered.text,tab.relativePath,
         (state,draft)=>onEditorChange(tab.key,state,draft),
-        state=>onEditorSelection(tab.key,state)
-      ));
+        state=>onEditorSelection(tab.key,state)));
       setTabs(previous=>previous.map(row=>row.key===tab.key?{
         ...row,revision:disk.revision,savedText:disk.text,draft:recovered.text,
         dirty:recovered.text!==disk.text,generation:row.generation+1,
         bufferRevision:(row.bufferRevision??0)+1,
       }:row));
-      setHint('Recovered private checkpoint to editor only. Review changes before explicit Save.');
-    } catch (error) {
-      setProblem('Unable to recover preserved draft: '+String(error));
-    } finally {setDraftRecoveryBusy(false);}
+      setWorkspaceRecoveryReport(previous=>previous?.projectId===tab.projectId
+        ? {...previous,rows:previous.rows.map(row=>row.key===tab.key
+          ? {...row,draftStatus:'recovered_as_unsaved_editor'}:row)}
+        : previous);
+      setHint('Recovered private checkpoint into unsaved editor only. '+
+        'Review the draft before explicitly saving.');
+    } catch(error) {
+      if (workspaceTransitionRef.current===token)
+        setProblem('Unable to recover private draft: '+String(error));
+    } finally {
+      if (workspaceTransitionRef.current===token)
+        workspaceTransitionRef.current=null;
+      setDraftRecoveryBusy(false);
+    }
   }
 
   function recoverDraftByReference(tab) {
@@ -4940,7 +4988,8 @@ function App() {
     const selected = tabsRef.current.find(tab => tab.key === key);
     if (!selected) return;
     if (savingKey === key || savingKeyRef.current === key ||
-        mergeBusy || mergeApplyRequest || workspaceLayoutOp.current) return;
+        mergeBusy || mergeApplyRequest || workspaceLayoutOp.current ||
+        workspaceTransitionRef.current) return;
     // The render's selected.dirty can be stale for the latest CodeMirror
     // transaction. Unknown identity requires confirmation, never silent loss.
     const live = captureLiveEditorIntent(selected,
@@ -4967,7 +5016,8 @@ function App() {
 
   async function reloadTab(tab) {
     if (!tab || savingKey || savingKeyRef.current || reviewPending ||
-        mergeBusy || mergeApplyRequest || workspaceLayoutOp.current) return;
+        mergeBusy || mergeApplyRequest || workspaceLayoutOp.current ||
+        workspaceTransitionRef.current) return;
     const original = captureLiveEditorIntent(tab,
       bufferIdentities.current.get(tab.key),editorStates.current.get(tab.key),
       activeProjectIdRef.current);
@@ -5032,7 +5082,7 @@ function App() {
   async function saveTab(tab, expectedReviewedIntent=null) {
     if (!tab || savingKey || savingKeyRef.current || mergeBusy ||
         mergeApplyRequest || explorerPending || explorerIoTicket.current ||
-        workspaceLayoutOp.current) return false;
+        workspaceLayoutOp.current || workspaceTransitionRef.current) return false;
     // CodeMirror is authoritative. The React draft/dirty flag can lag the
     // current edit transaction, so never save tab.draft from a stale render.
     const started = captureLiveEditorIntent(tab,
@@ -5111,8 +5161,8 @@ function App() {
 
   async function reviewTab(tab) {
     if (!tab || reviewPending || savingKey || savingKeyRef.current ||
-        mergeBusy || mergeApplyRequest || explorerPending ||
-        explorerIoTicket.current) return;
+        mergeBusy || mergeApplyRequest || workspaceTransitionRef.current ||
+        explorerPending || explorerIoTicket.current) return;
     const intent=captureLiveEditorIntent(tab,
       bufferIdentities.current.get(tab.key),editorStates.current.get(tab.key),
       activeProjectIdRef.current);
