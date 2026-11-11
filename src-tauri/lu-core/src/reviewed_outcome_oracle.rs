@@ -392,6 +392,74 @@ pub fn verify_media(
                 .as_bytes())
 }
 
+/// P0-TOOLS-04 independent semantic method: PDFInfo/ExifTool output is
+/// compared with an entirely separate parser of the host-picked source.
+/// For PDF, a complex page tree is UNSUPPORTED, never a verified count.
+pub fn verify_specialist(
+    source:&Path,approved_sha256:&str,
+    kind:crate::native_app_typed_specialist::SpecialistKind,
+    result:&Value
+)->OracleEvidence{
+    use crate::native_app_typed_specialist::SpecialistKind;
+    let method=match kind{
+        SpecialistKind::PdfInfo=>"PDFINFO_CLASSIC_PAGE_TREE_V1",
+        SpecialistKind::ImageExif=>"EXIFTOOL_IMAGE_DIMENSIONS_V1",
+    };
+    let unsupported_method=match kind{
+        SpecialistKind::PdfInfo=>"PDFINFO_UNSUPPORTED_V1",
+        SpecialistKind::ImageExif=>"EXIFTOOL_UNSUPPORTED_V1",
+    };
+    let bytes=match read_nosymlink(source,32*1024*1024){
+        Some(bytes)=>bytes,
+        None=>return OracleEvidence::unsupported(unsupported_method)
+    };
+    let observed=format!("{:x}",Sha256::digest(&bytes));
+    if observed!=approved_sha256||
+        result.get("sourceSha256").and_then(Value::as_str)
+            !=Some(approved_sha256)||
+        result.get("sourceDigestReverified")!=Some(&Value::Bool(true))||
+        result.get("osChildReaped")!=Some(&Value::Bool(true)){
+        return OracleEvidence::conflict(method)
+    }
+    match kind{
+        SpecialistKind::PdfInfo=>{
+            if bytes.len()<8||!bytes.starts_with(b"%PDF-"){
+                return OracleEvidence::conflict(method)
+            }
+            let header=std::str::from_utf8(&bytes[5..8]).unwrap_or("");
+            if result.get("pdfVersion").and_then(Value::as_str)!=Some(header){
+                return OracleEvidence::conflict(method)
+            }
+            let count=crate::native_reader_pdf::independent_classic_pdf_page_count(&bytes);
+            match count{
+                None=>OracleEvidence::unsupported(unsupported_method),
+                Some(actual) if result.get("pages").and_then(Value::as_u64)==Some(actual)=>
+                    OracleEvidence::verified(method,&bytes),
+                Some(_)=>OracleEvidence::conflict(method),
+            }
+        },
+        SpecialistKind::ImageExif=>{
+            let actual_kind=if bytes.starts_with(b"\x89PNG\r\n\x1a\n"){"PNG"}
+                else if bytes.starts_with(&[0xff,0xd8,0xff]){"JPEG"}
+                else{return OracleEvidence::conflict(method)};
+            if result.get("imageType").and_then(Value::as_str)!=Some(actual_kind){
+                return OracleEvidence::conflict(method)
+            }
+            let reader=image::ImageReader::new(std::io::Cursor::new(&bytes))
+                .with_guessed_format();
+            let dimensions=reader.ok().and_then(|r|r.into_dimensions().ok());
+            match dimensions{
+                None=>OracleEvidence::unsupported(unsupported_method),
+                Some((width,height)) if
+                    result.get("width").and_then(Value::as_u64)==Some(u64::from(width))&&
+                    result.get("height").and_then(Value::as_u64)==Some(u64::from(height))=>
+                        OracleEvidence::verified(method,&bytes),
+                Some(_)=>OracleEvidence::conflict(method),
+            }
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;

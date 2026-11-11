@@ -315,6 +315,14 @@ fn text_stream(bytes:&[u8])->Result<String,ReaderFailure>{
     }
     Ok(out)
 }
+/// P0-TOOLS-04: independently reconstruct the page tree from original
+/// approved PDF bytes. The external PDFInfo stdout is never consulted.
+/// Complex/object-stream/encrypted PDFs return UNSUPPORTED, not a guess.
+pub fn independent_classic_pdf_page_count(bytes:&[u8])->Option<u64>{
+    let objects=parse_objects(bytes).ok()?;
+    let leaves=collect_page_ids(&objects).ok()?;
+    u64::try_from(leaves.len()).ok()
+}
 pub fn read_pdf_text(bytes:&[u8],max_chars:usize)->Result<ReaderText,ReaderFailure>{
     read_pdf_page(bytes,max_chars,None)
 }

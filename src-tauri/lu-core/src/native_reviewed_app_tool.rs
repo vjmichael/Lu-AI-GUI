@@ -38,17 +38,23 @@ use crate::{
         SEALED_READ_BYTES as MEDIA_READ_BYTES,
     },
     native_background_process::BackgroundProcessSupervisor,
-    reviewed_outcome_oracle::{verify_git,verify_media},
+    native_app_typed_specialist::{
+        HostSpecialistCatalog,HostReviewedSpecialistProbe,SpecialistKind,
+        TypedSpecialistBroker,REQUEST_TYPE as SPECIALIST_INPUT,
+        RESULT_TYPE as SPECIALIST_OUTPUT,READ_TYPE as SPECIALIST_READ_TYPE,
+        EXEC_BYTES as SPECIALIST_EXEC_BYTES,READ_BYTES as SPECIALIST_READ_BYTES,
+    },
+    reviewed_outcome_oracle::{verify_git,verify_media,verify_specialist},
     reviewed_source_guard::{SourceRevisionGuard,RevisionObservation},
     registry::NativeToolRegistry,
     tasks::TaskStore,
 };
 const MODULE:&str="lu.reviewed";
-const MAX_REVIEWED_TOOLS:usize=5;
+const MAX_REVIEWED_TOOLS:usize=6;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum Operation{
-    Head,TrackedStatus,Branch,History,MediaFacts,
+    Head,TrackedStatus,Branch,History,MediaFacts,PdfFacts,ImageFacts,
 }
 impl Operation{
     fn name(self)->&'static str{
@@ -58,6 +64,8 @@ impl Operation{
             Self::Branch=>"lu_reviewed_git_branch",
             Self::History=>"lu_reviewed_git_history",
             Self::MediaFacts=>"lu_reviewed_media_facts",
+            Self::PdfFacts=>"lu_reviewed_pdf_facts",
+            Self::ImageFacts=>"lu_reviewed_image_facts",
         }
     }
     fn description(self)->&'static str{
@@ -67,13 +75,17 @@ impl Operation{
             Self::Branch=>"Read current branch of the user's approved Git repository (null when detached).",
             Self::History=>"Count reachable commits from HEAD in the user's approved Git repository.",
             Self::MediaFacts=>"Read duration, codec and audio/video stream properties of the host-approved WAV or MP4.",
+            Self::PdfFacts=>"Read PDFInfo page count/version for one host-approved PDF; separately verify classic PDF page tree.",
+            Self::ImageFacts=>"Read ExifTool image dimensions/type for one host-approved PNG/JPEG; independently verify pixels.",
         }
     }
     fn input(self)->&'static str{
-        if self==Self::MediaFacts{MEDIA_INPUT}else{GIT_INPUT}
+        if matches!(self,Self::PdfFacts|Self::ImageFacts){SPECIALIST_INPUT}
+        else if self==Self::MediaFacts{MEDIA_INPUT}else{GIT_INPUT}
     }
     fn output(self)->&'static str{
-        if self==Self::MediaFacts{MEDIA_OUTPUT}else{GIT_OUTPUT}
+        if matches!(self,Self::PdfFacts|Self::ImageFacts){SPECIALIST_OUTPUT}
+        else if self==Self::MediaFacts{MEDIA_OUTPUT}else{GIT_OUTPUT}
     }
     fn bytes(self)->&'static [u8]{
         match self{
@@ -82,6 +94,7 @@ impl Operation{
             Self::Branch=>GitReadOperation::CurrentBranch.request(),
             Self::History=>GitReadOperation::HistoryCount.request(),
             Self::MediaFacts=>MEDIA_EXEC_BYTES,
+            Self::PdfFacts|Self::ImageFacts=>SPECIALIST_EXEC_BYTES,
         }
     }
     fn suffix(self)->&'static str{
@@ -91,6 +104,8 @@ impl Operation{
             Self::Branch=>"gb",
             Self::History=>"gc",
             Self::MediaFacts=>"fm",
+            Self::PdfFacts=>"pd",
+            Self::ImageFacts=>"im",
         }
     }
 }
@@ -129,7 +144,9 @@ fn append_outcome_to_model(
             "WAV_PCM_DIRECT_V1"|"GIT_STATUS_UNSUPPORTED_V1"|
             "GIT_HISTORY_UNSUPPORTED_V1"|"GIT_HISTORY_LOOSE_DAG_V1"|
             "GIT_HISTORY_OBJECT_DAG_V2"|"GIT_STATUS_INDEX_TREE_V1"|
-            "MP4_BOXES_DIRECT_V1"|"MP4_UNSUPPORTED_V1")
+            "MP4_BOXES_DIRECT_V1"|"MP4_UNSUPPORTED_V1"|
+            "PDFINFO_CLASSIC_PAGE_TREE_V1"|"PDFINFO_UNSUPPORTED_V1"|
+            "EXIFTOOL_IMAGE_DIMENSIONS_V1"|"EXIFTOOL_UNSUPPORTED_V1")
         ||status=="VERIFIED"&&method.ends_with("_UNSUPPORTED_V1"){
         return Err(ModelToolError::InvalidResult(
             "unrecognized independent outcome classification".into()))
@@ -160,7 +177,9 @@ impl ModelToolCodec for ReviewedCodec{
             .map_err(|_|ModelToolError::InvalidResult("invalid reviewed result bytes".into()))?;
         let object=value.as_object()
             .ok_or_else(||ModelToolError::InvalidResult("reviewed result must be object".into()))?;
-        let expected=if self.0==Operation::MediaFacts{
+        let expected=if matches!(self.0,Operation::PdfFacts|Operation::ImageFacts){
+            "lu-p0-tools04-specialist-v1"
+        }else if self.0==Operation::MediaFacts{
             "lu-e1-p06e-media-facts-v1"
         }else{
             "lu-e1-p06c-typed-git-read-v1"
@@ -231,6 +250,39 @@ impl ModelToolCodec for ReviewedCodec{
                     .ok_or_else(||ModelToolError::InvalidResult("streams invalid".into()))?;
                 append_outcome_to_model(json!({"durationMilliseconds":duration,"streams":streams}),object)
             }
+            Operation::PdfFacts|Operation::ImageFacts=>{
+                if object.get("sourceDigestReverified")!=Some(&Value::Bool(true))||
+                   object.get("rawSourcePathPersisted")!=Some(&Value::Bool(false))||
+                   object.get("rawOutputPersisted")!=Some(&Value::Bool(false)){
+                    return Err(ModelToolError::InvalidResult("specialist source custody invalid".into()))
+                }
+                let expected_kind=if self.0==Operation::PdfFacts{"pdf_info"}else{"image_info"};
+                if object.get("kind").and_then(Value::as_str)!=Some(expected_kind){
+                    return Err(ModelToolError::InvalidResult("specialist operation mismatch".into()))
+                }
+                let data=if self.0==Operation::PdfFacts{
+                    let pages=object.get("pages").and_then(Value::as_u64)
+                        .filter(|n|(1..=4096).contains(n))
+                        .ok_or_else(||ModelToolError::InvalidResult("page count absent".into()))?;
+                    let version=object.get("pdfVersion").and_then(Value::as_str)
+                        .filter(|s|matches!(*s,"1.0"|"1.1"|"1.2"|"1.3"|"1.4"|
+                            "1.5"|"1.6"|"1.7"|"2.0"))
+                        .ok_or_else(||ModelToolError::InvalidResult("PDF version invalid".into()))?;
+                    json!({"pages":pages,"pdfVersion":version})
+                }else{
+                    let format=object.get("imageType").and_then(Value::as_str)
+                        .filter(|v|matches!(*v,"PNG"|"JPEG"))
+                        .ok_or_else(||ModelToolError::InvalidResult("image type invalid".into()))?;
+                    let width=object.get("width").and_then(Value::as_u64)
+                        .filter(|v|(1..=16384).contains(v))
+                        .ok_or_else(||ModelToolError::InvalidResult("width invalid".into()))?;
+                    let height=object.get("height").and_then(Value::as_u64)
+                        .filter(|v|(1..=16384).contains(v))
+                        .ok_or_else(||ModelToolError::InvalidResult("height invalid".into()))?;
+                    json!({"imageType":format,"width":width,"height":height})
+                };
+                append_outcome_to_model(data,object)
+            }
         }
     }
 }
@@ -252,6 +304,13 @@ enum ReviewedBackend{
         resource_id:String,
         read_tool_id:String,
         repository_root:PathBuf,
+    },
+    Specialist{
+        catalog:Arc<HostSpecialistCatalog>,
+        broker:Arc<TypedSpecialistBroker>,
+        profile_id:String,read_tool_id:String,
+        selected_path:PathBuf,source_sha256:String,
+        kind:SpecialistKind,
     },
     Media{
         catalog:Arc<HostMediaProbeCatalog>,
@@ -304,6 +363,8 @@ impl NativeTool for ReviewedTool{
                         (read_tool_id.as_str(),GIT_READ_INPUT,GIT_READ_BYTES),
                     ReviewedBackend::Media{read_tool_id,..}=>
                         (read_tool_id.as_str(),MEDIA_READ_INPUT,MEDIA_READ_BYTES),
+                    ReviewedBackend::Specialist{read_tool_id,..}=>
+                        (read_tool_id.as_str(),SPECIALIST_READ_TYPE,SPECIALIST_READ_BYTES),
                 };
                 let read=ToolInvocation{
                     call_id:read_id,tool_id:read_tool_id.into(),
@@ -343,6 +404,11 @@ impl NativeTool for ReviewedTool{
                         approved_media_path,media_sha256,..
                     }=>SourceRevisionGuard::media(
                         approved_media_path,media_sha256
+                    ),
+                    ReviewedBackend::Specialist{
+                        selected_path,source_sha256,..
+                    }=>SourceRevisionGuard::media(
+                        selected_path,source_sha256
                     )
                 };
                 match backend.as_ref(){
@@ -357,6 +423,12 @@ impl NativeTool for ReviewedTool{
                             catalog,profile_id,&origin,&execute,&descriptor,
                             &read,&read_descriptor,policy.as_ref()
                         ).map_err(|_|refused("reviewed media admission failed"))?;
+                    },
+                    ReviewedBackend::Specialist{catalog,broker,profile_id,..}=>{
+                        broker.launch(
+                            catalog,profile_id,&origin,&execute,&descriptor,
+                            &read,&read_descriptor,policy.as_ref()
+                        ).map_err(|_|refused("reviewed specialist admission failed"))?;
                     },
                 }
                 // The broker owns the actual OS child and kills/reaps on Drop.
@@ -373,12 +445,17 @@ impl NativeTool for ReviewedTool{
                             broker.poll().map_err(|_|refused("media worker poll failed"))?;
                             broker.active_count().map_err(|_|refused("media worker state unavailable"))?
                         },
+                        ReviewedBackend::Specialist{broker,..}=>{
+                            broker.poll().map_err(|_|refused("specialist worker poll failed"))?;
+                            broker.active_count().map_err(|_|refused("specialist worker status unavailable"))?
+                        },
                     };
                     if active==0{break}
                     if std::time::Instant::now()>=deadline{
                         let _=match backend.as_ref(){
                             ReviewedBackend::Git{broker,..}=>broker.cancel_current_task(&origin).is_ok(),
                             ReviewedBackend::Media{broker,..}=>broker.cancel_current_task(&origin).is_ok(),
+                            ReviewedBackend::Specialist{broker,..}=>broker.cancel_current_task(&origin).is_ok(),
                         };
                         return Err(refused("external application did not complete"))
                     }
@@ -425,6 +502,9 @@ impl NativeTool for ReviewedTool{
                     }=>verify_media(
                         approved_media_path,media_sha256,*reviewed_container,&value
                     ),
+                    ReviewedBackend::Specialist{
+                        selected_path,source_sha256,kind,..
+                    }=>verify_specialist(selected_path,source_sha256,*kind,&value),
                 };
                 // A source match observed only *after* the application
                 // returned is insufficient when the approved file or Git
@@ -505,6 +585,7 @@ pub fn register_reviewed_application_tools(
     policy:Arc<dyn ToolAuthorizer>,
     reviewed_git:Vec<HostReviewedGitRead>,
     reviewed_media:Option<HostReviewedMediaProbe>,
+    reviewed_specialist:Option<HostReviewedSpecialistProbe>,
 )->Result<Vec<String>,String>{
     let allowed=authority.permitted_tool_ids(&origin)
         .map_err(|e|format!("user-turn authority unavailable: {e:?}"))?;
@@ -599,6 +680,42 @@ pub fn register_reviewed_application_tools(
             &mut descriptors,&mut native,&mut definitions,
             descriptor,operation,backend,&authority,&origin,&policy,&effects,
         );
+    }
+    if let Some(record)=reviewed_specialist{
+        let operation=match record.kind{
+            SpecialistKind::PdfInfo=>Operation::PdfFacts,
+            SpecialistKind::ImageExif=>Operation::ImageFacts,
+        };
+        if !names.insert(operation.name().into())||
+            !allowed.contains(&record.execute_tool_id)||
+            !allowed.contains(&record.read_tool_id)||
+            !record.execute_tool_id.starts_with("lu.reviewed."){
+            return Err("specialist operation was not independently authorized".into())
+        }
+        let mut specialist=HostSpecialistCatalog::new();
+        specialist.register_host_reviewed(record.clone())
+            .map_err(|e|format!("host specialist catalog rejected: {e:?}"))?;
+        let backend=Arc::new(ReviewedBackend::Specialist{
+            catalog:Arc::new(specialist),
+            broker:Arc::new(TypedSpecialistBroker::new(
+                authority.clone(),Arc::clone(&supervisor),Arc::clone(&tasks),
+                Arc::clone(&effects)
+            ).map_err(|e|format!("specialist worker unavailable: {e:?}"))?),
+            profile_id:record.profile_id,
+            read_tool_id:record.read_tool_id,
+            selected_path:record.approved_input,
+            source_sha256:record.input_sha256,
+            kind:record.kind,
+        });
+        let descriptor=ToolDescriptor{
+            id:record.execute_tool_id,
+            display_name:operation.description().into(),
+            effect:ToolEffect::ExecuteCode,
+            input_type_url:operation.input().into(),
+            output_type_url:operation.output().into(),
+        };
+        append_tool(&mut descriptors,&mut native,&mut definitions,
+            descriptor,operation,backend,&authority,&origin,&policy,&effects);
     }
     if descriptors.is_empty()||descriptors.len()>MAX_REVIEWED_TOOLS{
         return Err("no current-turn reviewed application operations".into())
@@ -712,6 +829,7 @@ impl ReviewedApplicationTurnSession{
         policy:Arc<dyn ToolAuthorizer>,
         git:Vec<HostReviewedGitRead>,
         media:Option<HostReviewedMediaProbe>,
+        specialist:Option<HostReviewedSpecialistProbe>,
     )->Result<Self,String>{
         if workspace_id.is_empty()||workspace_id.len()>128{
             return Err("trusted workspace missing".into())
@@ -721,7 +839,7 @@ impl ReviewedApplicationTurnSession{
         let names=register_reviewed_application_tools(
             &registry,&mut catalog,authority.clone(),origin.clone(),
             tasks,supervisor,Arc::clone(&effects),Arc::clone(&policy),
-            git,media
+            git,media,specialist
         )?;
         let allowed=names.into_iter().collect::<BTreeSet<_>>();
         let mut turn=crate::agent_tool_loop::NativeToolTurn::new(

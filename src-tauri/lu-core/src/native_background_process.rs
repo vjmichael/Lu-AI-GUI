@@ -472,6 +472,56 @@ impl BackgroundProcessSupervisor {
         if observed==0{return Err(BackgroundProcessError::InvalidPlan)}
         self.start_host_approved_internal(plan,Some((output_limit,false)),true)
     }
+    /// P0-TOOLS-04: finite, host-only PDFInfo and ExifTool read operations.
+    /// These exact argument shapes are compiled in Lu; no Tauri/model input
+    /// can add flags, a different program, scripts, output paths or URLs.
+    /// Executable SHA and original human ExecuteCode+ReadWorkspace authority
+    /// are still separately enforced by the broker and OS supervisor.
+    pub(crate) fn start_host_approved_specialist_probe(
+        &self,plan:TrustedWorkerPlan,limit:usize,
+        original_file_sha256:&str,kind:&str
+    )->Result<(),BackgroundProcessError>{
+        if !(1..=8192).contains(&limit)||plan.progress_protocol||
+            plan.max_runtime_seconds.is_none_or(|t|!(1..=30).contains(&t)){
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
+        let file=match kind{
+            "pdfinfo" if plan.args.len()==2 &&
+                plan.args[0].to_str()==Some("-isodates")=>
+                    Path::new(&plan.args[1]),
+            "exiftool" if plan.args.len()==8 &&
+                plan.args[0].to_str()==Some("-j") &&
+                plan.args[1].to_str()==Some("-n") &&
+                plan.args[2].to_str()==Some("-ImageWidth") &&
+                plan.args[3].to_str()==Some("-ImageHeight") &&
+                plan.args[4].to_str()==Some("-FileType") &&
+                plan.args[5].to_str()==Some("-FileSize#") &&
+                plan.args[6].to_str()==Some("--")=>
+                    Path::new(&plan.args[7]),
+            _=>return Err(BackgroundProcessError::InvalidPlan),
+        };
+        let name=plan.executable.file_name().and_then(|x|x.to_str())
+            .ok_or(BackgroundProcessError::InvalidPlan)?
+            .to_ascii_lowercase();
+        let accepted_binary=match kind{
+            "pdfinfo"=>matches!(name.as_str(),"pdfinfo"|"pdfinfo.exe"),
+            "exiftool"=>matches!(name.as_str(),"exiftool"|"exiftool.exe"),
+            _=>false
+        };
+        let ext=file.extension().and_then(|e|e.to_str()).unwrap_or("");
+        let accepted_input=match kind{
+            "pdfinfo"=>ext.eq_ignore_ascii_case("pdf"),
+            "exiftool"=>matches!(ext.to_ascii_lowercase().as_str(),
+                "png"|"jpg"|"jpeg"),
+            _=>false
+        };
+        if !accepted_binary||!accepted_input{
+            return Err(BackgroundProcessError::InvalidPlan)
+        }
+        let length=verified_media_input(file,original_file_sha256)?;
+        if length>32*1024*1024{return Err(BackgroundProcessError::InvalidPlan)}
+        self.start_host_approved_internal(plan,Some((limit,false)),true)
+    }
     fn start_host_approved_internal(
         &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>,
         _linux_media_probe:bool

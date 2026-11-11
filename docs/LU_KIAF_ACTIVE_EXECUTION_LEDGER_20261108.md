@@ -2,6 +2,14 @@
 
 **Owner direction:** November 8, 2026. **Status:** binding current prioritization, NOT a production acceptance claim. Based on [canonical K/I/A/F](LU_AI_EXECUTION_LAYER_PHILOSOPHY_20261107.md), [memory-first user-centered policy](LU_HUMAN_CENTERED_AI_MEMORY_FIRST_20261107.md), [tool scope audit](LU_AI_EXECUTION_TOOL_REVIEW_20261107.md), and [v1.0 task ledger](LU_V1_0_TASKS.md).
 
+## November 11, 2026 — P0-TOOLS-04 new protected specialist utility adapters (source candidate)
+
+P0-TOOLS-04 adds **real external PDFInfo and ExifTool** to the existing original-user authenticated, one-use, ModelToolCatalog/NativeToolRegistry reviewed application path. A native OS file picker and a second exact-source/executable SHA-256 approval produce only one bounded read-only task. The existing OS supervisor now admits exactly two additional hardcoded argument forms, one for PDF page/version metadata and one for PNG/JPEG type/dimensions. It enforces a 15-second worker limit, 8192-byte stdout bound, actual source/file digest and ordinary cancellation/Job Object/Linux process custody. Each typed completed worker effect is independently checked against original source bytes using a *different parser* (classic PDF page tree, image dimensions) and journalled as VERIFIED, CONFLICT, or UNSUPPORTED. Model text cannot supply a path, command, script, shell, new grant or future authorization.
+
+Host normal Send conservatively recognizes explicit PDF/image metadata questions and enters the native review path. Existing agent PLAN step methods remain Git/FFprobe only until a **new** approved revision and explicit criterion-to-method evidence mapping. No new application mini-app, unrestricted external process runner or networking capability was introduced. Original TaskStore/EffectJournal receipts are preserved; the existing Git/media ANSF reviewed-memory adapter is not falsely told a PDF/Image operation is Git.
+
+**Status:** committed source candidate only. No compiler, real GGUF, native installed, CI, PR verification or regression run was started, per owner. Next P0-TOOLS-05 source-rechecked task criteria and independent witness handoff. See [P0-TOOLS-04 engineering handoff](LU_P0_TOOLS04_SPECIALIST_ADAPTERS_20261111.md).
+
 ## November 11, 2026 — P0-TOOLS-03 original ANSF native-source continuity (source candidate)
 
 **Development-first, no CI/PR work.** Closed a real integration gap between previously existing Browser, Reader, OCR and Observe sources and the model/ANSF history plane. The original ANSF Library SQLite gains a typed, integrity-hashed, read-only-to-model native-source index for current-chat source IDs, actual hashes, provenance and privacy. No new memory DB, arbitrary source URL tool, automatic observation or authority.

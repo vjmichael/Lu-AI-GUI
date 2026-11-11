@@ -4618,6 +4618,20 @@ async fn lu_generate(
             app,Arc::clone(state.inner()),session_id,chat_id,prompt,
         ).await?.ok_or_else(||"Reader document was not selected".into())
     }
+    // P0-TOOLS-04: exact current human asks to inspect one local PDF or
+    // PNG/JPEG can enter the TWO new narrowly reviewed application adapters.
+    // Lu will still open a fresh OS picker, show the exact source/executable
+    // hash in a second native dialog and grant only this tool pair to the
+    // original authenticated turn. The model never supplies any argv/path.
+    if !read_only_workspace.unwrap_or(false)&&image_refs.is_empty()&&
+        max_new_tokens==512{
+        if let Some(kind)=reviewed_app_desktop::explicit_specialist_request(&prompt){
+            return reviewed_app_desktop::lu_reviewed_app_ask(
+                app,state,session_id,chat_id,prompt,kind.into()
+            ).await?.ok_or_else(||
+                "Specialist source selection was cancelled".into())
+        }
+    }
     // Media inspection is now a normal-chat, model-neutral capability route.
     // Text only triggers the native file-picker request; it supplies no
     // filepath, command, tool ID, effect result or durable grant.
