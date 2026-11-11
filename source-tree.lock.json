@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "dfa102390e343686ed348ccaa7d9bd8ee046e1fa",
-  "trackedFileCount": 919,
+  "sourceCommitBeforeLock": "2d46a9ad4c72b2976d90f9b785a8720747ecd7c2",
+  "trackedFileCount": 924,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -226,6 +226,10 @@
     {
       "path": ".github/workflows/lu-p11-git-core.yml",
       "blob": "9b6ac72f2f2cac5579dc8538db057757a875c156"
+    },
+    {
+      "path": ".github/workflows/lu-plan07d-installed.yml",
+      "blob": "80bc990579f83fb11d7ee468ce293e9b22c0ad8a"
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
@@ -854,6 +858,10 @@
     {
       "path": "docs/LU_PLAN06_NATIVE_TASK_LIST_20261110.md",
       "blob": "85f1d8dc57ec56efbaf110a721f48340b523c730"
+    },
+    {
+      "path": "docs/LU_PLAN07D_INSTALLED_ACCEPTANCE_20261111.md",
+      "blob": "27d8357010d061528d8194b441f8287e31d18dde"
     },
     {
       "path": "docs/LU_PLAN07_EVIDENCE_DRIVEN_TASK_UPDATES_20261110.md",
@@ -2106,6 +2114,18 @@
     {
       "path": "scripts/plan07b-real-gguf-acceptance.sh",
       "blob": "1e4ebbc38b12145135aee8f3613bdda1a37e3137"
+    },
+    {
+      "path": "scripts/plan07d-debian-installed-smoke.py",
+      "blob": "c65fd618ab5541d15483b20c453fc2e1bbafda00"
+    },
+    {
+      "path": "scripts/plan07d-readonly-ansf-witness.py",
+      "blob": "38963b03c9e721e8d0366bfbaac42eb6408fd5de"
+    },
+    {
+      "path": "scripts/plan07d-windows-installed-acceptance.ps1",
+      "blob": "89737d1ba0ecf130e63ae26dd5e4d8e15b4951a1"
     },
     {
       "path": "scripts/probe-observe-sensitive-window-windows.ps1",

@@ -1,0 +1,239 @@
+name: Lu PLAN-07D installed NSIS and Debian acceptance
+on:
+  pull_request:
+    types: [edited]
+permissions:
+  contents: read
+concurrency:
+  group: lu-plan07d-installed-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  hosted-windows-nsis:
+    if: ${{ github.event.pull_request.number == 219 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110' && contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Pin reviewed source and one-time native installed admission
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:SOURCE_SHA){throw 'Wrong original source commit'}
+          $markers=[regex]::Matches($env:REVIEW_BODY,'(?m)^LU_PLAN07D_INSTALLED_SHA=([0-9a-f]{40})$')
+          if($markers.Count -ne 1 -or $markers[0].Groups[1].Value -cne $env:SOURCE_SHA){throw 'PLAN07D one-use exact SHA gate invalid'}
+          node scripts/verify-source-tree.mjs
+          if($LASTEXITCODE -ne 0){throw 'Tracked source manifest invalid'}
+          $dir=Join-Path $env:RUNNER_TEMP 'plan07d-installed-evidence'
+          New-Item -ItemType Directory -Path $dir|Out-Null
+          @{sourceSha=$env:SOURCE_SHA;os='windows-2025';realGgufTested=$false}|
+            ConvertTo-Json|Set-Content (Join-Path $dir 'source.json') -Encoding UTF8
+      - name: Build and hash genuine current-source x64 NSIS
+        shell: pwsh
+        timeout-minutes: 150
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $compiler=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
+          if(-not(Test-Path -LiteralPath $compiler)){
+            choco install nsis --version=3.11.0 --yes --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'Pinned NSIS unavailable'}
+          }
+          $folder=Join-Path $env:RUNNER_TEMP 'plan07d-genuine-installer'
+          & scripts/build-agent01g-physical-windows-nsis.ps1 -SourceSha $env:SOURCE_SHA -OutputDirectory $folder
+          if($LASTEXITCODE -ne 0){throw 'Authentic NSIS generation failed'}
+          $proof=Get-Content -LiteralPath (Join-Path $folder 'installer-checksums.json') -Raw|ConvertFrom-Json
+          if($proof.sourceSha -cne $env:SOURCE_SHA -or -not $proof.genuineInstallerProduced){throw 'Installer SHA ancestry denied'}
+          $installer=Join-Path $folder $proof.installerName
+          if((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -cne $proof.installerSha256){throw 'Original NSIS bytes changed'}
+          $target=Join-Path $env:RUNNER_TEMP 'plan07d-installed-Lu'
+          if(Test-Path $target){throw 'Preexisting installed app directory'}
+          $proc=Start-Process -FilePath $installer -ArgumentList @('/S',('/D='+$target)) -PassThru
+          if(-not $proc.WaitForExit(600000)){$proc.Kill($true);throw 'Actual NSIS timed out'}
+          if($proc.ExitCode -ne 0){throw 'Actual installer failed'}
+          $installed=Join-Path $target 'lu-desktop.exe'
+          if((Get-FileHash $installed -Algorithm SHA256).Hash.ToLowerInvariant() -cne $proof.appSha256){throw 'Installed app bytes mismatch'}
+          $engine=Join-Path $target 'lu-inference\llama-server.exe'
+          if((Get-FileHash $engine -Algorithm SHA256).Hash.ToLowerInvariant() -cne $proof.engineSha256){throw 'Installed genuine CPU engine changed'}
+          "PLAN07D_INSTALLED_EXE=$installed" >> $env:GITHUB_ENV
+          "PLAN07D_INSTALLED_SHA=$($proof.appSha256)" >> $env:GITHUB_ENV
+          "PLAN07D_INSTALL_DIR=$target" >> $env:GITHUB_ENV
+          Copy-Item (Join-Path $folder 'installer-checksums.json') (Join-Path $env:RUNNER_TEMP 'plan07d-installed-evidence/installer.json')
+      - name: Create genuine disposable original ANSF multi-project fixture
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:LU_PLAN06_INSTALLED_PROFILE=Join-Path $env:APPDATA 'org.lu.agent01g.devtest'
+          $env:LU_PLAN06_INSTALLED_PROJECTS=Join-Path $env:RUNNER_TEMP 'plan07d-original-projects'
+          $env:LU_PLAN06_INSTALLED_SEED_RECEIPT=Join-Path $env:RUNNER_TEMP 'plan07d-installed-evidence/original-seed.json'
+          if(Test-Path $env:LU_PLAN06_INSTALLED_PROFILE){throw 'Cannot overwrite unrelated original ANSF data'}
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -Path $root -ItemType Directory -Force|Out-Null
+          foreach($dll in @('msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            $file=Join-Path $root $dll
+            if(Test-Path $file){throw "Refuse replacing real engine runtime: $dll"}
+            Set-Content -LiteralPath $file -Value 'NOT_REAL_ENGINE_TEST_FIXTURE_ONLY' -NoNewline
+          }
+          & cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib project_task_board_desktop::tests::export_dual_project_installed_ui_fixture -- --ignored --exact --nocapture
+          if($LASTEXITCODE -ne 0){throw 'Native fixture creation failed'}
+          & python scripts/plan07d-readonly-ansf-witness.py --profile $env:LU_PLAN06_INSTALLED_PROFILE --seed $env:LU_PLAN06_INSTALLED_SEED_RECEIPT --output (Join-Path $env:RUNNER_TEMP 'plan07d-installed-evidence/ansf-original.json')
+          if($LASTEXITCODE -ne 0){throw 'Original ANSF independent witness refused fixture'}
+          "PLAN07D_PROFILE=$env:LU_PLAN06_INSTALLED_PROFILE" >> $env:GITHUB_ENV
+          "PLAN07D_PROJECTS=$env:LU_PLAN06_INSTALLED_PROJECTS" >> $env:GITHUB_ENV
+          "PLAN07D_SEED=$env:LU_PLAN06_INSTALLED_SEED_RECEIPT" >> $env:GITHUB_ENV
+      - name: Actual independent task UI, source picker, OS refusal approval cancellation, crash and restart
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          $ErrorActionPreference='Stop'
+          & scripts/plan07d-windows-installed-acceptance.ps1 -InstalledExe $env:PLAN07D_INSTALLED_EXE -ExpectedSha256 $env:PLAN07D_INSTALLED_SHA -ProfileDir $env:PLAN07D_PROFILE -SeedReceipt $env:PLAN07D_SEED -ProjectsDir $env:PLAN07D_PROJECTS -EvidenceDir (Join-Path $env:RUNNER_TEMP 'plan07d-installed-evidence/uia') -DisposableWindowsConfirmed
+          if($LASTEXITCODE -ne 0){throw '07D real installed Win32 UIA failed, no acceptance claimed'}
+          $result=Get-Content (Join-Path $env:RUNNER_TEMP 'plan07d-installed-evidence/uia/plan07d-windows-uia.json') -Raw|ConvertFrom-Json
+          if($result.acceptance -cne 'PASS_PLAN07D_HOSTED_WINDOWS_INSTALLED_INTERACTIONS'){throw 'No verified hosted interaction receipt'}
+      - name: Uninstall actual NSIS and independently preserve both original projects plus all human decisions
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference='Stop'
+          $before=Join-Path $env:RUNNER_TEMP 'plan07d-installed-evidence/ansf-before-uninstall.json'
+          & python scripts/plan07d-readonly-ansf-witness.py --profile $env:PLAN07D_PROFILE --seed $env:PLAN07D_SEED --output $before --require-phase refused --require-phase cancelled --require-phase approved_for_review --require-phase interrupted
+          if($LASTEXITCODE -ne 0){throw 'Original acceptance prefix vanished'}
+          $uninstall=Join-Path $env:PLAN07D_INSTALL_DIR 'UninstallLuAGENT01GPhysicalTest.exe'
+          if(-not(Test-Path $uninstall)){throw 'Real NSIS uninstaller missing'}
+          $proc=Start-Process $uninstall -ArgumentList '/S' -PassThru
+          if(-not $proc.WaitForExit(180000)){$proc.Kill($true);throw 'Uninstall timed out'}
+          if($proc.ExitCode -ne 0){throw 'Native uninstall failure'}
+          $end=[DateTime]::UtcNow.AddSeconds(30)
+          while((Test-Path $env:PLAN07D_INSTALL_DIR) -and [DateTime]::UtcNow -lt $end){Start-Sleep -Milliseconds 300}
+          if(Test-Path $env:PLAN07D_INSTALL_DIR){throw 'Uninstall left application folder'}
+          $after=Join-Path $env:RUNNER_TEMP 'plan07d-installed-evidence/ansf-after-uninstall.json'
+          & python scripts/plan07d-readonly-ansf-witness.py --profile $env:PLAN07D_PROFILE --seed $env:PLAN07D_SEED --output $after --require-phase refused --require-phase cancelled --require-phase approved_for_review --require-phase interrupted
+          if($LASTEXITCODE -ne 0){throw 'ANSF destroyed by uninstall'}
+          $a=Get-Content $before -Raw|ConvertFrom-Json
+          $b=Get-Content $after -Raw|ConvertFrom-Json
+          if(($a|ConvertTo-Json -Depth 50 -Compress) -cne ($b|ConvertTo-Json -Depth 50 -Compress)){throw 'Original data changed after uninstall'}
+          echo 'Hosted Win32 installed PLAN07D and original ANSF post-uninstall independently read back. Physical owner Radeon/Qwen acceptance remains OPEN.' >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-plan07d-windows-nsis-original-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/plan07d-installed-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+  hosted-debian-smoke:
+    if: ${{ github.event.pull_request.number == 219 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110' && contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: One reviewed source, real Debian dependencies and accessibility desktop
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python3 - <<'PY'
+          import os,re
+          assert re.findall(r'(?m)^LU_PLAN07D_INSTALLED_SHA=([0-9a-f]{40})$',os.environ['BODY']) == [os.environ['HEAD_SHA']]
+          PY
+          node scripts/verify-source-tree.mjs
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf libatspi2.0-dev gir1.2-atspi-2.0 python3-gi xvfb dbus-x11 at-spi2-core xdotool
+      - name: Build genuine native Linux ELF and a real dpkg-installed Debian test application
+        shell: bash
+        timeout-minutes: 110
+        run: |
+          set -euo pipefail
+          mkdir -p plan07d-debian-evidence
+          cd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          cd ..
+          # No assertion of bundled GGUF on Linux. Inert build-time Windows
+          # resource names are never packaged as real model or runtime binaries.
+          mkdir -p lu-desktop/src-tauri/resources/lu-inference
+          for n in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            test ! -e "lu-desktop/src-tauri/resources/lu-inference/$n"
+            printf '%s' 'INERT_LINUX_COMPILE_RESOURCE_NOT_GGUF' > "lu-desktop/src-tauri/resources/lu-inference/$n"
+          done
+          cargo build --locked --release --manifest-path lu-desktop/src-tauri/Cargo.toml --bin lu-desktop
+          candidate="lu-desktop/src-tauri/target/release/lu-desktop"
+          if test ! -x "$candidate"; then candidate="target/release/lu-desktop"; fi
+          test -x "$candidate"
+          stage="$RUNNER_TEMP/plan07d-debian-stage"
+          mkdir -p "$stage/DEBIAN" "$stage/usr/lib/lu-plan07d" "$stage/usr/bin" "$stage/usr/share/applications"
+          install -m 0755 "$candidate" "$stage/usr/lib/lu-plan07d/lu-desktop"
+          ln -s ../lib/lu-plan07d/lu-desktop "$stage/usr/bin/lu-desktop-plan07d"
+          printf '%s\n' 'Package: lu-plan07d' 'Version: 0.1.0~alpha1' 'Architecture: amd64' 'Maintainer: Lu Native Acceptance <test@localhost>' 'Description: disposable original Lu Debian installed acceptance candidate' > "$stage/DEBIAN/control"
+          printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Lu PLAN07D Test' 'Exec=/usr/bin/lu-desktop-plan07d' 'Terminal=false' 'Categories=Utility;' > "$stage/usr/share/applications/lu-plan07d.desktop"
+          dpkg-deb --build --root-owner-group "$stage" "$RUNNER_TEMP/lu-plan07d_0.1.0~alpha1_amd64.deb"
+          sha256sum "$candidate" "$RUNNER_TEMP/lu-plan07d_0.1.0~alpha1_amd64.deb" | tee plan07d-debian-evidence/build-sha256.txt
+          sudo dpkg -i "$RUNNER_TEMP/lu-plan07d_0.1.0~alpha1_amd64.deb"
+          test -x /usr/lib/lu-plan07d/lu-desktop
+          test "$(sha256sum "$candidate" | cut -d' ' -f1)" = "$(sha256sum /usr/lib/lu-plan07d/lu-desktop | cut -d' ' -f1)"
+          dpkg-query -W -f='${Status}\n' lu-plan07d | grep -Fx 'install ok installed'
+      - name: Build the original two-project ANSF profile for actual Debian UI
+        shell: bash
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          mkdir -p plan07d-debian-evidence
+          export XDG_DATA_HOME="$RUNNER_TEMP/plan07d-linux-xdg"
+          export LU_PLAN06_INSTALLED_PROFILE="$XDG_DATA_HOME/org.lu.desktop"
+          export LU_PLAN06_INSTALLED_PROJECTS="$RUNNER_TEMP/plan07d-linux-original-projects"
+          export LU_PLAN06_INSTALLED_SEED_RECEIPT="$GITHUB_WORKSPACE/plan07d-debian-evidence/original-seed.json"
+          test ! -e "$LU_PLAN06_INSTALLED_PROFILE"
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib project_task_board_desktop::tests::export_dual_project_installed_ui_fixture -- --ignored --exact --nocapture
+          python3 scripts/plan07d-readonly-ansf-witness.py --profile "$LU_PLAN06_INSTALLED_PROFILE" --seed "$LU_PLAN06_INSTALLED_SEED_RECEIPT" --output plan07d-debian-evidence/before-ui.json
+      - name: Actual installed GTK/WebKit AT-SPI task-list visibility and restart, explicitly NOT full human approval
+        shell: bash
+        timeout-minutes: 22
+        run: |
+          set -euo pipefail
+          export XDG_DATA_HOME="$RUNNER_TEMP/plan07d-linux-xdg"
+          export NO_AT_BRIDGE=0
+          xvfb-run -a dbus-run-session -- /usr/bin/python3 scripts/plan07d-debian-installed-smoke.py --installed-exe /usr/lib/lu-plan07d/lu-desktop --profile "$XDG_DATA_HOME/org.lu.desktop" --seed "$GITHUB_WORKSPACE/plan07d-debian-evidence/original-seed.json" --evidence-dir "$GITHUB_WORKSPACE/plan07d-debian-evidence/atspi"
+          echo 'Debian hosted installed task-window and restart smoke only: genuine operator approval, OS picker and GGUF on Linux remain OPEN.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Real dpkg removal, preserving original ANSF
+        shell: bash
+        run: |
+          set -euo pipefail
+          export XDG_DATA_HOME="$RUNNER_TEMP/plan07d-linux-xdg"
+          sudo dpkg -r lu-plan07d
+          test ! -e /usr/lib/lu-plan07d/lu-desktop
+          python3 scripts/plan07d-readonly-ansf-witness.py --profile "$XDG_DATA_HOME/org.lu.desktop" --seed plan07d-debian-evidence/original-seed.json --output plan07d-debian-evidence/after-removal.json
+          cmp -s plan07d-debian-evidence/before-ui.json plan07d-debian-evidence/after-removal.json || {
+            echo 'ANSF changed: compare actual original source and decision receipts';exit 2;
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-plan07d-debian-installed-smoke-${{ github.event.pull_request.head.sha }}
+          path: plan07d-debian-evidence/
+          if-no-files-found: warn
+          retention-days: 14
