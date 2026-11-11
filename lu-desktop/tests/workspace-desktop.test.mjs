@@ -194,3 +194,38 @@ test('PLAN-05 installed Windows acceptance requires true OS dialog controls and 
   assert.match(workflow,/LU_PLAN05_INSTALLED_SHA/);
   assert.doesNotMatch(ui,/run_reserved|grant_execution|model\.infer|allowAutoApprove/);
 });
+
+
+test('PLAN-06 isolated task-list surface never turns operator plan review into execution',()=>{
+  const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+  const native=readFileSync(new URL('../src-tauri/src/project_task_board_desktop.rs',import.meta.url),'utf8');
+  const screen=readFileSync(new URL('../web/task_board.jsx',import.meta.url),'utf8');
+  const shell=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
+  const settings=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+  assert.match(host,/label:"task-list",title:"Lu — Project Tasks"/);
+  assert.match(host,/project_task_board_desktop::lu_project_board_list,/);
+  for(const name of ['lu_project_board_evidence','lu_project_board_reorder',
+    'lu_project_board_correct','lu_project_board_approve','lu_project_board_export']){
+    assert.match(host,new RegExp('project_task_board_desktop::'+name+','));
+    assert.match(screen,new RegExp("invoke\\('"+name+"'"));
+  }
+  assert.match(shell,/luWindow==='task-list'\?<TaskBoardWindow\/>/);
+  assert.match(settings,/kind:'task-list'/);
+  assert.match(native,/ansf_project_task_board_revisions/);
+  assert.match(native,/TransactionBehavior::Immediate/);
+  assert.match(native,/PLAN06_STALE_BOARD_HEAD/);
+  assert.match(native,/PLAN06_STALE_REGISTER_HEAD/);
+  assert.match(native,/PLAN06_BOARD_CHAIN_BROKEN/);
+  assert.match(native,/PLAN06_EXPORT_REFUSES_OVERWRITE/);
+  assert.match(native,/blocking_save_file\(\)/);
+  assert.match(native,/human_approved/);
+  assert.match(native,/no_execution_authority:true/);
+  assert.match(native,/refuse|refusal|refuses|NO_ORDER_CHANGE/i);
+  assert.match(screen,/Task status filters/);
+  assert.match(screen,/Evidence details/);
+  assert.match(screen,/Review correction in OS dialog/);
+  assert.match(screen,/Approve plan wording and order only/);
+  assert.match(screen,/Export evidence-bound JSON plan/);
+  assert.doesNotMatch(native,/supervisor\.run_reserved|grant_execution|Command::new|reqwest|create_task_worker/);
+  assert.doesNotMatch(screen,/invoke\('lu_agent_run_reviewed_step'/);
+});
