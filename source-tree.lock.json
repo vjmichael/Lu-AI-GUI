@@ -1345,7 +1345,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_evidence_desktop.rs",
-      "blob": "7a946e6f18ca797704745dd6ed24507d05905ec0"
+      "blob": "ccd5208d6a8a019fedb8b747691c57177fe16dc3"
     },
     {
       "path": "lu-desktop/src-tauri/src/prompt_context.rs",

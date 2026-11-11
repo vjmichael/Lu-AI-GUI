@@ -296,6 +296,10 @@ mod tests{
         assert!(scoped_read(&d,"data.md",1024).unwrap().is_some());
         assert!(scoped_read(&d,"../other",1024).is_err());
         assert!(scoped_read(&d,"/root/file",1024).is_err());
+        // Windows requires the native directory capability handle to close
+        // before deleting this isolated test fixture. The production scanner
+        // still retains its read-only scope until inspection is finished.
+        drop(d);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
