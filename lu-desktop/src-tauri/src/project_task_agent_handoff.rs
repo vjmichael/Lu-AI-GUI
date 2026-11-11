@@ -179,9 +179,10 @@ fn check_existing(conn:&Connection,id:&str,task:&str,version:u64)
         |r|Ok((r.get(0)?,r.get(1)?))
     ).optional().map_err(|_|"P0_NEXT_HANDOFF_LOOKUP_FAILED")?;
     if let Some((_,phase))=existing{
-        return Err(if phase=="PREPARED"{
+        let reason=if phase=="PREPARED"{
             "P0_NEXT_PREPARED_HANDOFF_REQUIRES_MANUAL_RECOVERY"
-        }else{"P0_NEXT_EXISTING_PLAN_LINK_REOPEN_IN_TASK_BOARD"}.into())
+        }else{"P0_NEXT_EXISTING_PLAN_LINK_REOPEN_IN_TASK_BOARD"};
+        return Err(reason.to_string())
     }
     let count:i64=conn.query_row("SELECT COUNT(*) FROM ansf_project_task_agent_handoffs",
         [],|r|r.get(0)).map_err(|_|"P0_NEXT_HANDOFF_COUNT_FAILED")?;
@@ -416,19 +417,20 @@ pub(crate) async fn lu_project_task_prepare_agent_plan(
         }
         check_existing(&conn,&register_id,&task_id,expected_task_version)?;
         (task.summary.clone(),task.acceptance_criteria.clone(),
-            task.source_requirement_id.clone(),task.blocked_by.clone())
+            task.source_requirement_id.clone(),task.blocked_by.clone(),
+            task.description.clone())
     };
     let confirmed=project_register_desktop::confirm(&app,
         "Lu — Prepare source-linked agent plan only",format!(
         "Create a new ANSF conversation and separately reviewed AGENT plan for:\n\
-         Task: {}\nOriginal requirement: {}\nAcceptance criterion: {}\n\
+         Task: {}\nOriginal requirement: {}\nDescription: {}\nAcceptance criterion: {}\n\
          Outstanding blocker text: {}\nTask version: {}\n\
          Mode: {}\n\nThe original source must be selected AGAIN using \
          the operating-system folder picker, then re-scanned. \
          Source/requirements are context only, never instructions or permission. \
          This does NOT run Git, FFprobe, a shell or any worker; \
          does NOT accept implementation, and NEVER grants task authority.",
-        preview.0,preview.2,preview.1,preview.3,expected_task_version,mode
+        preview.0,preview.2,preview.4,preview.1,preview.3,expected_task_version,mode
     )).await?;
     if !confirmed{return Ok(None)}
     let chooser=app.clone();
@@ -515,8 +517,8 @@ pub(crate) async fn lu_project_task_prepare_agent_plan(
         // Presentation notification only. It cannot approve a plan or dispatch.
         // If the main chat was not open, the durable ANSF conversation remains.
         let _=events.emit("lu-project-agent-handoff-created",serde_json::json!({
-            "chatId":found.chat_id,"planId":found.plan_id,
-            "taskId":found.task_id,"registerId":found.register_id,
+            "chatId":found.chat_id.clone(),"planId":found.plan_id.clone(),
+            "taskId":found.task_id.clone(),"registerId":found.register_id.clone(),
             "status":"review_only_draft","executionAuthorized":false
         }));
         Ok(Some(found))
