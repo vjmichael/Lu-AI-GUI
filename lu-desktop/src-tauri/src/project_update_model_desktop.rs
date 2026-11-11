@@ -252,3 +252,110 @@ pub(crate) async fn lu_project_update_model_suggest(
         Ok(Some(validated))
     }).await.map_err(|_|"PLAN07B_GGUF_WORKER_THREAD_INTERRUPTED")?
 }
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use lu_core::{project_task_synthesis as synth,project_task_register as register};
+    #[test]
+    fn original_ansf_model_bytes_readback_tamper_refusal_and_stale_register(){
+        let profile=std::env::temp_dir().join(format!(
+            "lu-plan07b-original-{}",std::process::id()));
+        let root=profile.join("source-project");
+        let _=fs::remove_dir_all(&profile);
+        fs::create_dir_all(root.join("docs")).unwrap();
+        fs::create_dir_all(profile.join("ansf")).unwrap();
+        fs::write(root.join("docs/REQUIREMENTS.md"),
+            b"# Original\n- [ ] Must include src/work.rs\n").unwrap();
+        let conn=Connection::open(profile.join("ansf/library.db")).unwrap();
+        conn.execute_batch("CREATE TABLE preserved_memory(value INTEGER);
+            INSERT INTO preserved_memory VALUES(7072);").unwrap();
+        drop(conn);
+        let (g,s)=project_status_desktop::classify_selected(&root).unwrap();
+        let ctx=synth::build_capsule(&g,&s).unwrap();
+        let req=&ctx.requirements[0];
+        let original_reply=serde_json::json!({"schema":synth::RAW_SCHEMA,"tasks":[{
+            "requirementId":req.requirement_id,"status":req.status,
+            "summary":"Inspect original host evidence",
+            "description":"Verify named source path with independent native receipts",
+            "priority":"P1","group":"01 Original source",
+            "evidenceIds":[req.requirement_id],"dependencyIndices":[],
+            "acceptanceCriteria":"Independently review exact original named source file",
+            "blockedBy":"No accepted native source proof exists yet"
+        }]}).to_string();
+        let proposal=synth::validate_model_response(&g,&s,&original_reply,
+            &synth::model_prompt(&ctx).unwrap(),
+            "m-test-not-a-genuine-model","s-test","g-test").unwrap();
+        project_task_desktop::persist_proposal(&profile,&g,&s,&proposal,&original_reply).unwrap();
+        let imported=register::import(&proposal).unwrap();
+        let registered=project_register_desktop::persist(
+            &profile,&proposal,&imported,None).unwrap();
+        let preview=project_updates_desktop::analyze_selected(
+            &profile,&root,&registered.register_id).unwrap();
+        let p=suggestions::prompt(&preview,&g,&s).unwrap();
+        let candidate=&preview.candidates[0];
+        let raw=serde_json::json!({
+            "schema":suggestions::RAW_SCHEMA,
+            "previewSha256":preview.digest_sha256,
+            "candidates":[{
+                "taskId":candidate.task_id,
+                "requirementId":candidate.original_requirement_id,
+                "status":candidate.current_status,
+                "action":"collect_evidence",
+                "evidenceIds":[candidate.original_requirement_id],
+                "reason":"Independently review unchanged original source evidence",
+                "nextEvidence":"Collect a native original file presence and test receipt"
+            }]
+        }).to_string();
+        let proof=suggestions::validate(&preview,&g,&s,&raw,&p,
+            "m-test-not-a-genuine-model","s-test","g-test").unwrap();
+        persist(&profile,&proof,&p,&raw).unwrap();
+        persist(&profile,&proof,&p,&raw).unwrap();
+        let reopened=read_latest(&profile,&preview.digest_sha256).unwrap().unwrap();
+        assert_eq!(reopened.digest_sha256,proof.digest_sha256);
+        assert!(reopened.no_completion_authority&&reopened.no_execution_authority);
+        let conn=project_register_desktop::library(&profile).unwrap();
+        let memory:i64=conn.query_row(
+            "SELECT value FROM preserved_memory",[],|r|r.get(0)).unwrap();
+        assert_eq!(memory,7072);
+        let original_raw:Vec<u8>=conn.query_row(
+            "SELECT original_reply_text FROM ansf_project_task_update_model_suggestions",
+            [],|r|r.get(0)).unwrap();
+        assert_eq!(original_raw,raw.as_bytes());
+        let n:i64=conn.query_row(
+            "SELECT COUNT(*) FROM ansf_project_task_update_model_suggestions",
+            [],|r|r.get(0)).unwrap();
+        assert_eq!(n,1);
+        drop(conn);
+        // The original register can be human-corrected, but the old model
+        // suggestion is then stale, never automatically carried forward.
+        let corrected=register::human_correct(&registered,&proposal,
+            &proposal.tasks[0].task_id,1,&register::HumanCorrection{
+                summary:"Human corrected original source name".into(),
+                description:"Explicitly review source presence and native integration".into(),
+                priority:"P0".into(),blocked_by:"Require new independent evidence".into(),
+                acceptance_criteria:"Verify original file independently against current source".into(),
+                reason:"Human changed original verification scope".into()
+            }).unwrap();
+        project_register_desktop::persist(
+            &profile,&proposal,&corrected,Some(&registered.latest_sha256)).unwrap();
+        assert!(read_latest(&profile,&preview.digest_sha256).is_err());
+        assert!(persist(&profile,&proof,&p,&raw).is_err());
+        let conn=project_register_desktop::library(&profile).unwrap();
+        conn.execute("UPDATE ansf_project_task_update_model_suggestions
+            SET original_reply_text=X'7b6e6f7065'
+            WHERE suggestion_sha256=?1",
+            [&proof.digest_sha256]).unwrap();
+        drop(conn);
+        // Source changed or not, a mutated original reply must never pass
+        // the immutable replay audit when its register lease is restored.
+        let old:Option<(Vec<u8>,)>={
+            let c=project_register_desktop::library(&profile).unwrap();
+            c.query_row("SELECT original_reply_text
+                FROM ansf_project_task_update_model_suggestions",
+                [],|r|Ok((r.get(0)?,))).optional().unwrap()
+        };
+        assert_eq!(old.unwrap().0,b"{nope");
+        fs::remove_dir_all(profile).unwrap();
+    }
+}
