@@ -268,6 +268,9 @@ function App() {
   const [branchReview, setBranchReview] = useState(null);
   const [branchReviewBusy, setBranchReviewBusy] = useState(false);
   const branchReviewRequest = useRef(0);
+  const [replayPlan, setReplayPlan] = useState(null);
+  const [replayPlanBusy, setReplayPlanBusy] = useState(false);
+  const replayPlanRequest = useRef(0);
   const [mergePlan, setMergePlan] = useState(null);
   const [mergePlanBusy, setMergePlanBusy] = useState(false);
   const mergePlanRequest = useRef(0);
@@ -435,6 +438,9 @@ function App() {
     setBranchReview(null);
     setBranchReviewBusy(false);
     setBranchReviewTarget('');
+    replayPlanRequest.current += 1;
+    setReplayPlan(null);
+    setReplayPlanBusy(false);
     mergePlanRequest.current += 1;
     setMergePlan(null);
     setMergePlanBusy(false);
@@ -1768,6 +1774,9 @@ function App() {
     const operation = branchReviewKind;
     const selectedBranch = operation === 'stash' ? null : branchReviewTarget;
     const ticket = ++branchReviewRequest.current;
+    replayPlanRequest.current += 1;
+    setReplayPlan(null);
+    setReplayPlanBusy(false);
     mergeExecRequest.current += 1;
     setMergeExecReceipt(null);
     mergePlanRequest.current += 1;
@@ -1798,6 +1807,55 @@ function App() {
       }
     } finally {
       if (ticket === branchReviewRequest.current) setBranchReviewBusy(false);
+    }
+  }
+
+  async function previewRebaseCherryReplay() {
+    if (!activeProject?.projectId || replayPlanBusy || branchReviewBusy ||
+        !['rebase', 'cherry_pick'].includes(branchReviewKind) ||
+        branchReview?.projectId !== activeProject.projectId ||
+        branchReview?.operation !== branchReviewKind ||
+        branchReview.selectedLocalBranch !== branchReviewTarget) return;
+    const projectId = activeProject.projectId;
+    const selectedBranch = branchReviewTarget;
+    const operation = branchReviewKind === 'rebase'
+      ? 'rebase_current_onto_local' : 'cherry_pick_local_tip';
+    const upstreamSha = branchReview.evidenceSha256;
+    const ticket = ++replayPlanRequest.current;
+    setReplayPlanBusy(true);
+    setReplayPlan(null);
+    setProblem('');
+    try {
+      const plan = await invoke('ide_git_review_rebase_cherry_pick', {
+        projectId, selectedBranch, operation,
+      });
+      if (ticket !== replayPlanRequest.current) return;
+      if (plan?.schemaVersion !== 1 || plan.projectId !== projectId ||
+          plan.operation !== operation || plan.selectedLocalBranch !== selectedBranch ||
+          plan.currentBranch !== branchReview.currentBranch ||
+          plan.currentHead !== branchReview.currentHead ||
+          plan.selectedTip !== branchReview.selectedTip ||
+          plan.upstreamReviewSha256 !== upstreamSha ||
+          plan.sourceRechecked !== true || plan.originalCommitsRetained !== true ||
+          plan.branchRefUpdated !== false || plan.worktreeOrIndexModified !== false ||
+          plan.gitHookExecuted !== false || plan.networkQueried !== false ||
+          plan.processStarted !== false || plan.executionRouteAvailable !== false ||
+          plan.oneUseOsApprovalGranted !== false || plan.resultingTreeVerified !== false ||
+          plan.conflictResolutionPerformed !== false || plan.renameAnalysisPerformed !== false ||
+          !Array.isArray(plan.blockers) || !Array.isArray(plan.replayCommits) ||
+          plan.replayCommits.length > 16 ||
+          !/^[a-f0-9]{64}$/.test(plan.evidenceSha256) ||
+          !/^[a-f0-9]{64}$/.test(plan.originalIndexSha256)) {
+        throw Error('G06C04_REPLAY_PREVIEW_STALE_OR_UNTRUSTED');
+      }
+      setReplayPlan(plan);
+    } catch (error) {
+      if (ticket === replayPlanRequest.current) {
+        setReplayPlan(null);
+        setProblem('Exact original-commit replay review refused: ' + String(error));
+      }
+    } finally {
+      if (ticket === replayPlanRequest.current) setReplayPlanBusy(false);
     }
   }
 
@@ -1964,6 +2022,9 @@ function App() {
   }
 
   async function refreshGitStatus() {
+    replayPlanRequest.current += 1;
+    setReplayPlan(null);
+    setReplayPlanBusy(false);
     mergeExecRequest.current += 1;
     setMergeExecReceipt(null);
     setMergeRecovery(null);
@@ -5719,6 +5780,9 @@ function App() {
                 onChange={event => {
                   branchReviewRequest.current += 1;
                   setBranchReviewKind(event.target.value);
+                  replayPlanRequest.current += 1;
+                  setReplayPlan(null);
+                  setReplayPlanBusy(false);
                   mergeExecRequest.current += 1;
                   setMergeExecReceipt(null);
                   setBranchReview(null);
@@ -5741,6 +5805,9 @@ function App() {
                   onChange={event => {
                     branchReviewRequest.current += 1;
                     setBranchReviewTarget(event.target.value);
+                    replayPlanRequest.current += 1;
+                    setReplayPlan(null);
+                    setReplayPlanBusy(false);
                     mergeExecRequest.current += 1;
                     setMergeExecReceipt(null);
                     setBranchReview(null);
@@ -5793,6 +5860,57 @@ function App() {
                   <p>Authorization: none · Execution route: unavailable · No Git
                     writes, process launch or network access.</p>
                 </article>}
+              {['rebase', 'cherry_pick'].includes(branchReviewKind) &&
+                branchReview?.projectId === activeProject.projectId &&
+                branchReview.operation === branchReviewKind &&
+                branchReview.selectedLocalBranch === branchReviewTarget &&
+                <div aria-label="G06C04 original rebase cherry-pick history review no execution">
+                  <h4>Commit replay · original-history review only</h4>
+                  <p>{branchReviewKind === 'rebase'
+                    ? 'Inspect the current branch commits that would be replayed on the selected local branch. Rebase rewrites commit identity and may invalidate shared history.'
+                    : 'Inspect ONLY the existing selected local branch tip and its parent. Cherry-picking creates a new commit rather than moving the source branch.'}
+                    {' '}No resulting trees are built. Conflict and rename analysis remain
+                    incomplete; even an empty overlap list is not approval to execute.</p>
+                  <button type="button" className="ghostBtn"
+                    disabled={replayPlanBusy || branchReviewBusy}
+                    onClick={() => void previewRebaseCherryReplay()}>
+                    {replayPlanBusy ? 'Reading native original commits…' :
+                      'Review exact replay commits (no Git changes)'}
+                  </button>
+                  {replayPlan?.projectId === activeProject.projectId &&
+                    replayPlan.selectedLocalBranch === branchReviewTarget &&
+                    replayPlan.upstreamReviewSha256 === branchReview.evidenceSha256 &&
+                    <article className="continuityEvent" role="status">
+                      <strong>{replayPlan.operation.replaceAll('_', ' ')}</strong>
+                      <p>Current HEAD: <code>{replayPlan.currentHead}</code>
+                        {' · '}Target: <code>{replayPlan.selectedTip}</code></p>
+                      <p>Unique merge base: <code>{replayPlan.mergeBase}</code></p>
+                      <p>Original index SHA-256: <code>{replayPlan.originalIndexSha256}</code></p>
+                      <p>Original replay commits: {replayPlan.replayCommits.length}
+                        {' · '}Changed paths: {replayPlan.changedPathCount}
+                        {' · '}Potential path overlap: {replayPlan.possibleOverlapCount}</p>
+                      <p>History rewrite: {String(replayPlan.historyRewrite)}
+                        {' · '}Original commits retained: {String(replayPlan.originalCommitsRetained)}</p>
+                      {replayPlan.blockers.length > 0 &&
+                        <p role="alert">Blockers: {replayPlan.blockers.join(', ').replaceAll('_', ' ')}</p>}
+                      <div className="continuityEvents">
+                        {replayPlan.replayCommits.map(item => <article className="continuityEvent"
+                          key={item.originalCommit}>
+                          <strong>Commit {item.ordinal}: <code>{item.originalCommit}</code></strong>
+                          <p>{item.commitMessagePreview}</p>
+                          <p>Parent: <code>{item.originalParent}</code>
+                            {' · '}Tree: <code>{item.originalTree}</code></p>
+                          <p>Paths: {item.visiblePaths.join(', ') || 'no paths'}
+                            {item.omittedPathCount > 0 ? ' · additional paths hidden' : ''}
+                            {' · '}Unsupported deltas: {item.unsupportedDeltaCount}</p>
+                          <p>Original path ledger SHA-256: <code>{item.pathLedgerSha256}</code></p>
+                        </article>)}
+                      </div>
+                      <p>Evidence digest: <code>{replayPlan.evidenceSha256}</code></p>
+                      <p>No Git ref, index, worktree or remote mutation. No model or
+                        WebView authorization; no execution route for rebase or cherry-pick.</p>
+                    </article>}
+                </div>}
               {branchReviewKind === 'merge' &&
                 branchReview?.projectId === activeProject.projectId &&
                 branchReview.selectedLocalBranch === branchReviewTarget && <div
