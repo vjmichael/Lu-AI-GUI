@@ -67,7 +67,7 @@ fn parse_run(path:&str,sha:&str,bytes:&[u8])->Result<graph::RunInput,String>{
         artifact_sha256:row.artifact_sha256,
     })
 }
-fn assemble_from_selected(root:&Path)->Result<graph::EvidenceGraph,String>{
+pub(crate) fn assemble_from_selected(root:&Path)->Result<graph::EvidenceGraph,String>{
     let base=project_discovery_desktop::scan_selected(root)?;
     let dir=Dir::open_ambient_dir(Path::new(&base.root),ambient_authority())
         .map_err(|_|"PLAN02_PROJECT_SCOPE_UNAVAILABLE")?;
@@ -167,7 +167,7 @@ fn assemble_from_selected(root:&Path)->Result<graph::EvidenceGraph,String>{
     // This is a host-observed snapshot, not a status classifier or a grant.
     Ok(out)
 }
-fn persist_in_ansf_library(profile:&Path,g:&graph::EvidenceGraph)->Result<(),String>{
+pub(crate) fn persist_in_ansf_library(profile:&Path,g:&graph::EvidenceGraph)->Result<(),String>{
     graph::audit(g)?;
     let path=profile.join("ansf").join("library.db");
     let meta=fs::symlink_metadata(&path)

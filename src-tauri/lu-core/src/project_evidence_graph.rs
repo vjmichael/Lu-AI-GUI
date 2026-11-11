@@ -15,7 +15,7 @@ pub enum EvidenceState{Reported,Inspected,IndependentlyVerified,Stale,Unknown}
 pub enum NodeKind{Requirement,Document,Component,IntegrationPath,Test,Run,Acceptance,Artifact,Snapshot}
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Serialize,Deserialize)]
 #[serde(rename_all="snake_case")]
-pub enum Relation{OriginatesFrom,ExplicitMention,ChecksSource,ReportedBy,ClaimsOutcome,ClaimsArtifact,ContainedInHead}
+pub enum Relation{OriginatesFrom,ExplicitMention,ChecksSource,ReportedBy,ClaimsOutcome,ClaimsArtifact,ContainedInHead,NotContainedInHead}
 #[derive(Clone,Debug,Serialize,Deserialize)]
 #[serde(rename_all="camelCase")]
 pub struct EvidenceNode{
@@ -97,7 +97,8 @@ fn link(out:&mut Vec<EvidenceEdge>,nodes:&BTreeMap<String,EvidenceNode>,
     if !nodes.contains_key(from)||!nodes.contains_key(to){
         return Err("PLAN02_DANGLING_LINK".into())
     }
-    if evidence==EvidenceState::IndependentlyVerified&&relation!=Relation::ContainedInHead{
+    if evidence==EvidenceState::IndependentlyVerified&&
+        !matches!(relation,Relation::ContainedInHead|Relation::NotContainedInHead){
         return Err("PLAN02_FALSE_VERIFICATION".into())
     }
     if !out.iter().any(|e|e.from==from&&e.to==to&&e.relation==relation){
@@ -181,10 +182,16 @@ pub fn assemble(input:GraphInput)->Result<EvidenceGraph,String>{
                 &branch.ref_name,None,Some(branch.tip.clone()),None,
                 if input.host_git_checked{EvidenceState::Inspected}else{EvidenceState::Unknown},
                 "Actual local branch ref; only ancestry is independently checked.")?;
-            if input.host_git_checked&&branch.contained_in_head{
-                link(&mut edges,&nodes,&bid,&sid,Relation::ContainedInHead,
+            if input.host_git_checked{
+                link(&mut edges,&nodes,&bid,&sid,
+                    if branch.contained_in_head{Relation::ContainedInHead}
+                    else{Relation::NotContainedInHead},
                     EvidenceState::IndependentlyVerified,
-                    "Native host Git observed branch tip in the ancestry of selected HEAD.")?;
+                    if branch.contained_in_head{
+                        "Native host independently resolved branch tip as ancestor of selected HEAD."
+                    }else{
+                        "Native host checked merge-base and found this tip is NOT an ancestor of selected HEAD."
+                    })?;
             }
         }
     }else{limitations.push("No independently inspected local Git HEAD.".into())}
@@ -270,7 +277,7 @@ pub fn audit(g:&EvidenceGraph)->Result<(),String>{
     if g.edges.iter().any(|e|!ids.contains(e.from.as_str())||
         !ids.contains(e.to.as_str())||
         (e.evidence==EvidenceState::IndependentlyVerified&&
-            e.relation!=Relation::ContainedInHead)){
+            !matches!(e.relation,Relation::ContainedInHead|Relation::NotContainedInHead))){
         return Err("PLAN02_EDGE_UNTRUSTED_VERIFIER".into())
     }
     let bytes=serde_json::to_vec(&(&g.nodes,&g.edges,&g.project_scope_sha256,&g.selected_head,
@@ -317,7 +324,10 @@ mod tests{
         assert!(g.nodes.iter().any(|n|n.kind==NodeKind::Acceptance&&n.evidence==EvidenceState::Unknown));
         assert!(g.edges.iter().any(|e|e.relation==Relation::ExplicitMention));
         assert!(g.edges.iter().any(|e|e.relation==Relation::ClaimsArtifact));
-        assert!(!g.edges.iter().any(|e|e.evidence==EvidenceState::IndependentlyVerified));
+        assert!(g.edges.iter().any(|e|e.relation==Relation::ContainedInHead&&
+            e.evidence==EvidenceState::IndependentlyVerified)==false);
+        assert!(g.edges.iter().any(|e|e.relation==Relation::NotContainedInHead&&
+            e.evidence==EvidenceState::IndependentlyVerified));
         let mut changed=g.clone();changed.nodes[0].label="forged".into();
         assert!(audit(&changed).is_err());
     }
@@ -349,5 +359,7 @@ mod tests{
             e.evidence==EvidenceState::IndependentlyVerified));
         assert!(g.nodes.iter().filter(|n|n.kind==NodeKind::Acceptance)
             .all(|n|n.evidence!=EvidenceState::IndependentlyVerified));
+        assert!(g.edges.iter().any(|e|e.relation==Relation::ContainedInHead&&
+            e.evidence==EvidenceState::IndependentlyVerified));
     }
 }

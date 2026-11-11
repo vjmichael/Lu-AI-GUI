@@ -96,3 +96,25 @@ test('PLAN-02 schema and native folder boundary remain host owned',()=>{
   assert.doesNotMatch(hostGraph,/Command::new|reqwest|git fetch|model\.infer|run_plan/);
   assert.doesNotMatch(screen,/invoke\('lu_project_evidence_graph',\{.*root/);
 });
+
+test('PLAN-03 classification is native-only, graph-audited, ANSF-persisted and never a model grant',()=>{
+  const settings=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+  const classifier=readFileSync(new URL('../../src-tauri/lu-core/src/project_status_classifier.rs',import.meta.url),'utf8');
+  const bridge=readFileSync(new URL('../src-tauri/src/project_status_desktop.rs',import.meta.url),'utf8');
+  assert.match(host,/mod project_status_desktop;/);
+  assert.match(host,/project_status_desktop::lu_project_classify,/);
+  assert.match(bridge,/caller\.label\(\)!="settings"/);
+  assert.match(bridge,/blocking_pick_folder\(\)/);
+  assert.match(bridge,/project_evidence_desktop::assemble_from_selected/);
+  assert.match(bridge,/classifier::observe_project_paths/);
+  assert.match(bridge,/inspect_repository_baseline/);
+  assert.match(bridge,/ansf_project_status_snapshots/);
+  assert.match(bridge,/INSERT OR IGNORE/);
+  assert.match(classifier,/pub enum Status\{Missing,Partial,NotIntegrated,Broken,Unverified,Accepted,Blocked,Unknown\}/);
+  assert.match(classifier,/eg::audit\(g\)/);
+  assert.match(classifier,/PLAN03_FOREIGN_OR_DUPLICATE_PATH_PROOF/);
+  assert.match(settings,/invoke\('lu_project_classify'\)/);
+  assert.match(settings,/PLAN-04 task synthesis is separate/);
+  assert.doesNotMatch(bridge,/Command::new|reqwest|git fetch|run_plan|model\.infer/);
+  assert.doesNotMatch(settings,/invoke\('lu_project_classify',\{.*root/);
+});
