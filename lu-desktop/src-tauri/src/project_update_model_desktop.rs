@@ -508,10 +508,10 @@ mod tests{
             &profile,id).unwrap();
         let prompt=f["prompt"].as_str().unwrap();
         assert_eq!(suggestions::prompt(&preview,&g,&s).unwrap(),prompt);
-        assert_eq!(f["registerSha256"],register.latest_sha256);
-        assert_eq!(f["sourceScopeSha256"],register.scope_sha256);
-        assert_eq!(f["sourceGraphSha256"],g.sha256);
-        assert_eq!(f["sourceStatusSha256"],s.digest_sha256);
+        assert_eq!(f["registerSha256"].as_str(),Some(register.latest_sha256.as_str()));
+        assert_eq!(f["sourceScopeSha256"].as_str(),Some(register.scope_sha256.as_str()));
+        assert_eq!(f["sourceGraphSha256"].as_str(),Some(g.sha256.as_str()));
+        assert_eq!(f["sourceStatusSha256"].as_str(),Some(s.digest_sha256.as_str()));
         let before=project_register_desktop::library(&profile).unwrap();
         let old:i64=before.query_row(
             "SELECT COUNT(*) FROM ansf_project_task_register_revisions
