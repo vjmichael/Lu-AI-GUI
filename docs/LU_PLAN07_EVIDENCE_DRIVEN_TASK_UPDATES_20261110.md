@@ -100,3 +100,84 @@ PLAN-07C (full operator reconciliation/recovery) and PLAN-07D (installed release
 The exact-PR-head \`genuine-plan07b-gguf\` job in REPO-01 and the
 \`native-plan07b-model\` Windows/Linux matrix are separately SHA-admitted.
 A queued job, source check, or synthetic fixture is not a genuine-model PASS.
+
+
+## PLAN-07C — Complete human review and durable reconciliation
+
+**Engineering implementation** (native acceptance and real installed human UIA results remain separate):
+
+### Review is not acceptance of completed work
+
+In the independent **Project Tasks** native window the human selects the exact
+original task and either a deterministic PLAN-07A evidence candidate or a
+verified original PLAN-07B GGUF suggestion. A required 5–250 character human
+note records what to inspect. The native host refuses model suggestions that
+cannot be reconstructed from original source, prompt, reply and ANSF bytes.
+
+The host commits a **Prepared** record BEFORE displaying a real OS confirmation
+dialog. The dialog names the original task and version, requirement ID, original
+graph SHA, source register lease, model suggestion SHA (or native-only), and
+human note. **Approve** means the person authorizes only a *future evidence
+review*. It never authorizes executing a model/tool, marking the exact source
+criterion accepted, completing an engineering task, committing Git, or
+auto-merging. **Refuse** is an explicit durable terminal event, not a silently
+discarded modal. Approval requires a second native folder selection, and a
+fresh source/HEAD/native-classifier scan after the dialog. Wrong scope,
+changed source, changed model reply, stale register lease and changed original
+requirement IDs fail closed and are recorded as **StaleRejected**. A cancelled
+folder picker records **Cancelled**. A process interrupted after **Prepared**
+will leave no approval: on the next host instance's history load, it is sealed
+as **Interrupted**, never replayed or silently retried.
+
+### Original ANSF decision history
+
+New append-only table
+\`ansf_project_task_update_review_events\` in the same ANSF SQLite library
+stores exactly one immutable prepared event and at most one terminal event per
+one-use human review ID. Original SHA-256, predecessor link, sequence,
+SQLite row identity, model proof binding, source graph/status, original task
+version, operator note and no-authority flags are checked on readback.
+An \`IMMEDIATE\` transaction prevents decision replay and checks the latest
+register lease during approved decision commit. A bounded history list never
+truncates silently and offers independent restart/recovery readback in the
+task-list window. Changes to old source tasks and all earlier human corrections
+remain in their original PLAN-05 register unchanged.
+
+### Separate human acceptance of an exact requirement
+
+The interface has a second, deliberately separate action
+\`lu_project_update_review_exact_requirement\`. It uses a native project picker,
+actual current source/status and an OS dialog showing the person's **existing,
+possibly human-corrected** original wording/acceptance criterion. It refuses
+any source drift since the latest original register revision until the person
+uses PLAN-07A's separate source reconciliation. After approval it rescans the
+original source and exact HEAD, then appends a single PLAN-05
+\`HumanRevalidated\` revision using CAS and the original immutable source
+identity. The verified flag describes **only the specific named requirement**,
+and only if the independent current native classifier warrants it; it never
+states entire task/workflow completion, installed acceptance or execution
+authority. Model text is not consulted.
+
+### Tests and remaining acceptance
+
+- Full disposable original ANSF SQLite fixtures: approved/refused/cancelled
+  review decisions, source changes during the dialog, one-use denial,
+  original preserved user memory, restart recovery of interrupted prepared
+  records, tampered event bytes, and historical register SHA unchanged.
+- Separate native exact requirement test: refusing unreconciled source,
+  applying reviewed source and human wording correction, preserving the
+  corrected original wording after exact revalidation, and denying stale
+  versions and source changes after the dialog.
+- Original-model bound review test: only audited GGUF suggestions may be
+  reviewed; mutating original saved reply bytes after preparation denies
+  approval and writes only a stale-denial event.
+- Windows/Linux grouped \`native-plan07c-review\` exact-commit SHA gate
+  includes React/UI contracts, Rust core evidence and model validators,
+  ANSF journal/recovery tests, scoped GGUF cancellation and Tauri compile.
+
+**Outstanding independent gates:** actual exact-head compiler/test results;
+installed NSIS/deb UIA, operator approve/refuse/cancel, accessibility and
+restart on physical Windows; and prior PLAN-07B genuine Qwen GGUF acceptance.
+These are not inferred from source code or native unit tests. PLAN-07D
+installed/release acceptance has not been begun, and there is no merge or
+release authorization.
