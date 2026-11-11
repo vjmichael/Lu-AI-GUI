@@ -177,9 +177,10 @@ pub(crate) async fn ask_reader_for_chat(
     let reuse=state.source_reuse.retrieve_if_fresh(
         &chat_id,&session_id,&source_id,&source_sha256,source_epoch,
     ).is_some();
-    let safe_name=filename.chars().map(|ch|
-        if ch.is_control()||matches!(ch,'['|']'|'<'|'>'){ '_' }else{ch})
-        .take(120).collect::<String>();
+    let safe_name=crate::ansf_source_evidence::safe_reader_basename(&filename);
+    if safe_name.is_empty(){return Err(
+        "Reader filename could not be presented safely".into()
+    )}
     let generation_id=next_id("g-");
     let (ticket,position)=state.generation_queue
         .enqueue(&session_id,&chat_id,&generation_id)?;
@@ -288,6 +289,13 @@ pub(crate) async fn ask_reader_for_chat(
                 "{}\n\n[Lu Reader source: {} | SHA-256: {}]",
                 result.answer,safe_name,source_sha256,
             );
+            // A real successful tool call and original ANSF Reader user turn
+            // exist at this point. This records FILE BYTES provenance only,
+            // not a claim that the generated answer is factually correct.
+            // No file path, document contents or new tool grant enter memory.
+            host.chats.record_reader_native_source(
+                &chat_id,&gid,&prompt,&safe_name,&source_sha256
+            )?;
             host.chats.append_progress(&chat_id,&gid,&answer)?;
             host.chats.complete(&chat_id,&gid)?;
             // Only a completed native Reader run with an actual successful

@@ -832,6 +832,8 @@ function App() {
   const [nativeActionProposals,setNativeActionProposals]=useState({}); // inert Wave 3 review intents
   const [toolActivityOpen,setToolActivityOpen]=useState(false);
   const [toolHistoryByChat,setToolHistoryByChat]=useState({});
+  const [nativeSourcesByChat,setNativeSourcesByChat]=useState({});
+  const [nativeSourceBusy,setNativeSourceBusy]=useState(false);
   const [reviewedMemoryRecoveryByChat,setReviewedMemoryRecoveryByChat]=useState({});
   const [agentProgressByChat,setAgentProgressByChat]=useState({});
   const [agentRecoveryByPlan,setAgentRecoveryByPlan]=useState({});
@@ -1824,6 +1826,11 @@ function App() {
       if(selectedChat===chatId){
         setObserveNotes([]);
         setObserveHandoff(null);
+        // The native forget path deletes private Observe ANSF source metadata
+        // BEFORE returning success. Drop any stale renderer copy too.
+        setNativeSourcesByChat(prev=>({...prev,
+          [selectedChat]:(prev[selectedChat]||[]).filter(x=>x.kind!=='observe')
+        }));
         setObserveView(v=>({...v,notesLogged:0}));
         setActivity('Forgot '+removed+' local observation note'+(removed===1?'':'s')+'. No prior observation is reused.');
       }
@@ -1835,6 +1842,41 @@ function App() {
       const handoff=await invoke('lu_observe_handoff',{chatId});
       setObserveHandoff(handoff);
     }catch(e){setError(String(e));}
+  }
+  async function refreshNativeSourceHistory(targetChat=chatId){
+    if(!targetChat||nativeSourceBusy)return;
+    setNativeSourceBusy(true);setError('');
+    try{
+      const items=await invoke('lu_native_source_history',{chatId:targetChat});
+      setNativeSourcesByChat(prev=>({...prev,[targetChat]:items||[]}));
+    }catch(e){
+      setError('Original ANSF source identities could not be rechecked: '+String(e));
+    }finally{setNativeSourceBusy(false)}
+  }
+  async function publishPrivateObserveSource(){
+    const target=chatId;
+    if(!target||observeView.mode==='off'||nativeSourceBusy)return;
+    setNativeSourceBusy(true);setError('');
+    try{
+      const handoff=await invoke('lu_observe_handoff',{chatId:target});
+      setObserveHandoff(handoff);
+      if(!handoff){
+        setActivity('No current private Observe handoff to review.');
+        return;
+      }
+      const receipt=await invoke('lu_observe_publish_source_metadata',{
+        chatId:target,expectedReviewSha256:handoff.reviewSha256
+      });
+      if(!receipt){
+        setActivity('Private Observe source identity was not saved.');
+        return;
+      }
+      const items=await invoke('lu_native_source_history',{chatId:target});
+      setNativeSourcesByChat(prev=>({...prev,[target]:items||[]}));
+      setActivity('Private Observe source identity saved in ANSF; no notes, screenshots or tool grants stored.');
+    }catch(e){
+      setError('Private Observe source was not admitted: '+String(e));
+    }finally{setNativeSourceBusy(false)}
   }
   function observeAction(action){
     if(!chatId)return;
@@ -4609,8 +4651,58 @@ function App() {
               {toolHistoryBusy?'Refreshing…':'Refresh tool activity'}
             </button>
             <button type="button" className="subtleButton"
+              disabled={nativeSourceBusy}
+              onClick={()=>void refreshNativeSourceHistory(chatId)}>
+              {nativeSourceBusy?'Reading ANSF…':'Show original ANSF source receipts'}
+            </button>
+            <button type="button" className="subtleButton"
               onClick={()=>setToolActivityOpen(false)}>Close</button>
           </div>
+
+          <section className="readProposalCard" role="region"
+            aria-label="ANSF native source provenance">
+            <strong>Original ANSF source provenance · P0-TOOLS-03</strong>
+            <small>Read-only records of actual native Browser, Reader, and OCR
+              observations and separately reviewed Observe identities.
+              The sources are historical, not proof of current content,
+              correctness, publication rights or permission to run tools.
+              OCR transcripts and Observe pixels/notes are NEVER stored in
+              this index or automatically added to model context.</small>
+            <div className="settingsActions">
+              <button type="button" className="subtleButton"
+                disabled={nativeSourceBusy}
+                onClick={()=>void refreshNativeSourceHistory(chatId)}>
+                {nativeSourceBusy?'Reopening…':'Refresh ANSF source list'}
+              </button>
+              {(observeView.mode==='active'||observeView.mode==='paused')&&
+                <button type="button" className="subtleButton"
+                  disabled={nativeSourceBusy}
+                  onClick={()=>void publishPrivateObserveSource()}>
+                  Review saving private Observe source identity in native dialog…
+                </button>}
+            </div>
+            {(nativeSourcesByChat[chatId]||[]).length===0&&
+              <small>No source receipts loaded. Refresh to read the original ANSF
+                library; an empty view does not establish that no prior source exists.</small>}
+            {(nativeSourcesByChat[chatId]||[]).map(item=>
+              <article key={item.sourceId} className="recoveryProvenanceOperation">
+                <strong>{item.kind.toUpperCase()} · {item.sourceStatus.replaceAll('_',' ')}</strong>
+                <small>Source ID: <code>{item.sourceId}</code></small>
+                <small>Original locator (not a grant): {item.locator}</small>
+                <small>Source SHA-256: {item.sourceSha256}</small>
+                <small>Observed SHA-256: {item.observedSha256}</small>
+                {item.originalExcerpt&&!item.localOnlyPrivate&&
+                  <pre className="editFullText" aria-label="Untrusted original Browser excerpt">
+                    {item.originalExcerpt}
+                  </pre>}
+                <small>{item.localOnlyPrivate?
+                  'Private — local only; not model-visible.':
+                  'Historical native metadata; only explicit current human requests may show it to the LOCAL model.'}
+                  {' '}Requires human review: {item.requiresHumanReview?'YES':'No'}
+                  {' '}· Current source freshness: NOT RECHECKED
+                  {' '}· Execution authorized: NO.</small>
+              </article>)}
+          </section>
 
           <section className="readProposalCard" role="region"
             aria-label="Reviewed memory projection recovery">

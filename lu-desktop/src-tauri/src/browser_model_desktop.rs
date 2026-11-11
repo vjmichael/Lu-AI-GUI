@@ -242,6 +242,13 @@ pub(crate) async fn lu_browser_model_read(
                     &chat_id,&user_turn_id,&host_call,source_url,&status,
                     original,worker_truncated
                 )?;
+                // P0-TOOLS-03: index the genuinely observed *post-redirect*
+                // source identity in the SAME ANSF Library. This is public
+                // page DATA only; never a verified citation or permission.
+                owner.chats.record_browser_native_source(
+                    &chat_id,&user_turn_id,&saved.source_url,
+                    &saved.observed_sha256,original
+                )?;
                 let (summary,shortened)=bounded_excerpt(original);
                 (Some(summary),shortened||saved.excerpt_truncated)
             }else{(None,false)};
@@ -538,6 +545,14 @@ pub(crate) async fn lu_generate_browser(
                             );
                             owner.chats.append_browser_observation(
                                 &chat_id,&gid,&host_call,&proposal.tool_name,&record
+                            )?;
+                            // The original native read was already recorded
+                            // by the audited Research ledger. Now bind its
+                            // actual URL/text digest to the host-owned ANSF
+                            // source index for a later explicit local turn.
+                            owner.chats.record_browser_native_source(
+                                &chat_id,&gid,&saved.source_url,
+                                &saved.observed_sha256,text
                             )?;
                             evidence.insert(identity,(
                                 record.clone(),BrowserCitationSource{

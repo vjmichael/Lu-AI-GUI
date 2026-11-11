@@ -71,9 +71,15 @@ enum ReaderSource{
     /// never the original OS path or an ambient filesystem capability.
     Pinned{ filename:String, bytes:Arc<Vec<u8>> },
 }
+/// Native-host-only successful document read observer. Called AFTER the
+/// authenticated read and parser succeeded, never from unverified model
+/// arguments. The callback may persist a host source fingerprint but cannot
+/// grant another path, perform a write, or alter Reader tool schemas.
+pub type ReaderSourceObserver=Arc<dyn Fn(&str,&str)->Result<(),String>+Send+Sync>;
 pub struct ReaderTool{
     descriptor:ToolDescriptor,
     source:Arc<ReaderSource>,
+    observed:Option<ReaderSourceObserver>,
 }
 fn failure(code:&str)->ToolFailure{
     ToolFailure::new(code,code,false)
@@ -225,6 +231,7 @@ impl NativeTool for ReaderTool{
     fn descriptor(&self)->&ToolDescriptor{&self.descriptor}
     fn invoke(&self,invocation:ToolInvocation)->ToolFuture<'_>{
         let source=Arc::clone(&self.source);
+        let observed=self.observed.clone();
         Box::pin(async move{
             if invocation.tool_id!=TOOL_ID
                 ||invocation.input.type_url!=INPUT_TYPE
@@ -236,8 +243,15 @@ impl NativeTool for ReaderTool{
             if request.encode_to_vec()!=invocation.input.bytes{
                 return Err(failure("READER_NONCANONICAL_PROTOBUF"));
             }
+            // The path is untrusted until read_authorized actually opened it
+            // through the approved root, checked source bytes and parsed it.
+            let selected_relative=request.path.clone();
             let result=tokio::task::spawn_blocking(move||read_authorized(&source,request))
                 .await.map_err(|_|failure("READER_WORKER_UNAVAILABLE"))??;
+            if let Some(observer)=observed{
+                observer(&selected_relative,&result.source_sha256)
+                    .map_err(|_|failure("READER_SOURCE_PROVENANCE_UNAVAILABLE"))?;
+            }
             Ok(ToolOutput{payload:ProtoPayload{
                 type_url:OUTPUT_TYPE.into(),bytes:result.encode_to_vec(),
             }})
@@ -318,6 +332,20 @@ impl ModelToolCodec for ReaderCodec{
 pub fn register_reader(
     registry:&NativeToolRegistry,approved_root:&Path
 )->Result<ModelToolCatalog,String>{
+    register_reader_workspace(registry,approved_root,None)
+}
+/// Host-created original-source observer for the combined read-only workspace
+/// model turn. Its callback never selects another file or grants permission.
+pub fn register_reader_with_host_observer(
+    registry:&NativeToolRegistry,approved_root:&Path,
+    observer:ReaderSourceObserver,
+)->Result<ModelToolCatalog,String>{
+    register_reader_workspace(registry,approved_root,Some(observer))
+}
+fn register_reader_workspace(
+    registry:&NativeToolRegistry,approved_root:&Path,
+    observer:Option<ReaderSourceObserver>
+)->Result<ModelToolCatalog,String>{
     let original=std::fs::symlink_metadata(approved_root)
         .map_err(|_|"Invalid Reader root")?;
     if !original.is_dir()||original.file_type().is_symlink(){
@@ -327,7 +355,7 @@ pub fn register_reader(
     if !root.is_dir(){return Err("Reader root is not a directory".into());}
     let root=Arc::new(Dir::open_ambient_dir(root,ambient_authority())
         .map_err(|_|"Cannot open Reader root")?);
-    register_reader_source(registry,ReaderSource::Workspace(root))
+    register_reader_source(registry,ReaderSource::Workspace(root),observer)
 }
 /// Register exactly one document chosen and copied by the trusted host.
 /// The model never sees the source path and cannot open neighboring files.
@@ -346,10 +374,11 @@ pub fn register_reader_pinned(
     }
     register_reader_source(registry,ReaderSource::Pinned{
         filename:filename.to_owned(),bytes:Arc::new(bytes),
-    })
+    },None)
 }
 fn register_reader_source(
-    registry:&NativeToolRegistry,source:ReaderSource
+    registry:&NativeToolRegistry,source:ReaderSource,
+    observed:Option<ReaderSourceObserver>,
 )->Result<ModelToolCatalog,String>{
     let descriptor=ToolDescriptor{
         id:TOOL_ID.into(),display_name:"Read document text".into(),
@@ -361,7 +390,9 @@ fn register_reader_source(
         contract_version:CORE_CONTRACT_VERSION,
         kind:ModuleKind::Core,tools:vec![descriptor.clone()],
         panels:vec![],workflows:vec![],
-    },vec![Arc::new(ReaderTool{descriptor,source:Arc::new(source)}) as Arc<dyn NativeTool>])
+    },vec![Arc::new(ReaderTool{
+        descriptor,source:Arc::new(source),observed
+    }) as Arc<dyn NativeTool>])
         .map_err(|e:RegistryError|format!("{e:?}"))?;
     let mut catalog=ModelToolCatalog::new();
     catalog.insert(registry,ModelToolDefinition{
@@ -561,6 +592,28 @@ mod tests{
         next.offset_chars=Some(100);
         req.input.bytes=next.encode_to_vec();
         assert!(registry.dispatch(req,&Allow).await.is_err());
+        let _=std::fs::remove_dir_all(path);
+    }
+    #[tokio::test]
+    async fn original_source_observer_only_runs_after_real_reader_success(){
+        let path=workspace();let _=std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(path.join("original.md"),"# Actual bytes").unwrap();
+        let seen=Arc::new(std::sync::Mutex::new(Vec::<(String,String)>::new()));
+        let captured=Arc::clone(&seen);
+        let observer:ReaderSourceObserver=Arc::new(move|name,sha|{
+            captured.lock().unwrap().push((name.into(),sha.into()));
+            Ok(())
+        });
+        let registry=NativeToolRegistry::new();
+        let _catalog=register_reader_with_host_observer(&registry,&path,observer).unwrap();
+        assert!(registry.dispatch(invocation("unavailable.md"),&Allow).await.is_err());
+        assert!(seen.lock().unwrap().is_empty());
+        assert!(registry.dispatch(invocation("original.md"),&Allow).await.is_ok());
+        let originals=seen.lock().unwrap().clone();
+        assert_eq!(originals.len(),1);
+        assert_eq!(originals[0].0,"original.md");
+        assert_eq!(originals[0].1.len(),64);
         let _=std::fs::remove_dir_all(path);
     }
     #[cfg(unix)]

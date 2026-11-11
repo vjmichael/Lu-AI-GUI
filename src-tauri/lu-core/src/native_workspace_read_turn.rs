@@ -23,7 +23,9 @@ use crate::{
     native_file_discovery::register_discovery_tool,
     native_files::register_bundled_file_tools,
     native_git_inspect::register_git_inspection_tools,
-    native_reader_tool::register_reader,
+    native_reader_tool::{
+        register_reader,register_reader_with_host_observer,ReaderSourceObserver
+    },
     registry::NativeToolRegistry,
     supervised_tool_generation::{
         run_supervised_native_turn_journaled_observed,ModelStepGenerator,
@@ -71,7 +73,20 @@ impl WorkspaceReadTurnSession{
         host_approved_root:&Path,
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            host_approved_root,None)
+            host_approved_root,None,None)
+    }
+    /// P0-TOOLS-03: the trusted native desktop observes only completed real
+    /// Reader source identity, bound to the SAME original human-selected
+    /// workspace and authenticated turn. This is not a tool/OS grant.
+    pub fn new_with_reader_observer(
+        verifier:&dyn TrustedUserTurnVerifier,
+        conversation_id:&str,user_turn_id:&str,task_id:&str,
+        host_approved_root:&Path,observer:ReaderSourceObserver
+    )->Result<Self,WorkspaceReadError>{
+        Self::new_with_capability(
+            verifier,conversation_id,user_turn_id,task_id,
+            host_approved_root,None,Some(observer)
+        )
     }
     /// Wave 4: read-only local Git from a HUMAN-picked repository directory
     /// and a host-selected trusted Git executable. Only three narrow Git
@@ -83,13 +98,14 @@ impl WorkspaceReadTurnSession{
         host_approved_repository:&Path,host_trusted_git:&Path,
     )->Result<Self,WorkspaceReadError>{
         Self::new_with_capability(verifier,conversation_id,user_turn_id,task_id,
-            host_approved_repository,Some(host_trusted_git))
+            host_approved_repository,Some(host_trusted_git),None)
     }
     #[allow(clippy::too_many_arguments)]
     fn new_with_capability(
         verifier:&dyn TrustedUserTurnVerifier,
         conversation_id:&str,user_turn_id:&str,task_id:&str,
         host_approved_root:&Path,git_executable:Option<&Path>,
+        reader_observer:Option<ReaderSourceObserver>,
     )->Result<Self,WorkspaceReadError>{
         if [conversation_id,user_turn_id,task_id].iter().any(|s|
              s.is_empty()||s.len()>128||
@@ -127,8 +143,14 @@ impl WorkspaceReadTurnSession{
             // one read-only turn. The Reader's own Protobuf codec, 8 MiB cap,
             // source SHA and page/selector checks still apply. A new schema
             // is not an ambient pathname grant, and scanned PDFs need OCR.
-            let reader=register_reader(&registry,&root)
-                .map_err(|e|{eprintln!("Workspace Reader registration failed: {e:?}");WorkspaceReadError::RegistrationFailed})?;
+            let reader=match reader_observer{
+                Some(observe)=>register_reader_with_host_observer(
+                    &registry,&root,observe
+                ),
+                None=>register_reader(&registry,&root),
+            }.map_err(|e|{eprintln!(
+                "Workspace Reader registration failed: {e:?}"
+            );WorkspaceReadError::RegistrationFailed})?;
             catalog.absorb_registered(&registry,reader)
                 .map_err(|e|{eprintln!("Workspace Reader schema composition failed: {e:?}");WorkspaceReadError::CatalogUnavailable})?;
             register_archive_inspection_tool(&registry,&mut catalog,&root)

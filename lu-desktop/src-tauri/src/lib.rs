@@ -13,6 +13,7 @@ mod environment_context;
 mod host_clock;
 mod vision_context;
 mod observe_desktop;
+mod ansf_source_evidence;
 #[cfg(target_os="linux")]
 mod observe_linux_auth;
 mod native_browser_host;
@@ -1973,6 +1974,25 @@ fn lu_ocr_cancel(
     }else{Ok(false)}
 }
 /// Both operator OCR routes reuse the same hash-pinned offline worker.
+/// One original native OCR observation enters ANSF only as private,
+/// unverified source/text digests. The text itself remains in the separate
+/// operator-reviewed OCR response; no automatic model/network ingestion.
+fn append_private_ocr_origin(
+    state:&Arc<DesktopState>,chat_id:&str,locator:&str,
+    view:&OcrImageView,
+)->Result<(),String>{
+    if view.source_verified||!view.human_review_required{
+        return Err("OCR provenance would incorrectly assert verified text".into())
+    }
+    let actual_text=format!("{:x}",Sha256::digest(view.text.as_bytes()));
+    if actual_text!=view.text_sha256{
+        return Err("OCR output text changed before ANSF source registration".into())
+    }
+    state.chats.record_ocr_native_source(
+        chat_id,locator,&view.source_sha256,&view.text_sha256
+    )?;
+    Ok(())
+}
 fn offline_ocr_view(
     bytes:&[u8],executable:&Path,expected:&str,
     tessdata:&Path,expected_data:&str,cancel:&AtomicBool
@@ -2084,7 +2104,9 @@ async fn lu_ocr_read_selected_image(
         offline_ocr_view(&bytes,&executable,expected,&tessdata,expected_data,&worker_token)
     }).await.map_err(|_|"Native OCR execution worker unavailable");
     finish_ocr(state.inner(),&chat_id,&token);
-    Ok(Some(outcome??))
+    let observation=outcome??;
+    append_private_ocr_origin(state.inner(),&chat_id,"selected-image",&observation)?;
+    Ok(Some(observation))
 }
 
 /// Attached-image OCR operates on already host-admitted original pixels.
@@ -2152,7 +2174,9 @@ async fn lu_ocr_read_attached_image(
         offline_ocr_view(&source.bytes,&executable,expected,&tessdata,expected_data,&worker_token)
     }).await.map_err(|_|"Native attached-image OCR worker unavailable");
     finish_ocr(state.inner(),&chat_id,&token);
-    Ok(Some(outcome??))
+    let observation=outcome??;
+    append_private_ocr_origin(state.inner(),&chat_id,"attached-image",&observation)?;
+    Ok(Some(observation))
 }
 
 /// Native OCR for a rectangular region of the original admitted PNG/JPEG.
@@ -2232,7 +2256,9 @@ async fn lu_ocr_read_attached_region(
         })
     }).await.map_err(|_|"Native region OCR worker unavailable");
     finish_ocr(state.inner(),&chat_id,&token);
-    Ok(Some(outcome??))
+    let observation=outcome??;
+    append_private_ocr_origin(state.inner(),&chat_id,"image-region",&observation)?;
+    Ok(Some(observation))
 }
 
 /// User-selected offline PDF OCR. The existing Reader native picker pins
@@ -2326,7 +2352,14 @@ async fn lu_ocr_read_selected_pdf_page(
         }).collect())
     }).await.map_err(|_|"Native PDF OCR worker unavailable");
     finish_ocr(state.inner(),&chat_id,&token);
-    Ok(Some(outcome??))
+    let pages=outcome??;
+    for page in &pages{
+        let number=page.page.ok_or("OCR page index unavailable")?;
+        append_private_ocr_origin(
+            state.inner(),&chat_id,&format!("pdf-page-{number}"),page
+        )?;
+    }
+    Ok(Some(pages))
 }
 
 /// A native GGUF+MMProj semantic pixel probe. Synthetic images and answers
@@ -4972,6 +5005,21 @@ async fn generate_internal(
                             }
                         }
                     }
+                }
+            }
+            // P0-TOOLS-03: a NEW authenticated human turn can explicitly
+            // request original ANSF browser/document source observations.
+            // The receipt index is in ANSF Library SQLite, not a second
+            // memory service. OCR and private Observe NEVER enter prompts.
+            // No current citation, source freshness, or tool authority is
+            // inherited from historical source identities.
+            if origin==GenerationOrigin::Human&&!plan_only&&images.is_empty(){
+                let sources=state.chats.native_source_context_for_turn(
+                    &chat_id,&gid,&prompt
+                )?;
+                if !sources.is_empty()&&
+                    model_prompt.len().saturating_add(sources.len())<=16*1024{
+                    model_prompt.push_str(&sources);
                 }
             }
             // M3: lexical cross-chat recall and direct source-ID lookup are
@@ -8223,6 +8271,10 @@ async fn lu_observe_forget_notes(
     if !confirmed{return Ok(None)}
     state.chats.history(&chat_id)
         .map_err(|_|"The selected conversation is no longer available")?;
+    // Fail closed in favor of privacy: private ANSF source metadata is
+    // forgotten FIRST, before the notes are pruned. A crash cannot leave
+    // remembered Observe metadata after "forget" reported success.
+    state.chats.forget_private_observe_source_metadata(&chat_id)?;
     state.observe.forget_notes(&chat_id).map(Some)
 }
 /// Renderer event hints are NOT trusted test outcomes. Only two enumerated
@@ -8251,6 +8303,51 @@ fn lu_observe_handoff(
     state:State<'_,Arc<DesktopState>>,chat_id:String
 )->Result<Option<observe_desktop::ObserveHandoffView>,String>{
     state.observe.handoff(&chat_id)
+}
+
+/// Source-index consent is SEPARATE from enabling Observe. No screenshot,
+/// note payload, OCR text or generated repair reaches the ANSF source index.
+/// This is a private, never-model-visible metadata reference; neither a
+/// native GUI test verdict nor a current tool permission.
+#[tauri::command]
+async fn lu_observe_publish_source_metadata(
+    app:AppHandle,state:State<'_,Arc<DesktopState>>,
+    chat_id:String,expected_review_sha256:String,
+)->Result<Option<ansf_source_evidence::NativeSourceReceipt>,String>{
+    state.chats.history(&chat_id)?;
+    let original=state.observe.handoff(&chat_id)?
+        .ok_or("No consented Observe handoff is available")?;
+    if original.review_sha256!=expected_review_sha256||
+        original.network_egress_allowed||original.data_origin!="observe_learn"{
+        return Err("Observe review changed or private scope invalid".into())
+    }
+    let native=tauri::async_runtime::spawn_blocking(move||{
+        app.dialog().message(
+            "Save only the SHA-256 identity of this human-reviewed,              enum-only Observe handoff in the existing ANSF source list?\n\n             No notes, image pixels, window titles, screen text, audio,              clipboard or model-generated proposal will be saved. This              record remains private, cannot be used by network tools or              automatically copied to the local model, and is NOT a              verified GUI test or permission to run tools.\n\n             You can later forget this private ANSF source metadata              with the existing Forget Observe Notes action."
+        ).title("Lu — Review private ANSF observation source")
+         .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+             "Save private source identity".into(),"Keep private notes only".into()
+         )).blocking_show()
+    }).await.map_err(|_|"Native Observe source approval unavailable")?;
+    if !native{return Ok(None)}
+    let now=state.observe.handoff(&chat_id)?
+        .ok_or("Observe handoff changed during native review")?;
+    if now.review_sha256!=expected_review_sha256||
+        now.session_id!=original.session_id||
+        now.network_egress_allowed||now.data_origin!="observe_learn"{
+        return Err("Observe source changed during consent; save refused".into())
+    }
+    state.chats.record_observe_review_metadata(&chat_id,&now.review_sha256)
+        .map(Some)
+}
+
+/// Read-only, exact-chat original ANSF Library source index. The WebView may
+/// request history but cannot synthesize source rows or grant an effect.
+#[tauri::command]
+fn lu_native_source_history(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Vec<ansf_source_evidence::NativeSourceReceipt>,String>{
+    state.chats.native_source_history(&chat_id)
 }
 
 #[tauri::command]
@@ -8663,6 +8760,8 @@ pub fn run() {
             lu_observe_notes,
             lu_observe_forget_notes,
             lu_observe_handoff,
+            lu_observe_publish_source_metadata,
+            lu_native_source_history,
             lu_observe_capture_receipt,
             lu_observe_capture_one_shot,
             lu_observe_capture_local_image,

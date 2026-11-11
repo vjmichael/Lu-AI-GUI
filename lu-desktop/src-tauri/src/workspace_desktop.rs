@@ -267,8 +267,43 @@ async fn ask_scoped_read_for_chat(
                     &verifier,&chat_id,&gid,&gid,&root,exe,
                 )
             }else{
-                WorkspaceReadTurnSession::new(
-                    &verifier,&chat_id,&gid,&gid,&root,
+                // P0-TOOLS-03: only the real authenticated Reader tool,
+                // AFTER successfully opening/reading a source within this
+                // native-selected root, can publish one original per-file
+                // digest to the existing ANSF Library. Model answers, names
+                // in prompts and discovery hits can never create entries.
+                let source_host=Arc::clone(&host);
+                let source_chat=chat_id.clone();
+                let original_turn=gid.clone();
+                let seen=Arc::new(Mutex::new(
+                    std::collections::BTreeSet::<(String,String)>::new()
+                ));
+                let seen_sources=Arc::clone(&seen);
+                let reader_observer:lu_core::native_reader_tool::ReaderSourceObserver=
+                    Arc::new(move |relative,source_sha|{
+                        // The caller is a SUCCESSFUL native Reader dispatch,
+                        // never the untrusted model tool request. Do not
+                        // persist a real OS root or intermediate path.
+                        let basename=std::path::Path::new(relative)
+                            .file_name().and_then(|name|name.to_str())
+                            .ok_or("Reader observed a non-UTF-8 filename")?;
+                        let safe=crate::ansf_source_evidence::
+                            safe_reader_basename(basename);
+                        if safe.is_empty(){return Err(
+                            "Reader source display name unavailable".into()
+                        )}
+                        let key=(safe.clone(),source_sha.to_owned());
+                        let mut seen=seen_sources.lock()
+                            .map_err(|_|"Reader source deduplication unavailable")?;
+                        if seen.contains(&key){return Ok(())}
+                        source_host.chats.record_workspace_reader_native_source(
+                            &source_chat,&original_turn,&safe,source_sha
+                        )?;
+                        seen.insert(key);
+                        Ok(())
+                    });
+                WorkspaceReadTurnSession::new_with_reader_observer(
+                    &verifier,&chat_id,&gid,&gid,&root,reader_observer
                 )
             }.map_err(|e|format!("Native read admission: {e:?}"))?;
             let available=turn.capabilities().map_err(|_|"Native tool catalog unavailable")?;
