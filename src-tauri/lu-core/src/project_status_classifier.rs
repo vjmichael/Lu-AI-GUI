@@ -184,6 +184,11 @@ pub fn classify(g:&eg::EvidenceGraph,facts:&[ScopedPathFact])->Result<StatusRepo
                 needed.push("Rescan the same selected project and exact Git HEAD; never infer MISSING from conflicting observations.");
             }
         }else{
+            if not_integrated{
+                dimensions.push(Status::NotIntegrated);
+                reason.push("Host-checked local branch tip is not contained in selected HEAD.");
+                needed.push("Review branch integration and recheck merged HEAD and native tests.");
+            }
             if branch_gate{
                 dimensions.push(Status::Accepted);
                 reason.push("The exact branch-inclusion criterion was independently verified by native Git; no functional or installed acceptance inferred.");

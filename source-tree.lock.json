@@ -2917,7 +2917,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/project_status_classifier.rs",
-      "blob": "208237b16cf843398635ca481c20db3561b0492b"
+      "blob": "a983c8d472f8df4bd6385fa8c1f9e65ccddb7ca2"
     },
     {
       "path": "src-tauri/lu-core/src/projector_identity.rs",
