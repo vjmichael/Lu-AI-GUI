@@ -238,7 +238,7 @@ fn stage0_matches(repo: &Repository, relative: &str, candidate: &str) -> bool {
 fn other_entries_sha(repo: &Repository, relative: &str) -> Result<String, &'static str> {
     let idx = repo.index().map_err(|_| "G06D04_INDEX_OPEN_FAILED")?;
     let mut hash = Sha256::new();
-    hash.update(b"lu-ide-g06d04-unrelated-index-entries-v1\\n");
+    hash.update(b"lu-ide-g06d04-unrelated-index-entries-v1\n");
     let mut count = 0usize;
     for entry in idx.iter() {
         if entry.path.as_slice() == relative.as_bytes() { continue; }
@@ -414,6 +414,7 @@ impl IdeWorkspaceRegistry {
             .map_err(|_| "G06D04_TEMPFILE_UNAVAILABLE_MANUAL_REVIEW")?;
         file.write_all(candidate.as_bytes()).and_then(|_| file.sync_all())
             .map_err(|_| "G06D04_TEMPFILE_SYNC_FAILED_MANUAL_REVIEW")?;
+        drop(file); // Windows cannot safely rename an open temporary file.
         fs::set_permissions(&scratch, permissions)
             .map_err(|_| "G06D04_TEMPFILE_MODE_FAILED_MANUAL_REVIEW")?;
         if sha(&worktree_bytes(&root, relative)?) != j.original_worktree_sha256 ||
