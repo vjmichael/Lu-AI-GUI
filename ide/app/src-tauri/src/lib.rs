@@ -1058,6 +1058,24 @@ async fn ide_git_reconcile_protected_merge_receipt(
     result?
 }
 
+/// 6C-04A: strictly read-only commit graph and original change identity.
+/// No replay, no OS approval, no local index or ref change, and no remote.
+#[tauri::command]
+async fn ide_git_review_rebase_cherry_pick(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    operation: lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind,
+    selected_branch: String,
+) -> Result<lu_ide_workspace::git_rebase_cherry_plan::ReviewedReplayPlan, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.review_local_rebase_cherry_pick(&project_id, operation, &selected_branch)
+            .map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06C04_REPLAY_REVIEW_HOST_INTERRUPTED".to_owned())?
+}
+
 /// On explicit human request, compare local work with current public GitHub
 /// branch evidence. HTTPS to fixed api.github.com only; no token or Git fetch.
 #[tauri::command]
@@ -2679,6 +2697,7 @@ pub fn run() {
             ide_read_git_refs_health,
             ide_git_review_branch_operation,
             ide_git_preview_local_merge,
+            ide_git_review_rebase_cherry_pick,
             ide_git_execute_fast_forward,
             ide_git_cancel_protected_merge,
             ide_git_inspect_protected_merge_recovery,
