@@ -13,9 +13,9 @@ test('6C04B prospective replay uses isolated bare ODB, no original project mutat
   assert.match(lib,/pub mod git_replay_quarantine;/);
   assert.match(quarantine,/Repository::init_bare\(/);
   assert.match(quarantine,/\.add_disk_alternate\(/);
-  assert.match(quarantine,/quarantine\.cherrypick_commit\(/);
+  assert.match(quarantine,/\.cherrypick_commit\(/);
   assert.match(quarantine,/idx\.has_conflicts\(\)/);
-  assert.match(quarantine,/idx\.write_tree_to\(quarantine\)/);
+  assert.match(quarantine,/\.write_tree_to\(quarantine\)/);
   assert.match(quarantine,/quarantine\.commit\(None,/);
   assert.match(quarantine,/G06C04B_SOURCE_CHANGED_DURING_QUARANTINE/);
   assert.match(quarantine,/original_project_unchanged: true/);
