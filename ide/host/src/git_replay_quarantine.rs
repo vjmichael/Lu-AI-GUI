@@ -421,6 +421,10 @@ mod tests {
         let sig=Signature::now("Fixture","fixture@localhost.invalid").unwrap();
         repo.commit(Some("refs/heads/feature"),&sig,&sig,
             "feature modifies same main path",&tree,&[&prior]).unwrap();
+        drop(tree);
+        drop(builder);
+        drop(old_tree);
+        drop(prior);
         drop(repo);
         let before=snapshot(&f);
         let prospective=f.registry.preview_prospective_replay(
