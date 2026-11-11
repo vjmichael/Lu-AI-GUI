@@ -2327,11 +2327,12 @@ async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
         let installed = app
             .try_state::<Arc<lsp_backend::NativeLspRuntime>>()
             .is_some();
-        let supported = tauri::async_runtime::spawn_blocking(move || {
+        let (supported, semantic) = tauri::async_runtime::spawn_blocking(move || {
             if !installed {
-                return Vec::new();
+                return (Vec::new(), Vec::new());
             }
-            lsp_backend::installed_languages(&app)
+            (lsp_backend::installed_languages(&app),
+                lsp_backend::installed_semantic_languages(&app))
         })
         .await
         .unwrap_or_default();
@@ -2340,7 +2341,7 @@ async fn ide_lsp_worker_status(app: AppHandle) -> LanguageWorkerStatus {
                 ready: true, code: "LSP_REVIEWED_INSTALLATION_AVAILABLE",
                 detail: "Reviewed native language server installed; human consent and actual OS worker containment are required for every session.",
                 supported_languages: supported,
-                semantic_languages: lsp_backend::installed_semantic_languages(&app),
+                semantic_languages: semantic,
             };
         }
     }
