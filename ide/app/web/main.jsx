@@ -286,6 +286,13 @@ function App() {
   const mergeExecRequest = useRef(0);
   const [mergeRecovery, setMergeRecovery] = useState(null);
   const [mergeRecoveryBusy, setMergeRecoveryBusy] = useState(false);
+  const [divergentResult, setDivergentResult] = useState(null);
+  const [divergentBusy, setDivergentBusy] = useState(false);
+  const [divergentExecBusy, setDivergentExecBusy] = useState(false);
+  const [divergentReceipt, setDivergentReceipt] = useState(null);
+  const [divergentRecovery, setDivergentRecovery] = useState(null);
+  const [divergentRecoveryBusy, setDivergentRecoveryBusy] = useState(false);
+  const divergentRequest = useRef(0);
   const [gitFileHistory, setGitFileHistory] = useState(null);
   const [gitFilePath, setGitFilePath] = useState('');
   const [gitFileBusy, setGitFileBusy] = useState(false);
@@ -463,6 +470,13 @@ function App() {
     setMergeExecReceipt(null);
     setMergeRecovery(null);
     setMergeRecoveryBusy(false);
+    divergentRequest.current += 1;
+    setDivergentResult(null);
+    setDivergentBusy(false);
+    setDivergentExecBusy(false);
+    setDivergentReceipt(null);
+    setDivergentRecovery(null);
+    setDivergentRecoveryBusy(false);
     setGitFileHistory(null);
     setGitFileBusy(false);
     gitSnapshotRequest.current += 1;
@@ -2103,6 +2117,164 @@ function App() {
     }
   }
 
+  async function verifyDivergentMergeResult() {
+    if (!activeProject?.projectId || divergentBusy || divergentExecBusy ||
+        branchReviewKind !== 'merge' || mergePlan?.classification !== 'divergent_merge_candidate' ||
+        mergePlan?.projectId !== activeProject.projectId ||
+        mergePlan?.selectedLocalBranch !== branchReviewTarget ||
+        mergePlan?.upstreamReviewSha256 !== branchReview?.evidenceSha256) return;
+    const projectId = activeProject.projectId;
+    const selectedBranch = branchReviewTarget;
+    const plan = mergePlan;
+    const ticket = ++divergentRequest.current;
+    setDivergentBusy(true);
+    setDivergentResult(null);
+    setDivergentReceipt(null);
+    setProblem('');
+    try {
+      const candidate = await invoke('ide_git_verify_divergent_merge', {
+        projectId, selectedBranch, evidenceSha256: plan.evidenceSha256,
+      });
+      if (ticket !== divergentRequest.current) return;
+      if (candidate?.schemaVersion !== 1 || candidate.projectId !== projectId ||
+          candidate.currentHead !== plan.currentHead ||
+          candidate.selectedTip !== plan.selectedTip ||
+          candidate.sourcePlanSha256 !== plan.evidenceSha256 ||
+          candidate.firstParent !== plan.currentHead ||
+          candidate.secondParent !== plan.selectedTip ||
+          candidate.authorityGranted !== false ||
+          candidate.sourceObjectsWritten !== false ||
+          candidate.sourceIndexOrWorktreeWritten !== false ||
+          !Array.isArray(candidate.conflicts) ||
+          !/^[a-f0-9]{64}$/.test(candidate.resultSha256) ||
+          !/^[a-f0-9]{64}$/.test(candidate.resultingIndexSha256)) {
+        throw Error('G06C03B_DIVERGENT_RESULT_UNTRUSTED');
+      }
+      setDivergentResult(candidate);
+    } catch (error) {
+      if (ticket === divergentRequest.current) {
+        setDivergentResult(null);
+        setProblem('Isolated three-way local merge verification unavailable: ' + String(error));
+      }
+    } finally {
+      if (ticket === divergentRequest.current) setDivergentBusy(false);
+    }
+  }
+
+  async function executeProtectedDivergentMerge() {
+    if (!activeProject?.projectId || divergentBusy || divergentExecBusy ||
+        divergentResult?.projectId !== activeProject.projectId ||
+        divergentResult.sourcePlanSha256 !== mergePlan?.evidenceSha256 ||
+        divergentResult.firstParent !== mergePlan.currentHead ||
+        divergentResult.secondParent !== mergePlan.selectedTip ||
+        divergentResult.conflictFreePreview !== true ||
+        divergentResult.conflictCount !== 0 || !divergentResult.prospectiveTree) return;
+    const projectId = activeProject.projectId;
+    const selectedBranch = branchReviewTarget;
+    const candidate = divergentResult;
+    const ticket = ++divergentRequest.current;
+    setDivergentExecBusy(true);
+    setDivergentReceipt(null);
+    setProblem('');
+    try {
+      const receipt = await invoke('ide_git_execute_divergent_merge', {
+        projectId, selectedBranch,
+        evidenceSha256: candidate.sourcePlanSha256,
+        resultSha256: candidate.resultSha256,
+      });
+      if (ticket !== divergentRequest.current) return;
+      if (receipt?.schemaVersion !== 1 || receipt.projectId !== projectId ||
+          receipt.firstParent !== candidate.firstParent ||
+          receipt.secondParent !== candidate.secondParent ||
+          receipt.resultingTree !== candidate.prospectiveTree ||
+          receipt.reviewedResultSha256 !== candidate.resultSha256 ||
+          receipt.parentCountVerified !== true ||
+          receipt.originalBranchesPreserved !== true ||
+          receipt.exactOldHeadCas !== true ||
+          receipt.separatelyRequiredOneUseOsConsent !== true ||
+          receipt.independentlyVerified !== true || receipt.journalSynced !== true ||
+          receipt.hooksRun !== false || receipt.remoteMutated !== false) {
+        throw Error('G06C03B_PUBLISHED_RECEIPT_UNTRUSTED');
+      }
+      await refreshGitStatus();
+      setDivergentReceipt(receipt);
+      setHint('OS-approved two-parent local merge verified; no remote branch changed.');
+    } catch (error) {
+      if (ticket === divergentRequest.current) {
+        setProblem('Divergent merge denied, interrupted or unverified: ' + String(error));
+      }
+    } finally {
+      if (ticket === divergentRequest.current) setDivergentExecBusy(false);
+    }
+  }
+
+  async function cancelProtectedDivergentMerge() {
+    if (!activeProject?.projectId || !divergentExecBusy) return;
+    try {
+      const result = await invoke('ide_git_cancel_protected_merge', {
+        projectId: activeProject.projectId,
+      });
+      setHint('Native pre-publication cancellation: ' + result.replaceAll('_', ' '));
+    } catch (error) {
+      setProblem('Cancellation unavailable beyond object-publication boundary: ' + String(error));
+    }
+  }
+
+  async function inspectDivergentRecovery() {
+    if (!activeProject?.projectId || divergentRecoveryBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = ++divergentRequest.current;
+    setDivergentRecoveryBusy(true);
+    setDivergentRecovery(null);
+    try {
+      const state = await invoke('ide_git_inspect_divergent_recovery', { projectId });
+      if (ticket !== divergentRequest.current) return;
+      if (state?.schemaVersion !== 1 || state.projectId !== projectId ||
+          state.automaticRetry !== false || state.automaticCheckout !== false ||
+          state.automaticRefRewrite !== false || state.automaticRollback !== false ||
+          state.automaticLockDeletion !== false) {
+        throw Error('G06C03B_RECOVERY_UNTRUSTED');
+      }
+      setDivergentRecovery(state);
+    } catch (error) {
+      if (ticket === divergentRequest.current) {
+        setProblem('Protected divergent merge restart inspection unavailable: ' + String(error));
+      }
+    } finally {
+      if (ticket === divergentRequest.current) setDivergentRecoveryBusy(false);
+    }
+  }
+
+  async function reconcileDivergentReceipt() {
+    if (!activeProject?.projectId || divergentRecoveryBusy ||
+        !divergentRecovery?.operatorReconciliationRequired ||
+        divergentRecovery.foreignIndexLockPresent ||
+        !['published_requires_independent_receipt',
+          'unpublished_no_index_change_needs_review'].includes(divergentRecovery.state)) return;
+    const projectId = activeProject.projectId;
+    const ticket = ++divergentRequest.current;
+    setDivergentRecoveryBusy(true);
+    setProblem('');
+    try {
+      const state = await invoke('ide_git_reconcile_divergent_receipt', { projectId });
+      if (ticket !== divergentRequest.current) return;
+      if (state?.projectId !== projectId || state.operatorReconciliationRequired !== false ||
+          state.automaticRetry !== false || state.automaticCheckout !== false ||
+          state.automaticRefRewrite !== false || state.automaticRollback !== false ||
+          state.automaticLockDeletion !== false) {
+        throw Error('G06C03B_RECEIPT_NOT_VERIFIED');
+      }
+      setDivergentRecovery(state);
+      setHint('Independent native two-parent merge receipt reconciled; no replay performed.');
+    } catch (error) {
+      if (ticket === divergentRequest.current) {
+        setProblem('Receipt-only divergent recovery denied: ' + String(error));
+      }
+    } finally {
+      if (ticket === divergentRequest.current) setDivergentRecoveryBusy(false);
+    }
+  }
+
   async function executeReviewedFastForward() {
     if (!activeProject?.projectId || mergeExecBusy || mergePlanBusy ||
         branchReviewKind !== 'merge' || mergePlan?.projectId !== activeProject.projectId ||
@@ -2234,6 +2406,13 @@ function App() {
     setMergeRecovery(null);
     setMergeExecBusy(false);
     setMergeRecoveryBusy(false);
+    divergentRequest.current += 1;
+    setDivergentResult(null);
+    setDivergentBusy(false);
+    setDivergentExecBusy(false);
+    setDivergentReceipt(null);
+    setDivergentRecovery(null);
+    setDivergentRecoveryBusy(false);
     branchReviewRequest.current += 1;
     setBranchReview(null);
     setBranchReviewBusy(false);
