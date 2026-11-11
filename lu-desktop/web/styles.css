@@ -623,3 +623,13 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .plan07Candidates article{padding:10px;background:#1c354d;border:1px solid #466380;border-radius:7px;min-width:0}
 .plan07Candidates article strong{font-size:12px;overflow-wrap:anywhere}
 .plan07Candidates article p{margin:6px 0}
+
+
+/* PLAN-07B: visually segregate suggestions from independently reviewed work. */
+.plan07ModelSuggestions{margin-top:15px;padding:12px;border:1px solid #58768d;border-radius:8px;background:#182d42}
+.plan07ModelSuggestions h3{font-size:13px;margin:0 0 8px}
+.plan07ModelSuggestions p{font-size:12px;line-height:1.5}
+.plan07ModelSuggestions section{margin-top:12px;padding:8px;background:#15273b;border-radius:6px}
+.plan07ModelSuggestions article{margin:10px 0;border-top:1px solid #39546d;padding:9px 0}
+.plan07ModelSuggestions strong{font-size:12px;overflow-wrap:anywhere}
+.plan07ModelSuggestions small{overflow-wrap:anywhere;display:block}
