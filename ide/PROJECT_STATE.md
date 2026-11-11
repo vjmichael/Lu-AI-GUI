@@ -1,5 +1,21 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 6B-05 — installed commit/amend and independent Git recovery (Nov 10, 2026)
+
+Built a disposable real-Git integrity oracle and 12 cross-platform adversarial tests,
+checking original history, exact selected staged-tree bytes, unrelated index/worktree,
+refs, denial/cancel and foreign locks. Added genuine Windows NSIS and Debian
+installer, process restart and uninstall smoke lanes, separately from human consent.
+An additional native test covers a durable `publishing` journal after an actual
+matching branch-ref CAS and before terminal receipt, requiring fresh approved
+reconciliation rather than branch replay. Physical installed native approve,
+refuse, cancel, crash/restart and accessibility for both **new commit and
+two-consent amendment** remain OPEN; CI never supplies fake OS consent.
+Independently verify exact head and each job before accepting this group.
+See `ide/docs/IDE_GROUP06B05_INSTALLED_COMMIT_RECOVERY_20261110.md` and
+`ide/app/fixtures/g06b05_git_oracle.py`. No impact on Lu Core, release or main.
+
+
 ## Group 6B-04 — separately reviewed local Git commits/amends (Nov 10, 2026)
 
 New native reviewed-commit module consumes a private-journal-verified
