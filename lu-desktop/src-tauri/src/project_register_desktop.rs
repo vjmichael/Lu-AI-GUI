@@ -3,6 +3,7 @@
 use super::*;
 use lu_core::{project_evidence_graph as graph,project_status_classifier as status,
     project_task_synthesis as synthesis,project_task_register as register};
+use std::collections::BTreeMap;
 use rusqlite::{Connection,OpenFlags,params,OptionalExtension,TransactionBehavior};
 
 fn library(profile:&Path)->Result<Connection,String>{
@@ -76,6 +77,48 @@ fn archived_evidence(conn:&Connection,graph_id:&str,status_id:&str)
     }
     Ok((g,s))
 }
+fn audit_revision_observations(conn:&Connection,r:&register::TaskRegister)
+ ->Result<(),String>{
+    // A rehashed task JSON is not independent acceptance evidence. Every
+    // imported, corrected, drifted or verified event must resolve to its
+    // original audited PLAN-02/03 persisted source facts at restart.
+    let mut snapshots=BTreeMap::<
+        (String,String),(graph::EvidenceGraph,status::StatusReport)>::new();
+    for event in &r.events{
+        let revision=&event.revision;
+        let key=(revision.graph_sha256.clone(),revision.status_sha256.clone());
+        if !snapshots.contains_key(&key){
+            snapshots.insert(key.clone(),archived_evidence(conn,&key.0,&key.1)?);
+        }
+        let (g,s)=snapshots.get(&key)
+            .ok_or("PLAN05_SOURCE_RECEIPT_UNAVAILABLE")?;
+        if revision.selected_head!=g.selected_head||
+            (revision.observed_at_unix!=0&&
+                revision.observed_at_unix!=s.observed_at_unix){
+            return Err("PLAN05_HISTORICAL_SOURCE_RECEIPT_CHANGED".into())
+        }
+        let finding=s.findings.iter()
+            .find(|f|f.requirement_id==revision.source_requirement_id);
+        match finding{
+            Some(f) if f.primary!=revision.observed_status=>
+                return Err("PLAN05_HISTORICAL_STATUS_NOT_SOURCE_BOUND".into()),
+            None if event.kind!=register::RevisionKind::SourceChanged||
+                revision.observed_status!=status::Status::Unknown=>
+                return Err("PLAN05_UNVERIFIED_SOURCE_REQUIREMENT_REBOUND".into()),
+            _=>{},
+        }
+        if revision.independently_verified_requirement{
+            let verified=finding.is_some_and(|f|
+                event.kind==register::RevisionKind::HumanRevalidated&&
+                g.complete&&s.complete&&
+                f.primary==status::Status::Accepted&&
+                f.evidence_health==status::EvidenceHealth::Current&&
+                !f.conflicting_claims);
+            if !verified{return Err("PLAN05_UNPROVEN_ACCEPTANCE_IN_HISTORY".into())}
+        }
+    }
+    Ok(())
+}
 fn load_register(conn:&Connection,id:&str)
  ->Result<Option<(synthesis::ProjectTaskProposal,register::TaskRegister,u64)>,String>{
     let mut stmt=conn.prepare("SELECT register_revision,original_proposal_sha256,
@@ -120,7 +163,10 @@ fn load_register(conn:&Connection,id:&str)
         prior=Some(decoded);n+=1;
     }
     match (proposal,prior){
-        (Some(p),Some(r))=>Ok(Some((p,r,n))),
+        (Some(p),Some(r))=>{
+            audit_revision_observations(conn,&r)?;
+            Ok(Some((p,r,n)))
+        },
         (None,None)=>Ok(None),
         _=>Err("PLAN05_PARTIAL_REGISTER".into())
     }
