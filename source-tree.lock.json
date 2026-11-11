@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "94789902e6ffb64f446f46aa1771963ca11b33be",
-  "trackedFileCount": 917,
+  "sourceCommitBeforeLock": "3bddf91fe2739b99081516acc64eabe47618ca75",
+  "trackedFileCount": 918,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -365,7 +365,7 @@
     },
     {
       "path": "benchmarks/e1/plan07b_real_gguf_task_updates.py",
-      "blob": "7bb1553a5b640d16b671e412adf3be79061bca9f"
+      "blob": "3f8a037c5bf321c701f98c9707062c0abd0f9c2b"
     },
     {
       "path": "benchmarks/e1/r00_genuine_kiaf_comparison.py",
@@ -406,6 +406,10 @@
     {
       "path": "benchmarks/e1/test_memory_loop03c_reviewed_workers.py",
       "blob": "59fde8d6665524372299a9ae39172f1d4a541643"
+    },
+    {
+      "path": "benchmarks/e1/test_plan07b_real_gguf_task_updates.py",
+      "blob": "ba728e48e3ad9f7d33be8ff861e0e196c72e9505"
     },
     {
       "path": "benchmarks/e1/test_r00_genuine_kiaf_comparison.py",
@@ -1393,7 +1397,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_update_model_desktop.rs",
-      "blob": "591d29f3260bcd019cd74fbc77f7f5706b840456"
+      "blob": "a6c4060bffa203f4cfae1d6bbd7dd5c10c71eb4b"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_updates_desktop.rs",
@@ -2093,11 +2097,11 @@
     },
     {
       "path": "scripts/plan07b-independent-original-ansf-oracle.py",
-      "blob": "4ace09683aedf1adbe6c55fa720d5b5349f1e123"
+      "blob": "1c7a1e3466bfb87214838cf21ec1ae79caa1f167"
     },
     {
       "path": "scripts/plan07b-real-gguf-acceptance.sh",
-      "blob": "ddc6f25a47680cb8a09911bc3d96fe541df1316b"
+      "blob": "1e4ebbc38b12145135aee8f3613bdda1a37e3137"
     },
     {
       "path": "scripts/probe-observe-sensitive-window-windows.ps1",
