@@ -37,6 +37,7 @@ pub struct ConflictResolutionReview {
     pub original_index_sha256: String,
     pub inventory_evidence_sha256: String,
     pub original_worktree_sha256: String,
+    pub other_index_entries_sha256: String,
     pub proposed_content_sha256: String,
     pub proposed_bytes: usize,
     pub file_mode: u32,
@@ -63,6 +64,7 @@ struct Journal {
     original_head: String,
     original_index_sha256: String,
     original_worktree_sha256: String,
+    other_index_entries_sha256: String,
     proposed_content_sha256: String,
     review_sha256: String,
     candidate_blob_oid: String,
@@ -106,6 +108,7 @@ pub struct ProtectedResolutionRecovery {
     pub candidate_index_entry_matches: bool,
     pub original_worktree_matches: bool,
     pub proposed_worktree_matches: bool,
+    pub unrelated_index_entries_preserved: bool,
     pub foreign_index_lock_present: bool,
     pub automatic_retry: bool,
     pub automatic_restore: bool,
@@ -181,6 +184,7 @@ fn journal_last(path: &Path) -> Result<Option<Journal>, &'static str> {
             "verified" | "cancelled") ||
         !valid_hex(&j.original_index_sha256) ||
         !valid_hex(&j.original_worktree_sha256) ||
+        !valid_hex(&j.other_index_entries_sha256) ||
         !valid_hex(&j.proposed_content_sha256) ||
         !valid_hex(&j.review_sha256) {
         return Err("G06D04_JOURNAL_INVALID_RECORD");
@@ -221,6 +225,23 @@ fn stage0_matches(repo: &Repository, relative: &str, candidate: &str) -> bool {
     index.get_path(path, 0).is_some_and(|e| e.id == oid) &&
         (1..=3).all(|s| index.get_path(path, s).is_none())
 }
+fn other_entries_sha(repo: &Repository, relative: &str) -> Result<String, &'static str> {
+    let idx = repo.index().map_err(|_| "G06D04_INDEX_OPEN_FAILED")?;
+    let mut hash = Sha256::new();
+    hash.update(b"lu-ide-g06d04-unrelated-index-entries-v1\\n");
+    let mut count = 0usize;
+    for entry in idx.iter() {
+        if entry.path.as_slice() == relative.as_bytes() { continue; }
+        count += 1;
+        if count > 100_000 { return Err("G06D04_UNRELATED_INDEX_LIMIT"); }
+        hash.update((entry.path.len() as u64).to_le_bytes());
+        hash.update(&entry.path);
+        hash.update(entry.id.as_bytes());
+        hash.update(entry.mode.to_le_bytes());
+        hash.update((entry.flags & 0x3000).to_le_bytes());
+    }
+    Ok(format!("{:x}", hash.finalize()))
+}
 fn candidate_has_no_nul(candidate: &str) -> Result<(), &'static str> {
     if candidate.len() > MAX_CANDIDATE || candidate.as_bytes().contains(&0) {
         return Err("G06D03_CANDIDATE_NOT_PLAIN_BOUNDED_TEXT");
@@ -259,12 +280,13 @@ impl IdeWorkspaceRegistry {
         let root = self.registered_git_root(id).map_err(|_| "G06D03_PROJECT_CLOSED")?;
         let original_worktree = worktree_bytes(&root, relative)?;
         let worktree_digest = sha(&original_worktree);
+        let unrelated_index = other_entries_sha(&repo, relative)?;
         let proposed_sha = sha(candidate.as_bytes());
         let mut h = Sha256::new();
         h.update(b"lu-ide-g06d03-conflict-proposal-v1\n");
         for part in [id, relative, &inventory.current_branch, &inventory.current_head,
             &inventory.index_sha256, &inventory.evidence_sha256,
-            &worktree_digest, &proposed_sha] { bind(&mut h, part); }
+            &worktree_digest, &unrelated_index, &proposed_sha] { bind(&mut h, part); }
         h.update(mode.to_le_bytes());
         for oid in [&entry.ancestor, &entry.ours, &entry.theirs] {
             bind(&mut h, oid.as_ref().map(|v| v.oid.as_str()).unwrap_or("NONE"));
@@ -273,7 +295,8 @@ impl IdeWorkspaceRegistry {
         if self.inspect_native_git_conflicts(id)?.evidence_sha256 != inventory_sha ||
             worktree_bytes(&root, relative)? != original_worktree ||
             !head_matches(&repo, &inventory.current_head) ||
-            index_hash(&repo)? != inventory.index_sha256 {
+            index_hash(&repo)? != inventory.index_sha256 ||
+            other_entries_sha(&repo, relative)? != unrelated_index {
             return Err("G06D03_SOURCE_CHANGED_DURING_REVIEW");
         }
         Ok(ConflictResolutionReview {
@@ -282,6 +305,7 @@ impl IdeWorkspaceRegistry {
             original_index_sha256: inventory.index_sha256,
             inventory_evidence_sha256: inventory.evidence_sha256,
             original_worktree_sha256: worktree_digest,
+            other_index_entries_sha256: unrelated_index,
             proposed_content_sha256: proposed_sha,
             proposed_bytes: candidate.len(), file_mode: mode,
             ancestor_oid: entry.ancestor.as_ref().map(|v| v.oid.clone()),
@@ -332,6 +356,7 @@ impl IdeWorkspaceRegistry {
             original_head: reviewed.current_head.clone(),
             original_index_sha256: reviewed.original_index_sha256.clone(),
             original_worktree_sha256: reviewed.original_worktree_sha256.clone(),
+            other_index_entries_sha256: reviewed.other_index_entries_sha256.clone(),
             proposed_content_sha256: reviewed.proposed_content_sha256.clone(),
             review_sha256: reviewed.review_sha256.clone(),
             candidate_blob_oid: String::new(),
@@ -413,6 +438,7 @@ impl IdeWorkspaceRegistry {
         #[cfg(test)]
         test_abort(&root, repo.path(), "IDE_G06D04_ABORT_AFTER_INDEX");
         if !head_matches(&repo, &j.original_head) ||
+            other_entries_sha(&repo, relative)? != j.other_index_entries_sha256 ||
             !stage0_matches(&repo, relative, &j.candidate_blob_oid) ||
             sha(&worktree_bytes(&root, relative)?) != j.proposed_content_sha256 ||
             index_hash(&repo)? != j.resulting_index_sha256 {
@@ -445,6 +471,7 @@ impl IdeWorkspaceRegistry {
                 relative_path: String::new(), original_head_matches: false,
                 original_index_matches: false, candidate_index_entry_matches: false,
                 original_worktree_matches: false, proposed_worktree_matches: false,
+                unrelated_index_entries_preserved: false,
                 foreign_index_lock_present: false,
                 automatic_retry: false, automatic_restore: false,
                 automatic_index_write: false, automatic_ref_update: false,
@@ -462,11 +489,13 @@ impl IdeWorkspaceRegistry {
         let wt = worktree_bytes(&root, &j.relative_path).ok();
         let old_wt = wt.as_ref().is_some_and(|bytes| sha(bytes) == j.original_worktree_sha256);
         let new_wt = wt.as_ref().is_some_and(|bytes| sha(bytes) == j.proposed_content_sha256);
+        let other_preserved = other_entries_sha(&repo, &j.relative_path).ok()
+            .as_deref() == Some(&j.other_index_entries_sha256);
         let phase = j.phase.clone();
-        let state = if !lock && head_ok && staged && new_wt {
+        let state = if !lock && head_ok && other_preserved && staged && new_wt {
             if j.phase == "verified" { "verified_resolved_stage" }
             else { "resolved_requires_independent_receipt" }
-        } else if !lock && head_ok && original_index && old_wt &&
+        } else if !lock && head_ok && other_preserved && original_index && old_wt &&
             matches!(j.phase.as_str(), "prepared" | "blob_ready" | "cancelled") {
             "unpublished_original_source_preserved"
         } else { "partial_or_drifted_manual_repair" };
@@ -476,6 +505,7 @@ impl IdeWorkspaceRegistry {
             original_head_matches: head_ok, original_index_matches: original_index,
             candidate_index_entry_matches: staged,
             original_worktree_matches: old_wt, proposed_worktree_matches: new_wt,
+            unrelated_index_entries_preserved: other_preserved,
             foreign_index_lock_present: lock,
             automatic_retry: false, automatic_restore: false,
             automatic_index_write: false, automatic_ref_update: false,
