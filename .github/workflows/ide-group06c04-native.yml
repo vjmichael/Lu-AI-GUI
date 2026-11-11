@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/ide-group06c04-native.yml'
       - 'ide/host/src/git_rebase_cherry_plan.rs'
+      - 'ide/host/src/git_replay_quarantine.rs'
       - 'ide/host/src/lib.rs'
       - 'ide/app/src-tauri/src/lib.rs'
       - 'ide/app/web/main.jsx'
@@ -61,8 +62,9 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --manifest-path ide/host/Cargo.toml --lib git_rebase_cherry_plan -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_replay_quarantine -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_merge
-          rustfmt --edition 2021 --check ide/host/src/git_rebase_cherry_plan.rs
+          rustfmt --edition 2021 --check ide/host/src/git_rebase_cherry_plan.rs ide/host/src/git_replay_quarantine.rs
           echo G06C04_LOCAL_ORIGINAL_REPLAY=SOURCE_REVIEW_ONLY
       - name: Hostile UI source-boundary checks and desktop build
         shell: bash
