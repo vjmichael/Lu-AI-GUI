@@ -38,6 +38,7 @@ mod project_discovery_desktop;
 mod project_evidence_desktop;
 mod project_status_desktop;
 mod project_task_desktop;
+mod project_register_desktop;
 mod reviewed_app_desktop;
 mod reviewed_memory_evidence;
 mod reviewed_app_recovery;
