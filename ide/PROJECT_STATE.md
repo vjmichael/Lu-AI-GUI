@@ -1,5 +1,24 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## Group 6B-04 — separately reviewed local Git commits/amends (Nov 10, 2026)
+
+New native reviewed-commit module consumes a private-journal-verified
+6B-03 selected-hunk index, creates an immutable commit plan, and
+requires a distinct one-use native OS approval to update the original
+local branch HEAD through ref compare-and-swap. Explicit amendment
+requires an additional history-rewrite dialog; upstream branches,
+root/merge rewrites, stale plans and forged receipts are denied.
+A durable fsynced commit journal supports restart inspection and
+non-mutating, separately approved terminal receipt reconciliation.
+Restart can recover the original verified staged receipt without
+recovering approval. Source Control provides new-commit/amend review,
+authorization, cancellation and recovery UI. Native source tests
+exercise true Git objects, stale index/receipt denial and restart.
+The grouped exact-head Windows/Linux native and installed-app
+acceptance gates remain distinct; physical OS consent is NOT verified.
+See `ide/docs/IDE_GROUP06B_ADVANCED_STAGING_20261110.md`.
+
+
 ## Group 6B-03 — Protected partial Git staging (Nov 10)
 
 Source now contains exact reviewed-hunk index-byte reconstruction,
