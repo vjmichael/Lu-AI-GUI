@@ -426,6 +426,8 @@ impl IdeWorkspaceRegistry {
             return Err("G06C04_POST_CHECKOUT_TREE_UNVERIFIED");
         }
         j.phase="checkout_verified".into();append(&journal_file,&j)?;
+        #[cfg(test)]
+        test_abort_disposable(&root,repo.path(),"IDE_G06C04_ABORT_AFTER_CHECKOUT");
         if ref_oid(&repo,&branch_ref)?!=j.original_head||
             local_commit(&repo,branch)?.to_string()!=j.selected_tip||
             index_sha(repo.path())?!=j.candidate_index_sha256{
@@ -437,7 +439,7 @@ impl IdeWorkspaceRegistry {
             true,old_head,"Lu IDE: OS-approved original replay exact ref CAS"
         ).map_err(|_|"G06C04_EXACT_REF_CAS_FAILED_MANUAL_REPAIR")?;
         #[cfg(test)]
-        test_abort_after_cas(&root,repo.path());
+        test_abort_disposable(&root,repo.path(),"IDE_G06C04_ABORT_AFTER_CAS");
         j.phase="published".into();append(&journal_file,&j)?;
         if ref_oid(&repo,&branch_ref)?!=next_head||
             index_sha(repo.path())?!=j.candidate_index_sha256||
@@ -551,8 +553,8 @@ impl IdeWorkspaceRegistry {
 /// Test-only synthetic crash is guarded by disposable test fixture under
 /// system temporary directory and a marker inside its private Git metadata.
 #[cfg(test)]
-fn test_abort_after_cas(root:&Path,gitdir:&Path){
-    let Some(needle)=std::env::var_os("IDE_G06C04_ABORT_AFTER_CAS")else{return;};
+fn test_abort_disposable(root:&Path,gitdir:&Path,var:&str){
+    let Some(needle)=std::env::var_os(var)else{return;};
     let canonical=fs::canonicalize(root).ok();
     let claimed=fs::canonicalize(PathBuf::from(needle)).ok();
     let temp=fs::canonicalize(std::env::temp_dir()).ok();
