@@ -219,6 +219,10 @@ test('PLAN-06 isolated task-list surface never turns operator plan review into e
   assert.match(native,/PLAN06_EXPORT_REFUSES_OVERWRITE/);
   assert.match(native,/blocking_save_file\(\)/);
   assert.match(native,/human_approved/);
+  assert.match(native,/fn preview_order/);
+  assert.match(native,/Review and save this EXACT sequence/);
+  assert.match(native,/Description: \{\}/);
+  assert.match(native,/PLAN06_REVIEWED_ORDER_NOT_EXACT_PERMUTATION/);
   assert.match(native,/no_execution_authority:true/);
   assert.match(native,/refuse|refusal|refuses|NO_ORDER_CHANGE/i);
   assert.match(screen,/Task status filters/);
