@@ -271,6 +271,10 @@ impl IdeWorkspaceRegistry {
             .ok_or("G06D03_NOT_CURRENTLY_CONFLICTED")?;
         // Deny all unsupported modes, renamed and unsafe paths; 6D01 already
         // refuses these before returning an inventory entry.
+        if [entry.ancestor.as_ref(), entry.ours.as_ref(), entry.theirs.as_ref()]
+            .iter().flatten().any(|v| v.binary_or_non_utf8) {
+            return Err("G06D03_BINARY_CONFLICT_REQUIRES_SPECIALIST");
+        }
         let modes: Vec<u32> = [entry.ancestor.as_ref(), entry.ours.as_ref(),
             entry.theirs.as_ref()].iter().flatten().map(|v| v.mode).collect();
         let mode = *modes.first().ok_or("G06D03_NO_BASE_MODE")?;
