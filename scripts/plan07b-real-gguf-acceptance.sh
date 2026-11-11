@@ -53,7 +53,7 @@ sha256sum "$model" | tee plan07b-real-evidence/original-model-sha256.txt
 echo "MODEL_SHA256=$PLAN07B_REAL_MODEL_SHA" >> plan07b-real-evidence/source.txt
 
 "$server" -m "$model" --host 127.0.0.1 \
-  --port "$PLAN07B_REAL_PORT" -c 8192 -ngl 0 \
+  --port "$PLAN07B_REAL_PORT" -c 8192 -ngl 0 -np 1 \
   > plan07b-real-evidence/llama-server.log 2>&1 &
 pid="$!"
 trap 'kill "$pid" 2>/dev/null || true' EXIT
