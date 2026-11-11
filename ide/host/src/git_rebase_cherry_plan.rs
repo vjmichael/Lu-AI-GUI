@@ -461,8 +461,9 @@ mod tests {
     }
     fn snapshot(x: &Fixture) -> (String, String, Vec<u8>, Vec<u8>) {
         let repo = Repository::open(&x.root).unwrap();
+        let head_sha = repo.head().unwrap().target().unwrap().to_string();
         (
-            repo.head().unwrap().target().unwrap().to_string(),
+            head_sha,
             local_commit(&repo, "feature").unwrap().to_string(),
             fs::read(x.root.join(".git/index")).unwrap(),
             fs::read(x.root.join("original.keep")).unwrap(),
