@@ -37,6 +37,7 @@ mod workspace_desktop;
 mod project_discovery_desktop;
 mod project_evidence_desktop;
 mod project_status_desktop;
+mod project_task_desktop;
 mod reviewed_app_desktop;
 mod reviewed_memory_evidence;
 mod reviewed_app_recovery;
@@ -8574,6 +8575,7 @@ pub fn run() {
             project_discovery_desktop::lu_project_discover,
             project_evidence_desktop::lu_project_evidence_graph,
             project_status_desktop::lu_project_classify,
+            project_task_desktop::lu_project_generate_tasks,
             lu_status,
             lu_list_models,
             lu_model_preflight,

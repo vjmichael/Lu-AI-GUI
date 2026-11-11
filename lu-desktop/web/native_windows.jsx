@@ -80,6 +80,7 @@ export function SettingsWindow(){
   const [projectBaseline,setProjectBaseline]=useState(null);
   const [projectGraph,setProjectGraph]=useState(null);
   const [projectStatus,setProjectStatus]=useState(null);
+  const [projectTasks,setProjectTasks]=useState(null);
 
   async function refresh(){
     const results=await Promise.allSettled([
@@ -395,6 +396,40 @@ export function SettingsWindow(){
               </div>
               {projectStatus.status.limitations.map((limitation,i)=><p key={i}>{limitation}</p>)}
               <small>Unverified results are not accepted implementation, and reports cannot create BROKEN/ACCEPTED. PLAN-04 task synthesis is separate.</small>
+            </section>}
+          </Section>
+          <Section title="Generate a project task proposal · PLAN-04">
+            <p>Choose a project and let the currently loaded local GGUF propose evidence-backed work. A native confirmation is required; the model has no tool authority. Each task remains a draft until you explicitly review it. This does not create GitHub issues, change code, or start execution.</p>
+            <button type="button" disabled={busy}
+              onClick={()=>void act('Local GGUF task proposal saved for human review.',async()=>{
+                setProjectTasks(null);
+                const proposal=await invoke('lu_project_generate_tasks');
+                if(proposal!==null&&proposal?.schema!=='lu-project-tasks-v1'){
+                  throw Error('Unrecognized GGUF task proposal schema');
+                }
+                setProjectTasks(proposal);return proposal;
+              })}>Analyze project with loaded GGUF…</button>
+            {projectTasks&&<section className="nativeOption" aria-label="GGUF evidence-backed task proposal">
+              <strong>Generated proposal · human review required</strong>
+              <p>Source HEAD: {projectTasks.selectedHead||'unknown'} · Model: {projectTasks.originalModelRef}</p>
+              <small>Graph SHA-256: {projectTasks.graphSha256} · Classifier SHA-256: {projectTasks.statusSha256} · Original reply SHA-256: {projectTasks.originalReplySha256}</small>
+              <p>{projectTasks.tasks.length} proposed tasks · {projectTasks.incomplete?'Incomplete coverage':'Bounded requirements included'} · No tasks approved or scheduled.</p>
+              <div className="nativeOptionList">
+                {projectTasks.tasks.map(task=><article className="nativeOption" key={task.taskId}>
+                  <strong>{task.priority} · {task.group} · {task.status}</strong>
+                  <p>{task.summary}</p>
+                  <p>{task.description}</p>
+                  <small>Proposal ID: {task.taskId} · Requirement: {task.sourceRequirementId}</small>
+                  <small>Evidence: {task.evidenceIds.join(', ')}</small>
+                  <small>Depends on: {task.dependsOn.length?task.dependsOn.join(', '):'none'}</small>
+                  <p>Acceptance to obtain: {task.acceptanceCriteria}</p>
+                  <small>Blocked by: {task.blockedBy}</small>
+                </article>)}
+              </div>
+              <strong>Updated engineering priorities (proposed)</strong>
+              <ol>{projectTasks.updatedEngineeringPriorities.map((p,i)=><li key={i}>{p}</li>)}</ol>
+              {projectTasks.limitations.slice(-3).map((x,i)=><p key={i}>{x}</p>)}
+              <small>Read-only model proposal. Human corrections/task-register revisions are PLAN-05; execution requires separate original-turn authorization.</small>
             </section>}
           </Section>
           <p>Worker execution requires original-turn authorization, bounded input/output, cancellation, durable receipts and independent verification. Not every provider implements Lu's current tool-response protocol.</p>

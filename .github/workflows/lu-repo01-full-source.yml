@@ -1602,3 +1602,192 @@ jobs:
           path: plan03-evidence/
           retention-days: 14
           if-no-files-found: warn
+
+  native-plan04-synthesis:
+    # Only explicit exact SHA admission to PR #210. Source-only push/metadata
+    # verification cannot count as a native model synthesis acceptance.
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.head.ref == 'lu/plan04-genuine-gguf-task-synthesis-20261110' && contains(github.event.pull_request.body, format('LU_PLAN04_NATIVE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN04_NATIVE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert exact committed PLAN-04 sources and original admission
+        shell: bash
+        env:
+          SHA: ${{ github.event.pull_request.head.sha }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p plan04-native-evidence
+          test "$(git rev-parse HEAD)" = "$SHA"
+          python - <<'PY'
+          import os,re
+          assert re.findall(r'(?m)^LU_PLAN04_NATIVE_SHA=([0-9a-f]{40})$',os.environ['BODY'])==[os.environ['SHA']]
+          PY
+          node scripts/verify-source-tree.mjs | tee plan04-native-evidence/source-lock.log
+          printf 'SOURCE=%s\nPLATFORM=%s\n' "$SHA" "$RUNNER_OS" > plan04-native-evidence/original-identity.txt
+      - name: Install Linux native Tauri dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf
+      - name: Windows CI-only nonfunctional engine resources
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($n in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $n) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Build real frontend and confirm native Settings authority path
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd lu-desktop
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check
+          popd
+          node --test lu-desktop/tests/workspace-desktop.test.mjs 2>&1 | tee plan04-native-evidence/settings-contract.log
+          python -m py_compile benchmarks/e1/plan04_real_gguf_synthesis.py
+      - name: Compile real Lu Core and run source/citation/dependency tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib project_task_synthesis::tests -- --nocapture 2>&1 | tee plan04-native-evidence/synthesis-validator.log
+          grep -Fq 'test result: ok. 4 passed; 0 failed;' plan04-native-evidence/synthesis-validator.log
+      - name: Actual native Tauri read-only proposal and ANSF restart tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml \
+            --lib project_task_desktop::tests -- --nocapture 2>&1 | tee plan04-native-evidence/ansf-proposals.log
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' plan04-native-evidence/ansf-proposals.log
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | tee plan04-native-evidence/tauri-compile.log
+          echo 'PLAN04_HOST_VALIDATOR_AND_READ_ONLY_STORAGE_PASS' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Real GGUF inference and installed human selection require separate evidence.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-plan04-native-${{ matrix.os }}-${{ github.event.pull_request.head.sha }}
+          path: plan04-native-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  genuine-plan04-gguf:
+    # Genuine pinned Qwen3 model inference is never replaced with test JSON.
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.head.ref == 'lu/plan04-genuine-gguf-task-synthesis-20261110' && contains(github.event.pull_request.body, format('LU_PLAN04_MODEL_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN04_MODEL_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 130
+    env:
+      MODEL_SHA256: 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d
+      PLAN04_PORT: '18984'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Exact head, native-generated original graph/prompt
+        shell: bash
+        env:
+          SHA: ${{ github.event.pull_request.head.sha }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p plan04-real-evidence
+          test "$(git rev-parse HEAD)" = "$SHA"
+          python - <<'PY'
+          import os,re
+          assert re.findall(r'(?m)^LU_PLAN04_MODEL_SHA=([0-9a-f]{40})$',os.environ['BODY'])==[os.environ['SHA']]
+          PY
+          node scripts/verify-source-tree.mjs
+          export LU_PLAN04_PROMPT_OUT=plan04-real-evidence/original-graph-prompt.json
+          export LU_PLAN04_REAL_REPLY_FILE=plan04-real-evidence/original-gguf-reply.txt
+          printf 'LU_PLAN04_PROMPT_OUT=%s\n' "$LU_PLAN04_PROMPT_OUT" >> "$GITHUB_ENV"
+          printf 'LU_PLAN04_REAL_REPLY_FILE=%s\n' "$LU_PLAN04_REAL_REPLY_FILE" >> "$GITHUB_ENV"
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib project_task_synthesis::tests::export_original_real_gguf_evidence_prompt \
+            -- --ignored --nocapture 2>&1 | tee plan04-real-evidence/original-host-fixture.log
+          test -s plan04-real-evidence/original-graph-prompt.json
+          printf 'SOURCE_SHA=%s\n' "$SHA" > plan04-real-evidence/native-source.txt
+      - name: Build approved SHA-pinned real llama.cpp CPU server
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends cmake
+          git clone --depth 1 --branch b12143 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/plan04-llama"
+          actual="$(git -C "$RUNNER_TEMP/plan04-llama" rev-parse HEAD)"
+          test "$actual" = 2bc46baa9207d098d03741ac394e7faaf1a955b6
+          cmake -S "$RUNNER_TEMP/plan04-llama" -B "$RUNNER_TEMP/plan04-build" \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF \
+            -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/plan04-build" --target llama-server --parallel 3
+          sha256sum "$RUNNER_TEMP/plan04-build/bin/llama-server" > plan04-real-evidence/engine-sha256.txt
+          echo "ENGINE_SOURCE=$actual" >> plan04-real-evidence/native-source.txt
+      - name: Retrieve checksum-pinned original genuine Qwen3 GGUF
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 5 --connect-timeout 30 \
+            https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf \
+            -o "$RUNNER_TEMP/plan04-Qwen3-0.6B.gguf"
+          printf '%s  %s\n' "$MODEL_SHA256" "$RUNNER_TEMP/plan04-Qwen3-0.6B.gguf" | sha256sum -c -
+          echo "MODEL_SHA=$MODEL_SHA256" >> plan04-real-evidence/native-source.txt
+      - name: Actual local GGUF generation and strict original Lu Core review
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/plan04-build/bin/llama-server" \
+            -m "$RUNNER_TEMP/plan04-Qwen3-0.6B.gguf" \
+            --host 127.0.0.1 --port "$PLAN04_PORT" -c 8192 -ngl 0 \
+            > plan04-real-evidence/llama-server.log 2>&1 &
+          pid="$!"
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 150); do
+            kill -0 "$pid"
+            if curl -fsS --max-time 2 "http://127.0.0.1:$PLAN04_PORT/health" \
+              > plan04-real-evidence/health.json; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1
+          python3 benchmarks/e1/plan04_real_gguf_synthesis.py \
+            --fixture "$LU_PLAN04_PROMPT_OUT" \
+            --output "$LU_PLAN04_REAL_REPLY_FILE" --port "$PLAN04_PORT" \
+            2>&1 | tee plan04-real-evidence/model-response-log.txt
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib project_task_synthesis::tests::independently_validate_original_real_gguf_task_output \
+            -- --ignored --nocapture 2>&1 | tee plan04-real-evidence/strict-host-review.log
+          grep -Fq 'PLAN04_REAL_GGUF_TASK_SOURCE_VERIFIED_TASKS=1' \
+            plan04-real-evidence/strict-host-review.log
+          echo 'Real original Qwen3-0.6B GGUF model response independently checked against source graph and requirement references; does NOT verify installed Windows, Radeon 27B, or human approval.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-plan04-real-gguf-${{ github.event.pull_request.head.sha }}
+          path: plan04-real-evidence/
+          retention-days: 14
+          if-no-files-found: warn

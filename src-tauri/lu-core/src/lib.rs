@@ -202,6 +202,7 @@ pub mod native_trash_custody;
 pub mod native_git_inspect;
 pub mod project_evidence_graph;
 pub mod project_status_classifier;
+pub mod project_task_synthesis;
 pub mod native_files;
 pub mod native_atomic_write;
 pub mod native_create_new;
