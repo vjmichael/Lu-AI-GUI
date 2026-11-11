@@ -101,11 +101,39 @@ export function visibleHover(tab, nativeResult) {
 
 export function visibleDefinition(tab, nativeResult) {
   if (!matchesSource(tab, nativeResult) ||
-      nativeResult.definition?.relativePath !== tab.relativePath) return null;
+      nativeResult.definition?.relativePath !== tab.relativePath ||
+      nativeResult.definition?.diskSha256 !== tab.revision) return null;
   const from = lspPositionOffset(tab.draft, nativeResult.definition?.range?.start);
   const to = lspPositionOffset(tab.draft, nativeResult.definition?.range?.end);
   if (from === null || to === null || from > to) return null;
   return { from, to };
+}
+
+// Only the Rust host can turn a staged LSP target into a registered,
+// SHA-bound project-relative file. This is a navigation *proposal*, not a
+// filesystem operation or an authorization supplied by the language server.
+export function visibleCrossFileDefinition(tab, nativeResult) {
+  if (!matchesSource(tab, nativeResult)) return null;
+  const target = nativeResult.definition;
+  const path = target?.relativePath;
+  const sha = target?.diskSha256;
+  if (typeof path !== 'string' || path === tab.relativePath ||
+      path.length < 1 || path.length > 1024 ||
+      path.includes('\\') || path.includes(':') ||
+      path.split('/').some(part => !part || part === '.' || part === '..') ||
+      /[\u0000-\u001f\u007f]/.test(path) ||
+      typeof sha !== 'string' || !/^[a-fA-F0-9]{64}$/.test(sha))
+    return null;
+  const start = target?.range?.start;
+  const end = target?.range?.end;
+  const valid = value => Number.isSafeInteger(value) && value >= 0 && value <= 250000;
+  if (![start?.line,start?.character,end?.line,end?.character].every(valid) ||
+      (end.line < start.line ||
+        (end.line === start.line && end.character < start.character)))
+    return null;
+  return Object.freeze({ relativePath:path, diskSha256:sha,
+    start:{line:start.line,character:start.character},
+    end:{line:end.line,character:end.character} });
 }
 
 export function safePlainText(value, max = MAX_UI_DETAIL) {

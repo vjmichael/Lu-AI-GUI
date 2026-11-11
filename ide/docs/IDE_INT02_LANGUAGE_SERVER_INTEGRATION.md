@@ -26,9 +26,9 @@ Status: **feature implementation in progress; native acceptance deferred**. Cont
 
 ## Remaining INT02 implementation / integration
 
-- **INT02-D — Native source-bound cross-file definitions**: current protocol intentionally denies untrusted server file:// links except same-file results. Implement native registered-project source identity and revision binding for a different file before offering editor navigation.
+- **INT02-D — Native source-bound cross-file definitions (source implemented)**: protocol now carries an opaque candidate URI to the native host, which reconstructs the exact protected-worker staging prefix, rejects noncanonical escapes, traversal, foreign roots, unsupported file types and unregistered targets, and compares its sealed snapshot bytes with the live registry's saved SHA-256. Only a project-relative filename, verified target revision and checked UTF-16 span reach the UI. Go to Definition re-previews the target, refuses changed disk bytes or unsaved target tabs, retains Undo, and navigates by an exact CodeMirror selection. No server URI becomes a path capability. Native execution/acceptance is deferred.
 - **INT02-E — Multi-file language session ownership**: extend the current single-file native session to safely cover multiple currently open project buffers, without reusing old approval for another project and without concurrent writes or losing worker containment.
 - **INT02-F — Language-server availability and lifecycle**: finish the end-to-end offline installed toolchain/bundle lifecycle for all three languages, diagnostics after worker interruption, restart and ownership reconciliation, and accessible source Problems/hover/completion presentation.
 - **Deferred**: native Windows/Linux integration, exact-source compiler/protocol tests, installation/user approval, physical desktop accessibility, CI, PR review, whole-codebase repair and batch regression. All acceptance claims remain open until the implementation backlog has been built.
 
-Next: **INT02-D**. Keep working through feature implementation rather than returning to GitHub Actions or PR operations. INT03 Build/Test follows after the INT02 implementation slices.
+Next: **INT02-E — Multi-file language session ownership**. Continue feature implementation without GitHub Actions or PR operations. INT03 Build/Test follows after INT02 implementation slices.

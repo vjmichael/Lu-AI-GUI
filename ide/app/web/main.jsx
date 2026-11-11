@@ -35,7 +35,7 @@ import {
   parsePersistentDraftReference,
 } from './buffer_identity.js';
 import { buildDevelopmentCheckpoint } from './development_checkpoint.js';
-import { languageForPath, matchesSource, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition } from './lsp_editor.js';
+import { languageForPath, matchesSource, lspPositionOffset, visibleDiagnostics, visibleCompletions, visibleHover, visibleDefinition, visibleCrossFileDefinition } from './lsp_editor.js';
 import { captureLiveLspSource, stillCurrentLspSource, lspNativeReplyMatches,
   lspRequestForSource, sourceMatchesSession } from './lsp_live_source.js';
 import { projectProblems, stillCurrentProblem } from './lsp_problems.js';
@@ -4370,6 +4370,96 @@ function App() {
     return ()=>clearTimeout(timer);
   },[lspSession,activeTab?.key,activeTab?.bufferRevision,
     activeTab?.revision,activeTab?.generation]);
+
+  async function navigateProtectedCrossFileDefinition(source,response,epoch,serial) {
+    const fromTab=tabsRef.current.find(tab=>tab.key===source.key);
+    const proposed=visibleCrossFileDefinition({...fromTab,
+      draft:source.text,bufferRevision:source.bufferRevision},response);
+    if (!proposed) return false;
+    if (explorerIoTicket.current || workspaceTransitionRef.current ||
+        mergeBusy || mergeApplyRequest) {
+      setProblem('Finish the current editor operation before navigating to a definition.');
+      return true;
+    }
+    const projectId=source.projectId;
+    const key=keyFor(projectId,proposed.relativePath);
+    if (!admitOpenTabs(tabsRef.current,projectId,[key]).allowed) {
+      setProblem('Open-file budget reached. Close an unused tab before Go to Definition.');
+      return true;
+    }
+    const ticket=beginExplorerIo();
+    if (!ticket) return true;
+    const navEpoch=projectNavigationEpoch.current;
+    try {
+      // The server's URI never reaches this IPC. Native has already bound
+      // the target to this registered project and the sealed worker snapshot.
+      // Re-read exact saved bytes to close disk-change and project-switch races.
+      const opened=await invoke('ide_preview_source_file',{
+        projectId,relativePath:proposed.relativePath,
+      });
+      if (explorerIoTicket.current!==ticket ||
+          projectNavigationEpoch.current!==navEpoch ||
+          activeProjectIdRef.current!==projectId ||
+          serial!==lspFeatureSerial.current ||
+          !isCurrentLspReply(source,response,epoch) ||
+          !sourceMatchesSession(source,lspSessionRef.current)) return true;
+      if (opened.projectId!==projectId ||
+          opened.relativePath!==proposed.relativePath ||
+          opened.revision!==proposed.diskSha256)
+        throw Error('DEFINITION_TARGET_CHANGED_ON_DISK');
+      const from=lspPositionOffset(opened.text,proposed.start);
+      const to=lspPositionOffset(opened.text,proposed.end);
+      if (from===null || to===null || from>to)
+        throw Error('DEFINITION_RANGE_OUTSIDE_REGISTERED_SOURCE');
+      const existing=tabsRef.current.find(tab=>tab.key===key);
+      const admission=lateSourceOpenDecision(tabsRef.current,projectId,
+        proposed.relativePath,opened,activeProjectIdRef.current,key);
+      if (admission.action==='discard_stale') return true;
+      if (admission.action==='deny') throw Error('DEFINITION_OPEN_FILE_BUDGET');
+      const live=existing ? captureLiveEditorIntent(existing,
+        bufferIdentities.current.get(key),editorStates.current.get(key),projectId)
+        : null;
+      // Saved-file UTF-16 coordinates are never applied to an unsaved tab,
+      // even when React's dirty flag has not caught up with CodeMirror.
+      if (existing && (live?.status!=='current' || live.dirty ||
+          live.text!==opened.text || existing.revision!==opened.revision ||
+          existing.savedText!==opened.text)) {
+        setProblem('Definition refers to saved source, but the target tab has '+
+          'unsaved or newer edits. Its draft and Undo history were preserved.');
+        return true;
+      }
+      const editorState=existing ? editorStates.current.get(key)
+        : createEditorState(opened.text,opened.relativePath,
+            (state,draft)=>onEditorChange(key,state,draft),
+            state=>onEditorSelection(key,state));
+      if (!editorState || editorState.sliceDoc()!==opened.text ||
+          to>editorState.doc.length) throw Error('DEFINITION_EDITOR_CHANGED');
+      if (!existing) {
+        clearPrivateDraftSession(key);
+        resetBufferIdentity(key,projectId,opened.relativePath,opened.revision);
+        editorStates.current.set(key,editorState);
+        setTabs(previous=>[...previous,{
+          key,projectId,relativePath:opened.relativePath,
+          revision:opened.revision,savedText:opened.text,draft:opened.text,
+          dirty:false,generation:0,bufferRevision:0,
+        }]);
+      }
+      if (existing) selectPrimaryEditorTab(key);
+      else setActiveTabKey(key);
+      setSection('explorer');
+      setLspJumpRequest({from,to,tabIdentity:key+':'+(existing?.generation||0),
+        nonce:++problemJumpNonce.current});
+      if (!existing) void checkExistingDraft({key,projectId,
+        relativePath:opened.relativePath});
+      setHint('Opened verified definition in '+proposed.relativePath+'.');
+    } catch(error) {
+      if (activeProjectIdRef.current===projectId &&
+          serial===lspFeatureSerial.current)
+        setProblem('Definition navigation refused: '+String(error));
+    } finally { finishExplorerIo(ticket); }
+    return true;
+  }
+
   async function requestLspFeature(kind) {
     const tab=activeTab;
     if (!tab || !['completion','hover','definition','diagnostics'].includes(kind) ||
@@ -4408,9 +4498,14 @@ function App() {
         const latest=tabsRef.current.find(item=>item.key===source.key);
         const target=visibleDefinition({...latest,draft:source.text,
           bufferRevision:source.bufferRevision},response);
-        if (target) setLspJumpRequest({...target,
-          tabIdentity:latest.key+':'+latest.generation,
-          nonce:++problemJumpNonce.current});
+        if (target) {
+          setLspJumpRequest({...target,
+            tabIdentity:latest.key+':'+latest.generation,
+            nonce:++problemJumpNonce.current});
+        } else if (!await navigateProtectedCrossFileDefinition(
+          source,response,epoch,serial)) {
+          setHint('No verified definition found in this registered project.');
+        }
       }
     } catch(error) {
       if (epoch!==lspLifecycleEpoch.current ||

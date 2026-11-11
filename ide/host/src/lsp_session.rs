@@ -90,6 +90,9 @@ pub struct Completion {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Definition {
+    // Opaque, untrusted server candidate. Only the native registered-project
+    // binder may convert this URI into a source file capability.
+    pub uri: String,
     pub range: Span,
     pub from_utf16: usize,
     pub to_utf16: usize,
@@ -647,19 +650,34 @@ fn parse_definition(value: &Value, current_uri: &str, text: &str) -> Option<Opti
     } else {
         value
     };
-    // Never follow a server-provided URI to a different file. Full
-    // cross-file navigation needs native workspace root revalidation.
+    // Carry an untrusted cross-file candidate to the native host only.
+    // The LSP protocol layer never resolves, reads, or opens this URI.
     let (uri, range) = if item.get("targetUri").is_some() {
         (item["targetUri"].as_str()?, &item["targetSelectionRange"])
     } else {
         (item["uri"].as_str()?, &item["range"])
     };
-    if uri != current_uri {
+    if !uri.starts_with("file:///") || uri.len() > 2048 ||
+        uri.chars().any(char::is_control) {
         return Some(None);
     }
     let span: Span = serde_json::from_value(range.clone()).ok()?;
-    let (from_utf16, to_utf16) = span_utf16(text, &span)?;
+    // Same-file ranges can be checked against the active live document here.
+    // A different-file range must be checked against independently verified
+    // saved target bytes by the host; zero offsets here grant no navigation.
+    let (from_utf16, to_utf16) = if uri == current_uri {
+        span_utf16(text, &span)?
+    } else {
+        if span.start.line > 250_000 || span.end.line > 250_000 ||
+            span.start.character > 250_000 || span.end.character > 250_000 ||
+            (span.end.line, span.end.character) <
+                (span.start.line, span.start.character) {
+            return Some(None);
+        }
+        (0, 0)
+    };
     Some(Some(Definition {
+        uri: uri.to_owned(),
         range: span,
         from_utf16,
         to_utf16,
@@ -779,7 +797,10 @@ mod tests {
                 .unwrap(),
             )
             .unwrap();
-        assert_eq!(events, vec![LspEvent::Definition(None)]);
+        // The protocol carries only a candidate. No source path was opened,
+        // and the native binder must reject this outside-snapshot URI.
+        assert!(matches!(&events[..],
+            [LspEvent::Definition(Some(value))] if value.uri == "file:///outside.rs"));
     }
     #[test]
     fn unicode_surrogate_half_and_invalid_protocol_fail_closed() {
