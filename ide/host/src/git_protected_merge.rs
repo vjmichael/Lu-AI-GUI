@@ -8,8 +8,13 @@
 //! BEFORE the exact old-HEAD ref CAS. A failure or process death in that window
 //! may leave partially advanced files while HEAD remains old. Durable recovery
 //! is observational only and never silently rolls back or retries that window.
-use crate::{git_branch_operations::{exact_repo, local_commit, safe_local_name}, IdeWorkspaceRegistry};
-use git2::{build::CheckoutBuilder, ObjectType, Oid, Repository, RepositoryState, Status, StatusOptions};
+use crate::{
+    git_branch_operations::{exact_repo, local_commit, safe_local_name},
+    IdeWorkspaceRegistry,
+};
+use git2::{
+    build::CheckoutBuilder, ObjectType, Oid, Repository, RepositoryState, Status, StatusOptions,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -102,29 +107,45 @@ fn exact_index_sha(gitdir: &Path) -> Result<String, &'static str> {
 }
 
 fn current_branch(repo: &Repository) -> Result<(String, Oid), &'static str> {
-    if repo.is_shallow() || repo.state() != RepositoryState::Clean ||
-        repo.head_detached().unwrap_or(true) {
+    if repo.is_shallow()
+        || repo.state() != RepositoryState::Clean
+        || repo.head_detached().unwrap_or(true)
+    {
         return Err("G06C03_REPOSITORY_STATE_UNSAFE");
     }
     let head = repo.head().map_err(|_| "G06C03_HEAD_UNAVAILABLE")?;
     let branch = head.name().ok_or("G06C03_HEAD_NAME_UNAVAILABLE")?;
-    let branch = branch.strip_prefix("refs/heads/").ok_or("G06C03_HEAD_NOT_LOCAL")?;
+    let branch = branch
+        .strip_prefix("refs/heads/")
+        .ok_or("G06C03_HEAD_NOT_LOCAL")?;
     if !safe_local_name(branch) {
         return Err("G06C03_UNSAFE_CURRENT_BRANCH");
     }
-    Ok((branch.to_owned(), head.target().ok_or("G06C03_HEAD_NOT_DIRECT")?))
+    Ok((
+        branch.to_owned(),
+        head.target().ok_or("G06C03_HEAD_NOT_DIRECT")?,
+    ))
 }
 
 fn journal_file(
     registry: &IdeWorkspaceRegistry,
     project_id: &str,
 ) -> Result<PathBuf, &'static str> {
-    registry.registered_git_root(project_id).map_err(|_| "G06C03_UNKNOWN_PROJECT")?;
-    if project_id.is_empty() || project_id.len() > 128 ||
-        !project_id.bytes().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, b'_' | b'-')) {
+    registry
+        .registered_git_root(project_id)
+        .map_err(|_| "G06C03_UNKNOWN_PROJECT")?;
+    if project_id.is_empty()
+        || project_id.len() > 128
+        || !project_id
+            .bytes()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, b'_' | b'-'))
+    {
         return Err("G06C03_BAD_PROJECT_ID");
     }
-    let root = registry.catalog.parent().ok_or("G06C03_NO_APPDATA")?
+    let root = registry
+        .catalog
+        .parent()
+        .ok_or("G06C03_NO_APPDATA")?
         .join("ide-g06c03-protected-merges");
     fs::create_dir_all(&root).map_err(|_| "G06C03_JOURNAL_DIRECTORY_UNAVAILABLE")?;
     let meta = fs::symlink_metadata(&root).map_err(|_| "G06C03_JOURNAL_DIRECTORY_UNAVAILABLE")?;
@@ -147,17 +168,27 @@ fn read_latest(path: &Path) -> Result<Option<MergeJournal>, &'static str> {
     if bytes.last() != Some(&b'\n') {
         return Err("G06C03_JOURNAL_INCOMPLETE");
     }
-    let last = bytes.split(|b| *b == b'\n').filter(|p| !p.is_empty())
-        .last().ok_or("G06C03_JOURNAL_INCOMPLETE")?;
+    let last = bytes
+        .split(|b| *b == b'\n')
+        .filter(|p| !p.is_empty())
+        .last()
+        .ok_or("G06C03_JOURNAL_INCOMPLETE")?;
     if last.len() > MAX_ENTRY_BYTES {
         return Err("G06C03_JOURNAL_RECORD_OVERSIZED");
     }
     let record: MergeJournal =
         serde_json::from_slice(last).map_err(|_| "G06C03_JOURNAL_CORRUPTED")?;
     if record.schema_version != 1
-        || !matches!(record.phase.as_str(),
-            "prepared" | "checkout_intent" | "checkout_verified" | "publishing"
-            | "ref_published" | "verified" | "cancelled")
+        || !matches!(
+            record.phase.as_str(),
+            "prepared"
+                | "checkout_intent"
+                | "checkout_verified"
+                | "publishing"
+                | "ref_published"
+                | "verified"
+                | "cancelled"
+        )
         || record.operation_id.len() != 32
         || !record.operation_id.bytes().all(|ch| ch.is_ascii_hexdigit())
     {
@@ -176,34 +207,76 @@ fn append(path: &Path, record: &MergeJournal) -> Result<(), &'static str> {
     if bytes.len() > MAX_ENTRY_BYTES || previous_size + bytes.len() as u64 + 1 > MAX_JOURNAL_BYTES {
         return Err("G06C03_JOURNAL_CAP_REACHED");
     }
-    let mut file = OpenOptions::new().append(true).create(true).open(path)
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(path)
         .map_err(|_| "G06C03_JOURNAL_WRITE_DENIED")?;
-    if file.metadata().map_err(|_| "G06C03_JOURNAL_UNREADABLE")?.len() != previous_size {
+    if file
+        .metadata()
+        .map_err(|_| "G06C03_JOURNAL_UNREADABLE")?
+        .len()
+        != previous_size
+    {
         return Err("G06C03_JOURNAL_CONCURRENT_APPEND");
     }
-    file.write_all(&bytes).and_then(|_| file.write_all(b"\n"))
-        .and_then(|_| file.sync_all()).map_err(|_| "G06C03_JOURNAL_SYNC_FAILED")?;
+    file.write_all(&bytes)
+        .and_then(|_| file.write_all(b"\n"))
+        .and_then(|_| file.sync_all())
+        .map_err(|_| "G06C03_JOURNAL_SYNC_FAILED")?;
     #[cfg(unix)]
     File::open(path.parent().ok_or("G06C03_JOURNAL_PARENT_MISSING")?)
-        .and_then(|dir| dir.sync_all()).map_err(|_| "G06C03_JOURNAL_DIR_SYNC_FAILED")?;
+        .and_then(|dir| dir.sync_all())
+        .map_err(|_| "G06C03_JOURNAL_DIR_SYNC_FAILED")?;
     Ok(())
 }
 
 fn changed_path_is_plain_safe(root: &Path, path: &str) -> Result<(), &'static str> {
     // 6C03A is narrower than Git's full path vocabulary. Refuse Unicode,
     // colon, backslash, Windows devices, trailing dot/space and all aliases.
-    if path.is_empty() || path.len() > 240 || !path.is_ascii() ||
-        path.bytes().any(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b'/'))) {
+    if path.is_empty()
+        || path.len() > 240
+        || !path.is_ascii()
+        || path
+            .bytes()
+            .any(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b'/')))
+    {
         return Err("G06C03_CHANGED_PATH_NOT_SUPPORTED");
     }
     let mut cursor = root.to_path_buf();
     for item in path.split('/') {
         let raw = item.split('.').next().unwrap_or("").to_ascii_uppercase();
-        if item.is_empty() || item == "." || item == ".." || item.ends_with('.') ||
-            item.eq_ignore_ascii_case(".git") ||
-            matches!(raw.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "COM1" | "COM2" |
-              "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9" |
-              "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9") {
+        if item.is_empty()
+            || item == "."
+            || item == ".."
+            || item.ends_with('.')
+            || item.eq_ignore_ascii_case(".git")
+            || matches!(
+                raw.as_str(),
+                "CON"
+                    | "PRN"
+                    | "AUX"
+                    | "NUL"
+                    | "COM1"
+                    | "COM2"
+                    | "COM3"
+                    | "COM4"
+                    | "COM5"
+                    | "COM6"
+                    | "COM7"
+                    | "COM8"
+                    | "COM9"
+                    | "LPT1"
+                    | "LPT2"
+                    | "LPT3"
+                    | "LPT4"
+                    | "LPT5"
+                    | "LPT6"
+                    | "LPT7"
+                    | "LPT8"
+                    | "LPT9"
+            )
+        {
             return Err("G06C03_DANGEROUS_PATH_COMPONENT");
         }
         cursor.push(item);
@@ -224,11 +297,19 @@ fn no_wt_changes(repo: &Repository) -> Result<bool, &'static str> {
         .include_ignored(false)
         .renames_head_to_index(false)
         .renames_index_to_workdir(false);
-    let statuses = repo.statuses(Some(&mut opts)).map_err(|_| "G06C03_STATUS_UNAVAILABLE")?;
-    Ok(statuses.iter().all(|entry| !entry.status().intersects(
-        Status::WT_MODIFIED | Status::WT_DELETED | Status::WT_NEW |
-        Status::WT_RENAMED | Status::WT_TYPECHANGE | Status::CONFLICTED
-    )))
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .map_err(|_| "G06C03_STATUS_UNAVAILABLE")?;
+    Ok(statuses.iter().all(|entry| {
+        !entry.status().intersects(
+            Status::WT_MODIFIED
+                | Status::WT_DELETED
+                | Status::WT_NEW
+                | Status::WT_RENAMED
+                | Status::WT_TYPECHANGE
+                | Status::CONFLICTED,
+        )
+    }))
 }
 
 fn index_matches_tree(repo: &Repository, expected: &str) -> Result<bool, &'static str> {
@@ -237,30 +318,41 @@ fn index_matches_tree(repo: &Repository, expected: &str) -> Result<bool, &'stati
     if index.has_conflicts() {
         return Ok(false);
     }
-    let tree_oid = index.write_tree_to(repo).map_err(|_| "G06C03_INDEX_TREE_UNAVAILABLE")?;
+    let tree_oid = index
+        .write_tree_to(repo)
+        .map_err(|_| "G06C03_INDEX_TREE_UNAVAILABLE")?;
     Ok(tree_oid.to_string() == expected)
 }
 
 fn matching_commit(repo: &Repository, ref_name: &str) -> Result<Option<String>, &'static str> {
-    Ok(repo.find_reference(ref_name).map_err(|_| "G06C03_BRANCH_REF_NOT_FOUND")?
-        .target().map(|oid| oid.to_string()))
+    Ok(repo
+        .find_reference(ref_name)
+        .map_err(|_| "G06C03_BRANCH_REF_NOT_FOUND")?
+        .target()
+        .map(|oid| oid.to_string()))
 }
 
 /// Test-only fatal injection guarded by the caller's exact canonical
 /// disposable repository root AND an on-disk marker under its private Gitdir.
 #[cfg(test)]
 fn abort_disposable_process_at(root: &Path, gitdir: &Path, variable: &str) {
-    let Some(requested) = std::env::var_os(variable) else { return; };
+    let Some(requested) = std::env::var_os(variable) else {
+        return;
+    };
     let canonical_root = fs::canonicalize(root).ok();
     let claimed = fs::canonicalize(PathBuf::from(requested)).ok();
     let temp = fs::canonicalize(std::env::temp_dir()).ok();
     let marker = gitdir.join("g06c03-abort-fixture");
     if canonical_root.is_some()
         && claimed == canonical_root
-        && canonical_root.as_ref().zip(temp.as_ref())
+        && canonical_root
+            .as_ref()
+            .zip(temp.as_ref())
             .is_some_and(|(a, b)| a.starts_with(b))
         && root.file_name().is_some_and(|name| name == "repo")
-        && root.parent().and_then(|p| p.file_name())
+        && root
+            .parent()
+            .and_then(|p| p.file_name())
             .is_some_and(|name| name.to_string_lossy().starts_with("ide-g06c03-"))
         && fs::read(marker).ok().as_deref() == Some(b"G06C03_DISPOSABLE_ONLY\n")
     {
@@ -274,8 +366,10 @@ fn approved_fast_forward_plan(
     selected_branch: &str,
     expected_digest: &str,
 ) -> Result<crate::git_merge_plan::ReviewedMergePlan, &'static str> {
-    if !safe_local_name(selected_branch) || expected_digest.len() != 64 ||
-        !expected_digest.bytes().all(|b| b.is_ascii_hexdigit()) {
+    if !safe_local_name(selected_branch)
+        || expected_digest.len() != 64
+        || !expected_digest.bytes().all(|b| b.is_ascii_hexdigit())
+    {
         return Err("G06C03_BAD_REQUEST");
     }
     let plan = registry.preview_reviewed_local_merge(project_id, selected_branch)?;
@@ -285,13 +379,19 @@ fn approved_fast_forward_plan(
     if plan.classification != "fast_forward_candidate"
         || plan.merge_base_count != 1
         || plan.merge_base_commit.as_deref() != Some(plan.current_head.as_str())
-        || !plan.blockers.is_empty() {
+        || !plan.blockers.is_empty()
+    {
         return Err("G06C03_NON_FF_OR_BLOCKED_MERGE_DENIED");
     }
-    if plan.changed_path_count == 0 || plan.changed_path_count > MAX_CHECKOUT_PATHS
+    if plan.changed_path_count == 0
+        || plan.changed_path_count > MAX_CHECKOUT_PATHS
         || plan.visible_paths.len() != plan.changed_path_count
-        || plan.omitted_path_count != 0 || plan.possible_conflict_count != 0
-        || plan.visible_paths.iter().any(|p| p.classification != "selected_only_change")
+        || plan.omitted_path_count != 0
+        || plan.possible_conflict_count != 0
+        || plan
+            .visible_paths
+            .iter()
+            .any(|p| p.classification != "selected_only_change")
     {
         return Err("G06C03_CHECKOUT_CHANGESET_NOT_SUPPORTED");
     }
@@ -301,7 +401,10 @@ fn approved_fast_forward_plan(
 impl IdeWorkspaceRegistry {
     /// Native source revalidation before one-use OS consent. Not an approval.
     pub fn revalidate_protected_fast_forward(
-        &self, project_id: &str, selected_branch: &str, digest: &str,
+        &self,
+        project_id: &str,
+        selected_branch: &str,
+        digest: &str,
     ) -> Result<crate::git_merge_plan::ReviewedMergePlan, &'static str> {
         approved_fast_forward_plan(self, project_id, selected_branch, digest)
     }
@@ -309,20 +412,26 @@ impl IdeWorkspaceRegistry {
     /// Host-only authorized after the independent, visible native OS dialog.
     /// Cancellation CAS=0->1 occurs immediately before checkout intent.
     pub fn execute_os_approved_fast_forward(
-        &self, project_id: &str, selected_branch: &str,
-        digest: &str, cancel: &AtomicU8,
+        &self,
+        project_id: &str,
+        selected_branch: &str,
+        digest: &str,
+        cancel: &AtomicU8,
     ) -> Result<ProtectedFastForwardReceipt, &'static str> {
         if cancel.load(Ordering::SeqCst) != 0 {
             return Err("G06C03_CANCELLED_BEFORE_EXECUTION");
         }
         let plan = approved_fast_forward_plan(self, project_id, selected_branch, digest)?;
         let repo = exact_repo(self, project_id)?;
-        let root = self.registered_git_root(project_id)
+        let root = self
+            .registered_git_root(project_id)
             .map_err(|_| "G06C03_PROJECT_NOT_OPEN")?;
         let gitdir = repo.path();
         let (branch, old_oid) = current_branch(&repo)?;
-        if branch != plan.current_branch || old_oid.to_string() != plan.current_head
-            || local_commit(&repo, selected_branch)?.to_string() != plan.selected_tip {
+        if branch != plan.current_branch
+            || old_oid.to_string() != plan.current_head
+            || local_commit(&repo, selected_branch)?.to_string() != plan.selected_tip
+        {
             return Err("G06C03_HEAD_OR_SELECTED_MOVED");
         }
         if fs::symlink_metadata(gitdir.join("index.lock")).is_ok() {
@@ -330,7 +439,8 @@ impl IdeWorkspaceRegistry {
         }
         if exact_index_sha(gitdir)? != plan.index_sha256
             || !index_matches_tree(&repo, &plan.current_tree)?
-            || !no_wt_changes(&repo)? {
+            || !no_wt_changes(&repo)?
+        {
             return Err("G06C03_SOURCE_INDEX_OR_WORKTREE_DRIFT");
         }
         for item in &plan.visible_paths {
@@ -361,7 +471,10 @@ impl IdeWorkspaceRegistry {
             return Err("G06C03_CANCELLED_BEFORE_PREPARE");
         }
         append(&journal_path, &journal)?;
-        if cancel.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        if cancel
+            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             journal.phase = "cancelled".into();
             append(&journal_path, &journal)?;
             return Err("G06C03_CANCELLED_BEFORE_CHECKOUT");
@@ -372,21 +485,31 @@ impl IdeWorkspaceRegistry {
         if matching_commit(&repo, &journal.branch_ref)?.as_deref() != Some(&journal.previous_head)
             || local_commit(&repo, selected_branch)?.to_string() != journal.selected_tip
             || exact_index_sha(gitdir)? != journal.original_index_sha256
-            || !no_wt_changes(&repo)? {
+            || !no_wt_changes(&repo)?
+        {
             return Err("G06C03_SOURCE_CHANGED_BEFORE_CHECKOUT");
         }
-        let target = repo.find_object(
-            Oid::from_str(&plan.selected_tip).map_err(|_| "G06C03_SELECTED_OID_INVALID")?,
-            Some(ObjectType::Commit),
-        ).map_err(|_| "G06C03_SELECTED_COMMIT_NOT_FOUND")?;
+        let target = repo
+            .find_object(
+                Oid::from_str(&plan.selected_tip).map_err(|_| "G06C03_SELECTED_OID_INVALID")?,
+                Some(ObjectType::Commit),
+            )
+            .map_err(|_| "G06C03_SELECTED_COMMIT_NOT_FOUND")?;
         // No force, untracked removal, ignored overwrite, or index bypass.
         let mut checkout = CheckoutBuilder::new();
-        checkout.safe().recreate_missing(true).remove_untracked(false)
-            .remove_ignored(false).overwrite_ignored(false).update_index(true);
+        checkout
+            .safe()
+            .recreate_missing(true)
+            .remove_untracked(false)
+            .remove_ignored(false)
+            .overwrite_ignored(false)
+            .update_index(true);
         repo.checkout_tree(&target, Some(&mut checkout))
             .map_err(|_| "G06C03_SAFE_CHECKOUT_FAILED_RECOVERY_REQUIRED")?;
-        if !index_matches_tree(&repo, &plan.selected_tree)? || !no_wt_changes(&repo)?
-            || fs::symlink_metadata(gitdir.join("index.lock")).is_ok() {
+        if !index_matches_tree(&repo, &plan.selected_tree)?
+            || !no_wt_changes(&repo)?
+            || fs::symlink_metadata(gitdir.join("index.lock")).is_ok()
+        {
             return Err("G06C03_CHECKOUT_POSTCONDITION_UNVERIFIED");
         }
         journal.selected_index_sha256 = exact_index_sha(gitdir)?;
@@ -397,7 +520,8 @@ impl IdeWorkspaceRegistry {
         abort_disposable_process_at(&root, gitdir, "IDE_G06C03_ABORT_AFTER_CHECKOUT");
         if matching_commit(&repo, &journal.branch_ref)?.as_deref() != Some(&journal.previous_head)
             || local_commit(&repo, selected_branch)?.to_string() != journal.selected_tip
-            || exact_index_sha(gitdir)? != journal.selected_index_sha256 {
+            || exact_index_sha(gitdir)? != journal.selected_index_sha256
+        {
             return Err("G06C03_REF_OR_INDEX_CHANGED_BEFORE_PUBLICATION");
         }
         journal.phase = "publishing".into();
@@ -408,7 +532,8 @@ impl IdeWorkspaceRegistry {
             true,
             old_oid,
             "Lu IDE: independently reviewed one-use OS-approved local fast-forward",
-        ).map_err(|_| "G06C03_REF_CAS_FAILED_RECOVERY_REQUIRED")?;
+        )
+        .map_err(|_| "G06C03_REF_CAS_FAILED_RECOVERY_REQUIRED")?;
         #[cfg(test)]
         abort_disposable_process_at(&root, gitdir, "IDE_G06C03_ABORT_AFTER_REF_CAS");
         journal.phase = "ref_published".into();
@@ -417,8 +542,14 @@ impl IdeWorkspaceRegistry {
             || exact_index_sha(gitdir)? != journal.selected_index_sha256
             || !index_matches_tree(&repo, &journal.selected_tree)?
             || !no_wt_changes(&repo)?
-            || !repo.statuses(Some(StatusOptions::new().include_untracked(true)
-                .recurse_untracked_dirs(true))).map_err(|_| "G06C03_FINAL_STATUS_FAILED")?.is_empty()
+            || !repo
+                .statuses(Some(
+                    StatusOptions::new()
+                        .include_untracked(true)
+                        .recurse_untracked_dirs(true),
+                ))
+                .map_err(|_| "G06C03_FINAL_STATUS_FAILED")?
+                .is_empty()
         {
             return Err("G06C03_POST_CAS_INDEPENDENT_READBACK_FAILED");
         }
@@ -447,15 +578,20 @@ impl IdeWorkspaceRegistry {
 
     /// Read-only interrupted-operation evidence. No lock removal or retry.
     pub fn inspect_protected_merge_recovery(
-        &self, project_id: &str,
+        &self,
+        project_id: &str,
     ) -> Result<ProtectedMergeRecovery, &'static str> {
         let repo = exact_repo(self, project_id)?;
         let last = read_latest(&journal_file(self, project_id)?)?;
         let index_lock = fs::symlink_metadata(repo.path().join("index.lock")).is_ok();
         let head_ref = repo.head().ok();
-        let active_ref = head_ref.as_ref().and_then(|reference| reference.name())
+        let active_ref = head_ref
+            .as_ref()
+            .and_then(|reference| reference.name())
             .map(str::to_owned);
-        let head = head_ref.as_ref().and_then(|reference| reference.target())
+        let head = head_ref
+            .as_ref()
+            .and_then(|reference| reference.target())
             .map(|oid| oid.to_string());
         let index_sha = exact_index_sha(repo.path()).ok();
         let (state, phase, match_old, match_new, index_old, index_new) = match last {
@@ -466,11 +602,14 @@ impl IdeWorkspaceRegistry {
             Some(j) => {
                 let correct_branch = active_ref.as_deref() == Some(j.branch_ref.as_str());
                 let correct_selected = local_commit(&repo, &j.selected_local_branch)
-                    .ok().is_some_and(|oid| oid.to_string() == j.selected_tip);
-                let old = correct_branch && correct_selected &&
-                    head.as_deref() == Some(j.previous_head.as_str());
-                let new = correct_branch && correct_selected &&
-                    head.as_deref() == Some(j.selected_tip.as_str());
+                    .ok()
+                    .is_some_and(|oid| oid.to_string() == j.selected_tip);
+                let old = correct_branch
+                    && correct_selected
+                    && head.as_deref() == Some(j.previous_head.as_str());
+                let new = correct_branch
+                    && correct_selected
+                    && head.as_deref() == Some(j.selected_tip.as_str());
                 let old_index = index_sha.as_deref() == Some(&j.original_index_sha256);
                 let new_index = !j.selected_index_sha256.is_empty()
                     && index_sha.as_deref() == Some(&j.selected_index_sha256);
@@ -482,7 +621,10 @@ impl IdeWorkspaceRegistry {
                     "published_ref_requires_operator_receipt"
                 } else if old && new_index {
                     "checkout_completed_ref_not_published"
-                } else if old && old_index && matches!(j.phase.as_str(), "prepared" | "checkout_intent") {
+                } else if old
+                    && old_index
+                    && matches!(j.phase.as_str(), "prepared" | "checkout_intent")
+                {
                     "prepublication_no_index_change_pending_review"
                 } else {
                     "ambiguous_merge_files_or_ref_drift"
@@ -491,8 +633,12 @@ impl IdeWorkspaceRegistry {
             }
         };
         let wt_matches = no_wt_changes(&repo).unwrap_or(false);
-        let requires_review = index_lock || !wt_matches || !matches!(state,
-            "no_journal" | "verified_historical_fast_forward" | "cancelled_before_checkout");
+        let requires_review = index_lock
+            || !wt_matches
+            || !matches!(
+                state,
+                "no_journal" | "verified_historical_fast_forward" | "cancelled_before_checkout"
+            );
         Ok(ProtectedMergeRecovery {
             schema_version: 1,
             project_id: project_id.to_owned(),
@@ -516,7 +662,8 @@ impl IdeWorkspaceRegistry {
     /// appending an observation. Only the separate native OS dialog may call
     /// this. No ref update/checkout/rollback is ever done by reconciliation.
     pub fn reconcile_protected_merge_receipt(
-        &self, project_id: &str,
+        &self,
+        project_id: &str,
     ) -> Result<ProtectedMergeRecovery, &'static str> {
         let repo = exact_repo(self, project_id)?;
         if fs::symlink_metadata(repo.path().join("index.lock")).is_ok() {
@@ -531,21 +678,28 @@ impl IdeWorkspaceRegistry {
         if !observed.worktree_matches_current_index {
             return Err("G06C03_RECOVERY_WORKTREE_DRIFT");
         }
-        if observed.state == "published_ref_requires_operator_receipt" &&
-            matches!(last.phase.as_str(), "publishing" | "ref_published")
+        if observed.state == "published_ref_requires_operator_receipt"
+            && matches!(last.phase.as_str(), "publishing" | "ref_published")
         {
             if !index_matches_tree(&repo, &last.selected_tree)?
                 || matching_commit(&repo, &last.branch_ref)?.as_deref() != Some(&last.selected_tip)
-                || local_commit(&repo, &last.selected_local_branch)?.to_string() != last.selected_tip
-                || !repo.statuses(Some(StatusOptions::new().include_untracked(true)
-                    .recurse_untracked_dirs(true)))
-                    .map_err(|_| "G06C03_RECOVERY_STATUS_UNAVAILABLE")?.is_empty() {
+                || local_commit(&repo, &last.selected_local_branch)?.to_string()
+                    != last.selected_tip
+                || !repo
+                    .statuses(Some(
+                        StatusOptions::new()
+                            .include_untracked(true)
+                            .recurse_untracked_dirs(true),
+                    ))
+                    .map_err(|_| "G06C03_RECOVERY_STATUS_UNAVAILABLE")?
+                    .is_empty()
+            {
                 return Err("G06C03_RECOVERY_REF_OR_TREE_NOT_VERIFIED");
             }
             last.phase = "verified".into();
-        } else if observed.state == "prepublication_no_index_change_pending_review" &&
-            matches!(last.phase.as_str(), "prepared" | "checkout_intent") &&
-            index_matches_tree(&repo, &last.previous_tree)?
+        } else if observed.state == "prepublication_no_index_change_pending_review"
+            && matches!(last.phase.as_str(), "prepared" | "checkout_intent")
+            && index_matches_tree(&repo, &last.previous_tree)?
             && matching_commit(&repo, &last.branch_ref)?.as_deref() == Some(&last.previous_head)
         {
             last.phase = "cancelled".into();
@@ -594,7 +748,9 @@ mod tests {
         index.write().unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
         let sig = Signature::now("Merge fixture", "merge@localhost.invalid").unwrap();
-        let first = repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+        let first = repo
+            .commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+            .unwrap();
         drop(tree);
         let original = repo.find_commit(first).unwrap();
         repo.branch("feature", &original, false).unwrap();
@@ -603,8 +759,15 @@ mod tests {
         let next = repo.blob(b"feature revision\n").unwrap();
         builder.insert("tracked.txt", next, 0o100644).unwrap();
         let new_tree = repo.find_tree(builder.write().unwrap()).unwrap();
-        repo.commit(Some("refs/heads/feature"), &sig, &sig,
-            "feature", &new_tree, &[&original]).unwrap();
+        repo.commit(
+            Some("refs/heads/feature"),
+            &sig,
+            &sig,
+            "feature",
+            &new_tree,
+            &[&original],
+        )
+        .unwrap();
         drop(new_tree);
         drop(builder);
         drop(base_tree);
@@ -612,26 +775,53 @@ mod tests {
         drop(index);
         drop(repo);
         let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
-        let id = registry.register_from_native_picker(&mut Picker(root.clone()))
-            .unwrap().unwrap().project_id;
-        Fixture { base, root, id, registry }
+        let id = registry
+            .register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap()
+            .unwrap()
+            .project_id;
+        Fixture {
+            base,
+            root,
+            id,
+            registry,
+        }
     }
     fn reviewed(x: &Fixture) -> String {
-        x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap().evidence_sha256
+        x.registry
+            .preview_reviewed_local_merge(&x.id, "feature")
+            .unwrap()
+            .evidence_sha256
     }
     #[test]
     fn real_fast_forward_advances_head_index_and_worktree_without_changing_other_file() {
         let x = fixture();
         let unrelated = fs::read(x.root.join("unrelated.keep")).unwrap();
-        let previous = Repository::open(&x.root).unwrap().head().unwrap().target().unwrap();
+        let previous = Repository::open(&x.root)
+            .unwrap()
+            .head()
+            .unwrap()
+            .target()
+            .unwrap();
         let digest = reviewed(&x);
-        let done = x.registry.execute_os_approved_fast_forward(
-            &x.id, "feature", &digest, &AtomicU8::new(0)).unwrap();
+        let done = x
+            .registry
+            .execute_os_approved_fast_forward(&x.id, "feature", &digest, &AtomicU8::new(0))
+            .unwrap();
         let repo = Repository::open(&x.root).unwrap();
         assert_eq!(done.previous_head, previous.to_string());
-        assert_eq!(repo.head().unwrap().target().unwrap().to_string(), done.resulting_head);
-        assert_eq!(local_commit(&repo, "feature").unwrap().to_string(), done.resulting_head);
-        assert_eq!(fs::read(x.root.join("tracked.txt")).unwrap(), b"feature revision\n");
+        assert_eq!(
+            repo.head().unwrap().target().unwrap().to_string(),
+            done.resulting_head
+        );
+        assert_eq!(
+            local_commit(&repo, "feature").unwrap().to_string(),
+            done.resulting_head
+        );
+        assert_eq!(
+            fs::read(x.root.join("tracked.txt")).unwrap(),
+            b"feature revision\n"
+        );
         assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
         assert!(index_matches_tree(&repo, &done.resulting_tree).unwrap());
         assert!(repo.statuses(None).unwrap().is_empty());
@@ -649,22 +839,32 @@ mod tests {
     fn stale_plan_cancellation_foreign_lock_and_untrusted_branch_are_denied_without_writes() {
         let x = fixture();
         let first = reviewed(&x);
-        assert_eq!(x.registry.execute_os_approved_fast_forward(
-            &x.id, "feature", &first, &AtomicU8::new(2)).unwrap_err(),
-            "G06C03_CANCELLED_BEFORE_EXECUTION");
+        assert_eq!(
+            x.registry
+                .execute_os_approved_fast_forward(&x.id, "feature", &first, &AtomicU8::new(2))
+                .unwrap_err(),
+            "G06C03_CANCELLED_BEFORE_EXECUTION"
+        );
         assert_eq!(fs::read(x.root.join("tracked.txt")).unwrap(), b"original\n");
-        assert!(x.registry.execute_os_approved_fast_forward(
-            &x.id, "../feature", &first, &AtomicU8::new(0)).is_err());
+        assert!(x
+            .registry
+            .execute_os_approved_fast_forward(&x.id, "../feature", &first, &AtomicU8::new(0))
+            .is_err());
         let lock = x.root.join(".git/index.lock");
         fs::write(&lock, b"foreign process").unwrap();
-        assert_eq!(x.registry.execute_os_approved_fast_forward(
-            &x.id, "feature", &first, &AtomicU8::new(0)).unwrap_err(),
-            "G06C03_STALE_OR_FORGED_MERGE_PLAN");
+        assert_eq!(
+            x.registry
+                .execute_os_approved_fast_forward(&x.id, "feature", &first, &AtomicU8::new(0))
+                .unwrap_err(),
+            "G06C03_STALE_OR_FORGED_MERGE_PLAN"
+        );
         assert_eq!(fs::read(&lock).unwrap(), b"foreign process");
         fs::remove_file(lock).unwrap();
         fs::write(x.root.join("tracked.txt"), b"other change\n").unwrap();
-        assert!(x.registry.execute_os_approved_fast_forward(
-            &x.id, "feature", &first, &AtomicU8::new(0)).is_err());
+        assert!(x
+            .registry
+            .execute_os_approved_fast_forward(&x.id, "feature", &first, &AtomicU8::new(0))
+            .is_err());
     }
     #[test]
     fn recovery_rejects_unpublished_checkout_and_foreign_index_lock() {
@@ -672,7 +872,10 @@ mod tests {
         let digest = reviewed(&x);
         let repo = Repository::open(&x.root).unwrap();
         let original_ref = repo.head().unwrap().target().unwrap();
-        let plan = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        let plan = x
+            .registry
+            .preview_reviewed_local_merge(&x.id, "feature")
+            .unwrap();
         let journal_path = journal_file(&x.registry, &x.id).unwrap();
         let mut record = MergeJournal {
             schema_version: 1,
@@ -692,8 +895,12 @@ mod tests {
         append(&journal_path, &record).unwrap();
         let mut checkout = CheckoutBuilder::new();
         checkout.safe().recreate_missing(true);
-        let target = repo.find_object(
-            Oid::from_str(&record.selected_tip).unwrap(), Some(ObjectType::Commit)).unwrap();
+        let target = repo
+            .find_object(
+                Oid::from_str(&record.selected_tip).unwrap(),
+                Some(ObjectType::Commit),
+            )
+            .unwrap();
         repo.checkout_tree(&target, Some(&mut checkout)).unwrap();
         record.selected_index_sha256 = exact_index_sha(repo.path()).unwrap();
         record.phase = "checkout_verified".into();
@@ -702,38 +909,58 @@ mod tests {
         let state = x.registry.inspect_protected_merge_recovery(&x.id).unwrap();
         assert_eq!(state.state, "checkout_completed_ref_not_published");
         assert!(state.operator_reconciliation_required);
-        assert_eq!(x.registry.reconcile_protected_merge_receipt(&x.id).unwrap_err(),
-                   "G06C03_RECOVERY_MANUAL_REPAIR_REQUIRED");
+        assert_eq!(
+            x.registry
+                .reconcile_protected_merge_receipt(&x.id)
+                .unwrap_err(),
+            "G06C03_RECOVERY_MANUAL_REPAIR_REQUIRED"
+        );
         let lock = repo.path().join("index.lock");
         fs::write(&lock, b"foreign").unwrap();
-        assert_eq!(x.registry.reconcile_protected_merge_receipt(&x.id).unwrap_err(),
-                   "G06C03_RECOVERY_FOREIGN_LOCK");
+        assert_eq!(
+            x.registry
+                .reconcile_protected_merge_receipt(&x.id)
+                .unwrap_err(),
+            "G06C03_RECOVERY_FOREIGN_LOCK"
+        );
         assert_eq!(fs::read(lock).unwrap(), b"foreign");
     }
     #[test]
     fn g06c03_actual_process_abort_child() {
-        let Some(root) = std::env::var_os("IDE_G06C03_CHILD_ROOT") else { return; };
-        let Some(project_id) = std::env::var_os("IDE_G06C03_CHILD_ID") else { return; };
+        let Some(root) = std::env::var_os("IDE_G06C03_CHILD_ROOT") else {
+            return;
+        };
+        let Some(project_id) = std::env::var_os("IDE_G06C03_CHILD_ID") else {
+            return;
+        };
         let root = PathBuf::from(root);
-        let registry = IdeWorkspaceRegistry::open(root.parent().unwrap()
-            .join("catalog.json")).unwrap();
+        let registry =
+            IdeWorkspaceRegistry::open(root.parent().unwrap().join("catalog.json")).unwrap();
         let id = project_id.to_string_lossy().to_string();
         registry.reopen(&id).unwrap();
-        let digest = registry.preview_reviewed_local_merge(&id, "feature")
-            .unwrap().evidence_sha256;
-        let _ = registry.execute_os_approved_fast_forward(
-            &id, "feature", &digest, &AtomicU8::new(0));
+        let digest = registry
+            .preview_reviewed_local_merge(&id, "feature")
+            .unwrap()
+            .evidence_sha256;
+        let _ =
+            registry.execute_os_approved_fast_forward(&id, "feature", &digest, &AtomicU8::new(0));
         panic!("G06C03 child returned without deliberate process abort");
     }
     #[test]
     fn real_child_process_abort_after_ref_cas_restarts_without_ref_replay() {
-        if std::env::var_os("IDE_G06C03_CHILD_ROOT").is_some() { return; }
+        if std::env::var_os("IDE_G06C03_CHILD_ROOT").is_some() {
+            return;
+        }
         let x = fixture();
         let old_repo = Repository::open(&x.root).unwrap();
         let old_head = old_repo.head().unwrap().target().unwrap().to_string();
         let selected = local_commit(&old_repo, "feature").unwrap().to_string();
         let unrelated = fs::read(x.root.join("unrelated.keep")).unwrap();
-        fs::write(x.root.join(".git/g06c03-abort-fixture"), b"G06C03_DISPOSABLE_ONLY\n").unwrap();
+        fs::write(
+            x.root.join(".git/g06c03-abort-fixture"),
+            b"G06C03_DISPOSABLE_ONLY\n",
+        )
+        .unwrap();
         let test_bin = std::env::current_exe().unwrap();
         let output = std::process::Command::new(test_bin)
             .arg("--exact")
@@ -742,16 +969,22 @@ mod tests {
             .env("IDE_G06C03_CHILD_ROOT", &x.root)
             .env("IDE_G06C03_CHILD_ID", &x.id)
             .env("IDE_G06C03_ABORT_AFTER_REF_CAS", &x.root)
-            .output().unwrap();
+            .output()
+            .unwrap();
         assert!(!output.status.success(), "test child must genuinely abort");
-        assert!(!String::from_utf8_lossy(&output.stderr)
-            .contains("returned without deliberate process abort"),
-            "failure must be the actual post-CAS abort");
+        assert!(
+            !String::from_utf8_lossy(&output.stderr)
+                .contains("returned without deliberate process abort"),
+            "failure must be the actual post-CAS abort"
+        );
         let repo = Repository::open(&x.root).unwrap();
         assert_eq!(repo.head().unwrap().target().unwrap().to_string(), selected);
         assert_ne!(old_head, selected);
         assert!(repo.statuses(None).unwrap().is_empty());
-        assert_eq!(fs::read(x.root.join("tracked.txt")).unwrap(), b"feature revision\n");
+        assert_eq!(
+            fs::read(x.root.join("tracked.txt")).unwrap(),
+            b"feature revision\n"
+        );
         assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
         let path = journal_file(&x.registry, &x.id).unwrap();
         let pending = read_latest(&path).unwrap().unwrap();
@@ -767,15 +1000,22 @@ mod tests {
         let state = reopened.inspect_protected_merge_recovery(&x.id).unwrap();
         assert_eq!(state.state, "published_ref_requires_operator_receipt");
         assert!(state.operator_reconciliation_required);
-        assert!(!state.automatic_retry && !state.automatic_ref_rewrite &&
-                 !state.automatic_checkout && !state.automatic_lock_deletion);
+        assert!(
+            !state.automatic_retry
+                && !state.automatic_ref_rewrite
+                && !state.automatic_checkout
+                && !state.automatic_lock_deletion
+        );
         // The source-only test represents a separately approved reconciliation;
         // no actual physical human OS dialog is claimed.
         let reconciled = reopened.reconcile_protected_merge_receipt(&x.id).unwrap();
         assert_eq!(reconciled.state, "verified_historical_fast_forward");
         assert!(!reconciled.operator_reconciliation_required);
         let final_repo = Repository::open(&x.root).unwrap();
-        assert_eq!(final_repo.head().unwrap().target().unwrap().to_string(), selected);
+        assert_eq!(
+            final_repo.head().unwrap().target().unwrap().to_string(),
+            selected
+        );
         assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
         assert!(final_repo.statuses(None).unwrap().is_empty());
     }
@@ -783,32 +1023,48 @@ mod tests {
     fn restart_does_not_confuse_a_different_local_branch_at_the_same_commit() {
         let x = fixture();
         let digest = reviewed(&x);
-        let receipt = x.registry.execute_os_approved_fast_forward(
-            &x.id, "feature", &digest, &AtomicU8::new(0)).unwrap();
+        let receipt = x
+            .registry
+            .execute_os_approved_fast_forward(&x.id, "feature", &digest, &AtomicU8::new(0))
+            .unwrap();
         let repo = Repository::open(&x.root).unwrap();
-        let commit = repo.find_commit(Oid::from_str(&receipt.resulting_head).unwrap()).unwrap();
+        let commit = repo
+            .find_commit(Oid::from_str(&receipt.resulting_head).unwrap())
+            .unwrap();
         repo.branch("another", &commit, false).unwrap();
         repo.set_head("refs/heads/another").unwrap();
         assert!(repo.statuses(None).unwrap().is_empty());
         let state = x.registry.inspect_protected_merge_recovery(&x.id).unwrap();
         assert_eq!(state.state, "ambiguous_merge_files_or_ref_drift");
         assert!(state.operator_reconciliation_required);
-        assert_eq!(x.registry.reconcile_protected_merge_receipt(&x.id).unwrap_err(),
-            "G06C03_RECOVERY_MANUAL_REPAIR_REQUIRED");
+        assert_eq!(
+            x.registry
+                .reconcile_protected_merge_receipt(&x.id)
+                .unwrap_err(),
+            "G06C03_RECOVERY_MANUAL_REPAIR_REQUIRED"
+        );
         assert_eq!(repo.head().unwrap().name(), Some("refs/heads/another"));
     }
     #[test]
     fn real_child_process_abort_after_checkout_refuses_replay_and_preserves_original_ref() {
-        if std::env::var_os("IDE_G06C03_CHILD_ROOT").is_some() { return; }
+        if std::env::var_os("IDE_G06C03_CHILD_ROOT").is_some() {
+            return;
+        }
         let x = fixture();
         let before_repo = Repository::open(&x.root).unwrap();
         let original_head = before_repo.head().unwrap().target().unwrap().to_string();
         let selected_tip = local_commit(&before_repo, "feature").unwrap().to_string();
-        let selected_tree = before_repo.find_commit(
-            Oid::from_str(&selected_tip).unwrap()).unwrap().tree_id().to_string();
+        let selected_tree = before_repo
+            .find_commit(Oid::from_str(&selected_tip).unwrap())
+            .unwrap()
+            .tree_id()
+            .to_string();
         let unrelated = fs::read(x.root.join("unrelated.keep")).unwrap();
-        fs::write(x.root.join(".git/g06c03-abort-fixture"),
-            b"G06C03_DISPOSABLE_ONLY\n").unwrap();
+        fs::write(
+            x.root.join(".git/g06c03-abort-fixture"),
+            b"G06C03_DISPOSABLE_ONLY\n",
+        )
+        .unwrap();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .arg("--exact")
             .arg("git_protected_merge::tests::g06c03_actual_process_abort_child")
@@ -816,20 +1072,28 @@ mod tests {
             .env("IDE_G06C03_CHILD_ROOT", &x.root)
             .env("IDE_G06C03_CHILD_ID", &x.id)
             .env("IDE_G06C03_ABORT_AFTER_CHECKOUT", &x.root)
-            .output().unwrap();
+            .output()
+            .unwrap();
         assert!(!output.status.success(), "test child must really abort");
         assert!(!String::from_utf8_lossy(&output.stderr)
             .contains("returned without deliberate process abort"));
         let repo = Repository::open(&x.root).unwrap();
-        assert_eq!(repo.head().unwrap().target().unwrap().to_string(), original_head);
+        assert_eq!(
+            repo.head().unwrap().target().unwrap().to_string(),
+            original_head
+        );
         assert_ne!(original_head, selected_tip);
         assert!(index_matches_tree(&repo, &selected_tree).unwrap());
         assert!(no_wt_changes(&repo).unwrap());
-        assert_eq!(fs::read(x.root.join("tracked.txt")).unwrap(), b"feature revision\n");
+        assert_eq!(
+            fs::read(x.root.join("tracked.txt")).unwrap(),
+            b"feature revision\n"
+        );
         assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
         assert!(!repo.path().join("index.lock").exists());
         let journal = read_latest(&journal_file(&x.registry, &x.id).unwrap())
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert_eq!(journal.phase, "checkout_verified");
         assert_eq!(journal.previous_head, original_head);
         assert_eq!(journal.selected_tip, selected_tip);
@@ -838,12 +1102,28 @@ mod tests {
         let state = reopened.inspect_protected_merge_recovery(&x.id).unwrap();
         assert_eq!(state.state, "checkout_completed_ref_not_published");
         assert!(state.operator_reconciliation_required);
-        assert!(!state.automatic_ref_rewrite && !state.automatic_retry
-            && !state.automatic_checkout && !state.automatic_lock_deletion);
-        assert_eq!(reopened.reconcile_protected_merge_receipt(&x.id).unwrap_err(),
-            "G06C03_RECOVERY_MANUAL_REPAIR_REQUIRED");
-        assert_eq!(Repository::open(&x.root).unwrap().head().unwrap().target()
-            .unwrap().to_string(), original_head);
+        assert!(
+            !state.automatic_ref_rewrite
+                && !state.automatic_retry
+                && !state.automatic_checkout
+                && !state.automatic_lock_deletion
+        );
+        assert_eq!(
+            reopened
+                .reconcile_protected_merge_receipt(&x.id)
+                .unwrap_err(),
+            "G06C03_RECOVERY_MANUAL_REPAIR_REQUIRED"
+        );
+        assert_eq!(
+            Repository::open(&x.root)
+                .unwrap()
+                .head()
+                .unwrap()
+                .target()
+                .unwrap()
+                .to_string(),
+            original_head
+        );
         assert_eq!(fs::read(x.root.join("unrelated.keep")).unwrap(), unrelated);
     }
     #[test]
@@ -854,14 +1134,39 @@ mod tests {
         let original = repo.head().unwrap().target().unwrap();
         let tree = repo.find_commit(original).unwrap().tree().unwrap();
         let sig = Signature::now("Merge fixture", "merge@localhost.invalid").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "main diverges", &tree,
-                    &[&repo.find_commit(original).unwrap()]).unwrap();
-        let now = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "main diverges",
+            &tree,
+            &[&repo.find_commit(original).unwrap()],
+        )
+        .unwrap();
+        let now = x
+            .registry
+            .preview_reviewed_local_merge(&x.id, "feature")
+            .unwrap();
         assert_eq!(now.classification, "divergent_merge_candidate");
-        assert!(x.registry.execute_os_approved_fast_forward(
-            &x.id, "feature", &now.evidence_sha256, &AtomicU8::new(0)).is_err());
-        assert!(x.registry.execute_os_approved_fast_forward(
-            &x.id, "feature", &digest, &AtomicU8::new(0)).is_err());
-        assert!(x.registry.inspect_protected_merge_recovery(&x.id).unwrap().state == "no_journal");
+        assert!(x
+            .registry
+            .execute_os_approved_fast_forward(
+                &x.id,
+                "feature",
+                &now.evidence_sha256,
+                &AtomicU8::new(0)
+            )
+            .is_err());
+        assert!(x
+            .registry
+            .execute_os_approved_fast_forward(&x.id, "feature", &digest, &AtomicU8::new(0))
+            .is_err());
+        assert!(
+            x.registry
+                .inspect_protected_merge_recovery(&x.id)
+                .unwrap()
+                .state
+                == "no_journal"
+        );
     }
 }
