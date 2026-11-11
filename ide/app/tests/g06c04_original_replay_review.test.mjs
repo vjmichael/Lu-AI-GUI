@@ -14,12 +14,12 @@ test('G06C04A native replay plan binds original linear commits and commits no op
   assert.match(native, /RebaseCurrentOntoLocal/);
   assert.match(native, /CherryPickLocalTip/);
   assert.match(native, /pub fn review_local_rebase_cherry_pick\(/);
-  assert.match(native, /repo\.merge_bases\(/);
+  assert.match(native, /\.merge_bases\(/);
   assert.match(native, /fn first_parent_range\(/);
   assert.match(native, /G06C04_REBASE_COMMIT_LIMIT/);
   assert.match(native, /G06C04_REBASE_MERGE_OR_ROOT_IN_RANGE/);
   assert.match(native, /G06C04_ROOT_OR_MERGE_COMMIT_REVIEW_DENIED/);
-  assert.match(native, /repo\.diff_tree_to_tree\(/);
+  assert.match(native, /\.diff_tree_to_tree\(/);
   assert.match(native, /path_ledger_sha256/);
   assert.match(native, /G06C04_SOURCE_CHANGED_DURING_REVIEW/);
   assert.match(native, /G06C04_NOT_UNIQUE_MERGE_BASE/);
@@ -49,10 +49,11 @@ test('G06C04A typed preview only through registered Tauri host no executor', () 
   assert.match(tauri, /operation: lu_ide_workspace::git_rebase_cherry_plan::ReplayReviewKind/);
   assert.match(tauri, /review_local_rebase_cherry_pick\(&project_id, operation, &selected_branch\)/);
   assert.match(tauri, /ide_git_review_rebase_cherry_pick,/);
-  for (const forbidden of [
-    'ide_git_execute_rebase', 'ide_git_execute_cherry_pick',
-    'ide_git_apply_rebase', 'ide_git_apply_cherry_pick'
-  ]) assert.ok(!tauri.includes('async fn '+forbidden+'('));
+  assert.match(tauri, /async fn ide_git_execute_rebase\(/);
+  assert.match(tauri, /async fn ide_git_execute_cherry_pick\(/);
+  assert.match(tauri, /G06C04_HUMAN_DENIED/);
+  for (const forbidden of ['ide_git_apply_rebase', 'ide_git_apply_cherry_pick'])
+    assert.ok(!tauri.includes('async fn '+forbidden+'('));
 });
 
 test('G06C04A frontend never treats read-only plan as one-use OS approval or result', () => {
@@ -67,6 +68,5 @@ test('G06C04A frontend never treats read-only plan as one-use OS approval or res
   assert.match(ui, /replayPlanRequest\.current \+= 1/);
   assert.match(ui, /setReplayPlan\(null\)/);
   assert.match(ui, /no execution route for rebase or cherry-pick/);
-  assert.doesNotMatch(ui, /invoke\('ide_git_execute_rebase'/);
-  assert.doesNotMatch(ui, /invoke\('ide_git_execute_cherry_pick'/);
+  assert.match(ui, /G06C04B_RESULT_UNTRUSTED_OR_STALE/);
 });
