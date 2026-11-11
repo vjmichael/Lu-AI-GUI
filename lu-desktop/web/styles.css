@@ -633,3 +633,22 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .plan07ModelSuggestions article{margin:10px 0;border-top:1px solid #39546d;padding:9px 0}
 .plan07ModelSuggestions strong{font-size:12px;overflow-wrap:anywhere}
 .plan07ModelSuggestions small{overflow-wrap:anywhere;display:block}
+
+
+/* PLAN-07C: operator-owned evidence decisions, separate from model authority. */
+.plan07HumanReview{padding:14px 22px;border-bottom:1px solid #58778e;background:#16283a;max-height:44vh;overflow:auto;scrollbar-gutter:stable}
+.plan07HumanHeader{display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.plan07HumanReview h3{font-size:14px;margin:0}
+.plan07HumanReview p{font-size:12px;line-height:1.5;max-width:850px}
+.plan07HumanReview label{display:block;margin:9px 0;font-size:12px}
+.plan07HumanReview select,.plan07HumanReview textarea{display:block;width:100%;max-width:700px;margin-top:6px;background:#0d1d2b;color:#e2efff;border:1px solid #7894ac;border-radius:6px;padding:8px}
+.plan07HumanReview fieldset{display:flex;align-items:center;gap:15px;flex-wrap:wrap;border:1px solid #4a718b;border-radius:7px;max-width:700px;padding:8px 12px}
+.plan07HumanReview fieldset label{display:flex;align-items:center;gap:7px;margin:0}
+.plan07HumanReview fieldset input{accent-color:#73ade0}
+.plan07HumanReview button{border:1px solid #7f9bb7;background:#254765;color:#f1f7fe;border-radius:7px;padding:10px 13px;cursor:pointer}
+.plan07HumanReview button:disabled{opacity:.5;cursor:not-allowed}
+.plan07HumanReview small{display:block;font-size:11px;color:#b6ccda;overflow-wrap:anywhere;margin:8px 0}
+.plan07ExactRevalidation{max-width:900px;border-top:1px solid #46637a;padding-top:10px;margin-top:10px}
+.plan07ReviewHistory{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(290px,100%),1fr));gap:8px;max-height:17vh;overflow:auto;margin-top:10px}
+.plan07ReviewHistory article{border:1px solid #4f6a80;border-radius:6px;padding:10px;background:#20364a}
+.plan07ReviewHistory article strong{font-size:12px;overflow-wrap:anywhere}
