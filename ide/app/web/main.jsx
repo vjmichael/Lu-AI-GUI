@@ -1295,6 +1295,28 @@ function App() {
     }
   }
 
+  async function restoreReviewedPartialStageReceipt() {
+    if (!activeProject?.projectId || reviewedCommitBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = gitHunkRequest.current;
+    setReviewedCommitBusy(true);
+    setProblem('');
+    try {
+      const restored = await invoke('ide_git_restore_reviewed_stage_receipt', { projectId });
+      if (ticket === gitHunkRequest.current && restored.projectId === projectId) {
+        setGitPartialStageReceipt(restored);
+        setReviewedCommitPlan(null);
+        setReviewedCommitReceipt(null);
+        setHint('Previously approved partial stage was independently verified from the native journal; no commit has been authorized.');
+      }
+    } catch (error) {
+      if (ticket === gitHunkRequest.current)
+        setProblem('Unable to restore exact staged-hunk evidence: ' + String(error));
+    } finally {
+      if (ticket === gitHunkRequest.current) setReviewedCommitBusy(false);
+    }
+  }
+
   async function previewReviewedPartialCommit(mode) {
     if (!activeProject?.projectId || !gitPartialStageReceipt || reviewedCommitBusy ||
         gitPartialStageReceipt.projectId !== activeProject.projectId) return;
@@ -5218,6 +5240,11 @@ function App() {
                 A valid original native staging receipt is required; the host
                 independently checks the private journal, exact index, staged
                 tree, original source, HEAD and branch before showing any OS dialog.</p>
+              {!gitPartialStageReceipt && <button type="button" className="ghostBtn"
+                disabled={reviewedCommitBusy}
+                onClick={() => restoreReviewedPartialStageReceipt()}>
+                Restore previously verified staged-hunk receipt (read-only)
+              </button>}
               <label htmlFor="g06b-commit-message">Commit message</label>
               <textarea id="g06b-commit-message" rows={2} maxLength={4096}
                 value={reviewedCommitMessage} disabled={reviewedCommitBusy}
