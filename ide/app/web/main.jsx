@@ -263,6 +263,11 @@ function App() {
   const [gitStatus, setGitStatus] = useState(null);
   const [gitInventory, setGitInventory] = useState(null);
   const [gitRefsHealth, setGitRefsHealth] = useState(null);
+  const [branchReviewKind, setBranchReviewKind] = useState('merge');
+  const [branchReviewTarget, setBranchReviewTarget] = useState('');
+  const [branchReview, setBranchReview] = useState(null);
+  const [branchReviewBusy, setBranchReviewBusy] = useState(false);
+  const branchReviewRequest = useRef(0);
   const [gitFileHistory, setGitFileHistory] = useState(null);
   const [gitFilePath, setGitFilePath] = useState('');
   const [gitFileBusy, setGitFileBusy] = useState(false);
@@ -418,6 +423,10 @@ function App() {
     setGitStatus(null);
     setGitInventory(null);
     setGitRefsHealth(null);
+    branchReviewRequest.current += 1;
+    setBranchReview(null);
+    setBranchReviewBusy(false);
+    setBranchReviewTarget('');
     setGitFileHistory(null);
     setGitFileBusy(false);
     gitSnapshotRequest.current += 1;
@@ -1736,7 +1745,45 @@ function App() {
     finally { setWorkflowRunBusy(false); }
   }
 
+  async function previewLocalBranchOperation() {
+    if (!activeProject?.projectId || branchReviewBusy ||
+        (branchReviewKind !== 'stash' && !branchReviewTarget)) return;
+    const projectId = activeProject.projectId;
+    const operation = branchReviewKind;
+    const selectedBranch = operation === 'stash' ? null : branchReviewTarget;
+    const ticket = ++branchReviewRequest.current;
+    setBranchReviewBusy(true);
+    setBranchReview(null);
+    setProblem('');
+    try {
+      const review = await invoke('ide_git_review_branch_operation', {
+        projectId, operation, selectedBranch,
+      });
+      if (ticket !== branchReviewRequest.current) return;
+      if (review?.schemaVersion !== 1 || review.projectId !== projectId ||
+          review.operation !== operation || review.selectedLocalBranch !== selectedBranch ||
+          review.operationAuthorized !== false || review.operationExecuted !== false ||
+          review.executionRouteAvailable !== false || review.repositoryModified !== false ||
+          review.gitProcessStarted !== false || review.remoteQueried !== false ||
+          !Array.isArray(review.blockers) ||
+          !/^[a-f0-9]{64}$/.test(review.evidenceSha256)) {
+        throw Error('G06C_PREVIEW_UNTRUSTED_OR_MISMATCHED');
+      }
+      setBranchReview(review);
+    } catch (error) {
+      if (ticket === branchReviewRequest.current) {
+        setBranchReview(null);
+        setProblem('Could not review the exact local branch operation: ' + String(error));
+      }
+    } finally {
+      if (ticket === branchReviewRequest.current) setBranchReviewBusy(false);
+    }
+  }
+
   async function refreshGitStatus() {
+    branchReviewRequest.current += 1;
+    setBranchReview(null);
+    setBranchReviewBusy(false);
     if (!activeProject?.projectId) {
       setGitStatus(null);
       setGitInventory(null);
@@ -5468,6 +5515,84 @@ function App() {
                 Remote unchanged; release unapproved.</p>}
             </div>}
 
+            {activeProject && <div className="continuityDocument"
+              aria-label="G06C local Git branch operation review only">
+              <h3>Branch operations · review before any execution</h3>
+              <p>Inspect an exact local branch tip and Git ancestry for merge, rebase,
+                cherry-pick or revert, or assess whether a local stash would affect
+                unsaved work. This stage is read-only; it cannot checkout, stash,
+                run hooks, fetch, rewrite history or authorize an operation.</p>
+              <label htmlFor="g06c-operation-kind">Operation to review</label>
+              <select id="g06c-operation-kind" value={branchReviewKind}
+                disabled={branchReviewBusy}
+                onChange={event => {
+                  branchReviewRequest.current += 1;
+                  setBranchReviewKind(event.target.value);
+                  setBranchReview(null);
+                  setBranchReviewBusy(false);
+                }}>
+                <option value="merge">Merge local branch</option>
+                <option value="rebase">Rebase onto local branch</option>
+                <option value="cherry_pick">Cherry-pick local branch tip</option>
+                <option value="revert">Revert local branch tip</option>
+                <option value="stash">Review local stash impact</option>
+              </select>
+              {branchReviewKind !== 'stash' && <>
+                <label htmlFor="g06c-selected-local-branch">Existing local branch</label>
+                <select id="g06c-selected-local-branch" value={branchReviewTarget}
+                  disabled={branchReviewBusy || !gitInventory ||
+                    gitInventory.projectId !== activeProject.projectId}
+                  onChange={event => {
+                    branchReviewRequest.current += 1;
+                    setBranchReviewTarget(event.target.value);
+                    setBranchReview(null);
+                    setBranchReviewBusy(false);
+                  }}>
+                  <option value="">Choose a local branch</option>
+                  {(gitInventory?.projectId === activeProject.projectId
+                    ? gitInventory.branches : []).filter(entry => entry.tipSha)
+                    .map(entry => <option key={entry.name} value={entry.name}>
+                      {entry.name}{entry.current ? ' · current (blocked)' : ''}
+                    </option>)}
+                </select>
+              </>}
+              <button type="button" className="ghostBtn"
+                disabled={branchReviewBusy || gitBusy ||
+                  (branchReviewKind !== 'stash' && !branchReviewTarget)}
+                onClick={() => void previewLocalBranchOperation()}>
+                {branchReviewBusy ? 'Inspecting native Git graph…' :
+                  'Inspect operation (no changes)'}
+              </button>
+              {branchReview && branchReview.projectId === activeProject.projectId &&
+                <article className="continuityEvent" role="status">
+                  <strong>{branchReview.operation.replaceAll('_',' ')}
+                    {' · '}{branchReview.relationship.replaceAll('_',' ')}</strong>
+                  <p>Current: <code>{branchReview.currentBranch}</code>
+                    {' · '}HEAD: <code>{branchReview.currentHead}</code></p>
+                  {branchReview.selectedLocalBranch && <p>
+                    Local branch: <code>{branchReview.selectedLocalBranch}</code>
+                    {' · '}Tip: <code>{branchReview.selectedTip}</code></p>}
+                  {branchReview.mergeBase &&
+                    <p>Shared ancestor: <code>{branchReview.mergeBase}</code></p>}
+                  {branchReview.currentOnlyCommits !== null &&
+                    <p>Current-only commits: {branchReview.currentOnlyCommits}
+                      {' · '}Selected-only commits: {branchReview.selectedOnlyCommits}</p>}
+                  <p>Git state: {branchReview.gitState} · Index conflicts:
+                    {' '}{String(branchReview.indexConflicts)} · Index locked:
+                    {' '}{String(branchReview.indexLockPresent)}</p>
+                  <p>Changed paths: {branchReview.dirtyEntries}
+                    {branchReview.dirtyTruncated ? '+' : ''}
+                    {' · '}Untracked present: {String(branchReview.untrackedPresent)}</p>
+                  {branchReview.blockers.length > 0
+                    ? <p role="alert">Safety blockers:
+                        {' '}{branchReview.blockers.join(', ').replaceAll('_', ' ')}</p>
+                    : <p>No static safety blockers were observed. This does not
+                        authorize a branch operation or prove it can succeed.</p>}
+                  <p>Evidence: <code>{branchReview.evidenceSha256}</code></p>
+                  <p>Authorization: none · Execution route: unavailable · No Git
+                    writes, process launch or network access.</p>
+                </article>}
+            </div>}
             {gitInventory && gitInventory.projectId === activeProject?.projectId &&
               <div className="continuityDocument" aria-label="Local branches and linked worktrees">
                 <h3>Branches and linked worktrees · read-only</h3>
