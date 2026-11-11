@@ -21,7 +21,7 @@ if not db.is_file() or db.is_symlink():
 seed=json.loads(pathlib.Path(args.seed).read_text(encoding="utf-8-sig"))
 if seed.get("source")!="TEST_ONLY_SYNTHETIC_MODEL_RAW_JSON_NOT_GGUF":
     raise SystemExit("PLAN05 fixture provenance not preserved")
-conn=sqlite3.connect(f"file:{db.as_posix()}?mode=ro",uri=True,timeout=5)
+conn=sqlite3.connect(db.as_uri()+"?mode=ro",uri=True,timeout=5)
 conn.execute("PRAGMA query_only=ON")
 orig=conn.execute("SELECT proposal_json,original_reply_json,execution_authorized "
     "FROM ansf_project_task_proposals WHERE proposal_sha256=?",
