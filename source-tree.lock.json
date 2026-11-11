@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sourceCommitBeforeLock": "76ced59ff7fe9830be11eb60097fdcca8082486a",
-  "trackedFileCount": 893,
+  "trackedFileCount": 897,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "702faecc541de1e50724d58c506ac37d6bc7d1a2"
+      "blob": "3fcbad99d3200e0431ee809cd451d71aed9d403b"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -358,6 +358,10 @@
     {
       "path": "benchmarks/e1/memory_loop03c_reviewed_worker_cases.py",
       "blob": "e55c00715a891971926a679aace1d1359c78f3eb"
+    },
+    {
+      "path": "benchmarks/e1/plan04_real_gguf_synthesis.py",
+      "blob": "183ec814ac9693e51995540f5e5687deee780d99"
     },
     {
       "path": "benchmarks/e1/r00_genuine_kiaf_comparison.py",
@@ -832,6 +836,10 @@
       "blob": "fb25baefc11bba37e77db822bf9694ba59e3d7d0"
     },
     {
+      "path": "docs/LU_PLAN04_GENUINE_GGUF_TASK_SYNTHESIS_20261110.md",
+      "blob": "c793f45fb7dea8492b883cec84d750d25cd22321"
+    },
+    {
       "path": "docs/LU_R00_CAPABILITY_CONSOLIDATION_20261109.md",
       "blob": "0d6ea8e7fa09586b1c02e1b1cc04b462ce8c9986"
     },
@@ -1269,7 +1277,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "9c0b2c1dde6ead2f4a462b6673bdc57f7ad51006"
+      "blob": "a676c6232a8988847772cfec4ae5b90ec85f2951"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1353,7 +1361,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_status_desktop.rs",
-      "blob": "ff739a5e6d71bc3addf79b2ab1f7f77fa0b77c25"
+      "blob": "35cb5b4bff9355b0797be2b033ca43c6e01c34ad"
+    },
+    {
+      "path": "lu-desktop/src-tauri/src/project_task_desktop.rs",
+      "blob": "049682868d84ad7cbff386b421a572506ce8c366"
     },
     {
       "path": "lu-desktop/src-tauri/src/prompt_context.rs",
@@ -1849,7 +1861,7 @@
     },
     {
       "path": "lu-desktop/tests/workspace-desktop.test.mjs",
-      "blob": "8039d3fb7ade71459bf5d9d88f4cae12c720cf93"
+      "blob": "83a1d3a28c1d2066e14c505df832f9670cf26104"
     },
     {
       "path": "lu-desktop/tests/write-01e-edit-ux.test.mjs",
@@ -1921,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",
-      "blob": "5d2742847b2d57deb1ea0c481992c0547e4d403b"
+      "blob": "b1e4602536579e558aba7eebb367cfad26d61db0"
     },
     {
       "path": "lu-desktop/web/response_view.mjs",
@@ -2485,7 +2497,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/lib.rs",
-      "blob": "5ac23e768220fbe5e07c0abfbb46aaa76152d85f"
+      "blob": "52a3f113e71e34a951e56b5ee821de3819abda2c"
     },
     {
       "path": "src-tauri/lu-core/src/linux_device_hints.rs",
@@ -2918,6 +2930,10 @@
     {
       "path": "src-tauri/lu-core/src/project_status_classifier.rs",
       "blob": "68168751411bb9327f2e18ec8ecde5be8f9ee860"
+    },
+    {
+      "path": "src-tauri/lu-core/src/project_task_synthesis.rs",
+      "blob": "e25eb06d989922b423559afe1146893ca8d54a19"
     },
     {
       "path": "src-tauri/lu-core/src/projector_identity.rs",

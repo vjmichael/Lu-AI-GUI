@@ -118,3 +118,29 @@ test('PLAN-03 classification is native-only, graph-audited, ANSF-persisted and n
   assert.doesNotMatch(bridge,/Command::new|reqwest|git fetch|run_plan|model\.infer/);
   assert.doesNotMatch(settings,/invoke\('lu_project_classify',\{.*root/);
 });
+
+test('PLAN-04 uses actual loaded GGUF reservation and strict citation-validated drafts, never model tool grants',()=>{
+  const settings=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+  const synthesis=readFileSync(new URL('../../src-tauri/lu-core/src/project_task_synthesis.rs',import.meta.url),'utf8');
+  const bridge=readFileSync(new URL('../src-tauri/src/project_task_desktop.rs',import.meta.url),'utf8');
+  assert.match(host,/mod project_task_desktop;/);
+  assert.match(host,/project_task_desktop::lu_project_generate_tasks,/);
+  assert.match(bridge,/caller\.label\(\)!="settings"/);
+  assert.match(bridge,/blocking_pick_folder\(\)/);
+  assert.match(bridge,/blocking_show\(\)/);
+  assert.match(bridge,/supervisor\.reserve_generation_with_history/);
+  assert.match(bridge,/supervisor\.run_reserved_with_history/);
+  assert.match(bridge,/generation_queue\.enqueue/);
+  assert.match(bridge,/same_observed_sources/);
+  assert.match(bridge,/ansf_project_task_proposals/);
+  assert.match(bridge,/INSERT OR IGNORE/);
+  assert.match(synthesis,/PLAN04_MODEL_INVENTED_REQUIREMENT/);
+  assert.match(synthesis,/PLAN04_MODEL_STATUS_FABRICATION/);
+  assert.match(synthesis,/PLAN04_MODEL_EVIDENCE_INVENTED/);
+  assert.match(synthesis,/PLAN04_DEPENDENCY_CYCLE_OR_FORWARD_REFERENCE/);
+  assert.match(synthesis,/no_execution_authority:true/);
+  assert.match(settings,/invoke\('lu_project_generate_tasks'\)/);
+  assert.match(settings,/human review required/);
+  assert.doesNotMatch(bridge,/Command::new|reqwest|git fetch|run_plan|human.*autoApprove/);
+  assert.doesNotMatch(settings,/invoke\('lu_project_generate_tasks',\{.*root/);
+});

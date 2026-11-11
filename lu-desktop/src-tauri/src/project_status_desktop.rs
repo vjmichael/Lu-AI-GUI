@@ -28,7 +28,7 @@ fn classify_selected(root:&Path)->Result<(graph::EvidenceGraph,classifier::Statu
     classifier::audit(&report,&evidence)?;
     Ok((evidence,report))
 }
-fn store_status(profile:&Path,g:&graph::EvidenceGraph,
+pub(crate) fn store_status(profile:&Path,g:&graph::EvidenceGraph,
     r:&classifier::StatusReport)->Result<(),String>{
     graph::audit(g)?;
     classifier::audit(r,g)?;
