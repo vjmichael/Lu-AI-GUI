@@ -623,9 +623,10 @@ function App() {
   const lspAvailableForTab = !!lspWorker?.ready && !!activeTab &&
     !!currentLanguageId && Array.isArray(lspWorker.supportedLanguages) &&
     lspWorker.supportedLanguages.includes(currentLanguageId);
-  const lspCapabilities = languageServiceCapabilities(currentLanguageId);
+  const lspCapabilities = languageServiceCapabilities(currentLanguageId,lspWorker);
   const lspProviderForTab = lspCapabilities?.provider || 'unavailable language provider';
-  const lspSupportsNavigation = languageMethodAvailable(currentLanguageId, 'definition');
+  const lspSupportsNavigation = languageMethodAvailable(currentLanguageId,
+    'definition',lspWorker);
   const lspRunningForTab = !!activeTab && !lspSession?.cleanupRequired &&
     sourceMatchesSession(
       captureLiveLspSource(activeTab,
@@ -4369,7 +4370,7 @@ function App() {
     const source=liveLspSourceForTab(tab);
     if (!sourceMatchesSession(source,lspSessionRef.current) ||
         lspSessionRef.current?.cleanupRequired) return;
-    if (!languageMethodAvailable(source.languageId,kind)) {
+    if (!languageMethodAvailable(source.languageId,kind,lspWorker)) {
       setHint('The protected '+source.languageId+' provider does not offer '+
         kind+' for this file. No unapproved language server will start.');
       return;
@@ -8866,8 +8867,9 @@ function App() {
                   {lspCapabilities && <span className="lspLanguageCapabilityNotice"
                     title={lspCapabilities.status}
                     aria-label={'Language server capabilities: ' + lspCapabilities.status}>
-                    {currentLanguageId === 'python' ?
-                      'Ruff · diagnostics only' :
+                    {currentLanguageId === 'python' &&
+                      !lspWorker?.semanticLanguages?.includes('python') ?
+                      'Ruff · diagnostics only (Pyright bundle not installed)' :
                       lspProviderForTab + ' · diagnostics / completion / hover / definition'}
                   </span>}
                   <button type="button" className="ghostBtn editorToolButton"
