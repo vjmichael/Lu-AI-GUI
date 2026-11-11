@@ -941,6 +941,123 @@ async fn ide_git_preview_local_merge(
     .map_err(|_| "G06C02_MERGE_PREVIEW_HOST_UNAVAILABLE".to_owned())?
 }
 
+/// 6C-03A native one-use OS-confirmed local fast-forward. The frontend
+/// supplies only selection and a claim to exact source evidence, NEVER a grant.
+/// A divergent merge is intentionally unavailable until its output is verified.
+#[tauri::command]
+async fn ide_git_execute_fast_forward(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+    selected_branch: String,
+    evidence_sha256: String,
+) -> Result<lu_ide_workspace::git_protected_merge::ProtectedFastForwardReceipt, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let cancel = sessions.begin(&project_id)?;
+    let selected_id = project_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let fresh = registry.revalidate_protected_fast_forward(
+            &selected_id, &selected_branch, &evidence_sha256,
+        ).map_err(str::to_owned)?;
+        if cancel.load(Ordering::SeqCst) != 0 {
+            return Err("G06C03_CANCELLED_BEFORE_CONSENT".into());
+        }
+        let approved = app.dialog().message(format!(
+            "FAST-FORWARD LOCAL BRANCH '{}' to the exact tip of '{}'?\n\nProject ID: {}\nPrevious HEAD: {}\nNew HEAD: {}\nCurrent tree: {}\nSelected tree: {}\nOriginal index SHA-256: {}\nMerge review SHA-256: {}\nChanged paths: {}\n\nThis one-use operation will safely change the local Git INDEX and working files BEFORE atomically advancing the branch ref. A crash between checkout and ref update can require manual repair. Cancellation is available only BEFORE checkout begins. No hooks, command, push or network operation. Deny if another Git process is running.",
+            fresh.current_branch, selected_branch, selected_id,
+            fresh.current_head, fresh.selected_tip, fresh.current_tree,
+            fresh.selected_tree, fresh.index_sha256, fresh.evidence_sha256,
+            fresh.changed_path_count
+        )).title("Lu IDE · One-use protected local fast-forward authorization")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+            "Safely fast-forward this exact local branch".into(),
+            "Deny / Cancel".into(),
+          )).blocking_show();
+        if !approved { return Err("G06C03_HUMAN_DENIED".into()); }
+        if cancel.load(Ordering::SeqCst) != 0 {
+            return Err("G06C03_CANCELLED_AFTER_DIALOG".into());
+        }
+        registry.execute_os_approved_fast_forward(
+            &selected_id, &selected_branch, &fresh.evidence_sha256, &cancel,
+        ).map_err(str::to_owned)
+    }).await.map_err(|_| "G06C03_EXECUTION_HOST_INTERRUPTED".to_owned());
+    sessions.end(&project_id);
+    result?
+}
+
+/// Cancels only while the native operation is still before its initial
+/// index/worktree checkout intent. An already started checkout is irreversible
+/// from this endpoint; interrupted effects require separately reviewed recovery.
+#[tauri::command]
+async fn ide_git_cancel_protected_merge(
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+) -> Result<&'static str, String> {
+    sessions.cancel(&project_id)
+}
+
+#[tauri::command]
+async fn ide_git_inspect_protected_merge_recovery(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_protected_merge::ProtectedMergeRecovery, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        registry.inspect_protected_merge_recovery(&project_id).map_err(str::to_owned)
+    })
+    .await
+    .map_err(|_| "G06C03_RECOVERY_HOST_UNAVAILABLE".to_owned())?
+}
+
+/// Separate native OS consent to record an independently verified historical
+/// receipt. This never retries a merge, deletes Git locks or edits work files.
+#[tauri::command]
+async fn ide_git_reconcile_protected_merge_receipt(
+    app: AppHandle,
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<PartialStageSessions>>,
+    project_id: String,
+) -> Result<lu_ide_workspace::git_protected_merge::ProtectedMergeRecovery, String> {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let registry = Arc::clone(state.inner());
+    let sessions = Arc::clone(sessions.inner());
+    let _token = sessions.begin(&project_id)?;
+    let selected_id = project_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let observed = registry.inspect_protected_merge_recovery(&selected_id)
+            .map_err(str::to_owned)?;
+        if !observed.operator_reconciliation_required {
+            return Ok(observed);
+        }
+        if observed.git_index_lock_present {
+            return Err("G06C03_RECOVERY_LOCK_REQUIRES_MANUAL_REVIEW".into());
+        }
+        if !matches!(observed.state,
+            "published_ref_requires_operator_receipt"
+            | "prepublication_no_index_change_pending_review") {
+            return Err("G06C03_RECOVERY_REQUIRES_MANUAL_GIT_REPAIR".into());
+        }
+        let approved = app.dialog().message(format!(
+            "REVIEW interrupted local merge for project {}?\n\nObserved: {}\nJournal phase: {}\n\nLu will re-open the exact native Git repository and verify its ref, index, worktree and saved journal before recording a terminal receipt. This will NOT rerun checkout, rewrite a branch, delete any Git lock, restore files or contact a remote.",
+            selected_id, observed.state, observed.last_phase
+        )).title("Lu IDE · Independent protected merge receipt reconciliation")
+          .buttons(MessageDialogButtons::OkCancelCustom(
+            "Verify and record receipt only".into(),
+            "Deny / Cancel".into(),
+          )).blocking_show();
+        if !approved {
+            return Err("G06C03_RECOVERY_HUMAN_DENIED".into());
+        }
+        registry.reconcile_protected_merge_receipt(&selected_id)
+            .map_err(str::to_owned)
+    }).await.map_err(|_| "G06C03_RECOVERY_HOST_INTERRUPTED".to_owned());
+    sessions.end(&project_id);
+    result?
+}
+
 /// On explicit human request, compare local work with current public GitHub
 /// branch evidence. HTTPS to fixed api.github.com only; no token or Git fetch.
 #[tauri::command]
@@ -2562,6 +2679,10 @@ pub fn run() {
             ide_read_git_refs_health,
             ide_git_review_branch_operation,
             ide_git_preview_local_merge,
+            ide_git_execute_fast_forward,
+            ide_git_cancel_protected_merge,
+            ide_git_inspect_protected_merge_recovery,
+            ide_git_reconcile_protected_merge_receipt,
             ide_read_git_diff,
             ide_probe_project_resource,
             ide_read_git_history,
