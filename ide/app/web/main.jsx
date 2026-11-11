@@ -268,6 +268,9 @@ function App() {
   const [branchReview, setBranchReview] = useState(null);
   const [branchReviewBusy, setBranchReviewBusy] = useState(false);
   const branchReviewRequest = useRef(0);
+  const [mergePlan, setMergePlan] = useState(null);
+  const [mergePlanBusy, setMergePlanBusy] = useState(false);
+  const mergePlanRequest = useRef(0);
   const [gitFileHistory, setGitFileHistory] = useState(null);
   const [gitFilePath, setGitFilePath] = useState('');
   const [gitFileBusy, setGitFileBusy] = useState(false);
@@ -427,6 +430,9 @@ function App() {
     setBranchReview(null);
     setBranchReviewBusy(false);
     setBranchReviewTarget('');
+    mergePlanRequest.current += 1;
+    setMergePlan(null);
+    setMergePlanBusy(false);
     setGitFileHistory(null);
     setGitFileBusy(false);
     gitSnapshotRequest.current += 1;
@@ -1752,6 +1758,9 @@ function App() {
     const operation = branchReviewKind;
     const selectedBranch = operation === 'stash' ? null : branchReviewTarget;
     const ticket = ++branchReviewRequest.current;
+    mergePlanRequest.current += 1;
+    setMergePlan(null);
+    setMergePlanBusy(false);
     setBranchReviewBusy(true);
     setBranchReview(null);
     setProblem('');
@@ -1780,10 +1789,60 @@ function App() {
     }
   }
 
+  async function previewExactLocalMergePlan() {
+    if (!activeProject?.projectId || mergePlanBusy ||
+        branchReviewKind !== 'merge' || !branchReviewTarget ||
+        branchReview?.projectId !== activeProject.projectId ||
+        branchReview?.operation !== 'merge' ||
+        branchReview?.selectedLocalBranch !== branchReviewTarget) return;
+    const projectId = activeProject.projectId;
+    const selectedBranch = branchReviewTarget;
+    const expectedUpstreamSha = branchReview.evidenceSha256;
+    const ticket = ++mergePlanRequest.current;
+    setMergePlan(null);
+    setMergePlanBusy(true);
+    setProblem('');
+    try {
+      const plan = await invoke('ide_git_preview_local_merge', { projectId, selectedBranch });
+      if (ticket !== mergePlanRequest.current) return;
+      if (plan?.schemaVersion !== 1 || plan.projectId !== projectId ||
+          plan.selectedLocalBranch !== selectedBranch ||
+          plan.upstreamReviewSha256 !== expectedUpstreamSha ||
+          plan.currentHead !== branchReview.currentHead ||
+          plan.selectedTip !== branchReview.selectedTip ||
+          plan.sourceRechecked !== true ||
+          plan.authorizationGranted !== false ||
+          plan.branchRefUpdated !== false ||
+          plan.indexOrWorktreeModified !== false ||
+          plan.threeWayContentMergePerformed !== false ||
+          plan.renameAnalysisPerformed !== false ||
+          plan.hooksExecuted !== false ||
+          plan.remoteQueried !== false ||
+          plan.processStarted !== false ||
+          plan.executionRouteAvailable !== false ||
+          !Array.isArray(plan.blockers) || !Array.isArray(plan.visiblePaths) ||
+          !/^[a-f0-9]{64}$/.test(plan.evidenceSha256) ||
+          !/^[a-f0-9]{64}$/.test(plan.indexSha256)) {
+        throw Error('G06C02_MERGE_PREVIEW_STALE_OR_UNTRUSTED');
+      }
+      setMergePlan(plan);
+    } catch (error) {
+      if (ticket === mergePlanRequest.current) {
+        setMergePlan(null);
+        setProblem('Conservative merge planning unavailable: ' + String(error));
+      }
+    } finally {
+      if (ticket === mergePlanRequest.current) setMergePlanBusy(false);
+    }
+  }
+
   async function refreshGitStatus() {
     branchReviewRequest.current += 1;
     setBranchReview(null);
     setBranchReviewBusy(false);
+    mergePlanRequest.current += 1;
+    setMergePlan(null);
+    setMergePlanBusy(false);
     if (!activeProject?.projectId) {
       setGitStatus(null);
       setGitInventory(null);
@@ -5530,6 +5589,9 @@ function App() {
                   setBranchReviewKind(event.target.value);
                   setBranchReview(null);
                   setBranchReviewBusy(false);
+                  mergePlanRequest.current += 1;
+                  setMergePlan(null);
+                  setMergePlanBusy(false);
                 }}>
                 <option value="merge">Merge local branch</option>
                 <option value="rebase">Rebase onto local branch</option>
@@ -5547,6 +5609,9 @@ function App() {
                     setBranchReviewTarget(event.target.value);
                     setBranchReview(null);
                     setBranchReviewBusy(false);
+                    mergePlanRequest.current += 1;
+                    setMergePlan(null);
+                    setMergePlanBusy(false);
                   }}>
                   <option value="">Choose a local branch</option>
                   {(gitInventory?.projectId === activeProject.projectId
@@ -5592,6 +5657,57 @@ function App() {
                   <p>Authorization: none · Execution route: unavailable · No Git
                     writes, process launch or network access.</p>
                 </article>}
+              {branchReviewKind === 'merge' &&
+                branchReview?.projectId === activeProject.projectId &&
+                branchReview.selectedLocalBranch === branchReviewTarget && <div
+                  aria-label="G06C02 reviewed local merge plan no execution">
+                  <h4>Reviewed merge planning · exact source trees</h4>
+                  <p>Compare committed Git trees and the saved index without making a merge.
+                    This is a conservative path-level overlap assessment, not a completed
+                    three-way content merge or a promise of conflict-free execution.</p>
+                  <button type="button" className="ghostBtn"
+                    disabled={mergePlanBusy || branchReviewBusy}
+                    onClick={() => void previewExactLocalMergePlan()}>
+                    {mergePlanBusy ? 'Checking tree and ref evidence…' :
+                      'Review possible merge and conflicts (no write)'}
+                  </button>
+                  {mergePlan && mergePlan.projectId === activeProject.projectId &&
+                    mergePlan.upstreamReviewSha256 === branchReview.evidenceSha256 &&
+                    <article className="continuityEvent" role="status">
+                      <strong>{mergePlan.classification.replaceAll('_', ' ')}</strong>
+                      <p>Current HEAD: <code>{mergePlan.currentHead}</code>
+                        {' · '}Current tree: <code>{mergePlan.currentTree}</code></p>
+                      <p>Selected tip: <code>{mergePlan.selectedTip}</code>
+                        {' · '}Selected tree: <code>{mergePlan.selectedTree}</code></p>
+                      <p>Unique merge base: {mergePlan.mergeBaseCount === 1
+                        ? <code>{mergePlan.mergeBaseCommit}</code>
+                        : 'not verified'}
+                        {' · '}Base tree: <code>{mergePlan.mergeBaseTree || 'not available'}</code></p>
+                      <p>Index SHA-256: <code>{mergePlan.indexSha256}</code></p>
+                      <p>Changed paths: {mergePlan.changedPathCount}
+                        {' · '}Potential conflicts: {mergePlan.possibleConflictCount}
+                        {' · '}Hidden paths: {mergePlan.omittedPathCount}</p>
+                      <p>Review: {mergePlan.conflictReview.replaceAll('_', ' ')}</p>
+                      {mergePlan.blockers.length > 0 &&
+                        <p role="alert">Blockers: {mergePlan.blockers.join(', ').replaceAll('_', ' ')}</p>}
+                      <div className="continuityEvents">
+                        {mergePlan.visiblePaths.map(item => <article
+                          className="continuityEvent" key={item.relativePath}>
+                          <strong>{item.relativePath}</strong>
+                          <p>{item.classification.replaceAll('_', ' ')}
+                            {' · '}Manual review: {String(item.requiresManualResolution)}</p>
+                          <p>Base: <code>{item.baseOid || 'absent'}</code>
+                            {' · '}Current: <code>{item.currentOid || 'absent'}</code>
+                            {' · '}Selected: <code>{item.selectedOid || 'absent'}</code></p>
+                        </article>)}
+                      </div>
+                      <p>Evidence digest: <code>{mergePlan.evidenceSha256}</code></p>
+                      <p>Source rechecked: {String(mergePlan.sourceRechecked)}.
+                        Authorization: none. Execution route: unavailable.
+                        No ref/index/worktree mutation, hooks, merge drivers,
+                        process launch, or network operations.</p>
+                    </article>}
+                </div>}
             </div>}
             {gitInventory && gitInventory.projectId === activeProject?.projectId &&
               <div className="continuityDocument" aria-label="Local branches and linked worktrees">
