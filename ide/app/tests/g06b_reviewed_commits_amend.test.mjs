@@ -12,6 +12,7 @@ const ui = read('../web/main.jsx');
 test('G06B04 only a private verified staged-hunk journal may be committed', () => {
   assert.match(host, /pub mod git_reviewed_commit;/);
   assert.match(partial, /fn verify_partial_stage_for_commit\(/);
+  assert.match(partial, /pub fn restore_verified_partial_stage_receipt\(/);
   assert.match(partial, /G06B_COMMIT_UNTRUSTED_STAGE_RECEIPT/);
   assert.match(partial, /last\.source_sha256 != claimed\.source_sha256/);
   assert.match(partial, /last\.selected_hunks != claimed\.selected_hunks/);
@@ -55,6 +56,8 @@ test('G06B04 distinct native OS authorizations, double-confirm amend and host ca
         .includes(cmd) && ui.includes("'" + cmd + "'"), cmd);
   }
   assert.match(tauri, /G06B_COMMIT_MODE_NOT_AUTHORIZED/);
+  assert.match(tauri, /async fn ide_git_restore_reviewed_stage_receipt\(/);
+  assert.match(ui, /invoke\('ide_git_restore_reviewed_stage_receipt'/);
   assert.match(tauri, /FINAL HISTORY-REWRITE CONSENT/);
   assert.match(tauri, /if !rewrite/);
   assert.match(tauri, /if !allowed/);
@@ -71,6 +74,7 @@ test('G06B04 durable restart evidence cannot auto force update branch', () => {
   assert.match(native, /automatic_ref_rewrite: false/);
   assert.match(native, /automatic_retry: false/);
   assert.match(native, /interrupted_prepublication_journal_is_only_reconciled_after_new_review/);
+  assert.match(native, /restart_restores_exact_staged_receipt_but_never_reuses_os_commit_grant/);
   assert.match(native, /forged_stage_stale_index_and_cancel_cannot_publish_a_ref/);
   assert.match(ui, /No automatic\s+retry, history rewrite, or lock deletion is authorized/);
 });
