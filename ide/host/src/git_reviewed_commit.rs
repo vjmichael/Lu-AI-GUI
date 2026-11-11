@@ -334,9 +334,9 @@ impl IdeWorkspaceRegistry {
         if index.has_conflicts() {
             return Err("G06B_COMMIT_CONFLICTS");
         }
-        let tree_oid = index
-            .write_tree_to(&repo)
-            .map_err(|_| "G06B_COMMIT_TREE_UNAVAILABLE")?;
+        // Planning is read-only: even writing an unreferenced Git tree
+        // object is deferred until native OS approval and locked execution.
+        let staged_tree = "deferred_until_native_os_approval";
         let parent = repo
             .find_commit(Oid::from_str(&head).map_err(|_| "G06B_COMMIT_BAD_HEAD")?)
             .map_err(|_| "G06B_COMMIT_PARENT_UNAVAILABLE")?;
@@ -377,7 +377,7 @@ impl IdeWorkspaceRegistry {
             &head,
             &resulting_parent,
             &index_digest,
-            &tree_oid.to_string(),
+            staged_tree,
             message,
             author_name,
             author_email,
@@ -390,7 +390,7 @@ impl IdeWorkspaceRegistry {
             previous_head: head,
             resulting_parent,
             index_sha256: index_digest,
-            staged_tree_oid: tree_oid.to_string(),
+            staged_tree_oid: staged_tree.to_owned(),
             message: message.to_owned(),
             author_name: author_name.to_owned(),
             author_email: author_email.to_owned(),
@@ -451,17 +451,15 @@ impl IdeWorkspaceRegistry {
         index
             .read(true)
             .map_err(|_| "G06B_COMMIT_INDEX_RELOAD_FAILED")?;
-        if index.has_conflicts()
-            || index
-                .write_tree_to(&repo)
-                .map_err(|_| "G06B_COMMIT_TREE_UNAVAILABLE")?
-                .to_string()
-                != fresh.staged_tree_oid
-        {
+        if index.has_conflicts() {
             return Err("G06B_COMMIT_INDEX_TREE_CHANGED");
         }
-        let tree = repo
-            .find_tree(Oid::from_str(&fresh.staged_tree_oid).map_err(|_| "G06B_COMMIT_BAD_TREE")?)
+        // Only the separately OS-approved execution may materialize a
+        // Git tree object. The complete on-disk index SHA and approved
+        // source were pinned before the exclusive Git index lock.
+        let tree_oid = index.write_tree_to(&repo)
+            .map_err(|_| "G06B_COMMIT_TREE_UNAVAILABLE")?;
+        let tree = repo.find_tree(tree_oid)
             .map_err(|_| "G06B_COMMIT_TREE_MISSING")?;
         let parent = repo
             .find_commit(
@@ -481,7 +479,7 @@ impl IdeWorkspaceRegistry {
             old_head: fresh.previous_head.clone(),
             commit_oid: String::new(),
             parent_oid: fresh.resulting_parent.clone(),
-            tree_oid: fresh.staged_tree_oid.clone(),
+            tree_oid: tree_oid.to_string(),
             index_sha256: fresh.index_sha256.clone(),
             plan_sha256: fresh.plan_sha256.clone(),
             source_sha256: fresh.stage.source_sha256.clone(),
@@ -550,7 +548,7 @@ impl IdeWorkspaceRegistry {
         let published = repo
             .find_commit(oid)
             .map_err(|_| "G06B_COMMIT_PUBLISHED_OBJECT_MISSING")?;
-        if published.tree_id().to_string() != fresh.staged_tree_oid
+        if published.tree_id() != tree_oid
             || published.parent_count() != 1
             || published
                 .parent_id(0)
@@ -578,7 +576,7 @@ impl IdeWorkspaceRegistry {
             previous_head: fresh.previous_head,
             resulting_parent: fresh.resulting_parent,
             commit_oid: oid.to_string(),
-            committed_tree_oid: fresh.staged_tree_oid,
+            committed_tree_oid: tree_oid.to_string(),
             index_sha256: fresh.index_sha256,
             plan_sha256: fresh.plan_sha256,
             approval_one_use: true,
@@ -830,7 +828,8 @@ mod tests {
             .unwrap();
         assert_eq!(repo.head().unwrap().target(), Some(committed.id()));
         assert_eq!(committed.parent_id(0).unwrap(), original);
-        assert_eq!(committed.tree_id().to_string(), planned.staged_tree_oid);
+        assert_eq!(committed.tree_id().to_string(), done.committed_tree_oid);
+        assert_eq!(planned.staged_tree_oid, "deferred_until_native_os_approval");
         let tree = committed.tree().unwrap();
         let blob = repo
             .find_blob(tree.get_path(Path::new("tracked.txt")).unwrap().id())
