@@ -87,6 +87,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--installed-executable', required=True)
     p.add_argument('--source-sha', required=True)
+    p.add_argument('--expected-installed-sha256', required=True)
     p.add_argument('--evidence-directory', required=True)
     p.add_argument('--scenario', choices=sorted(SCENARIOS), required=True)
     args = p.parse_args()
@@ -108,6 +109,11 @@ def main():
     mode, checkpoint, outcome = SCENARIOS[scenario]
     original_pid = ask_pid('Enter PID of your already running installed Lu IDE')
     exe, exe_hash = require_installed(args.installed_executable, original_pid)
+    expected_exe = args.expected_installed_sha256.lower()
+    if len(expected_exe) != 64 or any(ch not in '0123456789abcdef' for ch in expected_exe):
+        fail('invalid_expected_installed_executable_digest')
+    if exe_hash != expected_exe:
+        fail('installed_executable_not_exact_source_reviewed_artifact')
     root = evidence / 'disposable-git-project'
     manifest = evidence / 'independent-before.json'
     init_fixture(root, mode)
