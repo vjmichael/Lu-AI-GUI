@@ -1,0 +1,97 @@
+# 6C-04A original replay review only: no rebase/cherry-pick execution.
+name: IDE G06C04 native original rebase and cherry-pick review
+on:
+  push:
+    branches: [ide/group06c04-rebase-cherrypick-20261110]
+    paths:
+      - '.github/workflows/ide-group06c04-native.yml'
+      - 'ide/host/src/git_rebase_cherry_plan.rs'
+      - 'ide/host/src/lib.rs'
+      - 'ide/app/src-tauri/src/lib.rs'
+      - 'ide/app/web/main.jsx'
+      - 'ide/app/tests/g06c04_original_replay_review.test.mjs'
+      - 'ide/docs/IDE_GROUP06C04_REBASE_CHERRYPICK_20261110.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-g06c04-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  exact-native:
+    name: G06C04 exact read-only Git replay and Tauri / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact head and independently passed source lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor afbbc96122b72e4d2695861c307c753b189b0ec0 HEAD
+          git merge-base --is-ancestor f2cd984cf89b25c8a8ba70109e979a89fd13451f HEAD
+          echo G06C04_SOURCE_SHA="$GITHUB_SHA"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Install native Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Native Git commit/parent/tree/diff tests and strict Rust formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_rebase_cherry_plan -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib git_protected_merge
+          rustfmt --edition 2021 --check ide/host/src/git_rebase_cherry_plan.rs
+          echo G06C04_LOCAL_ORIGINAL_REPLAY=SOURCE_REVIEW_ONLY
+      - name: Hostile UI source-boundary checks and desktop build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/g06c04_original_replay_review.test.mjs
+          npm run build
+          echo G06C04_WEB=REVIEW_ONLY
+      - name: Native Tauri typed replay route compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ] && [ ! -f ide/app/src-tauri/icons/icon.ico ]; then
+            python ide/app/fixtures/make_g04d_ci_icon.py
+          fi
+          cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+          echo G06C04_TAURI=COMPILED_NO_EXECUTION_GRANT
+      - name: Explicitly record deferred execution and human gates
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p ide-g06c04-receipts
+          printf 'head=%s\nos=%s\noriginal_replay=READ_ONLY\nresulting_trees=NOT_COMPUTED\nrebase_authorized=NO\ncherrypick_authorized=NO\nphysical_approval=DEFERRED\ninstalled_acceptance=DEFERRED\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" > ide-g06c04-receipts/source.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-g06c04-${{ matrix.os }}-${{ github.sha }}
+          path: ide-g06c04-receipts/
+          retention-days: 7
