@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8a1ba3bcae5fb64719e0386fa4293e02410659ae",
-  "trackedFileCount": 903,
+  "sourceCommitBeforeLock": "8d252c1ae65b402da0cfcd33e940e01d0879f321",
+  "trackedFileCount": 902,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -228,12 +228,8 @@
       "blob": "9b6ac72f2f2cac5579dc8538db057757a875c156"
     },
     {
-      "path": ".github/workflows/lu-plan05-installed-windows.yml",
-      "blob": "464b9fce1dd93b22ad654c1b57f9d8bd81be0f99"
-    },
-    {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "1f61b9f28aa741be8a6868cbf8bf8cf8be9fab56"
+      "blob": "27cd60b43bf51b2e8fac8f423bb7d1dd42bec0fb"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -845,7 +841,7 @@
     },
     {
       "path": "docs/LU_PLAN05_DURABLE_TASK_REGISTER_20261110.md",
-      "blob": "53cbd5c3d7ca545a9bc10b74e0a3bf027eaadbe9"
+      "blob": "de26c5d1f35a83830ba34278738fc2fed7143ab5"
     },
     {
       "path": "docs/LU_R00_CAPABILITY_CONSOLIDATION_20261109.md",
@@ -1873,7 +1869,7 @@
     },
     {
       "path": "lu-desktop/tests/workspace-desktop.test.mjs",
-      "blob": "653ce098ff18d2f8c72af5e298b725b4cc83b786"
+      "blob": "eea16e61b94c7e49039cefa3e2fba60edab8e6e8"
     },
     {
       "path": "lu-desktop/tests/write-01e-edit-ux.test.mjs",
