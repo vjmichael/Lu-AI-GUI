@@ -51,7 +51,7 @@ fn saved_preview(profile:&Path,preview_sha256:&str)
     }
     Ok(preview)
 }
-fn analyze_selected(profile:&Path,root:&Path,register_id:&str)
+pub(super) fn analyze_selected(profile:&Path,root:&Path,register_id:&str)
  ->Result<updates::Preview,String>{
     if !register_id.starts_with("lu-register-"){
         return Err("PLAN07_REGISTER_ID_INVALID".into())
