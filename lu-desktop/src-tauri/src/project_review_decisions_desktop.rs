@@ -534,3 +534,218 @@ pub(crate) async fn lu_project_update_review_exact_requirement(
             &(graph,stat)).map(Some)
     ).await.map_err(|_|"PLAN07C_EXACT_NATIVE_COMMIT_INTERRUPTED")?
 }
+
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use lu_core::{project_task_synthesis as synth,project_task_update_model as suggestions};
+    struct Original{
+        profile:PathBuf,root:PathBuf,proposal:synth::ProjectTaskProposal,
+        register:register::TaskRegister,preview:updates::Preview,
+    }
+    fn fixture(name:&str)->Original{
+        let profile=std::env::temp_dir().join(format!(
+            "lu-plan07c-{}-{}",name,std::process::id()));
+        let _=fs::remove_dir_all(&profile);
+        let root=profile.join("original-project");
+        fs::create_dir_all(root.join("docs")).unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(profile.join("ansf")).unwrap();
+        fs::write(root.join("docs/REQUIREMENTS.md"),
+            b"# Original project\n- [ ] Must include src/required.rs\n").unwrap();
+        let c=Connection::open(profile.join("ansf/library.db")).unwrap();
+        c.execute_batch("CREATE TABLE original_human_memory(value INTEGER);
+            INSERT INTO original_human_memory VALUES(7073);").unwrap();
+        drop(c);
+        let (g,s)=project_status_desktop::classify_selected(&root).unwrap();
+        let capsule=synth::build_capsule(&g,&s).unwrap();
+        let req=&capsule.requirements[0];
+        let raw=serde_json::json!({"schema":synth::RAW_SCHEMA,"tasks":[{
+            "requirementId":req.requirement_id,"status":req.status,
+            "summary":"Verify original required source",
+            "description":"Independently inspect the original source and runtime proof",
+            "priority":"P1","group":"01 Source",
+            "evidenceIds":[req.requirement_id],"dependencyIndices":[],
+            "acceptanceCriteria":"Host verifies named source plus separate human acceptance",
+            "blockedBy":"Missing original required source implementation"
+        }]}).to_string();
+        let proposal=synth::validate_model_response(&g,&s,&raw,
+            &synth::model_prompt(&capsule).unwrap(),
+            "m-test-synthetic","s-test-synthetic","g-test-synthetic").unwrap();
+        project_task_desktop::persist_proposal(
+            &profile,&g,&s,&proposal,&raw).unwrap();
+        let imported=register::import(&proposal).unwrap();
+        let register=project_register_desktop::persist(
+            &profile,&proposal,&imported,None).unwrap();
+        fs::write(root.join("src/required.rs"),
+            b"fn independently_present(){}\n").unwrap();
+        let preview=project_updates_desktop::analyze_selected(
+            &profile,&root,&register.register_id).unwrap();
+        assert!(preview.semantic_change);
+        Original{profile,root,proposal,register,preview}
+    }
+    #[test]
+    fn original_ansf_refusal_approval_cancel_and_crash_recovery_never_accept_work(){
+        let x=fixture("decision-restart");
+        let task=&x.proposal.tasks[0].task_id;
+        let note="Human requires separate evidence and original tests";
+        let refused=append(&x.profile,snapshot(
+            &x.profile,&x.preview.digest_sha256,task,None,note).unwrap()).unwrap();
+        let denied=decide(&x.profile,&refused,Phase::Refused,None).unwrap();
+        assert_eq!(denied.phase,Phase::Refused);
+        assert!(!denied.human_confirmed);
+        assert!(decide(&x.profile,&refused,Phase::ApprovedForReview,Some(&x.root)).is_err());
+        let approved=append(&x.profile,snapshot(
+            &x.profile,&x.preview.digest_sha256,task,None,note).unwrap()).unwrap();
+        let yes=decide(&x.profile,&approved,
+            Phase::ApprovedForReview,Some(&x.root)).unwrap();
+        assert_eq!(yes.phase,Phase::ApprovedForReview);
+        assert!(yes.human_confirmed&&yes.no_completion_authority&&
+            yes.no_execution_authority);
+        let canceled=append(&x.profile,snapshot(
+            &x.profile,&x.preview.digest_sha256,task,None,note).unwrap()).unwrap();
+        assert_eq!(decide(&x.profile,&canceled,Phase::Cancelled,None).unwrap().phase,
+            Phase::Cancelled);
+        let stale=append(&x.profile,snapshot(
+            &x.profile,&x.preview.digest_sha256,task,None,note).unwrap()).unwrap();
+        fs::write(x.root.join("src/required.rs"),b"changed_original_bytes").unwrap();
+        assert!(decide(&x.profile,&stale,
+            Phase::ApprovedForReview,Some(&x.root)).is_err());
+        assert_eq!(decide(&x.profile,&stale,Phase::StaleRejected,None)
+            .unwrap().phase,Phase::StaleRejected);
+        // Simulate an authenticated review begun by a *previous* host
+        // instance and interrupted before the OS dialog returned.
+        let mut interrupted=snapshot(
+            &x.profile,&x.preview.digest_sha256,task,None,note).unwrap();
+        interrupted.host_instance="lu-plan07c-previous-process-before-crash".into();
+        append(&x.profile,interrupted).unwrap();
+        let history=history(&x.profile,&x.register.register_id,true).unwrap();
+        assert_eq!(history.len(),5);
+        assert!(history.iter().any(|e|e.phase==Phase::Interrupted));
+        assert!(history.iter().all(|e|e.no_execution_authority&&
+            e.no_completion_authority));
+        let reopened=history(&x.profile,&x.register.register_id,true).unwrap();
+        assert_eq!(reopened.len(),history.len());
+        let c=project_register_desktop::library(&x.profile).unwrap();
+        let (_p,unchanged,_)=project_register_desktop::load_register(
+            &c,&x.register.register_id).unwrap().unwrap();
+        assert_eq!(unchanged.latest_sha256,x.register.latest_sha256);
+        assert_eq!(unchanged.events.len(),x.register.events.len());
+        assert!(!register::latest(&unchanged,task)
+            .unwrap().independently_verified_requirement);
+        let memory:i64=c.query_row("SELECT value FROM original_human_memory",
+            [],|r|r.get(0)).unwrap();
+        assert_eq!(memory,7073);
+        // Even an immutable receipt field cannot be silently swapped in
+        // SQLite and then promoted to a valid human decision.
+        c.execute("UPDATE ansf_project_task_update_review_events
+            SET event_json=X'7b6e6f70657d' WHERE review_id=?1 AND sequence=1",
+            [&refused.review_id]).unwrap();
+        assert!(history(&x.profile,&x.register.register_id,false).is_err());
+        drop(c);fs::remove_dir_all(x.profile).unwrap();
+    }
+    #[test]
+    fn exact_human_requirement_requires_reconciled_native_source_and_preserves_correction(){
+        let x=fixture("exact-criterion");
+        let task=&x.proposal.tasks[0].task_id;
+        assert!(exact_preflight(&x.profile,&x.root,
+            &x.register.register_id,task,1).is_err());
+        let c=project_register_desktop::library(&x.profile).unwrap();
+        let (_,old,_,g,s)=project_updates_desktop::reload_audited(
+            &x.profile,&x.preview.digest_sha256).unwrap();
+        drop(c);
+        let source=register::source_changed(&old,&x.proposal,&g,&s).unwrap();
+        let saved=project_register_desktop::persist(
+            &x.profile,&x.proposal,&source,Some(&old.latest_sha256)).unwrap();
+        let current=register::latest(&saved,task).unwrap();
+        let corrected=register::human_correct(
+            &saved,&x.proposal,task,current.version,&register::HumanCorrection{
+                summary:"Human corrected the exact source acceptance wording".into(),
+                description:"Check original source plus separate integration and installed gates".into(),
+                priority:"P0".into(),blocked_by:"Native integration still needs independent tests".into(),
+                acceptance_criteria:"Human verifies native source and separately installed behavior".into(),
+                reason:"Preserve corrected original acceptance scope".into()
+            }).unwrap();
+        let current=project_register_desktop::persist(
+            &x.profile,&x.proposal,&corrected,Some(&saved.latest_sha256)).unwrap();
+        let version=register::latest(&current,task).unwrap().version;
+        let (native_g,native_s,message)=exact_preflight(
+            &x.profile,&x.root,&x.register.register_id,task,version).unwrap();
+        assert!(message.contains("Original wording"));
+        let result=exact_commit(&x.profile,&x.root,
+            &x.register.register_id,task,version,&(native_g,native_s)).unwrap();
+        let verified=register::latest(&result,task).unwrap();
+        assert_eq!(verified.summary,
+            "Human corrected the exact source acceptance wording");
+        assert_eq!(verified.acceptance_criteria,
+            "Human verifies native source and separately installed behavior");
+        assert!(verified.independently_verified_requirement);
+        assert!(!verified.needs_human_reconciliation);
+        assert!(!verified.execution_authorized);
+        assert_eq!(result.events.last().unwrap().kind,register::RevisionKind::HumanRevalidated);
+        assert!(exact_commit(&x.profile,&x.root,&x.register.register_id,
+            task,version,&(g,s)).is_err());
+        // Changing any evidence after reviewing the OS dialog must deny.
+        let newer=register::latest(&result,task).unwrap().version;
+        let reviewed=project_status_desktop::classify_selected(&x.root).unwrap();
+        fs::write(x.root.join("src/required.rs"),
+            b"fn changed_during_operator_dialog(){}\n").unwrap();
+        assert!(exact_commit(&x.profile,&x.root,&x.register.register_id,
+            task,newer,&reviewed).is_err());
+        fs::remove_dir_all(x.profile).unwrap();
+    }
+    #[test]
+    fn original_gguf_model_suggestion_is_review_only_and_receipt_tamper_denied(){
+        let x=fixture("model-reference");
+        let task=&x.proposal.tasks[0].task_id;
+        let (_,_,_,g,s)=project_updates_desktop::reload_audited(
+            &x.profile,&x.preview.digest_sha256).unwrap();
+        let prompt=suggestions::prompt(&x.preview,&g,&s).unwrap();
+        let row=x.preview.candidates.iter().find(|c|&c.task_id==task).unwrap();
+        let raw=serde_json::json!({
+            "schema":suggestions::RAW_SCHEMA,"previewSha256":x.preview.digest_sha256,
+            "candidates":[{
+                "taskId":row.task_id,"requirementId":row.original_requirement_id,
+                "status":row.current_status,"action":"collect_evidence",
+                "evidenceIds":[row.original_requirement_id],
+                "reason":"Human should review original native evidence after source changes",
+                "nextEvidence":"Collect independent source and integration compiler receipts"
+            }]
+        }).to_string();
+        let model=suggestions::validate(&x.preview,&g,&s,&raw,&prompt,
+            "m-test-original-synthetic","s-test-local","g-test-local").unwrap();
+        project_update_model_desktop::persist(
+            &x.profile,&model,&prompt,&raw).unwrap();
+        let submitted=append(&x.profile,snapshot(
+            &x.profile,&x.preview.digest_sha256,task,
+            Some(&model.digest_sha256),
+            "Review original model suggestion only, without accepting work"
+        ).unwrap()).unwrap();
+        assert!(submitted.model_suggestion_sha256.is_some());
+        let current=decide(&x.profile,&submitted,
+            Phase::ApprovedForReview,Some(&x.root)).unwrap();
+        assert_eq!(current.phase,Phase::ApprovedForReview);
+        let c=project_register_desktop::library(&x.profile).unwrap();
+        let (_p,r,_)=project_register_desktop::load_register(
+            &c,&x.register.register_id).unwrap().unwrap();
+        assert_eq!(r.latest_sha256,x.register.latest_sha256);
+        assert!(!register::latest(&r,task).unwrap().independently_verified_requirement);
+        drop(c);
+        let another=append(&x.profile,snapshot(
+            &x.profile,&x.preview.digest_sha256,task,
+            Some(&model.digest_sha256),
+            "Human review of unmodified original model citation"
+        ).unwrap()).unwrap();
+        let c=project_register_desktop::library(&x.profile).unwrap();
+        c.execute("UPDATE ansf_project_task_update_model_suggestions
+            SET original_reply_text=X'7b6e6f70657d'
+            WHERE suggestion_sha256=?1",[&model.digest_sha256]).unwrap();
+        drop(c);
+        assert!(decide(&x.profile,&another,
+            Phase::ApprovedForReview,Some(&x.root)).is_err());
+        assert_eq!(decide(&x.profile,&another,
+            Phase::StaleRejected,None).unwrap().phase,Phase::StaleRejected);
+        fs::remove_dir_all(x.profile).unwrap();
+    }
+}
