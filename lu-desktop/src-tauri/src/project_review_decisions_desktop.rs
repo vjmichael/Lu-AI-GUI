@@ -230,6 +230,56 @@ fn snapshot(profile:&Path,preview_id:&str,task_id:&str,
         sha256:String::new(),
     })
 }
+fn original_review_details(profile:&Path,pending:&ReviewEvent)->Result<String,String>{
+    let (preview,register,_,_g,_s)=project_updates_desktop::reload_audited(
+        profile,&pending.preview_sha256)?;
+    if preview.expected_register_sha256!=pending.expected_register_sha256||
+       register.latest_sha256!=pending.expected_register_sha256{
+        return Err("PLAN07C_NATIVE_DIALOG_STALE_ORIGINAL_REGISTER".into())
+    }
+    let candidate=preview.candidates.iter().find(|x|
+        x.task_id==pending.task_id&&
+        x.original_requirement_id==pending.original_requirement_id&&
+        x.expected_version==pending.expected_task_version
+    ).ok_or("PLAN07C_NATIVE_DIALOG_ORIGINAL_TASK_CHANGED")?;
+    if let Some(model_sha)=pending.model_suggestion_sha256.as_deref(){
+        let suggestion=project_update_model_desktop::read_latest(
+            profile,&pending.preview_sha256)?
+            .ok_or("PLAN07C_NATIVE_DIALOG_MISSING_ORIGINAL_MODEL")?;
+        if suggestion.digest_sha256!=model_sha{
+            return Err("PLAN07C_NATIVE_DIALOG_MODEL_SHA_CHANGED".into())
+        }
+        let model=suggestion.suggestions.iter().find(|x|
+            x.task_id==pending.task_id&&
+            x.original_requirement_id==pending.original_requirement_id&&
+            x.expected_version==pending.expected_task_version&&
+            Some(x.action)==pending.model_action&&
+            !x.task_complete&&!x.independently_accepted&&
+            !x.execution_authorized
+        ).ok_or("PLAN07C_NATIVE_DIALOG_MODEL_CHANGED_TASK")?;
+        return Ok(format!(
+            "UNTRUSTED ORIGINAL GGUF SUGGESTION (not task completion)\n\
+             Action: {:?}\nReason to examine: {}\n\
+             Future independent evidence: {}\n\
+             Original exact citations: {}\n\
+             Host source status: {:?}\n\
+             Model suggestion SHA: {}\n",
+            model.action,model.reason,model.next_evidence,
+            model.evidence_ids.join(", "),model.host_status,model_sha
+        ))
+    }
+    Ok(format!(
+        "DETERMINISTIC NATIVE EVIDENCE CANDIDATE\n\
+         Current observed original status: {:?}\n\
+         Native evidence health: {:?}\n\
+         Review disposition: {:?}\n\
+         Next independent review: {}\n\
+         Current source HEAD: {}\n",
+        candidate.current_status,candidate.evidence_health,
+        candidate.disposition,candidate.explanation,
+        preview.current_head.as_deref().unwrap_or("unverified")
+    ))
+}
 fn decide(profile:&Path,pending:&ReviewEvent,phase:Phase,root:Option<&Path>)
  ->Result<ReviewEvent,String>{
     if pending.phase!=Phase::Prepared||pending.sequence!=1||
@@ -297,7 +347,7 @@ fn review_ids(c:&Connection,id:&str)->Result<Vec<String>,String>{
     }
     let mut st=c.prepare("SELECT DISTINCT review_id FROM
         ansf_project_task_update_review_events WHERE register_id=?1
-        ORDER BY review_id LIMIT ?2")
+        GROUP BY review_id ORDER BY MIN(rowid) LIMIT ?2")
         .map_err(|_|"PLAN07C_REGISTER_HISTORY_PREPARE_FAILED")?;
     let ids=st.query_map(params![id,MAX_EVENTS as i64],|r|r.get::<_,String>(0))
         .map_err(|_|"PLAN07C_HISTORY_SELECT_FAILED")?;
@@ -374,9 +424,11 @@ pub(crate) async fn lu_project_update_review_decide(
         append(&scoped,snapshot(&scoped,&preview_sha256,&task_id,
             model_suggestion_sha256.as_deref(),&operator_note)?)
     ).await.map_err(|_|"PLAN07C_PREPARE_WORKER_INTERRUPTED")??;
-    let selected=prepared.model_suggestion_sha256.as_deref()
-        .map(|x|format!("Original model suggestion SHA: {x}"))
-        .unwrap_or_else(||"Deterministic native evidence suggestion only".into());
+    let profile_details=profile.clone();
+    let pending_details=prepared.clone();
+    let selected=tauri::async_runtime::spawn_blocking(move||
+        original_review_details(&profile_details,&pending_details)
+    ).await.map_err(|_|"PLAN07C_DIALOG_SOURCE_DETAILS_INTERRUPTED")??;
     let message=format!("Approve this task's NEXT HUMAN EVIDENCE FOLLOW-UP?\n\n\
             Original task: {} v{}\n\
             Original requirement: {}\n\
