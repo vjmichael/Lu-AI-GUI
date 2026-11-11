@@ -85,6 +85,14 @@ function App() {
   const [gitPartialStageReceipt, setGitPartialStageReceipt] = useState(null);
   const [gitPartialRecovery, setGitPartialRecovery] = useState(null);
   const [gitPartialRecoveryBusy, setGitPartialRecoveryBusy] = useState(false);
+  const [reviewedCommitMessage, setReviewedCommitMessage] = useState('');
+  const [reviewedCommitAuthor, setReviewedCommitAuthor] = useState('');
+  const [reviewedCommitEmail, setReviewedCommitEmail] = useState('');
+  const [reviewedCommitPlan, setReviewedCommitPlan] = useState(null);
+  const [reviewedCommitReceipt, setReviewedCommitReceipt] = useState(null);
+  const [reviewedCommitBusy, setReviewedCommitBusy] = useState(false);
+  const [reviewedCommitRecovery, setReviewedCommitRecovery] = useState(null);
+  const [reviewedCommitRecoveryBusy, setReviewedCommitRecoveryBusy] = useState(false);
   const gitHunkRequest = useRef(0);
   const [gitReview, setGitReview] = useState(null);
   const [gitStageReceipt, setGitStageReceipt] = useState(null);
@@ -425,6 +433,11 @@ function App() {
     setGitPartialStageReceipt(null);
     setGitPartialRecovery(null);
     setGitPartialRecoveryBusy(false);
+    setReviewedCommitPlan(null);
+    setReviewedCommitReceipt(null);
+    setReviewedCommitBusy(false);
+    setReviewedCommitRecovery(null);
+    setReviewedCommitRecoveryBusy(false);
     setGithubComparison(null);
     exactCiRequest.current += 1;
     setExactCi(null);
@@ -1282,6 +1295,112 @@ function App() {
     }
   }
 
+  async function previewReviewedPartialCommit(mode) {
+    if (!activeProject?.projectId || !gitPartialStageReceipt || reviewedCommitBusy ||
+        gitPartialStageReceipt.projectId !== activeProject.projectId) return;
+    const projectId = activeProject.projectId;
+    const ticket = gitHunkRequest.current;
+    setReviewedCommitPlan(null);
+    setReviewedCommitReceipt(null);
+    setReviewedCommitBusy(true);
+    setProblem('');
+    try {
+      const review = await invoke('ide_git_preview_reviewed_commit', {
+        stage: gitPartialStageReceipt, mode,
+        message: reviewedCommitMessage,
+        authorName: reviewedCommitAuthor,
+        authorEmail: reviewedCommitEmail,
+      });
+      if (ticket === gitHunkRequest.current && review.stage.projectId === projectId)
+        setReviewedCommitPlan(review);
+    } catch (error) {
+      if (ticket === gitHunkRequest.current)
+        setProblem('Native commit or amendment review refused: ' + String(error));
+    } finally {
+      if (ticket === gitHunkRequest.current) setReviewedCommitBusy(false);
+    }
+  }
+
+  async function submitApprovedReviewedCommit() {
+    if (!activeProject?.projectId || !reviewedCommitPlan || reviewedCommitBusy ||
+        reviewedCommitPlan.stage.projectId !== activeProject.projectId) return;
+    const projectId = activeProject.projectId;
+    const ticket = gitHunkRequest.current;
+    setReviewedCommitBusy(true);
+    setReviewedCommitReceipt(null);
+    setProblem('');
+    const command = reviewedCommitPlan.mode === 'amend'
+      ? 'ide_git_amend_reviewed_commit' : 'ide_git_commit_selected_hunks';
+    try {
+      const receipt = await invoke(command, { expected: reviewedCommitPlan });
+      if (ticket === gitHunkRequest.current && receipt.projectId === projectId) {
+        setReviewedCommitReceipt(receipt);
+        setReviewedCommitPlan(null);
+        setGitPartialStageReceipt(null);
+        setReviewedCommitMessage('');
+        setHint(receipt.amendedExistingHistory
+          ? 'Explicitly reviewed local amend completed. No force-push or hooks.'
+          : 'Separately authorized local commit completed. No hooks or push.');
+        void refreshGitStatus();
+      }
+    } catch (error) {
+      if (ticket === gitHunkRequest.current) {
+        setReviewedCommitPlan(null);
+        setProblem('Local commit or explicit amend denied/interrupted: ' + String(error));
+      }
+    } finally {
+      if (ticket === gitHunkRequest.current) setReviewedCommitBusy(false);
+    }
+  }
+
+  async function cancelReviewedCommit() {
+    if (!activeProject?.projectId || !reviewedCommitBusy) return;
+    try {
+      const result = await invoke('ide_git_cancel_reviewed_commit', {
+        projectId: activeProject.projectId,
+      });
+      setHint('Commit cancellation: ' + result + '. Published refs are never automatically undone.');
+    } catch (error) {
+      setProblem('Commit cancellation refused at this phase: ' + String(error));
+    }
+  }
+
+  async function inspectReviewedCommitRecovery() {
+    if (!activeProject?.projectId || reviewedCommitRecoveryBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = gitHunkRequest.current;
+    setReviewedCommitRecoveryBusy(true);
+    setReviewedCommitRecovery(null);
+    try {
+      const state = await invoke('ide_git_inspect_commit_recovery', { projectId });
+      if (ticket === gitHunkRequest.current && state.projectId === projectId)
+        setReviewedCommitRecovery(state);
+    } catch (error) {
+      if (ticket === gitHunkRequest.current)
+        setProblem('Commit journal inspection refused: ' + String(error));
+    } finally {
+      if (ticket === gitHunkRequest.current) setReviewedCommitRecoveryBusy(false);
+    }
+  }
+
+  async function reconcileReviewedCommitReceipt() {
+    if (!activeProject?.projectId || !reviewedCommitRecovery?.operatorReconciliationRequired ||
+        reviewedCommitRecovery.gitIndexLockPresent || reviewedCommitRecoveryBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = gitHunkRequest.current;
+    setReviewedCommitRecoveryBusy(true);
+    try {
+      const state = await invoke('ide_git_reconcile_commit_receipt', { projectId });
+      if (ticket === gitHunkRequest.current && state.projectId === projectId)
+        setReviewedCommitRecovery(state);
+    } catch (error) {
+      if (ticket === gitHunkRequest.current)
+        setProblem('Commit journal reconciliation denied: ' + String(error));
+    } finally {
+      if (ticket === gitHunkRequest.current) setReviewedCommitRecoveryBusy(false);
+    }
+  }
+
   async function stageReviewedSelectedHunks() {
     if (!activeProject?.projectId || !gitHunkSelection || gitPartialStageBusy ||
         gitHunkSelection.plan.projectId !== activeProject.projectId ||
@@ -1290,6 +1409,8 @@ function App() {
     const ticket = gitHunkRequest.current;
     setGitPartialStageBusy(true);
     setGitPartialStageReceipt(null);
+    setReviewedCommitPlan(null);
+    setReviewedCommitReceipt(null);
     setProblem('');
     try {
       const receipt = await invoke('ide_git_stage_selected_hunks', {
@@ -5089,6 +5210,121 @@ function App() {
                 <p>Review alone grants no staging or commit authority.
                   Only the native OS approval dialog may authorize a one-use index update.</p>
               </div>}
+            </div>}
+            {activeProject && <div className="continuityDocument" aria-label="Separately authorized reviewed commit or amendment">
+              <h3>Reviewed staged-hunk commit · one-use OS approval</h3>
+              <p>Staging hunks does not create a commit. Select a new commit or,
+                separately, an explicit rewrite of the latest local commit.
+                A valid original native staging receipt is required; the host
+                independently checks the private journal, exact index, staged
+                tree, original source, HEAD and branch before showing any OS dialog.</p>
+              <label htmlFor="g06b-commit-message">Commit message</label>
+              <textarea id="g06b-commit-message" rows={2} maxLength={4096}
+                value={reviewedCommitMessage} disabled={reviewedCommitBusy}
+                onChange={event => {
+                  setReviewedCommitMessage(event.target.value);
+                  setReviewedCommitPlan(null);
+                }} />
+              <label htmlFor="g06b-author-name">Author name</label>
+              <input id="g06b-author-name" type="text" maxLength={160}
+                value={reviewedCommitAuthor} disabled={reviewedCommitBusy}
+                onChange={event => {
+                  setReviewedCommitAuthor(event.target.value);
+                  setReviewedCommitPlan(null);
+                }} />
+              <label htmlFor="g06b-author-email">Author email</label>
+              <input id="g06b-author-email" type="email" maxLength={160}
+                value={reviewedCommitEmail} disabled={reviewedCommitBusy}
+                onChange={event => {
+                  setReviewedCommitEmail(event.target.value);
+                  setReviewedCommitPlan(null);
+                }} />
+              <div className="actionRow">
+                <button type="button" className="ghostBtn"
+                  disabled={!gitPartialStageReceipt || reviewedCommitBusy ||
+                    !reviewedCommitMessage.trim() || !reviewedCommitAuthor.trim() ||
+                    !reviewedCommitEmail.trim()}
+                  onClick={() => previewReviewedPartialCommit('create')}>
+                  Review new local commit (no commit yet)
+                </button>
+                <button type="button" className="ghostBtn"
+                  disabled={!gitPartialStageReceipt || reviewedCommitBusy ||
+                    !reviewedCommitMessage.trim() || !reviewedCommitAuthor.trim() ||
+                    !reviewedCommitEmail.trim()}
+                  onClick={() => previewReviewedPartialCommit('amend')}>
+                  Review replacement of latest local commit
+                </button>
+              </div>
+              {reviewedCommitPlan && reviewedCommitPlan.stage.projectId === activeProject.projectId &&
+                <div>
+                  <p role="status">Independent native review: <strong>
+                    {reviewedCommitPlan.mode === 'amend' ? 'HISTORY REWRITE' : 'New local commit'}
+                  </strong></p>
+                  {reviewedCommitPlan.mode === 'amend' && <p role="alert">
+                    Amendment replaces the current local HEAD commit. The previous commit
+                    will no longer be on this branch. The host refuses an upstream
+                    whose publication status cannot be verified; there is no push.
+                    Amendment requires two separate OS confirmations.
+                  </p>}
+                  <p>Branch: <code>{reviewedCommitPlan.branchRef}</code></p>
+                  <p>Previous HEAD: <code>{reviewedCommitPlan.previousHead}</code></p>
+                  <p>New parent: <code>{reviewedCommitPlan.resultingParent}</code></p>
+                  <p>Tree: <code>{reviewedCommitPlan.stagedTreeOid}</code></p>
+                  <p>Index SHA-256: <code>{reviewedCommitPlan.indexSha256}</code></p>
+                  <p>Review SHA-256: <code>{reviewedCommitPlan.planSha256}</code></p>
+                  <p>No commit authority follows from preview; the native OS dialog decides.</p>
+                  <button type="button" className="ghostBtn"
+                    disabled={reviewedCommitBusy}
+                    onClick={() => submitApprovedReviewedCommit()}>
+                    {reviewedCommitPlan.mode === 'amend'
+                      ? 'Request separate OS authorization to amend local HEAD'
+                      : 'Request separate OS authorization to create commit'}
+                  </button>
+                </div>}
+              {reviewedCommitBusy && <div role="status">
+                Native commit review or OS approval in progress.
+                <button type="button" className="ghostBtn"
+                  onClick={() => cancelReviewedCommit()}>
+                  Request cancellation before branch update
+                </button>
+              </div>}
+              {reviewedCommitReceipt &&
+                reviewedCommitReceipt.projectId === activeProject.projectId &&
+                <div role="status">
+                  <p>Native Git operation independently verified.
+                    {reviewedCommitReceipt.amendedExistingHistory
+                      ? ' The latest local commit was explicitly replaced.' : ' A new local commit was created.'}
+                  </p>
+                  <p>Commit: <code>{reviewedCommitReceipt.commitOid}</code></p>
+                  <p>Parent: <code>{reviewedCommitReceipt.resultingParent}</code></p>
+                  <p>Committed tree: <code>{reviewedCommitReceipt.committedTreeOid}</code></p>
+                  <p>Index: <code>{reviewedCommitReceipt.indexSha256}</code></p>
+                  <p>Journal verified: {String(reviewedCommitReceipt.journalVerified)}
+                    {' · '}Hooks: {String(reviewedCommitReceipt.gitHooksExecuted)}
+                    {' · '}Remote updated: {String(reviewedCommitReceipt.remoteUpdated)}</p>
+                </div>}
+              <h4>Durable local commit recovery</h4>
+              <button type="button" className="ghostBtn"
+                disabled={reviewedCommitRecoveryBusy}
+                onClick={() => inspectReviewedCommitRecovery()}>
+                Inspect native commit journal
+              </button>
+              {reviewedCommitRecovery && reviewedCommitRecovery.projectId === activeProject.projectId &&
+                <div>
+                  <p>Journal: <strong>{reviewedCommitRecovery.state.replaceAll('_', ' ')}</strong>
+                    {' · '}Last phase: {reviewedCommitRecovery.lastPhase || 'none'}</p>
+                  <p>Git index lock: {String(reviewedCommitRecovery.gitIndexLockPresent)}</p>
+                  {reviewedCommitRecovery.operatorReconciliationRequired && <div>
+                    <p role="alert">Interrupted or ambiguous Git ref update. No automatic
+                      retry, history rewrite, or lock deletion is authorized.</p>
+                    {!reviewedCommitRecovery.gitIndexLockPresent &&
+                      <button type="button" className="ghostBtn"
+                        disabled={reviewedCommitRecoveryBusy}
+                        onClick={() => reconcileReviewedCommitReceipt()}>
+                        Request OS approval to independently reconcile receipt
+                      </button>}
+                  </div>}
+                </div>}
             </div>}
             {activeProject && <div className="continuityDocument" aria-label="Native partial Git staging recovery and receipts">
               <h3>Protected partial staging · journal and recovery</h3>
