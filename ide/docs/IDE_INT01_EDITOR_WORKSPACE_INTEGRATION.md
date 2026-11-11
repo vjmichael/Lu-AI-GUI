@@ -54,9 +54,20 @@ A source analysis of `ide/app/web/main.jsx` found that Save/Review relied on `ta
 
 **Implementation status:** INT01-E source committed without running tests, CI, PR verification or installed acceptance. The deferred future batch should cover 30k-entry cutoff, huge folders, Unicode ordering, deep generated folders, symlink/permission refusal, stale page cursor, cross-project results, Quick Open at full tab budget, and live Undo preservation on clean-tab reclamation.
 
+## INT01-F — Unified editor UX and accessibility (source implemented)
+
+- Added separate first/second editor labels and focus tracking to the existing CodeMirror view. Explicit Ctrl/Cmd+1 and Ctrl/Cmd+2 actions focus only the registered project's matching current editor pane. The editor accepts a requested focus only when project, pane and tab generation all match; opening a different project resets transient focus.
+- Ctrl/Cmd+S now targets the last genuinely focused editor pane even when keyboard focus has moved to a toolbar, rather than falling back silently to primary. Saving continues through the existing reviewed native source-revision gate and never grants broader execution authority.
+- Added direct editor-toolbar navigation to source-verified Problems and project-scoped Jobs; the Jobs screen now provides direct return navigation to either source Problems or the first editor. These buttons navigate existing UI and only request read-only project job/intent inspection, never initiate execution.
+- The Problems panel is programmatically focusable following an explicit user navigation action. Added roving source-tab keyboard control with ArrowLeft/ArrowRight/Home/End, accessible tab selected state and focus transfer to the newly selected tab even when tab paging changes.
+- Added per-project readable status/busy messages for project switching, tab counts, layout/draft recovery, and editor pane count. Native directory selection announces successful project switching while retaining other projects' unsaved buffers.
+- External-file-change inspection now shows separate counts of changed/current/unavailable/stale files, with clear warnings for simultaneous disk drift and unsaved local editor changes. Comparison, reload, and Save remain separately explicit operations; no automatic merge/write or fabricated verified status.
+- Updated responsive CSS for visible pane keyboard-focus boundaries, status messages, Problems/Jobs return controls and high-contrast focus outlines. No additional source-code storage, Lu bridge or native worker was introduced.
+
+**Implementation status:** INT01-F source committed. The combined INT01-A–F implementation pass is **source-complete**, not accepted: no source-wide repair, compiler/test execution, CI/PR verification, installed Windows/Linux acceptance or human physical interaction matrix was run. Deferred regression scenarios include keyboard focus across project switches and split-pane swaps, Ctrl/Cmd+S after toolbar focus, roving tab paging, stale diagnostic navigation, job progress isolation, external disk drift and assistive-technology accessibility.
+
 ## Remaining INT01 work (implementation/integration gaps, not CI tasks)
 
-- **INT01-F — Unified editor UX:** keyboard/split-pane focus, external file-change comparison and conflict path, accessibility and consistent project switching.
 
 ## Deferred batch-regression plan
 
@@ -64,4 +75,4 @@ After the implementation work is complete, run the staged `int01_live_editor_wri
 
 ## Next task
 
-**INT01-F — Unified editor UX and accessibility**. Finish keyboard/split-pane focus behavior, Problems/Jobs/source navigation consistency, external-disk-change review, accessible status/progress and responsive project-switch presentation. Keep native and regression acceptance postponed until backlog implementation is finished.
+**IDE-INT-02 — Language Server Integration**. Continue the feature backlog by integrating protected Rust, C/C++ and Python language servers against current source buffers, completion, diagnostics and restart lifecycle. All source analysis/repair, CI, PR checks and regression/installed acceptance are postponed until backlog implementation is complete.
