@@ -389,6 +389,9 @@ test('PLAN-07C original ANSF operator review preserves refusal, stale denial, re
   assert.match(host,/PLAN07C_APPROVED_MODEL_RECEIPT_CHANGED/);
   assert.match(host,/PLAN07C_HUMAN_REVIEW_SOURCE_CHANGED/);
   assert.match(host,/PLAN07C_REVIEW_TOKEN_REPLAY/);
+  assert.match(host,/Approve evidence review only/);
+  assert.match(host,/Refuse evidence review/);
+  assert.match(host,/PLAN07C_ORIGINAL_REVIEW_JOURNAL_FULL/);
   assert.match(host,/PLAN07C_RECONCILIATION_REQUIRED_BEFORE_REVALIDATION/);
   assert.match(host,/register::human_revalidate/);
   assert.match(host,/register::RevisionKind::HumanRevalidated/);
