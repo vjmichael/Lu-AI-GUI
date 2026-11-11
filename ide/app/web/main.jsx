@@ -3727,91 +3727,115 @@ function App() {
   }
 
   async function stageProposal(item) {
-    if (inboxBusy || pending || savingKey || explorerPending) return;
-    const project = projects.find(entry => entry.projectId === item.projectId && entry.active);
+    if (inboxBusy || pending || savingKey || savingKeyRef.current ||
+        explorerPending || explorerIoTicket.current ||
+        workspaceTransitionRef.current) return;
+    const project=projects.find(entry=>entry.projectId===item.projectId && entry.active);
     if (!project) {
-      setProblem('Open this project from the Projects screen before staging its proposed edits.');
+      setProblem('Open this registered project before staging its proposed edits.');
       return;
     }
-    if (tabs.some(tab => tab.projectId === item.projectId && tab.dirty) &&
-      !window.confirm('Staging will replace unsaved drafts in this project. Continue? No disk files will be changed.')) {
-      return;
-    }
+    // Confirm against CodeMirror rather than a delayed React dirty flag.
+    const witness=projectEditorWitness(item.projectId);
+    if (witness.some(entry=>entry.intent.status!=='current' ||
+        entry.intent.dirty) &&
+        !window.confirm('Staging will replace live unsaved drafts in this project. '+
+          'Continue? No project files will be saved or deleted.')) return;
+    const token=Symbol('ide-int01c-proposal-stage');
+    workspaceTransitionRef.current=token;
+    const originalProjectId=activeProjectIdRef.current;
     setInboxBusy(true);
     setProblem('');
     try {
-      const approved = await invoke('ide_stage_proposal', {
-        inboxId: item.inboxId,
-        expectedDigest: item.digest,
+      const approved=await invoke('ide_stage_proposal',{
+        inboxId:item.inboxId,expectedDigest:item.digest,
       });
-      // Every source is reread before changing editor buffers. No partial
-      // staging occurs when one file became unavailable or changed on disk.
-      const originals = await Promise.all(approved.edits.map(edit =>
-        invoke('ide_preview_source_file', {
-          projectId: item.projectId,
-          relativePath: edit.relativePath,
+      if (workspaceTransitionRef.current!==token ||
+          activeProjectIdRef.current!==originalProjectId) return;
+      if (!Array.isArray(approved?.edits) || approved.edits.length===0 ||
+          approved.edits.some(edit=>!verifiedRelativeSourcePath(edit.relativePath) ||
+            typeof edit.proposedText!=='string'))
+        throw Error('UNTRUSTED_PROPOSAL_SOURCE');
+      // No partial staging when one source changed on disk.
+      const originals=await Promise.all(approved.edits.map(edit=>
+        invoke('ide_preview_source_file',{
+          projectId:item.projectId,relativePath:edit.relativePath,
         })
       ));
-      for (let index = 0; index < originals.length; index++) {
-        if (originals[index].revision !== approved.edits[index].expectedRevision) {
-          throw new Error('File changed on disk. Nothing was staged.');
-        }
+      for (let index=0;index<originals.length;index++) {
+        if (originals[index]?.projectId!==item.projectId ||
+            originals[index]?.relativePath!==approved.edits[index].relativePath ||
+            originals[index]?.revision!==approved.edits[index].expectedRevision)
+          throw Error('PROPOSAL_SOURCE_CHANGED_ON_DISK');
       }
-      const rootListing = await invoke('ide_list_source_directory', {
-        projectId: item.projectId, relativeDir: '',
+      const rootListing=await invoke('ide_list_source_directory',{
+        projectId:item.projectId,relativeDir:'',
       });
-      const admission=admitOpenTabs(tabsRef.current,item.projectId,
-        approved.edits.map(edit=>keyFor(item.projectId,edit.relativePath)));
-      if (!admission.allowed) {
-        throw Error('OPEN_TAB_BUDGET_EXCEEDED: close unused tabs before staging. '+
-          'No proposal source files were modified.');
-      }
-      const stagedTabs = approved.edits.map((edit, index) => {
-        const key = keyFor(item.projectId, edit.relativePath);
-        const previous = tabs.find(tab => tab.key === key);
+      if (rootListing?.projectId!==item.projectId ||
+          rootListing?.relativeDir!=='' || !Array.isArray(rootListing.entries))
+        throw Error('PROPOSAL_PROJECT_LISTING_UNTRUSTED');
+      if (workspaceTransitionRef.current!==token ||
+          activeProjectIdRef.current!==originalProjectId ||
+          projectEditorWitnessChanged(item.projectId,witness))
+        throw Error('PROPOSAL_TARGET_EDITOR_CHANGED_DURING_REVIEW');
+      const incoming=approved.edits.map(edit=>keyFor(item.projectId,edit.relativePath));
+      if (new Set(incoming).size!==incoming.length)
+        throw Error('PROPOSAL_DUPLICATE_SOURCE_PATH');
+      const admission=admitOpenTabs(tabsRef.current,item.projectId,incoming);
+      if (!admission.allowed)
+        throw Error('OPEN_TAB_BUDGET_EXCEEDED: close unused tabs before staging.');
+      // Only now can this edit replace the target project's in-memory buffers.
+      const stagedTabs=approved.edits.map((edit,index)=>{
+        const key=keyFor(item.projectId,edit.relativePath);
+        const previous=tabsRef.current.find(tab=>tab.key===key);
         clearPrivateDraftSession(key);
         resetBufferIdentity(key,item.projectId,edit.relativePath,edit.expectedRevision);
-        editorStates.current.set(key, createEditorState(
-          edit.proposedText, edit.relativePath,
-          (state, draft) => onEditorChange(key, state, draft),
-          state => onEditorSelection(key,state)
+        editorStates.current.set(key,createEditorState(
+          edit.proposedText,edit.relativePath,
+          (state,draft)=>onEditorChange(key,state,draft),
+          state=>onEditorSelection(key,state)
         ));
-        return {
-          key, projectId: item.projectId, relativePath: edit.relativePath,
-          revision: edit.expectedRevision, savedText: originals[index].text,
-          draft: edit.proposedText,
-          dirty: edit.proposedText !== originals[index].text,
-          generation: (previous?.generation ?? 0) + 1,
-          bufferRevision: (previous?.bufferRevision ?? 0) + 1,
-        };
+        return {key,projectId:item.projectId,relativePath:edit.relativePath,
+          revision:edit.expectedRevision,savedText:originals[index].text,
+          draft:edit.proposedText,
+          dirty:edit.proposedText!==originals[index].text,
+          generation:(previous?.generation??0)+1,
+          bufferRevision:(previous?.bufferRevision??0)+1};
       });
-      const stagedKeys = new Set(stagedTabs.map(tab => tab.key));
-      if (activeProjectIdRef.current &&
-          activeProjectIdRef.current !== item.projectId) {
-        const previousView = captureProjectView(tabsRef.current,
-          activeProjectIdRef.current,activeTabKey,secondaryTabKey,
-          splitEditorOpen,tabWindowStart);
-        if (previousView)
-          projectEditorViews.current.set(activeProjectIdRef.current,previousView);
-        // Explicit proposal staging selects a new draft; do not inherit the
-        // old project's secondary editor or overlay.
+      const stagedKeys=new Set(stagedTabs.map(tab=>tab.key));
+      const nextTabs=[...tabsRef.current.filter(tab=>!stagedKeys.has(tab.key)),
+        ...stagedTabs];
+      const pane=paneSnapshotRef.current;
+      if (originalProjectId && originalProjectId!==item.projectId) {
+        const leaving=captureProjectView(tabsRef.current,originalProjectId,
+          pane.primaryKey,pane.secondaryKey,pane.splitOpen,pane.tabWindowStart);
+        if (leaving) projectEditorViews.current.set(originalProjectId,leaving);
         setSplitEditorOpen(false);
         setSecondaryTabKey(null);
         setTabWindowStart(0);
+      } else {
+        const selected=planProjectPaneSelection(nextTabs,item.projectId,
+          pane.primaryKey,pane.secondaryKey,pane.splitOpen,stagedTabs[0].key);
+        if (!selected.allowed) throw Error('PROPOSAL_PANE_SELECTION_UNAVAILABLE');
+        setSecondaryTabKey(selected.secondaryKey);
       }
-      setTabs(previous => [...previous.filter(tab => !stagedKeys.has(tab.key)), ...stagedTabs]);
+      projectNavigationEpoch.current+=1;
+      setTabs(previous=>[...previous.filter(tab=>!stagedKeys.has(tab.key)),
+        ...stagedTabs]);
       setActiveProject(project);
       setListing(rootListing);
       setDirectory('');
       setSection('explorer');
       setActiveTabKey(stagedTabs[0].key);
       setProposalDetail(null);
-      setHint('Proposal staged as editor drafts. Review and Save each file yourself; nothing was written to disk.');
-    } catch (error) {
-      setProblem(String(error).includes('FILE_CHANGED_ON_DISK')
-        ? 'File changed on disk. The proposal was not staged.'
-        : String(error));
-    } finally { setInboxBusy(false); }
+      setHint('Proposal staged only as editor drafts. Review and Save each file yourself.');
+    } catch(error) {
+      if (workspaceTransitionRef.current===token)
+        setProblem('Could not stage proposal without losing editor state: '+String(error));
+    } finally {
+      if (workspaceTransitionRef.current===token) workspaceTransitionRef.current=null;
+      setInboxBusy(false);
+    }
   }
 
   async function discardProposal(item) {
@@ -3866,7 +3890,8 @@ function App() {
 
   async function operation(command, args) {
     if (pending || savingKey || savingKeyRef.current || mergeBusy ||
-        mergeApplyRequest || explorerPending || explorerIoTicket.current ||
+        mergeApplyRequest || inboxBusy || workspaceTransitionRef.current ||
+        explorerPending || explorerIoTicket.current ||
         workspaceLayoutOp.current) return;
     const closing=command==='ide_close_project' ||
       command==='ide_unregister_project';
@@ -4171,6 +4196,7 @@ function App() {
   async function openProjectSearchMatch(match) {
     const projectId = activeProject?.projectId;
     if (!projectId || explorerPending || projectSearchBusy ||
+        workspaceTransitionRef.current ||
         projectSearchResults?.projectId !== projectId) return;
     const generation = projectSearchGeneration.current;
     const key = keyFor(projectId, match.relativePath);
@@ -4211,7 +4237,7 @@ function App() {
       if (existing && (existingLive.status !== 'current' || existingLive.dirty ||
                        existing.revision !== opened.revision ||
                        existing.savedText !== opened.text)) {
-        setActiveTabKey(key);
+        selectPrimaryEditorTab(key);
         setSection('explorer');
         setProblem('Search refers to saved disk bytes. The existing editor draft differs. ' +
           'No draft was changed and no stale coordinates were applied.');
