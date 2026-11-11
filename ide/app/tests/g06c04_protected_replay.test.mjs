@@ -39,12 +39,12 @@ test('6C04C/D ref CAS + original rebase ref backup, no replay without OS consent
   assert.match(protectedReplay,/G06C04_EXACT_REF_CAS_FAILED_MANUAL_REPAIR/);
   assert.match(protectedReplay,/G06C04_FOREIGN_INDEX_LOCK/);
   assert.match(protectedReplay,/G06C04_REVIEW_STALE_OR_FORGED/);
-  assert.match(protectedReplay,/cancel\.compare_exchange\(0,1,Ordering::SeqCst,Ordering::SeqCst\)/);
-  assert.match(protectedReplay,/automatic_ref_retry:false/);
-  assert.match(protectedReplay,/automatic_history_rewrite:false/);
-  assert.match(protectedReplay,/automatic_checkout:false/);
-  assert.match(protectedReplay,/automatic_rollback:false/);
-  assert.match(protectedReplay,/automatic_foreign_lock_deletion:false/);
+  assert.match(protectedReplay,/cancel\s*\.compare_exchange\(\s*0,\s*1,\s*Ordering::SeqCst,\s*Ordering::SeqCst\s*\)/);
+  assert.match(protectedReplay,/automatic_ref_retry:\s*false/);
+  assert.match(protectedReplay,/automatic_history_rewrite:\s*false/);
+  assert.match(protectedReplay,/automatic_checkout:\s*false/);
+  assert.match(protectedReplay,/automatic_rollback:\s*false/);
+  assert.match(protectedReplay,/automatic_foreign_lock_deletion:\s*false/);
   assert.match(protectedReplay,/test_abort_disposable/);
   assert.match(protectedReplay,/actual_process_abort_before_ref_cas_never_retries_history_rewrite/);
   assert.match(protectedReplay,/actual_process_abort_after_cas_can_only_reconcile_original_history_receipt/);
@@ -73,7 +73,8 @@ test('6C04C/D separately gated native OS consent, no page-provided authority',()
 });
 test('6C04 result UI demands exact output OIDs and only native OS dialog can execute',()=>{
   assert.match(ui,/invoke\('ide_git_preview_isolated_replay'/);
-  assert.match(ui,/invoke\('ide_git_execute_rebase'/);
+  assert.match(ui,/'ide_git_execute_rebase'/);
+  assert.match(ui,/const receipt = await invoke\(cmd,/);
   assert.match(ui,/ide_git_execute_cherry_pick/);
   assert.match(ui,/invoke\('ide_git_cancel_protected_replay'/);
   assert.match(ui,/invoke\('ide_git_inspect_replay_recovery'/);
