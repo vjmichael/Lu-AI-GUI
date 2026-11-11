@@ -26,9 +26,14 @@ export function stillCurrentLspSource(source,tab,identity,editorState,projectId)
   return languageForPath(source.relativePath)===source.languageId;
 }
 
+const providersByLanguage=Object.freeze({
+  rust:['rust-analyzer'],c:['clangd'],cpp:['clangd'],
+  python:['ruff','pyright'],
+});
 export function lspNativeReplyMatches(source,reply) {
   const observed=reply?.source;
   return !!source && !!observed &&
+    providersByLanguage[source.languageId]?.includes(reply.providerId) &&
     observed.projectId===source.projectId &&
     observed.relativePath===source.relativePath &&
     observed.diskSha256===source.savedRevision &&
