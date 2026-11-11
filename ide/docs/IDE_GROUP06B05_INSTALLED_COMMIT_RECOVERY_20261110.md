@@ -42,6 +42,43 @@ For commit/amend refusal, cancellation, or a verified interruption *before* the 
 
 The independent oracle's local self-tests have 12 cases, including real Git create/amend and hostile mutations of the second hunk, an unrelated file/index path, a second commit, a foreign lock, and a non-fixture repository. They exercise the oracle's ability to **reject** corruption; they are not proof of a user's OS interaction.
 
+## Physical operator runner
+
+The additional `ide/app/fixtures/g06b05_physical_installed_acceptance.py`
+provides an interactive, one-scenario-at-a-time witness on a machine with an
+**actually installed and running** Lu IDE. It refuses GitHub Actions/headless
+sessions, requires the running process ID to match the exact installed executable,
+checks that the test source checkout matches the explicitly supplied 40-digit
+commit SHA and creates an entirely new fixture/evidence directory. Human operator
+actions must be performed in the **real native OS dialogs**; the script never
+issues approval through the WebView or an IPC test hook.
+
+For example, from the repository checkout matching the installer source:
+
+```bash
+python ide/app/fixtures/g06b05_physical_installed_acceptance.py \
+  --installed-executable /usr/bin/lu-ide-desktop \
+  --source-sha YOUR_EXACT_40_DIGIT_COMMIT_SHA \
+  --scenario commit-approve \
+  --evidence-directory /tmp/g06b05-one-scenario-evidence
+```
+
+On Windows, run the identical Python script with the actual installed
+`lu-ide-desktop.exe` path and a new Windows evidence directory. For each
+new scenario choose a fresh directory. Supported scenarios:
+`stage-refuse`, `stage-cancel`, `commit-refuse`, `commit-cancel`,
+`commit-approve`, `amend-first-refuse`, `amend-second-refuse`,
+`amend-approve`, `kill-before-publication`,
+`restart-after-publication`, and `foreign-lock-refuse`.
+
+Each operator acknowledgement is recorded as a **claim of physical observation**
+and is accompanied by independent real-Git byte verification. Retain a real
+OS screenshot or native accessibility observation separately. The
+`kill-before-publication` case kills an installed process while approval is
+still pending; it does **not** simulate or prove a kill exactly inside the
+ref compare-and-swap. Full publication-window fault injection remains a distinct
+open acceptance obligation.
+
 ## Physical installed matrix — independently repeat on Windows and Debian
 
 | ID | Operator action in actual installed Source Control | Required independent result |
