@@ -17,6 +17,7 @@ export function TaskBoardWindow(){
   const [evidence,setEvidence]=useState(null);
   const [edit,setEdit]=useState(null);
   const [updatePreview,setUpdatePreview]=useState(null);
+  const [modelSuggestion,setModelSuggestion]=useState(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
@@ -39,7 +40,7 @@ export function TaskBoardWindow(){
     }).catch(e=>{if(live)setError(errorText(e));});
     return ()=>{live=false};
   },[]);
-  useEffect(()=>{setTaskId('');setEvidence(null);setEdit(null);setUpdatePreview(null)},[registerId]);
+  useEffect(()=>{setTaskId('');setEvidence(null);setEdit(null);setUpdatePreview(null);setModelSuggestion(null)},[registerId]);
   async function act(message,fn){
     if(busy)return;
     setBusy(true);setError('');setNotice('');
@@ -102,7 +103,7 @@ export function TaskBoardWindow(){
       const preview=await invoke('lu_project_update_inspect',{
         registerId:current.board.registerId
       });
-      if(preview)setUpdatePreview(preview);
+      if(preview){setUpdatePreview(preview);setModelSuggestion(null);}
       return preview;
     });
   }
@@ -112,8 +113,28 @@ export function TaskBoardWindow(){
       const result=await invoke('lu_project_update_apply',{
         previewSha256:updatePreview.digestSha256
       });
-      if(result){setUpdatePreview(null);await reload();setEvidence(null);}
+      if(result){setUpdatePreview(null);setModelSuggestion(null);await reload();setEvidence(null);}
       return result;
+    });
+  }
+  async function suggestUpdatesWithGGUF(){
+    if(!updatePreview)return;
+    await act('Original local GGUF suggestions admitted as review-only evidence; no tasks were accepted.',async()=>{
+      const result=await invoke('lu_project_update_model_suggest',{
+        previewSha256:updatePreview.digestSha256
+      });
+      if(result)setModelSuggestion(result);
+      return result;
+    });
+  }
+  async function reloadOriginalModelReceipt(){
+    if(!updatePreview)return;
+    await act('Reopened and independently verified the original GGUF receipt from ANSF.',async()=>{
+      const original=await invoke('lu_project_update_model_latest',{
+        previewSha256:updatePreview.digestSha256
+      });
+      if(original)setModelSuggestion(original);
+      return original;
     });
   }
   async function exportPlan(){
@@ -192,6 +213,39 @@ export function TaskBoardWindow(){
             </div>
             {updatePreview.changedListTruncated&&<p>Source-delta display is truncated;
               archived original evidence and task identities remain authoritative.</p>}
+            <div className="plan07ModelSuggestions" aria-label="Local GGUF evidence review suggestions">
+              <h3>Local GGUF suggestions · PLAN-07B</h3>
+              <p>Optional original-model suggestions only. Native citations and status
+                are checked by the host; no result completes or executes a task.</p>
+              <div className="plan06Actions">
+                <button type="button" disabled={busy} onClick={()=>void suggestUpdatesWithGGUF()}>
+                  Ask loaded local GGUF for evidence suggestions…
+                </button>
+                <button type="button" disabled={busy}
+                  onClick={()=>void reloadOriginalModelReceipt()}>
+                  Reopen audited original GGUF receipt…
+                </button>
+              </div>
+              {modelSuggestion?.previewSha256===updatePreview.digestSha256&&
+                <section aria-label="Original model suggestions, not accepted work">
+                  <small>Model: {modelSuggestion.originalModelRef}.
+                    Session: {modelSuggestion.originalSessionId}.
+                    Original reply SHA-256: {modelSuggestion.originalReplySha256}.
+                    Source register SHA-256: {modelSuggestion.expectedRegisterSha256}.
+                  </small>
+                  {modelSuggestion.suggestions.map(t=><article key={t.taskId}>
+                    <strong>{t.taskId} · {t.action.replaceAll('_',' ')}
+                      · SUGGESTED, NOT ACCEPTED</strong>
+                    <p>{t.reason}</p>
+                    <p><strong>Future independent evidence:</strong> {t.nextEvidence}</p>
+                    <small>Original requirement: {t.originalRequirementId}.
+                      Host status: {t.hostStatus||'missing'}.
+                      Citations: {t.evidenceIds.join(', ')}.
+                      Task completed: NO. Execution authorized: NO.
+                    </small>
+                  </article>)}
+                </section>}
+            </div>
             <button type="button" disabled={busy||!updatePreview.semanticChange}
               onClick={()=>void reconcileEvidence()}>
               Review native source changes and append revisions…
