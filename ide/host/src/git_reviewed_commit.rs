@@ -516,3 +516,201 @@ impl IdeWorkspaceRegistry {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{IdeError, NativeDirectoryPicker};
+    use git2::Repository;
+    use std::{fs, path::{Path, PathBuf}};
+
+    struct Picker(PathBuf);
+    impl NativeDirectoryPicker for Picker {
+        fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> {
+            Ok(Some(self.0.clone()))
+        }
+    }
+    struct Fixture(PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    }
+
+    fn fixture() -> (Fixture, IdeWorkspaceRegistry, String, PathBuf) {
+        let base = std::env::temp_dir().join(
+            format!("ide-g06b04-{:032x}", rand::random::<u128>()));
+        let root = base.join("repo");
+        fs::create_dir_all(&root).unwrap();
+        let text = (1..=48).map(|n| format!("line {n:02}\n")).collect::<String>();
+        fs::write(root.join("tracked.txt"), text).unwrap();
+        let repo = Repository::init(&root).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("tracked.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = Signature::now("Fixture", "fixture@localhost.invalid").unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+        drop(tree); drop(index); drop(repo);
+        let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
+        let id = registry.register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap().unwrap().project_id;
+        (Fixture(base), registry, id, root)
+    }
+
+    fn review_two_edits(registry: &IdeWorkspaceRegistry, id: &str, root: &Path)
+        -> PartialStageReceipt
+    {
+        let old = fs::read_to_string(root.join("tracked.txt")).unwrap();
+        let edited = old.replace("line 03\n", "selected 03\n")
+            .replace("line 43\n", "later unselected 43\n");
+        fs::write(root.join("tracked.txt"), edited).unwrap();
+        let plan = registry.preview_reviewed_git_hunks(id, "tracked.txt").unwrap();
+        assert_eq!(plan.hunks.len(), 2);
+        let selected = registry.select_reviewed_git_hunks(
+            &plan, &[plan.hunks[0].id.clone()]).unwrap();
+        registry.apply_approved_partial_stage(&selected, &AtomicU8::new(0)).unwrap()
+    }
+
+    fn preview(registry: &IdeWorkspaceRegistry, receipt: &PartialStageReceipt,
+        mode: ReviewedCommitMode) -> ReviewedCommitPlan
+    {
+        registry.preview_reviewed_partial_commit(
+            receipt, mode, "reviewed source only", "Fixture Author",
+            "fixture@localhost.invalid").unwrap()
+    }
+
+    #[test]
+    fn local_commit_contains_only_selected_hunk_with_unchanged_worktree() {
+        let (_temp, registry, id, root) = fixture();
+        let original = Repository::open(&root).unwrap().head().unwrap().target().unwrap();
+        let receipt = review_two_edits(&registry, &id, &root);
+        let worktree = fs::read(root.join("tracked.txt")).unwrap();
+        let planned = preview(&registry, &receipt, ReviewedCommitMode::Create);
+        assert!(!planned.commit_granted && !planned.amend_granted);
+        assert_eq!(planned.previous_head, original.to_string());
+        assert_eq!(Repository::open(&root).unwrap().head().unwrap().target(), Some(original));
+        let done = registry.execute_approved_reviewed_commit(&planned, &AtomicU8::new(0)).unwrap();
+        let repo = Repository::open(&root).unwrap();
+        let committed = repo.find_commit(Oid::from_str(&done.commit_oid).unwrap()).unwrap();
+        assert_eq!(repo.head().unwrap().target(), Some(committed.id()));
+        assert_eq!(committed.parent_id(0).unwrap(), original);
+        assert_eq!(committed.tree_id().to_string(), planned.staged_tree_oid);
+        let tree = committed.tree().unwrap();
+        let blob = repo.find_blob(tree.get_path(Path::new("tracked.txt")).unwrap().id()).unwrap();
+        let text = std::str::from_utf8(blob.content()).unwrap();
+        assert!(text.contains("selected 03\n"));
+        assert!(text.contains("line 43\n"));
+        assert!(!text.contains("later unselected 43\n"));
+        assert_eq!(fs::read(root.join("tracked.txt")).unwrap(), worktree);
+        assert!(done.approval_one_use && done.branch_ref_independently_verified
+            && done.staged_tree_independently_verified && done.journal_verified);
+        assert!(!done.amended_existing_history && !done.git_hooks_executed
+            && !done.remote_updated && !done.release_approved);
+        let recovered = registry.inspect_reviewed_commit_recovery(&id).unwrap();
+        assert_eq!(recovered.state, "verified_historical_commit");
+        assert!(!recovered.operator_reconciliation_required);
+        // An old stage cannot be promoted again after the original HEAD moves.
+        assert!(registry.preview_reviewed_partial_commit(
+            &receipt, ReviewedCommitMode::Create, "replay", "Fixture",
+            "fixture@localhost.invalid").is_err());
+    }
+
+    #[test]
+    fn amend_requires_distinct_review_and_rewrites_only_exact_current_head() {
+        let (_temp, registry, id, root) = fixture();
+        let original_head = Repository::open(&root).unwrap().head().unwrap().target().unwrap();
+        let first_stage = review_two_edits(&registry, &id, &root);
+        let first_plan = preview(&registry, &first_stage, ReviewedCommitMode::Create);
+        let first = registry.execute_approved_reviewed_commit(
+            &first_plan, &AtomicU8::new(0)).unwrap();
+        // The original source still has the unselected second hunk.
+        let second_plan = registry.preview_reviewed_git_hunks(&id, "tracked.txt").unwrap();
+        assert_eq!(second_plan.hunks.len(), 1);
+        let second_sel = registry.select_reviewed_git_hunks(
+            &second_plan, &[second_plan.hunks[0].id.clone()]).unwrap();
+        let second_stage = registry.apply_approved_partial_stage(
+            &second_sel, &AtomicU8::new(0)).unwrap();
+        let amended_plan = preview(&registry, &second_stage, ReviewedCommitMode::Amend);
+        assert_eq!(amended_plan.previous_head, first.commit_oid);
+        assert_eq!(amended_plan.resulting_parent, original_head.to_string());
+        let original_source = fs::read(root.join("tracked.txt")).unwrap();
+        let done = registry.execute_approved_reviewed_commit(
+            &amended_plan, &AtomicU8::new(0)).unwrap();
+        assert!(done.amended_existing_history);
+        assert_ne!(done.commit_oid, first.commit_oid);
+        let repo = Repository::open(&root).unwrap();
+        let amended = repo.find_commit(Oid::from_str(&done.commit_oid).unwrap()).unwrap();
+        assert_eq!(amended.parent_id(0).unwrap(), original_head);
+        assert_eq!(repo.head().unwrap().target(), Some(amended.id()));
+        let blob = repo.find_blob(amended.tree().unwrap()
+            .get_path(Path::new("tracked.txt")).unwrap().id()).unwrap();
+        let text = std::str::from_utf8(blob.content()).unwrap();
+        assert!(text.contains("selected 03\n"));
+        assert!(text.contains("later unselected 43\n"));
+        assert_eq!(fs::read(root.join("tracked.txt")).unwrap(), original_source);
+        assert!(!done.remote_updated && !done.git_hooks_executed);
+    }
+
+    #[test]
+    fn forged_stage_stale_index_and_cancel_cannot_publish_a_ref() {
+        let (_temp, registry, id, root) = fixture();
+        let stage = review_two_edits(&registry, &id, &root);
+        let original = Repository::open(&root).unwrap().head().unwrap().target().unwrap();
+        let mut forged = stage.clone();
+        forged.source_sha256 = "0".repeat(64);
+        assert!(registry.preview_reviewed_partial_commit(
+            &forged, ReviewedCommitMode::Create, "forged", "Fixture",
+            "fixture@localhost.invalid").is_err());
+        let mut forged_oid = stage.clone();
+        forged_oid.old_blob_oid = "0".repeat(40);
+        assert!(registry.preview_reviewed_partial_commit(
+            &forged_oid, ReviewedCommitMode::Create, "forged", "Fixture",
+            "fixture@localhost.invalid").is_err());
+        let plan = preview(&registry, &stage, ReviewedCommitMode::Create);
+        let mut changed = plan.clone();
+        changed.message = "unreviewed message".into();
+        assert_eq!(registry.execute_approved_reviewed_commit(
+            &changed, &AtomicU8::new(0)).unwrap_err(), "G06B_COMMIT_STALE_OR_FORGED_PLAN");
+        let cancelled = AtomicU8::new(2);
+        assert_eq!(registry.execute_approved_reviewed_commit(
+            &plan, &cancelled).unwrap_err(), "G06B_COMMIT_INVALID_OR_CANCELLED_PLAN");
+        fs::write(root.join(".git/index.lock"), b"foreign index writer").unwrap();
+        assert!(registry.execute_approved_reviewed_commit(
+            &plan, &AtomicU8::new(0)).is_err());
+        assert_eq!(fs::read(root.join(".git/index.lock")).unwrap(), b"foreign index writer");
+        fs::remove_file(root.join(".git/index.lock")).unwrap();
+        assert_eq!(Repository::open(&root).unwrap().head().unwrap().target(), Some(original));
+    }
+
+    #[test]
+    fn interrupted_prepublication_journal_is_only_reconciled_after_new_review() {
+        let (_tmp, registry, id, root) = fixture();
+        let stage = review_two_edits(&registry, &id, &root);
+        let plan = preview(&registry, &stage, ReviewedCommitMode::Create);
+        let path = journal_path(&registry, &id).unwrap();
+        append_journal(&path, &CommitJournal {
+            schema_version: 1, operation_id: "restart-fixture".into(),
+            project_id: id.clone(), phase: "object_written".into(),
+            mode: ReviewedCommitMode::Create,
+            branch_ref: plan.branch_ref.clone(),
+            old_head: plan.previous_head.clone(),
+            commit_oid: "a".repeat(40), parent_oid: plan.resulting_parent.clone(),
+            tree_oid: plan.staged_tree_oid.clone(),
+            index_sha256: plan.index_sha256.clone(),
+            plan_sha256: plan.plan_sha256.clone(),
+            source_sha256: stage.source_sha256.clone(),
+            relative_path: stage.relative_path.clone(),
+        }).unwrap();
+        drop(registry);
+        let reopened = IdeWorkspaceRegistry::open(_tmp.0.join("catalog.json")).unwrap();
+        reopened.reopen(&id).unwrap();
+        let pending = reopened.inspect_reviewed_commit_recovery(&id).unwrap();
+        assert!(pending.operator_reconciliation_required);
+        assert_eq!(pending.state, "ref_not_published_or_external_change");
+        let after = reopened.reconcile_reviewed_commit_journal(&id).unwrap();
+        assert_eq!(after.state, "cancelled_before_ref_update");
+        assert!(!after.operator_reconciliation_required);
+        assert_eq!(Repository::open(&root).unwrap().head().unwrap().target().unwrap().to_string(),
+            plan.previous_head);
+        assert!(!root.join(".git/index.lock").exists());
+    }
+}
