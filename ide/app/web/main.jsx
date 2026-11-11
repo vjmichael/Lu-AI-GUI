@@ -196,6 +196,13 @@ function App() {
   const [tabWindowStart, setTabWindowStart] = useState(0);
   const [splitEditorOpen, setSplitEditorOpen] = useState(false);
   const [secondaryTabKey, setSecondaryTabKey] = useState(null);
+  // Focus is transient UI state; it never grants file or worker access.
+  const [focusedEditorPane,setFocusedEditorPane] = useState('primary');
+  const focusedEditorPaneRef = useRef('primary');
+  const [editorFocusRequest,setEditorFocusRequest] = useState(null);
+  const focusNonce = useRef(0);
+  const projectProblemsPanelRef = useRef(null);
+  const [problemsFocusRequest,setProblemsFocusRequest] = useState(0);
   const [savingKey, setSavingKey] = useState(null);
   // Synchronous reservation: React state cannot stop same-tick duplicate Saves.
   const savingKeyRef = useRef(null);
@@ -642,6 +649,40 @@ function App() {
     secondaryTab ? visibleDiagnostics(
       secondaryTab,lspNativeDiagnostics[secondaryTab.key]) : [],
     [secondaryTab,lspNativeDiagnostics]);
+  useEffect(()=>{
+    focusedEditorPaneRef.current='primary';
+    setFocusedEditorPane('primary');
+    setEditorFocusRequest(null);
+  },[activeProject?.projectId]);
+
+  function requestEditorFocus(pane='primary') {
+    const target=pane==='secondary' && splitEditorOpen ? secondaryTab : activeTab;
+    const desired=pane==='secondary' && splitEditorOpen ? 'secondary' : 'primary';
+    if (!target || target.projectId!==activeProjectIdRef.current ||
+        !activeProject?.projectId || workspaceTransitionRef.current) return;
+    focusedEditorPaneRef.current=desired;
+    setFocusedEditorPane(desired);
+    setSection('explorer');
+    setEditorFocusRequest({pane:desired,projectId:target.projectId,
+      tabIdentity:target.key+':'+target.generation,nonce:++focusNonce.current});
+  }
+  function onEditorFocused(pane,identity) {
+    const target=pane==='secondary' ? secondaryTab : activeTab;
+    if (!target || target.projectId!==activeProjectIdRef.current ||
+        identity!==target.key+':'+target.generation) return;
+    focusedEditorPaneRef.current=pane;
+    setFocusedEditorPane(pane);
+  }
+  useEffect(()=>{
+    if (!projectProblemsOpen || !problemsFocusRequest) return;
+    projectProblemsPanelRef.current?.focus();
+  },[projectProblemsOpen,problemsFocusRequest]);
+  function showProjectProblems() {
+    if (!activeProject?.projectId) return;
+    setProjectProblemsOpen(true);
+    setProblemsFocusRequest(previous=>previous+1);
+    setSection('explorer');
+  }
   function selectPrimaryEditorTab(key) {
     if (mergeBusy || mergeApplyRequest || !activeProject?.projectId) return;
     const choice=planProjectPaneSelection(tabsRef.current,
@@ -657,12 +698,16 @@ function App() {
     setTabWindowStart(previous=>centerSelectedTab(projectTabs,key,previous));
     setSecondaryTabKey(choice.secondaryKey);
     setActiveTabKey(choice.primaryKey);
+    focusedEditorPaneRef.current='primary';
+    setFocusedEditorPane('primary');
   }
   function toggleSplitEditor() {
     if (!activeProject?.projectId || !activeTab) return;
     if (splitEditorOpen) {
       setSplitEditorOpen(false);
       setSecondaryTabKey(null);
+      focusedEditorPaneRef.current='primary';
+      setFocusedEditorPane('primary');
       return;
     }
     setSecondaryTabKey(initialSecondaryKey(projectTabs,
@@ -685,6 +730,7 @@ function App() {
     }
     selectPrimaryEditorTab(tab.key);
     setSection('explorer');
+    setProjectProblemsOpen(false);
     setLspJumpRequest({
       from: item.from, to: item.to,
       tabIdentity: tab.key + ':' + tab.generation,
@@ -5368,17 +5414,26 @@ function App() {
         event.preventDefault();
         setFindOpen(true);
         setFindIndex(-1);
+      } else if ((key==='1'||key==='2') && section==='explorer' &&
+          !event.altKey && !event.shiftKey) {
+        event.preventDefault();
+        requestEditorFocus(key==='2'?'secondary':'primary');
       } else if (key === 's') {
         event.preventDefault();
-        const focusedPane = event.target?.closest?.('[data-ide-editor-pane]')
-          ?.getAttribute('data-ide-editor-pane') || 'primary';
-        const target = canSaveFocusedPane(focusedPane,activeTab,secondaryTab);
-        if (target) void saveTab(target);
+        // Toolbars are not editor panes. Preserve the most recently focused
+        // source pane instead of silently defaulting Save to primary.
+        const closest = event.target?.closest?.('[data-ide-editor-pane]')
+          ?.getAttribute('data-ide-editor-pane');
+        const pane = closest || focusedEditorPaneRef.current;
+        const target = canSaveFocusedPane(pane,activeTab,secondaryTab);
+        if (target && !savingKeyRef.current && !workspaceTransitionRef.current)
+          void saveTab(target);
       }
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [pending, explorerPending, savingKey, activeTab, secondaryTab, tabs, section]);
+  }, [pending, explorerPending, savingKey, activeTab, secondaryTab, tabs, section,
+    splitEditorOpen, activeProject?.projectId]);
 
   useEffect(() => {
     const warn = event => {
