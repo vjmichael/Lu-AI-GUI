@@ -481,8 +481,19 @@ mod tests{
                 tip:"c".repeat(40),contained_in_head:false}],
             extra_limitations:vec![],
         }).unwrap();
+        let branch=g.nodes.iter().find(|n|n.kind==eg::NodeKind::IntegrationPath)
+            .expect("Original graph must contain the local branch");
+        let requirement=g.nodes.iter().find(|n|n.kind==eg::NodeKind::Requirement)
+            .expect("Original requirement missing");
+        assert_eq!(branch.label,"candidate");
+        assert!(requirement.label.contains("refs/heads/candidate"));
+        assert!(g.edges.iter().any(|e|e.from==branch.id&&
+            e.relation==eg::Relation::NotContainedInHead&&
+            e.evidence==eg::EvidenceState::IndependentlyVerified),
+            "No independently verified negative branch edge: {:?}",g.edges);
         let r=classify(&g,&[]).unwrap();
-        assert_eq!(r.findings[0].primary,Status::NotIntegrated);
+        assert_eq!(r.findings[0].primary,Status::NotIntegrated,
+            "Evidence classifier lost verified negative relation: {:?}",r.findings);
         assert_ne!(r.findings[0].primary,Status::Accepted);
         assert_eq!(r.findings[0].confidence,Confidence::Grounded);
     }
