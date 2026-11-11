@@ -11,7 +11,10 @@ use crate::{
     },
     IdeWorkspaceRegistry,
 };
-use git2::{ObjectType, Oid, Repository, RepositoryState, Status, StatusOptions, TreeWalkMode, TreeWalkResult};
+use git2::{
+    ObjectType, Oid, Repository, RepositoryState, Status, StatusOptions, TreeWalkMode,
+    TreeWalkResult,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -124,10 +127,7 @@ fn ordinary_index_sha(gitdir: &Path) -> Result<String, &'static str> {
     Ok(hex(&bytes))
 }
 
-fn source_fence(
-    repo: &Repository,
-    selected_branch: &str,
-) -> Result<SourceFence, &'static str> {
+fn source_fence(repo: &Repository, selected_branch: &str) -> Result<SourceFence, &'static str> {
     if repo.head_detached().unwrap_or(true) {
         return Err("G06C02_HEAD_DETACHED");
     }
@@ -152,7 +152,9 @@ fn source_fence(
         .include_ignored(false)
         .renames_head_to_index(false)
         .renames_index_to_workdir(false);
-    let entries = repo.statuses(Some(&mut opts)).map_err(|_| "G06C02_STATUS_UNAVAILABLE")?;
+    let entries = repo
+        .statuses(Some(&mut opts))
+        .map_err(|_| "G06C02_STATUS_UNAVAILABLE")?;
     let mut dirty = 0usize;
     for entry in entries.iter() {
         if entry.status() != Status::CURRENT {
@@ -178,7 +180,9 @@ fn tree_manifest(
     repo: &Repository,
     commit_id: Oid,
 ) -> Result<(String, BTreeMap<String, ObjectStamp>), &'static str> {
-    let commit = repo.find_commit(commit_id).map_err(|_| "G06C02_COMMIT_UNAVAILABLE")?;
+    let commit = repo
+        .find_commit(commit_id)
+        .map_err(|_| "G06C02_COMMIT_UNAVAILABLE")?;
     let tree = commit.tree().map_err(|_| "G06C02_TREE_UNAVAILABLE")?;
     let tree_oid = tree.id().to_string();
     let mut entries = BTreeMap::new();
@@ -247,10 +251,7 @@ fn inspect_path(
     let unsupported_kind = [base, current, selected]
         .iter()
         .flatten()
-        .any(|entry| {
-            entry.kind != "blob"
-                || !matches!(entry.file_mode, 0o100644 | 0o100755)
-        });
+        .any(|entry| entry.kind != "blob" || !matches!(entry.file_mode, 0o100644 | 0o100755));
     let (classification, manual) = if unsupported_kind {
         ("object_type_or_mode_requires_manual_review", true)
     } else if current_changed && selected_changed && current != selected {
@@ -404,7 +405,10 @@ impl IdeWorkspaceRegistry {
             // analysis, even when this scan observed zero overlapping paths.
             add_blocker(&mut blockers, "divergent_result_tree_not_verified");
         }
-        if matches!(classification, "same_commit_no_op" | "already_contains_selected_no_op") {
+        if matches!(
+            classification,
+            "same_commit_no_op" | "already_contains_selected_no_op"
+        ) {
             add_blocker(&mut blockers, "merge_unnecessary");
         }
         let final_fence = source_fence(&repo, selected_branch)?;
@@ -513,7 +517,9 @@ mod tests {
         index.add_path(Path::new("two.txt")).unwrap();
         index.write().unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
-        let root_commit = repo.commit(Some("HEAD"), &sig, &sig, "base", &tree, &[]).unwrap();
+        let root_commit = repo
+            .commit(Some("HEAD"), &sig, &sig, "base", &tree, &[])
+            .unwrap();
         drop(tree);
         let original = repo.find_commit(root_commit).unwrap();
         repo.branch("feature", &original, false).unwrap();
@@ -523,8 +529,14 @@ mod tests {
         builder.insert("one.txt", blob, 0o100644).unwrap();
         let feature_tree = repo.find_tree(builder.write().unwrap()).unwrap();
         repo.commit(
-            Some("refs/heads/feature"), &sig, &sig, "feature one", &feature_tree, &[&original],
-        ).unwrap();
+            Some("refs/heads/feature"),
+            &sig,
+            &sig,
+            "feature one",
+            &feature_tree,
+            &[&original],
+        )
+        .unwrap();
         drop(feature_tree);
         drop(builder);
         drop(initial_tree);
@@ -532,9 +544,17 @@ mod tests {
         drop(index);
         drop(repo);
         let registry = IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
-        let id = registry.register_from_native_picker(&mut Picker(root.clone()))
-            .unwrap().unwrap().project_id;
-        Fixture {base, root, registry, id}
+        let id = registry
+            .register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap()
+            .unwrap()
+            .project_id;
+        Fixture {
+            base,
+            root,
+            registry,
+            id,
+        }
     }
     fn add_main_change(x: &Fixture, relative: &str, bytes: &[u8]) {
         let repo = Repository::open(&x.root).unwrap();
@@ -545,24 +565,34 @@ mod tests {
         index.write().unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
         let sig = Signature::now("Merge test", "merge@localhost.invalid").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "main changed", &tree, &[&old]).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "main changed", &tree, &[&old])
+            .unwrap();
     }
-    fn original_bytes(x: &Fixture) -> (Vec<u8>,Vec<u8>,Vec<u8>, String, String) {
+    fn original_bytes(x: &Fixture) -> (Vec<u8>, Vec<u8>, Vec<u8>, String, String) {
         let repo = Repository::open(&x.root).unwrap();
         let head = repo.head().unwrap().target().unwrap().to_string();
         let feature = local_commit(&repo, "feature").unwrap().to_string();
-        (fs::read(x.root.join("one.txt")).unwrap(),
-         fs::read(x.root.join("two.txt")).unwrap(),
-         fs::read(x.root.join(".git/index")).unwrap(),
-         head, feature)
+        (
+            fs::read(x.root.join("one.txt")).unwrap(),
+            fs::read(x.root.join("two.txt")).unwrap(),
+            fs::read(x.root.join(".git/index")).unwrap(),
+            head,
+            feature,
+        )
     }
     #[test]
     fn fast_forward_candidate_has_exact_tree_and_no_repo_mutation() {
         let x = fixture();
         let before = original_bytes(&x);
-        let p = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        let p = x
+            .registry
+            .preview_reviewed_local_merge(&x.id, "feature")
+            .unwrap();
         assert_eq!(p.classification, "fast_forward_candidate");
-        assert_eq!(p.merge_base_commit.as_deref(), Some(p.current_head.as_str()));
+        assert_eq!(
+            p.merge_base_commit.as_deref(),
+            Some(p.current_head.as_str())
+        );
         assert_eq!(p.merge_base_count, 1);
         assert_eq!(p.current_only_commits, Some(0));
         assert_eq!(p.selected_only_commits, Some(1));
@@ -578,7 +608,10 @@ mod tests {
         assert!(!p.index_or_worktree_modified && !p.process_started && !p.remote_queried);
         assert_eq!(before, original_bytes(&x));
         assert!(!x.root.join(".git/index.lock").exists());
-        let again = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        let again = x
+            .registry
+            .preview_reviewed_local_merge(&x.id, "feature")
+            .unwrap();
         assert_eq!(p.evidence_sha256, again.evidence_sha256);
     }
     #[test]
@@ -586,14 +619,20 @@ mod tests {
         let x = fixture();
         add_main_change(&x, "two.txt", b"main two\n");
         let before = original_bytes(&x);
-        let p = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        let p = x
+            .registry
+            .preview_reviewed_local_merge(&x.id, "feature")
+            .unwrap();
         assert_eq!(p.classification, "divergent_merge_candidate");
         assert_eq!(p.current_only_commits, Some(1));
         assert_eq!(p.selected_only_commits, Some(1));
         assert_eq!(p.changed_path_count, 2);
         assert_eq!(p.possible_conflict_count, 0);
         assert!(p.blockers.contains(&"divergent_result_tree_not_verified"));
-        assert_eq!(p.conflict_review, "no_same_path_overlap_observed_not_a_clean_merge_proof");
+        assert_eq!(
+            p.conflict_review,
+            "no_same_path_overlap_observed_not_a_clean_merge_proof"
+        );
         assert_eq!(before, original_bytes(&x));
     }
     #[test]
@@ -601,13 +640,21 @@ mod tests {
         let x = fixture();
         add_main_change(&x, "one.txt", b"main one\n");
         let before = original_bytes(&x);
-        let p = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        let p = x
+            .registry
+            .preview_reviewed_local_merge(&x.id, "feature")
+            .unwrap();
         assert_eq!(p.classification, "divergent_merge_candidate");
         assert_eq!(p.possible_conflict_count, 1);
         assert_eq!(p.visible_paths[0].relative_path, "one.txt");
-        assert_eq!(p.visible_paths[0].classification, "possible_same_path_conflict");
+        assert_eq!(
+            p.visible_paths[0].classification,
+            "possible_same_path_conflict"
+        );
         assert!(p.visible_paths[0].requires_manual_resolution);
-        assert!(p.blockers.contains(&"potential_conflicts_require_manual_review"));
+        assert!(p
+            .blockers
+            .contains(&"potential_conflicts_require_manual_review"));
         assert_eq!(before, original_bytes(&x));
     }
     #[test]
@@ -617,9 +664,14 @@ mod tests {
         fs::write(x.root.join("extra.txt"), b"untracked\n").unwrap();
         let foreign_lock = x.root.join(".git/index.lock");
         fs::write(&foreign_lock, b"OTHER_OWNER").unwrap();
-        let p = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        let p = x
+            .registry
+            .preview_reviewed_local_merge(&x.id, "feature")
+            .unwrap();
         assert!(p.blockers.contains(&"worktree_or_index_dirty"));
-        assert!(p.blockers.contains(&"git_index_lock_requires_manual_review"));
+        assert!(p
+            .blockers
+            .contains(&"git_index_lock_requires_manual_review"));
         assert!(!p.authorization_granted && !p.execution_route_available);
         assert_eq!(fs::read(&foreign_lock).unwrap(), b"OTHER_OWNER");
         assert_eq!(fs::read(x.root.join("one.txt")).unwrap(), b"unsaved\n");
@@ -627,13 +679,32 @@ mod tests {
     #[test]
     fn staleness_and_untrusted_selectors_are_not_capabilities() {
         let x = fixture();
-        let old = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
-        for name in ["", "refs/heads/feature", "../feature", "origin/feature", "feature;rm", "HEAD"] {
-            assert!(x.registry.preview_reviewed_local_merge(&x.id, name).is_err());
+        let old = x
+            .registry
+            .preview_reviewed_local_merge(&x.id, "feature")
+            .unwrap();
+        for name in [
+            "",
+            "refs/heads/feature",
+            "../feature",
+            "origin/feature",
+            "feature;rm",
+            "HEAD",
+        ] {
+            assert!(x
+                .registry
+                .preview_reviewed_local_merge(&x.id, name)
+                .is_err());
         }
-        assert!(x.registry.preview_reviewed_local_merge("nonexistent", "feature").is_err());
+        assert!(x
+            .registry
+            .preview_reviewed_local_merge("nonexistent", "feature")
+            .is_err());
         add_main_change(&x, "two.txt", b"main two\n");
-        let next = x.registry.preview_reviewed_local_merge(&x.id, "feature").unwrap();
+        let next = x
+            .registry
+            .preview_reviewed_local_merge(&x.id, "feature")
+            .unwrap();
         assert_ne!(old.evidence_sha256, next.evidence_sha256);
         assert_ne!(old.current_head, next.current_head);
     }
