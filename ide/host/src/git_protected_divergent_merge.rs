@@ -859,6 +859,8 @@ mod tests {
         config
             .set_str("user.email", "local@localhost.invalid")
             .unwrap();
+        // Git's runner-wide autocrlf setting must not rewrite fixture bytes.
+        config.set_bool("core.autocrlf", false).unwrap();
         drop(config);
         let sig = repo.signature().unwrap();
         let mut index = repo.index().unwrap();
