@@ -567,3 +567,230 @@ fn test_abort_disposable(root:&Path,gitdir:&Path,var:&str){
         std::process::abort();
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{IdeError,NativeDirectoryPicker};
+    use git2::{Repository,Signature};
+    use std::{fs,path::{Path,PathBuf}};
+
+    struct Picker(PathBuf);
+    impl NativeDirectoryPicker for Picker {
+        fn choose_project_directory(&mut self)->Result<Option<PathBuf>,IdeError>{
+            Ok(Some(self.0.clone()))
+        }
+    }
+    struct Fixture {
+        base:PathBuf,root:PathBuf,id:String,registry:IdeWorkspaceRegistry,
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self){let _=fs::remove_dir_all(&self.base);}
+    }
+    fn fixture()->Fixture{
+        let base=std::env::temp_dir().join(format!(
+            "ide-g06c04-protected-{:032x}",rand::random::<u128>()));
+        let root=base.join("repo");fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("stable.keep"),b"untouched original\n").unwrap();
+        fs::write(root.join("main.txt"),b"initial\n").unwrap();
+        let repo=Repository::init(&root).unwrap();
+        repo.config().unwrap().set_bool("core.autocrlf",false).unwrap();
+        let sig=Signature::now("Original", "original@localhost.invalid").unwrap();
+        let mut index=repo.index().unwrap();
+        for path in ["stable.keep","main.txt"]{index.add_path(Path::new(path)).unwrap();}
+        index.write().unwrap();
+        let tree=repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let root_commit=repo.commit(Some("HEAD"),&sig,&sig,"root",&tree,&[]).unwrap();
+        let original=repo.find_commit(root_commit).unwrap();
+        repo.branch("feature",&original,false).unwrap();
+        let mut b=repo.treebuilder(Some(&tree)).unwrap();
+        let blob=repo.blob(b"feature text\n").unwrap();
+        b.insert("feature.txt",blob,0o100644).unwrap();
+        let feature_tree=repo.find_tree(b.write().unwrap()).unwrap();
+        repo.commit(Some("refs/heads/feature"),&sig,&sig,
+            "feature commit",&feature_tree,&[&original]).unwrap();
+        // Two independent original commits to replay during rebase.
+        let first=original.id();
+        let mut parent=first;
+        for (name,bytes) in [("main v1",b"main change one\n".as_slice()),
+                             ("main v2",b"main change two\n".as_slice())]{
+            fs::write(root.join("main.txt"),bytes).unwrap();
+            index.add_path(Path::new("main.txt")).unwrap();
+            index.write().unwrap();
+            let next_tree=repo.find_tree(index.write_tree().unwrap()).unwrap();
+            let p=repo.find_commit(parent).unwrap();
+            parent=repo.commit(Some("HEAD"),&sig,&sig,name,&next_tree,&[&p]).unwrap();
+        }
+        drop(feature_tree);drop(b);drop(original);drop(tree);drop(index);drop(repo);
+        let registry=IdeWorkspaceRegistry::open(base.join("catalog.json")).unwrap();
+        let id=registry.register_from_native_picker(&mut Picker(root.clone()))
+            .unwrap().unwrap().project_id;
+        Fixture{base,root,id,registry}
+    }
+    fn evidence(f:&Fixture,kind:ReplayReviewKind)->ProspectiveReplayResult{
+        f.registry.preview_prospective_replay(&f.id,kind,"feature").unwrap()
+    }
+    #[test]
+    fn native_cherry_pick_appends_new_commit_without_rewriting_current_or_source_branch(){
+        let f=fixture();
+        let before=evidence(&f,ReplayReviewKind::CherryPickLocalTip);
+        assert!(before.blockers.is_empty(),"candidate blocked: {:?}",before.blockers);
+        let original_unrelated=fs::read(f.root.join("stable.keep")).unwrap();
+        let repo=Repository::open(&f.root).unwrap();
+        let source_tip=local_commit(&repo,"feature").unwrap();
+        let original_head=repo.head().unwrap().target().unwrap();
+        drop(repo);
+        let receipt=f.registry.execute_os_approved_replay(
+            &f.id,ReplayReviewKind::CherryPickLocalTip,"feature",
+            &before.evidence_sha256,&AtomicU8::new(0)).unwrap();
+        let final_repo=Repository::open(&f.root).unwrap();
+        let new=final_repo.find_commit(Oid::from_str(&receipt.published_head).unwrap()).unwrap();
+        assert_eq!(new.parent_id(0).unwrap(),original_head);
+        assert_eq!(new.tree_id().to_string(),receipt.resulting_tree);
+        assert_eq!(final_repo.head().unwrap().target().unwrap(),new.id());
+        assert_eq!(local_commit(&final_repo,"feature").unwrap(),source_tip);
+        assert_eq!(fs::read(f.root.join("feature.txt")).unwrap(),b"feature text\n");
+        assert_eq!(fs::read(f.root.join("main.txt")).unwrap(),b"main change two\n");
+        assert_eq!(fs::read(f.root.join("stable.keep")).unwrap(),original_unrelated);
+        assert!(final_repo.statuses(None).unwrap().is_empty());
+        assert!(receipt.one_use_native_os_consent&&receipt.independently_verified);
+        assert!(receipt.exact_ref_cas&&!receipt.git_hooks_executed&&!receipt.remote_updated);
+        assert!(receipt.original_history_ref.is_none());
+        let reopened=IdeWorkspaceRegistry::open(f.base.join("catalog.json")).unwrap();
+        reopened.reopen(&f.id).unwrap();
+        let recovered=reopened.inspect_protected_replay_recovery(&f.id).unwrap();
+        assert_eq!(recovered.state,"verified_original_replay");
+        assert!(!recovered.operator_reconciliation_required);
+    }
+    #[test]
+    fn native_multi_commit_rebase_keeps_original_commit_ref_and_authentic_new_parent_chain(){
+        let f=fixture();
+        let before=evidence(&f,ReplayReviewKind::RebaseCurrentOntoLocal);
+        assert_eq!(before.result_steps.len(),2);
+        assert!(before.blockers.is_empty(),"candidate blocked: {:?}",before.blockers);
+        let original_head=before.current_head.clone();
+        let selected_tip=before.selected_tip.clone();
+        let result=f.registry.execute_os_approved_replay(
+            &f.id,ReplayReviewKind::RebaseCurrentOntoLocal,"feature",
+            &before.evidence_sha256,&AtomicU8::new(0)).unwrap();
+        let repo=Repository::open(&f.root).unwrap();
+        let candidate=repo.find_commit(Oid::from_str(&result.published_head).unwrap()).unwrap();
+        let parent=candidate.parent(0).unwrap();
+        assert_eq!(parent.parent_id(0).unwrap().to_string(),selected_tip);
+        assert_eq!(result.original_head,original_head);
+        assert_eq!(ref_oid(&repo,result.original_history_ref.as_deref().unwrap()).unwrap(),
+            original_head);
+        assert!(repo.find_commit(Oid::from_str(&original_head).unwrap()).is_ok());
+        assert_eq!(fs::read(f.root.join("feature.txt")).unwrap(),b"feature text\n");
+        assert_eq!(fs::read(f.root.join("main.txt")).unwrap(),b"main change two\n");
+        assert_eq!(fs::read(f.root.join("stable.keep")).unwrap(),b"untouched original\n");
+        assert!(repo.statuses(None).unwrap().is_empty());
+        assert!(result.original_objects_preserved&&result.exact_ref_cas);
+        let recovered=f.registry.inspect_protected_replay_recovery(&f.id).unwrap();
+        assert_eq!(recovered.state,"verified_original_replay");
+        assert!(recovered.backup_ref_verified);
+    }
+    #[test]
+    fn denied_cancellation_stale_digest_and_foreign_index_lock_do_not_mutate(){
+        let f=fixture();
+        let before=evidence(&f,ReplayReviewKind::CherryPickLocalTip);
+        let r=Repository::open(&f.root).unwrap();
+        let original=r.head().unwrap().target().unwrap().to_string();
+        let idx=fs::read(f.root.join(".git/index")).unwrap();
+        let denied=f.registry.execute_os_approved_replay(
+            &f.id,ReplayReviewKind::CherryPickLocalTip,"feature",
+            &before.evidence_sha256,&AtomicU8::new(2));
+        assert_eq!(denied.unwrap_err(),"G06C04_CANCELLED_BEFORE_REVIEW");
+        assert!(f.registry.execute_os_approved_replay(
+            &f.id,ReplayReviewKind::CherryPickLocalTip,"feature",
+            &"0".repeat(64),&AtomicU8::new(0)).is_err());
+        let lock=f.root.join(".git/index.lock");
+        fs::write(&lock,b"FOREIGN_OWNER").unwrap();
+        assert!(f.registry.execute_os_approved_replay(
+            &f.id,ReplayReviewKind::CherryPickLocalTip,"feature",
+            &before.evidence_sha256,&AtomicU8::new(0)).is_err());
+        assert_eq!(fs::read(&lock).unwrap(),b"FOREIGN_OWNER");
+        assert_eq!(fs::read(f.root.join(".git/index")).unwrap(),idx);
+        assert_eq!(r.head().unwrap().target().unwrap().to_string(),original);
+    }
+    #[test]
+    fn g06c04_abort_child(){
+        let Some(root)=std::env::var_os("IDE_G06C04_TEST_ROOT")else{return;};
+        let Some(id)=std::env::var_os("IDE_G06C04_TEST_ID")else{return;};
+        let kind=match std::env::var("IDE_G06C04_TEST_KIND").as_deref(){
+            Ok("rebase")=>ReplayReviewKind::RebaseCurrentOntoLocal,
+            _=>ReplayReviewKind::CherryPickLocalTip
+        };
+        let root=PathBuf::from(root);let id=id.to_string_lossy().to_string();
+        let registry=IdeWorkspaceRegistry::open(root.parent().unwrap().join("catalog.json")).unwrap();
+        registry.reopen(&id).unwrap();
+        let evidence=registry.preview_prospective_replay(&id,kind,"feature").unwrap();
+        registry.execute_os_approved_replay(&id,kind,"feature",
+            &evidence.evidence_sha256,&AtomicU8::new(0)).unwrap();
+        panic!("G06C04 child returned without actual process abort");
+    }
+    #[test]
+    fn actual_process_abort_before_ref_cas_never_retries_history_rewrite(){
+        if std::env::var_os("IDE_G06C04_TEST_ROOT").is_some(){return;}
+        let f=fixture();
+        let original=evidence(&f,ReplayReviewKind::RebaseCurrentOntoLocal);
+        fs::write(f.root.join(".git/g06c04-abort-fixture"),b"DISPOSABLE\n").unwrap();
+        let output=std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact").arg("git_protected_replay::tests::g06c04_abort_child")
+            .arg("--nocapture")
+            .env("IDE_G06C04_TEST_ROOT",&f.root)
+            .env("IDE_G06C04_TEST_ID",&f.id)
+            .env("IDE_G06C04_TEST_KIND","rebase")
+            .env("IDE_G06C04_ABORT_AFTER_CHECKOUT",&f.root)
+            .output().unwrap();
+        assert!(!output.status.success());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("child returned"));
+        let repo=Repository::open(&f.root).unwrap();
+        assert_eq!(repo.head().unwrap().target().unwrap().to_string(),original.current_head);
+        assert_eq!(fs::read(f.root.join("stable.keep")).unwrap(),b"untouched original\n");
+        let pending=f.registry.inspect_protected_replay_recovery(&f.id).unwrap();
+        assert!(pending.operator_reconciliation_required);
+        assert_eq!(pending.state,"checkout_complete_ref_not_published");
+        assert!(pending.backup_ref_verified);
+        assert!(!pending.automatic_ref_retry&&!pending.automatic_history_rewrite&&
+            !pending.automatic_checkout&&!pending.automatic_foreign_lock_deletion);
+        assert!(f.registry.reconcile_protected_replay_receipt(&f.id).is_err());
+        assert_eq!(repo.head().unwrap().target().unwrap().to_string(),original.current_head);
+    }
+    #[test]
+    fn actual_process_abort_after_cas_can_only_reconcile_original_history_receipt(){
+        if std::env::var_os("IDE_G06C04_TEST_ROOT").is_some(){return;}
+        let f=fixture();
+        let original=evidence(&f,ReplayReviewKind::RebaseCurrentOntoLocal);
+        fs::write(f.root.join(".git/g06c04-abort-fixture"),b"DISPOSABLE\n").unwrap();
+        let output=std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact").arg("git_protected_replay::tests::g06c04_abort_child")
+            .arg("--nocapture")
+            .env("IDE_G06C04_TEST_ROOT",&f.root)
+            .env("IDE_G06C04_TEST_ID",&f.id)
+            .env("IDE_G06C04_TEST_KIND","rebase")
+            .env("IDE_G06C04_ABORT_AFTER_CAS",&f.root)
+            .output().unwrap();
+        assert!(!output.status.success());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("child returned"));
+        let repo=Repository::open(&f.root).unwrap();
+        assert_eq!(repo.head().unwrap().target().unwrap().to_string(),
+            original.prospective_head.unwrap());
+        let old=original.current_head;
+        let state=f.registry.inspect_protected_replay_recovery(&f.id).unwrap();
+        assert_eq!(state.state,"published_ref_requires_separate_receipt");
+        assert!(state.operator_reconciliation_required&&state.backup_ref_verified);
+        assert!(!state.automatic_ref_retry);
+        let reopened=IdeWorkspaceRegistry::open(f.base.join("catalog.json")).unwrap();
+        reopened.reopen(&f.id).unwrap();
+        // Source-only test assumes separately granted OS approval. It is not
+        // installed physical human dialog acceptance.
+        let verified=reopened.reconcile_protected_replay_receipt(&f.id).unwrap();
+        assert_eq!(verified.state,"verified_original_replay");
+        assert_eq!(ref_oid(&repo,
+            &read_last(&journal_path(&reopened,&f.id).unwrap()).unwrap().unwrap()
+                .preserved_original_ref.unwrap()).unwrap(),old);
+        assert!(repo.statuses(None).unwrap().is_empty());
+    }
+}
