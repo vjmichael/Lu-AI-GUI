@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "43e244fad6c59353a561ac01c8d058bbd100c3f6",
+  "sourceCommitBeforeLock": "d0960f25b097403c437718877e5ffb48a1adbe7b",
   "trackedFileCount": 912,
   "files": [
     {
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "d8fd3b53e672fb320795d3702c8e839540d441b9"
+      "blob": "7afca5d64662f2417571f5e0898f454f9e3152f0"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -2993,7 +2993,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/project_task_updates.rs",
-      "blob": "764a68ff9ff0bdca92749525f7685f37533082cd"
+      "blob": "a382ffa9f1dcb75e9b71189837904bfab51d95c0"
     },
     {
       "path": "src-tauri/lu-core/src/projector_identity.rs",
