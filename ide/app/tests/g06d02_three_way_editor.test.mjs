@@ -17,13 +17,13 @@ test('6D02 proposal is local and bound to unchanged source evidence', () => {
   assert.match(source, /conflictDraft\.projectId === activeProject\.projectId/);
   assert.match(source, /setConflictDraft\(null\);/);
   assert.match(source, /value=\{conflictDraft\.candidateText\}/);
-  assert.match(source, /maxLength=\{1048576\}/);
+  assert.match(source, /maxLength=\{131072\}/);
   assert.match(source, /Unsaved resolution candidate/);
   assert.match(source, /No index stage,/);
 });
 test('6D02 does not add an executor or OS authorization for drafts', () => {
   const start = source.indexOf('function selectConflictDraft(entry, source)');
-  const end = source.indexOf('async function inspectUnresolvedNativeConflicts()', start);
+  const end = source.indexOf('async function reviewNativeConflictCandidate()', start);
   assert.ok(start >= 0 && end > start);
   const draft = source.slice(start, end);
   assert.doesNotMatch(draft, /invoke\(|execute_|commit\(|checkout|index\.write/);
