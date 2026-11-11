@@ -231,7 +231,7 @@ fn append(path: &Path, record: &MergeJournal) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn changed_path_is_plain_safe(root: &Path, path: &str) -> Result<(), &'static str> {
+pub(crate) fn changed_path_is_plain_safe(root: &Path, path: &str) -> Result<(), &'static str> {
     // 6C03A is narrower than Git's full path vocabulary. Refuse Unicode,
     // colon, backslash, Windows devices, trailing dot/space and all aliases.
     if path.is_empty()
