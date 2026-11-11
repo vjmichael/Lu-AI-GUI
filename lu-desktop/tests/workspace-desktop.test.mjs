@@ -390,6 +390,11 @@ test('PLAN-07C original ANSF operator review preserves refusal, stale denial, re
   assert.match(host,/PLAN07C_HUMAN_REVIEW_SOURCE_CHANGED/);
   assert.match(host,/PLAN07C_REVIEW_TOKEN_REPLAY/);
   assert.match(host,/Approve evidence review only/);
+  assert.match(host,/original_review_details/);
+  assert.match(host,/UNTRUSTED ORIGINAL GGUF SUGGESTION/);
+  assert.match(host,/Future independent evidence/);
+  assert.match(host,/Original exact citations/);
+  assert.match(host,/DETERMINISTIC NATIVE EVIDENCE CANDIDATE/);
   assert.match(host,/Refuse evidence review/);
   assert.match(host,/PLAN07C_ORIGINAL_REVIEW_JOURNAL_FULL/);
   assert.match(host,/PLAN07C_RECONCILIATION_REQUIRED_BEFORE_REVALIDATION/);
