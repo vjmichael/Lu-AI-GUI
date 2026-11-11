@@ -29,7 +29,9 @@ test('G06C03 source execution is fast-forward-only and protects Git worktree/ref
   assert.match(source, /journal\.phase = "publishing"/);
   assert.match(source, /journal\.phase = "verified"/);
   assert.match(source, /cancel\s*\.compare_exchange\(0, 1, Ordering::SeqCst, Ordering::SeqCst\)/);
-  const prod = source.split('#[cfg(test)]\nmod tests')[0];
+  const boundaries = source.split(/#\[cfg\(test\)\]\r?\nmod tests\s*\{/);
+  assert.equal(boundaries.length, 2, 'one native test module is required');
+  const prod = boundaries[0];
   for (const forbidden of [
     'repo.reset(', 'repo.checkout_head(', 'repo.merge(', 'repo.rebase(',
     'repo.fetch(', 'repo.push(', 'repo.commit(', 'repo.cherrypick(',
