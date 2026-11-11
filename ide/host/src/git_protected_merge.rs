@@ -644,7 +644,7 @@ mod tests {
         fs::write(&lock, b"foreign process").unwrap();
         assert_eq!(x.registry.execute_os_approved_fast_forward(
             &x.id, "feature", &first, &AtomicU8::new(0)).unwrap_err(),
-            "G06C03_NON_FF_OR_BLOCKED_MERGE_DENIED");
+            "G06C03_STALE_OR_FORGED_MERGE_PLAN");
         assert_eq!(fs::read(&lock).unwrap(), b"foreign process");
         fs::remove_file(lock).unwrap();
         fs::write(x.root.join("tracked.txt"), b"other change\n").unwrap();
