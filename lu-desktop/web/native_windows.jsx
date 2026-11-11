@@ -81,6 +81,9 @@ export function SettingsWindow(){
   const [projectGraph,setProjectGraph]=useState(null);
   const [projectStatus,setProjectStatus]=useState(null);
   const [projectTasks,setProjectTasks]=useState(null);
+  const [taskRegisters,setTaskRegisters]=useState([]);
+  const [registerSelection,setRegisterSelection]=useState('');
+  const [taskCorrection,setTaskCorrection]=useState(null);
 
   async function refresh(){
     const results=await Promise.allSettled([
@@ -98,6 +101,7 @@ export function SettingsWindow(){
   }
   useEffect(()=>{
     void refresh();
+    void invoke('lu_project_list_registers').then(setTaskRegisters).catch(()=>setTaskRegisters([]));
     void invoke('lu_observe_capture_available').then(setCaptureWorkerReady)
       .catch(()=>setCaptureWorkerReady(false));
   },[]);
@@ -438,6 +442,115 @@ export function SettingsWindow(){
               <strong>Updated engineering priorities (proposed)</strong>
               <ol>{projectTasks.updatedEngineeringPriorities.map((p,i)=><li key={i}>{p}</li>)}</ol>
             </section>}
+          </Section>
+
+          <Section title="Durable project task register · PLAN-05">
+            <p>Import a reviewed proposal, correct its task wording, and compare it against current native evidence. All revisions are preserved in your existing ANSF library. Importing and editing never grants permission to execute work.</p>
+            <button type="button" disabled={busy||!projectTasks}
+              onClick={()=>void act('Human-reviewed proposal imported into the durable register.',async()=>{
+                const result=await invoke('lu_project_register_proposal',{proposalDigest:projectTasks.digestSha256});
+                if(result){
+                  setTaskRegisters(await invoke('lu_project_list_registers'));
+                  setRegisterSelection(result.registerId);
+                }
+                return result;
+              })}>Import current proposal after native review…</button>
+            <button type="button" disabled={busy}
+              onClick={()=>void act('Reloaded verified register history.',async()=>{
+                const loaded=await invoke('lu_project_list_registers');
+                setTaskRegisters(loaded);return loaded;
+              })}>Reload saved task registers</button>
+            {taskRegisters.length>0&&<label className="nativeField">Saved task register
+              <select disabled={busy} value={registerSelection||taskRegisters[0].registerId}
+                onChange={e=>{setRegisterSelection(e.target.value);setTaskCorrection(null);}}>
+                {taskRegisters.map(item=><option key={item.registerId} value={item.registerId}>{item.registerId}</option>)}
+              </select>
+            </label>}
+            {taskRegisters.filter(item=>item.registerId===(registerSelection||taskRegisters[0]?.registerId)).map(item=>
+              <section className="nativeOption" key={item.registerId} aria-label="Versioned project task register">
+                <strong>Human-reviewed task revisions · never execution grants</strong>
+                <small>Original proposal: {item.originalProposalSha256} · Scope: {item.scopeSha256}</small>
+                <small>Latest event: {item.latestSha256} · {item.events.length} append-only events</small>
+                <div>
+                  <button type="button" disabled={busy}
+                    onClick={()=>void act('Project evidence compared with saved task versions.',async()=>{
+                      const updated=await invoke('lu_project_reconcile_register',{registerId:item.registerId});
+                      if(updated)setTaskRegisters(await invoke('lu_project_list_registers'));
+                      return updated;
+                    })}>Reconcile against selected source…</button>
+                </div>
+                {[...new Set(item.events.map(e=>e.revision.taskId))].map(id=>{
+                  const last=[...item.events].reverse().find(e=>e.revision.taskId===id);
+                  if(!last)return null;
+                  const task=last.revision;
+                  const editing=taskCorrection?.registerId===item.registerId&&taskCorrection?.taskId===id;
+                  const setField=(field,value)=>setTaskCorrection(previous=>({...previous,[field]:value}));
+                  return <article className="nativeOption" key={id}>
+                    <strong>{task.priority} · {task.summary} · v{task.version}</strong>
+                    <p>{task.description}</p>
+                    <small>{task.taskId} · Original requirement {task.sourceRequirementId} · {task.observedStatus}</small>
+                    <small>Exact HEAD: {task.selectedHead||'unverified'} · Evidence graph {task.graphSha256}</small>
+                    <p>{task.needsHumanReconciliation?'Source or human correction requires review':task.independentlyVerifiedRequirement?'Exact requirement independently verified (not task execution)':'Current requirement not independently accepted'}</p>
+                    <small>Acceptance criterion: {task.acceptanceCriteria}</small>
+                    <small>Blocker: {task.blockedBy} · No execution authority</small>
+                    <div>
+                      <button type="button" disabled={busy}
+                        onClick={()=>setTaskCorrection({
+                          registerId:item.registerId,taskId:id,expectedVersion:task.version,
+                          summary:task.summary,description:task.description,
+                          priority:task.priority,blockedBy:task.blockedBy,
+                          acceptanceCriteria:task.acceptanceCriteria,reason:''
+                        })}>Correct task…</button>
+                      <button type="button" disabled={busy}
+                        onClick={()=>void act('Independent requirement evidence recorded; check updated acceptance history.',async()=>{
+                          const result=await invoke('lu_project_revalidate_task',{
+                            registerId:item.registerId,taskId:id,expectedVersion:task.version
+                          });
+                          if(result)setTaskRegisters(await invoke('lu_project_list_registers'));
+                          return result;
+                        })}>Review current acceptance…</button>
+                    </div>
+                    {editing&&<div className="nativeOption" aria-label="Manual task correction">
+                      <label className="nativeField">Summary
+                        <input value={taskCorrection.summary} maxLength={100}
+                          onChange={e=>setField('summary',e.target.value)}/></label>
+                      <label className="nativeField">Description
+                        <textarea value={taskCorrection.description} maxLength={300}
+                          onChange={e=>setField('description',e.target.value)}/></label>
+                      <label className="nativeField">Priority
+                        <select value={taskCorrection.priority}
+                          onChange={e=>setField('priority',e.target.value)}>
+                          {['P0','P1','P2'].map(v=><option key={v}>{v}</option>)}
+                        </select></label>
+                      <label className="nativeField">Acceptance criterion
+                        <textarea value={taskCorrection.acceptanceCriteria} maxLength={300}
+                          onChange={e=>setField('acceptanceCriteria',e.target.value)}/></label>
+                      <label className="nativeField">Blocker
+                        <input value={taskCorrection.blockedBy} maxLength={200}
+                          onChange={e=>setField('blockedBy',e.target.value)}/></label>
+                      <label className="nativeField">Reason for correction
+                        <input value={taskCorrection.reason} maxLength={250}
+                          onChange={e=>setField('reason',e.target.value)}/></label>
+                      <button type="button" disabled={busy}
+                        onClick={()=>void act('Manual task correction appended to ANSF history.',async()=>{
+                          const {registerId,taskId,expectedVersion,summary,description,priority,blockedBy,acceptanceCriteria,reason}=taskCorrection;
+                          const result=await invoke('lu_project_revise_task',{
+                            registerId,taskId,expectedVersion,
+                            correction:{summary,description,priority,blockedBy,acceptanceCriteria,reason}
+                          });
+                          if(result){setTaskRegisters(await invoke('lu_project_list_registers'));setTaskCorrection(null);}
+                          return result;
+                        })}>Confirm correction in native dialog…</button>
+                    </div>}
+                  </article>;
+                })}
+                <strong>Durable acceptance history</strong>
+                {item.events.filter(e=>e.kind==='human_revalidated').length===0&&
+                  <p>No independent acceptance review recorded yet.</p>}
+                {item.events.filter(e=>e.kind==='human_revalidated').slice(-16).map(e=>
+                  <p key={e.sha256}>Event {e.sequence}: {e.revision.taskId} · {e.revision.independentlyVerifiedRequirement?'Exact requirement verified':'Not independently accepted'} · {e.revision.selectedHead||'unknown HEAD'} · {e.revision.statusSha256}</p>)}
+                <small>Historical acceptance stays historical when source changes. These records never authorize files, code execution, tools, or GitHub mutation.</small>
+              </section>)}
           </Section>
           <p>Worker execution requires original-turn authorization, bounded input/output, cancellation, durable receipts and independent verification. Not every provider implements Lu's current tool-response protocol.</p>
         </Section>}
