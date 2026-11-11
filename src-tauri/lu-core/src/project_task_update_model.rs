@@ -263,3 +263,110 @@ pub fn audit(x:&ModelSuggestion,preview:&updates::Preview,
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use crate::{project_task_synthesis as synthesis,project_task_register as register};
+    fn evidence()->(updates::Preview,graph::EvidenceGraph,status::StatusReport){
+        let g=graph::assemble(graph::GraphInput{
+            project_scope_sha256:"a".repeat(64),selected_head:None,
+            observed_at_unix:41,complete:true,host_git_checked:false,
+            files:vec![graph::FileInput{
+                path:"docs/REQUIREMENTS.md".into(),role:"project_document".into(),
+                sha256:Some("b".repeat(64))}],
+            requirements:vec![graph::RequirementInput{
+                path:"docs/REQUIREMENTS.md".into(),sha256:"b".repeat(64),
+                line:2,statement:"- [ ] Must include src/work.rs".into(),
+            }],runs:vec![],branches:vec![],extra_limitations:vec![],
+        }).unwrap();
+        let s=status::classify(&g,&[]).unwrap();
+        let cap=synthesis::build_capsule(&g,&s).unwrap();
+        let req=&cap.requirements[0];
+        let raw=serde_json::json!({"schema":synthesis::RAW_SCHEMA,"tasks":[{
+            "requirementId":req.requirement_id,"status":req.status,
+            "summary":"Review original source evidence",
+            "description":"Investigate independently verified source presence",
+            "priority":"P1","group":"01 Native evidence",
+            "evidenceIds":[req.requirement_id],"dependencyIndices":[],
+            "acceptanceCriteria":"Independently inspect the named original source file",
+            "blockedBy":"Native original implementation evidence absent"
+        }]}).to_string();
+        let proposal=synthesis::validate_model_response(&g,&s,&raw,
+            &synthesis::model_prompt(&cap).unwrap(),
+            "m-local-test","s-local-test","g-local-test").unwrap();
+        let register=register::import(&proposal).unwrap();
+        let preview=updates::analyze(&register,&proposal,&g,&s,&g,&s).unwrap();
+        (preview,g,s)
+    }
+    fn raw(preview:&updates::Preview)->String{
+        let candidate=&preview.candidates[0];
+        serde_json::json!({
+            "schema":RAW_SCHEMA,"previewSha256":preview.digest_sha256,
+            "candidates":[{
+                "taskId":candidate.task_id,"requirementId":candidate.original_requirement_id,
+                "status":candidate.current_status,"action":"collect_evidence",
+                "evidenceIds":[candidate.original_requirement_id],
+                "reason":"Inspect the exact original source before proposing any acceptance",
+                "nextEvidence":"Collect a new native read-only source and integration test receipt"
+            }]
+        }).to_string()
+    }
+    #[test]
+    fn valid_synthetic_json_is_only_human_suggestion_and_reconstructs(){
+        let (preview,g,s)=evidence();let raw=raw(&preview);
+        let p=prompt(&preview,&g,&s).unwrap();
+        let result=validate(&preview,&g,&s,&raw,&p,
+            "m-local-test","s-local-test","g-local-test").unwrap();
+        assert_eq!(result.suggestions.len(),1);
+        assert!(result.human_review_required&&result.no_execution_authority&&
+            result.no_completion_authority);
+        assert!(!result.suggestions[0].task_complete&&
+            !result.suggestions[0].independently_accepted&&
+            !result.suggestions[0].execution_authorized);
+        audit(&result,&preview,&g,&s,&raw).unwrap();
+    }
+    #[test]
+    fn fabricated_citations_statuses_and_completion_are_rejected(){
+        let (preview,g,s)=evidence();let p=prompt(&preview,&g,&s).unwrap();
+        let original:serde_json::Value=serde_json::from_str(&raw(&preview)).unwrap();
+        for mutated in ["citation","status","task","completed","action","requirement",
+            "missing_status","source","replay"]{
+            let mut v=original.clone();
+            match mutated{
+                "citation"=>v["candidates"][0]["evidenceIds"]=serde_json::json!([
+                    preview.candidates[0].original_requirement_id,"invented-proof"]),
+                "status"=>v["candidates"][0]["status"]=serde_json::json!("ACCEPTED"),
+                "task"=>v["candidates"][0]["taskId"]=serde_json::json!("lu-task-fake"),
+                "completed"=>v["candidates"][0]["completed"]=serde_json::json!(true),
+                "action"=>v["candidates"][0]["action"]=serde_json::json!("review_exact_criterion"),
+                "requirement"=>v["candidates"][0]["requirementId"]=serde_json::json!("new-id"),
+                "missing_status"=>{v["candidates"][0].as_object_mut().unwrap().remove("status");},
+                "source"=>v["previewSha256"]=serde_json::json!("c".repeat(64)),
+                "replay"=>v["candidates"][0]["evidenceIds"]=serde_json::json!([
+                    preview.candidates[0].original_requirement_id,
+                    preview.candidates[0].original_requirement_id]),
+                _=>unreachable!(),
+            }
+            let injected=v.to_string();
+            assert!(validate(&preview,&g,&s,&injected,&p,
+                "m-local-test","s-local-test","g-local-test").is_err(),
+                "invalid model output accepted: {mutated}");
+        }
+    }
+    #[test]
+    fn model_reply_or_provenance_modification_rejects_replay(){
+        let (preview,g,s)=evidence();let original=raw(&preview);
+        let prompt=prompt(&preview,&g,&s).unwrap();
+        let result=validate(&preview,&g,&s,&original,&prompt,
+            "m-local-test","s-local-test","g-local-test").unwrap();
+        let mut forged=result.clone();
+        forged.suggestions[0].task_complete=true;
+        forged.digest_sha256=seal(&forged).unwrap();
+        assert!(audit(&forged,&preview,&g,&s,&original).is_err());
+        assert!(validate(&preview,&g,&s,&original,&(prompt+"extra"),
+            "m-local-test","s-local-test","g-local-test").is_err());
+        let altered=format!("{} ",original);
+        assert!(audit(&result,&preview,&g,&s,&altered).is_err());
+    }
+}
