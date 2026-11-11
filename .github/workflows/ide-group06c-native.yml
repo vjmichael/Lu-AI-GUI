@@ -1,0 +1,96 @@
+# Group 6C-01 source-only native branch operations preview: NOT execution consent.
+# Parent: Group 6B exact head ea584951d7b5acea85e7f1ad9502ba4a461a8f87.
+name: IDE Group 6C local branch operations (source only)
+on:
+  push:
+    branches: [ide/group06c-branch-operations-20261110]
+    paths:
+      - '.github/workflows/ide-group06c-native.yml'
+      - 'ide/host/src/git_branch_operations.rs'
+      - 'ide/host/src/lib.rs'
+      - 'ide/app/src-tauri/src/lib.rs'
+      - 'ide/app/web/main.jsx'
+      - 'ide/app/tests/g06c_local_branch_operations.test.mjs'
+      - 'ide/docs/IDE_GROUP06C01_BRANCH_OPERATIONS_20261110.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-g06c01-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  exact-native-review:
+    name: G06C01 exact-source host and Tauri / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact source and preceding 6B acceptance commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor ea584951d7b5acea85e7f1ad9502ba4a461a8f87 HEAD
+          echo G06C01_SOURCE="$GITHUB_SHA"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Linux native Tauri WebKit dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libgtk-3-dev patchelf libssl-dev
+      - name: Host actual libgit2 branch graph and hostile input tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path ide/host/Cargo.toml --lib git_branch_operations
+          rustfmt --edition 2021 --check ide/host/src/git_branch_operations.rs
+          echo IDE_G06C01_LOCAL_BRANCH_GRAPH=ACTUAL_TESTED_NO_WRITES
+      - name: WebView hostile invocation boundary and frontend bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ide/app
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test tests/g06c_local_branch_operations.test.mjs
+          npm run build
+          echo IDE_G06C01_UI=REVIEW_ONLY_NO_OS_DIALOG
+      - name: Tauri host bridge compiles with restricted operation enum
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = Windows ] && [ ! -f ide/app/src-tauri/icons/icon.ico ]; then
+            python ide/app/fixtures/make_g04d_ci_icon.py
+          fi
+          cargo check --locked --manifest-path ide/app/src-tauri/Cargo.toml --all-targets
+          echo IDE_G06C01_TAURI=COMPILED_NO_EXECUTION_ROUTE
+      - name: Evidence never substitutes for human consent
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .ide-g06c01-receipts
+          printf 'source_sha=%s\nos=%s\nbranch_operations=PREVIEW_ONLY\nref_writes=NOT_AUTHORIZED\nnetwork=NOT_AUTHORIZED\nphysical_approval=DEFERRED\ninstalled_6C_acceptance=DEFERRED\n' \
+            "$GITHUB_SHA" "$RUNNER_OS" > .ide-g06c01-receipts/source.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ide-g06c01-${{ matrix.os }}-${{ github.sha }}
+          path: .ide-g06c01-receipts/
+          retention-days: 7
