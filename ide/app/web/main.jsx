@@ -8135,6 +8135,76 @@ function App() {
                 : 'No remembered tab layout. Remember tabs explicitly for restart.'}
               {' '}Never stores unsaved code or Undo. Use Preserve draft for private recovery.
             </p>
+            {belongsToSelectedProject(activeProject,workspaceRecoveryReport) &&
+              <section className="diskAuditPanel"
+                aria-label="Restarted workspace and private draft recovery">
+                <div className="diskAuditHeading">
+                  <strong>Workspace restart reconciliation</strong>
+                  <button type="button" className="ghostBtn"
+                    aria-label="Dismiss workspace recovery report"
+                    onClick={()=>setWorkspaceRecoveryReport(null)}>
+                    Dismiss report
+                  </button>
+                </div>
+                <p role="status">
+                  {workspaceRecoveryReport.restoredCount} saved file(s) reopened.
+                  {' '}{workspaceRecoveryReport.summary.changedOnDisk} changed on disk;
+                  {' '}{workspaceRecoveryReport.summary.missing} unavailable;
+                  {' '}{workspaceRecoveryReport.summary.existingEditorsPreserved} existing
+                  editor(s) preserved;
+                  {' '}{workspaceRecoveryReport.summary.checkpoints} private
+                  checkpoint(s) found.
+                </p>
+                <p>Only registered, currently readable source files were reopened.
+                  No project file was written, no older editor draft was applied,
+                  and no language server, build or debugger was restarted.
+                  The following is a read-only reconciliation from this session.</p>
+                {workspaceRecoveryReport.action==='inspection_only' &&
+                  <p role="alert">Disk changes were not accepted. No tabs were
+                    reopened. Choose Restore remembered again if you want to
+                    review the current saved files.</p>}
+                <div className="diskAuditRows">
+                  {workspaceRecoveryReport.rows.map(row=>{
+                    const opened=projectTabs.find(tab=>tab.key===row.key);
+                    const availableDraft=draftRecoveryByTab[row.key];
+                    const canRecover=!!opened && !!row.checkpointId &&
+                      availableDraft?.checkpointId===row.checkpointId &&
+                      row.draftStatus!=='recovered_as_unsaved_editor';
+                    return <div key={row.key} className="diskAuditRow">
+                      <code>{row.relativePath}</code>
+                      <strong>{row.status.replaceAll('_',' ')}</strong>
+                      {row.diskChanged && <span role="status">
+                        Saved disk revision changed since the remembered layout.
+                      </span>}
+                      {row.wasDirtyBeforeRestart && <span>
+                        File had unsaved changes before restart.
+                      </span>}
+                      <span>Private draft:
+                        {' '}{row.draftStatus.replaceAll('_',' ')}
+                      </span>
+                      {row.wasDirtyBeforeRestart && !row.checkpointId &&
+                        <span role="status">No recoverable private checkpoint
+                          confirmed. The remembered layout never stored unsaved text.
+                        </span>}
+                      {opened && <button type="button" className="ghostBtn"
+                        disabled={workspaceLayoutBusy || draftRecoveryBusy}
+                        onClick={()=>selectPrimaryEditorTab(opened.key)}>
+                        Show editor
+                      </button>}
+                      {canRecover && <button type="button" className="ghostBtn"
+                        disabled={workspaceLayoutBusy || draftRecoveryBusy ||
+                          !!savingKey || !!workspaceTransitionRef.current}
+                        onClick={()=>void restorePreservedDraft(opened,availableDraft)}>
+                        Recover checkpoint to unsaved editor
+                      </button>}
+                      {!opened && row.checkpointId && <span role="alert">
+                        Original source cannot be reopened. No automatic
+                        reconstruction from its private draft is permitted.
+                      </span>}
+                    </div>;
+                  })}
+                </div>
+              </section>}
             {belongsToSelectedProject(activeProject, diskAuditReport) &&
               <section className="diskAuditPanel" aria-label="External file changes">
                 <div className="diskAuditHeading">
