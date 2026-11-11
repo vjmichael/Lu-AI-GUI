@@ -310,9 +310,10 @@ fn review_selected(profile:&Path,root:&Path,id:&str,task:Option<(&str,u64)>,
     expected_observation:Option<&(graph::EvidenceGraph,status::StatusReport)>)
  ->Result<register::TaskRegister,String>{
     let current=classify_selected(root)?;
-    if expected_observation.is_some_and(|preview|
-        !observations_equal(preview,&current).unwrap_or(false)){
-        return Err("PLAN05_SOURCE_CHANGED_AFTER_HUMAN_REVIEW".into())
+    if let Some(preview)=expected_observation{
+        if !observations_equal(preview,&current)?{
+            return Err("PLAN05_SOURCE_CHANGED_AFTER_HUMAN_REVIEW".into())
+        }
     }
     let conn=library(profile)?;
     let (p,old,_)=load_register(&conn,id)?.ok_or("PLAN05_REGISTER_NOT_FOUND")?;
