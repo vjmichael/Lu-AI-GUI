@@ -32,9 +32,19 @@ A source analysis of `ide/app/web/main.jsx` found that Save/Review relied on `ta
 
 **Implementation status:** INT01-C source assembled. Runtime correctness and any further repair remain deferred to the batch after the implementation backlog, per owner instruction.
 
+## INT01-D — Durable workspace restart and private draft recovery (source implemented)
+
+- Reused the already existing B9 app-private **source-free** tab layout and B2 private draft-vault APIs; no new project file format, privileged authority, background worker, or Lu Core connection was introduced.
+- Added `editor_restart_reconciliation.js`: a bounded, source-free plan distinguishing current/changed/missing saved disk files, live editor buffers that must remain intact, prior unsaved flags, independently verified private checkpoint metadata, and unavailable checkpoint inspection. All relative paths remain scoped to one registered project.
+- Explicit **Restore remembered** now reads every saved path through the native project capability and inspects only its own latest private checkpoint. Before opening new tabs, it checks the live editor witness, rechecks proposed new disk bytes/revisions, and requires confirmation if remembered disk revisions changed. Project-switch and proposal-staging transitions are excluded while reconciliation is in progress.
+- Reopened tabs contain **current saved disk text only**. No historical unsaved source, private checkpoint text, language-server process, build or debugger session is automatically restored, started, executed or saved. Existing dirty tabs and their CodeMirror Undo histories are preserved.
+- Added a per-file Restart Reconciliation view showing changed/unavailable files, editor-preservation status and checkpoint state. A separate user action opens the file, and **Recover checkpoint to unsaved editor** invokes the B2 native load and rechecks immutable checkpoint identity, current disk base and live CodeMirror identity before applying. External source drift or replacement of a dirty editor requires additional explicit confirmation. The original project file is never changed by Recover.
+- Remember, Forget, Reload, Close, Save, Review and project navigation now refuse overlapping in-flight recovery transitions. Discarding a layout never discards private draft history.
+
+**Implementation status:** INT01-D source is committed. This does **not** imply native Windows/Linux, installed restart, accessibility, regression, permission or security acceptance. No tests/CI were run and no PR-verification work was started. Deferred future batch cases include missing/renamed files, changed disk SHA, stale checkpoint, user refusal, edited tabs during asynchronous native reads, cross-project navigation, and restart with partial draft vault access.
+
 ## Remaining INT01 work (implementation/integration gaps, not CI tasks)
 
-- **INT01-D — Durable workspace restart:** reconcile saved tab layout to current disk and private draft checkpoints. Restore navigation only by default; offer explicitly selected unsaved recovery, preserving unrelated original source and Undo ownership.
 - **INT01-E — Working set and large projects:** bounded tree paging and search, quick-open navigation, async file admission, verified clean background tab reclamation and memory limits for thousands of files.
 - **INT01-F — Unified editor UX:** keyboard/split-pane focus, external file-change comparison and conflict path, accessibility and consistent project switching.
 
@@ -44,4 +54,4 @@ After the implementation work is complete, run the staged `int01_live_editor_wri
 
 ## Next task
 
-**INT01-D — Durable workspace restart**. Reconcile saved navigation with current on-disk files and privately preserved draft checkpoints. Keep unsaved restore explicit and never silently rewrite source files. Do not advance to IDE-INT-02 until INT01 implementation source work is complete.
+**INT01-E — Large-project working set and navigation**. Improve bounded project-tree paging, quick-open, asynchronous file admission, clean background-tab reclamation and memory controls. INT01-F unified editor UX follows. Keep regression and CI gates paused until backlog implementation is finished.
