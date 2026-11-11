@@ -4756,11 +4756,16 @@ function App() {
   }
 
   function closeTab(key) {
-    const selected = tabs.find(tab => tab.key === key);
+    const selected = tabsRef.current.find(tab => tab.key === key);
     if (!selected) return;
-    if (savingKey === key || mergeBusy || mergeApplyRequest ||
-        workspaceLayoutOp.current) return;
-    if (selected.dirty && !window.confirm(
+    if (savingKey === key || savingKeyRef.current === key ||
+        mergeBusy || mergeApplyRequest || workspaceLayoutOp.current) return;
+    // The render's selected.dirty can be stale for the latest CodeMirror
+    // transaction. Unknown identity requires confirmation, never silent loss.
+    const live = captureLiveEditorIntent(selected,
+      bufferIdentities.current.get(key),editorStates.current.get(key),
+      selected.projectId);
+    if ((live.status !== 'current' || live.dirty) && !window.confirm(
       'Discard unsaved changes in ' + selected.relativePath + '?')) return;
     if (lspSession?.projectId === selected.projectId &&
         lspSession.relativePath === selected.relativePath) {
@@ -4771,8 +4776,8 @@ function App() {
     if (secondaryTabKey === key) setSecondaryTabKey(null);
     clearPrivateDraftSession(key);
     setReview(previous => previous?.tabKey === key ? null : previous);
-    const other = tabs.filter(tab => tab.key !== key);
-    setTabs(other);
+    const other = tabsRef.current.filter(tab => tab.key !== key);
+    setTabs(previous=>previous.filter(tab=>tab.key!==key));
     if (activeTabKey === key) {
       const candidates = other.filter(tab => tab.projectId === selected.projectId);
       setActiveTabKey(candidates.length ? candidates[candidates.length - 1].key : null);
@@ -4780,18 +4785,34 @@ function App() {
   }
 
   async function reloadTab(tab) {
-    if (!tab || savingKey || reviewPending || mergeBusy ||
-        mergeApplyRequest || workspaceLayoutOp.current) return;
-    setReview(null);
-    if (tab.dirty && !window.confirm('Discard your unsaved edits and reload from disk?')) return;
+    if (!tab || savingKey || savingKeyRef.current || reviewPending ||
+        mergeBusy || mergeApplyRequest || workspaceLayoutOp.current) return;
+    const original = captureLiveEditorIntent(tab,
+      bufferIdentities.current.get(tab.key),editorStates.current.get(tab.key),
+      activeProjectIdRef.current);
+    if (original.status !== 'current') {
+      setProblem('Cannot Reload: the live editor or original file base is unavailable.');
+      return;
+    }
+    if (original.dirty && !window.confirm(
+      'Discard your live unsaved edits and reload from disk?')) return;
+    // A confirmation cannot authorize deleting edits made while an LSP stop
+    // or filesystem read was in flight.
     if (lspSession?.projectId === tab.projectId &&
         lspSession.relativePath === tab.relativePath) {
       await stopLspSession();
     }
+    if (!stillCurrentEditorIntent(original,
+        tabsRef.current.find(item=>item.key===tab.key),
+        bufferIdentities.current.get(tab.key),editorStates.current.get(tab.key),
+        activeProjectIdRef.current)) {
+      setProblem('Reload stopped: editor changed after confirmation.');
+      return;
+    }
     const ticket = beginExplorerIo();
     if (!ticket) return;
-    // CodeMirror state can change before React publishes the next tabs render.
-    const editorStateAtStart = editorStates.current.get(tab.key);
+    const editorStateAtStart=editorStates.current.get(tab.key);
+    setReview(null);
     setProblem('');
     try {
       const opened = await invoke('ide_preview_source_file', {
@@ -4800,8 +4821,12 @@ function App() {
       const latestTab = tabsRef.current.find(item => item.key === tab.key);
       if (explorerIoTicket.current !== ticket ||
           editorStates.current.get(tab.key) !== editorStateAtStart ||
-          !lateReloadCanCommit(tab,latestTab,opened,activeProjectIdRef.current))
+          !stillCurrentEditorIntent(original,latestTab,
+            bufferIdentities.current.get(tab.key),
+            editorStates.current.get(tab.key),activeProjectIdRef.current) ||
+          !lateReloadCanCommit(tab,latestTab,opened,activeProjectIdRef.current)) {
         throw new Error('Reload stopped: project, source or draft changed during native read.');
+      }
       setMergeReview(previous=>previous?.tabKey===tab.key ? null : previous);
       clearPrivateDraftSession(tab.key);
       resetBufferIdentity(tab.key,opened.projectId,opened.relativePath,opened.revision);
