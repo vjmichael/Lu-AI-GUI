@@ -20,6 +20,7 @@ pub mod execution_intents;
 pub mod git_batch_review;
 pub mod git_branch_operations;
 pub mod git_merge_plan;
+pub mod git_divergent_verify;
 pub mod git_protected_merge;
 pub mod git_rebase_cherry_plan;
 pub mod git_replay_quarantine;
