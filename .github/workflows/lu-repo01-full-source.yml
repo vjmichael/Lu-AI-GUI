@@ -1570,15 +1570,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
+          # GITHUB_ENV only updates subsequent steps. Export the original
+          # test-owned Git path in THIS shell before running cargo.
+          export LU_PLAN01_TEST_GIT="$(python - <<'PY'
           import os,shutil
           exe=shutil.which('git.exe' if os.name=='nt' else 'git')
           if not exe: raise SystemExit('Real Git binary unavailable')
           real=os.path.realpath(exe)
           if not os.path.isfile(real): raise SystemExit('Real Git not a file')
-          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as env:
-              env.write('LU_PLAN01_TEST_GIT='+real+'\n')
+          print(real)
           PY
+          )"
+          printf 'LU_PLAN01_TEST_GIT=%s\n' "$LU_PLAN01_TEST_GIT" >> "$GITHUB_ENV"
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
             --lib native_git_inspect::plan02_local_topology_tests -- --ignored --nocapture 2>&1 | tee plan03-evidence/git-native.log
           grep -Fq 'test result: ok. 1 passed; 0 failed;' plan03-evidence/git-native.log
