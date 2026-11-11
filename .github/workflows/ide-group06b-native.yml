@@ -1,4 +1,4 @@
-# G06B-04 exact-head: object-write-free preview, post-consent tree commit, concurrent CAS denial, true native restart receipt tests.
+# G06B-04 exact-head rerun: native create/amend tests, deferred Git tree materialization and whitespace-safe source assertions.
 # Preserve real frontend-built icon; no CI-only icon may overwrite a valid app resource.
 # No Git write authority or operator acceptance.
 name: IDE Group 6B reviewed batch source (not release)
