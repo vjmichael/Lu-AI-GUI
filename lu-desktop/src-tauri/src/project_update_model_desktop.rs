@@ -329,6 +329,20 @@ mod tests{
             [],|r|r.get(0)).unwrap();
         assert_eq!(n,1);
         drop(conn);
+        // A forged original reply cannot be made genuine merely by leaving
+        // the suggestion JSON/hash unchanged. Reopen must revalidate bytes.
+        let c=project_register_desktop::library(&profile).unwrap();
+        c.execute("UPDATE ansf_project_task_update_model_suggestions
+            SET original_reply_text=X'7b6e6f7065' WHERE suggestion_sha256=?1",
+            [&proof.digest_sha256]).unwrap();
+        drop(c);
+        assert!(read_latest(&profile,&preview.digest_sha256).is_err());
+        let c=project_register_desktop::library(&profile).unwrap();
+        c.execute("UPDATE ansf_project_task_update_model_suggestions
+            SET original_reply_text=?1 WHERE suggestion_sha256=?2",
+            params![raw.as_bytes(),proof.digest_sha256]).unwrap();
+        drop(c);
+        assert!(read_latest(&profile,&preview.digest_sha256).unwrap().is_some());
         // The original register can be human-corrected, but the old model
         // suggestion is then stale, never automatically carried forward.
         let corrected=register::human_correct(&registered,&proposal,
