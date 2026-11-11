@@ -1188,14 +1188,19 @@ mod tests {
         assert_eq!(actual.head().unwrap().target(), Some(new_oid));
         let published = actual.find_commit(new_oid).unwrap();
         assert_eq!(published.tree_id(), tree_oid);
-        assert_eq!(published.parent_id(0).unwrap().to_string(), plan.previous_head);
+        assert_eq!(
+            published.parent_id(0).unwrap().to_string(),
+            plan.previous_head
+        );
         assert_eq!(fs::read(root.join("tracked.txt")).unwrap(), worktree_before);
         // A second inspection or reconciliation must not duplicate the commit.
         assert_eq!(
-            reopened.reconcile_reviewed_commit_journal(&id).unwrap().state,
+            reopened
+                .reconcile_reviewed_commit_journal(&id)
+                .unwrap()
+                .state,
             "verified_historical_commit"
         );
         assert_eq!(actual.head().unwrap().target(), Some(new_oid));
     }
-
 }
