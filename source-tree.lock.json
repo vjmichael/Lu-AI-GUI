@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2838a6f2806dbb311c5168e04066641b7b85e13e",
+  "sourceCommitBeforeLock": "bc83d833365ee5e0f0e7e751d55af4ab8a7b3f32",
   "trackedFileCount": 943,
   "files": [
     {
@@ -821,7 +821,7 @@
     },
     {
       "path": "docs/LU_P0_GATE_20261111.md",
-      "blob": "d5ac9e4703d2b04e960c5f81e02352d11356efd6"
+      "blob": "6aecd09b0ba34057f3c782ed3c6c360bf5f81a12"
     },
     {
       "path": "docs/LU_P0_MEMORY_ORIGINAL_CROSS_SESSION_CONTINUITY_20261111.md",
@@ -1389,7 +1389,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
-      "blob": "9c5e8f28bbea6a037674bf6f40b969be6ec9332b"
+      "blob": "9fa10f7edc264cd7700db8a802167c771e05ffcc"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",
@@ -1453,7 +1453,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_review_decisions_desktop.rs",
-      "blob": "32dc5ff74181fd733ef90cb8d5590198fadabae2"
+      "blob": "3f813642791c3fe1e0a198c35b05c3e6632c37e9"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_status_desktop.rs",
