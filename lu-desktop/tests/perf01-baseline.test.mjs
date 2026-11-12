@@ -4,6 +4,7 @@ import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 const fixtureHead='a'.repeat(40);
 function run(rows,head=fixtureHead){
   const root=mkdtempSync(join(tmpdir(),'lu-perf01-negative-'));
@@ -13,7 +14,8 @@ function run(rows,head=fixtureHead){
     return spawnSync(process.execPath,[
       'scripts/perf01-host-baseline.mjs',
       '--input',file,'--head',head
-    ],{cwd:new URL('../..',import.meta.url),encoding:'utf8',timeout:10000});
+    ],{cwd:fileURLToPath(new URL('../..',import.meta.url)),
+      encoding:'utf8',timeout:10000});
   }finally{
     rmSync(root,{recursive:true,force:true});
   }
