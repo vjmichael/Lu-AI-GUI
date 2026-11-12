@@ -826,7 +826,9 @@ function App() {
   const [researchQuoteBusy,setResearchQuoteBusy]=useState(false);
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
+  const jobsRef=useRef({});
   const reconnectPending=useRef(new Set());
+  useEffect(()=>{jobsRef.current=jobs;},[jobs]);
   const [perfLatestByChat,setPerfLatestByChat]=useState({}); // host diagnostics, not model proof
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
   const [writeProposals, setWriteProposals] = useState({}); // inert completed model write previews
@@ -2244,11 +2246,18 @@ function App() {
   async function reconcileActiveStream(targetChat){
     if(!targetChat || reconnectPending.current.has(targetChat))return;
     reconnectPending.current.add(targetChat);
+    const expectedGeneration=jobsRef.current[targetChat]?.generationId??null;
     try{
       const snapshot=await invoke('lu_stream_reconnect',{chatId:targetChat});
       if(currentChat.current!==targetChat)return;
-      setJobs(prev=>resumedJob(prev,targetChat,snapshot));
-      if(!snapshot){
+      // An older RPC cannot remove or overwrite a newer generation that
+      // started while the snapshot was in flight.
+      setJobs(prev=>{
+        if((prev[targetChat]?.generationId??null)!==expectedGeneration)return prev;
+        return resumedJob(prev,targetChat,snapshot);
+      });
+      if(!snapshot && (jobsRef.current[targetChat]?.generationId??null)
+            ===expectedGeneration){
         const durable=await loadLatestUiHistory(targetChat);
         if(currentChat.current===targetChat)setHistory(durable);
       }
