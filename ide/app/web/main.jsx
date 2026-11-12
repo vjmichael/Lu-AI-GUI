@@ -50,8 +50,9 @@ import { ingestJobProgress, visibleJobProgress } from './job_progress.js';
 import { safeConventionalTestDiscovery } from './conventional_tests.js';
 import {checkedTestExplorer} from './test_explorer.js';
 import {checkedGithubPrEvidence} from './github_pr_evidence.js';
-import {fin07ScopeRegister} from './fin07_scope_register.js';
-import {checkedFin06Journey,checkedFin06Destination}
+import {fin07ScopeRegister,fin07ImplementationReconciliation} from './fin07_scope_register.js';
+import {checkedFin06Journey,checkedFin06Destination,
+  checkedFin06OperationalReadiness}
   from './fin06_guided_workflow.js';
 import { projectJobLifecycle } from './protected_job_lifecycle.js';
 import { safeDebugTargetReview } from './debug_target_review.js';
@@ -839,6 +840,15 @@ function App() {
   const fin07Register=useMemo(()=>
     fin07ScopeRegister(activeProject?.projectId),
     [activeProject?.projectId]);
+  const fin06Operational=useMemo(()=>
+    checkedFin06OperationalReadiness(fin06Journey,activeProject?.projectId,{
+      build:buildStatus,debug:debugStatus,git:gitStatus,
+      packages:packageToolchainReadiness
+    }),[fin06Journey,activeProject?.projectId,buildStatus,debugStatus,
+       gitStatus,packageToolchainReadiness]);
+  const fin07Reconciliation=useMemo(()=>
+    fin07ImplementationReconciliation(activeProject?.projectId,fin06Operational),
+    [activeProject?.projectId,fin06Operational]);
   const testExplorerModel=useMemo(()=>
     checkedTestExplorer(testDiscovery,structuredTestReport,
       activeProject?.projectId,testExplorerFilter),
@@ -7033,6 +7043,13 @@ function App() {
                         </button>
                       </article>)}
                   </section>}
+                  {fin06Operational && <section aria-label="FIN-06 native workflow readiness">
+                    <h3>FIN-06 · Native workflow observations</h3>
+                    <p>These read-only observations are bound to the selected project.
+                      They never authorize source changes, OS actions or human acceptance.</p>
+                    {fin06Operational.rows.map(row=>
+                      <p key={row.id}><strong>{row.id}:</strong> {row.state.replaceAll('_',' ')}</p>)}
+                  </section>}
                   {fin07Register && <section aria-label="FIN-07 source implementation scope register">
                     <h3>FIN-07 · Implementation scope register</h3>
                     <p>Feature scope frozen: <strong>No</strong>.
@@ -7044,6 +7061,13 @@ function App() {
                         <p>{item.priority} · {item.state.replaceAll('_',' ')}</p>
                         <p>Remaining: {item.remaining}</p>
                       </article>)}
+                  </section>}
+                  {fin07Reconciliation && <section aria-label="FIN-07 outstanding engineering gates">
+                    <h3>FIN-07 · Remaining implementation boundaries</h3>
+                    <p>Feature freeze is not permitted by this view.
+                      {fin07Reconciliation.unresolvedGroups} FIN groups remain open.</p>
+                    {fin07Reconciliation.groups.map(group=>
+                      <p key={group.id}><strong>{group.id}:</strong> {group.boundary.replaceAll('_',' ')}</p>)}
                   </section>}
                   <p>Acceptance status:
                     <strong> not verified</strong>. Completed native jobs and
