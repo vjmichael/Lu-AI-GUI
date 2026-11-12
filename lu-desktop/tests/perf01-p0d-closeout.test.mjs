@@ -69,7 +69,11 @@ test('PERF01 indexed chat counts are scoped, bounded and do not inspect content'
   assert.match(router,/if !page\.has_more/);
   assert.match(router,/PARTIAL_CURSOR_UNAVAILABLE/);
   assert.match(router,/fn bounded_current_chat_count_only_reads_original_active_ANSF_index\(/);
-  assert.doesNotMatch(router,/count_current_chat[\s\S]*?fn safe_excerpt/); // structural fixture is separate
+  const countBody=router.split('pub(crate) fn count_current_chat(')[1]
+    .split('#[cfg(test)]')[0];
+  assert.ok(countBody);
+  assert.doesNotMatch(countBody,/chats\.history\(/);
+  assert.doesNotMatch(countBody,/original_source_text_page\(/);
 });
 test('PERF01 model-start events are original host callback deltas, not GPU guesses',()=>{
   assert.match(host,/phase=="engine_spawned"&&pid\.is_some\(\)/);
