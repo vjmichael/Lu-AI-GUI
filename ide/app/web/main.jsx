@@ -336,6 +336,8 @@ function App() {
   const nativeJobOutputRef = useRef(null);
   const buildStatusRequest = useRef(0);
   const [debugStatus, setDebugStatus] = useState(null);
+  const [fin01Recovery,setFin01Recovery]=useState(null);
+  const [fin01RecoveryBusy,setFin01RecoveryBusy]=useState(false);
   const [debugTargetReview,setDebugTargetReview]=useState(null);
   const [debugTargetBusy,setDebugTargetBusy]=useState(false);
   const debugTargetRequest=useRef(0);
@@ -1616,6 +1618,29 @@ function App() {
     }finally{
       if(ticket===int06Request.current)setInt06Busy(false);
     }
+  }
+  async function inspectFin01Recovery(){
+    if(fin01RecoveryBusy || !activeProject?.projectId)return;
+    const selected=activeProject.projectId;
+    setFin01RecoveryBusy(true);setFin01Recovery(null);
+    try{
+      const result=await invoke('ide_fin01_recovery_assessment');
+      if(activeProjectIdRef.current!==selected)return;
+      if(!result ||
+        typeof result.markerPresent!=='boolean' ||
+        typeof result.originalJournalsReconciled!=='boolean' ||
+        !Number.isSafeInteger(result.buildJournalPending) ||
+        !Number.isSafeInteger(result.debugJournalPending) ||
+        result.nativeOsReleaseIndependentlyVerified!==false ||
+        result.markerRemovalAuthorized!==false ||
+        result.autoRetryAuthorized!==false ||
+        typeof result.code!=='string')
+        throw Error('FIN01_RECOVERY_ASSESSMENT_UNTRUSTED');
+      setFin01Recovery({projectId:selected,...result});
+    }catch(error){
+      if(activeProjectIdRef.current===selected)
+        setProblem('Global native custody evidence unavailable: '+String(error));
+    }finally{setFin01RecoveryBusy(false);}
   }
   function navigateFin06Stage(id) {
     const projectId=activeProjectIdRef.current;
@@ -7042,6 +7067,25 @@ function App() {
                           Open review stage
                         </button>
                       </article>)}
+                  </section>}
+                  {activeProject && <section aria-label="FIN-01 global native custody recovery">
+                    <h3>FIN-01 · Cross-supervisor recovery</h3>
+                    <p>Read-only original-journal inspection. This cannot clear
+                      an interrupted lease, kill a process or reauthorize an action.</p>
+                    <button type="button" className="ghostBtn"
+                      disabled={fin01RecoveryBusy}
+                      onClick={()=>void inspectFin01Recovery()}>
+                      {fin01RecoveryBusy?'Inspecting native journals…':'Inspect global custody'}
+                    </button>
+                    {fin01Recovery?.projectId===activeProject.projectId &&
+                      <div role="status">
+                        <p>Classification: {fin01Recovery.code.replaceAll('_',' ')}</p>
+                        <p>Shared admission marker: {fin01Recovery.markerPresent?'Present':'Absent'}</p>
+                        <p>Build pending: {fin01Recovery.buildJournalPending};
+                          Debugger pending: {fin01Recovery.debugJournalPending}</p>
+                        <p>Native OS release independently verified: No.
+                          Marker removal and automatic retry: Not authorized.</p>
+                      </div>}
                   </section>}
                   {fin06Operational && <section aria-label="FIN-06 native workflow readiness">
                     <h3>FIN-06 · Native workflow observations</h3>
