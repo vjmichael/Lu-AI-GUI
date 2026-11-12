@@ -50,6 +50,7 @@ struct Job {
     session_id: String,
     class: TurnClass,
     cancelled: bool,
+    completed: bool,
     text: String,
     next_index: u32,
 }
@@ -128,6 +129,7 @@ impl GenerationQueue {
                 session_id: session_id.into(),
                 class,
                 cancelled: false,
+                completed: false,
                 text: String::new(),
                 next_index: 0,
             },
@@ -161,6 +163,7 @@ impl GenerationQueue {
         if job.session_id != session_id {
             return Err("wrong model session".into());
         }
+        if job.completed { return Err("generation already completed".into()); }
         job.cancelled = true;
         let status = if state.active.as_deref() == Some(generation_id) {
             CancelState::Active
@@ -191,6 +194,7 @@ impl GenerationQueue {
         };
         let job=state.jobs.get_mut(&generation_id)
             .ok_or("generation disappeared during scoped cancellation")?;
+        if job.completed { return Ok(None); }
         job.cancelled=true;
         let phase=if state.active.as_deref()==Some(generation_id.as_str()){
             CancelState::Active
@@ -227,7 +231,7 @@ impl GenerationQueue {
     pub fn record_chunk(
         &self, session_id:&str, generation_id:&str, index:u32, text:&str,
     ) -> Result<(),String> {
-        if text.is_empty() || text.len()>MAX_CHUNK_BYTES {
+        if text.is_empty() || text.len()>MAX_CHUNK_BYTES || text.contains('\0') {
             return Err("invalid bounded streaming chunk".into());
         }
         let mut state=self.state.lock().map_err(|_|"generation queue poisoned")?;
@@ -236,8 +240,8 @@ impl GenerationQueue {
         }
         let job=state.jobs.get_mut(generation_id)
             .ok_or("generation ticket missing during stream")?;
-        if job.session_id!=session_id || job.cancelled {
-            return Err("generation stream cancelled or session changed".into());
+        if job.session_id!=session_id || job.cancelled || job.completed {
+            return Err("generation stream cancelled, completed or session changed".into());
         }
         if job.next_index!=index || index==u32::MAX {
             return Err("out-of-order or unbounded generation chunk".into());
@@ -325,6 +329,28 @@ impl Ticket {
                 .map_err(|_| "generation queue poisoned")?;
         }
     }
+    /// Final ANSF progress+complete commit and a concurrent native Stop are
+    /// ordered by this same queue mutex. Cancellation wins if it was
+    /// recorded first; a post-commit Stop cannot change a complete answer.
+    /// Hold this small lock only for the final existing journal write, not
+    /// during model inference or streaming.
+    pub fn commit_completed(
+        &self, session_id:&str, commit:impl FnOnce()->Result<(),String>,
+    )->Result<(),String>{
+        let mut state=self.queue.state.lock()
+            .map_err(|_|"generation queue poisoned")?;
+        if state.active.as_deref()!=Some(self.id.as_str()){
+            return Err("generation is not active during completion".into());
+        }
+        let job=state.jobs.get_mut(&self.id)
+            .ok_or("generation ticket missing at completion")?;
+        if job.session_id!=session_id || job.cancelled || job.completed {
+            return Err("Cancelled before generation completion".into());
+        }
+        commit()?;
+        job.completed=true;
+        Ok(())
+    }
     pub fn cancelled(&self) -> bool {
         self.queue
             .state
@@ -343,6 +369,33 @@ impl Drop for Ticket {
 mod tests {
     use super::*;
     use std::{sync::mpsc, thread, time::Duration};
+    #[test]
+    fn final_journal_commit_is_ordered_against_cancellation(){
+        let q=Arc::new(GenerationQueue::default());
+        let (a,_)=q.enqueue("s","c","g").unwrap();
+        a.wait_for_slot().unwrap();
+        q.record_chunk("s","g",0,"answer").unwrap();
+        assert_eq!(q.cancel("s","g"),Ok(CancelState::Active));
+        let mut published=false;
+        assert!(a.commit_completed("s",||{published=true;Ok(())}).is_err());
+        assert!(!published,"cancelled generation cannot publish a completed answer");
+        drop(a);
+        let (b,_)=q.enqueue("s","c","g2").unwrap();
+        b.wait_for_slot().unwrap();
+        drop(b);
+    }
+    #[test]
+    fn completed_journal_turn_rejects_late_native_stop(){
+        let q=Arc::new(GenerationQueue::default());
+        let (a,_)=q.enqueue("s","c","g").unwrap();
+        a.wait_for_slot().unwrap();
+        let mut commits=0;
+        a.commit_completed("s",||{commits+=1;Ok(())}).unwrap();
+        assert_eq!(commits,1);
+        assert!(q.cancel("s","g").is_err());
+        assert!(!a.cancelled());
+        drop(a);
+    }
     #[test]
     fn live_reconnect_is_exact_chat_and_session_and_byte_bounded(){
         let q=Arc::new(GenerationQueue::default());
