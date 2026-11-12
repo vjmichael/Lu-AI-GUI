@@ -698,7 +698,7 @@ pub fn register_inspection_tools(
         .map_err(|e| format!("cannot publish stat schema: {e:?}"))?;
     catalog.insert(registry, ModelToolDefinition {
         name: "lu_files_search_text".into(), native_tool_id: SEARCH.into(),
-        description: "Search scoped literal UTF-8 text; optional bounded recursion and filename suffix filter. Hidden entries are excluded.".into(),
+        description: "Search approved workspace literal UTF-8 with optional recursion and suffix filter. Scope, time, byte and file limits yield PARTIAL with explicit limitation codes; hits carry source SHA-256. Hidden entries and links are excluded. A prior hit never grants file access.".into(),
         parameters: json!({"type":"object","properties":{
             "path":{"type":"string","description":"Workspace directory; omit for root"},
             "query":{"type":"string","description":"Literal phrase, up to 256 UTF-8 bytes"},
