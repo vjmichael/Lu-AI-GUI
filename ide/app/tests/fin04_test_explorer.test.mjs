@@ -37,3 +37,18 @@ test('FIN04 GUI never invokes ad-hoc test or process run',()=>{
   assert.match(ui,/checkedTestExplorer/);
   assert.doesNotMatch(ui,/shell:allow-execute|Command\.create\(/);
 });
+
+test('FIN04 rejects forged job ids and hostile reporter navigation hints',()=>{
+ const base={projectId:id,jobId:'job-'+'b'.repeat(32),
+  taskAcceptanceAuthorized:false,independentlyVerified:false,
+  cases:[{id:'case_'+'c'.repeat(64),name:'failing_case',
+   status:'reported_fail',source:{relativePath:'tests/expected.py'},
+   independentlyVerified:false}]};
+ assert.equal(checkedTestExplorer(discovery,base,id).cases[0].canReviewSource,true);
+ assert.equal(checkedTestExplorer(discovery,{...base,jobId:'foreign'},id).cases.length,0);
+ for(const path of ['../secret.py','/etc/passwd','tests//bad.py','tests/./bad.py',
+   'C:/Windows/secret','tests/\\\\evil.py']){
+  assert.equal(checkedTestExplorer(discovery,{...base,cases:[{
+   ...base.cases[0],source:{relativePath:path}}]},id),null);
+ }
+});
