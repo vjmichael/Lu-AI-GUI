@@ -580,7 +580,19 @@ impl NativeDebugRuntime {
         let source=self.review_stopped_source(
             registry,project_id,job_id,plan_sha256)?;
         let audit=self.inspect_control_evidence(project_id)?;
-        let observed=&source.source;
+        // An expensive profile-wide evidence scan must not leave a reviewed
+        // saved source unpinned. Revalidate original source bytes and the
+        // terminal receipt a second time before exposing the candidate.
+        let fresh=self.review_stopped_source(
+            registry,project_id,job_id,plan_sha256)?;
+        if fresh.terminal_receipt_sha256!=source.terminal_receipt_sha256 ||
+           fresh.source.relative_path!=source.source.relative_path ||
+           fresh.source.disk_sha256!=source.source.disk_sha256 ||
+           fresh.source.line!=source.source.line ||
+           fresh.source.frame_id!=source.source.frame_id {
+            return Err("FIN04_READ_ONLY_CONTROL_SOURCE_CHANGED".into());
+        }
+        let observed=&fresh.source;
         let mut hash=Sha256::new();
         hash.update(b"lu-ide-fin04-read-only-control-candidate-v1\n");
         for part in [
@@ -863,11 +875,21 @@ impl NativeDebugRuntime {
         // fence: source-level preflight alone is not enough across processes.
         // If an action changed since preflight, leave the marker quarantined
         // rather than dispatch a worker with uncertain authority.
-        if self.inspect_control_evidence(project_id)?
-            .global_os_cleanup_required {
-            let after=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
-            global_fence.release_before_prepare_if_unchanged(&own_before,&after)?;
-            return Err("FIN04_ACTION_RECOVERY_REQUIRED_INSIDE_GLOBAL_FENCE".into());
+        let action_scan=self.inspect_control_evidence(project_id);
+        match action_scan {
+            Ok(audit) if !audit.global_os_cleanup_required => {}
+            result => {
+                // This invocation has not prepared any Job. Even a corrupted
+                // action log cannot strand our own fresh marker if the entire
+                // original owner journal remains byte-identical. The corrupt
+                // action audit itself still denies the NEXT admission.
+                let after=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
+                global_fence.release_before_prepare_if_unchanged(&own_before,&after)?;
+                return Err(match result{
+                    Ok(_) => "FIN04_ACTION_RECOVERY_REQUIRED_INSIDE_GLOBAL_FENCE".into(),
+                    Err(error) => error,
+                });
+            }
         }
         let sibling=crate::global_native_custody::sibling_rows(
             &self.global_custody_profile,"debug")?;
