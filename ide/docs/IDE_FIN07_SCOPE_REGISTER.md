@@ -118,3 +118,37 @@ false. New Node regression fixtures verify foreign-project rejection, recovery
 denial and the inability to promote observations into release authority.
 No native tests, CI, installer verification, human acceptance, merge or release
 were performed in this development slice.
+
+## FIN-04H source continuation — 2026-11-12
+
+The existing FIN branch now also contains a **source-only** protected
+single-case route for saved Python/pytest and Node test candidates
+alongside the prior exact Rust libtest path. A fixed native framework
+recipe must pass bounded symbol/path grammar, saved source SHA,
+manifest SHA, original clean Git HEAD and immutable native input checks.
+The previously admitted, pinned AppContainer/Job or cgroup/Bubblewrap
+worker and original fresh OS confirmation remain the sole launch route.
+The Test Explorer calls the dedicated command and accepts original
+job/plan/receipt-bound results; test-runner output is **reported**, not
+independently verified assertion evidence.
+
+A source-level regression contract has been added but has not been
+run in native Node; compiler and installed OS verification are open.
+One pre-existing malformed Linux vcpkg manifest match which referenced
+an uninitialized command was corrected; this does not enable the
+vcpkg executor. CTest built-test enumeration and exact-case
+execution are still missing.
+
+The production debugger is **not promoted**: D5 live LLVM event
+owner, D6B fresh one-use human grant, D6C independent post-command
+stop/PDB verification and OS-only action recovery are still gated
+behind debug-only native paths or unimplemented release integration.
+The original action journal inspection remains immutable and
+global unresolved actions still deny new protected admission.
+Neither a terminal DAP ACK nor a CI-only receipt may become release
+authority. Full boundaries and required native acceptance are in
+[`IDE_FIN04H_EXACT_FRAMEWORK_AND_LLDB_RELEASE_GATES_20261112.md`](IDE_FIN04H_EXACT_FRAMEWORK_AND_LLDB_RELEASE_GATES_20261112.md).
+
+FIN-02 remains deferred. No CI, physical Windows/Linux test,
+installer acceptance, feature freeze, release or merge to main was
+authorized here.
