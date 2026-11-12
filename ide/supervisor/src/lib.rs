@@ -375,6 +375,8 @@ fn valid_change(previous: Option<JobPhase>, next: JobPhase) -> bool {
             | (Some(JobPhase::Running), JobPhase::Completed)
             | (Some(JobPhase::Running), JobPhase::Failed)
             | (Some(JobPhase::Running), JobPhase::RecoveryRequired)
+            | (Some(JobPhase::CancelRequested), JobPhase::ReleasePending)
+            | (Some(JobPhase::ReleasePending), JobPhase::Cancelled)
             | (Some(JobPhase::CancelRequested), JobPhase::Cancelled)
             | (Some(JobPhase::CancelRequested), JobPhase::Uncertain)
             | (Some(JobPhase::CancelRequested), JobPhase::RecoveryRequired)
@@ -1258,6 +1260,87 @@ impl Supervisor {
             plan_sha256: job.plan_hash,
             phase,
             requires_reconciliation: phase == JobPhase::Uncertain,
+            execution_verified: false,
+        })
+    }
+
+    /// FIN-01D: protected cancellation cannot report a durable Cancelled
+    /// terminal before the independent SCM/Job holder has fsynced its release
+    /// ACK. Existing Linux/non-service cancellation keeps its separate path.
+    fn cancel_running_with_service_release_pending(
+        &self,
+        job_id: &str,
+        broker: &mut impl NativeTreeTerminator,
+    ) -> Result<JobSummary, SupervisorError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
+        if job.phase != JobPhase::Running {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        self.append(
+            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
+            JobPhase::CancelRequested, "cancel_requested_before_os_kill",
+            "tree_termination_pending",
+        )?;
+        state.jobs.get_mut(job_id).unwrap().phase = JobPhase::CancelRequested;
+        let killed = broker.terminate_and_verify_tree(job_id, &job.plan_hash);
+        let (phase, code) = if matches!(killed, Ok(true)) {
+            (JobPhase::ReleasePending, "os_cancel_tree_reaped_service_release_pending")
+        } else {
+            (JobPhase::Uncertain, "os_termination_not_verified")
+        };
+        self.append(
+            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
+            phase, code, "native_supervisor_tree_kill_evidence",
+        )?;
+        state.jobs.get_mut(job_id).unwrap().phase = phase;
+        if phase == JobPhase::Uncertain {
+            state.quarantine.insert(job_id.to_owned());
+        }
+        Ok(JobSummary {
+            job_id: job_id.to_owned(),
+            project_id: job.plan.project_id,
+            plan_sha256: job.plan_hash,
+            phase,
+            requires_reconciliation: phase == JobPhase::Uncertain,
+            execution_verified: false,
+        })
+    }
+
+    /// Called only after the original protected lease returned a verified
+    /// empty-Job, fsynced service release ACK. No frontend can call this.
+    fn native_finish_cancelled_after_service_release(
+        &self,
+        job_id: &str,
+    ) -> Result<JobSummary, SupervisorError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
+        let exact_cancel_intent = state.receipts.last().is_some_and(|last|
+            last.body.job_id == job_id
+                && last.body.phase == JobPhase::ReleasePending
+                && last.body.outcome_code == "os_cancel_tree_reaped_service_release_pending"
+        );
+        if job.phase != JobPhase::ReleasePending || !exact_cancel_intent {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        self.append(
+            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
+            JobPhase::Cancelled, "native_cancel_service_release_verified",
+            "tree_empty_and_independent_service_ack",
+        )?;
+        state.jobs.get_mut(job_id).unwrap().phase = JobPhase::Cancelled;
+        Ok(JobSummary {
+            job_id: job_id.to_owned(),
+            project_id: job.plan.project_id,
+            plan_sha256: job.plan_hash,
+            phase: JobPhase::Cancelled,
+            requires_reconciliation: false,
             execution_verified: false,
         })
     }
