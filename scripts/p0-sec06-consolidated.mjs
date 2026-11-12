@@ -116,8 +116,7 @@ function sourceCases(){
     'lu-desktop/tests/reviewed-app-desktop.test.mjs',
     'lu-desktop/tests/reviewed-task-continuity.test.mjs',
     'lu-desktop/tests/agent01l-os-custody.test.mjs',
-    'lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs',
-    'lu-desktop/tests/background-worker-e2e.test.mjs'
+    'lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs'
   ],{timeout:180000,nodeTestSummary:true});
   doCase('sec06-js-syntax','node',[
     '--check','scripts/p0-sec06-consolidated.mjs'
@@ -158,6 +157,21 @@ function rustCases(){
       '--lib','sec0','--','--nocapture'
     ],{timeout:600000,rustTestSummary:true});
   }
+  const built=doCase('native-file-scan-build','cargo',[
+    'build','--locked','--manifest-path',
+    'lu-desktop/tests/native-file-scan/Cargo.toml'
+  ],{timeout:600000});
+  if(built.status==='PASS'){
+    doCase('native-file-scan-e2e','node',[
+      '--test','lu-desktop/tests/background-worker-e2e.test.mjs'
+    ],{
+      timeout:180000,nodeTestSummary:true,
+      mustContain:['production scanner harness reads media-sized file',
+                   'worker mode requires a single readable nonempty file']
+    });
+  }else{
+    reject('native production scanner acceptance binary not built');
+  }
 }
 if(mode==='verify'){
   const proofMap={source:arg('--source'),linux:arg('--linux'),windows:arg('--windows')};
@@ -193,7 +207,9 @@ if(mode==='verify'){
                  'linux-host-crash-python-syntax',
                  'core-native-full','desktop-ansf-native','worker-job-native',
                  'core-sec-regressions','desktop-sec-regressions',
-                 'worker-sec-regressions','guardian-test-binaries','linux-original-host-sigkill',
+                 'worker-sec-regressions',
+                 'native-file-scan-build','native-file-scan-e2e',
+                 'guardian-test-binaries','linux-original-host-sigkill',
                  'linux-reviewed-git-original-journal',
                  'linux-guardian-death','linux-guardian-stall',
                  'linux-worker-stall','linux-ancestor-migration'],
@@ -201,6 +217,7 @@ if(mode==='verify'){
                    'sec06-js-syntax','core-native-full',
                    'desktop-ansf-native','worker-job-native',
                    'core-sec-regressions','desktop-sec-regressions',
+                   'native-file-scan-build','native-file-scan-e2e',
                    'windows-real-two-jobs',
                    'windows-reviewed-git-original-journal'],
         }[target];
