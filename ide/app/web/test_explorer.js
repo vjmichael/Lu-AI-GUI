@@ -4,6 +4,11 @@ const PROJECT=/^ide-[a-f0-9]{32}$/;
 const LANG=new Set(['rust','python','javascript','cpp']);
 const STATUS=new Set(['reported_pass','reported_fail','reported_skip']);
 const SAFE=/^[^\\:\x00-\x1f\x7f]{1,1024}$/u;
+const JOB=/^job-[a-f0-9]{32}$/;
+function safeRelativeSource(path) {
+  return typeof path==='string' && SAFE.test(path) &&
+    !path.startsWith('/') && !path.split('/').some(s=>!s||s==='.'||s==='..');
+}
 export function checkedTestExplorer(discovery,report,projectId,filter='all') {
   if(!PROJECT.test(projectId||'') ||
      !['all',...LANG].includes(filter))return null;
@@ -14,8 +19,7 @@ export function checkedTestExplorer(discovery,report,projectId,filter='all') {
   if(valid){
     const seen=new Set();
     for(const row of discovery.files){
-      if(!row || !SAFE.test(row.path||'') || row.path.startsWith('/') ||
-        row.path.split('/').some(s=>!s||s==='.'||s==='..') ||
+      if(!row || !safeRelativeSource(row.path) ||
         seen.has(row.path) || !LANG.has(row.language) ||
         row.runnable!==false ||
         !(row.recipe===null || typeof row.recipe==='string'))
@@ -27,7 +31,7 @@ export function checkedTestExplorer(discovery,report,projectId,filter='all') {
     }
   }
   const cases=[];
-  if(report?.projectId===projectId &&
+  if(report?.projectId===projectId && JOB.test(report.jobId||'') &&
      report.taskAcceptanceAuthorized===false &&
      report.independentlyVerified===false &&
      Array.isArray(report.cases) && report.cases.length<=128){
@@ -37,8 +41,13 @@ export function checkedTestExplorer(discovery,report,projectId,filter='all') {
          !/^case_[a-f0-9]{64}$/.test(row.id) ||
          typeof row.name!=='string' || row.name.length>240 ||
          row.independentlyVerified!==false)return null;
+      const source=row.source;
+      const sourceValid=source && typeof source==='object' &&
+        safeRelativeSource(source.relativePath);
+      // Reporter hints are untrusted source-navigation metadata.
+      if(source && !sourceValid)return null;
       cases.push(Object.freeze({id:row.id,name:row.name,status:row.status,
-        canReviewSource:row.status==='reported_fail' && !!row.source,
+        canReviewSource:row.status==='reported_fail' && !!sourceValid,
         executionAuthorized:false,assertionVerified:false}));
     }
   }
