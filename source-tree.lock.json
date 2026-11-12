@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a03b1f563d78a35e6b6e7ab1c0de0ea744ed078e",
-  "trackedFileCount": 958,
+  "sourceCommitBeforeLock": "8b1d014d039943797470be9c381fcbec22610988",
+  "trackedFileCount": 961,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -950,6 +950,10 @@
     {
       "path": "docs/LU_READER_CLOSEOUT.md",
       "blob": "08fafc87cd8b97ee69264414b4be5833df765594"
+    },
+    {
+      "path": "docs/LU_TOOLS09_BOUNDED_RECURSIVE_WORKSPACE_SEARCH_20261112.md",
+      "blob": "df4ca1a74938147c4d35258b1a26943529828947"
     },
     {
       "path": "docs/LU_TOOL_COMPLETION_WAVES.md",
@@ -1976,6 +1980,10 @@
       "blob": "7097b98da26145221ca4c2b136fcec87ada498d1"
     },
     {
+      "path": "lu-desktop/tests/tools09-bounded-search.test.mjs",
+      "blob": "4f7a015859cdbe654967964edfb8c1866dd2a65e"
+    },
+    {
       "path": "lu-desktop/tests/ux-chat01-message-interactions.test.mjs",
       "blob": "c9425824ecc84756216b574fd1e015b40ba00a16"
     },
@@ -2389,7 +2397,7 @@
     },
     {
       "path": "src-tauri/lu-core/proto/lu/v1/core.proto",
-      "blob": "5487d68d40723419f6da9bf33819293ac1a7825f"
+      "blob": "d83291c733ac9412456dade36b19ff1246481dec"
     },
     {
       "path": "src-tauri/lu-core/src/agent_continuation_intent.rs",
@@ -2921,7 +2929,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_file_extra.rs",
-      "blob": "8a90b49a1af32b0348659914db73c9ba7a7fd5b8"
+      "blob": "bf6406779af4011a74df95eedc45ca56b4b76ce2"
     },
     {
       "path": "src-tauri/lu-core/src/native_file_transfer.rs",
@@ -3214,6 +3222,10 @@
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
       "blob": "022fe242d947e25b20b8482d23eaccb0815080f0"
+    },
+    {
+      "path": "src-tauri/lu-core/src/tools09_search_adversarial_tests.rs",
+      "blob": "5a13d8da58e3acc9d995b0dffd3a4ab45434e020"
     },
     {
       "path": "src-tauri/lu-core/src/vision_routing.rs",
