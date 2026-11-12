@@ -4916,11 +4916,14 @@ fn publish_model_stream_chunk(
     state.generation_queue.record_chunk(
         session_id,generation_id,chunk.index,&chunk.text
     ).map_err(|_|BridgeError::WrongOperation)?;
-    app.emit("lu-token",ChatEvent{
+    // WebView reloads are not model failures. Keep host-owned bounded text
+    // and the original ANSF checkpoint even if no frontend listener is
+    // currently reachable; reconnect rehydrates from the native queue.
+    let forwarded=app.emit("lu-token",ChatEvent{
         chat_id:chat_id.into(),generation_id:generation_id.into(),
         text:chunk.text,index:chunk.index,
-    }).map_err(|_|BridgeError::WrongOperation)?;
-    perf_trace.chunk_forwarded_to_webview();
+    }).is_ok();
+    if forwarded { perf_trace.chunk_forwarded_to_webview(); }
     // First emitted chunk is committed immediately. Subsequent full snapshots
     // are throttled to bound ANSF write amplification while preserving a
     // subsecond recovery point and the mandatory final durable checkpoint.
