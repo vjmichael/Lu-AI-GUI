@@ -4631,6 +4631,44 @@ function App() {
     }
   }
 
+  async function reviewFin04ReleaseAction(kind){
+    const projectId=activeProject?.projectId;
+    if(!['stepOver','breakpointAtVerifiedLine'].includes(kind) ||
+       !projectId || debugBusy || buildBusy ||
+       debugStatus?.operationControlCode!==
+          'FIN04R_RELEASE_OWNER_OBSERVER_ONLY_SOURCE_AND_ACTION_GATES_OPEN' ||
+       !debugAdmission.projectDebugSupported || !!debugStatus?.current ||
+       !safeDebugSymbolEvidence(buildResult,projectId))return;
+    setDebugBusy(true);setProblem('');setDebugResult(null);
+    try{
+      // A renderer may select only this fixed review KIND. Native host
+      // verifies the live first-party OS event, protected PE/PDB line,
+      // original receipts, then separately asks the human in an OS dialog.
+      // A decision is always revoked. No DAP operation can be dispatched.
+      const result=await invoke('ide_debug_review_release_action',{projectId,kind});
+      if(activeProjectIdRef.current!==projectId)return;
+      if(!checkedProjectDebugWitness(result,buildResult,projectId) ||
+         result.operationOutcomeCode!==
+           'release_one_use_human_review_revoked_no_dispatch' ||
+         !/^[a-f0-9]{64}$/.test(result.operationReceiptSha256||'') ||
+         result.releaseOwnerSourceLineVerified!==true ||
+         result.releaseOwnerKernelVerified!==true ||
+         result.releaseOwnerControlAuthorized!==false ||
+         result.installedAppAccepted!==false)
+         throw Error('FIN04R_ORIGINAL_NATIVE_REVIEW_NOT_REVOKED');
+      setDebugResult(result);
+      setHint('One-use native human review recorded then revoked. '+
+        'Original source line independently mapped; debugger action NOT executed.');
+    }catch(error){
+      if(activeProjectIdRef.current===projectId)
+         setProblem('Protected LLDB review denied: '+String(error));
+    }finally{
+      setDebugBusy(false);
+      if(activeProjectIdRef.current===projectId)
+        void invoke('ide_debug_status',{projectId})
+          .then(setDebugStatus).catch(()=>{});
+    }
+  }
   async function runProtectedProjectDebugger() {
     const projectId=activeProject?.projectId;
     const witness=safeDebugSymbolEvidence(buildResult,projectId);
@@ -8139,6 +8177,28 @@ function App() {
                   <p role="status">{debugAdmission.blockedReason}.
                     A separate protected native release entitlement and
                     current-source build proof remain mandatory.</p>}
+                {debugStatus?.operationControlCode===
+                  'FIN04R_RELEASE_OWNER_OBSERVER_ONLY_SOURCE_AND_ACTION_GATES_OPEN' &&
+                  <div className="continuityEvent" aria-label="FIN-04R release protected source review only">
+                    <p>Protected first-party LLDB owner/PDB evidence may be
+                      reviewed with a fresh native human approval. Approval
+                      is immediately revoked; no breakpoint or step is executed.
+                      Production debugger controls are unavailable.</p>
+                    <button type="button" className="ghostBtn"
+                      disabled={!activeProject||!debugAdmission.projectDebugSupported||
+                        !!debugStatus?.current||debugBusy||buildBusy||
+                        !safeDebugSymbolEvidence(buildResult,activeProject?.projectId)}
+                      onClick={()=>void reviewFin04ReleaseAction('stepOver')}>
+                      Review step-over only (native dialog, no execution)
+                    </button>
+                    <button type="button" className="ghostBtn"
+                      disabled={!activeProject||!debugAdmission.projectDebugSupported||
+                        !!debugStatus?.current||debugBusy||buildBusy||
+                        !safeDebugSymbolEvidence(buildResult,activeProject?.projectId)}
+                      onClick={()=>void reviewFin04ReleaseAction('breakpointAtVerifiedLine')}>
+                      Review source breakpoint only (native dialog, no execution)
+                    </button>
+                  </div>}
                 {debugAdmission.operationControlSupported &&
                   <details className="jobOperationControls" aria-label="Developer-only native debugger action approval">
                     <summary>Advanced debugger actions (developer build only)</summary>
