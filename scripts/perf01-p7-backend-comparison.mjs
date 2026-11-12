@@ -79,6 +79,9 @@ try{
   if(essential.some(id=>!covered.has(id))){
     throw Error('Both mandatory text and code cases must be measured');
   }
+  if(covered.has('vision_mmproj')&&data.projectorSha256===null){
+    throw Error('Vision comparison requires exact original projector SHA-256');
+  }
   const sampleCounts={};
   const comparisons={};
   for(const id of [...covered].sort()){
