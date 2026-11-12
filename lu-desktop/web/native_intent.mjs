@@ -28,3 +28,22 @@ export function isHostCurrentTimeQuestion(value){
     "give me the current time","what is my local time",
     "what's the current time","what's the local time"].some(prefix=>s.startsWith(prefix));
 }
+
+
+/**
+ * PERF-01 P0D: presentation-only no-model admission for a narrowly typed
+ * original-chat exact literal request. The Rust host reclassifies independently.
+ * No user-chosen path, stored memory, model output, or snippet becomes a grant.
+ */
+export function isHostCpuChatLookup(value){
+  if(typeof value!=='string')return false;
+  const text=value.trim();
+  if(!text||text.length>512||text.includes('<|')||
+     text.toLowerCase().includes('[attached text file:'))return false;
+  const prefix=['Search this chat for: ','Find in this conversation: ']
+    .find(p=>text.startsWith(p));
+  if(!prefix)return false;
+  const q=text.slice(prefix.length);
+  return q.length>=2 && q.length<=128 && q.trim()===q &&
+    !/[\u0000-\u001f\u007f<>\x60]/.test(q);
+}
