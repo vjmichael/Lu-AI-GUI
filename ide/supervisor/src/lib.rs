@@ -40,7 +40,7 @@ pub mod snapshot;
 pub mod windows_broker;
 #[cfg(all(target_os = "windows", feature = "windows-worker"))]
 mod windows_cap_tree;
-#[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+#[cfg(all(windows, any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence")))]
 mod windows_event_owner;
 #[cfg(all(windows, feature = "dap-transport"))]
 pub mod windows_kernel_pc;
@@ -597,7 +597,7 @@ impl Supervisor {
     /// The only permitted owner-event receipt destination is the already
     /// approved native journal's private parent. Never a workspace, model
     /// path or WebView-supplied folder. CI only.
-    #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    #[cfg(all(windows, any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence")))]
     pub(crate) fn native_owner_receipt_root(&self) -> Result<PathBuf, SupervisorError> {
         use std::os::windows::fs::MetadataExt;
         let root = self
@@ -618,7 +618,7 @@ impl Supervisor {
     /// Prove the separate fsynced owner-event receipt survived supervisor
     /// close/reopen. The path is derived solely from the original private
     /// journal directory and native job ID; callers never choose a folder.
-    #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    #[cfg(all(windows, any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence")))]
     pub fn verify_native_owner_receipt_after_restart(
         &self,
         job_id: &str,
