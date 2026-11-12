@@ -1377,7 +1377,8 @@ impl Supervisor {
         }
         if !matches!(
             job.phase,
-            JobPhase::AdmissionPending | JobPhase::Running | JobPhase::CancelRequested
+            JobPhase::AdmissionPending | JobPhase::Running
+                | JobPhase::ReleasePending | JobPhase::CancelRequested
         ) {
             return Err(SupervisorError::InvalidTransition);
         }
@@ -1897,6 +1898,33 @@ mod tests {
         drop(restarted);
         fs::remove_file(p).unwrap();
     }
+    #[cfg(all(windows, feature = "protected-recovery-service"))]
+    #[test]
+    fn protected_release_pending_reenters_recovery_without_invented_scm_ack() {
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        drop(supervisor);
+        let interrupted = Supervisor::open(filename.clone()).unwrap();
+        assert!(interrupted.inspect().unwrap()[0].requires_reconciliation);
+        interrupted.mark_protected_recovery_pending(&job.job_id).unwrap();
+        let rows = interrupted.inspect().unwrap();
+        assert_eq!(rows[0].phase, JobPhase::RecoveryRequired);
+        assert!(rows[0].requires_reconciliation);
+        assert_eq!(interrupted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        drop(interrupted);
+        let restarted = Supervisor::open(filename.clone()).unwrap();
+        assert_eq!(restarted.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
+        assert!(restarted.inspect().unwrap()[0].requires_reconciliation);
+        drop(restarted);
+        fs::remove_file(filename).unwrap();
+    }
+
     #[test]
     fn persisted_receipts_survive_restart_but_grants_do_not() {
         let p = path();
