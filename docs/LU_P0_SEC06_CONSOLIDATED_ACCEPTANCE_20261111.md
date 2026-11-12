@@ -27,7 +27,7 @@ and owner physical acceptance remain mandatory.
 | ID | Gate | Native evidence required | Current status |
 | --- | --- | --- | --- |
 | SEC-06A | Exact source and negative verifier | Frozen source lock, Node contracts including verifier tamper cases, Python probe compilation | Authored / not executed |
-| SEC-06B | Core native regression | Full lu-core, desktop ANSF, and OS helper Rust test binaries, SEC-02/03/04/05 native tests | Authored / not executed |
+| SEC-06B | Core native regression | Full lu-core, desktop ANSF and OS helper Rust tests; explicit SEC-02/03/04/05/06 filters; compile exact production file-scanner acceptance binary and run 12-MiB real scanner E2E | Authored / not executed |
 | SEC-06C | Linux delegated containment | Original Lu test host SIGKILL; independent guardian kills nested setsid descendant; real Git restart journal; guardian-death and stall negatives; ancestor-migration blocked; original receipts | Authored / not executed |
 | SEC-06D | Windows Job containment | Real two-Job cross-chat cancellation and genuine reviewed Git native Job receipt, original chat/task binding and post-restart | Authored / not executed |
 | SEC-06E | Installed-app human operation | Exact installed executable, approved vs denied tools, cancel/revoke races, cross-chat isolation, restart/uncertain-effects UI, accessibility, preservation | Deferred owner acceptance |
@@ -148,3 +148,20 @@ cgroup; no physical Windows instance or owner GUI interactions were
 executed. Separate Linux escape remediation and genuine kernel proof may
 be necessary. No open security item should be marked done merely because
 the branch has a compiled test fixture or a correctly labeled uncertain state.
+
+### Gate mechanics and zero-test refusal
+
+Node source contracts must produce a nonzero TAP test count with every case
+passing and zero failures. Native Rust full and targeted SEC-prefixed suites
+must produce at least one genuine passed test. The genuine file-scanner
+acceptance executable is built from the production scanning source before
+its 12-MiB media-size SHA-256 E2E runs, not accidentally invoked by a
+source-only test. Windows true Job/Git tests are run with explicit name
+filters and reject a zero-test result. Missing helper binaries or source
+verification produce NOT_AVAILABLE/FAIL, never a green receipt.
+
+An older reviewed-application test was reconciled to the actual P0-WIN-CHAT
+single-Send/native host routing and SEC-03 revocation-fenced terminal append.
+The removed specialist-mode toolbar labels must not be resurrected merely
+to satisfy an obsolete source assertion; the OS picker and one-turn
+authorization still bind real execution.
