@@ -56,6 +56,11 @@ child.wait()
         &mut cmd,std::process::id(),None
     ).expect("independent parent-death signal");
     let mut worker=cmd.spawn().expect("kernel-gated child exec");
+    // Genuine post-exec /proc evidence from the live original child, not
+    // the pre_exec write alone. The guardian must still be alive and outside
+    // the subtree before a crash-surviving custody claim is emitted.
+    custodian.verify_admitted_worker(worker.id())
+        .expect("worker not admitted or guardian died");
     let mut pid_line=String::new();
     BufReader::new(worker.stdout.take().unwrap()).read_line(&mut pid_line)
         .expect("escaped grandchild identifier");
