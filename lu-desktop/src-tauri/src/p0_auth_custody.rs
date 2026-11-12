@@ -93,11 +93,27 @@ pub(crate) fn requested_watermark(
 )->Result<i64,String>{
     if !ident(chat,"c-"){return Err("P0_SEC_INVALID_CHAT_SCOPE".into())}
     initialize(conn)?;
-    conn.query_row(
-        "SELECT COALESCE(MAX(id),0) FROM ansf_p0_host_cancel_events
-         WHERE chat_id=?1 AND phase='REQUESTED'",
-        params![chat],|row|row.get(0)
-    ).map_err(|_|"P0_SEC_CANCEL_WATERMARK_UNAVAILABLE".into())
+    // Never let a corrupt original REQUESTED row become a valid revocation
+    // baseline. Tool dispatch calls this after each host permission check;
+    // an altered row must deny execution, NOT silently restore old authority.
+    let latest:Option<(i64,Vec<u8>,String)>=conn.query_row(
+        "SELECT id,original_json,original_sha256
+         FROM ansf_p0_host_cancel_events
+         WHERE chat_id=?1 AND phase='REQUESTED'
+         ORDER BY id DESC LIMIT 1",
+        params![chat],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))
+    ).optional().map_err(|_|"P0_SEC_CANCEL_WATERMARK_UNAVAILABLE")?;
+    let Some((sequence,source,expected_sha))=latest else{return Ok(0)};
+    if source.is_empty()||source.len()>MAX_EVENT_BYTES||
+        digest(&source)!=expected_sha{
+        return Err("P0_SEC_CANCEL_INTENT_TAMPERED".into())
+    }
+    let event:HostCancelEvent=serde_json::from_slice(&source)
+        .map_err(|_|"P0_SEC_CANCEL_INTENT_INVALID")?;
+    if !valid(&event)||event.phase!="REQUESTED"||event.chat_id!=chat{
+        return Err("P0_SEC_CANCEL_INTENT_SCOPE_INVALID".into())
+    }
+    Ok(sequence)
 }
 
 pub(crate) fn append(conn:&Connection,event:&HostCancelEvent)
