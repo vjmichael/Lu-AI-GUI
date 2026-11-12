@@ -1126,6 +1126,16 @@ impl Supervisor {
         if !matches!(job.phase, JobPhase::Running | JobPhase::ReleasePending) {
             return Err(SupervisorError::InvalidTransition);
         }
+        // A cancellation has its own verified terminal after SCM ACK. It may
+        // never be mislabeled Completed/Failed through the output path.
+        if job.phase == JobPhase::ReleasePending
+            && state.receipts.last().is_some_and(|receipt|
+                receipt.body.job_id == job_id
+                    && receipt.body.outcome_code == "os_cancel_tree_reaped_service_release_pending"
+            )
+        {
+            return Err(SupervisorError::InvalidTransition);
+        }
         if !tree_reaped || !outputs_bounded {
             self.append(
                 &mut state,
@@ -1969,6 +1979,59 @@ mod tests {
         .unwrap();
         state.jobs.get_mut(&job.job_id).unwrap().phase = JobPhase::Running;
     }
+    #[test]
+    fn protected_cancellation_waits_for_distinct_fsynced_release_receipt() {
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        let mut killer = TestTerminator { verified: true, requests: 0 };
+        let pending = supervisor
+            .cancel_running_with_service_release_pending(&job.job_id, &mut killer)
+            .unwrap();
+        assert_eq!(killer.requests, 1);
+        assert_eq!(pending.phase, JobPhase::ReleasePending);
+        assert_eq!(
+            supervisor.native_finish(&job.job_id, true, true, true).unwrap_err(),
+            SupervisorError::InvalidTransition
+        );
+        drop(supervisor);
+        let interrupted = Supervisor::open(filename.clone()).unwrap();
+        assert!(interrupted.inspect().unwrap()[0].requires_reconciliation);
+        assert_eq!(interrupted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        drop(interrupted);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn verified_cancel_service_release_must_be_a_separate_terminal_transition() {
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        let mut killer = TestTerminator { verified: true, requests: 0 };
+        supervisor
+            .cancel_running_with_service_release_pending(&job.job_id, &mut killer)
+            .unwrap();
+        // Mock-only: the caller supplies the absent real SCM ACK boundary.
+        let finished = supervisor
+            .native_finish_cancelled_after_service_release(&job.job_id)
+            .unwrap();
+        assert_eq!(finished.phase, JobPhase::Cancelled);
+        drop(supervisor);
+        let reopened = Supervisor::open(filename.clone()).unwrap();
+        assert_eq!(reopened.inspect().unwrap()[0].phase, JobPhase::Cancelled);
+        assert!(!reopened.inspect().unwrap()[0].requires_reconciliation);
+        drop(reopened);
+        fs::remove_file(filename).unwrap();
+    }
+
     #[test]
     fn interrupted_protected_release_is_quarantined_on_journal_restart() {
         // An SCM ACK is NOT a journal terminal. A host crash after release
