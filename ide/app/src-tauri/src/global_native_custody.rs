@@ -138,7 +138,7 @@ impl GlobalAdmissionFence {
     return Err("FIN01_NEW_JOURNAL_EVENT_BEFORE_ADMISSION_RELEASE".into());
   }
   let profile=self.marker.parent().ok_or("FIN01_PROFILE_UNAVAILABLE")?;
-  if journal_fingerprint(profile,self.domain)?!=self.journal_identity {
+  if journal_fingerprint(profile,self.domain)?.as_ref()!=self.journal_identity.as_ref() {
    return Err("FIN01_OWNER_JOURNAL_BYTES_CHANGED_BEFORE_ADMISSION_RELEASE".into());
   }
   self.remove_exact_owner_marker()
@@ -370,6 +370,17 @@ mod tests{
   assert_eq!(assessment.lsp_journal_pending,1);
   assert!(!assessment.original_journals_reconciled);
   assert!(!assessment.marker_removal_authorized);
+  fs::remove_dir_all(p).unwrap();
+ }
+ #[test]
+ fn active_lsp_owner_cannot_continue_after_marker_replacement(){
+  let p=fixture();
+  let lease=GlobalAdmissionFence::acquire(&p,"lsp").unwrap();
+  lease.marker_owner_intact().unwrap();
+  fs::write(marker_path(&p),b"replaced-by-foreign-owner").unwrap();
+  assert!(lease.marker_owner_intact().is_err());
+  assert!(global_custody_unresolved(&p).unwrap());
+  drop(lease);
   fs::remove_dir_all(p).unwrap();
  }
  #[test]
