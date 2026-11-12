@@ -377,6 +377,12 @@ function App() {
   const [gitRefsHealth, setGitRefsHealth] = useState(null);
   const [stashInventory,setStashInventory]=useState(null);
   const [stashBusy,setStashBusy]=useState(false);
+  const [fin03ImpactKind,setFin03ImpactKind]=useState('revert_commit');
+  const [fin03ImpactCommit,setFin03ImpactCommit]=useState('');
+  const [fin03ImpactIndex,setFin03ImpactIndex]=useState('0');
+  const [fin03ImpactReview,setFin03ImpactReview]=useState(null);
+  const [fin03ImpactBusy,setFin03ImpactBusy]=useState(false);
+  const fin03ImpactTicket=useRef(0);
   const [reviewedRestore,setReviewedRestore]=useState(null);
   const [restoreReceipt,setRestoreReceipt]=useState(null);
   const [restoreRecovery,setRestoreRecovery]=useState(null);
@@ -3442,6 +3448,61 @@ function App() {
          activeProjectIdRef.current===projectId)
         setProblem('Stash metadata unavailable: '+String(error));
     }finally{if(ticket===stashTicket.current)setStashBusy(false);}
+  }
+  async function previewFin03Impact(){
+    const projectId=activeProject?.projectId;
+    const kind=fin03ImpactKind;
+    const revert=kind==='revert_commit';
+    const sha=fin03ImpactCommit.trim();
+    const index=Number(fin03ImpactIndex);
+    if(!projectId || fin03ImpactBusy)return;
+    if(!['revert_commit','stash_apply','stash_drop'].includes(kind) ||
+      (revert && !/^[a-f0-9]{40}$/.test(sha)) ||
+      (!revert && (!/^(0|[1-9][0-9]?)$/.test(fin03ImpactIndex) ||
+        !Number.isSafeInteger(index) || index>31))){
+      setProblem('Select a valid local operation and exact SHA or stash index 0–31.');
+      return;
+    }
+    const ticket=++fin03ImpactTicket.current;
+    setFin03ImpactBusy(true);setFin03ImpactReview(null);
+    try{
+      const result=await invoke('ide_git_preview_local_mutation_impact',{
+        projectId,kind,commitSha:revert?sha:null,stashIndex:revert?null:index,
+      });
+      if(ticket!==fin03ImpactTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(result?.schemaVersion!==1 || result.projectId!==projectId ||
+         result.kind!==kind || result.stashIndex!==(revert?null:index) ||
+         (revert && result.selectedCommit!==sha) ||
+         !/^[a-f0-9]{40}$/.test(result.selectedCommit||'') ||
+         !/^[a-f0-9]{40}$/.test(result.currentHead||'') ||
+         !/^[a-f0-9]{64}$/.test(result.indexSha256||'') ||
+         !/^[a-f0-9]{64}$/.test(result.evidenceSha256||'') ||
+         !Number.isSafeInteger(result.changedPathsCount) ||
+         !Number.isSafeInteger(result.possibleOverlapCount) ||
+         !Array.isArray(result.visiblePaths) || result.visiblePaths.length>48 ||
+         !result.visiblePaths.every(p=>typeof p==='string' && p.length<=1024) ||
+         !Array.isArray(result.blockers) || result.blockers.length>16 ||
+         !result.blockers.every(p=>typeof p==='string' && p.length<=100) ||
+         result.riskAssessment!=='path_overlap_only_not_conflict_or_result_tree_proof' ||
+         result.originalGitObjectsPreserved!==true ||
+         result.sourceRechecked!==true ||
+         result.indexOrWorktreeModified!==false ||
+         result.stashOrBranchRefModified!==false ||
+         result.gitProcessStarted!==false || result.networkQueried!==false ||
+         result.conflictResolutionPerformed!==false ||
+         result.resultTreeVerified!==false ||
+         result.executionRouteAvailable!==false ||
+         result.executionAuthorized!==false)
+        throw Error('FIN03G_NATIVE_REVIEW_UNTRUSTED');
+      setFin03ImpactReview(result);
+    }catch(error){
+      if(ticket===fin03ImpactTicket.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('FIN-03 impact preview refused: '+String(error));
+    }finally{
+      if(ticket===fin03ImpactTicket.current)setFin03ImpactBusy(false);
+    }
   }
   async function reviewNativeRestore(){
     const projectId=activeProject?.projectId;
@@ -8905,6 +8966,52 @@ function App() {
                   {stashInventory.entries.map(item=>
                     <p key={item.index}>#{item.index}:
                       <code>{item.commitSha}</code></p>)}
+                </div>}
+            </section>}
+            {activeProject && <section className="continuityDocument"
+              aria-label="FIN-03G read-only local revert and stash impact review">
+              <h3>Revert and stash impact · review only</h3>
+              <p>Native Git-object and changed-path evidence. Overlap is not proof
+                of a conflict, and absence of overlap does not prove a safe apply.
+                No Git mutation or execution approval is available.</p>
+              <label htmlFor="fin03g-kind">Proposed operation</label>
+              <select id="fin03g-kind" value={fin03ImpactKind}
+                disabled={fin03ImpactBusy}
+                onChange={e=>{setFin03ImpactKind(e.target.value);setFin03ImpactReview(null);}}>
+                <option value="revert_commit">Revert original commit</option>
+                <option value="stash_apply">Apply existing stash</option>
+                <option value="stash_drop">Drop existing stash</option>
+              </select>
+              {fin03ImpactKind==='revert_commit'?<>
+                <label htmlFor="fin03g-commit">Exact lowercase commit SHA</label>
+                <input id="fin03g-commit" type="text" maxLength={40}
+                  value={fin03ImpactCommit} disabled={fin03ImpactBusy}
+                  onChange={e=>{setFin03ImpactCommit(e.target.value);setFin03ImpactReview(null);}}/>
+              </>:<>
+                <label htmlFor="fin03g-index">Stash index (0–31)</label>
+                <input id="fin03g-index" type="number" min="0" max="31" step="1"
+                  value={fin03ImpactIndex} disabled={fin03ImpactBusy}
+                  onChange={e=>{setFin03ImpactIndex(e.target.value);setFin03ImpactReview(null);}}/>
+              </>}
+              <button type="button" className="ghostBtn"
+                disabled={fin03ImpactBusy || gitBusy}
+                onClick={()=>void previewFin03Impact()}>
+                {fin03ImpactBusy?'Inspecting Git objects…':'Preview impact (no changes)'}
+              </button>
+              {fin03ImpactReview?.projectId===activeProject.projectId &&
+                <div role="status">
+                  <p>Original commit: <code>{fin03ImpactReview.selectedCommit}</code></p>
+                  <p>Current HEAD: <code>{fin03ImpactReview.currentHead}</code></p>
+                  <p>Changed paths: {fin03ImpactReview.changedPathsCount};
+                    possible overlaps: {fin03ImpactReview.possibleOverlapCount}</p>
+                  {fin03ImpactReview.visiblePaths.map(path=>
+                    <p key={path}><code>{path}</code></p>)}
+                  {fin03ImpactReview.omittedPathsCount>0 &&
+                    <p>{fin03ImpactReview.omittedPathsCount} additional paths omitted.</p>}
+                  {fin03ImpactReview.blockers.map(code=>
+                    <p key={code}>Review required: {code.replaceAll('_',' ')}</p>)}
+                  <p>Evidence SHA-256: <code>{fin03ImpactReview.evidenceSha256}</code></p>
+                  <p>Resulting tree and conflicts unverified; execution not authorized.</p>
                 </div>}
             </section>}
             {activeProject && <div className="continuityDocument" aria-label="Read-only reviewed hunk selection">
