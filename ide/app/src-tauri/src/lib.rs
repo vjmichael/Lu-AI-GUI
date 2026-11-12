@@ -994,6 +994,58 @@ async fn ide_git_execute_single_unstage(
 }
 
 #[tauri::command]
+async fn ide_git_review_single_file_restore(
+ state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
+)->Result<lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReview,String>{
+ let registry=Arc::clone(state.inner());
+ tauri::async_runtime::spawn_blocking(move||
+  registry.review_single_file_restore(&project_id))
+  .await.map_err(|_|"FIN03_RESTORE_REVIEW_THREAD_INTERRUPTED".to_owned())?
+  .map_err(str::to_owned)
+}
+#[tauri::command]
+async fn ide_git_execute_single_file_restore(
+ app:AppHandle,state:State<'_,Arc<IdeWorkspaceRegistry>>,
+ sessions:State<'_,Arc<PartialStageSessions>>,
+ expected:lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReview,
+)->Result<lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReceipt,String>{
+ let registry=Arc::clone(state.inner());
+ let sessions=Arc::clone(sessions.inner());
+ let id=expected.project_id.clone();
+ let cancel=sessions.begin(&id)?;
+ let result=tauri::async_runtime::spawn_blocking(move||{
+  let fresh=registry.review_single_file_restore(&id).map_err(str::to_owned)?;
+  if fresh.review_sha256!=expected.review_sha256 ||
+     expected.operation_authorized || expected.source_files_modified ||
+     expected.refs_modified || cancel.load(Ordering::SeqCst)!=0 {
+    return Err("FIN03_RESTORE_REVIEW_CHANGED".into());
+  }
+  let yes=app.dialog().message(format!(
+   "Restore the original HEAD contents of ONE file?\\n\\nProject: {}\\nFile: {}\\nOriginal SHA: {}\\nHEAD SHA: {}\\nReview SHA: {}\\n\\nYour modified original bytes will be preserved in the local .git directory. This changes the worktree; no Git ref or remote is changed.",
+   id,fresh.relative_path,fresh.original_sha256,fresh.head_sha,fresh.review_sha256))
+   .title("Lu IDE · One-use native file restore")
+   .buttons(MessageDialogButtons::OkCancelCustom(
+    "Restore reviewed file".into(),"Deny".into())).blocking_show();
+  if !yes || cancel.load(Ordering::SeqCst)!=0{
+    return Err("FIN03_RESTORE_HUMAN_DENIED".into());
+  }
+  registry.execute_approved_single_file_restore(&fresh,&cancel).map_err(str::to_owned)
+ }).await.map_err(|_|"FIN03_RESTORE_HOST_INTERRUPTED".to_owned());
+ sessions.end(&id);
+ result?
+}
+#[tauri::command]
+async fn ide_git_single_file_restore_recovery(
+ state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
+)->Result<bool,String>{
+ let registry=Arc::clone(state.inner());
+ tauri::async_runtime::spawn_blocking(move||
+  registry.single_file_restore_recovery_required(&project_id))
+  .await.map_err(|_|"FIN03_RESTORE_RECOVERY_READ_INTERRUPTED".to_owned())?
+  .map_err(str::to_owned)
+}
+
+#[tauri::command]
 async fn ide_git_inspect_unstage_recovery(
  state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
 )->Result<Option<&'static str>,String>{
@@ -3755,6 +3807,9 @@ pub fn run() {
             ide_git_review_branch_operation,
             ide_read_local_stash_inventory,
             ide_git_review_single_unstage,
+            ide_git_review_single_file_restore,
+            ide_git_execute_single_file_restore,
+            ide_git_single_file_restore_recovery,
             ide_git_execute_single_unstage,
             ide_git_inspect_unstage_recovery,
             ide_git_reconcile_unstage_recovery,
