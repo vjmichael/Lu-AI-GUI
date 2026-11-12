@@ -12,6 +12,8 @@ const desktop=read('../src-tauri/src/lib.rs');
 
 test('P7L-1 native matrix is manually admitted and pins the exact SHA in both OS jobs',()=>{
   assert.match(matrix,/workflow_dispatch:/);
+  assert.match(matrix,/tee p7l1-evidence\/p7l1-node-regression\.log/);
+  assert.match(matrix,/tee p7l1-evidence\/p7l1-node-syntax\.log/);
   assert.doesNotMatch(matrix,/\bpush:\s*\n/);
   assert.doesNotMatch(matrix,/\bpull_request:\s*\n/);
   assert.match(matrix,/\[a-f0-9\]\{40\}/);
