@@ -140,7 +140,7 @@ impl DapGateway {
     }
     /// Exact kernel DebuggerThread sideband from a separately allowlisted
     /// pipe, not DAP stdout; this has no public Tauri/WebView action.
-    #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+    #[cfg(all(windows, any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence")))]
     pub(crate) fn verify_lldb_kernel_event_owner(
         &mut self,
         pid: u32,
