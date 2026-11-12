@@ -707,9 +707,12 @@ impl BackgroundProcessSupervisor {
         #[cfg(target_os="linux")]
         if let Some(guard)=cgroup.as_mut(){
             if guard.verify_admitted_worker(child.id()).is_err(){
-                // Stop the worker leader even if the custodian is gone.
-                // Detached descendants remain UNVERIFIED on guardian loss.
+                // The worker has executed; its side effects are uncertain.
+                // Persist this original task's uncertainty BEFORE returning
+                // even though the worker is still in PENDING transition.
                 let _=child.kill();let _=child.wait();
+                let _=self.store.record_process_uncertain(
+                    &plan.task_id,"OS_CUSTODY_UNVERIFIED");
                 let _=guard.stop_and_verify();
                 let _=self.store.fail_pending(&plan.task_id);
                 return Err(BackgroundProcessError::SpawnFailed)
@@ -777,6 +780,9 @@ impl BackgroundProcessSupervisor {
                     // or independent cgroup-custody status.
                     let _=worker.child.kill();
                     let _=worker.child.wait();
+                    self.store.record_process_uncertain(
+                        id,"LINUX_GUARDIAN_LOST")
+                        .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
                     return Err(BackgroundProcessError::ProcessUncertain)
                 }
             }
@@ -801,12 +807,20 @@ impl BackgroundProcessSupervisor {
                         // a failed cgroup stop would lose the only live
                         // cancellation handle and strand an uncertain effect.
                         if let Some(guard)=worker.cgroup.as_mut(){
-                            guard.stop_and_verify()
-                                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+                            if guard.stop_and_verify().is_err(){
+                                self.store.record_process_uncertain(
+                                    id,"OS_CUSTODY_UNVERIFIED")
+                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                                return Err(BackgroundProcessError::ProcessUncertain)
+                            }
                         }
                         if let Some(guardian)=worker.guardian.as_mut(){
-                            guardian.stop_and_verify_signal()
-                                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+                            if guardian.stop_and_verify_signal().is_err(){
+                                self.store.record_process_uncertain(
+                                    id,"OS_CUSTODY_UNVERIFIED")
+                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                                return Err(BackgroundProcessError::ProcessUncertain)
+                            }
                         }
                     }
                     finished.push((id.clone(),Some(status.success())));
@@ -815,7 +829,12 @@ impl BackgroundProcessSupervisor {
                     if worker.deadline.is_some_and(|deadline|Instant::now()>=deadline){
                         // Host deadline, never a model decision or an inferred
                         // lost heartbeat. Kill and reap before publishing.
-                        terminate_owned(worker)?;
+                        if terminate_owned(worker).is_err(){
+                            self.store.record_process_uncertain(
+                                id,"OS_CUSTODY_UNVERIFIED")
+                                .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                            return Err(BackgroundProcessError::ProcessUncertain)
+                        }
                         finished.push((id.clone(),None));
                     }
                 },
@@ -970,7 +989,12 @@ impl BackgroundProcessSupervisor {
         if worker.workspace_id!=workspace_id{
             return Err(BackgroundProcessError::WrongWorkspace);
         }
-        terminate_owned(worker)?;
+        if terminate_owned(worker).is_err(){
+            self.store.record_process_uncertain(
+                task_id,"OS_CUSTODY_UNVERIFIED")
+                .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+            return Err(BackgroundProcessError::ProcessUncertain)
+        }
         let mut owner=workers.remove(task_id).expect("live worker owned");
         if let Some(reader)=owner.progress_reader.take(){let _=reader.join();}
         if let Some(reader)=owner.version_reader.take(){let _=reader.join();}
