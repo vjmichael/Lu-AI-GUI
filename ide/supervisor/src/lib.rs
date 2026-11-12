@@ -651,8 +651,21 @@ impl Supervisor {
         if got != expected_sha256 {
             return Err(SupervisorError::JournalCorrupt);
         }
-        let text = std::str::from_utf8(&content).map_err(|_| SupervisorError::JournalCorrupt)?;
-        if !text.starts_with(&format!("lu-owner-v1\\n{job_id}\\n")) {
+        let (original_plan, original_running)=
+            crate::windows_event_owner::parse_persisted_owner_receipt(
+                &content,job_id,seq,
+            ).map_err(|_|SupervisorError::JournalCorrupt)?;
+        // A matching file hash is not sufficient by itself: the saved
+        // event MUST refer to an authentic original Running receipt and
+        // the same immutable JobPlan. Reopened files do not confer a
+        // live DEBUG_EVENT or restoration of authorization.
+        let jobs=self.inspect()?;
+        if !jobs.iter().any(|j|
+            j.job_id==job_id && j.plan_sha256==original_plan)
+            || !self.receipt_history(job_id)?.iter().any(|entry|
+                entry.entry_hash==original_running &&
+                entry.body.plan_sha256==original_plan &&
+                entry.body.phase==JobPhase::Running) {
             return Err(SupervisorError::JournalCorrupt);
         }
         Ok(())
