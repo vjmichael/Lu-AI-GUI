@@ -6428,6 +6428,15 @@ function App() {
           <small>This is Lu's conservative launch policy, not actual
             GPU/VRAM allocation or proof that an already-running worker paused.
             Existing workers retain cancellation and restart custody.</small>
+          <small>Multi-GPU: {backgroundGuardian.p6VerifiedGpuDevices??0} GPUs with
+            verified native evidence, {backgroundGuardian.p6ActiveGpuReservations??0}
+            {' '}additional reservations. Lu's installed single-model inference
+            path remains the default; no second GPU is assumed.</small>
+          <small>Optional compute nodes: {backgroundGuardian.p6RemoteCandidates??0}
+            {' '}reviewed identities; remote inference {
+              backgroundGuardian.p6RemoteDispatchEnabled?'available':'disabled'
+            }. No prompts, tools, images or source data are sent to an
+            unaccepted external compute node.</small>
         </div>}
         <div className="backgroundScanLaunch">
           <button type="button" className="primaryButton"
