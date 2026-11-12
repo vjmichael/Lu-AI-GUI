@@ -95,7 +95,7 @@ jobs:
             (Resolve-Path -LiteralPath 'scripts/perf01-windows-owner-metrics.ps1').Path,
             [ref]$tokens,[ref]$errors)
           if(@($errors).Count -ne 0){
-            foreach($error in $errors){Write-Error $error.Message}
+            foreach($parseError in $errors){Write-Error ($parseError.Message + ' at ' + $parseError.Extent.Text)}
             exit 1
           }
           Write-Host 'Owner-only sampler PowerShell syntax: accepted; real CPU/GPU measurements NOT RUN'
