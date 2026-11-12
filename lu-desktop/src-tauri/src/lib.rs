@@ -4555,6 +4555,66 @@ async fn lu_generate(
         return generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
             prompt,image_refs,max_new_tokens,GenerationOrigin::Human,true).await
     }
+    // PERF-01 P0D: deterministic supervisor metadata, not an inference,
+    // not an inference-engine capability/progress claim and no tool grant.
+    if matches!(
+        perf01_router::classify(
+            &prompt,!image_refs.is_empty(),
+            read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
+        ),perf01_router::Route::LocalModelStatus
+    ){
+        if !(1..=4096).contains(&max_new_tokens){
+            return Err("Invalid CPU model status request limits".into())
+        }
+        let owner=Arc::clone(state.inner());
+        let current=owner.supervisor.status()
+            .map_err(|_|"Native model status unavailable")?;
+        let expected_session=current.session_id.clone();
+        let session_matches=if session_id.is_empty(){
+            expected_session.is_none()
+        }else{
+            expected_session.as_deref()==Some(session_id.as_str())
+        };
+        if !session_matches{
+            return Err("Model session changed before CPU status observation".into())
+        }
+        let began=std::time::Instant::now();
+        return tauri::async_runtime::spawn_blocking(move||{
+            owner.chats.history_window(&chat_id,None,"older",1)?;
+            let now=owner.supervisor.status()
+                .map_err(|_|"Native model status unavailable")?;
+            if now.session_id!=expected_session{
+                return Err("Model changed while reading CPU status".into())
+            }
+            let answer=format!(
+                "Lu native CPU status: phase={:?}, modelLoaded={}, modelRef={}. Source: currently observed local supervisor metadata; no inference, new model load, GPU attestation or tool permission.",
+                now.phase,
+                now.session_id.is_some(),
+                now.model_ref.as_deref().unwrap_or("none")
+            );
+            let gid=next_id("g-");
+            owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            let _=app.emit("lu-generation-queued",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"queued",position:0
+            });
+            let _=app.emit("lu-generation-start",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"running",position:0
+            });
+            owner.chats.append_progress(&chat_id,&gid,&answer)?;
+            owner.chats.complete(&chat_id,&gid)?;
+            let _=owner.perf01.record(perf01_telemetry::cpu_receipt(
+                &chat_id,&gid,"NATIVE_MODEL_STATUS",began,
+                expected_session.is_some(),None,None,None,"COMPLETED"
+            ));
+            let _=app.emit("lu-generation-finish",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid,
+                phase:"finished",position:0
+            });
+            Ok(answer)
+        }).await.map_err(|_|"CPU model status worker interrupted")?;
+    }
     // PERF-01 P0D: exact current-human literal query, original ANSF
     // search, same-chat source IDs, and NO inference or GPU wake.
     // Do not treat a frontend classification as a tool or permission grant.
