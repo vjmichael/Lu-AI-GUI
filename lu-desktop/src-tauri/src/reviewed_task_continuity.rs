@@ -182,9 +182,9 @@ pub(crate) fn sec04_reviewed_turn_security(
         return Ok(Some(output))
     }
     output.original_origin_bound=true;
-    output.journal_status=if effect_present{
+    output.journal_status=(if effect_present{
         "ORIGINAL_JOURNALS_PRESENT"
-    }else{"ORIGINAL_EFFECT_JOURNAL_MISSING"}.into();
+    }else{"ORIGINAL_EFFECT_JOURNAL_MISSING"}).into();
     let query=if table_exists(&task,"lu_task_custody_uncertainty")?{
         "SELECT t.task_id,t.state,u.reason FROM lu_tasks t
          LEFT JOIN lu_task_custody_uncertainty u ON u.task_id=t.task_id
