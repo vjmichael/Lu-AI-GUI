@@ -173,3 +173,52 @@ fn tools09_windows_reparse_directory_denied_when_native_fixture_can_create_it(){
     }
     drop(root);fs::remove_dir_all(path).unwrap();
 }
+
+
+#[cfg(unix)]
+#[test]
+fn tools09_open_directory_handle_survives_ambient_root_replacement(){
+    let (path,root)=sandbox();
+    fs::write(path.join("old.txt"),"needle ORIGINAL").unwrap();
+    let moved=path.with_extension("preserved");
+    fs::rename(&path,&moved).unwrap();
+    fs::create_dir(&path).unwrap();
+    fs::write(path.join("new.txt"),"needle REPLACEMENT").unwrap();
+    let result=decode(search(&root,request("needle",true)).unwrap());
+    assert_eq!(result.hits.len(),1);
+    assert_eq!(result.hits[0].path,"old.txt");
+    assert!(result.hits[0].excerpt.contains("ORIGINAL"));
+    assert!(!result.hits[0].excerpt.contains("REPLACEMENT"));
+    drop(root);fs::remove_dir_all(path).unwrap();
+    fs::remove_dir_all(moved).unwrap();
+}
+#[test]
+fn tools09_entry_limit_is_marked_even_when_every_candidate_is_filtered(){
+    let (path,root)=sandbox();
+    for i in 0..530u32 {
+        fs::write(path.join(format!("unwanted-{i:04}.dat")),"needle").unwrap();
+    }
+    let mut req=request("needle",false);
+    req.file_suffix=Some(".rs".into());
+    let result=decode(search(&root,req).unwrap());
+    assert!(result.hits.is_empty());
+    assert!(result.truncated);
+    assert!(result.limitations.contains(&"ENTRY_LIMIT".into()));
+    drop(root);fs::remove_dir_all(path).unwrap();
+}
+#[cfg(unix)]
+#[test]
+fn tools09_long_relative_result_path_is_not_emitted_or_silently_omitted(){
+    let (path,root)=sandbox();
+    let mut target=path.clone();
+    for _ in 0..6 {
+        target.push("x".repeat(183));
+        fs::create_dir(&target).unwrap();
+    }
+    fs::write(target.join("hit.txt"),"needle").unwrap();
+    let result=decode(search(&root,request("needle",true)).unwrap());
+    assert!(result.hits.is_empty());
+    assert!(result.truncated);
+    assert!(result.limitations.contains(&"RESULT_PATH_LIMIT".into()));
+    drop(root);fs::remove_dir_all(path).unwrap();
+}
