@@ -143,6 +143,44 @@ pub(crate) fn review_from_verified_native_owner_for_ci(
     })
 }
 
+/// FIN-04R-1: construct a *review-only* action identity from the current
+/// protected first-party LLDB event plus an independent protected PE/PDB
+/// source map. This is neither a reusable consent nor executable authority.
+/// Every field is from the native Windows Job and its existing receipts,
+/// never an adapter stop packet, WebView or recovered action journal.
+#[cfg(all(windows, feature="fin04-release-owner-evidence"))]
+pub(crate) fn review_from_protected_release_owner(
+    witness:&crate::windows_worker::lsp_native::ReleaseOwnerObservation,
+)->Result<DebugReviewSession,DebugReviewDenial>{
+    if !witness.os_event_owner_verified ||
+       !witness.original_debug_job_verified ||
+       !witness.original_build_receipt_verified ||
+       !witness.source_line_independently_verified ||
+       witness.debugger_control_authorized || witness.recovery_authorized ||
+       witness.independently_verified_source_line.is_none() ||
+       witness.independently_verified_source_sha256.as_deref()
+           .is_none_or(|sha|!is_sha(sha)) ||
+       witness.independent_pdb_sha256.as_deref()
+           .is_none_or(|sha|!is_sha(sha)) ||
+       witness.source_frame_id==0 || witness.source_frame_id>1_000_000
+    {
+        return Err(DebugReviewDenial::BadStop);
+    }
+    DebugReviewSession::from_stop(NativeStop{
+        job_id:witness.debugger_job_id.clone(),
+        debug_plan_sha:witness.debugger_plan_sha256.clone(),
+        build_completed_sha:witness.build_terminal_receipt_sha256.clone(),
+        debug_running_sha:witness.debug_running_receipt_sha256.clone(),
+        owner_event_sha:witness.receipt_sha256.clone(),
+        source_snapshot_sha:witness.source_snapshot_sha256.clone(),
+        source:"src/main.rs".into(),
+        line:witness.independently_verified_source_line
+            .ok_or(DebugReviewDenial::BadStop)?,
+        process_id:witness.process_id,thread_id:witness.thread_id,
+        rip:witness.stopped_rip,event_sequence:witness.owner_sequence,
+        verified_frame_id:Some(witness.source_frame_id),
+    })
+}
 /// Preview-only. It is not a Tauri command or an executable DAP request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DebugReviewPreview {
