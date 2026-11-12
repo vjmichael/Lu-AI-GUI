@@ -1340,6 +1340,36 @@ mod tests{
     }
     #[cfg(target_os="linux")]
     #[test]
+    fn sec03_cancel_workspace_sweeps_all_owned_workers_and_spares_other_chat(){
+        let binary=fs::canonicalize("/bin/sleep").unwrap();
+        let digest=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let manager=BackgroundProcessSupervisor::new(Arc::clone(&store));
+        for (id,workspace) in [
+            ("p0-sweep-1","c-target"),("p0-sweep-2","c-target"),
+            ("p0-unrelated","c-other")
+        ]{
+            manager.start_host_approved(TrustedWorkerPlan{
+                task_id:id.into(),workspace_id:workspace.into(),
+                executable:binary.clone(),expected_sha256:digest.clone(),
+                args:vec!["3".into()],progress_protocol:false,
+                max_runtime_seconds:Some(10),
+            }).unwrap();
+        }
+        assert_eq!(manager.cancel_workspace_owned("c-target").unwrap(),2);
+        for id in ["p0-sweep-1","p0-sweep-2"]{
+            assert_eq!(store.get(id).unwrap().unwrap().state,
+                TaskState::Cancelled);
+            assert!(!manager.can_cancel(id));
+        }
+        assert!(manager.can_cancel("p0-unrelated"));
+        assert_eq!(store.get("p0-unrelated").unwrap().unwrap().state,
+            TaskState::Running);
+        assert_eq!(manager.cancel_workspace_owned("c-target").unwrap(),0);
+        assert_eq!(manager.cancel_workspace_owned("c-other").unwrap(),1);
+    }
+    #[cfg(target_os="linux")]
+    #[test]
     fn sec03_real_os_cancel_poll_collision_has_one_terminal_receipt(){
         use std::sync::{Arc,Barrier};
         let binary=fs::canonicalize("/bin/sleep").unwrap();
