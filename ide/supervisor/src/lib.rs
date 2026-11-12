@@ -1479,6 +1479,32 @@ mod tests {
         reviewed.debug_target_binding_sha256 = Some("d".repeat(64));
         assert!(!validate_plan(&reviewed));
     }
+    #[cfg(feature = "package-vcpkg-worker")]
+    #[test]
+    fn fin05_vcpkg_requires_distinct_exact_review_and_bounded_worker() {
+        let mut plan=plan();
+        plan.recipe_id="vcpkg_install_offline".into();
+        plan.effect_class=format!("package_vcpkg_install_offline:{}", "a".repeat(64));
+        plan.runtime_limit_ms=600_000;
+        plan.process_limit=12;
+        plan.log_limit_bytes=128*1024;
+        if cfg!(target_os="linux") {
+            assert!(validate_plan(&plan));
+        } else {
+            assert!(!validate_plan(&plan));
+        }
+        let original=fingerprint(&plan).unwrap();
+        plan.effect_class=format!("package_vcpkg_install_offline:{}", "b".repeat(64));
+        assert_ne!(original,fingerprint(&plan).unwrap());
+        plan.effect_class="test_build_isolated".into();
+        assert!(!validate_plan(&plan));
+        plan.effect_class=format!("package_vcpkg_install_offline:{}", "a".repeat(64));
+        plan.process_limit=13;
+        assert!(!validate_plan(&plan));
+        plan.process_limit=12;
+        plan.runtime_limit_ms=600_001;
+        assert!(!validate_plan(&plan));
+    }
     #[test]
     fn ide053_package_recipe_never_inherits_an_unrelated_build_grant() {
         let mut unrelated = plan();
