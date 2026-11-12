@@ -440,7 +440,7 @@ fn spawn_contained_stdio(
     // The fourth handle is *only* a test-only reviewed LLDB event channel.
     // Normal LSP, ordinary DAP and all release processes inherit exactly 3.
     let event_pipe = if owner_event_channel
-        && cfg!(all(debug_assertions, feature = "dev045d5-ci-event-owner"))
+        && cfg!(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence"))
     {
         let (host_read, child_write) = inheritable_pipe()?;
         uninheritable(host_read.0)?;
@@ -643,7 +643,7 @@ struct WindowsLspProcess {
     writer_thread: Option<JoinHandle<()>>,
     stdout_read: Handle,
     debug_stderr: Option<Handle>,
-    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    #[cfg(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence"))]
     event_sideband: Option<crate::windows_event_owner::OwnerSideband>,
     released: bool,
 }
@@ -681,7 +681,7 @@ impl RestrictedLspProcess for WindowsLspProcess {
             .expect_pipe_eof_after_lldb_crash()?;
         Ok(())
     }
-    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    #[cfg(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence"))]
     fn verify_lldb_kernel_event_owner(
         &mut self,
         pid: u32,
@@ -1026,7 +1026,7 @@ pub fn start_windows_lsp(
         writer_thread: Some(writer_thread),
         stdout_read,
         debug_stderr,
-        #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+        #[cfg(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence"))]
         event_sideband: None,
         released: false,
     };
@@ -1252,7 +1252,7 @@ fn start_windows_dap_inner(
             &workspace,
             &mut env,
             plan.recipe_id == "dap_lldb_project"
-                && cfg!(all(debug_assertions, feature = "dev045d5-ci-event-owner")),
+                && cfg!(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence")),
         ) {
             Ok(value) => {
                 native_lsp_trace("suspended_child_attested");
@@ -1300,7 +1300,7 @@ fn start_windows_dap_inner(
         }
     };
     native_lsp_trace("writer_ready");
-    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    #[cfg(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence"))]
     let event_sideband = if let Some((reader, nonce)) = owner_pipe {
         let raw = reader.0 as usize;
         // The bounded native reader exclusively owns this kernel handle
@@ -1327,7 +1327,7 @@ fn start_windows_dap_inner(
         writer_thread: Some(writer_thread),
         stdout_read,
         debug_stderr,
-        #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+        #[cfg(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence"))]
         event_sideband,
         released: false,
     };
