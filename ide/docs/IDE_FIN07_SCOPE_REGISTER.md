@@ -160,3 +160,31 @@ Source-only release-observer integration now exists behind `fin04-release-event-
 The existing one-use action journal and independent post-command result checker can compile in the release-observer source, but every non-test release dispatch-slot admission is explicitly denied. The CI-only `llvm-symbolizer` child is not acceptable production custody. No release debugger human authorization, step, breakpoint or variables operation is enabled. A new native operator dialog can record a unique OS-only recovery receipt for a prior interrupted action after independently rechecking all original Job Objects/cgroups and action journals; it does not clear the original global marker, restore action permission, independently verify the old operation result or replay any DAP request. FIN-02 deferred; FIN-04R-1 through R-5 native release gates are open.
 
 See [FIN-04R release observer/recovery details](IDE_FIN04R_RELEASE_OWNER_AND_ACTION_RECOVERY_20261112.md). Exact-head native compilation, Windows/Linux kernel fixtures, independent protected PDB acceptance, physical GUI approvals, installed restart and security acceptance remain **not performed**. No CI/merge/release/feature freeze authorized.
+
+## FIN-04R-1 update — protected PE/PDB reader source, 2026-11-12
+
+The release observer's old CI-only host symbolizer was split from the
+strict PE/PDB validator; FIN-04R-1 now routes a fixed, measured
+`llvm-symbolizer.exe` through the original **Windows AppContainer and
+SCM-held Job Object**, bounded stdio and terminal OS process. The
+native source-line verifier binds one compiler PE/PDB mapping to the
+still-live first-party LLDB event, original Job, OS thread/RIP and
+source/build/debug receipts before and after the protected read.
+
+There is now a separate native operator action **review**, accepting
+only a fixed original step-over or verified-line breakpoint intent.
+It records Prepared/Approved/Revoked, immediately revokes the decision,
+and cannot send any DAP step/breakpoint command. Pure step and
+independent breakpoint-hit verifier source and hostile fixtures exist,
+but **no actual production post-command execution or positive OS
+result has been accepted**. The existing global action journal,
+OS-only two-pass kernel quiescence and no-replay recovery remain
+mandatory. New exact-head Windows native + physical Windows human
+fixtures are authored, **not executed**.
+
+See [FIN-04R-1 detailed implementation and acceptance](IDE_FIN04R1_PROTECTED_PDB_AND_NATIVE_ACCEPTANCE_20261112.md).
+No Windows Rust/Tauri compile, actual Win32 SCM/AppContainer,
+source/PDB tamper, owner cancellation/continuation/restart, physical
+installed approval or accessibility/security acceptance has been
+performed here. Production debugger controls remain **disabled**.
+FIN-02 stays deferred. No CI, PR merge, feature freeze or release.
