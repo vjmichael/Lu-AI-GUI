@@ -10,7 +10,8 @@ fn sha(b:&[u8])->String{format!("{:x}",Sha256::digest(b))}
 #[derive(Clone,Debug,Serialize)]
 #[serde(rename_all="camelCase")]
 pub struct ReviewedStashSave {
- pub project_id:String,pub relative_path:String,pub source_review_sha256:String,
+ pub project_id:String,pub relative_path:String,pub head_sha:String,
+ pub original_sha256:String,pub source_review_sha256:String,
  pub initial_stash_oid:Option<String>,pub review_sha256:String,
  pub operation_authorized:bool,pub refs_modified:bool,pub worktree_modified:bool,
 }
@@ -43,6 +44,7 @@ impl IdeWorkspaceRegistry {
     tip.as_deref().unwrap_or("no-stash")).as_bytes());
   Ok(ReviewedStashSave{
    project_id:id.into(),relative_path:source.relative_path,
+   head_sha:source.head_sha,original_sha256:source.original_sha256,
    source_review_sha256:source.review_sha256,initial_stash_oid:tip,
    review_sha256:reviewed,operation_authorized:false,refs_modified:false,
    worktree_modified:false})
@@ -57,6 +59,8 @@ impl IdeWorkspaceRegistry {
   if fresh.review_sha256!=expected.review_sha256 ||
      fresh.relative_path!=expected.relative_path ||
      fresh.source_review_sha256!=expected.source_review_sha256 ||
+     fresh.head_sha!=expected.head_sha ||
+     fresh.original_sha256!=expected.original_sha256 ||
      fresh.initial_stash_oid!=expected.initial_stash_oid {
     return Err("FIN03_STASH_REVIEW_CHANGED");
   }
@@ -81,8 +85,14 @@ impl IdeWorkspaceRegistry {
   if cancel.compare_exchange(0,1,Ordering::SeqCst,Ordering::SeqCst).is_err(){
    return Err("FIN03_STASH_CANCELLED_RECONCILIATION_REQUIRED");
   }
-  // A second review is blocked by the marker. Revalidate the exact
-  // tracked original bytes and stash ref without clearing the marker.
+  // A fresh tracked-status/index/tree review is separate from the stash
+  // review, which cannot run while the private interruption marker exists.
+  let source_again=self.review_single_file_restore(&expected.project_id)?;
+  if source_again.review_sha256!=fresh.source_review_sha256 ||
+     source_again.head_sha!=fresh.head_sha ||
+     source_again.original_sha256!=fresh.original_sha256 {
+   return Err("FIN03_STASH_SOURCE_CHANGED_AFTER_BACKUP");
+  }
   if fs::read(root.join(&fresh.relative_path))
       .map_err(|_|"FIN03_STASH_TARGET_UNREADABLE")?!=original ||
      stash_tip(&repo)?!=fresh.initial_stash_oid {
@@ -98,6 +108,9 @@ impl IdeWorkspaceRegistry {
   }
   let original_head=repo.head().map_err(|_|"FIN03_STASH_HEAD_UNAVAILABLE")?
    .peel_to_commit().map_err(|_|"FIN03_STASH_HEAD_UNAVAILABLE")?;
+  if original_head.id().to_string()!=fresh.head_sha {
+   return Err("FIN03_STASH_HEAD_CHANGED");
+  }
   let tree=original_head.tree().map_err(|_|"FIN03_STASH_HEAD_TREE_UNAVAILABLE")?;
   let entry=tree.get_path(std::path::Path::new(&fresh.relative_path))
    .map_err(|_|"FIN03_STASH_HEAD_PATH_UNAVAILABLE")?;
