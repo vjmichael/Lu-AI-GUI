@@ -44,7 +44,8 @@ test('P0 telemetry measures real generation stages but never invents GPU rate',(
   assert.match(host,/perf_trace\.context_ready\(\)/);
   assert.match(host,/perf_trace\.dispatched\(\)/);
   assert.match(host,/perf_trace\.stream_chunk\(chunk\.text\.len\(\)\)/);
-  assert.match(host,/perf_trace\.finish\(/);
+  assert.match(host,/perf_trace\s*\.with_engine_start_events\(/);
+  assert.match(host,/observed_engine_starts_after/);
   assert.match(ledger,/queue_wait_ms:Option<u64>/);
   assert.match(ledger,/context_assembly_ms:Option<u64>/);
   assert.match(ledger,/model_dispatch_to_first_chunk_ms:Option<u64>/);
