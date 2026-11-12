@@ -50,3 +50,32 @@ test('FIN06 recovery prevents navigation and native success promotion',()=>{
  assert.equal(checkedFin06Journey(w,id,completed,null,null).steps
    .find(row=>row.id==='build').observation,'unverified');
 });
+
+test('FIN06B operational readiness distinguishes native observations from authority',async()=>{
+ const {checkedFin06OperationalReadiness}=await import('../web/fin06_guided_workflow.js');
+ const journey=checkedFin06Journey(workbench(),id,null,null,null);
+ const signals={
+  git:{projectId:id,state:'local_repository_inspected',truncated:false},
+  build:{ready:true,globalRecoveryRequired:false,globalWorkerBusy:false,
+    activeInAnotherProject:false},
+  debug:{ready:true,projectDebugSupported:true,globalRecoveryRequired:false,
+    activeInAnotherProject:false,orphanedDebugActionRequired:false},
+  packages:[{reviewAvailable:true,installAuthorized:false}]
+ };
+ const v=checkedFin06OperationalReadiness(journey,id,signals);
+ assert.equal(v.gitObserved,true);
+ assert.equal(v.buildWorkerObserved,true);
+ assert.equal(v.debuggerLaunchObserved,true);
+ assert.equal(v.packageReviewObserved,true);
+ assert.equal(v.productionDebuggerApproved,false);
+ assert.equal(v.packageInstallApproved,false);
+ assert.equal(v.executionAuthorized,false);
+ const interrupted=checkedFin06OperationalReadiness(journey,id,{
+  ...signals,build:{...signals.build,globalRecoveryRequired:true}});
+ assert.equal(interrupted.blockedByRecovery,true);
+ assert.equal(interrupted.buildWorkerObserved,false);
+ assert.equal(interrupted.debuggerLaunchObserved,false);
+ assert.equal(checkedFin06OperationalReadiness(journey,'ide-'+'c'.repeat(32),signals),null);
+ assert.equal(checkedFin06OperationalReadiness(journey,id,{
+  ...signals,git:{...signals.git,projectId:'ide-'+'c'.repeat(32)}}).gitObserved,false);
+});
