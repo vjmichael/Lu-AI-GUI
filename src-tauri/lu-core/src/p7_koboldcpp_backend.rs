@@ -300,12 +300,14 @@ impl KoboldCppBackend {
                 Ok(())
             },
         );
-        if result.is_err()||cancel.is_cancelled(){
+        let cancelled=cancel.is_cancelled();
+        if result.is_err()||cancelled{
             // Disconnect alone is not proof Kobold stopped decoding;
             // kill/reap the original supervised process. No automatic
             // replay, partial effect approval or silent backend fallback.
             self.unload();
         }
+        if cancelled{return Err("P7L original generation cancelled".into())}
         result
     }
 }
@@ -389,9 +391,11 @@ impl InferenceBackend for KoboldCppBackend {
             ||cancel.is_cancelled(),
             std::collections::BTreeSet::from(["lu_browser_read".into()]),
         );
-        if result.is_err()||cancel.is_cancelled(){
+        let cancelled=cancel.is_cancelled();
+        if result.is_err()||cancelled{
             self.unload();
         }
+        if cancelled{return Err("P7L tool proposal cancelled".into())}
         result
     }
 }
