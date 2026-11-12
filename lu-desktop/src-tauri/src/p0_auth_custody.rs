@@ -85,6 +85,21 @@ pub(crate) fn initialize(conn:&Connection)->Result<(),String>{
             ON ansf_p0_host_cancel_events(chat_id,id DESC);"
     ).map_err(|_|"P0_AUTH_ANFS_CANCEL_SCHEMA_UNAVAILABLE".into())
 }
+/// The native original-catalog cancellation REQUESTED row is the
+/// linearization point for revoked work. A RESULT alone cannot revoke
+/// an operation, and an older REQUESTED must not revoke a fresh turn.
+pub(crate) fn requested_watermark(
+    conn:&Connection,chat:&str,
+)->Result<i64,String>{
+    if !ident(chat,"c-"){return Err("P0_SEC_INVALID_CHAT_SCOPE".into())}
+    initialize(conn)?;
+    conn.query_row(
+        "SELECT COALESCE(MAX(id),0) FROM ansf_p0_host_cancel_events
+         WHERE chat_id=?1 AND phase='REQUESTED'",
+        params![chat],|row|row.get(0)
+    ).map_err(|_|"P0_SEC_CANCEL_WATERMARK_UNAVAILABLE".into())
+}
+
 pub(crate) fn append(conn:&Connection,event:&HostCancelEvent)
  ->Result<(),String>{
     if !valid(event){return Err("P0_AUTH_INVALID_CANCEL_EVENT".into())}
