@@ -542,6 +542,62 @@ pub struct KernelClearanceReceipt {
 /// Separate cross-process recovery mutex. Its unexpected crash residue
 /// prevents another clearance; it does NOT clear or authorize the real
 /// native admission marker.
+/// The existing global marker remains mandatory throughout recovery
+/// lock reaping, preventing an abandoned sidecar from becoming an execution
+/// bypass. A live guard owner or unverifiable native host always denies.
+fn recover_abandoned_recovery_guard(profile:&Path,path:&Path)->Result<(),String>{
+ if !marker_present(profile)?{
+  return Err("FIN01_RECOVERY_LOCK_WITHOUT_GLOBAL_MARKER".into());
+ }
+ let meta=fs::symlink_metadata(path)
+  .map_err(|_|"FIN01_RECOVERY_LOCK_UNREADABLE")?;
+ if !meta.is_file() || meta.file_type().is_symlink() ||
+    meta.len()==0 || meta.len()>96 {
+  return Err("FIN01_RECOVERY_LOCK_UNTRUSTED".into());
+ }
+ let bytes=fs::read(path).map_err(|_|"FIN01_RECOVERY_LOCK_UNREADABLE")?;
+ let body=std::str::from_utf8(&bytes)
+  .map_err(|_|"FIN01_RECOVERY_LOCK_INVALID")?;
+ let body=body.strip_suffix('\n')
+  .ok_or("FIN01_RECOVERY_LOCK_INVALID")?;
+ let parts:Vec<_>=body.split(':').collect();
+ if parts.len()!=3 || parts[0]!="FIN01-RECOVERY" ||
+    parts[2].len()!=16 ||
+    !parts[2].bytes().all(|b|b.is_ascii_hexdigit() && !b.is_ascii_uppercase()){
+  return Err("FIN01_RECOVERY_LOCK_INVALID".into());
+ }
+ let owner=parts[1].parse::<u32>()
+  .map_err(|_|"FIN01_RECOVERY_LOCK_INVALID")?;
+ if owner==0 || owner==std::process::id(){
+  return Err("FIN01_RECOVERY_OWNER_STILL_ALIVE".into());
+ }
+ #[cfg(windows)]
+ lu_ide_execution_supervisor::windows_worker
+  ::verify_global_worker_quiescence(owner,&[])
+  .map_err(|_|"FIN01_ABANDONED_RECOVERY_OWNER_KERNEL_UNVERIFIED")?;
+ #[cfg(target_os="linux")]
+ lu_ide_execution_supervisor::linux_worker
+  ::verify_global_worker_quiescence(owner,&[])
+  .map_err(|_|"FIN01_ABANDONED_RECOVERY_OWNER_KERNEL_UNVERIFIED")?;
+ let after=fs::symlink_metadata(path)
+  .map_err(|_|"FIN01_RECOVERY_LOCK_CHANGED")?;
+ if fs::read(path).map_err(|_|"FIN01_RECOVERY_LOCK_CHANGED")?!=bytes ||
+    after.len()!=meta.len() || after.modified().ok()!=meta.modified().ok() ||
+    !marker_present(profile)?{
+  return Err("FIN01_RECOVERY_LOCK_CHANGED".into());
+ }
+ #[cfg(unix)]{
+  use std::os::unix::fs::MetadataExt;
+  if after.ino()!=meta.ino() || after.dev()!=meta.dev(){
+   return Err("FIN01_RECOVERY_LOCK_REPLACED".into());
+  }
+ }
+ fs::remove_file(path).map_err(|_|"FIN01_RECOVERY_LOCK_REAP_FAILED")?;
+ #[cfg(unix)]
+ File::open(profile).and_then(|d|d.sync_all())
+  .map_err(|_|"FIN01_RECOVERY_LOCK_REAP_SYNC_FAILED")?;
+ Ok(())
+}
 struct RecoveryGuard {path:PathBuf, nonce:Vec<u8>}
 impl RecoveryGuard{
  fn begin(profile:&Path)->Result<Self,String>{
@@ -552,9 +608,21 @@ impl RecoveryGuard{
    use std::os::unix::fs::OpenOptionsExt;
    options.mode(0o600);
   }
-  let mut file=options.open(&path)
-   .map_err(|_|"FIN01_RECOVERY_ALREADY_IN_PROGRESS_OR_INTERRUPTED")?;
-  let nonce=format!("FIN01-RECOVERY:{:016x}\n",rand::random::<u64>()).into_bytes();
+  let mut file=match options.open(&path) {
+   Ok(file)=>file,
+   Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>{
+    // A prior process may have crashed during clearance. Never unlink a
+    // stale *recovery* mutex from its age: validate its original owner as
+    // exited through the same native kernel path. The actual global marker
+    // must still be present and is never touched by this function.
+    recover_abandoned_recovery_guard(profile,&path)?;
+    options.open(&path)
+     .map_err(|_|"FIN01_RECOVERY_ALREADY_IN_PROGRESS_OR_INTERRUPTED")?
+   }
+   Err(_)=>return Err("FIN01_RECOVERY_ALREADY_IN_PROGRESS_OR_INTERRUPTED".into()),
+  };
+  let nonce=format!("FIN01-RECOVERY:{}:{:016x}\n",
+    std::process::id(),rand::random::<u64>()).into_bytes();
   file.write_all(&nonce).and_then(|_|file.sync_all())
    .map_err(|_|"FIN01_RECOVERY_LOCK_SYNC_UNVERIFIED")?;
   #[cfg(unix)]
