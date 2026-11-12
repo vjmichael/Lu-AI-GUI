@@ -481,6 +481,79 @@ fn fin02_require_reviewed_lsp_stage() -> Result<(), String> {
     // provider and protected service against the exact release source.
     Ok(())
 }
+/// FIN-04R source provenance for a protected Windows *observer*, never
+/// permission to step, set a breakpoint, inspect values or replay actions.
+/// A standalone lldb-dap.exe copied into resources is NOT evidence that
+/// the first-party DEBUG_EVENT hook was compiled into it. Require a
+/// reviewed, byte-pinned LLVM 18.1.8 patch inventory in addition to the
+/// FIN-02 whole-runtime hash and the original signed service checks.
+/// Absence of this independent build-stage evidence denies packaging.
+fn fin04_require_reviewed_owner_stage() -> Result<(), String> {
+    if env::var_os("CARGO_FEATURE_FIN04_RELEASE_EVENT_OBSERVER").is_none() {
+        return Ok(());
+    }
+    if env::var("CARGO_CFG_TARGET_OS").ok().as_deref() != Some("windows")
+        || env::var_os("CARGO_FEATURE_FIN02_PROTECTED_ALPHA").is_none()
+        || env::var_os("CARGO_FEATURE_NATIVE_PROJECT_DEBUG").is_none()
+        || env::var_os("CARGO_FEATURE_DEV046D_NATIVE_DIALOG").is_some()
+    {
+        return Err("FIN04R_PROTECTED_RELEASE_OBSERVER_PROFILE_DENIED".into());
+    }
+    let root=PathBuf::from(env::var("CARGO_MANIFEST_DIR")
+        .map_err(|_|"FIN04R_BUILD_ROOT_UNAVAILABLE")?);
+    let stage=root.join("resources/debug-adapters/lldb-dap");
+    let provenance=stage.join("fin04-owner-provenance.json");
+    println!("cargo:rerun-if-changed={}",provenance.display());
+    let data=json(&provenance)?;
+    if data["schema"]!="lu.ide.fin04.first-party-lldb-owner.v1"
+        || data["upstreamCommit"]!="3b5b5c1ec4a3095ab096dd780e84d7ab81f3d7ff"
+        || data["observerOnly"]!=true
+        || data["productionDebuggerActions"]!=false
+        || data["replayAuthorized"]!=false
+    {
+        return Err("FIN04R_OWNER_SOURCE_PROVENANCE_DENIED".into());
+    }
+    let header=root.join("../../llvm18_owner/LuIdeOwnerEvent.h");
+    let patcher=root.join("../../llvm18_owner/apply_llvm18_owner_hook.py");
+    let cpp=stage.join("provenance/DebuggerThread.cpp");
+    let binary=stage.join("bin/lldb-dap.exe");
+    for file in [&header,&patcher,&cpp,&binary] {
+        println!("cargo:rerun-if-changed={}",file.display());
+    }
+    let checks=[
+        ("headerSha256",&header),
+        ("patcherSha256",&patcher),
+        ("patchedDebuggerThreadSha256",&cpp),
+        ("lldbDapExeSha256",&binary),
+    ];
+    for (key,path) in checks {
+        let expected=fin02_checked_sha(&data[key])?;
+        if digest_file(path)?!=expected {
+            return Err(format!("FIN04R_REVIEWED_OWNER_SOURCE_OR_BINARY_MISMATCH:{key}"));
+        }
+    }
+    // The reviewed source must actually contain the authenticated event
+    // callbacks. A checksum alone cannot establish the first-party patch's
+    // intended trust boundary. Real OS execution is an additional gate.
+    let meta=fs::symlink_metadata(&cpp)
+        .map_err(|_|"FIN04R_PATCHED_SOURCE_UNAVAILABLE")?;
+    if !meta.is_file() || meta.file_type().is_symlink() || meta.len()>1024*1024 {
+        return Err("FIN04R_PATCHED_SOURCE_UNTRUSTED".into());
+    }
+    let patched=fs::read_to_string(&cpp)
+        .map_err(|_|"FIN04R_PATCHED_SOURCE_UNREADABLE")?;
+    for anchor in [
+        "#include \"LuIdeOwnerEvent.h\"",
+        "lu_ide_owner::OnReceived(dbe);",
+        "lu_ide_owner::OnContinued(dbe, continued);",
+    ] {
+        if patched.matches(anchor).count()!=1 {
+            return Err("FIN04R_PATCHED_EVENT_OWNER_ANCHOR_MISSING".into());
+        }
+    }
+    Ok(())
+}
+
 fn main() {
     if let Err(error) = fin02_require_reviewed_lsp_stage() {
         panic!("protected alpha admission refused: {error}");
@@ -490,6 +563,9 @@ fn main() {
     }
     if let Err(error) = fin02_require_runtime_stage() {
         panic!("FIN-02 reviewed native runtime stage denied: {error}");
+    }
+    if let Err(error) = fin04_require_reviewed_owner_stage() {
+        panic!("FIN-04R first-party protected event owner denied: {error}");
     }
     tauri_build::build();
 }
