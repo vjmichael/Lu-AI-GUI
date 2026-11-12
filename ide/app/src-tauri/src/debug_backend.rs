@@ -243,6 +243,13 @@ pub struct DebugWitness {
     pub target_binding_sha256: Option<String>,
     pub operation_outcome_code: Option<&'static str>,
     pub operation_receipt_sha256: Option<String>,
+    /// FIN-04R read-only owner event; no PDB source line, debugger command
+    /// authorization, replay or installed-app acceptance is inferred.
+    pub release_owner_receipt_sha256: Option<String>,
+    pub release_owner_event_sequence: Option<u64>,
+    pub release_owner_kernel_verified: bool,
+    pub release_owner_source_line_verified: bool,
+    pub release_owner_control_authorized: bool,
     /// Only developer-only, physically consented one-shot DAP names/types.
     /// No adapter values, memory references, handles or expressions.
     pub inspected_frame_id: Option<u64>,
@@ -1248,6 +1255,17 @@ impl NativeDebugRuntime {
         } else {
             None
         };
+        // FIN-04R: capture the original protected first-party Windows
+        // DEBUG_EVENT while it is still live. A native build with the
+        // observer feature MUST deny missing/changed owner evidence;
+        // the CI-only PDB symbolizer and DAP controls remain disabled.
+        #[cfg(all(windows, feature = "fin04-release-event-observer"))]
+        let release_owner = match target {
+            Some(original_target) => Some(session.observe_release_owned_stop(
+                &self.supervisor, &prepared.job_id, &plan, original_target,
+            ).map_err(|e| e.code().to_owned())?),
+            None => None,
+        };
         // The session is never exposed to the browser. Close demands Job/
         // cgroup emptiness, independent service release and a terminal receipt.
         // D6D: developer-only Windows native approval after an actual
@@ -1429,6 +1447,30 @@ impl NativeDebugRuntime {
             target_binding_sha256: target.map(|target| target.binding_sha256.clone()),
             operation_outcome_code,
             operation_receipt_sha256,
+            release_owner_receipt_sha256: {
+                #[cfg(all(windows, feature = "fin04-release-event-observer"))]
+                { release_owner.as_ref().map(|v|v.receipt_sha256.clone()) }
+                #[cfg(not(all(windows, feature = "fin04-release-event-observer")))]
+                { None }
+            },
+            release_owner_event_sequence: {
+                #[cfg(all(windows, feature = "fin04-release-event-observer"))]
+                { release_owner.as_ref().map(|v|v.owner_sequence) }
+                #[cfg(not(all(windows, feature = "fin04-release-event-observer")))]
+                { None }
+            },
+            release_owner_kernel_verified: {
+                #[cfg(all(windows, feature = "fin04-release-event-observer"))]
+                { release_owner.as_ref().is_some_and(|v|
+                    v.os_event_owner_verified && v.original_debug_job_verified &&
+                    v.original_build_receipt_verified &&
+                    !v.source_line_independently_verified &&
+                    !v.debugger_control_authorized && !v.recovery_authorized) }
+                #[cfg(not(all(windows, feature = "fin04-release-event-observer")))]
+                { false }
+            },
+            release_owner_source_line_verified: false,
+            release_owner_control_authorized: false,
             inspected_frame_id,
             redacted_variables,
         })
