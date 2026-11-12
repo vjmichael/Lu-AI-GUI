@@ -723,6 +723,11 @@ impl NativeDebugRuntime {
         // debugger slot or generating fresh native worker authority.
         let mut global_fence=crate::global_native_custody::GlobalAdmissionFence
             ::acquire(&self.global_custody_profile,"debug")?;
+        let own_before=self.supervisor.inspect()
+            .map_err(|e|e.code().to_owned())?;
+        if crate::global_native_custody::durable_busy(&own_before) {
+            return Err("FIN01_DEBUG_JOURNAL_STILL_OWNS_CUSTODY".into());
+        }
         let sibling=crate::global_native_custody::sibling_rows(
             &self.global_custody_profile,"debug")?;
         if crate::global_native_custody::durable_busy(&sibling){
