@@ -4,7 +4,7 @@
 
 ## Architecture and candidate disposition
 
-Lu's existing Rust `InferenceBackend` + Protobuf `InferenceBridge` + `TrustedInferenceSupervisor` are the **single authorized host/model/tool boundary**. The original `PersistentLlamaBackend`, pinned `llama-server` CPU/Vulkan binaries, GGUF/MMProj admission, signed-by-source file digest checks, streaming, P2 KV invalidation, P3 interruption recovery, P4 interactive priority, P6 default offline and OS process custody remain unchanged.
+Lu's existing Rust `InferenceBackend` + Protobuf `InferenceBridge` + `TrustedInferenceSupervisor` are the **single authorized host/model/tool boundary**. The original `PersistentLlamaBackend`, pinned `llama-server` CPU/Vulkan binaries, GGUF/MMProj admission, source-pinned file digest checks, streaming, P2 KV invalidation, P3 interruption recovery, P4 interactive priority, P6 default offline and OS process custody remain unchanged.
 
 The installed `lu_model_select_backend` still selects **CPU or Vulkan only** in builds supporting the dual-engine preview. The Settings backend inventory now includes three **nonselectable** research candidates (not installed and not independently verified). None can dispatch a prompt, launch a process, access source files, load models, authorize tools or join existing sessions. Single-GPU offline operation remains first-class. Runtime automatic fallback to an alternative is explicitly prohibited: after an authorized tool action, a silent retry could duplicate effects.
 
