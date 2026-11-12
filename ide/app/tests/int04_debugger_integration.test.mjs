@@ -173,3 +173,26 @@ test('FIN04 developer debugger controls cannot masquerade as installed productio
  assert.equal(recovery.operationControlSupported,false);
  assert.equal(recovery.productionOperationsAvailable,false);
 });
+
+test('FIN04 forged production admission code cannot unlock debugger controls',()=>{
+ const base={ready:true,projectDebugSupported:true,
+  operationControlSupported:true,
+  operationControlCode:'FIN04_NATIVE_RELEASE_ACTIONS_INDEPENDENTLY_ADMITTED',
+  journal:[],quarantined:[],globalRecoveryRequired:false,
+  activeInAnotherProject:false,orphanedDebugActionRequired:false,current:null};
+ assert.equal(debugAdmissionStatus(base,project).productionOperationsAvailable,false);
+ for(const key of ['productionOwnerEventVerified','originalActionJournalVerified',
+   'globalOsCustodyVerified','installedDebuggerControlAccepted']){
+  const forged={...base,productionOwnerEventVerified:true,
+   originalActionJournalVerified:true,globalOsCustodyVerified:true,
+   installedDebuggerControlAccepted:true,[key]:false};
+  assert.equal(debugAdmissionStatus(forged,project).productionOperationsAvailable,false);
+ }
+ assert.equal(debugAdmissionStatus({...base,productionOwnerEventVerified:true,
+  originalActionJournalVerified:true,globalOsCustodyVerified:true,
+  installedDebuggerControlAccepted:true},project).operationControlMode,'release_candidate');
+ assert.equal(debugAdmissionStatus({...base,globalRecoveryRequired:true,
+  productionOwnerEventVerified:true,originalActionJournalVerified:true,
+  globalOsCustodyVerified:true,installedDebuggerControlAccepted:true},
+  project).productionOperationsAvailable,false);
+});
