@@ -13,7 +13,8 @@ from unittest.mock import patch
 import apply_llvm18_owner_hook as overlay
 
 CPP = """#include "DebuggerThread.h"
-DebuggerThread() : m_is_shutting_down(false) {
+DebuggerThread()
+      m_is_shutting_down(false) {
   m_debugging_ended_event = ::CreateEvent(nullptr, TRUE, FALSE, nullptr);
 }
 void loop() {
