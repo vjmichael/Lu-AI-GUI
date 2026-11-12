@@ -1313,3 +1313,26 @@ On branch `ide/dev04-4-protected-project-debug-20261108` stacked on DEV-04.3 dra
 ## FIN-04R source continuation — 2026-11-12
 
 Current IDE FIN branch source adds a first-party Windows LLDB `DEBUG_EVENT` **release-observer only** feature, measured LLVM patch/provenance staging gate, original Job+receipt-bound native owner witness, release-readable one-use debugger-action audit, and operator-approved OS-only interrupted-action recovery evidence with double kernel quiescence checks and **no replay**. Release DAP step/breakpoint/variables slots are hard-denied. The original CI-only PE/PDB oracle cannot yet be promoted because its symbolizer helper is not independently OS-contained; this blocks positive native action authorization and post-command source-line verification. See `docs/IDE_FIN04R_RELEASE_OWNER_AND_ACTION_RECOVERY_20261112.md`. FIN-02 intentionally deferred. Source uncompiled, no CI or native/installed acceptance, no merge/release.
+
+## FIN-04R-1 follow-on — 2026-11-12
+
+The previously described CI-only external host symbolizer is now
+replaced **in the release-observer source route** by a fixed pinned
+LLVM symbolizer child of the already-held Windows AppContainer/SCM
+Job, with inherited-handle allowlist, bounded output, terminal exit
+and independent original PE/PDB/source/bundle hash rechecks. The
+live-stop witness now binds an independently parsed PDB source line
+to first-party OS event, Job, original source and receipts. One-use
+human **review-only** step/breakpoint dialogs write and revoke an
+original action journal without dispatch. Pure post-command step and
+breakpoint-*hit* proof routines and hostile fixtures were added.
+Separate real Windows native kernel/owner/continuation/restart
+acceptance mode, exact-head runner, and physical installed-human
+consent/restart script were authored but **not executed**.
+FIN-04R-1 source is NOT compiled/accepted on genuine Windows in
+this session, and all production debugger commands are hard-denied.
+Physical installed accessibility/security, independent *actual*
+post-command execution proof and interrupted-action kernel fixtures
+are open. FIN-02 deferred. Details:
+`docs/IDE_FIN04R1_PROTECTED_PDB_AND_NATIVE_ACCEPTANCE_20261112.md`.
+No CI, merge or release.
