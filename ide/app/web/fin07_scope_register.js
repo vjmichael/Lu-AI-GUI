@@ -10,7 +10,7 @@ const groups=Object.freeze([
    remaining:'Build-stage pin/layout and read-only actual Linux cgroup-host readiness implemented. Real trusted resident host/IPC, approved binary distribution, Windows service/ACL and actual native installed evidence still missing.'},
   {id:'FIN-03',priority:'P1',state:'implementation_remaining',
    title:'GitHub and remaining local Git operations',
-   remaining:'Native reviewed unstage and default-disabled one-file restore and tracked-only stash-save candidates now include preserved originals, interruption markers, exact review binding and native one-use dialogs. Native acceptance, stash apply/drop, general revert, worktree management and authenticated publication remain open.'},
+   remaining:'Native reviewed unstage plus default-disabled single-file restore/stash-save candidates remain unaccepted. FIN-03G now adds read-only exact-object impact previews for revert and stash apply/drop with path-overlap warnings and no execution route. Actual protected revert, stash apply/drop, worktree management, authenticated publication, OS custody and native acceptance remain open.'},
   {id:'FIN-04',priority:'P1',state:'implementation_remaining',
    title:'Production debugging and complete test execution',
    remaining:'Original protected exact Rust libtest remains; production debugger visibility now requires independently attested OS owner, original action journal, global custody and installed controls. Release-backed LLDB step/breakpoint/variable operations and multi-framework case execution remain missing.'},
