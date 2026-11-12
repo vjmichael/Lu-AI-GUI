@@ -248,9 +248,14 @@ mod protected {
             wo6_output_evidence::audit_published_output,
         };
         if protected_release_pdb && (verify_owner_event || verify_independent_pdb ||
-            crash_owner || cancel_project || ci_control.is_some()) {
+            crash_owner || ci_control.is_some()) {
             return Err("DENIED: release protected PDB is observation-only, never a CI control mode".into());
         }
+        // FIN-04R-1 negative: a fixed, OS-owned session cancellation after
+        // the protected PE/PDB line was verified must kill the SAME kernel
+        // Job and persist CancelRequested -> Cancelled, then reopen the
+        // original owner receipt without reviving a one-use action. This is
+        // a test-only recipe selection, not debugger control authority.
         if protected_release_pdb && !cfg!(feature="fin04-release-owner-evidence"){
             return Err("DENIED: release protected PDB observer feature not compiled".into());
         }
@@ -1030,6 +1035,14 @@ mod protected {
         if args.as_slice() == ["--project-debug-protected-pdb"] {
             return run_windows_project_debug(
                 false,true,true,false,false,false,None,true,
+            );
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-protected-pdb-cancel"] {
+            // Only the actual OS-owned debugger Job is cancelled after
+            // independent source/owner proof. No DAP step or breakpoint.
+            return run_windows_project_debug(
+                true,true,true,false,false,false,None,true,
             );
         }
         #[cfg(windows)]
