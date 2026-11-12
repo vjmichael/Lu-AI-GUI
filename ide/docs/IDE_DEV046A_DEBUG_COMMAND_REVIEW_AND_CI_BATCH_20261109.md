@@ -52,3 +52,59 @@ This is a test integration only; it does NOT dispatch a breakpoint,
 step, scopes, variables or evaluate request. The existing exact-head
 native D5 OS workflow will exercise this when it is included in the
 later consolidated Windows/Linux batch; no small CI workflow was added.
+
+## FIN-04F — Release-safe read-only native debugger-control evidence (November 12, 2026)
+
+This source increment **does not enable** production LLDB control. It extracts
+an independent *read-only* `debug_control_evidence` verifier from the
+developer-only D6B/D6C action-admission path. The original
+`debug_action_receipts` and `debug_control_dispatch` remain feature-gated;
+the new module cannot create `NativeConsentMarker`, `CiControlSlot`,
+one-use claims, OS workers, DAP frames or live owner events.
+
+The module replays the original `debug-fixture-receipts.jsonl` supervisor
+state, hashes its original bytes before and after the scan, and verifies
+each private `lu-debug-action-<sha>.ndjson` action journal:
+- 32 KiB max per action, 12 events, 4,096 action files, 32 visible
+  selected-project results; reject tampered/replaced, overlarge and
+  symlinked records, invalid ordinal or hash-chain links, unknown phase
+  transitions and changed origin Job/plan/operation/owner identity
+- correlate **every** action to the original debugger Job/plan before
+  disclosing only the selected project's records (foreign corrupt data
+  blocks the scan without leaking foreign job identifiers or counts)
+- report `Prepared`, `Approved`, `Consumed` as requiring independent
+  OS-only reconciliation; `ResultVerified` remains a historical recorded
+  claim, **never** a fresh kernel proof or available execution grant
+- refuse original job-journal changes during evidence inspection
+
+The native Tauri endpoint `ide_debug_control_evidence` accepts only
+the registered project ID. `ide_debug_review_control_candidate` accepts
+an exact previously completed debug Job and plan hash, plus one of five
+bounded intent labels: `step_over`, `step_into`, `step_out`,
+`breakpoint_at_reviewed_line`, `inspect_reviewed_frame`. The native
+backend invokes the existing independently rechecked saved-source
+review and original action-audit reader. It binds the original terminal
+receipt, source SHA, reviewed line and adapter frame ID to a digest,
+while clearly marking missing live owner, independent instruction/source
+mapping, per-operation consent, installed control acceptance, and
+FIN-01D kernel admission as **blockers**.
+
+The IDE shows two read-only panels. No arbitrary source path, debugger
+PID, expression, command, memory reference, DAP token, app-supplied
+kernel witness, or executable action is passed to the native host.
+
+New Rust fixtures cover original action hash chains, foreign-project
+redaction/corruption, historical verified results as non-authority,
+and no replay. JavaScript contract fixtures verify that release-safe
+review cannot import or call the developer-only control dispatcher.
+These fixtures are **committed but have not yet been executed**.
+
+**Still open:** FIN-01D's actual native Windows/Linux kernel-custody
+acceptance; release-grade independently held LLDB event-owner stop,
+fresh native approval/denial and one-shot claim consumption; genuine
+step/breakpoint/variables results with post-command OS/PDB verification;
+interrupted owner-event recovery; installed UI, accessibility and
+restart acceptance; multi-framework exact-case execution.
+
+**FIN-02 remains deferred. FIN-03 destructive mutations and FIN-05
+package execution remain disabled. No release/merge or CI batch.**
