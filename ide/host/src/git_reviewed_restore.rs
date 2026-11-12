@@ -1,7 +1,7 @@
 //! FIN-03: review and restore exactly one modified tracked regular file.
 //! Restoring is destructive to the visible worktree, so original bytes are
 //! preserved under the local Git directory; interrupted jobs require review.
-use crate::{git_branch_operations::exact_repo,IdeWorkspaceRegistry};
+use crate::{git_branch_operations::exact_repo,git_protected_merge::changed_path_is_plain_safe,IdeWorkspaceRegistry};
 use git2::{Repository,Status,StatusOptions,RepositoryState,ObjectType};
 use serde::{Serialize,Deserialize};
 use sha2::{Sha256,Digest};
@@ -48,6 +48,7 @@ fn inspected(reg:&IdeWorkspaceRegistry,id:&str)
  if path.starts_with('/') || path.contains('\\') || path.contains(':') ||
     path.split('/').any(|s|s.is_empty()||s=="."||s=="..") ||
     path.len()>1024 {return Err("FIN03_RESTORE_PATH_UNSAFE");}
+ changed_path_is_plain_safe(&root,&path)?;
  let target=root.join(&path);
  let meta=fs::symlink_metadata(&target).map_err(|_|"FIN03_RESTORE_FILE_MISSING")?;
  if !meta.is_file() || meta.file_type().is_symlink() || meta.len()>LIMIT as u64 {
@@ -106,6 +107,7 @@ impl IdeWorkspaceRegistry {
     return Err("FIN03_RESTORE_CANCELLED_RECONCILIATION_REQUIRED");
   }
   // Restrict the replacement to a previously validated regular tracked file.
+  changed_path_is_plain_safe(&root,&path)?;
   let target=root.join(&path);
   if fs::symlink_metadata(&target).map_err(|_|"FIN03_RESTORE_TARGET_GONE")?
       .file_type().is_symlink() ||
@@ -115,6 +117,8 @@ impl IdeWorkspaceRegistry {
   let tmp=root.join(format!(".lu-ide-fin03-restore-{}.tmp",fresh.review_sha256));
   let mut output=OpenOptions::new().write(true).create_new(true).open(&tmp)
    .map_err(|_|"FIN03_RESTORE_TEMP_EXISTS")?;
+  let target_permissions=fs::metadata(&target).map_err(|_|"FIN03_RESTORE_PERMISSIONS_READ")?.permissions();
+  output.set_permissions(target_permissions).map_err(|_|"FIN03_RESTORE_PERMISSIONS_PRESERVE")?;
   output.write_all(&bytes).and_then(|_|output.sync_all())
    .map_err(|_|"FIN03_RESTORE_TEMP_SYNC_FAILED")?;
   // Windows replacement requires removing the old destination; preserve it
