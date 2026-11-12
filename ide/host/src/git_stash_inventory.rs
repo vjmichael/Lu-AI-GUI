@@ -35,7 +35,15 @@ impl IdeWorkspaceRegistry {
     if rows.len()==32{partial=true;break;}
     let event=log.get(i).ok_or("FIN03_STASH_EVENT_MISSING")?;
     let oid=event.id_new();
-    repo.find_commit(oid).map_err(|_|"FIN03_STASH_RECORD_NOT_COMMIT")?;
+    let commit=repo.find_commit(oid).map_err(|_|"FIN03_STASH_RECORD_NOT_COMMIT")?;
+    if !(2..=3).contains(&commit.parent_count()) {
+        return Err("FIN03_STASH_PARENT_SHAPE_INVALID");
+    }
+    let base=commit.parent(0).map_err(|_|"FIN03_STASH_BASE_MISSING")?;
+    let index=commit.parent(1).map_err(|_|"FIN03_STASH_INDEX_MISSING")?;
+    if base.id()==index.id() {
+        return Err("FIN03_STASH_PARENT_IDENTITY_INVALID");
+    }
     rows.push(StashRow{index:i,commit_sha:oid.to_string()});
    }
   }
