@@ -153,7 +153,7 @@ impl CiControlSlot {
         // own production-grade consent constructor. No CI/dev token, even
         // with matching SHA strings, can cross this boundary.
         if cfg!(all(windows, feature = "fin04-release-owner-evidence"))
-            && !cfg!(all(debug_assertions, feature = "dev046d-native-dialog"))
+            && !cfg!(test)
         {
             return Err(ControlDenial::Unreviewed);
         }
