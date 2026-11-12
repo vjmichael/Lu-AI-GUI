@@ -2621,8 +2621,8 @@ jobs:
   p0-gate-compiler:
     name: P0-GATE exact-head compiler diagnostics (${{ matrix.os }})
     needs: verify-source
-    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-gate-consolidated-20261111' && contains(github.event.pull_request.body, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) }
-    runs-on: ${{ matrix.os }
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-gate-consolidated-20261111' && contains(github.event.pull_request.body, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -2631,7 +2631,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -2642,8 +2642,8 @@ jobs:
       - name: Authenticate one-use exact SHA and frozen source
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }
-          GATE_BODY: ${{ github.event.pull_request.body }
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          GATE_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
           mkdir -p p0-gate-evidence
@@ -2685,7 +2685,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lu-p0-compiler-${{ matrix.os }-${{ github.event.pull_request.head.sha }
+          name: lu-p0-compiler-${{ matrix.os }}-${{ github.event.pull_request.head.sha }}
           path: p0-gate-evidence/
           if-no-files-found: warn
           retention-days: 14
@@ -2693,7 +2693,7 @@ jobs:
   p0-gate-native:
     name: P0-GATE original native regression and custody (${{ matrix.os }})
     needs: p0-gate-compiler
-    runs-on: ${{ matrix.os }
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -2702,7 +2702,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -2719,7 +2719,7 @@ jobs:
       - name: Inert build resources and original checked source
         shell: bash
         env:
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha }
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
@@ -2747,7 +2747,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lu-p0-native-${{ matrix.os }-${{ github.event.pull_request.head.sha }
+          name: lu-p0-native-${{ matrix.os }}-${{ github.event.pull_request.head.sha }}
           path: p0-native-evidence/
           if-no-files-found: warn
           retention-days: 14
@@ -2760,7 +2760,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -2771,7 +2771,7 @@ jobs:
       - name: Exact source and pinned NSIS toolchain
         shell: pwsh
         env:
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha }
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           $ErrorActionPreference='Stop'
           if((git rev-parse HEAD).Trim() -cne $env:SOURCE_SHA){throw 'P0 wrong source'}
@@ -2785,7 +2785,7 @@ jobs:
         shell: pwsh
         timeout-minutes: 150
         env:
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha }
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           $ErrorActionPreference='Stop'
           $dir=Join-Path $env:RUNNER_TEMP 'p0-current-nsis'
@@ -2854,7 +2854,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lu-p0-installed-windows-${{ github.event.pull_request.head.sha }
+          name: lu-p0-installed-windows-${{ github.event.pull_request.head.sha }}
           path: ${{ runner.temp }}/p0-current-nsis/
           if-no-files-found: warn
           retention-days: 14
@@ -2867,7 +2867,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -2878,7 +2878,7 @@ jobs:
       - name: Real Linux installed Tauri and accessibility dependencies
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
@@ -2933,7 +2933,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lu-p0-installed-debian-${{ github.event.pull_request.head.sha }
+          name: lu-p0-installed-debian-${{ github.event.pull_request.head.sha }}
           path: p0-debian-evidence/
           if-no-files-found: warn
           retention-days: 14
