@@ -48,6 +48,7 @@ import { reconcileDevelopmentEvidence } from './development_reconciliation.js';
 import { belongsToSelectedProject } from './job_render_guard.js';
 import { ingestJobProgress, visibleJobProgress } from './job_progress.js';
 import { safeConventionalTestDiscovery } from './conventional_tests.js';
+import {checkedTestExplorer} from './test_explorer.js';
 import { projectJobLifecycle } from './protected_job_lifecycle.js';
 import { safeDebugTargetReview } from './debug_target_review.js';
 import { safeDebugBinaryEvidence } from './debug_binary_evidence.js';
@@ -79,6 +80,7 @@ const sections = [
   { id: 'terminal', title: 'Terminal', glyph: '⌨' },
   { id: 'source', title: 'Source control', glyph: '⑂' },
   { id: 'tasks', title: 'Job requests', glyph: '▶' },
+  { id: 'test-explorer', title: 'Test Explorer', glyph: '✓' },
 ];
 
 const keyFor = (projectId, path) => projectId + ':' + path;
@@ -278,6 +280,7 @@ function App() {
   const [testNavigationBusy,setTestNavigationBusy]=useState(false);
   const [testCaseFilter,setTestCaseFilter]=useState('failed');
   const [testDiscovery,setTestDiscovery] = useState(null);
+  const [testExplorerFilter,setTestExplorerFilter]=useState('all');
   const [testDiscoveryBusy,setTestDiscoveryBusy] = useState(false);
   const testDiscoveryTicket=useRef(0);
   const [profileDiscoveryBusy,setProfileDiscoveryBusy] = useState(false);
@@ -794,6 +797,11 @@ function App() {
   const structuredTestReport=useMemo(()=>
     visibleStructuredTestEvidence(buildResult,activeProject?.projectId),
     [buildResult,activeProject?.projectId]);
+  const testExplorerModel=useMemo(()=>
+    checkedTestExplorer(testDiscovery,structuredTestReport,
+      activeProject?.projectId,testExplorerFilter),
+    [testDiscovery,structuredTestReport,activeProject?.projectId,
+      testExplorerFilter]);
   const debugAdmission=useMemo(()=>
     debugAdmissionStatus(debugStatus,activeProject?.projectId),
     [debugStatus,activeProject?.projectId]);
@@ -1014,6 +1022,7 @@ function App() {
   const isLanguages = section === 'languages';
   const isContinuity = section === 'continuity';
   const isJobs = section === 'tasks';
+  const isTestExplorer = section === 'test-explorer';
   const isWorkbench = section === 'workbench';
   const isTerminal = section === 'terminal';
   useEffect(() => {
@@ -6461,7 +6470,9 @@ function App() {
             ((item.id === 'explorer' || item.id === 'project-search' || item.id === 'workbench') && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => { setSection(item.id); if (item.id === 'workbench') void inspectInt06Workbench(); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'packages') void readWorkflowRuns();
+          onClick={() => { setSection(item.id);
+            if(item.id==='test-explorer') void inspectConventionalTests();
+            if (item.id === 'workbench') void inspectInt06Workbench(); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'packages') void readWorkflowRuns();
             if (item.id === 'terminal') void refreshProtectedBuildStatus(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
@@ -6477,9 +6488,10 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1 aria-label={isJobs ? 'Execution requests' : undefined}>{isProjectSearch ? 'Find in project' : isJobs ? 'Execution requests' : isWorkbench ? 'Workbench' : isTerminal ? 'Terminal' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <h1 aria-label={isJobs ? 'Execution requests' : undefined}>{isProjectSearch ? 'Find in project' : isJobs ? 'Execution requests' : isTestExplorer ? 'Test Explorer' : isWorkbench ? 'Workbench' : isTerminal ? 'Terminal' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
           <p>{isProjectSearch ? 'Saved-source search · Revision-checked hits · No writes' :
             isJobs ? 'Historical review intents · Protected native Run/Test · Explicit cancellation' :
+            isTestExplorer ? 'Saved test files · Native job reports · No individual-case execution' :
             isWorkbench ? 'Native project workflow · Review before action · No automatic execution' :
             isTerminal ? 'Native typed commands · Protected OS jobs · No arbitrary shell' :
             isPackages ? 'Local package manager inspection · Multi-project release review · No install permission' :
@@ -6495,7 +6507,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isWorkbench ? inspectInt06Workbench() : isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isTerminal ? refreshProtectedBuildStatus() : isPackages ? (inspectPackageManagers(), readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? Promise.all([
+            onClick={() => isTestExplorer ? inspectConventionalTests() : isWorkbench ? inspectInt06Workbench() : isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isTerminal ? refreshProtectedBuildStatus() : isPackages ? (inspectPackageManagers(), readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? Promise.all([
                 invoke('ide_list_language_servers'),
                 invoke('ide_lsp_worker_status'),
               ]).then(([servers,worker])=>{
@@ -6577,6 +6589,80 @@ function App() {
                     repository observations never complete human acceptance
                     tasks automatically.</p>
                 </div>}
+            </section>
+          </section>
+
+        : isTestExplorer
+        ? <section className="workspaceContent continuityWorkspace"
+            aria-label="FIN-04 · Test Explorer">
+            <section className="continuityDocument">
+              <h2>Test Explorer · project-scoped observations</h2>
+              <p>Filename discovery is incomplete and never authorizes a run.
+                Framework-reported cases come only from an original protected
+                native Build/Test result; reports are not independently
+                verified assertions.</p>
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject || testDiscoveryBusy}
+                onClick={()=>void inspectConventionalTests()}>
+                {testDiscoveryBusy?'Inspecting native metadata…':
+                  'Refresh saved test-file candidates'}
+              </button>
+              <label htmlFor="fin04LanguageFilter">Filter language</label>
+              <select id="fin04LanguageFilter" value={testExplorerFilter}
+                onChange={event=>setTestExplorerFilter(event.target.value)}>
+                <option value="all">All supported languages</option>
+                <option value="rust">Rust</option>
+                <option value="python">Python</option>
+                <option value="javascript">JavaScript / TypeScript</option>
+                <option value="cpp">C/C++</option>
+              </select>
+              {testExplorerModel && <div className="continuityEvents">
+                <p role="status">{testExplorerModel.files.length} bounded
+                  filename candidates · incomplete by design.</p>
+                {testExplorerModel.files.map(file=>
+                  <article className="continuityEvent" key={file.path}>
+                    <strong><code>{file.path}</code></strong>
+                    <p>{file.language} · {file.recipe||'No fixed recipe hint'}
+                      {' · '}Not independently runnable</p>
+                    <button type="button" className="ghostBtn"
+                      disabled={!activeProject || explorerPending}
+                      onClick={()=>{const expected=activeProject?.projectId;
+                        void selectEntry({kind:'file',relativePath:file.path,
+                          name:file.path.split('/').pop()}).then(()=>{
+                            if(activeProjectIdRef.current===expected)
+                              setSection('explorer');
+                          });}}>
+                      Open saved source in editor
+                    </button>
+                  </article>)}
+              </div>}
+            </section>
+            <section className="continuityDocument">
+              <h3>Original protected job · reporter cases</h3>
+              {testExplorerModel?.cases.length ?
+                <>
+                  <p>Only an original in-process native receipt can provide
+                    these reports. No per-case run authority is inferred.</p>
+                  {testExplorerModel.cases.map(testCase=>
+                    <article className="continuityEvent" key={testCase.id}>
+                      <strong>{testCase.name}</strong>
+                      <p>{testCase.status.replaceAll('_',' ')}
+                        {' · '}Assertion not independently verified</p>
+                      {testCase.canReviewSource &&
+                        <button type="button" className="ghostBtn"
+                          disabled={testNavigationBusy || buildBusy}
+                          onClick={()=>void navigateReportedTestFailure(testCase.id)}>
+                          Recheck saved source for failure
+                        </button>}
+                    </article>)}
+                </>
+                : <p role="status">No original native reporter case evidence
+                    available in this process.</p>}
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject}
+                onClick={()=>setSection('tasks')}>
+                Review protected Build/Test profiles in Jobs
+              </button>
             </section>
           </section>
         : isJobs

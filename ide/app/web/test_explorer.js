@@ -1,0 +1,52 @@
+/** FIN-04: test filename and original-job reporter evidence belong to
+ * different trust domains; this is an explicit read-only operator catalog. */
+const PROJECT=/^ide-[a-f0-9]{32}$/;
+const LANG=new Set(['rust','python','javascript','cpp']);
+const STATUS=new Set(['reported_pass','reported_fail','reported_skip']);
+const SAFE=/^[^\\:\x00-\x1f\x7f]{1,1024}$/u;
+export function checkedTestExplorer(discovery,report,projectId,filter='all') {
+  if(!PROJECT.test(projectId||'') ||
+     !['all',...LANG].includes(filter))return null;
+  const valid=discovery?.projectId===projectId &&
+    discovery.incomplete===true && Array.isArray(discovery.files) &&
+    discovery.files.length<=96;
+  const files=[];
+  if(valid){
+    const seen=new Set();
+    for(const row of discovery.files){
+      if(!row || !SAFE.test(row.path||'') || row.path.startsWith('/') ||
+        row.path.split('/').some(s=>!s||s==='.'||s==='..') ||
+        seen.has(row.path) || !LANG.has(row.language) ||
+        row.runnable!==false ||
+        !(row.recipe===null || typeof row.recipe==='string'))
+        return null;
+      seen.add(row.path);
+      if(filter==='all' || filter===row.language)
+        files.push(Object.freeze({path:row.path,language:row.language,
+          recipe:row.recipe,executionAuthorized:false}));
+    }
+  }
+  const cases=[];
+  if(report?.projectId===projectId &&
+     report.taskAcceptanceAuthorized===false &&
+     report.independentlyVerified===false &&
+     Array.isArray(report.cases) && report.cases.length<=128){
+    for(const row of report.cases){
+      if(!row || !STATUS.has(row.status) ||
+         typeof row.id!=='string' ||
+         !/^case_[a-f0-9]{64}$/.test(row.id) ||
+         typeof row.name!=='string' || row.name.length>240 ||
+         row.independentlyVerified!==false)return null;
+      cases.push(Object.freeze({id:row.id,name:row.name,status:row.status,
+        canReviewSource:row.status==='reported_fail' && !!row.source,
+        executionAuthorized:false,assertionVerified:false}));
+    }
+  }
+  return Object.freeze({projectId,kind:'advisory_test_explorer',
+    files:Object.freeze(files),cases:Object.freeze(cases),
+    discoveryIncomplete:true,sourceMetadataOnly:true,
+    currentNativeJobId:cases.length?report.jobId:null,
+    singleCaseExecutionSupported:false,
+    executionAuthorized:false,installedAccepted:false,
+    independentlyVerified:false});
+}
