@@ -47,3 +47,11 @@ export function isHostCpuChatLookup(value){
   return q.length>=2 && q.length<=128 && q.trim()===q &&
     !/[\u0000-\u001f\u007f<>\x60]/.test(q);
 }
+
+
+/** PERF-01 presentation-only status request; Rust revalidates everything. */
+export function isHostModelStatusQuestion(value){
+  if(typeof value!=='string')return false;
+  return ['show local model status','what model is loaded?',
+    'is a model loaded?'].includes(value.trim().toLowerCase());
+}
