@@ -1727,7 +1727,6 @@ impl NativeDebugRuntime {
                 { release_owner.as_ref().is_some_and(|v|
                     v.os_event_owner_verified && v.original_debug_job_verified &&
                     v.original_build_receipt_verified &&
-                    !v.source_line_independently_verified &&
                     !v.debugger_control_authorized && !v.recovery_authorized) }
                 #[cfg(not(all(windows, feature = "fin04-release-event-observer")))]
                 { false }
