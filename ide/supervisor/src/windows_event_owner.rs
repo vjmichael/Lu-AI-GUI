@@ -209,6 +209,9 @@ pub(crate) fn persist_native_owner_receipt(
 pub(crate) struct OwnerSideband {
     pub(crate) receiver: std::sync::mpsc::Receiver<Result<OwnerEvent, ()>>,
     pub(crate) ledger: OwnerEventLedger,
+    // An already witnessed ContinueDebugEvent can never satisfy a second
+    // independent release/revocation verification request.
+    acknowledged_continue: Option<u64>,
 }
 pub(crate) fn start_owner_pipe_reader(
     raw: usize,
@@ -280,6 +283,7 @@ pub(crate) fn start_owner_pipe_reader(
     Ok(OwnerSideband {
         receiver: rx,
         ledger: OwnerEventLedger::default(),
+        acknowledged_continue: None,
     })
 }
 impl OwnerSideband {
@@ -332,12 +336,23 @@ impl OwnerSideband {
         sequence: u64,
     ) -> Result<(), SupervisorError> {
         use std::sync::mpsc::RecvTimeoutError;
+        // The request must originate while the ORIGINAL OS stop is
+        // actually active and match that exact received event. Never
+        // acknowledge an already-revoked sequence or a prior ACK.
+        if sequence == 0 || self.acknowledged_continue == Some(sequence)
+            || self.ledger.revoked
+            || self.ledger.active.as_ref().is_none_or(|event|
+                event.kind != RECEIVED || event.seq != sequence)
+        {
+            return Err(denied());
+        }
         let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
         loop {
             if self.ledger.revoked
                 && self.ledger.next_sequence == sequence
                 && self.ledger.active.is_none()
             {
+                self.acknowledged_continue = Some(sequence);
                 return Ok(());
             }
             let left = until.saturating_duration_since(std::time::Instant::now());
@@ -437,6 +452,47 @@ mod tests {
         assert_eq!(ledger.matching_stop(55, 75, 0x140001123).unwrap().seq, 1);
         ledger.observe(record(1, CONTINUED)).unwrap();
         assert!(ledger.matching_stop(55, 75, 0x140001123).is_err());
+    }
+    #[test]
+    fn continued_attestation_requires_one_live_stop_and_is_once_only() {
+        use std::sync::mpsc;
+        let (sender, receiver) = mpsc::sync_channel(4);
+        let mut ledger = OwnerEventLedger::default();
+        ledger.observe(record(1, RECEIVED)).unwrap();
+        let mut sideband = OwnerSideband {
+            receiver, ledger, acknowledged_continue: None,
+        };
+        assert!(sideband.wait_exact_native_continue(2).is_err(),
+            "cannot acknowledge a different sequence");
+        sender.send(Ok(record(1, CONTINUED))).unwrap();
+        sideband.wait_exact_native_continue(1).unwrap();
+        assert!(sideband.ledger.matching_stop(55, 75, 0x140001123).is_err());
+        assert!(sideband.wait_exact_native_continue(1).is_err(),
+            "cannot replay an already observed OS continuation");
+        assert!(sideband.wait_exact_native_continue(2).is_err(),
+            "no second stop was received");
+        sideband.ledger.observe(record(2, RECEIVED)).unwrap();
+        sender.send(Ok(record(2, CONTINUED))).unwrap();
+        sideband.wait_exact_native_continue(2).unwrap();
+        assert!(sideband.wait_exact_native_continue(2).is_err());
+    }
+    #[test]
+    fn failed_os_continuation_does_not_create_a_second_authority() {
+        use std::sync::mpsc;
+        let (sender, receiver) = mpsc::sync_channel(4);
+        let mut ledger = OwnerEventLedger::default();
+        ledger.observe(record(1, RECEIVED)).unwrap();
+        let mut sideband = OwnerSideband {
+            receiver, ledger, acknowledged_continue: None,
+        };
+        let mut failed = record(1, CONTINUED);
+        failed.continue_status = 2;
+        sender.send(Ok(failed)).unwrap();
+        assert!(sideband.wait_exact_native_continue(1).is_err());
+        assert_eq!(sideband.acknowledged_continue, None);
+        assert_eq!(sideband.ledger.matching_stop(55,75,0x140001123).unwrap().seq,1);
+        // No synthetic success follows a failed OS continuation.
+        assert_eq!(sideband.acknowledged_continue, None);
     }
     #[test]
     fn rejects_truncation_unknown_kind_and_status() {
