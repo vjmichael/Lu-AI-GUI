@@ -34,3 +34,36 @@ FIN-03–FIN-05 add read-only GitHub/Local Git observations, native
 test-symbol hints and one reviewed vcpkg *source declaration edit*,
 not authenticated push/merge, production LLDB stepping, per-case
 execution or package installation. FIN-07 feature freeze remains OPEN.
+
+## FIN 02–05 continuation (same source branch)
+
+- **FIN-02E:** read-only Linux kernel process/cgroup admission readiness
+  now gates Cargo and multilang UI status as well as the protected
+  worker's pre-existing per-job cgroup proof. A normal uncontained
+  desktop process stays unavailable. No resident delegated production
+  host/IPC service has been packaged or installed; the existing systemd
+  host entry remains a template awaiting a verified first-party
+  production native binary, reviewed package install, ownership,
+  delegation and genuine hostile-process evidence.
+- **FIN-03:** one-file index-only reviewed native unstaging and separate
+  no-replay recovery classification, plus scoped public review and
+  stash read-only observations. No authenticated remote publication,
+  automated stash/revert or worktree mutation.
+- **FIN-04:** native test-symbol selection can now request a fixed
+  exact Rust libtest recipe through the existing protected
+  Cargo worker, with frozen source SHA, original test case report and
+  no implied test assertion or human task acceptance. The new parser
+  path was corrected to preserve original case events. Production
+  debugger controls remain developer-only behind the old
+  intentionally unshippable feature; framework-true discovery and
+  complete per-case test runner matrix remain open.
+- **FIN-05:** separately opted-in Linux uv Sync uses a reviewed staged
+  and installed uv/Python bundle hash, no-network Bwrap, existing
+  native approval, durable journal and private output. This does not
+  add Windows uv ACL permissions or general vcpkg/Conan resolvers.
+
+**All claims are source-level only.** No actual approved native release
+binaries were obtained; no Windows AppContainer or Linux cgroup-v2
+installed child/process witness was executed; no Rust compiler,
+Node test, CI or PR acceptance has run in this continuation.
+No main merge, release or feature freeze is authorized.
