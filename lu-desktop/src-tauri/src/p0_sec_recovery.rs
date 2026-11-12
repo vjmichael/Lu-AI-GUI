@@ -40,6 +40,21 @@ pub(crate) struct SecurityRecoveryView{
     pub automatic_retry_allowed:bool,
     pub human_reconciliation_required:bool,
 }
+impl SecurityRecoveryView{
+    pub(crate) fn unavailable()->Self{
+        Self{
+            status:"ORIGINAL_SECURITY_RECOVERY_UNAVAILABLE_RECONCILE",
+            problems:vec![],additional_problems_not_displayed:true,
+            older_original_turns_not_inspected:true,
+            pending_cancel_intents:0,
+            cancellation_outcomes_still_require_review:0,
+            original_journals_examined:0,
+            old_os_custody_independently_proven:false,
+            prior_authority_reusable:false,automatic_retry_allowed:false,
+            human_reconciliation_required:true,
+        }
+    }
+}
 fn push_problem(
     view:&mut SecurityRecoveryView,record:SecurityRecoveryProblem,
 ){
