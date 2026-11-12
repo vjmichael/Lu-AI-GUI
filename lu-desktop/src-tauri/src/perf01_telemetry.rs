@@ -5,7 +5,7 @@ use serde::Serialize;
 use std::{
     collections::VecDeque,
     sync::Mutex,
-    time::{Duration,Instant},
+    time::Instant,
 };
 
 const MAX_RECEIPTS:usize=128;
