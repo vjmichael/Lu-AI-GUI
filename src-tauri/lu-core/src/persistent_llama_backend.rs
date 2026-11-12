@@ -320,6 +320,13 @@ impl InferenceBackend for PersistentLlamaBackend {
             if f.metadata().map_err(|_|"draft metadata unavailable")?.len()!=expected{
                 return Err("draft GGUF changed before engine spawn".into())
             }
+            // Repeat original draft admission after opening its pinned
+            // handle. Startup does not silently replace a revoked model.
+            if let Some(crate::inference_tuning::Speculative::DraftSimple(admitted_draft))=
+                self.config.tuning.as_ref().map(|t|&t.speculative){
+                admitted_draft.recheck()
+                    .map_err(|_|"draft GGUF admission changed during open")?;
+            }
             Some(f)
         }else{None};
         verify_engine(&self.canonical_executable, &self.config.expected_sha256)?;
