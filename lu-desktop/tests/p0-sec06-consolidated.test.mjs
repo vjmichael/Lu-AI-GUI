@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const gate=readFileSync(join(root,'scripts/p0-sec06-consolidated.mjs'),'utf8');
@@ -75,4 +76,54 @@ test('SEC06 never auto-promotes source and native proofs to app release',()=>{
   assert.match(gate,/NATIVE_CASES_PRESENT_OWNER_INSTALLED_AND_INDEPENDENT_REVIEW_PENDING/);
   assert.match(gate,/noReleaseAuthority:true/);
   assert.doesNotMatch(gate,/SEC06_RELEASE_ACCEPTED\s*=\s*true/);
+});
+
+
+test('SEC06 verifier rejects changed original native log with correct head and labels',()=>{
+  const temp=mkdtempSync(join(tmpdir(),'lu-sec06-edited-log-'));
+  try{
+    const digest=(v)=>createHash('sha256').update(v).digest('hex');
+    const current=spawnSync('git',['rev-parse','HEAD'],{
+      cwd:root,encoding:'utf8',timeout:10000
+    });
+    assert.equal(current.status,0);
+    const head=current.stdout.trim();
+    const lockHash=digest(readFileSync(join(root,'source-tree.lock.json')));
+    const required=[
+      'exact-head-inventory','security-contracts','sec06-js-syntax',
+      'linux-negative-python-syntax','core-native-full',
+      'desktop-ansf-native','worker-job-native','guardian-test-binaries',
+      'linux-guardian-death','linux-guardian-stall',
+      'linux-worker-stall','linux-ancestor-migration'
+    ];
+    const cases=required.map(id=>{
+      const log=id+'.log';
+      const bytes=Buffer.from('fixed original proof placeholder '+id+'\n');
+      writeFileSync(join(temp,log),bytes);
+      return {id,status:'PASS',log,sha256:digest(bytes)};
+    });
+    const receipt=join(temp,'linux.receipt.json');
+    writeFileSync(receipt,JSON.stringify({
+      schema:'lu-sec06-native-evidence-v1',target:'linux',head,
+      sourceLockSha256:lockHash,machine:{platform:'linux'},
+      status:'PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING',
+      allNativeCasesPassed:true,localExecutionOnly:true,
+      noReleaseAuthority:true,
+      independentlyVerifiedInstalledHumanAcceptance:false,
+      cases
+    }));
+    // Even before corruption, this verifier only says 'UNREVIEWED',
+    // never SEC06 release approved. The logs are not a cryptographic
+    // machine attestation and still require independent human review.
+    const unreviewed=run(['--linux',receipt]);
+    assert.equal(unreviewed.status,1);
+    assert.equal(JSON.parse(unreviewed.stdout).proofs.linux.status,
+      'NATIVE_EVIDENCE_PRESENT_UNREVIEWED');
+    writeFileSync(join(temp,'linux-ancestor-migration.log'),
+      'MALICIOUSLY REPLACED ORIGINAL LOG\n');
+    const modified=run(['--linux',receipt]);
+    assert.equal(modified.status,1);
+    assert.equal(JSON.parse(modified.stdout).proofs.linux.status,
+      'UNTRUSTED_OR_INCOMPLETE');
+  }finally{rmSync(temp,{recursive:true,force:true})}
 });
