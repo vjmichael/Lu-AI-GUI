@@ -249,6 +249,9 @@ struct Inner {
     running:BTreeMap<String,ResourceClaim>,
     external:BTreeMap<String,(String,ResourceClaim)>,
     capacity:ResourceBudget,
+    // Applies to new scheduled launches AND explicit guardian leases.
+    // Never cancels an existing verified native process.
+    interactive_admission_hold:bool,
 }
 /// A short-lived, host-only lease for native OCR and other approved
 /// non-scheduler tool workers. Dropping it releases only a reservation; the
@@ -338,6 +341,7 @@ impl BackgroundScheduler{
         Ok(Self{store,process,inner:Mutex::new(Inner{
             db,plans:BTreeMap::new(),running:BTreeMap::new(),
             external:BTreeMap::new(),capacity:budget,
+            interactive_admission_hold:false,
         })})
     }
     fn insert(
@@ -506,7 +510,7 @@ impl BackgroundScheduler{
         // Preserve terminal reconciliation and durable receipts above while
         // a human model turn is queued/running; do not launch a new worker
         // that competes with the user's first token.
-        if foreground_pending { return Ok(0); }
+        if foreground_pending || g.interactive_admission_hold { return Ok(0); }
         let mut queued=Vec::new();
         {
             let mut stmt=g.db.prepare(
@@ -653,6 +657,9 @@ impl BackgroundScheduler{
             return Err(SchedulerError::InvalidRequest)
         }
         let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
+        if g.interactive_admission_hold {
+            return Err(SchedulerError::ResourceRejected)
+        }
         if g.external.contains_key(task_id)||g.running.contains_key(task_id)
             ||g.plans.contains_key(task_id){return Err(SchedulerError::Duplicate)}
         let used=g.running.values().fold(ResourceClaim::default(),|acc,x|acc.add(*x));
@@ -661,6 +668,21 @@ impl BackgroundScheduler{
         g.external.insert(task_id.into(),(workspace_id.into(),claim));
         Ok(GuardianLease{owner:Arc::clone(self),
             task_id:task_id.into(),workspace_id:workspace_id.into()})
+    }
+    /// Single host-owned mutation: update resource reservations and whether
+    /// NEW workers may be admitted together under the existing guardian
+    /// mutex. A model/controller/renderer cannot clear this hold.
+    pub fn apply_interactive_admission(
+        &self,admission:InteractiveAdmission
+    )->Result<(),SchedulerError>{
+        let budget=admission.budget;
+        if budget.workers==0||budget.cpu==0||budget.ram_mib==0 {
+            return Err(SchedulerError::InvalidRequest)
+        }
+        let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
+        g.capacity=budget;
+        g.interactive_admission_hold=admission.defer_new_background;
+        Ok(())
     }
     pub fn set_budget(&self,budget:ResourceBudget)->Result<(),SchedulerError>{
         if budget.workers==0||budget.cpu==0||budget.ram_mib==0{
@@ -929,6 +951,30 @@ mod tests{
         assert_eq!(queue.tick_at_guarded(now,false).unwrap(),0);
         assert_eq!(queue.state_for("held-for-human","c-owner").unwrap().as_deref(),
             Some("FAILED"));
+    }
+    #[test]
+    fn perf01_p4_guardian_hold_blocks_new_lease_but_preserves_existing_custody(){
+        use crate::native_resource_pressure::HostPressure;
+        let (_,_,queue)=test_scheduler();
+        let queue=Arc::new(queue);
+        let claim=ResourceClaim::file_scan();
+        let already=queue.admit_host_worker("c-owner","existing-lease",claim).unwrap();
+        assert_eq!(queue.guardian_snapshot("c-owner").unwrap().used.workers,1);
+        let pressure=HostPressure{
+            available_ram_mib:Some(8192),cpu_busy_percent:Some(20)
+        };
+        let blocked=ResourceBudget::interactive_admission(8,true,true,pressure);
+        queue.apply_interactive_admission(blocked).unwrap();
+        assert_eq!(queue.admit_host_worker("c-owner","new-lease",claim)
+            .err(),Some(SchedulerError::ResourceRejected));
+        // Holding new admissions does not revoke prior OS process custody.
+        assert_eq!(queue.guardian_snapshot("c-owner").unwrap().used.workers,1);
+        drop(already);
+        assert_eq!(queue.guardian_snapshot("c-owner").unwrap().used.workers,0);
+        let open=ResourceBudget::interactive_admission(8,true,false,pressure);
+        queue.apply_interactive_admission(open).unwrap();
+        assert!(!open.defer_new_background);
+        assert!(queue.admit_host_worker("c-owner","later-lease",claim).is_ok());
     }
     #[test]
     fn perf01_p4_second_probe_stops_native_starts_after_queue_scan(){
