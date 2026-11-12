@@ -18,7 +18,7 @@ test('FIN04 original reporter output never certifies assertions',()=>{
   const report={projectId:id,jobId:'job-'+'b'.repeat(32),
     taskAcceptanceAuthorized:false,independentlyVerified:false,
     cases:[{id:'case_'+'c'.repeat(64),name:'test_math',
-      status:'reported_fail',source:{relativePath:'tests/test_math.py'},
+      status:'reported_fail',source:{relativePath:'tests/test_math.py',diskSha256:'f'.repeat(64),line:3,characterUtf16:0},
       independentlyVerified:false}]};
   const v=checkedTestExplorer(discovery,report,id);
   assert.equal(v.cases[0].canReviewSource,true);
@@ -42,14 +42,14 @@ test('FIN04 rejects forged job ids and hostile reporter navigation hints',()=>{
  const base={projectId:id,jobId:'job-'+'b'.repeat(32),
   taskAcceptanceAuthorized:false,independentlyVerified:false,
   cases:[{id:'case_'+'c'.repeat(64),name:'failing_case',
-   status:'reported_fail',source:{relativePath:'tests/expected.py'},
+   status:'reported_fail',source:{relativePath:'tests/expected.py',diskSha256:'f'.repeat(64),line:3,characterUtf16:0},
    independentlyVerified:false}]};
  assert.equal(checkedTestExplorer(discovery,base,id).cases[0].canReviewSource,true);
  assert.equal(checkedTestExplorer(discovery,{...base,jobId:'foreign'},id).cases.length,0);
  for(const path of ['../secret.py','/etc/passwd','tests//bad.py','tests/./bad.py',
    'C:/Windows/secret','tests/\\\\evil.py']){
   assert.equal(checkedTestExplorer(discovery,{...base,cases:[{
-   ...base.cases[0],source:{relativePath:path}}]},id),null);
+   ...base.cases[0],source:{relativePath:path,diskSha256:'f'.repeat(64),line:3,characterUtf16:0}}]},id),null);
  }
 });
 
@@ -60,4 +60,20 @@ test('FIN04 rejects duplicate reported case identities',()=>{
   taskAcceptanceAuthorized:false,independentlyVerified:false,
   cases:[one,{...one,name:'two'}]};
  assert.equal(checkedTestExplorer(discovery,report,id),null);
+});
+
+test('FIN04 refuses source navigation without native source hash and line binding',()=>{
+ const source={relativePath:'tests/test_math.py',diskSha256:'e'.repeat(64),
+  line:2,characterUtf16:0};
+ const row={id:'case_'+'f'.repeat(64),name:'fails',status:'reported_fail',
+  source,independentlyVerified:false};
+ const report={projectId:id,jobId:'job-'+'b'.repeat(32),
+  taskAcceptanceAuthorized:false,independentlyVerified:false,cases:[row]};
+ assert.equal(checkedTestExplorer(discovery,report,id).cases[0].canReviewSource,true);
+ for(const bad of [{...source,diskSha256:'unverified'},
+  {...source,line:0},{...source,characterUtf16:4},
+  {relativePath:source.relativePath}]) {
+  assert.equal(checkedTestExplorer(discovery,{
+   ...report,cases:[{...row,source:bad}]},id),null);
+ }
 });
