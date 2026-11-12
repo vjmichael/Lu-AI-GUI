@@ -131,6 +131,39 @@
              if name!=expected{return None;}
              ("cargo_libtest_exact_filter",name,status,None)
          }
+         id if lu_ide_execution_supervisor::exact_framework_case(id).is_some() => {
+             let (framework,path,name)=lu_ide_execution_supervisor::exact_framework_case(id)?;
+             match framework {
+                 "python_pytest" => {
+                     // pytest -v prints complete source-bound node ID.
+                     // Output is still an untrusted assertion report.
+                     let exact=format!("{path}::{name}");
+                     let outcome=row.strip_prefix(&exact)?.trim_start();
+                     let status=if outcome.starts_with("PASSED ") || outcome=="PASSED" {
+                         "reported_pass"
+                     }else if outcome.starts_with("FAILED ") || outcome=="FAILED" {
+                         "reported_fail"
+                     }else if outcome.starts_with("SKIPPED ") || outcome=="SKIPPED" {
+                         "reported_skip"
+                     }else{return None};
+                     ("pytest_exact_reported",name,status,Some(path.to_owned()))
+                 }
+                 "js_tests" => {
+                     let (status,tail)=if let Some(v)=row.strip_prefix("ok ") {
+                         ("reported_pass",v)
+                     }else if let Some(v)=row.strip_prefix("not ok ") {
+                         ("reported_fail",v)
+                     }else{return None};
+                     let (count,reported)=tail.split_once(" - ")?;
+                     if count.is_empty() || count.len()>6 ||
+                        !count.bytes().all(|b|b.is_ascii_digit()) ||
+                        count.parse::<u32>().ok()?==0 ||
+                        reported.trim()!=name {return None;}
+                     ("node_tap_exact_reported",name,status,None)
+                 }
+                 _=>return None,
+             }
+         }
          "python_pytest" => {
              let (status, tail) = if let Some(value) = row.strip_prefix("FAILED ") {
                  ("reported_fail", value)
@@ -334,10 +367,14 @@
          toolchain_sha256:toolchain_sha256.to_owned(),
          observed_log_sha256,capture_truncated,
          cases_truncated,case_count_observed:observed_count,cases,
-         evidence_state:if native_terminated {
-             "native_terminal_framework_reported_not_assertion_verified"
-         } else {
+         evidence_state:if !native_terminated {
              "native_not_reconciled_test_evidence_suppressed"
+         } else if (lu_ide_execution_supervisor::exact_framework_case(recipe_id).is_some()
+                     || lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_some())
+                   && (observed_count!=1 || capture_truncated || cases_truncated) {
+             "native_terminal_exact_case_report_missing_or_ambiguous"
+         } else {
+             "native_terminal_framework_reported_not_assertion_verified"
          },
          assertion_independently_verified:false,
          accepted_by_human:false,
@@ -357,6 +394,18 @@
          assert!(parse_candidate("python_pytest",
              "FAILED tests/test_math.py::test_subtract - AssertionError").is_some());
          assert!(parse_candidate("rust_build","test pretend ... ok").is_none());
+         assert!(parse_candidate(
+           "pytest_exact_case:tests/test_math.py::test_add",
+           "tests/test_math.py::test_add PASSED [100%]").is_some());
+         assert!(parse_candidate(
+           "pytest_exact_case:tests/test_math.py::test_add",
+           "tests/test_math.py::test_sub PASSED [100%]").is_none());
+         assert!(parse_candidate(
+           "node_exact_case:tests/math.test.js::adds",
+           "ok 1 - adds").is_some());
+         assert!(parse_candidate(
+           "node_exact_case:tests/math.test.js::adds",
+           "ok 1 - adds_more").is_none());
          assert!(parse_candidate("js_tests","ok bash - rm").is_none());
          assert!(reported_pytest_location("../../secret.py:4: AssertionError").is_none());
          assert!(!safe_path("C:/private.py"));
