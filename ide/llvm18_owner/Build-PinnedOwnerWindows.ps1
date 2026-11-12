@@ -43,7 +43,7 @@ $ownerProvenance=[ordered]@{
   lldbDapExeSha256=(& $sha256 (Join-Path $bin 'lldb-dap.exe'))
 }
 $ownerProvenance | ConvertTo-Json -Depth 3 |
-  Set-Content -LiteralPath (Join-Path $bundle 'fin04-owner-provenance.json') -Encoding utf8NoBOM
+  Set-Content -LiteralPath (Join-Path $bundle 'fin04-owner-provenance.json') -Encoding UTF8
 $lock=[ordered]@{schema='lu-ide-d5-ci-only-v1'; llvmCommit=$expected; lldbSha256=(Get-FileHash (Join-Path $bin 'lldb-dap.exe') -Algorithm SHA256).Hash; sourceSha256=(Get-FileHash (Join-Path $root 'lldb/source/Plugins/Process/Windows/Common/DebuggerThread.cpp') -Algorithm SHA256).Hash; releaseApproved=$false}
 $lock | ConvertTo-Json | Set-Content (Join-Path $env:RUNNER_TEMP 'lu-owner-llvm18-lock.json')
 Add-Content $env:GITHUB_ENV "LU_IDE_WO6_DAP_BUNDLE=$bundle"
