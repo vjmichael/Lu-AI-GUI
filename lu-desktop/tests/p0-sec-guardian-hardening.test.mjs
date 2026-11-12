@@ -112,10 +112,11 @@ const desktopLib=load('../src-tauri/src/lib.rs');
 const desktopUI=load('../web/main.jsx');
 
 test('SEC-04 original uncertain PENDING and RUNNING states remain fenced on restart',()=>{
-  assert.match(sec04Core,/state IN \('PAUSED','INTERRUPTED'\)\s+AND NOT EXISTS/);
+  assert.match(sec04Core,/WHERE task_id=\?1 AND state='PAUSED'\s+AND NOT EXISTS/);
   assert.match(sec04Core,/if matches!\(to,TaskState::Running\|TaskState::Completed/);
   assert.match(sec04Core,/WHERE state='RUNNING' OR \(state='PENDING' AND EXISTS\(/);
   assert.match(sec04Core,/pub fn security_recovery_rows\(/);
+  assert.match(sec04Core,/An old interruption record is never a credential to restart work/);
   assert.match(sec04Core,/LEFT JOIN lu_task_custody_uncertainty/);
   assert.match(sec04View,/sec04_pending_uncertainty_is_interrupted_and_unresumable/);
 });
