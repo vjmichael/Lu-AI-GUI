@@ -392,4 +392,53 @@ mod tests{
             "forged RESULT cannot be a revocation watermark baseline");
     }
 
+    #[test]
+    fn sec06_orphan_result_hidden_beyond_recent_32_entries_still_blocks_new_tools(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;
+            CREATE TABLE ansf_desktop_chats(chat_id TEXT PRIMARY KEY);").unwrap();
+        initialize(&conn).unwrap();
+        let chat=format!("c-{}","a".repeat(32));
+        let other=format!("c-{}","b".repeat(32));
+        for id in [&chat,&other]{
+            conn.execute("INSERT INTO ansf_desktop_chats(chat_id) VALUES (?1)",
+                [id]).unwrap();
+        }
+        let forged=HostCancelEvent{
+            schema:SCHEMA.into(),attempt_id:format!("au-{:032x}",1),
+            chat_id:chat.clone(),phase:"RESULT".into(),
+            domains:vec![DomainResult{
+                name:"background".into(),
+                state:"NATIVE_TERMINATION_REAP_RETURNED".into()
+            }],
+            authority_restored:false,automatic_retry_allowed:false,
+            os_custody_independently_verified:false,
+        };
+        let raw=serde_json::to_vec(&forged).unwrap();
+        let hash=digest(&raw);
+        conn.execute("INSERT INTO ansf_p0_host_cancel_events(
+             attempt_id,chat_id,phase,original_json,original_sha256)
+             VALUES (?1,?2,'RESULT',?3,?4)",
+            params![&forged.attempt_id,&chat,&raw,&hash]).unwrap();
+        for i in 100..180u32{
+            let requested=HostCancelEvent{
+                schema:SCHEMA.into(),
+                attempt_id:format!("au-{i:032x}"),
+                chat_id:chat.clone(),phase:"REQUESTED".into(),
+                domains:vec![],authority_restored:false,
+                automatic_retry_allowed:false,
+                os_custody_independently_verified:false,
+            };
+            append(&conn,&requested).unwrap();
+        }
+        // The operator window sees only recent valid REQUESTED records.
+        assert!(!recent(&conn,&chat,16).unwrap().iter().any(|x|
+            x.status=="ORIGINAL_CANCEL_INTENT_UNAVAILABLE"));
+        // The original native authorization fence, however, queries the
+        // full scoped ledger and can never treat the hidden orphan as cleared.
+        assert_eq!(requested_watermark(&conn,&chat).unwrap_err(),
+            "P0_SEC_CANCEL_ORPHANED_RESULT");
+        assert_eq!(requested_watermark(&conn,&other).unwrap(),0);
+    }
+
 }
