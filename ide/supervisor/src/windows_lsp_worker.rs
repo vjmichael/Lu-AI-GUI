@@ -1493,6 +1493,10 @@ fn start_windows_dap_inner(
             root: input.root.clone(),
             seal: input.seal.clone(),
         },
+        #[cfg(feature = "fin04-release-owner-evidence")]
+        release_staged_bundle: bundle.clone(),
+        #[cfg(feature = "fin04-release-owner-evidence")]
+        release_staged_target_root: project_target.map(|_|local.join("debug-target")),
         #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
         private_reviewed_bundle: bundle.clone(),
         fixed_debuggee: bundle
@@ -1583,6 +1587,10 @@ pub struct WindowsDapSession {
     native_job_id: String,
     native_plan_sha256: String,
     source_input: PublishedInput,
+    #[cfg(feature = "fin04-release-owner-evidence")]
+    release_staged_bundle: PathBuf,
+    #[cfg(feature = "fin04-release-owner-evidence")]
+    release_staged_target_root: Option<PathBuf>,
     #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
     private_reviewed_bundle: PathBuf,
 }
