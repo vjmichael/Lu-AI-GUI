@@ -662,3 +662,11 @@ See the engineering handoff and linked acceptance documents for exact evidence. 
 
 
 - **DEV-02.4 upstream LSP shutdown contract repair (Nov 8):** Verified ty's own real LSP fixture sends `shutdown` → `exit` → closes client stdin → waits. The first Lu real comparison did not close stdin; corrected actual benchmark order and added unit coverage proving bounded native protocol EOF and nonzero-exit still never qualifies as clean. Real Win/Linux rerun pending; no installed Lu language-worker authority granted.
+
+## 2026-11-12 — FIN-04R development source increment (unaccepted)
+
+- Isolated the first-party LLVM 18.1.8 Windows debug-event sideband as a separately opt-in protected *release observer*, with exact patched-source/binary provenance required at Tauri build-time.
+- Added original Job/SCM and build/debug-receipt-bound live event observation. PDB source-line, execution, replay and installed acceptance remain false.
+- Compiled original one-use action journals and post-command verification sources for release review while explicitly refusing all non-test release debugger dispatch slots.
+- Added native-dialog OS-only interrupted-action recovery, original journal/hash rechecks, independent kernel quiescence before/after a unique synced uncertainty receipt, and Test Explorer/workspace UI reporting with no effect replay or marker clearance.
+- Added FIN-04R regression contract source; **tests and physical OS release acceptance have not run**. Protected PDB worker and production one-use action consent remain implementation blockers. FIN-02 remains deferred.
