@@ -369,6 +369,11 @@ function App() {
   const [gitRefsHealth, setGitRefsHealth] = useState(null);
   const [stashInventory,setStashInventory]=useState(null);
   const [stashBusy,setStashBusy]=useState(false);
+  const [reviewedUnstage,setReviewedUnstage]=useState(null);
+  const [unstageReceipt,setUnstageReceipt]=useState(null);
+  const [unstageRecovery,setUnstageRecovery]=useState(null);
+  const [unstageBusy,setUnstageBusy]=useState(false);
+  const unstageTicket=useRef(0);
   const stashTicket=useRef(0);
   const [branchReviewKind, setBranchReviewKind] = useState('merge');
   const [branchReviewTarget, setBranchReviewTarget] = useState('');
@@ -3314,7 +3319,83 @@ function App() {
         setProblem('Stash metadata unavailable: '+String(error));
     }finally{if(ticket===stashTicket.current)setStashBusy(false);}
   }
+  async function reviewNativeUnstage(){
+    const projectId=activeProject?.projectId;
+    if(!projectId||unstageBusy||gitBusy)return;
+    const request=++unstageTicket.current;
+    setUnstageBusy(true);setReviewedUnstage(null);setUnstageReceipt(null);
+    try{
+      const result=await invoke('ide_git_review_single_unstage',{projectId});
+      if(request!==unstageTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(result?.projectId!==projectId ||
+         result.sourceRechecked!==true ||
+         result.operationAuthorized!==false ||
+         result.refsModified!==false || result.sourceFilesModified!==false ||
+         !/^[a-f0-9]{64}$/.test(result.reviewSha256||'') ||
+         !/^[a-f0-9]{64}$/.test(result.indexSha256||'') ||
+         !/^[a-f0-9]{40}$/.test(result.headSha||'') ||
+         typeof result.relativePath!=='string')throw Error('FIN03_BAD_UNSTAGE_REVIEW');
+      setReviewedUnstage(result);
+    }catch(error){
+      if(request===unstageTicket.current &&
+        activeProjectIdRef.current===projectId)
+        setProblem('Cannot review one-file unstage: '+String(error));
+    }finally{if(request===unstageTicket.current)setUnstageBusy(false);}
+  }
+  async function executeNativeUnstage(){
+    const projectId=activeProject?.projectId,review=reviewedUnstage;
+    if(!projectId || review?.projectId!==projectId || unstageBusy)return;
+    const request=++unstageTicket.current;
+    setUnstageBusy(true);setUnstageReceipt(null);
+    try{
+      const receipt=await invoke('ide_git_execute_single_unstage',{expected:review});
+      if(request!==unstageTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(receipt?.projectId!==projectId ||
+         receipt.reviewSha256!==review.reviewSha256 ||
+         receipt.headSha!==review.headSha ||
+         receipt.indexBefore!==review.indexSha256 ||
+         receipt.indexIndependentlyVerified!==true ||
+         receipt.sourceFilesModified!==false ||
+         receipt.refsModified!==false ||
+         receipt.gitProcessStarted!==false ||
+         receipt.operationState!=='verified_index_only')
+         throw Error('FIN03_UNSTAGE_RECEIPT_MISMATCH');
+      setUnstageReceipt(receipt);setReviewedUnstage(null);
+    }catch(error){
+      if(request===unstageTicket.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Native unstage refused or interrupted: '+String(error));
+    }finally{if(request===unstageTicket.current)setUnstageBusy(false);}
+  }
+  async function inspectUnstageRecovery(reconcile=false){
+    const projectId=activeProject?.projectId;
+    if(!projectId || unstageBusy)return;
+    const request=++unstageTicket.current;
+    setUnstageBusy(true);
+    try{
+      const result=await invoke(reconcile?
+        'ide_git_reconcile_unstage_recovery':'ide_git_inspect_unstage_recovery',
+        {projectId});
+      if(request!==unstageTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(result!==null && typeof result!=='string')
+        throw Error('FIN03_UNSTAGE_RECOVERY_RECEIPT_INVALID');
+      setUnstageRecovery(result);
+      if(reconcile)setReviewedUnstage(null);
+    }catch(error){
+      if(request===unstageTicket.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Native unstage recovery unavailable: '+String(error));
+    }finally{if(request===unstageTicket.current)setUnstageBusy(false);}
+  }
   async function refreshGitStatus() {
+    ++unstageTicket.current;
+    setReviewedUnstage(null);
+    setUnstageReceipt(null);
+    setUnstageRecovery(null);
+    setUnstageBusy(false);
     ++stashTicket.current;
     setStashInventory(null);
     setStashBusy(false);
@@ -8417,6 +8498,47 @@ function App() {
               Tracking information is locally stored and may be stale.
             </p>
             {!activeProject && <p>Open a project to inspect its source control.</p>}
+            {activeProject && <section className="continuityDocument"
+              aria-label="FIN-03 reviewed index unstage">
+              <h3>Protected one-file Git unstage</h3>
+              <p>Exactly one staged file, no other worktree changes.
+                Native confirmation before index-only modification.
+                No commit, checkout, source edit or Git CLI.</p>
+              <button className="ghostBtn" type="button"
+                disabled={unstageBusy || gitBusy}
+                onClick={()=>void reviewNativeUnstage()}>
+                {unstageBusy?'Checking Git evidence…':'Review single staged unstage'}
+              </button>
+              {reviewedUnstage?.projectId===activeProject.projectId &&
+                <div>
+                  <p>File: <code>{reviewedUnstage.relativePath}</code></p>
+                  <p>HEAD: <code>{reviewedUnstage.headSha}</code></p>
+                  <p>Review hash: <code>{reviewedUnstage.reviewSha256}</code></p>
+                  <button type="button" className="primaryBtn"
+                    disabled={unstageBusy}
+                    onClick={()=>void executeNativeUnstage()}>
+                    Request OS confirmation and unstage
+                  </button>
+                </div>}
+              {unstageReceipt?.projectId===activeProject.projectId &&
+                <p role="status">Index independently verified.
+                  Source and refs unchanged. Original index:
+                  <code>{unstageReceipt.indexBefore}</code>
+                  {' · '}Result index:
+                  <code>{unstageReceipt.indexAfter}</code></p>}
+              <button className="ghostBtn" type="button"
+                disabled={unstageBusy}
+                onClick={()=>void inspectUnstageRecovery(false)}>
+                Inspect interrupted unstage journal
+              </button>
+              {unstageRecovery && <p role="status">{unstageRecovery.replaceAll('_',' ')}</p>}
+              {unstageRecovery==='manual_reconciliation_required' &&
+                <button className="ghostBtn" type="button"
+                  disabled={unstageBusy}
+                  onClick={()=>void inspectUnstageRecovery(true)}>
+                  Request OS approval to classify native recovery
+                </button>}
+            </section>}
             {activeProject && <section className="continuityDocument"
               aria-label="FIN-03 read-only stash inventory">
               <h3>Local stash references</h3>

@@ -9,8 +9,8 @@ use std::{fs::{self,OpenOptions,File},io::{Read,Write},path::{Path,PathBuf},sync
 const LIMIT:u64=64*1024*1024;
 const JOURNAL_MAX:u64=1024*1024;
 
-#[derive(Debug,Clone,Serialize)]
-#[serde(rename_all="camelCase")]
+#[derive(Debug,Clone,Serialize,Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
 pub struct ReviewedUnstage{
  pub project_id:String,pub head_sha:String,pub relative_path:String,
  pub index_sha256:String,pub index_blob:String,
@@ -115,7 +115,7 @@ fn latest(repo:&Repository)->Result<Option<Journal>,&'static str>{
  let j:Journal=serde_json::from_slice(row)
     .map_err(|_|"FIN03_UNSTAGE_JOURNAL_CORRUPT")?;
  if j.schema!=1 || j.project_id.len()!=36 || !j.project_id.starts_with("ide-")
-    || !matches!(j.phase.as_str(),"prepared"|"publishing"|"verified") {
+    || !matches!(j.phase.as_str(),"prepared"|"publishing"|"verified"|"cancelled") {
     return Err("FIN03_UNSTAGE_JOURNAL_INVALID");
  }
  Ok(Some(j))
@@ -150,7 +150,7 @@ impl IdeWorkspaceRegistry{
     ->Result<ReviewedUnstage,&'static str>{
   let (repo,head,path,old)=inspected_repo(self,id)?;
   if let Some(j)=latest(&repo)?{
-    if j.phase!="verified"{return Err("FIN03_UNSTAGE_PREVIOUS_INTERRUPTED");}
+    if !matches!(j.phase.as_str(),"verified"|"cancelled"){return Err("FIN03_UNSTAGE_PREVIOUS_INTERRUPTED");}
   }
   let index=index_digest(&repo)?;
   let ix=repo.index().map_err(|_|"FIN03_UNSTAGE_INDEX")?;
@@ -217,12 +217,68 @@ impl IdeWorkspaceRegistry{
  }
  pub fn inspect_unstage_interrupted(&self,id:&str)
     ->Result<Option<&'static str>,&'static str>{
-   let (repo,_,_,_)=inspected_repo(self,id)?;
+   let repo=exact_repo(self,id)?;
    let Some(j)=latest(&repo)? else{return Ok(None)};
-   if j.project_id!=id {return Err("FIN03_UNSTAGE_JOURNAL_PROJECT_MISMATCH")}
+   if j.project_id!=id{return Err("FIN03_UNSTAGE_JOURNAL_PROJECT_MISMATCH");}
    Ok(Some(match j.phase.as_str(){
-      "verified"=>"verified",_=>"manual_reconciliation_required",
+      "verified"=>"verified",
+      "cancelled"=>"cancelled_before_publication",
+      _=>"manual_reconciliation_required",
    }))
+ }
+ /// This does NOT replay an index operation. It only classifies an
+ /// interrupted exact-HEAD journal from independently reread native Git.
+ pub fn reconcile_unstage_interrupted(&self,id:&str)
+    ->Result<&'static str,&'static str>{
+   let repo=exact_repo(self,id)?;
+   if repo.head_detached().unwrap_or(true) ||
+      repo.state()!=git2::RepositoryState::Clean ||
+      repo.path().join("index.lock").exists(){
+      return Err("FIN03_UNSTAGE_RECOVERY_GIT_BUSY");
+   }
+   let mut j=latest(&repo)?.ok_or("FIN03_UNSTAGE_NO_INTERRUPTED_RECORD")?;
+   if j.project_id!=id{return Err("FIN03_UNSTAGE_RECOVERY_WRONG_PROJECT");}
+   if matches!(j.phase.as_str(),"cancelled"|"verified"){
+      return Ok("already_terminal");
+   }
+   let now_head=repo.head().map_err(|_|"FIN03_UNSTAGE_HEAD_MISSING")?
+      .target().ok_or("FIN03_UNSTAGE_HEAD_INDIRECT")?.to_string();
+   if now_head!=j.head_sha{
+      return Err("FIN03_UNSTAGE_RECOVERY_HEAD_CHANGED");
+   }
+   let root=self.registered_git_root(id)
+      .map_err(|_|"FIN03_UNSTAGE_RECOVERY_PROJECT_CLOSED")?;
+   changed_path_is_plain_safe(&root,&j.relative_path)?;
+   let now=index_digest(&repo)?;
+   if now==j.before{
+      j.after=Some(now);j.phase="cancelled".into();
+      append(&repo,&j)?;
+      return Ok("cancelled_without_index_publication");
+   }
+   let head=repo.find_commit(git2::Oid::from_str(&j.head_sha)
+      .map_err(|_|"FIN03_UNSTAGE_BAD_HEAD")?)
+      .map_err(|_|"FIN03_UNSTAGE_HEAD_NOT_COMMIT")?;
+   let tree=head.tree().map_err(|_|"FIN03_UNSTAGE_TREE_MISSING")?;
+   let expect=tree.get_path(Path::new(&j.relative_path)).ok()
+      .map(|x|x.id().to_string());
+   let idx=repo.index().map_err(|_|"FIN03_UNSTAGE_RECOVERY_INDEX")?;
+   if idx.has_conflicts() ||
+      idx.get_path(Path::new(&j.relative_path),0)
+         .map(|e|e.id.to_string())!=expect{
+      return Err("FIN03_UNSTAGE_RECOVERY_INDEX_AMBIGUOUS");
+   }
+   let mut opts=StatusOptions::new();
+   opts.include_untracked(true).recurse_untracked_dirs(true)
+       .renames_head_to_index(false).renames_index_to_workdir(false);
+   let status=repo.statuses(Some(&mut opts))
+       .map_err(|_|"FIN03_UNSTAGE_RECOVERY_STATUS")?;
+   if status.iter().any(|e|e.status().intersects(
+       Status::INDEX_MODIFIED|Status::INDEX_NEW|Status::INDEX_DELETED|
+       Status::INDEX_RENAMED|Status::INDEX_TYPECHANGE|Status::CONFLICTED)){
+       return Err("FIN03_UNSTAGE_RECOVERY_OTHER_STAGED_ENTRIES");
+   }
+   j.after=Some(now);j.phase="verified".into();append(&repo,&j)?;
+   Ok("verified_index_already_restored")
  }
 }
 #[cfg(test)]

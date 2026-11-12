@@ -993,6 +993,46 @@ async fn ide_git_execute_single_unstage(
  result?
 }
 
+#[tauri::command]
+async fn ide_git_inspect_unstage_recovery(
+ state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
+)->Result<Option<&'static str>,String>{
+ let registry=Arc::clone(state.inner());
+ tauri::async_runtime::spawn_blocking(move||
+   registry.inspect_unstage_interrupted(&project_id))
+   .await.map_err(|_|"FIN03_UNSTAGE_RECOVERY_READ_INTERRUPTED".to_owned())?
+   .map_err(str::to_owned)
+}
+#[tauri::command]
+async fn ide_git_reconcile_unstage_recovery(
+ app:AppHandle,state:State<'_,Arc<IdeWorkspaceRegistry>>,
+ sessions:State<'_,Arc<PartialStageSessions>>,project_id:String,
+)->Result<&'static str,String>{
+ let registry=Arc::clone(state.inner());
+ let sessions=Arc::clone(sessions.inner());
+ let token=sessions.begin(&project_id)?;
+ let result=tauri::async_runtime::spawn_blocking(move||{
+   let state=registry.inspect_unstage_interrupted(&project_id)
+       .map_err(str::to_owned)?;
+   if state!=Some("manual_reconciliation_required") ||
+      token.load(Ordering::SeqCst)!=0{
+      return Err("FIN03_UNSTAGE_RECOVERY_NOT_REQUIRED".into());
+   }
+   let approved=app.dialog().message(format!(
+      "Inspect the interrupted one-file Git unstage for project {}?\n\nNo Git index write, replay or rollback is permitted. Only existing on-disk evidence can be classified.",project_id))
+      .title("Lu IDE · Recover interrupted unstage")
+      .buttons(MessageDialogButtons::OkCancelCustom(
+        "Classify original Git evidence".into(),"Decline".into()))
+      .blocking_show();
+   if !approved || token.load(Ordering::SeqCst)!=0{
+      return Err("FIN03_UNSTAGE_RECOVERY_HUMAN_DENIED".into());
+   }
+   registry.reconcile_unstage_interrupted(&project_id)
+      .map_err(str::to_owned)
+ }).await.map_err(|_|"FIN03_UNSTAGE_RECOVERY_THREAD_INTERRUPTED".to_owned());
+ sessions.end(&project_id);
+ result?
+}
 /// G06C-02: read-only merge plan. No ref writes or user-approved grant.
 #[tauri::command]
 async fn ide_git_preview_local_merge(
@@ -3686,6 +3726,8 @@ pub fn run() {
             ide_read_local_stash_inventory,
             ide_git_review_single_unstage,
             ide_git_execute_single_unstage,
+            ide_git_inspect_unstage_recovery,
+            ide_git_reconcile_unstage_recovery,
             ide_git_preview_local_merge,
             ide_git_verify_divergent_merge,
             ide_git_inspect_native_conflicts,
