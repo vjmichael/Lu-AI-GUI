@@ -11,10 +11,7 @@
 // The portable supervisor state machine itself performs no unsafe operations.
 #[cfg(feature = "dap-transport")]
 mod dap_transport;
-#[cfg(any(
-    test,
-    all(windows, debug_assertions, feature = "dev045d5-ci-event-owner")
-))]
+#[cfg(any(test, any(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"), all(windows, feature = "fin04-release-owner-evidence"))))]
 mod debug_action_receipts;
 pub mod debug_binary_witness;
 pub mod debug_command_review;
@@ -664,7 +661,7 @@ impl Supervisor {
     /// completes/crashes. Only validates its fsynced hash-chain and terminal
     /// denial/consumed/uncertain phase: NEVER recreates a consent or dispatch
     /// token. Accepts opaque hash coordinates, not a user-controlled path.
-    #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    #[cfg(any(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"), all(windows, feature = "fin04-release-owner-evidence")))]
     pub fn verify_native_debug_action_after_restart(
         &self,
         action_id_sha256: &str,
@@ -687,7 +684,7 @@ impl Supervisor {
 
     /// D6D: joined, read-only action inventory. Never recreates consumed
     /// approval. In-flight actions require separate verified native OS cleanup.
-    #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    #[cfg(any(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"), all(windows, feature = "fin04-release-owner-evidence")))]
     pub fn native_debug_action_cleanup_jobs_after_restart(
         &self,
     ) -> Result<Vec<String>, SupervisorError> {
