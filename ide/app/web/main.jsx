@@ -338,6 +338,8 @@ function App() {
   const [debugStatus, setDebugStatus] = useState(null);
   const [fin01Recovery,setFin01Recovery]=useState(null);
   const [fin01RecoveryBusy,setFin01RecoveryBusy]=useState(false);
+  const [fin01LspJobs,setFin01LspJobs]=useState(null);
+  const [fin01LspBusy,setFin01LspBusy]=useState(false);
   const [debugTargetReview,setDebugTargetReview]=useState(null);
   const [debugTargetBusy,setDebugTargetBusy]=useState(false);
   const debugTargetRequest=useRef(0);
@@ -1631,6 +1633,7 @@ function App() {
         typeof result.originalJournalsReconciled!=='boolean' ||
         !Number.isSafeInteger(result.buildJournalPending) ||
         !Number.isSafeInteger(result.debugJournalPending) ||
+        !Number.isSafeInteger(result.lspJournalPending) ||
         result.nativeOsReleaseIndependentlyVerified!==false ||
         result.markerRemovalAuthorized!==false ||
         result.autoRetryAuthorized!==false ||
@@ -1641,6 +1644,42 @@ function App() {
       if(activeProjectIdRef.current===selected)
         setProblem('Global native custody evidence unavailable: '+String(error));
     }finally{setFin01RecoveryBusy(false);}
+  }
+  async function inspectFin01LspJobs(){
+    if(fin01LspBusy || !activeProject?.projectId)return;
+    const selected=activeProject.projectId;
+    setFin01LspBusy(true);setFin01LspJobs(null);
+    try{
+      const jobs=await invoke('ide_lsp_recoverable_jobs',{projectId:selected});
+      if(activeProjectIdRef.current!==selected)return;
+      if(!Array.isArray(jobs) || jobs.length>128 ||
+        !jobs.every(job=>typeof job==='string' && /^job-[a-f0-9]{32}$/.test(job)) ||
+        new Set(jobs).size!==jobs.length)
+        throw Error('FIN01_LSP_RECOVERY_JOBS_UNTRUSTED');
+      setFin01LspJobs({projectId:selected,jobs});
+    }catch(error){
+      if(activeProjectIdRef.current===selected)
+        setProblem('Protected LSP recovery inventory unavailable: '+String(error));
+    }finally{setFin01LspBusy(false);}
+  }
+  async function reconcileFin01LspJob(jobId){
+    const selected=activeProject?.projectId;
+    if(!selected || fin01LspBusy ||
+      fin01LspJobs?.projectId!==selected ||
+      !fin01LspJobs.jobs.includes(jobId))return;
+    setFin01LspBusy(true);setFin01LspJobs(null);
+    try{
+      const result=await invoke('ide_lsp_reconcile',{projectId:selected,jobId});
+      if(activeProjectIdRef.current!==selected)return;
+      if(result!=='FIN01_LSP_OS_JOB_RECONCILED_GLOBAL_CUSTODY_RECHECK_REQUIRED')
+        throw Error('FIN01_LSP_RECOVERY_RECEIPT_UNVERIFIED');
+      setProblem('Original protected LSP job reconciled by native OS cleanup. The global custody marker still requires separate assessment; no retry was authorized.');
+      setFin01Recovery(null);
+      void inspectFin01Recovery();
+    }catch(error){
+      if(activeProjectIdRef.current===selected)
+        setProblem('LSP OS cleanup was not verified: '+String(error));
+    }finally{setFin01LspBusy(false);}
   }
   function navigateFin06Stage(id) {
     const projectId=activeProjectIdRef.current;
@@ -7082,9 +7121,28 @@ function App() {
                         <p>Classification: {fin01Recovery.code.replaceAll('_',' ')}</p>
                         <p>Shared admission marker: {fin01Recovery.markerPresent?'Present':'Absent'}</p>
                         <p>Build pending: {fin01Recovery.buildJournalPending};
-                          Debugger pending: {fin01Recovery.debugJournalPending}</p>
+                          Debugger pending: {fin01Recovery.debugJournalPending};
+                          LSP pending: {fin01Recovery.lspJournalPending}</p>
                         <p>Native OS release independently verified: No.
                           Marker removal and automatic retry: Not authorized.</p>
+                      </div>}
+                    <button type="button" className="ghostBtn"
+                      disabled={fin01LspBusy}
+                      onClick={()=>void inspectFin01LspJobs()}>
+                      {fin01LspBusy?'Inspecting original LSP worker…':'Inspect interrupted LSP jobs'}
+                    </button>
+                    {fin01LspJobs?.projectId===activeProject.projectId &&
+                      <div aria-label="Original protected LSP jobs needing OS cleanup">
+                        {fin01LspJobs.jobs.length===0 &&
+                          <p>No original LSP job awaiting native OS cleanup was returned.</p>}
+                        {fin01LspJobs.jobs.map(jobId=><article key={jobId}>
+                          <code>{jobId}</code>
+                          <button type="button" className="ghostBtn"
+                            disabled={fin01LspBusy}
+                            onClick={()=>void reconcileFin01LspJob(jobId)}>
+                            Request native OS-only cleanup
+                          </button>
+                        </article>)}
                       </div>}
                   </section>}
                   {fin06Operational && <section aria-label="FIN-06 native workflow readiness">
