@@ -82,7 +82,15 @@ pub(crate) fn initialize(conn:&Connection)->Result<(),String>{
             UNIQUE(attempt_id,phase)
          );
          CREATE INDEX IF NOT EXISTS ansf_p0_cancel_chat
-            ON ansf_p0_host_cancel_events(chat_id,id DESC);"
+            ON ansf_p0_host_cancel_events(chat_id,id DESC);
+         CREATE TRIGGER IF NOT EXISTS ansf_p0_cancel_no_update
+            BEFORE UPDATE ON ansf_p0_host_cancel_events
+            BEGIN SELECT RAISE(ABORT,'Immutable original cancellation event'); END;
+         CREATE TRIGGER IF NOT EXISTS ansf_p0_cancel_no_direct_delete
+            BEFORE DELETE ON ansf_p0_host_cancel_events
+            WHEN EXISTS(SELECT 1 FROM ansf_desktop_chats
+                        WHERE chat_id=OLD.chat_id)
+            BEGIN SELECT RAISE(ABORT,'Immutable original cancellation event'); END;"
     ).map_err(|_|"P0_AUTH_ANFS_CANCEL_SCHEMA_UNAVAILABLE".into())
 }
 /// The native original-catalog cancellation REQUESTED row is the
