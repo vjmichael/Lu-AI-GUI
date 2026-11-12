@@ -184,6 +184,8 @@ impl PersistentLlamaBackend {
     }
     fn active_port(&mut self) -> Result<u16, String> {
         if !self.is_running() {
+            self.cache_gate.invalidate();
+            self.next_trusted_cache_scope=None;
             return Err("persistent llama.cpp engine is not running".into());
         }
         self.port
@@ -228,6 +230,10 @@ impl InferenceBackend for PersistentLlamaBackend {
     }
     fn set_trusted_cache_scope(&mut self, scope: Option<&str>) {
         self.next_trusted_cache_scope=scope.map(str::to_owned);
+    }
+    fn invalidate_prefix_cache(&mut self) {
+        self.cache_gate.invalidate();
+        self.next_trusted_cache_scope=None;
     }
     fn generate_browser_function_calls(
         &mut self,
