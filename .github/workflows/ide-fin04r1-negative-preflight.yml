@@ -8,6 +8,8 @@ on:
     paths:
       - .github/workflows/ide-fin04r1-negative-preflight.yml
       - ide/supervisor/examples/wo6_native_dap_acceptance.rs
+      - ide/supervisor/src/dap_transport.rs
+      - ide/supervisor/src/windows_lsp_worker.rs
       - ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1
       - ide/app/fixtures/Test-FIN04R1-PhysicalProtectedPdbReview.ps1
       - ide/app/tests/fin04r1_protected_pdb.test.mjs
