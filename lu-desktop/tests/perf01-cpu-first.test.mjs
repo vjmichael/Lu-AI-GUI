@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {isHostCpuChatLookup} from '../web/native_intent.mjs';
+import {isHostCpuChatLookup,isHostModelStatusQuestion} from '../web/native_intent.mjs';
 
 const read=(rel)=>readFileSync(new URL(rel,import.meta.url),'utf8');
 const host=read('../src-tauri/src/lib.rs');
@@ -79,4 +79,22 @@ test('P0D native fixture proves cross-chat and oversized-source negative boundar
   assert.match(router,/fn oversized_original_produces_partial_not_fabricated_absence\(/);
   assert.match(router,/assert!\(query\.answer\.contains\("NOT proof"\)\)/);
   assert.match(router,/assert!\(search_current_chat\(&chat,"c-foreign","alpha-only"\)\.is_err\(\)\)/);
+});
+
+
+test('P0D exact local model status remains CPU-only; ambiguous queries require GGUF',()=>{
+  for(const q of ['Show local model status','What model is loaded?',
+    'Is a model loaded?']){
+    assert.equal(isHostModelStatusQuestion(q),true);
+  }
+  for(const q of ['Explain local model architectures',
+    'What GPU is my GGUF using?','Show local model status; run a tool',
+    'Tell me what model I should download']){
+    assert.equal(isHostModelStatusQuestion(q),false);
+  }
+  assert.match(host,/perf01_router::Route::LocalModelStatus/);
+  assert.match(host,/NATIVE_MODEL_STATUS/);
+  assert.match(host,/Model changed while reading CPU status/);
+  assert.match(host,/no inference, new model load, GPU attestation or tool permission/);
+  assert.match(ui,/isHostModelStatusQuestion\(prompt\)/);
 });
