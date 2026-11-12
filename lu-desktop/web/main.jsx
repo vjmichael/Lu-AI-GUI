@@ -4749,9 +4749,11 @@ function App() {
                       </li>)}
                   </ul>}
                 {(authorityPostureByChat[chatId].securityRecovery.additionalProblemsNotDisplayed||
-                  authorityPostureByChat[chatId].securityRecovery.olderOriginalTurnsNotInspected)&&
+                  authorityPostureByChat[chatId].securityRecovery.olderOriginalTurnsNotInspected||
+                  authorityPostureByChat[chatId].securityRecovery.olderCancelIntentsNotInspected)&&
                   <small>Bounded recovery view incomplete. Additional original
-                    tasks or older turns require host reconciliation.</small>}
+                    tasks, older turns or older cancellation intents
+                    require host reconciliation.</small>}
                 <small>Previous authority: REVOKED / NOT REUSABLE.
                   {' '}Automatic replay: DISALLOWED.
                   {' '}Historical OS cleanup: NOT independently proven by this view.
