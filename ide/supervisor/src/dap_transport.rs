@@ -441,13 +441,25 @@ impl DapGateway {
         {
             return self.quarantine();
         }
-        self.supervisor.native_mark_release_pending(&self.job_id)?;
+        self.supervisor.native_mark_release_pending(&self.job_id)
+            .map_err(|e| {
+                #[cfg(test)] eprintln!("FIN01D_RELEASE_FAILURE stage=mark_release_pending error={}", e.code());
+                e
+            })?;
         self.process
             .as_mut()
             .ok_or(SupervisorError::Quarantined)?
-            .release_after_verified_terminal()?;
+            .release_after_verified_terminal()
+            .map_err(|e| {
+                #[cfg(test)] eprintln!("FIN01D_RELEASE_FAILURE stage=service_release error={}", e.code());
+                e
+            })?;
         self.supervisor
-            .native_finish(&self.job_id, true, true, true)?;
+            .native_finish(&self.job_id, true, true, true)
+            .map_err(|e| {
+                #[cfg(test)] eprintln!("FIN01D_RELEASE_FAILURE stage=terminal_receipt error={}", e.code());
+                e
+            })?;
         self.finished = true;
         Ok(())
     }
@@ -635,7 +647,12 @@ mod tests {
             "success":true,"body":{"threads":[]}
         })));
         assert_eq!(gateway.poll().unwrap(), vec![DapEvent::ThreadsReceived]);
-        gateway.close().unwrap();
+        // Preserve the original failure before Drop can make a second recovery transition.
+        // Never classify an uncertain close as successful.
+        gateway.close().map_err(|e| {
+            eprintln!("FIN01D_DAP_CLOSE_FAILURE error={} jobs={:?}", e.code(), supervisor.inspect().map(|jobs| jobs.into_iter().map(|j| (j.phase, j.requires_reconciliation)).collect::<Vec<_>>()));
+            e
+        }).unwrap();
         let last = supervisor.inspect().unwrap().pop().unwrap();
         assert_eq!(last.phase, JobPhase::Completed);
         assert!(!last.requires_reconciliation);
