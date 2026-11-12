@@ -100,6 +100,8 @@ function sourceCases(){
     'lu-desktop/tests/p0-sec06-consolidated.test.mjs',
     'lu-desktop/tests/reviewed-app-desktop.test.mjs',
     'lu-desktop/tests/reviewed-task-continuity.test.mjs',
+    'lu-desktop/tests/agent01l-os-custody.test.mjs',
+    'lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs',
     'lu-desktop/tests/background-worker-e2e.test.mjs'
   ],{timeout:180000});
   doCase('sec06-js-syntax','node',[
