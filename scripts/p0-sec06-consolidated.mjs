@@ -1,0 +1,233 @@
+#!/usr/bin/env node
+// SEC-06 consolidated, fail-closed native security acceptance coordinator.
+// This is an explicitly invoked developer/owner tool. It never dispatches
+// CI, merges a PR, modifies a production app, or grants execution authority.
+// A successful source test is NOT proof of Windows Job or Linux cgroup custody.
+import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {constants,existsSync,accessSync,mkdirSync,readFileSync,writeFileSync,mkdtempSync} from 'node:fs';
+import {join,dirname,resolve} from 'node:path';
+import {tmpdir,platform,arch,release} from 'node:os';
+import {fileURLToPath} from 'node:url';
+
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+const argv=process.argv.slice(2);
+const arg=(flag)=>{const i=argv.indexOf(flag);return i>=0?argv[i+1]:null};
+const mode=arg('--mode');
+const supported=['source','linux','windows','verify'];
+if (!supported.includes(mode)){
+  process.stderr.write('Usage: node scripts/p0-sec06-consolidated.mjs --mode source|linux|windows|verify [--evidence DIR] [--source RECEIPT --linux RECEIPT --windows RECEIPT]\n');
+  process.exit(2);
+}
+const hash=(bytes)=>createHash('sha256').update(bytes).digest('hex');
+const stringHash=(s)=>hash(Buffer.from(s,'utf8'));
+const command=(exe,args,timeout=180000,environment=process.env)=>{
+  const r=spawnSync(exe,args,{
+    cwd:root,env:environment,encoding:'utf8',
+    timeout,maxBuffer:8*1024*1024,windowsHide:true,
+  });
+  return {code:r.status,signal:r.signal,
+    error:r.error?String(r.error):null,
+    output:'STDOUT\n'+(r.stdout||'')+'\nSTDERR\n'+(r.stderr||'')+'\n'};
+};
+const git=(...a)=>{
+  const r=command('git',a,30000);
+  if(r.code!==0||r.error)throw new Error('SEC06_SOURCE_IDENTITY_UNAVAILABLE: '+r.output.slice(0,1000));
+  return r.output.split('\nSTDERR\n')[0].replace(/^STDOUT\n/,'').trim();
+};
+const sha=/^[a-f0-9]{64}$/;
+const receiptId=/^[a-f0-9]{40}$/;
+const sourceLock=join(root,'source-tree.lock.json');
+const lockSha=hash(readFileSync(sourceLock));
+let currentHead;
+try{currentHead=git('rev-parse','HEAD')}catch(e){
+  process.stderr.write(String(e)+'\n');process.exit(2);
+}
+if(!receiptId.test(currentHead)){throw new Error('Invalid original source commit identity')}
+const approvedEvidenceRoot=arg('--evidence');
+const evidence=approvedEvidenceRoot?resolve(approvedEvidenceRoot):mkdtempSync(join(tmpdir(),'lu-sec06-'));
+if(mode!=='verify')mkdirSync(evidence,{recursive:true});
+const results=[];
+let blocked=false;
+function doCase(id,exe,args,opts={}){
+  const env=opts.env||process.env;
+  const result=command(exe,args,opts.timeout||180000,env);
+  const log=join(evidence,id+'.log');
+  const body='COMMAND '+[exe,...args].join(' ')+'\n'+result.output;
+  writeFileSync(log,body,{flag:'wx',mode:0o600});
+  const evidenceDigest=stringHash(body);
+  let status=result.code===0&&!result.error?'PASS':
+    result.code===77||result.error&&result.error.includes('ENOENT')?'NOT_AVAILABLE':'FAIL';
+  if(status==='PASS'&&opts.mustContain&&
+     !opts.mustContain.every(t=>result.output.includes(t)))status='FAIL';
+  if(status==='PASS'&&opts.mustReject&&
+     opts.mustReject.some(t=>result.output.includes(t)))status='FAIL';
+  if(status!=='PASS')blocked=true;
+  const row={id,status,exitCode:result.code,signal:result.signal,
+    stderrOrSpawnError:result.error,log:id+'.log',sha256:evidenceDigest};
+  results.push(row);
+  process.stdout.write(id+' '+status+'\n');
+  return row;
+}
+function writeReceipt(target){
+  const status=blocked?'BLOCKED_NATIVE_SECURITY':'PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING';
+  const receipt={
+    schema:'lu-sec06-native-evidence-v1',
+    target,head:currentHead,sourceLockSha256:lockSha,
+    machine:{platform:platform(),arch:arch(),release:release()},
+    status,allNativeCasesPassed:!blocked,
+    localExecutionOnly:true,noReleaseAuthority:true,
+    independentlyVerifiedInstalledHumanAcceptance:false,
+    cases:results,
+  };
+  const path=join(evidence,target+'.receipt.json');
+  writeFileSync(path,JSON.stringify(receipt,null,2)+'\n',{flag:'wx',mode:0o600});
+  process.stdout.write('SEC06_RECEIPT='+path+'\nSEC06_STATUS='+status+'\n');
+  if(blocked)process.exitCode=1;
+}
+function reject(reason){
+  blocked=true;
+  results.push({id:'preflight',status:'NOT_AVAILABLE',reason});
+  process.stderr.write('SEC06_NOT_AVAILABLE '+reason+'\n');
+}
+function sourceCases(){
+  doCase('exact-head-inventory','node',['scripts/verify-source-tree.mjs'],{timeout:120000});
+  doCase('security-contracts','node',[
+    '--test','lu-desktop/tests/p0-sec-guardian-hardening.test.mjs',
+    'lu-desktop/tests/p0-sec05-adversarial.test.mjs',
+    'lu-desktop/tests/reviewed-app-desktop.test.mjs',
+    'lu-desktop/tests/reviewed-task-continuity.test.mjs',
+    'lu-desktop/tests/background-worker-e2e.test.mjs'
+  ],{timeout:180000});
+  doCase('linux-negative-python-syntax','python3',[
+    '-m','py_compile','benchmarks/e1/p0_sec02_linux_guardian_negative.py'
+  ],{timeout:30000});
+}
+function rustCases(){
+  for(const [id,manifest,filter] of [
+    ['core-native-full','src-tauri/lu-core/Cargo.toml',null],
+    ['desktop-ansf-native','lu-desktop/src-tauri/Cargo.toml',null],
+    ['worker-job-native','src-tauri/lu-win-worker-job/Cargo.toml',null],
+    ['reviewed-restart-negative','lu-desktop/src-tauri/Cargo.toml','sec04_'],
+    ['adversarial-sql-and-revocation','lu-desktop/src-tauri/Cargo.toml','sec05_'],
+  ]){
+    const args=['test','--locked','--manifest-path',manifest];
+    if(filter)args.push(filter);
+    doCase(id,'cargo',args,{timeout:900000});
+  }
+}
+if(mode==='verify'){
+  const proofMap={source:arg('--source'),linux:arg('--linux'),windows:arg('--windows')};
+  const summary={schema:'lu-sec06-consolidated-review-v1',head:currentHead,
+    sourceLockSha256:lockSha,proofs:{},securityDecision:'BLOCKED',
+    ownerOperatedInstalledAppAccepted:false,releaseOrMergeAuthorized:false};
+  let valid=true;
+  for(const [target,filename] of Object.entries(proofMap)){
+    const info={status:'NOT_AVAILABLE'};
+    if(filename){
+      try{
+        const path=resolve(filename);
+        const p=JSON.parse(readFileSync(path,'utf8'));
+        if(p.schema!=='lu-sec06-native-evidence-v1'||p.target!==target||
+           p.head!==currentHead||p.sourceLockSha256!==lockSha||
+           p.allNativeCasesPassed!==true||
+           p.status!=='PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING'){
+          throw new Error('wrong original source identity or unaccepted native result');
+        }
+        if(target==='linux'&&p.machine.platform!=='linux'||
+           target==='windows'&&p.machine.platform!=='win32'){
+          throw new Error('wrong original OS proof');
+        }
+        if(!Array.isArray(p.cases)||p.cases.length<4||
+           p.cases.some(x=>x.status!=='PASS'||!sha.test(x.sha256))){
+          throw new Error('missing genuine native cases');
+        }
+        for(const entry of p.cases){
+          if(typeof entry.log!=='string'||!/^[-a-z0-9]+\.log$/.test(entry.log)){
+            throw new Error('unsafe or missing original case log');
+          }
+          const pathToLog=join(dirname(path),entry.log);
+          if(!existsSync(pathToLog)||hash(readFileSync(pathToLog))!==entry.sha256){
+            throw new Error('tampered original native log: '+entry.id);
+          }
+        }
+        info.status='NATIVE_EVIDENCE_PRESENT_UNREVIEWED';
+        info.cases=p.cases.length;
+      }catch(e){info.status='UNTRUSTED_OR_INCOMPLETE';info.reason=String(e)}
+    }
+    if(info.status!=='NATIVE_EVIDENCE_PRESENT_UNREVIEWED')valid=false;
+    summary.proofs[target]=info;
+  }
+  summary.securityDecision=valid?
+    'NATIVE_CASES_PRESENT_OWNER_INSTALLED_AND_INDEPENDENT_REVIEW_PENDING':
+    'BLOCKED_MISSING_OR_UNTRUSTED_NATIVE_PROOFS';
+  process.stdout.write(JSON.stringify(summary,null,2)+'\n');
+  // Even fully matching native logs cannot be auto-promoted to SEC-06 PASS:
+  // only the owner/independent installed-app and kernel review can close it.
+  process.exitCode=1;
+}else{
+  if(git('status','--porcelain','--untracked-files=no')){
+    reject('working tree differs from original exact source head');
+    writeReceipt(mode);
+  }else if(mode==='source'){
+    sourceCases();
+    writeReceipt(mode);
+  }else if(mode==='linux'&&platform()!=='linux'||
+           mode==='windows'&&platform()!=='win32'){
+    reject('requested operating system unavailable');
+    writeReceipt(mode);
+  }else{
+    sourceCases();
+    rustCases();
+    if(mode==='linux'){
+      const cgroup='/sys/fs/cgroup';
+      if(!existsSync(join(cgroup,'cgroup.controllers'))){
+        reject('unified Linux cgroup-v2 unavailable');
+      }else if(typeof process.getuid!=='function'||process.getuid()===0){
+        reject('destructive fixture must run as ordinary delegated user');
+      }else{
+        const build=doCase('guardian-test-binaries','cargo',[
+          'build','--locked','--manifest-path',
+          'src-tauri/lu-win-worker-job/Cargo.toml',
+          '--features','e1-p08-crash-fixture',
+          '--bin','lu-linux-cgroup-guard',
+          '--bin','lu-p0-sec02-linux-negative'
+        ],{timeout:900000});
+        if(build.status==='PASS'){
+          const basedir=join(root,'src-tauri/lu-win-worker-job/target/debug');
+          const helper=join(basedir,'lu-linux-cgroup-guard');
+          const fixture=join(basedir,'lu-p0-sec02-linux-negative');
+          if(!existsSync(helper)||!existsSync(fixture)){
+            reject('original compiled first-party helper binaries not found');
+          }else{
+            const env={...process.env,LU_AGENT01L_TEST_CGROUP_GUARD:helper};
+            for(const modeName of [
+              'guardian-death','guardian-stall','worker-stall','ancestor-migration'
+            ]){
+              doCase('linux-'+modeName,'python3',[
+                'benchmarks/e1/p0_sec02_linux_guardian_negative.py',
+                '--fixture',fixture,'--mode',modeName
+              ],{
+                timeout:180000,env,
+                mustContain:[
+                  modeName==='ancestor-migration'?
+                    'P0_SEC05_NATIVE_ANCESTOR_MIGRATION_PASS=1':
+                    'P0_SEC02_NATIVE_'+modeName.toUpperCase().replaceAll('-','_')+'_PASS=1'
+                ],
+                mustReject:['SEC06_BLOCKED_ANCESTOR_CGROUP_ESCAPE=1']
+              });
+            }
+          }
+        }
+      }
+    }else{
+      doCase('windows-real-two-jobs','cargo',[
+        'test','--locked','--manifest-path',
+        'src-tauri/lu-core/Cargo.toml',
+        '--lib','sec05_windows_two_jobs_cross_chat_cancel_cannot_terminate_foreign_worker',
+        '--','--exact','--nocapture'
+      ],{timeout:600000});
+    }
+    writeReceipt(mode);
+  }
+}
