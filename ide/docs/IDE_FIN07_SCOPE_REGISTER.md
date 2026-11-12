@@ -88,3 +88,33 @@ FIN-02 remains explicitly deferred as directed; FIN-01 cross-supervisor producti
 - **Tests and closure:** New Rust/Node fixtures were committed but not run, and no CI workflow, native OS execution, physical-human acceptance, package installation, feature freeze, PR merge or release was performed.
 
 The next source engineering tasks are (1) reconcile/repair the FIN-03 restore through exact-head native execution with genuine interruption, (2) move independently verified Windows protected LLDB owner-event operations from developer test feature to a genuinely shippable native authorization path without weakening release policy, and (3) wire Linux vcpkg package preview into separate one-use consent, worker receipt and source/installed provenance verification; then complete Conan/Windows. These are implementation tasks, not acceptance-only labels.
+
+## FIN-06B/FIN-07B consolidated workflow and scope reconciliation
+
+The existing Workbench now displays two explicit, separately sourced projections:
+FIN-06B project-scoped Git/build/debug/package/recovery observations, and
+FIN-07B conservative unresolved implementation boundaries derived from the
+registered FIN group scope. These are **advisory observations**, not a mutable
+task register or an independent OS-evidence verifier.
+
+- FIN-01: cross-supervisor/OS custody and interrupted-worker reconciliation open.
+- FIN-02: intentionally deferred; trusted production runtimes and Windows/Linux
+  installed service/worker admission are not accepted.
+- FIN-03: one-file restore remains opt-in and native-unverified; remaining
+  stash/revert/worktree/remote publication features open.
+- FIN-04: developer debugger control cannot masquerade as installed/production
+  stop/step/breakpoint authority; framework coverage and real OS acceptance open.
+- FIN-05: opt-in Linux vcpkg worker source is not a callable approved desktop
+  package operation; provenance, Conan and Windows execution open.
+- FIN-06: source-facing human workflow now correlates native observations
+  and recovery. Installed accessibility, restart, optional PTY and owner operation
+  acceptance remain open.
+- FIN-07: scope register and conservative reconciliation exist in source,
+  but human feature-scope decision, dependency-license closure, native exact-head
+  compiler/tests and installed OS acceptance remain open.
+
+The reconciliation always reports featureFrozen=false and release eligibility
+false. New Node regression fixtures verify foreign-project rejection, recovery
+denial and the inability to promote observations into release authority.
+No native tests, CI, installer verification, human acceptance, merge or release
+were performed in this development slice.
