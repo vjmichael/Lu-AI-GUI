@@ -66,6 +66,12 @@ fn reviewed_multilang_bundle(
     let (root, pin) = match recipe_id {
         "python_pytest" => (DEV03_PYTHON_ROOT, DEV03_PYTHON_PIN),
         "js_tests" => (DEV03_NODE_ROOT, DEV03_NODE_PIN),
+        id if crate::exact_framework_case(id).is_some() => match crate::exact_framework_case(id)
+            .ok_or(SupervisorError::InvalidPlan)?.0 {
+            "python_pytest" => (DEV03_PYTHON_ROOT, DEV03_PYTHON_PIN),
+            "js_tests" => (DEV03_NODE_ROOT, DEV03_NODE_PIN),
+            _ => return Err(SupervisorError::InvalidPlan),
+        },
         "cpp_cmake_build" => (DEV03_CMAKE_ROOT, DEV03_CMAKE_PIN),
         "uv_sync_offline" if cfg!(feature = "package-uv-worker") => (IDE05_UV_ROOT, IDE05_UV_PIN),
         "vcpkg_install_offline" if cfg!(feature = "package-vcpkg-worker") => (IDE05_VCPKG_ROOT, IDE05_VCPKG_PIN),
@@ -534,6 +540,12 @@ fn command_for(
         "lu_ide_host_tests" => "/workspace/ide/host/Cargo.toml",
         "rust_tests" | "rust_check" | "rust_build" => "/workspace/Cargo.toml",
         id if crate::rust_exact_case_name(id).is_some()=>"/workspace/Cargo.toml",
+        id if crate::exact_framework_case(id).is_some() && runtime.is_some() =>
+            match crate::exact_framework_case(id).ok_or(SupervisorError::InvalidPlan)?.0 {
+                "python_pytest" => "/workspace/pyproject.toml",
+                "js_tests" => "/workspace/package.json",
+                _ => return Err(SupervisorError::InvalidPlan),
+            },
         "python_pytest" if runtime.is_some() => "/workspace/pyproject.toml",
         "vcpkg_install_offline" if cfg!(feature = "package-vcpkg-worker") && runtime.is_some()=>"/workspace/vcpkg.json",
         "vcpkg_install_offline" if cfg!(feature = "package-vcpkg-worker") && runtime.is_some() => {
@@ -745,6 +757,23 @@ fn command_for(
                     "/runtime/wheelhouse",
                     "--no-cache",
                 ]);
+            }
+        }
+        id if crate::exact_framework_case(id).is_some() && runtime.is_some() => {
+            let (framework, path, name) =
+                crate::exact_framework_case(id).ok_or(SupervisorError::InvalidPlan)?;
+            match framework {
+                "python_pytest" => {
+                    cmd.arg("/runtime/bin/python3").args(["-I", "-m", "pytest", "-v",
+                        "-p", "no:cacheprovider"])
+                        .arg(format!("/workspace/{path}::{name}"));
+                }
+                "js_tests" => {
+                    cmd.arg("/runtime/bin/node").args(["--test", "--test-reporter=tap"])
+                        .arg(format!("--test-name-pattern=^{name}$"))
+                        .arg(format!("/workspace/{path}"));
+                }
+                _ => return Err(SupervisorError::InvalidPlan),
             }
         }
         "python_pytest" if runtime.is_some() => {

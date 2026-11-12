@@ -292,6 +292,12 @@ pub fn publish_input(
     let manifest_relative_path = match recipe_id {
         "rust_check" | "rust_build" | "rust_tests" => "Cargo.toml",
         id if crate::rust_exact_case_name(id).is_some()=>"Cargo.toml",
+        id if crate::exact_framework_case(id).is_some() && cfg!(feature = "multilang-worker") =>
+            match crate::exact_framework_case(id).ok_or(SnapshotError::InvalidName)?.0 {
+                "python_pytest" => "pyproject.toml",
+                "js_tests" => "package.json",
+                _ => return Err(SnapshotError::InvalidName),
+            },
         "lu_ide_host_tests" => "ide/host/Cargo.toml",
         "python_pytest" if cfg!(feature = "multilang-worker") => "pyproject.toml",
         "uv_sync_offline" if cfg!(feature = "package-uv-worker") => "pyproject.toml",

@@ -764,6 +764,27 @@ fn command_for(
                     tools.join("bin/python.exe").display(),
                 ),
             ),
+            id if crate::exact_framework_case(id).is_some() => {
+                let (framework, path, name) =
+                    crate::exact_framework_case(id).ok_or(SupervisorError::InvalidPlan)?;
+                let relative = path.replace('/', "\\");
+                let source_file = workspace.join(&relative);
+                if source_file.to_string_lossy().contains('"') ||
+                   !clean_meta(&source_file)?.is_file() {
+                    return Err(denied());
+                }
+                match framework {
+                    "python_pytest" => (
+                        "bin/python.exe", "pyproject.toml",
+                        format!("-I -m pytest -v -p no:cacheprovider \"{}::{}\"",source_file.display(),name),
+                    ),
+                    "js_tests" => (
+                        "bin/node.exe", "package.json",
+                        format!("--test --test-reporter=tap --test-name-pattern=^{}$ \"{}\"",name,source_file.display()),
+                    ),
+                    _ => return Err(SupervisorError::InvalidPlan),
+                }
+            }
             "python_pytest" => (
                 "bin/python.exe",
                 "pyproject.toml",

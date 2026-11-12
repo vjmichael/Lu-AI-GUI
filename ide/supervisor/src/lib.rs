@@ -156,6 +156,55 @@ pub fn rust_exact_case_name(recipe_id: &str) -> Option<&str> {
     }
     Some(name)
 }
+
+/**
+ * FIN-04H: exact per-framework test selector. The path and symbol are
+ * data inside a bounded *native* JobPlan recipe; they are never a command,
+ * shell fragment, arbitrary path, or authority to select a runtime.
+ * The host MUST separately prove saved symbol discovery, current and
+ * sealed source bytes, clean Git HEAD, and one-use OS approval.
+ */
+pub fn exact_framework_case(recipe: &str) -> Option<(&'static str, &str, &str)> {
+    let (framework, tail) = if let Some(t) = recipe.strip_prefix("pytest_exact_case:") {
+        ("python_pytest", t)
+    } else if let Some(t) = recipe.strip_prefix("node_exact_case:") {
+        ("js_tests", t)
+    } else {
+        return None;
+    };
+    let (path, name) = tail.rsplit_once("::")?;
+    if tail.matches("::").count() != 1
+        || path.len() > 128
+        || path.is_empty()
+        || name.is_empty()
+        || name.len() > 64
+        || !name.bytes().next()?.is_ascii_alphabetic()
+            && !name.starts_with('_')
+        || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        || !path.bytes().all(|b| b.is_ascii_alphanumeric()
+            || matches!(b, b'_' | b'-' | b'.' | b'/'))
+        || path.split('/').any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return None;
+    }
+    let (dir, file) = path.rsplit_once('/')?;
+    if !matches!(dir, "tests" | "test" | "__tests__" | "src/tests" | "src/test") {
+        return None;
+    }
+    let allowed = match framework {
+        "python_pytest" => {
+            file.ends_with(".py") && (file.starts_with("test_") || file.ends_with("_test.py"))
+                && name.starts_with("test_")
+        }
+        "js_tests" => {
+            [".test.js", ".spec.js", ".test.mjs", ".spec.mjs",
+             ".test.cjs", ".spec.cjs"].iter().any(|suffix| file.ends_with(suffix))
+        }
+        _ => false,
+    };
+    allowed.then_some((framework, path, name))
+}
+
 fn hex_sha(value: &str, n: usize) -> bool {
     value.len() == n && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
@@ -166,7 +215,9 @@ fn validate_plan(value: &JobPlan) -> bool {
         && (matches!(
             value.recipe_id.as_str(),
             "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
-        ) || rust_exact_case_name(&value.recipe_id).is_some() || (cfg!(feature = "package-uv-worker") && value.recipe_id == "uv_sync_offline")
+        ) || rust_exact_case_name(&value.recipe_id).is_some()
+            || (cfg!(feature = "multilang-worker") && exact_framework_case(&value.recipe_id).is_some())
+            || (cfg!(feature = "package-uv-worker") && value.recipe_id == "uv_sync_offline")
             || (cfg!(all(feature = "package-vcpkg-worker", target_os = "linux")) && value.recipe_id == "vcpkg_install_offline")
             || (cfg!(feature = "multilang-worker")
                 && matches!(
@@ -248,6 +299,30 @@ fn validate_plan(value: &JobPlan) -> bool {
             value.effect_class == "test_build_isolated"
         }
 }
+#[cfg(test)]
+mod fin04h_exact_framework_tests {
+    use super::*;
+    #[test]
+    fn native_recipe_parser_rejects_paths_flags_globs_and_regex() {
+        assert_eq!(exact_framework_case("pytest_exact_case:tests/test_math.py::test_add"),
+            Some(("python_pytest", "tests/test_math.py", "test_add")));
+        assert_eq!(exact_framework_case("node_exact_case:__tests__/sum.test.mjs::sum"),
+            Some(("js_tests", "__tests__/sum.test.mjs", "sum")));
+        for bad in [
+            "pytest_exact_case:../tests/test_x.py::test_x",
+            "pytest_exact_case:tests/test_x.py::test_x;rm",
+            "pytest_exact_case:tests/test_x.py::test_x::more",
+            "pytest_exact_case:tests/test_x.py::other",
+            "node_exact_case:tests/file.test.js::name.*",
+            "node_exact_case:tests/file.test.js::a b",
+            "node_exact_case:tests/file.js::name",
+            "node_exact_case:tests/sub/file.test.js::name",
+            "pytest_exact_case:tests/test_x.py::-k",
+            "node_exact_case:/etc/file.test.js::name",
+        ] {assert!(exact_framework_case(bad).is_none(), "{bad}");}
+    }
+}
+
 fn fingerprint(value: &JobPlan) -> Result<String, SupervisorError> {
     let bytes = serde_json::to_vec(value).map_err(|_| SupervisorError::InvalidPlan)?;
     Ok(format!("{:x}", Sha256::digest(&bytes)))
