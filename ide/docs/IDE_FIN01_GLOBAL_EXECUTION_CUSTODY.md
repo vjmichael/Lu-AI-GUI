@@ -44,3 +44,47 @@ concurrent-process races; exact-head compilation; actual installed
 service/cgroup process custody; native owner acceptance. No CI or
 installed acceptance was performed. FIN-02 remains deferred and no
 destructive Git or package executor was promoted.
+
+## FIN-01D — Unified build/debug/LSP admission and recovery (source increment)
+
+- The shared `fin01-global-native-custody-v1.lock` now serializes the
+  **build/package, debugger and LSP** native supervisors. All admission
+  paths independently replay the other two original journals, not just
+  their own current-process state. An active LSP session retains its
+  original marker until independently supervised close and terminal
+  journal validation. This deliberately prohibits a concurrent build
+  while a protected LSP is live, pending a separately reviewed safe
+  multi-lease design; it is not a background resource scheduler.
+- An otherwise clean-looking previous LSP job that remains nonterminal,
+  uncertain or quarantined blocks build/debug re-admission. Global
+  recovery assessment now counts all three original journals and never
+  discloses foreign project/job details.
+- Denied build/debug/LSP admissions preflight original journals
+  **before creating** the global marker. After acquiring, a refusal
+  before `Supervisor::prepare` may release its own marker only when the
+  complete original owner-job inventory and a bounded SHA-256 of the
+  underlying owner-journal bytes remain unchanged. An admission that
+  reached preparation, a changed journal, a missing owner or unknown OS
+  cleanup remains quarantined. There is no automatic `Drop` unlink.
+- A current LSP session must revalidate its exact private marker
+  identity before further diagnostics, document updates, hover or
+  completion. Replacement/loss is treated as uncertain custody, not
+  continued permission. `stop` and OS-only reconciliation remain
+  available for cleanup.
+- Added a project-scoped LSP recovery inventory, a separately
+  approved native OS-only exact-job cleanup command through the
+  original Windows protected recovery service or Linux delegated
+  cgroup, and a visible human entrypoint in the IDE. No project code
+  or language server is restarted by this command. The global
+  marker is **not** cleared after restart merely because journals
+  appear terminal; an independently OS-attested stale-owner clearance
+  mechanism is still required.
+
+**Validation limits:** New Rust and Node hostile fixtures are checked
+in but not executed. No exact-head Windows/Linux compilation,
+physical OS admission race, kernel-descendant probe, native dialog
+or installed application acceptance was run in this pass. FIN-02
+runtime provisioning/packaging remains deferred; no new destructive
+Git or package execution was enabled. FIN-01D remains open for
+stale-marker OS proof and native acceptance, not a completed
+production authorization contract.
