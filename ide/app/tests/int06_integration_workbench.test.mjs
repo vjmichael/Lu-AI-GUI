@@ -17,7 +17,7 @@ const snapshot={
 };
 test('INT06 fixed cross-tool view cannot approve work or execution',()=>{
   const w=projectWorkbench(id,snapshot);
-  assert.equal(w.rows.length,8);
+  assert.equal(w.rows.length,9);
   assert.equal(w.executionAuthorized,false);
   assert.equal(w.acceptanceVerified,false);
   assert.equal(w.installedAppAccepted,false);
@@ -41,7 +41,7 @@ test('INT06 recovery always precedes source review or build workflow',()=>{
   assert.equal(w.priority,'build');
   assert.equal(w.rows.find(x=>x.id==='build').state,'reconciliation_required');
 });
-test('INT06 all six read-only probes and no mutation',async()=>{
+test('INT06 all seven read-only probes and no mutation',async()=>{
   const calls=[];
   const answers={
     ide_read_git_repository_inventory:snapshot.git,
@@ -54,7 +54,7 @@ test('INT06 all six read-only probes and no mutation',async()=>{
   assert.deepEqual(calls.map(c=>c[0]).sort(),[
     'ide_build_status','ide_debug_status','ide_discover_project_run_profiles',
     'ide_inspect_package_managers','ide_lsp_worker_status',
-    'ide_read_git_repository_inventory',
+    'ide_read_git_repository_inventory','ide_read_project_context',
   ].sort());
   assert.deepEqual(calls.find(c=>c[0]==='ide_lsp_worker_status')[1],undefined);
   assert.ok(calls.filter(c=>c[1]).every(c=>c[1].projectId===id));
@@ -82,4 +82,19 @@ test('INT06 desktop links panel only to read-only observation',()=>{
   assert.match(ui,/IDE-INT06 Workbench/);
   assert.match(ui,/Non-atomic observations/);
   assert.doesNotMatch(ui,/shell:allow-execute|Command\.create\(/);
+});
+
+test('INT06 continuity records are historical, not approval or release',()=>{
+  const ledger={schemaVersion:1,projectId:id,events:[],tasks:[{
+    taskId:'IDE-INT06',status:'completed',requiredGates:['source_review'],
+    acceptanceGates:[],taskAcceptance:'not_verified',
+  }]};
+  const w=projectWorkbench(id,{...snapshot,continuity:ledger});
+  assert.equal(w.rows.find(x=>x.id==='continuity').state,'observed');
+  assert.equal(w.rows.find(x=>x.id==='acceptance').state,'unverified');
+  assert.equal(w.acceptanceVerified,false);
+  assert.equal(checkedWorkbenchNavigation(w,'continuity',id).section,'continuity');
+  const foreign=projectWorkbench(id,{...snapshot,continuity:{
+    ...ledger,projectId:'ide-'+'b'.repeat(32)}});
+  assert.equal(foreign.rows.find(x=>x.id==='continuity').state,'unverified');
 });

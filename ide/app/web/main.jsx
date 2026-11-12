@@ -1558,6 +1558,7 @@ function App() {
     setSection(route.section);
     if(route.section==='source')void refreshGitStatus();
     if(route.section==='tasks')void refreshProtectedBuildStatus();
+    if(route.section==='continuity')void refreshContext();
   }
 
   async function inspectPackageManagers() {

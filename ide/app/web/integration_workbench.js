@@ -18,9 +18,10 @@ const REQUESTS=Object.freeze([
   ['build','ide_build_status',true],
   ['debug','ide_debug_status',true],
   ['language','ide_lsp_worker_status',false],
+  ['continuity','ide_read_project_context',true],
 ]);
 const ROUTES=new Set(['explorer','languages','tasks','source',
-  'packages','terminal']);
+  'packages','terminal','continuity']);
 const STATUSES=new Set(['observed','review_required','blocked',
   'reconciliation_required','unverified']);
 const entry=(id,label,target,state,detail)=>Object.freeze({
@@ -66,6 +67,31 @@ function checkedPackages(v,projectId) {
   }
   return Object.freeze({reviewable,blockerCount:v.blockers.length});
 }
+function checkedContinuity(v,projectId) {
+  // The ledger stores human-authored state; it is neither OS evidence nor
+  // automatic acceptance. Only bounded counts survive this review surface.
+  if(!isObject(v) || v.schemaVersion!==1 ||
+     v.projectId!==projectId || !Array.isArray(v.tasks) ||
+     v.tasks.length>128 || !Array.isArray(v.events) ||
+     v.events.length>40) return null;
+  const seen=new Set();
+  for(const task of v.tasks){
+    if(!task || typeof task.taskId!=='string' ||
+       !/^[A-Za-z0-9_.-]{1,64}$/.test(task.taskId) ||
+       seen.has(task.taskId) ||
+       typeof task.status!=='string' || task.status.length>80 ||
+       !Array.isArray(task.requiredGates) ||
+       !Array.isArray(task.acceptanceGates) ||
+       task.requiredGates.length>16 || task.acceptanceGates.length>32 ||
+       typeof task.taskAcceptance!=='string' ||
+       task.taskAcceptance.length>100) return null;
+    seen.add(task.taskId);
+  }
+  return Object.freeze({taskCount:seen.size,
+    // This counter is descriptive, NEVER verification of a task.
+    recordedNotAccepted:v.tasks.filter(t=>
+      t.taskAcceptance!=='accepted_with_required_evidence').length});
+}
 function checkedProfiles(v,projectId) {
   try{return safeProjectRunProfileDiscovery(v,projectId);}
   catch{return null;}
@@ -76,6 +102,7 @@ export function projectWorkbench(projectId,raw) {
   if(!PROJECT.test(projectId||'') || !isObject(raw))return null;
   const git=checkedSource(raw.git,projectId);
   const packages=checkedPackages(raw.packages,projectId);
+  const continuity=checkedContinuity(raw.continuity,projectId);
   const profiles=checkedProfiles(raw.profiles,projectId);
   const inventory=checkedToolchainInventory(raw.build,projectId);
   const nativeBuild=inventory.kind==='native_pin_observation';
@@ -131,7 +158,12 @@ export function projectWorkbench(projectId,raw) {
       'Manifest/runtime evidence missing; no package operation is authorized.'),
     entry('terminal','Protected terminal','terminal',
       'review_required','Only fixed typed commands. Native Build/Test review and per-job OS consent remain required.'),
-    entry('acceptance','Release acceptance','tasks',
+    entry('continuity','Project tasks & continuity','continuity',
+      continuity?'observed':'unverified',
+      continuity?continuity.taskCount+
+        ' native ledger task records observed. Recorded statuses are not independent acceptance proof.' :
+        'Project task ledger not verified. Open Continuity for review and human corrections.'),
+    entry('acceptance','Release acceptance','continuity',
       'unverified','Exact-head compiler, Windows/Linux native custody, installed-app and physical-human acceptance remain deferred.'),
   ];
   if(!rows.every(r=>STATUSES.has(r.state) && ROUTES.has(r.target)))
@@ -146,7 +178,7 @@ export function projectWorkbench(projectId,raw) {
     rows:Object.freeze(rows),priority,recoveryRequired:recovery,
     sourcesObserved:Object.freeze({
       git:!!git,packages:!!packages,profiles:!!profiles,
-      runtime:nativeBuild,
+      continuity:!!continuity,runtime:nativeBuild,
       language:!!raw.language && lsp.sessionState!=='unavailable',
       debugger:!!raw.debug && Array.isArray(raw.debug.journal),
     }),
@@ -185,7 +217,7 @@ export function checkedWorkbenchNavigation(workbench,id,projectId) {
      workbench.kind!=='non_atomic_read_only_observations' ||
      workbench.executionAuthorized!==false ||
      !Array.isArray(workbench.rows) ||
-     workbench.rows.length!==8) return null;
+     workbench.rows.length!==9) return null;
   const row=workbench.rows.find(r=>r.id===id);
   if(!row || !ROUTES.has(row.target) || !STATUSES.has(row.state) ||
      row.executionAuthorized!==false || row.taskAccepted!==false)

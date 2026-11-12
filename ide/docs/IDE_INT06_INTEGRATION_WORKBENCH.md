@@ -11,7 +11,7 @@
 - Displays conservative `observed`, `review_required`, `unverified`, `blocked`, or `reconciliation_required` states and bounded explanatory text. A release gate is never shown as passed because of a completed job or local source observation.
 
 ## INT06-B — Independent native evidence connections
-- `integration_workbench.js` invokes only six fixed **read-only** existing native commands: saved Build/Test profiles, local Git repository inventory, package manager inspection, protected Build/Test status, protected debugger status, and global protected LSP worker status.
+- `integration_workbench.js` invokes only seven fixed **read-only** existing native commands: saved Build/Test profiles, local Git repository inventory, package manager inspection, protected Build/Test status, protected debugger status, global protected LSP worker status, and project continuity/task context.
 - Each result is revalidated at its own native/source trust boundary. Git observation is bound to the current registered project and source HEAD SHA; it is **not** remote status or a worktree-clean claim. Package and profile evidence is project-scoped. Runtime toolchain fingerprints come from the independently verified native release pins.
 - These reads are intentionally **non-atomic** and only describe conditions at observation time. Neither an observed runtime nor reviewed manifest can attest to subsequent execution or kernel cleanup.
 
@@ -22,6 +22,7 @@
 ## INT06-D — Project-switch, restart and accessibility
 - In-flight multi-source reads use a monotonically increasing request ticket and the current registered project ID; project selection changes invalidate previously returned information. No result is persisted across IDE restart.
 - The Workbench is keyboard reachable, labelled as a single section, with a live status region for refresh errors/availability and explicit buttons to inspect or open underlying panels. Warnings are text, not untrusted markup.
+- INT06-E includes the existing read-only `ide_read_project_context` task ledger as a seventh observation. It counts bounded current task records without copying their authored descriptions or treating `completed` as independently accepted. The Continuity link opens the existing human-correction and acceptance-gate review panel; no task state mutation happens in Workbench.
 - Added source-contract and model regression tests for cross-project identity, stale read suppression, foreign/untrusted source state, non-execution, recovery precedence and fixed native-read allowlist. These tests are staged **but not yet run**.
 
 ## Remaining consolidated acceptance and gaps
