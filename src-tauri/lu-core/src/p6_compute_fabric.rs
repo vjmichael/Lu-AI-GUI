@@ -310,6 +310,83 @@ impl ApprovedLocalGpuPlacement{
     }
 }
 
+/// A host-only selector across separately supervised, already loaded local
+/// engines. The original Tauri chat/journal/cancel path must still mint and
+/// execute each chosen generation; this selector never receives chat text or
+/// turns model outputs into tool authority. It cannot create a second
+/// unaccounted backend process.
+pub struct IndependentLane<B:crate::inference_host::InferenceBackend+Send+'static>{
+    pub slot_id:String,
+    pub placement:ApprovedLocalGpuPlacement,
+    pub supervisor:Arc<crate::inference_supervisor::TrustedInferenceSupervisor<B>>,
+}
+pub struct LocalIndependentFleet<B:crate::inference_host::InferenceBackend+Send+'static>{
+    lanes:Vec<IndependentLane<B>>,
+    cursor:std::sync::atomic::AtomicUsize,
+    engine_sha256:[u8;32],
+}
+pub struct SelectedLocalLane<B:crate::inference_host::InferenceBackend+Send+'static>{
+    pub slot_id:String,
+    pub session_id:String,
+    pub supervisor:Arc<crate::inference_supervisor::TrustedInferenceSupervisor<B>>,
+}
+impl<B:crate::inference_host::InferenceBackend+Send+'static> LocalIndependentFleet<B>{
+    pub fn new(
+        mut lanes:Vec<IndependentLane<B>>,engine_sha256:[u8;32]
+    )->Result<Self,GpuScheduleError>{
+        if lanes.is_empty()||lanes.len()>MAX_LOCAL_DEVICES {
+            return Err(GpuScheduleError::InvalidRequest)
+        }
+        let mut names=BTreeSet::new();
+        let mut devices=BTreeSet::new();
+        for lane in &lanes{
+            if !valid_host_id(&lane.slot_id)||
+                !names.insert(lane.slot_id.clone())||
+                lane.placement.mode()!=ComputeMode::IndependentInstance||
+                lane.placement.verify_engine(engine_sha256).is_err(){
+                return Err(GpuScheduleError::InvalidRequest)
+            }
+            for dev in &lane.placement.devices{
+                if !devices.insert(dev.clone()){
+                    return Err(GpuScheduleError::InvalidRequest)
+                }
+            }
+        }
+        lanes.sort_by(|a,b|a.slot_id.cmp(&b.slot_id));
+        Ok(Self{lanes,cursor:std::sync::atomic::AtomicUsize::new(0),
+            engine_sha256})
+    }
+    /// Round-robin preferred among READY real supervisor sessions with the
+    /// requested original model identity; no fallback after generation has
+    /// begun, no transport, no output text, and no implicit model wake.
+    /// A racing reservation must still pass the original per-supervisor
+    /// session/generation checks before execution.
+    pub fn choose_ready(&self,model_ref:&str)
+        ->Result<SelectedLocalLane<B>,GpuScheduleError>{
+        if !valid_host_id(model_ref){
+            return Err(GpuScheduleError::InvalidRequest)
+        }
+        let start=self.cursor.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+        for i in 0..self.lanes.len(){
+            let lane=&self.lanes[(start+i)%self.lanes.len()];
+            if lane.placement.verify_engine(self.engine_sha256).is_err(){
+                continue
+            }
+            let Ok(status)=lane.supervisor.status() else{continue};
+            if status.phase!=crate::inference_host::EnginePhase::Ready||
+                status.generation_id.is_some()||
+                status.model_ref.as_deref()!=Some(model_ref){
+                continue
+            }
+            let Some(session_id)=status.session_id else{continue};
+            return Ok(SelectedLocalLane{
+                slot_id:lane.slot_id.clone(),session_id,
+                supervisor:Arc::clone(&lane.supervisor),
+            })
+        }
+        Err(GpuScheduleError::Busy)
+    }
+}
 #[derive(Debug,Clone)]
 pub struct RemoteNodeDescriptor {
     pub node_id:String,
