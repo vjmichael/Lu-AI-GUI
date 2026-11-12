@@ -34,6 +34,9 @@ impl IdeWorkspaceRegistry {
   ->Result<ReviewedStashSave,&'static str>{
   let source:SingleFileRestoreReview=self.review_single_file_restore(id)?;
   let repo=exact_repo(self,id)?;
+  if repo.path().join("lu-ide-fin03-stash-active").exists(){
+   return Err("FIN03_STASH_PREVIOUS_INTERRUPTION");
+  }
   let tip=stash_tip(&repo)?;
   let reviewed=sha(format!("fin03-stash-save-v1:{}:{}:{}:{}",
     id,source.review_sha256,source.relative_path,
@@ -78,10 +81,8 @@ impl IdeWorkspaceRegistry {
   if cancel.compare_exchange(0,1,Ordering::SeqCst,Ordering::SeqCst).is_err(){
    return Err("FIN03_STASH_CANCELLED_RECONCILIATION_REQUIRED");
   }
-  let verify=self.review_one_file_stash_save(&expected.project_id);
-  // The marker intentionally blocks further reviews; instead freshly check
-  // original bytes, HEAD and stash tip before entering libgit2 mutation.
-  let _=verify.err();
+  // A second review is blocked by the marker. Revalidate the exact
+  // tracked original bytes and stash ref without clearing the marker.
   if fs::read(root.join(&fresh.relative_path))
       .map_err(|_|"FIN03_STASH_TARGET_UNREADABLE")?!=original ||
      stash_tip(&repo)?!=fresh.initial_stash_oid {
@@ -91,16 +92,20 @@ impl IdeWorkspaceRegistry {
    .map_err(|_|"FIN03_STASH_SIGNATURE_INVALID")?;
   let oid=repo.stash_save(&signature,"Lu IDE reviewed one-file stash",Some(StashFlags::DEFAULT))
    .map_err(|_|"FIN03_STASH_EXECUTION_UNCERTAIN")?;
-  if stash_tip(&repo)?.as_deref()!=Some(oid.to_string().as_str()){
+  let expected_tip=oid.to_string();
+  if stash_tip(&repo)?.as_deref()!=Some(expected_tip.as_str()){
    return Err("FIN03_STASH_REF_READBACK_UNCERTAIN");
   }
-  let head=self.review_local_branch_operation(
-    &expected.project_id,crate::git_branch_operations::BranchOperationKind::Stash,None);
-  let _=head; // Observation cannot authorize a second mutation.
+  let original_head=repo.head().map_err(|_|"FIN03_STASH_HEAD_UNAVAILABLE")?
+   .peel_to_commit().map_err(|_|"FIN03_STASH_HEAD_UNAVAILABLE")?;
+  let tree=original_head.tree().map_err(|_|"FIN03_STASH_HEAD_TREE_UNAVAILABLE")?;
+  let entry=tree.get_path(std::path::Path::new(&fresh.relative_path))
+   .map_err(|_|"FIN03_STASH_HEAD_PATH_UNAVAILABLE")?;
+  let head_bytes=repo.find_blob(entry.id())
+   .map_err(|_|"FIN03_STASH_HEAD_BLOB_UNAVAILABLE")?.content().to_vec();
   let restored=fs::read(root.join(&fresh.relative_path))
     .map_err(|_|"FIN03_STASH_WORKTREE_READBACK_UNAVAILABLE")?;
-  if sha(&restored)!=self.review_single_file_restore(&expected.project_id)
-     .err().map(|_|sha(&restored)).unwrap_or_else(||sha(&restored)){
+  if restored!=head_bytes {
     return Err("FIN03_STASH_WORKTREE_READBACK_UNCERTAIN");
   }
   // Verify the original persisted backup independently before clearing.
