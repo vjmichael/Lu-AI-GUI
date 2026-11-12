@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "db7b9bfedb951145008eb89971b62fb6f4c0a87c",
-  "trackedFileCount": 945,
+  "sourceCommitBeforeLock": "50f2c3b8fb7d0a93d5888f3f75f94bba2c0a9eb2",
+  "trackedFileCount": 948,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -582,6 +582,10 @@
     {
       "path": "docs/LU_CI_TASK_GROUP_GATES_20261109.md",
       "blob": "69338481a7272999d7525a2762054b3579059f4e"
+    },
+    {
+      "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
+      "blob": "c8ba8759a8bd5325edefb81117c94dae8a2c0c5f"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -2090,6 +2094,14 @@
     {
       "path": "scripts/build-current-windows-nsis.ps1",
       "blob": "3d2b5b2420d958e4a629664b1268c9b31e60af1d"
+    },
+    {
+      "path": "scripts/core01-verify-scope.mjs",
+      "blob": "b773b7aad9496c5edce96acc95e69358702a823f"
+    },
+    {
+      "path": "scripts/core01-verify-scope.test.mjs",
+      "blob": "662c3e244432cbb9aff8f3ae3613ea1226dfaf76"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",

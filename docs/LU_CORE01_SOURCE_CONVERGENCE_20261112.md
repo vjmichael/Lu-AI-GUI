@@ -49,3 +49,9 @@ E. After coherent implementation, run **one** grouped Windows/Linux native and i
 - **ACCEPTED:** exact source and appropriate independently observed original runtime evidence.
 
 This branch exists for convergence only; it does not close CORE-01 yet.
+
+## CORE-01A — strict source identity and isolation gate (2026-11-12)
+
+The original path-only gate is replaced by an exact HEAD Git-tree/blob inventory check plus a baseline-to-HEAD delta review. Scope rejects changed IDE paths and all P7L/KoboldCpp-named paths, including deletions and renames represented by deleted/added tree entries. Executable Rust/JS/C/C++/Protobuf and dependency manifests added or modified since the reviewed baseline are scanned for experimental provider references and IDE imports. Existing pre-baseline source is not silently deleted. The check requires a clean checkout, reviewed ancestor, ordered exact tree inventory, and no missing or extra lock entries. It is intentionally stricter than a filename-only test, but is not a complete dependency supply-chain review or a behavior proof.
+
+Negative Node tests cover forbidden paths, excluded provider registration, allowed llama.cpp source, documentation nonfalse-positive, and corrupted/extra lock entries. A stale manifest is rejected until refreshed from the exact Git tree. CORE-01A is **source-only**; Rust, Windows/Linux kernel custody, installed apps, actual GGUF and physical Radeon acceptance remain OPEN. No IDE/P7L feature branches, merges, permissions or runtime providers are introduced.
