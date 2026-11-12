@@ -465,6 +465,31 @@ pub mod unix_owned {
             assert_eq!(valid.unwrap(),"READY\n");
         }
         #[test]
+        fn failed_or_incomplete_guardian_stop_cannot_turn_into_success_on_retry(){
+            let mut group_child=Command::new("/bin/true")
+                .stdin(Stdio::null()).stdout(Stdio::null())
+                .spawn().unwrap();
+            let _=group_child.wait().unwrap();
+            let mut group=LinuxOwnedGroupGuardian{
+                child:group_child,stdin:None,stopped:true,verified_signal:false,
+            };
+            assert!(group.stop_and_verify_signal().is_err());
+            assert!(group.stop_and_verify_signal().is_err());
+
+            let mut cgroup_child=Command::new("/bin/true")
+                .stdin(Stdio::null()).stdout(Stdio::null())
+                .spawn().unwrap();
+            let _=cgroup_child.wait().unwrap();
+            let mut cgroup=LinuxCgroupCustodian{
+                child:cgroup_child,stdin:None,
+                subtree:std::path::PathBuf::new(),
+                receipt:std::path::PathBuf::new(),
+                stopped:true,verified_empty:false,
+            };
+            assert!(cgroup.stop_and_verify().is_err());
+            assert!(cgroup.stop_and_verify().is_err());
+        }
+        #[test]
         fn unavailable_helper_must_exit_before_no_delegation_result(){
             let mut child=Command::new("/bin/sh").args(["-c","sleep 2"])
                 .stdin(Stdio::null()).stdout(Stdio::piped())
