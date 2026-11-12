@@ -39,6 +39,12 @@ fn make_proposed_manifest(source:&str,request:&PackagePreviewRequest)
     let mut doc:Value=serde_json::from_str(source)
         .map_err(|_|"FIN05_VCPKG_JSON_INVALID")?;
     let object=doc.as_object_mut().ok_or("FIN05_VCPKG_ROOT_NOT_OBJECT")?;
+    // A declaration edit is not a resolver: malformed special fields are
+    // never silently normalized into an apparently valid package plan.
+    if object.get("overrides").is_some_and(|v|!v.is_array()) ||
+       object.get("builtin-baseline").is_some_and(|v|!v.is_string()) {
+        return Err("FIN05_VCPKG_UNSUPPORTED_ROOT_SHAPE");
+    }
     let name=request.package_name.as_deref()
         .filter(|s|valid_name(s)).ok_or("FIN05_VCPKG_DEPENDENCY_INVALID")?;
     // Compute before borrowing dependencies mutably: a concurrent manifest
