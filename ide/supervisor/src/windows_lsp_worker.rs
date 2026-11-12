@@ -665,7 +665,7 @@ impl RestrictedLspProcess for WindowsLspProcess {
     ) -> Result<serde_json::Value, SupervisorError> {
         use sha2::{Digest,Sha256};
         use std::path::Component;
-        use windows_sys::Win32::System::Threading::GetExitCodeProcess;
+        use windows_sys::Win32::System::Threading::{GetExitCodeProcess,GetProcessId};
         const MAX_OUTPUT: usize=8192;
         let bad=||SupervisorError::NoContainment;
         if !self.lease.alive()
@@ -735,6 +735,18 @@ impl RestrictedLspProcess for WindowsLspProcess {
                 &self._profile,&self.job,&tool,&mut command,&local,&mut env,false,
             )?;
         if owner_channel.is_some(){return Err(bad());}
+        // The native CreateProcessW attribute list already atomically
+        // assigned the child to this Job and verified the AppContainer
+        // token while suspended. Requery the kernel using the CHILD'S
+        // actual process HANDLE (never a PID from DAP/source/renderer)
+        // before allowing the fixed symbolizer to execute.
+        let child_pid=unsafe{GetProcessId(child.0)};
+        if child_pid==0 ||
+           !crate::windows_kernel_pc::job_has_member(
+               self.job.handle.0,child_pid,
+           )? {
+            return Err(bad());
+        }
         drop(stdin); // fixed command needs no interactive input or DAP pipe
         if unsafe {ResumeThread(thread.0)}==u32::MAX{
             return Err(bad());
