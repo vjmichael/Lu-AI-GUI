@@ -21,6 +21,9 @@ export function nativeProfileAvailability(nativeStatus, profileId) {
       !Array.isArray(nativeStatus.quarantined) ||
       !Array.isArray(nativeStatus.journal) ||
       nativeStatus.current ||
+      nativeStatus.globalRecoveryRequired!==false ||
+      nativeStatus.activeInAnotherProject!==false ||
+      nativeStatus.globalWorkerBusy!==false ||
       nativeStatus.quarantined.some(row=>row?.requiresReconciliation===true) ||
       nativeStatus.journal.some(row=>row?.requiresReconciliation===true))
     return 'worker_unavailable_or_recovery_required';

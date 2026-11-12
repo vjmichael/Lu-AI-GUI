@@ -8,6 +8,8 @@ const project='ide-'+'a'.repeat(32),foreign='ide-'+'b'.repeat(32);
 const job='job-'+'c'.repeat(32),sha='d'.repeat(64);
 const status=()=>({
   ready:true,cargoReady:true,code:'BUILD_READY',
+  globalRecoveryRequired:false,activeInAnotherProject:false,
+  globalWorkerBusy:false,
   cargoProvenance:{
     profileId:'rust_cargo',observedSha256:sha,releasePinSha256:sha,
     provenanceState:'installed_bytes_match_compile_time_release_pin',
@@ -149,4 +151,18 @@ test('INT05-E pure host provenance binds observed bytes and release pins',()=>{
   assert.match(native,/runtime_provenance\("rust_cargo"/);
   assert.match(native,/provenance: RuntimeProvenance/);
   assert.match(native,/license_evidence: "not_independently_verified"/);
+});
+
+test('FIN01 global native custody blocks even when foreign jobs are hidden',()=>{
+  const s=status();s.globalRecoveryRequired=true;
+  const i=checkedToolchainInventory(s,project);
+  assert.equal(i.blockedByRecovery,true);
+  assert.equal(i.rows[0].disposition,'reconciliation_required');
+  const busy=status();busy.activeInAnotherProject=true;
+  busy.globalWorkerBusy=true;
+  const j=checkedToolchainInventory(busy,project);
+  assert.equal(j.workerBusy,true);
+  assert.equal(j.rows[0].disposition,'native_worker_busy');
+  const legacy=status();delete legacy.globalRecoveryRequired;
+  assert.equal(checkedToolchainInventory(legacy,project).kind,'unavailable');
 });

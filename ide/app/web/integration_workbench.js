@@ -108,7 +108,8 @@ export function projectWorkbench(projectId,raw) {
   const nativeBuild=inventory.kind==='native_pin_observation';
   const lsp=checkedLspWorkerStatus(raw.language);
   const debug=debugAdmissionStatus(raw.debug,projectId);
-  const buildRecovery=Array.isArray(raw.build?.quarantined) &&
+  const buildRecovery=raw.build?.globalRecoveryRequired===true ||
+    Array.isArray(raw.build?.quarantined) &&
       raw.build.quarantined.some(x=>x?.requiresReconciliation===true) ||
     Array.isArray(raw.build?.journal) &&
       raw.build.journal.some(x=>x?.requiresReconciliation===true);
@@ -121,7 +122,11 @@ export function projectWorkbench(projectId,raw) {
   const matchedProfiles=profiles?.profiles.filter(p=>
     p.manifestState==='saved_file_sha_observed_not_validated' &&
     SHA.test(p.sha||''))||[];
-  const nativeReady=inventory.rows.some(x=>x.ready);
+  const globalBusy=raw.build?.globalWorkerBusy===true ||
+    raw.build?.activeInAnotherProject===true ||
+    raw.debug?.activeInAnotherProject===true;
+  const nativeReady=inventory.rows.some(x=>x.ready) &&
+    inventory.workerBusy===false && !globalBusy && !recovery;
   const rows=[
     entry('editor','Editor & saved sources','explorer',
       'review_required','Open or review saved project files. Unsaved CodeMirror buffers are not certified by this workbench.'),
@@ -137,9 +142,11 @@ export function projectWorkbench(projectId,raw) {
       'Native provider availability is not verified.'),
     entry('build','Build & test','tasks',
       buildRecovery?'reconciliation_required':
+      globalBusy?'blocked':
       nativeBuild && nativeReady && matchedProfiles.length>0?
         'review_required':'unverified',
       buildRecovery?'Previous protected build/test job requires independent OS cleanup.' :
+      globalBusy?'A protected worker is occupied, potentially by another project. No new run is available.' :
       nativeBuild && nativeReady && matchedProfiles.length>0?
         matchedProfiles.length+' saved manifest candidates; select a reviewed profile and obtain new OS approval.' :
         'No matching saved profile and installed pinned runtime have been jointly observed.'),
@@ -198,10 +205,21 @@ export async function inspectProjectWorkbench(projectId,invokeRead,stillCurrent)
   if(!PROJECT.test(projectId||'') ||
     typeof invokeRead!=='function' || typeof stillCurrent!=='function')
     return null;
+  // FIN01: a hung native READ must not strand Workbench refresh forever.
+  // Each bounded wait changes only presentation; the native operation is
+  // read-only and is NOT claimed cancelled when the deadline expires.
   const values=await Promise.allSettled(REQUESTS.map(async([field,command,scoped])=>{
     const args=scoped?{projectId}:undefined;
-    const result=await invokeRead(command,args);
-    return [field,result];
+    let deadline;
+    try {
+      return await Promise.race([
+        Promise.resolve().then(()=>invokeRead(command,args))
+          .then(result=>[field,result]),
+        new Promise((_,reject)=>{
+          deadline=setTimeout(()=>reject(Error('FIN01_NATIVE_READ_TIMED_OUT')),12000);
+        }),
+      ]);
+    } finally { clearTimeout(deadline); }
   }));
   if(!stillCurrent())return null;
   const raw={};

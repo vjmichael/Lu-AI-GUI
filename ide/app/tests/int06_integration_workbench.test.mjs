@@ -98,3 +98,24 @@ test('INT06 continuity records are historical, not approval or release',()=>{
     ...ledger,projectId:'ide-'+'b'.repeat(32)}});
   assert.equal(foreign.rows.find(x=>x.id==='continuity').state,'unverified');
 });
+
+test('FIN01 foreign job/recovery never makes project build reviewable',()=>{
+  const w=projectWorkbench(id,{...snapshot,build:{
+    globalRecoveryRequired:true,activeInAnotherProject:false,
+    globalWorkerBusy:false,journal:[],quarantined:[],
+  }});
+  assert.equal(w.rows.find(r=>r.id==='build').state,'reconciliation_required');
+  const busy=projectWorkbench(id,{...snapshot,build:{
+    globalRecoveryRequired:false,activeInAnotherProject:true,
+    globalWorkerBusy:true,journal:[],quarantined:[],
+  }});
+  assert.equal(busy.rows.find(r=>r.id==='build').state,'blocked');
+});
+test('FIN01 native read can fail without turning other observations into proof',async()=>{
+  let resolve;
+  const never=new Promise(r=>resolve=r);
+  const p=inspectProjectWorkbench(id,(name)=>name==='ide_build_status'
+    ? never:Promise.resolve(null),()=>false);
+  resolve(null);
+  assert.equal(await p,null);
+});

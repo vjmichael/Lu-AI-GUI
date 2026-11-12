@@ -483,6 +483,11 @@ pub struct BuildStatus {
     /// Separate native Cargo proof. A pinned Python/Node/CMake bundle
     /// must never make the uninstalled Cargo recipe appear runnable.
     cargo_ready: bool,
+    // Global OS worker custody has process scope, not selected project
+    // scope. Expose only booleans; foreign job IDs and output stay private.
+    global_recovery_required: bool,
+    active_in_another_project: bool,
+    global_worker_busy: bool,
     cargo_provenance: RuntimeProvenance,
     multilang_ready: Vec<MultilangProfileReadiness>,
     code: String,
@@ -626,6 +631,9 @@ impl NativeBuildRuntime {
             })
             .collect();
         let locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
+        let global_worker_busy = locked.current.is_some();
+        let active_in_another_project = locked.current
+            .as_ref().is_some_and(|v| v.project_id != project_id);
         let current = locked
             .current
             .as_ref()
@@ -649,6 +657,10 @@ impl NativeBuildRuntime {
             .collect();
         drop(locked);
         let durable = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
+        // This uses the full original durable journal, not the truncated
+        // selected-project presentation. No foreign job ID is published.
+        let global_recovery_required =
+            durable.iter().any(|job| job.requires_reconciliation);
         // Serialize only exact project-scoped immutable journal identifiers.
         // Do not reconstruct a BuildRunView or invent a successful native exit
         // code after restart: the original runtime receipt is authoritative.
@@ -726,6 +738,9 @@ impl NativeBuildRuntime {
         Ok(BuildStatus {
             ready: any_native_profile_ready,
             cargo_ready,
+            global_recovery_required,
+            active_in_another_project,
+            global_worker_busy,
             cargo_provenance,
             multilang_ready,
             code: if cargo_ready {

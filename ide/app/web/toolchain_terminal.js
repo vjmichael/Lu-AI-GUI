@@ -62,7 +62,10 @@ export function checkedToolchainInventory(status,projectId) {
       !Array.isArray(status.multilangReady) ||
       status.multilangReady.length!==MULTILANG.size ||
       !Array.isArray(status.journal) || !Array.isArray(status.quarantined) ||
-      !Array.isArray(status.recent) || !safeCode(status.code))
+      !Array.isArray(status.recent) || !safeCode(status.code) ||
+      typeof status.globalRecoveryRequired!=='boolean' ||
+      typeof status.activeInAnotherProject!=='boolean' ||
+      typeof status.globalWorkerBusy!=='boolean')
     return unavailable(projectId);
   const found=new Map();
   for (const row of status.multilangReady) {
@@ -81,9 +84,11 @@ export function checkedToolchainInventory(status,projectId) {
     nativeProvenance.set(profileId,verified);
   }
   // Global process/recovery custody cannot be bypassed by switching projects.
-  const blockedByRecovery=status.quarantined.length>0 ||
+  const blockedByRecovery=status.globalRecoveryRequired ||
+    status.quarantined.length>0 ||
     status.journal.some(entry=>entry?.requiresReconciliation===true);
-  const busy=!!status.current;
+  const busy=status.globalWorkerBusy || status.activeInAnotherProject ||
+    !!status.current;
   const rows=RUNTIMES.map(entry=>{
     const native=entry.profileId==='rust_cargo'
       ? {ready:status.cargoReady,code:status.cargoReady
@@ -110,7 +115,8 @@ export function checkedToolchainInventory(status,projectId) {
   return Object.freeze({
     projectId,kind:'native_pin_observation',
     rows:Object.freeze(rows),blockedByRecovery,
-    executionAuthorized:false,installedAppAccepted:false,
+    activeInAnotherProject:status.activeInAnotherProject,
+    workerBusy:busy,executionAuthorized:false,installedAppAccepted:false,
   });
 }
 

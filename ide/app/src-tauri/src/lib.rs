@@ -1945,6 +1945,9 @@ async fn ide_build_status(app: AppHandle, project_id: String) -> Result<serde_js
         let _ = (app, project_id);
         Ok(serde_json::json!({
             "ready":false,
+            "globalRecoveryRequired":false,
+            "activeInAnotherProject":false,
+            "globalWorkerBusy":false,
             "code":"BUILD_PROTECTED_WORKER_NOT_INSTALLED",
             "description":"Default IDE does not ship an authorized native build/test runtime.",
             "current":null, "recent":[], "journal":[], "quarantined":[]
