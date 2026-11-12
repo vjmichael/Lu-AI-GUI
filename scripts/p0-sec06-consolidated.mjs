@@ -97,6 +97,7 @@ function sourceCases(){
   doCase('security-contracts','node',[
     '--test','lu-desktop/tests/p0-sec-guardian-hardening.test.mjs',
     'lu-desktop/tests/p0-sec05-adversarial.test.mjs',
+    'lu-desktop/tests/p0-sec06-consolidated.test.mjs',
     'lu-desktop/tests/reviewed-app-desktop.test.mjs',
     'lu-desktop/tests/reviewed-task-continuity.test.mjs',
     'lu-desktop/tests/background-worker-e2e.test.mjs'
