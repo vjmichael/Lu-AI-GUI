@@ -4589,8 +4589,9 @@ async fn lu_generate(
         let current=host.supervisor.status()
             .map_err(|_|"Native model status unavailable")?;
         let loaded=current.session_id.is_some();
-        if if session_id.is_empty(){loaded}
-           else{current.session_id.as_deref()!=Some(session_id.as_str())}{
+        let mismatch=if session_id.is_empty(){loaded}
+            else{current.session_id.as_deref()!=Some(session_id.as_str())};
+        if mismatch {
             return Err("Model session changed before CPU indexed count".into())
         }
         let began=std::time::Instant::now();
