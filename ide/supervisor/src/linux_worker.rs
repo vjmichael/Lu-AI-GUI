@@ -48,10 +48,12 @@ const DEV03_PYTHON_ROOT: &str = "/opt/lu-ide/runtimes/python_pytest";
 const DEV03_NODE_ROOT: &str = "/opt/lu-ide/runtimes/js_tests";
 const DEV03_CMAKE_ROOT: &str = "/opt/lu-ide/runtimes/cpp_cmake_build";
 const IDE05_UV_ROOT: &str = "/opt/lu-ide/runtimes/uv_sync_offline";
+const IDE05_VCPKG_ROOT: &str = "/opt/lu-ide/runtimes/vcpkg_install_offline";
 const DEV03_PYTHON_PIN: Option<&str> = option_env!("LU_IDE_DEV03_LINUX_PYTHON_SHA256");
 const DEV03_NODE_PIN: Option<&str> = option_env!("LU_IDE_DEV03_LINUX_NODE_SHA256");
 const DEV03_CMAKE_PIN: Option<&str> = option_env!("LU_IDE_DEV03_LINUX_CMAKE_SHA256");
 const IDE05_UV_PIN: Option<&str> = option_env!("LU_IDE05_LINUX_UV_SHA256");
+const IDE05_VCPKG_PIN: Option<&str> = option_env!("LU_IDE05_LINUX_VCPKG_SHA256");
 
 /// Native-only release-pinned runtime. Executable authority remains with
 /// the existing supervisor OS-cgroup worker and its one-use approval.
@@ -66,6 +68,7 @@ fn reviewed_multilang_bundle(
         "js_tests" => (DEV03_NODE_ROOT, DEV03_NODE_PIN),
         "cpp_cmake_build" => (DEV03_CMAKE_ROOT, DEV03_CMAKE_PIN),
         "uv_sync_offline" if cfg!(feature = "package-uv-worker") => (IDE05_UV_ROOT, IDE05_UV_PIN),
+        "vcpkg_install_offline" if cfg!(feature = "package-vcpkg-worker") => (IDE05_VCPKG_ROOT, IDE05_VCPKG_PIN),
         _ => return Err(SupervisorError::InvalidPlan),
     };
     let expected = pin.ok_or(SupervisorError::NoContainment)?;
@@ -532,6 +535,19 @@ fn command_for(
         "rust_tests" | "rust_check" | "rust_build" => "/workspace/Cargo.toml",
         id if crate::rust_exact_case_name(id).is_some()=>"/workspace/Cargo.toml",
         "python_pytest" if runtime.is_some() => "/workspace/pyproject.toml",
+        "vcpkg_install_offline" if cfg!(feature = "package-vcpkg-worker") && runtime.is_some()=>"/workspace/vcpkg.json",
+        "vcpkg_install_offline" if cfg!(feature = "package-vcpkg-worker") && runtime.is_some() => {
+            cmd.arg("/runtime/bin/vcpkg").args([
+                "install",
+                "--no-downloads",
+                "--x-manifest-root=/workspace",
+                "--x-install-root=/output/installed",
+                "--downloads-root=/output/downloads",
+                "--x-buildtrees-root=/output/buildtrees",
+                "--x-packages-root=/output/packages",
+                "--binarysource=clear",
+            ]);
+        }
         "uv_sync_offline" if cfg!(feature = "package-uv-worker") && runtime.is_some() => {
             "/workspace/pyproject.toml"
         }
