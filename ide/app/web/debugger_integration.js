@@ -21,20 +21,31 @@ export function debugAdmissionStatus(value,projectId) {
       typeof value.operationControlSupported!=='boolean' ||
       !Array.isArray(value.journal) || !Array.isArray(value.quarantined))
     return Object.freeze({ready:false,projectDebugSupported:false,
-      operationControlSupported:false,blockedReason:'Debug host unavailable'});
+      operationControlSupported:false,productionOperationsAvailable:false,
+      operationControlMode:'unavailable',blockedReason:'Debug host unavailable'});
   const global=value.globalRecoveryRequired===true ||
     value.quarantined.some(row=>row?.requiresReconciliation===true);
   const elsewhere=value.activeInAnotherProject===true;
   const actions=value.orphanedDebugActionRequired===true;
   const occupied=!!value.current;
   const ready=value.ready && !global && !elsewhere && !actions && !occupied;
+  const developerOnly=value.operationControlCode===
+    'DEV046D_NATIVE_DIALOG_DEV_ONLY_NOT_RELEASE_ACCEPTED';
+  const productionAction= value.operationControlCode===
+    'FIN04_NATIVE_RELEASE_ACTIONS_INDEPENDENTLY_ADMITTED';
   return Object.freeze({
     ready,projectDebugSupported:ready && value.projectDebugSupported,
-    operationControlSupported:ready && value.operationControlSupported,
+    operationControlSupported:ready && value.operationControlSupported &&
+      (developerOnly || productionAction),
+    productionOperationsAvailable:ready && value.operationControlSupported &&
+      productionAction,
+    operationControlMode:developerOnly?'developer_only':
+      productionAction?'release_candidate':'unavailable',
     blockedReason:global?'Original protected debugger OS cleanup required':
       actions?'Interrupted debugger action journal requires native cleanup':
       elsewhere?'Another registered project owns the protected debugger':
       occupied?'Protected debugger session already running':
+      ready && developerOnly?'Developer-only debugger action; not production accepted':
       ready?'Native debugger available with fresh OS approval':
       'Native debugger release resources or authorization unavailable',
   });
