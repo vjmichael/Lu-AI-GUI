@@ -1,7 +1,8 @@
 //! P03: bounded, read-only GGUF metadata summary for the local model picker.
 //! GGUF strings are UNTRUSTED descriptive bytes. This is NOT a validator of
 //! tensor data, tokenizer suitability, architecture support, licensing or GPU.
-use std::{fs::File,io::{self,Read,Seek,SeekFrom},path::Path};
+use std::{collections::BTreeMap,fs::File,io::{self,Read,Seek,SeekFrom},path::Path};
+use sha2::{Digest,Sha256};
 use crate::gguf_preflight::inspect_gguf_header;
 const MAX_KV:u64=32768;
 const MAX_METADATA_BYTES:u64=128*1024*1024;
@@ -124,6 +125,61 @@ pub fn inspect_metadata(path:&Path)->Result<GgufMetadataSummary,MetadataReadErro
         }
     }
     Ok(summary)
+}
+/// Conservative exact identity of all declared GGUF tokenizer.* metadata,
+/// including original token strings, merges, special-token IDs and chat
+/// template. Unlike matching `tokenizer.ggml.model` labels, two distinct
+/// vocabularies cannot accidentally pass this check. This does NOT attest
+/// tensor compatibility or quality. A pinned backend must still load both
+/// originals and independently prove speculative acceptance.
+pub fn tokenizer_metadata_sha256(path:&Path)->Result<[u8;32],MetadataReadError>{
+    let h=inspect_gguf_header(path).map_err(|_|MetadataReadError::InvalidGguf)?;
+    if h.metadata_count>MAX_KV{return Err(MetadataReadError::LimitExceeded)}
+    let mut file=File::open(path)?;
+    file.seek(SeekFrom::Start(24))?;
+    let mut ordered=BTreeMap::<String,[u8;32]>::new();
+    let mut tokens_found=false;
+    let mut model_found=false;
+    for _ in 0..h.metadata_count {
+        if file.stream_position()?>MAX_METADATA_BYTES {
+            return Err(MetadataReadError::LimitExceeded)
+        }
+        let key=read_string(&mut file,h.file_bytes,256)?
+            .ok_or(MetadataReadError::InvalidMetadata)?;
+        let kind=read_u32(&mut file)?;
+        let value_start=file.stream_position()?;
+        skip_value(&mut file,kind,h.file_bytes)?;
+        let value_end=file.stream_position()?;
+        if !key.starts_with("tokenizer.") {continue}
+        if key=="tokenizer.ggml.tokens"{tokens_found=true}
+        if key=="tokenizer.ggml.model"{model_found=true}
+        let mut sha=Sha256::new();
+        sha.update(kind.to_le_bytes());
+        file.seek(SeekFrom::Start(value_start))?;
+        let mut left=value_end.saturating_sub(value_start);
+        let mut buffer=[0u8;65536];
+        while left>0{
+            let n=(left.min(buffer.len() as u64)) as usize;
+            file.read_exact(&mut buffer[..n])?;
+            sha.update(&buffer[..n]);
+            left-=n as u64;
+        }
+        file.seek(SeekFrom::Start(value_end))?;
+        if ordered.insert(key,sha.finalize().into()).is_some(){
+            return Err(MetadataReadError::InvalidMetadata)
+        }
+    }
+    if !tokens_found||!model_found||ordered.len()<2 {
+        return Err(MetadataReadError::InvalidMetadata)
+    }
+    let mut identity=Sha256::new();
+    identity.update(b"lu-p5-tokenizer-metadata-v1");
+    for (key,value) in ordered {
+        identity.update((key.len() as u32).to_le_bytes());
+        identity.update(key.as_bytes());
+        identity.update(value);
+    }
+    Ok(identity.finalize().into())
 }
 #[cfg(test)]
 mod tests{
