@@ -499,17 +499,26 @@ impl Drop for DapGateway {
             };
             // Record CancelRequested BEFORE OS termination; a failed
             // descendant kill leaves Uncertain and blocks later admissions.
-            if self
-                .supervisor
-                .cancel_running_with(&self.job_id, &mut broker)
-                .is_ok()
+            match self.supervisor
+                .cancel_running_with_service_release_pending(&self.job_id, &mut broker)
             {
-                if process.release_after_verified_terminal().is_err() {
+                Ok(summary) if summary.phase == JobPhase::ReleasePending => {
+                    if process.release_after_verified_terminal().is_ok() {
+                        if self.supervisor
+                            .native_finish_cancelled_after_service_release(&self.job_id)
+                            .is_err()
+                        {
+                            let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
+                        }
+                    } else {
+                        let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
+                    }
+                }
+                Ok(_) => {} // Uncertain kill already has its quarantine receipt.
+                Err(_) => {
+                    let _ = process.terminate_tree_and_verify();
                     let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
                 }
-            } else {
-                let _ = process.terminate_tree_and_verify();
-                let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
             }
         }
     }
