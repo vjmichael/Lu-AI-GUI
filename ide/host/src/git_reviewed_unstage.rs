@@ -92,7 +92,8 @@ fn inspected_repo(reg:&IdeWorkspaceRegistry,project:&str)
     return Err("FIN03_UNSTAGE_HEAD_FILE_MISSING");
  }
  let old_sha=oid.to_string();
- drop(index);drop(commit);drop(head);
+ // git2 returned borrowed views must be released before moving Repository.
+ drop(tree);drop(index);drop(changes);drop(commit);drop(head);
  Ok((repo,old_sha,path,old))
 }
 fn journal_path(repo:&Repository)->PathBuf{
