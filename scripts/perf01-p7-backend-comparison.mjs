@@ -58,14 +58,16 @@ try{
        !Number.isInteger(item.trial)||item.trial<1||item.trial>20||
        !number(item.totalMs)||!number(item.firstForwardMs)||
        item.firstForwardMs>item.totalMs||
-       !number(item.generatedTokens)||item.generatedTokens>32768||
+       (item.generatedTokens!==null&&
+          (!number(item.generatedTokens)||item.generatedTokens>32768))||
        typeof item.qualityPass!=='boolean'||
        typeof item.cancelReaped!=='boolean'||
        typeof item.restartedSafely!=='boolean'||
        (item.decodeMs!==null&&
            (!number(item.decodeMs)||item.decodeMs>item.totalMs))||
        (item.decodeTokens!==null&&
-           (!number(item.decodeTokens)||item.decodeTokens>item.generatedTokens))){
+           (item.generatedTokens===null||
+            !number(item.decodeTokens)||item.decodeTokens>item.generatedTokens))){
       throw Error('Invalid timing, quality or custody measurement');
     }
     if((item.decodeMs===null)!==(item.decodeTokens===null)){
