@@ -1887,6 +1887,62 @@ mod tests {
         state.jobs.get_mut(&job.job_id).unwrap().phase = JobPhase::Running;
     }
     #[test]
+    fn interrupted_protected_release_is_quarantined_on_journal_restart() {
+        // An SCM ACK is NOT a journal terminal. A host crash after release
+        // intent but before the terminal receipt must preserve uncertainty.
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        inject_running(&supervisor, &job);
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        let live = supervisor.inspect().unwrap();
+        assert_eq!(live[0].phase, JobPhase::ReleasePending);
+        let receipts = supervisor.receipt_history(&job.job_id).unwrap();
+        assert_eq!(receipts.last().unwrap().body.phase, JobPhase::ReleasePending);
+        drop(supervisor);
+
+        let restarted = Supervisor::open(filename.clone()).unwrap();
+        let jobs = restarted.inspect().unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].phase, JobPhase::ReleasePending);
+        assert!(jobs[0].requires_reconciliation);
+        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        assert_eq!(
+            restarted.record_human_approval(
+                &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+            ).unwrap_err(),
+            SupervisorError::Quarantined
+        );
+        drop(restarted);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn protected_release_terminal_is_a_distinct_durable_receipt() {
+        // Source-level transition only: no test substitutes for an SCM ACK.
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        inject_running(&supervisor, &job);
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        assert_eq!(
+            supervisor.native_finish(&job.job_id, true, true, true).unwrap().phase,
+            JobPhase::Completed
+        );
+        let history = supervisor.receipt_history(&job.job_id).unwrap();
+        let phases: Vec<_> = history.iter().rev().take(2)
+            .map(|receipt| receipt.body.phase).collect();
+        assert_eq!(phases, vec![JobPhase::Completed, JobPhase::ReleasePending]);
+        drop(supervisor);
+        let reopened = Supervisor::open(filename.clone()).unwrap();
+        let jobs = reopened.inspect().unwrap();
+        assert_eq!(jobs[0].phase, JobPhase::Completed);
+        assert!(!jobs[0].requires_reconciliation);
+        drop(reopened);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
     fn published_output_digest_is_bound_to_durable_terminal_receipt() {
         let filename = path();
         let sup = Supervisor::open(filename.clone()).unwrap();
