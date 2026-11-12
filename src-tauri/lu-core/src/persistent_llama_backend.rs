@@ -8,6 +8,7 @@
 //! Real GPU offload remains a physical Windows acceptance gate.
 //! A signed, immutable engine package and model-file identity are required
 //! before a production release.
+use crate::inference_tuning::TuningProfile;
 use crate::inference_host::{
     Cancellation, EngineError, GenerationRequest, InferenceBackend, TokenChunk,
 };
@@ -39,6 +40,9 @@ pub struct PersistentEngineConfig {
     pub startup_timeout: Duration,
     pub request_timeout: Duration,
     pub api_key: String,
+    /// Optional explicitly approved P5 experimental engine policy.
+    /// Normal Lu chat passes None and keeps exact original launch flags.
+    pub tuning: Option<TuningProfile>,
     /// Host observer receives only known stage and operating-system PID.
     pub load_observer: Option<Arc<dyn Fn(&'static str, Option<u32>) + Send + Sync>>,
 }
@@ -48,6 +52,7 @@ pub struct PersistentLlamaBackend {
     canonical_executable: PathBuf,
     pinned_model_file: Option<File>,
     pinned_projector_file: Option<File>,
+    pinned_draft_file: Option<File>,
     process: Option<Child>,
     port: Option<u16>,
     cache_gate: PromptCacheGate,
@@ -155,12 +160,16 @@ impl PersistentLlamaBackend {
         {
             return Err("invalid persistent inference resource limits".into());
         }
+        if let Some(profile)=config.tuning.as_ref() {
+            profile.validate_numbers(config.threads,config.context_tokens)?;
+        }
         let canonical_executable = verify_engine(&config.executable, &config.expected_sha256)?;
         Ok(Self {
             config,
             canonical_executable,
             pinned_model_file: None,
             pinned_projector_file: None,
+            pinned_draft_file: None,
             process: None,
             port: None,
             cache_gate: PromptCacheGate::default(),
@@ -261,6 +270,9 @@ impl InferenceBackend for PersistentLlamaBackend {
         self.cache_gate.invalidate();
         self.next_trusted_cache_scope=None;
         admitted.recheck().map_err(|e| format!("{e:?}"))?;
+        if let Some(tuning)=self.config.tuning.as_ref(){
+            tuning.validate_for_model(admitted,projector.is_some())?;
+        }
         // Windows share-read mode rejects normal replacement of the model file.
         // A production loader must additionally pin the complete engine package
         // and link its process to a Windows kill-on-close Job Object.
@@ -295,6 +307,21 @@ impl InferenceBackend for PersistentLlamaBackend {
         } else {
             None
         };
+        // Draft-model admission is separate from target and MMProj. Keep the
+        // original draft handle alive for the same supervised child lifetime.
+        let draft_file=if let Some(draft)=self.config.tuning.as_ref()
+            .and_then(|t|t.draft_path()){
+            let f=open.open(draft).map_err(|_|"draft GGUF inaccessible")?;
+            let expected=self.config.tuning.as_ref()
+                .and_then(|t|match &t.speculative{
+                    crate::inference_tuning::Speculative::DraftSimple(m)=>
+                        Some(m.header().file_bytes),_=>None
+                }).ok_or("draft GGUF admission lost")?;
+            if f.metadata().map_err(|_|"draft metadata unavailable")?.len()!=expected{
+                return Err("draft GGUF changed before engine spawn".into())
+            }
+            Some(f)
+        }else{None};
         verify_engine(&self.canonical_executable, &self.config.expected_sha256)?;
 
         // Host picks an ephemeral loopback port, never accepting an endpoint
@@ -321,11 +348,10 @@ impl InferenceBackend for PersistentLlamaBackend {
             .arg("--parallel")
             .arg("1")
             .arg("--n-gpu-layers")
-            .arg(if cfg!(target_os = "windows") {
-                "99"
-            } else {
-                "0"
-            })
+            .arg(self.config.tuning.as_ref().map(|t|t.gpu_layers.to_string())
+                .unwrap_or_else(||if cfg!(target_os="windows"){
+                    "99".into()
+                }else{"0".into()}))
             .arg("--no-warmup")
             .current_dir(
                 self.canonical_executable
@@ -337,6 +363,9 @@ impl InferenceBackend for PersistentLlamaBackend {
             .stderr(Stdio::null());
         if let Some(projector) = projector {
             command.arg("--mmproj").arg(projector.path());
+        }
+        if let Some(tuning)=self.config.tuning.as_ref(){
+            command.args(tuning.launch_args());
         }
         for (name, _) in std::env::vars_os() {
             let key = name.to_string_lossy();
@@ -388,6 +417,7 @@ impl InferenceBackend for PersistentLlamaBackend {
         self.observe("engine_spawned", self.pid());
         self.pinned_model_file = Some(file);
         self.pinned_projector_file = projector_file;
+        self.pinned_draft_file = draft_file;
         self.port = Some(port);
         let deadline = Instant::now() + self.config.startup_timeout;
         if let Err(error) = self.wait_ready(deadline, port) {
@@ -406,6 +436,7 @@ impl InferenceBackend for PersistentLlamaBackend {
         self.port = None;
         self.pinned_model_file = None;
         self.pinned_projector_file = None;
+        self.pinned_draft_file = None;
         #[cfg(windows)]
         {
             // Closing the final job handle also cleans up descendants that
@@ -539,6 +570,7 @@ mod tests {
             startup_timeout: Duration::from_secs(5),
             request_timeout: Duration::from_secs(5),
             api_key: "ab".repeat(32),
+            tuning:None,
             load_observer: None,
         };
         let mut backend = PersistentLlamaBackend::new(config).unwrap();
@@ -577,6 +609,7 @@ mod tests {
             startup_timeout: Duration::from_secs(5),
             request_timeout: Duration::from_secs(5),
             api_key: "ab".repeat(32),
+            tuning:None,
             load_observer: Some(observer),
         }).unwrap();
         backend.observe("engine_spawned", Some(1234));
