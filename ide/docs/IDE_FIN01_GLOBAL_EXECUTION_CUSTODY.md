@@ -109,3 +109,67 @@ unverified OS release always denies marker deletion. A native
 Windows/Linux interruption matrix and a separately operator-approved
 restart marker clearance with independently observed kernel custody
 are still outstanding. Source tests are committed but unexecuted.
+
+## FIN-01D kernel-attested stale-marker clearance (source integrated)
+
+The separate native Tauri command `ide_fin01_clear_stale_marker` requires
+a new OS-level dialog. The WebView sends **no PID, source path, asserted
+OS witness, release flag or approval boolean**. The host acquires a
+cross-process recovery sidecar; reads the exact private global marker;
+replays all three original supervisor journals; refuses any nonterminal
+or quarantined original job; and computes full journal byte digests.
+
+A native host-only OS function then checks the original marker owner's
+actual kernel process state and all known protected worker identities:
+
+- **Windows:** `OpenProcess` / `WaitForSingleObject` must show the old
+  owner exited. For every original job, `OpenJobObjectW` must expose a
+  Job Object with zero active processes or an absent exact named object.
+  The protected workers use Job kill-on-last-handle semantics. Access
+  denied, a live process, a corrupt/duplicate job identity or a busy
+  object fails closed.
+- **Linux:** the native host must actually belong to the restricted
+  `lu-ide-host` leaf of a delegated kernel cgroup-v2 hierarchy.
+  The former owner must be absent from `/proc`. The delegated parent
+  must contain no directly attached processes and no unknown child
+  cgroups. Every original `lu-ide-job-...` group still present must
+  report `populated 0`, empty `cgroup.procs` and `pids.current=0`.
+  Ordinary desktop/container hosts without genuine delegation cannot
+  pass as protected native hosts.
+
+The host rechecks the original journal digests and exact marker identity,
+fsyncs a host-produced `fin01-global-clearance-evidence-v1.jsonl`
+entry, repeats the OS kernel and journal checks, then removes the marker
+and fsyncs the containing directory. This is a clearance of **stale
+serialization custody only**, not an execution grant or automatic retry.
+
+A separate recovery sidecar is mutually exclusive across processes.
+An abandoned sidecar may be reaped only after native kernel proof that
+its own recorded process exited while the original marker still exists.
+A corrupt sidecar or unavailable kernel is a quarantine, not a timer
+based cleanup.
+
+### Required native acceptance evidence — not yet obtained
+
+- **Windows:** original exact-head compiled/installed protected service;
+  actual named Job handles, active-process and zero-descendant observations;
+  owner crash with genuine Job cleanup, refused live-owner clear, native
+  physical approval/refusal, stale-marker clearance readback and no new
+  worker without a fresh permission.
+- **Linux:** an actually delegated systemd/cgroup-v2 host, real worker
+  descendants and `cgroup.events` / `cgroup.procs` / `pids.current`
+  witnesses; denial for populated and unknown worker cgroups, confirmed
+  owner death, then original-journal and global-marker recovery.
+- **Both:** after-approval journal append, corrupted/audit write refusal,
+  two competing recovery hosts, marker replacement, PID reuse/conservative
+  denial, interruption during receipt fsync and after unlink, restart,
+  cancellation races, foreign project isolation and native accessibility.
+
+No CI, native Windows/Linux process test, actual installed application
+test, or physical-human witness has been run for this source increment.
+The new OS-verifier functions are a way to **obtain** genuine evidence on
+the correct hosts, not evidence that those hosts were exercised.
+
+**Release safety:** FIN-01D native acceptance remains open. FIN-02
+provisioning is still deferred. FIN-03 destructive stash/restore and
+FIN-05 vcpkg/Conan production execution remain disabled.
