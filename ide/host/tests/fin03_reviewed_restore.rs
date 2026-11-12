@@ -55,3 +55,20 @@ fn restore_rejects_dirty_index_untracked_file_and_source_change(){
  assert!(registry.review_single_file_restore(&id).is_err());
  drop(index);drop(git);drop(registry);fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn interrupted_restore_needs_valid_marker_and_original_backup() {
+ let (root,folder,registry,id)=fixture();
+ let marker=folder.join(".git/lu-ide-fin03-restore-active.json");
+ fs::write(&marker,b"not-a-valid-review-hash").unwrap();
+ assert!(registry.single_file_restore_recovery_required(&id).is_err());
+ fs::write(&marker,b"a".repeat(64)).unwrap();
+ assert!(registry.single_file_restore_recovery_required(&id).is_err());
+ let backup=folder.join(".git").join(format!(
+  "lu-ide-fin03-restore-backup-{}.bin","a".repeat(64)));
+ fs::write(&backup,b"preserved original").unwrap();
+ assert_eq!(registry.single_file_restore_recovery_required(&id).unwrap(),true);
+ fs::remove_file(&marker).unwrap();
+ assert_eq!(registry.single_file_restore_recovery_required(&id).unwrap(),false);
+ drop(registry);fs::remove_dir_all(root).unwrap();
+}
