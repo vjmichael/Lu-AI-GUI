@@ -22,13 +22,18 @@ use std::{
     io::Read,
     os::windows::fs::MetadataExt,
     path::{Component, Path},
+    #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
     process::{Command, Stdio},
+    #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
     thread,
+    #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
     time::{Duration, Instant},
 };
 
 const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
+#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
 const MAX_ORACLE_OUTPUT: u64 = 8192;
+#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
 const MAX_ORACLE_RUNTIME: Duration = Duration::from_secs(6);
 
 fn denied() -> SupervisorError {
@@ -114,12 +119,15 @@ fn bounded_sha(path: &Path, ceiling: u64) -> Result<String, SupervisorError> {
     }
     Ok(format!("{:x}", hash.finalize()))
 }
+#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
 struct EphemeralOutput(std::path::PathBuf);
+#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
 impl Drop for EphemeralOutput {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.0);
     }
 }
+#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
 fn run_measured_reader(
     program: &Path,
     binary: &Path,
@@ -258,7 +266,11 @@ fn equal_mapped_line(
 
 /// Only the trusted native Windows DAP session, never a WebView or adapter,
 /// can call this with independently OS-verified Job + frame + sealed target.
-pub(crate) fn independently_verify_pdb_line_for_ci(
+/// FIN-04R-1: strict common PE/PDB verifier. The caller owns a *native*
+/// protected symbolizer read. On release, the passed callback is the only
+/// fixed-purpose process inside the original SCM-owned Job/AppContainer,
+/// never the prior CI-only host std::process::Command fallback.
+pub(crate) fn independently_verify_pdb_line_with_reader<F>(
     staged_dap_bundle: &Path,
     original_bundle_sha256: &str,
     target: &SealedProjectDebugTarget,
@@ -266,7 +278,10 @@ pub(crate) fn independently_verify_pdb_line_for_ci(
     module: &WindowsLoadedModuleWitness,
     thread: &WindowsThreadRipSample,
     candidate: &SourceLineCandidate,
-) -> Result<IndependentPdbLine, SupervisorError> {
+    protected_read: F,
+) -> Result<IndependentPdbLine, SupervisorError>
+where F: FnOnce(&Path, u64, u64) -> Result<Value, SupervisorError>
+{
     if !thread.two_matching_samples
         || !thread.job_membership_rechecked
         || !module.job_member_verified
@@ -343,21 +358,19 @@ pub(crate) fn independently_verify_pdb_line_for_ci(
         return Err(denied());
     }
     let tool = staged_dap_bundle.join("bin/llvm-symbolizer.exe");
-    // The executable and all DLLs belong to the already reviewed, immutable
-    // CI bundle bound to this separate one-use debugger plan SHA.
+    // The host independently measures the exact immutable bundle; the
+    // release reader MUST separately verify and launch its staged copy
+    // inside the same live Job and AppContainer (not a host subprocess).
     let tree_sha = crate::windows_worker::lsp_native::native_lsp_bundle_digest(
         staged_dap_bundle,
         "dap_lldb_project",
     )?;
-    if tree_sha != original_bundle_sha256 || bounded_sha(&tool, 64 * 1024 * 1024)?.len() != 64 {
+    if tree_sha != original_bundle_sha256 ||
+        bounded_sha(&tool, 64 * 1024 * 1024)?.len() != 64 {
         return Err(denied());
     }
-    let json = run_measured_reader(
-        &tool,
-        &pe,
-        module.loaded_base - module.preferred_base,
-        thread.observed_rip,
-        staged_dap_bundle,
+    let json = protected_read(
+        &pe, module.loaded_base - module.preferred_base, thread.observed_rip,
     )?;
     equal_mapped_line(
         &json,
@@ -391,6 +404,28 @@ pub(crate) fn independently_verify_pdb_line_for_ci(
         debugger_commands_authorized: false,
         installed_app_accepted: false,
     })
+}
+
+/// Original legacy CI-only host-spawn symbolizer is retained solely
+/// for developer fixture comparison; it does not compile in release.
+#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
+pub(crate) fn independently_verify_pdb_line_for_ci(
+    staged_dap_bundle: &Path,
+    original_bundle_sha256: &str,
+    target: &SealedProjectDebugTarget,
+    native_source_root: &Path,
+    module: &WindowsLoadedModuleWitness,
+    thread: &WindowsThreadRipSample,
+    candidate: &SourceLineCandidate,
+) -> Result<IndependentPdbLine, SupervisorError> {
+    independently_verify_pdb_line_with_reader(
+        staged_dap_bundle, original_bundle_sha256, target,
+        native_source_root, module, thread, candidate,
+        |pe, slide, rip| run_measured_reader(
+            &staged_dap_bundle.join("bin/llvm-symbolizer.exe"),
+            pe, slide, rip, staged_dap_bundle,
+        ),
+    )
 }
 
 #[cfg(test)]
