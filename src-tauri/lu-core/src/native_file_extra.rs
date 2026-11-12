@@ -181,6 +181,24 @@ fn open_search_directory(root: &Dir, folder: &Path) -> Result<Dir, ToolFailure> 
         if current.canonicalize(text).ok().as_deref() != Some(Path::new(text)) {
             return Err(bad("DENIED_SCOPE", "directory alias refused"));
         }
+        // On Linux the leaf directory itself is opened with O_NOFOLLOW
+        // and O_DIRECTORY against the held parent handle, so a symlink
+        // swapped into place between stat and open cannot be traversed.
+        #[cfg(target_os="linux")]
+        let child = {
+            use cap_std::fs::OpenOptionsExt;
+            const O_DIRECTORY: i32 = 0o200000;
+            const O_NOFOLLOW: i32 = 0o400000;
+            let mut opts = cap_std::fs::OpenOptions::new();
+            opts.read(true).custom_flags(O_DIRECTORY | O_NOFOLLOW);
+            let file = current.open_with(text, &opts)
+                .map_err(|_| bad("DENIED_SCOPE", "unsafe search directory open"))?;
+            if !file.metadata().is_ok_and(|m| m.is_dir()) {
+                return Err(bad("DENIED_SCOPE", "opened search component not a directory"));
+            }
+            Dir::from_std_file(file.into_std())
+        };
+        #[cfg(not(target_os="linux"))]
         let child = current.open_dir(text)
             .map_err(|_| bad("FILE_ACCESS", "cannot open search directory"))?;
         let opened = child.dir_metadata()
