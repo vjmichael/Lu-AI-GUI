@@ -230,6 +230,7 @@ mod protected {
         verify_owner_event: bool,
         crash_owner: bool,
         ci_control: Option<&'static str>,
+        protected_release_pdb: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use lu_ide_execution_supervisor::windows_worker::lsp_native::{
             native_lsp_bundle_digest, start_windows_project_dap,
@@ -246,6 +247,13 @@ mod protected {
             },
             wo6_output_evidence::audit_published_output,
         };
+        if protected_release_pdb && (verify_owner_event || verify_independent_pdb ||
+            crash_owner || cancel_project || ci_control.is_some()) {
+            return Err("DENIED: release protected PDB is observation-only, never a CI control mode".into());
+        }
+        if protected_release_pdb && !cfg!(feature="fin04-release-owner-evidence"){
+            return Err("DENIED: release protected PDB observer feature not compiled".into());
+        }
         if ci_control.is_some() && (!verify_owner_event || crash_owner || cancel_project) {
             return Err(
                 "DENIED: D6C native command requires verified owner and its own one-use normal Job"
@@ -526,7 +534,7 @@ mod protected {
         if crash_owner && !verify_owner_event {
             return Err("DENIED: fixed owner crash test requires original verified event".into());
         }
-        if (sample_stopped_thread || verify_independent_pdb || verify_owner_event)
+        if (sample_stopped_thread || verify_independent_pdb || verify_owner_event || protected_release_pdb)
             && !verify_job_module
         {
             return Err(
@@ -635,6 +643,37 @@ mod protected {
                     "DENIED: real LLDB/PDB mapping is CI-only and never enabled in release".into(),
                 );
             }
+        }
+        // Separate, strictly observation-only real release Job path. No CI
+        // adapter control or host-spawn source-line oracle is involved.
+        #[cfg(feature="fin04-release-owner-evidence")]
+        let mut release_owner_receipt:Option<(u64,String)>=None;
+        if protected_release_pdb {
+            #[cfg(feature="fin04-release-owner-evidence")]
+            {
+                let owner=dap.observe_release_owned_stop(
+                    &supervisor,&debug_job.job_id,&debug_plan,&target,
+                ).map_err(|_|"DENIED: real AppContainer/Job-owned LLVM PDB worker source line missing")?;
+                if !owner.os_event_owner_verified ||
+                   !owner.original_debug_job_verified ||
+                   !owner.original_build_receipt_verified ||
+                   !owner.source_line_independently_verified ||
+                   owner.independently_verified_source_line.is_none() ||
+                   owner.independent_pdb_sha256.as_deref()
+                     !=Some(target.symbols.symbols_sha256.as_str()) ||
+                   owner.debugger_control_authorized ||
+                   owner.recovery_authorized ||
+                   owner.debugger_job_id!=debug_job.job_id ||
+                   owner.debugger_plan_sha256!=debug_job.plan_sha256 ||
+                   owner.build_terminal_receipt_sha256!=receipt.terminal_receipt_hash ||
+                   owner.owner_sequence==0 {
+                    return Err("DENIED: protected release PDB line or first-party owner proof false".into());
+                }
+                release_owner_receipt=Some((owner.owner_sequence,owner.receipt_sha256));
+                println!("FIN04R1_REAL_PROTECTED_LLDB_PDB_SOURCE=PASS_CONDITIONAL_NATIVE;control_authorized=false;attached=false");
+            }
+            #[cfg(not(feature="fin04-release-owner-evidence"))]
+            return Err("DENIED: protected release PDB feature not present".into());
         }
         #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
         let mut owner_receipt: Option<(u64, String)> = None;
@@ -782,6 +821,17 @@ mod protected {
                 );
             }
             println!("DEV045C_WINDOWS_PROJECT_LLDB_CANCEL_JOB_TREE_AND_RECEIPTS=PASS");
+        } else if protected_release_pdb {
+            #[cfg(feature="fin04-release-owner-evidence")]
+            {
+                let seq=release_owner_receipt.as_ref()
+                    .ok_or("DENIED: protected PDB owner receipt was not recorded")?.0;
+                dap.close_with_protected_release_owner_continue(seq)
+                    .map_err(|_|"DENIED: first-party LLDB continuation/revocation not observed")?;
+                println!("FIN04R1_FIRST_PARTY_RELEASE_EVENT_CONTINUED_AND_REVOKED=PASS_CONDITIONAL_NATIVE");
+            }
+            #[cfg(not(feature="fin04-release-owner-evidence"))]
+            return Err("DENIED: release PDB close path not installed".into());
         } else if verify_owner_event {
             #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
             {
@@ -895,6 +945,18 @@ mod protected {
             }
             println!("DEV046D_ACTION_RESTART_INVENTORY=PASS;orphan_grants=0;new_authority=false");
         }
+        #[cfg(feature="fin04-release-owner-evidence")]
+        if let Some((sequence,owner_sha))=release_owner_receipt {
+            replay.verify_native_owner_receipt_after_restart(
+                &debug_job.job_id,sequence,&owner_sha,
+            ).map_err(|_|"DENIED: protected release owner receipt failed exact restart audit")?;
+            if !replay.native_debug_action_cleanup_jobs_after_restart()
+                .map_err(|_|"DENIED: release action restart inventory changed")?
+                .is_empty(){
+                return Err("DENIED: original debugger action replay/cleanup outstanding".into());
+            }
+            println!("FIN04R1_RELEASE_OS_JOB_AND_OWNER_RESTART_AUDIT=PASS_CONDITIONAL_NATIVE;replay=false");
+        }
         #[cfg(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"))]
         if let Some((sequence, owner_sha)) = owner_receipt {
             replay
@@ -962,43 +1024,49 @@ mod protected {
         let args: Vec<String> = env::args().skip(1).collect();
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug"] {
-            return run_windows_project_debug(false, false, false, false, false, false, None);
+            return run_windows_project_debug(false, false, false, false, false, false, None, false);
+        }
+        #[cfg(windows)]
+        if args.as_slice() == ["--project-debug-protected-pdb"] {
+            return run_windows_project_debug(
+                false,true,true,false,false,false,None,true,
+            );
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-cancel"] {
-            return run_windows_project_debug(true, false, false, false, false, false, None);
+            return run_windows_project_debug(true, false, false, false, false, false, None, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-module"] {
-            return run_windows_project_debug(false, true, false, false, false, false, None);
+            return run_windows_project_debug(false, true, false, false, false, false, None, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-thread"] {
-            return run_windows_project_debug(false, true, true, false, false, false, None);
+            return run_windows_project_debug(false, true, true, false, false, false, None, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-line"] {
-            return run_windows_project_debug(false, true, true, true, false, false, None);
+            return run_windows_project_debug(false, true, true, true, false, false, None, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-line-cancel"] {
-            return run_windows_project_debug(true, true, true, true, false, false, None);
+            return run_windows_project_debug(true, true, true, true, false, false, None, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-owner"] {
-            return run_windows_project_debug(false, true, true, true, true, false, None);
+            return run_windows_project_debug(false, true, true, true, true, false, None, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-owner-cancel"] {
-            return run_windows_project_debug(true, true, true, true, true, false, None);
+            return run_windows_project_debug(true, true, true, true, true, false, None, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-owner-crash"] {
-            return run_windows_project_debug(false, true, true, true, true, true, None);
+            return run_windows_project_debug(false, true, true, true, true, true, None, false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-step"] {
-            return run_windows_project_debug(false, true, true, true, true, false, Some("step"));
+            return run_windows_project_debug(false, true, true, true, true, false, Some("step"), false);
         }
         #[cfg(windows)]
         if args.as_slice() == ["--project-debug-breakpoint"] {
@@ -1010,7 +1078,7 @@ mod protected {
                 true,
                 false,
                 Some("breakpoint"),
-            );
+            , false);
         }
         let cancel = args.as_slice() == ["--cancel"];
         #[cfg(target_os = "linux")]
