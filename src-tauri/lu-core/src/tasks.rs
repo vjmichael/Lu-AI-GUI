@@ -327,7 +327,20 @@ impl TaskStore {
                BEFORE DELETE ON lu_tasks
                WHEN EXISTS(SELECT 1 FROM lu_task_custody_uncertainty u
                            WHERE u.task_id=OLD.task_id)
-               BEGIN SELECT RAISE(ABORT,'Cannot erase custody-uncertain task'); END;"
+               BEGIN SELECT RAISE(ABORT,'Cannot erase custody-uncertain task'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertainty_identity_fence
+               BEFORE UPDATE OF task_id,workspace_id ON lu_tasks
+               WHEN EXISTS(SELECT 1 FROM lu_task_custody_uncertainty u
+                           WHERE u.task_id=OLD.task_id)
+               BEGIN SELECT RAISE(ABORT,'Cannot change uncertain task owner'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertain_event_no_update
+               BEFORE UPDATE ON lu_task_events
+               WHEN OLD.event='PROCESS_UNCERTAIN'
+               BEGIN SELECT RAISE(ABORT,'Immutable process uncertainty event'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertain_event_no_delete
+               BEFORE DELETE ON lu_task_events
+               WHEN OLD.event='PROCESS_UNCERTAIN'
+               BEGIN SELECT RAISE(ABORT,'Immutable process uncertainty event'); END;"
         )?;
         Ok(Self {
             connection: Mutex::new(connection),
