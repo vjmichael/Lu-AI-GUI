@@ -1,4 +1,4 @@
-//! Bounded, host-owned FIFO scheduler for one physical model session.
+//! Bounded, host-owned, foreground-first scheduler for one physical model session.
 //!
 //! Accepts turns from different conversations without attempting to run two
 //! simultaneous generations against a single loaded llama-server. A ticket
@@ -10,16 +10,38 @@ use std::{
 };
 
 const MAX_JOBS: usize = 8;
+// Admit one already-approved background turn after four consecutive
+// foreground turns, preventing indefinite starvation without preempting UI.
+const MAX_FOREGROUND_BURST: u8 = 4;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TurnClass { Foreground, Background }
+
 
 #[derive(Default)]
 struct State {
-    waiting: VecDeque<String>,
+    foreground_waiting: VecDeque<String>,
+    background_waiting: VecDeque<String>,
     active: Option<String>,
+    foreground_streak: u8,
     jobs: HashMap<String, Job>,
+}
+impl State {
+    fn next_ready(&self) -> Option<&str> {
+        let foreground = self.foreground_waiting.front();
+        let background = self.background_waiting.front();
+        if foreground.is_some()
+            && (self.foreground_streak < MAX_FOREGROUND_BURST || background.is_none()) {
+            foreground.map(String::as_str)
+        } else {
+            background.or(foreground).map(String::as_str)
+        }
+    }
 }
 struct Job {
     chat_id: String,
     session_id: String,
+    class: TurnClass,
     cancelled: bool,
 }
 
@@ -47,6 +69,17 @@ impl GenerationQueue {
         chat_id: &str,
         generation_id: &str,
     ) -> Result<(Ticket, usize), String> {
+        self.enqueue_with_class(session_id, chat_id, generation_id, TurnClass::Foreground)
+    }
+    /// Only the native host assigns the class. Browser/model arguments cannot
+    /// promote a background continuation to foreground authority.
+    pub fn enqueue_with_class(
+        self: &Arc<Self>,
+        session_id: &str,
+        chat_id: &str,
+        generation_id: &str,
+        class: TurnClass,
+    ) -> Result<(Ticket, usize), String> {
         let mut state = self.state.lock().map_err(|_| "generation queue poisoned")?;
         if state.jobs.len() >= MAX_JOBS {
             return Err("generation queue full (8 turns maximum)".into());
@@ -66,11 +99,21 @@ impl GenerationQueue {
             Job {
                 chat_id: chat_id.into(),
                 session_id: session_id.into(),
+                class,
                 cancelled: false,
             },
         );
-        state.waiting.push_back(generation_id.into());
-        let position = state.waiting.len() + usize::from(state.active.is_some());
+        match class {
+            TurnClass::Foreground => state.foreground_waiting.push_back(generation_id.into()),
+            TurnClass::Background => state.background_waiting.push_back(generation_id.into()),
+        }
+        // Snapshot of scheduling position; later arrivals can reprioritize it.
+        let position = usize::from(state.active.is_some()) + match class {
+            TurnClass::Foreground => state.foreground_waiting.len()
+                + usize::from(state.foreground_streak >= MAX_FOREGROUND_BURST
+                    && !state.background_waiting.is_empty()),
+            TurnClass::Background => state.foreground_waiting.len() + state.background_waiting.len(),
+        };
         Ok((
             Ticket {
                 queue: Arc::clone(self),
@@ -130,6 +173,14 @@ impl GenerationQueue {
         Ok(state.jobs.iter().find(|(_,job)|job.chat_id==chat_id)
             .map(|(id,_)|state.active.as_deref()==Some(id.as_str())))
     }
+    /// Conservative foreground gate for background-worker admission.
+    /// Include queued and active human work; fail closed on lock poisoning.
+    pub fn has_foreground_jobs(&self) -> bool {
+        self.state.lock()
+            .map(|state| state.jobs.values()
+                .any(|job| job.class == TurnClass::Foreground))
+            .unwrap_or(true)
+    }
     pub fn has_jobs(&self) -> bool {
         self.state
             .lock()
@@ -141,7 +192,8 @@ impl GenerationQueue {
             if state.active.as_deref() == Some(generation_id) {
                 state.active = None;
             }
-            state.waiting.retain(|x| x != generation_id);
+            state.foreground_waiting.retain(|x| x != generation_id);
+            state.background_waiting.retain(|x| x != generation_id);
             state.jobs.remove(generation_id);
             self.ready.notify_all();
         }
@@ -163,8 +215,20 @@ impl Ticket {
             if job.cancelled {
                 return Err("Cancelled while queued".into());
             }
-            if state.active.is_none() && state.waiting.front() == Some(&self.id) {
-                state.waiting.pop_front();
+            if state.active.is_none() && state.next_ready() == Some(self.id.as_str()) {
+                let class = job.class;
+                let removed = match class {
+                    TurnClass::Foreground => state.foreground_waiting.pop_front(),
+                    TurnClass::Background => state.background_waiting.pop_front(),
+                };
+                if removed.as_deref() != Some(self.id.as_str()) {
+                    return Err("generation scheduler lost FIFO custody".into());
+                }
+                state.foreground_streak = match class {
+                    TurnClass::Foreground => state.foreground_streak
+                        .saturating_add(1).min(MAX_FOREGROUND_BURST),
+                    TurnClass::Background => 0,
+                };
                 state.active = Some(self.id.clone());
                 return Ok(());
             }
@@ -268,6 +332,56 @@ mod tests {
         assert!(queue.cancel_for_chat("nonexistent").unwrap().is_none());
         drop(task);drop(normal);
         assert!(!queue.has_jobs());
+    }
+    #[test]
+    fn human_turn_overtakes_queued_background_without_preemption() {
+        let q = Arc::new(GenerationQueue::default());
+        let (active, _) = q.enqueue("s", "human-active", "h1").unwrap();
+        active.wait_for_slot().unwrap();
+        let (background, _) = q.enqueue_with_class(
+            "s", "auto", "b1", TurnClass::Background).unwrap();
+        let (human, _) = q.enqueue("s", "human-new", "h2").unwrap();
+        assert!(q.has_foreground_jobs());
+        drop(active);
+        human.wait_for_slot().unwrap(); // queued auto did not block a human send
+        assert!(q.scoped_job_active("auto").unwrap() == Some(false));
+        drop(human);
+        background.wait_for_slot().unwrap();
+        assert!(!q.has_foreground_jobs());
+        drop(background);
+        assert!(!q.has_jobs());
+    }
+    #[test]
+    fn background_eventually_gets_one_slot_after_foreground_burst() {
+        let q = Arc::new(GenerationQueue::default());
+        for n in 0..MAX_FOREGROUND_BURST {
+            let (ticket, _) = q.enqueue("s", &format!("chat-{n}"),
+                &format!("human-{n}")).unwrap();
+            ticket.wait_for_slot().unwrap();
+            drop(ticket);
+        }
+        let (auto, _) = q.enqueue_with_class(
+            "s", "background", "b", TurnClass::Background).unwrap();
+        let (human, _) = q.enqueue("s", "later-human", "h").unwrap();
+        auto.wait_for_slot().unwrap();
+        drop(auto);
+        human.wait_for_slot().unwrap();
+        drop(human);
+        assert!(!q.has_jobs());
+    }
+    #[test]
+    fn cancelling_queued_auto_does_not_affect_foreground() {
+        let q = Arc::new(GenerationQueue::default());
+        let (active, _) = q.enqueue("s", "human", "h").unwrap();
+        active.wait_for_slot().unwrap();
+        let (auto, _) = q.enqueue_with_class(
+            "s", "auto", "b", TurnClass::Background).unwrap();
+        assert_eq!(q.cancel("s", "b"), Ok(CancelState::Queued));
+        assert!(auto.wait_for_slot().is_err());
+        assert!(!active.cancelled());
+        drop(auto);
+        drop(active);
+        assert!(!q.has_jobs());
     }
     #[test]
     fn plan07b_scoped_active_cancel_marks_ticket_before_model_storage(){
