@@ -731,17 +731,24 @@ impl NativeDebugRuntime {
         let own_before=self.supervisor.inspect()
             .map_err(|e|e.code().to_owned())?;
         if crate::global_native_custody::durable_busy(&own_before) {
+            let after=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
+            global_fence.release_before_prepare_if_unchanged(&own_before,&after)?;
             return Err("FIN01_DEBUG_JOURNAL_STILL_OWNS_CUSTODY".into());
         }
         let sibling=crate::global_native_custody::sibling_rows(
             &self.global_custody_profile,"debug")?;
         if crate::global_native_custody::durable_busy(&sibling){
-            return Err("FIN01_BUILD_JOURNAL_STILL_OWNS_CUSTODY".into());
+            let after=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
+            global_fence.release_before_prepare_if_unchanged(&own_before,&after)?;
+            return Err("FIN01_BUILD_OR_LSP_JOURNAL_STILL_OWNS_CUSTODY".into());
         }
         let cancellation = Arc::new(AtomicBool::new(false));
         {
             let mut active = self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?;
             if active.is_some() {
+                drop(active);
+                let after=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
+                global_fence.release_before_prepare_if_unchanged(&own_before,&after)?;
                 return Err("DEBUG_SESSION_ALREADY_ACTIVE".into());
             }
             // Serialize launch and read-only result invalidation together.
