@@ -1985,10 +1985,20 @@ async fn ide_debug_control_evidence(
 async fn ide_debug_review_control_candidate(
  app:AppHandle,state:State<'_,Arc<IdeWorkspaceRegistry>>,
  project_id:String,job_id:String,plan_sha256:String,
- kind:debug_backend::DebugControlReviewKind,
+ kind:String,
 )->Result<serde_json::Value,String>{
  #[cfg(all(feature="native-debug",any(windows,target_os="linux")))]
  {
+  let kind=match kind.as_str(){
+   "step_over"=>debug_backend::DebugControlReviewKind::StepOver,
+   "step_into"=>debug_backend::DebugControlReviewKind::StepInto,
+   "step_out"=>debug_backend::DebugControlReviewKind::StepOut,
+   "breakpoint_at_reviewed_line"=>
+     debug_backend::DebugControlReviewKind::BreakpointAtReviewedLine,
+   "inspect_reviewed_frame"=>
+     debug_backend::DebugControlReviewKind::InspectReviewedFrame,
+   _=>return Err("FIN04_UNKNOWN_READ_ONLY_CONTROL_KIND".into()),
+  };
   let registry=Arc::clone(state.inner());
   let runtime=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
    .ok_or("FIN04_NATIVE_DEBUG_SUPERVISOR_UNAVAILABLE")?;
