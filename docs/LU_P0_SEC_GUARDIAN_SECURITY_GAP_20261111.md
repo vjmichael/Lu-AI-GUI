@@ -27,6 +27,41 @@ Source-only candidate, November 11, 2026. Branch: lu/p0-sec-guardian-hardening-2
 - Kernel-uninterruptible helper teardown/reaping cannot be guaranteed merely by a user-space timeout. Treat an unobserved reap as uncertain, never success.
 - Portable Windows Job subtree and human-installed Windows/Radeon alpha acceptance remain separate, explicitly deferred. No IDE, NVP, automatic CI, PR merge or release operations are included.
 
-## Next P0-SEC implementation slice
+## SEC-02 — executable negative cases authored, native acceptance OPEN
 
-Construct a real delegated-kernel negative fixture that kills or stalls a first-party guardian after a live admitted worker/nested setsid descendant exists, then prove bounded host failure reporting, no false COMPLETED/cancelled receipt, independently observed survivor state, and recovery. Combine with reviewed Git/media cancellation and revocation races and genuine persisted restart evidence before closing P0-SEC or advancing to P0-PLAN.
+- CI-only Rust binary: src-tauri/lu-win-worker-job/src/bin/lu-p0-sec02-linux-negative.rs; feature gate e1-p08-crash-fixture. The production helper PID accessor is unavailable without that feature.
+- Independent Linux verifier: benchmarks/e1/p0_sec02_linux_guardian_negative.py. It records kernel /proc worker membership, guardian identity outside the subtree, nested setsid descendant, original process PID handles and unrelated live control.
+- guardian-death: verifier SIGKILLs the original admitted guardian, and the fixture MUST return GUARDIAN_LOST_UNVERIFIED with NO cgroup-empty receipt. A surviving nested descendant is evidence of the guarantee boundary. The verifier cleans the exact disposable subtree.
+- guardian-stall: verifier SIGSTOPs the guardian after worker admission. Host stop must time out and return GUARDIAN_STALLED_UNVERIFIED without publishing a receipt. Verifier independently recovers the disposable subtree.
+- worker-stall: deliberately unresponsive worker plus nested setsid descendant; a healthy guardian performs genuine recursive kernel cleanup. Only an original populated-zero receipt, missing subtree and terminated descendant qualify as WORKER_STALL_NATIVE_CGROUP_EMPTY.
+- Missing delegation, false receipts, missing descendants, failure to stop, accidental unrelated kills, or cleanup failure are NOT valid positive security acceptance.
+
+Manual native run sequence, under a genuinely delegated unprivileged Linux cgroup-v2 service (not an ordinary read-only container):
+
+    cargo build --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml \
+      --features e1-p08-crash-fixture \
+      --bin lu-linux-cgroup-guard --bin lu-p0-sec02-linux-negative
+    export LU_AGENT01L_TEST_CGROUP_GUARD="$PWD/src-tauri/lu-win-worker-job/target/debug/lu-linux-cgroup-guard"
+    for mode in guardian-death guardian-stall worker-stall; do
+      python3 benchmarks/e1/p0_sec02_linux_guardian_negative.py \
+        --fixture "$PWD/src-tauri/lu-win-worker-job/target/debug/lu-p0-sec02-linux-negative" \
+        --mode "$mode"
+    done
+
+These commands are future acceptance instructions, NOT tests reported as run.
+
+## SEC-03 — authority and cancellation race candidate, native acceptance OPEN
+
+- P0-AUTH original ANSF REQUESTED rows have a monotonically increasing host-owned row-ID watermark. The reviewed turn captures its baseline BEFORE native source selection/approval. The exact original chat must match the baseline again after queueing, before opening task authority, and on EVERY reviewed tool authorization.
+- The final reviewed ANSF AssistantCompleted append and cancellation REQUESTED append are serialized under the same ANSF catalog mutex. The original answer may complete BEFORE cancellation, but a cancellation recorded first must suppress later completion. A separately approved later turn obtains a NEW watermark and is not permanently poisoned by the earlier cancellation.
+- New native ANSF tests use a real chat store to exercise revoke-before-complete, a fresh subsequent human turn, and a simultaneous revoke-vs-complete race. Reviewed policy rejects tool dispatch when the cancellation token is set or the durable REQUESTED watermark changed.
+- The ordinary native background-process supervisor now exposes cancel_workspace_owned: it enumerates actual exact-workspace workers while holding its admission/poll ownership lock, stops all even if one fails, leaves failed stops owned and marked uncertain, and does not depend on a potentially truncated UI dashboard. P0-AUTH uses this for unscheduled workers. Reviewed per-turn workers remain subject to the original generation cancellation lane.
+- Native Linux tests use actual /bin/sleep workers for concurrent poll-versus-cancel and two-target/one-foreign workspace isolation. A task may end in exactly one terminal receipt; wrong-chat cancellation must not affect other workers.
+
+## Remaining security gates and limits
+
+1. Source code changes and test fixtures have NOT passed exact-head cargo compilation, Node contracts, genuine delegated kernel execution or the installed Windows/Linux matrix. P0-SEC remains OPEN; do not represent fixture presence as accepted OS proof.
+2. SEC-02's direct guardian fixture confirms the loss-of-custody ceiling but does not itself execute the full TaskStore journal path. The separately authored supervisor and ANSF tests cover host state transitions; an end-to-end combined original-turn journal and real kernel failure run remains mandatory.
+3. There is still an unavoidable authorization-check-to-exec gap unless all effectful workers are bound to a revocable native execution gate; a cancellation racing after the last tool check may leave an historical effect. This is uncertain, not permission to replay or a claim of rollback.
+4. No guaranteed custody after the active host dies IF its custodian already died. A hostile worker able to migrate into writable ancestor cgroup.procs can escape the leaf. A tested nonmigratable OS boundary and installed Linux guardian watchdog are separate requirements.
+5. Follow-on SEC-04/SEC-05/SEC-06 must reconcile process custody, UI cancellation, restart, model-to-tool, Windows Job, kernel authority ceilings and genuine installed OS evidence before accepting P0-SEC or moving to P0-PLAN.
