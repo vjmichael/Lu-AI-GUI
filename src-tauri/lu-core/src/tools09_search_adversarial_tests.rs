@@ -195,7 +195,7 @@ fn tools09_open_directory_handle_survives_ambient_root_replacement(){
 #[test]
 fn tools09_entry_limit_is_marked_even_when_every_candidate_is_filtered(){
     let (path,root)=sandbox();
-    for i in 0..530u32 {
+    for i in 0..1_040u32 {
         fs::write(path.join(format!("unwanted-{i:04}.dat")),"needle").unwrap();
     }
     let mut req=request("needle",false);
