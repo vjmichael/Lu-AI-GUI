@@ -40,8 +40,12 @@ fn required(key:&str)->String{
     env::var(key).unwrap_or_else(|_|panic!("{key} is required for native acceptance"))
 }
 fn bounded(key:&str,default:u32,low:u32,high:u32)->u32{
-    let result=env::var(key).ok().and_then(|v|v.parse::<u32>().ok())
-        .unwrap_or(default);
+    let result=match env::var(key){
+        Ok(value)=>value.parse::<u32>()
+            .unwrap_or_else(|_|panic!("{key} must be a valid numeric tuning value")),
+        Err(env::VarError::NotPresent)=>default,
+        Err(_)=>panic!("{key} cannot be decoded safely"),
+    };
     assert!((low..=high).contains(&result),"{key} outside admitted bounds");
     result
 }
