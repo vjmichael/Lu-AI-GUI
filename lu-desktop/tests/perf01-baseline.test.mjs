@@ -27,7 +27,7 @@ function row(i,route){
     evidenceScope:'HOST_OBSERVED_ONLY',sourceHead:fixtureHead,
     operatingSystem:'fixture-not-real-host',architecture:'fixture',
     modelLoadedAtEntry:route==='MODEL_INFERENCE',
-    modelStartedByThisRoute:false,
+    modelStartedByThisRoute:route==='CPU_DETERMINISTIC'?false:null,
     queueWaitMs:route==='MODEL_INFERENCE'?5:null,
     contextAssemblyMs:route==='MODEL_INFERENCE'?10:null,
     modelDispatchToFirstChunkMs:route==='MODEL_INFERENCE'?15:null,
