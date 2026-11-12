@@ -31,7 +31,7 @@ use lu_ide_workspace::{
     dap_source_lines::SourceLineCandidate,
     IdeWorkspaceRegistry,
 };
-use serde::Serialize;
+use serde::{Deserialize,Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -283,6 +283,48 @@ pub struct DebugInterrupted {
     phase: String,
     requires_reconciliation: bool,
 }
+/// FIN-04: candidate control names, NOT an executable DAP enum.
+#[derive(Clone,Copy,Debug,Deserialize,Serialize)]
+#[serde(rename_all="snake_case")]
+pub enum DebugControlReviewKind {
+    StepOver,StepInto,StepOut,BreakpointAtReviewedLine,InspectReviewedFrame,
+}
+impl DebugControlReviewKind {
+    fn label(self)->&'static str {
+        match self{
+            Self::StepOver=>"step_over",
+            Self::StepInto=>"step_into",
+            Self::StepOut=>"step_out",
+            Self::BreakpointAtReviewedLine=>"breakpoint_at_reviewed_line",
+            Self::InspectReviewedFrame=>"inspect_reviewed_frame",
+        }
+    }
+}
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct DebugControlCandidateReview {
+    project_id:String,
+    original_debug_job_id:String,
+    original_plan_sha256:String,
+    original_terminal_receipt_sha256:String,
+    kind:DebugControlReviewKind,
+    reviewed_source_relative_path:String,
+    reviewed_source_sha256:String,
+    reviewed_source_line:u32,
+    adapter_reported_frame_id:u64,
+    original_action_rows_visible:usize,
+    original_action_cleanup_required:bool,
+    review_sha256:String,
+    blockers:Vec<&'static str>,
+    source_bytes_rechecked:bool,
+    live_native_owner_event_verified:bool,
+    kernel_instruction_source_line_verified:bool,
+    reviewed_frame_independently_verified:bool,
+    installed_debugger_controls_accepted:bool,
+    execution_route_available:bool,
+    debugger_execution_authorized:bool,
+    replay_authorized:bool,
+}
 #[derive(Clone, Copy, Debug)]
 pub enum ReviewedNativeAction {
     StepOver,
@@ -521,6 +563,67 @@ impl NativeDebugRuntime {
             ::inspect_debug_control_evidence(
                 &self.global_custody_profile,&self.supervisor,project_id)
             .map_err(str::to_owned)
+    }
+    /// Read-only control *candidate* from the earlier exact terminal LLDB
+    /// source observation, original terminal job receipt, and inspected
+    /// action journal. No stopped process exists for this candidate: even
+    /// a complete SHA-256 does not authorize a fresh DAP request.
+    pub fn review_control_candidate(
+        &self,registry:&IdeWorkspaceRegistry,project_id:&str,
+        job_id:&str,plan_sha256:&str,kind:DebugControlReviewKind,
+    )->Result<DebugControlCandidateReview,String>{
+        let source=self.review_stopped_source(
+            registry,project_id,job_id,plan_sha256)?;
+        let audit=self.inspect_control_evidence(project_id)?;
+        let observed=&source.source;
+        let mut hash=Sha256::new();
+        hash.update(b"lu-ide-fin04-read-only-control-candidate-v1\n");
+        for part in [
+            project_id,job_id,plan_sha256,
+            source.terminal_receipt_sha256.as_str(),kind.label(),
+            observed.relative_path.as_str(),observed.disk_sha256.as_str(),
+        ]{
+            hash.update((part.len() as u64).to_le_bytes());
+            hash.update(part.as_bytes());
+        }
+        hash.update(observed.line.to_le_bytes());
+        hash.update(observed.frame_id.to_le_bytes());
+        let mut blockers=vec![
+            "no_live_native_owner_event",
+            "debugger_job_already_terminal",
+            "fin01d_native_kernel_acceptance_not_proven",
+            "installed_debugger_control_not_accepted",
+            "independent_instruction_source_mapping_missing",
+            "one_use_execution_consent_not_granted",
+        ];
+        if audit.requires_os_cleanup{
+            blockers.push("original_debug_action_os_recovery_required");
+        }
+        if matches!(kind,DebugControlReviewKind::InspectReviewedFrame){
+            blockers.push("adapter_frame_id_is_not_kernel_frame_proof");
+        }
+        Ok(DebugControlCandidateReview{
+            project_id:project_id.to_owned(),
+            original_debug_job_id:job_id.to_owned(),
+            original_plan_sha256:plan_sha256.to_owned(),
+            original_terminal_receipt_sha256:source.terminal_receipt_sha256,
+            kind,
+            reviewed_source_relative_path:observed.relative_path.clone(),
+            reviewed_source_sha256:observed.disk_sha256.clone(),
+            reviewed_source_line:observed.line,
+            adapter_reported_frame_id:observed.frame_id,
+            original_action_rows_visible:audit.rows.len(),
+            original_action_cleanup_required:audit.requires_os_cleanup,
+            review_sha256:format!("{:x}",hash.finalize()),
+            blockers,source_bytes_rechecked:true,
+            live_native_owner_event_verified:false,
+            kernel_instruction_source_line_verified:false,
+            reviewed_frame_independently_verified:false,
+            installed_debugger_controls_accepted:false,
+            execution_route_available:false,
+            debugger_execution_authorized:false,
+            replay_authorized:false,
+        })
     }
     /// INT04: one read-only source review for an earlier, successfully
     /// terminated protected LLDB session. No debuggee, DAP request, source
