@@ -97,3 +97,33 @@ test('FIN01D only original strictly pre-OS jobs receive no-worker cancellation',
  assert.match(lsp,/no_active && admitted_this_call/);
  assert.match(shared,/release_if_terminal/);
 });
+
+const windows=source('../../supervisor/src/windows_worker.rs');
+const linux=source('../../supervisor/src/linux_worker.rs');
+test('FIN01D stale clearance must query real kernel objects, not renderer booleans',()=>{
+ assert.match(shared,/pub fn clear_stale_marker_with_kernel_proof/);
+ assert.match(shared,/verify_global_worker_quiescence\(owner_pid,&jobs\)/);
+ assert.match(shared,/original_journals_sha256:baseline/);
+ assert.match(shared,/FIN01_JOURNAL_CHANGED_AFTER_KERNEL_WITNESS/);
+ assert.match(shared,/FIN01_STALE_MARKER_CHANGED/);
+ assert.match(shared,/FIN01_RECOVERY_AUDIT_SYNC_FAILED/);
+ assert.match(windows,/pub fn verify_global_worker_quiescence/);
+ assert.match(windows,/OpenProcess\(PROCESS_QUERY_LIMITED_INFORMATION/);
+ assert.match(windows,/OpenJobObjectW\(JOB_OBJECT_QUERY_ACCESS/);
+ assert.match(windows,/job\.empty\(\)/);
+ assert.match(windows,/JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE/);
+ assert.match(linux,/pub fn verify_global_worker_quiescence/);
+ assert.match(linux,/current_cgroup_parent\(\)/);
+ assert.match(linux,/parse_empty_cgroup_events/);
+ assert.match(linux,/cgroup\.procs/);
+ assert.match(linux,/pids\.current/);
+});
+test('FIN01D host requires physical dialog and never promotes replay authority',()=>{
+ assert.match(backend,/async fn ide_fin01_clear_stale_marker/);
+ assert.match(backend,/FIN01_GLOBAL_RECOVERY_NOT_APPROVED/);
+ assert.match(backend,/Verify kernel and clear only if empty/);
+ assert.match(backend,/ide_fin01_clear_stale_marker,/);
+ assert.match(shared,/replay_authorized:false,execution_authorized:false/);
+ assert.match(main,/Request OS-verified stale-marker clearance/);
+ assert.match(main,/FIN01_NATIVE_KERNEL_RECEIPT_UNTRUSTED/);
+});
