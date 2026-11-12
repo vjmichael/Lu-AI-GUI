@@ -938,6 +938,61 @@ async fn ide_read_local_stash_inventory(
   .await.map_err(|_|"FIN03_STASH_READ_THREAD_UNAVAILABLE".to_owned())?
   .map_err(str::to_owned)
 }
+
+/// FIN-03: one reviewed staged file -> unstaged source, Git index ONLY.
+/// No caller-provided Git commands, paths, OS approval tokens or ref writes.
+#[tauri::command]
+async fn ide_git_review_single_unstage(
+ state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
+)->Result<lu_ide_workspace::git_reviewed_unstage::ReviewedUnstage,String>{
+ let registry=Arc::clone(state.inner());
+ tauri::async_runtime::spawn_blocking(move||
+    registry.review_single_staged_unstage(&project_id))
+    .await.map_err(|_|"FIN03_UNSTAGE_REVIEW_THREAD_INTERRUPTED".to_owned())?
+    .map_err(str::to_owned)
+}
+#[tauri::command]
+async fn ide_git_execute_single_unstage(
+ app:AppHandle,state:State<'_,Arc<IdeWorkspaceRegistry>>,
+ sessions:State<'_,Arc<PartialStageSessions>>,
+ expected:lu_ide_workspace::git_reviewed_unstage::ReviewedUnstage,
+)->Result<lu_ide_workspace::git_reviewed_unstage::UnstageReceipt,String>{
+ let registry=Arc::clone(state.inner());
+ let sessions=Arc::clone(sessions.inner());
+ let project_id=expected.project_id.clone();
+ let cancel=sessions.begin(&project_id)?;
+ let result=tauri::async_runtime::spawn_blocking(move||{
+    let fresh=registry.review_single_staged_unstage(&project_id)
+       .map_err(str::to_owned)?;
+    if fresh.review_sha256!=expected.review_sha256 ||
+        fresh.index_sha256!=expected.index_sha256 ||
+        fresh.relative_path!=expected.relative_path ||
+        fresh.head_sha!=expected.head_sha ||
+        expected.operation_authorized || !expected.source_rechecked ||
+        expected.refs_modified || expected.source_files_modified {
+        return Err("FIN03_UNSTAGE_REVIEW_CHANGED".into());
+    }
+    if cancel.load(Ordering::SeqCst)!=0{
+        return Err("FIN03_UNSTAGE_CANCELLED_PRE_CONSENT".into());
+    }
+    let yes=app.dialog().message(format!(
+       "Unstage exactly ONE reviewed file?\n\nProject: {}\nFile: {}\nHEAD: {}\nIndex SHA: {}\nReview SHA: {}\n\nOnly Git INDEX changes. Worktree/source and branch refs will not be altered.",
+       project_id,fresh.relative_path,fresh.head_sha,
+       fresh.index_sha256,fresh.review_sha256))
+       .title("Lu IDE · One-use native unstage")
+       .buttons(MessageDialogButtons::OkCancelCustom(
+           "Unstage reviewed file".into(),"Deny".into()))
+       .blocking_show();
+    if !yes || cancel.load(Ordering::SeqCst)!=0{
+        return Err("FIN03_UNSTAGE_HUMAN_DENIED".into());
+    }
+    registry.execute_approved_single_unstage(&fresh,&cancel)
+        .map_err(str::to_owned)
+ }).await.map_err(|_|"FIN03_UNSTAGE_HOST_INTERRUPTED".to_owned());
+ sessions.end(&project_id);
+ result?
+}
+
 /// G06C-02: read-only merge plan. No ref writes or user-approved grant.
 #[tauri::command]
 async fn ide_git_preview_local_merge(
@@ -3629,6 +3684,8 @@ pub fn run() {
             ide_read_git_refs_health,
             ide_git_review_branch_operation,
             ide_read_local_stash_inventory,
+            ide_git_review_single_unstage,
+            ide_git_execute_single_unstage,
             ide_git_preview_local_merge,
             ide_git_verify_divergent_merge,
             ide_git_inspect_native_conflicts,
