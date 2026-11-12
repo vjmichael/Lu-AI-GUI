@@ -996,6 +996,62 @@ async fn ide_git_execute_single_unstage(
 }
 
 #[tauri::command]
+async fn ide_git_review_one_file_stash(
+ state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
+)->Result<lu_ide_workspace::git_reviewed_stash_save::ReviewedStashSave,String>{
+ let reg=Arc::clone(state.inner());
+ tauri::async_runtime::spawn_blocking(move||
+  reg.review_one_file_stash_save(&project_id))
+  .await.map_err(|_|"FIN03_STASH_REVIEW_TASK_INTERRUPTED".to_owned())?
+  .map_err(str::to_owned)
+}
+#[tauri::command]
+async fn ide_git_execute_one_file_stash(
+ app:AppHandle,state:State<'_,Arc<IdeWorkspaceRegistry>>,
+ sessions:State<'_,Arc<PartialStageSessions>>,
+ project_id:String,expected_review_sha256:String,
+)->Result<lu_ide_workspace::git_reviewed_stash_save::ReviewedStashReceipt,String>{
+ if !cfg!(feature="fin03-reviewed-stash"){
+  return Err("FIN03_STASH_NATIVE_ACCEPTANCE_REQUIRED".into());
+ }
+ let registry=Arc::clone(state.inner());
+ let sessions=Arc::clone(sessions.inner());
+ let cancel=sessions.begin(&project_id)?;
+ let project_for_session=project_id.clone();
+ let result=tauri::async_runtime::spawn_blocking(move||{
+  let reviewed=registry.review_one_file_stash_save(&project_id)
+   .map_err(str::to_owned)?;
+  if reviewed.review_sha256!=expected_review_sha256 ||
+     cancel.load(Ordering::SeqCst)!=0{
+   return Err("FIN03_STASH_REVIEW_CHANGED".into());
+  }
+  let confirmed=app.dialog().message(format!(
+   "Save exactly ONE reviewed tracked modification in the local Git stash?\n\nProject: {}\nPath: {}\nReview SHA-256: {}\n\nThis changes refs/stash and resets the reviewed file in the working tree. Original bytes are preserved privately. No remote action or automatic recovery is permitted.",
+   project_id,reviewed.relative_path,reviewed.review_sha256))
+   .title("Lu IDE · One-use protected stash save")
+   .buttons(MessageDialogButtons::OkCancelCustom(
+     "Save reviewed stash".into(),"Decline".into())).blocking_show();
+  if !confirmed || cancel.load(Ordering::SeqCst)!=0{
+   return Err("FIN03_STASH_HUMAN_DENIED".into());
+  }
+  registry.execute_reviewed_one_file_stash_save(&reviewed,&cancel)
+   .map_err(str::to_owned)
+ }).await.map_err(|_|"FIN03_STASH_NATIVE_TASK_INTERRUPTED".to_owned());
+ sessions.end(&project_for_session);
+ result?
+}
+#[tauri::command]
+async fn ide_git_one_file_stash_recovery(
+ state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
+)->Result<bool,String>{
+ let reg=Arc::clone(state.inner());
+ tauri::async_runtime::spawn_blocking(move||
+  reg.one_file_stash_recovery_required(&project_id))
+  .await.map_err(|_|"FIN03_STASH_RECOVERY_TASK_INTERRUPTED".to_owned())?
+  .map_err(str::to_owned)
+}
+
+#[tauri::command]
 async fn ide_git_review_single_file_restore(
  state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
 )->Result<lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReview,String>{
@@ -3836,6 +3892,9 @@ pub fn run() {
             ide_git_review_branch_operation,
             ide_read_local_stash_inventory,
             ide_git_review_single_unstage,
+            ide_git_review_one_file_stash,
+            ide_git_execute_one_file_stash,
+            ide_git_one_file_stash_recovery,
             ide_git_review_single_file_restore,
             ide_git_execute_single_file_restore,
             ide_git_single_file_restore_recovery,
