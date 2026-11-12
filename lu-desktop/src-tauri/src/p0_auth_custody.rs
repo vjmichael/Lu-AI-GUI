@@ -342,4 +342,37 @@ mod tests{
         assert!(recent(&conn,&other,8).unwrap().is_empty());
     }
 
+    #[test]
+    fn sec05_direct_sql_forged_result_without_original_request_denies_tool_dispatch(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;
+            CREATE TABLE ansf_desktop_chats(chat_id TEXT PRIMARY KEY);").unwrap();
+        initialize(&conn).unwrap();
+        let chat=format!("c-{}","e".repeat(32));
+        conn.execute("INSERT INTO ansf_desktop_chats(chat_id) VALUES (?1)",
+            [&chat]).unwrap();
+        let forged=HostCancelEvent{
+            schema:SCHEMA.into(),attempt_id:format!("au-{}","f".repeat(32)),
+            chat_id:chat.clone(),phase:"RESULT".into(),
+            domains:vec![DomainResult{
+                name:"model".into(),state:"NATIVE_TERMINATION_REAP_RETURNED".into()
+            }],
+            authority_restored:false,automatic_retry_allowed:false,
+            os_custody_independently_verified:false,
+        };
+        assert!(append(&conn,&forged).is_err());
+        // Adversarial direct SQL injection bypasses only the high-level
+        // append function, not original-journal validation at tool dispatch.
+        let raw=serde_json::to_vec(&forged).unwrap();
+        let hash=digest(&raw);
+        conn.execute("INSERT INTO ansf_p0_host_cancel_events(
+                attempt_id,chat_id,phase,original_json,original_sha256)
+                VALUES (?1,?2,'RESULT',?3,?4)",
+            params![&forged.attempt_id,&chat,&raw,&hash]).unwrap();
+        assert_eq!(recent(&conn,&chat,8).unwrap()[0].status,
+            "ORIGINAL_CANCEL_INTENT_UNAVAILABLE");
+        assert!(requested_watermark(&conn,&chat).is_err(),
+            "forged RESULT cannot be a revocation watermark baseline");
+    }
+
 }
