@@ -1330,6 +1330,7 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
         // unbounded set of every historical task event.
         let mut attempted=HashMap::<String,i64>::new();
         let mut auto_scan_cursor=0i64;
+        let mut last_warm_check=std::time::Instant::now();
         loop {
             std::thread::sleep(Duration::from_millis(500));
             // The native task supervisor must not depend on a visible
@@ -1362,6 +1363,17 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
                     }).is_err(){break;}
                     pushed_cursor=seq;
                 }
+            }
+            // PERF-01 P1: host-only warm residency maintenance, no model wake.
+            // Do not evict while queued work exists; supervisor also rejects
+            // a concurrent reserved generation under its original lock.
+            if !state.generation_queue.has_jobs()
+                && last_warm_check.elapsed()>=Duration::from_secs(10) {
+                last_warm_check=std::time::Instant::now();
+                let _=state.supervisor.poll_warm_residency(
+                    &next_id("warm-residency-"),
+                    lu_core::warm_model_residency::WarmResidencyPolicy::default(),
+                );
             }
             if state.generation_queue.has_jobs(){continue;}
             let Ok(model)=state.supervisor.status() else{continue};
