@@ -444,6 +444,8 @@ impl NativeDebugRuntime {
         let action_evidence=self.inspect_control_evidence(project_id)?;
         let original_action_cleanup_required=
             action_evidence.global_os_cleanup_required;
+        let global_recovery_required =
+            global_recovery_required || original_action_cleanup_required;
         // Security decision uses every outstanding job, not the bounded UI list.
         let quarantined: Vec<DebugInterrupted> = durable
             .iter()
@@ -512,7 +514,7 @@ impl NativeDebugRuntime {
             ready: native_admission_available,
             global_recovery_required,
             active_in_another_project,
-            orphaned_debug_action_required: !!original_action_cleanup_required,
+            orphaned_debug_action_required: original_action_cleanup_required,
             project_debug_supported: cfg!(feature = "native-project-debug")
                 && native_admission_available,
             // Test-only D6C permission never becomes installed action authority.
@@ -530,7 +532,7 @@ impl NativeDebugRuntime {
             } else {
                 "DEV046D_NATIVE_HUMAN_ACTION_APPROVAL_NOT_ACCEPTED"
             },
-            code: if !!original_action_cleanup_required {
+            code: if original_action_cleanup_required {
                 "DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED".into()
             } else if global_recovery_required {
                 "IDE_INT04_GLOBAL_KERNEL_RECONCILIATION_REQUIRED".into()
