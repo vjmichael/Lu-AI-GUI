@@ -84,6 +84,35 @@ impl VerifiedCandidate {
     pub fn engine_sha256(&self)->[u8;32]{self.engine_sha256}
     pub fn model_sha256(&self)->[u8;32]{self.model_sha256}
     pub fn executable_path(&self)->&Path{&self.executable_path}
+    pub fn model_path(&self)->&Path{&self.model_path}
+    pub fn projector_path(&self)->Option<&Path>{self.projector_path.as_deref()}
+    /// Before EVERY candidate launch re-hash the original reviewed paths;
+    /// holding handles on Windows is not a substitute for a complete
+    /// package DLL inventory or race-free OS execution admission.
+    pub fn recheck_originals(&self)->Result<(),CandidateBlocker>{
+        let (_,exe_path,exe)=digest_original_file(
+            &self.executable_path,MAX_EVALUATION_BINARY_BYTES)?;
+        if exe_path!=self.executable_path||exe!=self.engine_sha256{
+            return Err(CandidateBlocker::ChangedArtifact)
+        }
+        let (_,model_path,model)=digest_original_file(
+            &self.model_path,MAX_EVALUATION_GGUF_BYTES)?;
+        if model_path!=self.model_path||model!=self.model_sha256{
+            return Err(CandidateBlocker::ChangedArtifact)
+        }
+        if let Some(projector_path)=self.projector_path.as_ref(){
+            let (_,same,_) = digest_original_file(
+                projector_path,MAX_EVALUATION_MMProj_BYTES)?;
+            if same!=*projector_path{return Err(CandidateBlocker::ChangedArtifact)}
+            // Only the owner may construct the hash-verified projector
+            // manifest; its handle remains pinned for this object lifetime.
+            // Do not claim file identity if an original handle was omitted.
+            if self._pinned_projector.is_none(){
+                return Err(CandidateBlocker::ProjectorMismatch)
+            }
+        }
+        Ok(())
+    }
 }
 fn nonzero_sha(sha:&[u8;32])->bool {
     sha.iter().any(|value|*value!=0)
