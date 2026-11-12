@@ -109,7 +109,7 @@ fn real_gguf_cold_vs_eligible_warm_context() {
         threads:NonZeroUsize::new(4).unwrap(),context_tokens:4096,
         startup_timeout:Duration::from_secs(300),
         request_timeout:Duration::from_secs(180),
-        api_key,load_observer:None,
+        api_key,tuning:None,load_observer:None,
     }).expect("engine digest/manifest is not admitted");
     backend.load(catalog.current().unwrap()).expect("real GGUF load failed");
     let original_pid=backend.process_id().expect("missing real supervised child");
