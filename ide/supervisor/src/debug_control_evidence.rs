@@ -29,6 +29,7 @@ struct VerifiedAction {
  job_id:String,plan:String,action:String,preview:String,
  owner_event:String,sequence:u64,phase:String,last_hash:String,
  requires_os_cleanup:bool,
+ requires_result_reconciliation:bool,
 }
 fn allowed_outcome(e:&ActionEvent)->bool{
  match e.phase.as_str(){
@@ -226,6 +227,7 @@ fn read_verified(path:&Path,action:&str)->Result<VerifiedAction,&'static str>{
   owner_event:first.owner_event_sha256,sequence:first.owner_sequence,
   phase:end.phase.clone(),last_hash:end.entry_hash,
   requires_os_cleanup:matches!(end.phase.as_str(),"Prepared"|"Approved"|"Consumed"),
+  requires_result_reconciliation:end.phase=="ResultUncertain",
  })
 }
 #[derive(Debug,Clone,Serialize)]
@@ -239,6 +241,7 @@ pub struct DebugControlEvidenceRow{
  pub phase:String,
  pub last_receipt_sha256:String,
  pub native_os_cleanup_required:bool,
+ pub independent_result_reconciliation_required:bool,
  pub independent_os_result_claimed:bool,
  pub result_reverified_from_current_kernel:bool,
  pub debugger_execution_authorized:bool,
@@ -256,6 +259,7 @@ pub struct DebugControlEvidenceInventory{
  /// Privacy-safe profile-wide blocker: original in-flight actions in ANY
  /// project deny new protected debugger admission without exposing identity.
  pub global_os_cleanup_required:bool,
+ pub global_unresolved_action_required:bool,
  /// These hashes pin a read-only review to the original on-disk evidence;
  /// neither one is executable permission or current OS proof.
  pub original_debug_journal_sha256:String,
@@ -325,6 +329,7 @@ pub fn inspect_debug_control_evidence(
  let mut all=Vec::new();
  let mut checked=0usize;
  let mut global_action_cleanup=false;
+ let mut global_action_reconciliation=false;
  for item in fs::read_dir(trusted_profile).map_err(|_|"FIN04_ACTION_DIRECTORY_UNREADABLE")? {
   let entry=item.map_err(|_|"FIN04_ACTION_DIRECTORY_UNREADABLE")?;
   let name=entry.file_name();
@@ -345,6 +350,8 @@ pub fn inspect_debug_control_evidence(
    return Err("FIN04_ACTION_ORIGINAL_PLAN_MISMATCH");
   }
   global_action_cleanup |= parsed.requires_os_cleanup;
+  global_action_reconciliation |=
+   parsed.requires_os_cleanup || parsed.requires_result_reconciliation;
   if parsed.requires_os_cleanup && !original.requires_reconciliation &&
       matches!(original.phase,JobPhase::Cancelled|JobPhase::Completed|
         JobPhase::Failed|JobPhase::Denied){
@@ -359,6 +366,7 @@ pub fn inspect_debug_control_evidence(
    owner_sequence:parsed.sequence,phase:parsed.phase.clone(),
    last_receipt_sha256:parsed.last_hash,
    native_os_cleanup_required:parsed.requires_os_cleanup,
+   independent_result_reconciliation_required:parsed.requires_result_reconciliation,
    independent_os_result_claimed:parsed.phase=="ResultVerified",
    result_reverified_from_current_kernel:false,
    debugger_execution_authorized:false,replay_authorized:false,
@@ -398,7 +406,7 @@ pub fn inspect_debug_control_evidence(
  // to the renderer. Foreign project identities and activity remain private.
  let project_action_count=all.len();
  let project_job_count=jobs.iter().filter(|job|job.project_id==project_id).count();
- let global_os_cleanup_required=global_action_cleanup ||
+ let global_os_cleanup_required=global_action_reconciliation ||
   jobs.iter().any(|j|j.requires_reconciliation ||
     !matches!(j.phase,JobPhase::Completed|JobPhase::Cancelled|
       JobPhase::Failed|JobPhase::Denied));
@@ -410,6 +418,7 @@ pub fn inspect_debug_control_evidence(
   original_action_files_checked:project_action_count,
   original_action_files_visible:visible,
   truncated,requires_os_cleanup,global_os_cleanup_required,
+  global_unresolved_action_required:global_action_reconciliation,
   original_debug_journal_sha256:journal_before,
   action_manifest_sha256:actions_before,
   journal_chain_verified:true,
@@ -530,6 +539,46 @@ mod tests{
   let index=bytes.iter().position(|b|*b==b'P').unwrap();
   bytes[index]=b'X';fs::write(&file,&bytes).unwrap();
   assert!(inspect_debug_control_evidence(&root,&supervisor,&project).is_err());
+  fs::remove_dir_all(root).unwrap();
+ }
+ #[test]
+ fn result_uncertain_requires_independent_result_reconciliation_not_os_claim(){
+  let (root,supervisor,project,_)=fixture();
+  let job=prepared(&supervisor,&project);
+  let action=sha(format!("job:{}",job.job_id).as_bytes());
+  let path=root.join(format!("lu-debug-action-{action}.ndjson"));
+  let preview=sha(b"review");
+  let owner=sha(b"native owner");
+  let sequence=[
+   ("Prepared","awaiting_fresh_native_operator".to_owned()),
+   ("Approved","ci_only_not_installed_consent".into()),
+   ("Consumed","one_use_slot_consumed_before_dispatch".into()),
+   ("ResultUncertain","requires_independent_result_reconciliation_no_replay".into()),
+  ];
+  let mut previous="0".repeat(64);
+  let mut output=Vec::new();
+  for (i,(phase,outcome)) in sequence.iter().enumerate(){
+   let mut event=ActionEvent{
+    version:1,ordinal:(i+1) as u64,action_id_sha256:action.clone(),
+    preview_sha256:preview.clone(),operation_sha256:sha(b"step-over"),
+    job_id:job.job_id.clone(),plan_sha256:job.plan_sha256.clone(),
+    owner_event_sha256:owner.clone(),owner_sequence:4,
+    phase:(*phase).to_owned(),outcome_code:outcome.clone(),
+    observed_unix_ms:(i+1) as u64,previous_hash:previous,
+    entry_hash:String::new(),
+   };
+   event.entry_hash=sha(&serde_json::to_vec(&event).unwrap());
+   previous=event.entry_hash.clone();
+   output.extend(serde_json::to_vec(&event).unwrap());output.push(b'\n');
+  }
+  fs::write(&path,output).unwrap();
+  let inventory=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
+  assert!(inventory.global_unresolved_action_required);
+  assert!(inventory.global_os_cleanup_required);
+  assert_eq!(inventory.rows[0].phase,"ResultUncertain");
+  assert!(!inventory.rows[0].native_os_cleanup_required);
+  assert!(inventory.rows[0].independent_result_reconciliation_required);
+  assert!(!inventory.debugger_execution_authorized);
   fs::remove_dir_all(root).unwrap();
  }
  #[test]
