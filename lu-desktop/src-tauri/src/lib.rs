@@ -1205,6 +1205,9 @@ impl DesktopState {
                     startup_timeout: Duration::from_secs(180),
                     request_timeout: Duration::from_secs(180),
                     api_key: key,
+                    // P5 never changes the installed model defaults before
+                    // exact pinned-engine and owner device acceptance.
+                    tuning:None,
                     load_observer: Some(Arc::new(move |phase, pid| {
                         if phase=="engine_spawned"&&pid.is_some(){
                             engine_start_for_load.fetch_add(1,Ordering::Relaxed);
