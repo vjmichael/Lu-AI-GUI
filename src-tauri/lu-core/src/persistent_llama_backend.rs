@@ -162,6 +162,13 @@ impl PersistentLlamaBackend {
         }
         if let Some(profile)=config.tuning.as_ref() {
             profile.validate_numbers(config.threads,config.context_tokens)?;
+            if let Some(placement)=profile.gpu_placement.as_ref(){
+                // A local device reservation is bound to the exact pinned
+                // llama.cpp binary, not a similarly named backend or another
+                // model session. No device CLI flags from the WebView.
+                placement.verify_engine(config.expected_sha256)
+                    .map_err(|_|"P6 placement belongs to a different engine")?;
+            }
         }
         let canonical_executable = verify_engine(&config.executable, &config.expected_sha256)?;
         Ok(Self {
