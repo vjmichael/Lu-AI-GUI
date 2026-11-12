@@ -14,9 +14,9 @@ fn main(){
     if !matches!(mode,"guardian-death"|"guardian-stall"|"worker-stall"){
         std::process::exit(92)
     }
-    let profile=PathBuf::from(&argv[2]);
-    let evidence=PathBuf::from(&argv[3]);
-    let outcome=PathBuf::from(&argv[4]);
+    let profile=PathBuf::from(argv[2].clone());
+    let evidence=PathBuf::from(argv[3].clone());
+    let outcome=PathBuf::from(argv[4].clone());
     let chat=format!("c-{}","7".repeat(32));
     let turn=format!("g-{}","8".repeat(32));
     let call="p0-sec02-negative-gh";
