@@ -235,6 +235,9 @@ impl KoboldCppBackend {
         if job.assign(&child).is_err(){
             let _=child.kill();
             let waited=child.wait().is_ok();
+            // Release the original Job handle, including any descendants,
+            // BEFORE declaring the corresponding durable lease reaped.
+            drop(job);
             self.finish_after_reap(waited);
             return Err("P7L original child refused protected Job custody".into())
         }
