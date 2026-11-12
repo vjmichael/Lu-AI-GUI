@@ -648,15 +648,18 @@ impl NativeLspRuntime {
         // The approval dialog above conveys no permanent process authority.
         crate::global_native_custody::preflight_global_idle(
             &self.global_custody_profile,"lsp")?;
-        let fence=crate::global_native_custody::GlobalAdmissionFence
+        let mut fence=crate::global_native_custody::GlobalAdmissionFence
             ::acquire(&self.global_custody_profile,"lsp")?;
         let own=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
         let other=crate::global_native_custody::sibling_rows(
             &self.global_custody_profile,"lsp")?;
         if crate::global_native_custody::durable_busy(&own) ||
            crate::global_native_custody::durable_busy(&other) {
-            // No grant is minted and the existing interrupted custody stays
-            // quarantined; no automatic unlink of an uncertain marker.
+            // No native job was prepared by this invocation. Verify that
+            // our exact original journal did not change before releasing
+            // only our own newly created marker. Never infer OS cleanup.
+            let after=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
+            fence.release_before_prepare_if_unchanged(&own,&after)?;
             return Err("FIN01_LSP_GLOBAL_JOURNAL_BUSY".into());
         }
         *self.global_admission.lock()
