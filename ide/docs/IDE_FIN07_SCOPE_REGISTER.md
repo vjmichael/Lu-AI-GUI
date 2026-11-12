@@ -67,3 +67,14 @@ binaries were obtained; no Windows AppContainer or Linux cgroup-v2
 installed child/process witness was executed; no Rust compiler,
 Node test, CI or PR acceptance has run in this continuation.
 No main merge, release or feature freeze is authorized.
+
+## FIN-03–07 continuation — source-only, no closure
+
+The following follow-on work is implemented on this existing IDE FIN branch:
+- FIN-03: local stash reflog read-only inventory now rejects records which are not two/three-parent stash-shaped commits or have an identical base/index parent identity. **This does not implement** stash save/apply/drop, local revert, remote push, worktree mutation, or native one-use consent for those operations.
+- FIN-04: the Test Explorer rejects hostile source-hint navigation, forged job identities and duplicate case identifiers. The protected exact Rust case path pre-exists. **Still open:** genuine multi-framework protected per-case execution; shippable native LLDB breakpoint/step/variable authority; installed proof.
+- FIN-05: reviewed vcpkg direct source-declaration edits reject malformed root special fields. Existing offline uv Sync remains separate. **Still open:** vcpkg/Conan protected installed operations, resolver/cache integrity, Windows uv ACL, dependency provenance.
+- FIN-06: recovery-required Workbench observations cannot promote build/debug evidence or navigate the guided workflow. **Still open:** installed human workflow, accessibility, optional PTY, proof of cross-supervisor continuity.
+- FIN-07: read-only exact-source evidence reconciliation independently tracks compiler, Windows/Linux native, Windows/Linux installed, owner, security, and license gates. The view is an advisory projection, not connected to release authority or native receipt verification. The feature freeze is not authorized.
+
+FIN-02 remains explicitly deferred as directed; FIN-01 cross-supervisor production custody is also open. All source changes in this pass are uncompiled and without execution receipts; regression fixtures have been added but not run. Full FIN-03/04/05 functionality and FIN-06/07 production integration are not complete. No merge to main, no release and no feature freeze.
