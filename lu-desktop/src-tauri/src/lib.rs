@@ -4007,6 +4007,20 @@ fn lu_cancel(
     }
 }
 
+/// Rebind a reloaded WebView to the exact host-owned in-flight generation.
+//// Only the original session currently loaded in Lu can expose its bounded
+/// live text. A host restart leaves no in-memory stream to reattach; the
+/// existing ANSF history window reports its last durable interrupted progress.
+#[tauri::command]
+fn lu_stream_reconnect(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Option<generation_queue::LiveStreamSnapshot>,String>{
+    let runtime=state.supervisor.status()
+        .map_err(|_|"Current model session status unavailable")?;
+    let Some(session_id)=runtime.session_id.as_deref() else{return Ok(None)};
+    state.generation_queue.reconnect_snapshot(session_id,&chat_id)
+}
+
 #[derive(Clone,Copy,PartialEq,Eq)]
 enum GenerationOrigin { Human, BackgroundTerminal }
 
@@ -5534,6 +5548,13 @@ async fn generate_internal(
                 let frame = decode_frame(&wire).map_err(BridgeError::Wire)?;
                 if let Some(proto::inference_frame::Body::Event(event)) = frame.body {
                     if let Some(proto::inference_event::Kind::TextChunk(chunk)) = event.kind {
+                        // Bound every live stream and enforce model event index
+                        // continuity BEFORE committing UI text. Reconnecting
+                        // WebViews use the same cursor and cannot splice
+                        // another chat/session's output into this response.
+                        state.generation_queue.record_chunk(
+                            &sid,&gid,chunk.chunk_index,&chunk.text
+                        ).map_err(|_|BridgeError::WrongOperation)?;
                         perf_trace.stream_chunk(chunk.text.len());
                         answer.push_str(&chunk.text);
                         // Forward each chunk to the UI before doing the
@@ -5551,7 +5572,12 @@ async fn generate_internal(
                         )
                         .map_err(|_| BridgeError::WrongOperation)?;
                         perf_trace.chunk_forwarded_to_webview();
-                        if answer.len().saturating_sub(last_checkpoint_bytes) >= 512
+                        // First chunk is durable immediately *after* its
+                        // UI event. Subsequent full-state checkpoints use a
+                        // larger 16 KiB interval to avoid O(n^2) ANSF writes;
+                        // time-based and terminal checkpoints remain.
+                        if last_checkpoint_bytes == 0
+                            || answer.len().saturating_sub(last_checkpoint_bytes) >= 16 * 1024
                             || last_checkpoint.elapsed() >= Duration::from_millis(750)
                         {
                             state
@@ -9104,6 +9130,7 @@ pub fn run() {
             lu_set_browser_visibility,
             lu_unload_model,
             lu_cancel,
+            lu_stream_reconnect,
             lu_generate,
             lu_inspect_text_file,
             lu_approve_read_proposal,
