@@ -70,7 +70,9 @@ function doCase(id,exe,args,opts={}){
   return row;
 }
 function writeReceipt(target){
-  const status=blocked?'BLOCKED_NATIVE_SECURITY':'PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING';
+  const status=blocked?'BLOCKED_NATIVE_SECURITY':
+    target==='source'?'SOURCE_CONTRACTS_PASS_NATIVE_UNPROVEN':
+    'PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING';
   const receipt={
     schema:'lu-sec06-native-evidence-v1',
     target,head:currentHead,sourceLockSha256:lockSha,
@@ -131,16 +133,33 @@ if(mode==='verify'){
         if(p.schema!=='lu-sec06-native-evidence-v1'||p.target!==target||
            p.head!==currentHead||p.sourceLockSha256!==lockSha||
            p.allNativeCasesPassed!==true||
-           p.status!=='PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING'){
+           p.status!==(target==='source'?
+             'SOURCE_CONTRACTS_PASS_NATIVE_UNPROVEN':
+             'PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING')){
           throw new Error('wrong original source identity or unaccepted native result');
         }
         if(target==='linux'&&p.machine.platform!=='linux'||
            target==='windows'&&p.machine.platform!=='win32'){
           throw new Error('wrong original OS proof');
         }
-        if(!Array.isArray(p.cases)||p.cases.length<4||
+        const required={
+          source:['exact-head-inventory','security-contracts',
+                  'linux-negative-python-syntax'],
+          linux:['exact-head-inventory','security-contracts',
+                 'linux-negative-python-syntax','core-native-full',
+                 'desktop-ansf-native','worker-job-native',
+                 'guardian-test-binaries','linux-guardian-death',
+                 'linux-guardian-stall','linux-worker-stall',
+                 'linux-ancestor-migration'],
+          windows:['exact-head-inventory','security-contracts',
+                   'linux-negative-python-syntax','core-native-full',
+                   'desktop-ansf-native','worker-job-native',
+                   'windows-real-two-jobs'],
+        }[target];
+        if(!Array.isArray(p.cases)||
+           required.some(id=>!p.cases.some(x=>x.id===id&&x.status==='PASS'))||
            p.cases.some(x=>x.status!=='PASS'||!sha.test(x.sha256))){
-          throw new Error('missing genuine native cases');
+          throw new Error('missing genuine required SEC06 native cases');
         }
         for(const entry of p.cases){
           if(typeof entry.log!=='string'||!/^[-a-z0-9]+\.log$/.test(entry.log)){
@@ -225,8 +244,15 @@ if(mode==='verify'){
         'test','--locked','--manifest-path',
         'src-tauri/lu-core/Cargo.toml',
         '--lib','sec05_windows_two_jobs_cross_chat_cancel_cannot_terminate_foreign_worker',
-        '--','--exact','--nocapture'
-      ],{timeout:600000});
+        '--','--nocapture'
+      ],{
+        timeout:600000,
+        mustContain:[
+          'sec05_windows_two_jobs_cross_chat_cancel_cannot_terminate_foreign_worker',
+          '1 passed'
+        ],
+        mustReject:['running 0 tests']
+      });
     }
     writeReceipt(mode);
   }
