@@ -1,0 +1,114 @@
+name: Lu PERF-01 P7L-1 exact-head native matrix (opt-in only)
+on:
+  workflow_dispatch:
+    inputs:
+      exact_head:
+        description: 'Exact 40-hex reviewed P7L-1 source SHA. No moving branch refs.'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: lu-perf01-p7l1-native-${{ inputs.exact_head }}
+  cancel-in-progress: false
+
+jobs:
+  source-and-node:
+    name: Exact source and Node P7L-1 regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Validate explicit owner-pinned commit hash
+        env:
+          EXPECTED_SHA: ${{ inputs.exact_head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ ]]
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.exact_head }}
+          persist-credentials: false
+      - name: Prove checkout identity and original source
+        env:
+          EXPECTED_SHA: ${{ inputs.exact_head }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          echo "P7L1_NATIVE_EXACT_HEAD=$EXPECTED_SHA"
+          git status --porcelain
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: P7L exact original source and comparator tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            lu-desktop/tests/perf01-p7l-koboldcpp-native-contract.test.mjs \
+            lu-desktop/tests/perf01-p7l-comparison-null-tokens.test.mjs \
+            lu-desktop/tests/perf01-p7-evaluation-contract.test.mjs \
+            lu-desktop/tests/perf01-p7-backend-comparison.test.mjs
+          node --check scripts/perf01-p7-backend-comparison.mjs
+  native:
+    name: Original lu-core + P7L-1 native fixture (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: source-and-node
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.exact_head }}
+          persist-credentials: false
+      - name: Exact committed source head
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.exact_head }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          echo "P7L1_NATIVE_EXACT_HEAD=$EXPECTED_SHA"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Native original inference preflight, backend, and journal Rust unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib p7_backend_evaluation::tests -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib p7_kobold_custody::tests -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --lib p7_koboldcpp_backend::tests -- --nocapture
+      - name: Native real socket original SSE, structured tool and cancellation tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test p7l_kobold_http_protocol -- --nocapture
+      - name: Test-only original native OS child, local password and durable recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --features p7l-native-fixture \
+            --test p7l_kobold_process_custody -- --nocapture
+      - name: Compile opt-in genuine GGUF benchmark, never run without approved original engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test p7l_real_kobold_comparison --no-run
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
+            --test perf01_p7_candidate_protocol_real --no-run
+      - name: Explicit native acceptance scope
+        shell: bash
+        run: |
+          echo "P7L1_NATIVE_FIXTURE_ONLY: not physical KoboldCpp, GGUF, MMProj or Radeon acceptance"
+          echo "P7L1_ALTERNATIVE_PRODUCTION_ENABLED=false"
