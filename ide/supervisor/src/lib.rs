@@ -714,25 +714,35 @@ impl Supervisor {
             {
                 return Err(SupervisorError::JournalCorrupt);
             }
-            // A previously consumed/approved action remains *audit-only*
-            // forever; if the native Job has independently reached a
-            // reconciled terminal with OS descendants verified gone, it
-            // cannot require a second OS-tree kill or restore old consent.
-            // A genuinely interrupted Job still blocks the next session.
+            // A previously consumed/approved action remains audit-only.
+            // A terminal label alone is NOT evidence that the original
+            // kernel Job was reaped or that the SCM service acknowledged
+            // its release. Reopen the original terminal receipt and accept
+            // only outcome/evidence codes issued by the OS-backed broker.
             let native = jobs
                 .iter()
                 .find(|job| job.job_id == action.job_id && job.plan_sha256 == action.plan_sha256)
                 .ok_or(SupervisorError::JournalCorrupt)?;
-            if action.requires_native_os_cleanup
-                && (native.requires_reconciliation
-                    || !matches!(
-                        native.phase,
-                        JobPhase::Completed
-                            | JobPhase::Cancelled
-                            | JobPhase::Denied
-                            | JobPhase::Failed
-                    ))
-            {
+            if !action.requires_native_os_cleanup {continue;}
+            let terminal=self.receipt_history(&action.job_id)?;
+            let trusted=terminal.last().is_some_and(|r|
+                r.body.plan_sha256==action.plan_sha256 &&
+                match r.body.phase {
+                    JobPhase::Completed | JobPhase::Failed =>
+                        matches!(r.body.outcome_code.as_str(),
+                            "native_worker_completed"|"native_worker_failed") &&
+                        (r.body.evidence_code=="reaped_process_tree_bounded_outputs" ||
+                         r.body.evidence_code.starts_with("tree_reaped_published_sha256_")),
+                    JobPhase::Cancelled =>
+                        matches!(r.body.outcome_code.as_str(),
+                            "os_tree_termination_verified"|"os_orphan_cleanup_verified"),
+                    JobPhase::Denied =>
+                        r.body.outcome_code=="native_process_admission_denied" &&
+                        r.body.evidence_code=="no_child_executed",
+                    _ => false,
+                }
+            );
+            if native.requires_reconciliation || !trusted {
                 cleanup.push(action.job_id);
             }
         }
