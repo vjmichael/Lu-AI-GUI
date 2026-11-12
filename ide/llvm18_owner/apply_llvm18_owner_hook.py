@@ -13,6 +13,11 @@ import sys
 LLVM18_PIN = "3b5b5c1ec4a3095ab096dd780e84d7ab81f3d7ff"
 SOURCE = "lldb/source/Plugins/Process/Windows/Common/DebuggerThread.cpp"
 HEADER = "lldb/source/Plugins/Process/Windows/Common/LuIdeOwnerEvent.h"
+# LLVM 18.1.8 upstream's DAP ProgressEvent.h uses std::chrono::system_clock
+# without directly including <chrono>. Native Windows 2022/MSVC C2039 and
+# C3861 (original job 130020178608) proved this compile failure. Make the
+# smallest exact-pin, source-reviewed include fix; never alter unpinned LLVM.
+DAP_PROGRESS_HEADER = "lldb/tools/lldb-dap/ProgressEvent.h"
 
 
 def replace_one(source: str, original: str, replacement: str) -> str:
@@ -74,6 +79,20 @@ def apply(root: Path) -> None:
         raise RuntimeError("DENIED: upstream target unexpectedly exists")
     dest.write_bytes(overlay.read_bytes())
     cpp.write_text(content, encoding="utf-8")
+    progress = root / DAP_PROGRESS_HEADER
+    if not progress.is_file():
+        raise RuntimeError("DENIED: pinned upstream LLVM DAP ProgressEvent.h missing")
+    original_progress = progress.read_text(encoding="utf-8")
+    if "#include <chrono>" in original_progress or (
+        original_progress.count("std::chrono::system_clock::now()") != 1
+    ):
+        raise RuntimeError("DENIED: upstream LLVM 18 DAP chrono defect anchor changed")
+    fixed_progress = replace_one(
+        original_progress, "#include <atomic>\\n",
+        "#include <atomic>\\n#include <chrono>\\n",
+    )
+    progress.write_text(fixed_progress, encoding="utf-8")
+    print("LU_LLDB18_PINNED_DAP_CHRONO_HEADER_FIX=APPLIED_NOT_NATIVE_ACCEPTED")
     print("LU_LLDB18_FIRST_PARTY_EVENT_OWNER_OVERLAY=APPLIED_NOT_NATIVE_ACCEPTED")
 
 
