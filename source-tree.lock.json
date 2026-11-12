@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "96b2b19bfb2c8b52480c5cf1407f0e09f9d6beea",
-  "trackedFileCount": 944,
+  "sourceCommitBeforeLock": "de64be4c562ae07dbbbaf62277137538391637a2",
+  "trackedFileCount": 945,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -233,7 +233,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "4f997c51223a1d177b530472c3797aeb8e7e5ae5"
+      "blob": "74980746896d6c7475a867370ade61959d271666"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -857,7 +857,7 @@
     },
     {
       "path": "docs/LU_P0_WIN_CHAT_204_20261111.md",
-      "blob": "b853799202c2bb2c5c9c6bb63965a5a166abaf2f"
+      "blob": "63b380712a923bc1fa36afb2db56b76d3e88d27d"
     },
     {
       "path": "docs/LU_P10_IMAGE_BASICS.md",
@@ -3628,6 +3628,10 @@
       "blob": "461f86f5eac1bb9be6f872bd048c0772d2c6a5b3"
     },
     {
+      "path": "src-tauri/lu-core/tests/p0_win_chat_real_mmproj.rs",
+      "blob": "20b6bf2ffc8f0789d60a60e585670347279743b6"
+    },
+    {
       "path": "src-tauri/lu-core/tests/p2_inference_lifecycle.rs",
       "blob": "56882fc3aa59f418b86b317e12bb644c2ddbe002"
     },
@@ -3669,7 +3673,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/supervised_native_turn.rs",
-      "blob": "017f1a2504aa576611921f43728a0d794e05157c"
+      "blob": "82b00094d1a1267afa922e6720760769a0373628"
     },
     {
       "path": "src-tauri/lu-core/tests/supervisor_dynamic_catalog.rs",
