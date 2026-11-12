@@ -224,6 +224,7 @@ pub struct EvaluatedInferenceBackend<B:InferenceBackend>{
     candidate:VerifiedCandidate,
     proof:NativeConformance,
     loaded:bool,
+    projector_loaded:bool,
 }
 impl<B:InferenceBackend> EvaluatedInferenceBackend<B>{
     pub fn new(
@@ -232,7 +233,7 @@ impl<B:InferenceBackend> EvaluatedInferenceBackend<B>{
         if !proof.text_evaluation_ready(){
             return Err(CandidateBlocker::IncompleteProtocolEvidence)
         }
-        Ok(Self{native,candidate,proof,loaded:false})
+        Ok(Self{native,candidate,proof,loaded:false,projector_loaded:false})
     }
     pub fn candidate_id(&self)->&'static str{self.candidate.kind.id()}
     /// Explicit text-only comparative evaluation may use a candidate even
@@ -286,6 +287,7 @@ impl<B:InferenceBackend> InferenceBackend for EvaluatedInferenceBackend<B>{
         }
         self.native.load(model)?;
         self.loaded=true;
+        self.projector_loaded=false;
         Ok(())
     }
     fn load_with_projector(
@@ -305,12 +307,14 @@ impl<B:InferenceBackend> InferenceBackend for EvaluatedInferenceBackend<B>{
         }
         self.native.load_with_projector(model,projector)?;
         self.loaded=true;
+        self.projector_loaded=projector.is_some();
         Ok(())
     }
     fn unload(&mut self){
         if self.loaded{
             self.native.unload();
             self.loaded=false;
+            self.projector_loaded=false;
         }
     }
     fn invalidate_prefix_cache(&mut self){self.native.invalidate_prefix_cache()}
@@ -332,8 +336,9 @@ impl<B:InferenceBackend> InferenceBackend for EvaluatedInferenceBackend<B>{
         cancel:&Cancellation,
         emit:&mut dyn FnMut(TokenChunk)->Result<(),EngineError>,
     )->Result<(),String>{
-        if !self.proof.vision_evaluation_ready() {
-            return Err("P7 vision capability not verified; no text fallback".into())
+        if !self.proof.vision_evaluation_ready()||
+            !self.projector_loaded||images.is_empty(){
+            return Err("P7 vision/projector proof absent; no text fallback".into())
         }
         self.stream_checked(request,cancel,emit,Some(images))
     }
@@ -346,6 +351,9 @@ impl<B:InferenceBackend> InferenceBackend for EvaluatedInferenceBackend<B>{
             return Err("P7 tool-call parity absent; model text is not a tool".into())
         }
         if !self.loaded{return Err("P7 candidate not loaded".into())}
+        if admitted_read_schemas.is_empty()||admitted_read_schemas.len()>2{
+            return Err("P7 original read-only tool schema absent".into())
+        }
         if cancel.is_cancelled(){return Err("P7 candidate cancelled".into())}
         self.native.generate_browser_function_calls(
             request,admitted_read_schemas,cancel
