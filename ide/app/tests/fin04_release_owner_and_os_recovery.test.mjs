@@ -33,13 +33,15 @@ test('built owner sideband is inherited only in the restricted project DAP Job',
  assert.match(owner,/start_owner_pipe_reader/);
  assert.match(owner,/fn wait_exact_native_continue\(/);
 });
-test('release owner source cannot be promoted from arbitrary DAP or same-size mutable resource',()=>{
+test('release source-line proof requires protected PDB and never upgrades debugger control',()=>{
  assert.match(native,/pub fn observe_release_owned_stop\(/);
  assert.match(native,/verify_windows_native_debug_port/);
  assert.match(native,/sample_windows_stopped_thread_rip/);
  assert.match(native,/persist_native_owner_receipt/);
  assert.match(native,/verify_input\(&self\.source_input\)/);
- assert.match(native,/source_line_independently_verified:false/);
+ assert.match(native,/independently_verify_pdb_line_with_reader/);
+ assert.match(native,/source_line_independently_verified:true/);
+ assert.match(native,/debugger_control_authorized:false,recovery_authorized:false/);
  assert.match(native,/debugger_control_authorized:false,recovery_authorized:false/);
  assert.match(build,/fin04_require_reviewed_owner_stage/);
  assert.match(build,/FIN04R_PATCHED_EVENT_OWNER_ANCHOR_MISSING/);
