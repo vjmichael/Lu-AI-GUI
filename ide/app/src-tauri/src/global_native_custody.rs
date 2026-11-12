@@ -69,6 +69,9 @@ impl GlobalAdmissionFence {
   let owner_bytes=format!("FIN01-V1:{}:{}\n",domain,std::process::id()).into_bytes();
   file.write_all(&owner_bytes).and_then(|_|file.sync_all())
    .map_err(|_|"FIN01_GLOBAL_MARKER_SYNC_FAILED".to_owned())?;
+  #[cfg(unix)]
+  File::open(profile).and_then(|dir|dir.sync_all())
+   .map_err(|_|"FIN01_GLOBAL_MARKER_DIRECTORY_SYNC_FAILED".to_owned())?;
   Ok(Self{marker,owner_bytes,released:false})
  }
  /// Called only after every known original supervisor job is terminal and
@@ -90,6 +93,12 @@ impl GlobalAdmissionFence {
    .map_err(|_|"FIN01_GLOBAL_MARKER_UNREADABLE")?;
   if bytes!=self.owner_bytes{return Err("FIN01_GLOBAL_MARKER_CHANGED".into());}
   fs::remove_file(&self.marker).map_err(|_|"FIN01_GLOBAL_MARKER_CLEAR_FAILED")?;
+  #[cfg(unix)]
+  {
+   let parent=self.marker.parent().ok_or("FIN01_GLOBAL_MARKER_PARENT_MISSING")?;
+   File::open(parent).and_then(|dir|dir.sync_all())
+    .map_err(|_|"FIN01_GLOBAL_MARKER_REMOVAL_SYNC_FAILED")?;
+  }
   self.released=true;
   Ok(())
  }
