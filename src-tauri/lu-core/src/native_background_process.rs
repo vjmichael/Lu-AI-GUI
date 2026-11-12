@@ -711,10 +711,14 @@ impl BackgroundProcessSupervisor {
                 // Persist this original task's uncertainty BEFORE returning
                 // even though the worker is still in PENDING transition.
                 let _=child.kill();let _=child.wait();
-                let _=self.store.record_process_uncertain(
+                let recorded=self.store.record_process_uncertain(
                     &plan.task_id,"OS_CUSTODY_UNVERIFIED");
                 let _=guard.stop_and_verify();
-                let _=self.store.fail_pending(&plan.task_id);
+                // Do not mask a failed durable uncertainty write as an
+                // ordinary failed admission after worker execution began.
+                recorded.map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                self.store.fail_pending(&plan.task_id)
+                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
                 return Err(BackgroundProcessError::SpawnFailed)
             }
         }
