@@ -2062,6 +2062,40 @@ mod tests {
     }
 
     #[test]
+    fn interrupted_release_clears_quarantine_only_on_verified_os_tree_cleanup() {
+        // The mock is NOT a native kernel witness; this tests the exact
+        // original-journal phase transition and prohibits replayed grants.
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        drop(supervisor);
+        let restarted = Supervisor::open(filename.clone()).unwrap();
+        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        let mut verified = TestTerminator { verified: true, requests: 0 };
+        let result = restarted.reconcile_interrupted_with(&job.job_id, &mut verified).unwrap();
+        assert_eq!(verified.requests, 1);
+        assert_eq!(result.phase, JobPhase::Cancelled);
+        assert!(!result.requires_reconciliation);
+        let history = restarted.receipt_history(&job.job_id).unwrap();
+        assert_eq!(history[history.len() - 2].body.phase, JobPhase::RecoveryRequired);
+        assert_eq!(history.last().unwrap().body.phase, JobPhase::Cancelled);
+        assert_eq!(
+            restarted.record_human_approval(
+                &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+            ).unwrap_err(),
+            SupervisorError::InvalidTransition
+        );
+        assert!(restarted.prepare(plan()).is_ok());
+        drop(restarted);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
     fn interrupted_release_requires_independent_os_cleanup_before_reconciliation() {
         let filename = path();
         let supervisor = Supervisor::open(filename.clone()).unwrap();
