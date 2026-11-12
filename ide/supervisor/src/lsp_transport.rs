@@ -106,6 +106,19 @@ pub(crate) trait RestrictedLspProcess: Send {
         // overrides this; mocks and unrelated workers fail closed.
         Err(SupervisorError::NoContainment)
     }
+    /// FIN-04R-1: fixed pinned LLVM symbolizer, launched ONLY from the
+    /// original Windows AppContainer actor into its already protected
+    /// SCM-owned Job. The native caller supplies only sealed/staged paths,
+    /// verified SHA-256 digests and an OS-owned stop address, not a command.
+    /// Other platform workers and mock processes fail closed.
+    #[cfg(all(windows, feature = "fin04-release-owner-evidence"))]
+    fn read_protected_pe_pdb(
+        &mut self, _binary:&Path, _pdb:&Path,
+        _binary_sha256:&str, _pdb_sha256:&str,
+        _bundle_sha256:&str, _slide:u64, _rip:u64,
+    ) -> Result<serde_json::Value, SupervisorError> {
+        Err(SupervisorError::NoContainment)
+    }
     fn write_bounded(&mut self, bytes: &[u8]) -> io::Result<()>;
     fn read_bounded(&mut self, limit: usize, timeout: Duration) -> io::Result<Vec<u8>>;
     /// Optional fixed, debug-only native fault witness BEFORE OS tree kill.
