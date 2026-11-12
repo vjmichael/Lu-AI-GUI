@@ -1984,6 +1984,7 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "lu-ide-execution-supervisor",
  "lu-ide-workspace",
+ "rand",
  "serde",
  "serde_json",
  "sha2",
