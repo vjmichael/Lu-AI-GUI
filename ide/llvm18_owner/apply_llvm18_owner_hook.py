@@ -88,8 +88,8 @@ def apply(root: Path) -> None:
     ):
         raise RuntimeError("DENIED: upstream LLVM 18 DAP chrono defect anchor changed")
     fixed_progress = replace_one(
-        original_progress, "#include <atomic>\\n",
-        "#include <atomic>\\n#include <chrono>\\n",
+        original_progress, "#include <atomic>\n",
+        "#include <atomic>\n#include <chrono>\n",
     )
     progress.write_text(fixed_progress, encoding="utf-8")
     print("LU_LLDB18_PINNED_DAP_CHRONO_HEADER_FIX=APPLIED_NOT_NATIVE_ACCEPTED")
