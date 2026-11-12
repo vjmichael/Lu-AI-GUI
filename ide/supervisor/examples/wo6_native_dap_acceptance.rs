@@ -346,9 +346,23 @@ mod protected {
             log_limit_bytes: 65536,
             effect_class: "test_build_isolated".into(),
         };
+        // Read-only native diagnostics: never clear quarantine or synthesize
+        // custody/approval. Bound the output to journal summary metadata.
+        let diagnose = |operation: &str, failure: &str| -> String {
+            let jobs = supervisor.inspect();
+            let state = match jobs {
+                Ok(jobs) => jobs.iter().take(8).map(|j| format!(
+                    "{}:{:?}:quarantine={}", j.job_id, j.phase, j.requires_reconciliation
+                )).collect::<Vec<_>>().join(","),
+                Err(e) => format!("inspect_failed={}", e.code()),
+            };
+            let detail = format!("FIN04R1_NATIVE_OPERATION_FAILED operation={operation} error={failure} jobs=[{state}]");
+            eprintln!("{detail}");
+            detail
+        };
         let build_job = supervisor
             .prepare(build_plan.clone())
-            .map_err(|e| e.code())?;
+            .map_err(|e| diagnose("prepare_protected_cargo", e.code()))?;
         let live = Arc::new(LiveOutput::default());
         let built = execute_windows_worker_after_staging_approval_with_output(
             &supervisor,
@@ -374,7 +388,7 @@ mod protected {
             },
             Some(Arc::clone(&live)),
         )
-        .map_err(|e| e.code())?;
+        .map_err(|e| diagnose("execute_protected_cargo_and_terminal_custody", e.code()))?;
         if built.summary.phase != JobPhase::Completed
             || built.exit_code != Some(0)
             || built.summary.requires_reconciliation
@@ -443,7 +457,7 @@ mod protected {
         };
         let debug_job = supervisor
             .prepare(debug_plan.clone())
-            .map_err(|e| e.code())?;
+            .map_err(|e| diagnose("prepare_project_debug_after_cargo_terminal", e.code()))?;
         if supervisor
             .record_human_approval(
                 &build_job.job_id,
@@ -473,8 +487,8 @@ mod protected {
             &broker,
             &target,
         )
-        .map_err(|e| e.code())?;
-        dap.initialize().map_err(|e| e.code())?;
+        .map_err(|e| diagnose("launch_protected_project_debugger", e.code()))?;
+        dap.initialize().map_err(|e| diagnose("initialize_protected_project_debugger", e.code()))?;
         poll_until_ready(&mut dap, false)?;
         target.verify().map_err(|e| e.code())?;
         dap.launch_project_target().map_err(|e| e.code())?;
