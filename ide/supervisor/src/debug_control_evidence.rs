@@ -46,6 +46,32 @@ fn allowed_outcome(e:&ActionEvent)->bool{
   _=>false,
  }
 }
+/// Exact original supervisor journal-byte identity, separate from its
+/// parsed job summaries. A same-phase append still invalidates an audit
+/// read if it races the action inventory.
+fn original_debug_journal_digest(profile:&Path)->Result<String,&'static str>{
+ let file=profile.join("debug-fixture-receipts.jsonl");
+ let meta=fs::symlink_metadata(&file)
+  .map_err(|_|"FIN04_DEBUG_JOURNAL_IDENTITY_MISSING")?;
+ if !meta.is_file()||meta.file_type().is_symlink()||
+    meta.len()>64*1024*1024{
+  return Err("FIN04_DEBUG_JOURNAL_IDENTITY_UNTRUSTED");
+ }
+ #[cfg(windows)]{
+  use std::os::windows::fs::MetadataExt;
+  if meta.file_attributes()&0x400!=0{
+   return Err("FIN04_DEBUG_JOURNAL_IDENTITY_REPARSE_DENIED");
+  }
+ }
+ let mut content=Vec::new();
+ File::open(&file).map_err(|_|"FIN04_DEBUG_JOURNAL_IDENTITY_UNREADABLE")?
+  .take(64*1024*1024+1).read_to_end(&mut content)
+  .map_err(|_|"FIN04_DEBUG_JOURNAL_IDENTITY_UNREADABLE")?;
+ if content.len()>64*1024*1024 || content.len() as u64!=meta.len(){
+  return Err("FIN04_DEBUG_JOURNAL_IDENTITY_CHANGED");
+ }
+ Ok(sha(&content))
+}
 fn read_verified(path:&Path,action:&str)->Result<VerifiedAction,&'static str>{
  let meta=fs::symlink_metadata(path).map_err(|_|"FIN04_ACTION_JOURNAL_UNAVAILABLE")?;
  if !meta.is_file() || meta.file_type().is_symlink() ||
@@ -181,6 +207,7 @@ pub fn inspect_debug_control_evidence(
   use std::os::windows::fs::MetadataExt;
   if root.file_attributes()&0x400!=0{return Err("FIN04_EVIDENCE_PROFILE_REPARSE_DENIED");}
  }
+ let journal_before=original_debug_journal_digest(trusted_profile)?;
  let jobs=supervisor.inspect().map_err(|_|"FIN04_ORIGINAL_DEBUG_JOURNAL_UNVERIFIED")?;
  if jobs.len()>8192{return Err("FIN04_ORIGINAL_DEBUG_JOB_LIMIT");}
  let mut identities=BTreeSet::new();
@@ -230,6 +257,17 @@ pub fn inspect_debug_control_evidence(
    result_reverified_from_current_kernel:false,
    debugger_execution_authorized:false,replay_authorized:false,
   });
+ }
+ let journal_after=original_debug_journal_digest(trusted_profile)?;
+ let fresh=supervisor.inspect().map_err(|_|"FIN04_ORIGINAL_DEBUG_JOURNAL_UNVERIFIED")?;
+ if journal_before!=journal_after || jobs.len()!=fresh.len() ||
+    !jobs.iter().zip(fresh.iter()).all(|(before,after)|
+      before.job_id==after.job_id &&
+      before.project_id==after.project_id &&
+      before.plan_sha256==after.plan_sha256 &&
+      before.phase==after.phase &&
+      before.requires_reconciliation==after.requires_reconciliation){
+  return Err("FIN04_DEBUG_JOURNAL_CHANGED_DURING_ACTION_INSPECTION");
  }
  all.sort_by(|a,b|a.action_id_sha256.cmp(&b.action_id_sha256));
  let requires_os_cleanup=all.iter().any(|r|r.native_os_cleanup_required) ||
