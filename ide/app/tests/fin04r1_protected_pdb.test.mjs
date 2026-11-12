@@ -48,6 +48,11 @@ test('mapped source is exact original kernel stop and original source/PDB/Job se
  assert.match(source,/equal_mapped_line\(/);
  assert.match(source,/compiled_source_identity\(/);
  assert.match(desktop,/release_owner_source_line_verified/);
+ const ownerState=desktop.slice(desktop.indexOf('release_owner_kernel_verified: {'),
+   desktop.indexOf('release_owner_source_line_verified: {'));
+ assert.match(ownerState,/v\.os_event_owner_verified/);
+ assert.doesNotMatch(ownerState,/!v\.source_line_independently_verified/,
+   'independent PDB success must not suppress first-party live owner truth');
  assert.match(desktop,/release_owner_verified_pdb_sha256/);
  assert.match(authority,/releaseOwnerVerifiedPdbSha256!==witness\.symbolsSha/);
 });
