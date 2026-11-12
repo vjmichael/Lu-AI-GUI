@@ -17,6 +17,9 @@ const desktop=read('ide/app/src-tauri/src/debug_backend.rs');
 const tauri=read('ide/app/src-tauri/src/lib.rs');
 const browser=read('ide/app/web/main.jsx');
 const authority=read('ide/app/web/project_debug_authority.js');
+const nativeScenario=read('ide/supervisor/examples/wo6_native_dap_acceptance.rs');
+const physical=read('ide/app/fixtures/Test-FIN04R1-PhysicalProtectedPdbReview.ps1');
+const nativeScript=read('ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1');
 
 test('old host Command symbolizer is strictly dev-only',()=>{
  assert.match(source,/#\[cfg\(all\(debug_assertions, feature = "dev045d4c-ci-oracle"\)\)\]\s*fn run_measured_reader/);
@@ -83,4 +86,25 @@ test('unknown interrupted results remain non-replay and distinct from physical h
  assert.match(desktop,/post_command_result_independently_verified:false/);
  assert.match(desktop,/global_marker_cleared:false/);
  assert.match(desktop,/installed_app_accepted:false/);
+});
+
+test('release PDB cancellation is original OS Job reaping and durable restart, not DAP control',()=>{
+ assert.match(nativeScenario,/--project-debug-protected-pdb-cancel/);
+ assert.match(nativeScenario,/true,true,true,false,false,false,None,true/);
+ assert.match(nativeScenario,/DEV045C_WINDOWS_PROJECT_LLDB_CANCEL_JOB_TREE_AND_RECEIPTS=PASS/);
+ assert.match(nativeScenario,/native_debug_action_cleanup_jobs_after_restart/);
+ assert.match(nativeScript,/real_AppContainer_Job_protected_PDB_cancel_reap_restart_failed/);
+ assert.match(nativeScript,/--project-debug-protected-pdb-cancel/);
+ assert.match(nativeScript,/abnormalWorkerDeathAfterProtectedPdbAccepted=\$false/);
+});
+test('physical Windows acceptance cannot infer installed approval from source or mutate journal at restart',()=>{
+ assert.match(physical,/requires_physical_interactive_windows_no_CI/);
+ assert.match(physical,/installed_pinned_LLVM_chrono_header_missing/);
+ assert.match(physical,/patchedProgressEventHeaderSha256/);
+ assert.match(physical,/originalActionHash=\(Get-FileHash/);
+ assert.match(physical,/restart_mutated_original_one_use_action_receipts/);
+ assert.match(physical,/nativeKernelAndPdbAcceptanceIndependentlyVerified=\$false/);
+ assert.match(physical,/productionDebuggerControlsAccepted=\$false/);
+ assert.equal(physical.split('$restarted=$false').length-1,1);
+ assert.equal(physical.split('EVIDENCE: $evidence').length-1,1);
 });
