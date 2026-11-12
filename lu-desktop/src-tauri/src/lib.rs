@@ -5459,9 +5459,21 @@ async fn generate_internal(
             }
             // Host clock is observed anew on every ordinary human turn.
             // It is read-only context, NEVER permission to invoke a shell or other tools.
+            let mut cache_only_clock_suffix=None;
             if origin==GenerationOrigin::Human {
-                model_prompt.push_str(&host_clock::fresh_local_clock_context());
+                let clock=host_clock::fresh_local_clock_context();
+                model_prompt.push_str(&clock);
+                cache_only_clock_suffix=Some(clock);
             }
+            // Only a plain human text request with no added retrieval,
+            // procedural memory, proposed tool contract, or changed grant
+            // may enter the same-chat prefix lane. The clock is a trailing
+            // context suffix and never enters the immutable cached prefix.
+            // All other routes explicitly fall back to a cold cache.
+            let plain_cache_scope =
+                origin==GenerationOrigin::Human && !plan_only && images.is_empty()
+                && cache_only_clock_suffix.as_ref().is_some_and(|clock|
+                    model_prompt.strip_prefix(&prompt)==Some(clock.as_str()));
             let runtime = supervisor.status().map_err(|e| format!("status: {e:?}"))?;
             if runtime.session_id.as_deref() != Some(sid.as_str()) {
                 return Err("model session changed while queued".into());
@@ -5490,6 +5502,13 @@ async fn generate_internal(
                         &history,
                     )
                     .map_err(|e| format!("reserve images: {e:?}"))?;
+            }
+            // The chat ID comes from Lu's existing saved conversation
+            // custody, not the LLM or renderer. Failure to bind merely
+            // disables an optimization; it must never block a valid send.
+            if plain_cache_scope && !ticket.cancelled() {
+                let _=supervisor.bind_reserved_cache_scope(
+                    &sid,&gid,&chat_id);
             }
             // Host cancellation can arrive between gate activation and the
             // engine reservation. Propagate the latched bit after reserving.
