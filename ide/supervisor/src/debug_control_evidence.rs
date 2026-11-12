@@ -406,7 +406,7 @@ pub fn inspect_debug_control_evidence(
  // to the renderer. Foreign project identities and activity remain private.
  let project_action_count=all.len();
  let project_job_count=jobs.iter().filter(|job|job.project_id==project_id).count();
- let global_os_cleanup_required=global_action_reconciliation ||
+ let global_os_cleanup_required=global_action_cleanup ||
   jobs.iter().any(|j|j.requires_reconciliation ||
     !matches!(j.phase,JobPhase::Completed|JobPhase::Cancelled|
       JobPhase::Failed|JobPhase::Denied));
