@@ -93,32 +93,32 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
-            --lib p7_backend_evaluation::tests -- --nocapture
+            --lib p7_backend_evaluation::tests -- --nocapture 2>&1 | tee "p7l1-evidence/p7-backend-unit.log"
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
-            --lib p7_kobold_custody::tests -- --nocapture
+            --lib p7_kobold_custody::tests -- --nocapture 2>&1 | tee "p7l1-evidence/p7l-custody-unit.log"
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
-            --lib p7_koboldcpp_backend::tests -- --nocapture
+            --lib p7_koboldcpp_backend::tests -- --nocapture 2>&1 | tee "p7l1-evidence/p7l-backend-unit.log"
       - name: Native real socket original SSE, structured tool and cancellation tests
         shell: bash
         run: |
           set -euo pipefail
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
-            --test p7l_kobold_http_protocol -- --nocapture
+            --test p7l_kobold_http_protocol -- --nocapture 2>&1 | tee "p7l1-evidence/p7l-loopback-http.log"
       - name: Test-only original native OS child, local password and durable recovery
         shell: bash
         run: |
           set -euo pipefail
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
             --features p7l-native-fixture \
-            --test p7l_kobold_process_custody -- --nocapture
+            --test p7l_kobold_process_custody -- --nocapture 2>&1 | tee "p7l1-evidence/p7l-native-child.log"
       - name: Compile opt-in genuine GGUF benchmark, never run without approved original engines
         shell: bash
         run: |
           set -euo pipefail
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
-            --test p7l_real_kobold_comparison --no-run
+            --test p7l_real_kobold_comparison --no-run 2>&1 | tee "p7l1-evidence/p7l-real-gguf-compile-only.log"
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml \
-            --test perf01_p7_candidate_protocol_real --no-run
+            --test perf01_p7_candidate_protocol_real --no-run 2>&1 | tee "p7l1-evidence/p7-original-protocol-compile-only.log"
       - name: Explicit native acceptance scope
         shell: bash
         run: |
