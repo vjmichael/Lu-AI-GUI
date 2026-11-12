@@ -1284,6 +1284,10 @@ pub fn reconcile_linux_interrupted(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fin01d_kernel_attestation_never_accepts_the_live_recovery_owner(){
+        assert!(verify_global_worker_quiescence(std::process::id(),&[]).is_err());
+    }
 
     #[test]
     fn actual_pipe_drain_emits_bounded_distinct_streams() {
