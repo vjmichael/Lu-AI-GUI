@@ -7374,7 +7374,14 @@ function App() {
                     <article key={row.profileId} className="continuityEvent">
                       <strong>{row.label}</strong>
                       <p>{row.disposition.replaceAll('_',' ')}
-                        {' · '}Version/provenance not independently certified.</p>
+                        {' · '}Installed byte pin verified:
+                        {' '}{row.verified?'yes':'no'}.
+                        Version, publisher and license closure:
+                        {' '}not independently verified.</p>
+                      <p>Installed tree SHA-256:
+                        {' '}<code>{row.observedSha256 || 'unavailable'}</code></p>
+                      <p>Reviewed release pin:
+                        {' '}<code>{row.releasePinSha256 || 'missing'}</code></p>
                       <small>Native evidence: <code>{row.code}</code></small>
                     </article>)}
                 </div>

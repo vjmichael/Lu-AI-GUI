@@ -323,6 +323,50 @@ fn installation(app: &AppHandle) -> Result<Installation, String> {
     }
 }
 
+
+/// INT05-E: provenance of the *actually rehashed installed bytes*. Neither
+/// a compile-time digest alone nor project metadata is installation proof.
+/// Publisher, package version and license closure are intentionally unknown.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeProvenance {
+    profile_id: &'static str,
+    observed_sha256: Option<String>,
+    release_pin_sha256: Option<String>,
+    provenance_state: &'static str,
+    version_evidence: &'static str,
+    publisher_evidence: &'static str,
+    license_evidence: &'static str,
+    execution_authorized: bool,
+    installed_app_accepted: bool,
+}
+fn runtime_provenance(
+    profile_id: &'static str,
+    observed: Option<String>,
+    declared_pin: Option<&str>,
+) -> RuntimeProvenance {
+    let pin = approved_pin(declared_pin).ok().map(str::to_owned);
+    let matched = observed.as_ref().zip(pin.as_ref())
+        .is_some_and(|(bytes, expected)| bytes == expected &&
+            bytes.len() == 64 && bytes.bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+    RuntimeProvenance {
+        profile_id,
+        observed_sha256: if matched { observed } else { None },
+        release_pin_sha256: pin,
+        provenance_state: if matched {
+            "installed_bytes_match_compile_time_release_pin"
+        } else {
+            "unavailable_or_not_independently_verified"
+        },
+        version_evidence: "not_independently_verified",
+        publisher_evidence: "not_independently_verified",
+        license_evidence: "not_independently_verified",
+        execution_authorized: false,
+        installed_app_accepted: false,
+    }
+}
+
 /// Native runtime readiness only; this is NEVER execution permission.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -330,6 +374,7 @@ pub struct MultilangProfileReadiness {
     profile_id: &'static str,
     ready: bool,
     code: &'static str,
+    provenance: RuntimeProvenance,
 }
 
 #[cfg(feature = "native-multilang")]
@@ -438,6 +483,7 @@ pub struct BuildStatus {
     /// Separate native Cargo proof. A pinned Python/Node/CMake bundle
     /// must never make the uninstalled Cargo recipe appear runnable.
     cargo_ready: bool,
+    cargo_provenance: RuntimeProvenance,
     multilang_ready: Vec<MultilangProfileReadiness>,
     code: String,
     description: &'static str,
@@ -540,22 +586,33 @@ impl NativeBuildRuntime {
         })
     }
     pub fn status(&self, app: &AppHandle, project_id: &str) -> Result<BuildStatus, String> {
-        let availability = installation(app).map(|_| ());
+        let availability = installation(app);
+        let cargo_provenance = runtime_provenance("rust_cargo",
+            availability.as_ref().ok().map(|bundle|bundle.toolchain_sha256.clone()),
+            PINNED_CARGO);
         let multilang_ready: Vec<MultilangProfileReadiness> = MULTILANG_RECIPES
             .iter()
             .map(|&profile_id| {
                 #[cfg(feature = "native-multilang")]
-                let result = if profile_id == "uv_sync_offline" && cfg!(windows) {
-                    // The runtime hash alone cannot certify a read-only
-                    // AppContainer workspace. The executor denies Windows
-                    // package jobs until exact source ACL OS tests pass.
-                    Err("IDE053_WINDOWS_WORKSPACE_ACL_NOT_ACCEPTED".into())
-                } else {
-                    installation_multilang(app, profile_id).map(|_| ())
-                };
+                let result: Result<Installation, String> =
+                    if profile_id == "uv_sync_offline" && cfg!(windows) {
+                        // A valid hash cannot substitute for Windows source
+                        // AppContainer ACL acceptance: fail closed.
+                        Err("IDE053_WINDOWS_WORKSPACE_ACL_NOT_ACCEPTED".into())
+                    } else {
+                        installation_multilang(app, profile_id)
+                    };
                 #[cfg(not(feature = "native-multilang"))]
-                let result: Result<(), String> = Err("DEV03_OPTIN_FEATURE_DISABLED".into());
+                let result: Result<Installation, String> =
+                    Err("DEV03_OPTIN_FEATURE_DISABLED".into());
+                #[cfg(feature = "native-multilang")]
+                let pin = multilang_release_pin(profile_id);
+                #[cfg(not(feature = "native-multilang"))]
+                let pin = None;
+                let provenance = runtime_provenance(profile_id,
+                    result.as_ref().ok().map(|bundle|bundle.toolchain_sha256.clone()),pin);
                 MultilangProfileReadiness {
+                    provenance,
                     profile_id,
                     ready: result.is_ok(),
                     code: if profile_id == "uv_sync_offline" && cfg!(windows) {
@@ -669,6 +726,7 @@ impl NativeBuildRuntime {
         Ok(BuildStatus {
             ready: any_native_profile_ready,
             cargo_ready,
+            cargo_provenance,
             multilang_ready,
             code: if cargo_ready {
                 "BUILD_RELEASE_RESOURCES_VERIFIED_ADMISSION_PER_JOB".into()
@@ -2029,6 +2087,23 @@ mod dev035_native_lifecycle_tests {
         ] {
             assert_eq!(profile_manifest(hostile), None);
         }
+    }
+    #[test]
+    fn provenance_never_promotes_an_unverified_bundle_or_publisher() {
+        let digest = "a".repeat(64);
+        let valid = runtime_provenance("rust_cargo", Some(digest.clone()),Some(&digest));
+        assert_eq!(valid.provenance_state,
+            "installed_bytes_match_compile_time_release_pin");
+        assert_eq!(valid.observed_sha256.as_deref(),Some(digest.as_str()));
+        assert_eq!(valid.license_evidence,"not_independently_verified");
+        assert!(!valid.execution_authorized);
+        let forged = runtime_provenance("rust_cargo",Some("b".repeat(64)),
+            Some(&digest));
+        assert!(forged.observed_sha256.is_none());
+        assert_eq!(forged.provenance_state,
+            "unavailable_or_not_independently_verified");
+        let unpinned = runtime_provenance("python_pytest",Some(digest),None);
+        assert!(unpinned.observed_sha256.is_none());
     }
     #[test]
     fn cancellation_and_recovery_phase_names_match_durable_supervisor_schema() {

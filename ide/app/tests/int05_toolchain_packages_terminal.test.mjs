@@ -8,9 +8,25 @@ const project='ide-'+'a'.repeat(32),foreign='ide-'+'b'.repeat(32);
 const job='job-'+'c'.repeat(32),sha='d'.repeat(64);
 const status=()=>({
   ready:true,cargoReady:true,code:'BUILD_READY',
+  cargoProvenance:{
+    profileId:'rust_cargo',observedSha256:sha,releasePinSha256:sha,
+    provenanceState:'installed_bytes_match_compile_time_release_pin',
+    versionEvidence:'not_independently_verified',
+    publisherEvidence:'not_independently_verified',
+    licenseEvidence:'not_independently_verified',
+    executionAuthorized:false,installedAppAccepted:false,
+  },
   multilangReady:['python_pytest','js_tests','cpp_cmake_build',
     'uv_sync_offline'].map(profileId=>({
       profileId,ready:true,code:'DEV03_RUNTIME_PIN_VERIFIED_NATIVE_ADMISSION_PER_JOB',
+      provenance:{
+        profileId,observedSha256:sha,releasePinSha256:sha,
+        provenanceState:'installed_bytes_match_compile_time_release_pin',
+        versionEvidence:'not_independently_verified',
+        publisherEvidence:'not_independently_verified',
+        licenseEvidence:'not_independently_verified',
+        executionAuthorized:false,installedAppAccepted:false,
+      },
     })),
   journal:[{projectId:project,jobId:job,planSha256:sha,
     phase:'completed',requiresReconciliation:false}],
@@ -31,8 +47,10 @@ test('INT05 native fixed catalog does not infer installation or execution',()=>{
   assert.equal(rows.kind,'native_pin_observation');
   assert.equal(rows.rows.length,5);
   assert.equal(rows.executionAuthorized,false);
-  assert.ok(rows.rows.every(row=>row.ready && !row.canInstall &&
-    !row.canStartWithoutConsent && !row.versionVerified));
+  assert.ok(rows.rows.every(row=>row.ready && row.verified &&
+    row.observedSha256===sha && !row.canInstall &&
+    !row.canStartWithoutConsent && !row.versionVerified &&
+    !row.publisherVerified && !row.licenseVerified));
 });
 test('INT05 incomplete, duplicated, malformed readiness fails closed',()=>{
   const a=status();a.multilangReady.pop();
@@ -44,6 +62,9 @@ test('INT05 incomplete, duplicated, malformed readiness fails closed',()=>{
 });
 test('INT05 missing runtime or global recovery never becomes runnable',()=>{
   const a=status();a.multilangReady[3].ready=false;
+  a.multilangReady[3].provenance={
+    ...a.multilangReady[3].provenance,observedSha256:null,
+    provenanceState:'unavailable_or_not_independently_verified'};
   const inv=checkedToolchainInventory(a,project);
   assert.equal(inv.rows.find(x=>x.profileId==='uv_sync_offline').ready,false);
   const b=status();b.quarantined=[{projectId:foreign,requiresReconciliation:true}];
@@ -109,4 +130,23 @@ test('INT05 desktop uses the existing native admission, not a shell plugin',()=>
   assert.match(main,/Protected terminal transcript/);
   assert.match(main,/No arbitrary commands, shells or package installs/);
   assert.doesNotMatch(main,/shell:allow-execute|Command\.create\(/);
+});
+
+test('INT05-E release pin and installed byte mismatch never claims availability',()=>{
+  const s=status();
+  s.multilangReady[0].provenance.observedSha256='e'.repeat(64);
+  assert.equal(checkedToolchainInventory(s,project).kind,'unavailable');
+  const s2=status();
+  s2.cargoProvenance.licenseEvidence='verified';
+  assert.equal(checkedToolchainInventory(s2,project).kind,'unavailable');
+  const s3=status();
+  s3.multilangReady[1].provenance.releasePinSha256=null;
+  assert.equal(checkedToolchainInventory(s3,project).kind,'unavailable');
+});
+test('INT05-E pure host provenance binds observed bytes and release pins',()=>{
+  const native=readFileSync(new URL('../../src-tauri/src/build_backend.rs',import.meta.url),'utf8');
+  assert.match(native,/installed_bytes_match_compile_time_release_pin/);
+  assert.match(native,/runtime_provenance\("rust_cargo"/);
+  assert.match(native,/provenance: RuntimeProvenance/);
+  assert.match(native,/license_evidence: "not_independently_verified"/);
 });

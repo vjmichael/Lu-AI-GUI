@@ -30,6 +30,29 @@ function unavailable(projectId) {
 function safeCode(code) {
   return typeof code==='string' && /^[A-Z0-9_]{1,100}$/.test(code);
 }
+function checkedProvenance(row,profileId) {
+  if (!row || row.profileId!==profileId ||
+      !['installed_bytes_match_compile_time_release_pin',
+        'unavailable_or_not_independently_verified']
+        .includes(row.provenanceState) ||
+      row.executionAuthorized!==false ||
+      row.installedAppAccepted!==false ||
+      row.versionEvidence!=='not_independently_verified' ||
+      row.publisherEvidence!=='not_independently_verified' ||
+      row.licenseEvidence!=='not_independently_verified') return null;
+  const sha=row.observedSha256;
+  const pin=row.releasePinSha256;
+  if (sha!==null && !SHA.test(sha||'')) return null;
+  if (pin!==null && !SHA.test(pin||'')) return null;
+  const verified=row.provenanceState===
+    'installed_bytes_match_compile_time_release_pin';
+  if (verified !== (sha!==null && sha===pin)) return null;
+  return Object.freeze({
+    verified, observedSha256:sha,releasePinSha256:pin,
+    provenanceState:row.provenanceState,
+    versionVerified:false,publisherVerified:false,licenseVerified:false,
+  });
+}
 
 /** The native build runtime, not PATH or an untrusted project manifest, probes pins. */
 export function checkedToolchainInventory(status,projectId) {
@@ -49,6 +72,14 @@ export function checkedToolchainInventory(status,projectId) {
     found.set(row.profileId,row);
   }
   if (found.size!==MULTILANG.size) return unavailable(projectId);
+  const cargoProvenance=checkedProvenance(status.cargoProvenance,'rust_cargo');
+  if (!cargoProvenance) return unavailable(projectId);
+  const nativeProvenance=new Map([['rust_cargo',cargoProvenance]]);
+  for (const [profileId,row] of found) {
+    const verified=checkedProvenance(row.provenance,profileId);
+    if (!verified) return unavailable(projectId);
+    nativeProvenance.set(profileId,verified);
+  }
   // Global process/recovery custody cannot be bypassed by switching projects.
   const blockedByRecovery=status.quarantined.length>0 ||
     status.journal.some(entry=>entry?.requiresReconciliation===true);
@@ -59,9 +90,13 @@ export function checkedToolchainInventory(status,projectId) {
           ? 'DEV03_RUNTIME_PIN_VERIFIED_NATIVE_ADMISSION_PER_JOB'
           : status.code}
       : found.get(entry.profileId);
-    const ready=native.ready===true;
+    const proof=nativeProvenance.get(entry.profileId);
+    const ready=native.ready===true && proof.verified;
+    // The runtime cannot be presented as ready without evidence of actual
+    // installed bytes matching the exact reviewed compile-time pin.
+    if(native.ready===true && !proof.verified) return null;
     return Object.freeze({
-      ...entry,ready,
+      ...entry,...proof,ready,
       code:native.code,
       disposition:!ready?'native_runtime_not_available':
         blockedByRecovery?'reconciliation_required':
@@ -71,6 +106,7 @@ export function checkedToolchainInventory(status,projectId) {
       versionVerified:false,executionAuthorized:false,
     });
   });
+  if(rows.some(row=>row===null)) return unavailable(projectId);
   return Object.freeze({
     projectId,kind:'native_pin_observation',
     rows:Object.freeze(rows),blockedByRecovery,
