@@ -596,16 +596,34 @@ impl NativeLspRuntime {
         &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
         request: LspRequest,
     ) -> Result<Value, String> {
-        let result = self.start_approved(app, registry, request);
+        let mut admitted_this_call=false;
+        let mut prepared_this_call:Option<String>=None;
+        let result = self.start_approved(
+            app, registry, request, &mut admitted_this_call,
+            &mut prepared_this_call);
         if result.is_err() {
-            // A rejected second Start must not release or poison an existing
-            // legitimate LSP session. Only a failed admission with NO active
-            // session may attempt terminal-journal release of its own fence.
+            // A second rejected Start must not cancel or release an earlier
+            // legitimate LSP session. Only the exact admission in this call
+            // may journal a no-worker cancellation.
             let no_active=self.active.lock()
                 .map(|owner|owner.is_none()).unwrap_or(false);
-            if no_active && self.release_global_if_terminal().is_err() {
-                if let Ok(mut state)=self.cleanup_uncertain.lock(){
-                    *state=true;
+            if no_active && admitted_this_call {
+                let mut no_worker_terminal=true;
+                if let Some(ref id)=prepared_this_call {
+                    let phase=self.supervisor.inspect().ok().and_then(|rows|
+                        rows.into_iter().find(|row|row.job_id==*id));
+                    no_worker_terminal=match phase {
+                        Some(row) if matches!(row.phase,
+                            JobPhase::Prepared|JobPhase::Authorized) =>
+                            self.supervisor.cancel_before_start(id).is_ok(),
+                        Some(_) => true, // real OS cleanup remains mandatory
+                        None => false,
+                    };
+                }
+                if !no_worker_terminal || self.release_global_if_terminal().is_err(){
+                    if let Ok(mut state)=self.cleanup_uncertain.lock(){
+                        *state=true;
+                    }
                 }
             }
             // Admission can fail after a genuine OS process was spawned.
@@ -627,6 +645,8 @@ impl NativeLspRuntime {
         app: &AppHandle,
         registry: &IdeWorkspaceRegistry,
         request: LspRequest,
+        admitted_this_call:&mut bool,
+        prepared_this_call:&mut Option<String>,
     ) -> Result<Value, String> {
         // Reserve the native owner for the full admission and OS consent.
         // A concurrent window cannot spawn a second worker before publish.
@@ -686,6 +706,7 @@ impl NativeLspRuntime {
         }
         *self.global_admission.lock()
             .map_err(|_|"FIN01_LSP_ADMISSION_OWNER_UNAVAILABLE")?=Some(fence);
+        *admitted_this_call=true;
         let input = publish_lsp_input(&root, &self.stage, &request.relative_path, server_id)
             .map_err(|e| e.code())?;
         if input.seal.manifest_sha256 != saved_revision {
@@ -714,6 +735,7 @@ impl NativeLspRuntime {
             .supervisor
             .prepare(plan.clone())
             .map_err(|e| e.code())?;
+        *prepared_this_call=Some(prepared.job_id.clone());
         self.supervisor
             .record_human_approval(&prepared.job_id, &prepared.plan_sha256, &observed, true)
             .map_err(|e| e.code())?;
