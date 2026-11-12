@@ -512,6 +512,16 @@ impl NativeDebugRuntime {
             },
         })
     }
+    /// FIN-04: original action-journal evidence inventory, never a debugger
+    /// operation grant. This does not reconstruct native owner event handles.
+    pub fn inspect_control_evidence(
+        &self, project_id:&str
+    )->Result<lu_ide_execution_supervisor::debug_control_evidence::DebugControlEvidenceInventory,String>{
+        lu_ide_execution_supervisor::debug_control_evidence
+            ::inspect_debug_control_evidence(
+                &self.global_custody_profile,&self.supervisor,project_id)
+            .map_err(str::to_owned)
+    }
     /// INT04: one read-only source review for an earlier, successfully
     /// terminated protected LLDB session. No debuggee, DAP request, source
     /// path, frame ID, or authorization token is accepted from the WebView.
