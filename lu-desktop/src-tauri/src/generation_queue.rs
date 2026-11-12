@@ -8,10 +8,15 @@ use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Condvar, Mutex},
 };
+use serde::Serialize;
 
 const MAX_JOBS: usize = 8;
 // Leave at least six queue places for explicit human requests.
 const MAX_BACKGROUND_JOBS: usize = 2;
+/// One bounded live response per generation. The ANSF SQLite journal is
+/// the durable source; this RAM snapshot only repairs a live WebView reload.
+pub const MAX_LIVE_STREAM_BYTES: usize = 1024 * 1024;
+pub const MAX_CHUNK_BYTES: usize = 64 * 1024;
 // Admit one already-approved background turn after four consecutive
 // foreground turns, preventing indefinite starvation without preempting UI.
 const MAX_FOREGROUND_BURST: u8 = 4;
@@ -45,6 +50,8 @@ struct Job {
     session_id: String,
     class: TurnClass,
     cancelled: bool,
+    text: String,
+    next_index: u32,
 }
 
 #[derive(Default)]
@@ -57,6 +64,20 @@ pub struct GenerationQueue {
 pub enum CancelState {
     Queued,
     Active,
+}
+
+/// Read-only, exact-session, exact-chat snapshot for a reconnecting WebView.
+/// The host never replays a generation, grants permission or supplies another
+/// conversation's bytes. The cursor refers to the next stream event index.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveStreamSnapshot {
+    pub chat_id: String,
+    pub generation_id: String,
+    pub phase: &'static str,
+    pub text: String,
+    pub next_index: u32,
+    pub cancelling: bool,
 }
 
 /// Owns its place in the queue; releases the slot on every exit path.
@@ -107,6 +128,8 @@ impl GenerationQueue {
                 session_id: session_id.into(),
                 class,
                 cancelled: false,
+                text: String::new(),
+                next_index: 0,
             },
         );
         match class {
@@ -198,6 +221,52 @@ impl GenerationQueue {
                 && (!job.cancelled || state.active.as_deref()==Some(id.as_str()))))
             .unwrap_or(true)
     }
+    /// A chunk must arrive from the currently running original generation,
+    /// in order, under bounded memory. Reconnect repairs missed UI events
+    /// from this in-memory text; it is never used as a durable ANSF replacement.
+    pub fn record_chunk(
+        &self, session_id:&str, generation_id:&str, index:u32, text:&str,
+    ) -> Result<(),String> {
+        if text.is_empty() || text.len()>MAX_CHUNK_BYTES {
+            return Err("invalid bounded streaming chunk".into());
+        }
+        let mut state=self.state.lock().map_err(|_|"generation queue poisoned")?;
+        if state.active.as_deref()!=Some(generation_id) {
+            return Err("generation is not active for streaming".into());
+        }
+        let job=state.jobs.get_mut(generation_id)
+            .ok_or("generation ticket missing during stream")?;
+        if job.session_id!=session_id || job.cancelled {
+            return Err("generation stream cancelled or session changed".into());
+        }
+        if job.next_index!=index || index==u32::MAX {
+            return Err("out-of-order or unbounded generation chunk".into());
+        }
+        let total=job.text.len().checked_add(text.len())
+            .ok_or("generation stream size overflow")?;
+        if total>MAX_LIVE_STREAM_BYTES {
+            return Err("generation stream reached the 1 MiB maximum".into());
+        }
+        job.text.push_str(text);
+        job.next_index+=1;
+        Ok(())
+    }
+    pub fn reconnect_snapshot(
+        &self, session_id:&str, chat_id:&str,
+    )->Result<Option<LiveStreamSnapshot>,String>{
+        let state=self.state.lock().map_err(|_|"generation queue poisoned")?;
+        Ok(state.jobs.iter()
+            .find(|(_,job)|job.chat_id==chat_id && job.session_id==session_id)
+            .map(|(generation_id,job)|LiveStreamSnapshot {
+                chat_id:chat_id.to_owned(),
+                generation_id:generation_id.clone(),
+                phase:if state.active.as_deref()==Some(generation_id.as_str()){
+                    "running"
+                }else{"queued"},
+                text:job.text.clone(),next_index:job.next_index,
+                cancelling:job.cancelled,
+            }))
+    }
     pub fn has_jobs(&self) -> bool {
         self.state
             .lock()
@@ -274,6 +343,45 @@ impl Drop for Ticket {
 mod tests {
     use super::*;
     use std::{sync::mpsc, thread, time::Duration};
+    #[test]
+    fn live_reconnect_is_exact_chat_and_session_and_byte_bounded(){
+        let q=Arc::new(GenerationQueue::default());
+        let (ticket,_)=q.enqueue("session-a","chat-a","g-1").unwrap();
+        assert_eq!(q.reconnect_snapshot("session-b","chat-a").unwrap(),None);
+        let queued=q.reconnect_snapshot("session-a","chat-a").unwrap().unwrap();
+        assert_eq!(queued.phase,"queued");
+        assert_eq!(queued.next_index,0);
+        ticket.wait_for_slot().unwrap();
+        q.record_chunk("session-a","g-1",0,"alpha").unwrap();
+        q.record_chunk("session-a","g-1",1,"✓").unwrap();
+        assert_eq!(q.record_chunk("session-a","g-1",1,"duplicate"),
+            Err("out-of-order or unbounded generation chunk".into()));
+        assert!(q.record_chunk("session-b","g-1",2,"wrong session").is_err());
+        assert_eq!(q.reconnect_snapshot("session-a","chat-b").unwrap(),None);
+        let live=q.reconnect_snapshot("session-a","chat-a").unwrap().unwrap();
+        assert_eq!(live.phase,"running");
+        assert_eq!(live.text,"alpha✓");
+        assert_eq!(live.next_index,2);
+        assert!(q.record_chunk("session-a","g-1",2,&"x".repeat(MAX_CHUNK_BYTES+1)).is_err());
+        // Oversize rejection does not change the retained, exact stream.
+        assert_eq!(q.reconnect_snapshot("session-a","chat-a").unwrap().unwrap().next_index,2);
+        drop(ticket);
+        assert!(q.reconnect_snapshot("session-a","chat-a").unwrap().is_none());
+    }
+    #[test]
+    fn cancelled_generation_cannot_append_or_leak_across_reconnect(){
+        let q=Arc::new(GenerationQueue::default());
+        let (ticket,_)=q.enqueue("s","c","g").unwrap();
+        ticket.wait_for_slot().unwrap();
+        q.record_chunk("s","g",0,"partial").unwrap();
+        assert_eq!(q.cancel("s","g"),Ok(CancelState::Active));
+        assert!(q.record_chunk("s","g",1,"after cancellation").is_err());
+        let snap=q.reconnect_snapshot("s","c").unwrap().unwrap();
+        assert!(snap.cancelling);
+        assert_eq!(snap.text,"partial");
+        drop(ticket);
+        assert!(q.reconnect_snapshot("s","c").unwrap().is_none());
+    }
     #[test]
     fn another_chat_queues_instead_of_interrupting() {
         let gate = Arc::new(GenerationQueue::default());
