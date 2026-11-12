@@ -161,6 +161,12 @@ def verify(root: Path, platform: str, expected: dict) -> dict:
             digest=linux_cargo()
         else:
             path=(root/location) if platform=="windows" else Path(location)
+            staged = None
+            if platform=="linux":
+                if kind=="runtime":
+                    staged=root/"resources/build-tools/linux-runtimes"/path.name
+                elif kind=="linux_bundle":
+                    staged=root/"resources/debug-adapters/lldb-dap"
             if kind=="file":
                 digest=sha_file(path)
             else:
@@ -171,13 +177,14 @@ def verify(root: Path, platform: str, expected: dict) -> dict:
                     for needed in ("lib","cargo-home"):
                         if not (path/needed).is_dir():
                             raise Denied("FIN02_REQUIRED_CARGO_DIRECTORY_MISSING")
-                profile=key.split("_")[-2] if False else None
                 if kind=="runtime":
                     profile=path.name
                     for needed in REQUIRED[profile][platform]:
                         if not (path/needed).is_file():
                             raise Denied("FIN02_REQUIRED_RUNTIME_FILE_MISSING")
                 digest=tree_sha(path,kind)
+                if staged is not None and tree_sha(staged,kind)!=digest:
+                    raise Denied("FIN02_LINUX_PACKAGE_PAYLOAD_DIFFERS_FROM_INSTALLED")
         if digest!=pin:
             raise Denied("FIN02_STAGED_BYTES_DO_NOT_MATCH_REVIEWED_PIN")
         pins[key]=digest

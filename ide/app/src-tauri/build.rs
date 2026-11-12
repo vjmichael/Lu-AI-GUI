@@ -308,7 +308,8 @@ fn fin02_tree_hash(root:&Path,kind:&str)->Result<String,String>{
     Ok(format!("{:x}",h.finalize()))
 }
 fn fin02_linux_cargo_hash()->Result<String,String>{
-    let linker=if cfg!(target_arch="x86_64"){
+    let linker=if env::var("CARGO_CFG_TARGET_ARCH").as_deref()
+        ==Ok("x86_64"){
         vec!["/usr/bin/x86_64-linux-gnu-gcc-14",
              "/usr/bin/x86_64-linux-gnu-gcc-13",
              "/usr/bin/x86_64-linux-gnu-gcc-12"]
@@ -404,22 +405,34 @@ fn fin02_require_runtime_stage()->Result<(),String>{
             },
             "cargo"=>fin02_linux_cargo_hash()?,
             "lldb_dap"=>{
-                let at=if windows {
-                    root.join("resources/debug-adapters/lldb-dap")
-                }else{
-                    PathBuf::from("/opt/lu-ide/debug-adapters/lldb-dap")
-                };
-                println!("cargo:rerun-if-changed={}",at.display());
-                fin02_tree_hash(&at,"native_bundle")?
+                let stage=root.join("resources/debug-adapters/lldb-dap");
+                println!("cargo:rerun-if-changed={}",stage.display());
+                let staged=fin02_tree_hash(&stage,"native_bundle")?;
+                if windows {staged} else {
+                    let installed=PathBuf::from("/opt/lu-ide/debug-adapters/lldb-dap");
+                    let actual=fin02_tree_hash(&installed,"native_bundle")?;
+                    if staged!=actual{
+                        return Err("FIN02_LINUX_PACKAGE_PAYLOAD_MISMATCH".into());
+                    }
+                    actual
+                }
             },
             profile=>{
-                let at=if windows {
+                let stage=if windows {
                     root.join("resources/build-tools/windows-runtimes").join(profile)
                 }else{
-                    PathBuf::from("/opt/lu-ide/runtimes").join(profile)
+                    root.join("resources/build-tools/linux-runtimes").join(profile)
                 };
-                println!("cargo:rerun-if-changed={}",at.display());
-                fin02_tree_hash(&at,"runtime")?
+                println!("cargo:rerun-if-changed={}",stage.display());
+                let staged=fin02_tree_hash(&stage,"runtime")?;
+                if windows {staged} else {
+                    let installed=PathBuf::from("/opt/lu-ide/runtimes").join(profile);
+                    let actual=fin02_tree_hash(&installed,"runtime")?;
+                    if actual!=staged{
+                        return Err("FIN02_LINUX_PACKAGE_PAYLOAD_MISMATCH".into());
+                    }
+                    actual
+                }
             }
         };
         if actual!=pin{return Err("FIN02_INSTALLED_RUNTIME_HASH_DIFFERS".into());}

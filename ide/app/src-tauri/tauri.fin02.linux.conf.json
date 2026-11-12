@@ -1,0 +1,19 @@
+{
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "resources": {
+      "resources/": ""
+    },
+    "linux": {
+      "deb": {
+        "files": {
+          "/opt/lu-ide/runtimes/python_pytest": "resources/build-tools/linux-runtimes/python_pytest",
+          "/opt/lu-ide/runtimes/js_tests": "resources/build-tools/linux-runtimes/js_tests",
+          "/opt/lu-ide/runtimes/cpp_cmake_build": "resources/build-tools/linux-runtimes/cpp_cmake_build",
+          "/opt/lu-ide/debug-adapters/lldb-dap": "resources/debug-adapters/lldb-dap"
+        }
+      }
+    }
+  }
+}
