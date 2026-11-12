@@ -91,8 +91,10 @@ test('SEC06 verifier rejects changed original native log with correct head and l
     const lockHash=digest(readFileSync(join(root,'source-tree.lock.json')));
     const required=[
       'exact-head-inventory','security-contracts','sec06-js-syntax',
-      'linux-negative-python-syntax','core-native-full',
-      'desktop-ansf-native','worker-job-native','guardian-test-binaries',
+      'linux-negative-python-syntax','linux-host-crash-python-syntax',
+      'core-native-full','desktop-ansf-native','worker-job-native',
+      'guardian-test-binaries','linux-original-host-sigkill',
+      'linux-reviewed-git-original-journal',
       'linux-guardian-death','linux-guardian-stall',
       'linux-worker-stall','linux-ancestor-migration'
     ];
