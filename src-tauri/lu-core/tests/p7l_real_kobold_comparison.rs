@@ -12,6 +12,7 @@ use lu_core::{
     p7_backend_evaluation::{CandidateKind,CandidateManifest},
     p7_koboldcpp_backend::{KoboldCppBackend,KoboldCppConfig,KoboldCppLimits},
     persistent_llama_backend::{PersistentLlamaBackend,PersistentEngineConfig},
+    inference_tuning::{TuningProfile,KvType,Speculative},
 };
 use sha2::{Digest,Sha256};
 use serde_json::{json,Value};
@@ -114,7 +115,19 @@ fn llama()->PersistentLlamaBackend{
         startup_timeout:Duration::from_secs(360),
         request_timeout:Duration::from_secs(180),
         api_key:required("LU_P7L_LLAMA_SECRET"),
-        tuning:None,load_observer:None,
+        // P7L-1: comparing a Windows default Vulkan-offloaded baseline with
+        // a CPU-only Kobold candidate is NOT an equal-device A/B test.
+        // Opt-in owner benchmark forces original llama.cpp CPU layers 0.
+        // Exact pinned llama-server must support these experimental flags;
+        // otherwise the native run fails instead of emitting false speedups.
+        tuning:Some(TuningProfile{
+            threads_batch:NonZeroUsize::new(4).unwrap(),
+            batch_size:512,ubatch_size:128,
+            gpu_layers:0,gpu_placement:None,
+            key_cache:KvType::F16,value_cache:KvType::F16,
+            speculative:Speculative::Disabled,
+        }),
+        load_observer:None,
     }).expect("original pinned llama baseline cannot start")
 }
 fn sample(
@@ -218,7 +231,8 @@ fn actual_koboldcpp_vs_original_llama_paired_gguf_evaluation(){
         "contextTokens":4096,
         "baseline":{
             "backend":"llama_cpp","engineSha256":hex(&baseline_sha),
-            "requestedGpuLayersOnWindows":99,
+            "requestedGpuLayersOnWindows":0,
+            "baselineRequestedBackend":"CPU",
             "baselineCpuVsKoboldCpuEquivalenceProven":false
         },
         "candidate":{
