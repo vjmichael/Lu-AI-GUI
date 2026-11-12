@@ -41,6 +41,25 @@ test('release helper is independently AppContainer+SCM Job-contained, never gene
  assert.match(gate,/fn read_pe_pdb_inside_owned_job/);
  assert.match(transport,/fn read_protected_pe_pdb/);
 });
+test('a protected PDB helper is independently a member of the original kernel Job before running',()=>{
+ assert.match(worker,/let child_pid=unsafe\{GetProcessId\(child\.0\)\}/);
+ assert.match(worker,/job_has_member\(\s*self\.job\.handle\.0,child_pid/);
+ assert.match(worker,/if unsafe \{ResumeThread\(thread\.0\)\}/);
+ const membership=worker.indexOf('let child_pid=unsafe{GetProcessId(child.0)}');
+ const resumed=worker.indexOf('if unsafe {ResumeThread(thread.0)}');
+ assert.ok(membership>=0 && resumed>membership,
+   'attest actual process membership before resuming symbolizer');
+});
+test('protected PDB helper error or changed source/job must quarantine the entire original Job',()=>{
+ const read=gate.slice(gate.indexOf('pub(crate) fn read_pe_pdb_inside_owned_job('),
+   gate.indexOf('/// Read-only OS evidence from the *owned* native Job.'));
+ assert.match(read,/read_protected_pe_pdb\(/);
+ assert.match(read,/Err\(_\)=>return self\.quarantine\(\)/);
+ assert.match(read,/job\.phase!=JobPhase::Running \|\| job\.requires_reconciliation/);
+ assert.match(read,/return self\.quarantine\(\);/);
+ assert.match(gate,/native_quarantine_after_error\(&self\.job_id\)/);
+ assert.match(gate,/terminate_tree_and_verify\(\)/);
+});
 test('mapped source is exact original kernel stop and original source/PDB/Job seals',()=>{
  assert.match(worker,/pub fn observe_release_owned_stop\(/);
  assert.match(worker,/independently_verify_pdb_line_with_reader/);
