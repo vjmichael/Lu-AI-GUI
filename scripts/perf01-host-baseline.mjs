@@ -30,7 +30,10 @@ try{
         ||x.evidenceScope!=='HOST_OBSERVED_ONLY'
         ||x.terminalState!=='COMPLETED'
         ||x.sourceHead!==expectedHead
-        ||x.modelStartedByThisRoute!==false
+        ||(x.route==='CPU_DETERMINISTIC'&&x.modelStartedByThisRoute!==false)
+        ||(x.route==='MODEL_INFERENCE'&&x.modelStartedByThisRoute!==null
+           &&x.modelStartedByThisRoute!==false
+           &&x.modelStartedByThisRoute!==true)
         ||typeof x.overallLatencyMs!=='number'
         ||!Number.isSafeInteger(x.overallLatencyMs)
         ||x.overallLatencyMs<0
