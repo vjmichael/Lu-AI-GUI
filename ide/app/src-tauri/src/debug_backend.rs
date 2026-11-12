@@ -380,8 +380,16 @@ impl NativeDebugRuntime {
         let durable = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
         let global_custody =
             lu_ide_execution_supervisor::observe_global_custody(&durable,project_id);
-        let global_recovery_required=global_custody.recovery_required;
+        let unresolved_global_marker=crate::global_native_custody
+            ::global_custody_unresolved(&self.global_custody_profile)?;
+        let other=crate::global_native_custody::sibling_rows(
+            &self.global_custody_profile,"debug")?;
+        let other_custody=lu_ide_execution_supervisor
+            ::observe_global_custody(&other,project_id);
+        let global_recovery_required=global_custody.recovery_required ||
+            other_custody.recovery_required || unresolved_global_marker;
         let active_in_another_project = global_custody.active_in_another_project ||
+            other_custody.active_in_another_project ||
             self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
             .as_ref().is_some_and(|value| value.project_id != project_id);
         #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
@@ -450,6 +458,8 @@ impl NativeDebugRuntime {
         let native_admission_available = available.is_ok()
             && !global_recovery_required
             && !global_custody.worker_busy_or_unreconciled
+            && !other_custody.worker_busy_or_unreconciled
+            && !unresolved_global_marker
             && current.is_none()
             && !active_in_another_project
             && dangling_action_jobs.is_empty();
