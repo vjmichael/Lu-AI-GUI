@@ -54,7 +54,8 @@ export function visibleStructuredTestEvidence(result,projectId) {
       !SHA.test(result.inputSnapshotSha256||'') ||
       !SHA.test(result.toolchainSha256||'') ||
       !HEAD.test(result.sourceHead||'') ||
-      !REPORTERS[result.recipeId] ||
+      !(REPORTERS[result.recipeId] ||
+          /^rust_exact_case:[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(result.recipeId||'')) ||
       report.projectId!==projectId ||
       report.jobId!==result.jobId ||
       report.recipeId!==result.recipeId ||
@@ -88,7 +89,8 @@ export function visibleStructuredTestEvidence(result,projectId) {
   const seen=new Set();
   for(const row of report.cases) {
     if (!row || !CASE.test(row.caseId||'') || seen.has(row.caseId) ||
-        row.reporter!==REPORTERS[result.recipeId] ||
+        row.reporter!==(REPORTERS[result.recipeId] ||
+          'cargo_libtest_exact_filter') ||
         !STATUS.has(row.status) ||
         typeof row.name!=='string' ||
         row.name.length<1 || row.name.length>240 ||

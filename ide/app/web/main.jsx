@@ -291,6 +291,7 @@ function App() {
   const [testExplorerFilter,setTestExplorerFilter]=useState('all');
   const [testSymbols,setTestSymbols]=useState(null);
   const [testSymbolsBusy,setTestSymbolsBusy]=useState(false);
+  const [rustCaseBusy,setRustCaseBusy]=useState(false);
   const testSymbolsTicket=useRef(0);
   const [testDiscoveryBusy,setTestDiscoveryBusy] = useState(false);
   const testDiscoveryTicket=useRef(0);
@@ -3832,6 +3833,53 @@ function App() {
     }finally{if(ticket===testSymbolsTicket.current)
       setTestSymbolsBusy(false);}
   }
+  async function executeProtectedSavedRustCase(file,symbol){
+    const projectId=activeProject?.projectId;
+    const source=testSymbols;
+    const plan=projectRunProfiles?.profiles?.find(row=>
+      row.id==='rust_tests' && row.manifest==='Cargo.toml');
+    if(!projectId || buildBusy || rustCaseBusy ||
+       buildStatus?.ready!==true || buildStatus.current ||
+       source?.projectId!==projectId ||
+       source.relativePath!==file.path || source.language!=='rust' ||
+       !source.symbols.some(x=>x.name===symbol.name) ||
+       !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(symbol.name) ||
+       plan?.manifestState!=='saved_file_sha_observed_not_validated' ||
+       !/^[a-f0-9]{64}$/.test(plan.sha||'')) {
+       setProblem('A fresh saved Rust test and pinned Cargo manifest are required.');
+       return;
+    }
+    setBuildBusy(true);setRustCaseBusy(true);setBuildResult(null);
+    setVerifiedBuildOutcome(null);setProblem('');
+    setNativeJobOutput(null);
+    try{
+      const result=await invoke('ide_run_protected_rust_test_case',{
+        projectId,relativePath:file.path,caseName:symbol.name,
+        expectedSourceRevision:source.sourceRevision,
+        expectedManifestSha256:plan.sha,
+      });
+      if(activeProjectIdRef.current!==projectId)return;
+      if(result?.projectId!==projectId ||
+         result.recipeId!=='rust_exact_case:'+symbol.name ||
+         result.manifestSha256!==plan.sha ||
+         !/^[a-f0-9]{64}$/.test(result.planSha256||'') ||
+         !/^[a-f0-9]{64}$/.test(result.terminalReceiptSha256||'') ||
+         result.installedAppAccepted!==false ||
+         !['completed','failed','cancelled','recovery_required'].includes(result.phase))
+         throw Error('FIN04_ORIGINAL_CASE_JOB_RECEIPT_INVALID');
+      setBuildResult(result);
+      setHint('Protected exact-case job reported '+result.phase+
+        '. Check the original reporter case entry; completion is not an assertion pass.');
+      void refreshProtectedBuildStatus();
+    }catch(error){
+      if(activeProjectIdRef.current===projectId)
+        setProblem('Protected case invocation refused: '+String(error));
+    }finally{
+      if(activeProjectIdRef.current===projectId){
+        setBuildBusy(false);setRustCaseBusy(false);
+      }
+    }
+  }
   async function inspectConventionalTests() {
     const projectId=activeProjectIdRef.current;
     if(!projectId || testDiscoveryBusy || buildBusy ||
@@ -6984,7 +7032,20 @@ function App() {
                        {testSymbols.symbols.map((symbol,index)=>
                          <p key={index}>
                            Line {symbol.line}: <code>{symbol.name}</code>
-                           {' · '}Not individually runnable
+                           {' · '}Static test candidate only.
+                           {file.language==='rust' &&
+                            /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(symbol.name) &&
+                            <button className="ghostBtn" type="button"
+                              disabled={buildBusy || rustCaseBusy ||
+                                buildStatus?.ready!==true ||
+                                !projectRunProfiles?.profiles?.some(p=>
+                                  p.id==='rust_tests' &&
+                                  p.manifestState==='saved_file_sha_observed_not_validated' &&
+                                  /^[a-f0-9]{64}$/.test(p.sha||''))}
+                              onClick={()=>void executeProtectedSavedRustCase(file,symbol)}>
+                              {rustCaseBusy?'Protected case running…':
+                                'Request OS approval to run exact Rust case'}
+                            </button>}
                          </p>)}
                      </div>}
                     <button type="button" className="ghostBtn"
