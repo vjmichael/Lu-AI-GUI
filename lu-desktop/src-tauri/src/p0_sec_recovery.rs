@@ -260,6 +260,23 @@ mod tests{
         let again=reconcile_reviewed_application_journals(&root).unwrap();
         assert_eq!(again.interrupted_tasks,0);
         assert_eq!(again.uncertain_effects,0);
+        // Reopen the ORIGINAL ANSF catalog, not a synthesized status
+        // snapshot, and demand the same uncertainty/authority posture.
+        let restarted_chats=ChatStore::open(&root).unwrap();
+        let pending=restarted_chats.p0_auth_cancel_history(&chat).unwrap();
+        assert_eq!(pending[0].status,"CANCELLATION_REQUESTED_OUTCOME_UNKNOWN");
+        let tasks=TaskStore::open(&task_path).unwrap();
+        assert_eq!(tasks.process_uncertainty("sec04-kernel-worker")
+            .unwrap().as_deref(),Some("LINUX_GUARDIAN_LOST"));
+        let background=TaskStore::open(
+            &root.join("lu-background-tasks.sqlite")).unwrap();
+        let persisted=for_original_chat(
+            &root,&chat,&restarted_chats,&background,&pending).unwrap();
+        assert_eq!(persisted.pending_cancel_intents,1);
+        assert!(persisted.problems.iter().any(|record|
+            record.reason=="LINUX_GUARDIAN_LOST"));
+        assert!(!persisted.automatic_retry_allowed);
+        drop(tasks);drop(background);drop(restarted_chats);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
