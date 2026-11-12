@@ -12,6 +12,8 @@ const MAX_WALL_MS:u64=300;
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub(crate) enum Route {
     CurrentChatLiteral(String),
+    ApprovedWorkspaceLiteral(String),
+    CurrentChatCounts,
     LocalModelStatus,
     ModelRequired(&'static str),
 }
@@ -32,9 +34,13 @@ pub(crate) fn classify(prompt:&str,has_images:bool,other_mode:bool)->Route {
         "is a model loaded?"){
         return Route::LocalModelStatus;
     }
-    let needle=["Search this chat for: ","Find in this conversation: "]
+    if input=="Show current chat counts" {
+        return Route::CurrentChatCounts;
+    }
+    let approved_workspace=input.strip_prefix("Search selected workspace for: ");
+    let current_chat=["Search this chat for: ","Find in this conversation: "]
         .iter().find_map(|prefix|input.strip_prefix(prefix));
-    let Some(query)=needle else {
+    let Some(query)=approved_workspace.or(current_chat) else {
         return Route::ModelRequired("OPEN_ENDED_OR_OTHER_CAPABILITY");
     };
     if query.len()<2||query.len()>MAX_QUERY_BYTES||query.trim()!=query||
@@ -42,7 +48,11 @@ pub(crate) fn classify(prompt:&str,has_images:bool,other_mode:bool)->Route {
         query.contains(char::from(96))||query.contains('<')||query.contains('>') {
         return Route::ModelRequired("LITERAL_QUERY_NOT_ADMISSIBLE");
     }
-    Route::CurrentChatLiteral(query.to_owned())
+    if approved_workspace.is_some(){
+        Route::ApprovedWorkspaceLiteral(query.to_owned())
+    }else{
+        Route::CurrentChatLiteral(query.to_owned())
+    }
 }
 
 fn safe_excerpt(source:&str,needle:&str)->String{
@@ -166,6 +176,10 @@ mod tests{
             Route::LocalModelStatus);
         assert_eq!(classify("Show local model status",false,false),
             Route::LocalModelStatus);
+        assert_eq!(classify("Show current chat counts",false,false),
+            Route::CurrentChatCounts);
+        assert_eq!(classify("Search selected workspace for: needle",false,false),
+            Route::ApprovedWorkspaceLiteral("needle".into()));
         for prompt in ["Please search this chat for needle",
             "Explain the phrase needle","How to load a model?",
             "Explain local model architecture","Search this chat for: ",
