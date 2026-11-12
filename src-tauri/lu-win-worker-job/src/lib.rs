@@ -495,7 +495,7 @@ pub mod unix_owned {
             let mut cgroup=LinuxCgroupCustodian{
                 child:cgroup_child,stdin:None,
                 subtree:std::path::PathBuf::new(),
-                receipt:std::path::PathBuf::new(),
+                receipt:std::path::PathBuf::new(),expected_receipt:String::new(),
                 stopped:true,verified_empty:false,
             };
             assert!(cgroup.stop_and_verify().is_err());
@@ -621,12 +621,42 @@ pub mod unix_owned {
     /// lifetime and OUTSIDE its killable worker subtree. The OS scopes are
     /// acquired from the helper's actual /proc/self/cgroup, never user/model
     /// supplied PID or cgroup path.
+    /// SEC-06: positive OS receipts must exactly match the original
+    /// admission identity, including the random kernel leaf nonce. A
+    /// replaced, linked, oversized, relaxed-mode, or edited receipt is
+    /// NOT a native cleanup witness. This is local evidence validation,
+    /// not protection from another process with full profile privileges.
+    #[cfg(target_os="linux")]
+    fn validate_linux_cgroup_receipt(
+        path:&std::path::Path,expected:&str,
+    )->io::Result<()>{
+        use std::{fs::OpenOptions,io::Read,
+            os::unix::fs::{MetadataExt,OpenOptionsExt,PermissionsExt}};
+        // Linux O_NOFOLLOW. Prevent a symlink swap between a metadata
+        // inspection and opening this original host-controlled path.
+        const O_NOFOLLOW:i32=0o400000;
+        let mut file=OpenOptions::new().read(true)
+            .custom_flags(O_NOFOLLOW).open(path)?;
+        let meta=file.metadata()?;
+        if !meta.is_file()||meta.len()>4096||meta.nlink()!=1
+            ||meta.permissions().mode()&0o077!=0{
+            return Err(io::Error::other("Unsafe original OS receipt"))
+        }
+        let mut bytes=Vec::new();
+        file.take(4097).read_to_end(&mut bytes)?;
+        if bytes!=expected.as_bytes(){
+            return Err(io::Error::other(
+                "Kernel cgroup witness identity or original nonce mismatch"))
+        }
+        Ok(())
+    }
     #[cfg(target_os="linux")]
     pub struct LinuxCgroupCustodian{
         child:Child,
         stdin:Option<std::process::ChildStdin>,
         subtree:std::path::PathBuf,
         receipt:std::path::PathBuf,
+        expected_receipt:String,
         stopped:bool,
         verified_empty:bool,
     }
@@ -724,8 +754,17 @@ pub mod unix_owned {
             if admission.child().try_wait()?.is_some(){
                 return Err(io::Error::other("Custodian exited before admission"))
             }
+            let nonce=group.file_name().and_then(|v|v.to_str())
+                .and_then(|v|v.strip_prefix("lu-review-"))
+                .ok_or_else(||io::Error::other("Invalid kernel cgroup nonce"))?;
+            let expected_receipt=format!(
+                "LU_CGROUP_V2_EMPTY_V1\nCHAT={chat}\nTURN={turn}\nCALL={call}\nNONCE={nonce}\nPOPULATED=0\n"
+            );
             let child=admission.admit();
-            Ok(Some(Self{child,stdin:Some(stdin),subtree:group,receipt,stopped:false,verified_empty:false}))
+            Ok(Some(Self{
+                child,stdin:Some(stdin),subtree:group,receipt,expected_receipt,
+                stopped:false,verified_empty:false,
+            }))
         }
         pub fn subtree(&self)->&std::path::Path{&self.subtree}
         // This accessor exists only in a destructive, first-party OS test
@@ -791,12 +830,9 @@ pub mod unix_owned {
                     if !status.success(){
                         return Err(io::Error::other("Kernel cgroup closure not verified"))
                     }
-                    let record=std::fs::read_to_string(&self.receipt)?;
-                    if !record.starts_with("LU_CGROUP_V2_EMPTY_V1\n")
-                        ||!record.contains("\nPOPULATED=0\n")
-                        ||record.len()>4096{
-                        return Err(io::Error::other("Cgroup witness missing or corrupt"))
-                    }
+                    validate_linux_cgroup_receipt(
+                        &self.receipt,&self.expected_receipt
+                    )?;
                     self.verified_empty=true;
                     return Ok(())
                 }
