@@ -58,3 +58,37 @@ escape, physical desktop restart, or installed operator approval. Those
 remain separate acceptance gates. The main acceptance branch continues
 building its immutable LLVM head; do not invalidate its long-running
 original job by merging this test during compilation.
+
+## Owner-deferred acceptance and Task 2 verification (2026-11-12)
+
+**Explicit deferral, not a success:** The owner deferred (a) actual/native
+Windows kernel acceptance of protected AppContainer/LocalService SCM Job,
+protected PDB reader, continuation/revocation and restart/worker death;
+and (b) installed-app physical human/security/consent/accessibility testing
+requiring an interactive Windows installation. No hosted source test,
+operator prompt mock, job receipt file or action-log observation can
+substitute for these gates. They remain open in FIN-04R-1 and later
+consolidated FIN-07 acceptance. FIN-02 separately deferred.
+
+**Task 2 — current source-only custody review:** The original
+`Job::create` applies active-process/memory quotas and KILL_ON_JOB_CLOSE,
+and `spawn_contained_stdio` atomically adds the fixed child to that Job
+with an actual AppContainer token and a three-handle allowlist (the
+fourth inherited event pipe applies to the first-party LLDB event-owner
+process, not the protected PDB symbolizer). The protected fixed PDB helper
+now rechecks the **actual child PID** against its ORIGINAL kernel Job before
+resuming that child, rather than trusting DAP-reported process membership.
+The gateway now immediately quarantines and reaps the same protected Job
+if the PDB helper fails (bounded-output, timeout, malformed JSON, process
+exit, stale OS custody) or the original stopped source/Job identity changes.
+It must never preserve a live actor awaiting eventual Drop. The shared
+PE/PDB verifier still checks exact independently sealed binary/PDB/source,
+original loaded PE mapping and OS thread RIP, with post-read original
+owner-event and journal rechecks.
+
+**Evidence state:** Prior isolated Windows preflight #43292002483 succeeded
+on its exact earlier source head. New source changes require their own
+Windows compilation/contract results. Native OS and installed-human
+acceptance remains unexecuted by this Task 2 review. All action authority
+flags are false; NO release promotion, CI kernel acceptance or owner feature
+freeze is authorized by these checks.
