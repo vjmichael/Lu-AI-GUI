@@ -1979,6 +1979,33 @@ async fn ide_debug_control_evidence(
   Err("FIN04_NATIVE_DEBUG_EVIDENCE_NOT_INSTALLED".into())
  }
 }
+/// FIN-04: read-only control candidate bound to an existing original
+/// stopped-source review, never a live owner or executable adapter command.
+#[tauri::command]
+async fn ide_debug_review_control_candidate(
+ app:AppHandle,state:State<'_,Arc<IdeWorkspaceRegistry>>,
+ project_id:String,job_id:String,plan_sha256:String,
+ kind:debug_backend::DebugControlReviewKind,
+)->Result<serde_json::Value,String>{
+ #[cfg(all(feature="native-debug",any(windows,target_os="linux")))]
+ {
+  let registry=Arc::clone(state.inner());
+  let runtime=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+   .ok_or("FIN04_NATIVE_DEBUG_SUPERVISOR_UNAVAILABLE")?;
+  let runtime=Arc::clone(runtime.inner());
+  let review=tauri::async_runtime::spawn_blocking(move||
+   runtime.review_control_candidate(
+    &registry,&project_id,&job_id,&plan_sha256,kind))
+    .await.map_err(|_|"FIN04_CONTROL_REVIEW_INTERRUPTED".to_owned())??;
+  return serde_json::to_value(review)
+   .map_err(|_|"FIN04_CONTROL_REVIEW_SERIALIZATION_FAILED".into());
+ }
+ #[cfg(not(all(feature="native-debug",any(windows,target_os="linux"))))]
+ {
+  let _=(app,state,project_id,job_id,plan_sha256,kind);
+  Err("FIN04_NATIVE_DEBUG_CONTROL_REVIEW_UNAVAILABLE".into())
+ }
+}
 #[tauri::command]
 async fn ide_debug_run_fixture(
     app: AppHandle,
@@ -3997,6 +4024,7 @@ pub fn run() {
             ide_build_reconcile,
             ide_debug_status,
             ide_debug_control_evidence,
+            ide_debug_review_control_candidate,
             ide_debug_run_fixture,
             ide_debug_run_project,
             ide_debug_step_project,
