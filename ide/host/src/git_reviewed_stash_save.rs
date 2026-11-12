@@ -2,7 +2,7 @@
 //! This is a source-level implementation candidate, default disabled.
 use crate::{git_branch_operations::exact_repo,git_reviewed_restore::SingleFileRestoreReview,
  IdeWorkspaceRegistry};
-use git2::{Signature,StashFlags};
+use git2::Signature;
 use serde::Serialize;
 use sha2::{Digest,Sha256};
 use std::{fs::{self,OpenOptions},io::Write,sync::atomic::{AtomicU8,Ordering}};
@@ -90,7 +90,7 @@ impl IdeWorkspaceRegistry {
   }
   let signature=Signature::now("Lu IDE protected stash","lu-ide@local.invalid")
    .map_err(|_|"FIN03_STASH_SIGNATURE_INVALID")?;
-  let oid=repo.stash_save(&signature,"Lu IDE reviewed one-file stash",Some(StashFlags::DEFAULT))
+  let oid=repo.stash_save(&signature,"Lu IDE reviewed one-file stash",None)
    .map_err(|_|"FIN03_STASH_EXECUTION_UNCERTAIN")?;
   let expected_tip=oid.to_string();
   if stash_tip(&repo)?.as_deref()!=Some(expected_tip.as_str()){
