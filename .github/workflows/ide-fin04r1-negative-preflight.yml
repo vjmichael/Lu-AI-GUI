@@ -10,6 +10,8 @@ on:
       - ide/supervisor/examples/wo6_native_dap_acceptance.rs
       - ide/supervisor/src/dap_transport.rs
       - ide/supervisor/src/windows_lsp_worker.rs
+      - ide/supervisor/src/windows_event_owner.rs
+      - ide/supervisor/src/lib.rs
       - ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1
       - ide/app/fixtures/Test-FIN04R1-PhysicalProtectedPdbReview.ps1
       - ide/app/tests/fin04r1_protected_pdb.test.mjs
@@ -48,6 +50,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) {throw 'FIN04R1_NEGATIVE_ORIGINAL_ACTION_RESTART_TEST_FAILED'}
           cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib windows_event_owner
           if ($LASTEXITCODE -ne 0) {throw 'FIN04R1_NEGATIVE_KERNEL_OWNER_CONTRACT_FAILED'}
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib
+          if ($LASTEXITCODE -ne 0) {throw 'FIN04R1_ALL_SUPERVISOR_RECOVERY_TESTS_FAILED'}
       - name: Real physical fixture parse only, never human acceptance
         shell: pwsh
         run: |
