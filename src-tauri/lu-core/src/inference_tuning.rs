@@ -7,6 +7,7 @@ use std::{ffi::OsString,num::NonZeroUsize,path::Path};
 use crate::{
     gguf_metadata_summary::{inspect_metadata,tokenizer_metadata_sha256},
     model_admission::AdmittedModel,
+    p6_compute_fabric::ApprovedLocalGpuPlacement,
 };
 
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
@@ -30,6 +31,8 @@ pub struct TuningProfile {
     pub batch_size: u32,
     pub ubatch_size: u32,
     pub gpu_layers: u16,
+    /// Optional P6 reservation-backed GPU placement. No default use.
+    pub gpu_placement:Option<ApprovedLocalGpuPlacement>,
     pub key_cache: KvType,
     pub value_cache: KvType,
     pub speculative: Speculative,
@@ -45,7 +48,8 @@ impl TuningProfile {
             self.ubatch_size>self.batch_size ||
             self.batch_size>context_tokens ||
             self.gpu_layers>99 ||
-            (!cfg!(target_os="windows") && self.gpu_layers!=0) {
+            (!cfg!(target_os="windows") && self.gpu_layers!=0) ||
+            (self.gpu_placement.is_some() && self.gpu_layers==0) {
             return Err("P5 tuning exceeds conservative engine or platform bounds".into())
         }
         Ok(())
@@ -117,6 +121,9 @@ impl TuningProfile {
                 add("--spec-draft-n-max","3".into());
             }
         }
+        if let Some(local)=&self.gpu_placement{
+            values.extend(local.flags());
+        }
         values
     }
     pub fn label(&self)->&'static str{
@@ -134,6 +141,7 @@ mod tests{
         TuningProfile{
             threads_batch:NonZeroUsize::new(4).unwrap(),
             batch_size:512,ubatch_size:128,gpu_layers:0,
+            gpu_placement:None,
             key_cache:KvType::F16,value_cache:KvType::F16,
             speculative:Speculative::Disabled,
         }
