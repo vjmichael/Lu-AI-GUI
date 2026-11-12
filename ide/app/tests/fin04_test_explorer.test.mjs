@@ -52,3 +52,12 @@ test('FIN04 rejects forged job ids and hostile reporter navigation hints',()=>{
    ...base.cases[0],source:{relativePath:path}}]},id),null);
  }
 });
+
+test('FIN04 rejects duplicate reported case identities',()=>{
+ const one={id:'case_'+'d'.repeat(64),name:'one',status:'reported_pass',
+  independentlyVerified:false};
+ const report={projectId:id,jobId:'job-'+'e'.repeat(32),
+  taskAcceptanceAuthorized:false,independentlyVerified:false,
+  cases:[one,{...one,name:'two'}]};
+ assert.equal(checkedTestExplorer(discovery,report,id),null);
+});
