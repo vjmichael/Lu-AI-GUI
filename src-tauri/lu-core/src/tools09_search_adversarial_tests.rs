@@ -87,11 +87,19 @@ fn tools09_scope_filter_and_path_attack_are_denied_without_ambient_open(){
         req.path=bad.into();
         assert!(search(&root,req).is_err(),"invalid path admitted: {bad:?}");
     }
-    for bad in ["../hidden","*.rs","a/b",".env","\0"]{
+    for bad in ["../hidden","*.rs","a/b","\0"]{
         let mut req=request("needle",true);
         req.file_suffix=Some(bad.into());
         assert!(search(&root,req).is_err());
     }
+    // A literal suffix may be syntactically valid while the hidden
+    // filenames themselves stay outside the default searchable scope.
+    fs::write(path.join(".env"),"needle private").unwrap();
+    let mut hidden_filter=request("needle",true);
+    hidden_filter.file_suffix=Some(".env".into());
+    let hidden=decode(search(&root,hidden_filter).unwrap());
+    assert!(hidden.hits.is_empty());
+    assert!(!hidden.truncated);
     let mut scoped=request("needle",true);
     scoped.path="safe".into();
     let reply=decode(search(&root,scoped).unwrap());
