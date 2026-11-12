@@ -338,6 +338,8 @@ function App() {
   const [debugStatus, setDebugStatus] = useState(null);
   const [fin01Recovery,setFin01Recovery]=useState(null);
   const [fin01RecoveryBusy,setFin01RecoveryBusy]=useState(false);
+  const [fin01KernelBusy,setFin01KernelBusy]=useState(false);
+  const [fin01KernelReceipt,setFin01KernelReceipt]=useState(null);
   const [fin01LspJobs,setFin01LspJobs]=useState(null);
   const [fin01LspBusy,setFin01LspBusy]=useState(false);
   const [debugTargetReview,setDebugTargetReview]=useState(null);
@@ -1644,6 +1646,48 @@ function App() {
       if(activeProjectIdRef.current===selected)
         setProblem('Global native custody evidence unavailable: '+String(error));
     }finally{setFin01RecoveryBusy(false);}
+  }
+  async function clearFin01StaleMarker(){
+    const selected=activeProject?.projectId;
+    if(!selected || fin01KernelBusy || fin01RecoveryBusy ||
+       fin01Recovery?.projectId!==selected ||
+       fin01Recovery.markerPresent!==true ||
+       fin01Recovery.originalJournalsReconciled!==true ||
+       [fin01Recovery.buildJournalPending,fin01Recovery.debugJournalPending,
+        fin01Recovery.lspJournalPending].some(n=>n!==0))return;
+    setFin01KernelBusy(true);
+    setFin01KernelReceipt(null);
+    try {
+      // This only requests a fresh host-owned OS dialog and native kernel
+      // examination; no GUI state or approval flag reaches the kernel API.
+      const result=await invoke('ide_fin01_clear_stale_marker');
+      if(activeProjectIdRef.current!==selected)return;
+      if(result?.code!=='FIN01_NATIVE_KERNEL_STALE_MARKER_CLEARED' ||
+         result.originalOsKernelVerified!==true ||
+         result.previousOwnerExited!==true ||
+         result.executionAuthorized!==false ||
+         result.replayAuthorized!==false ||
+         !['windows_job_object','linux_cgroup_v2'].includes(result.platform) ||
+         !Number.isSafeInteger(result.originalJobCount) ||
+         !Number.isSafeInteger(result.kernelObjectsEmpty) ||
+         !Number.isSafeInteger(result.kernelObjectsAbsent) ||
+         result.originalJobCount!==
+          result.kernelObjectsEmpty+result.kernelObjectsAbsent ||
+         !/^[a-f0-9]{64}$/.test(result.markerSha256||'') ||
+         !Array.isArray(result.originalJournalsSha256) ||
+         result.originalJournalsSha256.length!==3 ||
+         !result.originalJournalsSha256.every(v=>
+           v===null || /^[a-f0-9]{64}$/.test(v)))
+         throw Error('FIN01_NATIVE_KERNEL_RECEIPT_UNTRUSTED');
+      setFin01KernelReceipt({projectId:selected,...result});
+      setFin01Recovery(null);
+      setProblem('Native kernel-custody readback cleared the abandoned global marker. This does not approve or restart any job.');
+    } catch(error){
+      if(activeProjectIdRef.current===selected)
+        setProblem('Kernel-custody clearance refused; protected actions remain blocked: '+String(error));
+    } finally {
+      setFin01KernelBusy(false);
+    }
   }
   async function inspectFin01LspJobs(){
     if(fin01LspBusy || !activeProject?.projectId)return;
@@ -7123,9 +7167,27 @@ function App() {
                         <p>Build pending: {fin01Recovery.buildJournalPending};
                           Debugger pending: {fin01Recovery.debugJournalPending};
                           LSP pending: {fin01Recovery.lspJournalPending}</p>
-                        <p>Native OS release independently verified: No.
-                          Marker removal and automatic retry: Not authorized.</p>
+                        <p>Read-only inventory cannot authorize marker removal.
+                          Each clearance requires fresh native OS approval and
+                          kernel readback. No action may be automatically retried.</p>
                       </div>}
+                    {fin01Recovery?.projectId===activeProject.projectId &&
+                      fin01Recovery.markerPresent===true &&
+                      fin01Recovery.originalJournalsReconciled===true &&
+                      fin01Recovery.buildJournalPending===0 &&
+                      fin01Recovery.debugJournalPending===0 &&
+                      fin01Recovery.lspJournalPending===0 &&
+                      <button type="button" className="ghostBtn"
+                        disabled={fin01KernelBusy || fin01RecoveryBusy}
+                        onClick={()=>void clearFin01StaleMarker()}>
+                        {fin01KernelBusy?'Verifying OS custody…':
+                          'Request OS-verified stale-marker clearance'}
+                      </button>}
+                    {fin01KernelReceipt?.projectId===activeProject.projectId &&
+                      <p role="status">Previous marker cleared after
+                        {fin01KernelReceipt.platform.replaceAll('_',' ')}
+                        {' '}verification of {fin01KernelReceipt.originalJobCount}
+                        {' '}original jobs. No execution or replay authorized.</p>}
                     <button type="button" className="ghostBtn"
                       disabled={fin01LspBusy}
                       onClick={()=>void inspectFin01LspJobs()}>
