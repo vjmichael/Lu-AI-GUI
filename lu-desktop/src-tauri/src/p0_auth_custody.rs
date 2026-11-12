@@ -254,8 +254,85 @@ mod tests{
             os_custody_independently_verified:false
         };
         append(&conn,&row).unwrap();
+        // Simulate historical damaged data from before immutability was
+        // deployed. The current production path never removes this trigger.
+        conn.execute_batch("DROP TRIGGER ansf_p0_cancel_no_update;").unwrap();
         conn.execute("UPDATE ansf_p0_host_cancel_events SET original_sha256=?1",
             ["f".repeat(64)]).unwrap();
+        initialize(&conn).unwrap();
         assert!(recent(&conn,&chat,4).is_err());
+        assert!(requested_watermark(&conn,&chat).is_err());
     }
+    #[test]
+    fn sec05_cancel_intent_mutations_and_direct_deletes_are_rejected(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;
+            CREATE TABLE ansf_desktop_chats(chat_id TEXT PRIMARY KEY);").unwrap();
+        initialize(&conn).unwrap();
+        let first=format!("c-{}","a".repeat(32));
+        let other=format!("c-{}","b".repeat(32));
+        for chat in [&first,&other]{
+            conn.execute("INSERT INTO ansf_desktop_chats(chat_id) VALUES (?1)",
+                [chat]).unwrap();
+        }
+        let row=HostCancelEvent{
+            schema:SCHEMA.into(),attempt_id:format!("au-{}","c".repeat(32)),
+            chat_id:first.clone(),phase:"REQUESTED".into(),domains:vec![],
+            authority_restored:false,automatic_retry_allowed:false,
+            os_custody_independently_verified:false,
+        };
+        append(&conn,&row).unwrap();
+        assert!(requested_watermark(&conn,&first).unwrap()>0);
+        assert_eq!(requested_watermark(&conn,&other).unwrap(),0);
+        // A direct SQLite attacker cannot silently alter the phase, chat
+        // owner, origin digest, or delete an old revocation from its catalog.
+        for sql in [
+            "UPDATE ansf_p0_host_cancel_events SET phase='RESULT'",
+            "UPDATE ansf_p0_host_cancel_events SET chat_id='forged-chat'",
+            "UPDATE ansf_p0_host_cancel_events SET original_sha256='0'",
+            "DELETE FROM ansf_p0_host_cancel_events",
+        ]{
+            assert!(conn.execute_batch(sql).is_err(),"{sql}");
+        }
+        assert!(requested_watermark(&conn,&first).unwrap()>0);
+        assert_eq!(requested_watermark(&conn,&other).unwrap(),0);
+        // Respect explicit human deletion of the WHOLE parent chat.
+        // Parent deletion cascades its own rows, not another chat's.
+        conn.execute("DELETE FROM ansf_desktop_chats WHERE chat_id=?1",
+            [&first]).unwrap();
+        assert_eq!(requested_watermark(&conn,&other).unwrap(),0);
+    }
+    #[test]
+    fn sec05_cross_chat_forged_result_cannot_close_another_cancel_request(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;
+            CREATE TABLE ansf_desktop_chats(chat_id TEXT PRIMARY KEY);").unwrap();
+        initialize(&conn).unwrap();
+        let chat=format!("c-{}","a".repeat(32));
+        let other=format!("c-{}","b".repeat(32));
+        for id in [&chat,&other]{
+            conn.execute("INSERT INTO ansf_desktop_chats(chat_id) VALUES (?1)",
+                [id]).unwrap();
+        }
+        let request=HostCancelEvent{
+            schema:SCHEMA.into(),attempt_id:format!("au-{}","d".repeat(32)),
+            chat_id:chat.clone(),phase:"REQUESTED".into(),domains:vec![],
+            authority_restored:false,automatic_retry_allowed:false,
+            os_custody_independently_verified:false,
+        };
+        append(&conn,&request).unwrap();
+        let mut forged=request.clone();
+        forged.chat_id=other.clone();
+        forged.phase="RESULT".into();
+        forged.domains=vec![DomainResult{
+            name:"background".into(),
+            state:"NATIVE_TERMINATION_REAP_RETURNED".into(),
+        }];
+        assert!(append(&conn,&forged).is_err());
+        assert_eq!(requested_watermark(&conn,&other).unwrap(),0);
+        assert_eq!(recent(&conn,&chat,8).unwrap()[0].status,
+            "CANCELLATION_REQUESTED_OUTCOME_UNKNOWN");
+        assert!(recent(&conn,&other,8).unwrap().is_empty());
+    }
+
 }
