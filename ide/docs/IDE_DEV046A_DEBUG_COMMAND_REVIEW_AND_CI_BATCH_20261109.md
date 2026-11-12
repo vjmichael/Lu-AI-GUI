@@ -108,3 +108,59 @@ restart acceptance; multi-framework exact-case execution.
 
 **FIN-02 remains deferred. FIN-03 destructive mutations and FIN-05
 package execution remain disabled. No release/merge or CI batch.**
+
+## FIN-04G — Global original-action recovery admission and evidence identity
+
+This source increment fixes an admission defect: a release/native debugger
+must not infer clean custody from terminal worker receipts while a separate
+D6 native debugger-action receipt remains `Prepared`, `Approved`,
+`Consumed`, or `ResultUncertain`. Previously this check was reachable
+only under the debug-only D6D feature gate.
+
+The **release-safe**, read-only `debug_control_evidence` inspector now:
+- Replays the original on-disk `debug-fixture-receipts.jsonl` supervisor
+  independently of its in-memory owner and rejects stale/desynchronized
+  supervisor state, with a special bound pristine-empty profile case.
+- Hashes the original job journal and the **full** bounded private action
+  journal directory both before and after validation; changed, replaced,
+  newly inserted, removed, corrupt or foreign action files refuse the scan.
+- Replays all original action journal chains and correlations before
+  selected-project filtering. No foreign project identity/count leaks to
+  the renderer. Returns only a privacy-safe global unresolved-action flag.
+- Separates `global_os_cleanup_required` (native process/worker uncertainty)
+  from `global_unresolved_action_required` (unfinished control or uncertain
+  result). A `ResultUncertain` row requires independent result reconciliation,
+  not a claim that another kernel process is necessarily still running.
+- Distinguishes a legitimate active native Job from an orphaned action in
+  the operator display. Both block unsafe parallel admission, but recovery
+  messaging is not conflated.
+
+Every native-debug build, including production profiles, checks this
+independent action evidence in `status()` and `run_bound()`. The new
+debugger launch checks it *again under the profile-wide FIN-01 global
+marker*, before `Supervisor::prepare`. Refusal before preparation
+releases only the current invocation's unchanged original journal
+marker; it does not touch earlier stale markers or assert OS cleanup.
+
+Read-only debugger-control candidates now bind the original supervisor
+journal SHA-256 and complete action manifest SHA-256 alongside the source,
+terminal debugger receipt and operation intent. A second exact original
+stopped-source review after scanning denies changed source/terminal evidence.
+Review digest changes cannot mint an execution grant or resurrect an old stop.
+
+Added native Rust fixtures for cross-project unfinished action blocking,
+original on-disk journal advancing past in-memory state, byte-level action
+mutation, unchanged manifest, terminal no-action distinction and uncertain
+result classification. Updated JavaScript source-contract tests and the
+operator's profile-wide recovery messaging.
+
+**Still blocked:** genuine FIN-01D native Windows/Linux kernel-custody
+acceptance, one-use release operator action approval, independently
+verified OS event-owner/PDB/RIP source mappings and post-command results,
+OS-only recovery for interrupted native control actions, installed
+Windows/Linux debugging UX, and multi-framework exact-case execution.
+
+**No production DAP step/breakpoint/variable executor was enabled.**
+FIN-02 remains deferred; FIN-03 destructive and FIN-05 package executors
+remain gated. Rust/Node source fixtures were committed but not run,
+and no compiler, CI or installed-app acceptance is claimed.
