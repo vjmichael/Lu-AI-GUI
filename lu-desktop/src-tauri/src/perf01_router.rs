@@ -293,6 +293,31 @@ mod tests{
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn bounded_current_chat_count_only_reads_original_active_ANSF_index(){
+        use std::fs;
+        let root=std::env::temp_dir().join(format!(
+            "lu-perf01-count-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let chats=ChatStore::open(&root).unwrap();
+        let a=chats.create_chat().unwrap().chat_id;
+        let b=chats.create_chat().unwrap().chat_id;
+        let g=format!("g-{}","b".repeat(32));
+        chats.append_user_with_turn_id(&a,&g,"Public original").unwrap();
+        let other=format!("g-{}","c".repeat(32));
+        chats.append_user_with_turn_id(&b,&other,"Other hidden original").unwrap();
+        let count=count_current_chat(&chats,&a).unwrap();
+        assert!(count.complete);
+        assert_eq!(count.scanned_entries,1);
+        assert!(count.answer.contains("human messages: 1"));
+        assert!(!count.answer.contains("Other hidden"));
+        assert!(count_current_chat(&chats,"c-untrusted").is_err());
+        drop(chats);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn excerpt_contains_match_without_emitting_raw_markdown_or_html(){
         let input=format!("{}findme<script>alert(1)</script>", "x".repeat(300));
         let excerpt=safe_excerpt(&input,"findme");
