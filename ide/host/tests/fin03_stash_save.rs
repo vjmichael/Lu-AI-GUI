@@ -65,6 +65,9 @@ fn stash_review_rejects_untracked_file_and_interrupted_marker(){
   &AtomicU8::new(0)).is_err());
  fs::write(folder.join(".git/lu-ide-fin03-stash-active"),b"a".repeat(64)).unwrap();
  assert!(registry.review_one_file_stash_save(&id).is_err());
+ assert!(registry.one_file_stash_recovery_required(&id).is_err());
+ fs::write(folder.join(".git").join(format!(
+  "lu-ide-fin03-stash-original-{}.bin","a".repeat(64))),b"private original").unwrap();
  assert!(registry.one_file_stash_recovery_required(&id).unwrap());
  drop(registry);fs::remove_dir_all(root).unwrap();
 }
