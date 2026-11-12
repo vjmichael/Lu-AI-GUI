@@ -370,7 +370,7 @@ struct Active {
 /// The native OS dialog must not hold a protected stopped Job forever.
 /// A late callback has no receiver and can never produce a consent marker.
 /// Used for developer-only debugger actions; this is not a CI-simulated yes.
-#[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
+#[cfg(all(windows, any(all(debug_assertions, feature = "dev046d-native-dialog"), feature="fin04-release-event-observer")))]
 fn bounded_native_debugger_consent(app: &AppHandle, message: &str, cancel: &AtomicBool) -> bool {
     use std::sync::mpsc::{sync_channel, RecvTimeoutError};
     if cancel.load(Ordering::SeqCst) {
@@ -1040,6 +1040,21 @@ impl NativeDebugRuntime {
     ) -> Result<DebugWitness, String> {
         self.run_bound(app, registry, project_id, Some(target), Some(operation))
     }
+    /// FIN-04R-1: genuine native review of a fixed original action, bound
+    /// to the real first-party event and a separately protected PDB line.
+    /// Approve/decline is recorded once and REVOKED: no production DAP
+    /// request, debugger control or repeatable grant is returned.
+    #[cfg(all(windows,feature="fin04-release-event-observer"))]
+    pub fn run_project_release_review(
+        &self,app:&AppHandle,registry:&IdeWorkspaceRegistry,
+        project_id:&str,target:Arc<SealedProjectDebugTarget>,
+        action:ReviewedNativeAction,
+    )->Result<DebugWitness,String>{
+        if matches!(action,ReviewedNativeAction::InspectVariables){
+            return Err("FIN04R_FRAME_ID_NOT_INDEPENDENTLY_VERIFIED".into());
+        }
+        self.run_bound(app,registry,project_id,Some(target),Some(action))
+    }
     fn run_bound(
         &self,
         app: &AppHandle,
@@ -1183,6 +1198,7 @@ impl NativeDebugRuntime {
                 debug_assertions,
                 feature = "dev046d-native-dialog"
             ))
+            && !cfg!(all(windows,feature="fin04-release-event-observer"))
         {
             return Err("DEV046D_NATIVE_DIALOG_FEATURE_DISABLED".into());
         }
@@ -1462,6 +1478,37 @@ impl NativeDebugRuntime {
             ).map_err(|e| e.code().to_owned())?),
             None => None,
         };
+        #[cfg(all(windows,feature="fin04-release-event-observer"))]
+        let mut release_review_receipt:Option<(String,String)>=None;
+        #[cfg(all(windows,feature="fin04-release-event-observer"))]
+        if let (Some(target),Some(operation),Some(owner))=
+            (target,operation,release_owner.as_ref()) {
+            use lu_ide_execution_supervisor::debug_command_review
+                ::{DebugReviewIntent,StepKind};
+            let intent=match operation {
+                ReviewedNativeAction::StepOver=>DebugReviewIntent::Step{
+                    kind:StepKind::Over,thread_id:owner.thread_id,
+                },
+                ReviewedNativeAction::SameLineBreakpoint=>
+                    DebugReviewIntent::Breakpoint{
+                        source:"src/main.rs".into(),
+                        line:owner.independently_verified_source_line
+                            .ok_or("FIN04R_PROTECTED_LINE_MISSING")?,
+                    },
+                ReviewedNativeAction::InspectVariables=>
+                    return Err("FIN04R_VARIABLE_FRAME_NOT_INDEPENDENTLY_VERIFIED".into()),
+            };
+            let mut native_dialog=|message:&str|
+                bounded_native_debugger_consent(app,message,cancel);
+            let audit=session.review_one_release_action_without_dispatch(
+                &self.supervisor,&prepared.job_id,&plan,target,owner,intent,
+                &mut native_dialog,cancel,
+            ).map_err(|e|e.code().to_owned())?;
+            if audit.2!="Revoked"{
+                return Err("FIN04R_REVIEW_NOT_DURABLY_REVOKED".into());
+            }
+            release_review_receipt=Some((audit.0,audit.1));
+        }
         // The session is never exposed to the browser. Close demands Job/
         // cgroup emptiness, independent service release and a terminal receipt.
         // D6D: developer-only Windows native approval after an actual
@@ -1582,7 +1629,17 @@ impl NativeDebugRuntime {
         #[cfg(not(all(windows, debug_assertions, feature = "dev046d-native-dialog")))]
         let (operation_outcome_code, operation_receipt_sha256) = {
             session.close().map_err(|e| e.code().to_owned())?;
-            (None, None)
+            #[cfg(all(windows,feature="fin04-release-event-observer"))]
+            {
+                match release_review_receipt {
+                    Some((_,receipt))=>
+                        (Some("release_one_use_human_review_revoked_no_dispatch"),
+                         Some(receipt)),
+                    None=>(None,None),
+                }
+            }
+            #[cfg(not(all(windows,feature="fin04-release-event-observer")))]
+            {(None,None)}
         };
 
         #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
