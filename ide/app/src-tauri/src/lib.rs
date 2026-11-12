@@ -2665,6 +2665,29 @@ async fn ide_list_language_servers() -> Vec<lu_ide_workspace::lsp::LanguageServe
     lu_ide_workspace::lsp::available_servers().to_vec()
 }
 
+
+/// FIN-02: compile-time feature inventory only; not runtime readiness,
+/// worker authority, installer approval, or proof of installed resources.
+#[tauri::command]
+async fn ide_native_feature_inventory() -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion":1,
+        "profile":"fin02_compiled_features_observation",
+        "protectedAlphaProfile":cfg!(feature="fin02-protected-alpha"),
+        "nativeLsp":cfg!(feature="native-lsp"),
+        "nativeBuild":cfg!(feature="native-build"),
+        "nativeMultilang":cfg!(feature="native-multilang"),
+        "nativeDebug":cfg!(feature="native-debug"),
+        "nativeProjectDebug":cfg!(feature="native-project-debug"),
+        "nativeOfflineUv":cfg!(feature="native-package-uv"),
+        "developerOnlyDebugActions":cfg!(feature="dev046d-native-dialog"),
+        "runtimeResourcesIndependentlyVerified":false,
+        "installedAppAccepted":false,
+        "authorizationGranted":false,
+        "processStarted":false
+    })
+}
+
 /// List actual host-supported operations. Discovery is not authorization.
 #[tauri::command]
 async fn ide_list_capabilities() -> lu_ide_workspace::capabilities::CapabilityCatalog {
@@ -3409,6 +3432,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ide_list_capabilities,
+            ide_native_feature_inventory,
             ide_list_language_servers,
             ide_lsp_worker_status,
             ide_lsp_runtime_state,

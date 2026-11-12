@@ -9,6 +9,11 @@ description = "Standalone desktop IDE, optionally interoperable with Lu"
 
 [features]
 default = []
+# FIN-02: explicit integrated source feature profile, NOT a released
+# worker package. No developer-only debugger actions or Windows uv Sync.
+# Build script refuses this profile without a fully remeasured LSP stage;
+# every native runner separately verifies installed resources and OS admission.
+fin02-protected-alpha = ["native-lsp", "native-multilang", "native-project-debug"]
 # Opt-in, pinned native Windows/Linux LSP host. Never enabled by default.
 # Windows requires the reviewed D7D SCM; Linux requires root-owned bundle,
 # root-owned bwrap and delegated kernel cgroup-v2, with no permissive fallback.

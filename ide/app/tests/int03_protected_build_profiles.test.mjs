@@ -8,6 +8,7 @@ const project='ide-'+'a'.repeat(32);
 const sha='b'.repeat(64);
 const status=()=>({
   ready:true,cargoReady:true,current:null,quarantined:[],journal:[],
+  globalRecoveryRequired:false,activeInAnotherProject:false,globalWorkerBusy:false,
   multilangReady:[{profileId:'python_pytest',ready:true,
     code:'DEV03_RUNTIME_PIN_VERIFIED_NATIVE_ADMISSION_PER_JOB'},
     {profileId:'js_tests',ready:false,code:'DEV03_RUNTIME_NOT_READY'}],
@@ -67,4 +68,14 @@ test('compiler/log hints remain read-only and reject path escapes',()=>{
   assert.equal(rows.every(row=>row.verified===false && row.navigable===false),true);
   assert.equal(boundedBuildTestHints({...output,jobId:'job-'+'9'.repeat(32)},
     project,job).length,0);
+});
+
+test('FIN01 foreign project global supervisor cannot be reviewed',()=>{
+  const current=status();
+  current.activeInAnotherProject=true;current.globalWorkerBusy=true;
+  assert.equal(nativeProfileAvailability(current,'rust_tests'),
+    'worker_unavailable_or_recovery_required');
+  const broken=status(); delete broken.globalRecoveryRequired;
+  assert.equal(nativeProfileAvailability(broken,'rust_tests'),
+    'worker_unavailable_or_recovery_required');
 });

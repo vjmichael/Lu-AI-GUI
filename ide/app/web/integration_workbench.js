@@ -19,6 +19,7 @@ const REQUESTS=Object.freeze([
   ['debug','ide_debug_status',true],
   ['language','ide_lsp_worker_status',false],
   ['continuity','ide_read_project_context',true],
+  ['compiled','ide_native_feature_inventory',false],
 ]);
 const ROUTES=new Set(['explorer','languages','tasks','source',
   'packages','terminal','continuity']);
@@ -67,6 +68,27 @@ function checkedPackages(v,projectId) {
   }
   return Object.freeze({reviewable,blockerCount:v.blockers.length});
 }
+function checkedCompiled(v) {
+  if(!isObject(v) || v.schemaVersion!==1 ||
+    v.profile!=='fin02_compiled_features_observation' ||
+    v.runtimeResourcesIndependentlyVerified!==false ||
+    v.installedAppAccepted!==false ||
+    v.authorizationGranted!==false || v.processStarted!==false)
+    return null;
+  for(const k of ['protectedAlphaProfile','nativeLsp','nativeBuild',
+    'nativeMultilang','nativeDebug','nativeProjectDebug','nativeOfflineUv',
+    'developerOnlyDebugActions']) {
+    if(typeof v[k]!=='boolean')return null;
+  }
+  // No developer-only action entitlement can be interpreted as production
+  // debugger approval, even in an explicitly integrated feature build.
+  return Object.freeze({
+    ...Object.fromEntries(['protectedAlphaProfile','nativeLsp',
+      'nativeBuild','nativeMultilang','nativeDebug','nativeProjectDebug',
+      'nativeOfflineUv','developerOnlyDebugActions'].map(k=>[k,v[k]])),
+    executionAuthorized:false
+  });
+}
 function checkedContinuity(v,projectId) {
   // The ledger stores human-authored state; it is neither OS evidence nor
   // automatic acceptance. Only bounded counts survive this review surface.
@@ -102,6 +124,7 @@ export function projectWorkbench(projectId,raw) {
   if(!PROJECT.test(projectId||'') || !isObject(raw))return null;
   const git=checkedSource(raw.git,projectId);
   const packages=checkedPackages(raw.packages,projectId);
+  const compiled=checkedCompiled(raw.compiled);
   const continuity=checkedContinuity(raw.continuity,projectId);
   const profiles=checkedProfiles(raw.profiles,projectId);
   const inventory=checkedToolchainInventory(raw.build,projectId);
@@ -125,7 +148,8 @@ export function projectWorkbench(projectId,raw) {
   const globalBusy=raw.build?.globalWorkerBusy===true ||
     raw.build?.activeInAnotherProject===true ||
     raw.debug?.activeInAnotherProject===true;
-  const nativeReady=inventory.rows.some(x=>x.ready) &&
+  const nativeReady=compiled?.nativeBuild===true &&
+    inventory.rows.some(x=>x.ready) &&
     inventory.workerBusy===false && !globalBusy && !recovery;
   const rows=[
     entry('editor','Editor & saved sources','explorer',
@@ -136,9 +160,10 @@ export function projectWorkbench(projectId,raw) {
         'Local HEAD observed: '+git.headSha.slice(0,12)+'…; remote, dirty buffers and merge safety not implied.' :
         'Local branch/HEAD not verified. Inspect the repository before Git operations.'),
     entry('language','Language services','languages',
-      lspRecovery?'reconciliation_required':lsp.ready?'review_required':'unverified',
+      lspRecovery?'reconciliation_required':
+      compiled?.nativeLsp && lsp.ready?'review_required':'unverified',
       lspRecovery?'An interrupted native language worker requires OS reconciliation.' :
-      lsp.ready?'Pinned provider observed; starting a session still needs native approval.' :
+      compiled?.nativeLsp && lsp.ready?'Pinned provider observed; starting a session still needs native approval.' :
       'Native provider availability is not verified.'),
     entry('build','Build & test','tasks',
       buildRecovery?'reconciliation_required':
@@ -152,9 +177,10 @@ export function projectWorkbench(projectId,raw) {
         'No matching saved profile and installed pinned runtime have been jointly observed.'),
     entry('debug','Debugger','tasks',
       debugRecovery?'reconciliation_required':
-      debug.ready && debug.projectDebugSupported?'review_required':'unverified',
+      compiled?.nativeProjectDebug && debug.ready &&
+        debug.projectDebugSupported?'review_required':'unverified',
       debugRecovery?'Debugger/action native cleanup is required.' :
-      debug.ready && debug.projectDebugSupported?
+      compiled?.nativeProjectDebug && debug.ready && debug.projectDebugSupported?
         'Available for reviewed protected project target; no attach, arbitrary launch or automatic step.' :
         'Debugger target or native availability has not been verified.'),
     entry('packages','Packages & toolchains','packages',
@@ -185,7 +211,7 @@ export function projectWorkbench(projectId,raw) {
     rows:Object.freeze(rows),priority,recoveryRequired:recovery,
     sourcesObserved:Object.freeze({
       git:!!git,packages:!!packages,profiles:!!profiles,
-      continuity:!!continuity,runtime:nativeBuild,
+      continuity:!!continuity,runtime:nativeBuild,compiled:!!compiled,
       language:!!raw.language && lsp.sessionState!=='unavailable',
       debugger:!!raw.debug && Array.isArray(raw.debug.journal),
     }),

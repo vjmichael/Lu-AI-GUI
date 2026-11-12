@@ -41,7 +41,7 @@ test('INT06 recovery always precedes source review or build workflow',()=>{
   assert.equal(w.priority,'build');
   assert.equal(w.rows.find(x=>x.id==='build').state,'reconciliation_required');
 });
-test('INT06 all seven read-only probes and no mutation',async()=>{
+test('INT06 FIN02 eight read-only probes and no mutation',async()=>{
   const calls=[];
   const answers={
     ide_read_git_repository_inventory:snapshot.git,
@@ -55,8 +55,10 @@ test('INT06 all seven read-only probes and no mutation',async()=>{
     'ide_build_status','ide_debug_status','ide_discover_project_run_profiles',
     'ide_inspect_package_managers','ide_lsp_worker_status',
     'ide_read_git_repository_inventory','ide_read_project_context',
+    'ide_native_feature_inventory',
   ].sort());
   assert.deepEqual(calls.find(c=>c[0]==='ide_lsp_worker_status')[1],undefined);
+  assert.equal(calls.find(c=>c[0]==='ide_native_feature_inventory')[1],undefined);
   assert.ok(calls.filter(c=>c[1]).every(c=>c[1].projectId===id));
   assert.equal(w.executionAuthorized,false);
 });
@@ -118,4 +120,22 @@ test('FIN01 native read can fail without turning other observations into proof',
     ? never:Promise.resolve(null),()=>false);
   resolve(null);
   assert.equal(await p,null);
+});
+
+test('FIN02 compiled features must be an explicit native observation',()=>{
+  const compiled={schemaVersion:1,
+    profile:'fin02_compiled_features_observation',
+    protectedAlphaProfile:true,nativeLsp:true,nativeBuild:true,
+    nativeMultilang:true,nativeDebug:true,nativeProjectDebug:true,
+    nativeOfflineUv:false,developerOnlyDebugActions:false,
+    runtimeResourcesIndependentlyVerified:false,
+    installedAppAccepted:false,authorizationGranted:false,
+    processStarted:false};
+  const value=projectWorkbench(id,{...snapshot,compiled});
+  assert.equal(value.sourcesObserved.compiled,true);
+  assert.equal(value.executionAuthorized,false);
+  assert.equal(value.installedAppAccepted,false);
+  const forged=projectWorkbench(id,{...snapshot,compiled:{
+    ...compiled,authorizationGranted:true}});
+  assert.equal(forged.sourcesObserved.compiled,false);
 });

@@ -213,7 +213,27 @@ fn offline_lsp_pins() -> Result<(), String> {
     }
     Ok(())
 }
+// FIN-02: never allow an "integrated alpha" build to fall back to the
+// permissive development path in which absent staged LSP pins are accepted
+// only so that the IDE's default (inert) UI can compile.
+fn fin02_require_reviewed_lsp_stage() -> Result<(), String> {
+    if env::var_os("CARGO_FEATURE_FIN02_PROTECTED_ALPHA").is_none() {
+        return Ok(());
+    }
+    let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR")
+        .map_err(|_| "FIN02_DESKTOP_BUILD_ROOT_MISSING")?);
+    let pins = root.join("lsp-compile-pins.json");
+    if !pins.is_file() {
+        return Err("FIN02_REVIEWED_LSP_STAGE_REQUIRED".into());
+    }
+    // offline_lsp_pins below must independently validate the staged
+    // provider and protected service against the exact release source.
+    Ok(())
+}
 fn main() {
+    if let Err(error) = fin02_require_reviewed_lsp_stage() {
+        panic!("protected alpha admission refused: {error}");
+    }
     if let Err(error) = offline_lsp_pins() {
         panic!("offline LSP admission refused: {error}");
     }
