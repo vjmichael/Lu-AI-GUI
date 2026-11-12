@@ -52,6 +52,10 @@ ide056-ci-acl-positive = ["windows-worker"]
 # CI-only ELF oracle outside the child cgroup, never packaged into a desktop.
 # Without this precise opt-in the native method fails closed at runtime.
 dev045d3-ci-oracle = ["dap-transport", "linux-worker"]
+# FIN-04R: the first-party LLDB event sideband under native Windows
+# AppContainer / Job Object and SCM custody is observation-only.
+# No DAP control, CI symbolizer, action grant, or replay authority.
+fin04-release-owner-evidence = ["dap-transport", "protected-recovery-service"]
 # D4C runs a pinned, native first-party LLVM PE/PDB reader only in
 # disposable debug CI; not a Lu release, Tauri command or general tool.
 dev045d4c-ci-oracle = ["dap-transport", "protected-recovery-service"]
