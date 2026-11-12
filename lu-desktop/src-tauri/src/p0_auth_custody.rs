@@ -101,6 +101,23 @@ pub(crate) fn requested_watermark(
 )->Result<i64,String>{
     if !ident(chat,"c-"){return Err("P0_SEC_INVALID_CHAT_SCOPE".into())}
     initialize(conn)?;
+    // SEC-06 original-ledger reconciliation is NOT capped to the 32-row
+    // operator view. A forged orphan RESULT deep in old history must still
+    // deny authorization. SQL filters the exact chat before probing all
+    // original attempt bindings and cannot mistake a positive RESULT as an
+    // original human request.
+    let orphan:i64=conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM ansf_p0_host_cancel_events r
+           WHERE r.chat_id=?1 AND r.phase='RESULT'
+             AND NOT EXISTS(
+               SELECT 1 FROM ansf_p0_host_cancel_events q
+               WHERE q.chat_id=r.chat_id
+                 AND q.attempt_id=r.attempt_id
+                 AND q.phase='REQUESTED'))",
+        params![chat],|row|row.get(0)
+    ).map_err(|_|"P0_SEC_CANCEL_ORPHAN_QUERY_UNAVAILABLE")?;
+    if orphan!=0{return Err("P0_SEC_CANCEL_ORPHANED_RESULT".into())}
     // A malicious/old SQLite writer may have injected a standalone RESULT.
     // This is NOT a substitute for a genuine host-saved REQUESTED intent;
     // even a perfectly hashed orphan never restores tool execution.
