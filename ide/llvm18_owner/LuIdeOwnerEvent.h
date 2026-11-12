@@ -1,6 +1,9 @@
 //===-- LuIdeOwnerEvent.h --------------------------------------------------===//
 //
-// First-party Lu IDE LLVM 18.1.8 CI-only Windows debug-event sideband.
+// First-party Lu IDE LLVM 18.1.8 Windows debug-event sideband.
+ // May serve a strictly read-only pinned release observer ONLY after
+ // independent build-time source/binary provenance and native OS acceptance.
+ // No production stepping, breakpoint, variables or replay authority.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 // This header MUST be applied only to the exact pinned upstream LLVM tag.
