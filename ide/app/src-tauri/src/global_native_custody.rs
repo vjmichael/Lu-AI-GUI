@@ -66,7 +66,7 @@ impl GlobalAdmissionFence {
       return Err("FIN01_GLOBAL_MARKER_PERMISSIONS".into());
     }
   }
-  let owner_bytes=format!("FIN01-V1:{}:{}\n",domain,std::process::id()).into_bytes();
+  let owner_bytes=format!("FIN01-V1:{}:{}:{:016x}\n",domain,std::process::id(),rand::random::<u64>()).into_bytes();
   file.write_all(&owner_bytes).and_then(|_|file.sync_all())
    .map_err(|_|"FIN01_GLOBAL_MARKER_SYNC_FAILED".to_owned())?;
   #[cfg(unix)]
@@ -92,6 +92,14 @@ impl GlobalAdmissionFence {
    .take(MAX_MARKER+1).read_to_end(&mut bytes)
    .map_err(|_|"FIN01_GLOBAL_MARKER_UNREADABLE")?;
   if bytes!=self.owner_bytes{return Err("FIN01_GLOBAL_MARKER_CHANGED".into());}
+  // Compare a second time immediately before unlink. A replaced marker may
+  // never be mistaken for our original one-use admission ticket.
+  let latest=fs::symlink_metadata(&self.marker)
+   .map_err(|_|"FIN01_GLOBAL_MARKER_CHANGED")?;
+  if !latest.is_file() || latest.file_type().is_symlink() ||
+     latest.len()!=metadata.len() || latest.modified().ok()!=metadata.modified().ok(){
+    return Err("FIN01_GLOBAL_MARKER_CHANGED".into());
+  }
   fs::remove_file(&self.marker).map_err(|_|"FIN01_GLOBAL_MARKER_CLEAR_FAILED")?;
   #[cfg(unix)]
   {
