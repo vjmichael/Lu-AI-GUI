@@ -8349,6 +8349,14 @@ function App() {
                   {debugResult.stackResponseObserved ? 'observed' : 'not proven'}</p>
                 <p>Kernel tree cleanup: {debugResult.verifiedOsTreeReleaseByWorker
                   ? 'recorded by protected supervisor' : 'not verified'}.</p>
+                {debugResult.releaseOwnerKernelVerified===true &&
+                  <p>First-party protected LLDB DEBUG_EVENT owner:
+                    native sequence {debugResult.releaseOwnerEventSequence}.
+                    Original OS Job and journal were checked; this does
+                    <strong> not</strong> verify the PDB source line, a
+                    breakpoint, a step or production control authority.
+                    <code>{debugResult.releaseOwnerReceiptSha256}</code>
+                  </p>}
                 {typeof debugResult.terminalReceiptSha256==='string' &&
                   <p>Exact debugger terminal journal hash:
                     {' '}<code>{debugResult.terminalReceiptSha256}</code></p>}
