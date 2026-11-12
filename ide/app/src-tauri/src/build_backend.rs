@@ -65,6 +65,10 @@ const MULTILANG_RECIPES: [&str; 4] = [
     "cpp_cmake_build",
     "uv_sync_offline",
 ];
+fn multilang_base_recipe(recipe: &str) -> &str {
+    lu_ide_execution_supervisor::exact_framework_case(recipe)
+        .map(|(base, _, _)| base).unwrap_or(recipe)
+}
 /// INT03: An explicit reviewed profile binds exactly one saved manifest,
 /// never a caller-submitted path, script, shell argument or toolchain.
 fn profile_manifest(recipe: &str) -> Option<&'static str> {
@@ -72,6 +76,8 @@ fn profile_manifest(recipe: &str) -> Option<&'static str> {
         "rust_check" | "rust_build" | "rust_tests" => Some("Cargo.toml"),
         id if lu_ide_execution_supervisor::rust_exact_case_name(id).is_some()=>
             Some("Cargo.toml"),
+        id if lu_ide_execution_supervisor::exact_framework_case(id).is_some() =>
+            profile_manifest(multilang_base_recipe(id)),
         "lu_ide_host_tests" => Some("ide/host/Cargo.toml"),
         "python_pytest" => Some("pyproject.toml"),
         "js_tests" => Some("package.json"),
@@ -194,6 +200,7 @@ fn native_package_consent(app: &AppHandle, message: String, requested: &AtomicBo
 
 #[cfg(feature = "native-multilang")]
 fn multilang_release_pin(recipe_id: &str) -> Option<&'static str> {
+    let recipe_id=multilang_base_recipe(recipe_id);
     #[cfg(windows)]
     {
         match recipe_id {
@@ -381,6 +388,7 @@ pub struct MultilangProfileReadiness {
 
 #[cfg(feature = "native-multilang")]
 fn installation_multilang(app: &AppHandle, recipe_id: &str) -> Result<Installation, String> {
+    let recipe_id=multilang_base_recipe(recipe_id);
     if !MULTILANG_RECIPES.contains(&recipe_id) {
         return Err("DEV03_RECIPE_DENIED".into());
     }
@@ -991,6 +999,50 @@ impl NativeBuildRuntime {
         )
     }
 
+    /// FIN-04H: only a native-discovered saved Python or Node symbol may
+    /// choose a fixed, offline OS-contained exact-case recipe. CTest exact
+    /// execution remains gated on real compiled-test enumeration.
+    pub fn run_selected_framework_case(
+        &self, app:&AppHandle, registry:&IdeWorkspaceRegistry,
+        project_id:&str, relative_path:&str, case_name:&str,
+        expected_source_revision:&str, expected_manifest_sha256:&str,
+    )->Result<BuildRunView,String>{
+        if !cfg!(feature="native-multilang"){
+            return Err("FIN04H_MULTILANG_OS_WORKER_DISABLED".into());
+        }
+        let source=registry.inspect_test_symbol_candidates(project_id,relative_path)
+            .map_err(str::to_owned)?;
+        if source.project_id!=project_id ||
+           !matches!(source.language,"python"|"javascript") ||
+           source.source_revision!=expected_source_revision ||
+           !source.symbols.iter().any(|row|row.name==case_name &&
+                row.candidate_only && !row.executable_test_verified) {
+            return Err("FIN04H_SAVED_CASE_STALE_OR_UNKNOWN".into());
+        }
+        let prefix=if source.language=="python" {
+            "pytest_exact_case:"
+        } else {"node_exact_case:"};
+        let recipe_id=format!("{prefix}{relative_path}::{case_name}");
+        let (framework, exact_path, exact_name)=
+            lu_ide_execution_supervisor::exact_framework_case(&recipe_id)
+            .ok_or("FIN04H_EXACT_RECIPE_DENIED")?;
+        if exact_path!=relative_path || exact_name!=case_name {
+            return Err("FIN04H_SOURCE_RECIPE_MISMATCH".into());
+        }
+        let manifest_path=profile_manifest(framework)
+            .ok_or("FIN04H_FRAMEWORK_MANIFEST_UNAVAILABLE")?;
+        let manifest=registry.preview_source_file(project_id,manifest_path)
+            .map_err(|_|"FIN04H_MANIFEST_NOT_SAVED")?;
+        if manifest.project_id!=project_id ||
+           manifest.relative_path!=manifest_path ||
+           manifest.revision!=expected_manifest_sha256 {
+            return Err("FIN04H_ORIGINAL_MANIFEST_STALE".into());
+        }
+        self.run_with_review(app,registry,project_id,&recipe_id,None,
+            Some(expected_manifest_sha256),
+            Some((relative_path.to_owned(),expected_source_revision.to_owned())))
+    }
+
     /// FIN04: one native-discovered saved Rust test name, sealed with Cargo
     /// and original test source SHA, executed only under a fresh OS approval.
     pub fn run_selected_rust_case(
@@ -1034,7 +1086,8 @@ impl NativeBuildRuntime {
         expected_profile_sha: Option<&str>,
         selected_case_source:Option<(String,String)>,
     ) -> Result<BuildRunView, String> {
-        if lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_some()
+        if (lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_some() ||
+            lu_ide_execution_supervisor::exact_framework_case(recipe_id).is_some())
            && selected_case_source.is_none(){
            return Err("FIN04_RUST_EXACT_CASE_NOT_NATIVE_REVIEWED".into());
         }
@@ -1183,7 +1236,7 @@ impl NativeBuildRuntime {
             return Err("INT03_PRIOR_KERNEL_RECONCILIATION_REQUIRED".into());
         }
         #[cfg(feature = "native-multilang")]
-        let installed = if MULTILANG_RECIPES.contains(&recipe_id) {
+        let installed = if MULTILANG_RECIPES.contains(&multilang_base_recipe(recipe_id)) {
             installation_multilang(app, recipe_id)?
         } else {
             installation(app)?
@@ -1235,7 +1288,8 @@ impl NativeBuildRuntime {
             }
         }
         if let Some((relative,revision))=selected_case_source {
-            if lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_none()
+            if (lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_none() &&
+                lu_ide_execution_supervisor::exact_framework_case(recipe_id).is_none())
                 || relative.len()>1024
                 || relative.starts_with('/')
                 || relative.contains(':') || relative.contains('\\')
@@ -1761,7 +1815,8 @@ impl NativeBuildRuntime {
         let test_case_evidence = if matches!(
             recipe_id, "rust_tests" | "lu_ide_host_tests" |
                 "python_pytest" | "js_tests" | "cpp_cmake_build"
-        ) || lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_some() {
+        ) || lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_some()
+          || lu_ide_execution_supervisor::exact_framework_case(recipe_id).is_some() {
             // The ORIGINAL native worker returned its terminal result. Output
             // is still project-controlled, so these are reported observations.
             let native_terminated = matches!(
