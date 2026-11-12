@@ -487,6 +487,7 @@ pub mod unix_owned {
         child:Child,
         stdin:Option<std::process::ChildStdin>,
         stopped:bool,
+        verified_signal:bool,
     }
     #[cfg(target_os="linux")]
     impl LinuxOwnedGroupGuardian{
@@ -538,7 +539,7 @@ pub mod unix_owned {
                 return Err(io::Error::other("group guardian died before worker admission"))
             }
             let child=admission.admit();
-            Ok(Some(Self{child,stdin:Some(stdin),stopped:false}))
+            Ok(Some(Self{child,stdin:Some(stdin),stopped:false,verified_signal:false}))
         }
         pub fn group_id(&self)->i32{self.child.id() as i32}
         /// A successful handshake proves private PGID ownership; SIGKILL
@@ -546,7 +547,10 @@ pub mod unix_owned {
         /// adopted zombie descendants have been wait()-reaped by Lu.
         pub fn stop_and_verify_signal(&mut self)->io::Result<()>{
             use std::{os::unix::process::ExitStatusExt,time::{Duration,Instant}};
-            if self.stopped{return Ok(())}
+            if self.stopped{
+                return if self.verified_signal{Ok(())}
+                else{Err(io::Error::other("Group guardian stop was not verified"))}
+            }
             if self.child.try_wait()?.is_some(){
                 return Err(io::Error::other("group guardian died before closure"))
             }
@@ -555,7 +559,8 @@ pub mod unix_owned {
             loop{
                 if let Some(status)=self.child.try_wait()?{
                     self.stopped=true;
-                    return if status.signal()==Some(SIGKILL){Ok(())}
+                    self.verified_signal=status.signal()==Some(SIGKILL);
+                    return if self.verified_signal{Ok(())}
                     else{Err(io::Error::other("group guardian did not die by group SIGKILL"))};
                 }
                 if Instant::now()>=deadline{
@@ -586,6 +591,7 @@ pub mod unix_owned {
         subtree:std::path::PathBuf,
         receipt:std::path::PathBuf,
         stopped:bool,
+        verified_empty:bool,
     }
     #[cfg(target_os="linux")]
     impl LinuxCgroupCustodian{
@@ -682,7 +688,7 @@ pub mod unix_owned {
                 return Err(io::Error::other("Custodian exited before admission"))
             }
             let child=admission.admit();
-            Ok(Some(Self{child,stdin:Some(stdin),subtree:group,receipt,stopped:false}))
+            Ok(Some(Self{child,stdin:Some(stdin),subtree:group,receipt,stopped:false,verified_empty:false}))
         }
         pub fn subtree(&self)->&std::path::Path{&self.subtree}
         /// A live custodian is required during execution, not merely at
@@ -729,7 +735,10 @@ pub mod unix_owned {
         /// uncertainty, NOT success or a fresh authority grant.
         pub fn stop_and_verify(&mut self)->io::Result<()>{
             use std::time::{Duration,Instant};
-            if self.stopped{return Ok(())}
+            if self.stopped{
+                return if self.verified_empty{Ok(())}
+                else{Err(io::Error::other("Cgroup closure previously failed verification"))}
+            }
             if self.child.try_wait()?.is_some(){
                 return Err(io::Error::other("Linux custodian died before OS cleanup"))
             }
@@ -747,6 +756,7 @@ pub mod unix_owned {
                         ||record.len()>4096{
                         return Err(io::Error::other("Cgroup witness missing or corrupt"))
                     }
+                    self.verified_empty=true;
                     return Ok(())
                 }
                 if Instant::now()>=deadline{
