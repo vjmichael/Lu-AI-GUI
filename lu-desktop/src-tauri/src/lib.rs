@@ -5506,10 +5506,12 @@ async fn generate_internal(
             // The chat ID comes from Lu's existing saved conversation
             // custody, not the LLM or renderer. Failure to bind merely
             // disables an optimization; it must never block a valid send.
-            if plain_cache_scope && !ticket.cancelled() {
-                let _=supervisor.bind_reserved_cache_scope(
-                    &sid,&gid,&chat_id);
-            }
+            let cache_scope_bound=plain_cache_scope && !ticket.cancelled()
+                && supervisor.bind_reserved_cache_scope(
+                    &sid,&gid,&chat_id).is_ok();
+            // This receipt means only that Lu admitted a cache scope; the
+            // pinned server's token reuse remains independently unverified.
+            perf_trace.cache_scope_admitted(cache_scope_bound);
             // Host cancellation can arrive between gate activation and the
             // engine reservation. Propagate the latched bit after reserving.
             if ticket.cancelled() {
