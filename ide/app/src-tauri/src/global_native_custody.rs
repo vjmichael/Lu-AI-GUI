@@ -313,6 +313,19 @@ mod tests{
   assert!(!global_custody_unresolved(&p).unwrap());
   fs::remove_dir_all(p).unwrap();
  }
+ #[test]
+ fn same_phase_changed_journal_bytes_cannot_unlock_denied_admission(){
+  let p=fixture();
+  let mut lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
+  let jobs:Vec<JobSummary>=Vec::new();
+  // This mutation does not prepare a job in the test state; the original
+  // bytes still changed and must fail the exact owner-journal release.
+  fs::write(p.join("build-job-receipts.jsonl"),b"unexpected_journal_bytes").unwrap();
+  assert_eq!(lease.release_before_prepare_if_unchanged(&jobs,&jobs)
+   .unwrap_err(),"FIN01_OWNER_JOURNAL_BYTES_CHANGED_BEFORE_ADMISSION_RELEASE");
+  assert!(global_custody_unresolved(&p).unwrap());
+  fs::remove_dir_all(p).unwrap();
+ }
  #[cfg(feature="native-lsp")]
  #[test]
  fn independently_replayed_lsp_job_blocks_build_and_debug_admission(){
