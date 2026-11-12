@@ -502,6 +502,50 @@ pub mod unix_owned {
             assert!(cgroup.stop_and_verify().is_err());
         }
         #[test]
+        fn sec06_kernel_receipt_rejects_cross_chat_nonce_truncation_symlinks_and_mode(){
+            use std::{fs,os::unix::fs::{PermissionsExt,symlink}};
+            let dir=std::env::temp_dir().join(format!(
+                "lu-sec06-receipt-{}-{}",std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+            fs::create_dir(&dir).unwrap();
+            let receipt=dir.join("original-guard.receipt");
+            let exact=format!(
+                "LU_CGROUP_V2_EMPTY_V1\nCHAT=c-{}\nTURN=g-{}\nCALL=sec06-gh\nNONCE={}\nPOPULATED=0\n",
+                "a".repeat(32),"b".repeat(32),"c".repeat(32)
+            );
+            fs::write(&receipt,&exact).unwrap();
+            fs::set_permissions(&receipt,fs::Permissions::from_mode(0o600))
+                .unwrap();
+            assert!(validate_linux_cgroup_receipt(&receipt,&exact).is_ok());
+            for wrong in [
+                exact.replace("CHAT=c-","CHAT=c-other-"),
+                exact.replace("CALL=sec06-gh","CALL=other-gh"),
+                exact.replace(&"c".repeat(32),&"d".repeat(32)),
+                exact.replace("POPULATED=0","POPULATED=1"),
+                format!("{exact}REPLAY=1\n"),
+                exact.trim_end().to_string(),
+            ]{
+                fs::write(&receipt,wrong).unwrap();
+                assert!(validate_linux_cgroup_receipt(&receipt,&exact).is_err());
+            }
+            fs::write(&receipt,&exact).unwrap();
+            fs::set_permissions(&receipt,fs::Permissions::from_mode(0o666))
+                .unwrap();
+            assert!(validate_linux_cgroup_receipt(&receipt,&exact).is_err());
+            fs::set_permissions(&receipt,fs::Permissions::from_mode(0o600))
+                .unwrap();
+            fs::write(&receipt,vec![b'x';4097]).unwrap();
+            assert!(validate_linux_cgroup_receipt(&receipt,&exact).is_err());
+            fs::write(&receipt,&exact).unwrap();
+            let link=dir.join("linked.receipt");
+            symlink(&receipt,&link).unwrap();
+            assert!(validate_linux_cgroup_receipt(&link,&exact).is_err());
+            fs::remove_file(&link).unwrap();
+            fs::remove_file(&receipt).unwrap();
+            fs::remove_dir(dir).unwrap();
+        }
+        #[test]
         fn unavailable_helper_must_exit_before_no_delegation_result(){
             let mut child=Command::new("/bin/sh").args(["-c","exec sleep 2"])
                 .stdin(Stdio::null()).stdout(Stdio::piped())
