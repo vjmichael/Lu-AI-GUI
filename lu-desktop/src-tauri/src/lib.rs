@@ -4801,7 +4801,7 @@ async fn generate_internal(
     let request_id = next_id("req-");
     let mut perf_trace=perf01_telemetry::ModelTrace::new(
         &chat_id,&generation_id,perf_turn_start,true
-    );
+    ).with_model(runtime.model_ref.clone());
     perf_trace.queued();
     let supervisor = Arc::clone(&state.supervisor);
     // Admission is bounded and host-owned: at most one active/pending turn
