@@ -141,7 +141,7 @@ impl DapGateway {
     /// The only permitted test-only continue is the existing fixed DAP
     /// disconnect, never arbitrary step/continue. The original LLDB
     /// event-owner thread must emit CONTINUED before terminal success.
-    #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+    #[cfg(all(windows, any(all(feature = "dev045d5-ci-event-owner", debug_assertions), feature="fin04-release-owner-evidence")))]
     pub(crate) fn close_with_actual_owner_continue_for_ci(
         mut self,
         seq: u64,
