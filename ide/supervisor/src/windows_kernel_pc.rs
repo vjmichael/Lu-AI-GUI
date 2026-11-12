@@ -222,7 +222,7 @@ pub(crate) fn sample_job_thread_rip(
 
 /// A process must be a member of the supervisor-created Job, not just
 /// a reported PID in LLDB-DAP or a private pipe event record.
-#[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+#[cfg(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence"))]
 pub(crate) fn job_has_member(job: HANDLE, pid: u32) -> Result<bool, SupervisorError> {
     if pid == 0 {
         return Err(denied());
@@ -234,7 +234,7 @@ pub(crate) fn job_has_member(job: HANDLE, pid: u32) -> Result<bool, SupervisorEr
 /// already verified against an inherited pipe nonce and monotonic sequence.
 /// Independently ensure this real Win32 thread belongs to Lu's original
 /// protected LLDB process HANDLE. A DAP or model-supplied TID is not accepted.
-#[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+#[cfg(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence"))]
 pub(crate) fn verify_lldb_event_owner_thread(
     ll_process: HANDLE,
     owner_tid: u32,
