@@ -1457,11 +1457,19 @@ where
                 id: job_id,
                 hash: &plan_hash,
             };
-            if let Err(reason) = supervisor.cancel_running_with(job_id, &mut terminator) {
-                let _ = supervisor.native_quarantine_after_error(job_id);
-                return Err(reason);
-            }
+            let cancelling = match supervisor
+                .cancel_running_with_service_release_pending(job_id, &mut terminator)
+            {
+                Ok(summary) if summary.phase == JobPhase::ReleasePending => summary,
+                Ok(_) => return Err(SupervisorError::Quarantined),
+                Err(reason) => {
+                    let _ = supervisor.native_quarantine_after_error(job_id);
+                    return Err(reason);
+                }
+            };
+            debug_assert_eq!(cancelling.phase, JobPhase::ReleasePending);
             if unsafe { WaitForSingleObject(process.0, 5000) } != WAIT_OBJECT_0 {
+                let _ = supervisor.native_quarantine_after_error(job_id);
                 return Err(SupervisorError::Quarantined);
             }
             break None;
@@ -1519,16 +1527,25 @@ where
         publish_output(&output, &private_parent, job_id).ok()
     };
     let summary = if stopped {
-        // Cancellation still follows the separately durable native
-        // CancelRequested/Cancelled path. A failed SCM release must never
-        // be silently reported as a successful worker return.
-        let summary = supervisor
-            .inspect()?
-            .into_iter()
-            .find(|j| j.job_id == job_id)
-            .ok_or(SupervisorError::NoSuchJob)?;
-        broker.release_empty()?;
-        summary
+        // Cancellation is pending until the independent SCM holder has
+        // acknowledged the empty Job and durable NUL-lease revocation.
+        // A failed ACK leaves the original ReleasePending receipt, which
+        // replays as quarantine rather than a false Cancelled terminal.
+        if !reaped {
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(SupervisorError::Quarantined);
+        }
+        if let Err(error) = broker.release_empty() {
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(error);
+        }
+        match supervisor.native_finish_cancelled_after_service_release(job_id) {
+            Ok(summary) => summary,
+            Err(error) => {
+                let _ = supervisor.native_quarantine_after_error(job_id);
+                return Err(error);
+            }
+        }
     } else {
         // A verified empty kernel tree and immutable published output are
         // necessary but NOT sufficient for a terminal receipt: the independent
