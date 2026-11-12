@@ -2176,7 +2176,7 @@ async fn ide_debug_reconcile(
 #[tauri::command]
 async fn ide_fin01_recovery_assessment(app:AppHandle)
  ->Result<serde_json::Value,String>{
- #[cfg(all(any(windows,target_os="linux"),any(feature="native-build",feature="native-debug")))]
+ #[cfg(all(any(windows,target_os="linux"),any(feature="native-build",feature="native-debug",feature="native-lsp")))]
  {
   let profile=app.path().app_data_dir()
    .map_err(|_|"FIN01_PROFILE_UNAVAILABLE")?;
@@ -2186,7 +2186,7 @@ async fn ide_fin01_recovery_assessment(app:AppHandle)
    .and_then(|value|serde_json::to_value(value)
      .map_err(|_|"FIN01_RECOVERY_ASSESSMENT_SERIALIZATION_FAILED".to_owned()));
  }
- #[cfg(not(all(any(windows,target_os="linux"),any(feature="native-build",feature="native-debug"))))]
+ #[cfg(not(all(any(windows,target_os="linux"),any(feature="native-build",feature="native-debug",feature="native-lsp"))))]
  {
   let _=app;
   Err("FIN01_NATIVE_SUPERVISORS_NOT_INSTALLED".into())
