@@ -89,6 +89,23 @@ impl NativeConsentMarker {
             ci_fixture_only: false,
         }
     }
+    /// FIN-04R-1: fresh native Windows modal for a PE/PDB-verified
+    /// original event. A release operator can approve a one-use REVIEW,
+    /// but it is immediately revoked without any DAP send while the
+    /// protected production-control acceptance gates remain unresolved.
+    /// This constructor is unavailable to JavaScript, models and CI fixtures.
+    #[cfg(all(windows, feature="fin04-release-owner-evidence"))]
+    pub(crate) fn for_protected_release_modal(
+        preview: &str, challenge: &str, sequence:u64, now:u64, confirmed:bool,
+    )->Self{
+        Self{
+            preview_sha256:preview.to_owned(),
+            challenge_sha256:challenge.to_owned(),
+            native_owner_sequence:sequence,
+            observed_unix_ms:now,
+            confirmed,ci_fixture_only:false,
+        }
+    }
     #[cfg(test)]
     fn for_unit_test(preview: &str, challenge: &str, sequence: u64, now: u64, yes: bool) -> Self {
         Self {
