@@ -4086,6 +4086,56 @@ function App() {
     }finally{if(ticket===testSymbolsTicket.current)
       setTestSymbolsBusy(false);}
   }
+  async function executeProtectedSavedFrameworkCase(file,symbol){
+    const projectId=activeProject?.projectId;
+    const source=testSymbols;
+    const profiles={python:['python_pytest','pyproject.toml','pytest_exact_case:'],
+                    javascript:['js_tests','package.json','node_exact_case:']};
+    const target=profiles[file.language];
+    const manifest=target&&projectRunProfiles?.profiles?.find(p=>
+      p.id===target[0]&&p.manifest===target[1]);
+    const grammar=/^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+    if(!projectId||!target||buildBusy||rustCaseBusy||
+      buildStatus?.globalRecoveryRequired===true||buildStatus?.current||
+      source?.projectId!==projectId||source.relativePath!==file.path||
+      source.language!==file.language||
+      !source.symbols.some(x=>x.name===symbol.name&&x.candidateOnly===true)||
+      !grammar.test(symbol.name)||
+      manifest?.manifestState!=='saved_file_sha_observed_not_validated'||
+      !/^[a-f0-9]{64}$/.test(manifest.sha||'')){
+      setProblem('Saved exact test source and reviewed framework manifest required.');
+      return;
+    }
+    setBuildBusy(true);setRustCaseBusy(true);setBuildResult(null);
+    setVerifiedBuildOutcome(null);setProblem('');setNativeJobOutput(null);
+    try{
+      const result=await invoke('ide_run_protected_framework_test_case',{
+        projectId,relativePath:file.path,caseName:symbol.name,
+        expectedSourceRevision:source.sourceRevision,
+        expectedManifestSha256:manifest.sha,
+      });
+      if(activeProjectIdRef.current!==projectId)return;
+      const exactRecipe=target[2]+file.path+'::'+symbol.name;
+      if(result?.projectId!==projectId||result.recipeId!==exactRecipe||
+         result.manifestSha256!==manifest.sha||
+         !/^[a-f0-9]{64}$/.test(result.planSha256||'')||
+         !/^[a-f0-9]{64}$/.test(result.terminalReceiptSha256||'')||
+         result.installedAppAccepted!==false||
+         !['completed','failed','cancelled','recovery_required'].includes(result.phase))
+        throw Error('FIN04H_ORIGINAL_FRAMEWORK_JOB_RECEIPT_INVALID');
+      setBuildResult(result);
+      setHint('Protected '+file.language+' exact-case job reported '+result.phase+
+        '. Runner output is reported evidence, not independent assertion proof.');
+      void refreshProtectedBuildStatus();
+    }catch(error){
+      if(activeProjectIdRef.current===projectId)
+        setProblem('Protected framework case denied: '+String(error));
+    }finally{
+      if(activeProjectIdRef.current===projectId){
+        setBuildBusy(false);setRustCaseBusy(false);
+      }
+    }
+  }
   async function executeProtectedSavedRustCase(file,symbol){
     const projectId=activeProject?.projectId;
     const source=testSymbols;
@@ -7474,6 +7524,20 @@ function App() {
                          <p key={index}>
                            Line {symbol.line}: <code>{symbol.name}</code>
                            {' · '}Static test candidate only.
+                           {['python','javascript'].includes(file.language) &&
+                            /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(symbol.name) &&
+                            <button className="ghostBtn" type="button"
+                              disabled={buildBusy || rustCaseBusy ||
+                                buildStatus?.globalRecoveryRequired===true||
+                                !!buildStatus?.current||
+                                !projectRunProfiles?.profiles?.some(p=>
+                                  p.id===(file.language==='python'?'python_pytest':'js_tests') &&
+                                  p.manifestState==='saved_file_sha_observed_not_validated' &&
+                                  /^[a-f0-9]{64}$/.test(p.sha||''))}
+                              onClick={()=>void executeProtectedSavedFrameworkCase(file,symbol)}>
+                              {rustCaseBusy?'Protected case running…':
+                                'Request OS approval for exact framework case'}
+                            </button>}
                            {file.language==='rust' &&
                             /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(symbol.name) &&
                             <button className="ghostBtn" type="button"
