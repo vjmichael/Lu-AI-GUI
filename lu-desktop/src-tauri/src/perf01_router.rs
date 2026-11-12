@@ -170,6 +170,59 @@ mod tests{
             Route::ModelRequired("NON_TEXT_OR_REVIEWED_MODE")));
     }
     #[test]
+    fn native_original_ansf_lookup_is_chat_scoped_and_model_free(){
+        use std::fs;
+        let root=std::env::temp_dir().join(format!(
+            "lu-perf01-p0d-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let chat=ChatStore::open(&root).unwrap();
+        let a=chat.create_chat().unwrap().chat_id;
+        let b=chat.create_chat().unwrap().chat_id;
+        let x=format!("g-{}","a".repeat(32));
+        let y=format!("g-{}","b".repeat(32));
+        chat.append_user_with_turn_id(&a,&x,
+            "Original alpha-only literal evidence").unwrap();
+        chat.append_user_with_turn_id(&b,&y,
+            "Other-chat private-only literal").unwrap();
+        let answer=search_current_chat(&chat,&a,"alpha-only").unwrap();
+        assert!(answer.complete);
+        assert_eq!(answer.matches,1);
+        assert!(answer.answer.contains("Original source ansf:v1:"));
+        assert!(!answer.answer.contains("private-only"));
+        let denied=search_current_chat(&chat,&a,"private-only").unwrap();
+        assert!(denied.complete);
+        assert_eq!(denied.matches,0);
+        assert!(search_current_chat(&chat,"c-foreign","alpha-only").is_err());
+        drop(chat);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn oversized_original_produces_partial_not_fabricated_absence(){
+        use std::fs;
+        let root=std::env::temp_dir().join(format!(
+            "lu-perf01-oversize-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let chat=ChatStore::open(&root).unwrap();
+        let a=chat.create_chat().unwrap().chat_id;
+        let t=format!("g-{}","c".repeat(32));
+        chat.append_user_with_turn_id(&a,&t,
+            &format!("{}masked-at-tail","x".repeat(6_000))).unwrap();
+        let query=search_current_chat(&chat,&a,"masked-at-tail").unwrap();
+        assert!(!query.complete);
+        assert_eq!(query.matches,0);
+        assert!(query.answer.contains("NOT proof"));
+        drop(chat);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn excerpt_contains_match_without_emitting_raw_markdown_or_html(){
         let input=format!("{}findme<script>alert(1)</script>", "x".repeat(300));
         let excerpt=safe_excerpt(&input,"findme");
