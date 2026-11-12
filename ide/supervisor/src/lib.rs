@@ -476,7 +476,6 @@ pub struct GrantSummary {
 /// native supervisor journal. A nonterminal durable job can never be
 /// represented as idle simply because a desktop process lost its live handle.
 /// This is advisory only; the original protected OS worker still authorizes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// FIN-01D OS-native readback, produced only by the trusted worker host.
  /// Counts are kernel queries against named Windows Job Objects or the
  /// delegated Linux cgroup hierarchy, not frontend or journal assertions.
@@ -489,6 +488,7 @@ pub struct KernelQuiescenceWitness {
     pub marker_owner_exited: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlobalCustodyObservation {
     pub recovery_required: bool,
     pub worker_busy_or_unreconciled: bool,
