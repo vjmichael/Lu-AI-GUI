@@ -34,3 +34,42 @@ test('FIN01 installed UI readiness observes interrupted fence and other supervis
  assert.match(build,/global_worker_busy = global_worker_busy \|\|/);
  assert.match(debug,/!other_custody\.worker_busy_or_unreconciled/);
 });
+
+const lsp=source('../src-tauri/src/lsp_backend.rs');
+const main=source('../web/main.jsx');
+
+test('FIN01D all three original supervisors participate in admission and recovery',()=>{
+ assert.match(shared,/lsp-job-receipts\.jsonl/);
+ assert.match(shared,/debug-fixture-receipts\.jsonl/);
+ assert.match(shared,/build-job-receipts\.jsonl/);
+ assert.match(shared,/for \(id,_\) in DOMAINS/);
+ assert.match(shared,/pub fn preflight_global_idle/);
+ assert.match(lsp,/GlobalAdmissionFence\s*::acquire\(&self\.global_custody_profile,"lsp"\)/);
+ assert.match(lsp,/global_admission: Mutex<Option<crate::global_native_custody::GlobalAdmissionFence>>/);
+ assert.match(lsp,/fn release_global_if_terminal/);
+ assert.match(lsp,/pub fn reconcile\(/);
+ assert.match(lsp,/reconcile_linux_interrupted/);
+ assert.match(lsp,/reconcile_windows_interrupted_via_service/);
+ assert.match(backend,/ide_lsp_recoverable_jobs,/);
+ assert.match(backend,/ide_lsp_reconcile,/);
+ assert.match(backend,/feature = "native-lsp"\)\)\]/);
+ assert.match(main,/LSP pending: \{fin01Recovery\.lspJournalPending\}/);
+});
+test('FIN01D no-worker denied admission releases only after unchanged original journal',()=>{
+ assert.match(shared,/release_before_prepare_if_unchanged/);
+ assert.match(shared,/FIN01_NEW_JOURNAL_EVENT_BEFORE_ADMISSION_RELEASE/);
+ for(const impl of [build,debug]){
+  assert.match(impl,/preflight_global_idle\(/);
+  assert.match(impl,/release_before_prepare_if_unchanged\(&own_before,&after\)/);
+ }
+ assert.match(lsp,/release_before_prepare_if_unchanged\(&own,&after\)/);
+ assert.doesNotMatch(shared,/impl Drop for GlobalAdmissionFence/);
+});
+test('FIN01D no operator UI control can release a global marker from a journal count',()=>{
+ assert.match(shared,/marker_removal_authorized:false/);
+ assert.match(shared,/auto_retry_authorized:false/);
+ assert.match(main,/Request native OS-only cleanup/);
+ assert.match(lsp,/FIN01_LSP_RECOVERY_NOT_APPROVED/);
+ assert.match(lsp,/FIN01_LSP_OS_RECOVERY_UNVERIFIED/);
+ assert.doesNotMatch(main,/invoke\(['"]ide_fin01_release_marker/);
+});
