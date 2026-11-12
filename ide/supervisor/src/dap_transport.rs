@@ -430,7 +430,9 @@ impl DapGateway {
             DapPhase::Ready | DapPhase::Stopped | DapPhase::AwaitingInitializedEvent
         ) {
             if let Ok(frame) = self.session.disconnect() {
-                let _ = self.send(&frame);
+                // A failed bounded disconnect must not be silently followed by
+                // an apparently clean terminal receipt: send() quarantines.
+                self.send(&frame)?;
             }
         }
         if !self
@@ -644,7 +646,7 @@ mod tests {
         gateway.threads().unwrap();
         shared.pending.lock().unwrap().push_back(frame(json!({
             "seq":3,"type":"response","request_seq":2,"command":"threads",
-            "success":true,"body":{"threads":[]}
+            "success":true,"body":{"threads":[{"id":1,"name":"protected-main"}]}
         })));
         assert_eq!(gateway.poll().unwrap(), vec![DapEvent::ThreadsReceived]);
         // Preserve the original failure before Drop can make a second recovery transition.
