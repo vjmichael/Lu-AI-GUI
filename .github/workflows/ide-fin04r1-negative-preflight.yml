@@ -1,0 +1,60 @@
+# FIN-04R-1 negative-source staging branch. Compile/test only; DOES NOT
+# build patched LLVM or claim any kernel, installed or human acceptance.
+name: IDE FIN-04R1 negative custody preflight
+on:
+  push:
+    branches:
+      - ide/fin04r1-native-negative-20261112
+    paths:
+      - .github/workflows/ide-fin04r1-negative-preflight.yml
+      - ide/supervisor/examples/wo6_native_dap_acceptance.rs
+      - ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1
+      - ide/app/fixtures/Test-FIN04R1-PhysicalProtectedPdbReview.ps1
+      - ide/app/tests/fin04r1_protected_pdb.test.mjs
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  staged-windows-compile:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact head and real source-negative contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.sha }}') {throw 'FIN04R1_NEGATIVE_HEAD_CHANGED'}
+          node --test ide/app/tests/fin04r1_protected_pdb.test.mjs ide/app/tests/fin04_release_owner_and_os_recovery.test.mjs
+          if ($LASTEXITCODE -ne 0) {throw 'FIN04R1_NEGATIVE_UI_SECURITY_CONTRACT_FAILED'}
+      - name: Compile original protected native cancellation scenario
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo check --manifest-path ide/supervisor/Cargo.toml --release --features fin04-release-owner-evidence --example wo6_native_dap_acceptance
+          if ($LASTEXITCODE -ne 0) {throw 'FIN04R1_NEGATIVE_NATIVE_RUST_COMPILE_FAILED'}
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib debug_action_receipts
+          if ($LASTEXITCODE -ne 0) {throw 'FIN04R1_NEGATIVE_ORIGINAL_ACTION_RESTART_TEST_FAILED'}
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib windows_event_owner
+          if ($LASTEXITCODE -ne 0) {throw 'FIN04R1_NEGATIVE_KERNEL_OWNER_CONTRACT_FAILED'}
+      - name: Real physical fixture parse only, never human acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach ($path in @('ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1', 'ide/app/fixtures/Test-FIN04R1-PhysicalProtectedPdbReview.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$errors)|Out-Null
+            if ($errors.Count -ne 0){throw "FIN04R1_NEGATIVE_PS_PARSE_FAILED:$path"}
+          }
+          Write-Host 'FIN04R1_STAGED_NEGATIVE_SOURCE=COMPILED_NOT_KERNEL_TESTED'
+          Write-Host 'FIN04R1_ORIGINAL_LLVM_BUILD=UNCHANGED_ON_MAIN_BRANCH'
+          Write-Host 'FIN04R1_INSTALLED_HUMAN_APPROVAL=NOT_PERFORMED'
