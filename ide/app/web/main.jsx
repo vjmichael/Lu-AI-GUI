@@ -56,6 +56,8 @@ import { checkedProjectDebugWitness } from './project_debug_authority.js';
 import { debugAdmissionStatus, checkedDebugStoppedSource,
   checkedReviewedDebugSource, checkedRedactedDebugLocals } from './debugger_integration.js';
 import { acceptNativeOutput } from './native_build_output.js';
+import { checkedToolchainInventory, checkedPackageToolchainReadiness,
+  checkedProtectedTerminal } from './toolchain_terminal.js';
 import { boundedBuildTestHints } from './build_test_output_hints.js';
 import { visibleStructuredTestEvidence,
   reviewedTestFailureTarget } from './structured_test_evidence.js';
@@ -285,6 +287,17 @@ function App() {
     boundedBuildTestHints(nativeJobOutput,
       activeProject?.projectId,nativeJobOutput?.jobId),
     [nativeJobOutput,activeProject?.projectId]);
+  const toolchainInventory=useMemo(()=>
+    checkedToolchainInventory(buildStatus,activeProject?.projectId),
+    [buildStatus,activeProject?.projectId]);
+  const packageToolchainReadiness=useMemo(()=>
+    checkedPackageToolchainReadiness(packageInspection,toolchainInventory,
+      activeProject?.projectId),
+    [packageInspection,toolchainInventory,activeProject?.projectId]);
+  const terminalTranscript=useMemo(()=>
+    checkedProtectedTerminal(buildStatus,nativeJobOutput,
+      activeProject?.projectId),
+    [buildStatus,nativeJobOutput,activeProject?.projectId]);
   const nativeOutputCursor = useRef({projectId:null,jobId:null,sequence:0});
   const nativeOutputPending = useRef(false);
   const nativeJobOutputRef = useRef(null);
@@ -6523,25 +6536,33 @@ function App() {
               </>}
               <section className="continuityDocument"
                 aria-label="Protected worker live stdout and stderr">
-                <h4>DEV-03.3B · Live protected worker output</h4>
-                <p>Bounded untrusted process text from the native worker.
-                  Both Linux and Windows preserve stdout/stderr identity; Windows
-                  uses separate protected inherited file handles. Live output is not
-                  a completed-job receipt or proof of kernel cleanup.</p>
-                {belongsToSelectedProject(activeProject, nativeJobOutput) &&
-                  nativeJobOutput.chunks.length > 0
-                  ? <>
-                    {nativeJobOutput.truncated &&
-                      <p role="status">Earlier output truncated to the bounded
-                        in-memory window.</p>}
-                    <pre aria-label="Untrusted worker output"
-                      style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
-                        maxHeight:'20rem',overflow:'auto'}}>
-                      {nativeJobOutput.chunks.map(chunk=>
-                        '['+chunk.stream+'] '+chunk.text).join('')}
-                    </pre>
-                  </>
-                  : <p>No native worker output has been observed for this project.</p>}
+                <h4>INT05-C · Protected terminal transcript</h4>
+                <p>No arbitrary commands, shells or package installs. This is
+                  bounded, read-only, untrusted stdout/stderr from the existing
+                  native supervised job. A terminal transcript is not a receipt,
+                  assertion proof or authority to repeat execution.</p>
+                {terminalTranscript.kind!=='unavailable'
+                  ? <div role="status" aria-live="polite">
+                    <p>Native job: <code>{terminalTranscript.jobId}</code>
+                      {' · '}{terminalTranscript.kind.replaceAll('_',' ')}
+                      {' · '}No interactive shell.</p>
+                    <p>Original process terminal receipt:
+                      {' '}<code>{terminalTranscript.terminalReceiptSha256 ||
+                        'not correlated / job in progress'}</code></p>
+                    {terminalTranscript.truncated &&
+                      <p>Earlier output was truncated from the bounded native window.</p>}
+                    {terminalTranscript.chunks.length>0
+                      ? <pre aria-label="Protected terminal transcript; untrusted text"
+                          tabIndex={0}
+                          style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+                            maxHeight:'20rem',overflow:'auto'}}>
+                          {terminalTranscript.chunks.map(chunk=>
+                            '['+chunk.stream+'] '+chunk.text).join('')}
+                        </pre>
+                      : <p>No output has been captured for this job.</p>}
+                  </div>
+                  : <p role="status">No current project-owned native terminal
+                      stream. A journal after restart does not restore output.</p>}
                 {buildOutputHints.length>0 &&
                   <section aria-label="Advisory compiler and test output hints"
                     className="int03AdvisoryFindings">
@@ -7180,6 +7201,33 @@ function App() {
         </section>
         : isPackages
         ? <section className="workspaceContent continuityWorkspace" aria-label="Advanced packaging and multi-project workflows">
+            <section className="continuityDocument"
+              aria-label="INT05-A native pinned toolchain inventory">
+              <h2>Toolchains · native readiness</h2>
+              <p>Read-only evidence from installed, pinned native runtimes, not
+                project-controlled scripts or PATH. No toolchain is installed,
+                upgraded, launched or authorized by inspection.</p>
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject}
+                onClick={()=>void refreshProtectedBuildStatus()}>
+                Refresh native runtime readiness
+              </button>
+              {toolchainInventory.kind==='native_pin_observation'
+                ? <div className="continuityEvents" role="status">
+                  {toolchainInventory.blockedByRecovery &&
+                    <p>Recovery required before new native execution.
+                      Existing job authority cannot be reused.</p>}
+                  {toolchainInventory.rows.map(row=>
+                    <article key={row.profileId} className="continuityEvent">
+                      <strong>{row.label}</strong>
+                      <p>{row.disposition.replaceAll('_',' ')}
+                        {' · '}Version/provenance not independently certified.</p>
+                      <small>Native evidence: <code>{row.code}</code></small>
+                    </article>)}
+                </div>
+                : <p role="status">Native toolchain inventory unavailable or
+                    unverified. No executable availability is inferred.</p>}
+            </section>
             <div className="continuityDocument" aria-label="IDE-05.1 read-only package manager discovery">
               <h2>Package managers &amp; lockfiles</h2>
               <p>Inspect saved Python uv and C/C++ vcpkg/Conan manifests
@@ -7215,6 +7263,18 @@ function App() {
                     </article>)}
                 </div>}
             </div>
+              {packageToolchainReadiness.length>0 &&
+                <section className="continuityDocument"
+                  aria-label="INT05-B manifest and native runtime correlation">
+                  <h3>Manifest and toolchain readiness</h3>
+                  <p>Manager detection is not proof of an installed manager or
+                    permission to execute. Only locked offline uv Sync has a
+                    separately gated native worker; vcpkg/Conan are review-only.</p>
+                  {packageToolchainReadiness.map(row=>
+                    <p key={row.managerId}><strong>{row.managerId}:</strong>
+                      {' '}{row.disposition.replaceAll('_',' ')}
+                      {' · '}No install or project promotion authorized.</p>)}
+                </section>}
               {belongsToSelectedProject(activeProject, packageInspection) &&
                 <section aria-label="IDE-05.2 verified package operation preview">
                   <h3>Review a proposed dependency operation</h3>
