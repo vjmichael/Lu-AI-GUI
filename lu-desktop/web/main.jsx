@@ -20,7 +20,7 @@ import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppeara
 import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget,correctedMessageFollowUp} from './message_revisions.mjs';
 import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from './agent_replan.mjs';
 import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
-import {isHostCurrentTimeQuestion,isHostCpuChatLookup,isHostModelStatusQuestion} from './native_intent.mjs';
+import {isHostCurrentTimeQuestion,isHostCpuChatLookup,isHostModelStatusQuestion,isHostCpuWorkspaceLookup,isHostCpuChatCountsQuestion} from './native_intent.mjs';
 import {TaskBoardWindow} from './task_board.jsx';
 
 function MessageText({text, role='assistant'}) {
@@ -972,7 +972,8 @@ function App() {
   // The Rust host independently rejects mismatched mode/session/scope.
   const modelFreeClockAllowed=!loaded && !runtime.sessionId &&
     (isHostCurrentTimeQuestion(prompt)||isHostCpuChatLookup(prompt)||
-      isHostModelStatusQuestion(prompt)) &&
+      isHostModelStatusQuestion(prompt)||isHostCpuWorkspaceLookup(prompt)||
+      isHostCpuChatCountsQuestion(prompt)) &&
     images.length===0 && textFiles.length===0 &&
     !planDraftNextSend && !browserResearchNextSend && !reviewedAppNextSend &&
     !workspaceToolsNextSend;
@@ -5959,7 +5960,7 @@ function App() {
             </span>)}
           </div>}
           <textarea ref={composerRef} aria-label="Message Lu" value={prompt} onChange={e => {draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
-            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask time, model status, or Search this chat for: phrase · no model needed'}
+            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask the time, check model status, search this chat or selected workspace'}
             onPaste={handlePaste}
             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
