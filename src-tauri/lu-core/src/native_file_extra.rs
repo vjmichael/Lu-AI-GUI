@@ -31,9 +31,9 @@ const STAT_IN: &str = "type.googleapis.com/lu.v1.FileStatRequest";
 const STAT_OUT: &str = "type.googleapis.com/lu.v1.FileStatResult";
 const SEARCH_IN: &str = "type.googleapis.com/lu.v1.SearchTextRequest";
 const SEARCH_OUT: &str = "type.googleapis.com/lu.v1.SearchTextResult";
-const MAX_FILES: u32 = 64;
+const MAX_FILES: u32 = 256;
 const MAX_MATCHES: u32 = 128;
-const MAX_ENTRIES: usize = 512;
+const MAX_ENTRIES: usize = 1_024;
 const MAX_FILE_BYTES: u64 = 64 * 1024;
 
 fn bad(code: &str, message: impl Into<String>) -> ToolFailure {
@@ -86,10 +86,10 @@ fn stat(root: &Dir, path: String) -> Result<ToolOutput, ToolFailure> {
 
 // One finite, human-rooted scan. Errors and omitted source scope cannot be
 // converted to a complete "no match" observation.
-const MAX_DIRECTORIES: u32 = 64;
-const MAX_SEARCH_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_DIRECTORIES: u32 = 128;
+const MAX_SEARCH_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_SEARCH_OUTPUT_BYTES: usize = 48 * 1024;
-const MAX_SEARCH_MILLIS: u64 = 2_000;
+const MAX_SEARCH_MILLIS: u64 = 3_000;
 
 fn note(reasons: &mut Vec<String>, code: &str, partial: &mut bool) {
     *partial = true;
@@ -449,7 +449,9 @@ fn search_with_cancel<F: Fn() -> bool>(
                     let at = content.find(&req.query).unwrap_or(0);
                     let start_char = content[..at].chars().count().saturating_sub(60);
                     let excerpt: String = content.chars().skip(start_char).take(320).collect();
-                    let estimated_bytes = relative.len() + excerpt.len() + 256;
+                    let estimated_bytes = relative.chars().count().saturating_mul(12)
+                        .saturating_add(excerpt.chars().count().saturating_mul(12))
+                        .saturating_add(256);
                     if output_bytes.saturating_add(estimated_bytes) > MAX_SEARCH_OUTPUT_BYTES {
                         note(&mut limitations, "RESULT_BYTE_LIMIT", &mut truncated);
                         break 'walk;
