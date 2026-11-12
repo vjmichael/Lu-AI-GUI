@@ -50,6 +50,9 @@ pub(crate) struct PerfReceipt {
     pub decode_tokens_per_second:Option<f64>,
     pub gpu_used_percent:Option<f64>,
     pub cache_hit:Option<bool>,
+    /// Native host admitted the current turn for scoped reuse; a true value
+    /// is NOT proof that llama.cpp actually reused even one KV token.
+    pub cache_scope_admitted:Option<bool>,
 }
 fn elapsed_ms(start:Instant)->u64 {
     start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
@@ -84,6 +87,7 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
         source_result_complete:None,streamed_utf8_bytes:0,
         prefill_tokens_per_second:None,decode_tokens_per_second:None,
         gpu_used_percent:None,cache_hit:None,
+        cache_scope_admitted:None,
     }
 }
 #[derive(Default)]
@@ -164,6 +168,9 @@ impl ModelTrace{
         self.row.backend_family=Some("llama.cpp".into());
         self.row.context_limit_tokens=Some(4096);
         self
+    }
+    pub fn cache_scope_admitted(&mut self,admitted:bool){
+        self.row.cache_scope_admitted=Some(admitted);
     }
     pub fn queued(&mut self){self.queue_entered=Instant::now();}
     pub fn acquired_slot(&mut self){
@@ -249,6 +256,7 @@ mod tests{
             .with_model(Some("model-opaque".into()))
             .with_background_origin(false);
         span.queued();
+        span.cache_scope_admitted(true);
         span.acquired_slot();
         span.context_ready();
         span.dispatched();
