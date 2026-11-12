@@ -26,6 +26,8 @@ test('P7L-1 native matrix is manually admitted and pins the exact SHA in both OS
 });
 test('P7L-1 CPU-vs-CPU comparison refuses deceptive Vulkan speedup figures',()=>{
   assert.match(comparisons,/tuning:Some\(TuningProfile\{/);
+  assert.match(comparisons,/threads:NonZeroUsize::new\(bounded\("LU_P7L_THREADS",4,1,64\) as usize\)\.unwrap\(\)/);
+  assert.match(comparisons,/let threads=bounded\("LU_P7L_THREADS",4,1,64\)/);
   assert.match(comparisons,/gpu_layers:0,gpu_placement:None/);
   assert.match(comparisons,/Speculative::Disabled/);
   assert.match(comparisons,/"requestedGpuLayersOnWindows":0/);
