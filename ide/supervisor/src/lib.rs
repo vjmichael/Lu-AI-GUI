@@ -18,6 +18,7 @@ mod dap_transport;
 mod debug_action_receipts;
 pub mod debug_binary_witness;
 pub mod debug_command_review;
+pub mod debug_control_evidence;
 #[cfg(any(test, all(windows, debug_assertions, feature = "dev046c-ci-control")))]
 mod debug_control_dispatch;
 pub mod debug_symbol_verification;
