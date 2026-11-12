@@ -532,8 +532,30 @@ pub fn search_host_approved_workspace_cpu(
             return Err(bad("DENIED_SCOPE","native-selected directory reparse denied"))
         }
     }
+    // Linux: pin the originally picked leaf atomically as a real directory.
+    // A symlink swapped after preflight must not redirect the search root.
+    #[cfg(target_os="linux")]
+    let root={
+        use std::os::unix::fs::{OpenOptionsExt as _,MetadataExt as _};
+        use cap_std::fs::MetadataExt as _;
+        let mut opts=std::fs::OpenOptions::new();
+        opts.read(true).custom_flags(0o200000 | 0o400000); // O_DIRECTORY|O_NOFOLLOW
+        let file=opts.open(original_host_selected_root)
+            .map_err(|_|bad("DENIED_SCOPE","selected directory changed or unavailable"))?;
+        let opened=file.metadata()
+            .map_err(|_|bad("DENIED_SCOPE","selected directory metadata unavailable"))?;
+        if !opened.is_dir()||opened.dev()!=metadata.dev()||
+            opened.ino()!=metadata.ino(){
+            return Err(bad("DENIED_SCOPE","selected directory changed during admission"))
+        }
+        Dir::from_std_file(file)
+    };
+    #[cfg(not(target_os="linux"))]
     let root=Dir::open_ambient_dir(original_host_selected_root,ambient_authority())
         .map_err(|_|bad("DENIED_SCOPE","cannot open native-selected root"))?;
+    if !root.dir_metadata().is_ok_and(|m|m.is_dir()&&!is_reparse(&m)){
+        return Err(bad("DENIED_SCOPE","selected root is not a safe opened directory"))
+    }
     let request=proto::SearchTextRequest{
         path:String::new(),
         query:literal_query.into(),
