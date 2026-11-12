@@ -101,6 +101,13 @@ pub(crate) fn requested_watermark(
 )->Result<i64,String>{
     if !ident(chat,"c-"){return Err("P0_SEC_INVALID_CHAT_SCOPE".into())}
     initialize(conn)?;
+    // A malicious/old SQLite writer may have injected a standalone RESULT.
+    // This is NOT a substitute for a genuine host-saved REQUESTED intent;
+    // even a perfectly hashed orphan never restores tool execution.
+    if recent(conn,chat,MAX_HISTORY)?.iter().any(|event|
+        event.status=="ORIGINAL_CANCEL_INTENT_UNAVAILABLE"){
+        return Err("P0_SEC_CANCEL_ORPHANED_RESULT".into())
+    }
     // Never let a corrupt original REQUESTED row become a valid revocation
     // baseline. Tool dispatch calls this after each host permission check;
     // an altered row must deny execution, NOT silently restore old authority.
