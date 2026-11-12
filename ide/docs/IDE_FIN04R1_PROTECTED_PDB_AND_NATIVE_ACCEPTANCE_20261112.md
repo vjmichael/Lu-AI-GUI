@@ -92,3 +92,39 @@ Windows compilation/contract results. Native OS and installed-human
 acceptance remains unexecuted by this Task 2 review. All action authority
 flags are false; NO release promotion, CI kernel acceptance or owner feature
 freeze is authorized by these checks.
+
+## Task 4 demonstrated failure reconciliation (2026-11-12)
+
+1. **Unexpected clean-close quarantine — corrected test fixture.**
+   Original preflight #43303531469: the trace at
+   `dap_transport.rs:661` is the **second poll**, not `close`.
+   Its synthetic empty `threads:[]` violated the host DAP
+   protocol. `DapSession` correctly quarantines empty thread lists;
+   changing that runtime security condition would be unsafe.
+   The read-only gateway fixture now uses
+   `threads:[{id:1,name:"main"}]`, testing a genuinely valid
+   DAP response. Full Rust `--lib` **131/131**, source checks 19/19
+   on exact Windows preflight #43311283163.
+
+2. **Original native `SUPERVISOR_RECONCILIATION_REQUIRED` — not
+   resolved by pretending a terminal Job label.** The pinned LLVM
+   build and SCM service install completed in #43288086009, but
+   the protected Cargo/project run failed before positive PE/PDB
+   acceptance. The generic original error is insufficient to prove
+   whether the worker failed custody, release, output publication,
+   or other OS evidence. The acceptance-only native harness
+   now prints a fixed original Job stage, latest phase,
+   outcome and evidence code on failure, without reading project
+   data or clearing the original quarantine. Source-level regression
+   reproduces an *unverified output-publication* case in which a
+   reaped process tree is **not** sufficient to assert completion:
+   `RecoveryRequired` persists across `Supervisor::open`, blocks
+   new work and restores no old grant. This negative test proves the
+   policy boundary, **not** the root cause of the native failure.
+
+The Windows native source regression is a separate gate from
+real OS/SCM/Job restart acceptance. As explicitly deferred by the
+owner, genuine Windows kernel-runtime and interactive installed
+human/security acceptance remain OPEN/DEFERRED/UNVERIFIED. FIN-02
+remains deferred. No positive post-command debugger action or
+production promotion is enabled.
