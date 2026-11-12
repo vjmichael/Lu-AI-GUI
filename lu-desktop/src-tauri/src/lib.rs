@@ -1394,7 +1394,12 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
                     lu_core::warm_model_residency::WarmResidencyPolicy::default(),
                 );
             }
-            if state.generation_queue.has_jobs(){continue;}
+            // P4 protects human prompt responsiveness from a second route:
+            // background *model continuations* must obey the same measured
+            // admission as native OS workers. Existing queued/running model
+            // turns retain their original priority/cancellation custody.
+            if admission.defer_new_background ||
+                state.generation_queue.has_jobs(){continue;}
             let Ok(model)=state.supervisor.status() else{continue};
             if model.generation_id.is_some()
               ||model.phase!=lu_core::inference_host::EnginePhase::Ready{
