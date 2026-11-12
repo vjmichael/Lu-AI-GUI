@@ -1108,6 +1108,25 @@ impl NativeBuildRuntime {
             expected_profile_sha,
             selected_case_source.as_ref(),
         );
+        // A refused native dialog or pre-admission failure must not strand
+        // an ordinary Cargo/pytest/Node/CMake Prepared job. Only the exact
+        // current job, still Prepared/Authorized in its original journal,
+        // can be journaled Cancelled without a kernel worker cleanup proof.
+        // AdmissionPending/Running/Uncertain are NEVER classified no-worker.
+        if result.is_err() {
+            let current_id=self.store.lock()
+                .map_err(|_|"BUILD_HOST_UNAVAILABLE")?
+                .current.as_ref().and_then(|a|a.job_id.clone());
+            if let Some(id)=current_id {
+                let state=self.supervisor.inspect().map_err(|e|e.code().to_owned())?
+                    .into_iter().find(|j|j.job_id==id)
+                    .ok_or("FIN01_BUILD_ORIGINAL_JOB_MISSING")?;
+                if matches!(state.phase,JobPhase::Prepared|JobPhase::Authorized) {
+                    self.supervisor.cancel_before_start(&id)
+                        .map_err(|e|e.code().to_owned())?;
+                }
+            }
+        }
         let mut locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
         let finished_output = locked.current.as_ref().and_then(|active| {
             active.job_id.as_ref().map(|job_id| {
