@@ -316,7 +316,18 @@ impl TaskStore {
                BEGIN SELECT RAISE(ABORT,'Immutable OS custody uncertainty'); END;
              CREATE TRIGGER IF NOT EXISTS lu_task_uncertainty_no_delete
                BEFORE DELETE ON lu_task_custody_uncertainty
-               BEGIN SELECT RAISE(ABORT,'Immutable OS custody uncertainty'); END;"
+               BEGIN SELECT RAISE(ABORT,'Immutable OS custody uncertainty'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertainty_state_fence
+               BEFORE UPDATE OF state ON lu_tasks
+               WHEN EXISTS(SELECT 1 FROM lu_task_custody_uncertainty u
+                           WHERE u.task_id=OLD.task_id)
+                AND NEW.state IN ('RUNNING','COMPLETED','CANCELLED','TIMED_OUT')
+               BEGIN SELECT RAISE(ABORT,'Custody-uncertain task cannot be promoted'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertainty_parent_fence
+               BEFORE DELETE ON lu_tasks
+               WHEN EXISTS(SELECT 1 FROM lu_task_custody_uncertainty u
+                           WHERE u.task_id=OLD.task_id)
+               BEGIN SELECT RAISE(ABORT,'Cannot erase custody-uncertain task'); END;"
         )?;
         Ok(Self {
             connection: Mutex::new(connection),
