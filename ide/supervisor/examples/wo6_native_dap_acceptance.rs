@@ -221,6 +221,30 @@ mod protected {
     // The separate project LLDB job obtains its OWN one-use, plan-bound CI
     // approval after an independently verified PE/PDB and durable build receipt.
     // Test-only native SCM acceptance; never a user grant or release approval.
+    /// FIN-04R-1 native negative receipt diagnostics. Only fixed source-
+    /// authored stage names and the ORIGINAL supervisor's own phase/codes
+    /// appear: no worker stdout, paths, PDB data, PID, token or credentials.
+    /// Reading these records does NOT prove an OS cleanup or release a
+    /// quarantined job. Genuine kernel tests remain owner-deferred.
+    #[cfg(windows)]
+    fn report_original_job_failure(
+        supervisor: &Supervisor, job_id:&str, stage:&'static str,
+    ) {
+        eprintln!("FIN04R1_ORIGINAL_JOB_FAILURE_STAGE={stage}");
+        match supervisor.receipt_history(job_id) {
+            Ok(records)=>{
+                if let Some(last)=records.last() {
+                    eprintln!("FIN04R1_ORIGINAL_JOB_LAST_PHASE={:?}",last.body.phase);
+                    eprintln!("FIN04R1_ORIGINAL_JOB_LAST_OUTCOME={}",last.body.outcome_code);
+                    eprintln!("FIN04R1_ORIGINAL_JOB_LAST_EVIDENCE={}",last.body.evidence_code);
+                } else {
+                    eprintln!("FIN04R1_ORIGINAL_JOB_LAST_RECEIPT=ABSENT");
+                }
+            },
+            Err(_)=>eprintln!("FIN04R1_ORIGINAL_JOB_RECEIPTS=UNAVAILABLE"),
+        }
+        eprintln!("FIN04R1_ORIGINAL_JOB_AUTHORITY_RECOVERED=false");
+    }
     #[cfg(windows)]
     fn run_windows_project_debug(
         cancel_project: bool,
@@ -379,7 +403,11 @@ mod protected {
             },
             Some(Arc::clone(&live)),
         )
-        .map_err(|e| e.code())?;
+        .map_err(|e|{
+            report_original_job_failure(
+                &supervisor,&build_job.job_id,"protected_cargo_build_or_output");
+            e.code()
+        })?;
         if built.summary.phase != JobPhase::Completed
             || built.exit_code != Some(0)
             || built.summary.requires_reconciliation
@@ -478,7 +506,11 @@ mod protected {
             &broker,
             &target,
         )
-        .map_err(|e| e.code())?;
+        .map_err(|e|{
+            report_original_job_failure(
+                &supervisor,&debug_job.job_id,"protected_lldb_admission");
+            e.code()
+        })?;
         dap.initialize().map_err(|e| e.code())?;
         poll_until_ready(&mut dap, false)?;
         target.verify().map_err(|e| e.code())?;
