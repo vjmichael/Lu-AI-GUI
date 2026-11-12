@@ -721,6 +721,11 @@ impl NativeDebugRuntime {
         }
         // Cross-supervisor, cross-process admission before reserving the
         // debugger slot or generating fresh native worker authority.
+        // Refuse known busy journals BEFORE creating the profile-wide marker.
+        // The exclusive create_new still serializes the final admission, and
+        // the original journals are rechecked while it is held.
+        crate::global_native_custody::preflight_global_idle(
+            &self.global_custody_profile,"debug")?;
         let mut global_fence=crate::global_native_custody::GlobalAdmissionFence
             ::acquire(&self.global_custody_profile,"debug")?;
         let own_before=self.supervisor.inspect()
