@@ -36,6 +36,11 @@ jobs:
           node-version: '22'
       - name: Verify exact tracked-source snapshot
         run: node scripts/verify-source-tree.mjs
+      - name: CORE-01A original scope and exact tree isolation
+        if: hashFiles('scripts/core01-verify-scope.test.mjs') != ''
+        run: |
+          node --test scripts/core01-verify-scope.test.mjs
+          node scripts/core01-verify-scope.mjs
       - name: Audit grouped-CI trigger policy and queue cleanup safety
         if: hashFiles('scripts/lu-ci-group-policy.mjs') != ''
         run: |
