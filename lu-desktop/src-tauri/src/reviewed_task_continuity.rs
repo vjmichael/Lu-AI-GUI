@@ -129,6 +129,92 @@ fn checkpoint(task:&Connection,task_id:&str,turn:&str)
         .map_err(|_|"Invalid checkpoint progress")).transpose()?;
     Ok((state=="COMPLETED",progress,count as u32))
 }
+/// SEC-04: read original per-turn native SQLite without writable open,
+/// journal replay, or UI-provided paths. The caller must derive this exact
+/// chat and original turn from the ANSF trusted catalog.
+#[derive(Clone,Debug,Serialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct SecurityReviewedTurn{
+    pub original_human_turn_id:String,
+    pub original_origin_bound:bool,
+    pub journal_status:String,
+    pub interrupted_or_uncertain_tasks:Vec<SecurityNativeTask>,
+    pub additional_native_tasks_not_inspected:bool,
+    pub historical_effects_need_review:bool,
+}
+#[derive(Clone,Debug,Serialize)]
+#[serde(rename_all="camelCase")]
+pub(crate) struct SecurityNativeTask{
+    pub task_id:String,
+    pub state:String,
+    pub custody_reason:Option<String>,
+}
+pub(crate) fn sec04_reviewed_turn_security(
+    profile:&Path,chat:&str,turn:&str,
+)->Result<Option<SecurityReviewedTurn>,String>{
+    if !valid(chat,"c-")||!valid(turn,"g-"){
+        return Err("Invalid original security recovery scope".into())
+    }
+    let task_path=profile.join(format!("lu-reviewed-task-{turn}.sqlite"));
+    let effect_path=profile.join(format!("lu-reviewed-effects-{turn}.sqlite"));
+    let task=open_readonly(&task_path)?;
+    let effect_present=no_linked_file(&effect_path)?.is_some();
+    if task.is_none()&&!effect_present{return Ok(None)}
+    let mut output=SecurityReviewedTurn{
+        original_human_turn_id:turn.to_owned(),
+        original_origin_bound:false,
+        journal_status:"PARTIAL_OR_UNBOUND_JOURNALS".into(),
+        interrupted_or_uncertain_tasks:Vec::new(),
+        additional_native_tasks_not_inspected:false,
+        historical_effects_need_review:true,
+    };
+    let Some(task)=task else{return Ok(Some(output))};
+    if !table_exists(&task,"lu_reviewed_turn_origin")?
+        ||!table_exists(&task,"lu_tasks")?{
+        return Ok(Some(output))
+    }
+    let original:Option<(String,String)>=task.query_row(
+        "SELECT conversation_id,user_turn_id FROM lu_reviewed_turn_origin
+         WHERE singleton=1",[],|r|Ok((r.get(0)?,r.get(1)?))
+    ).optional().map_err(|_|"Original SEC-04 task origin unavailable")?;
+    if original.as_ref()!=Some(&(chat.to_owned(),turn.to_owned())){
+        output.journal_status="ORIGINAL_ORIGIN_MISMATCH".into();
+        return Ok(Some(output))
+    }
+    output.original_origin_bound=true;
+    output.journal_status=if effect_present{
+        "ORIGINAL_JOURNALS_PRESENT"
+    }else{"ORIGINAL_EFFECT_JOURNAL_MISSING"}.into();
+    let query=if table_exists(&task,"lu_task_custody_uncertainty")?{
+        "SELECT t.task_id,t.state,u.reason FROM lu_tasks t
+         LEFT JOIN lu_task_custody_uncertainty u ON u.task_id=t.task_id
+         WHERE t.workspace_id=?1
+           AND (t.state='INTERRUPTED' OR u.task_id IS NOT NULL)
+         ORDER BY t.updated_at DESC,t.task_id ASC LIMIT 33"
+    }else{
+        "SELECT task_id,state,NULL AS reason FROM lu_tasks
+         WHERE workspace_id=?1 AND state='INTERRUPTED'
+         ORDER BY updated_at DESC,task_id ASC LIMIT 33"
+    };
+    let mut stmt=task.prepare(query)
+        .map_err(|_|"SEC-04 original task projection unavailable")?;
+    let rows=stmt.query_map(params![turn],|r|Ok(SecurityNativeTask{
+        task_id:r.get(0)?,state:r.get(1)?,
+        custody_reason:r.get(2)?,
+    })).map_err(|_|"SEC-04 original task rows unavailable")?;
+    for row in rows{
+        output.interrupted_or_uncertain_tasks.push(
+            row.map_err(|_|"SEC-04 damaged native security row")?);
+    }
+    output.additional_native_tasks_not_inspected=
+        output.interrupted_or_uncertain_tasks.len()>32;
+    output.interrupted_or_uncertain_tasks.truncate(32);
+    let continuity=reviewed_turn_continuity(profile,chat,turn)?;
+    output.historical_effects_need_review=continuity.as_ref().is_none_or(|v|
+        v.journal_state!="VERIFIED_PAST_OPERATIONS"||
+        v.operations.iter().any(|op|op.process_state!="APPLIED"));
+    Ok(Some(output))
+}
 fn expected_method(tool:&str,method:&str)->bool{
     match tool{
         "lu.reviewed.git.head"=>method=="GIT_HEAD_DIRECT_V1",
