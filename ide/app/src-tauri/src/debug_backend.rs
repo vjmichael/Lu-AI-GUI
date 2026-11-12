@@ -317,6 +317,7 @@ pub struct DebugControlCandidateReview {
     original_debug_journal_sha256:String,
     action_manifest_sha256:String,
     global_action_cleanup_required:bool,
+    global_unresolved_action_required:bool,
     review_sha256:String,
     blockers:Vec<&'static str>,
     source_bytes_rechecked:bool,
@@ -443,9 +444,10 @@ impl NativeDebugRuntime {
         // debugger action. The inspector discloses only a global blocker.
         let action_evidence=self.inspect_control_evidence(project_id)?;
         let original_action_cleanup_required=
-            action_evidence.global_os_cleanup_required;
+            action_evidence.global_unresolved_action_required;
         let global_recovery_required =
-            global_recovery_required || original_action_cleanup_required;
+            global_recovery_required || original_action_cleanup_required ||
+            action_evidence.global_os_cleanup_required;
         // Security decision uses every outstanding job, not the bounded UI list.
         let quarantined: Vec<DebugInterrupted> = durable
             .iter()
@@ -619,7 +621,10 @@ impl NativeDebugRuntime {
             blockers.push("original_debug_action_os_recovery_required");
         }
         if audit.global_os_cleanup_required{
-            blockers.push("global_debugger_action_or_job_recovery_required");
+            blockers.push("global_debugger_job_os_recovery_required");
+        }
+        if audit.global_unresolved_action_required {
+            blockers.push("global_debugger_action_or_result_reconciliation_required");
         }
         if matches!(kind,DebugControlReviewKind::InspectReviewedFrame){
             blockers.push("adapter_frame_id_is_not_kernel_frame_proof");
@@ -639,6 +644,7 @@ impl NativeDebugRuntime {
             original_debug_journal_sha256:audit.original_debug_journal_sha256,
             action_manifest_sha256:audit.action_manifest_sha256,
             global_action_cleanup_required:audit.global_os_cleanup_required,
+            global_unresolved_action_required:audit.global_unresolved_action_required,
             review_sha256:format!("{:x}",hash.finalize()),
             blockers,source_bytes_rechecked:true,
             live_native_owner_event_verified:false,
@@ -851,9 +857,10 @@ impl NativeDebugRuntime {
         // A profile-wide native action audit is mandatory even when the
         // current project has no visible interrupted Job. No release build
         // may infer control safety from a terminal debugger journal alone.
-        if self.inspect_control_evidence(project_id)?
-            .global_os_cleanup_required {
-            return Err("FIN04_ORIGINAL_ACTION_OS_RECOVERY_REQUIRED".into());
+        let before_actions=self.inspect_control_evidence(project_id)?;
+        if before_actions.global_unresolved_action_required ||
+           before_actions.global_os_cleanup_required {
+            return Err("FIN04_ORIGINAL_ACTION_OR_JOB_RECONCILIATION_REQUIRED".into());
         }
         // Cross-supervisor, cross-process admission before reserving the
         // debugger slot or generating fresh native worker authority.
@@ -877,7 +884,8 @@ impl NativeDebugRuntime {
         // rather than dispatch a worker with uncertain authority.
         let action_scan=self.inspect_control_evidence(project_id);
         match action_scan {
-            Ok(audit) if !audit.global_os_cleanup_required => {}
+            Ok(audit) if !audit.global_os_cleanup_required &&
+                         !audit.global_unresolved_action_required => {}
             result => {
                 // This invocation has not prepared any Job. Even a corrupted
                 // action log cannot strand our own fresh marker if the entire
