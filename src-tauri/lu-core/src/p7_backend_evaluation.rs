@@ -437,6 +437,34 @@ mod tests{
             Err(CandidateBlocker::Unreviewed)));
         fs::remove_dir_all(dir).unwrap();
     }
+    #[test] fn projector_hash_is_required_for_multimodal_evaluation(){
+        let (dir,admitted,mut manifest)=fixture();
+        let path=dir.join("mmproj.gguf");
+        let mut header=b"GGUF".to_vec();
+        header.extend(3u32.to_le_bytes());
+        header.extend(1u64.to_le_bytes());
+        header.extend(1u64.to_le_bytes());
+        fs::write(&path,&header).unwrap();
+        let projector=crate::mmproj_admission::admit_projector(
+            &dir,"mmproj.gguf"
+        ).unwrap();
+        let digest:[u8;32]=Sha256::digest(&header).into();
+        manifest.expected_projector_sha256=Some(digest);
+        assert!(matches!(manifest.preflight_for_model(&admitted),
+            Err(CandidateBlocker::ProjectorMismatch)));
+        let reviewed=manifest.preflight_for_model_and_projector(
+            &admitted,Some(&projector)).unwrap();
+        assert_eq!(reviewed.projector_path.as_deref(),Some(path.as_path()));
+        let mut wrong=manifest.clone();
+        wrong.expected_projector_sha256=Some([9;32]);
+        assert!(matches!(wrong.preflight_for_model_and_projector(
+            &admitted,Some(&projector)),
+            Err(CandidateBlocker::ProjectorMismatch)));
+        fs::write(&path,b"invalid changed image projector").unwrap();
+        assert!(manifest.preflight_for_model_and_projector(
+            &admitted,Some(&projector)).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
     #[test] fn candidate_text_stream_is_bounded_and_vision_and_tools_fail_closed(){
         let (dir,admitted,manifest)=fixture();
         let proof=text_proof();
