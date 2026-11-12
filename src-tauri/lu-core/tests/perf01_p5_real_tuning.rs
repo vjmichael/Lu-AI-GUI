@@ -162,6 +162,7 @@ fn compare_baseline_and_explicit_tuning_on_real_gguf() {
         ubatch_size:bounded("LU_P5_UBATCH",128,1,512),
         gpu_layers:bounded("LU_P5_GPU_LAYERS",
             if cfg!(target_os="windows"){99}else{0},0,99) as u16,
+        gpu_placement:None,
         key_cache:kv("LU_P5_KV_K"),value_cache:kv("LU_P5_KV_V"),
         speculative:speculation,
     };
