@@ -398,7 +398,7 @@ fn lu_model_backend_options(
             detail:"P7 review only. A documented GGUF/OpenAI-compatible HTTP server is not proof of Lu native cancellation, model custody or vision/tool parity."
         },
         BackendOptionView{
-            backend:"vllm_gguf",engine:"vLLM GGUF plugin",packaged:false,
+            backend:"vllm",engine:"vLLM GGUF plugin",packaged:false,
             runtime_inference_verified:false,gpu_execution_verified:false,
             selectable:false,selected_on_next_start:false,
             detail:"Experimental and plugin-dependent GGUF route. Not packaged or admitted for local Windows Radeon inference."
