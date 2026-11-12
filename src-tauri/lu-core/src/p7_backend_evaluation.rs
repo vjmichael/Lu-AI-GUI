@@ -25,6 +25,7 @@ use std::{
 
 const MAX_EVALUATION_BINARY_BYTES:u64=1024*1024*1024;
 const MAX_EVALUATION_GGUF_BYTES:u64=128*1024*1024*1024;
+const MAX_EVALUATION_MMProj_BYTES:u64=16*1024*1024*1024;
 const MAX_OUTPUT_CHUNK_BYTES:usize=64*1024;
 const MAX_OUTPUT_BYTES:usize=1024*1024;
 
@@ -50,7 +51,7 @@ impl CandidateKind {
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum CandidateBlocker {
     Unreviewed,InvalidDigest,UnsafeFile,ChangedArtifact,
-    ModelMismatch,IncompleteProtocolEvidence,
+    ModelMismatch,ProjectorMismatch,IncompleteProtocolEvidence,
     VisionUnavailable,ToolSchemaUnavailable,Cancelled,
     OutputViolation,ExperimentalOnly,
 }
@@ -60,6 +61,7 @@ pub struct CandidateManifest {
     pub executable:PathBuf,
     pub expected_executable_sha256:[u8;32],
     pub expected_model_sha256:[u8;32],
+    pub expected_projector_sha256:Option<[u8;32]>,
     /// Independent owner review is required. It is not executable authority.
     pub operator_reviewed:bool,
     pub local_only:bool,
@@ -71,8 +73,10 @@ pub struct VerifiedCandidate {
     pub kind:CandidateKind,
     executable_path:PathBuf,
     model_path:PathBuf,
+    projector_path:Option<PathBuf>,
     _pinned_executable:File,
     _pinned_model:File,
+    _pinned_projector:Option<File>,
     engine_sha256:[u8;32],
     model_sha256:[u8;32],
 }
@@ -119,6 +123,14 @@ impl CandidateManifest {
     pub fn preflight_for_model(
         &self,admitted:&AdmittedModel,
     )->Result<VerifiedCandidate,CandidateBlocker>{
+        self.preflight_for_model_and_projector(admitted,None)
+    }
+    pub fn preflight_for_model_and_projector(
+        &self,admitted:&AdmittedModel,projector:Option<&AdmittedProjector>,
+    )->Result<VerifiedCandidate,CandidateBlocker>{
+        if projector.is_some()!=self.expected_projector_sha256.is_some(){
+            return Err(CandidateBlocker::ProjectorMismatch)
+        }
         if !self.operator_reviewed||!self.local_only {
             return Err(CandidateBlocker::Unreviewed)
         }
@@ -137,10 +149,27 @@ impl CandidateManifest {
         if model_sha!=self.expected_model_sha256{
             return Err(CandidateBlocker::ModelMismatch)
         }
+        let (projector_file,projector_path)=if let Some(p)=projector {
+            p.recheck().map_err(|_|CandidateBlocker::ChangedArtifact)?;
+            let expected=self.expected_projector_sha256
+                .ok_or(CandidateBlocker::ProjectorMismatch)?;
+            if !nonzero_sha(&expected){
+                return Err(CandidateBlocker::InvalidDigest)
+            }
+            let (file,path,actual)=digest_original_file(
+                p.path(),MAX_EVALUATION_MMProj_BYTES)?;
+            if actual!=expected{return Err(CandidateBlocker::ProjectorMismatch)}
+            p.recheck().map_err(|_|CandidateBlocker::ChangedArtifact)?;
+            (Some(file),Some(path))
+        }else{
+            (None,None)
+        };
         admitted.recheck().map_err(|_|CandidateBlocker::ChangedArtifact)?;
         Ok(VerifiedCandidate{
             kind:self.kind,executable_path:canonical,model_path,
+            projector_path,
             _pinned_executable:exe,_pinned_model:model,
+            _pinned_projector:projector_file,
             engine_sha256:sha,model_sha256:model_sha,
         })
     }
@@ -250,7 +279,8 @@ impl<B:InferenceBackend> InferenceBackend for EvaluatedInferenceBackend<B>{
     fn process_id(&self)->Option<u32>{self.native.process_id()}
     fn load(&mut self,model:&AdmittedModel)->Result<(),String>{
         if self.loaded {return Err("P7 candidate already loaded".into())}
-        if model.path()!=self.candidate.model_path ||
+        if self.candidate.projector_path.is_some() ||
+            model.path()!=self.candidate.model_path.as_path() ||
             model.recheck().is_err(){
             return Err("P7 candidate GGUF differs from pinned evaluation model".into())
         }
@@ -265,12 +295,13 @@ impl<B:InferenceBackend> InferenceBackend for EvaluatedInferenceBackend<B>{
             return Err("P7 candidate MMProj not independently accepted".into())
         }
         if self.loaded {return Err("P7 candidate already loaded".into())}
-        if model.path()!=self.candidate.model_path ||
+        if model.path()!=self.candidate.model_path.as_path() ||
             model.recheck().is_err(){
             return Err("P7 candidate GGUF differs from pinned evaluation model".into())
         }
-        if projector.is_some_and(|p|p.recheck().is_err()){
-            return Err("P7 projector admission changed".into())
+        if projector.map(|p|p.path())!=self.candidate.projector_path.as_deref()||
+            projector.is_some_and(|p|p.recheck().is_err()){
+            return Err("P7 MMProj differs from pinned candidate evaluation".into())
         }
         self.native.load_with_projector(model,projector)?;
         self.loaded=true;
@@ -366,6 +397,7 @@ mod tests{
             kind:CandidateKind::MistralRs,executable:exe,
             expected_executable_sha256:sha_exe,
             expected_model_sha256:sha_model,
+            expected_projector_sha256:None,
             operator_reviewed:true,local_only:true
         };
         (root,admitted,reviewed)
