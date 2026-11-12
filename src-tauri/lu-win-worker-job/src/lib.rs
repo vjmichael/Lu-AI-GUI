@@ -412,7 +412,19 @@ pub mod unix_owned {
                 if !matches!(child.try_wait(),Ok(Some(_))){
                     let _=child.kill();
                 }
-                let _=child.wait();
+                // A Linux kernel task stuck in uninterruptible sleep may
+                // not reap despite SIGKILL. Never make host admission hang
+                // forever waiting for the OS. No verified custody is minted.
+                let deadline=std::time::Instant::now()
+                    +std::time::Duration::from_secs(2);
+                loop{
+                    match child.try_wait(){
+                        Ok(Some(_))=>break,
+                        Ok(None) if std::time::Instant::now()<deadline=>
+                            std::thread::sleep(std::time::Duration::from_millis(10)),
+                        _=>break,
+                    }
+                }
             }
         }
     }
@@ -451,7 +463,7 @@ pub mod unix_owned {
         }
         #[test]
         fn still_alive_silent_guardian_cannot_block_admission(){
-            let (result,elapsed)=banner_case("sleep 2",Duration::from_millis(125));
+            let (result,elapsed)=banner_case("exec sleep 2",Duration::from_millis(125));
             assert_eq!(result.unwrap_err().kind(),io::ErrorKind::TimedOut);
             assert!(elapsed<Duration::from_secs(1));
         }
@@ -491,7 +503,7 @@ pub mod unix_owned {
         }
         #[test]
         fn unavailable_helper_must_exit_before_no_delegation_result(){
-            let mut child=Command::new("/bin/sh").args(["-c","sleep 2"])
+            let mut child=Command::new("/bin/sh").args(["-c","exec sleep 2"])
                 .stdin(Stdio::null()).stdout(Stdio::piped())
                 .stderr(Stdio::null()).spawn().unwrap();
             let start=Instant::now();
