@@ -1155,6 +1155,93 @@ pub fn execute_linux_worker_with_output(
 /// cgroup path must still exist under the *current* delegated parent and
 /// must match this exact native job identity; otherwise remain quarantined.
 /// No process is restarted. A verified cgroup.kill + populated=0 is required.
+/// FIN-01D: fresh Linux cgroup-v2 kernel-custody readback for global
+/// stale-marker clearance. This is deliberately restricted to the real
+/// systemd-delegated native host leaf: a user desktop, container or
+/// synthetic fixture cannot produce a positive kernel witness.
+pub fn verify_global_worker_quiescence(
+    owner_pid:u32, jobs:&[JobSummary]
+)->Result<crate::KernelQuiescenceWitness,SupervisorError>{
+    if owner_pid==0 || owner_pid==std::process::id() || jobs.len()>4096 {
+        return Err(SupervisorError::Quarantined);
+    }
+    let owner_path=PathBuf::from(format!("/proc/{owner_pid}"));
+    let owner_exited=||->Result<(),SupervisorError>{
+        match fs::symlink_metadata(&owner_path){
+            Err(e) if e.kind()==io::ErrorKind::NotFound=>Ok(()),
+            _=>Err(SupervisorError::Quarantined),
+        }
+    };
+    owner_exited()?;
+    let parent=current_cgroup_parent()?;
+    // The parent must be the true kernel delegated hierarchy, not a user
+    // controlled tree. The native host leaf must still exist and be
+    // inspectable. Empty parent cgroup.procs prevents untracked direct jobs.
+    let host=parent.join("lu-ide-host");
+    let host_meta=fs::symlink_metadata(&host).map_err(|_|SupervisorError::Quarantined)?;
+    if !host_meta.is_dir() || host_meta.file_type().is_symlink() {
+        return Err(SupervisorError::Quarantined);
+    }
+    if !fs::read_to_string(parent.join("cgroup.procs"))
+        .map_err(|_|SupervisorError::Quarantined)?.trim().is_empty(){
+        return Err(SupervisorError::Quarantined);
+    }
+    let mut known=std::collections::BTreeSet::new();
+    for job in jobs {
+        if job.requires_reconciliation ||
+            !matches!(job.phase,JobPhase::Completed|JobPhase::Cancelled|JobPhase::Failed|JobPhase::Denied) ||
+            job.job_id.len()!=36 || !job.job_id.starts_with("job-") ||
+            !job.job_id[4..].bytes().all(|b|b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) ||
+            job.plan_sha256.len()!=64 ||
+            !job.plan_sha256.bytes().all(|b|b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) ||
+            !known.insert(format!("lu-ide-{}",job.job_id)){
+            return Err(SupervisorError::Quarantined);
+        }
+    }
+    let mut seen=std::collections::BTreeSet::new();
+    let mut empty=0usize;
+    let entries=fs::read_dir(&parent).map_err(|_|SupervisorError::Quarantined)?;
+    for entry in entries {
+        let entry=entry.map_err(|_|SupervisorError::Quarantined)?;
+        let name=entry.file_name();
+        let item=entry.path();
+        let meta=fs::symlink_metadata(&item).map_err(|_|SupervisorError::Quarantined)?;
+        if meta.file_type().is_symlink(){
+            return Err(SupervisorError::Quarantined);
+        }
+        if !meta.is_dir(){continue;} // normal kernel cgroup control files
+        if name=="lu-ide-host" {continue;}
+        // Any unexpected child cgroup could contain an unjournaled worker.
+        // Never guess that an unknown group is harmless.
+        let label=name.to_str().ok_or(SupervisorError::Quarantined)?;
+        if !known.contains(label) || !seen.insert(label.to_owned()){
+            return Err(SupervisorError::Quarantined);
+        }
+        if !parse_empty_cgroup_events(&fs::read_to_string(item.join("cgroup.events"))
+                .map_err(|_|SupervisorError::Quarantined)?) ||
+           !fs::read_to_string(item.join("cgroup.procs"))
+                .map_err(|_|SupervisorError::Quarantined)?.trim().is_empty() ||
+           fs::read_to_string(item.join("pids.current"))
+                .map_err(|_|SupervisorError::Quarantined)?.trim()!="0" {
+            return Err(SupervisorError::Quarantined);
+        }
+        empty+=1;
+    }
+    // Kernel cgroups normally disappear after verified worker shutdown.
+    // A missing group is not by itself proof of an exited worker; this
+    // verifier additionally requires terminal original journals and a
+    // verified delegated parent with no untracked live child cgroups.
+    owner_exited()?;
+    let absent=known.len().saturating_sub(seen.len());
+    Ok(crate::KernelQuiescenceWitness{
+        platform:"linux_cgroup_v2",
+        examined_job_identities:jobs.len(),
+        kernel_objects_empty:empty,
+        kernel_objects_absent:absent,
+        marker_owner_exited:true,
+    })
+}
+
 pub fn reconcile_linux_interrupted(
     supervisor: &Supervisor,
     job_id: &str,
