@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "5a76c7e1a77f6cd9dcff82dde16940f333dea873",
+  "sourceCommitBeforeLock": "8b2026847c0b6e02df36679236b6c5a4cb78f117",
   "trackedFileCount": 983,
   "files": [
     {
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "ad30e7737a1d605b9b96609e16ea89730f2cb81b"
+      "blob": "060ef4717828f513b8b1d9bfbf14ba29cbf597b6"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
