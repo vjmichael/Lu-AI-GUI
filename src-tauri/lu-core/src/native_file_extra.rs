@@ -442,7 +442,13 @@ fn search_with_cancel<F: Fn() -> bool>(
                         note(&mut limitations, "MATCH_LIMIT", &mut truncated);
                         break 'walk;
                     }
-                    let excerpt: String = content.chars().take(240).collect();
+                    // Preserve the actual matched phrase even when it
+                    // starts far beyond the front of a long line. The query
+                    // is at most 256 UTF-8 bytes; 60 chars of left context
+                    // plus 256 query chars fit in this bounded excerpt.
+                    let at = content.find(&req.query).unwrap_or(0);
+                    let start_char = content[..at].chars().count().saturating_sub(60);
+                    let excerpt: String = content.chars().skip(start_char).take(320).collect();
                     let estimated_bytes = relative.len() + excerpt.len() + 256;
                     if output_bytes.saturating_add(estimated_bytes) > MAX_SEARCH_OUTPUT_BYTES {
                         note(&mut limitations, "RESULT_BYTE_LIMIT", &mut truncated);
