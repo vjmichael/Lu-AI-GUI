@@ -1356,9 +1356,11 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
             // Capacity and the interactive launch hold are one guardian
             // mutation. Direct native worker leases cannot slip past a
             // foreground priority gate even when not on the timed queue.
-            let _=state.background_scheduler.apply_interactive_admission(admission);
+            let applied=state.background_scheduler.apply_interactive_admission(admission);
             if let Ok(mut observed_reason)=state.interactive_admission_reason.lock(){
-                *observed_reason=Some(admission.reason);
+                // A decision is not an applied guardian policy if its native
+                // admission mutex rejected it. Do not display false success.
+                *observed_reason=applied.is_ok().then_some(admission.reason);
             }
             // PERF-01 P4: no NEW OS worker while the live model needs
             // foreground resources, physical RAM is unmeasured/critical, or
