@@ -26,10 +26,10 @@ The new implementation:
    whose actual opened identities disagree with the original metadata.
    The source-root is a pinned open directory; later changing its
    ambient pathname cannot redirect the current scan.
-3. Keeps opt-in recursion with host-enforced ceilings: 64 directories,
-   512 directory entries, 64 opened files, 128 matched lines, 64 KiB
-   per file, 4 MiB total source reads, 48 KiB estimated result payload
-   and 2 seconds elapsed time. All limits are local and independent of
+3. Keeps opt-in recursion with host-enforced ceilings: 128 directories,
+   1,024 directory entries, 256 opened files, 128 matched lines, 64 KiB
+   per file, 8 MiB total source reads, 48 KiB worst-case JSON result payload
+   and 3 seconds elapsed time. All limits are local and independent of
    model arguments, which can request only smaller file/hit limits.
 4. Uses the existing file_suffix filter as the initial safe simple filter.
    No unrestricted glob, regex or model-chosen `ripgrep` executable is
