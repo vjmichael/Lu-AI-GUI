@@ -230,17 +230,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             return Err("DENIED: cancellation leaked published outputs or false completion".into());
         }
-        let phases: Vec<JobPhase> = supervisor
+        let history = supervisor
             .receipt_history(&prepared.job_id)
-            .map_err(|e| format!("DENIED: cancellation receipts: {}", e.code()))?
-            .into_iter()
-            .map(|entry| entry.body.phase)
-            .collect();
-        if !phases
-            .windows(2)
-            .any(|pair| pair == [JobPhase::CancelRequested, JobPhase::Cancelled])
-        {
-            return Err("DENIED: cancellation was not durably recorded before kernel kill".into());
+            .map_err(|e| format!("DENIED: cancellation receipts: {}", e.code()))?;
+        let phases: Vec<JobPhase> = history.iter().map(|entry| entry.body.phase).collect();
+        // The independent protected SCM holder must have fsynced the
+        // empty-Job / NUL-lease release ACK before the terminal Cancelled.
+        // The historical adjacent pair wrongly rejected this safer protocol.
+        if !phases.windows(3).any(|triple| {
+            triple == [
+                JobPhase::CancelRequested,
+                JobPhase::ReleasePending,
+                JobPhase::Cancelled,
+            ]
+        }) || history.last().is_none_or(|entry| {
+            entry.body.phase != JobPhase::Cancelled
+                || entry.body.outcome_code != "native_cancel_service_release_verified"
+        }) {
+            return Err("DENIED: protected cancellation missing distinct fsynced SCM release boundary".into());
         }
         drop(supervisor);
         let reopened = Supervisor::open(root.join("supervisor-receipts.jsonl"))
