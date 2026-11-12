@@ -1361,3 +1361,34 @@ The isolated Windows source preflight #43292002483 passed on
 The follow-on OS-membership/quarantine fixes have their own preflight
 and **do not** claim kernel execution, installed acceptance or authorization.
 See `docs/IDE_FIN04R1_PROTECTED_PDB_AND_NATIVE_ACCEPTANCE_20261112.md`.
+
+## FIN-04R-1 Task 4 — demonstrated failures and conservative recovery (2026-11-12)
+
+The source-level clean-close regression failure in Windows preflight
+#43303531469 was **not** a process-tree cleanup failure. The mocked DAP
+`threads` response used an empty `threads:[]` list. The original strict
+DAP parser intentionally rejects an empty successful thread list and
+quarantines the adapter; the failure occurred at `gateway.poll()`, before
+`gateway.close()`. The fixture now supplies a real bounded thread identity
+while the negative DAP test continues denying empty lists. The exact-head
+Windows source preflight #43311283163 passed all **131** supervisor Rust
+tests and **19** JS security checks (0 failures).
+
+The earlier first-party Windows kernel workflow #43288086009 compiled the
+patched LLVM 18 owner, staged the native SCM service and then failed its
+protected Cargo/project scenario with
+`SUPERVISOR_RECONCILIATION_REQUIRED`. That is a genuine *unresolved*
+runtime acceptance failure, NOT an excuse to clear quarantine or replay
+work. Its unqualified error string does not reveal which original receipt
+caused the failure. The native acceptance harness now logs only fixed,
+original supervisor Journal phase/outcome/evidence categories for that
+specific Job on error, without recovering authority. A new source-level
+negative test checks missing independently bounded output publication:
+the original Job enters RecoveryRequired and after restart still blocks
+new admission. Follow-on full exact-head tests are separate from the
+previously confirmed run.
+
+Owner-deferred genuine Windows kernel/SCM/PDB/restart acceptance and
+interactive installed-human/security acceptance remain **OPEN,
+DEFERRED and UNVERIFIED**. No native OS success, physical acceptance,
+production debugger control, release, or merge was inferred.
