@@ -109,6 +109,9 @@ function sourceCases(){
     doCase('linux-negative-python-syntax','python3',[
       '-m','py_compile','benchmarks/e1/p0_sec02_linux_guardian_negative.py'
     ],{timeout:30000});
+    doCase('linux-host-crash-python-syntax','python3',[
+      '-m','py_compile','benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py'
+    ],{timeout:30000});
   }
 }
 function rustCases(){
@@ -155,14 +158,17 @@ if(mode==='verify'){
                   'sec06-js-syntax'],
           linux:['exact-head-inventory','security-contracts',
                  'sec06-js-syntax','linux-negative-python-syntax',
+                 'linux-host-crash-python-syntax',
                  'core-native-full','desktop-ansf-native','worker-job-native',
-                 'guardian-test-binaries','linux-guardian-death',
-                 'linux-guardian-stall','linux-worker-stall',
-                 'linux-ancestor-migration'],
+                 'guardian-test-binaries','linux-original-host-sigkill',
+                 'linux-reviewed-git-original-journal',
+                 'linux-guardian-death','linux-guardian-stall',
+                 'linux-worker-stall','linux-ancestor-migration'],
           windows:['exact-head-inventory','security-contracts',
                    'sec06-js-syntax','core-native-full',
                    'desktop-ansf-native','worker-job-native',
-                   'windows-real-two-jobs'],
+                   'windows-real-two-jobs',
+                   'windows-reviewed-git-original-journal'],
         }[target];
         if(!Array.isArray(p.cases)||
            required.some(id=>!p.cases.some(x=>x.id===id&&x.status==='PASS'))||
@@ -218,16 +224,37 @@ if(mode==='verify'){
           'src-tauri/lu-win-worker-job/Cargo.toml',
           '--features','e1-p08-crash-fixture',
           '--bin','lu-linux-cgroup-guard',
-          '--bin','lu-p0-sec02-linux-negative'
+          '--bin','lu-p0-sec02-linux-negative',
+          '--bin','lu-e1-p08-linux-cgroup-crash-parent'
         ],{timeout:900000});
         if(build.status==='PASS'){
           const basedir=join(root,'src-tauri/lu-win-worker-job/target/debug');
           const helper=join(basedir,'lu-linux-cgroup-guard');
           const fixture=join(basedir,'lu-p0-sec02-linux-negative');
-          if(!existsSync(helper)||!existsSync(fixture)){
+          const crashHost=join(basedir,'lu-e1-p08-linux-cgroup-crash-parent');
+          if(!existsSync(helper)||!existsSync(fixture)||
+             !existsSync(crashHost)){
             reject('original compiled first-party helper binaries not found');
           }else{
             const env={...process.env,LU_AGENT01L_TEST_CGROUP_GUARD:helper};
+            doCase('linux-original-host-sigkill','python3',[
+              'benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py',
+              '--guard',helper,'--parent',crashHost
+            ],{
+              env,timeout:180000,
+              mustContain:['AGENT01L_NATIVE_CGROUP_ESCAPED_DESCENDANT_PASS=1',
+                           'Lu_SIGKILL=1','original_scope_receipt=1']
+            });
+            doCase('linux-reviewed-git-original-journal','cargo',[
+              'test','--locked','--manifest-path',
+              'src-tauri/lu-core/Cargo.toml','--lib',
+              'agent01l_linux_real_git_cgroup_custody_after_restart',
+              '--','--ignored','--nocapture'
+            ],{
+              env,timeout:600000,
+              mustContain:['agent01l_linux_real_git_cgroup_custody_after_restart',
+                           '1 passed'],mustReject:['running 0 tests']
+            });
             for(const modeName of [
               'guardian-death','guardian-stall','worker-stall','ancestor-migration'
             ]){
@@ -257,6 +284,19 @@ if(mode==='verify'){
         timeout:600000,
         mustContain:[
           'sec05_windows_two_jobs_cross_chat_cancel_cannot_terminate_foreign_worker',
+          '1 passed'
+        ],
+        mustReject:['running 0 tests']
+      });
+      doCase('windows-reviewed-git-original-journal','cargo',[
+        'test','--locked','--manifest-path',
+        'src-tauri/lu-core/Cargo.toml','--lib',
+        'agent01l_real_git_job_attests_original_turn_and_reopens_without_replay',
+        '--','--nocapture'
+      ],{
+        timeout:600000,
+        mustContain:[
+          'agent01l_real_git_job_attests_original_turn_and_reopens_without_replay',
           '1 passed'
         ],
         mustReject:['running 0 tests']
