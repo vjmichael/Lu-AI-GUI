@@ -941,6 +941,23 @@ async fn ide_read_local_stash_inventory(
   .map_err(str::to_owned)
 }
 
+/// FIN-03G: immutable native Git-object review. This does not grant
+/// OS authority, apply or drop a stash, revert a commit, or alter local refs.
+#[tauri::command]
+async fn ide_git_preview_local_mutation_impact(
+ state:State<'_,Arc<IdeWorkspaceRegistry>>,
+ project_id:String,
+ kind:lu_ide_workspace::git_fin03_operation_preview::Fin03ImpactKind,
+ commit_sha:Option<String>,stash_index:Option<usize>,
+)->Result<lu_ide_workspace::git_fin03_operation_preview::Fin03ImpactReview,String>{
+ let registry=Arc::clone(state.inner());
+ tauri::async_runtime::spawn_blocking(move||
+  registry.review_fin03_local_impact(
+   &project_id,kind,commit_sha.as_deref(),stash_index))
+  .await.map_err(|_|"FIN03G_REVIEW_TASK_INTERRUPTED".to_owned())?
+  .map_err(str::to_owned)
+}
+
 /// FIN-03: one reviewed staged file -> unstaged source, Git index ONLY.
 /// No caller-provided Git commands, paths, OS approval tokens or ref writes.
 #[tauri::command]
@@ -3969,6 +3986,7 @@ pub fn run() {
             ide_read_git_refs_health,
             ide_git_review_branch_operation,
             ide_read_local_stash_inventory,
+            ide_git_preview_local_mutation_impact,
             ide_git_review_single_unstage,
             ide_git_review_one_file_stash,
             ide_git_execute_one_file_stash,
