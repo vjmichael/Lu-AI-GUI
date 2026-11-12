@@ -152,3 +152,11 @@ authority. Full boundaries and required native acceptance are in
 FIN-02 remains deferred. No CI, physical Windows/Linux test,
 installer acceptance, feature freeze, release or merge to main was
 authorized here.
+
+## FIN-04R · first-party owner observer and OS-only recovery (2026-11-12)
+
+Source-only release-observer integration now exists behind `fin04-release-event-observer` and independently verified staged LLVM hook/binary-provenance inputs. The first-party Windows protected AppContainer/SCM Job event sideband is separated from dev-only D6D consent and D6C DAP dispatch. Original native event, job, source-snapshot and journal identities can produce a **read-only** owner receipt; this does not verify PE/PDB source lines in the release observer.
+
+The existing one-use action journal and independent post-command result checker can compile in the release-observer source, but every non-test release dispatch-slot admission is explicitly denied. The CI-only `llvm-symbolizer` child is not acceptable production custody. No release debugger human authorization, step, breakpoint or variables operation is enabled. A new native operator dialog can record a unique OS-only recovery receipt for a prior interrupted action after independently rechecking all original Job Objects/cgroups and action journals; it does not clear the original global marker, restore action permission, independently verify the old operation result or replay any DAP request. FIN-02 deferred; FIN-04R-1 through R-5 native release gates are open.
+
+See [FIN-04R release observer/recovery details](IDE_FIN04R_RELEASE_OWNER_AND_ACTION_RECOVERY_20261112.md). Exact-head native compilation, Windows/Linux kernel fixtures, independent protected PDB acceptance, physical GUI approvals, installed restart and security acceptance remain **not performed**. No CI/merge/release/feature freeze authorized.
