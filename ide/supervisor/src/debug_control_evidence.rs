@@ -51,8 +51,12 @@ fn allowed_outcome(e:&ActionEvent)->bool{
 /// read if it races the action inventory.
 fn original_debug_journal_digest(profile:&Path)->Result<String,&'static str>{
  let file=profile.join("debug-fixture-receipts.jsonl");
- let meta=fs::symlink_metadata(&file)
-  .map_err(|_|"FIN04_DEBUG_JOURNAL_IDENTITY_MISSING")?;
+ let meta=match fs::symlink_metadata(&file){
+  Ok(meta)=>meta,
+  Err(e) if e.kind()==std::io::ErrorKind::NotFound=>
+   return Ok(sha(b"fin04-pristine-no-debug-journal-yet-v1")),
+  Err(_)=>return Err("FIN04_DEBUG_JOURNAL_IDENTITY_MISSING"),
+ };
  if !meta.is_file()||meta.file_type().is_symlink()||
     meta.len()>64*1024*1024{
   return Err("FIN04_DEBUG_JOURNAL_IDENTITY_UNTRUSTED");
@@ -288,6 +292,13 @@ pub fn inspect_debug_control_evidence(
  let journal_before=original_debug_journal_digest(trusted_profile)?;
  let actions_before=action_directory_fingerprint(trusted_profile)?;
  let jobs=supervisor.inspect().map_err(|_|"FIN04_ORIGINAL_DEBUG_JOURNAL_UNVERIFIED")?;
+ // A pristine profile can lack its first append-only journal; a missing
+ // journal once any native Job exists is a hard integrity violation.
+ let journal_exists=fs::symlink_metadata(
+  trusted_profile.join("debug-fixture-receipts.jsonl")).is_ok();
+ if !journal_exists && !jobs.is_empty(){
+  return Err("FIN04_MISSING_NONEMPTY_ORIGINAL_DEBUG_JOURNAL");
+ }
  if jobs.len()>8192{return Err("FIN04_ORIGINAL_DEBUG_JOB_LIMIT");}
  let mut identities=BTreeSet::new();
  for j in &jobs{
@@ -445,6 +456,9 @@ mod tests{
   let (root,supervisor,project,_)=fixture();
   let inventory=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
   assert_eq!(inventory.original_action_files_checked,0);
+  assert_eq!(inventory.original_debug_journal_sha256.len(),64);
+  assert_eq!(inventory.action_manifest_sha256.len(),64);
+  assert!(!inventory.global_os_cleanup_required);
   assert!(inventory.rows.is_empty());
   assert!(!inventory.debugger_execution_authorized);
   assert!(!inventory.replay_authorized);
