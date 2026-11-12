@@ -65,3 +65,42 @@ These commands are future acceptance instructions, NOT tests reported as run.
 3. There is still an unavoidable authorization-check-to-exec gap unless all effectful workers are bound to a revocable native execution gate; a cancellation racing after the last tool check may leave an historical effect. This is uncertain, not permission to replay or a claim of rollback.
 4. No guaranteed custody after the active host dies IF its custodian already died. A hostile worker able to migrate into writable ancestor cgroup.procs can escape the leaf. A tested nonmigratable OS boundary and installed Linux guardian watchdog are separate requirements.
 5. Follow-on SEC-04/SEC-05/SEC-06 must reconcile process custody, UI cancellation, restart, model-to-tool, Windows Job, kernel authority ceilings and genuine installed OS evidence before accepting P0-SEC or moving to P0-PLAN.
+
+## SEC-04 — durable recovery, original execution-journal reconciliation and operator UI
+
+**Status: SOURCE IMPLEMENTED, native/installed acceptance OPEN.** This is not proof that
+descendants died when a custodian was lost or that any external effect was rolled back.
+
+1. TaskStore::resume now accepts only PAUSED tasks. INTERRUPTED work from an OS
+   crash cannot be resumed under an old task identity even without a previously
+   recorded custody failure. A PENDING task with immutable custody uncertainty
+   becomes INTERRUPTED during exclusive startup reconciliation. START, RESUME
+   and positive terminal transitions cannot bypass its immutable failure row.
+2. TaskStore::security_recovery_rows is bounded and filtered by the original
+   exact chat workspace in SQLite BEFORE LIMIT. It exposes no worker argv,
+   PIDs, output paths, source bytes, checkpoint payloads or tool authority.
+3. reviewed_task_continuity::sec04_reviewed_turn_security opens host-derived
+   original task/effect journals READ ONLY, rejects linked/reparse/oversize
+   journal files, verifies the sealed original (conversation_id,user_turn_id)
+   binding and refuses cross-chat status attribution. Missing/legacy/unbound
+   journals become warnings, never evidence that effects have completed.
+4. p0_sec_recovery joins original ANSF authenticated turns, original
+   per-turn task/effect journals, global background task uncertainty and
+   host cancellation REQUESTED/RESULT rows. Missing RESULT remains unknown
+   across restart. Capped history is explicit. Read errors produce a
+   fail-closed ORIGINAL_SECURITY_RECOVERY_UNAVAILABLE_RECONCILE status.
+5. The existing lu_p0_authority_posture command includes the security
+   projection. The Lu conversation native tool activity pane shows accessible
+   SEC-04 status, original task/turn exceptions, unresolved cancellation
+   counts, effects needing review and bounded-history warnings. Viewing
+   cannot restore old authority or automatically replay external effects.
+6. Rust regression fixtures model guardian loss, EXECUTING effects, immutable
+   original task uncertainty, ANSF cancellation, two restart projections,
+   cross-chat origin mismatch, uncertain PENDING admission and resume denial.
+   JS source contracts verify source/UI wiring.
+
+**Open acceptance:** exact-head native Rust compilation/tests; genuine kernel
+guardian SIGKILL to task/effect journal and operator view on ONE original
+human turn; Windows Job restart; physical installed operator and permission
+matrix; SEC-05 adversarial containment; SEC-06 consolidated acceptance.
+Historical SQLite state is NEVER treated as a positive OS cleanup witness.
