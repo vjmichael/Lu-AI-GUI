@@ -435,8 +435,25 @@ impl BackgroundScheduler{
         ->Result<usize,SchedulerError>{
         self.tick_at_guarded(now_unix(),foreground_pending)
     }
+    /// PERF-01 P4: apply the host-observed resource gate, then recheck the
+    /// original foreground queue immediately before EACH native spawn.
+    /// The probe must be read-only and bounded. It narrows the admission race
+    /// but is not an atomic OS-wide preemption of already-approved workers.
+    pub fn tick_interactive_guarded(
+        &self,defer_new_background:bool,
+        foreground_probe:impl Fn()->bool,
+    )->Result<usize,SchedulerError>{
+        self.tick_at_guarded_with_probe(
+            now_unix(),defer_new_background,foreground_probe
+        )
+    }
     fn tick_at_guarded(&self,now:u64,foreground_pending:bool)
         ->Result<usize,SchedulerError>{
+        self.tick_at_guarded_with_probe(now,foreground_pending,||false)
+    }
+    fn tick_at_guarded_with_probe(
+        &self,now:u64,foreground_pending:bool,foreground_probe:impl Fn()->bool,
+    )->Result<usize,SchedulerError>{
         self.process.poll().map_err(|_|SchedulerError::WorkerControl)?;
         let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
         let active_ids=g.running.keys().cloned().collect::<Vec<_>>();
@@ -556,6 +573,10 @@ impl BackgroundScheduler{
                 max_runtime_seconds:job.plan.max_runtime_seconds,
             };
             let claim=job.opts.claim;
+            // A human Send may have queued during the admission scan. Do
+            // not start another native OS child behind a pending first token.
+            // Already-running workers are never killed or silently replayed.
+            if foreground_probe(){break}
             if self.process.start_host_approved(plan).is_err(){
                 g.db.execute(
                   "UPDATE lu_schedule SET state='FAILED',
@@ -908,6 +929,24 @@ mod tests{
         assert_eq!(queue.tick_at_guarded(now,false).unwrap(),0);
         assert_eq!(queue.state_for("held-for-human","c-owner").unwrap().as_deref(),
             Some("FAILED"));
+    }
+    #[test]
+    fn perf01_p4_second_probe_stops_native_starts_after_queue_scan(){
+        use std::sync::atomic::{AtomicUsize,Ordering};
+        let (_,_,scheduler)=test_scheduler();
+        let now=now_unix();
+        scheduler.enqueue_host_plan(plan("p4-queued"),
+            ScheduleOptions::file_scan(now,None,Priority::Interactive)).unwrap();
+        let probes=AtomicUsize::new(0);
+        let started=scheduler.tick_at_guarded_with_probe(now,false,||{
+            probes.fetch_add(1,Ordering::SeqCst);
+            true
+        }).unwrap();
+        assert_eq!(started,0);
+        assert!(probes.load(Ordering::SeqCst)>=1);
+        assert_eq!(scheduler.state_for("p4-queued","c-owner").unwrap().as_deref(),
+            Some("QUEUED"));
+        assert_eq!(scheduler.guardian_snapshot("c-owner").unwrap().used.workers,0);
     }
     #[test]
     fn priority_and_resource_admission_reject_gpu_without_verified_budget(){
