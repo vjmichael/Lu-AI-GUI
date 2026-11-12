@@ -155,6 +155,8 @@ impl Supervisor {
                 job.plan.recipe_id.as_str(),
                 "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
             ) && job.plan.effect_class == "test_build_isolated"
+            || (crate::rust_exact_case_name(&job.plan.recipe_id).is_some()
+               && job.plan.effect_class=="test_build_isolated")
         };
         if !matches_operation {
             return Err(SupervisorError::InvalidPlan);

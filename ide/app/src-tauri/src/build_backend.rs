@@ -70,6 +70,8 @@ const MULTILANG_RECIPES: [&str; 4] = [
 fn profile_manifest(recipe: &str) -> Option<&'static str> {
     match recipe {
         "rust_check" | "rust_build" | "rust_tests" => Some("Cargo.toml"),
+        id if lu_ide_execution_supervisor::rust_exact_case_name(id).is_some()=>
+            Some("Cargo.toml"),
         "lu_ide_host_tests" => Some("ide/host/Cargo.toml"),
         "python_pytest" => Some("pyproject.toml"),
         "js_tests" => Some("package.json"),
@@ -880,7 +882,7 @@ impl NativeBuildRuntime {
         {
             return Err("BUILD_RECIPE_DENIED".into());
         }
-        self.run_with_review(app, registry, project_id, recipe_id, None, None)
+        self.run_with_review(app, registry, project_id, recipe_id, None, None, None)
     }
 
     /// INT03: the user explicitly selects an already-discovered profile
@@ -912,7 +914,7 @@ impl NativeBuildRuntime {
             return Err("INT03_DISCOVERED_MANIFEST_STALE".into());
         }
         self.run_with_review(app, registry, project_id, recipe_id, None,
-            Some(expected_manifest_sha256))
+            Some(expected_manifest_sha256),None)
     }
 
     /// Only the separately named native package entrypoint can choose the
@@ -952,7 +954,41 @@ impl NativeBuildRuntime {
                 evidence_fingerprint: expected_evidence_fingerprint.to_owned(),
             }),
             None,
+            None,
         )
+    }
+
+    /// FIN04: one native-discovered saved Rust test name, sealed with Cargo
+    /// and original test source SHA, executed only under a fresh OS approval.
+    pub fn run_selected_rust_case(
+        &self,app:&AppHandle,registry:&IdeWorkspaceRegistry,
+        project_id:&str,relative_path:&str,case_name:&str,
+        expected_source_revision:&str,expected_manifest_sha256:&str
+    )->Result<BuildRunView,String>{
+        let source=registry.inspect_test_symbol_candidates(project_id,relative_path)
+            .map_err(str::to_owned)?;
+        if source.project_id!=project_id ||
+           source.language!="rust" ||
+           source.source_revision!=expected_source_revision ||
+           relative_path.starts_with("ide/host/") ||
+           !source.symbols.iter().any(|row|row.name==case_name &&
+               row.candidate_only && !row.executable_test_verified){
+            return Err("FIN04_SELECTED_SAVED_TEST_STALE_OR_UNKNOWN".into());
+        }
+        let recipe_id=format!("rust_exact_case:{case_name}");
+        if lu_ide_execution_supervisor::rust_exact_case_name(&recipe_id)
+            !=Some(case_name){
+            return Err("FIN04_SELECTED_TEST_NAME_INVALID".into());
+        }
+        let manifest=registry.preview_source_file(project_id,"Cargo.toml")
+            .map_err(|_|"FIN04_TEST_CARGO_MANIFEST_MISSING")?;
+        if manifest.project_id!=project_id ||
+           manifest.revision!=expected_manifest_sha256{
+            return Err("FIN04_TEST_MANIFEST_STALE".into());
+        }
+        self.run_with_review(app,registry,project_id,&recipe_id,None,
+            Some(expected_manifest_sha256),
+            Some((relative_path.to_owned(),expected_source_revision.to_owned())))
     }
 
     fn run_with_review(
@@ -963,7 +999,12 @@ impl NativeBuildRuntime {
         recipe_id: &str,
         reviewed: Option<ReviewedPackageSync>,
         expected_profile_sha: Option<&str>,
+        selected_case_source:Option<(String,String)>,
     ) -> Result<BuildRunView, String> {
+        if lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_some()
+           && selected_case_source.is_none(){
+           return Err("FIN04_RUST_EXACT_CASE_NOT_NATIVE_REVIEWED".into());
+        }
         if recipe_id == "uv_sync_offline" {
             #[cfg(feature = "native-package-uv")]
             if reviewed.is_none() {
@@ -1006,6 +1047,7 @@ impl NativeBuildRuntime {
             &output,
             reviewed.as_ref(),
             expected_profile_sha,
+            selected_case_source.as_ref(),
         );
         let mut locked = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
         let finished_output = locked.current.as_ref().and_then(|active| {
@@ -1040,6 +1082,7 @@ impl NativeBuildRuntime {
         output: &Arc<LiveOutput>,
         reviewed: Option<&ReviewedPackageSync>,
         expected_profile_sha: Option<&str>,
+        selected_case_source:Option<&(String,String)>,
     ) -> Result<BuildRunView, String> {
         // No Build/Test start may overlap an unresolved OS process tree.
         // A green recipe listing, cached editor plan or new approval dialog
@@ -1098,6 +1141,30 @@ impl NativeBuildRuntime {
                     .ok_or("INT03_PROFILE_NOT_ALLOWLISTED")? ||
                 input.seal.manifest_sha256 != expected {
                 return Err("INT03_FROZEN_MANIFEST_MISMATCH".into());
+            }
+        }
+        if let Some((relative,revision))=selected_case_source {
+            if lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_none()
+                || relative.len()>1024
+                || relative.starts_with('/')
+                || relative.contains(':') || relative.contains('\\')
+                || relative.split('/').any(|p|p.is_empty()||p=="."||p=="..")
+                || revision.len()!=64
+                || !revision.bytes().all(|c|c.is_ascii_hexdigit()){
+                return Err("FIN04_SELECTED_CASE_SOURCE_DENIED".into());
+            }
+            let path=input.root.join(relative);
+            let info=fs::symlink_metadata(&path)
+                .map_err(|_|"FIN04_FROZEN_TEST_SOURCE_MISSING")?;
+            if !info.is_file() || info.file_type().is_symlink() ||
+                info.len()>512*1024 {
+                return Err("FIN04_FROZEN_TEST_SOURCE_UNTRUSTED".into());
+            }
+            let data=fs::read(&path)
+                .map_err(|_|"FIN04_FROZEN_TEST_SOURCE_READ_FAILED")?;
+            if data.len() as u64!=info.len() ||
+               format!("{:x}",Sha256::digest(&data))!=*revision{
+                return Err("FIN04_FROZEN_SOURCE_DIFFERS_FROM_TEST_REVIEW".into());
             }
         }
         #[cfg(feature = "native-package-uv")]

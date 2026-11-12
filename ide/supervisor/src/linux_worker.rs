@@ -508,6 +508,7 @@ fn command_for(
     let manifest = match plan.recipe_id.as_str() {
         "lu_ide_host_tests" => "/workspace/ide/host/Cargo.toml",
         "rust_tests" | "rust_check" | "rust_build" => "/workspace/Cargo.toml",
+        id if crate::rust_exact_case_name(id).is_some()=>"/workspace/Cargo.toml",
         "python_pytest" if runtime.is_some() => "/workspace/pyproject.toml",
         "uv_sync_offline" if cfg!(feature = "package-uv-worker") && runtime.is_some() => {
             "/workspace/pyproject.toml"
@@ -660,6 +661,12 @@ fn command_for(
             .arg("--offline")
             .arg("--manifest-path")
             .arg(manifest);
+        }
+        id if crate::rust_exact_case_name(id).is_some() && runtime.is_none()=>{
+            let name=crate::rust_exact_case_name(id).ok_or(SupervisorError::InvalidPlan)?;
+            cmd.arg(CARGO).args(["test","--locked","--offline",
+                "--manifest-path"]).arg(manifest)
+                .arg(name).args(["--","--exact"]);
         }
         "uv_sync_offline" if cfg!(feature = "package-uv-worker") && runtime.is_some() => {
             if !input.root.join("uv.lock").is_file() {

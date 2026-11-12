@@ -291,6 +291,7 @@ pub fn publish_input(
 ) -> Result<PublishedInput, SnapshotError> {
     let manifest_relative_path = match recipe_id {
         "rust_check" | "rust_build" | "rust_tests" => "Cargo.toml",
+        id if crate::rust_exact_case_name(id).is_some()=>"Cargo.toml",
         "lu_ide_host_tests" => "ide/host/Cargo.toml",
         "python_pytest" if cfg!(feature = "multilang-worker") => "pyproject.toml",
         "uv_sync_offline" if cfg!(feature = "package-uv-worker") => "pyproject.toml",

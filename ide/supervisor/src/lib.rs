@@ -143,6 +143,18 @@ pub struct JobPlan {
     pub log_limit_bytes: u64,
     pub effect_class: String,
 }
+/// Native-only test-name token. This is an immutable subrecipe identity,
+/// never a shell fragment or caller-selected binary/argument vector.
+pub fn rust_exact_case_name(recipe_id: &str) -> Option<&str> {
+    let name=recipe_id.strip_prefix("rust_exact_case:")?;
+    let bytes=name.as_bytes();
+    if bytes.is_empty() || bytes.len()>64 ||
+       !(bytes[0].is_ascii_alphabetic() || bytes[0]==b'_') ||
+       !bytes.iter().all(|x|x.is_ascii_alphanumeric() || *x==b'_'){
+       return None;
+    }
+    Some(name)
+}
 fn hex_sha(value: &str, n: usize) -> bool {
     value.len() == n && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
@@ -153,7 +165,7 @@ fn validate_plan(value: &JobPlan) -> bool {
         && (matches!(
             value.recipe_id.as_str(),
             "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
-        ) || (cfg!(feature = "package-uv-worker") && value.recipe_id == "uv_sync_offline")
+        ) || rust_exact_case_name(&value.recipe_id).is_some() || (cfg!(feature = "package-uv-worker") && value.recipe_id == "uv_sync_offline")
             || (cfg!(feature = "multilang-worker")
                 && matches!(
                     value.recipe_id.as_str(),

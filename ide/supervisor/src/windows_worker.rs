@@ -809,6 +809,7 @@ fn command_for(
         "rust_check" => ("check", "Cargo.toml"),
         "rust_build" => ("build", "Cargo.toml"),
         "rust_tests" => ("test", "Cargo.toml"),
+        id if crate::rust_exact_case_name(id).is_some()=>("test","Cargo.toml"),
         "lu_ide_host_tests" => ("test", "ide/host/Cargo.toml"),
         _ => return Err(SupervisorError::InvalidPlan),
     };
@@ -820,11 +821,14 @@ fn command_for(
     if !clean_meta(&file)?.is_file() {
         return Err(denied());
     }
-    let command = format!(
-        "\"{}\" {subcommand} --offline --locked --manifest-path \"{}\"",
-        exe.display(),
-        file.display()
-    );
+    let exact_case=crate::rust_exact_case_name(&plan.recipe_id);
+    let command=if let Some(name)=exact_case{
+        format!("\"{}\" test --offline --locked --manifest-path \"{}\" {} -- --exact",
+            exe.display(),file.display(),name)
+    }else{
+        format!("\"{}\" {subcommand} --offline --locked --manifest-path \"{}\"",
+            exe.display(),file.display())
+    };
     // All components are host-determined fixed paths; no project string is
     // inserted into process command, environment or executable selection.
     if command.contains('\n') || command.contains('\r') {

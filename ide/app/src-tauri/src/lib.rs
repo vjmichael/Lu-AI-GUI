@@ -2259,6 +2259,35 @@ async fn ide_build_run_profile(
     }
 }
 
+/// FIN-04: verified saved test candidate, frozen source, genuine pinned Cargo
+/// OS process, exact libtest name filter and a separate native user grant.
+#[tauri::command]
+async fn ide_run_protected_rust_test_case(
+ app:AppHandle,registry:State<'_,Arc<IdeWorkspaceRegistry>>,
+ project_id:String,relative_path:String,case_name:String,
+ expected_source_revision:String,expected_manifest_sha256:String
+)->Result<serde_json::Value,String>{
+ #[cfg(all(feature="native-build",any(windows,target_os="linux")))]
+ {
+    let runtime=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+        .ok_or("FIN04_PROTECTED_BUILD_HOST_UNAVAILABLE")?;
+    let runtime=Arc::clone(runtime.inner());
+    let registry=Arc::clone(registry.inner());
+    let result=tauri::async_runtime::spawn_blocking(move||
+        runtime.run_selected_rust_case(&app,&registry,&project_id,
+          &relative_path,&case_name,&expected_source_revision,
+          &expected_manifest_sha256))
+        .await.map_err(|_|"FIN04_PROTECTED_TEST_THREAD_INTERRUPTED".to_owned())??;
+    return serde_json::to_value(result)
+        .map_err(|_|"FIN04_TEST_RECEIPT_SERIALIZATION_DENIED".into());
+ }
+ #[cfg(not(all(feature="native-build",any(windows,target_os="linux"))))]
+ {
+   let _=(app,registry,project_id,relative_path,case_name,
+      expected_source_revision,expected_manifest_sha256);
+   Err("FIN04_OS_TEST_WORKER_NOT_INSTALLED".into())
+ }
+}
 #[tauri::command]
 async fn ide_build_start(
     app: AppHandle,
@@ -3700,6 +3729,7 @@ pub fn run() {
             ide_terminal_submit,
             ide_build_read_output,
             ide_build_run_profile,
+            ide_run_protected_rust_test_case,
             ide_build_review_test_target,
             ide_build_start,
             ide_package_run_reviewed_uv,

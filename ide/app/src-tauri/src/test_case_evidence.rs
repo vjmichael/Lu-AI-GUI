@@ -118,6 +118,19 @@
              };
              ("cargo_libtest", name, status, None)
          }
+         id if lu_ide_execution_supervisor::rust_exact_case_name(id).is_some()=>{
+             let suffix=row.strip_prefix("test ")?;
+             let (name,status)=suffix.rsplit_once(" ... ")?;
+             let status=match status.trim(){
+               "ok"=>"reported_pass","FAILED"=>"reported_fail",
+               "ignored"=>"reported_skip",_=>return None,
+             };
+             // A completed exit-0 with no matching case output cannot
+             // become a reported passing test.
+             let expected=lu_ide_execution_supervisor::rust_exact_case_name(id)?;
+             if name!=expected{return None;}
+             ("cargo_libtest_exact_filter",name,status,None)
+         }
          "python_pytest" => {
              let (status, tail) = if let Some(value) = row.strip_prefix("FAILED ") {
                  ("reported_fail", value)
