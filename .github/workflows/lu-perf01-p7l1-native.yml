@@ -46,6 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           node --test \
+            lu-desktop/tests/perf01-p7l1-native-gate.test.mjs \
             lu-desktop/tests/perf01-p7l-koboldcpp-native-contract.test.mjs \
             lu-desktop/tests/perf01-p7l-comparison-null-tokens.test.mjs \
             lu-desktop/tests/perf01-p7-evaluation-contract.test.mjs \
