@@ -32,6 +32,7 @@ pub(crate) struct SecurityRecoveryView{
     pub problems:Vec<SecurityRecoveryProblem>,
     pub additional_problems_not_displayed:bool,
     pub older_original_turns_not_inspected:bool,
+    pub older_cancel_intents_not_inspected:bool,
     pub pending_cancel_intents:usize,
     pub cancellation_outcomes_still_require_review:usize,
     pub original_journals_examined:usize,
@@ -46,6 +47,7 @@ impl SecurityRecoveryView{
             status:"ORIGINAL_SECURITY_RECOVERY_UNAVAILABLE_RECONCILE",
             problems:vec![],additional_problems_not_displayed:true,
             older_original_turns_not_inspected:true,
+            older_cancel_intents_not_inspected:true,
             pending_cancel_intents:0,
             cancellation_outcomes_still_require_review:0,
             original_journals_examined:0,
@@ -75,6 +77,7 @@ pub(crate) fn for_original_chat(
         status:"BOUNDED_ORIGINAL_HISTORY_NOT_OS_CUSTODY_PROOF",
         problems:vec![],additional_problems_not_displayed:false,
         older_original_turns_not_inspected:false,
+        older_cancel_intents_not_inspected:cancels.len()>=16,
         pending_cancel_intents:0,
         cancellation_outcomes_still_require_review:0,
         original_journals_examined:0,
@@ -159,6 +162,7 @@ pub(crate) fn for_original_chat(
         !output.problems.is_empty()
         ||output.additional_problems_not_displayed
         ||output.older_original_turns_not_inspected
+        ||output.older_cancel_intents_not_inspected
         ||output.pending_cancel_intents>0
         ||output.cancellation_outcomes_still_require_review>0;
     output.status=if output.human_reconciliation_required{
