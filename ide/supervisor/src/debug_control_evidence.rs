@@ -72,6 +72,64 @@ fn original_debug_journal_digest(profile:&Path)->Result<String,&'static str>{
  }
  Ok(sha(&content))
 }
+/// Bounded complete action-directory byte witness. Read before AND after
+/// the parsed action scan; a same-size rewrite, new file, removal or foreign
+/// project's action changes invalidate the entire observation. No action
+/// paths, file contents or foreign identifiers are returned to the renderer.
+fn action_directory_fingerprint(profile:&Path)->Result<String,&'static str>{
+ let mut entries=Vec::<(String,String)>::new();
+ let mut total=0u64;
+ for item in fs::read_dir(profile).map_err(|_|"FIN04_ACTION_DIRECTORY_UNREADABLE")?{
+  let entry=item.map_err(|_|"FIN04_ACTION_DIRECTORY_UNREADABLE")?;
+  let name=entry.file_name();
+  let name=name.to_str().ok_or("FIN04_ACTION_FILENAME_INVALID")?;
+  if !name.starts_with("lu-debug-action-"){continue;}
+  let action=name.strip_prefix("lu-debug-action-")
+   .and_then(|tail|tail.strip_suffix(".ndjson"))
+   .ok_or("FIN04_ACTION_FILENAME_INVALID")?;
+  if !hex64(action) || entries.len()>=MAX_ACTIONS {
+   return Err("FIN04_ACTION_MANIFEST_LIMIT_OR_NAME");
+  }
+  let path=entry.path();
+  let meta=fs::symlink_metadata(&path)
+   .map_err(|_|"FIN04_ACTION_MANIFEST_FILE_MISSING")?;
+  if !meta.is_file() || meta.file_type().is_symlink() ||
+     meta.len()==0 || meta.len()>MAX_FILE{
+   return Err("FIN04_ACTION_MANIFEST_UNTRUSTED_FILE");
+  }
+  #[cfg(windows)]{
+   use std::os::windows::fs::MetadataExt;
+   if meta.file_attributes()&0x400!=0 {
+    return Err("FIN04_ACTION_MANIFEST_REPARSE_DENIED");
+   }
+  }
+  total=total.checked_add(meta.len())
+   .ok_or("FIN04_ACTION_MANIFEST_BYTE_BUDGET")?;
+  if total>32*1024*1024 {
+   return Err("FIN04_ACTION_MANIFEST_BYTE_BUDGET");
+  }
+  let mut raw=Vec::new();
+  File::open(&path).map_err(|_|"FIN04_ACTION_MANIFEST_UNREADABLE")?
+   .take(MAX_FILE+1).read_to_end(&mut raw)
+   .map_err(|_|"FIN04_ACTION_MANIFEST_UNREADABLE")?;
+  if raw.len() as u64!=meta.len(){
+   return Err("FIN04_ACTION_MANIFEST_CHANGED");
+  }
+  entries.push((name.to_owned(),sha(&raw)));
+ }
+ entries.sort_by(|a,b|a.0.cmp(&b.0));
+ if entries.windows(2).any(|pair|pair[0].0==pair[1].0){
+  return Err("FIN04_ACTION_MANIFEST_DUPLICATE");
+ }
+ let mut digest=Sha256::new();
+ digest.update(b"fin04-action-directory-fingerprint-v1\\n");
+ for (name,hash) in entries{
+  digest.update((name.len() as u64).to_le_bytes());
+  digest.update(name.as_bytes());
+  digest.update(hash.as_bytes());
+ }
+ Ok(format!("{:x}",digest.finalize()))
+}
 fn read_verified(path:&Path,action:&str)->Result<VerifiedAction,&'static str>{
  let meta=fs::symlink_metadata(path).map_err(|_|"FIN04_ACTION_JOURNAL_UNAVAILABLE")?;
  if !meta.is_file() || meta.file_type().is_symlink() ||
@@ -191,6 +249,13 @@ pub struct DebugControlEvidenceInventory{
  pub original_action_files_visible:usize,
  pub truncated:bool,
  pub requires_os_cleanup:bool,
+ /// Privacy-safe profile-wide blocker: original in-flight actions in ANY
+ /// project deny new protected debugger admission without exposing identity.
+ pub global_os_cleanup_required:bool,
+ /// These hashes pin a read-only review to the original on-disk evidence;
+ /// neither one is executable permission or current OS proof.
+ pub original_debug_journal_sha256:String,
+ pub action_manifest_sha256:String,
  pub journal_chain_verified:bool,
  pub native_owner_event_live_verified:bool,
  pub global_kernel_custody_accepted:bool,
@@ -221,6 +286,7 @@ pub fn inspect_debug_control_evidence(
   if root.file_attributes()&0x400!=0{return Err("FIN04_EVIDENCE_PROFILE_REPARSE_DENIED");}
  }
  let journal_before=original_debug_journal_digest(trusted_profile)?;
+ let actions_before=action_directory_fingerprint(trusted_profile)?;
  let jobs=supervisor.inspect().map_err(|_|"FIN04_ORIGINAL_DEBUG_JOURNAL_UNVERIFIED")?;
  if jobs.len()>8192{return Err("FIN04_ORIGINAL_DEBUG_JOB_LIMIT");}
  let mut identities=BTreeSet::new();
@@ -233,6 +299,7 @@ pub fn inspect_debug_control_evidence(
  let mut seen=BTreeSet::new();
  let mut all=Vec::new();
  let mut checked=0usize;
+ let mut global_action_cleanup=false;
  for item in fs::read_dir(trusted_profile).map_err(|_|"FIN04_ACTION_DIRECTORY_UNREADABLE")? {
   let entry=item.map_err(|_|"FIN04_ACTION_DIRECTORY_UNREADABLE")?;
   let name=entry.file_name();
@@ -252,6 +319,7 @@ pub fn inspect_debug_control_evidence(
   if original.plan_sha256!=parsed.plan {
    return Err("FIN04_ACTION_ORIGINAL_PLAN_MISMATCH");
   }
+  global_action_cleanup |= parsed.requires_os_cleanup;
   if parsed.requires_os_cleanup && !original.requires_reconciliation &&
       matches!(original.phase,JobPhase::Cancelled|JobPhase::Completed|
         JobPhase::Failed|JobPhase::Denied){
@@ -272,6 +340,10 @@ pub fn inspect_debug_control_evidence(
   });
  }
  let journal_after=original_debug_journal_digest(trusted_profile)?;
+ let actions_after=action_directory_fingerprint(trusted_profile)?;
+ if actions_before!=actions_after{
+  return Err("FIN04_ACTION_DIRECTORY_CHANGED_DURING_INSPECTION");
+ }
  let fresh=supervisor.inspect().map_err(|_|"FIN04_ORIGINAL_DEBUG_JOURNAL_UNVERIFIED")?;
  if journal_before!=journal_after || jobs.len()!=fresh.len() ||
     !jobs.iter().zip(fresh.iter()).all(|(before,after)|
@@ -290,6 +362,10 @@ pub fn inspect_debug_control_evidence(
  // to the renderer. Foreign project identities and activity remain private.
  let project_action_count=all.len();
  let project_job_count=jobs.iter().filter(|job|job.project_id==project_id).count();
+ let global_os_cleanup_required=global_action_cleanup ||
+  jobs.iter().any(|j|j.requires_reconciliation ||
+    !matches!(j.phase,JobPhase::Completed|JobPhase::Cancelled|
+      JobPhase::Failed|JobPhase::Denied));
  let truncated=all.len()>MAX_VISIBLE;
  let visible=all.len().min(MAX_VISIBLE);
  all.truncate(MAX_VISIBLE);
@@ -297,7 +373,10 @@ pub fn inspect_debug_control_evidence(
   project_id:project_id.into(),original_debug_jobs_checked:project_job_count,
   original_action_files_checked:project_action_count,
   original_action_files_visible:visible,
-  truncated,requires_os_cleanup,journal_chain_verified:true,
+  truncated,requires_os_cleanup,global_os_cleanup_required,
+  original_debug_journal_sha256:journal_before,
+  action_manifest_sha256:actions_before,
+  journal_chain_verified:true,
   native_owner_event_live_verified:false,global_kernel_custody_accepted:false,
   installed_debugger_controls_accepted:false,
   debugger_execution_authorized:false,replay_authorized:false,rows:all,
