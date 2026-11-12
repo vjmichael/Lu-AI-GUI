@@ -4785,7 +4785,8 @@ async fn lu_generate(
             let receipt=perf01_telemetry::cpu_receipt(
                 &chat_id,&gid,"EXACT_CURRENT_CHAT_LITERAL",began,
                 model_loaded,Some(original.scanned_bytes),
-                Some(original.scanned_entries),Some(original.complete),"COMPLETED"
+                Some(original.scanned_entries),Some(original.complete),
+                if original.complete{"COMPLETED"}else{"PARTIAL"}
             );
             let _=owner.perf01.record(receipt);
             let _=app.emit("lu-generation-finish",GenerationEvent{

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a022d8850d9cefbfe4420b527aeeac50517d9b88",
+  "sourceCommitBeforeLock": "fce8a186d8d38aa168255afc72fd990f75025b1f",
   "trackedFileCount": 984,
   "files": [
     {
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "6dc78ea019966f699ee965153726ce4ee6fd912e"
+      "blob": "ea9a868609016916c65bf5393d87cd34e693ca6c"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -1389,7 +1389,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/host_clock.rs",
-      "blob": "8576777296b6fea893326bc18940dea52c51f7fc"
+      "blob": "b3ca2ed9d301b1cd5f6d830ac5b291ff6a5d5184"
     },
     {
       "path": "lu-desktop/src-tauri/src/host_safe_continuation.rs",
@@ -1401,7 +1401,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/lib.rs",
-      "blob": "2599cdab55cd6293e517717d6b849697576701fb"
+      "blob": "c5e134dcb76420cf6742616c4348ba4124f29970"
     },
     {
       "path": "lu-desktop/src-tauri/src/load_trace.rs",
@@ -1721,7 +1721,7 @@
     },
     {
       "path": "lu-desktop/tests/core01d-normal-chat-boundary.test.mjs",
-      "blob": "a663a215b60b2483ecbb6b5fde76f03cb110e406"
+      "blob": "9ed26570e7ef79e865cf8ebfb12c1b1c7253bc30"
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",

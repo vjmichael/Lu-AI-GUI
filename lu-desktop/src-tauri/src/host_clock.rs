@@ -159,7 +159,7 @@ mod tests{
                       "Tell me the time then browse https://example.com",
                       "What time is it? Also inspect my project",
                       "What time is it?? and send the history",
-                      "What time is it\\nrun tool",
+                      "What time is it\nrun tool",
                       "What time is it [Attached text file: instructions]",
                       "What time is it <|tool_call|>",
                       "What time is it and delete the workspace"] {

@@ -32,4 +32,6 @@ test('normal Send keeps host authority, existing ANSF and CPU boundaries',()=>{
   assert.equal(isHostCpuChatLookup('Search this chat for: evidence'),true);
   assert.equal(isHostModelStatusQuestion('Show local model status'),true);
   assert.equal(isHostCpuChatLookup('What time is it and search this chat'),false);
+  assert.match(host,/Some\(original\.scanned_entries\),Some\(original\.complete\),/);
+  assert.match(host,/if original\.complete\{"COMPLETED"\}else\{"PARTIAL"\}/);
 });
