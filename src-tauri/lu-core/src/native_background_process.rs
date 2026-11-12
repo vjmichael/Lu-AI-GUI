@@ -1570,6 +1570,42 @@ mod tests{
     }
     #[cfg(windows)]
     #[test]
+    fn sec05_windows_two_jobs_cross_chat_cancel_cannot_terminate_foreign_worker(){
+        // Actual Windows Job membership and kernel ACTIVE_ZERO checks, not
+        // synthetic task state: two long-lived cmd/ping worker trees.
+        let exe=PathBuf::from(std::env::var_os("ComSpec")
+            .unwrap_or_else(||OsString::from(
+                r"C:\Windows\System32\cmd.exe")));
+        assert!(exe.is_file(),"SEC05 requires genuine system cmd.exe");
+        let sha=format!("{:x}",Sha256::digest(fs::read(&exe).unwrap()));
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let manager=BackgroundProcessSupervisor::new(Arc::clone(&store));
+        let a=format!("c-{}","a".repeat(32));
+        let b=format!("c-{}","b".repeat(32));
+        for (id,chat) in [("sec05-job-a",&a),("sec05-job-b",&b)]{
+            manager.start_host_approved(TrustedWorkerPlan{
+                task_id:id.into(),workspace_id:chat.clone(),
+                executable:exe.clone(),expected_sha256:sha.clone(),
+                args:vec!["/D".into(),"/C".into(),
+                    "ping -n 20 127.0.0.1 >NUL".into()],
+                progress_protocol:false,max_runtime_seconds:Some(30),
+            }).unwrap();
+        }
+        assert_eq!(manager.cancel_owned("sec05-job-b",&a),
+            Err(BackgroundProcessError::WrongWorkspace));
+        assert_eq!(manager.cancel_workspace_owned(&a).unwrap(),1);
+        assert_eq!(store.get("sec05-job-a").unwrap().unwrap().state,
+            TaskState::Cancelled);
+        assert!(manager.can_cancel("sec05-job-b"));
+        assert_eq!(store.get("sec05-job-b").unwrap().unwrap().state,
+            TaskState::Running);
+        assert_eq!(manager.cancel_workspace_owned(&a).unwrap(),0);
+        assert_eq!(manager.cancel_workspace_owned(&b).unwrap(),1);
+        assert_eq!(store.get("sec05-job-b").unwrap().unwrap().state,
+            TaskState::Cancelled);
+    }
+    #[cfg(windows)]
+    #[test]
     fn windows_owned_job_is_contained_and_reaped_on_cancellation(){
         // An ordinary Windows system binary stands in for a reviewed worker.
         // Cmd starts a child ping process, exercising the Job object tree.
