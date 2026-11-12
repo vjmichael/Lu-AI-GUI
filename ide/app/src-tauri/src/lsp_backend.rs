@@ -476,7 +476,24 @@ impl NativeLspRuntime {
         }
         Ok(())
     }
+    fn require_current_global_owner(&self)->Result<(),String>{
+        let result=self.global_admission.lock()
+            .map_err(|_|"FIN01_LSP_GLOBAL_OWNER_UNAVAILABLE".to_owned())
+            .and_then(|owner|owner.as_ref()
+                .ok_or("FIN01_LSP_GLOBAL_OWNER_MISSING".to_owned())
+                .and_then(|fence|fence.marker_owner_intact()));
+        if result.is_err(){
+            if let Ok(mut state)=self.cleanup_uncertain.lock(){*state=true;}
+        }
+        result
+    }
     pub fn poll_status(&self) -> &'static str {
+        // An active protected worker must still own its exact profile fence.
+        // Loss of this owner is an unresolved OS custody event, not idleness.
+        if self.active.lock().map(|a|a.is_some()).unwrap_or(true) &&
+           self.require_current_global_owner().is_err(){
+            return "reconciliation_required";
+        }
         // A lightweight native worker heartbeat. Poll owns the same mutex as
         // changes/features, so a WebView status request cannot race a pipe
         // write or steal a response from an in-flight query.
@@ -537,7 +554,12 @@ impl NativeLspRuntime {
             Ok(value)=>value.is_some(),
             Err(_)=>return "reconciliation_required",
         };
-        if active { return "running"; }
+        if active {
+            if self.require_current_global_owner().is_err(){
+                return "reconciliation_required";
+            }
+            return "running";
+        }
         if crate::global_native_custody::global_custody_unresolved(
             &self.global_custody_profile).unwrap_or(true){
             return "reconciliation_required";
@@ -767,6 +789,7 @@ impl NativeLspRuntime {
 
     pub fn open_document(&self, registry: &IdeWorkspaceRegistry,
         request: LspRequest) -> Result<Value, String> {
+        self.require_current_global_owner()?;
         let mut lock = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
         let active = lock.as_mut().ok_or("LSP_SESSION_NOT_STARTED")?;
         if active.project_id != request.project_id ||
@@ -806,6 +829,7 @@ impl NativeLspRuntime {
             .map_err(|_| "LSP_RESPONSE_UNAVAILABLE".into())
     }
     pub fn close_document(&self, request: LspRequest) -> Result<(), String> {
+        self.require_current_global_owner()?;
         let mut lock = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
         let active = lock.as_mut().ok_or("LSP_SESSION_NOT_STARTED")?;
         let doc = active.documents.get(&request.relative_path)
@@ -914,6 +938,7 @@ impl NativeLspRuntime {
     /// No server URI is ever returned and no filesystem access is delegated.
     pub fn project_diagnostics(&self,
         registry: &IdeWorkspaceRegistry) -> Result<Value, String> {
+        self.require_current_global_owner()?;
         let mut lock = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
         let active = lock.as_mut().ok_or("LSP_SESSION_NOT_STARTED")?;
         let root = registry.trusted_native_worker_root(&active.project_id)
