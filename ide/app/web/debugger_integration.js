@@ -31,8 +31,15 @@ export function debugAdmissionStatus(value,projectId) {
   const ready=value.ready && !global && !elsewhere && !actions && !occupied;
   const developerOnly=value.operationControlCode===
     'DEV046D_NATIVE_DIALOG_DEV_ONLY_NOT_RELEASE_ACCEPTED';
+  // A status code alone is not a production owner-event witness.
+  // This remains unavailable until a native release path supplies all
+  // independent journal/OS/owner acceptance gates on the exact project.
   const productionAction= value.operationControlCode===
-    'FIN04_NATIVE_RELEASE_ACTIONS_INDEPENDENTLY_ADMITTED';
+    'FIN04_NATIVE_RELEASE_ACTIONS_INDEPENDENTLY_ADMITTED' &&
+    value.productionOwnerEventVerified===true &&
+    value.originalActionJournalVerified===true &&
+    value.globalOsCustodyVerified===true &&
+    value.installedDebuggerControlAccepted===true;
   return Object.freeze({
     ready,projectDebugSupported:ready && value.projectDebugSupported,
     operationControlSupported:ready && value.operationControlSupported &&
