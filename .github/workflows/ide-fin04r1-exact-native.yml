@@ -8,6 +8,18 @@ on:
       - ide/fin01-07-implementation-20261111
     paths:
       - .github/workflows/ide-fin04r1-exact-native.yml
+      - ide/app/tests/fin04_release_owner_and_os_recovery.test.mjs
+      - ide/app/tests/fin04r1_protected_pdb.test.mjs
+      - ide/supervisor/src/windows_lsp_worker.rs
+      - ide/supervisor/src/windows_stopped_line_oracle.rs
+      - ide/supervisor/src/debug_control_dispatch.rs
+      - ide/supervisor/src/debug_action_receipts.rs
+      - ide/supervisor/src/debug_command_review.rs
+      - ide/supervisor/src/dap_transport.rs
+      - ide/supervisor/src/lsp_transport.rs
+      - ide/supervisor/examples/wo6_native_dap_acceptance.rs
+      - ide/app/src-tauri/src/debug_backend.rs
+      - ide/app/src-tauri/src/lib.rs
   workflow_dispatch:
 permissions:
   contents: read
