@@ -49,7 +49,8 @@ const FIN07_GATES=Object.freeze([
 ]);
 export function fin07ReconcileEvidence(projectId,records) {
  const register=fin07ScopeRegister(projectId);
- if(!register || !Array.isArray(records) || records.length>FIN07_GATES.length)
+ if(!register || !Array.isArray(records) || records.length>FIN07_GATES.length ||
+    records.some(row=>!FIN07_GATES.includes(row?.gate)))
    return null;
  const seen=new Set();
  const gates=[];
