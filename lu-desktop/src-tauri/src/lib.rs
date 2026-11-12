@@ -4654,7 +4654,7 @@ async fn lu_generate(
             owner.chats.complete(&chat_id,&gid)?;
             let _=owner.perf01.record(perf01_telemetry::cpu_receipt(
                 &chat_id,&gid,"NATIVE_OS_CLOCK",perf_start,
-                model_loaded,false.then_some(0usize),None,None,"COMPLETED"
+                model_loaded,None,None,None,"COMPLETED"
             ));
             let _=app.emit("lu-generation-finish",GenerationEvent{
                 chat_id:chat_id.clone(),generation_id:gid,phase:"finished",
@@ -4750,6 +4750,7 @@ async fn generate_internal(
     origin:GenerationOrigin,
     plan_only:bool,
 )->Result<String,String>{
+    let perf_turn_start=std::time::Instant::now();
     let images: Vec<PinnedImage> = {
         let registered = state.images.lock().map_err(|_| "image registry poisoned")?;
         let observed=state.observed_image_owners.lock()
@@ -4798,6 +4799,10 @@ async fn generate_internal(
     }
     let generation_id = next_id("g-");
     let request_id = next_id("req-");
+    let mut perf_trace=perf01_telemetry::ModelTrace::new(
+        &chat_id,&generation_id,perf_turn_start,true
+    );
+    perf_trace.queued();
     let supervisor = Arc::clone(&state.supervisor);
     // Admission is bounded and host-owned: at most one active/pending turn
     // per conversation and eight turns total for this loaded model session.
@@ -4833,6 +4838,7 @@ async fn generate_internal(
     tauri::async_runtime::spawn_blocking(move || {
         let outcome = (|| -> Result<String, String> {
             ticket.wait_for_slot()?;
+            perf_trace.acquired_slot();
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
             }
@@ -5309,6 +5315,7 @@ async fn generate_internal(
             if runtime.session_id.as_deref() != Some(sid.as_str()) {
                 return Err("model session changed while queued".into());
             }
+            perf_trace.context_ready();
             if images.is_empty() {
                 supervisor
                     .reserve_generation_with_history(
@@ -5347,6 +5354,7 @@ async fn generate_internal(
                     position: 0,
                 },
             );
+            perf_trace.dispatched();
             let mut answer = String::new();
             let mut last_checkpoint = std::time::Instant::now();
             let mut last_checkpoint_bytes = 0usize;
@@ -5354,6 +5362,7 @@ async fn generate_internal(
                 let frame = decode_frame(&wire).map_err(BridgeError::Wire)?;
                 if let Some(proto::inference_frame::Body::Event(event)) = frame.body {
                     if let Some(proto::inference_event::Kind::TextChunk(chunk)) = event.kind {
+                        perf_trace.stream_chunk(chunk.text.len());
                         answer.push_str(&chunk.text);
                         if answer.len().saturating_sub(last_checkpoint_bytes) >= 512
                             || last_checkpoint.elapsed() >= Duration::from_millis(750)
@@ -5592,6 +5601,10 @@ async fn generate_internal(
             Err(e) if e.contains("Cancelled") || e.contains("Canceled") => "cancelled",
             Err(_) => "failed",
         };
+        let _=state.perf01.record(perf_trace.finish(
+            if phase=="completed"{"COMPLETED"}
+            else if phase=="cancelled"{"CANCELLED"}else{"FAILED"}
+        ));
         // Observe & Learn is OFF by default. While a human-authorized
         // Lu-only observation is active, a genuine failed native model
         // generation produces a small verified-host-origin note, never a
