@@ -124,6 +124,44 @@ impl LocalGpuCoordinator {
         state.observations=devices;
         Ok(())
     }
+    /// Choose one local GPU for an independent, separately supervised model
+    /// instance by max verified remaining memory. An expiring observation
+    /// cannot create capacity. The subsequent reserve rechecks atomically,
+    /// so a concurrent claimant either succeeds or is rejected, never
+    /// overcommitting VRAM. This never starts inference by itself.
+    pub fn reserve_best_independent(
+        &self,reservation_id:&str,session_id:&str,required_vram_mib:u64,now:u64
+    )->Result<ApprovedLocalGpuPlacement,GpuScheduleError>{
+        if required_vram_mib==0||!valid_host_id(reservation_id)||
+            !valid_host_id(session_id){return Err(GpuScheduleError::InvalidRequest)}
+        let selected={
+            let state=self.inner.lock().map_err(|_|GpuScheduleError::Poisoned)?;
+            let mut best:Option<(u64,String)>=None;
+            for (name,obs) in &state.observations{
+                if obs.validate(state.engine_sha256,now).is_err(){continue}
+                let already=state.leases.values().flat_map(|l|&l.devices)
+                    .filter(|(device,_)|device==name)
+                    .fold(0u64,|n,(_,mib)|n.saturating_add(*mib));
+                let available=obs.available_vram_mib.unwrap_or(0);
+                let needed=required_vram_mib.checked_add(already)
+                    .and_then(|n|n.checked_add(VRAM_HEADROOM_MIB))
+                    .ok_or(GpuScheduleError::InsufficientVram)?;
+                if available<needed{continue}
+                let spare=available-needed;
+                if best.as_ref().is_none_or(|(old,_)|spare>*old){
+                    best=Some((spare,name.clone()));
+                }
+            }
+            best.map(|(_,name)|name).ok_or(GpuScheduleError::InsufficientVram)?
+        };
+        self.reserve(GpuRequest{
+            reservation_id:reservation_id.into(),session_id:session_id.into(),
+            mode:ComputeMode::IndependentInstance,
+            devices:vec![selected],
+            measured_required_vram_mib:vec![required_vram_mib],
+            tensor_split_percent:None,
+        },now)
+    }
     pub fn reserve(
         &self,request:GpuRequest,now:u64
     )->Result<ApprovedLocalGpuPlacement,GpuScheduleError>{
@@ -345,6 +383,22 @@ mod tests {
         assert_eq!(a.flags().len(),4);
         assert_eq!(b.flags().len(),4);
         assert_eq!(co.reservation_count().unwrap(),2);
+    }
+    #[test]
+    fn host_can_choose_separate_devices_without_overcommitting(){
+        let co=LocalGpuCoordinator::new([1;32]).unwrap();
+        co.set_verified_observations(vec![good("Vulkan0",100),good("Vulkan1",100)],100)
+            .unwrap();
+        let first=co.reserve_best_independent("i1","s1",8000,101).unwrap();
+        assert_eq!(first.flags()[1].to_string_lossy(),"Vulkan0");
+        let second=co.reserve_best_independent("i2","s2",8000,101).unwrap();
+        assert_eq!(second.flags()[1].to_string_lossy(),"Vulkan1");
+        assert_eq!(co.reserve_best_independent("i3","s3",8000,101),
+            Err(GpuScheduleError::InsufficientVram));
+        assert!(co.release_verified("i1","wrong",true).is_err());
+        assert_eq!(co.reservation_count().unwrap(),2);
+        co.release_verified("i1","s1",true).unwrap();
+        assert!(co.reserve_best_independent("i3","s3",8000,102).is_ok());
     }
     #[test]
     fn unknown_stale_or_unverified_device_is_never_admitted(){
