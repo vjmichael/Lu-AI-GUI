@@ -292,6 +292,20 @@ pub fn inspect_debug_control_evidence(
  let journal_before=original_debug_journal_digest(trusted_profile)?;
  let actions_before=action_directory_fingerprint(trusted_profile)?;
  let jobs=supervisor.inspect().map_err(|_|"FIN04_ORIGINAL_DEBUG_JOURNAL_UNVERIFIED")?;
+ // The caller is a live in-process host; another process could have
+ // appended its original journal since this Supervisor was opened.
+ // Independently re-open and replay the same original on-disk book.
+ let on_disk=Supervisor::open(
+  trusted_profile.join("debug-fixture-receipts.jsonl"))
+  .and_then(|reader|reader.inspect())
+  .map_err(|_|"FIN04_ORIGINAL_DEBUG_JOURNAL_REPLAY_FAILED")?;
+ if jobs.len()!=on_disk.len() ||
+    !jobs.iter().zip(on_disk.iter()).all(|(a,b)|
+      a.job_id==b.job_id && a.project_id==b.project_id &&
+      a.plan_sha256==b.plan_sha256 && a.phase==b.phase &&
+      a.requires_reconciliation==b.requires_reconciliation){
+  return Err("FIN04_ORIGINAL_DEBUG_SUPERVISOR_STATE_STALE");
+ }
  // A pristine profile can lack its first append-only journal; a missing
  // journal once any native Job exists is a hard integrity violation.
  let journal_exists=fs::symlink_metadata(
@@ -356,6 +370,17 @@ pub fn inspect_debug_control_evidence(
   return Err("FIN04_ACTION_DIRECTORY_CHANGED_DURING_INSPECTION");
  }
  let fresh=supervisor.inspect().map_err(|_|"FIN04_ORIGINAL_DEBUG_JOURNAL_UNVERIFIED")?;
+ let replayed=Supervisor::open(
+  trusted_profile.join("debug-fixture-receipts.jsonl"))
+  .and_then(|reader|reader.inspect())
+  .map_err(|_|"FIN04_FINAL_ORIGINAL_DEBUG_REPLAY_FAILED")?;
+ if replayed.len()!=fresh.len() ||
+    !replayed.iter().zip(fresh.iter()).all(|(a,b)|
+      a.job_id==b.job_id && a.project_id==b.project_id &&
+      a.plan_sha256==b.plan_sha256 && a.phase==b.phase &&
+      a.requires_reconciliation==b.requires_reconciliation){
+  return Err("FIN04_FINAL_DEBUG_SUPERVISOR_STATE_STALE");
+ }
  if journal_before!=journal_after || jobs.len()!=fresh.len() ||
     !jobs.iter().zip(fresh.iter()).all(|(before,after)|
       before.job_id==after.job_id &&
@@ -505,6 +530,17 @@ mod tests{
   let index=bytes.iter().position(|b|*b==b'P').unwrap();
   bytes[index]=b'X';fs::write(&file,&bytes).unwrap();
   assert!(inspect_debug_control_evidence(&root,&supervisor,&project).is_err());
+  fs::remove_dir_all(root).unwrap();
+ }
+ #[test]
+ fn in_memory_supervisor_rejects_original_disk_journal_advanced_by_other_host(){
+  let (root,supervisor,project,_)=fixture();
+  let second=Supervisor::open(root.join("debug-fixture-receipts.jsonl")).unwrap();
+  let _job=prepared(&second,&project);
+  assert_eq!(
+   inspect_debug_control_evidence(&root,&supervisor,&project).unwrap_err(),
+   "FIN04_ORIGINAL_DEBUG_SUPERVISOR_STATE_STALE"
+  );
   fs::remove_dir_all(root).unwrap();
  }
  #[test]
