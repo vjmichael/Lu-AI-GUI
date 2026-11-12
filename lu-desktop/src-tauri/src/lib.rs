@@ -4555,6 +4555,63 @@ async fn lu_generate(
         return generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
             prompt,image_refs,max_new_tokens,GenerationOrigin::Human,true).await
     }
+    // PERF-01 P0D: exact current-human literal query, original ANSF
+    // search, same-chat source IDs, and NO inference or GPU wake.
+    // Do not treat a frontend classification as a tool or permission grant.
+    if let perf01_router::Route::CurrentChatLiteral(needle)=
+        perf01_router::classify(
+            &prompt,!image_refs.is_empty(),
+            read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
+        ){
+        if !(1..=4096).contains(&max_new_tokens){
+            return Err("Invalid CPU retrieval output limit".into())
+        }
+        let owner=Arc::clone(state.inner());
+        let current=owner.supervisor.status()
+            .map_err(|_|"Native model/session status unavailable")?;
+        let model_loaded=current.session_id.is_some();
+        let session_matches=if session_id.is_empty(){
+            current.session_id.is_none()
+        }else{
+            current.session_id.as_deref()==Some(session_id.as_str())
+        };
+        if !session_matches{
+            return Err("Model session changed before CPU retrieval".into())
+        }
+        let began=std::time::Instant::now();
+        return tauri::async_runtime::spawn_blocking(move||{
+            // Verify ANSF ownership and scan originals BEFORE appending
+            // this request, so the query cannot self-match.
+            owner.chats.history_window(&chat_id,None,"older",1)?;
+            let original=perf01_router::search_current_chat(
+                &owner.chats,&chat_id,&needle
+            )?;
+            let gid=next_id("g-");
+            let answer=original.answer;
+            owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            let _=app.emit("lu-generation-queued",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"queued",position:0
+            });
+            let _=app.emit("lu-generation-start",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"running",position:0
+            });
+            owner.chats.append_progress(&chat_id,&gid,&answer)?;
+            owner.chats.complete(&chat_id,&gid)?;
+            let receipt=perf01_telemetry::cpu_receipt(
+                &chat_id,&gid,"EXACT_CURRENT_CHAT_LITERAL",began,
+                model_loaded,Some(original.scanned_bytes),
+                Some(original.scanned_entries),Some(original.complete),"COMPLETED"
+            );
+            let _=owner.perf01.record(receipt);
+            let _=app.emit("lu-generation-finish",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid,
+                phase:"finished",position:0
+            });
+            Ok(answer)
+        }).await.map_err(|_|"CPU retrieval worker interrupted")?;
+    }
     // CPU-only read-only host utility: the native device clock is the
     // authoritative current observation, not Qwen's training cutoff or
     // a string hallucinated during inference. No model process, shell,
@@ -4565,11 +4622,13 @@ async fn lu_generate(
             return Err("Invalid current-time request limits".into());
         }
         let owner=Arc::clone(state.inner());
+        let perf_start=std::time::Instant::now();
         // This CPU-only host utility is valid without any GGUF model. If
         // there IS a model session, it must still match exactly; a stale
         // renderer may not silently borrow a different session identity.
         let current=owner.supervisor.status()
             .map_err(|_|"Native model/session status unavailable")?;
+        let model_loaded=current.session_id.is_some();
         let model_identity_matches=if session_id.is_empty(){
             current.session_id.is_none()
         }else{
@@ -4593,6 +4652,10 @@ async fn lu_generate(
             });
             owner.chats.append_progress(&chat_id,&gid,&answer)?;
             owner.chats.complete(&chat_id,&gid)?;
+            let _=owner.perf01.record(perf01_telemetry::cpu_receipt(
+                &chat_id,&gid,"NATIVE_OS_CLOCK",perf_start,
+                model_loaded,false.then_some(0usize),None,None,"COMPLETED"
+            ));
             let _=app.emit("lu-generation-finish",GenerationEvent{
                 chat_id:chat_id.clone(),generation_id:gid,phase:"finished",
                 position:0
