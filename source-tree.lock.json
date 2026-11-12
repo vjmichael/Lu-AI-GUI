@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "797c3da2d539583dae408495c9a92f40ee06373c",
+  "sourceCommitBeforeLock": "0a5e47fcd9f96b55ac96983f05cb8a385728c666",
   "trackedFileCount": 943,
   "files": [
     {
@@ -821,7 +821,7 @@
     },
     {
       "path": "docs/LU_P0_GATE_20261111.md",
-      "blob": "c98f1978debfeb373aba5229a727ab16a7793f76"
+      "blob": "b03c8994cdcb1c8295972b76782023fbee51cf34"
     },
     {
       "path": "docs/LU_P0_MEMORY_ORIGINAL_CROSS_SESSION_CONTINUITY_20261111.md",
@@ -1377,7 +1377,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03c_reviewed_worker_tests.rs",
-      "blob": "4ac3583adea64dd994e07b8c3226d653725796eb"
+      "blob": "752dbfd8ad2dfa13ff5350ceed368e89448f56aa"
     },
     {
       "path": "lu-desktop/src-tauri/src/model_file_effect_handoff.rs",
