@@ -31,7 +31,7 @@ test('built owner sideband is inherited only in the restricted project DAP Job',
  assert.match(native,/let event_sideband = if let Some\(\(reader, nonce\)\) = owner_pipe/);
  assert.match(native,/verify_lldb_kernel_event_owner/);
  assert.match(owner,/start_owner_pipe_reader/);
- assert.match(owner,/\.wait_exact_native_continue\(/);
+ assert.match(owner,/fn wait_exact_native_continue\(/);
 });
 test('release owner source cannot be promoted from arbitrary DAP or same-size mutable resource',()=>{
  assert.match(native,/pub fn observe_release_owned_stop\(/);
