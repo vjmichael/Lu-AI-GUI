@@ -370,6 +370,11 @@ function App() {
   const [gitRefsHealth, setGitRefsHealth] = useState(null);
   const [stashInventory,setStashInventory]=useState(null);
   const [stashBusy,setStashBusy]=useState(false);
+  const [reviewedRestore,setReviewedRestore]=useState(null);
+  const [restoreReceipt,setRestoreReceipt]=useState(null);
+  const [restoreRecovery,setRestoreRecovery]=useState(false);
+  const [restoreBusy,setRestoreBusy]=useState(false);
+  const restoreTicket=useRef(0);
   const [reviewedUnstage,setReviewedUnstage]=useState(null);
   const [unstageReceipt,setUnstageReceipt]=useState(null);
   const [unstageRecovery,setUnstageRecovery]=useState(null);
@@ -3319,6 +3324,68 @@ function App() {
          activeProjectIdRef.current===projectId)
         setProblem('Stash metadata unavailable: '+String(error));
     }finally{if(ticket===stashTicket.current)setStashBusy(false);}
+  }
+  async function reviewNativeRestore(){
+    const projectId=activeProject?.projectId;
+    if(!projectId||restoreBusy||gitBusy)return;
+    const ticket=++restoreTicket.current;
+    setRestoreBusy(true);setReviewedRestore(null);setRestoreReceipt(null);
+    try{
+      const interrupted=await invoke('ide_git_single_file_restore_recovery',{projectId});
+      if(ticket!==restoreTicket.current||activeProjectIdRef.current!==projectId)return;
+      setRestoreRecovery(interrupted===true);
+      if(interrupted!==false)throw Error('FIN03_RESTORE_MANUAL_RECOVERY_REQUIRED');
+      const review=await invoke('ide_git_review_single_file_restore',{projectId});
+      if(ticket!==restoreTicket.current||activeProjectIdRef.current!==projectId)return;
+      if(review?.projectId!==projectId||review.operationAuthorized!==false||
+         review.sourceFilesModified!==false||review.refsModified!==false||
+         !/^[a-f0-9]{64}$/.test(review.reviewSha256||'')||
+         !/^[a-f0-9]{64}$/.test(review.originalSha256||'')||
+         !/^[a-f0-9]{64}$/.test(review.restoredSha256||'')||
+         !/^[a-f0-9]{40}$/.test(review.headSha||'')||
+         typeof review.relativePath!=='string')throw Error('FIN03_RESTORE_UNTRUSTED_REVIEW');
+      setReviewedRestore(review);
+    }catch(error){
+      if(ticket===restoreTicket.current&&activeProjectIdRef.current===projectId)
+        setProblem('Cannot review protected file restore: '+String(error));
+    }finally{if(ticket===restoreTicket.current)setRestoreBusy(false);}
+  }
+  async function executeNativeRestore(){
+    const projectId=activeProject?.projectId,expected=reviewedRestore;
+    if(!projectId||restoreBusy||expected?.projectId!==projectId)return;
+    const ticket=++restoreTicket.current;
+    setRestoreBusy(true);setReviewedRestore(null);setRestoreReceipt(null);
+    try{
+      const receipt=await invoke('ide_git_execute_single_file_restore',{expected});
+      if(ticket!==restoreTicket.current||activeProjectIdRef.current!==projectId)return;
+      if(receipt?.projectId!==projectId||receipt.reviewSha256!==expected.reviewSha256||
+         receipt.sourceRestored!==true||receipt.originalPreserved!==true||
+         receipt.refsModified!==false||receipt.installedAcceptance!==false||
+         typeof receipt.backupRelativeGitPath!=='string')
+         throw Error('FIN03_RESTORE_RECEIPT_UNTRUSTED');
+      setRestoreReceipt(receipt);
+    }catch(error){
+      if(ticket===restoreTicket.current&&activeProjectIdRef.current===projectId){
+        setProblem('Native restore declined or interrupted: '+String(error));
+        setRestoreRecovery(true);
+      }
+    }finally{if(ticket===restoreTicket.current)setRestoreBusy(false);}
+  }
+  async function inspectRestoreRecovery(){
+    const projectId=activeProject?.projectId;
+    if(!projectId||restoreBusy)return;
+    const ticket=++restoreTicket.current;
+    setRestoreBusy(true);
+    try{
+      const required=await invoke('ide_git_single_file_restore_recovery',{projectId});
+      if(ticket===restoreTicket.current&&activeProjectIdRef.current===projectId){
+        if(typeof required!=='boolean')throw Error('FIN03_RESTORE_RECOVERY_INVALID');
+        setRestoreRecovery(required);
+      }
+    }catch(error){
+      if(ticket===restoreTicket.current&&activeProjectIdRef.current===projectId)
+        setProblem('Cannot inspect restore recovery: '+String(error));
+    }finally{if(ticket===restoreTicket.current)setRestoreBusy(false);}
   }
   async function reviewNativeUnstage(){
     const projectId=activeProject?.projectId;
@@ -8559,6 +8626,40 @@ function App() {
               Tracking information is locally stored and may be stale.
             </p>
             {!activeProject && <p>Open a project to inspect its source control.</p>}
+            {activeProject && <section className="continuityDocument"
+              aria-label="FIN-03 reviewed one-file worktree restore">
+              <h3>Protected single-file worktree restore</h3>
+              <p>Restores only one unstaged tracked regular file from HEAD.
+                Original modified bytes are saved in the local Git directory.
+                This action requires a separate native OS confirmation.
+                An interrupted operation requires manual recovery.</p>
+              <button className="ghostBtn" type="button"
+                disabled={restoreBusy||gitBusy}
+                onClick={()=>void reviewNativeRestore()}>
+                {restoreBusy?'Checking original file…':'Review single-file restore'}
+              </button>
+              {reviewedRestore?.projectId===activeProject.projectId &&
+                <div>
+                  <p>File: <code>{reviewedRestore.relativePath}</code></p>
+                  <p>Original bytes SHA: <code>{reviewedRestore.originalSha256}</code></p>
+                  <p>HEAD bytes SHA: <code>{reviewedRestore.restoredSha256}</code></p>
+                  <button className="primaryBtn" type="button"
+                    disabled={restoreBusy} onClick={()=>void executeNativeRestore()}>
+                    Request native approval to restore file
+                  </button>
+                </div>}
+              {restoreReceipt?.projectId===activeProject.projectId &&
+                <p role="status">Original preserved under .git:
+                  <code>{restoreReceipt.backupRelativeGitPath}</code>.
+                  File restoration is reported by the native host, not independently installed-accepted.</p>}
+              <button className="ghostBtn" type="button" disabled={restoreBusy}
+                onClick={()=>void inspectRestoreRecovery()}>
+                Inspect interrupted restore
+              </button>
+              {restoreRecovery && <p role="alert">An interrupted restore requires
+                operator review of the preserved original and target file.
+                No automatic replay or rollback will occur.</p>}
+            </section>}
             {activeProject && <section className="continuityDocument"
               aria-label="FIN-03 reviewed index unstage">
               <h3>Protected one-file Git unstage</h3>
