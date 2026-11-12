@@ -661,6 +661,59 @@ impl ChatStore {
         self.append(chat_id,LiveKind::AssistantProgress,text,None,
             Some(generation_id),None,None)
     }
+    /// Capture the durable native cancellation watermark immediately before
+    /// this freshly approved human turn is enqueued. Earlier revocations do
+    /// NOT poison a later, separately authorized turn.
+    pub(crate) fn p0_auth_requested_watermark(
+        &self,chat_id:&str,
+    )->Result<i64,String>{
+        let conn=self.catalog.lock().map_err(to_err)?;
+        if !Self::known(&conn,chat_id)?{
+            return Err("P0_SEC_UNKNOWN_CHAT".into())
+        }
+        crate::p0_auth_custody::requested_watermark(&conn,chat_id)
+    }
+    /// SEC-03: serialize the final original reviewed turn completion against
+    /// a newly committed P0-AUTH cancellation REQUESTED row in this SAME
+    /// catalog mutex. The ANSF book terminal append occurs while the lock is
+    /// held, so cancellation and completion have an exact host-owned order.
+    /// No earlier cancelled grant is reusable; a later freshly approved
+    /// human turn has its own baseline.
+    pub(crate) fn complete_reviewed_if_not_revoked(
+        &self,chat_id:&str,generation_id:&str,watermark:i64,
+    )->Result<(),String>{
+        if !valid_id(generation_id,"g-")||watermark<0{
+            return Err("P0_SEC_INVALID_REVIEWED_TURN".into())
+        }
+        let mut conn=self.catalog.lock().map_err(to_err)?;
+        if !Self::known(&conn,chat_id)?{
+            return Err("P0_SEC_UNKNOWN_CHAT".into())
+        }
+        let observed=crate::p0_auth_custody::requested_watermark(
+            &conn,chat_id)?;
+        if observed!=watermark{
+            return Err("Cancelled reviewed application turn before publication".into())
+        }
+        let book=self.ansf_book(chat_id)?;
+        let event=LiveEvent{
+            event_id:id("e-"),kind:LiveKind::AssistantCompleted,text:String::new(),
+            user_turn_id:None,legacy_turn_id:None,
+            generation_id:Some(generation_id.into()),
+            call_id:None,tool_id:None,
+        };
+        let committed=book.append_host_chat_event(chat_id,&event)
+            .map_err(to_err)?;
+        let tx=conn.transaction().map_err(to_err)?;
+        let seq=bump_seq(&tx)?;
+        tx.execute(
+            "UPDATE ansf_desktop_chats SET updated_seq=?2,last_event_seq=?3
+             WHERE chat_id=?1",
+            params![chat_id,seq as i64,committed.seq]
+        ).map_err(to_err)?;
+        tx.commit().map_err(to_err)?;
+        Ok(())
+    }
+
     pub fn complete(&self,chat_id:&str,generation_id:&str)->Result<(),String>{
         self.append(chat_id,LiveKind::AssistantCompleted,"",None,
             Some(generation_id),None,None)
