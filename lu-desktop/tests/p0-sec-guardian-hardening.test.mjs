@@ -103,3 +103,44 @@ test('SEC-03 host process cancel and poll collide on actual original PID once',(
   assert.match(supervisor,/a\.poll\(\)/);
   assert.match(supervisor,/assert_eq!\(terminal\.len\(\),1,/);
 });
+
+const sec04Core=load('../../src-tauri/lu-core/src/tasks.rs');
+const sec04View=load('../src-tauri/src/p0_sec_recovery.rs');
+const sec04Read=load('../src-tauri/src/reviewed_task_continuity.rs');
+const sec04Host=load('../src-tauri/src/p0_auth_desktop.rs');
+const desktopLib=load('../src-tauri/src/lib.rs');
+const desktopUI=load('../web/main.jsx');
+
+test('SEC-04 original uncertain PENDING and RUNNING states remain fenced on restart',()=>{
+  assert.match(sec04Core,/state IN \('PAUSED','INTERRUPTED'\)\s+AND NOT EXISTS/);
+  assert.match(sec04Core,/if matches!\(to,TaskState::Running\|TaskState::Completed/);
+  assert.match(sec04Core,/WHERE state='RUNNING' OR \(state='PENDING' AND EXISTS\(/);
+  assert.match(sec04Core,/pub fn security_recovery_rows\(/);
+  assert.match(sec04Core,/LEFT JOIN lu_task_custody_uncertainty/);
+  assert.match(sec04View,/sec04_pending_uncertainty_is_interrupted_and_unresumable/);
+});
+
+test('SEC-04 original ANSF turn and read-only execution journals bind uncertainty to owner',()=>{
+  assert.match(sec04Read,/fn sec04_reviewed_turn_security\(/);
+  assert.match(sec04Read,/Connection::open_with_flags\(path,flags\)/);
+  assert.match(sec04Read,/lu_reviewed_turn_origin/);
+  assert.match(sec04Read,/ORIGINAL_ORIGIN_MISMATCH/);
+  assert.match(sec04Read,/lu_task_custody_uncertainty/);
+  assert.match(sec04View,/sec04_original_guardian_loss_effect_and_restart_are_never_cleared/);
+  assert.match(sec04View,/reconcile_reviewed_application_journals/);
+  assert.match(sec04View,/HISTORICAL_EFFECTS_REQUIRE_RECONCILIATION/);
+});
+
+test('SEC-04 original cancellation and effects shown in operator-owned chat UI only',()=>{
+  assert.match(desktopLib,/mod p0_sec_recovery;/);
+  assert.match(sec04Host,/pub security_recovery:crate::p0_sec_recovery::SecurityRecoveryView/);
+  assert.match(sec04Host,/security_recovery,/);
+  assert.match(sec04View,/chats.require\(chat\)\?/);
+  assert.match(sec04View,/chats.prior_authenticated_turn_ids/);
+  assert.match(sec04View,/CANCELLATION_REQUESTED_OUTCOME_UNKNOWN/);
+  assert.match(sec04View,/ORIGINAL_SECURITY_RECOVERY_UNAVAILABLE_RECONCILE/);
+  assert.match(desktopUI,/SEC-04 · Original security recovery/);
+  assert.match(desktopUI,/Original security exceptions/);
+  assert.match(desktopUI,/Automatic replay: DISALLOWED/);
+  assert.match(sec04View,/prior_authority_reusable:false,automatic_retry_allowed:false/);
+});
