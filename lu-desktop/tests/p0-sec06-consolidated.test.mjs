@@ -93,6 +93,8 @@ test('SEC06 verifier rejects changed original native log with correct head and l
       'exact-head-inventory','security-contracts','sec06-js-syntax',
       'linux-negative-python-syntax','linux-host-crash-python-syntax',
       'core-native-full','desktop-ansf-native','worker-job-native',
+      'core-sec-regressions','desktop-sec-regressions',
+      'worker-sec-regressions',
       'guardian-test-binaries','linux-original-host-sigkill',
       'linux-reviewed-git-original-journal',
       'linux-guardian-death','linux-guardian-stall',
