@@ -98,10 +98,6 @@ pub struct TaskTerminalNotice {
     pub progress:u8,
     pub detail:String,
 }
-/// Sanitized native operator view. Never includes checkpoints, raw worker
-/// output, files, or executable paths. Only Lu's trusted desktop host should
-/// expose this to the local user; model-facing tools remain workspace scoped.
-#[derive(Debug,Clone,PartialEq,Eq)]
 /// Original-journal recovery projection; no PID, argv, path, checkpoint,
 /// private bytes, tool grant or action capability is exported.
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -110,6 +106,10 @@ pub struct SecurityRecoveryRow{
     pub state:TaskState,
     pub custody_reason:Option<String>,
 }
+/// Sanitized native operator view. Never includes checkpoints, raw worker
+/// output, files, or executable paths. Only Lu's trusted desktop host should
+/// expose this to the local user; model-facing tools remain workspace scoped.
+#[derive(Debug,Clone,PartialEq,Eq)]
 pub struct TaskDashboardEntry{
     pub task_id:String,
     pub workspace_id:Option<String>,
