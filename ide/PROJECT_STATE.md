@@ -1336,3 +1336,28 @@ post-command execution proof and interrupted-action kernel fixtures
 are open. FIN-02 deferred. Details:
 `docs/IDE_FIN04R1_PROTECTED_PDB_AND_NATIVE_ACCEPTANCE_20261112.md`.
 No CI, merge or release.
+
+## FIN-04R-1 Task 2 — protected PDB custody source audit; OS acceptance deferred (2026-11-12)
+
+**Owner direction:** Defer genuine physical/native Windows kernel-runtime
+acceptance (AppContainer, LocalService SCM Job custody, recovery and restart)
+and physical Windows installed-human acceptance. These are deliberately
+**DEFERRED/UNVERIFIED**, never passed, removed or automatically satisfied
+by source tests. FIN-02 remains separately deferred.
+
+Task 2 continues at source/automated Windows compiler-contract level:
+the original AppContainer child is atomically admitted into the original
+SCM-owned Job, its original process-token and fixed handle allowlist are
+checked, and the fixed, pinned PE/PDB reader's child PID is now independently
+verified by OS Job membership *before* ResumeThread. A reader error, timeout
+or changed original Job/source phase now immediately quarantines and reaps
+the original debugger Job instead of relying on eventual gateway Drop.
+The original first-party LLDB owner, thread RIP, hash-verified PE/PDB and
+completed build/debug journals must all still match after a successful read.
+Production step, breakpoint, scopes, variables and replay remain disabled.
+
+The isolated Windows source preflight #43292002483 passed on
+`a9dd610a205ec87506a1a1043ae73fcf2fc0a4ba`.
+The follow-on OS-membership/quarantine fixes have their own preflight
+and **do not** claim kernel execution, installed acceptance or authorization.
+See `docs/IDE_FIN04R1_PROTECTED_PDB_AND_NATIVE_ACCEPTANCE_20261112.md`.
