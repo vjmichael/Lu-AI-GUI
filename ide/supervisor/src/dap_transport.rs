@@ -93,34 +93,46 @@ impl DapGateway {
         binary_sha256:&str, pdb_sha256:&str, bundle_sha256:&str,
         slide:u64, rip:u64,
     )->Result<serde_json::Value,SupervisorError>{
+        let original_job_running=match self.supervisor.inspect() {
+            Ok(jobs)=>jobs.iter().any(|job|
+                job.job_id==self.job_id &&
+                job.plan_sha256==self.plan_sha256 &&
+                job.phase==JobPhase::Running && !job.requires_reconciliation),
+            Err(_)=>false,
+        };
+        // No journal receipt, changed original job, or stale source means
+        // the EXISTING debugger process must be quarantined immediately.
         if self.session.phase()!=DapPhase::Stopped ||
            self.session.source_candidate()
              .and_then(|f|f.instruction_address)!=Some(rip) ||
-           self.supervisor.inspect()?.iter().all(|job|
-             job.job_id!=self.job_id ||
-             job.plan_sha256!=self.plan_sha256 ||
-             job.phase!=JobPhase::Running || job.requires_reconciliation)
+           !original_job_running
         {
-            return Err(SupervisorError::NoContainment);
+            return self.quarantine();
         }
         // A helper crash, timeout, malformed output or any lost native
         // custody cannot leave the original debugger Job running merely
         // because a caller later decides not to drop its session. Quarantine
         // immediately, journal uncertainty, and reap *that same* Job.
-        let result=match self.process.as_mut()
-            .ok_or(SupervisorError::NoContainment)?
-            .read_protected_pe_pdb(binary,pdb,binary_sha256,pdb_sha256,
-                bundle_sha256,slide,rip) {
-                Ok(result)=>result,
-                Err(_)=>return self.quarantine(),
-            };
+        let read=match self.process.as_mut() {
+            Some(process)=>process.read_protected_pe_pdb(
+                binary,pdb,binary_sha256,pdb_sha256,bundle_sha256,slide,rip),
+            None=>Err(SupervisorError::NoContainment),
+        };
+        let result=match read {
+            Ok(result)=>result,
+            Err(_)=>return self.quarantine(),
+        };
+        let original_job_still_running=match self.supervisor.inspect() {
+            Ok(jobs)=>jobs.iter().any(|job|
+                job.job_id==self.job_id &&
+                job.plan_sha256==self.plan_sha256 &&
+                job.phase==JobPhase::Running && !job.requires_reconciliation),
+            Err(_)=>false,
+        };
         if self.session.phase()!=DapPhase::Stopped ||
            self.session.source_candidate()
                .and_then(|f|f.instruction_address)!=Some(rip) ||
-           self.supervisor.inspect()?.iter().all(|job|
-               job.job_id!=self.job_id ||
-               job.plan_sha256!=self.plan_sha256 ||
-               job.phase!=JobPhase::Running || job.requires_reconciliation)
+           !original_job_still_running
         {
             return self.quarantine();
         }
