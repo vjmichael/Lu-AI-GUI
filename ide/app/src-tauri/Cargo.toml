@@ -14,6 +14,10 @@ default = []
 # Build script refuses this profile without a fully remeasured LSP stage;
 # every native runner separately verifies installed resources and OS admission.
 fin02-protected-alpha = ["native-lsp", "native-multilang", "native-project-debug"]
+# FIN05 Linux-only package Sync: ALL reviewed uv+Python bytes required at
+# build-time, plus the existing delegated-cgroup/Bubblewrap one-use OS worker.
+# This is not an automatic install, dependency Add/Remove, or Windows ACL grant.
+fin02-linux-offline-uv = ["fin02-protected-alpha", "native-package-uv"]
 # Opt-in, pinned native Windows/Linux LSP host. Never enabled by default.
 # Windows requires the reviewed D7D SCM; Linux requires root-owned bundle,
 # root-owned bwrap and delegated kernel cgroup-v2, with no permissive fallback.

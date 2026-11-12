@@ -369,6 +369,16 @@ fn fin02_require_runtime_stage()->Result<(),String>{
     }
     let records=data["pins"].as_object().ok_or("FIN02_RUNTIME_PINS_MISSING")?;
     let windows=target=="windows";
+    let linux_uv=env::var_os("CARGO_FEATURE_FIN02_LINUX_OFFLINE_UV").is_some();
+    if linux_uv && windows {
+        return Err("FIN05_WINDOWS_UV_SOURCE_ACL_UNVERIFIED".into());
+    }
+    // Do not accept unrelated package-uv flags without the exact integrated
+    // Linux release profile and measured uv+Python runtime.
+    if env::var_os("CARGO_FEATURE_NATIVE_PACKAGE_UV").is_some() &&
+       !linux_uv {
+        return Err("FIN05_PACKAGE_UV_REQUIRES_LINUX_RELEASE_PROFILE".into());
+    }
     let service="LU_IDE_WO6_WINDOWS_D7D_SERVICE_SHA256";
     let mut expected=BTreeSet::new();
     let runtimes=[
@@ -383,7 +393,11 @@ fn fin02_require_runtime_stage()->Result<(),String>{
         ("lldb_dap",if windows{"LU_IDE_WO6_WINDOWS_LLDB_DAP_SHA256"}
             else{"LU_IDE_WO6_LINUX_LLDB_DAP_SHA256"}),
     ];
-    for (name,key) in runtimes {
+    let mut all=Vec::from(runtimes);
+    if linux_uv {
+        all.push(("uv_sync_offline","LU_IDE05_LINUX_UV_SHA256"));
+    }
+    for (name,key) in all {
         expected.insert(key.to_string());
         let pin=fin02_checked_sha(records.get(key)
             .ok_or("FIN02_REQUIRED_PIN_ABSENT")?)?;

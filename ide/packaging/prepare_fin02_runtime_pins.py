@@ -35,7 +35,13 @@ LINUX = {
     "LU_IDE_DEV03_LINUX_CMAKE_SHA256": ("/opt/lu-ide/runtimes/cpp_cmake_build", "runtime"),
     "LU_IDE_WO6_LINUX_LLDB_DAP_SHA256": ("/opt/lu-ide/debug-adapters/lldb-dap", "linux_bundle"),
 }
+LINUX_UV = {
+    "LU_IDE05_LINUX_UV_SHA256": ("/opt/lu-ide/runtimes/uv_sync_offline", "runtime"),
+}
 REQUIRED = {
+    "uv_sync_offline": {
+        "linux": ["bin/uv", "bin/python3", "LICENSES/uv.txt", "LICENSES/python.txt"],
+    },
     "python_pytest": {
         "windows": ["bin/python.exe", "Lib/site-packages/pytest/__init__.py", "LICENSES/python.txt", "LICENSES/pytest.txt"],
         "linux": ["bin/python3", "lib/python3.13/site-packages/pytest/__init__.py", "LICENSES/python.txt", "LICENSES/pytest.txt"],
@@ -146,10 +152,15 @@ def linux_cargo() -> str:
         h.update(name.encode()+b"\x00"+sha_file(path).encode()+b"\x00")
     return h.hexdigest()
 
-def verify(root: Path, platform: str, expected: dict) -> dict:
+def verify(root: Path, platform: str, expected: dict,
+           linux_uv: bool = False) -> dict:
     if platform not in ("windows", "linux"):
         raise Denied("FIN02_PLATFORM_DENIED")
-    spec=WINDOWS if platform=="windows" else LINUX
+    if linux_uv and platform != "linux":
+        raise Denied("FIN05_WINDOWS_UV_ADMISSION_NOT_ACCEPTED")
+    spec=WINDOWS if platform=="windows" else dict(LINUX)
+    if linux_uv:
+        spec.update(LINUX_UV)
     if set(expected) != set(spec):
         raise Denied("FIN02_PIN_SET_NOT_EXACT")
     pins={}
@@ -197,6 +208,7 @@ def main() -> int:
     parser.add_argument("--tauri-dir", type=Path, required=True)
     parser.add_argument("--platform", choices=["windows","linux"], required=True)
     parser.add_argument("--reviewed-pins", type=Path, required=True)
+    parser.add_argument("--linux-offline-uv", action="store_true")
     args=parser.parse_args()
     try:
         root=args.tauri_dir.resolve(strict=True)
@@ -206,7 +218,8 @@ def main() -> int:
         raw=json.loads(review.read_text(encoding="utf-8"))
         if raw.get("schema")!="lu.ide.fin02.independent-input-pins.v1" or raw.get("platform")!=args.platform:
             raise Denied("FIN02_REVIEWED_INPUT_SCHEMA_DENIED")
-        result=verify(root,args.platform,raw.get("pins"))
+        result=verify(root,args.platform,raw.get("pins"),
+                      args.linux_offline_uv)
         output=root/"fin02-runtime-pins.json"
         # Never silently replace a reviewed build input or overwrite an
         # artifact already inspected by a separate packager.
