@@ -651,6 +651,151 @@ struct WindowsLspProcess {
 // concurrently and each pipe read/write occurs on one serialized worker actor.
 unsafe impl Send for WindowsLspProcess {}
 impl RestrictedLspProcess for WindowsLspProcess {
+    /// FIN-04R-1: create a SECOND, fixed-purpose AppContainer process in
+    /// the SAME original protected debugger Job Object. The SCM recovery
+    /// holder and immutable bundle/target bytes remain authoritative.
+    /// This has no arbitrary attach, command execution, user path or DAP
+    /// mutation surface. The new process inherits exactly three allowlisted
+    /// handles (stdin, stdout and NUL stderr), never the LLDB owner pipe.
+    #[cfg(feature = "fin04-release-owner-evidence")]
+    fn read_protected_pe_pdb(
+        &mut self, binary:&Path, pdb:&Path,
+        binary_sha256:&str, pdb_sha256:&str,
+        bundle_sha256:&str, slide:u64, rip:u64,
+    ) -> Result<serde_json::Value, SupervisorError> {
+        use sha2::{Digest,Sha256};
+        use std::path::Component;
+        use windows_sys::Win32::System::Threading::GetExitCodeProcess;
+        const MAX_OUTPUT: usize=8192;
+        let bad=||SupervisorError::NoContainment;
+        if !self.lease.alive()
+            || unsafe { WaitForSingleObject(self.process.0,0) } !=WAIT_TIMEOUT
+            || rip==0 || slide>rip
+            || binary_sha256.len()!=64 || pdb_sha256.len()!=64 ||
+            ![binary_sha256,pdb_sha256,bundle_sha256].iter().all(|h|
+                h.len()==64 && h.bytes().all(|v|v.is_ascii_hexdigit() && !v.is_ascii_uppercase()))
+        {return Err(bad());}
+        let local=self._profile.local_state()?;
+        let stage=local.join("debug-target");
+        let bundle=local.join("language-server");
+        let tool=bundle.join("bin/llvm-symbolizer.exe");
+        if !clean_meta(&stage)?.is_dir() ||
+           !clean_meta(&bundle)?.is_dir() ||
+           !clean_meta(&bundle.join("bin"))?.is_dir() ||
+           !clean_meta(&tool)?.is_file() ||
+           native_lsp_bundle_digest(&bundle,"dap_lldb_project")?!=bundle_sha256
+        {return Err(bad());}
+        let check_file=|file:&Path, expected:&str|->Result<(),SupervisorError>{
+            let relative=file.strip_prefix(&stage).map_err(|_|bad())?;
+            if relative.components().count()<2 ||
+               !relative.components().all(|c|matches!(c,Component::Normal(_))) {
+                return Err(bad());
+            }
+            let mut parent=stage.clone();
+            for component in relative.components() {
+                parent.push(component.as_os_str());
+                let meta=clean_meta(&parent)?;
+                if parent!=file && !meta.is_dir(){return Err(bad());}
+            }
+            let meta=clean_meta(file)?;
+            if !meta.is_file() || meta.len()<64 || meta.len()>64*1024*1024 {
+                return Err(bad());
+            }
+            let bytes=fs::read(file).map_err(|_|bad())?;
+            if bytes.len() as u64 !=meta.len() ||
+               format!("{:x}",Sha256::digest(&bytes))!=expected ||
+               clean_meta(file)?.len()!=meta.len() {
+                return Err(bad());
+            }
+            Ok(())
+        };
+        check_file(binary,binary_sha256)?;
+        check_file(pdb,pdb_sha256)?;
+        if binary.file_name().is_none_or(|name|!name.to_string_lossy().ends_with(".exe"))
+            || pdb.file_name().is_none_or(|name|!name.to_string_lossy().ends_with(".pdb"))
+            || !binary.starts_with(&stage.join("target/debug"))
+            || !pdb.starts_with(&stage.join("target/debug"))
+        {return Err(bad());}
+        let forbidden=|path:&Path|{
+            let t=path.to_string_lossy();
+            t.chars().any(char::is_control) || t.contains('"') || t.len()>1024
+        };
+        if forbidden(&tool)||forbidden(binary)||forbidden(pdb){return Err(bad());}
+        let command_text=format!(
+            "\"{}\" --obj=\"{}\" --output-style=JSON --functions=none --no-inlines --adjust-vma=0x{slide:x} 0x{rip:x}",
+            tool.display(),binary.display()
+        );
+        if command_text.len()>4096 || command_text.chars().any(char::is_control){
+            return Err(bad());
+        }
+        let mut command=wstr(&command_text);
+        let mut env=min_environment(&local,&bundle)?;
+        let (child,thread,stdin,stdout,stderr,owner_channel)=
+            spawn_contained_stdio(
+                &self._profile,&self.job,&tool,&mut command,&local,&mut env,false,
+            )?;
+        if owner_channel.is_some(){return Err(bad());}
+        drop(stdin); // fixed command needs no interactive input or DAP pipe
+        if unsafe {ResumeThread(thread.0)}==u32::MAX{
+            return Err(bad());
+        }
+        let deadline=Instant::now()+Duration::from_secs(6);
+        let mut output=Vec::new();
+        let mut exited=false;
+        while Instant::now()<deadline {
+            if !self.lease.alive() ||
+                unsafe {WaitForSingleObject(self.process.0,0)}!=WAIT_TIMEOUT {
+                return Err(bad());
+            }
+            let status=unsafe{WaitForSingleObject(child.0,0)};
+            if status==WAIT_OBJECT_0 {exited=true;}
+            else if status!=WAIT_TIMEOUT {return Err(bad());}
+            let mut available=0u32;
+            let found=unsafe { PeekNamedPipe(
+                stdout.0,ptr::null_mut(),0,ptr::null_mut(),
+                &mut available,ptr::null_mut()
+            ) };
+            if found==0 {
+                if !exited {return Err(bad());}
+                break;
+            }
+            if (available as usize)>MAX_OUTPUT.saturating_sub(output.len()) {
+                return Err(bad());
+            }
+            if available>0 {
+                let mut data=vec![0u8;available as usize];
+                let mut n=0u32;
+                if unsafe {ReadFile(
+                    stdout.0,data.as_mut_ptr(),available,&mut n,ptr::null_mut(),
+                )}==0 || n!=available {
+                    return Err(bad());
+                }
+                output.extend_from_slice(&data);
+            }
+            if exited && available==0 {break;}
+            thread::sleep(Duration::from_millis(10));
+        }
+        if !exited || output.is_empty() || output.len()>=MAX_OUTPUT {
+            return Err(bad());
+        }
+        let mut code=0u32;
+        if unsafe {GetExitCodeProcess(child.0,&mut code)}==0 || code!=0 {
+            return Err(bad());
+        }
+        drop(stderr);
+        drop(stdout);
+        drop(thread);
+        drop(child);
+        // No claimed PDB success can bypass a second sealed resource scan.
+        check_file(binary,binary_sha256)?;
+        check_file(pdb,pdb_sha256)?;
+        if native_lsp_bundle_digest(&bundle,"dap_lldb_project")?!=bundle_sha256
+            || !self.lease.alive() ||
+            unsafe{WaitForSingleObject(self.process.0,0)}!=WAIT_TIMEOUT {
+            return Err(bad());
+        }
+        serde_json::from_slice::<serde_json::Value>(&output).map_err(|_|bad())
+    }
     #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
     fn wait_owner_continued_for_ci(&mut self, seq: u64) -> Result<(), SupervisorError> {
         if !self.lease.alive() {
