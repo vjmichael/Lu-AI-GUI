@@ -7,6 +7,7 @@ import {queuedJob,startedJob,tokenForJob,resumedJob,removeJob,MAX_LIVE_CHARS}
 const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
 const queue=readFileSync(new URL('../src-tauri/src/generation_queue.rs',import.meta.url),'utf8');
 const web=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
+const delivery=readFileSync(new URL('../src-tauri/src/stream_delivery.rs',import.meta.url),'utf8');
 function reconnect(chatId,generationId,text,nextIndex,phase='running'){
   return {chatId,generationId,text,nextIndex,phase,cancelling:false};
 }
@@ -81,13 +82,19 @@ test('P3 host binds session+chat, orders cursor events and checkpoints first tok
   assert.match(host,/fn lu_stream_reconnect\(/);
   assert.match(host,/generation_queue\.reconnect_snapshot\(session_id,&chat_id\)/);
   assert.match(host,/generation_queue\.record_chunk\(/);
-  assert.match(host,/last_checkpoint_bytes == 0/);
+  assert.match(host,/last_checkpoint_bytes\s*==\s*0/);
   assert.match(host,/append_progress\(&chat_id, &gid, &answer\)/);
   assert.match(host,/lu_stream_reconnect,\s*lu_generate,/);
   assert.match(queue,/MAX_LIVE_STREAM_BYTES: usize = 1024 \* 1024/);
   assert.match(queue,/MAX_CHUNK_BYTES: usize = 64 \* 1024/);
   assert.match(queue,/job\.next_index!=index/);
   assert.match(queue,/job\.session_id!=session_id \|\| job\.cancelled/);
+  assert.match(host,/ticket\.commit_completed\(&sid/);
+  assert.match(host,/BoundedStreamDelivery::default\(\)/);
+  assert.match(host,/delivery\.accept\(&chunk\.text\)/);
+  assert.match(host,/delivery\.flush\(\)/);
+  assert.match(delivery,/COALESCE_BYTES:usize=2048/);
+  assert.match(delivery,/COALESCE_DELAY:Duration=Duration::from_millis\(40\)/);
   assert.match(web,/reconcileActiveStream\(id\)/);
   assert.match(web,/resumedJob\(prev,targetChat,snapshot\)/);
   assert.match(web,/listen\('lu-token'/);
