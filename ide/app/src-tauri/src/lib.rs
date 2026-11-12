@@ -2279,6 +2279,22 @@ async fn ide_inspect_saved_test_symbols(
         .map_err(str::to_owned)
 }
 
+/// FIN-05B: exact vcpkg declaration diff, no file write or package process.
+#[tauri::command]
+async fn ide_preview_exact_vcpkg_manifest_edit(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id:String,
+    request:lu_ide_workspace::package_preview::PackagePreviewRequest,
+    expected_preview_sha256:String,
+    expected_evidence_fingerprint:String,
+)->Result<lu_ide_workspace::package_manifest_edits::VcpkgManifestEdit,String>{
+    let native=Arc::clone(registry.inner());
+    tauri::async_runtime::spawn_blocking(move||
+        native.prepare_exact_vcpkg_edit(&project_id,request,
+            &expected_preview_sha256,&expected_evidence_fingerprint))
+        .await.map_err(|_|"FIN05_VCPKG_REVIEW_THREAD_UNAVAILABLE".to_owned())?
+        .map_err(str::to_owned)
+}
 /// IDE-05.1 manager-of-managers read-only detection. The WebView supplies
 /// an opaque registered project ID ONLY; manager/tool/path selection is fixed
 /// inside the native host. No subprocess or network access is possible here.
@@ -3487,6 +3503,7 @@ pub fn run() {
             ide_inspect_package_managers,
             ide_preview_package_operation,
             ide_revalidate_package_operation,
+            ide_preview_exact_vcpkg_manifest_edit,
             ide_discover_conventional_tests,
             ide_inspect_saved_test_symbols,
             ide_review_project_debug_target,

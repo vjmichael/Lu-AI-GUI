@@ -48,6 +48,7 @@ pub mod lsp;
 pub mod lsp_session;
 pub mod package_manager;
 pub mod package_preview;
+pub mod package_manifest_edits;
 pub mod project_run_profiles;
 pub mod project_search;
 pub mod quick_open;
