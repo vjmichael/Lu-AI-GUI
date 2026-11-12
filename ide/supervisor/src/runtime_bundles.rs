@@ -47,8 +47,8 @@ impl RuntimeProfile {
     /// prerequisites is denied even when its hash is syntactically valid.
     pub fn required(self, windows: bool) -> &'static [&'static str] {
         match (self, windows) {
-            (Self::VcpkgInstallOffline, true) => &["bin/vcpkg.exe", "LICENSES/vcpkg.txt"],
-            (Self::VcpkgInstallOffline, false) => &["bin/vcpkg", "LICENSES/vcpkg.txt"],
+            (Self::VcpkgInstallOffline, true) => &["bin/vcpkg.exe", "LICENSES/vcpkg.txt", "binary-cache/manifest.txt"],
+            (Self::VcpkgInstallOffline, false) => &["bin/vcpkg", "LICENSES/vcpkg.txt", "binary-cache/manifest.txt"],
             (Self::UvSyncOffline, true) => &[
                 "bin/uv.exe",
                 "bin/python.exe",
