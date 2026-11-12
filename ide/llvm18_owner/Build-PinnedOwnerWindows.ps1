@@ -39,6 +39,7 @@ if (!$progressText.Contains('#include <chrono>') -or
 $provenanceDirectory=Join-Path $bundle 'provenance'
 New-Item -ItemType Directory -Force $provenanceDirectory | Out-Null
 Copy-Item -LiteralPath $patched -Destination (Join-Path $provenanceDirectory 'DebuggerThread.cpp')
+Copy-Item -LiteralPath $progress -Destination (Join-Path $provenanceDirectory 'ProgressEvent.h')
 $sha256={ param([string]$p) (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() }
 $ownerProvenance=[ordered]@{
   schema='lu.ide.fin04.first-party-lldb-owner.v1'
