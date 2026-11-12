@@ -459,6 +459,30 @@ mod tests{
         assert!(probe_token_count(0,&"a".repeat(64)).is_err());
     }
     #[test]
+    fn foreign_passwordless_listener_is_never_accepted_as_original_child(){
+        let listener=TcpListener::bind((Ipv4Addr::LOCALHOST,0)).unwrap();
+        let port=listener.local_addr().unwrap().port();
+        let server=thread::spawn(move||{
+            // A foreign server that ignores Authorization is not accepted.
+            for _ in 0..2{
+                let (mut sock,_)=listener.accept().unwrap();
+                let mut reader=BufReader::new(&mut sock);
+                loop {
+                    let mut line=String::new();
+                    if reader.read_line(&mut line).unwrap()==0{break}
+                    if line=="\\r\\n"||line=="\\n"{break}
+                }
+                drop(reader);
+                let _=sock.write_all(
+                    b"HTTP/1.1 200 OK\\r\\nContent-Length: 0\\r\\nConnection: close\\r\\n\\r\\n"
+                );
+            }
+        });
+        assert!(!KoboldCppBackend::authenticated_probe(
+            port,&"a".repeat(64)).unwrap());
+        server.join().unwrap();
+    }
+    #[test]
     fn protected_readiness_requires_wrong_key_401_and_original_key_200(){
         let server=TcpListener::bind((Ipv4Addr::LOCALHOST,0)).unwrap();
         let port=server.local_addr().unwrap().port();
