@@ -8357,6 +8357,18 @@ function App() {
                     breakpoint, a step or production control authority.
                     <code>{debugResult.releaseOwnerReceiptSha256}</code>
                   </p>}
+                {debugResult.releaseOwnerSourceLineVerified===true &&
+                  debugResult.releaseOwnerKernelVerified===true &&
+                  debugResult.releaseOwnerControlAuthorized===false &&
+                  <p>Independent protected PE/PDB source mapping:
+                    line {debugResult.releaseOwnerVerifiedSourceLine};
+                    original source SHA-256
+                    {' '}<code>{debugResult.releaseOwnerVerifiedSourceSha256}</code>;
+                    compiler PDB SHA-256
+                    {' '}<code>{debugResult.releaseOwnerVerifiedPdbSha256}</code>.
+                    This confirms the original stopped instruction-to-source
+                    mapping for this session only. It does NOT authorize
+                    stepping, setting a breakpoint or inspecting variables.</p>}
                 {typeof debugResult.terminalReceiptSha256==='string' &&
                   <p>Exact debugger terminal journal hash:
                     {' '}<code>{debugResult.terminalReceiptSha256}</code></p>}
