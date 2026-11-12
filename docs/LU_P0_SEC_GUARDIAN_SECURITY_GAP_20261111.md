@@ -174,3 +174,28 @@ from the lu-core Rust test crate on the physical Windows host.
    uncertainty must remain and require a fresh human decision.
 5. SEC-06 consolidated Windows/Linux native, installed-app, recovery and
    independent OS custody acceptance remains separate. No release or merge.
+
+## SEC-06 — consolidated security acceptance
+
+Consolidated exact-head source, native Linux cgroup, Windows Job, original
+restart journals, operator UI and manual owner acceptance are specified in
+[LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md](LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md).
+
+The acceptance runner is scripts/p0-sec06-consolidated.mjs. It produces
+source-only / Linux / Windows local receipts with original log SHA-256 and
+the exact source-lock identity, and always withholds installed-human/release
+acceptance pending independent review. scripts/p0-sec06-windows-owner-observation.ps1
+creates an unsigned-installed-EXE identity worksheet marked PENDING,
+not an automatic positive attestation.
+
+SEC-06 repair: historical orphan cancellation outcomes are queried over the
+whole exact-chat ledger for tool authorization (not only the capped operator
+window). Linux cgroup cleanup receipts now require exact original
+CHAT/TURN/CALL/NONCE/POPULATED identity and safe file properties.
+The ancestor-migration adversary reports a confirmed live escape as
+SEC06_BLOCKED_ANCESTOR_CGROUP_ESCAPE even when the host correctly returns
+UNCERTAIN. Existing native Lu-parent SIGKILL, real reviewed Git restart and
+real Windows Job cases are mandatory in the consolidated proof inventory.
+
+STATUS: SOURCE IMPLEMENTED; NATIVE COMPILATION / KERNEL / WINDOWS INSTALLED
+HUMAN ACCEPTANCE OPEN. No CI, merge or release authorization.
