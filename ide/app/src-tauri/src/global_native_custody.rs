@@ -81,6 +81,26 @@ impl GlobalAdmissionFence {
   if durable_busy(own) || durable_busy(other){
    return Err("FIN01_GLOBAL_CUSTODY_NOT_RECONCILED".into());
   }
+  self.remove_exact_owner_marker()
+ }
+ /// Distinct *in-process only* cleanup for a denied admission which has not
+ /// called Supervisor::prepare. It cannot recover a marker after restart,
+ /// and cannot be used when any job has been newly prepared, even if an OS
+ /// process has not yet been observed. Baseline/current identities cover the
+ /// complete original job inventory (not a truncated renderer projection).
+ pub fn release_before_prepare_if_unchanged(
+  &mut self,before:&[JobSummary],after:&[JobSummary]
+ ) ->Result<(),String>{
+  if before.len()!=after.len() ||
+     !before.iter().zip(after).all(|(a,b)|
+      a.job_id==b.job_id && a.project_id==b.project_id &&
+      a.plan_sha256==b.plan_sha256 && a.phase==b.phase &&
+      a.requires_reconciliation==b.requires_reconciliation) {
+    return Err("FIN01_NEW_JOURNAL_EVENT_BEFORE_ADMISSION_RELEASE".into());
+  }
+  self.remove_exact_owner_marker()
+ }
+ fn remove_exact_owner_marker(&mut self)->Result<(),String>{
   let metadata=fs::symlink_metadata(&self.marker)
    .map_err(|_|"FIN01_GLOBAL_MARKER_MISSING")?;
   if !metadata.is_file() || metadata.file_type().is_symlink() ||
