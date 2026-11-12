@@ -1392,3 +1392,22 @@ Owner-deferred genuine Windows kernel/SCM/PDB/restart acceptance and
 interactive installed-human/security acceptance remain **OPEN,
 DEFERRED and UNVERIFIED**. No native OS success, physical acceptance,
 production debugger control, release, or merge was inferred.
+
+### FIN-04R-1 Task 4 exact-head source regression closeout
+
+Windows run **#43311830978**, native source head
+`5116afe7e8452145adf917237a7624a5bd04cf11`, passed
+**132/132 Rust `--lib` supervisor tests** and **19/19 JS source/security
+checks**, including clean DAP close, original LLDB owner revocation,
+one-use action restart and the new unknown-output/quarantine replay test.
+Release example compiled; PowerShell physical-only scripts parsed.
+
+The earlier source fixture error is repaired. The original **runtime**
+`SUPERVISOR_RECONCILIATION_REQUIRED` from Windows run #43288086009 is
+**not proven repaired**: the source acceptance harness now emits the
+original Job receipt's fixed outcome category on a future native failure,
+and the negative regression confirms output without independent
+publication is never promoted. This source-level evidence is not an
+OS-kernel pass. Owner-deferred genuine SCM/AppContainer/Job/PDB/restart
+and interactive installed-human/security gates stay explicitly OPEN and
+UNVERIFIED. No debugger execution grants, replay, merge or release.
