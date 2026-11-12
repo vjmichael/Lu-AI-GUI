@@ -41,6 +41,9 @@ jobs:
         run: |
           node --test scripts/core01-verify-scope.test.mjs
           node scripts/core01-verify-scope.mjs
+      - name: CORE-01D normal-chat and ANSF status source contracts
+        if: hashFiles('lu-desktop/tests/core01d-normal-chat-boundary.test.mjs') != ''
+        run: node --test lu-desktop/tests/core01d-normal-chat-boundary.test.mjs
       - name: Audit grouped-CI trigger policy and queue cleanup safety
         if: hashFiles('scripts/lu-ci-group-policy.mjs') != ''
         run: |
