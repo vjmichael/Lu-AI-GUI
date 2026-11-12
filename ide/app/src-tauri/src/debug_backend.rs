@@ -266,6 +266,9 @@ pub struct DebugWitness {
     pub release_owner_event_sequence: Option<u64>,
     pub release_owner_kernel_verified: bool,
     pub release_owner_source_line_verified: bool,
+    pub release_owner_verified_source_line: Option<u32>,
+    pub release_owner_verified_source_sha256: Option<String>,
+    pub release_owner_verified_pdb_sha256: Option<String>,
     pub release_owner_control_authorized: bool,
     /// Only developer-only, physically consented one-shot DAP names/types.
     /// No adapter values, memory references, handles or expressions.
@@ -1662,7 +1665,35 @@ impl NativeDebugRuntime {
                 #[cfg(not(all(windows, feature = "fin04-release-event-observer")))]
                 { false }
             },
-            release_owner_source_line_verified: false,
+            release_owner_source_line_verified: {
+                #[cfg(all(windows, feature = "fin04-release-event-observer"))]
+                {release_owner.as_ref().is_some_and(|v|
+                    v.source_line_independently_verified &&
+                    v.independently_verified_source_line.is_some() &&
+                    v.independently_verified_source_sha256.is_some() &&
+                    v.independent_pdb_sha256.is_some() &&
+                    !v.debugger_control_authorized)}
+                #[cfg(not(all(windows, feature = "fin04-release-event-observer")))]
+                {false}
+            },
+            release_owner_verified_source_line: {
+                #[cfg(all(windows, feature = "fin04-release-event-observer"))]
+                {release_owner.as_ref().and_then(|v|v.independently_verified_source_line)}
+                #[cfg(not(all(windows, feature = "fin04-release-event-observer")))]
+                {None}
+            },
+            release_owner_verified_source_sha256: {
+                #[cfg(all(windows, feature = "fin04-release-event-observer"))]
+                {release_owner.as_ref().and_then(|v|v.independently_verified_source_sha256.clone())}
+                #[cfg(not(all(windows, feature = "fin04-release-event-observer")))]
+                {None}
+            },
+            release_owner_verified_pdb_sha256: {
+                #[cfg(all(windows, feature = "fin04-release-event-observer"))]
+                {release_owner.as_ref().and_then(|v|v.independent_pdb_sha256.clone())}
+                #[cfg(not(all(windows, feature = "fin04-release-event-observer")))]
+                {None}
+            },
             release_owner_control_authorized: false,
             inspected_frame_id,
             redacted_variables,
