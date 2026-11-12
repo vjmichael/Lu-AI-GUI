@@ -546,6 +546,7 @@ struct Store {
 }
 pub struct NativeBuildRuntime {
     supervisor: Arc<Supervisor>,
+    global_custody_profile: PathBuf,
     staged: PathBuf,
     outputs: PathBuf,
     debug_targets: PathBuf,
@@ -579,6 +580,7 @@ impl NativeBuildRuntime {
             PackageLifecycleLedger::open(data.clone()).map_err(|e| e.code().to_owned())?;
         Ok(Self {
             supervisor: Arc::new(supervisor),
+            global_custody_profile: data.clone(),
             staged,
             outputs,
             debug_targets,
@@ -1058,6 +1060,15 @@ impl NativeBuildRuntime {
             let mut store = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
             store.debug_target = None;
         }
+        // FIN-01: cross-process admission is acquired before any native
+        // preparation, one-use approval or worker OS launch.
+        let mut global_fence=crate::global_native_custody::GlobalAdmissionFence
+            ::acquire(&self.global_custody_profile,"build")?;
+        let sibling=crate::global_native_custody::sibling_rows(
+            &self.global_custody_profile,"build")?;
+        if crate::global_native_custody::durable_busy(&sibling) {
+            return Err("FIN01_DEBUG_JOURNAL_STILL_OWNS_CUSTODY".into());
+        }
         let result = self.run_inner(
             app,
             registry,
@@ -1089,6 +1100,19 @@ impl NativeBuildRuntime {
                     locked.recent.remove(&old);
                 }
             }
+        }
+        // Do not release admission on merely returning from a worker.
+        // Both durable journals must have terminal, reconciled custody.
+        let own=self.supervisor.inspect().map_err(|e|e.code().to_owned());
+        let sibling=crate::global_native_custody::sibling_rows(
+            &self.global_custody_profile,"build");
+        let release=match (own,sibling){
+            (Ok(own),Ok(sibling))=>
+                global_fence.release_if_terminal(&own,&sibling),
+            _=>Err("FIN01_GLOBAL_TERMINAL_PROOF_UNAVAILABLE".into()),
+        };
+        if let Err(reason)=release {
+            if result.is_ok(){return Err(reason);}
         }
         result
     }
