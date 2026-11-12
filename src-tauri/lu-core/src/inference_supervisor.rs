@@ -908,6 +908,23 @@ mod tests {
             .reserve_generation("s-1", "g-2", "gen-2", "hello", 32)
             .unwrap();
         assert_eq!(
+            supervisor.bind_reserved_cache_scope("s-2","g-2","c-one"),
+            Err(SupervisorError::WrongSession)
+        );
+        assert_eq!(
+            supervisor.bind_reserved_cache_scope("s-1","g-wrong","c-one"),
+            Err(SupervisorError::WrongGeneration)
+        );
+        assert_eq!(
+            supervisor.bind_reserved_cache_scope("s-1","g-2","invalid/scope"),
+            Err(SupervisorError::InvalidRequest)
+        );
+        supervisor.bind_reserved_cache_scope("s-1","g-2","c-one").unwrap();
+        assert_eq!(
+            supervisor.bind_reserved_cache_scope("s-1","g-2","c-other"),
+            Err(SupervisorError::InvalidRequest)
+        );
+        assert_eq!(
             supervisor.cancel("s-1", "g-nope", "cancel-bad"),
             Err(SupervisorError::Bridge(BridgeError::UnauthorizedGeneration))
         );
