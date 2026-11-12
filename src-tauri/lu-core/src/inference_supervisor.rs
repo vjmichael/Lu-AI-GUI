@@ -741,6 +741,16 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         }
         result
     }
+    /// A failed final journal commit must invalidate the previous successful
+    /// llama.cpp cache parent before the next generation acquires this engine.
+    /// The original session ID is required; no untrusted request can invoke it.
+    pub fn invalidate_prefix_cache(&self,session_id:&str)->Result<(),SupervisorError>{
+        let session=self.session(session_id)?;
+        session.engine.lock().map_err(|_|SupervisorError::Poisoned)?
+            .invalidate_prefix_cache();
+        Ok(())
+    }
+
     /// Poll from the trusted host (not from an AI/tool request). A resident
     /// backend remains loaded across turns until this decision evicts it or
     /// the user explicitly ejects it. Pressure may shorten the grace period,
