@@ -45,6 +45,8 @@ native-project-debug = ["native-debug", "native-build"]
 dev046d-native-dialog = ["native-project-debug", "lu-ide-execution-supervisor/dev046d-native-dialog"]
 # FIN03 experimental one-file restore: no release package enables this by default.
 fin03-reviewed-restore = []
+# Source candidate only; no released profile enables destructive stash mutation.
+fin03-reviewed-stash = []
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
