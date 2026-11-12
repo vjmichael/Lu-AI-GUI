@@ -23,3 +23,12 @@ test('FIN03 restore requires native one-use consent, no renderer authority',()=>
  assert.match(tauri,/FIN03_RESTORE_HUMAN_DENIED/);
  assert.match(tauri,/ide_git_single_file_restore_recovery,/);
 });
+
+test('FIN03 restore remains opt-in and disabled in default app profile',()=>{
+ const cargo=read('../src-tauri/Cargo.toml');
+ assert.match(cargo,/fin03-reviewed-restore = \[\]/);
+ assert.match(tauri,/if !cfg!\(feature="fin03-reviewed-restore"\)/);
+ assert.match(tauri,/FIN03_RESTORE_OPT_IN_AND_NATIVE_ACCEPTANCE_REQUIRED/);
+ assert.match(host,/changed_path_is_plain_safe/);
+ assert.match(host,/output\.set_permissions\(target_permissions\)/);
+});
