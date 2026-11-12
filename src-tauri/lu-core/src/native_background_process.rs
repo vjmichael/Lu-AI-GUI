@@ -1006,6 +1006,51 @@ impl BackgroundProcessSupervisor {
         self.store.cancelled(task_id)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)
     }
+    /// SEC-03: stop every currently owned OS worker for ONE exact
+    /// authenticated host workspace under the SAME mutex that serializes
+    /// task admission and poll. No stale dashboard snapshot, UI PID, or
+    /// 100-row truncation can omit a live native task from this sweep.
+    /// A failure remains owned and uncertain; attempt remaining workers.
+    /// A NEW task admitted after this sweep still requires its own fresh
+    /// human/host authority at the caller; this method grants none.
+    pub fn cancel_workspace_owned(&self,workspace_id:&str)
+        ->Result<usize,BackgroundProcessError>{
+        if !valid_id(workspace_id){
+            return Err(BackgroundProcessError::WrongWorkspace)
+        }
+        let mut workers=self.owned.lock()
+            .map_err(|_|BackgroundProcessError::Poisoned)?;
+        let tasks=workers.iter().filter(|(_,w)|w.workspace_id==workspace_id)
+            .map(|(id,_)|id.clone()).collect::<Vec<_>>();
+        let mut count=0usize;
+        let mut uncertain=false;
+        for id in tasks{
+            let stop=workers.get_mut(&id)
+                .ok_or(BackgroundProcessError::NotOwned)
+                .and_then(terminate_owned);
+            if stop.is_err(){
+                if self.store.record_process_uncertain(
+                    &id,"OS_CUSTODY_UNVERIFIED").is_err(){
+                    uncertain=true;
+                }
+                uncertain=true;
+                continue
+            }
+            let mut owner=workers.remove(&id)
+                .ok_or(BackgroundProcessError::NotOwned)?;
+            if let Some(reader)=owner.progress_reader.take(){
+                if reader.join().is_err(){uncertain=true}
+            }
+            if let Some(reader)=owner.version_reader.take(){
+                if reader.join().is_err(){uncertain=true}
+            }
+            drop(owner);
+            if self.store.cancelled(&id).is_err(){uncertain=true}
+            else{count+=1}
+        }
+        if uncertain{return Err(BackgroundProcessError::ProcessUncertain)}
+        Ok(count)
+    }
     /// Local operator action: derive ownership from the host's active map,
     /// never from a model/WebView-supplied workspace or process identifier.
     pub fn cancel_operator_owned(&self,task_id:&str)
