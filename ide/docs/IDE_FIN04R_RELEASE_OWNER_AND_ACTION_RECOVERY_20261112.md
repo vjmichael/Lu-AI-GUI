@@ -23,3 +23,24 @@
 ## Handoff status
 
 Source changes and negative structural regression fixture committed to `ide/fin01-07-implementation-20261111`. GitHub-only source review can verify the changed files, but the native Windows/LLVM/SCM and installed desktop environment is unavailable in this coding session; all claimed OS evidence is **implementation design or guarded native calls**, not a captured live native acceptance result.
+
+## FIN-04R-1 continuation (source update, 2026-11-12)
+
+The earlier note that no protected production PE/PDB reader source
+exists is superseded for the **release-observer** path: the strict
+parser is shared, and the pinned fixed-purpose symbolizer is now
+launched under the original Windows native Job/AppContainer with SCM
+process custody and before/after PE/PDB/source/bundle checks. A live
+first-party owner event may therefore acquire a separately parsed
+read-only PE/PDB source-line witness *when* all OS checks succeed.
+The new human consent route is intentionally a **one-use review**:
+even an affirmative approval is immediately journaled Revoked with
+no DAP command or executable authorization. Independent step and
+breakpoint-hit proof source exists, but native post-command positive
+execution evidence is not present.
+
+This does **not** close release acceptance. See
+[`IDE_FIN04R1_PROTECTED_PDB_AND_NATIVE_ACCEPTANCE_20261112.md`](IDE_FIN04R1_PROTECTED_PDB_AND_NATIVE_ACCEPTANCE_20261112.md)
+for remaining compiler, OS-hostile, physical-human, installed and
+post-command gates. No actual Windows compiler or kernel result was
+obtained during this source iteration; no production controls enabled.
