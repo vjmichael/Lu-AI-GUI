@@ -5648,11 +5648,18 @@ async fn generate_internal(
                     // Final original ANSF publication has a definite order
                     // against native Stop. No completed stream can be
                     // committed after its generation was cancelled.
-                    ticket.commit_completed(&sid,||{
+                    let saved=ticket.commit_completed(&sid,||{
                         state.chats.append_progress(&chat_id, &gid, &answer)?;
                         state.chats.complete(&chat_id, &gid)?;
                         Ok(())
-                    })?;
+                    });
+                    if saved.is_err(){
+                        // A late Stop may win after llama.cpp returned Ok.
+                        // The rejected original terminal state cannot become
+                        // a trusted prefix/KV cache parent for the next turn.
+                        let _=supervisor.invalidate_prefix_cache(&sid);
+                    }
+                    saved?;
                     if plan_only{
                         let result=plan_source.as_ref()
                             .ok_or_else(||"Original plan identity unavailable".to_string())
