@@ -656,7 +656,7 @@ mod tests {
         gateway.threads().unwrap();
         shared.pending.lock().unwrap().push_back(frame(json!({
             "seq":3,"type":"response","request_seq":2,"command":"threads",
-            "success":true,"body":{"threads":[]}
+            "success":true,"body":{"threads":[{"id":1,"name":"main"}]}
         })));
         assert_eq!(gateway.poll().unwrap(), vec![DapEvent::ThreadsReceived]);
         gateway.close().unwrap();
