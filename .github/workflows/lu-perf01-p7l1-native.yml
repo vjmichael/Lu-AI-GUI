@@ -38,6 +38,8 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           echo "P7L1_NATIVE_EXACT_HEAD=$EXPECTED_SHA"
           git status --porcelain
+          mkdir -p p7l1-evidence
+          printf 'SOURCE_HEAD=%s\nOS=Linux\nTEST_KIND=SOURCE_ONLY\n' "$EXPECTED_SHA" > p7l1-evidence/source-identity.txt
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -52,6 +54,13 @@ jobs:
             lu-desktop/tests/perf01-p7-evaluation-contract.test.mjs \
             lu-desktop/tests/perf01-p7-backend-comparison.test.mjs
           node --check scripts/perf01-p7-backend-comparison.mjs
+      - name: Preserve exact source-node acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p7l1-source-node
+          path: p7l1-evidence/
+          if-no-files-found: error
   native:
     name: Original lu-core + P7L-1 native fixture (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -74,6 +83,8 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           echo "P7L1_NATIVE_EXACT_HEAD=$EXPECTED_SHA"
+          mkdir -p p7l1-evidence
+          printf 'SOURCE_HEAD=%s\nRUNNER_OS=%s\nTEST_KIND=NATIVE_FIXTURE\n' "$EXPECTED_SHA" "$RUNNER_OS" > p7l1-evidence/native-identity.txt
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.98.0'
@@ -113,3 +124,11 @@ jobs:
         run: |
           echo "P7L1_NATIVE_FIXTURE_ONLY: not physical KoboldCpp, GGUF, MMProj or Radeon acceptance"
           echo "P7L1_ALTERNATIVE_PRODUCTION_ENABLED=false"
+          printf 'NATIVE_FIXTURE_SCOPED_ONLY=1\nPHYSICAL_KOBOLD_ACCEPTED=0\nBACKEND_PROMOTED=0\n' > p7l1-evidence/scope.txt
+      - name: Preserve original Windows/Linux native test identity
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p7l1-native-${{ matrix.os }}
+          path: p7l1-evidence/
+          if-no-files-found: error
