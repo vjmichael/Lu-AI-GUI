@@ -438,12 +438,16 @@ impl TaskStore {
         self.transition(task_id, "RUNNING", TaskState::Paused)
     }
 
+    /// Only an explicitly PAUSED, still-owned task may resume. An
+    /// INTERRUPTED task lost its original process/authority on restart;
+    /// it needs a new original human authorization and NEW task identity.
+    /// An old interruption record is never a credential to restart work.
     pub fn resume(&self, task_id: &str) -> Result<(), TaskStoreError> {
         let mut connection=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
         let tx=connection.transaction()?;
         let changed=tx.execute(
             "UPDATE lu_tasks SET state='RUNNING', updated_at=CURRENT_TIMESTAMP
-             WHERE task_id=?1 AND state IN ('PAUSED','INTERRUPTED')
+             WHERE task_id=?1 AND state='PAUSED'
                AND NOT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
                               WHERE task_id=?1)",params![task_id]
         )?;
