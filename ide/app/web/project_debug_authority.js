@@ -24,9 +24,22 @@ export function checkedProjectDebugWitness(result,build,projectId) {
      !(Number.isSafeInteger(result.stoppedThread)&&result.stoppedThread>0)||
      result.installedAppAccepted!==false ||
      (result.releaseOwnerSourceLineVerified!==undefined &&
-       result.releaseOwnerSourceLineVerified!==false) ||
+       typeof result.releaseOwnerSourceLineVerified!=='boolean') ||
      (result.releaseOwnerControlAuthorized!==undefined &&
        result.releaseOwnerControlAuthorized!==false) ||
+     (result.releaseOwnerSourceLineVerified===true &&
+       (result.releaseOwnerKernelVerified!==true ||
+        !SHA.test(result.releaseOwnerVerifiedSourceSha256||'') ||
+        !SHA.test(result.releaseOwnerVerifiedPdbSha256||'') ||
+        result.releaseOwnerVerifiedPdbSha256!==witness.symbolsSha ||
+        !Number.isSafeInteger(result.releaseOwnerVerifiedSourceLine) ||
+        result.releaseOwnerVerifiedSourceLine<1 ||
+        result.releaseOwnerVerifiedSourceLine!==result.stoppedSource?.line ||
+        result.releaseOwnerVerifiedSourceSha256!==result.stoppedSource?.diskSha256)) ||
+     (result.releaseOwnerSourceLineVerified!==true &&
+       (result.releaseOwnerVerifiedSourceLine!=null ||
+        result.releaseOwnerVerifiedSourceSha256!=null ||
+        result.releaseOwnerVerifiedPdbSha256!=null)) ||
      (result.releaseOwnerKernelVerified===true &&
        (!SHA.test(result.releaseOwnerReceiptSha256||'') ||
         !Number.isSafeInteger(result.releaseOwnerEventSequence) ||
