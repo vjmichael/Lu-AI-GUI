@@ -11,6 +11,8 @@ mod generation_queue;
 mod background_context;
 mod environment_context;
 mod host_clock;
+mod perf01_router;
+mod perf01_telemetry;
 mod vision_context;
 mod observe_desktop;
 mod ansf_source_evidence;
@@ -722,6 +724,7 @@ struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
     chats: ChatStore,
+    perf01: perf01_telemetry::PerfLedger,
     operational_assets: lu_core::operational_asset_ledger::OperationalAssetLedger,
     continuity: lu_core::continuity::ContinuityStore,
     reviewed_memory_recovery: Vec<reviewed_memory_evidence::ReviewedMemoryRecoveryView>,
@@ -1249,6 +1252,7 @@ impl DesktopState {
             models_dir:models_dir.clone(),
             catalog_path,
             chats,
+            perf01:perf01_telemetry::PerfLedger::default(),
             operational_assets:lu_core::operational_asset_ledger::OperationalAssetLedger::open(
                 &root.join("lu-operational-assets.sqlite")
             ).map_err(|e|format!("Operational asset ledger unavailable: {e:?}"))?,
@@ -4510,6 +4514,17 @@ async fn lu_m3_remember_asset(
 fn lu_m3_read_source(state:State<'_,Arc<DesktopState>>,chat_id:String,source_id:String)
     ->Result<chat_store::RecallHit,String>{
     state.chats.known_source_for_turn(&chat_id,&source_id)
+}
+
+/// PERF-01 P0: host-only scoped diagnostics. Original chat membership is
+/// checked from ANSF before returning any same-chat receipt. These samples
+/// are ephemeral and never confer tool authority or task acceptance.
+#[tauri::command]
+fn lu_perf01_recent(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,limit:Option<usize>
+)->Result<Vec<perf01_telemetry::PerfReceipt>,String>{
+    state.chats.history_window(&chat_id,None,"older",1)?;
+    state.perf01.recent(&chat_id,limit.unwrap_or(8))
 }
 
 #[tauri::command]
@@ -8715,6 +8730,7 @@ pub fn run() {
             lu_open_aux_window,
             lu_close_aux_window,
             lu_native_route_catalog,
+            lu_perf01_recent,
             project_discovery_desktop::lu_project_discover,
             project_evidence_desktop::lu_project_evidence_graph,
             project_status_desktop::lu_project_classify,
