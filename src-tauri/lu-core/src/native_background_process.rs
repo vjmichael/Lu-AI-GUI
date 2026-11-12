@@ -578,7 +578,7 @@ impl BackgroundProcessSupervisor {
         // unavailable the reviewed tool may retain its existing PGID
         // guardian, but AGENT-01K/01L REFUSE full descendant custody.
         #[cfg(target_os="linux")]
-        let cgroup=if let Some((profile,chat,turn))=reviewed_origin{
+        let mut cgroup=if let Some((profile,chat,turn))=reviewed_origin{
             lu_win_worker_job::unix_owned::LinuxCgroupCustodian::spawn_if_delegated(
                 profile,&chat,&turn,&plan.task_id
             ).map_err(|_|{
@@ -699,6 +699,22 @@ impl BackgroundProcessSupervisor {
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed);
         }
+        // The pre_exec kernel write is necessary but not sufficient proof:
+        // independently read /proc for this exact still-owned Child, and
+        // verify the helper remains alive outside the killable subtree.
+        // No task is marked RUNNING when the guardian died or membership is
+        // missing. This can conservatively reject an extremely fast worker.
+        #[cfg(target_os="linux")]
+        if let Some(guard)=cgroup.as_mut(){
+            if guard.verify_admitted_worker(child.id()).is_err(){
+                // Stop the worker leader even if the custodian is gone.
+                // Detached descendants remain UNVERIFIED on guardian loss.
+                let _=child.kill();let _=child.wait();
+                let _=guard.stop_and_verify();
+                let _=self.store.fail_pending(&plan.task_id);
+                return Err(BackgroundProcessError::SpawnFailed)
+            }
+        }
         // Delay progress consumption until the SQLite RUNNING transition.
         // A fast worker must not lose its first checkpoint to a startup race.
         let progress_pipe=if plan.progress_protocol{child.stdout.take()}else{None};
@@ -752,6 +768,18 @@ impl BackgroundProcessSupervisor {
         let mut workers=self.owned.lock().map_err(|_|BackgroundProcessError::Poisoned)?;
         let mut finished=Vec::new();
         for (id,worker) in workers.iter_mut(){
+            #[cfg(target_os="linux")]
+            if let Some(guard)=worker.cgroup.as_mut(){
+                if guard.require_live_guardian().is_err(){
+                    // The worker may still be running, or its descendants
+                    // may already have escaped the leader. Kill the known
+                    // leader, retain the owned entry, and REFUSE completion
+                    // or independent cgroup-custody status.
+                    let _=worker.child.kill();
+                    let _=worker.child.wait();
+                    return Err(BackgroundProcessError::ProcessUncertain)
+                }
+            }
             match worker.child.try_wait(){
                 Ok(Some(status))=>{
                     #[cfg(windows)]
@@ -765,6 +793,21 @@ impl BackgroundProcessSupervisor {
                             job.terminate_and_verify_empty()
                                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?
                         );
+                    }
+                    #[cfg(target_os="linux")]
+                    {
+                        // Never remove a worker from the owner map before
+                        // native descendant cleanup has succeeded. Otherwise
+                        // a failed cgroup stop would lose the only live
+                        // cancellation handle and strand an uncertain effect.
+                        if let Some(guard)=worker.cgroup.as_mut(){
+                            guard.stop_and_verify()
+                                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+                        }
+                        if let Some(guardian)=worker.guardian.as_mut(){
+                            guardian.stop_and_verify_signal()
+                                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+                        }
                     }
                     finished.push((id.clone(),Some(status.success())));
                 },
@@ -786,19 +829,9 @@ impl BackgroundProcessSupervisor {
             let empty_job_witness=owner.job_empty.take();
             #[cfg(windows)]
             drop(owner.job.take()); // The kernel empty-job check preceded CloseHandle.
-            // Shut down the Linux PGID anchor before joining pipes: a
-            // descendant may have inherited worker stdout. A verified
-            // guardian SIGKILL is required, not merely a leader exit.
-            #[cfg(target_os="linux")]
-            if let Some(guard)=owner.cgroup.as_mut(){
-                guard.stop_and_verify()
-                    .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
-            }
-            #[cfg(target_os="linux")]
-            if let Some(guardian)=owner.guardian.as_mut(){
-                guardian.stop_and_verify_signal()
-                    .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
-            }
+            // Linux kernel/PGID cleanup was established BEFORE removal from
+            // the owner map. For deadline outcomes terminate_owned did so.
+            // Any failure must leave task ownership for explicit recovery.
             let had_reader=owner.progress_reader.is_some();
             let had_version_reader=owner.version_reader.is_some();
             let version=owner.version_reader.take()
