@@ -43,6 +43,8 @@ native-project-debug = ["native-debug", "native-build"]
 # D6D native human-dialog bridge for Windows DEV BUILDS ONLY.
 # This intentionally cannot be compiled into a release/signed installer yet.
 dev046d-native-dialog = ["native-project-debug", "lu-ide-execution-supervisor/dev046d-native-dialog"]
+# FIN03 experimental one-file restore: no release package enables this by default.
+fin03-reviewed-restore = []
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
