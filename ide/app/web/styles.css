@@ -443,3 +443,16 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .int03TestCase small{display:block;color:#f1c98e}
 .int03TestCases select:focus-visible,
 .int03TestCase button:focus-visible{outline:2px solid #e4c66b;outline-offset:3px}
+
+
+/* IDE-INT04: read-only, bounded first stopped-source and custody status.
+   A source link never sends LLDB commands, breakpoints or new launch rights. */
+.int04StoppedSource{padding:10px 12px;border-left:2px solid #7e9cbb;
+  display:flex;flex-direction:column;gap:7px;overflow-wrap:anywhere}
+.int04StoppedSource h4{margin:0;font-size:14px}
+.int04StoppedSource p{margin:3px 0;line-height:1.45}
+.int04StoppedSource button{align-self:flex-start;max-width:100%;
+  white-space:normal;text-align:left}
+.int04StoppedSource button:focus-visible{outline:2px solid #f6d48f;outline-offset:3px}
+.int04RecoveryNotice{border-left:2px solid #d2a56a;padding:7px 10px;
+  line-height:1.5}

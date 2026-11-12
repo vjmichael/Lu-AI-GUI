@@ -13,7 +13,8 @@ use lu_ide_execution_supervisor::linux_worker::lsp_native::{
 #[cfg(target_os = "linux")]
 use lu_ide_execution_supervisor::linux_worker::reconcile_linux_interrupted;
 use lu_ide_execution_supervisor::{
-    project_debug_target::SealedProjectDebugTarget, snapshot::publish_input, JobPhase, JobPlan,
+    project_debug_target::SealedProjectDebugTarget,
+    snapshot::{publish_input, verify_input, PublishedInput}, JobPhase, JobPlan,
     Supervisor,
 };
 #[cfg(windows)]
@@ -27,12 +28,14 @@ use lu_ide_execution_supervisor::{
 };
 use lu_ide_workspace::{
     dap_session::{DapEvent, DapPhase},
+    dap_source_lines::SourceLineCandidate,
     IdeWorkspaceRegistry,
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::{
     fs,
-    path::PathBuf,
+    path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -135,12 +138,96 @@ pub struct RedactedVariableSummary {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DebugStoppedSource {
+    /// No adapter-origin absolute path ever reaches WebView.
+    pub relative_path: String,
+    pub disk_sha256: String,
+    pub line: u32,
+    /// We intentionally navigate to column zero: DAP columns have not been
+    /// independently proven UTF-16 or cross-checked to a compiler line map.
+    pub character_utf16: u32,
+    pub frame_id: u64,
+    pub source_bytes_verified: bool,
+    pub os_instruction_source_line_verified: bool,
+    pub installed_app_accepted: bool,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugSourceReview {
+    pub project_id: String,
+    pub job_id: String,
+    pub plan_sha256: String,
+    pub terminal_receipt_sha256: String,
+    pub source: DebugStoppedSource,
+    pub navigation_automatic: bool,
+    pub debugger_execution_authorized: bool,
+    pub human_task_accepted: bool,
+}
+fn reviewed_initial_stop_source(
+    registry: &IdeWorkspaceRegistry,
+    project_id: &str,
+    input: &PublishedInput,
+    candidate: &SourceLineCandidate,
+) -> Option<DebugStoppedSource> {
+    // OS process translation is fixed by the native worker. The adapter is
+    // NOT allowed to choose a host absolute path or access a foreign project.
+    #[cfg(target_os = "linux")]
+    let relative = candidate.adapter_path.strip_prefix("/workspace/")?;
+    #[cfg(windows)]
+    let relative = Path::new(&candidate.adapter_path)
+        .strip_prefix(&input.root).ok()?.to_str()?;
+    if relative.is_empty() || relative.len() > 512 || relative.contains('\\') ||
+        relative.contains(':') || relative.chars().any(char::is_control) ||
+        !Path::new(relative).components()
+            .all(|part| matches!(part, Component::Normal(_))) ||
+        relative.split('/').any(|part| part == "." || part == ".." || part.is_empty()) ||
+        candidate.line == 0 || candidate.line > 250_000 ||
+        candidate.frame_id == 0 || candidate.frame_id > 1_000_000 ||
+        verify_input(input).is_err() {
+        return None;
+    }
+    let path = input.root.join(relative);
+    let meta = fs::symlink_metadata(&path).ok()?;
+    if !meta.is_file() || meta.file_type().is_symlink() ||
+        meta.len() == 0 || meta.len() > 512 * 1024 {
+        return None;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes() & 0x400 != 0 {return None;}
+    }
+    let bytes = fs::read(&path).ok()?;
+    if bytes.len() as u64 != meta.len() {return None;}
+    let text = std::str::from_utf8(&bytes).ok()?;
+    if candidate.line as usize > text.split('\n').count() {return None;}
+    let digest = format!("{:x}",Sha256::digest(&bytes));
+    let saved = registry.preview_source_file(project_id,relative).ok()?;
+    if saved.project_id != project_id || saved.relative_path != relative ||
+       saved.revision != digest || saved.text != text {
+        return None;
+    }
+    Some(DebugStoppedSource {
+        relative_path: relative.to_owned(),disk_sha256:digest,
+        line:candidate.line,character_utf16:0,frame_id:candidate.frame_id,
+        source_bytes_verified:true,
+        // A DAP stack line checked against saved bytes is NOT independent
+        // stopped OS RIP -> DWARF/PDB line-map proof. This stays false.
+        os_instruction_source_line_verified:false,
+        installed_app_accepted:false,
+    })
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DebugWitness {
     pub job_id: String,
     pub project_id: String,
     pub source_head: String,
     pub plan_sha256: String,
     pub bundle_sha256: String,
+    pub terminal_receipt_sha256: String,
+    pub stopped_source: Option<DebugStoppedSource>,
     pub stopped_thread: Option<u64>,
     pub threads_response_observed: bool,
     pub stack_response_observed: bool,
@@ -172,6 +259,11 @@ pub struct DebugActive {
 #[serde(rename_all = "camelCase")]
 pub struct DebugStatus {
     ready: bool,
+    /// All protected debugger jobs share OS cleanup custody, even when the
+    /// Jobs pane is currently viewing a different project.
+    global_recovery_required: bool,
+    active_in_another_project: bool,
+    orphaned_debug_action_required: bool,
     project_debug_supported: bool,
     operation_control_supported: bool,
     operation_control_code: &'static str,
@@ -284,6 +376,11 @@ impl NativeDebugRuntime {
             .filter(|v| v.project_id == project_id)
             .cloned();
         let durable = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
+        let global_recovery_required =
+            durable.iter().any(|job| job.requires_reconciliation);
+        let active_in_another_project = self
+            .active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
+            .as_ref().is_some_and(|value| value.project_id != project_id);
         #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
         let dangling_action_jobs = self
             .supervisor
@@ -347,20 +444,23 @@ impl NativeDebugRuntime {
             })
             .collect();
         journal.reverse();
+        let native_admission_available = available.is_ok()
+            && !global_recovery_required
+            && !active_in_another_project
+            && dangling_action_jobs.is_empty();
         Ok(DebugStatus {
-            ready: available.is_ok() && quarantined.is_empty() && dangling_action_jobs.is_empty(),
+            ready: native_admission_available,
+            global_recovery_required,
+            active_in_another_project,
+            orphaned_debug_action_required: !dangling_action_jobs.is_empty(),
             project_debug_supported: cfg!(feature = "native-project-debug")
-                && available.is_ok()
-                && quarantined.is_empty()
-                && dangling_action_jobs.is_empty(),
+                && native_admission_available,
             // Test-only D6C permission never becomes installed action authority.
             operation_control_supported: cfg!(all(
                 windows,
                 debug_assertions,
                 feature = "dev046d-native-dialog"
-            )) && available.is_ok()
-                && quarantined.is_empty()
-                && dangling_action_jobs.is_empty(),
+            )) && native_admission_available,
             operation_control_code: if cfg!(all(
                 windows,
                 debug_assertions,
@@ -370,12 +470,17 @@ impl NativeDebugRuntime {
             } else {
                 "DEV046D_NATIVE_HUMAN_ACTION_APPROVAL_NOT_ACCEPTED"
             },
-            code: match available {
-                Ok(()) if !dangling_action_jobs.is_empty() => {
-                    "DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED".into()
+            code: if !dangling_action_jobs.is_empty() {
+                "DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED".into()
+            } else if global_recovery_required {
+                "IDE_INT04_GLOBAL_KERNEL_RECONCILIATION_REQUIRED".into()
+            } else if active_in_another_project {
+                "IDE_INT04_OTHER_PROJECT_DEBUGGER_ACTIVE".into()
+            } else {
+                match available {
+                    Ok(()) => "DEBUG_FIXTURE_BUNDLE_VERIFIED_OS_ADMISSION_PER_RUN".into(),
+                    Err(code) => code,
                 }
-                Ok(()) => "DEBUG_FIXTURE_BUNDLE_VERIFIED_OS_ADMISSION_PER_RUN".into(),
-                Err(code) => code,
             },
             current,
             last,
@@ -390,6 +495,83 @@ impl NativeDebugRuntime {
             } else {
                 "Fixed LLDB self-test and separately approved sealed project launch are feature-gated. Installed step/breakpoint control remains disabled."
             },
+        })
+    }
+    /// INT04: one read-only source review for an earlier, successfully
+    /// terminated protected LLDB session. No debuggee, DAP request, source
+    /// path, frame ID, or authorization token is accepted from the WebView.
+    /// A debugger stack coordinate remains adapter-reported: OS source
+    /// mapping and independent instruction ownership are NOT inferred.
+    pub fn review_stopped_source(
+        &self,
+        registry: &IdeWorkspaceRegistry,
+        project_id: &str,
+        job_id: &str,
+        plan_sha256: &str,
+    ) -> Result<DebugSourceReview, String> {
+        if !job_id.starts_with("job-") || job_id.len() != 36 ||
+            !job_id[4..].bytes().all(|byte| byte.is_ascii_hexdigit()) ||
+            plan_sha256.len()!=64 ||
+            !plan_sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("INT04_INVALID_DEBUG_SESSION_IDENTITY".into());
+        }
+        if self.active.lock().map_err(|_| "INT04_DEBUG_HOST_BUSY")?.is_some() {
+            return Err("INT04_DEBUG_SESSION_STILL_ACTIVE".into());
+        }
+        let witnessed = self.last.lock()
+            .map_err(|_| "INT04_LAST_DEBUG_RECEIPT_UNAVAILABLE")?
+            .as_ref().cloned().ok_or("INT04_NO_SAME_PROCESS_DEBUG_EVIDENCE")?;
+        if witnessed.project_id != project_id || witnessed.job_id != job_id ||
+            witnessed.plan_sha256 != plan_sha256 ||
+            witnessed.terminal_phase != "completed" ||
+            witnessed.target != "one_exact_private_project_build_in_protected_job" ||
+            !witnessed.verified_os_tree_release_by_worker ||
+            witnessed.installed_app_accepted {
+            return Err("INT04_DEBUG_ORIGINAL_SESSION_MISMATCH".into());
+        }
+        let source = witnessed.stopped_source.as_ref()
+            .ok_or("INT04_NO_SAVED_STOPPED_SOURCE_ANCHOR")?;
+        if !source.source_bytes_verified ||
+            source.os_instruction_source_line_verified ||
+            source.installed_app_accepted {
+            return Err("INT04_DEBUG_SOURCE_AUTHORITY_MISMATCH".into());
+        }
+        let current = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
+        let original = current.iter().find(|entry| entry.job_id == job_id)
+            .ok_or("INT04_ORIGINAL_DEBUG_JOB_NOT_FOUND")?;
+        if original.project_id != project_id ||
+            original.plan_sha256 != plan_sha256 ||
+            original.phase != JobPhase::Completed ||
+            original.requires_reconciliation ||
+            current.iter().any(|entry| entry.requires_reconciliation) {
+            return Err("INT04_NATIVE_DEBUG_KERNEL_RECOVERY_REQUIRED".into());
+        }
+        let receipts = self.supervisor.receipt_history(job_id)
+            .map_err(|e| e.code().to_owned())?;
+        let last = receipts.last().ok_or("INT04_DEBUG_JOURNAL_EMPTY")?;
+        if last.entry_hash != witnessed.terminal_receipt_sha256 ||
+            last.body.project_id != project_id ||
+            last.body.plan_sha256 != plan_sha256 ||
+            last.body.phase != JobPhase::Completed {
+            return Err("INT04_DEBUG_JOURNAL_RECEIPT_CHANGED".into());
+        }
+        let saved = registry.preview_source_file(project_id,&source.relative_path)
+            .map_err(|_| "INT04_STOPPED_SOURCE_NOT_REGISTERED")?;
+        if saved.project_id != project_id ||
+            saved.relative_path != source.relative_path ||
+            saved.revision != source.disk_sha256 ||
+            source.line == 0 ||
+            source.line as usize > saved.text.split('\n').count() {
+            return Err("INT04_STOPPED_SOURCE_CHANGED".into());
+        }
+        Ok(DebugSourceReview {
+            project_id: project_id.to_owned(),job_id:job_id.to_owned(),
+            plan_sha256:plan_sha256.to_owned(),
+            terminal_receipt_sha256:witnessed.terminal_receipt_sha256,
+            source:source.clone(),
+            navigation_automatic:false,
+            debugger_execution_authorized:false,
+            human_task_accepted:false,
         })
     }
     /// A separately approved OS-only cleanup, never a debugger resume.
@@ -528,6 +710,9 @@ impl NativeDebugRuntime {
             if active.is_some() {
                 return Err("DEBUG_SESSION_ALREADY_ACTIVE".into());
             }
+            // Serialize launch and read-only result invalidation together.
+            // A poisoned evidence lock must not leave a phantom live worker.
+            *self.last.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")? = None;
             *active = Some(Active {
                 project_id: project_id.to_owned(),
                 job_id: None,
@@ -821,6 +1006,16 @@ impl NativeDebugRuntime {
         if !stack_response {
             return Err("DEBUG_INSPECTION_TIMEOUT".into());
         }
+        // DAP's source file and line are merely a candidate. Bind them to
+        // the *original* sealed project and independently current saved
+        // bytes. This is read-only and is not a trusted PDB/DWARF PC map.
+        let stopped_source = if target.is_some() {
+            session.source_candidate().as_ref()
+                .and_then(|source| reviewed_initial_stop_source(
+                    registry,project_id,&input,source))
+        } else {
+            None
+        };
         // The session is never exposed to the browser. Close demands Job/
         // cgroup emptiness, independent service release and a terminal receipt.
         // D6D: developer-only Windows native approval after an actual
@@ -962,8 +1157,17 @@ impl NativeDebugRuntime {
             .into_iter()
             .find(|job| job.job_id == prepared.job_id)
             .ok_or("DEBUG_JOURNAL_RECEIPT_MISSING")?;
-        if state.phase != JobPhase::Completed || state.requires_reconciliation {
+        if state.phase != JobPhase::Completed || state.requires_reconciliation ||
+            state.project_id != project_id || state.plan_sha256 != prepared.plan_sha256 {
             return Err("DEBUG_TERMINAL_OS_CLEANUP_NOT_VERIFIED".into());
+        }
+        let history = self.supervisor.receipt_history(&prepared.job_id)
+            .map_err(|e| e.code().to_owned())?;
+        let terminal = history.last().ok_or("IDE_INT04_DEBUG_TERMINAL_RECEIPT_MISSING")?;
+        if terminal.body.project_id != project_id ||
+            terminal.body.plan_sha256 != prepared.plan_sha256 ||
+            terminal.body.phase != JobPhase::Completed {
+            return Err("IDE_INT04_DEBUG_TERMINAL_RECEIPT_MISMATCH".into());
         }
         Ok(DebugWitness {
             job_id: prepared.job_id,
@@ -971,6 +1175,8 @@ impl NativeDebugRuntime {
             source_head: head,
             plan_sha256: prepared.plan_sha256,
             bundle_sha256: plan.toolchain_sha256,
+            terminal_receipt_sha256: terminal.entry_hash.clone(),
+            stopped_source,
             stopped_thread,
             threads_response_observed: threads_response,
             stack_response_observed: stack_response,

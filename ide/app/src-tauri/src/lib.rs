@@ -1680,6 +1680,8 @@ async fn ide_debug_status(app: AppHandle, project_id: String) -> Result<serde_js
         let _ = (app, project_id);
         Ok(serde_json::json!({
             "ready":false,"projectDebugSupported":false,
+            "globalRecoveryRequired":false,"activeInAnotherProject":false,
+            "orphanedDebugActionRequired":false,
             "operationControlSupported":false,
             "operationControlCode":"DEV046D_NATIVE_HUMAN_ACTION_APPROVAL_NOT_ACCEPTED",
             "code":"DEBUG_PROTECTED_ADAPTER_NOT_INSTALLED",

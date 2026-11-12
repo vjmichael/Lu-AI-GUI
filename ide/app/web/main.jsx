@@ -53,6 +53,8 @@ import { safeDebugTargetReview } from './debug_target_review.js';
 import { safeDebugBinaryEvidence } from './debug_binary_evidence.js';
 import { safeDebugSymbolEvidence } from './debug_symbol_evidence.js';
 import { checkedProjectDebugWitness } from './project_debug_authority.js';
+import { debugAdmissionStatus, checkedDebugStoppedSource,
+  checkedReviewedDebugSource, checkedRedactedDebugLocals } from './debugger_integration.js';
 import { acceptNativeOutput } from './native_build_output.js';
 import { boundedBuildTestHints } from './build_test_output_hints.js';
 import { visibleStructuredTestEvidence,
@@ -293,6 +295,8 @@ function App() {
   const debugTargetRequest=useRef(0);
   const [debugBusy, setDebugBusy] = useState(false);
   const [debugResult, setDebugResult] = useState(null);
+  const [debugNavigationBusy, setDebugNavigationBusy] = useState(false);
+  const debugNavigationSerial = useRef(0);
   const [reviewIntentId, setReviewIntentId] = useState(null);
   const intentRequest = useRef(0);
   const [contextBusy, setContextBusy] = useState(false);
@@ -581,6 +585,8 @@ function App() {
     setDebugStatus(null);
     setDebugBusy(false);
     setDebugResult(null);
+    ++debugNavigationSerial.current;
+    setDebugNavigationBusy(false);
     setGitStatus(null);
     setGitInventory(null);
     setGitRefsHealth(null);
@@ -747,6 +753,32 @@ function App() {
   const structuredTestReport=useMemo(()=>
     visibleStructuredTestEvidence(buildResult,activeProject?.projectId),
     [buildResult,activeProject?.projectId]);
+  const debugAdmission=useMemo(()=>
+    debugAdmissionStatus(debugStatus,activeProject?.projectId),
+    [debugStatus,activeProject?.projectId]);
+  const stoppedDebugSource=useMemo(()=>
+    checkedDebugStoppedSource(debugResult,buildResult,
+      activeProject?.projectId),
+    [debugResult,buildResult,activeProject?.projectId]);
+  const redactedDebugLocals=useMemo(()=>
+    checkedRedactedDebugLocals(debugResult,buildResult,
+      activeProject?.projectId),
+    [debugResult,buildResult,activeProject?.projectId]);
+  const visibleNativeDebuggerResult=useMemo(()=>{
+    if(!debugResult || debugResult.projectId!==activeProject?.projectId ||
+       debugResult.installedAppAccepted!==false ||
+       debugResult.terminalPhase!=='completed' ||
+       !/^[a-f0-9]{64}$/.test(debugResult.terminalReceiptSha256||''))
+      return null;
+    if(debugResult.target==='one_exact_private_project_build_in_protected_job')
+      return checkedProjectDebugWitness(debugResult,buildResult,
+        activeProject?.projectId) ? debugResult : null;
+    return debugResult.target==='fixed_installer_selftest_only_not_project_debugger' &&
+      debugResult.verifiedOsTreeReleaseByWorker===true &&
+      debugResult.threadsResponseObserved===true &&
+      debugResult.stackResponseObserved===true
+      ? debugResult : null;
+  },[debugResult,buildResult,activeProject?.projectId]);
   const visibleTree = visibleTreeEntries(listing?.entries,visibleTreeCount);
   const projectTabCount = projectTabs.length;
   const workingSetNotice = projectTabCount + ' / ' + MAX_OPEN_TABS_PER_PROJECT +
@@ -3438,6 +3470,9 @@ function App() {
     ++testNavigationSerial.current;
     setBuildBusy(true);
     setBuildResult(null);
+    setDebugResult(null);
+    ++debugNavigationSerial.current;
+    setDebugNavigationBusy(false);
     setVerifiedBuildOutcome(null);
     nativeJobOutputRef.current=null;
     nativeOutputCursor.current={projectId:null,jobId:null,sequence:0};
@@ -3637,10 +3672,107 @@ function App() {
     }
   }
 
+  async function navigateProtectedDebuggerStop() {
+    const projectId=activeProjectIdRef.current;
+    const candidate=checkedDebugStoppedSource(
+      debugResult,buildResult,projectId);
+    if(!projectId || !candidate || debugNavigationBusy ||
+       debugBusy || buildBusy || explorerIoTicket.current ||
+       workspaceTransitionRef.current || mergeBusy || mergeApplyRequest ||
+       !debugAdmission.ready) return;
+    const ticket=beginExplorerIo();
+    if(!ticket) return;
+    const serial=++debugNavigationSerial.current;
+    const epoch=projectNavigationEpoch.current;
+    setDebugNavigationBusy(true);
+    try {
+      // Only the native original project/job/plan; NO file path, DAP
+      // instruction or authorization reaches this IPC from the renderer.
+      const response=await invoke('ide_debug_review_stopped_source',{
+        projectId,jobId:candidate.jobId,planSha256:candidate.planSha256,
+      });
+      if(serial!==debugNavigationSerial.current ||
+         epoch!==projectNavigationEpoch.current ||
+         explorerIoTicket.current!==ticket ||
+         activeProjectIdRef.current!==projectId) return;
+      const reviewed=checkedReviewedDebugSource(candidate,response);
+      if(!reviewed) throw Error('INT04_DEBUG_SOURCE_REVIEW_MISMATCH');
+      const key=keyFor(projectId,reviewed.relativePath);
+      if(!admitOpenTabs(tabsRef.current,projectId,[key]).allowed)
+        throw Error('INT04_EDITOR_TAB_BUDGET_EXCEEDED');
+      const opened=await invoke('ide_preview_source_file',{
+        projectId,relativePath:reviewed.relativePath,
+      });
+      if(serial!==debugNavigationSerial.current ||
+         epoch!==projectNavigationEpoch.current ||
+         explorerIoTicket.current!==ticket ||
+         activeProjectIdRef.current!==projectId) return;
+      if(!opened || opened.projectId!==projectId ||
+         opened.relativePath!==reviewed.relativePath ||
+         opened.revision!==reviewed.diskSha256)
+        throw Error('INT04_SAVED_SOURCE_CHANGED_DURING_NAVIGATION');
+      const from=lspPositionOffset(opened.text,{
+        line:reviewed.line-1,character:0,
+      });
+      if(from===null)throw Error('INT04_INVALID_DAP_REPORTED_LINE');
+      const existing=tabsRef.current.find(tab=>tab.key===key);
+      const decision=lateSourceOpenDecision(tabsRef.current,projectId,
+        reviewed.relativePath,opened,activeProjectIdRef.current,key);
+      if(decision.action==='discard_stale')return;
+      if(decision.action==='deny')
+        throw Error('INT04_EDITOR_OPEN_NOT_ALLOWED');
+      const current=existing ? captureLiveEditorIntent(existing,
+        bufferIdentities.current.get(key),
+        editorStates.current.get(key),projectId) : null;
+      if(existing && (current?.status!=='current' || current.dirty ||
+          current.text!==opened.text || existing.savedText!==opened.text ||
+          existing.revision!==reviewed.diskSha256)) {
+        setProblem('Debugger source refers to an earlier saved file. '+
+          'The current unsaved or newer tab was preserved; the cursor was not moved.');
+        return;
+      }
+      const state=existing ? editorStates.current.get(key) :
+        createEditorState(opened.text,opened.relativePath,
+          (newState,draft)=>onEditorChange(key,newState,draft),
+          newState=>onEditorSelection(key,newState));
+      if(!state || state.sliceDoc()!==opened.text ||
+         from>state.doc.length)
+        throw Error('INT04_EDITOR_DOCUMENT_CHANGED');
+      if(!existing){
+        clearPrivateDraftSession(key);
+        resetBufferIdentity(key,projectId,opened.relativePath,opened.revision);
+        editorStates.current.set(key,state);
+        setTabs(previous=>[...previous,{
+          key,projectId,relativePath:opened.relativePath,
+          revision:opened.revision,savedText:opened.text,draft:opened.text,
+          dirty:false,generation:0,bufferRevision:0,
+        }]);
+      }
+      if(existing)selectPrimaryEditorTab(key);
+      else setActiveTabKey(key);
+      setSection('explorer');
+      setLspJumpRequest({from,to:from,
+        tabIdentity:key+':'+(existing?.generation||0),
+        nonce:++problemJumpNonce.current});
+      if(!existing)void checkExistingDraft({key,projectId,
+        relativePath:opened.relativePath});
+      setHint('Opened the saved file at LLDB’s reported initial stop line. '+
+        'Exact bytes were rechecked; OS instruction-to-source mapping remains unverified.');
+    }catch(error){
+      if(serial===debugNavigationSerial.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Protected debugger source navigation denied: '+String(error));
+    }finally{
+      if(serial===debugNavigationSerial.current)
+        setDebugNavigationBusy(false);
+      finishExplorerIo(ticket);
+    }
+  }
+
   async function runProtectedProjectDebugger() {
     const projectId=activeProject?.projectId;
     const witness=safeDebugSymbolEvidence(buildResult,projectId);
-    if(!projectId||!witness||!debugStatus?.projectDebugSupported||
+    if(!projectId||!witness||!debugAdmission.projectDebugSupported||
        !!debugStatus.current||debugBusy||buildBusy)return;
     setDebugBusy(true);
     setProblem('');
@@ -3670,8 +3802,8 @@ function App() {
   async function runNativeDebuggerAction(kind) {
     const projectId=activeProject?.projectId;
     const witness=safeDebugSymbolEvidence(buildResult,projectId);
-    if(!projectId || !witness || !debugStatus?.projectDebugSupported ||
-       !debugStatus?.operationControlSupported ||
+    if(!projectId || !witness || !debugAdmission.projectDebugSupported ||
+       !debugAdmission.operationControlSupported ||
        !!debugStatus.current || debugBusy || buildBusy)return;
     const command=kind==='stepOver'?'ide_debug_step_project':
       kind==='sameLineBreakpoint'?'ide_debug_breakpoint_project':
@@ -3727,7 +3859,7 @@ function App() {
 
   async function runProtectedDebuggerFixture() {
     const projectId = activeProject?.projectId;
-    if (!projectId || !debugStatus?.ready || !!debugStatus.current || debugBusy) return;
+    if (!projectId || !debugAdmission.ready || !!debugStatus?.current || debugBusy) return;
     setDebugBusy(true);
     setProblem('');
     setDebugResult(null);
@@ -6696,18 +6828,18 @@ function App() {
                   must still match. No arbitrary executable, attach,
                   shell, expressions, terminal, or debugger arguments.</p>
                 <button type="button" className="ghostBtn"
-                  disabled={!activeProject||!debugStatus?.projectDebugSupported||
-                    !!debugStatus.current||debugBusy||buildBusy||
+                  disabled={!activeProject||!debugAdmission.projectDebugSupported||
+                    !!debugStatus?.current||debugBusy||buildBusy||
                     !safeDebugSymbolEvidence(buildResult,activeProject?.projectId)}
                   onClick={()=>void runProtectedProjectDebugger()}>
                   {debugBusy?'Protected project debugger running…':
                     'Debug last verified project build'}
                 </button>
-                {!debugStatus?.projectDebugSupported &&
-                  <p>Project debugger release feature and native adapter
-                    are not independently installed/approved on this desktop.
-                    The default build remains nonexecuting.</p>}
-                {debugStatus?.operationControlSupported &&
+                {!debugAdmission.projectDebugSupported &&
+                  <p role="status">{debugAdmission.blockedReason}.
+                    A separate protected native release entitlement and
+                    current-source build proof remain mandatory.</p>}
+                {debugAdmission.operationControlSupported &&
                   <details className="jobOperationControls" aria-label="Developer-only native debugger action approval">
                     <summary>Advanced debugger actions (developer build only)</summary>
                     <p><strong>DEV-04.6D development mode only.</strong> Each action creates
@@ -6715,22 +6847,22 @@ function App() {
                       approval and a second native modal bound to the verified stop.
                       It is not signed installed release acceptance.</p>
                     <button type="button" className="ghostBtn"
-                      disabled={!activeProject||!debugStatus?.projectDebugSupported||
-                        !!debugStatus.current||debugBusy||buildBusy||
+                      disabled={!activeProject||!debugAdmission.projectDebugSupported||
+                        !!debugStatus?.current||debugBusy||buildBusy||
                         !safeDebugSymbolEvidence(buildResult,activeProject?.projectId)}
                       onClick={()=>void runNativeDebuggerAction('stepOver')}>
                       Step over verified source line (native approval)
                     </button>
                     <button type="button" className="ghostBtn"
-                      disabled={!activeProject||!debugStatus?.projectDebugSupported||
-                        !!debugStatus.current||debugBusy||buildBusy||
+                      disabled={!activeProject||!debugAdmission.projectDebugSupported||
+                        !!debugStatus?.current||debugBusy||buildBusy||
                         !safeDebugSymbolEvidence(buildResult,activeProject?.projectId)}
                       onClick={()=>void runNativeDebuggerAction('sameLineBreakpoint')}>
                       Request verified-line breakpoint (native approval)
                     </button>
                     <button type="button" className="ghostBtn"
-                      disabled={!activeProject||!debugStatus?.projectDebugSupported||
-                        !!debugStatus.current||debugBusy||buildBusy||
+                      disabled={!activeProject||!debugAdmission.projectDebugSupported||
+                        !!debugStatus?.current||debugBusy||buildBusy||
                         !safeDebugSymbolEvidence(buildResult,activeProject?.projectId)}
                       onClick={()=>void runNativeDebuggerAction('inspectVariables')}>
                       Inspect redacted local names/types (native approval)
@@ -6744,12 +6876,21 @@ function App() {
                 requires the distinct opt-in native-project-debug feature,
                 a sealed protected build and an independently pinned installed LLDB.
                 Arbitrary attach, debugger scripts and terminal commands remain denied.</p>
-              <p>Debugger: <strong>{debugStatus?.ready
-                ? 'Pinned debugger bundle observed; OS containment checked per run'
-                : (debugStatus?.code || 'Checking approved debugger assets…')}</strong></p>
+              <p role="status" aria-live="polite">Debugger:
+                <strong> {debugAdmission.blockedReason}</strong>
+                {' · '}{debugStatus?.code || 'Native installed status unknown'}
+              </p>
+              {(debugStatus?.globalRecoveryRequired ||
+                debugStatus?.orphanedDebugActionRequired) &&
+                <p role="alert" className="int04RecoveryNotice">
+                  An original protected debugger job or action is unreconciled.
+                  No new debugger execution is authorized—even if the current
+                  project has no visible interrupted entries.
+                </p>}
               <p>{debugStatus?.description || 'An unpinned adapter cannot execute.'}</p>
               <button type="button" className="ghostBtn"
-                disabled={!activeProject || !debugStatus?.ready || !!debugStatus.current || debugBusy}
+                disabled={!activeProject || !debugAdmission.ready ||
+                  !!debugStatus?.current || debugBusy}
                 onClick={() => runProtectedDebuggerFixture()}>
                 {debugBusy ? 'Inspecting fixed native debuggee…' : 'Run protected debugger self-test'}
               </button>
@@ -6787,7 +6928,8 @@ function App() {
                     </article>)}
                   <p>Journal entries are not simulated debugger results or release acceptance.</p>
                 </section>}
-              {belongsToSelectedProject(activeProject, debugResult) && <div role="status">
+              {belongsToSelectedProject(activeProject, visibleNativeDebuggerResult) &&
+                <div role="status" aria-label="Original native debugger receipt">
                 <p>{debugResult.target==='one_exact_private_project_build_in_protected_job'
                   ? 'Protected project LLDB session' : 'Native LLDB self-test'}:
                   <strong> {debugResult.terminalPhase}</strong></p>
@@ -6804,18 +6946,43 @@ function App() {
                   {debugResult.threadsResponseObserved ? 'observed' : 'not proven'} · Stack:
                   {debugResult.stackResponseObserved ? 'observed' : 'not proven'}</p>
                 <p>Kernel tree cleanup: {debugResult.verifiedOsTreeReleaseByWorker
-                  ? 'reported by protected supervisor' : 'not verified'}.</p>
-                {debugResult.operationOutcomeCode==='native_dialog_variables_redacted_uncertain' &&
-                  Array.isArray(debugResult.redactedVariables) &&
-                  debugResult.redactedVariables.length<=16 && <>
+                  ? 'recorded by protected supervisor' : 'not verified'}.</p>
+                {typeof debugResult.terminalReceiptSha256==='string' &&
+                  <p>Exact debugger terminal journal hash:
+                    {' '}<code>{debugResult.terminalReceiptSha256}</code></p>}
+                {stoppedDebugSource &&
+                  <section className="int04StoppedSource"
+                    aria-label="Read-only LLDB initial stopped source">
+                    <h4>Initial stopped frame · saved source</h4>
+                    <p>LLDB reported frame <code>{stoppedDebugSource.frameId}</code>
+                      {' · '}<code>{stoppedDebugSource.relativePath}</code>:
+                      {stoppedDebugSource.line}.
+                      The file's original saved bytes were independently
+                      matched to the protected snapshot; the debugger's
+                      instruction-to-source mapping remains unverified.</p>
+                    <p>Exact saved source SHA-256:
+                      {' '}<code>{stoppedDebugSource.diskSha256}</code></p>
+                    <button type="button" className="ghostBtn"
+                      disabled={debugNavigationBusy || debugBusy || buildBusy ||
+                        !debugAdmission.ready || explorerPending}
+                      aria-label={'Recheck and open protected LLDB-reported source '+
+                        stoppedDebugSource.relativePath+' line '+stoppedDebugSource.line}
+                      onClick={()=>void navigateProtectedDebuggerStop()}>
+                      {debugNavigationBusy ? 'Rechecking saved source…' :
+                        'Review saved source (no debugger execution)'}
+                    </button>
+                    <p>No breakpoint, step, variable evaluation, or task
+                      acceptance is authorized by this source link.</p>
+                  </section>}
+                {redactedDebugLocals && <>
                   <p>Read-only frame: <code>{debugResult.inspectedFrameId}</code>.
                     Native consent was one-use. All variable values are redacted;
                     the names and types below remain adapter assertions.</p>
-                  <ul>{debugResult.redactedVariables
-                    .filter(entry=>entry.valueRedacted===true)
-                    .map((entry,index)=>
-                      <li key={index}><code>{entry.name}</code>
-                        {' '}· {entry.declaredType||'type unavailable'} · value redacted</li>)}
+                  <ul aria-label="Read-only debugger local names and types">
+                    {redactedDebugLocals.map(entry=>
+                      <li key={entry.name}><code>{entry.name}</code>
+                        {' '}· {entry.declaredType} · value redacted
+                        {' '}· adapter-reported, not independently verified</li>)}
                   </ul>
                 </>}
                 <p>Installed/debugger project release acceptance: <strong>Not established.</strong></p>
