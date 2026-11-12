@@ -57,6 +57,7 @@ fn synthetic_bounded_sse_and_client_abort_on_original_local_candidate(){
     let reviewed=CandidateManifest{
         kind,executable:path,expected_executable_sha256:original_exe,
         expected_model_sha256:model_sha,
+        expected_projector_sha256:None,
         operator_reviewed:true,local_only:true,
     };
     let candidate=reviewed.preflight_for_model(&model)
