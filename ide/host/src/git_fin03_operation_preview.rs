@@ -293,3 +293,120 @@ impl IdeWorkspaceRegistry {
   })
  }
 }
+
+#[cfg(test)]
+mod tests {
+ use super::*;
+ use crate::{IdeError,NativeDirectoryPicker};
+ use git2::{Repository,Signature};
+ use std::{fs,path::{Path,PathBuf}};
+ struct Picker(PathBuf);
+ impl NativeDirectoryPicker for Picker {
+  fn choose_project_directory(&mut self)->Result<Option<PathBuf>,IdeError>{
+   Ok(Some(self.0.clone()))
+  }
+ }
+ struct Fixture {
+  home:PathBuf,root:PathBuf,registry:IdeWorkspaceRegistry,
+  id:String,base:String,tip:String,
+ }
+ impl Drop for Fixture {
+  fn drop(&mut self){let _=fs::remove_dir_all(&self.home);}
+ }
+ fn fixture()->Fixture{
+  let home=std::env::temp_dir().join(
+    format!("fin03g-impact-{:032x}",rand::random::<u128>()));
+  let root=home.join("project");
+  fs::create_dir_all(&root).unwrap();
+  let repo=Repository::init(&root).unwrap();
+  fs::write(root.join("tracked.txt"),b"original\n").unwrap();
+  fs::write(root.join("untouched.txt"),b"leave untouched\n").unwrap();
+  let mut index=repo.index().unwrap();
+  for p in ["tracked.txt","untouched.txt"]{index.add_path(Path::new(p)).unwrap();}
+  index.write().unwrap();
+  let sig=Signature::now("fixture","fixture@example.invalid").unwrap();
+  let base_tree=repo.find_tree(index.write_tree().unwrap()).unwrap();
+  let base=repo.commit(Some("HEAD"),&sig,&sig,"base",&base_tree,&[]).unwrap();
+  drop(base_tree);
+  fs::write(root.join("tracked.txt"),b"modified\n").unwrap();
+  index.add_path(Path::new("tracked.txt")).unwrap();
+  index.write().unwrap();
+  let next_tree=repo.find_tree(index.write_tree().unwrap()).unwrap();
+  let prev=repo.find_commit(base).unwrap();
+  let tip=repo.commit(Some("HEAD"),&sig,&sig,"modified",&next_tree,&[&prev]).unwrap();
+  drop(prev);drop(next_tree);drop(index);drop(repo);
+  let registry=IdeWorkspaceRegistry::open(home.join("catalog.json")).unwrap();
+  let id=registry.register_from_native_picker(&mut Picker(root.clone()))
+   .unwrap().unwrap().project_id;
+  Fixture{home,root,registry,id,base:base.to_string(),tip:tip.to_string()}
+ }
+ fn original(f:&Fixture)->(String,Vec<u8>,Vec<u8>,Option<String>){
+  let repo=Repository::open(&f.root).unwrap();
+  let head=repo.head().unwrap().target().unwrap().to_string();
+  let stash=repo.find_reference("refs/stash").ok()
+    .and_then(|ref_|ref_.target().map(|id|id.to_string()));
+  (head,fs::read(f.root.join("tracked.txt")).unwrap(),
+   fs::read(f.root.join(".git/index")).unwrap(),stash)
+ }
+ #[test]
+ fn revert_tip_review_never_mutates_original_repo(){
+  let f=fixture();let before=original(&f);
+  let review=f.registry.review_fin03_local_impact(
+   &f.id,Fin03ImpactKind::RevertCommit,Some(&f.tip),None).unwrap();
+  assert_eq!(review.selected_commit,f.tip);
+  assert_eq!(review.changed_paths_count,1);
+  assert_eq!(review.visible_paths,vec!["tracked.txt"]);
+  assert_eq!(review.possible_overlap_count,1);
+  assert_eq!(review.index_or_worktree_modified,false);
+  assert_eq!(review.stash_or_branch_ref_modified,false);
+  assert_eq!(review.execution_route_available,false);
+  assert_eq!(review.execution_authorized,false);
+  assert_eq!(review.evidence_sha256.len(),64);
+  assert!(review.blockers.contains(&"resulting_tree_and_conflicts_not_verified"));
+  assert_eq!(original(&f),before);
+  let again=f.registry.review_fin03_local_impact(
+   &f.id,Fin03ImpactKind::RevertCommit,Some(&f.tip),None).unwrap();
+  assert_eq!(review.evidence_sha256,again.evidence_sha256);
+  assert_eq!(original(&f),before);
+ }
+ #[test]
+ fn stash_apply_and_drop_preview_no_mutation_or_content_exposure(){
+  let f=fixture();
+  fs::write(f.root.join("tracked.txt"),b"stashed change\n").unwrap();
+  let mut repo=Repository::open(&f.root).unwrap();
+  let sig=Signature::now("fixture","fixture@example.invalid").unwrap();
+  let stash_oid=repo.stash_save(&sig,"fixture stash",None).unwrap();
+  drop(repo);
+  let before=original(&f);
+  for operation in [Fin03ImpactKind::StashApply,Fin03ImpactKind::StashDrop]{
+   let row=f.registry.review_fin03_local_impact(
+    &f.id,operation,None,Some(0)).unwrap();
+   assert_eq!(row.selected_commit,stash_oid.to_string());
+   assert_eq!(row.stash_ref_tip.as_deref(),Some(stash_oid.to_string().as_str()));
+   assert!(row.changed_paths_count>=1);
+   assert!(!row.execution_route_available && !row.execution_authorized);
+   assert!(!row.result_tree_verified);
+   assert!(!row.stash_or_branch_ref_modified);
+   assert_eq!(original(&f),before);
+  }
+ }
+ #[test]
+ fn invalid_selectors_and_uncommitted_state_are_observations_not_authority(){
+  let f=fixture();let before=original(&f);
+  assert!(f.registry.review_fin03_local_impact(
+   &f.id,Fin03ImpactKind::RevertCommit,Some("HEAD"),None).is_err());
+  assert!(f.registry.review_fin03_local_impact(
+   &f.id,Fin03ImpactKind::RevertCommit,Some(&f.base),Some(0)).is_err());
+  assert!(f.registry.review_fin03_local_impact(
+   &f.id,Fin03ImpactKind::StashApply,Some(&f.tip),Some(0)).is_err());
+  assert!(f.registry.review_fin03_local_impact(
+   &f.id,Fin03ImpactKind::StashDrop,None,Some(32)).is_err());
+  fs::write(f.root.join("untracked.tmp"),b"untracked private\n").unwrap();
+  let review=f.registry.review_fin03_local_impact(
+   &f.id,Fin03ImpactKind::RevertCommit,Some(&f.tip),None).unwrap();
+  assert!(review.blockers.contains(&"worktree_or_index_dirty"));
+  assert!(!review.execution_authorized);
+  fs::remove_file(f.root.join("untracked.tmp")).unwrap();
+  assert_eq!(original(&f),before);
+ }
+}
