@@ -56,6 +56,8 @@ import { checkedProjectDebugWitness } from './project_debug_authority.js';
 import { debugAdmissionStatus, checkedDebugStoppedSource,
   checkedReviewedDebugSource, checkedRedactedDebugLocals } from './debugger_integration.js';
 import { acceptNativeOutput } from './native_build_output.js';
+import {inspectProjectWorkbench, checkedWorkbenchNavigation}
+  from './integration_workbench.js';
 import { checkedTerminalSession, checkedTerminalReply }
   from './interactive_terminal.js';
 import { checkedToolchainInventory, checkedPackageToolchainReadiness,
@@ -66,6 +68,7 @@ import { visibleStructuredTestEvidence,
 
 const sections = [
   { id: 'projects', title: 'Projects', glyph: '▣' },
+  { id: 'workbench', title: 'Workbench', glyph: '◫' },
   { id: 'explorer', title: 'Explorer', glyph: '▤' },
   { id: 'project-search', title: 'Find in project', glyph: '⌕' },
   { id: 'proposals', title: 'Proposals', glyph: '⇄' },
@@ -89,6 +92,9 @@ const taskGateChoices = [
 
 function App() {
   const [section, setSection] = useState('projects');
+  const [int06Workbench,setInt06Workbench]=useState(null);
+  const [int06Busy,setInt06Busy]=useState(false);
+  const int06Request=useRef(0);
   const [projects, setProjects] = useState([]);
   const [workflowSteps, setWorkflowSteps] = useState([]);
   const [workflowRuns, setWorkflowRuns] = useState([]);
@@ -551,6 +557,9 @@ function App() {
 
   useEffect(() => {
     // Invalidate in-flight project evidence when the selected project changes.
+    ++int06Request.current;
+    setInt06Workbench(null);
+    setInt06Busy(false);
     projectSearchGeneration.current += 1;
     setProjectSearchResults(null);
     setProjectSearchBusy(false);
@@ -999,6 +1008,7 @@ function App() {
   const isLanguages = section === 'languages';
   const isContinuity = section === 'continuity';
   const isJobs = section === 'tasks';
+  const isWorkbench = section === 'workbench';
   const isTerminal = section === 'terminal';
   useEffect(() => {
     const projectId = activeProject?.projectId;
@@ -1512,6 +1522,42 @@ function App() {
           String(error));
       }
     }finally{if(ticket===terminalTicket.current)setTerminalBusy(false);}
+  }
+
+  async function inspectInt06Workbench() {
+    const projectId=activeProjectIdRef.current;
+    if(!projectId || int06Busy || explorerIoTicket.current ||
+       workspaceLayoutOp.current)return;
+    const ticket=++int06Request.current;
+    setInt06Busy(true);
+    setInt06Workbench(null);
+    try{
+      // Fixed read-only command set in the helper, no constructed path or
+      // executable/permission from WebView input.
+      const report=await inspectProjectWorkbench(projectId,
+        (command,args)=>invoke(command,args),
+        ()=>ticket===int06Request.current &&
+          activeProjectIdRef.current===projectId);
+      if(ticket!==int06Request.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(!report)throw Error('INT06_EVIDENCE_STALE');
+      setInt06Workbench(report);
+    }catch(error){
+      if(ticket===int06Request.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Workbench observations unavailable: '+String(error));
+    }finally{
+      if(ticket===int06Request.current)setInt06Busy(false);
+    }
+  }
+  function openInt06WorkflowPanel(id) {
+    const projectId=activeProjectIdRef.current;
+    const route=checkedWorkbenchNavigation(int06Workbench,id,projectId);
+    if(!route || projectId!==activeProject?.projectId)return;
+    // Only choose an existing UI section. Never invoke an action endpoint.
+    setSection(route.section);
+    if(route.section==='source')void refreshGitStatus();
+    if(route.section==='tasks')void refreshProtectedBuildStatus();
   }
 
   async function inspectPackageManagers() {
@@ -6369,10 +6415,10 @@ function App() {
         {sections.map(item => <button key={item.id} type="button"
           className={'navItem' + (section === item.id ? ' selected' : '')}
           disabled={item.pending || mergeBusy || !!mergeApplyRequest ||
-            ((item.id === 'explorer' || item.id === 'project-search') && !activeProject)}
+            ((item.id === 'explorer' || item.id === 'project-search' || item.id === 'workbench') && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'packages') void readWorkflowRuns();
+          onClick={() => { setSection(item.id); if (item.id === 'workbench') void inspectInt06Workbench(); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'packages') void readWorkflowRuns();
             if (item.id === 'terminal') void refreshProtectedBuildStatus(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
@@ -6388,9 +6434,10 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1 aria-label={isJobs ? 'Execution requests' : undefined}>{isProjectSearch ? 'Find in project' : isJobs ? 'Execution requests' : isTerminal ? 'Terminal' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <h1 aria-label={isJobs ? 'Execution requests' : undefined}>{isProjectSearch ? 'Find in project' : isJobs ? 'Execution requests' : isWorkbench ? 'Workbench' : isTerminal ? 'Terminal' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
           <p>{isProjectSearch ? 'Saved-source search · Revision-checked hits · No writes' :
             isJobs ? 'Historical review intents · Protected native Run/Test · Explicit cancellation' :
+            isWorkbench ? 'Native project workflow · Review before action · No automatic execution' :
             isTerminal ? 'Native typed commands · Protected OS jobs · No arbitrary shell' :
             isPackages ? 'Local package manager inspection · Multi-project release review · No install permission' :
             isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
@@ -6405,7 +6452,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isTerminal ? refreshProtectedBuildStatus() : isPackages ? (inspectPackageManagers(), readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? Promise.all([
+            onClick={() => isWorkbench ? inspectInt06Workbench() : isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isTerminal ? refreshProtectedBuildStatus() : isPackages ? (inspectPackageManagers(), readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? Promise.all([
                 invoke('ide_list_language_servers'),
                 invoke('ide_lsp_worker_status'),
               ]).then(([servers,worker])=>{
@@ -6435,7 +6482,61 @@ function App() {
         <button type="button" className="noticeDismiss" aria-label="Dismiss notification"
           onClick={() => setHint('')}>×</button>
       </div>}
-      {isJobs
+
+      {isWorkbench
+        ? <section className="workspaceContent continuityWorkspace"
+            aria-label="IDE-INT06 Workbench">
+            <div className="sectionHeading">
+              <h2>Integrated project workbench</h2>
+              <span>INT06 · Read-only review</span>
+            </div>
+            <section className="continuityDocument">
+              <p>Non-atomic observations from the native registered project.
+                They do not certify clean source, build success, package
+                installation, global process custody or release acceptance.
+                Opening a workflow never starts an action.</p>
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject || int06Busy}
+                onClick={()=>void inspectInt06Workbench()}>
+                {int06Busy?'Inspecting native project evidence…':
+                  'Refresh project workflow observations'}
+              </button>
+              {int06Busy &&
+                <p role="status" aria-live="polite">
+                  Inspecting read-only native evidence. No project operations
+                  are being executed.</p>}
+              {!int06Busy && int06Workbench?.projectId!==activeProject?.projectId &&
+                <p role="status">No current project evidence. Refresh the
+                  workbench before interpreting subsystem status.</p>}
+              {int06Workbench?.projectId===activeProject?.projectId &&
+                <div className="continuityEvents" role="status" aria-live="polite">
+                  {int06Workbench.recoveryRequired &&
+                    <p><strong>Native OS reconciliation required.</strong>
+                      Inspect the affected protected worker before asking
+                      it to perform additional work.</p>}
+                  <p>Recommended inspection: <strong>
+                    {int06Workbench.rows.find(item=>
+                      item.id===int06Workbench.priority)?.label ||
+                      'Review project state'}</strong>.
+                    This is not an approval to execute.</p>
+                  {int06Workbench.rows.map(item=>
+                    <article className="continuityEvent" key={item.id}>
+                      <strong>{item.label}</strong>
+                      <p>{item.state.replaceAll('_',' ')}</p>
+                      <p>{item.detail}</p>
+                      <button type="button" className="ghostBtn"
+                        onClick={()=>openInt06WorkflowPanel(item.id)}>
+                        Open {item.label}
+                      </button>
+                    </article>)}
+                  <p>Acceptance status:
+                    <strong> not verified</strong>. Completed native jobs and
+                    repository observations never complete human acceptance
+                    tasks automatically.</p>
+                </div>}
+            </section>
+          </section>
+        : isJobs
         ? <section className="workspaceContent continuityWorkspace" aria-label="Execution intent review">
             <div className="sectionHeading">
               <h2>Build, test and job requests</h2>
