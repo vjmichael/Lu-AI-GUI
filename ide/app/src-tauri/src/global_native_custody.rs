@@ -190,6 +190,25 @@ mod tests{
   fs::remove_dir_all(p).unwrap();
  }
  #[test]
+ fn recovery_assessment_preserves_os_uncertainty_after_clean_journals(){
+  let p=fixture();
+  let initial=assess_global_recovery(&p).unwrap();
+  assert!(!initial.marker_present);
+  assert!(initial.original_journals_reconciled);
+  assert!(!initial.marker_removal_authorized);
+  let lease=GlobalAdmissionFence::acquire(&p,"debug").unwrap();
+  drop(lease);
+  let interrupted=assess_global_recovery(&p).unwrap();
+  assert!(interrupted.marker_present);
+  assert_eq!(interrupted.marker_domain.as_deref(),Some("debug"));
+  assert!(interrupted.original_journals_reconciled);
+  assert_eq!(interrupted.code,"FIN01_ORIGINAL_OS_RELEASE_PROOF_REQUIRED");
+  assert!(!interrupted.native_os_release_independently_verified);
+  assert!(!interrupted.auto_retry_authorized);
+  assert!(!interrupted.marker_removal_authorized);
+  fs::remove_dir_all(p).unwrap();
+ }
+ #[test]
  fn marker_corruption_cannot_be_silently_reconciled(){
   let p=fixture();
   let mut lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
@@ -227,7 +246,12 @@ pub fn assess_global_recovery(profile:&Path)->Result<RecoveryAssessment,String>{
    .map_err(|_|"FIN01_GLOBAL_MARKER_UNREADABLE")?;
   let marker=std::str::from_utf8(&bytes)
    .map_err(|_|"FIN01_GLOBAL_MARKER_FORMAT_INVALID")?;
-  let parts:Vec<_>=marker.trim_end_matches('\n').split(':').collect();
+  let body=marker.strip_suffix('\n')
+   .ok_or("FIN01_GLOBAL_MARKER_FORMAT_INVALID")?;
+  if body.contains('\n') || body.contains('\r'){
+   return Err("FIN01_GLOBAL_MARKER_FORMAT_INVALID".into());
+  }
+  let parts:Vec<_>=body.split(':').collect();
   if parts.len()!=4 || parts[0]!="FIN01-V1" ||
      !matches!(parts[1],"build"|"debug") ||
      parts[3].len()!=16 ||
