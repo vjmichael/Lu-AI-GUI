@@ -3839,7 +3839,7 @@ function App() {
     const plan=projectRunProfiles?.profiles?.find(row=>
       row.id==='rust_tests' && row.manifest==='Cargo.toml');
     if(!projectId || buildBusy || rustCaseBusy ||
-       buildStatus?.ready!==true || buildStatus.current ||
+       buildStatus?.cargoReady!==true || buildStatus.current ||
        source?.projectId!==projectId ||
        source.relativePath!==file.path || source.language!=='rust' ||
        !source.symbols.some(x=>x.name===symbol.name) ||
@@ -7037,7 +7037,7 @@ function App() {
                             /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(symbol.name) &&
                             <button className="ghostBtn" type="button"
                               disabled={buildBusy || rustCaseBusy ||
-                                buildStatus?.ready!==true ||
+                                buildStatus?.cargoReady!==true ||
                                 !projectRunProfiles?.profiles?.some(p=>
                                   p.id==='rust_tests' &&
                                   p.manifestState==='saved_file_sha_observed_not_validated' &&

@@ -1684,7 +1684,7 @@ impl NativeBuildRuntime {
         let test_case_evidence = if matches!(
             recipe_id, "rust_tests" | "lu_ide_host_tests" |
                 "python_pytest" | "js_tests" | "cpp_cmake_build"
-        ) {
+        ) || lu_ide_execution_supervisor::rust_exact_case_name(recipe_id).is_some() {
             // The ORIGINAL native worker returned its terminal result. Output
             // is still project-controlled, so these are reported observations.
             let native_terminated = matches!(
