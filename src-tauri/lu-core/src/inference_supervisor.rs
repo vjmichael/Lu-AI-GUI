@@ -10,10 +10,12 @@ use crate::{
     multimodal_saved_turn::PinnedImage,
     projector_identity::{projector_filename_for_model, projector_ref_for_model},
     wire::proto,
+    warm_model_residency::{WarmDecision, WarmResidencyPolicy},
 };
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -48,6 +50,7 @@ struct Active {
 struct SessionControl {
     active: Option<Active>,
     closing: bool,
+    idle_since: Option<Instant>,
 }
 struct Session<B: InferenceBackend> {
     session_id: String,
@@ -71,6 +74,7 @@ impl<B: InferenceBackend> Drop for GenerationCleanup<B> {
                 .is_some_and(|a| a.generation_id == self.generation_id)
             {
                 control.active = None;
+                control.idle_since = Some(Instant::now());
             }
         }
     }
@@ -280,6 +284,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             control: Mutex::new(SessionControl {
                 active: None,
                 closing: false,
+                idle_since: Some(Instant::now()),
             }),
         }));
         Ok(frame)
@@ -332,6 +337,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         if control.closing || control.active.is_some() {
             return Err(SupervisorError::Busy);
         }
+        control.idle_since = None;
         control.active = Some(Active {
             generation_id: generation_id.into(),
             cancellation: Cancellation::default(),
@@ -426,6 +432,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         if control.closing || control.active.is_some() {
             return Err(SupervisorError::Busy);
         }
+        control.idle_since = None;
         control.active = Some(Active {
             generation_id: generation_id.into(),
             cancellation: Cancellation::default(),
@@ -702,6 +709,55 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             control.closing = false;
         }
         result
+    }
+    /// Poll from the trusted host (not from an AI/tool request). A resident
+    /// backend remains loaded across turns until this decision evicts it or
+    /// the user explicitly ejects it. Pressure may shorten the grace period,
+    /// but never cancels or interrupts a reserved generation.
+    pub fn evict_warm_if_needed(
+        &self,
+        request_id: &str,
+        policy: WarmResidencyPolicy,
+        available_ram_mib: Option<u64>,
+    ) -> Result<WarmDecision, SupervisorError> {
+        let snapshot = {
+            let current = self.current.lock().map_err(|_| SupervisorError::Poisoned)?;
+            let Some(session) = current.as_ref() else {
+                return Ok(WarmDecision::RetainActive);
+            };
+            let control = session.control.lock().map_err(|_| SupervisorError::Poisoned)?;
+            let idle_for: Option<Duration> = control.idle_since.map(|t| t.elapsed());
+            let decision = policy.decide(
+                true, control.active.is_some() || control.closing,
+                idle_for, available_ram_mib,
+            );
+            (session.session_id.clone(), decision)
+        };
+        match snapshot.1 {
+            WarmDecision::EvictIdleTimeout | WarmDecision::EvictMeasuredPressure => {
+                // unload rechecks the current session and its active reservation
+                // under the original supervisor lock; racing sends remain safe.
+                match self.unload(&snapshot.0, request_id) {
+                    Ok(_) => Ok(snapshot.1),
+                    Err(SupervisorError::Busy | SupervisorError::WrongSession
+                        | SupervisorError::Unavailable) => Ok(WarmDecision::RetainActive),
+                    Err(error) => Err(error),
+                }
+            }
+            decision => Ok(decision),
+        }
+    }
+
+    /// Explicit host-only OS sampling. Unknown pressure never fabricates a
+    /// low-memory reading; normal idle timeout still applies.
+    pub fn poll_warm_residency(
+        &self,
+        request_id: &str,
+        policy: WarmResidencyPolicy,
+    ) -> Result<WarmDecision, SupervisorError> {
+        self.evict_warm_if_needed(
+            request_id, policy, crate::native_resource_pressure::available_ram(),
+        )
     }
     pub fn status(&self) -> Result<SupervisorStatus, SupervisorError> {
         let current = self.current.lock().map_err(|_| SupervisorError::Poisoned)?;
