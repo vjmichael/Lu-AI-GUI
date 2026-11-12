@@ -202,6 +202,36 @@ pub(crate) fn persist_native_owner_receipt(
     Ok(hash)
 }
 
+/// Strict parser for an original, fsynced LLDB RECEIVED receipt. This
+/// checks its entire fixed schema after independently verifying the file
+/// SHA-256; restart recovery must additionally join the returned identities
+/// to the ORIGINAL JobPlan and Running journal entry. Never a live stop.
+pub(crate) fn parse_persisted_owner_receipt(
+    bytes: &[u8], job_id: &str, sequence: u64,
+) -> Result<(String, String), SupervisorError> {
+    let value=std::str::from_utf8(bytes).map_err(|_|denied())?;
+    if !value.ends_with('\n') || value.contains('\r') ||
+       value.bytes().any(|c|c==0 || c>0x7f) {
+        return Err(denied());
+    }
+    let fields:Vec<&str>=value.lines().collect();
+    // schema, JobID, plan, running receipt, sequence, pid, tid,
+    // first-party owner tid, exception code, first-chance, RIP, address
+    if fields.len()!=12 || fields[0]!="lu-owner-v1" ||
+       fields[1]!=job_id || fields[4].parse::<u64>().ok()!=Some(sequence) ||
+       !fields[2..=3].iter().all(|v|
+          v.len()==64 && v.bytes().all(|c|c.is_ascii_hexdigit())) {
+        return Err(denied());
+    }
+    for (idx,field) in fields.iter().enumerate().skip(5) {
+        let n=field.parse::<u64>().map_err(|_|denied())?;
+        if n==0 && idx!=9 {return Err(denied());}
+        if idx==9 && n>1 {return Err(denied());}
+        if idx<=9 && n>u32::MAX as u64 {return Err(denied());}
+    }
+    Ok((fields[2].to_owned(),fields[3].to_owned()))
+}
+
 /// The read endpoint is moved exactly once into a native reader thread.
 /// It is not passed to AppContainer or the debuggee. A full queue closes the
 /// pipe, forcing the pinned LLDB hook to fail closed rather than blocking
@@ -415,6 +445,28 @@ mod tests {
         out.extend_from_slice(&e.continue_status.to_le_bytes());
         assert_eq!(out.len(), SIZE);
         out
+    }
+    #[test]
+    fn reopened_receipt_parser_denies_foreign_or_malformed_original_owner() {
+        let id=format!("job-{}", "a".repeat(32));
+        let plan="b".repeat(64);
+        let running="c".repeat(64);
+        let genuine=format!(
+          "lu-owner-v1\n{id}\n{plan}\n{running}\n7\n55\n75\n90\n2147483651\n1\n5368713507\n5368713506\n"
+        );
+        assert_eq!(parse_persisted_owner_receipt(genuine.as_bytes(),&id,7).unwrap(),
+            (plan.clone(),running.clone()));
+        assert!(parse_persisted_owner_receipt(genuine.as_bytes(),&id,8).is_err());
+        assert!(parse_persisted_owner_receipt(genuine.as_bytes(),
+            &format!("job-{}","d".repeat(32)),7).is_err());
+        assert!(parse_persisted_owner_receipt(
+            genuine.replace(&plan, &"z".repeat(64)).as_bytes(),&id,7).is_err());
+        assert!(parse_persisted_owner_receipt(
+            genuine.replace("\n55\n","\n0\n").as_bytes(),&id,7).is_err());
+        assert!(parse_persisted_owner_receipt(
+            genuine.trim_end().as_bytes(),&id,7).is_err());
+        assert!(parse_persisted_owner_receipt(
+            format!("{genuine}extra\n").as_bytes(),&id,7).is_err());
     }
     #[test]
     fn genuine_received_then_continue_revokes_exact_owner_stop() {
