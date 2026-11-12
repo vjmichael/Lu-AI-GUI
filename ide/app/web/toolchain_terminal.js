@@ -135,7 +135,7 @@ export function checkedPackageToolchainReadiness(inspection,inventory,projectId)
   const ids=new Set();
   const results=[];
   for (const c of inspection.candidates) {
-    if (!c || !['uv','vcpkg','conan'].includes(c.managerId) ||
+    if (!c || !['uv','vcpkg','conan2'].includes(c.managerId) ||
         ids.has(c.managerId) || typeof c.state!=='string' ||
         c.executionAuthorized!==false ||
         c.applySupported!==false || c.resolutionSupported!==false)
