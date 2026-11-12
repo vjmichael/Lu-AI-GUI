@@ -993,7 +993,11 @@ function App() {
   // An in-flight checkpoint is already visible in the live stream buffer.
   // Do not render that same unfinished assistant text twice after chat switch.
   const displayedHistory = visibleJob ? history.filter((entry,i) =>
-    !(i === history.length - 1 && entry.role === 'assistant' && entry.interrupted && !entry.cancelled)) : history;
+    // An older interrupted response belongs to its original generation.
+    // Never hide that durable partial merely because a NEW turn is active.
+    !(i === history.length - 1 && entry.role === 'assistant' &&
+      entry.interrupted && !entry.cancelled &&
+      entry.text.length>0 && visibleStream.startsWith(entry.text))) : history;
   useEffect(() => { draftText.current = prompt; draftImages.current = images; draftFiles.current = textFiles; }, [prompt, images, textFiles]);
   useEffect(() => {
     if (!(working && activity.startsWith('Loading'))) {
