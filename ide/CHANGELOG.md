@@ -670,3 +670,27 @@ See the engineering handoff and linked acceptance documents for exact evidence. 
 - Compiled original one-use action journals and post-command verification sources for release review while explicitly refusing all non-test release debugger dispatch slots.
 - Added native-dialog OS-only interrupted-action recovery, original journal/hash rechecks, independent kernel quiescence before/after a unique synced uncertainty receipt, and Test Explorer/workspace UI reporting with no effect replay or marker clearance.
 - Added FIN-04R regression contract source; **tests and physical OS release acceptance have not run**. Protected PDB worker and production one-use action consent remain implementation blockers. FIN-02 remains deferred.
+
+## 2026-11-12 — FIN-04R-1 protected PE/PDB source integration (not accepted)
+
+- Split the CI-only host subprocess from the strict PE/PDB parser.
+  In the release observer, `llvm-symbolizer` now launches solely inside
+  the original protected Windows AppContainer and SCM Job Object;
+  bounded output/exit, exact staged binary/PDB/bundle identity and
+  source/owner original receipts must match before and after reading.
+- Added live first-party Windows event → original PE/PDB source-line
+  binding, with separate non-authorizing receipt fields; a genuine
+  `ContinueDebugEvent` revocation is required before session terminal.
+- Added fresh native-human *review-only* step/breakpoint proposal:
+  Prepared/Approved/Revoked durable records, no Consumed dispatch
+  and no production DAP request; a refused/cancelled/late review never
+  restores authority. Client requests only a fixed kind.
+- Added pure independently checked breakpoint-*hit* verifier,
+  hostile changed owner/plan/source/thread fixtures and original
+  step-result verifier boundaries; DAP breakpoint ACK cannot assert
+  installation. Production action-slot admission stays denied.
+- Added exact-head actual Windows protected-source/Job/restart
+  acceptance mode and a physical-human installed-review script.
+  **All native Windows and real installed acceptance remain unrun.**
+  OS-only original-action recovery remains no-replay, and FIN-02 is
+  still deferred; no merge/CI/release or source-completeness assertion.
