@@ -1417,7 +1417,8 @@ impl Supervisor {
         }
         if matches!(
             job.phase,
-            JobPhase::AdmissionPending | JobPhase::Running | JobPhase::CancelRequested
+            JobPhase::AdmissionPending | JobPhase::Running
+                | JobPhase::ReleasePending | JobPhase::CancelRequested
         ) {
             self.append(
                 &mut state,
@@ -2057,6 +2058,32 @@ mod tests {
         assert_eq!(reopened.inspect().unwrap()[0].phase, JobPhase::Cancelled);
         assert!(!reopened.inspect().unwrap()[0].requires_reconciliation);
         drop(reopened);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn interrupted_release_requires_independent_os_cleanup_before_reconciliation() {
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        drop(supervisor);
+        let restarted = Supervisor::open(filename.clone()).unwrap();
+        let mut unverified = TestTerminator { verified: false, requests: 0 };
+        let result = restarted.reconcile_interrupted_with(&job.job_id, &mut unverified).unwrap();
+        assert_eq!(unverified.requests, 1);
+        assert_eq!(result.phase, JobPhase::Uncertain);
+        assert!(result.requires_reconciliation);
+        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        drop(restarted);
+        let replay = Supervisor::open(filename.clone()).unwrap();
+        assert_eq!(replay.inspect().unwrap()[0].phase, JobPhase::Uncertain);
+        assert!(replay.inspect().unwrap()[0].requires_reconciliation);
+        drop(replay);
         fs::remove_file(filename).unwrap();
     }
 
