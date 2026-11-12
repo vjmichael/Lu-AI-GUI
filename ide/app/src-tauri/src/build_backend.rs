@@ -1036,6 +1036,15 @@ impl NativeBuildRuntime {
             #[cfg(not(feature = "native-package-uv"))]
             return Err("IDE053_PACKAGE_WORKER_NOT_COMPILED".into());
         }
+        // Acquire before the in-memory current-job slot is set. A denied
+        // global lease cannot leave a phantom active build.
+        let mut global_fence=crate::global_native_custody::GlobalAdmissionFence
+            ::acquire(&self.global_custody_profile,"build")?;
+        let sibling=crate::global_native_custody::sibling_rows(
+            &self.global_custody_profile,"build")?;
+        if crate::global_native_custody::durable_busy(&sibling) {
+            return Err("FIN01_DEBUG_JOURNAL_STILL_OWNS_CUSTODY".into());
+        }
         let cancel = Arc::new(NativeCancel::default());
         let requested = Arc::new(AtomicBool::new(false));
         let output = Arc::new(LiveOutput::default());
@@ -1059,15 +1068,6 @@ impl NativeBuildRuntime {
             // fresh debugger request, even if the new build is denied.
             let mut store = self.store.lock().map_err(|_| "BUILD_HOST_UNAVAILABLE")?;
             store.debug_target = None;
-        }
-        // FIN-01: cross-process admission is acquired before any native
-        // preparation, one-use approval or worker OS launch.
-        let mut global_fence=crate::global_native_custody::GlobalAdmissionFence
-            ::acquire(&self.global_custody_profile,"build")?;
-        let sibling=crate::global_native_custody::sibling_rows(
-            &self.global_custody_profile,"build")?;
-        if crate::global_native_custody::durable_busy(&sibling) {
-            return Err("FIN01_DEBUG_JOURNAL_STILL_OWNS_CUSTODY".into());
         }
         let result = self.run_inner(
             app,
