@@ -385,6 +385,44 @@ mod tests{
   fs::remove_dir_all(p).unwrap();
  }
  #[test]
+ fn current_live_marker_owner_cannot_be_cleared_from_journal_state(){
+  let p=fixture();
+  let lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
+  let outcome=clear_stale_marker_with_kernel_proof(&p);
+  assert_eq!(outcome.unwrap_err(),"FIN01_LIVE_OWNER_CANNOT_CLEAR_MARKER");
+  assert!(global_custody_unresolved(&p).unwrap());
+  // A rejected request never strands its separate normal recovery guard.
+  assert!(!p.join("fin01-global-clearance-v1.lock").exists());
+  drop(lease);fs::remove_dir_all(p).unwrap();
+ }
+ #[test]
+ fn concurrent_stale_marker_clearance_is_exclusive(){
+  let p=fixture();
+  let _guard=RecoveryGuard::begin(&p).unwrap();
+  assert_eq!(clear_stale_marker_with_kernel_proof(&p).unwrap_err(),
+    "FIN01_RECOVERY_ALREADY_IN_PROGRESS_OR_INTERRUPTED");
+  fs::remove_dir_all(p).unwrap();
+ }
+ #[test]
+ fn changed_marker_or_unreconciled_job_refuses_global_clearance(){
+  let p=fixture();
+  let lease=GlobalAdmissionFence::acquire(&p,"lsp").unwrap();
+  let (original,meta)=verified_marker_bytes(&p).unwrap();
+  fs::write(marker_path(&p),b"tampered-global-marker").unwrap();
+  assert!(same_marker(&p,&original,&meta).is_err());
+  drop(lease);fs::remove_dir_all(&p).unwrap();
+  fs::create_dir_all(&p).unwrap();
+  let marker=format!("FIN01-V1:build:{}:{:016x}\\n",
+    std::process::id(),42u64);
+  fs::write(marker_path(&p),marker).unwrap();
+  let rows=vec![job(JobPhase::Running,true)];
+  assert!(durable_busy(&rows));
+  assert_eq!(clear_stale_marker_with_kernel_proof(&p).unwrap_err(),
+    "FIN01_LIVE_OWNER_CANNOT_CLEAR_MARKER");
+  assert!(global_custody_unresolved(&p).unwrap());
+  fs::remove_dir_all(p).unwrap();
+ }
+ #[test]
  fn marker_corruption_cannot_be_silently_reconciled(){
   let p=fixture();
   let mut lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
@@ -619,7 +657,7 @@ pub fn clear_stale_marker_with_kernel_proof(
   "kernelObjectsEmpty":witness.kernel_objects_empty,
   "kernelObjectsAbsent":witness.kernel_objects_absent,
   "ownerExited":true,
-  "originalJournalSha256":baseline,
+  "originalJournalSha256":baseline.clone(),
   "executionAuthorized":false,
   "autoRetryAuthorized":false
  });
