@@ -56,7 +56,7 @@ test('original SCM + AppContainer + kernel Job chain has no host or renderer fal
  assert.match(worker,/let mut child_handles = vec!\[child_stdin\.0, child_stdout\.0, stderr\.0\]/);
  assert.match(worker,/spawn_contained_stdio\([\s\S]*?&self\._profile,&self\.job,&tool/);
  assert.match(scm,/security::authenticate_service_server/);
- assert.match(scm,/let mut lease = BrokerLease::begin/); // admitted by native worker
+ assert.match(worker,/let mut lease = BrokerLease::begin/); // admitted by native worker
  assert.match(scm,/pub fn grant_null\(/);
  assert.match(scm,/pub fn release_empty\(/);
  assert.match(scmSecurity,/GetNamedPipeClientProcessId/);
