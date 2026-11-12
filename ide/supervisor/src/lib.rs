@@ -1828,6 +1828,51 @@ mod tests {
         fs::remove_file(p).unwrap();
     }
     #[test]
+    fn fin04r1_missing_bounded_output_must_keep_original_job_quarantined_after_restart() {
+        // An observed Cargo exit or empty Job is not an output-publication
+        // receipt. This reproduces the fail-closed Quarantined class of the
+        // Windows native acceptance run without inventing OS kernel evidence.
+        let journal=path();
+        let sup=Supervisor::open(journal.clone()).unwrap();
+        let plan=plan();
+        let job=sup.prepare(plan.clone()).unwrap();
+        sup.record_human_approval(
+            &job.job_id,&job.plan_sha256,&plan.source_head,true,
+        ).unwrap();
+        let proof=OsContainmentProof {
+            platform:"windows".into(),
+            restricted_identity:true,filesystem_access_limited:true,
+            network_access_limited:true,child_contained_before_resume:true,
+            process_tree_kill_verified:true,memory_quota:true,
+            cpu_quota:true,pid_quota:true,protected_journal_broker:true,
+        };
+        sup.consume_grant_after_attestation(&job.job_id,&plan,&proof).unwrap();
+        sup.native_mark_running(&job.job_id).unwrap();
+        assert_eq!(
+            sup.native_finish_with_output(
+                &job.job_id,true,true,false,None,
+            ).unwrap_err(),SupervisorError::Quarantined,
+        );
+        let original=sup.receipt_history(&job.job_id).unwrap();
+        let last=original.last().unwrap();
+        assert_eq!(last.body.phase,JobPhase::RecoveryRequired);
+        assert_eq!(last.body.outcome_code,"incomplete_os_worker_reap");
+        assert_eq!(last.body.evidence_code,"do_not_restart_or_reuse_outputs");
+        drop(sup);
+        let reopened=Supervisor::open(journal.clone()).unwrap();
+        let phase=reopened.inspect().unwrap().pop().unwrap();
+        assert_eq!(phase.phase,JobPhase::RecoveryRequired);
+        assert!(phase.requires_reconciliation);
+        assert!(!phase.execution_verified);
+        assert_eq!(reopened.prepare(plan).unwrap_err(),SupervisorError::Quarantined);
+        assert_eq!(
+            reopened.receipt_history(&job.job_id).unwrap().last().unwrap().entry_hash,
+            last.entry_hash,
+        );
+        drop(reopened);
+        std::fs::remove_file(journal).unwrap();
+    }
+    #[test]
     fn persisted_receipts_survive_restart_but_grants_do_not() {
         let p = path();
         let sup = Supervisor::open(p.clone()).unwrap();
