@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "58eba5cae3c685a1c3eaa4a8cc3b03a3fac59cb0",
+  "sourceCommitBeforeLock": "a07bc22ff908068ececff6db7a1bd178a64c98ef",
   "trackedFileCount": 943,
   "files": [
     {
@@ -821,7 +821,7 @@
     },
     {
       "path": "docs/LU_P0_GATE_20261111.md",
-      "blob": "554f6111a7eaf05b3af47dcc27680a8ccd3a9ab8"
+      "blob": "464644cec497c28d7e2682fad0b216309dc1e1c3"
     },
     {
       "path": "docs/LU_P0_MEMORY_ORIGINAL_CROSS_SESSION_CONTINUITY_20261111.md",
@@ -2093,11 +2093,11 @@
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
-      "blob": "d8aa882387ed30b5591495b16944e37625b37ef8"
+      "blob": "bcf3c6bfbf67ee84ab11064d83f7e841a861ab7b"
     },
     {
       "path": "scripts/lu-ci-group-policy.test.mjs",
-      "blob": "3ae032d0d11cb735de71cf79fafa1b340be1d488"
+      "blob": "035a42c5e960f871bb0ee86d9077e1340a5467b3"
     },
     {
       "path": "scripts/lu-ci-superseded-queue.mjs",

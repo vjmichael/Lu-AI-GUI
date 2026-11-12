@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { inspectOne, inspectDirectory } from "./lu-ci-group-policy.mjs";
+import fs from "node:fs";
 
 const manual = "name: One\non:\n  workflow_dispatch:\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n";
 const auto = "name: One\non:\n  push:\n  pull_request:\n  workflow_dispatch:\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n";
@@ -24,4 +25,18 @@ test("actual checked-in Lu workflow suite uses task-group batching", () => {
   assert.equal(report.automatic.length, 1);
   assert.equal(report.taskGroupOnly, report.total - 1);
   assert.deepEqual(report.failures, []);
+});
+
+test("PLAN-07D exception requires all three exact PR219/branch/SHA guards", () => {
+  const src = fs.readFileSync(".github/workflows/lu-plan07d-installed.yml", "utf8");
+  assert.deepEqual(inspectOne("lu-plan07d-installed.yml", src).problems, []);
+  for (const unsafe of [
+    src.replace("types: [edited]", "types: [opened, edited]"),
+    src.replace("number == 219", "number == 999"),
+    src.replace("head.ref == 'lu/plan07-evidence-driven-task-updates-20261110'", "head.ref == 'main'"),
+    src.replace("!contains(github.event.changes.body.from", "contains(github.event.changes.body.from"),
+    src.replace("hosted-genuine-gguf-original:", "generic-unchecked-job:")
+  ]) {
+    assert.ok(inspectOne("lu-plan07d-installed.yml", unsafe).problems.includes("HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
+  }
 });
