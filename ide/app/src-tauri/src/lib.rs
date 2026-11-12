@@ -30,7 +30,7 @@ use lu_ide_workspace::{
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
 
 /// In-memory one-use lifetime of an OS-confirmed partial stage.
 #[derive(Default)]
@@ -59,6 +59,9 @@ impl PartialStageSessions {
     }
 }
 
+
+#[derive(Default)]
+struct Fin05ManifestMutationGate(Mutex<()>);
 struct NativePicker(AppHandle);
 impl NativeDirectoryPicker for NativePicker {
     fn choose_project_directory(&mut self) -> Result<Option<PathBuf>, IdeError> {
@@ -2295,6 +2298,83 @@ async fn ide_preview_exact_vcpkg_manifest_edit(
         .await.map_err(|_|"FIN05_VCPKG_REVIEW_THREAD_UNAVAILABLE".to_owned())?
         .map_err(str::to_owned)
 }
+
+/// FIN-05C: one user-confirmed source-manifest replacement. This is not
+/// package installation. The worker cannot accept arbitrary file paths,
+/// process arguments, source bytes, URLs or human approval from the WebView.
+#[tauri::command]
+async fn ide_apply_reviewed_vcpkg_manifest_edit(
+    app:AppHandle,
+    registry:State<'_,Arc<IdeWorkspaceRegistry>>,
+    gate:State<'_,Arc<Fin05ManifestMutationGate>>,
+    project_id:String,
+    request:lu_ide_workspace::package_preview::PackagePreviewRequest,
+    expected_preview_sha256:String,
+    expected_evidence_fingerprint:String,
+    expected_original_revision:String,
+    expected_proposed_revision:String,
+)->Result<serde_json::Value,String>{
+    let registry=Arc::clone(registry.inner());
+    let gate=Arc::clone(gate.inner());
+    tauri::async_runtime::spawn_blocking(move||{
+        let _one_use=gate.0.try_lock()
+            .map_err(|_|"FIN05_MANIFEST_EDIT_ALREADY_ACTIVE".to_owned())?;
+        let before=registry.prepare_exact_vcpkg_edit(
+            &project_id,request.clone(),&expected_preview_sha256,
+            &expected_evidence_fingerprint).map_err(str::to_owned)?;
+        if before.expected_revision!=expected_original_revision ||
+            before.proposed_revision!=expected_proposed_revision ||
+            before.process_started || before.files_modified ||
+            before.execution_authorized || before.packages_installed {
+            return Err("FIN05_SAVED_MANIFEST_CHANGED_REVIEW_AGAIN".to_owned());
+        }
+        // Native dialog, no web-granted boolean, bounded 30-second refusal.
+        let (sender,receiver)=std::sync::mpsc::sync_channel(1);
+        app.dialog()
+            .message(format!(
+                "Approve ONE vcpkg.json dependency declaration edit?\n\
+                 Operation: {}\nDependency: {}\n\
+                 Source: {}\nProposed SHA-256: {}\n\
+                 This changes ONLY vcpkg.json. No packages are installed.",
+                 before.operation,before.dependency_name,
+                 before.expected_revision,before.proposed_revision))
+            .title("Lu IDE · review and save package declaration")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Approve this exact file edit".into(),"Decline".into()))
+            .show(move|confirmed|{let _=sender.try_send(confirmed);});
+        let allowed=receiver.recv_timeout(std::time::Duration::from_secs(30))
+            .unwrap_or(false);
+        if !allowed {
+            return Err("FIN05_HUMAN_DECLINED_OR_MODAL_TIMED_OUT".to_owned());
+        }
+        // Fresh native package evidence AND original source revision after
+        // dialog, immediately before the already revision-checked save.
+        let fresh=registry.prepare_exact_vcpkg_edit(
+            &project_id,request,&expected_preview_sha256,
+            &expected_evidence_fingerprint).map_err(str::to_owned)?;
+        if fresh.expected_revision!=before.expected_revision ||
+            fresh.proposed_revision!=before.proposed_revision ||
+            fresh.preview_sha256!=before.preview_sha256 ||
+            fresh.evidence_fingerprint!=before.evidence_fingerprint {
+            return Err("FIN05_EDIT_CHANGED_DURING_NATIVE_CONSENT".to_owned());
+        }
+        let saved=registry.save_source_file(&project_id,"vcpkg.json",
+            &fresh.expected_revision,&fresh.proposed_text)
+            .map_err(|e|e.code().to_owned())?;
+        Ok(serde_json::json!({
+            "projectId":project_id,"relativePath":"vcpkg.json",
+            "previousRevision":fresh.expected_revision,
+            "revision":saved.revision,
+            "proposedRevision":fresh.proposed_revision,
+            "exactSavedRevisionMatched":saved.revision==fresh.proposed_revision,
+            "oneUseNativeHumanConfirmed":true,
+            "processStarted":false,"packagesInstalled":false,
+            "lockfileResolved":false,"installedAppAccepted":false,
+            "executionAuthorizedByManifestEdit":false
+        }))
+    }).await.map_err(|_|"FIN05_MANIFEST_EDIT_THREAD_UNAVAILABLE".to_owned())?
+}
+
 /// IDE-05.1 manager-of-managers read-only detection. The WebView supplies
 /// an opaque registered project ID ONLY; manager/tool/path selection is fixed
 /// inside the native host. No subprocess or network access is possible here.
@@ -3441,6 +3521,7 @@ pub fn run() {
             .map_err(|_| std::io::Error::other("IDE private navigation unavailable"))?;
             app.manage(Arc::new(navigation));
             app.manage(Arc::new(PartialStageSessions::default()));
+            app.manage(Arc::new(Fin05ManifestMutationGate::default()));
             app.manage(Arc::new(terminal_broker::TerminalSessions::default()));
             app.manage(Arc::new(registry));
             let snapshots = InventorySnapshots::new(data.join("evidence-baselines.json"))
@@ -3504,6 +3585,7 @@ pub fn run() {
             ide_preview_package_operation,
             ide_revalidate_package_operation,
             ide_preview_exact_vcpkg_manifest_edit,
+            ide_apply_reviewed_vcpkg_manifest_edit,
             ide_discover_conventional_tests,
             ide_inspect_saved_test_symbols,
             ide_review_project_debug_target,

@@ -41,6 +41,11 @@ fn make_proposed_manifest(source:&str,request:&PackagePreviewRequest)
     let object=doc.as_object_mut().ok_or("FIN05_VCPKG_ROOT_NOT_OBJECT")?;
     let name=request.package_name.as_deref()
         .filter(|s|valid_name(s)).ok_or("FIN05_VCPKG_DEPENDENCY_INVALID")?;
+    // Compute before borrowing dependencies mutably: a concurrent manifest
+    // edit still fails the later source-revision and review rechecks.
+    let baseline_valid=object.get("builtin-baseline").is_some_and(|v|
+        v.as_str().is_some_and(|s|s.len()==40 &&
+            s.bytes().all(|b|b.is_ascii_hexdigit())));
     if !object.contains_key("dependencies"){
         object.insert("dependencies".into(),json!([]));
     }
@@ -67,9 +72,7 @@ fn make_proposed_manifest(source:&str,request:&PackagePreviewRequest)
                 .ok_or("FIN05_VCPKG_VERSION_UNSUPPORTED")?;
             // vcpkg's version>= is a LOWER BOUND, not an exact version pin.
             // It requires an existing baseline. No lock resolution implied.
-            if !object.get("builtin-baseline").is_some_and(|v|
-                v.as_str().is_some_and(|s|s.len()==40 &&
-                    s.bytes().all(|b|b.is_ascii_hexdigit()))){
+            if !baseline_valid {
                 return Err("FIN05_VCPKG_BASELINE_REQUIRED_FOR_VERSION");
             }
             deps.push(json!({"name":name,"version>=":version}));

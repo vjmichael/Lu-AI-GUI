@@ -153,6 +153,9 @@ function App() {
   const [packageExactVersion, setPackageExactVersion] = useState('');
   const [packagePreview, setPackagePreview] = useState(null);
   const [packageRevalidated, setPackageRevalidated] = useState(null);
+  const [vcpkgEditReview,setVcpkgEditReview]=useState(null);
+  const [vcpkgEditBusy,setVcpkgEditBusy]=useState(false);
+  const vcpkgEditTicket=useRef(0);
   const [packagePreviewBusy, setPackagePreviewBusy] = useState(false);
   const packagePreviewRequest = useRef(0);
   const [packageRunBusy, setPackageRunBusy] = useState(false);
@@ -1659,6 +1662,9 @@ function App() {
     packagePreviewRequest.current += 1;
     setPackagePreview(null);
     setPackageRevalidated(null);
+    ++vcpkgEditTicket.current;
+    setVcpkgEditReview(null);
+    setVcpkgEditBusy(false);
     setPackageRunResult(null);
     setPackagePreviewBusy(false);
   }
@@ -1751,6 +1757,89 @@ function App() {
     }
   }
 
+
+  async function inspectExactVcpkgEdit(){
+    const projectId=activeProject?.projectId,preview=packagePreview;
+    if(!projectId || preview?.projectId!==projectId ||
+       preview.request.managerId!=='vcpkg' ||
+       !['add','remove'].includes(preview.request.operation) ||
+       vcpkgEditBusy || packageRunBusy)return;
+    const ticket=++vcpkgEditTicket.current;
+    setVcpkgEditBusy(true);setVcpkgEditReview(null);setProblem('');
+    try{
+      const row=await invoke('ide_preview_exact_vcpkg_manifest_edit',{
+        projectId,request:preview.request,
+        expectedPreviewSha256:preview.previewSha256,
+        expectedEvidenceFingerprint:preview.evidenceFingerprint,
+      });
+      if(ticket!==vcpkgEditTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(row?.schemaVersion!==1 || row.projectId!==projectId ||
+         row.relativePath!=='vcpkg.json' ||
+         row.previewSha256!==preview.previewSha256 ||
+         row.evidenceFingerprint!==preview.evidenceFingerprint ||
+         row.sourceRechecked!==true || row.processStarted!==false ||
+         row.networkAccessed!==false || row.filesModified!==false ||
+         row.executionAuthorized!==false || row.packagesInstalled!==false ||
+         row.lockfileVerified!==false ||
+         row.review?.truncated!==false || row.review.unchanged!==false ||
+         !/^[a-f0-9]{64}$/.test(row.expectedRevision||'') ||
+         !/^[a-f0-9]{64}$/.test(row.proposedRevision||'') ||
+         typeof row.proposedText!=='string' ||
+         row.proposedText.length>256*1024)
+        throw Error('FIN05_VCPKG_UNTRUSTED_EDIT_PREVIEW');
+      setVcpkgEditReview(row);
+    }catch(error){
+      if(ticket===vcpkgEditTicket.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Exact vcpkg edit not reviewable: '+String(error));
+    }finally{if(ticket===vcpkgEditTicket.current)
+      setVcpkgEditBusy(false);}
+  }
+  async function saveExactVcpkgEdit(){
+    const projectId=activeProject?.projectId,preview=packagePreview;
+    const edit=vcpkgEditReview;
+    if(!projectId || !edit || !preview ||
+       edit.projectId!==projectId ||
+       edit.previewSha256!==preview.previewSha256 ||
+       edit.evidenceFingerprint!==preview.evidenceFingerprint ||
+       vcpkgEditBusy || packageRunBusy ||
+       tabsRef.current.some(tab=>tab.projectId===projectId &&
+         tab.relativePath==='vcpkg.json'))return;
+    const ticket=++vcpkgEditTicket.current;
+    setVcpkgEditBusy(true);setProblem('');
+    try{
+      const result=await invoke('ide_apply_reviewed_vcpkg_manifest_edit',{
+        projectId,request:preview.request,
+        expectedPreviewSha256:edit.previewSha256,
+        expectedEvidenceFingerprint:edit.evidenceFingerprint,
+        expectedOriginalRevision:edit.expectedRevision,
+        expectedProposedRevision:edit.proposedRevision,
+      });
+      if(ticket!==vcpkgEditTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(result?.projectId!==projectId ||
+         result.relativePath!=='vcpkg.json' ||
+         result.previousRevision!==edit.expectedRevision ||
+         result.revision!==edit.proposedRevision ||
+         result.exactSavedRevisionMatched!==true ||
+         result.oneUseNativeHumanConfirmed!==true ||
+         result.processStarted!==false ||
+         result.packagesInstalled!==false ||
+         result.lockfileResolved!==false ||
+         result.executionAuthorizedByManifestEdit!==false)
+        throw Error('FIN05_SAVE_RECEIPT_UNVERIFIED');
+      invalidatePackagePreview();
+      setHint('vcpkg.json declaration saved with exact source revision and '+
+        'native confirmation. Dependencies were NOT resolved or installed.');
+      await inspectPackageManagers();
+    }catch(error){
+      if(ticket===vcpkgEditTicket.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('vcpkg edit refused or interrupted; reread source: '+String(error));
+    }finally{if(ticket===vcpkgEditTicket.current)
+      setVcpkgEditBusy(false);}
+  }
   async function runProtectedOfflineUvSync() {
     const projectId=activeProject?.projectId;
     const preview=packagePreview;
@@ -7923,6 +8012,49 @@ function App() {
                         <p role="status"><strong>Fresh native evidence matched.</strong>
                           {' '}Approval is still disabled; this result is not an
                           execution token and cannot bypass future OS consent.</p>}
+                      {packagePreview.request.managerId==='vcpkg' &&
+                       ['add','remove'].includes(packagePreview.request.operation) &&
+                       <section className="continuityDocument"
+                         aria-label="FIN-05 exact vcpkg source declaration">
+                         <h4>vcpkg.json · Exact source declaration edit</h4>
+                         <p>This edits only the manifest, not installed
+                           packages. A requested version is a minimum bound,
+                           not an exact resolved lock.</p>
+                         <button type="button" className="ghostBtn"
+                           disabled={vcpkgEditBusy}
+                           onClick={()=>void inspectExactVcpkgEdit()}>
+                           {vcpkgEditBusy?'Reviewing exact bytes…':
+                             'Review actual vcpkg.json source diff'}
+                         </button>
+                         {vcpkgEditReview?.projectId===activeProject?.projectId &&
+                          vcpkgEditReview.previewSha256===packagePreview.previewSha256 &&
+                           <>
+                             <p>Original SHA:
+                               <code>{vcpkgEditReview.expectedRevision}</code>
+                               {' · '}Proposed SHA:
+                               <code>{vcpkgEditReview.proposedRevision}</code>
+                             </p>
+                             <pre tabIndex={0} style={{whiteSpace:'pre-wrap',
+                               maxHeight:'22rem',overflow:'auto'}}>
+                               {vcpkgEditReview.proposedText}
+                             </pre>
+                             <p>Review is not permission to run vcpkg.
+                               Changes may affect transitive resolution.</p>
+                             <button type="button" className="primaryBtn"
+                               disabled={vcpkgEditBusy || tabs.some(tab=>
+                                 tab.projectId===activeProject?.projectId &&
+                                 tab.relativePath==='vcpkg.json')}
+                               onClick={()=>void saveExactVcpkgEdit()}>
+                               Request native confirmation and save manifest
+                             </button>
+                             {tabs.some(tab=>
+                               tab.projectId===activeProject?.projectId &&
+                               tab.relativePath==='vcpkg.json') &&
+                               <p role="alert">Close the currently open
+                                 vcpkg.json editor tab before applying this
+                                 separate reviewed file change.</p>}
+                           </>}
+                       </section>}
                       <p><strong>General Install/Apply unavailable.</strong> This
                         review is not authority. A fixed offline uv Sync
                         is separately feature-gated and still requires native
