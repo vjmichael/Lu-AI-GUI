@@ -31,9 +31,9 @@ jobs:
         shell: pwsh
         run: |
           if ((git rev-parse HEAD).Trim() -ne '${{ github.sha }}') { throw 'FIN01D_HEAD_MISMATCH' }
-          cargo test --manifest-path ide/supervisor/Cargo.toml --locked --features fin04-release-owner-evidence --lib
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib
           if ($LASTEXITCODE -ne 0) { throw 'FIN01D_WINDOWS_RUST_FAILED' }
-          cargo check --manifest-path ide/supervisor/Cargo.toml --locked --release --features fin04-release-owner-evidence --example wo6_native_dap_acceptance
+          cargo check --manifest-path ide/supervisor/Cargo.toml --release --features fin04-release-owner-evidence --example wo6_native_dap_acceptance
           if ($LASTEXITCODE -ne 0) { throw 'FIN01D_WINDOWS_PROTECTED_WORKER_COMPILER_FAILED' }
           Write-Host 'FIN01D_WINDOWS_FULL_RUST_AND_RELEASE_COMPILE=PASS_NOT_KERNEL'
   linux-rust:
@@ -52,5 +52,5 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
-          cargo test --manifest-path ide/supervisor/Cargo.toml --locked --features dap-transport --lib
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features dap-transport --lib
           echo 'FIN01D_LINUX_FULL_RUST=PASS_NOT_NATIVE_CGROUP'
