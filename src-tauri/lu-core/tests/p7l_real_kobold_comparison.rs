@@ -110,8 +110,7 @@ fn llama()->PersistentLlamaBackend{
     assert_eq!(hash(&executable),expected,"llama baseline engine digest changed");
     PersistentLlamaBackend::new(PersistentEngineConfig{
         executable,expected_sha256:expected,
-        threads:NonZeroUsize::new(4).unwrap(),
-        context_tokens:4096,
+        // P7L-1: keep the CPU thread budget identical to the candidate.\n        // Changing LU_P7L_THREADS must never compare 4 llama workers against\n        // a different number of Kobold workers.\n        threads:NonZeroUsize::new(bounded("LU_P7L_THREADS",4,1,64) as usize).unwrap(),\n        context_tokens:4096,
         startup_timeout:Duration::from_secs(360),
         request_timeout:Duration::from_secs(180),
         api_key:required("LU_P7L_LLAMA_SECRET"),
