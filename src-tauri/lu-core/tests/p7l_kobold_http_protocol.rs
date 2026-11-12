@@ -101,8 +101,8 @@ fn exact_openai_text_stream_handles_fragments_across_http_chunks(){
 fn streamed_browser_call_requires_original_function_name_and_valid_json(){
     let allowed=BTreeSet::from(["lu_browser_read".to_string()]);
     let (port,server)=socket_fixture(vec![
-        sse(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"lu_browser_read","arguments":"{\\"operation\\":\\"navigate\\","}}]}}]}"#),
-        sse(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":",\\"url\\":\\"https://example.org\\"}"}}]}}]}"#),
+        sse(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"lu_browser_read","arguments":"{\"operation\":\"navigate\""}}]}}]}"#),
+        sse(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":",\"url\":\"https://example.org\"}"}}]}}]}"#),
         sse(r#"{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#),
         sse("[DONE]"),
     ],200);
