@@ -156,3 +156,20 @@ test('debugger native UI routes never take a source path, PID or DAP payload',()
   assert.match(ui,/opened\.revision!==reviewed\.diskSha256/);
   assert.match(ui,/current\.dirty/);
 });
+
+test('FIN04 developer debugger controls cannot masquerade as installed production actions',()=>{
+ const status={ready:true,projectDebugSupported:true,
+  operationControlSupported:true,
+  operationControlCode:'DEV046D_NATIVE_DIALOG_DEV_ONLY_NOT_RELEASE_ACCEPTED',
+  journal:[],quarantined:[],globalRecoveryRequired:false,
+  activeInAnotherProject:false,orphanedDebugActionRequired:false,current:null};
+ const dev=debugAdmissionStatus(status,project);
+ assert.equal(dev.operationControlSupported,true);
+ assert.equal(dev.operationControlMode,'developer_only');
+ assert.equal(dev.productionOperationsAvailable,false);
+ const untrusted=debugAdmissionStatus({...status,operationControlCode:'unrecognized'},project);
+ assert.equal(untrusted.operationControlSupported,false);
+ const recovery=debugAdmissionStatus({...status,globalRecoveryRequired:true},project);
+ assert.equal(recovery.operationControlSupported,false);
+ assert.equal(recovery.productionOperationsAvailable,false);
+});
