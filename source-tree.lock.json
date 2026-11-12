@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "afcb7ae235de8ae84d3fdc66c127bac6984fa33e",
-  "trackedFileCount": 942,
+  "sourceCommitBeforeLock": "cc312e281b5989a0a9fb972eb04b9e34215a77da",
+  "trackedFileCount": 943,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -233,7 +233,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "0d70ebdc7b7949a7e296b2b3d23e1b3cdb9aa548"
+      "blob": "58f540fac64bbdd665b045687622897d45b3ed1f"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -818,6 +818,10 @@
     {
       "path": "docs/LU_P0_AUTH_UNIFIED_NATIVE_CUSTODY_RECOVERY_20261111.md",
       "blob": "c8585c6ff46b9e9618514c899d199edd8c824866"
+    },
+    {
+      "path": "docs/LU_P0_GATE_20261111.md",
+      "blob": "554f6111a7eaf05b3af47dcc27680a8ccd3a9ab8"
     },
     {
       "path": "docs/LU_P0_MEMORY_ORIGINAL_CROSS_SESSION_CONTINUITY_20261111.md",

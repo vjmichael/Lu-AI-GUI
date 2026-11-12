@@ -2617,3 +2617,324 @@ jobs:
           path: plan07c-native-evidence/
           retention-days: 14
           if-no-files-found: warn
+
+  p0-gate-compiler:
+    name: P0-GATE exact-head compiler diagnostics (${{ matrix.os }})
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-gate-consolidated-20261111' && contains(github.event.pull_request.body, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) }
+    runs-on: ${{ matrix.os }
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Authenticate one-use exact SHA and frozen source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }
+          GATE_BODY: ${{ github.event.pull_request.body }
+        run: |
+          set -euo pipefail
+          mkdir -p p0-gate-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node -e 'const m=[...process.env.GATE_BODY.matchAll(/^LU_P0_GATE_SHA=([0-9a-f]{40})$/gm)].map(x=>x[1]);if(m.length!==1||m[0]!==process.env.EXPECTED_SHA)process.exit(9)'
+          node scripts/verify-source-tree.mjs 2>&1 | tee p0-gate-evidence/source.log
+          printf 'head=%s\nrunner=%s\n' "$EXPECTED_SHA" "$RUNNER_OS" > p0-gate-evidence/identity.txt
+      - name: Install actual Linux Tauri compiler prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends protobuf-compiler pkg-config libssl-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf ffmpeg
+      - name: Create inert build-only engine resources (not real inference)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p lu-desktop/src-tauri/resources/lu-inference
+          for f in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            printf 'CI_ONLY_NOT_A_MODEL_OR_ENGINE' > "lu-desktop/src-tauri/resources/lu-inference/$f"
+          done
+      - name: Frontend compile and strict source-level check
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd lu-desktop && npm ci --no-audit --no-fund && npm run build && npm run check) 2>&1 | tee p0-gate-evidence/frontend-compile.log
+      - name: Rust Core exact-lock typecheck and test-binary compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path src-tauri/lu-core/Cargo.toml 2>&1 | tee p0-gate-evidence/core-check.log
+          cargo test --locked --no-run --manifest-path src-tauri/lu-core/Cargo.toml --lib --tests 2>&1 | tee p0-gate-evidence/core-test-compile.log
+      - name: Rust Tauri full production graph and desktop test compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml 2>&1 | tee p0-gate-evidence/tauri-check.log
+          cargo test --locked --no-run --manifest-path lu-desktop/src-tauri/Cargo.toml --lib 2>&1 | tee p0-gate-evidence/tauri-test-compile.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-p0-compiler-${{ matrix.os }-${{ github.event.pull_request.head.sha }
+          path: p0-gate-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+  p0-gate-native:
+    name: P0-GATE original native regression and custody (${{ matrix.os }})
+    needs: p0-gate-compiler
+    runs-on: ${{ matrix.os }
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Linux native dependencies and real FFprobe/Git
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends protobuf-compiler pkg-config libssl-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev ffmpeg
+      - name: Inert build resources and original checked source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          node scripts/verify-source-tree.mjs
+          mkdir -p p0-native-evidence lu-desktop/src-tauri/resources/lu-inference
+          for f in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            printf CI_ONLY_NOT_A_MODEL_OR_ENGINE > "lu-desktop/src-tauri/resources/lu-inference/$f"
+          done
+          echo "LU_TOOLS03_TEST_GIT_PATH=$(command -v git)" >> "$GITHUB_ENV"
+      - name: Full original Core native regressions (no simulated completion)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib --tests -- --nocapture 2>&1 | tee p0-native-evidence/core-tests.log
+      - name: Original desktop ANSF and authorization native tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib -- --nocapture 2>&1 | tee p0-native-evidence/desktop-tests.log
+      - name: Production frontend and P0 UI regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd lu-desktop && npm ci --no-audit --no-fund && npm run build && npm run check && npm run test:ui) 2>&1 | tee p0-native-evidence/frontend-regressions.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-p0-native-${{ matrix.os }-${{ github.event.pull_request.head.sha }
+          path: p0-native-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+  p0-gate-installed-windows:
+    name: P0-GATE genuine hosted Windows NSIS, UIA, restart, uninstall
+    needs: p0-gate-native
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact source and pinned NSIS toolchain
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD).Trim() -cne $env:SOURCE_SHA){throw 'P0 wrong source'}
+          node scripts/verify-source-tree.mjs
+          $nsis=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS\makensis.exe'
+          if(-not(Test-Path $nsis)){
+            choco install nsis --version=3.11.0 --yes --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'NSIS install failed'}
+          }
+      - name: Build current Lu with genuinely pinned CPU engine and original NSIS
+        shell: pwsh
+        timeout-minutes: 150
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir=Join-Path $env:RUNNER_TEMP 'p0-current-nsis'
+          & scripts/build-agent01g-physical-windows-nsis.ps1 -SourceSha $env:SOURCE_SHA -OutputDirectory $dir
+          if($LASTEXITCODE -ne 0){throw 'P0 NSIS build failed'}
+          $p=Get-Content (Join-Path $dir 'installer-checksums.json') -Raw|ConvertFrom-Json
+          if($p.sourceSha -cne $env:SOURCE_SHA -or -not $p.genuineInstallerProduced){throw 'Installer provenance failed'}
+          $file=Join-Path $dir $p.installerName
+          if((Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() -cne $p.installerSha256){throw 'Installer bytes changed'}
+          $target=Join-Path $env:RUNNER_TEMP 'p0-current-installed-Lu'
+          if(Test-Path $target){throw 'Not a disposable install directory'}
+          $proc=Start-Process $file -ArgumentList @('/S',('/D='+$target)) -PassThru
+          if(-not $proc.WaitForExit(600000)){$proc.Kill($true);throw 'Installer timed out'}
+          if($proc.ExitCode -ne 0){throw 'Installer error'}
+          $exe=Join-Path $target 'lu-desktop.exe'
+          if((Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant() -cne $p.appSha256){throw 'Installed original app changed'}
+          "P0_INSTALLED_EXE=$exe" >> $env:GITHUB_ENV
+          "P0_INSTALLED_SHA=$($p.appSha256)" >> $env:GITHUB_ENV
+          "P0_INSTALL_DIR=$target" >> $env:GITHUB_ENV
+          "P0_PROOF_DIR=$dir" >> $env:GITHUB_ENV
+      - name: Genuine original ANSF disposable fixture and installed Win32 UI Automation
+        shell: pwsh
+        timeout-minutes: 40
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:LU_PLAN06_INSTALLED_PROFILE=Join-Path $env:APPDATA 'org.lu.agent01g.devtest'
+          $env:LU_PLAN06_INSTALLED_PROJECTS=Join-Path $env:RUNNER_TEMP 'p0-projects'
+          $ev=Join-Path $env:P0_PROOF_DIR 'p0-installed-evidence'
+          New-Item -ItemType Directory -Force -Path $ev|Out-Null
+          $env:LU_PLAN06_INSTALLED_SEED_RECEIPT=Join-Path $ev 'seed.json'
+          if(Test-Path $env:LU_PLAN06_INSTALLED_PROFILE){throw 'Refuse existing owner ANSF profile'}
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root|Out-Null
+          foreach($n in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            if(-not(Test-Path (Join-Path $root $n))){Set-Content (Join-Path $root $n) -Value 'CI_ONLY_NOT_AN_ENGINE' -NoNewline}
+          }
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib project_task_board_desktop::tests::export_dual_project_installed_ui_fixture -- --ignored --exact --nocapture
+          if($LASTEXITCODE -ne 0){throw 'ANSF fixture creation failed'}
+          python scripts/plan07d-readonly-ansf-witness.py --profile $env:LU_PLAN06_INSTALLED_PROFILE --seed $env:LU_PLAN06_INSTALLED_SEED_RECEIPT --output (Join-Path $ev 'before-ui.json')
+          if($LASTEXITCODE -ne 0){throw 'Native original ANSF witness failed'}
+          & scripts/plan07d-windows-installed-acceptance.ps1 -InstalledExe $env:P0_INSTALLED_EXE -ExpectedSha256 $env:P0_INSTALLED_SHA -ProfileDir $env:LU_PLAN06_INSTALLED_PROFILE -SeedReceipt $env:LU_PLAN06_INSTALLED_SEED_RECEIPT -ProjectsDir $env:LU_PLAN06_INSTALLED_PROJECTS -EvidenceDir (Join-Path $ev 'uia') -DisposableWindowsConfirmed
+          if($LASTEXITCODE -ne 0){throw 'Win32 original UIA review/restart not accepted'}
+          "P0_ANSF_PROFILE=$env:LU_PLAN06_INSTALLED_PROFILE" >> $env:GITHUB_ENV
+          "P0_ANSF_SEED=$env:LU_PLAN06_INSTALLED_SEED_RECEIPT" >> $env:GITHUB_ENV
+          "P0_INSTALLED_EVIDENCE=$ev" >> $env:GITHUB_ENV
+      - name: Real NSIS removal and independent ANSF preservation witness
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/plan07d-readonly-ansf-witness.py --profile $env:P0_ANSF_PROFILE --seed $env:P0_ANSF_SEED --output (Join-Path $env:P0_INSTALLED_EVIDENCE 'before-uninstall.json') --require-phase refused --require-phase cancelled --require-phase approved_for_review --require-phase interrupted
+          if($LASTEXITCODE -ne 0){throw 'Prior original ANSF evidence incomplete'}
+          $uninstaller=Join-Path $env:P0_INSTALL_DIR 'UninstallLuAGENT01GPhysicalTest.exe'
+          if(-not(Test-Path $uninstaller)){throw 'Real uninstaller missing'}
+          $p=Start-Process $uninstaller -ArgumentList '/S' -PassThru
+          if(-not $p.WaitForExit(180000)){$p.Kill($true);throw 'Uninstaller timeout'}
+          if($p.ExitCode -ne 0){throw 'Uninstaller failed'}
+          $end=[DateTime]::UtcNow.AddSeconds(30)
+          while((Test-Path $env:P0_INSTALL_DIR) -and [DateTime]::UtcNow -lt $end){Start-Sleep -Milliseconds 300}
+          if(Test-Path $env:P0_INSTALL_DIR){throw 'Installed binary remains'}
+          python scripts/plan07d-readonly-ansf-witness.py --profile $env:P0_ANSF_PROFILE --seed $env:P0_ANSF_SEED --output (Join-Path $env:P0_INSTALLED_EVIDENCE 'after-uninstall.json') --require-phase refused --require-phase cancelled --require-phase approved_for_review --require-phase interrupted
+          if($LASTEXITCODE -ne 0){throw 'ANSF missing after uninstall'}
+          $a=Get-Content (Join-Path $env:P0_INSTALLED_EVIDENCE 'before-uninstall.json') -Raw
+          $b=Get-Content (Join-Path $env:P0_INSTALLED_EVIDENCE 'after-uninstall.json') -Raw
+          if($a -cne $b){throw 'Original ANSF source changed across removal'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-p0-installed-windows-${{ github.event.pull_request.head.sha }
+          path: ${{ runner.temp }}/p0-current-nsis/
+          if-no-files-found: warn
+          retention-days: 14
+
+  p0-gate-installed-debian:
+    name: P0-GATE genuine hosted Debian app, AT-SPI, restart, removal
+    needs: p0-gate-native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Real Linux installed Tauri and accessibility dependencies
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends protobuf-compiler pkg-config libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev patchelf libatspi2.0-dev gir1.2-atspi-2.0 python3-gi xvfb dbus-x11 at-spi2-core xdotool
+      - name: Compile genuine Lu ELF and install nonproduction test Debian package
+        shell: bash
+        timeout-minutes: 110
+        run: |
+          set -euo pipefail
+          mkdir -p p0-debian-evidence
+          (cd lu-desktop && npm ci --no-audit --no-fund && npm run build && npm run check)
+          mkdir -p lu-desktop/src-tauri/resources/lu-inference
+          for n in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            printf CI_ONLY_NOT_REAL_GGUF > "lu-desktop/src-tauri/resources/lu-inference/$n"
+          done
+          cargo build --locked --release --manifest-path lu-desktop/src-tauri/Cargo.toml --bin lu-desktop
+          candidate=lu-desktop/src-tauri/target/release/lu-desktop
+          if test ! -x "$candidate"; then candidate=target/release/lu-desktop; fi
+          test -x "$candidate"
+          stage="$RUNNER_TEMP/p0-debian-stage"
+          mkdir -p "$stage/DEBIAN" "$stage/usr/lib/lu-p0" "$stage/usr/bin" "$stage/usr/share/applications"
+          install -m 0755 "$candidate" "$stage/usr/lib/lu-p0/lu-desktop"
+          ln -s ../lib/lu-p0/lu-desktop "$stage/usr/bin/lu-desktop-p0"
+          printf '%s\n' 'Package: lu-p0' 'Version: 0.1.0~alpha1' 'Architecture: amd64' 'Maintainer: Lu Acceptance <test@localhost>' 'Description: disposable Lu P0 source-bound Debian acceptance test' > "$stage/DEBIAN/control"
+          printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Lu P0 Test' 'Exec=/usr/bin/lu-desktop-p0' 'Terminal=false' 'Categories=Utility;' > "$stage/usr/share/applications/lu-p0.desktop"
+          dpkg-deb --build --root-owner-group "$stage" "$RUNNER_TEMP/lu-p0_0.1.0~alpha1_amd64.deb"
+          sha256sum "$candidate" "$RUNNER_TEMP/lu-p0_0.1.0~alpha1_amd64.deb" | tee p0-debian-evidence/build-sha256.txt
+          sudo dpkg -i "$RUNNER_TEMP/lu-p0_0.1.0~alpha1_amd64.deb"
+          test "$(sha256sum "$candidate" | cut -d' ' -f1)" = "$(sha256sum /usr/lib/lu-p0/lu-desktop | cut -d' ' -f1)"
+      - name: Installed original ANSF fixture, real AT-SPI operator decisions and restart
+        shell: bash
+        timeout-minutes: 60
+        run: |
+          set -euo pipefail
+          export XDG_DATA_HOME="$RUNNER_TEMP/p0-linux-xdg"
+          export LU_PLAN06_INSTALLED_PROFILE="$XDG_DATA_HOME/org.lu.desktop"
+          export LU_PLAN06_INSTALLED_PROJECTS="$RUNNER_TEMP/p0-linux-original-projects"
+          export LU_PLAN06_INSTALLED_SEED_RECEIPT="$GITHUB_WORKSPACE/p0-debian-evidence/seed.json"
+          test ! -e "$LU_PLAN06_INSTALLED_PROFILE"
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib project_task_board_desktop::tests::export_dual_project_installed_ui_fixture -- --ignored --exact --nocapture
+          python3 scripts/plan07d-readonly-ansf-witness.py --profile "$LU_PLAN06_INSTALLED_PROFILE" --seed "$LU_PLAN06_INSTALLED_SEED_RECEIPT" --output p0-debian-evidence/before-ui.json
+          export NO_AT_BRIDGE=0 GDK_BACKEND=x11 GTK_MODULES=gail:atk-bridge
+          xvfb-run -a dbus-run-session -- /usr/bin/python3 scripts/plan07d-debian-installed-smoke.py --installed-exe /usr/lib/lu-p0/lu-desktop --profile "$LU_PLAN06_INSTALLED_PROFILE" --seed "$LU_PLAN06_INSTALLED_SEED_RECEIPT" --evidence-dir "$GITHUB_WORKSPACE/p0-debian-evidence/atspi"
+          xvfb-run -a dbus-run-session -- /usr/bin/python3 scripts/plan07d-debian-installed-human.py --installed-exe /usr/lib/lu-p0/lu-desktop --profile "$LU_PLAN06_INSTALLED_PROFILE" --seed "$LU_PLAN06_INSTALLED_SEED_RECEIPT" --projects-dir "$LU_PLAN06_INSTALLED_PROJECTS" --evidence-dir "$GITHUB_WORKSPACE/p0-debian-evidence/human-matrix"
+          python3 scripts/plan07d-readonly-ansf-witness.py --profile "$LU_PLAN06_INSTALLED_PROFILE" --seed "$LU_PLAN06_INSTALLED_SEED_RECEIPT" --output p0-debian-evidence/before-removal.json --require-phase refused --require-phase cancelled --require-phase approved_for_review --require-phase interrupted
+          sudo dpkg -r lu-p0
+          test ! -e /usr/lib/lu-p0/lu-desktop
+          python3 scripts/plan07d-readonly-ansf-witness.py --profile "$LU_PLAN06_INSTALLED_PROFILE" --seed "$LU_PLAN06_INSTALLED_SEED_RECEIPT" --output p0-debian-evidence/after-removal.json --require-phase refused --require-phase cancelled --require-phase approved_for_review --require-phase interrupted
+          cmp -s p0-debian-evidence/before-removal.json p0-debian-evidence/after-removal.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-p0-installed-debian-${{ github.event.pull_request.head.sha }
+          path: p0-debian-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
