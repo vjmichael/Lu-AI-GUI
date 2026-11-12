@@ -21,6 +21,7 @@ pub enum RuntimeProfile {
     NodeTests,
     CmakeCTest,
     UvSyncOffline,
+    VcpkgInstallOffline,
 }
 impl RuntimeProfile {
     pub fn for_id(id: &str) -> Option<Self> {
@@ -29,6 +30,7 @@ impl RuntimeProfile {
             "js_tests" => Some(Self::NodeTests),
             "cpp_cmake_build" => Some(Self::CmakeCTest),
             "uv_sync_offline" if cfg!(feature = "package-uv-worker") => Some(Self::UvSyncOffline),
+            "vcpkg_install_offline" if cfg!(all(feature = "package-vcpkg-worker", target_os = "linux")) => Some(Self::VcpkgInstallOffline),
             _ => None,
         }
     }
@@ -38,12 +40,15 @@ impl RuntimeProfile {
             Self::NodeTests => "js_tests",
             Self::CmakeCTest => "cpp_cmake_build",
             Self::UvSyncOffline => "uv_sync_offline",
+            Self::VcpkgInstallOffline => "vcpkg_install_offline",
         }
     }
     /// Paths are fixed at build time. A candidate tree that lacks these
     /// prerequisites is denied even when its hash is syntactically valid.
     pub fn required(self, windows: bool) -> &'static [&'static str] {
         match (self, windows) {
+            (Self::VcpkgInstallOffline, true) => &["bin/vcpkg.exe", "LICENSES/vcpkg.txt"],
+            (Self::VcpkgInstallOffline, false) => &["bin/vcpkg", "LICENSES/vcpkg.txt"],
             (Self::UvSyncOffline, true) => &[
                 "bin/uv.exe",
                 "bin/python.exe",
