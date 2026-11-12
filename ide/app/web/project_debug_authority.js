@@ -22,7 +22,16 @@ export function checkedProjectDebugWitness(result,build,projectId) {
      result.threadsResponseObserved!==true||
      result.stackResponseObserved!==true||
      !(Number.isSafeInteger(result.stoppedThread)&&result.stoppedThread>0)||
-     result.installedAppAccepted!==false)return null;
+     result.installedAppAccepted!==false ||
+     result.releaseOwnerSourceLineVerified!==false ||
+     result.releaseOwnerControlAuthorized!==false ||
+     (result.releaseOwnerKernelVerified===true &&
+       (!SHA.test(result.releaseOwnerReceiptSha256||'') ||
+        !Number.isSafeInteger(result.releaseOwnerEventSequence) ||
+        result.releaseOwnerEventSequence<1)) ||
+     (result.releaseOwnerKernelVerified===false &&
+       (result.releaseOwnerReceiptSha256!==null ||
+        result.releaseOwnerEventSequence!==null)))return null;
   // A historical journal result or raw LLDB output cannot recreate this
   // exact session-scoped native outcome after the desktop restarts.
   return Object.freeze({
