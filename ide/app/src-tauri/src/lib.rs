@@ -1509,6 +1509,18 @@ async fn ide_read_github_pull_requests(
         .await.map_err(|_| "G06E01_PR_REVIEW_HOST_UNAVAILABLE".to_owned())
 }
 
+/// FIN-03: one explicit, read-only, same-HEAD public review inspection.
+#[tauri::command]
+async fn ide_read_github_review_state(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,
+    number: u64,
+) -> Result<lu_ide_workspace::github_review_state::ReviewStateEvidence, String> {
+    let registry = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move ||
+        registry.inspect_github_review_state(&project_id,number))
+        .await.map_err(|_| "G06E02_REVIEW_HOST_UNAVAILABLE".to_owned())
+}
 /// Explicit read-only public GitHub Actions receipts for the exact local HEAD.
 #[tauri::command]
 async fn ide_read_exact_head_ci(
@@ -3508,6 +3520,7 @@ pub fn run() {
             ide_read_git_history,
             ide_compare_live_github,
             ide_read_github_pull_requests,
+            ide_read_github_review_state,
             ide_read_exact_head_ci,
             ide_capture_project_inventory,
             ide_compare_project_inventory,

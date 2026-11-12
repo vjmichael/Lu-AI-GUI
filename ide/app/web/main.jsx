@@ -405,6 +405,9 @@ function App() {
   const [githubBusy, setGithubBusy] = useState(false);
   const [githubComparison, setGithubComparison] = useState(null);
   const [githubPulls, setGithubPulls] = useState(null);
+  const [githubReviewState,setGithubReviewState]=useState(null);
+  const [githubReviewBusy,setGithubReviewBusy]=useState(false);
+  const githubReviewTicket=useRef(0);
   const [githubPullsBusy, setGithubPullsBusy] = useState(false);
   const githubPullsRequest = useRef(0);
   const [exactCi, setExactCi] = useState(null);
@@ -686,6 +689,9 @@ function App() {
     setReviewedCommitRecoveryBusy(false);
     setGithubComparison(null);
     githubPullsRequest.current += 1;
+    ++githubReviewTicket.current;
+    setGithubReviewState(null);
+    setGithubReviewBusy(false);
     setGithubPulls(null);
     setGithubPullsBusy(false);
     exactCiRequest.current += 1;
@@ -3289,6 +3295,8 @@ function App() {
     const projectId = activeProject.projectId;
     const ticket = ++githubPullsRequest.current;
     setGithubPullsBusy(true);
+    ++githubReviewTicket.current;
+    setGithubReviewState(null);
     setGithubPulls(null);
     setProblem('');
     try {
@@ -3330,6 +3338,40 @@ function App() {
     }
   }
 
+  async function inspectGithubReviewState(pr) {
+    const projectId=activeProject?.projectId;
+    if(!projectId || githubReviewBusy ||
+       githubPulls?.projectId!==projectId ||
+       !githubPulls?.pulls.some(row=>row.number===pr.number &&
+         row.headSha===pr.headSha && row.localVsPrHead==='same_commit'))return;
+    const ticket=++githubReviewTicket.current;
+    setGithubReviewBusy(true);setGithubReviewState(null);
+    try{
+      const result=await invoke('ide_read_github_review_state',{
+        projectId,number:pr.number,
+      });
+      if(ticket!==githubReviewTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(result?.schemaVersion!==1 || result.projectId!==projectId ||
+         result.number!==pr.number || result.headSha!==pr.headSha ||
+         result.mergeAuthorized!==false ||
+         result.branchPolicyVerified!==false ||
+         result.reviewSubmitted!==false || result.credentialsUsed!==false ||
+         result.remoteModified!==false ||
+         result.installedAppAccepted!==false ||
+         !Number.isSafeInteger(result.currentApprovals) ||
+         !Number.isSafeInteger(result.changesRequested) ||
+         !Number.isSafeInteger(result.staleReviewers)) {
+        throw Error('G06E02_REVIEW_RESPONSE_DENIED');
+      }
+      setGithubReviewState(result);
+    }catch(error){
+      if(ticket===githubReviewTicket.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Review state unavailable: '+String(error));
+    }finally{if(ticket===githubReviewTicket.current)
+      setGithubReviewBusy(false);}
+  }
   async function inspectExactHeadCi() {
     if (!activeProject?.projectId || exactCiBusy || gitBusy) return;
     const projectId = activeProject.projectId;
@@ -9104,8 +9146,23 @@ function App() {
                         {' · '}Base: {pr.baseBranch}</p>
                       <p>Remote PR HEAD: <code>{pr.headSha}</code>
                         {' · '}Local comparison: {pr.localVsPrHead.replaceAll('_', ' ')}</p>
-                      <p>Approval and CI: not independently verified.
-                        Review is not permission to execute, publish or merge.</p>
+                      <p>Branch-policy approval and CI are not independently
+                        verified. Reviews never permit publication or merge.</p>
+                      <button type="button" className="ghostBtn"
+                        disabled={githubReviewBusy || pr.localVsPrHead!=='same_commit'}
+                        onClick={()=>void inspectGithubReviewState(pr)}>
+                        {githubReviewBusy?'Checking reviews…':'Inspect public review state'}
+                      </button>
+                      {githubReviewState?.projectId===activeProject?.projectId &&
+                       githubReviewState.number===pr.number &&
+                       githubReviewState.headSha===pr.headSha &&
+                       <p role="status">
+                         {githubReviewState.state.replaceAll('_',' ')}.
+                         Current approvals observed: {githubReviewState.currentApprovals};
+                         changes requested: {githubReviewState.changesRequested};
+                         stale reviewers: {githubReviewState.staleReviewers}.
+                         Branch protection and merge authorization remain unverified.
+                       </p>}
                       <p><a href={pr.url} target="_blank"
                         rel="noreferrer">Open this pull request on GitHub</a></p>
                     </article>)}
