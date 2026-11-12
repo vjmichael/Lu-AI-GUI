@@ -195,7 +195,8 @@ impl LocalGpuCoordinator {
         }
         let mut state=self.inner.lock().map_err(|_|GpuScheduleError::Poisoned)?;
         if state.leases.len()>=MAX_LOCAL_RESERVATIONS ||
-            state.leases.contains_key(&request.reservation_id){
+            state.leases.contains_key(&request.reservation_id) ||
+            state.leases.values().any(|lease|lease.session==request.session_id){
             return Err(GpuScheduleError::Busy)
         }
         let mut seen=BTreeSet::new();
@@ -301,6 +302,7 @@ impl ApprovedLocalGpuPlacement{
         Ok(())
     }
     pub fn mode(&self)->ComputeMode{self.mode}
+    pub fn bound_session(&self)->&str{&self.session_id}
     pub fn flags(&self)->Vec<OsString>{
         let mut flags=vec![
             "--device".into(),self.devices.join(",").into(),
@@ -348,9 +350,11 @@ impl<B:crate::inference_host::InferenceBackend+Send+'static> LocalIndependentFle
         }
         let mut names=BTreeSet::new();
         let mut devices=BTreeSet::new();
+        let mut supervisors=BTreeSet::new();
         for lane in &lanes{
             if !valid_host_id(&lane.slot_id)||
                 !names.insert(lane.slot_id.clone())||
+                !supervisors.insert(Arc::as_ptr(&lane.supervisor) as usize)||
                 lane.placement.mode()!=ComputeMode::IndependentInstance||
                 lane.placement.verify_engine(engine_sha256).is_err(){
                 return Err(GpuScheduleError::InvalidRequest)
@@ -384,6 +388,7 @@ impl<B:crate::inference_host::InferenceBackend+Send+'static> LocalIndependentFle
             let Ok(status)=lane.supervisor.status() else{continue};
             if status.phase!=crate::inference_host::EnginePhase::Ready||
                 status.generation_id.is_some()||
+                status.session_id.as_deref()!=Some(lane.placement.bound_session())||
                 status.model_ref.as_deref()!=Some(model_ref){
                 continue
             }
@@ -604,6 +609,7 @@ mod tests {
             });
         }
         let fleet=LocalIndependentFleet::new(lanes,[1;32]).unwrap();
+        assert!(fleet.choose_ready("other-model").is_err());
         let first=fleet.choose_ready("model-1").unwrap();
         let second=fleet.choose_ready("model-1").unwrap();
         assert_ne!(first.slot_id,second.slot_id);
