@@ -91,6 +91,13 @@ impl<B: InferenceBackend> InferenceBridge<B> {
     pub fn process_id(&self) -> Option<u32> {
         self.host.process_id()
     }
+    /// Host-only hint after the original session/generation reservation.
+    /// No Protobuf/UI/model field is permitted to set this cache scope.
+    pub fn set_trusted_cache_scope(
+        &mut self, scope: Option<&str>,
+    ) -> Result<(), BridgeError> {
+        self.host.set_trusted_cache_scope(scope).map_err(BridgeError::Engine)
+    }
 
     fn next_event(
         &mut self,
