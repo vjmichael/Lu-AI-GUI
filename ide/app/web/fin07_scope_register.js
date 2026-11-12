@@ -79,3 +79,38 @@ export function fin07ReconcileEvidence(projectId,records) {
    allEvidenceVerified:gates.every(row=>row.exactSourceVerified),
    taskAutomaticallyAccepted:false});
 }
+
+/** FIN-07B: reconcile the implementation ledger against FIN-06 observations.
+ * A live observation may describe a slice as inspectable. It never makes
+ * source-completeness, production safety or installed acceptance true. */
+export function fin07ImplementationReconciliation(projectId,workflow) {
+ const register=fin07ScopeRegister(projectId);
+ if(!register || workflow?.kind!=='advisory_workflow_readiness' ||
+    workflow.projectId!==projectId || workflow.executionAuthorized!==false ||
+    workflow.installedAccepted!==false || workflow.taskAccepted!==false ||
+    !Array.isArray(workflow.rows) || workflow.rows.length!==6 ||
+    typeof workflow.blockedByRecovery!=='boolean')return null;
+ const projections=register.rows.map(group=>{
+   const boundary=group.id==='FIN-01' ? 'cross_supervisor_custody_unverified'
+     : group.id==='FIN-02' ? 'deferred_native_runtime_admission'
+     : group.id==='FIN-03' ? (workflow.gitObserved
+        ? 'git_observed_mutation_gates_open':'git_native_evidence_missing')
+     : group.id==='FIN-04' ? (workflow.debuggerLaunchObserved
+        ? 'debug_launch_observed_production_controls_open':'protected_debugger_unavailable')
+     : group.id==='FIN-05' ? (workflow.packageReviewObserved
+        ? 'manifest_review_observed_executor_open':'package_executor_unavailable')
+     : group.id==='FIN-06' ? (workflow.blockedByRecovery
+        ? 'workflow_recovery_blocked':'guided_navigation_source_only')
+     : 'owner_feature_scope_and_native_evidence_required';
+   return Object.freeze({id:group.id,priority:group.priority,
+     sourceState:group.state,boundary,
+     implementationClosed:false,verifiedInstalled:false,
+     ownerAccepted:false,releaseAuthorized:false});
+ });
+ return Object.freeze({projectId,kind:'conservative_fin_group_reconciliation',
+   groups:Object.freeze(projections),
+   unresolvedGroups:projections.filter(row=>!row.implementationClosed).length,
+   sourceImplementationObserved:true,independentNativeAcceptance:false,
+   productionReleaseEligible:false,featureFrozen:false,
+   ownerAcceptanceRequired:true,automaticTaskCompletion:false});
+}
