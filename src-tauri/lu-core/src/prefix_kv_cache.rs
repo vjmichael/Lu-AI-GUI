@@ -168,6 +168,34 @@ mod tests {
             CacheDecision::ColdPrefix);
     }
     #[test]
+    fn changed_prompt_content_keeps_static_prefix_but_not_changed_suffix(){
+        let mut gate=PromptCacheGate::default();
+        let mut prior=body("A first original user request");
+        let first=gate.begin_text(Some("c-1"),&mut prior).unwrap();
+        gate.complete(first,true);
+        let mut changed=body("Changed text and fresh evidence are a new suffix");
+        let second=gate.begin_text(Some("c-1"),&mut changed).unwrap();
+        assert_eq!(second.decision,CacheDecision::EligibleSameScope);
+        // The server's tokenizer must re-evaluate everything after the
+        // first mismatched token; this gate cannot claim actual KV hits.
+        assert_eq!(prior["messages"][0],changed["messages"][0]);
+        assert_ne!(prior["messages"][1],changed["messages"][1]);
+        assert_eq!(changed["cache_prompt"],true);
+    }
+    #[test]
+    fn new_model_or_projector_epoch_requires_a_forced_miss(){
+        let mut gate=PromptCacheGate::default();
+        let mut first=body("Hello");
+        let a=gate.begin_text(Some("c-a"),&mut first).unwrap();
+        gate.complete(a,true);
+        // Persistent backend calls this on every load/unload (GGUF/MMProj).
+        gate.invalidate();
+        let mut second=body("Hello");
+        let b=gate.begin_text(Some("c-a"),&mut second).unwrap();
+        assert_eq!(b.decision,CacheDecision::ColdPrefix);
+        assert_eq!(second["cache_prompt"],false);
+    }
+    #[test]
     fn unknown_scope_and_tools_never_reuse_cached_context() {
         let mut gate=PromptCacheGate::default();
         for scope in [None,Some("not/valid"),Some(""),Some("x x")] {
