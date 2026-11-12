@@ -74,3 +74,51 @@ export function checkedFin06Destination(journey,id,projectId) {
  return Object.freeze({projectId,section:step.section,
    executionAuthorized:false});
 }
+
+/** FIN-06B: explicitly non-authoritative, current-project workflow readiness.
+ * Runtime status, OS evidence, and the owner decision are separate domains.
+ * Missing data is unavailable, never a successful default. */
+export function checkedFin06OperationalReadiness(journey,projectId,signals) {
+ if(!PROJECT.test(projectId||'') || journey?.kind!=='human_navigation_only' ||
+    journey.projectId!==projectId || journey.executionAuthorized!==false ||
+    typeof journey.workerRecoveryRequired!=='boolean' ||
+    !Array.isArray(journey.steps) || journey.steps.length!==STEPS.length ||
+    !signals || typeof signals!=='object')return null;
+ for(const step of STEPS){
+   const row=journey.steps.find(item=>item?.id===step.id);
+   if(!row || row.section!==step.section || row.executionAuthorized!==false ||
+      row.taskAccepted!==false || row.installedAccepted!==false)return null;
+ }
+ const recovery=journey.workerRecoveryRequired ||
+    signals.build?.globalRecoveryRequired===true ||
+    signals.build?.globalWorkerBusy===true ||
+    signals.debug?.globalRecoveryRequired===true ||
+    signals.debug?.orphanedDebugActionRequired===true;
+ const validGit=signals.git?.projectId===projectId &&
+    signals.git.state==='local_repository_inspected' &&
+    signals.git.truncated===false;
+ const buildReady=signals.build?.ready===true && !recovery &&
+    signals.build.globalRecoveryRequired===false &&
+    signals.build.activeInAnotherProject===false;
+ const debuggerReady=signals.debug?.ready===true && !recovery &&
+    signals.debug.projectDebugSupported===true &&
+    signals.debug.globalRecoveryRequired===false &&
+    signals.debug.activeInAnotherProject===false;
+ const packages=Array.isArray(signals.packages)?signals.packages:[];
+ const packageObserved=packages.some(row=>row?.reviewAvailable===true &&
+    row.installAuthorized===false);
+ const rows=Object.freeze([
+   {id:'source',state:validGit?'native_git_observed':'git_not_observed'},
+   {id:'build',state:buildReady?'native_worker_observed':'worker_unavailable_or_recovery'},
+   {id:'debug',state:debuggerReady?'native_debug_launch_observed':'production_debug_unavailable'},
+   {id:'packages',state:packageObserved?'manifest_review_only':'package_review_unavailable'},
+   {id:'recovery',state:recovery?'recovery_or_worker_custody_blocks':'no_active_block_observed'},
+   {id:'acceptance',state:'owner_acceptance_not_established'},
+ ].map(row=>Object.freeze({...row,executionAuthorized:false,accepted:false})));
+ return Object.freeze({projectId,kind:'advisory_workflow_readiness',
+   rows,blockedByRecovery:recovery,
+   gitObserved:validGit,buildWorkerObserved:buildReady,
+   debuggerLaunchObserved:debuggerReady,packageReviewObserved:packageObserved,
+   productionDebuggerApproved:false,packageInstallApproved:false,
+   installedAccepted:false,taskAccepted:false,executionAuthorized:false});
+}
