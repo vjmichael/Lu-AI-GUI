@@ -204,7 +204,7 @@ impl KoboldCppBackend {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+            command.creation_flags(0x0800_0000 | 0x0000_0004); // CREATE_NO_WINDOW | CREATE_SUSPENDED
             let root=env::var_os("SystemRoot")
                 .ok_or("P7L Windows system runtime location unavailable")?;
             let system=PathBuf::from(&root);
@@ -232,7 +232,7 @@ impl KoboldCppBackend {
             }
         };
         #[cfg(windows)]
-        if job.assign(&child).is_err(){
+        if job.assign_and_resume_suspended(&child).is_err(){
             let _=child.kill();
             let waited=child.wait().is_ok();
             // Release the original Job handle, including any descendants,
@@ -348,7 +348,19 @@ impl InferenceBackend for KoboldCppBackend {
             if child.wait().is_err(){reaped=false;}
         }
         #[cfg(windows)]
-        {self.job=None;} // Job kill-on-close for descendants
+        {
+            // The parent exit alone does NOT prove all Job descendants died.
+            // Retain the Job handle while querying the native kernel; refuse
+            // to clear the durable lease if the Job cannot be proven empty.
+            if let Some(job)=self.job.take(){
+                if job.terminate_and_verify_empty().is_err(){
+                    reaped=false;
+                }
+                drop(job); // kill-on-close is additional defense, not proof
+            }else if self.journal_armed {
+                reaped=false;
+            }
+        }
         self.finish_after_reap(reaped);
     }
     fn set_trusted_cache_scope(&mut self,_scope:Option<&str>){
