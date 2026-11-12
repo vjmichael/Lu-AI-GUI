@@ -768,6 +768,10 @@ struct DesktopState {
     /// permanently tainted while registered, and remain chat-bound.
     observed_image_owners: Mutex<HashMap<String,String>>,
     generation_queue: Arc<GenerationQueue>,
+    /// P6 default has ZERO enumerated local devices/remote endpoints. Only
+    /// genuine host-native evidence may grant additional device capacity.
+    p6_local_gpu:lu_core::p6_compute_fabric::LocalGpuCoordinator,
+    p6_remote_nodes:lu_core::p6_compute_fabric::OptionalComputeNodes,
     /// Last observed native P4 scheduler decision. This is a view only;
     /// neither UI nor the model may approve a background process with it.
     interactive_admission_reason:Mutex<Option<lu_core::native_background_scheduler::InteractiveAdmissionReason>>,
@@ -1320,6 +1324,10 @@ impl DesktopState {
             images: Mutex::new(HashMap::new()),
             observed_image_owners: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
+            p6_local_gpu:lu_core::p6_compute_fabric::LocalGpuCoordinator::new(
+                decode_sha(selected_engine_sha)?
+            ).map_err(|e|format!("P6 pinned device ledger unavailable: {e:?}"))?,
+            p6_remote_nodes:lu_core::p6_compute_fabric::OptionalComputeNodes::default(),
             interactive_admission_reason:Mutex::new(None),
             load_trace,
             engine_start_events,
@@ -5946,6 +5954,10 @@ struct BackgroundGuardianView {
     waiting_background_generations:usize,
     active_model_generation_class:Option<String>,
     oldest_background_wait_ms:Option<u64>,
+    p6_verified_gpu_devices:usize,
+    p6_active_gpu_reservations:usize,
+    p6_remote_candidates:usize,
+    p6_remote_dispatch_enabled:bool,
 }
 /// Native file-picker admission. The model never selects the executable,
 /// file path or task ID, and the same Lu installation performs the scan as
@@ -6285,6 +6297,13 @@ fn lu_background_guardian_status(
         waiting_background_generations:priority.waiting_background,
         active_model_generation_class:priority.active_class.map(str::to_owned),
         oldest_background_wait_ms:priority.oldest_background_wait_ms,
+        p6_verified_gpu_devices:state.p6_local_gpu.verified_device_count()
+            .map_err(|_|"P6 local device status unavailable")?,
+        p6_active_gpu_reservations:state.p6_local_gpu.reservation_count()
+            .map_err(|_|"P6 reservation status unavailable")?,
+        p6_remote_candidates:state.p6_remote_nodes.known_nodes()
+            .map_err(|_|"P6 optional node status unavailable")?,
+        p6_remote_dispatch_enabled:false,
     })
 }
 #[tauri::command]
