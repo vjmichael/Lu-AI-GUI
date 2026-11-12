@@ -4,7 +4,7 @@
 const groups=Object.freeze([
   {id:'FIN-01',priority:'P0',state:'source_slice_implemented',
    title:'Global custody and project readiness',
-   remaining:'Cross-process build/debug admission marker and dual-journal blocking are source implemented; native read-only recovery assessment is available. Independent OS release attestation, approved stale-marker clearance, concurrent-process restart tests and installed acceptance remain open.'},
+   remaining:'Build/package, debugger and protected LSP now share an exclusive marker and three original journals. Native LSP exact-job OS cleanup, pre-preparation refusal release and owner-loss revocation are source implemented. Independently attested stale-marker clearance after restart, native cross-process races and installed acceptance remain open.'},
   {id:'FIN-02',priority:'P0',state:'implementation_remaining',
    title:'Protected runtime packaging and admission',
    remaining:'Build-stage pin/layout and read-only actual Linux cgroup-host readiness implemented. Real trusted resident host/IPC, approved binary distribution, Windows service/ACL and actual native installed evidence still missing.'},
