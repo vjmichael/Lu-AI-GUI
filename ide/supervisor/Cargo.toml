@@ -38,6 +38,9 @@ multilang-worker = []
 # multilang immutable bundle, existing SCM/cgroup admission and journal.
 # No generic manager command, networked resolver or Add/Remove.
 package-uv-worker = ["multilang-worker", "dep:toml", "dep:base64"]
+# FIN05 opt-in Linux-only isolated vcpkg executor, never enabled by default.
+# Requires an independently staged exact runtime pin and delegated cgroup/Bwrap.
+package-vcpkg-worker = ["multilang-worker", "linux-worker"]
 # Disposable CI-only exact wheelhouse fixture. Never linked into installed Tauri.
 ide055-ci-wheelhouse = ["package-uv-worker"]
 # Explicit compile-time opt-in for disposable native CI ONLY. This is not a
