@@ -395,13 +395,13 @@ mod tests {
             TurnClass::Background).unwrap();
         assert!(q.enqueue_with_class("s","auto3","b3",
             TurnClass::Background).is_err());
+        let mut foreground = Vec::new();
         for i in 0..6 {
-            assert!(q.enqueue("s", &format!("human-{i}"),
-                &format!("h{i}")).is_ok());
-            // Here the ticket drops at end of statement, so this proves
-            // foreground admission rather than simultaneous occupancy.
+            foreground.push(q.enqueue("s", &format!("human-{i}"),
+                &format!("h{i}")).unwrap().0);
         }
-        assert!(q.enqueue("s","human","h").is_ok());
+        assert!(q.enqueue("s","human-extra","h-extra").is_err());
+        assert_eq!(foreground.len(),6);
     }
     #[test]
     fn cancelled_foreground_waiter_does_not_block_background_lane() {
