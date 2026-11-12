@@ -104,3 +104,71 @@ guardian SIGKILL to task/effect journal and operator view on ONE original
 human turn; Windows Job restart; physical installed operator and permission
 matrix; SEC-05 adversarial containment; SEC-06 consolidated acceptance.
 Historical SQLite state is NEVER treated as a positive OS cleanup witness.
+
+## SEC-05 — adversarial native security tests and explicit red gates
+
+**Implementation: tests/defenses authored. Native OS acceptance: OPEN.**
+Do not interpret the existence of these fixtures as kernel containment proof.
+
+| Threat | Implemented native/first-party adversary | Pass / failure requirement |
+|---|---|---|
+| Linux parent cgroup escape | `ancestor-migration` in gated Rust fixture and independent pidfd Python verifier | If ancestor write is denied, guardian must kill nested setsid process; if migration succeeds, a surviving escaped child MUST NOT receive a positive leaf-empty witness. A false witness is RED. |
+| Guardian failure/stall | Existing genuine SIGKILL/SIGSTOP, worker-stall and nested descendant cases | Unverified guardian termination NEVER becomes a positive OS stop. No unrelated process may die. |
+| Windows cross-chat Job custody | Two actual cmd/ping worker trees under separate native Jobs | Cross-chat stop refused, exact target Job cleaned, unrelated worker remains live until separately stopped. |
+| Cancellation timing | 32 concurrent real ANSF cancellation-vs-terminal-append collisions plus new fresh turn | Old watermark never permits late completion; unrelated chat and freshly approved later turn retain their own identity. |
+| Forged cancellation | Mutated phase/hash/chat, missing request, forged result, direct deletion attempts | Latest intent checksum and scope checked before each reviewed tool grant; immutable catalog rows reject direct write/delete while parent chat privacy deletion remains supported. |
+| SQLite task tampering | Direct state, task-ID, workspace-ID, uncertainty reason, task/event deletion attacks | Immutable custody remains; cannot forge RUNNING/COMPLETED/CANCELLED/TIMED_OUT, rekey, or erase original event. |
+| Cross-chat leakage | Wrong-origin reviewed task journal, independent chat status query, capped result window | No task identity leaked to a foreign conversation; bounded history never implies complete clearance. |
+| Failed original recovery | Corrupted effect SQLite, symlinked original journal, restarted uncertain task | No automatic retry or grant; fail closed with visible reconciliation required, and unrelated target files unchanged. |
+
+### Manual native attack entrypoint (not run)
+
+On an unprivileged Linux host whose own cgroup-v2 parent is actually delegated:
+
+    bash benchmarks/e1/p0_sec05_native_adversarial_manual.sh
+
+The manual script verifies exact Git source inventory, Node contracts, core
+and Tauri native adversarial tests, compiles the first-party feature-gated
+guardian and fixture, then executes guardian death/stall, worker stall and
+ancestor-migration with independent PIDFD and cgroup evidence. It exits
+nonzero for unavailable delegation, a false positive cleanup receipt or
+any failed test. Evidence is written to the reported temp directory (or
+`SEC05_EVIDENCE_DIR`). No CI dispatch, PR merge or production service is
+created. Windows native test: filter `sec05_windows_two_jobs_cross_chat`
+from the lu-core Rust test crate on the physical Windows host.
+
+### Hardening implemented
+
+- The original P0-AUTH cancellation watermark now validates the most recent
+  immutable REQUESTED row's raw JSON, SHA-256, scope and fixed schema before
+  admitting each reviewed tool dispatch. Historical mismatches deny authority.
+- ANSF original cancellation rows have no-update and guarded no-direct-delete
+  SQLite triggers. Deleting an entire human-owned chat via the original
+  parent FK cascade remains supported; model/renderer cannot select rows.
+- TaskStore's existing immutable uncertainty row now has SQLite state, owner
+  rekey, parent-delete and PROCESS_UNCERTAIN event guards. This supplements
+  Rust transitions and protects against simple direct-connection forgery.
+- Test-only Linux fixture signals original PIDFD handles and explicitly kills
+  a deliberately escaped descendant after any RED result, rather than
+  leaving a leaked test process alive. No arbitrary PID or cgroup is supplied
+  by a model, WebView or saved task.
+
+### Unclosed security limits and next gate
+
+1. No actual delegated-kernel SEC-05 run, compiler/test result, Windows native
+   run, or installed UI security test was obtained in this implementation
+   pass. SEC-05 acceptance is OPEN.
+2. A same-UID worker able to write an ancestor cgroup.procs may escape the
+   original leaf. cgroup.events populated 0 is evidence for that LEAF only.
+   The new adversarial gate will report RED if this yields a false receipt;
+   a nonmigratable OS isolation boundary is still required for full process
+   tree containment. Do not call the guardian escape closed from source alone.
+3. SQLite triggers and local SHA-256 are application integrity controls, not
+   protection from an attacker who has privileges to modify the SQLite
+   schema, remove triggers, or replace the database. The desktop OS account
+   and profile permission boundary remains an independent acceptance gate.
+4. An external effect committed before cancellation cannot be rolled back
+   by these tests. Its historical effect journal and operator-visible
+   uncertainty must remain and require a fresh human decision.
+5. SEC-06 consolidated Windows/Linux native, installed-app, recovery and
+   independent OS custody acceptance remains separate. No release or merge.
