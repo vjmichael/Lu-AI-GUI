@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0a5e47fcd9f96b55ac96983f05cb8a385728c666",
-  "trackedFileCount": 943,
+  "sourceCommitBeforeLock": "e422d18cef10fdb1092578631b5fec692b3d7a4f",
+  "trackedFileCount": 944,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -856,6 +856,10 @@
       "blob": "29dce3d7fa7e58b4b785524a22f870d76cb4bbea"
     },
     {
+      "path": "docs/LU_P0_WIN_CHAT_204_20261111.md",
+      "blob": "cd7ed427bcc22812d42c612d93a85775c3da3a7b"
+    },
+    {
       "path": "docs/LU_P10_IMAGE_BASICS.md",
       "blob": "f8d1ddcd5a87d8fcd97a1100899f5f840de46aed"
     },
@@ -1289,7 +1293,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/browser_model_desktop.rs",
-      "blob": "543938e5818a85b8d33d942724de6dde25b553bf"
+      "blob": "3acd71830a4c2f9d983a0da0b1dcac658818b094"
     },
     {
       "path": "lu-desktop/src-tauri/src/chat_message_interactions.rs",
@@ -1337,7 +1341,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/host_clock.rs",
-      "blob": "6261f273080c7c8aeb90352f2b40c7f0a6657fef"
+      "blob": "1a00b124c991fc976695f01cb4bba26b119d99c5"
     },
     {
       "path": "lu-desktop/src-tauri/src/host_safe_continuation.rs",

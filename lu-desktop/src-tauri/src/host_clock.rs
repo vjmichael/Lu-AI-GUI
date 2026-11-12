@@ -12,9 +12,55 @@ struct NativeSystemTime {
 }
 
 #[cfg(windows)]
+#[repr(C)]
+#[derive(Default)]
+struct NativeTimeZoneInformation {
+    bias:i32,
+    standard_name:[u16;32],
+    standard_date:NativeSystemTime,
+    standard_bias:i32,
+    daylight_name:[u16;32],
+    daylight_date:NativeSystemTime,
+    daylight_bias:i32,
+}
+
+#[cfg(windows)]
 #[link(name="kernel32")]
 extern "system" {
     fn GetLocalTime(system_time:*mut NativeSystemTime);
+    fn GetTimeZoneInformation(info:*mut NativeTimeZoneInformation)->u32;
+}
+
+// Windows returns a UTC->local Bias in minutes. A positive Bias means
+// a negative UTC offset. A bad or unavailable OS response is never guessed.
+#[cfg(windows)]
+fn windows_utc_offset(bias:i32,seasonal_bias:i32)->Option<String>{
+    let east=-(i64::from(bias)+i64::from(seasonal_bias));
+    if !(-840..=840).contains(&east){return None}
+    let sign=if east<0{"-"}else{"+"};
+    let magnitude=east.abs();
+    Some(format!("UTC{sign}{:02}:{:02}",magnitude/60,magnitude%60))
+}
+
+#[cfg(windows)]
+fn measured_windows_timezone()->Option<String>{
+    let mut tz=NativeTimeZoneInformation::default();
+    let state=unsafe{GetTimeZoneInformation(&mut tz)};
+    let (seasonal,name)=match state{
+        0=>(0,&tz.standard_name), // TIME_ZONE_ID_UNKNOWN
+        1=>(tz.standard_bias,&tz.standard_name),
+        2=>(tz.daylight_bias,&tz.daylight_name),
+        _=>return None, // TIME_ZONE_ID_INVALID
+    };
+    let offset=windows_utc_offset(tz.bias,seasonal)?;
+    let length=name.iter().position(|&ch|ch==0).unwrap_or(name.len());
+    let os_label=String::from_utf16_lossy(&name[..length]);
+    let safe_label=os_label.chars()
+        .filter(|ch|ch.is_alphanumeric()||ch.is_whitespace()
+            ||matches!(ch,'-'|'_'|'(' | ')'))
+        .take(64).collect::<String>();
+    if safe_label.trim().is_empty(){Some(offset)}
+    else{Some(format!("{offset}; Windows timezone: {}",safe_label.trim()))}
 }
 
 #[cfg(windows)]
@@ -27,9 +73,11 @@ fn device_clock() -> Option<String> {
         || value.hour>23 || value.minute>59 || value.second>60 {
         return None;
     }
+    let zone=measured_windows_timezone().unwrap_or_else(||
+        "Device timezone offset was not measured".into());
     Some(format!(
-        "Windows device LOCAL clock: {:04}-{:02}-{:02} {:02}:{:02}:{:02}. Device timezone offset was not measured.",
-        value.year,value.month,value.day,value.hour,value.minute,value.second
+        "Windows device LOCAL clock: {:04}-{:02}-{:02} {:02}:{:02}:{:02}; {}.",
+        value.year,value.month,value.day,value.hour,value.minute,value.second,zone
     ))
 }
 
@@ -112,6 +160,18 @@ mod tests{
         assert!(s.contains("FRESH HOST-CLOCK OBSERVATION"));
         assert!(s.contains("UTC Unix epoch seconds: "));
         assert!(!s.contains("permission granted"));
+    }
+    #[cfg(windows)]
+    #[test]
+    fn native_windows_timezone_bias_and_dst_are_explicitly_measured(){
+        assert_eq!(windows_utc_offset(420,0).as_deref(),Some("UTC-07:00"));
+        assert_eq!(windows_utc_offset(300,-60).as_deref(),Some("UTC-04:00"));
+        assert_eq!(windows_utc_offset(-330,0).as_deref(),Some("UTC+05:30"));
+        assert!(windows_utc_offset(10_000,0).is_none());
+        let current=measured_windows_timezone();
+        if let Some(zone)=current{
+            assert!(zone.starts_with("UTC+")||zone.starts_with("UTC-"));
+        }
     }
     #[cfg(not(windows))]
     #[test]
