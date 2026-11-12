@@ -447,6 +447,8 @@ impl NativeDebugRuntime {
         journal.reverse();
         let native_admission_available = available.is_ok()
             && !global_recovery_required
+            && !global_custody.worker_busy_or_unreconciled
+            && current.is_none()
             && !active_in_another_project
             && dangling_action_jobs.is_empty();
         Ok(DebugStatus {
