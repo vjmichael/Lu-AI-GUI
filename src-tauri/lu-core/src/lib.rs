@@ -224,6 +224,7 @@ pub mod rollback_approval_ledger;
 pub mod ownership_store;
 pub mod passive_diagnostics;
 pub mod passive_localization;
+pub mod p6_compute_fabric;
 pub mod inference_tuning;
 pub mod persistent_llama_backend;
 pub mod platform_compute;
