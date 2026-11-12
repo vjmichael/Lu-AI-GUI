@@ -34,7 +34,84 @@ pub struct ResourceBudget {
     pub workers:u16, pub cpu:u16, pub ram_mib:u32,
     pub gpu:u16, pub vram_mib:u32, pub disk:u16, pub network:u16,
 }
+
+/// PERF-01 P4: the native host's interactive admission decision. This
+/// reports *conservative permissions to launch new workers*, not realtime
+/// per-process OS CPU/RAM consumption or a verified VRAM measurement.
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum InteractiveAdmissionReason {
+    ForegroundModelTurn,
+    SingleProcessor,
+    UnknownMemory,
+    UnknownCpuWithResidentModel,
+    MemoryPressure,
+    CpuPressure,
+    BackgroundPermitted,
+}
+impl InteractiveAdmissionReason {
+    pub fn as_str(self)->&'static str {
+        match self {
+            Self::ForegroundModelTurn=>"FOREGROUND_MODEL_TURN",
+            Self::SingleProcessor=>"SINGLE_PROCESSOR",
+            Self::UnknownMemory=>"UNKNOWN_MEMORY",
+            Self::UnknownCpuWithResidentModel=>"UNKNOWN_CPU_WITH_RESIDENT_MODEL",
+            Self::MemoryPressure=>"MEMORY_PRESSURE",
+            Self::CpuPressure=>"CPU_PRESSURE",
+            Self::BackgroundPermitted=>"BACKGROUND_PERMITTED",
+        }
+    }
+}
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub struct InteractiveAdmission {
+    pub budget:ResourceBudget,
+    pub defer_new_background:bool,
+    pub reason:InteractiveAdmissionReason,
+}
 impl ResourceBudget {
+    /// Re-evaluated from original host-only pressure samples each watchdog
+    /// cycle. A resident GGUF retains one logical CPU and at least 1 GiB
+    /// available physical RAM for foreground prompt assembly. Never infer
+    /// free VRAM from host RAM or pretend a zero-GPU claim uses no GPU.
+    ///
+    /// Defer affects NEW background starts only; existing host-supervised
+    /// children retain original custody and durable reconciliation.
+    pub fn interactive_admission(
+        logical_cpus:usize,
+        model_resident:bool,
+        foreground_pending:bool,
+        pressure:crate::native_resource_pressure::HostPressure,
+    )->InteractiveAdmission {
+        let mut budget=Self::for_parallelism(logical_cpus);
+        if model_resident {
+            budget.workers=budget.workers.min(1);
+            budget.cpu=budget.cpu.min(1);
+            budget.ram_mib=budget.ram_mib.min(512);
+        }
+        budget=budget.under_host_pressure(pressure);
+        // No independent first-party GPU/VRAM oracle is available yet.
+        // These are unconditional ZERO even on physical Windows/Radeon.
+        budget.gpu=0;
+        budget.vram_mib=0;
+        let reason=if foreground_pending {
+            InteractiveAdmissionReason::ForegroundModelTurn
+        }else if logical_cpus<=1 {
+            InteractiveAdmissionReason::SingleProcessor
+        }else if pressure.available_ram_mib.is_none() {
+            InteractiveAdmissionReason::UnknownMemory
+        }else if model_resident && pressure.cpu_busy_percent.is_none() {
+            InteractiveAdmissionReason::UnknownCpuWithResidentModel
+        }else if pressure.available_ram_mib.is_some_and(|n|n<1536) {
+            InteractiveAdmissionReason::MemoryPressure
+        }else if pressure.cpu_busy_percent.is_some_and(|n|n>=85) {
+            InteractiveAdmissionReason::CpuPressure
+        }else{
+            InteractiveAdmissionReason::BackgroundPermitted
+        };
+        InteractiveAdmission {
+            budget,defer_new_background:reason!=InteractiveAdmissionReason::BackgroundPermitted,
+            reason,
+        }
+    }
     /// Reserve at least one CPU for foreground work; GPU budget defaults to
     /// zero until a runtime/driver-specific guardian verifies it.
     pub fn interactive_first() -> Self {
@@ -172,6 +249,9 @@ struct Inner {
     running:BTreeMap<String,ResourceClaim>,
     external:BTreeMap<String,(String,ResourceClaim)>,
     capacity:ResourceBudget,
+    // Applies to new scheduled launches AND explicit guardian leases.
+    // Never cancels an existing verified native process.
+    interactive_admission_hold:bool,
 }
 /// A short-lived, host-only lease for native OCR and other approved
 /// non-scheduler tool workers. Dropping it releases only a reservation; the
@@ -261,6 +341,7 @@ impl BackgroundScheduler{
         Ok(Self{store,process,inner:Mutex::new(Inner{
             db,plans:BTreeMap::new(),running:BTreeMap::new(),
             external:BTreeMap::new(),capacity:budget,
+            interactive_admission_hold:false,
         })})
     }
     fn insert(
@@ -349,6 +430,34 @@ impl BackgroundScheduler{
         self.tick_at(now_unix())
     }
     pub fn tick_at(&self,now:u64)->Result<usize,SchedulerError>{
+        self.tick_at_guarded(now,false)
+    }
+    /// The desktop's trusted foreground model queue gates only NEW worker
+    /// dispatch. Existing native operations retain custody, may complete and
+    /// are reconciled above this gate; no running effect is preempted.
+    pub fn tick_foreground_guarded(&self,foreground_pending:bool)
+        ->Result<usize,SchedulerError>{
+        self.tick_at_guarded(now_unix(),foreground_pending)
+    }
+    /// PERF-01 P4: apply the host-observed resource gate, then recheck the
+    /// original foreground queue immediately before EACH native spawn.
+    /// The probe must be read-only and bounded. It narrows the admission race
+    /// but is not an atomic OS-wide preemption of already-approved workers.
+    pub fn tick_interactive_guarded(
+        &self,defer_new_background:bool,
+        foreground_probe:impl Fn()->bool,
+    )->Result<usize,SchedulerError>{
+        self.tick_at_guarded_with_probe(
+            now_unix(),defer_new_background,foreground_probe
+        )
+    }
+    fn tick_at_guarded(&self,now:u64,foreground_pending:bool)
+        ->Result<usize,SchedulerError>{
+        self.tick_at_guarded_with_probe(now,foreground_pending,||false)
+    }
+    fn tick_at_guarded_with_probe(
+        &self,now:u64,foreground_pending:bool,foreground_probe:impl Fn()->bool,
+    )->Result<usize,SchedulerError>{
         self.process.poll().map_err(|_|SchedulerError::WorkerControl)?;
         let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
         let active_ids=g.running.keys().cloned().collect::<Vec<_>>();
@@ -398,6 +507,10 @@ impl BackgroundScheduler{
                 });
             }
         }
+        // Preserve terminal reconciliation and durable receipts above while
+        // a human model turn is queued/running; do not launch a new worker
+        // that competes with the user's first token.
+        if foreground_pending || g.interactive_admission_hold { return Ok(0); }
         let mut queued=Vec::new();
         {
             let mut stmt=g.db.prepare(
@@ -464,6 +577,10 @@ impl BackgroundScheduler{
                 max_runtime_seconds:job.plan.max_runtime_seconds,
             };
             let claim=job.opts.claim;
+            // A human Send may have queued during the admission scan. Do
+            // not start another native OS child behind a pending first token.
+            // Already-running workers are never killed or silently replayed.
+            if foreground_probe(){break}
             if self.process.start_host_approved(plan).is_err(){
                 g.db.execute(
                   "UPDATE lu_schedule SET state='FAILED',
@@ -540,6 +657,9 @@ impl BackgroundScheduler{
             return Err(SchedulerError::InvalidRequest)
         }
         let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
+        if g.interactive_admission_hold {
+            return Err(SchedulerError::ResourceRejected)
+        }
         if g.external.contains_key(task_id)||g.running.contains_key(task_id)
             ||g.plans.contains_key(task_id){return Err(SchedulerError::Duplicate)}
         let used=g.running.values().fold(ResourceClaim::default(),|acc,x|acc.add(*x));
@@ -548,6 +668,21 @@ impl BackgroundScheduler{
         g.external.insert(task_id.into(),(workspace_id.into(),claim));
         Ok(GuardianLease{owner:Arc::clone(self),
             task_id:task_id.into(),workspace_id:workspace_id.into()})
+    }
+    /// Single host-owned mutation: update resource reservations and whether
+    /// NEW workers may be admitted together under the existing guardian
+    /// mutex. A model/controller/renderer cannot clear this hold.
+    pub fn apply_interactive_admission(
+        &self,admission:InteractiveAdmission
+    )->Result<(),SchedulerError>{
+        let budget=admission.budget;
+        if budget.workers==0||budget.cpu==0||budget.ram_mib==0 {
+            return Err(SchedulerError::InvalidRequest)
+        }
+        let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
+        g.capacity=budget;
+        g.interactive_admission_hold=admission.defer_new_background;
+        Ok(())
     }
     pub fn set_budget(&self,budget:ResourceBudget)->Result<(),SchedulerError>{
         if budget.workers==0||budget.cpu==0||budget.ram_mib==0{
@@ -759,6 +894,105 @@ mod tests{
         assert!(queue.admit_host_worker("c-one","obs-frame-1",claim).is_err());
         drop(lease);
         assert!(queue.admit_host_worker("c-one","obs-frame-1",claim).is_ok());
+    }
+    #[test]
+    fn perf01_p4_new_workers_yield_to_human_and_unknown_pressure(){
+        use crate::native_resource_pressure::HostPressure;
+        let calm=HostPressure{available_ram_mib:Some(8192),cpu_busy_percent:Some(25)};
+        let free=ResourceBudget::interactive_admission(8,false,false,calm);
+        assert!(!free.defer_new_background);
+        assert_eq!(free.reason,InteractiveAdmissionReason::BackgroundPermitted);
+        assert_eq!((free.budget.gpu,free.budget.vram_mib),(0,0));
+        let human=ResourceBudget::interactive_admission(8,true,true,calm);
+        assert!(human.defer_new_background);
+        assert_eq!(human.reason,InteractiveAdmissionReason::ForegroundModelTurn);
+        assert_eq!((human.budget.workers,human.budget.cpu,human.budget.ram_mib),
+            (1,1,512));
+        let unknown=ResourceBudget::interactive_admission(8,true,false,
+            HostPressure{available_ram_mib:None,cpu_busy_percent:None});
+        assert!(unknown.defer_new_background);
+        assert_eq!(unknown.reason,InteractiveAdmissionReason::UnknownMemory);
+        assert_eq!(unknown.budget.ram_mib,1);
+        let no_cpu=ResourceBudget::interactive_admission(8,true,false,
+            HostPressure{available_ram_mib:Some(8192),cpu_busy_percent:None});
+        assert!(no_cpu.defer_new_background);
+        assert_eq!(no_cpu.reason,InteractiveAdmissionReason::UnknownCpuWithResidentModel);
+    }
+    #[test]
+    fn perf01_p4_single_processor_cpu_and_memory_pressure_close_new_admission(){
+        use crate::native_resource_pressure::HostPressure;
+        let nominal=HostPressure{available_ram_mib:Some(8192),cpu_busy_percent:Some(30)};
+        assert_eq!(ResourceBudget::interactive_admission(1,false,false,nominal).reason,
+            InteractiveAdmissionReason::SingleProcessor);
+        let high=HostPressure{available_ram_mib:Some(8192),cpu_busy_percent:Some(86)};
+        let busy=ResourceBudget::interactive_admission(16,true,false,high);
+        assert_eq!(busy.reason,InteractiveAdmissionReason::CpuPressure);
+        assert!(busy.defer_new_background);
+        let low=HostPressure{available_ram_mib:Some(1200),cpu_busy_percent:Some(20)};
+        let pressure=ResourceBudget::interactive_admission(16,true,false,low);
+        assert_eq!(pressure.reason,InteractiveAdmissionReason::MemoryPressure);
+        assert!(pressure.defer_new_background);
+        assert_eq!(pressure.budget.gpu,0);
+        assert_eq!(pressure.budget.vram_mib,0);
+        assert_eq!(pressure.budget.ram_mib,176); // 1200 MiB - 1024 MiB reserve
+    }
+    #[test]
+    fn foreground_gate_holds_due_workers_without_revoking_reviewed_approval(){
+        let (_,_,queue)=test_scheduler();
+        let now=now_unix();
+        queue.enqueue_host_plan(plan("held-for-human"),
+            ScheduleOptions::file_scan(now,None,Priority::Interactive)).unwrap();
+        assert_eq!(queue.tick_at_guarded(now,true).unwrap(),0);
+        assert_eq!(queue.state_for("held-for-human","c-owner").unwrap().as_deref(),
+            Some("QUEUED"));
+        assert_eq!(queue.guardian_snapshot("c-owner").unwrap().used.workers,0);
+        // After foreground clears, original admission still applies.
+        // Our intentionally invalid test hash is never executed by the OS.
+        assert_eq!(queue.tick_at_guarded(now,false).unwrap(),0);
+        assert_eq!(queue.state_for("held-for-human","c-owner").unwrap().as_deref(),
+            Some("FAILED"));
+    }
+    #[test]
+    fn perf01_p4_guardian_hold_blocks_new_lease_but_preserves_existing_custody(){
+        use crate::native_resource_pressure::HostPressure;
+        let (_,_,queue)=test_scheduler();
+        let queue=Arc::new(queue);
+        let claim=ResourceClaim::file_scan();
+        let already=queue.admit_host_worker("c-owner","existing-lease",claim).unwrap();
+        assert_eq!(queue.guardian_snapshot("c-owner").unwrap().used.workers,1);
+        let pressure=HostPressure{
+            available_ram_mib:Some(8192),cpu_busy_percent:Some(20)
+        };
+        let blocked=ResourceBudget::interactive_admission(8,true,true,pressure);
+        queue.apply_interactive_admission(blocked).unwrap();
+        assert_eq!(queue.admit_host_worker("c-owner","new-lease",claim)
+            .err(),Some(SchedulerError::ResourceRejected));
+        // Holding new admissions does not revoke prior OS process custody.
+        assert_eq!(queue.guardian_snapshot("c-owner").unwrap().used.workers,1);
+        drop(already);
+        assert_eq!(queue.guardian_snapshot("c-owner").unwrap().used.workers,0);
+        let open=ResourceBudget::interactive_admission(8,true,false,pressure);
+        queue.apply_interactive_admission(open).unwrap();
+        assert!(!open.defer_new_background);
+        assert!(queue.admit_host_worker("c-owner","later-lease",claim).is_ok());
+    }
+    #[test]
+    fn perf01_p4_second_probe_stops_native_starts_after_queue_scan(){
+        use std::sync::atomic::{AtomicUsize,Ordering};
+        let (_,_,scheduler)=test_scheduler();
+        let now=now_unix();
+        scheduler.enqueue_host_plan(plan("p4-queued"),
+            ScheduleOptions::file_scan(now,None,Priority::Interactive)).unwrap();
+        let probes=AtomicUsize::new(0);
+        let started=scheduler.tick_at_guarded_with_probe(now,false,||{
+            probes.fetch_add(1,Ordering::SeqCst);
+            true
+        }).unwrap();
+        assert_eq!(started,0);
+        assert!(probes.load(Ordering::SeqCst)>=1);
+        assert_eq!(scheduler.state_for("p4-queued","c-owner").unwrap().as_deref(),
+            Some("QUEUED"));
+        assert_eq!(scheduler.guardian_snapshot("c-owner").unwrap().used.workers,0);
     }
     #[test]
     fn priority_and_resource_admission_reject_gpu_without_verified_budget(){

@@ -2,7 +2,7 @@
 //! EXISTING ANSF Library SQLite. No new worker, planner, model grant or DB.
 //! Requests are written BEFORE stop attempts; missing outcomes after crash
 //! remain uncertain and can NEVER be replayed as a cancellation action.
-use rusqlite::{params,Connection};
+use rusqlite::{params,Connection,OptionalExtension};
 use serde::{Serialize,Deserialize};
 use sha2::{Digest,Sha256};
 use std::collections::BTreeMap;

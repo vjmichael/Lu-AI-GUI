@@ -1861,6 +1861,36 @@ mod tests{
         drop(chats);fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn p3_crash_after_stream_checkpoint_retains_only_interrupted_partial(){
+        let root=tmp();
+        let chat_id;
+        let turn=format!("g-{:032x}",201);
+        {
+            let store=ChatStore::open(&root).unwrap();
+            chat_id=store.create_chat().unwrap().chat_id;
+            store.append_user_with_turn_id(&chat_id,&turn,"Show a bounded reply").unwrap();
+            store.append_progress(&chat_id,&turn,"First token").unwrap();
+            store.append_progress(&chat_id,&turn,"First token and a saved partial").unwrap();
+            // Simulate native host death: no terminal completion/cancellation
+            // and no live model slot survives. Never auto-retry the prompt.
+        }
+        {
+            let reopened=ChatStore::open(&root).unwrap();
+            let rows=reopened.history(&chat_id).unwrap();
+            assert_eq!(rows.len(),2);
+            assert_eq!(rows[1].text,"First token and a saved partial");
+            assert!(rows[1].interrupted && !rows[1].cancelled);
+            let page=reopened.history_window(&chat_id,None,"older",10).unwrap();
+            assert_eq!(page.entries.len(),2);
+            assert_eq!(page.entries[1].text,"First token and a saved partial");
+            assert!(page.entries[1].interrupted);
+            let context=reopened.recent_model_history(&chat_id,10).unwrap();
+            assert!(context.iter().all(|m|m.role!="assistant"));
+            assert_eq!(context.len(),1,"uncommitted model bytes are never completed context");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn sqlite_is_primary_for_new_messages_and_restarts(){
         let root=tmp();
         let chat_id;

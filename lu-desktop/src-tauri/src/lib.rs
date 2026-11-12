@@ -8,9 +8,12 @@ mod memory_desktop;
 mod file_scan_worker;
 pub use file_scan_worker::run_file_scan_worker;
 mod generation_queue;
+mod stream_delivery;
 mod background_context;
 mod environment_context;
 mod host_clock;
+mod perf01_router;
+mod perf01_telemetry;
 mod vision_context;
 mod observe_desktop;
 mod ansf_source_evidence;
@@ -88,7 +91,7 @@ use workspace_desktop::lu_workspace_ask_directory;
 use reviewed_app_desktop::{lu_reviewed_app_ask,lu_agent_run_reviewed_step};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
-use generation_queue::{CancelState, GenerationQueue};
+use generation_queue::{CancelState, GenerationQueue, TurnClass};
 use load_trace::{LoadTrace, LoadTraceView};
 use lu_core::{
     inference_bridge::BridgeError,
@@ -111,7 +114,7 @@ use std::{
     io::{Read, Write},
     num::NonZeroUsize,
     path::{Path, PathBuf},
-    sync::{atomic::{AtomicBool,Ordering},Arc, Mutex},
+    sync::{atomic::{AtomicBool,AtomicU64,Ordering},Arc, Mutex},
     time::Duration,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -722,6 +725,7 @@ struct DesktopState {
     models_dir: PathBuf,
     catalog_path: PathBuf,
     chats: ChatStore,
+    perf01: perf01_telemetry::PerfLedger,
     operational_assets: lu_core::operational_asset_ledger::OperationalAssetLedger,
     continuity: lu_core::continuity::ContinuityStore,
     reviewed_memory_recovery: Vec<reviewed_memory_evidence::ReviewedMemoryRecoveryView>,
@@ -764,7 +768,11 @@ struct DesktopState {
     /// permanently tainted while registered, and remain chat-bound.
     observed_image_owners: Mutex<HashMap<String,String>>,
     generation_queue: Arc<GenerationQueue>,
+    /// Last observed native P4 scheduler decision. This is a view only;
+    /// neither UI nor the model may approve a background process with it.
+    interactive_admission_reason:Mutex<Option<lu_core::native_background_scheduler::InteractiveAdmissionReason>>,
     load_trace: Arc<Mutex<LoadTrace>>,
+    engine_start_events:Arc<AtomicU64>,
     reader_generations: Mutex<HashMap<String,ReaderRunControl>>,
     source_reuse: lu_core::ai_operations::SourceReuseIndex,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
@@ -1175,6 +1183,8 @@ impl DesktopState {
         // can report real child lifecycle events without acquiring engine locks.
         let load_trace = Arc::new(Mutex::new(LoadTrace::default()));
         let engine_trace = Arc::clone(&load_trace);
+        let engine_start_events=Arc::new(AtomicU64::new(0));
+        let engine_start_observer=Arc::clone(&engine_start_events);
         let supervisor = TrustedInferenceSupervisor::new(
             // Explicit test-only installed CPU package must not claim AMD
             // Vulkan offload; normal desktop builds retain Vulkan identity.
@@ -1186,6 +1196,7 @@ impl DesktopState {
                 OsRng.fill_bytes(&mut raw);
                 let key = raw.iter().map(|b| format!("{b:02x}")).collect::<String>();
                 let engine_trace_for_load = Arc::clone(&engine_trace);
+                let engine_start_for_load=Arc::clone(&engine_start_observer);
                 PersistentLlamaBackend::new(PersistentEngineConfig {
                     executable: executable.clone(),
                     expected_sha256: decode_sha(selected_engine_sha)?,
@@ -1195,6 +1206,9 @@ impl DesktopState {
                     request_timeout: Duration::from_secs(180),
                     api_key: key,
                     load_observer: Some(Arc::new(move |phase, pid| {
+                        if phase=="engine_spawned"&&pid.is_some(){
+                            engine_start_for_load.fetch_add(1,Ordering::Relaxed);
+                        }
                         if let Ok(mut trace) = engine_trace_for_load.lock() {
                             trace.record_engine(phase, None, pid);
                         }
@@ -1249,6 +1263,7 @@ impl DesktopState {
             models_dir:models_dir.clone(),
             catalog_path,
             chats,
+            perf01:perf01_telemetry::PerfLedger::default(),
             operational_assets:lu_core::operational_asset_ledger::OperationalAssetLedger::open(
                 &root.join("lu-operational-assets.sqlite")
             ).map_err(|e|format!("Operational asset ledger unavailable: {e:?}"))?,
@@ -1302,7 +1317,9 @@ impl DesktopState {
             images: Mutex::new(HashMap::new()),
             observed_image_owners: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
+            interactive_admission_reason:Mutex::new(None),
             load_trace,
+            engine_start_events,
             supervisor: Arc::new(supervisor),
         })
     }
@@ -1318,6 +1335,7 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
         // unbounded set of every historical task event.
         let mut attempted=HashMap::<String,i64>::new();
         let mut auto_scan_cursor=0i64;
+        let mut last_warm_check=std::time::Instant::now();
         loop {
             std::thread::sleep(Duration::from_millis(500));
             // The native task supervisor must not depend on a visible
@@ -1325,15 +1343,34 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
             // Host-only guardian admission. A loaded model reserves greater
             // foreground capacity; background GPU jobs stay prohibited until
             // a verified per-backend VRAM monitor establishes an allowance.
-            let mut budget=lu_core::native_background_scheduler::
-                ResourceBudget::interactive_first();
-            if state.supervisor.status().is_ok_and(|s|s.session_id.is_some()){
-                budget.workers=1;budget.cpu=1;budget.ram_mib=512;
-            }
+            let model_resident=state.supervisor.status()
+                .is_ok_and(|s|s.session_id.is_some());
+            let foreground_pending=state.generation_queue.has_foreground_jobs();
             let observed=state.background_pressure.sample();
-            let budget=budget.under_host_pressure(observed);
-            let _=state.background_scheduler.set_budget(budget);
-            let _=state.background_scheduler.tick();
+            let logical_cpus=std::thread::available_parallelism()
+                .map(|n|n.get()).unwrap_or(1);
+            let admission=lu_core::native_background_scheduler::
+                ResourceBudget::interactive_admission(
+                    logical_cpus,model_resident,foreground_pending,observed
+                );
+            // Capacity and the interactive launch hold are one guardian
+            // mutation. Direct native worker leases cannot slip past a
+            // foreground priority gate even when not on the timed queue.
+            let applied=state.background_scheduler.apply_interactive_admission(admission);
+            if let Ok(mut observed_reason)=state.interactive_admission_reason.lock(){
+                // A decision is not an applied guardian policy if its native
+                // admission mutex rejected it. Do not display false success.
+                *observed_reason=applied.is_ok().then_some(admission.reason);
+            }
+            // PERF-01 P4: no NEW OS worker while the live model needs
+            // foreground resources, physical RAM is unmeasured/critical, or
+            // CPU is saturated. A second host-owned queue probe runs just
+            // before every worker launch to narrow the sampling race.
+            // Existing workers still receive custody/recovery reconciliation.
+            let _=state.background_scheduler.tick_interactive_guarded(
+                admission.defer_new_background,
+                ||state.generation_queue.has_foreground_jobs(),
+            );
             // The existing watchdog also expires Lu-only observation leases.
             state.observe.tick();
             if let Ok(events)=state.background_tasks.pending_terminal_notices_after(
@@ -1351,7 +1388,23 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
                     pushed_cursor=seq;
                 }
             }
-            if state.generation_queue.has_jobs(){continue;}
+            // PERF-01 P1: host-only warm residency maintenance, no model wake.
+            // Do not evict while queued work exists; supervisor also rejects
+            // a concurrent reserved generation under its original lock.
+            if !state.generation_queue.has_jobs()
+                && last_warm_check.elapsed()>=Duration::from_secs(10) {
+                last_warm_check=std::time::Instant::now();
+                let _=state.supervisor.poll_warm_residency(
+                    &next_id("warm-residency-"),
+                    lu_core::warm_model_residency::WarmResidencyPolicy::default(),
+                );
+            }
+            // P4 protects human prompt responsiveness from a second route:
+            // background *model continuations* must obey the same measured
+            // admission as native OS workers. Existing queued/running model
+            // turns retain their original priority/cancellation custody.
+            if admission.defer_new_background ||
+                state.generation_queue.has_jobs(){continue;}
             let Ok(model)=state.supervisor.status() else{continue};
             if model.generation_id.is_some()
               ||model.phase!=lu_core::inference_host::EnginePhase::Ready{
@@ -3978,6 +4031,20 @@ fn lu_cancel(
     }
 }
 
+/// Rebind a reloaded WebView to the exact host-owned in-flight generation.
+/// Only the original session currently loaded in Lu can expose its bounded
+/// live text. A host restart leaves no in-memory stream to reattach; the
+/// existing ANSF history window reports its last durable interrupted progress.
+#[tauri::command]
+fn lu_stream_reconnect(
+    state:State<'_,Arc<DesktopState>>,chat_id:String
+)->Result<Option<generation_queue::LiveStreamSnapshot>,String>{
+    let runtime=state.supervisor.status()
+        .map_err(|_|"Current model session status unavailable")?;
+    let Some(session_id)=runtime.session_id.as_deref() else{return Ok(None)};
+    state.generation_queue.reconnect_snapshot(session_id,&chat_id)
+}
+
 #[derive(Clone,Copy,PartialEq,Eq)]
 enum GenerationOrigin { Human, BackgroundTerminal }
 
@@ -4512,6 +4579,17 @@ fn lu_m3_read_source(state:State<'_,Arc<DesktopState>>,chat_id:String,source_id:
     state.chats.known_source_for_turn(&chat_id,&source_id)
 }
 
+/// PERF-01 P0: host-only scoped diagnostics. Original chat membership is
+/// checked from ANSF before returning any same-chat receipt. These samples
+/// are ephemeral and never confer tool authority or task acceptance.
+#[tauri::command]
+fn lu_perf01_recent(
+    state:State<'_,Arc<DesktopState>>,chat_id:String,limit:Option<usize>
+)->Result<Vec<perf01_telemetry::PerfReceipt>,String>{
+    state.chats.history_window(&chat_id,None,"older",1)?;
+    state.perf01.recent(&chat_id,limit.unwrap_or(8))
+}
+
 #[tauri::command]
 async fn lu_generate(
     app: AppHandle,
@@ -4540,6 +4618,183 @@ async fn lu_generate(
         return generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
             prompt,image_refs,max_new_tokens,GenerationOrigin::Human,true).await
     }
+    // P0D: exactly worded current-human workspace request enters the
+    // ORIGINAL TOOLS-09 scanner only after a fresh native OS folder picker.
+    // This branch needs no model, and is never a WebView filesystem grant.
+    if let perf01_router::Route::ApprovedWorkspaceLiteral(needle)=
+        perf01_router::classify(
+            &prompt,!image_refs.is_empty(),
+            read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
+        ){
+        if max_new_tokens!=512 {
+            return Err("CPU workspace search uses fixed 512-token Send".into())
+        }
+        return workspace_desktop::cpu_search_workspace_for_chat(
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,needle
+        ).await;
+    }
+    if matches!(perf01_router::classify(
+        &prompt,!image_refs.is_empty(),
+        read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
+    ),perf01_router::Route::CurrentChatCounts){
+        if !(1..=4096).contains(&max_new_tokens){
+            return Err("Invalid bounded CPU chat-count request".into())
+        }
+        let host=Arc::clone(state.inner());
+        let current=host.supervisor.status()
+            .map_err(|_|"Native model status unavailable")?;
+        let loaded=current.session_id.is_some();
+        let mismatch=if session_id.is_empty(){loaded}
+            else{current.session_id.as_deref()!=Some(session_id.as_str())};
+        if mismatch {
+            return Err("Model session changed before CPU indexed count".into())
+        }
+        let began=std::time::Instant::now();
+        return tauri::async_runtime::spawn_blocking(move||{
+            host.chats.history_window(&chat_id,None,"older",1)?;
+            let result=perf01_router::count_current_chat(&host.chats,&chat_id)?;
+            let gid=next_id("g-");
+            host.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            let _=app.emit("lu-generation-queued",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"queued",position:0
+            });
+            let _=app.emit("lu-generation-start",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"running",position:0
+            });
+            host.chats.append_progress(&chat_id,&gid,&result.answer)?;
+            host.chats.complete(&chat_id,&gid)?;
+            let _=host.perf01.record(perf01_telemetry::cpu_receipt(
+                &chat_id,&gid,"INDEXED_CURRENT_CHAT_COUNTS",began,
+                loaded,None,Some(result.scanned_entries),
+                Some(result.complete),if result.complete{"COMPLETED"}else{"PARTIAL"}
+            ));
+            let _=app.emit("lu-generation-finish",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid,
+                phase:"finished",position:0
+            });
+            Ok(result.answer)
+        }).await.map_err(|_|"CPU indexed count worker interrupted")?;
+    }
+    // PERF-01 P0D: deterministic supervisor metadata, not an inference,
+    // not an inference-engine capability/progress claim and no tool grant.
+    if matches!(
+        perf01_router::classify(
+            &prompt,!image_refs.is_empty(),
+            read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
+        ),perf01_router::Route::LocalModelStatus
+    ){
+        if !(1..=4096).contains(&max_new_tokens){
+            return Err("Invalid CPU model status request limits".into())
+        }
+        let owner=Arc::clone(state.inner());
+        let current=owner.supervisor.status()
+            .map_err(|_|"Native model status unavailable")?;
+        let expected_session=current.session_id.clone();
+        let expected_model=current.model_ref.clone();
+        let session_matches=if session_id.is_empty(){
+            expected_session.is_none()
+        }else{
+            expected_session.as_deref()==Some(session_id.as_str())
+        };
+        if !session_matches{
+            return Err("Model session changed before CPU status observation".into())
+        }
+        let began=std::time::Instant::now();
+        return tauri::async_runtime::spawn_blocking(move||{
+            owner.chats.history_window(&chat_id,None,"older",1)?;
+            let now=owner.supervisor.status()
+                .map_err(|_|"Native model status unavailable")?;
+            if now.session_id!=expected_session||now.model_ref!=expected_model{
+                return Err("Model changed while reading CPU status".into())
+            }
+            let answer=format!(
+                "Lu native CPU status: phase={:?}, modelLoaded={}, modelRef={}. Source: currently observed local supervisor metadata; no inference, new model load, GPU attestation or tool permission.",
+                now.phase,
+                now.session_id.is_some(),
+                now.model_ref.as_deref().unwrap_or("none")
+            );
+            let gid=next_id("g-");
+            owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            let _=app.emit("lu-generation-queued",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"queued",position:0
+            });
+            let _=app.emit("lu-generation-start",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"running",position:0
+            });
+            owner.chats.append_progress(&chat_id,&gid,&answer)?;
+            owner.chats.complete(&chat_id,&gid)?;
+            let _=owner.perf01.record(perf01_telemetry::cpu_receipt(
+                &chat_id,&gid,"NATIVE_MODEL_STATUS",began,
+                expected_session.is_some(),None,None,None,"COMPLETED"
+            ));
+            let _=app.emit("lu-generation-finish",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid,
+                phase:"finished",position:0
+            });
+            Ok(answer)
+        }).await.map_err(|_|"CPU model status worker interrupted")?;
+    }
+    // PERF-01 P0D: exact current-human literal query, original ANSF
+    // search, same-chat source IDs, and NO inference or GPU wake.
+    // Do not treat a frontend classification as a tool or permission grant.
+    if let perf01_router::Route::CurrentChatLiteral(needle)=
+        perf01_router::classify(
+            &prompt,!image_refs.is_empty(),
+            read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
+        ){
+        if !(1..=4096).contains(&max_new_tokens){
+            return Err("Invalid CPU retrieval output limit".into())
+        }
+        let owner=Arc::clone(state.inner());
+        let current=owner.supervisor.status()
+            .map_err(|_|"Native model/session status unavailable")?;
+        let model_loaded=current.session_id.is_some();
+        let session_matches=if session_id.is_empty(){
+            current.session_id.is_none()
+        }else{
+            current.session_id.as_deref()==Some(session_id.as_str())
+        };
+        if !session_matches{
+            return Err("Model session changed before CPU retrieval".into())
+        }
+        let began=std::time::Instant::now();
+        return tauri::async_runtime::spawn_blocking(move||{
+            // Verify ANSF ownership and scan originals BEFORE appending
+            // this request, so the query cannot self-match.
+            owner.chats.history_window(&chat_id,None,"older",1)?;
+            let original=perf01_router::search_current_chat(
+                &owner.chats,&chat_id,&needle
+            )?;
+            let gid=next_id("g-");
+            let answer=original.answer;
+            owner.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            let _=app.emit("lu-generation-queued",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"queued",position:0
+            });
+            let _=app.emit("lu-generation-start",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"running",position:0
+            });
+            owner.chats.append_progress(&chat_id,&gid,&answer)?;
+            owner.chats.complete(&chat_id,&gid)?;
+            let receipt=perf01_telemetry::cpu_receipt(
+                &chat_id,&gid,"EXACT_CURRENT_CHAT_LITERAL",began,
+                model_loaded,Some(original.scanned_bytes),
+                Some(original.scanned_entries),Some(original.complete),"COMPLETED"
+            );
+            let _=owner.perf01.record(receipt);
+            let _=app.emit("lu-generation-finish",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid,
+                phase:"finished",position:0
+            });
+            Ok(answer)
+        }).await.map_err(|_|"CPU retrieval worker interrupted")?;
+    }
     // CPU-only read-only host utility: the native device clock is the
     // authoritative current observation, not Qwen's training cutoff or
     // a string hallucinated during inference. No model process, shell,
@@ -4550,11 +4805,13 @@ async fn lu_generate(
             return Err("Invalid current-time request limits".into());
         }
         let owner=Arc::clone(state.inner());
+        let perf_start=std::time::Instant::now();
         // This CPU-only host utility is valid without any GGUF model. If
         // there IS a model session, it must still match exactly; a stale
         // renderer may not silently borrow a different session identity.
         let current=owner.supervisor.status()
             .map_err(|_|"Native model/session status unavailable")?;
+        let model_loaded=current.session_id.is_some();
         let model_identity_matches=if session_id.is_empty(){
             current.session_id.is_none()
         }else{
@@ -4578,6 +4835,10 @@ async fn lu_generate(
             });
             owner.chats.append_progress(&chat_id,&gid,&answer)?;
             owner.chats.complete(&chat_id,&gid)?;
+            let _=owner.perf01.record(perf01_telemetry::cpu_receipt(
+                &chat_id,&gid,"NATIVE_OS_CLOCK",perf_start,
+                model_loaded,None,None,None,"COMPLETED"
+            ));
             let _=app.emit("lu-generation-finish",GenerationEvent{
                 chat_id:chat_id.clone(),generation_id:gid,phase:"finished",
                 position:0
@@ -4659,6 +4920,47 @@ async fn lu_generate(
         prompt,image_refs,max_new_tokens,GenerationOrigin::Human,false).await
 }
 
+/// A coalesced event uses a host-minted contiguous cursor rather than raw
+/// llama.cpp SSE chunk indices. The queue checks exact live session/turn and
+/// refuses over-capacity or cancelled output before any WebView publication.
+/// First forwarding precedes its independent durable ANSF checkpoint.
+fn publish_model_stream_chunk(
+    app:&AppHandle,
+    state:&Arc<DesktopState>,
+    session_id:&str,
+    chat_id:&str,
+    generation_id:&str,
+    chunk:stream_delivery::DeliveryChunk,
+    answer:&str,
+    last_checkpoint:&mut std::time::Instant,
+    last_checkpoint_bytes:&mut usize,
+    perf_trace:&mut perf01_telemetry::ModelTrace,
+)->Result<(),BridgeError>{
+    state.generation_queue.record_chunk(
+        session_id,generation_id,chunk.index,&chunk.text
+    ).map_err(|_|BridgeError::WrongOperation)?;
+    // WebView reloads are not model failures. Keep host-owned bounded text
+    // and the original ANSF checkpoint even if no frontend listener is
+    // currently reachable; reconnect rehydrates from the native queue.
+    let forwarded=app.emit("lu-token",ChatEvent{
+        chat_id:chat_id.into(),generation_id:generation_id.into(),
+        text:chunk.text,index:chunk.index,
+    }).is_ok();
+    if forwarded { perf_trace.chunk_forwarded_to_webview(); }
+    // First emitted chunk is committed immediately. Subsequent full snapshots
+    // are throttled to bound ANSF write amplification while preserving a
+    // subsecond recovery point and the mandatory final durable checkpoint.
+    if *last_checkpoint_bytes==0 ||
+        answer.len().saturating_sub(*last_checkpoint_bytes)>=16*1024 ||
+        last_checkpoint.elapsed()>=Duration::from_millis(750){
+        state.chats.append_progress(chat_id,generation_id,answer)
+            .map_err(|_|BridgeError::WrongOperation)?;
+        *last_checkpoint_bytes=answer.len();
+        *last_checkpoint=std::time::Instant::now();
+    }
+    Ok(())
+}
+
 /// Only the trusted Lu host may use BackgroundTerminal origin; it is never
 /// exported as a Tauri command. Models cannot synthesize auto turns.
 async fn generate_internal(
@@ -4672,6 +4974,7 @@ async fn generate_internal(
     origin:GenerationOrigin,
     plan_only:bool,
 )->Result<String,String>{
+    let perf_turn_start=std::time::Instant::now();
     let images: Vec<PinnedImage> = {
         let registered = state.images.lock().map_err(|_| "image registry poisoned")?;
         let observed=state.observed_image_owners.lock()
@@ -4720,13 +5023,23 @@ async fn generate_internal(
     }
     let generation_id = next_id("g-");
     let request_id = next_id("req-");
+    let observed_engine_starts_before=state.engine_start_events.load(Ordering::Relaxed);
+    let mut perf_trace=perf01_telemetry::ModelTrace::new(
+        &chat_id,&generation_id,perf_turn_start,true
+    ).with_model(runtime.model_ref.clone())
+        .with_background_origin(origin==GenerationOrigin::BackgroundTerminal);
+    perf_trace.queued();
     let supervisor = Arc::clone(&state.supervisor);
     // Admission is bounded and host-owned: at most one active/pending turn
     // per conversation and eight turns total for this loaded model session.
     let (ticket, position) =
         state
             .generation_queue
-            .enqueue(&session_id, &chat_id, &generation_id)?;
+            .enqueue_with_class(&session_id, &chat_id, &generation_id,
+                match origin {
+                    GenerationOrigin::Human => TurnClass::Foreground,
+                    GenerationOrigin::BackgroundTerminal => TurnClass::Background,
+                })?;
     // Durable user journal before acknowledgment, including queued prompts.
     // Ticket drop releases the queue on any error before worker dispatch.
     if origin==GenerationOrigin::Human{
@@ -4755,6 +5068,7 @@ async fn generate_internal(
     tauri::async_runtime::spawn_blocking(move || {
         let outcome = (|| -> Result<String, String> {
             ticket.wait_for_slot()?;
+            perf_trace.acquired_slot();
             if ticket.cancelled() {
                 return Err("Cancelled while queued".into());
             }
@@ -5224,13 +5538,26 @@ async fn generate_internal(
             }
             // Host clock is observed anew on every ordinary human turn.
             // It is read-only context, NEVER permission to invoke a shell or other tools.
+            let mut cache_only_clock_suffix=None;
             if origin==GenerationOrigin::Human {
-                model_prompt.push_str(&host_clock::fresh_local_clock_context());
+                let clock=host_clock::fresh_local_clock_context();
+                model_prompt.push_str(&clock);
+                cache_only_clock_suffix=Some(clock);
             }
+            // Only a plain human text request with no added retrieval,
+            // procedural memory, proposed tool contract, or changed grant
+            // may enter the same-chat prefix lane. The clock is a trailing
+            // context suffix and never enters the immutable cached prefix.
+            // All other routes explicitly fall back to a cold cache.
+            let plain_cache_scope =
+                origin==GenerationOrigin::Human && !plan_only && images.is_empty()
+                && cache_only_clock_suffix.as_ref().is_some_and(|clock|
+                    model_prompt.strip_prefix(&prompt)==Some(clock.as_str()));
             let runtime = supervisor.status().map_err(|e| format!("status: {e:?}"))?;
             if runtime.session_id.as_deref() != Some(sid.as_str()) {
                 return Err("model session changed while queued".into());
             }
+            perf_trace.context_ready();
             if images.is_empty() {
                 supervisor
                     .reserve_generation_with_history(
@@ -5255,6 +5582,15 @@ async fn generate_internal(
                     )
                     .map_err(|e| format!("reserve images: {e:?}"))?;
             }
+            // The chat ID comes from Lu's existing saved conversation
+            // custody, not the LLM or renderer. Failure to bind merely
+            // disables an optimization; it must never block a valid send.
+            let cache_scope_bound=plain_cache_scope && !ticket.cancelled()
+                && supervisor.bind_reserved_cache_scope(
+                    &sid,&gid,&chat_id).is_ok();
+            // This receipt means only that Lu admitted a cache scope; the
+            // pinned server's token reuse remains independently unverified.
+            perf_trace.cache_scope_admitted(cache_scope_bound);
             // Host cancellation can arrive between gate activation and the
             // engine reservation. Propagate the latched bit after reserving.
             if ticket.cancelled() {
@@ -5269,39 +5605,34 @@ async fn generate_internal(
                     position: 0,
                 },
             );
+            perf_trace.dispatched();
             let mut answer = String::new();
             let mut last_checkpoint = std::time::Instant::now();
             let mut last_checkpoint_bytes = 0usize;
+            let mut delivery=stream_delivery::BoundedStreamDelivery::default();
             let emit = |wire: Vec<u8>| -> Result<(), BridgeError> {
                 let frame = decode_frame(&wire).map_err(BridgeError::Wire)?;
                 if let Some(proto::inference_frame::Body::Event(event)) = frame.body {
                     if let Some(proto::inference_event::Kind::TextChunk(chunk)) = event.kind {
+                        // Validate cumulative bytes before growing model output
+                        // or forwarding to the WebView. Backend chunks are
+                        // coalesced into 40ms/2KiB host-owned indexed events.
+                        let ready=delivery.accept(&chunk.text)
+                            .map_err(|_|BridgeError::WrongOperation)?;
+                        perf_trace.stream_chunk(chunk.text.len());
                         answer.push_str(&chunk.text);
-                        if answer.len().saturating_sub(last_checkpoint_bytes) >= 512
-                            || last_checkpoint.elapsed() >= Duration::from_millis(750)
-                        {
-                            state
-                                .chats
-                                .append_progress(&chat_id, &gid, &answer)
-                                .map_err(|_| BridgeError::WrongOperation)?;
-                            last_checkpoint_bytes = answer.len();
-                            last_checkpoint = std::time::Instant::now();
+                        for part in ready {
+                            publish_model_stream_chunk(
+                                &app,&state,&sid,&chat_id,&gid,part,&answer,
+                                &mut last_checkpoint,&mut last_checkpoint_bytes,
+                                &mut perf_trace
+                            )?;
                         }
-                        app.emit(
-                            "lu-token",
-                            ChatEvent {
-                                chat_id: chat_id.clone(),
-                                generation_id: gid.clone(),
-                                text: chunk.text,
-                                index: chunk.chunk_index,
-                            },
-                        )
-                        .map_err(|_| BridgeError::WrongOperation)?;
                     }
                 }
                 Ok(())
             };
-            let result = if images.is_empty() {
+            let mut result = if images.is_empty() {
                 supervisor.run_reserved_with_history(
                     &sid,
                     &gid,
@@ -5323,10 +5654,35 @@ async fn generate_internal(
                     emit,
                 )
             };
+            // Drain a subthreshold final chunk after the original native
+            // inference call. On cancellation, the queue refuses any further
+            // UI chunks; the outer failure path still saves prior partials.
+            if let Some(tail)=delivery.flush(){
+                if let Err(error)=publish_model_stream_chunk(
+                    &app,&state,&sid,&chat_id,&gid,tail,&answer,
+                    &mut last_checkpoint,&mut last_checkpoint_bytes,
+                    &mut perf_trace
+                ){
+                    if result.is_ok(){result=Err(SupervisorError::Bridge(error));}
+                }
+            }
             match result {
                 Ok(()) => {
-                    state.chats.append_progress(&chat_id, &gid, &answer)?;
-                    state.chats.complete(&chat_id, &gid)?;
+                    // Final original ANSF publication has a definite order
+                    // against native Stop. No completed stream can be
+                    // committed after its generation was cancelled.
+                    let saved=ticket.commit_completed(&sid,||{
+                        state.chats.append_progress(&chat_id, &gid, &answer)?;
+                        state.chats.complete(&chat_id, &gid)?;
+                        Ok(())
+                    });
+                    if saved.is_err(){
+                        // A late Stop may win after llama.cpp returned Ok.
+                        // The rejected original terminal state cannot become
+                        // a trusted prefix/KV cache parent for the next turn.
+                        let _=supervisor.invalidate_prefix_cache(&sid);
+                    }
+                    saved?;
                     if plan_only{
                         let result=plan_source.as_ref()
                             .ok_or_else(||"Original plan identity unavailable".to_string())
@@ -5514,6 +5870,15 @@ async fn generate_internal(
             Err(e) if e.contains("Cancelled") || e.contains("Canceled") => "cancelled",
             Err(_) => "failed",
         };
+        let observed_engine_starts_after=state.engine_start_events.load(Ordering::Relaxed);
+        let _=state.perf01.record(perf_trace
+            .with_engine_start_events(
+                observed_engine_starts_before,observed_engine_starts_after
+            ).finish(
+                if phase=="completed"{"COMPLETED"}
+                else if phase=="cancelled"{"CANCELLED"}else{"FAILED"}
+            )
+        );
         // Observe & Learn is OFF by default. While a human-authorized
         // Lu-only observation is active, a genuine failed native model
         // generation produces a small verified-host-origin note, never a
@@ -5572,6 +5937,12 @@ struct BackgroundGuardianView {
     network_capacity:u16,network_used:u16,
     observed_available_ram_mib:Option<u64>,
     observed_cpu_busy_percent:Option<u8>,
+    interactive_admission_reason:Option<String>,
+    new_background_admission_deferred:Option<bool>,
+    waiting_foreground_generations:usize,
+    waiting_background_generations:usize,
+    active_model_generation_class:Option<String>,
+    oldest_background_wait_ms:Option<u64>,
 }
 /// Native file-picker admission. The model never selects the executable,
 /// file path or task ID, and the same Lu installation performs the scan as
@@ -5891,6 +6262,9 @@ fn lu_background_guardian_status(
     let snapshot=state.background_scheduler.guardian_snapshot(&chat_id)
         .map_err(|e|format!("Guardian status unavailable: {e:?}"))?;
     let observed=state.background_pressure.sample();
+    let priority=state.generation_queue.priority_snapshot()?;
+    let reason=*state.interactive_admission_reason.lock()
+        .map_err(|_|"Interactive admission status unavailable")?;
     Ok(BackgroundGuardianView{
         queued:snapshot.queued,running:snapshot.running,paused:snapshot.paused,
         worker_capacity:snapshot.capacity.workers,worker_used:snapshot.used.workers,
@@ -5901,6 +6275,13 @@ fn lu_background_guardian_status(
         network_capacity:snapshot.capacity.network,network_used:snapshot.used.network,
         observed_available_ram_mib:observed.available_ram_mib,
         observed_cpu_busy_percent:observed.cpu_busy_percent,
+        interactive_admission_reason:reason.map(|value|value.as_str().to_owned()),
+        new_background_admission_deferred:reason.map(|value|value!=
+            lu_core::native_background_scheduler::InteractiveAdmissionReason::BackgroundPermitted),
+        waiting_foreground_generations:priority.waiting_foreground,
+        waiting_background_generations:priority.waiting_background,
+        active_model_generation_class:priority.active_class.map(str::to_owned),
+        oldest_background_wait_ms:priority.oldest_background_wait_ms,
     })
 }
 #[tauri::command]
@@ -8715,6 +9096,7 @@ pub fn run() {
             lu_open_aux_window,
             lu_close_aux_window,
             lu_native_route_catalog,
+            lu_perf01_recent,
             project_discovery_desktop::lu_project_discover,
             project_evidence_desktop::lu_project_evidence_graph,
             project_status_desktop::lu_project_classify,
@@ -8830,6 +9212,7 @@ pub fn run() {
             lu_set_browser_visibility,
             lu_unload_model,
             lu_cancel,
+            lu_stream_reconnect,
             lu_generate,
             lu_inspect_text_file,
             lu_approve_read_proposal,

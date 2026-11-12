@@ -13,14 +13,14 @@ import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachm
 import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
 import {stagedImageDimensions,REGION_IMAGE_OPERATIONS,
   imagePointerPixel,imageDragRectangle} from './image_assembly_geometry.mjs';
-import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
+import {queuedJob, startedJob, tokenForJob, resumedJob, removeJob} from './generation_jobs.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryAnchor} from './history_window_geometry.mjs';
 import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppearance,textForBackground,visibleReactionBySeq} from './message_interactions.mjs';
 import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget,correctedMessageFollowUp} from './message_revisions.mjs';
 import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from './agent_replan.mjs';
 import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
-import {isHostCurrentTimeQuestion} from './native_intent.mjs';
+import {isHostCurrentTimeQuestion,isHostCpuChatLookup,isHostModelStatusQuestion,isHostCpuWorkspaceLookup,isHostCpuChatCountsQuestion} from './native_intent.mjs';
 import {TaskBoardWindow} from './task_board.jsx';
 
 function MessageText({text, role='assistant'}) {
@@ -826,6 +826,10 @@ function App() {
   const [researchQuoteBusy,setResearchQuoteBusy]=useState(false);
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
+  const jobsRef=useRef({});
+  const reconnectPending=useRef(new Set());
+  useEffect(()=>{jobsRef.current=jobs;},[jobs]);
+  const [perfLatestByChat,setPerfLatestByChat]=useState({}); // host diagnostics, not model proof
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
   const [writeProposals, setWriteProposals] = useState({}); // inert completed model write previews
   const [writeRecovery, setWriteRecovery] = useState([]); // read-only durable evidence
@@ -966,11 +970,14 @@ function App() {
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
   const viewedDraftImage=imageViewer && images.find(im=>im.imageRef===imageViewer.imageRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
-  // The host, not this UI predicate, authorizes the OS-clock-only shortcut.
-  // A no-model Send may ask only an explicit current-time question, with no
-  // attachments or specialist mode; all other prompts require an active GGUF.
+  // Only two host-validated, read-only and model-free shortcuts are shown:
+  // native clock and exact literal search of this original ANSF chat.
+  // The Rust host independently rejects mismatched mode/session/scope.
   const modelFreeClockAllowed=!loaded && !runtime.sessionId &&
-    isHostCurrentTimeQuestion(prompt) && images.length===0 && textFiles.length===0 &&
+    (isHostCurrentTimeQuestion(prompt)||isHostCpuChatLookup(prompt)||
+      isHostModelStatusQuestion(prompt)||isHostCpuWorkspaceLookup(prompt)||
+      isHostCpuChatCountsQuestion(prompt)) &&
+    images.length===0 && textFiles.length===0 &&
     !planDraftNextSend && !browserResearchNextSend && !reviewedAppNextSend &&
     !workspaceToolsNextSend;
   const busy = working || runtime.phase === 'Generating' || Object.keys(jobs).length > 0;
@@ -988,7 +995,11 @@ function App() {
   // An in-flight checkpoint is already visible in the live stream buffer.
   // Do not render that same unfinished assistant text twice after chat switch.
   const displayedHistory = visibleJob ? history.filter((entry,i) =>
-    !(i === history.length - 1 && entry.role === 'assistant' && entry.interrupted && !entry.cancelled)) : history;
+    // An older interrupted response belongs to its original generation.
+    // Never hide that durable partial merely because a NEW turn is active.
+    !(i === history.length - 1 && entry.role === 'assistant' &&
+      entry.interrupted && !entry.cancelled &&
+      entry.text.length>0 && visibleStream.startsWith(entry.text))) : history;
   useEffect(() => { draftText.current = prompt; draftImages.current = images; draftFiles.current = textFiles; }, [prompt, images, textFiles]);
   useEffect(() => {
     if (!(working && activity.startsWith('Loading'))) {
@@ -2228,6 +2239,35 @@ function App() {
     }catch(e){setError('Next history page unavailable: '+String(e))}
     finally{loadingWindow.current=false}
   }
+  /// A WebView reload does not restore a generation ticket. Reattach only to
+  // the host's exact current model session + conversation, never by
+  // resubmitting the prompt. If the host restarted, show durable ANSF
+  // interrupted partial output instead of claiming completion.
+  async function reconcileActiveStream(targetChat){
+    if(!targetChat || reconnectPending.current.has(targetChat))return;
+    reconnectPending.current.add(targetChat);
+    const expectedGeneration=jobsRef.current[targetChat]?.generationId??null;
+    try{
+      const snapshot=await invoke('lu_stream_reconnect',{chatId:targetChat});
+      if(currentChat.current!==targetChat)return;
+      // An older RPC cannot remove or overwrite a newer generation that
+      // started while the snapshot was in flight.
+      setJobs(prev=>{
+        if((prev[targetChat]?.generationId??null)!==expectedGeneration)return prev;
+        return resumedJob(prev,targetChat,snapshot);
+      });
+      if(!snapshot && (jobsRef.current[targetChat]?.generationId??null)
+            ===expectedGeneration){
+        const durable=await loadLatestUiHistory(targetChat);
+        if(currentChat.current===targetChat)setHistory(durable);
+      }
+    }catch(error){
+      if(currentChat.current===targetChat)
+        setError('Native stream reconciliation unavailable: '+String(error));
+    }finally{
+      reconnectPending.current.delete(targetChat);
+    }
+  }
   async function switchChat(id) {
     if (currentChat.current !== id) {
       // Capture the outgoing reading position before the asynchronous read.
@@ -2254,6 +2294,7 @@ function App() {
     setChatId(id);
     setHistory(entries);
     setError('');
+    void reconcileActiveStream(id);
   }
   useEffect(() => {
     let alive = true;
@@ -2284,7 +2325,13 @@ function App() {
     listen('lu-token', e => {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => tokenForJob(prev,e.payload));
-    }).then(fn => { if (alive) stopToken = fn; else fn(); });
+    }).then(fn => {
+      if (alive){
+        stopToken = fn;
+        // Close the window between history loading and event registration.
+        if(currentChat.current)void reconcileActiveStream(currentChat.current);
+      }else fn();
+    });
     listen('lu-read-proposal', e => {
       const proposal = e.payload;
       if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
@@ -2381,6 +2428,21 @@ function App() {
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
     return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); stopPlanAdmission(); stopAgentWitness(); stopTaskHandoff(); };
   }, []);
+  // A missing queued/start event or stream-index gap is recovered from the
+  // native same-chat cursor. Do not fill missing bytes with guessed text.
+  useEffect(()=>{
+    for(const [id,job] of Object.entries(jobs)){
+      if(job?.needsSync && currentChat.current===id)
+        void reconcileActiveStream(id);
+    }
+  },[jobs]);
+  // A hidden/reopened WebView may have missed finished or token events.
+  // This is one user-focus read, not periodic inference polling.
+  useEffect(()=>{
+    const resumed=()=>{if(currentChat.current)void reconcileActiveStream(currentChat.current);};
+    window.addEventListener('focus',resumed);
+    return ()=>window.removeEventListener('focus',resumed);
+  },[]);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
   function onTranscriptScroll() {
@@ -4040,6 +4102,16 @@ function App() {
       }
       setJobs(prev => removeJob(prev,activeId));
       await refreshCatalog().catch(error => { if (currentChat.current === activeId) setError(String(error)); });
+      // Read only the original host-observed per-chat latency receipt.
+      // The WebView never sends performance records or model permissions.
+      if (completed && currentChat.current===activeId) {
+        const samples=await invoke('lu_perf01_recent',{
+          chatId:activeId,limit:1
+        }).catch(()=>[]);
+        if(samples.length && currentChat.current===activeId){
+          setPerfLatestByChat(prev=>({...prev,[activeId]:samples[0]}));
+        }
+      }
       if (usePlanDraft) await refreshToolActivity(activeId).catch(error=>{
         if (currentChat.current===activeId)setError(String(error));
       });
@@ -4386,7 +4458,7 @@ function App() {
           className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}
           style={{backgroundColor:entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble,
             color:textForBackground(entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble)}}>
-          <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
+          <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted (partial saved)' : ''}</span>
           {revision?.replyTo&&<button type="button" className="messageReplyReference"
             onClick={()=>setMessageProvenance({entry,revision})}
             aria-label={'Inspect reply provenance for message '+entry.seq}>
@@ -5946,13 +6018,24 @@ function App() {
             </span>)}
           </div>}
           <textarea ref={composerRef} aria-label="Message Lu" value={prompt} onChange={e => {draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
-            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask for the current time, or load a GGUF model…'}
+            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask the time, check model status, search this chat or selected workspace'}
             onPaste={handlePaste}
             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
             {/* Legacy specialist controls retained temporarily for compatibility, but no longer mounted. Native tools enter through the original human chat and per-turn OS approvals. */}
+            {perfLatestByChat[chatId] && <small className="hostPerfLatest"
+              aria-label="Latest host-observed performance receipt"
+              title="Measured by Lu host; missing token/GPU metrics are unverified, not zero.">
+              {perfLatestByChat[chatId].route==='CPU_DETERMINISTIC'?'CPU exact':'GGUF model'}
+              {' · '}{perfLatestByChat[chatId].overallLatencyMs} ms
+              {perfLatestByChat[chatId].queueWaitMs!=null
+                ?' · queue '+perfLatestByChat[chatId].queueWaitMs+' ms':''}
+              {perfLatestByChat[chatId].modelDispatchToFirstChunkMs!=null
+                ?' · first text '+perfLatestByChat[chatId].modelDispatchToFirstChunkMs+' ms':''}
+              {' · '}{perfLatestByChat[chatId].terminalState}
+            </small>}
             
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
@@ -6332,6 +6415,19 @@ function App() {
           <span>Workers: {backgroundGuardian.workerUsed}/{backgroundGuardian.workerCapacity} · CPU slots: {backgroundGuardian.cpuUsed}/{backgroundGuardian.cpuCapacity} · RAM reservation: {backgroundGuardian.ramUsedMib}/{backgroundGuardian.ramCapacityMib} MiB</span>
           <small>{backgroundGuardian.observedAvailableRamMib==null?'Physical RAM probe unavailable':('Physical RAM available: '+backgroundGuardian.observedAvailableRamMib+' MiB')}{backgroundGuardian.observedCpuBusyPercent==null?'':' · CPU busy '+backgroundGuardian.observedCpuBusyPercent+'%'}</small>
           <small>GPU tasks stay disabled without verified backend VRAM availability. CPU/RAM admission reacts to host pressure; reservations are not actual per-worker consumption.</small>
+          <small>Interactive model: {backgroundGuardian.activeModelGenerationClass||'no active turn'}
+            {' '}· Waiting human: {backgroundGuardian.waitingForegroundGenerations??0}
+            {' '}· Waiting automatic: {backgroundGuardian.waitingBackgroundGenerations??0}</small>
+          <small>New background worker launches: {
+            backgroundGuardian.newBackgroundAdmissionDeferred===null ||
+            backgroundGuardian.newBackgroundAdmissionDeferred===undefined
+              ?'not yet sampled'
+              :backgroundGuardian.newBackgroundAdmissionDeferred?'deferred':'eligible'}
+            {' '}· Host reason: {String(backgroundGuardian.interactiveAdmissionReason||
+              'UNMEASURED').replaceAll('_',' ').toLowerCase()}.</small>
+          <small>This is Lu's conservative launch policy, not actual
+            GPU/VRAM allocation or proof that an already-running worker paused.
+            Existing workers retain cancellation and restart custody.</small>
         </div>}
         <div className="backgroundScanLaunch">
           <button type="button" className="primaryButton"

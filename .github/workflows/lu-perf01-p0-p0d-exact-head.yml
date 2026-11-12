@@ -1,0 +1,101 @@
+name: Lu PERF-01 P0/P0D exact-head native acceptance
+on:
+  push:
+    branches:
+      - lu/perf01-p0-p0d-closeout-20261112
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lu-perf01-p0p0d-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source-node:
+    name: Exact source and Node regression (not physical benchmark)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact committed source-tree.lock
+        run: node scripts/verify-source-tree.mjs
+      - name: Test genuine Node PERF-01/TOOLS-09 source and baseline programs
+        run: >
+          node --test
+          lu-desktop/tests/perf01-cpu-first.test.mjs
+          lu-desktop/tests/perf01-p0d-closeout.test.mjs
+          lu-desktop/tests/perf01-baseline.test.mjs
+          lu-desktop/tests/tools09-bounded-search.test.mjs
+      - name: Syntax-check unchanged production JavaScript runner
+        run: node --check scripts/perf01-host-baseline.mjs
+  core-native:
+    name: Actual Core Rust tests (${{ matrix.os }})
+    needs: source-node
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Native full Core regressions including actual TOOLS-09 scanner
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib -- --nocapture
+      - name: Native direct approved-root CPU scan adversaries
+        run: cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib perf01_cpu_workspace -- --nocapture
+  desktop-windows:
+    name: Native Windows PERF-01 Rust/React compilation
+    needs: source-node
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Stage NONFUNCTIONAL compiler-only inference placeholders
+        shell: pwsh
+        run: |
+          $root='lu-desktop/src-tauri/resources/lu-inference'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          foreach($name in @('llama-server.exe','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll')){
+            Set-Content -LiteralPath (Join-Path $root $name) -Value 'NOT_AN_ENGINE_CI_PLACEHOLDER' -NoNewline
+          }
+      - name: Compile production React UI and run its compiler checks
+        shell: pwsh
+        working-directory: lu-desktop
+        run: |
+          if(Test-Path package-lock.json){ npm ci }else{ npm install --no-audit --no-fund }
+          npm run build
+          npm run check
+      - name: Compile actual Tauri Windows source
+        run: cargo check --locked --manifest-path lu-desktop/src-tauri/Cargo.toml
+      - name: Execute actual native PERF-01 original ANSF router and timing tests
+        run: cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib perf01 -- --nocapture
+      - name: Parse physical Windows owner sampler without executing it
+        shell: pwsh
+        run: |
+          $tokens=$null
+          $errors=$null
+          $null=[System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path -LiteralPath 'scripts/perf01-windows-owner-metrics.ps1').Path,
+            [ref]$tokens,[ref]$errors)
+          if($null -ne $errors -and $errors.Count -gt 0){
+            foreach($parseError in $errors){Write-Error ($parseError.Message + ' at ' + $parseError.Extent.Text)}
+            exit 1
+          }
+          Write-Host 'Owner-only sampler PowerShell syntax: accepted; real CPU/GPU measurements NOT RUN'

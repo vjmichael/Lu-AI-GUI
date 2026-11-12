@@ -243,3 +243,47 @@ fn tools09_late_line_match_contains_the_provenance_phrase(){
     assert_eq!(answer.hits[0].sha256_hex,format!("{:x}",Sha256::digest(input.as_bytes())));
     drop(root);fs::remove_dir_all(path).unwrap();
 }
+
+
+#[test]
+fn perf01_cpu_workspace_reuses_original_no_follow_search_and_hash(){
+    let (path,root)=sandbox();
+    fs::create_dir(path.join("nested")).unwrap();
+    fs::write(path.join("nested/alpha.rs"),"CPU-needle captured\n").unwrap();
+    fs::write(path.join(".private"),"CPU-needle secret\n").unwrap();
+    let result=search_host_approved_workspace_cpu(&path,"CPU-needle").unwrap();
+    assert_eq!(result.status,"COMPLETE");
+    assert_eq!(result.hits.len(),1);
+    assert_eq!(result.hits[0].path,"nested/alpha.rs");
+    assert_eq!(result.hits[0].sha256_hex,
+        format!("{:x}",Sha256::digest(b"CPU-needle captured\n")));
+    assert!(!result.hits[0].excerpt.contains("secret"));
+    assert!(search_host_approved_workspace_cpu(&path,"x").is_err());
+    drop(root);fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn perf01_cpu_workspace_marks_capped_results_partial(){
+    let (path,root)=sandbox();
+    for i in 0..32{
+        fs::write(path.join(format!("hit-{i:03}.txt")),"CPU-needle\n").unwrap();
+    }
+    let result=search_host_approved_workspace_cpu(&path,"CPU-needle").unwrap();
+    assert_eq!(result.hits.len(),16);
+    assert_eq!(result.status,"PARTIAL");
+    assert!(result.limitations.contains(&"MATCH_LIMIT".to_owned()));
+    drop(root);fs::remove_dir_all(path).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn perf01_cpu_workspace_rejects_direct_symlink_as_approved_root(){
+    use std::os::unix::fs::symlink;
+    let (path,root)=sandbox();
+    let alias=path.with_extension("alias");
+    symlink(&path,&alias).unwrap();
+    let failure=search_host_approved_workspace_cpu(&alias,"CPU-needle");
+    assert!(failure.is_err());
+    drop(root);fs::remove_file(alias).unwrap();
+    fs::remove_dir_all(path).unwrap();
+}

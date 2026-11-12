@@ -72,6 +72,11 @@ pub trait InferenceBackend {
         self.load(model)
     }
     fn unload(&mut self);
+    /// Optional host-only hint, never accepted from a model/Protobuf frame.
+    /// Backends that lack KV support retain their existing behavior.
+    fn set_trusted_cache_scope(&mut self, _scope: Option<&str>) {}
+    /// Clear eligibility when a reserved turn is cancelled before transport.
+    fn invalidate_prefix_cache(&mut self) {}
     /// Image bytes can only originate from the host's verified saved-turn
     /// resolver. A backend without vision support fails closed.
     fn generate_with_images(
@@ -176,7 +181,10 @@ impl<B: InferenceBackend> InferenceHost<B> {
                 .and_then(serde_json::Value::as_str)!=Some("lu_browser_read") {
             return Err(EngineError::InvalidRequest);
         }
-        if cancel.is_cancelled(){ return Err(EngineError::Cancelled); }
+        if cancel.is_cancelled(){
+            self.backend.invalidate_prefix_cache();
+            return Err(EngineError::Cancelled);
+        }
         self.phase=EnginePhase::Generating;
         self.cancellation=Some(cancel.clone());
         let outcome=self.backend.generate_browser_function_calls(
@@ -184,7 +192,10 @@ impl<B: InferenceBackend> InferenceHost<B> {
         );
         self.cancellation=None;
         self.phase=EnginePhase::Ready;
-        if cancel.is_cancelled(){ return Err(EngineError::Cancelled); }
+        if cancel.is_cancelled(){
+            self.backend.invalidate_prefix_cache();
+            return Err(EngineError::Cancelled);
+        }
         outcome.map_err(EngineError::Backend)
     }
     pub fn generate(
@@ -204,6 +215,7 @@ impl<B: InferenceBackend> InferenceHost<B> {
             return Err(EngineError::InvalidRequest);
         }
         if cancel.is_cancelled() {
+            self.backend.invalidate_prefix_cache();
             return Err(EngineError::Cancelled);
         }
         self.phase = EnginePhase::Generating;
@@ -217,6 +229,7 @@ impl<B: InferenceBackend> InferenceHost<B> {
         self.cancellation = None;
         self.phase = EnginePhase::Ready;
         if cancel.is_cancelled() {
+            self.backend.invalidate_prefix_cache();
             return Err(EngineError::Cancelled);
         }
         result.map_err(EngineError::Backend)
@@ -240,6 +253,7 @@ impl<B: InferenceBackend> InferenceHost<B> {
             return Err(EngineError::InvalidRequest);
         }
         if cancel.is_cancelled() {
+            self.backend.invalidate_prefix_cache();
             return Err(EngineError::Cancelled);
         }
         self.phase = EnginePhase::Generating;
@@ -255,9 +269,24 @@ impl<B: InferenceBackend> InferenceHost<B> {
         self.cancellation = None;
         self.phase = EnginePhase::Ready;
         if cancel.is_cancelled() {
+            self.backend.invalidate_prefix_cache();
             return Err(EngineError::Cancelled);
         }
         result.map_err(EngineError::Backend)
+    }
+    /// A failed or revoked host journal commit is not a successful cache
+    /// parent, even when llama.cpp finished generating its local bytes.
+    pub fn invalidate_prefix_cache(&mut self) {
+        self.backend.invalidate_prefix_cache();
+    }
+    /// A bound, host-owned conversation may opt into prefix reuse only
+    /// while the same backend is ready. This does not authorize any tool.
+    pub fn set_trusted_cache_scope(&mut self, scope: Option<&str>) -> Result<(), EngineError> {
+        if self.phase != EnginePhase::Ready {
+            return Err(EngineError::NotLoaded);
+        }
+        self.backend.set_trusted_cache_scope(scope);
+        Ok(())
     }
     pub fn cancel(&self) {
         if let Some(cancel) = &self.cancellation {
