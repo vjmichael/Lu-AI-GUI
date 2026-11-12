@@ -20,6 +20,7 @@ pub mod execution_intents;
 pub mod git_batch_review;
 pub mod git_branch_operations;
 pub mod git_stash_inventory;
+pub mod git_fin03_operation_preview;
 pub mod git_reviewed_unstage;
 pub mod git_reviewed_restore;
 pub mod git_reviewed_stash_save;
