@@ -372,7 +372,7 @@ function App() {
   const [stashBusy,setStashBusy]=useState(false);
   const [reviewedRestore,setReviewedRestore]=useState(null);
   const [restoreReceipt,setRestoreReceipt]=useState(null);
-  const [restoreRecovery,setRestoreRecovery]=useState(false);
+  const [restoreRecovery,setRestoreRecovery]=useState(null);
   const [restoreBusy,setRestoreBusy]=useState(false);
   const restoreTicket=useRef(0);
   const [reviewedUnstage,setReviewedUnstage]=useState(null);
@@ -3333,7 +3333,7 @@ function App() {
     try{
       const interrupted=await invoke('ide_git_single_file_restore_recovery',{projectId});
       if(ticket!==restoreTicket.current||activeProjectIdRef.current!==projectId)return;
-      setRestoreRecovery(interrupted===true);
+      setRestoreRecovery(interrupted===true?projectId:null);
       if(interrupted!==false)throw Error('FIN03_RESTORE_MANUAL_RECOVERY_REQUIRED');
       const review=await invoke('ide_git_review_single_file_restore',{projectId});
       if(ticket!==restoreTicket.current||activeProjectIdRef.current!==projectId)return;
@@ -3367,7 +3367,7 @@ function App() {
     }catch(error){
       if(ticket===restoreTicket.current&&activeProjectIdRef.current===projectId){
         setProblem('Native restore declined or interrupted: '+String(error));
-        setRestoreRecovery(true);
+        setRestoreRecovery(projectId);
       }
     }finally{if(ticket===restoreTicket.current)setRestoreBusy(false);}
   }
@@ -3380,7 +3380,7 @@ function App() {
       const required=await invoke('ide_git_single_file_restore_recovery',{projectId});
       if(ticket===restoreTicket.current&&activeProjectIdRef.current===projectId){
         if(typeof required!=='boolean')throw Error('FIN03_RESTORE_RECOVERY_INVALID');
-        setRestoreRecovery(required);
+        setRestoreRecovery(required?projectId:null);
       }
     }catch(error){
       if(ticket===restoreTicket.current&&activeProjectIdRef.current===projectId)
@@ -8656,7 +8656,7 @@ function App() {
                 onClick={()=>void inspectRestoreRecovery()}>
                 Inspect interrupted restore
               </button>
-              {restoreRecovery && <p role="alert">An interrupted restore requires
+              {restoreRecovery===activeProject.projectId && <p role="alert">An interrupted restore requires
                 operator review of the preserved original and target file.
                 No automatic replay or rollback will occur.</p>}
             </section>}
