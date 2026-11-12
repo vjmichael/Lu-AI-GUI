@@ -274,6 +274,11 @@ impl<B: InferenceBackend> InferenceHost<B> {
         }
         result.map_err(EngineError::Backend)
     }
+    /// A failed or revoked host journal commit is not a successful cache
+    /// parent, even when llama.cpp finished generating its local bytes.
+    pub fn invalidate_prefix_cache(&mut self) {
+        self.backend.invalidate_prefix_cache();
+    }
     /// A bound, host-owned conversation may opt into prefix reuse only
     /// while the same backend is ready. This does not authorize any tool.
     pub fn set_trusted_cache_scope(&mut self, scope: Option<&str>) -> Result<(), EngineError> {
