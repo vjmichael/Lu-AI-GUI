@@ -109,12 +109,10 @@ fn tools09_limit_reasons_and_cooperative_cancel_are_explicit(){
     assert_eq!(limited.scanned_files,3);
     assert!(limited.truncated);
     assert!(limited.limitations.contains(&"FILE_LIMIT".into()));
-    let mut polls=0u32;
+    let polls=std::sync::atomic::AtomicU32::new(0);
     let aborted=search_with_cancel(&root,request("needle",true),||{
-        // The closure is called synchronously by the blocking walker.
-        // Interior mutation here is deliberate test-only behavior.
-        polls+=1;
-        polls>=3
+        // Synchronous Fn closure with interior test-only atomic state.
+        polls.fetch_add(1,Ordering::Relaxed)>=2
     },Instant::now());
     // This test exercises the branch without an OS child or model.
     assert_eq!(aborted.unwrap_err().code,"CANCELLED");
