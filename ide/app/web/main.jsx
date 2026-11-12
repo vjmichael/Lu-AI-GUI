@@ -49,6 +49,8 @@ import { belongsToSelectedProject } from './job_render_guard.js';
 import { ingestJobProgress, visibleJobProgress } from './job_progress.js';
 import { safeConventionalTestDiscovery } from './conventional_tests.js';
 import {checkedTestExplorer} from './test_explorer.js';
+import {checkedFin06Journey,checkedFin06Destination}
+  from './fin06_guided_workflow.js';
 import { projectJobLifecycle } from './protected_job_lifecycle.js';
 import { safeDebugTargetReview } from './debug_target_review.js';
 import { safeDebugBinaryEvidence } from './debug_binary_evidence.js';
@@ -801,6 +803,11 @@ function App() {
   const structuredTestReport=useMemo(()=>
     visibleStructuredTestEvidence(buildResult,activeProject?.projectId),
     [buildResult,activeProject?.projectId]);
+  const fin06Journey=useMemo(()=>
+    checkedFin06Journey(int06Workbench,activeProject?.projectId,
+      buildResult,structuredTestReport,debugResult),
+    [int06Workbench,activeProject?.projectId,buildResult,
+      structuredTestReport,debugResult]);
   const testExplorerModel=useMemo(()=>
     checkedTestExplorer(testDiscovery,structuredTestReport,
       activeProject?.projectId,testExplorerFilter),
@@ -1568,6 +1575,19 @@ function App() {
     }finally{
       if(ticket===int06Request.current)setInt06Busy(false);
     }
+  }
+  function navigateFin06Stage(id) {
+    const projectId=activeProjectIdRef.current;
+    const result=checkedFin06Destination(fin06Journey,id,projectId);
+    if(!result || projectId!==activeProject?.projectId)return;
+    setSection(result.section);
+    if(result.section==='test-explorer')void inspectConventionalTests();
+    if(result.section==='languages')
+      void invoke('ide_list_language_servers')
+        .then(setLanguageServers).catch(()=>setLanguageServers([]));
+    if(result.section==='source')void refreshGitStatus();
+    if(result.section==='continuity')void refreshContext();
+    if(result.section==='tasks')void refreshProtectedBuildStatus();
   }
   function openInt06WorkflowPanel(id) {
     const projectId=activeProjectIdRef.current;
@@ -6594,6 +6614,21 @@ function App() {
                         Open {item.label}
                       </button>
                     </article>)}
+                  {fin06Journey && <section aria-label="FIN-06 guided human workflow">
+                    <h3>FIN-06 · Human development workflow</h3>
+                    <p>Stages are navigation only. A completed native job,
+                      test reporter or debugger stop is never independent
+                      acceptance or permission to execute.</p>
+                    {fin06Journey.steps.map(step=>
+                      <article className="continuityEvent" key={step.id}>
+                        <strong>{step.label}</strong>
+                        <p>{step.observation.replaceAll('_',' ')}</p>
+                        <button type="button" className="ghostBtn"
+                          onClick={()=>navigateFin06Stage(step.id)}>
+                          Open review stage
+                        </button>
+                      </article>)}
+                  </section>}
                   <p>Acceptance status:
                     <strong> not verified</strong>. Completed native jobs and
                     repository observations never complete human acceptance
