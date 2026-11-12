@@ -394,7 +394,7 @@ mod tests {
    let row=f.registry.review_fin03_local_impact(
     &f.id,operation,None,Some(0)).unwrap();
    assert_eq!(row.selected_commit,stash_oid.to_string());
-   assert_eq!(row.stash_ref_tip.as_deref(),Some(stash_oid.to_string().as_str()));
+   assert_eq!(row.stash_ref_tip,Some(stash_oid.to_string()));
    assert!(row.changed_paths_count>=1);
    assert!(!row.execution_route_available && !row.execution_authorized);
    assert!(!row.result_tree_verified);
