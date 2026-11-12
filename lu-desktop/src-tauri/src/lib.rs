@@ -16,6 +16,7 @@ mod observe_desktop;
 mod ansf_source_evidence;
 mod p0_auth_custody;
 mod p0_auth_desktop;
+mod p0_sec_recovery;
 #[cfg(target_os="linux")]
 mod observe_linux_auth;
 mod native_browser_host;
