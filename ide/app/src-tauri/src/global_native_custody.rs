@@ -583,13 +583,24 @@ fn recover_abandoned_recovery_guard(profile:&Path,path:&Path)->Result<(),String>
  if owner==0 || owner==std::process::id(){
   return Err("FIN01_RECOVERY_OWNER_STILL_ALIVE".into());
  }
+ // An earlier interrupted clearance may have left an empty known
+ // kernel group. The kernel verifier must receive ALL original job IDs,
+ // not an empty fake inventory that rejects a legitimate residual group.
+ let mut originals=Vec::new();
+ for (domain,_) in DOMAINS {
+  let rows=domain_rows(profile,domain)?;
+  if durable_busy(&rows){
+   return Err("FIN01_RECOVERY_GUARD_ORIGINAL_JOBS_STILL_ACTIVE".into());
+  }
+  originals.extend(rows);
+ }
  #[cfg(windows)]
  lu_ide_execution_supervisor::windows_worker
-  ::verify_global_worker_quiescence(owner,&[])
+  ::verify_global_worker_quiescence(owner,&originals)
   .map_err(|_|"FIN01_ABANDONED_RECOVERY_OWNER_KERNEL_UNVERIFIED")?;
  #[cfg(target_os="linux")]
  lu_ide_execution_supervisor::linux_worker
-  ::verify_global_worker_quiescence(owner,&[])
+  ::verify_global_worker_quiescence(owner,&originals)
   .map_err(|_|"FIN01_ABANDONED_RECOVERY_OWNER_KERNEL_UNVERIFIED")?;
  let after=fs::symlink_metadata(path)
   .map_err(|_|"FIN01_RECOVERY_LOCK_CHANGED")?;
