@@ -90,12 +90,19 @@ message SearchTextHit {
   string path = 1;
   uint32 line_number = 2;
   string excerpt = 3;
+  // Exact content digest of a complete, unchanged, opened file.
+  // Not a permission, file handle or proof of freshness after the scan.
+  string sha256_hex = 4;
+  uint64 size_bytes = 5;
 }
 message SearchTextResult {
   repeated SearchTextHit hits = 1;
   uint32 scanned_files = 2;
-  bool truncated = 3;
+  bool truncated = 3; // Also true on skipped/inaccessible/mutated data.
   uint32 scanned_directories = 4;
+  repeated string limitations = 5; // Bounded host-defined codes, never filesystem paths.
+  uint64 read_bytes = 6;
+  uint32 skipped_entries = 7;
 }
 
 // TOOLS-04: host-scoped, read-only ZIP manifest inspection. Never extracts.
