@@ -72,6 +72,9 @@ pub trait InferenceBackend {
         self.load(model)
     }
     fn unload(&mut self);
+    /// Optional host-only hint, never accepted from a model/Protobuf frame.
+    /// Backends that lack KV support retain their existing behavior.
+    fn set_trusted_cache_scope(&mut self, _scope: Option<&str>) {}
     /// Image bytes can only originate from the host's verified saved-turn
     /// resolver. A backend without vision support fails closed.
     fn generate_with_images(
@@ -258,6 +261,15 @@ impl<B: InferenceBackend> InferenceHost<B> {
             return Err(EngineError::Cancelled);
         }
         result.map_err(EngineError::Backend)
+    }
+    /// A bound, host-owned conversation may opt into prefix reuse only
+    /// while the same backend is ready. This does not authorize any tool.
+    pub fn set_trusted_cache_scope(&mut self, scope: Option<&str>) -> Result<(), EngineError> {
+        if self.phase != EnginePhase::Ready {
+            return Err(EngineError::NotLoaded);
+        }
+        self.backend.set_trusted_cache_scope(scope);
+        Ok(())
     }
     pub fn cancel(&self) {
         if let Some(cancel) = &self.cancellation {
