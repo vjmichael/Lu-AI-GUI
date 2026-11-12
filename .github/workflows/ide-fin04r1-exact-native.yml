@@ -81,6 +81,13 @@ jobs:
           cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib debug_action_receipts
           if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_ONE_USE_RESTART_TEST_FAILED' }
           Write-Host 'FIN04R1_WINDOWS_COMPILER_AND_SOURCE_FIXTURES=PASS_NOT_KERNEL_OR_INSTALLED'
+      - name: Complete exact-head Rust supervisor regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_FULL_SUPERVISOR_RUST_REGRESSION_FAILED' }
+          Write-Host 'FIN04R1_FULL_RUST_SUPERVISOR_REGRESSION=PASS_NOT_KERNEL_OR_INSTALLED'
       - name: Parse physical-only script without synthetic UI interaction
         shell: pwsh
         run: |
