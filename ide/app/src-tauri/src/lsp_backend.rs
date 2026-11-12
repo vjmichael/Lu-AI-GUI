@@ -854,6 +854,7 @@ impl NativeLspRuntime {
     fn use_active<F>(&self, registry: &IdeWorkspaceRegistry,
         request: LspRequest, mut action: F) -> Result<Value, String>
     where F: FnMut(&mut Active, &LspRequest) -> Result<LspReply, String> {
+        self.require_current_global_owner()?;
         let mut lock = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
         let active = lock.as_mut().ok_or("LSP_SESSION_NOT_STARTED")?;
         let doc = active.documents.get(&request.relative_path)
