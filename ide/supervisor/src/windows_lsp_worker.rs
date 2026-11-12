@@ -796,7 +796,7 @@ impl RestrictedLspProcess for WindowsLspProcess {
         }
         serde_json::from_slice::<serde_json::Value>(&output).map_err(|_|bad())
     }
-    #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
+    #[cfg(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature="fin04-release-owner-evidence"))]
     fn wait_owner_continued_for_ci(&mut self, seq: u64) -> Result<(), SupervisorError> {
         if !self.lease.alive() {
             return Err(SupervisorError::NoContainment);
