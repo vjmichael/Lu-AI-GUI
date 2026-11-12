@@ -2114,6 +2114,29 @@ async fn ide_debug_reconcile(
 // The default desktop exposes read-only "unavailable" status; none of these
 // commands can run an unpinned executable, accept a path, grant token, source
 // payload, shell flags or debugger command from the WebView.
+/// Read-only FIN01 cross-supervisor custody classification. Neither the
+/// renderer nor this command can approve OS cleanup, remove a marker, or
+/// replay an interrupted native job.
+#[tauri::command]
+async fn ide_fin01_recovery_assessment(app:AppHandle)
+ ->Result<serde_json::Value,String>{
+ #[cfg(all(any(windows,target_os="linux"),any(feature="native-build",feature="native-debug")))]
+ {
+  let profile=app.path().app_data_dir()
+   .map_err(|_|"FIN01_PROFILE_UNAVAILABLE")?;
+  return tauri::async_runtime::spawn_blocking(move||
+    crate::global_native_custody::assess_global_recovery(&profile))
+   .await.map_err(|_|"FIN01_RECOVERY_ASSESSMENT_INTERRUPTED".to_owned())?
+   .and_then(|value|serde_json::to_value(value)
+     .map_err(|_|"FIN01_RECOVERY_ASSESSMENT_SERIALIZATION_FAILED".to_owned()));
+ }
+ #[cfg(not(all(any(windows,target_os="linux"),any(feature="native-build",feature="native-debug"))))]
+ {
+  let _=app;
+  Err("FIN01_NATIVE_SUPERVISORS_NOT_INSTALLED".into())
+ }
+}
+
 #[tauri::command]
 async fn ide_build_status(app: AppHandle, project_id: String) -> Result<serde_json::Value, String> {
     #[cfg(all(feature = "native-build", any(windows, target_os = "linux")))]
@@ -3781,6 +3804,7 @@ pub fn run() {
             ide_inspect_saved_test_symbols,
             ide_review_project_debug_target,
             ide_review_multilang_adapter,
+            ide_fin01_recovery_assessment,
             ide_build_status,
             ide_terminal_open,
             ide_terminal_submit,
