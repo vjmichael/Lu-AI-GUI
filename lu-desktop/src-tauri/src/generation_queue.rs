@@ -385,6 +385,29 @@ mod tests {
         drop(b);
     }
     #[test]
+    fn concurrent_stop_during_final_anf_commit_cannot_revoke_published_answer(){
+        let q=Arc::new(GenerationQueue::default());
+        let (ticket,_)=q.enqueue("s","c","g").unwrap();
+        ticket.wait_for_slot().unwrap();
+        let (entered_tx,entered_rx)=mpsc::channel();
+        let (release_tx,release_rx)=mpsc::channel();
+        let finalizer=thread::spawn(move||{
+            ticket.commit_completed("s",||{
+                entered_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                Ok(())
+            }).unwrap();
+        });
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let cancelled_queue=Arc::clone(&q);
+        let stopper=thread::spawn(move||cancelled_queue.cancel("s","g"));
+        // Finalization holds the queue mutex until the original ANSF commit
+        // completes; a concurrent Stop cannot rewrite the terminal state.
+        release_tx.send(()).unwrap();
+        finalizer.join().unwrap();
+        assert!(stopper.join().unwrap().is_err());
+    }
+    #[test]
     fn completed_journal_turn_rejects_late_native_stop(){
         let q=Arc::new(GenerationQueue::default());
         let (a,_)=q.enqueue("s","c","g").unwrap();
