@@ -38,7 +38,8 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, GetLastError, LocalFree, ERROR_ALREADY_EXISTS, HANDLE, INVALID_HANDLE_VALUE,
+        CloseHandle, GetLastError, LocalFree, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND,
+        ERROR_INVALID_PARAMETER, HANDLE, INVALID_HANDLE_VALUE,
         WAIT_OBJECT_0, WAIT_TIMEOUT,
     },
     Security::{
@@ -63,7 +64,8 @@ use windows_sys::Win32::{
         },
         Threading::{
             CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess,
-            InitializeProcThreadAttributeList, OpenProcessToken, ResumeThread, TerminateProcess,
+            InitializeProcThreadAttributeList, OpenProcess, OpenProcessToken, ResumeThread, TerminateProcess,
+            PROCESS_QUERY_LIMITED_INFORMATION,
             UpdateProcThreadAttribute, WaitForSingleObject, CREATE_NO_WINDOW, CREATE_SUSPENDED,
             CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, PROCESS_INFORMATION,
             PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTF_USESTDHANDLES, STARTUPINFOEXW,
@@ -1577,6 +1579,75 @@ pub fn reconcile_windows_interrupted(
 /// The supervisor's in-memory AND replayed quarantine remain active until
 /// that ACK and a second native Job-tree verification both succeed.
 #[cfg(feature = "protected-recovery-service")]
+/// FIN-01D: independent *current* kernel checks before a stale global marker
+/// can be cleared. A named Job that still has any active process is a hard
+/// refusal; missing Jobs count only when original durable records are
+/// terminal and the worker implementation's kill-on-last-handle semantics
+/// were independently established by native acceptance.
+pub fn verify_global_worker_quiescence(
+    owner_pid:u32, jobs:&[JobSummary]
+)->Result<crate::KernelQuiescenceWitness,SupervisorError>{
+    if owner_pid==0 || jobs.len()>4096 || owner_pid==std::process::id(){
+        return Err(SupervisorError::Quarantined);
+    }
+    let owner=unsafe{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,0,owner_pid)};
+    if !owner.is_null(){
+        let handle=Handle::new(owner)?;
+        // Signaled kernel process object means exited, not merely an absent
+        // user-mode heartbeat. Access errors remain quarantine.
+        if unsafe{WaitForSingleObject(handle.0,0)}!=WAIT_OBJECT_0{
+            return Err(SupervisorError::Quarantined);
+        }
+    } else if unsafe{GetLastError()}!=ERROR_INVALID_PARAMETER {
+        return Err(SupervisorError::Quarantined);
+    }
+    let mut identities=std::collections::BTreeSet::new();
+    let mut absent=0usize;
+    let mut empty=0usize;
+    for row in jobs {
+        if row.requires_reconciliation ||
+            !matches!(row.phase,JobPhase::Completed|JobPhase::Cancelled|JobPhase::Failed|JobPhase::Denied) ||
+            !valid_job_id(&row.job_id) ||
+            !row.job_id.bytes().all(|b|!b.is_ascii_uppercase()) ||
+            row.plan_sha256.len()!=64 ||
+            !row.plan_sha256.bytes().all(|b|b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) ||
+            !identities.insert(row.job_id.as_str()) {
+            return Err(SupervisorError::Quarantined);
+        }
+        let name=job_name(&row.job_id,&row.plan_sha256)?;
+        let raw=unsafe{OpenJobObjectW(JOB_OBJECT_QUERY_ACCESS,0,name.as_ptr())};
+        if raw.is_null(){
+            if unsafe{GetLastError()}!=ERROR_FILE_NOT_FOUND {
+                return Err(SupervisorError::Quarantined);
+            }
+            absent+=1;
+            continue;
+        }
+        let job=Job{handle:Handle::new(raw)?};
+        if !matches!(job.empty(),Ok(true)){
+            return Err(SupervisorError::Quarantined);
+        }
+        empty+=1;
+    }
+    // Repeat owner-exit check to avoid relying on a stale one-time read.
+    let owner_again=unsafe{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,0,owner_pid)};
+    if !owner_again.is_null(){
+        let handle=Handle::new(owner_again)?;
+        if unsafe{WaitForSingleObject(handle.0,0)}!=WAIT_OBJECT_0{
+            return Err(SupervisorError::Quarantined);
+        }
+    } else if unsafe{GetLastError()}!=ERROR_INVALID_PARAMETER {
+        return Err(SupervisorError::Quarantined);
+    }
+    Ok(crate::KernelQuiescenceWitness{
+        platform:"windows_job_object",
+        examined_job_identities:jobs.len(),
+        kernel_objects_empty:empty,
+        kernel_objects_absent:absent,
+        marker_owner_exited:true,
+    })
+}
+
 pub fn reconcile_windows_interrupted_via_service(
     supervisor: &Supervisor,
     id: &str,
