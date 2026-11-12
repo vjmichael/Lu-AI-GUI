@@ -1575,6 +1575,9 @@ pub struct ReleaseOwnerObservation {
     pub original_debug_job_verified: bool,
     pub original_build_receipt_verified: bool,
     pub source_line_independently_verified: bool,
+    pub independently_verified_source_line: Option<u32>,
+    pub independently_verified_source_sha256: Option<String>,
+    pub independent_pdb_sha256: Option<String>,
     pub debugger_control_authorized: bool,
     pub recovery_authorized: bool,
 }
@@ -1744,11 +1747,78 @@ impl WindowsDapSession {
                 || r.body.phase != JobPhase::Running) {
             return Err(SupervisorError::InvalidTransition);
         }
+        // FIN-04R-1: independently decode the exact compiler PE/PDB in a
+        // separately token-verified AppContainer child that belongs to this
+        // same native Job and protected SCM recovery lease. No desktop host
+        // Command::spawn fallback is available to release builds.
+        let staged_root=self.release_staged_target_root.as_deref()
+            .ok_or(SupervisorError::NoContainment)?;
+        let relative_pdb=target.symbols.symbols_relative_path.as_deref()
+            .ok_or(SupervisorError::NoContainment)?;
+        let staged_binary=staged_root.join(target.confined_relative_binary());
+        let staged_pdb=staged_root.join(relative_pdb);
+        let frame=self.gateway.source_candidate()
+            .ok_or(SupervisorError::NoContainment)?;
+        if frame.line==0 || frame.instruction_address!=Some(sample.observed_rip){
+            return Err(SupervisorError::NoContainment);
+        }
+        let verified=crate::windows_stopped_line_oracle
+            ::independently_verify_pdb_line_with_reader(
+                &self.release_staged_bundle,
+                &plan.toolchain_sha256,
+                target,
+                &self.source_input.root,
+                &lineage.module,
+                &sample,
+                &frame,
+                |_,slide,rip|self.gateway.read_pe_pdb_inside_owned_job(
+                    &staged_binary,&staged_pdb,
+                    &target.binary.binary_sha256,
+                    &target.symbols.symbols_sha256,
+                    &plan.toolchain_sha256,slide,rip,
+                ),
+            )?;
+        if !verified.independent_pe_pdb_source_line_verified ||
+           !verified.os_thread_rip_matches_lldb_stack ||
+           !verified.os_loaded_pe_mapping_verified ||
+           verified.debugger_commands_authorized ||
+           verified.installed_app_accepted ||
+           verified.line!=frame.line ||
+           verified.binary_sha256!=target.binary.binary_sha256 ||
+           verified.pdb_sha256!=target.symbols.symbols_sha256 ||
+           verified.source_relative_path!="src/main.rs" {
+            return Err(SupervisorError::NoContainment);
+        }
+        // The PDB subprocess has now exited. Independently verify that
+        // Win32 still reports the same live LLDB-owned DEBUG_EVENT and
+        // the same *original* stopped thread/RIP and DAP source candidate.
+        let end=self.gateway.verify_lldb_kernel_event_owner(
+            sample.process_id,sample.thread_id,sample.observed_rip,
+        )?;
+        if end!=event || !self.gateway.poll()?.is_empty() ||
+           self.gateway.phase()!=DapPhase::Stopped ||
+           self.gateway.source_candidate()!=Some(frame.clone()) {
+            return Err(SupervisorError::NoContainment);
+        }
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_|SupervisorError::WrongProjectOrSource)?;
+        if supervisor.receipt_history(job_id)?.last().is_none_or(|r|
+            r.entry_hash!=running.entry_hash || r.body.phase!=JobPhase::Running)
+           || supervisor.receipt_history(&target.lineage.build_job_id)?
+               .last().is_none_or(|r|
+                 r.entry_hash!=target.lineage.terminal_receipt_sha256 ||
+                 r.body.phase!=JobPhase::Completed) {
+            return Err(SupervisorError::InvalidTransition);
+        }
         Ok(ReleaseOwnerObservation {
-            owner_sequence:event.seq, receipt_sha256:receipt,
+            owner_sequence:event.seq,receipt_sha256:receipt,
             os_event_owner_verified:true,original_debug_job_verified:true,
             original_build_receipt_verified:true,
-            source_line_independently_verified:false,
+            source_line_independently_verified:true,
+            independently_verified_source_line:Some(verified.line),
+            independently_verified_source_sha256:Some(verified.source_sha256),
+            independent_pdb_sha256:Some(verified.pdb_sha256),
             debugger_control_authorized:false,recovery_authorized:false,
         })
     }
