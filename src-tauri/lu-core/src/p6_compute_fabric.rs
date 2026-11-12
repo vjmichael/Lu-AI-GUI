@@ -238,6 +238,10 @@ impl LocalGpuCoordinator {
     pub fn reservation_count(&self)->Result<usize,GpuScheduleError>{
         Ok(self.inner.lock().map_err(|_|GpuScheduleError::Poisoned)?.leases.len())
     }
+    pub fn verified_device_count(&self)->Result<usize,GpuScheduleError>{
+        Ok(self.inner.lock().map_err(|_|GpuScheduleError::Poisoned)?
+            .observations.len())
+    }
     /// No device observation or reservation survives an uncertain host
     /// restart. Neither the availability of an OS PID nor a status text line
     /// proves a previous model process has been reaped. Native acceptance
