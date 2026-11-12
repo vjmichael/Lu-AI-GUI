@@ -258,6 +258,47 @@ mod tests{
   fs::remove_dir_all(p).unwrap();
  }
  #[test]
+ fn denied_preparation_can_release_only_when_original_journal_is_unchanged(){
+  let p=fixture();
+  let mut fence=GlobalAdmissionFence::acquire(&p,"build").unwrap();
+  let before=[job(JobPhase::Completed,false)];
+  let changed=[job(JobPhase::Prepared,false)];
+  assert_eq!(fence.release_before_prepare_if_unchanged(&before,&changed)
+    .unwrap_err(),"FIN01_NEW_JOURNAL_EVENT_BEFORE_ADMISSION_RELEASE");
+  assert!(global_custody_unresolved(&p).unwrap());
+  fence.release_before_prepare_if_unchanged(&before,&before).unwrap();
+  assert!(!global_custody_unresolved(&p).unwrap());
+  fs::remove_dir_all(p).unwrap();
+ }
+ #[cfg(feature="native-lsp")]
+ #[test]
+ fn independently_replayed_lsp_job_blocks_build_and_debug_admission(){
+  let p=fixture();
+  let supervisor=lu_ide_execution_supervisor::Supervisor::open(
+     p.join("lsp-job-receipts.jsonl")).unwrap();
+  let plan=lu_ide_execution_supervisor::JobPlan{
+   project_id:format!("ide-{}","b".repeat(32)),
+   recipe_id:"lsp_rust_analyzer".into(),source_head:"c".repeat(40),
+   input_snapshot_sha256:"d".repeat(64),manifest_sha256:"e".repeat(64),
+   toolchain_sha256:"f".repeat(64),debug_target_binding_sha256:None,
+   runtime_limit_ms:300000,memory_limit_bytes:512*1024*1024,
+   process_limit:4,log_limit_bytes:64*1024,
+   effect_class:"language_analysis_isolated".into(),
+  };
+  let prepared=supervisor.prepare(plan).unwrap();
+  assert_eq!(prepared.phase,JobPhase::Prepared);
+  assert!(durable_busy(&sibling_rows(&p,"build").unwrap()));
+  assert!(durable_busy(&sibling_rows(&p,"debug").unwrap()));
+  assert_eq!(preflight_global_idle(&p,"build").unwrap_err(),
+    "FIN01_PREVIOUS_NATIVE_WORKER_NOT_RECONCILED");
+  assert!(!global_custody_unresolved(&p).unwrap());
+  let assessment=assess_global_recovery(&p).unwrap();
+  assert_eq!(assessment.lsp_journal_pending,1);
+  assert!(!assessment.original_journals_reconciled);
+  assert!(!assessment.marker_removal_authorized);
+  fs::remove_dir_all(p).unwrap();
+ }
+ #[test]
  fn marker_corruption_cannot_be_silently_reconciled(){
   let p=fixture();
   let mut lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
