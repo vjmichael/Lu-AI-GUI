@@ -173,6 +173,24 @@ impl GlobalAdmissionFence {
   self.released=true;
   Ok(())
  }
+ /// Runtime owner check only. A marker is a *serialization receipt*,
+ /// never an OS grant, but a lost/replaced marker must revoke subsequent
+ /// LSP operations rather than assume continued exclusive admission.
+ pub fn marker_owner_intact(&self)->Result<(),String>{
+  if self.released {return Err("FIN01_GLOBAL_MARKER_ALREADY_RELEASED".into());}
+  let meta=fs::symlink_metadata(&self.marker)
+   .map_err(|_|"FIN01_GLOBAL_MARKER_LOST")?;
+  if !meta.is_file() || meta.file_type().is_symlink() ||
+     meta.len()!=self.owner_bytes.len() as u64 {
+   return Err("FIN01_GLOBAL_MARKER_OWNER_CHANGED".into());
+  }
+  let bytes=fs::read(&self.marker)
+   .map_err(|_|"FIN01_GLOBAL_MARKER_UNREADABLE")?;
+  if bytes!=self.owner_bytes{
+   return Err("FIN01_GLOBAL_MARKER_OWNER_CHANGED".into());
+  }
+  Ok(())
+ }
  pub fn is_released(&self)->bool{self.released}
 }
 
