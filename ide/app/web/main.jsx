@@ -4745,6 +4745,43 @@ function App() {
     }
   }
 
+  async function recordFin04ActionOsRecovery(){
+    const projectId=activeProject?.projectId;
+    if(!projectId||debugBusy||debugStatus?.current||
+      fin04Evidence?.projectId!==projectId||
+      fin04Evidence.originalActionFilesChecked===0||
+      fin04Evidence.globalUnresolvedActionRequired!==true)return;
+    setDebugBusy(true);setProblem('');
+    try{
+      // The native host opens a REAL OS dialog after independently
+      // re-reading the original action book; no browser consent is sent.
+      const result=await invoke('ide_debug_action_os_recovery',{projectId});
+      if(activeProjectIdRef.current!==projectId)return;
+      if(result?.projectId!==projectId ||
+         result.code!=='FIN04_OS_TREE_QUIESCENT_ACTION_OUTCOME_UNKNOWN' ||
+         result.osKernelQuiescenceVerified!==true ||
+         result.postCommandResultIndependentlyVerified!==false ||
+         result.originalActionReplayed!==false ||
+         result.globalMarkerCleared!==false ||
+         result.debuggerExecutionAuthorized!==false ||
+         result.installedAppAccepted!==false ||
+         result.operatorTaskAccepted!==false ||
+         !/^[a-f0-9]{64}$/.test(result.nativeReceiptSha256||'') ||
+         !/^[a-f0-9]{64}$/.test(result.originalActionManifestSha256||''))
+         throw Error('FIN04REC_NATIVE_WITNESS_NOT_TRUSTED');
+      setHint('Original OS process tree independently verified quiescent. '+
+        'Interrupted debugger action outcome remains unknown; no replay or admission.');
+      void inspectFin04ControlEvidence();
+      void invoke('ide_debug_status',{projectId}).then(value=>{
+        if(activeProjectIdRef.current===projectId)setDebugStatus(value);
+      }).catch(()=>{});
+    }catch(error){
+      if(activeProjectIdRef.current===projectId)
+        setProblem('OS-only debugger action recovery not established: '+String(error));
+    }finally{
+      if(activeProjectIdRef.current===projectId)setDebugBusy(false);
+    }
+  }
   async function inspectFin04ControlEvidence(){
     const projectId=activeProject?.projectId;
     if(!projectId || fin04EvidenceBusy)return;
@@ -8156,6 +8193,20 @@ function App() {
                 <p>Inspect original action-journal hashes, phases and their
                   originating debugger jobs. This does not inspect live memory,
                   approve a breakpoint or step, or grant DAP execution.</p>
+                {fin04Evidence?.projectId===activeProject.projectId &&
+                 fin04Evidence.originalActionFilesChecked>0 &&
+                 fin04Evidence.globalUnresolvedActionRequired===true &&
+                 <div className="continuityEvent">
+                   <p>An original debugger action has no final independently
+                     reconciled result. After OS-only job cleanup, one native
+                     human approval can record an OS kernel quiescence witness.
+                     This will NOT clear the global admission lock or retry an action.</p>
+                   <button type="button" className="ghostBtn"
+                     disabled={debugBusy||!!debugStatus?.current||fin04EvidenceBusy}
+                     onClick={()=>void recordFin04ActionOsRecovery()}>
+                     Verify OS-only action recovery (audit only)
+                   </button>
+                 </div>}
                 <button type="button" className="ghostBtn"
                   disabled={fin04EvidenceBusy}
                   onClick={()=>void inspectFin04ControlEvidence()}>
