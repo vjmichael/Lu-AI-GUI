@@ -220,6 +220,23 @@ fn reviewed_initial_stop_source(
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DebugActionOsRecovery {
+    pub project_id:String,
+    pub code:&'static str,
+    pub original_jobs_checked:usize,
+    pub os_platform:&'static str,
+    pub original_action_manifest_sha256:String,
+    pub native_receipt_sha256:String,
+    pub os_kernel_quiescence_verified:bool,
+    pub post_command_result_independently_verified:bool,
+    pub original_action_replayed:bool,
+    pub global_marker_cleared:bool,
+    pub debugger_execution_authorized:bool,
+    pub installed_app_accepted:bool,
+    pub operator_task_accepted:bool,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DebugWitness {
     pub job_id: String,
     pub project_id: String,
@@ -570,6 +587,180 @@ impl NativeDebugRuntime {
     }
     /// FIN-04: original action-journal evidence inventory, never a debugger
     /// operation grant. This does not reconstruct native owner event handles.
+    /// FIN-04R: OS-only recovery after a prior debug action was interrupted.
+    /// The native operator's one-use dialog is owned by the Tauri command.
+    /// This method accepts NO PID, Job name, witness bit, receipt path,
+    /// debug command or authorization token from a WebView.
+    ///
+    /// A successful receipt attests only original kernel-tree quiescence.
+    /// Previously Consumed/ResultUncertain action journals are unchanged;
+    /// no old result is verified, no operation is replayed and the original
+    /// global recovery marker remains in place until its distinct FIN-01D
+    /// OS clearance is independently approved.
+    pub fn record_action_os_recovery(
+        &self, project_id:&str,
+    )->Result<DebugActionOsRecovery,String>{
+        use std::io::Write;
+        if self.active.lock().map_err(|_|"FIN04REC_DEBUG_HOST_UNAVAILABLE")?
+            .is_some() {
+            return Err("FIN04REC_LIVE_DEBUG_WORKER_DENIED".into());
+        }
+        let original=self.inspect_control_evidence(project_id)?;
+        if original.original_action_files_checked==0 ||
+            !original.global_unresolved_action_required {
+            return Err("FIN04REC_NO_ORIGINAL_ACTION_REQUIRING_RECOVERY".into());
+        }
+        let profile=&self.global_custody_profile;
+        let assessment=crate::global_native_custody::assess_global_recovery(profile)?;
+        if !assessment.marker_present || !assessment.original_journals_reconciled ||
+            assessment.build_journal_pending!=0 ||
+            assessment.debug_journal_pending!=0 ||
+            assessment.lsp_journal_pending!=0 {
+            return Err("FIN04REC_ORIGINAL_JOB_OS_RECOVERY_FIRST".into());
+        }
+        let prior_owner=assessment.marker_owner_pid
+            .ok_or("FIN04REC_ORIGINAL_OWNER_MISSING")?;
+        if prior_owner==std::process::id() {
+            return Err("FIN04REC_CURRENT_OWNER_STILL_ACTIVE".into());
+        }
+        let marker_path=profile.join("fin01-global-native-custody-v1.lock");
+        let marker_meta=fs::symlink_metadata(&marker_path)
+            .map_err(|_|"FIN04REC_GLOBAL_MARKER_UNAVAILABLE")?;
+        if !marker_meta.is_file() || marker_meta.file_type().is_symlink() ||
+            marker_meta.len()==0 || marker_meta.len()>128 {
+            return Err("FIN04REC_GLOBAL_MARKER_UNTRUSTED".into());
+        }
+        #[cfg(windows)] {
+            use std::os::windows::fs::MetadataExt;
+            if marker_meta.file_attributes() & 0x400 !=0 {
+                return Err("FIN04REC_GLOBAL_MARKER_REPARSE_DENIED".into());
+            }
+        }
+        let marker=fs::read(&marker_path)
+            .map_err(|_|"FIN04REC_GLOBAL_MARKER_READ_FAILED")?;
+        if marker.len() as u64 !=marker_meta.len() {
+            return Err("FIN04REC_GLOBAL_MARKER_CHANGED".into());
+        }
+        let mut jobs=Vec::new();
+        for domain in ["build","debug","lsp"] {
+            let rows=crate::global_native_custody::domain_rows(profile,domain)?;
+            if crate::global_native_custody::durable_busy(&rows) {
+                return Err("FIN04REC_ORIGINAL_WORKER_STILL_ACTIVE".into());
+            }
+            jobs.extend(rows);
+        }
+        if jobs.len()>4096 || !jobs.iter().any(|row|row.project_id==project_id){
+            return Err("FIN04REC_JOB_SCOPE_OR_LIMIT_DENIED".into());
+        }
+        // The original SCM/Job Object or delegated cgroup is queried here,
+        // not a journal flag or renderer-provided "processGone" boolean.
+        #[cfg(windows)]
+        let kernel=lu_ide_execution_supervisor::windows_worker
+            ::verify_global_worker_quiescence(prior_owner,&jobs)
+            .map_err(|_|"FIN04REC_WINDOWS_KERNEL_QUIESCENCE_UNPROVEN")?;
+        #[cfg(target_os="linux")]
+        let kernel=lu_ide_execution_supervisor::linux_worker
+            ::verify_global_worker_quiescence(prior_owner,&jobs)
+            .map_err(|_|"FIN04REC_LINUX_KERNEL_QUIESCENCE_UNPROVEN")?;
+        if !kernel.marker_owner_exited ||
+            kernel.examined_job_identities!=jobs.len() ||
+            kernel.kernel_objects_empty+kernel.kernel_objects_absent!=jobs.len() {
+            return Err("FIN04REC_KERNEL_QUORUM_INCOMPLETE".into());
+        }
+        let checked=self.inspect_control_evidence(project_id)?;
+        if checked.original_debug_journal_sha256!=original.original_debug_journal_sha256 ||
+            checked.action_manifest_sha256!=original.action_manifest_sha256 ||
+            checked.global_unresolved_action_required !=original.global_unresolved_action_required ||
+            fs::read(&marker_path).ok()!=Some(marker.clone()) ||
+            fs::symlink_metadata(&marker_path).ok()
+                .is_none_or(|meta|meta.len()!=marker_meta.len() ||
+                    meta.modified().ok()!=marker_meta.modified().ok()) {
+            return Err("FIN04REC_ORIGINAL_EVIDENCE_CHANGED".into());
+        }
+        // The same original evidence may have one audit receipt only.
+        // Its deterministic filename, create_new and private profile
+        // location prevent parallel callers from multiplying recoveries.
+        let mut id=Sha256::new();
+        id.update(b"fin04-os-only-action-recovery-v1");
+        id.update(&marker);
+        id.update(original.action_manifest_sha256.as_bytes());
+        id.update(original.original_debug_journal_sha256.as_bytes());
+        let id=format!("{:x}",id.finalize());
+        let audit=profile.join(format!("fin04-action-os-recovery-{id}.json"));
+        let source=serde_json::json!({
+            "schema":"fin04.action-os-recovery.kernel-v1",
+            "projectId":project_id,
+            "originalMarkerSha256":format!("{:x}",Sha256::digest(&marker)),
+            "originalDebugJournalSha256":original.original_debug_journal_sha256,
+            "originalActionManifestSha256":original.action_manifest_sha256,
+            "originalJobs":jobs.len(),
+            "osPlatform":kernel.platform,
+            "kernelObjectsEmpty":kernel.kernel_objects_empty,
+            "kernelObjectsAbsent":kernel.kernel_objects_absent,
+            "priorMarkerOwnerExited":true,
+            "actionOutcome":"unknown_never_replay",
+            "independentPostCommandVerified":false,
+            "debuggerExecutionAuthorized":false,
+            "originalActionReplayed":false,
+            "globalMarkerCleared":false,
+            "ownerTaskAccepted":false
+        });
+        let bytes=serde_json::to_vec(&source)
+            .map_err(|_|"FIN04REC_EVIDENCE_ENCODING_FAILED")?;
+        let mut options=fs::OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)] {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut output=options.open(&audit)
+            .map_err(|_|"FIN04REC_EVIDENCE_ALREADY_PRESENT_OR_UNWRITABLE")?;
+        output.write_all(&bytes).and_then(|_|output.sync_all())
+            .map_err(|_|"FIN04REC_EVIDENCE_FSYNC_FAILED")?;
+        drop(output);
+        #[cfg(unix)]
+        fs::File::open(profile).and_then(|dir|dir.sync_all())
+            .map_err(|_|"FIN04REC_EVIDENCE_DIRECTORY_SYNC_FAILED")?;
+        if fs::read(&audit).ok()!=Some(bytes.clone()) {
+            return Err("FIN04REC_EVIDENCE_REOPEN_DIFFERS".into());
+        }
+        #[cfg(windows)]
+        let final_os=lu_ide_execution_supervisor::windows_worker
+            ::verify_global_worker_quiescence(prior_owner,&jobs)
+            .map_err(|_|"FIN04REC_FINAL_WINDOWS_KERNEL_CHANGED")?;
+        #[cfg(target_os="linux")]
+        let final_os=lu_ide_execution_supervisor::linux_worker
+            ::verify_global_worker_quiescence(prior_owner,&jobs)
+            .map_err(|_|"FIN04REC_FINAL_LINUX_KERNEL_CHANGED")?;
+        let after=self.inspect_control_evidence(project_id)?;
+        let final_assessment=crate::global_native_custody::assess_global_recovery(profile)?;
+        if !final_os.marker_owner_exited ||
+            final_os.examined_job_identities!=jobs.len() ||
+            final_os.kernel_objects_empty+final_os.kernel_objects_absent!=jobs.len() ||
+            after.original_debug_journal_sha256!=original.original_debug_journal_sha256 ||
+            after.action_manifest_sha256!=original.action_manifest_sha256 ||
+            !after.global_unresolved_action_required ||
+            final_assessment.marker_owner_pid!=Some(prior_owner) ||
+            !final_assessment.original_journals_reconciled ||
+            fs::read(&marker_path).ok()!=Some(marker) {
+            return Err("FIN04REC_FINAL_ORIGINAL_OR_KERNEL_WITNESS_CHANGED".into());
+        }
+        Ok(DebugActionOsRecovery {
+            project_id:project_id.into(),
+            code:"FIN04_OS_TREE_QUIESCENT_ACTION_OUTCOME_UNKNOWN",
+            original_jobs_checked:jobs.len(),
+            os_platform:kernel.platform,
+            original_action_manifest_sha256:original.action_manifest_sha256,
+            native_receipt_sha256:format!("{:x}",Sha256::digest(&bytes)),
+            os_kernel_quiescence_verified:true,
+            post_command_result_independently_verified:false,
+            original_action_replayed:false,
+            global_marker_cleared:false,
+            debugger_execution_authorized:false,
+            installed_app_accepted:false,
+            operator_task_accepted:false,
+        })
+    }
     pub fn inspect_control_evidence(
         &self, project_id:&str
     )->Result<lu_ide_execution_supervisor::debug_control_evidence::DebugControlEvidenceInventory,String>{
