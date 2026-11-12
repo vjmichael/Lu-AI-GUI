@@ -77,7 +77,11 @@ test('protected PDB helper error or changed source/job must quarantine the entir
    gate.indexOf('/// Read-only OS evidence from the *owned* native Job.'));
  assert.match(read,/read_protected_pe_pdb\(/);
  assert.match(read,/Err\(_\)=>return self\.quarantine\(\)/);
- assert.match(read,/job\.phase!=JobPhase::Running \|\| job\.requires_reconciliation/);
+ assert.match(read,/job\.phase==JobPhase::Running && !job\.requires_reconciliation/);
+ assert.match(read,/let original_job_running=match self\.supervisor\.inspect\(\)/);
+ assert.match(read,/let original_job_still_running=match self\.supervisor\.inspect\(\)/);
+ assert.ok(read.split('Err(_)=>false').length-1===2,
+   'journal inspection errors must deny both before and after the PDB helper');
  assert.match(read,/return self\.quarantine\(\);/);
  assert.match(gate,/native_quarantine_after_error\(&self\.job_id\)/);
  assert.match(gate,/terminate_tree_and_verify\(\)/);
