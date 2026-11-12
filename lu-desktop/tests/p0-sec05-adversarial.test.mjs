@@ -53,6 +53,8 @@ test('SEC05 immutable task custody, origin and receipt resist direct SQLite writ
 });
 test('SEC05 malformed cancel intent and forged cross-chat outcome fail closed',()=>{
   assert.match(cancel,/P0_SEC_CANCEL_INTENT_TAMPERED/);
+  assert.match(cancel,/P0_SEC_CANCEL_ORPHANED_RESULT/);
+  assert.match(cancel,/sec05_direct_sql_forged_result_without_original_request_denies_tool_dispatch/);
   assert.match(cancel,/ansf_p0_cancel_no_update/);
   assert.match(cancel,/ansf_p0_cancel_no_direct_delete/);
   assert.match(cancel,/sec05_cancel_intent_mutations_and_direct_deletes_are_rejected/);
