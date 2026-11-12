@@ -11,3 +11,20 @@ export function routeExplicitLocalFolderRequest(value){
   const unc=/(?:^|[\s"'])(?:\\\\[A-Za-z0-9._-]+\\[A-Za-z0-9._$-]+)/;
   return drive.test(text)||unc.test(text);
 }
+
+/**
+ * Presentation-only recognition of one deterministic OS-clock request while
+ * no GGUF model is loaded. The Tauri host independently reclassifies the
+ * original user turn and never treats this boolean as execution authority.
+ */
+export function isHostCurrentTimeQuestion(value){
+  if(typeof value!=='string')return false;
+  const s=value.trim().toLowerCase();
+  if(!s||s.length>256||s.includes('[attached text file:')||s.includes('<|'))return false;
+  if(["don't","do not","without","how to","what is time complexity",
+      "time travel","time zone difference","timing estimate"].some(term=>s.includes(term)))return false;
+  return ["what time is it","what's the time","what is the current time",
+    "what time is it right now","tell me the time",
+    "give me the current time","what is my local time",
+    "what's the current time","what's the local time"].some(prefix=>s.startsWith(prefix));
+}

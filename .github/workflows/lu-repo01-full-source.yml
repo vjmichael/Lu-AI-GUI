@@ -2728,7 +2728,27 @@ jobs:
           for f in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
             printf CI_ONLY_NOT_A_MODEL_OR_ENGINE > "lu-desktop/src-tauri/resources/lu-inference/$f"
           done
-          echo "LU_TOOLS03_TEST_GIT_PATH=$(command -v git)" >> "$GITHUB_ENV"
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            echo "LU_TOOLS03_TEST_GIT_PATH=$(command -v git)" >> "$GITHUB_ENV"
+          fi
+      - name: Use real Win32 executable for reviewed Git fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Get-Command returns multiple Git installations on Windows.
+          # Select one command object before reading its Source property.
+          $command=Get-Command git.exe -CommandType Application -ErrorAction Stop |
+            Select-Object -First 1
+          if($null -eq $command){throw 'Trusted native Git executable missing'}
+          $resolved=Resolve-Path -LiteralPath ([string]$command.Source) -ErrorAction Stop
+          if(@($resolved).Count -ne 1){throw 'Git selection was ambiguous'}
+          $native=[string]$resolved.ProviderPath
+          if(-not [System.IO.Path]::IsPathFullyQualified($native) -or
+             -not (Test-Path -LiteralPath $native -PathType Leaf)){
+            throw 'Native absolute Windows Git executable missing'
+          }
+          Write-Host "Pinning exactly one verified Git executable: $native"
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$native"
       - name: Full original Core native regressions (no simulated completion)
         shell: bash
         run: |
@@ -2938,3 +2958,198 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+
+  p0-win-chat-native:
+    name: P0-WIN-CHAT native model/tool, image and UI (${{ matrix.os }})
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 224 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-win-chat-204-20261111' && contains(github.event.pull_request.body, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 130
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check exact reviewed source marker, checkout, original hash manifest
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p p0-win-chat-evidence
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          node -e 'const x=[...process.env.PR_BODY.matchAll(/^LU_P0_WIN_CHAT_MATRIX_SHA=([0-9a-f]{40})$/gm)];if(x.length!==1||x[0][1]!==process.env.HEAD_SHA)process.exit(9)'
+          node scripts/verify-source-tree.mjs | tee p0-win-chat-evidence/source.log
+          printf 'head=%s\nos=%s\n' "$HEAD_SHA" "$RUNNER_OS" > p0-win-chat-evidence/identity.txt
+      - name: Install actual Linux native desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends protobuf-compiler pkg-config libssl-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev ffmpeg
+      - name: Stage Tauri compiler placeholders and host Git identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p lu-desktop/src-tauri/resources/lu-inference
+          for n in llama-server.exe msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            printf 'NOT_A_REAL_ENGINE' > "lu-desktop/src-tauri/resources/lu-inference/$n"
+          done
+          if [[ "$RUNNER_OS" == "Linux" ]]; then echo "LU_TOOLS03_TEST_GIT_PATH=$(command -v git)" >> "$GITHUB_ENV"; fi
+      - name: Bind absolute native Windows git.exe to review fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Previous failure: Get-Command yielded three Git paths and PowerShell
+          # joined all of them into a single invalid Rust filename.
+          $command=Get-Command git.exe -CommandType Application -ErrorAction Stop |
+            Select-Object -First 1
+          if($null -eq $command){throw 'No trusted native Git executable'}
+          $resolved=Resolve-Path -LiteralPath ([string]$command.Source) -ErrorAction Stop
+          if(@($resolved).Count -ne 1){throw 'Git selection ambiguous'}
+          $native=[string]$resolved.ProviderPath
+          if(-not [System.IO.Path]::IsPathFullyQualified($native) -or
+             -not (Test-Path -LiteralPath $native -PathType Leaf)){
+            throw 'No valid native absolute Git executable'
+          }
+          Write-Host "Pinning exactly one verified Git executable: $native"
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$native"
+      - name: Real native subprocesses, model-to-tool authority and structured image contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test supervised_native_turn -- --nocapture 2>&1 | tee p0-win-chat-evidence/model-tool-audit.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test native_git_inspect -- --nocapture 2>&1 | tee p0-win-chat-evidence/git-real.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib multimodal_http::tests -- --nocapture 2>&1 | tee p0-win-chat-evidence/multimodal-protocol.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib multimodal_saved_turn::tests -- --nocapture 2>&1 | tee p0-win-chat-evidence/multimodal-original-images.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test p0_win_chat_real_mmproj --no-run 2>&1 | tee p0-win-chat-evidence/real-vision-compile.log
+      - name: React/Tauri Send, host clock, browser scope, vision receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd lu-desktop && npm ci --no-audit --no-fund && npm run build && npm run check) 2>&1 | tee p0-win-chat-evidence/frontend.log
+          node --test lu-desktop/tests/p0-native-intent.test.mjs lu-desktop/tests/browser-model-read.test.mjs lu-desktop/tests/p0-physical-ux-contract.test.mjs 2>&1 | tee p0-win-chat-evidence/ui-tests.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib host_clock::tests -- --nocapture 2>&1 | tee p0-win-chat-evidence/clock.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib p0_browse_intent_tests -- --nocapture 2>&1 | tee p0-win-chat-evidence/browser-intent.log
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib vision_context::tests -- --nocapture 2>&1 | tee p0-win-chat-evidence/vision-receipts.log
+          echo 'Native and protocol tests do not substitute for genuine GGUF execution.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-p0-win-chat-native-${{ matrix.os }}-${{ github.event.pull_request.head.sha }}
+          path: p0-win-chat-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+  p0-win-chat-genuine-model:
+    name: P0-WIN-CHAT real Qwen native tool choice and SmolVLM MMProj pixel inference
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 224 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-win-chat-204-20261111' && contains(github.event.pull_request.body, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Authenticate exact SHA and original source lock
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p p0-real-model-evidence
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          node -e 'const x=[...process.env.PR_BODY.matchAll(/^LU_P0_WIN_CHAT_MATRIX_SHA=([0-9a-f]{40})$/gm)];if(x.length!==1||x[0][1]!==process.env.HEAD_SHA)process.exit(9)'
+          node scripts/verify-source-tree.mjs | tee p0-real-model-evidence/source.log
+      - name: Pin and compile genuine llama.cpp CPU engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends cmake build-essential ffmpeg curl git
+          git clone --depth 1 --branch b12143 https://github.com/ggml-org/llama.cpp.git "$RUNNER_TEMP/p0-llama"
+          test "$(git -C "$RUNNER_TEMP/p0-llama" rev-parse HEAD)" = 2bc46baa9207d098d03741ac394e7faaf1a955b6
+          cmake -S "$RUNNER_TEMP/p0-llama" -B "$RUNNER_TEMP/p0-build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_VULKAN=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/p0-build" --target llama-server --parallel 3
+          sha256sum "$RUNNER_TEMP/p0-build/bin/llama-server" > p0-real-model-evidence/engine-hash.txt
+      - name: Real Qwen 0.6B independently selects authorized Git and FFprobe tools
+        shell: bash
+        timeout-minutes: 55
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 4 https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf -o "$RUNNER_TEMP/p0-qwen.gguf"
+          printf '%s  %s\n' 7af3fdf842f87b24672f8a7f1dd50404043f0bfb71093ff91c31d2b49df4631d "$RUNNER_TEMP/p0-qwen.gguf" | sha256sum -c -
+          export LU_E1_P07_LLAMA_PORT=18972 LU_E1_P07_RESPONSE_PROTOCOL=json_schema
+          export LU_E1_P07_GIT="$(command -v git)" LU_E1_P07_FFPROBE="$(command -v ffprobe)"
+          "$RUNNER_TEMP/p0-build/bin/llama-server" -m "$RUNNER_TEMP/p0-qwen.gguf" --host 127.0.0.1 --port "$LU_E1_P07_LLAMA_PORT" -c 8192 -ngl 0 > p0-real-model-evidence/qwen-server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 120); do
+            kill -0 "$pid" || exit 1
+            if curl -fsS --max-time 2 "http://127.0.0.1:$LU_E1_P07_LLAMA_PORT/health" > p0-real-model-evidence/qwen-health.json; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test e1_reviewed_model_tools genuine_gguf_independently_selects_git_and_media_tools_and_survives_journal_restart -- --ignored --nocapture 2>&1 | tee p0-real-model-evidence/qwen-model-tool.log
+          echo QWEN_GENUINE_TOOL_PASS=1 > p0-real-model-evidence/qwen-outcome.txt
+      - name: Real SmolVLM 256M GGUF and compatible Q8 MMProj red/blue pixels
+        shell: bash
+        timeout-minutes: 55
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 4 https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/SmolVLM-256M-Instruct-Q8_0.gguf -o "$RUNNER_TEMP/p0-smolvlm.gguf"
+          curl -fL --retry 4 --retry-delay 4 https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf -o "$RUNNER_TEMP/p0-mmproj.gguf"
+          printf '%s  %s\n' 2a31195d3769c0b0fd0a4906201666108834848db768af11de1d2cef7cd35e65 "$RUNNER_TEMP/p0-smolvlm.gguf" | sha256sum -c -
+          printf '%s  %s\n' 7e943f7c53f0382a6fc41b6ee0c2def63ba4fded9ab8ed039cc9e2ab905e0edd "$RUNNER_TEMP/p0-mmproj.gguf" | sha256sum -c -
+          export LU_P0_MM_PORT=18973
+          # One-use 256-bit localhost token. The previous literal was 65
+          # characters, so the test failed before any real pixel evaluation.
+          export LU_P0_MM_API_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+          test "${#LU_P0_MM_API_KEY}" -eq 64
+          [[ "$LU_P0_MM_API_KEY" =~ ^[[:xdigit:]]{64}$ ]]
+          "$RUNNER_TEMP/p0-build/bin/llama-server" -m "$RUNNER_TEMP/p0-smolvlm.gguf" --mmproj "$RUNNER_TEMP/p0-mmproj.gguf" --host 127.0.0.1 --port "$LU_P0_MM_PORT" -c 4096 -ngl 0 --api-key "$LU_P0_MM_API_KEY" > p0-real-model-evidence/mmproj-server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 120); do
+            kill -0 "$pid" || exit 1
+            if curl -fsS --max-time 2 -H "Authorization: Bearer $LU_P0_MM_API_KEY" "http://127.0.0.1:$LU_P0_MM_PORT/health" > p0-real-model-evidence/mmproj-health.json; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --test p0_win_chat_real_mmproj actual_local_mmproj_distinguishes_two_independent_pixel_images -- --ignored --nocapture 2>&1 | tee p0-real-model-evidence/real-image-inference.log
+          echo SMOLVLM_GENUINE_MM_PROJ_PASS=1 > p0-real-model-evidence/vision-outcome.txt
+      - name: Report actual model results without pretending this is physical Radeon acceptance
+        if: always()
+        shell: bash
+        run: |
+          echo 'These are real hosted CPU small-GGUF results, not installed Qwen3.8 Radeon Vulkan or human Windows UI acceptance.' >> "$GITHUB_STEP_SUMMARY"
+          for f in p0-real-model-evidence/*-outcome.txt; do
+            if test -f "$f"; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-p0-win-chat-genuine-model-${{ github.event.pull_request.head.sha }}
+          path: p0-real-model-evidence/
+          retention-days: 14
+          if-no-files-found: warn

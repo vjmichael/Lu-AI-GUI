@@ -20,6 +20,7 @@ import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppeara
 import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget,correctedMessageFollowUp} from './message_revisions.mjs';
 import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from './agent_replan.mjs';
 import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
+import {isHostCurrentTimeQuestion} from './native_intent.mjs';
 import {TaskBoardWindow} from './task_board.jsx';
 
 function MessageText({text, role='assistant'}) {
@@ -965,6 +966,13 @@ function App() {
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
   const viewedDraftImage=imageViewer && images.find(im=>im.imageRef===imageViewer.imageRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
+  // The host, not this UI predicate, authorizes the OS-clock-only shortcut.
+  // A no-model Send may ask only an explicit current-time question, with no
+  // attachments or specialist mode; all other prompts require an active GGUF.
+  const modelFreeClockAllowed=!loaded && !runtime.sessionId &&
+    isHostCurrentTimeQuestion(prompt) && images.length===0 && textFiles.length===0 &&
+    !planDraftNextSend && !browserResearchNextSend && !reviewedAppNextSend &&
+    !workspaceToolsNextSend;
   const busy = working || runtime.phase === 'Generating' || Object.keys(jobs).length > 0;
   const wave2FileBusy = archiveBusy || documentCreateBusy || officeRevisionBusy ||
     fileTransferBusy || trashBusy;
@@ -3918,7 +3926,8 @@ function App() {
   }
   async function send(e) {
     e.preventDefault();
-    if (working || chatBusy || !runtime.sessionId || !prompt.trim()) return;
+    if (working || chatBusy ||
+        (!runtime.sessionId && !modelFreeClockAllowed) || !prompt.trim()) return;
     const input = prompt.trim();
     const usePlanDraft=planDraftNextSend;
     const useBrowserResearch=browserResearchNextSend;
@@ -4000,7 +4009,7 @@ function App() {
               prompt:input,origins:browserOrigins,maxNewTokens:512
             })
           : await invoke('lu_generate', {
-            sessionId: runtime.sessionId, chatId: activeId,
+            sessionId: runtime.sessionId ?? '', chatId: activeId,
             prompt: submitted, imageRefs: refs, maxNewTokens: 512,
             readOnlyWorkspace: useWorkspaceTools,
             planOnly: usePlanDraft
@@ -5898,7 +5907,7 @@ function App() {
             </span>)}
           </div>}
           <textarea ref={composerRef} aria-label="Message Lu" value={prompt} onChange={e => {draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
-            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Load a GGUF model first…'} disabled={!loaded}
+            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask for the current time, or load a GGUF model…'}
             onPaste={handlePaste}
             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
@@ -5908,7 +5917,7 @@ function App() {
             
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
-              : <button className="primaryButton" type="submit" disabled={working || !loaded || !prompt.trim()}>Send</button>}
+              : <button className="primaryButton" type="submit" disabled={working || (!loaded && !modelFreeClockAllowed) || !prompt.trim()}>Send</button>}
           </div></form>}
       </div>
     </main>

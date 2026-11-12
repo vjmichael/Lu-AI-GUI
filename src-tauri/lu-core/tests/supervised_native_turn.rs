@@ -660,7 +660,15 @@ async fn json_syntax_and_nested_duplicates_recover_after_two_generations_only() 
     let audit = journal.events_for("conversation-test", "task-test").unwrap();
     assert_eq!(audit.iter().filter(|e| e.kind == ModelAuditKind::Rejected).count(), 2);
     assert_eq!(audit.iter().filter(|e| e.kind == ModelAuditKind::FinalAnswer).count(), 1);
-    assert!(!audit.iter().any(|e| e.kind == ModelAuditKind::ToolFeedback));
+    // Two malformed attempts produce host-authored typed boundary notices.
+    // They were never dispatched and cannot leak rejected filenames.
+    let feedback:Vec<_>=audit.iter()
+        .filter(|e|e.kind==ModelAuditKind::ToolFeedback).collect();
+    assert_eq!(feedback.len(),2);
+    assert!(feedback.iter().all(|e|
+        e.payload.contains("lu_boundary")&&
+        !e.payload.contains("secret.txt")&&
+        !e.payload.contains("notes.txt")));
     drop(journal); drop(turn); drop(catalog); drop(registry); drop(authority);
     remove_workspace(root);
 }

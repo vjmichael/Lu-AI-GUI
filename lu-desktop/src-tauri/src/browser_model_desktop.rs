@@ -283,10 +283,16 @@ pub(crate) fn explicit_browse_origin(prompt:&str)->Option<String>{
     if ["do not browse","don't browse","do not open","don't open",
         "without browsing","no browser","no network","how to browse",
         "explain browsing"].iter().any(|bad|lower.contains(bad)){return None}
-    if !["browse ","visit ","open website","open https://","read https://",
-        "read the website","summarize https://","inspect https://",
+    // These polite prefixes are part of the original human request, not
+    // retrieved content or model output. An HTTPS URL still never grants
+    // network authority: the native runtime+per-turn OS approval remain mandatory.
+    let intent=["please ","could you ","can you ","would you "]
+        .iter().find_map(|prefix|lower.strip_prefix(prefix)).unwrap_or(&lower);
+    if !["browse ","visit ","open website","open the website",
+        "open https://","read https://","read the website",
+        "summarize https://","inspect https://",
         "summarize the page","look at https://","check https://"]
-        .iter().any(|v|lower.starts_with(v)){return None}
+        .iter().any(|v|intent.starts_with(v)){return None}
     let mut origins=std::collections::BTreeSet::new();
     for word in trimmed.split_whitespace(){
         let candidate=word.trim_matches(|c:char|matches!(c,'"'|'('|')'|'['|']'|','|';'|'.')||c as u32==39);
@@ -769,6 +775,12 @@ mod p0_browse_intent_tests {
             Some("https://example.org".to_string()));
         assert_eq!(explicit_browse_origin("Summarize https://docs.rs/serde/latest"),
             Some("https://docs.rs".to_string()));
+        assert_eq!(explicit_browse_origin("Please browse https://example.org/post"),
+            Some("https://example.org".to_string()));
+        assert_eq!(explicit_browse_origin("Could you read https://docs.rs/serde"),
+            Some("https://docs.rs".to_string()));
+        assert_eq!(explicit_browse_origin("Can you open https://example.org/"),
+            Some("https://example.org".to_string()));
         for invalid in [
             "Tell me what surfing means","What time is it?",
             "Do not browse https://example.org",
@@ -778,7 +790,11 @@ mod p0_browse_intent_tests {
             "Browse http://example.org",
             "Browse https://alice:secret@example.org",
             "Open C:\\Windows\\System32",
-            "Explain browsing https://example.org"
+            "Explain browsing https://example.org",
+            "Please don't browse https://example.org",
+            "Could you browse https://localhost/admin",
+            "Can you browse https://example.org and https://example.net",
+            "Could you delete https://example.org"
         ] {
             assert_eq!(explicit_browse_origin(invalid),None,"{invalid}");
         }
