@@ -10,6 +10,8 @@ use std::{
 };
 
 const MAX_JOBS: usize = 8;
+// Leave at least six queue places for explicit human requests.
+const MAX_BACKGROUND_JOBS: usize = 2;
 // Admit one already-approved background turn after four consecutive
 // foreground turns, preventing indefinite starvation without preempting UI.
 const MAX_FOREGROUND_BURST: u8 = 4;
@@ -83,6 +85,10 @@ impl GenerationQueue {
         let mut state = self.state.lock().map_err(|_| "generation queue poisoned")?;
         if state.jobs.len() >= MAX_JOBS {
             return Err("generation queue full (8 turns maximum)".into());
+        }
+        if class == TurnClass::Background && state.jobs.values()
+            .filter(|j| j.class == TurnClass::Background).count() >= MAX_BACKGROUND_JOBS {
+            return Err("background continuation quota reached".into());
         }
         if state.jobs.contains_key(generation_id)
             || state.jobs.values().any(|j| j.chat_id == chat_id)
@@ -379,6 +385,23 @@ mod tests {
         human.wait_for_slot().unwrap();
         drop(human);
         assert!(!q.has_jobs());
+    }
+    #[test]
+    fn background_queue_cannot_consume_all_human_capacity() {
+        let q = Arc::new(GenerationQueue::default());
+        let (_a, _) = q.enqueue_with_class("s","auto1","b1",
+            TurnClass::Background).unwrap();
+        let (_b, _) = q.enqueue_with_class("s","auto2","b2",
+            TurnClass::Background).unwrap();
+        assert!(q.enqueue_with_class("s","auto3","b3",
+            TurnClass::Background).is_err());
+        for i in 0..6 {
+            assert!(q.enqueue("s", &format!("human-{i}"),
+                &format!("h{i}")).is_ok());
+            // Here the ticket drops at end of statement, so this proves
+            // foreground admission rather than simultaneous occupancy.
+        }
+        assert!(q.enqueue("s","human","h").is_ok());
     }
     #[test]
     fn cancelled_foreground_waiter_does_not_block_background_lane() {
