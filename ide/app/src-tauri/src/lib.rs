@@ -3060,6 +3060,47 @@ async fn ide_lsp_stop_session(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// FIN-01D: discover ONLY this registered project's original interrupted
+/// LSP job IDs. Never a worker handle, execution token, source or foreign job.
+#[tauri::command]
+async fn ide_lsp_recoverable_jobs(app:AppHandle,project_id:String)
+    ->Result<Vec<String>,String>{
+    #[cfg(all(any(windows,target_os="linux"),feature="native-lsp"))]
+    {
+        let native=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+            .ok_or("FIN01_LSP_NATIVE_SUPERVISOR_MISSING")?;
+        let native=Arc::clone(native.inner());
+        return tauri::async_runtime::spawn_blocking(move||
+            native.recoverable_jobs(&project_id))
+            .await.map_err(|_|"FIN01_LSP_RECOVERY_READ_INTERRUPTED".to_owned())?;
+    }
+    #[cfg(not(all(any(windows,target_os="linux"),feature="native-lsp")))]
+    {
+        let _=(app,project_id);
+        Err("FIN01_LSP_NATIVE_SUPERVISOR_NOT_INSTALLED".into())
+    }
+}
+/// This requires its own physical native OS dialog and independently reaps
+/// an exact original cgroup/Windows Job. It cannot clear the global fence.
+#[tauri::command]
+async fn ide_lsp_reconcile(app:AppHandle,project_id:String,job_id:String)
+    ->Result<String,String>{
+    #[cfg(all(any(windows,target_os="linux"),feature="native-lsp"))]
+    {
+        let native=app.try_state::<Arc<lsp_backend::NativeLspRuntime>>()
+            .ok_or("FIN01_LSP_NATIVE_SUPERVISOR_MISSING")?;
+        let native=Arc::clone(native.inner());
+        return tauri::async_runtime::spawn_blocking(move||
+            native.reconcile(&app,&project_id,&job_id).map(str::to_owned))
+            .await.map_err(|_|"FIN01_LSP_RECOVERY_TASK_INTERRUPTED".to_owned())?;
+    }
+    #[cfg(not(all(any(windows,target_os="linux"),feature="native-lsp")))]
+    {
+        let _=(app,project_id,job_id);
+        Err("FIN01_LSP_NATIVE_SUPERVISOR_NOT_INSTALLED".into())
+    }
+}
+
 /// Read-only descriptions of known free/open-source LSP servers.
 /// No PATH search, installation, process spawn, worker grant or IPC occurs.
 #[tauri::command]
@@ -3847,6 +3888,8 @@ pub fn run() {
             ide_lsp_read_diagnostics,
             ide_lsp_project_diagnostics,
             ide_lsp_stop_session,
+            ide_lsp_recoverable_jobs,
+            ide_lsp_reconcile,
             ide_prepare_execution_intent,
             ide_decide_execution_intent,
             ide_list_execution_intents,
