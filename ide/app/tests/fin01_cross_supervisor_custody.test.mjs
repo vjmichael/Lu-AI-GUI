@@ -8,7 +8,7 @@ const debug=source('../src-tauri/src/debug_backend.rs');
 const backend=source('../src-tauri/src/lib.rs');
 
 test('FIN01 build and debugger share the exact profile-wide cross-process admission fence',()=>{
- assert.match(shared,/OpenOptions::new\(\)\.create_new\(true\)/);
+ assert.match(shared,/options\.create_new\(true\)\.write\(true\)/);
  assert.match(shared,/fin01-global-native-custody-v1\.lock/);
  assert.match(shared,/fn sibling_rows/);
  assert.match(shared,/debug-fixture-receipts\.jsonl/);
@@ -72,4 +72,14 @@ test('FIN01D no operator UI control can release a global marker from a journal c
  assert.match(lsp,/FIN01_LSP_RECOVERY_NOT_APPROVED/);
  assert.match(lsp,/FIN01_LSP_OS_RECOVERY_UNVERIFIED/);
  assert.doesNotMatch(main,/invoke\(['"]ide_fin01_release_marker/);
+});
+
+test('FIN01D live LSP commands demand matching owner marker',()=>{
+ assert.match(shared,/pub fn marker_owner_intact/);
+ assert.match(lsp,/fn require_current_global_owner/);
+ assert.match(lsp,/self\.require_current_global_owner\(\)\?/);
+ assert.match(lsp,/self\.require_current_global_owner\(\)\.is_err\(\)/);
+ assert.match(shared,/FIN01_OWNER_JOURNAL_BYTES_CHANGED_BEFORE_ADMISSION_RELEASE/);
+ assert.match(shared,/fn journal_fingerprint/);
+ assert.match(shared,/options\.mode\(0o600\)/);
 });
