@@ -460,6 +460,15 @@ fn search_with_cancel<F: Fn() -> bool>(
     })
 }
 
+// A dropped model/tool future must signal a running bounded blocking scan.
+// This is cooperative cancellation, not a promise to abort a kernel-blocked IO.
+struct SearchDropGuard(Arc<std::sync::atomic::AtomicBool>);
+impl Drop for SearchDropGuard {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 struct InspectTool {
     descriptor: ToolDescriptor,
     root: Arc<Dir>,
@@ -472,6 +481,9 @@ impl NativeTool for InspectTool {
         let root = Arc::clone(&self.root);
         let is_stat = self.descriptor.id == STAT;
         Box::pin(async move {
+            let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let _cancel_on_drop = SearchDropGuard(Arc::clone(&cancelled));
+            let cancellation_in_worker = Arc::clone(&cancelled);
             tokio::task::spawn_blocking(move || {
                 if is_stat {
                     let args = proto::FileStatRequest::decode(call.input.bytes.as_slice())
@@ -480,7 +492,9 @@ impl NativeTool for InspectTool {
                 } else {
                     let args = proto::SearchTextRequest::decode(call.input.bytes.as_slice())
                         .map_err(|_| bad("BAD_PROTOBUF", "invalid search arguments"))?;
-                    search(&root, args)
+                    search_with_cancel(&root, args,
+                        || cancellation_in_worker.load(std::sync::atomic::Ordering::Relaxed),
+                        std::time::Instant::now())
                 }
             })
             .await
@@ -581,11 +595,22 @@ impl ModelToolCodec for SearchCodec {
             .into_iter()
             .map(|hit| {
                 json!({
-                    "path":hit.path,"line_number":hit.line_number,"excerpt":hit.excerpt,
+                    "path":hit.path,"line_number":hit.line_number,
+                    "excerpt":hit.excerpt,"sha256_hex":hit.sha256_hex,
+                    "size_bytes":hit.size_bytes,
                 })
             })
             .collect();
-        Ok(json!({"hits":hits,"scanned_files":result.scanned_files,"scanned_directories":result.scanned_directories,"truncated":result.truncated}))
+        Ok(json!({
+            "hits":hits,
+            "scanned_files":result.scanned_files,
+            "scanned_directories":result.scanned_directories,
+            "truncated":result.truncated,
+            "status":if result.truncated {"PARTIAL"} else {"COMPLETE"},
+            "limitations":result.limitations,
+            "read_bytes":result.read_bytes,
+            "skipped_entries":result.skipped_entries
+        }))
     }
 }
 
