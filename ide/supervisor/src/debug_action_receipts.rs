@@ -5,10 +5,7 @@
 //! model/WebView command. The native installed consent bridge is NOT present:
 //! all current native test consents are expressly CI_ONLY and cannot become a
 //! production privilege, even when a truthful per-action receipt is recorded.
-#![cfg(any(
-    test,
-    all(windows, debug_assertions, feature = "dev045d5-ci-event-owner")
-))]
+#![cfg(any(test, any(all(windows, debug_assertions, feature = "dev045d5-ci-event-owner"), all(windows, feature = "fin04-release-owner-evidence"))))]
 
 use crate::debug_command_review::{DebugReviewIntent, DebugReviewPreview, NativeReviewBinding};
 use serde::{Deserialize, Serialize};
