@@ -227,8 +227,19 @@ mod tests{
         assert_eq!(recovered.get("sec04-kernel-worker").unwrap()
             .unwrap().state,TaskState::Interrupted);
         assert!(recovered.resume("sec04-kernel-worker").is_err());
+        let cancellation=crate::p0_auth_custody::HostCancelEvent{
+            schema:crate::p0_auth_custody::SCHEMA.into(),
+            attempt_id:original('b',"au-"),
+            chat_id:chat.clone(),phase:"REQUESTED".into(),
+            domains:vec![],authority_restored:false,
+            automatic_retry_allowed:false,
+            os_custody_independently_verified:false,
+        };
+        chats.append_p0_auth_cancel(&cancellation).unwrap();
+        let cancel_history=chats.p0_auth_cancel_history(&chat).unwrap();
         let background=TaskStore::open(&root.join("lu-background-tasks.sqlite")).unwrap();
-        let view=for_original_chat(&root,&chat,&chats,&background,&[]).unwrap();
+        let view=for_original_chat(
+            &root,&chat,&chats,&background,&cancel_history).unwrap();
         assert_eq!(view.status,"ORIGINAL_SECURITY_RECONCILIATION_REQUIRED");
         assert!(view.problems.iter().any(|row|
             row.reason=="LINUX_GUARDIAN_LOST"
@@ -236,6 +247,11 @@ mod tests{
         assert!(view.problems.iter().any(|row|
             row.reason=="HISTORICAL_EFFECTS_REQUIRE_RECONCILIATION"));
         assert!(!view.prior_authority_reusable&&!view.automatic_retry_allowed);
+        assert_eq!(view.pending_cancel_intents,1);
+        let denied=crate::reviewed_task_continuity::sec04_reviewed_turn_security(
+            &root,&other,&turn).unwrap().unwrap();
+        assert!(!denied.original_origin_bound);
+        assert_eq!(denied.journal_status,"ORIGINAL_ORIGIN_MISMATCH");
         let other_view=for_original_chat(
             &root,&other,&chats,&background,&[]).unwrap();
         assert!(!other_view.problems.iter().any(|r|
