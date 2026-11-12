@@ -4,7 +4,7 @@
 const groups=Object.freeze([
   {id:'FIN-01',priority:'P0',state:'source_slice_implemented',
    title:'Global custody and project readiness',
-   remaining:'Build/package, debugger and protected LSP now share an exclusive marker and three original journals. Native LSP exact-job OS cleanup, pre-preparation refusal release and owner-loss revocation are source implemented. Independently attested stale-marker clearance after restart, native cross-process races and installed acceptance remain open.'},
+   remaining:'Build/package, debugger and protected LSP share original-journal custody; default-deny global stale-marker clearance now queries genuine Windows named Job Objects or delegated Linux cgroup-v2 kernel state, with owner-exit proof and a one-use native dialog. Source wired; actual installed native kernel acceptance, interruption races and release security review remain open. No destructive Git or package execution is promoted.'},
   {id:'FIN-02',priority:'P0',state:'implementation_remaining',
    title:'Protected runtime packaging and admission',
    remaining:'Build-stage pin/layout and read-only actual Linux cgroup-host readiness implemented. Real trusted resident host/IPC, approved binary distribution, Windows service/ACL and actual native installed evidence still missing.'},
