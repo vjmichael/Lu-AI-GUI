@@ -337,6 +337,14 @@ impl InferenceBackend for PersistentLlamaBackend {
             Some(f)
         }else{None};
         verify_engine(&self.canonical_executable, &self.config.expected_sha256)?;
+        if let Some(placement)=self.config.tuning.as_ref()
+            .and_then(|t|t.gpu_placement.as_ref()){
+            // A first validation happened at backend construction. Recheck
+            // the live original reservation immediately before OS spawn; a
+            // revoked, copied or cross-session placement cannot start a GPU.
+            placement.verify_engine(self.config.expected_sha256)
+                .map_err(|_|"P6 GPU reservation revoked before launch")?;
+        }
 
         // Host picks an ephemeral loopback port, never accepting an endpoint
         // supplied by the model. A bind race is handled by failing closed if
