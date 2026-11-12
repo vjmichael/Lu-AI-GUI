@@ -107,3 +107,79 @@ pub fn sibling_rows(profile:&Path,domain:&str)->Result<Vec<JobSummary>,String>{
   .and_then(|s|s.inspect())
   .map_err(|_|"FIN01_SIBLING_JOURNAL_UNVERIFIED".into())
 }
+
+#[cfg(test)]
+mod tests{
+ use super::*;
+ use std::{sync::{Arc,Barrier},thread};
+ fn fixture()->PathBuf{
+  let p=std::env::temp_dir().join(format!("fin01-global-{}-{:?}",
+    std::process::id(),std::thread::current().id()));
+  let _=fs::remove_dir_all(&p);
+  fs::create_dir_all(&p).unwrap();
+  p
+ }
+ fn job(phase:JobPhase,recovery:bool)->JobSummary{
+  JobSummary{job_id:format!("job-{}","a".repeat(32)),
+   project_id:format!("ide-{}","b".repeat(32)),
+   plan_sha256:"c".repeat(64),phase,requires_reconciliation:recovery,
+   execution_verified:false}
+ }
+ #[test]
+ fn only_one_supervisor_claims_profile_even_across_threads(){
+  let p=fixture();
+  let lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
+  let barrier=Arc::new(Barrier::new(2));
+  let b=Arc::clone(&barrier);let x=p.clone();
+  let competing=thread::spawn(move||{
+   b.wait();
+   GlobalAdmissionFence::acquire(&x,"debug").err()
+  });
+  barrier.wait();
+  assert_eq!(competing.join().unwrap().as_deref(),
+   Some("FIN01_GLOBAL_ADMISSION_OCCUPIED_OR_UNCERTAIN"));
+  assert!(global_custody_unresolved(&p).unwrap());
+  let mut lease=lease;
+  assert!(lease.release_if_terminal(&[],&[]).is_ok());
+  assert!(!global_custody_unresolved(&p).unwrap());
+  drop(lease);fs::remove_dir_all(p).unwrap();
+ }
+ #[test]
+ fn marker_survives_unwind_or_restart_without_auto_regrant(){
+  let p=fixture();
+  let lease=GlobalAdmissionFence::acquire(&p,"debug").unwrap();
+  drop(lease);
+  assert!(global_custody_unresolved(&p).unwrap());
+  assert!(GlobalAdmissionFence::acquire(&p,"build").is_err());
+  fs::remove_dir_all(p).unwrap();
+ }
+ #[test]
+ fn terminal_cleanup_refuses_prepared_running_or_quarantined_sibling(){
+  let p=fixture();
+  let mut lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
+  for (phase,recovery) in [
+   (JobPhase::Prepared,false),(JobPhase::Running,false),
+   (JobPhase::Failed,true),(JobPhase::CancelRequested,true)
+  ]{
+   assert_eq!(lease.release_if_terminal(&[],&[job(phase,recovery)])
+     .unwrap_err(),"FIN01_GLOBAL_CUSTODY_NOT_RECONCILED");
+   assert!(global_custody_unresolved(&p).unwrap());
+  }
+  assert!(lease.release_if_terminal(
+   &[job(JobPhase::Completed,false)],
+   &[job(JobPhase::Cancelled,false)]).is_ok());
+  assert!(lease.is_released());
+  assert!(!global_custody_unresolved(&p).unwrap());
+  fs::remove_dir_all(p).unwrap();
+ }
+ #[test]
+ fn marker_corruption_cannot_be_silently_reconciled(){
+  let p=fixture();
+  let mut lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
+  fs::write(marker_path(&p),b"forged owner").unwrap();
+  assert_eq!(lease.release_if_terminal(&[],&[]).unwrap_err(),
+   "FIN01_GLOBAL_MARKER_CHANGED");
+  assert!(global_custody_unresolved(&p).unwrap());
+  fs::remove_dir_all(p).unwrap();
+ }
+}
