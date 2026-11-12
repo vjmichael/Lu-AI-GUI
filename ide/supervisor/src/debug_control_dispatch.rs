@@ -272,6 +272,59 @@ impl CiBreakpointDispatch {
     }
 }
 
+/// FIN-04R-1: a breakpoint adapter ACK, even 'verified=true', does
+/// NOT prove executable breakpoint installation. Only a NEW first-party
+/// Job-owned kernel exception event and independently decoded PE/PDB
+/// source line can prove that this exact source location was HIT.
+/// This verifier is evidence-only; the release action-slot admission
+/// remains hard-denied until genuine OS and installed acceptance.
+pub(crate) struct VerifiedCiBreakpointHit {
+    action_id_sha256:String,
+    consumed_sha256:String,
+    receipt_sha256:String,
+    previous_owner_sequence:u64,
+    current_owner_sequence:u64,
+}
+pub(crate) fn verify_independent_breakpoint_hit(
+    dispatched:&CiBreakpointDispatch,
+    after:&NativeControlStop,
+)->Result<VerifiedCiBreakpointHit,ControlDenial>{
+    if !valid_stop(after) ||
+       !same_fixed_job(&dispatched.from,after) ||
+       after.owner_sequence != dispatched.from.owner_sequence
+           .checked_add(1).ok_or(ControlDenial::NoIndependentStop)? ||
+       after.owner_receipt_sha256 == dispatched.from.owner_receipt_sha256 ||
+       after.line != dispatched.from.line ||
+       after.source_snapshot_sha256 != dispatched.from.source_snapshot_sha256
+    {
+        return Err(ControlDenial::NoIndependentStop);
+    }
+    let fingerprint=format!(
+        "lu-ci-breakpoint-hit-native-v1\\n{}\\n{}\\n{}\\n{}\\n{}\\n{}\\n{}\\n{}\\n{}",
+        dispatched.claim.action_id_sha256,
+        dispatched.claim.consumed_receipt_sha256,
+        dispatched.from.job_id,dispatched.from.plan_sha256,
+        dispatched.from.owner_receipt_sha256,after.owner_receipt_sha256,
+        dispatched.from.owner_sequence,after.owner_sequence,after.rip,
+    );
+    Ok(VerifiedCiBreakpointHit{
+        action_id_sha256:dispatched.claim.action_id_sha256.clone(),
+        consumed_sha256:dispatched.claim.consumed_receipt_sha256.clone(),
+        receipt_sha256:proof_sha(&fingerprint),
+        previous_owner_sequence:dispatched.from.owner_sequence,
+        current_owner_sequence:after.owner_sequence,
+    })
+}
+impl VerifiedCiBreakpointHit {
+    /// True only for a newer OS-owned exception at the reviewed line, not
+    /// installation; no positive release claim can be minted from DAP ACK.
+    pub(crate) fn matches_consumption(&self,action:&str,consumed:&str)->bool{
+        self.action_id_sha256==action && self.consumed_sha256==consumed &&
+        hash64(&self.receipt_sha256) &&
+        self.current_owner_sequence==self.previous_owner_sequence+1
+    }
+    pub(crate) fn evidence_sha256(&self)->&str{&self.receipt_sha256}
+}
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct NativeStepAck {
     pub(crate) correlated_response: bool,
@@ -524,6 +577,50 @@ mod tests {
             Err(ControlDenial::WrongOperation)
         ));
         assert!(!slot.has_unconsumed_slot());
+    }
+    #[test]
+    fn new_kernel_owned_pe_pdb_hit_is_distinct_from_dap_breakpoint_ack(){
+        let mut c=claim();
+        c.operation=DebugReviewIntent::Breakpoint{
+            source:"src/main.rs".into(),line:7,
+        };
+        c.operation_sha256=op_digest(&c.operation);
+        let mut slot=CiControlSlot::admit(c,stop(1)).unwrap();
+        let sent=slot.take_breakpoint().unwrap();
+        assert!(!sent.independently_installed());
+        assert!(verify_independent_breakpoint_hit(&sent,&stop(1)).is_err());
+        let hit=verify_independent_breakpoint_hit(&sent,&stop(2));
+        assert!(hit.is_err(),"a new event at a different PDB line is not the reviewed hit");
+        let mut exact=stop(2);
+        exact.line=7;
+        let verified=verify_independent_breakpoint_hit(&sent,&exact).unwrap();
+        assert!(verified.matches_consumption(
+            sent.action_id_sha256(),&sent.claim.consumed_receipt_sha256));
+        assert_eq!(verified.evidence_sha256().len(),64);
+        assert!(!sent.independently_installed(),
+            "hit evidence is not independently verified installation");
+        exact.owner_receipt_sha256=sent.from.owner_receipt_sha256.clone();
+        assert!(verify_independent_breakpoint_hit(&sent,&exact).is_err());
+        let mut wrong=stop(2);
+        wrong.line=7;wrong.has_independent_pdb=false;
+        assert!(verify_independent_breakpoint_hit(&sent,&wrong).is_err());
+    }
+    #[test]
+    fn breakpoint_result_denies_changed_plan_source_thread_and_owner(){
+        let mut c=claim();
+        c.operation=DebugReviewIntent::Breakpoint{
+            source:"src/main.rs".into(),line:7,
+        };
+        c.operation_sha256=op_digest(&c.operation);
+        let sent=CiControlSlot::admit(c,stop(1)).unwrap()
+            .take_breakpoint().unwrap();
+        let mut after=stop(2);after.line=7;
+        after.plan_sha256="9".repeat(64);
+        assert!(verify_independent_breakpoint_hit(&sent,&after).is_err());
+        let mut after=stop(2);after.line=7;after.thread_id=23;
+        assert!(verify_independent_breakpoint_hit(&sent,&after).is_err());
+        let mut after=stop(2);after.line=7;after.source_snapshot_sha256="9".repeat(64);
+        assert!(verify_independent_breakpoint_hit(&sent,&after).is_err());
     }
     #[test]
     fn breakpoint_adapter_approval_is_not_independent_memory_evidence() {
