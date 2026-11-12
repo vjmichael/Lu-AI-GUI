@@ -60,13 +60,13 @@ impl PromptCacheGate {
         body: &mut Value,
     ) -> Result<CacheAttempt, &'static str> {
         let obj = body.as_object_mut().ok_or("invalid chat payload")?;
+        let no_tools = !obj.contains_key("tools");
         let msgs = obj.get_mut("messages").and_then(Value::as_array_mut)
             .ok_or("missing chat messages")?;
         if msgs.is_empty() { return Err("no chat turns"); }
         let safe_scope = trusted_scope.filter(|scope| valid_scope(scope));
         let prefix = prefix_digest();
-        let eligible = safe_scope.is_some()
-            && !obj.contains_key("tools"); // borrow ends after messages below
+        let eligible = safe_scope.is_some() && no_tools;
         // prepend only a constant non-authorizing instruction; no user
         // identity, path, prompt or grant is serialized to the engine.
         if eligible {
