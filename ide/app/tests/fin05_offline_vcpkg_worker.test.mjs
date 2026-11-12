@@ -27,3 +27,11 @@ test('FIN05 native worker code never accepts a user-supplied shell command',()=>
  assert.match(linux,/--unshare-all/);
  assert.match(linux,/--die-with-parent/);
 });
+
+test('FIN05 port builds are denied and only reviewed offline binary cache can serve packages',()=>{
+ assert.match(linux,/--only-binarycaching/);
+ assert.match(linux,/--binarysource=files,\/runtime\/binary-cache,read/);
+ assert.match(linux,/--vcpkg-root=\/runtime/);
+ assert.match(runtimes,/binary-cache\/manifest\.txt/);
+ assert.match(linux,/--no-downloads/);
+});
