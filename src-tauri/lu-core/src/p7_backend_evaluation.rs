@@ -70,6 +70,7 @@ pub struct CandidateManifest {
 pub struct VerifiedCandidate {
     pub kind:CandidateKind,
     executable_path:PathBuf,
+    model_path:PathBuf,
     _pinned_executable:File,
     _pinned_model:File,
     engine_sha256:[u8;32],
@@ -131,14 +132,14 @@ impl CandidateManifest {
         if sha!=self.expected_executable_sha256{
             return Err(CandidateBlocker::InvalidDigest)
         }
-        let (model,_,model_sha)=digest_original_file(
+        let (model,model_path,model_sha)=digest_original_file(
             admitted.path(),MAX_EVALUATION_GGUF_BYTES)?;
         if model_sha!=self.expected_model_sha256{
             return Err(CandidateBlocker::ModelMismatch)
         }
         admitted.recheck().map_err(|_|CandidateBlocker::ChangedArtifact)?;
         Ok(VerifiedCandidate{
-            kind:self.kind,executable_path:canonical,
+            kind:self.kind,executable_path:canonical,model_path,
             _pinned_executable:exe,_pinned_model:model,
             engine_sha256:sha,model_sha256:model_sha,
         })
@@ -249,6 +250,10 @@ impl<B:InferenceBackend> InferenceBackend for EvaluatedInferenceBackend<B>{
     fn process_id(&self)->Option<u32>{self.native.process_id()}
     fn load(&mut self,model:&AdmittedModel)->Result<(),String>{
         if self.loaded {return Err("P7 candidate already loaded".into())}
+        if model.path()!=self.candidate.model_path ||
+            model.recheck().is_err(){
+            return Err("P7 candidate GGUF differs from pinned evaluation model".into())
+        }
         self.native.load(model)?;
         self.loaded=true;
         Ok(())
@@ -260,13 +265,22 @@ impl<B:InferenceBackend> InferenceBackend for EvaluatedInferenceBackend<B>{
             return Err("P7 candidate MMProj not independently accepted".into())
         }
         if self.loaded {return Err("P7 candidate already loaded".into())}
+        if model.path()!=self.candidate.model_path ||
+            model.recheck().is_err(){
+            return Err("P7 candidate GGUF differs from pinned evaluation model".into())
+        }
+        if projector.is_some_and(|p|p.recheck().is_err()){
+            return Err("P7 projector admission changed".into())
+        }
         self.native.load_with_projector(model,projector)?;
         self.loaded=true;
         Ok(())
     }
     fn unload(&mut self){
-        self.native.unload();
-        self.loaded=false;
+        if self.loaded{
+            self.native.unload();
+            self.loaded=false;
+        }
     }
     fn invalidate_prefix_cache(&mut self){self.native.invalidate_prefix_cache()}
     fn set_trusted_cache_scope(&mut self,scope:Option<&str>){
