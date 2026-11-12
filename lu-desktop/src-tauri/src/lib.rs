@@ -90,7 +90,7 @@ use workspace_desktop::lu_workspace_ask_directory;
 use reviewed_app_desktop::{lu_reviewed_app_ask,lu_agent_run_reviewed_step};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chat_store::{ChatFolder, ChatMessage, ChatStore, ChatSummary};
-use generation_queue::{CancelState, GenerationQueue};
+use generation_queue::{CancelState, GenerationQueue, TurnClass};
 use load_trace::{LoadTrace, LoadTraceView};
 use lu_core::{
     inference_bridge::BridgeError,
@@ -1346,7 +1346,12 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
             let observed=state.background_pressure.sample();
             let budget=budget.under_host_pressure(observed);
             let _=state.background_scheduler.set_budget(budget);
-            let _=state.background_scheduler.tick();
+            // PERF-01 P2: new native OS workers do not start behind a
+            // foreground chat request. Already-running approved work is
+            // polled and reconciled without preemption.
+            let foreground_pending=state.generation_queue.has_foreground_jobs();
+            let _=state.background_scheduler
+                .tick_foreground_guarded(foreground_pending);
             // The existing watchdog also expires Lu-only observation leases.
             state.observe.tick();
             if let Ok(events)=state.background_tasks.pending_terminal_notices_after(
@@ -4950,7 +4955,11 @@ async fn generate_internal(
     let (ticket, position) =
         state
             .generation_queue
-            .enqueue(&session_id, &chat_id, &generation_id)?;
+            .enqueue_with_class(&session_id, &chat_id, &generation_id,
+                match origin {
+                    GenerationOrigin::Human => TurnClass::Foreground,
+                    GenerationOrigin::BackgroundTerminal => TurnClass::Background,
+                })?;
     // Durable user journal before acknowledgment, including queued prompts.
     // Ticket drop releases the queue on any error before worker dispatch.
     if origin==GenerationOrigin::Human{
@@ -5505,16 +5514,10 @@ async fn generate_internal(
                     if let Some(proto::inference_event::Kind::TextChunk(chunk)) = event.kind {
                         perf_trace.stream_chunk(chunk.text.len());
                         answer.push_str(&chunk.text);
-                        if answer.len().saturating_sub(last_checkpoint_bytes) >= 512
-                            || last_checkpoint.elapsed() >= Duration::from_millis(750)
-                        {
-                            state
-                                .chats
-                                .append_progress(&chat_id, &gid, &answer)
-                                .map_err(|_| BridgeError::WrongOperation)?;
-                            last_checkpoint_bytes = answer.len();
-                            last_checkpoint = std::time::Instant::now();
-                        }
+                        // Forward each chunk to the UI before doing the
+                        // synchronous SQLite progress checkpoint. This
+                        // matters when llama.cpp emits a >512-byte first
+                        // chunk or a checkpoint timer already expired.
                         app.emit(
                             "lu-token",
                             ChatEvent {
@@ -5525,6 +5528,17 @@ async fn generate_internal(
                             },
                         )
                         .map_err(|_| BridgeError::WrongOperation)?;
+                        perf_trace.chunk_forwarded_to_webview();
+                        if answer.len().saturating_sub(last_checkpoint_bytes) >= 512
+                            || last_checkpoint.elapsed() >= Duration::from_millis(750)
+                        {
+                            state
+                                .chats
+                                .append_progress(&chat_id, &gid, &answer)
+                                .map_err(|_| BridgeError::WrongOperation)?;
+                            last_checkpoint_bytes = answer.len();
+                            last_checkpoint = std::time::Instant::now();
+                        }
                     }
                 }
                 Ok(())
