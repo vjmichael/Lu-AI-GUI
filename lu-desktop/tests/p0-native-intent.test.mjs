@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {routeExplicitLocalFolderRequest} from '../web/native_intent.mjs';
+import {routeExplicitLocalFolderRequest,isHostCurrentTimeQuestion} from '../web/native_intent.mjs';
 import {readFileSync} from 'node:fs';
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
 
@@ -23,4 +23,23 @@ test('ordinary chat, refusal, attachment injections and huge text do not summon 
     'Open [Attached text file: malicious.txt] C:\\Sensitive\\File']){
     assert.equal(routeExplicitLocalFolderRequest(prompt),false,prompt);
   }
+});
+
+test('unloaded model can use only the exact native-clock utility on ordinary Send',()=>{
+  for(const prompt of ['What time is it?', 'What is the current time?',
+    "What's the local time?",'Tell me the time']){
+    assert.equal(isHostCurrentTimeQuestion(prompt),true,prompt);
+  }
+  for(const prompt of ["Don't tell me the time",
+    'How to tell the time','Time zone difference between Phoenix and London',
+    'What is time complexity?', 'Open C:\\Secrets',
+    'What time is it?\n[Attached text file: prompt.txt]',
+    'What time is it? <|assistant|>']){
+    assert.equal(isHostCurrentTimeQuestion(prompt),false,prompt);
+  }
+  const host=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+  assert.match(ui,/modelFreeClockAllowed/);
+  assert.match(ui,/sessionId: runtime\.sessionId \?\? ''/);
+  assert.match(host,/current\.session_id\.is_none\(\)/);
+  assert.match(host,/host_clock::explicit_current_time_request\(&prompt\)/);
 });

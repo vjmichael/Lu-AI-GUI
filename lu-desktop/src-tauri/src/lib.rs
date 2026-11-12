@@ -4549,9 +4549,18 @@ async fn lu_generate(
             return Err("Invalid current-time request limits".into());
         }
         let owner=Arc::clone(state.inner());
-        if owner.supervisor.status().map_err(|_|"Model unavailable")?
-            .session_id.as_deref()!=Some(session_id.as_str()){
-            return Err("Loaded model session changed".into());
+        // This CPU-only host utility is valid without any GGUF model. If
+        // there IS a model session, it must still match exactly; a stale
+        // renderer may not silently borrow a different session identity.
+        let current=owner.supervisor.status()
+            .map_err(|_|"Native model/session status unavailable")?;
+        let model_identity_matches=if session_id.is_empty(){
+            current.session_id.is_none()
+        }else{
+            current.session_id.as_deref()==Some(session_id.as_str())
+        };
+        if !model_identity_matches{
+            return Err("Model session changed before native clock observation".into());
         }
         return tauri::async_runtime::spawn_blocking(move||{
             owner.chats.history(&chat_id)?;
