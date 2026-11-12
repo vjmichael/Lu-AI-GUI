@@ -386,10 +386,22 @@ fn lu_model_backend_options(
             detail:"Not packaged or independently verified."
         },
         BackendOptionView{
-            backend:"vllm",engine:"vLLM",packaged:false,
+            backend:"mistral_rs",engine:"mistral.rs",packaged:false,
             runtime_inference_verified:false,gpu_execution_verified:false,
             selectable:false,selected_on_next_start:false,
-            detail:"Provider adapter not installed."
+            detail:"P7 review only. GGUF/OpenAI chat support is documented upstream; Lu has not accepted its exact Windows/Vulkan, MMProj, streaming, tools or recovery path."
+        },
+        BackendOptionView{
+            backend:"koboldcpp",engine:"KoboldCpp",packaged:false,
+            runtime_inference_verified:false,gpu_execution_verified:false,
+            selectable:false,selected_on_next_start:false,
+            detail:"P7 review only. A documented GGUF/OpenAI-compatible HTTP server is not proof of Lu native cancellation, model custody or vision/tool parity."
+        },
+        BackendOptionView{
+            backend:"vllm_gguf",engine:"vLLM GGUF plugin",packaged:false,
+            runtime_inference_verified:false,gpu_execution_verified:false,
+            selectable:false,selected_on_next_start:false,
+            detail:"Experimental and plugin-dependent GGUF route. Not packaged or admitted for local Windows Radeon inference."
         },
     ])
 }
