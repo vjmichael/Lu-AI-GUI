@@ -11,7 +11,7 @@ fn main(){
         std::process::exit(92)
     }
     let mode=argv[1].to_str().expect("mode utf8");
-    if !matches!(mode,"guardian-death"|"guardian-stall"|"worker-stall"){
+    if !matches!(mode,"guardian-death"|"guardian-stall"|"worker-stall"|"ancestor-migration"){
         std::process::exit(92)
     }
     let profile=PathBuf::from(argv[2].clone());
@@ -96,6 +96,34 @@ descendant.wait()
                     "GUARDIAN_STALLED_UNVERIFIED\n".to_string()
                 },
                 Ok(())=>"FAIL_STALLED_GUARDIAN_CLAIMED_SUCCESS\n".to_string()
+            }
+        },
+        "ancestor-migration"=>{
+            // Test-only adversary: the independent verifier tried to move
+            // a known first-party setsid descendant into the WRITABLE
+            // ancestor cgroup. A cgroup.empty receipt is NOT proof that a
+            // process which escaped the leaf was killed.
+            let original=fs::read_to_string(&trigger)
+                .expect("original verifier migration outcome missing");
+            let moved=fs::read_to_string(format!("/proc/{escaped}/cgroup"))
+                .map(|s|s.trim_end()!=nested.trim_end())
+                .unwrap_or(false);
+            if original.contains("MIGRATION_GRANTED")!=moved{
+                "FAIL_INCONSISTENT_ANCESTOR_MIGRATION_OBSERVATION\n".to_string()
+            }else{
+                match custody.stop_and_verify(){
+                    Ok(()) if moved=>
+                        "FAIL_ESCAPED_DESCENDANT_MINTED_FALSE_EMPTY_RECEIPT\n".to_string(),
+                    Ok(())=>{
+                        let _=worker.wait();
+                        "MIGRATION_DENIED_NATIVE_CGROUP_EMPTY\n".to_string()
+                    },
+                    Err(_) if moved=>{
+                        let _=worker.kill();let _=worker.wait();
+                        "MIGRATION_ESCAPE_UNVERIFIED\n".to_string()
+                    },
+                    Err(err)=>format!("FAIL_DENIED_MIGRATION_NATIVE_STOP={err}\n"),
+                }
             }
         },
         "worker-stall"=>{
