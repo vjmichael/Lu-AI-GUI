@@ -24,7 +24,7 @@ pub(crate) struct PerfReceipt {
     pub operating_system:String,
     pub architecture:String,
     pub model_loaded_at_entry:bool,
-    pub model_started_by_this_route:bool,
+    pub model_started_by_this_route:Option<bool>,
     pub model_ref:Option<String>,
     pub backend_family:Option<String>,
     pub context_limit_tokens:Option<u32>,
@@ -63,7 +63,7 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
         source_head:source_head(),
         operating_system:std::env::consts::OS.into(),
         architecture:std::env::consts::ARCH.into(),
-        model_loaded_at_entry,model_started_by_this_route:false,
+        model_loaded_at_entry,model_started_by_this_route:None,
         model_ref:None,backend_family:None,context_limit_tokens:None,
         queue_wait_ms:None,context_assembly_ms:None,
         model_dispatch_to_first_chunk_ms:None,overall_latency_ms:0,
@@ -105,6 +105,7 @@ pub(crate) fn cpu_receipt(
     let mut result=base(chat_id,generation_id,"CPU_DETERMINISTIC",
         reason_code,model_loaded_at_entry);
     result.terminal_state=terminal_state.into();
+    result.model_started_by_this_route=Some(false);
     result.overall_latency_ms=elapsed_ms(start);
     result.original_source_bytes_scanned=source_bytes.map(|v|v as u64);
     result.original_entries_scanned=entries.map(|v|v.min(u32::MAX as usize) as u32);
@@ -171,7 +172,8 @@ mod tests{
         }
         let a=ledger.recent("a",24).unwrap();
         assert_eq!(a.len(),24);
-        assert!(a.iter().all(|r|r.chat_id=="a"&&!r.model_started_by_this_route));
+        assert!(a.iter().all(|r|r.chat_id=="a"
+            &&r.model_started_by_this_route==Some(false)));
         assert!(a.iter().all(|r|r.prefill_tokens_per_second.is_none()
             &&r.decode_tokens_per_second.is_none()&&r.gpu_used_percent.is_none()));
         assert_eq!(ledger.recent("missing",2).unwrap().len(),0);
@@ -192,6 +194,7 @@ mod tests{
         assert_eq!(receipt.model_ref.as_deref(),Some("model-opaque"));
         assert_eq!(receipt.backend_family.as_deref(),Some("llama.cpp"));
         assert_eq!(receipt.context_limit_tokens,Some(4096));
+        assert_eq!(receipt.model_started_by_this_route,None);
         assert!(receipt.queue_wait_ms.is_some());
         assert!(receipt.context_assembly_ms.is_some());
         assert!(receipt.model_dispatch_to_first_chunk_ms.is_some());
