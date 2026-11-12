@@ -1391,6 +1391,7 @@ where
         )
         .is_err()
         {
+            acceptance_trace("runtime_stream_output_rejected");
             let _ = job.kill_and_verify();
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(SupervisorError::Quarantined);
@@ -1399,16 +1400,20 @@ where
         if waited == WAIT_OBJECT_0 {
             let mut code = 1_u32;
             if unsafe { GetExitCodeProcess(process.0, &mut code) } == 0 {
+                acceptance_trace("runtime_exit_code_query_failed");
                 let _ = supervisor.native_quarantine_after_error(job_id);
                 return Err(denied());
             }
+            acceptance_trace(if code == 0 { "runtime_parent_exited_zero" } else { "runtime_parent_exited_nonzero" });
             break Some(code);
         }
         if waited != WAIT_TIMEOUT {
+            acceptance_trace("runtime_kernel_wait_failed");
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(denied());
         }
         if !broker.alive() {
+            acceptance_trace("runtime_scm_owner_lost");
             let _ = job.kill_and_verify();
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(SupervisorError::Quarantined);
@@ -1484,6 +1489,7 @@ where
     )
     .is_err()
     {
+        acceptance_trace("terminal_stream_output_rejected");
         let _ = job.kill_and_verify();
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(SupervisorError::Quarantined);
@@ -1491,6 +1497,7 @@ where
     // All descendants must exit or be killed, including after the Cargo
     // parent process exits. Job Object handle remains open through receipt.
     let naturally_empty = job.await_empty(REAP_LIMIT);
+    acceptance_trace(if naturally_empty { "terminal_kernel_job_naturally_empty" } else { "terminal_kernel_job_requires_reap" });
     let reaped = if naturally_empty {
         true
     } else {
@@ -1503,6 +1510,7 @@ where
         }
     };
     if !reaped {
+        acceptance_trace("terminal_kernel_descendants_unverified");
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(SupervisorError::Quarantined);
     }
@@ -1524,7 +1532,19 @@ where
     let publication = if stopped {
         None
     } else {
-        publish_output(&output, &private_parent, job_id).ok()
+        match publish_output(&output, &private_parent, job_id) {
+            Ok(published) => {
+                acceptance_trace("terminal_output_published_and_resealed");
+                Some(published)
+            }
+            Err(_) => {
+                // Never publish a terminal receipt for an unreadable or
+                // altered child output tree. Fixed operation category only:
+                // no user paths, output bytes, or filesystem authority.
+                acceptance_trace("terminal_output_publication_denied");
+                None
+            }
+        }
     };
     let summary = if stopped {
         // Cancellation is pending until the independent SCM holder has
@@ -1536,9 +1556,11 @@ where
             return Err(SupervisorError::Quarantined);
         }
         if let Err(error) = broker.release_empty() {
+            acceptance_trace("terminal_cancel_scm_release_ack_failed");
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(error);
         }
+        acceptance_trace("terminal_cancel_scm_release_ack_fsynced");
         match supervisor.native_finish_cancelled_after_service_release(job_id) {
             Ok(summary) => summary,
             Err(error) => {
@@ -1553,14 +1575,21 @@ where
         // Journal ReleasePending *before* the service release to ensure a
         // host crash between these operations is quarantined after restart.
         if !reaped || publication.is_none() {
+            acceptance_trace("terminal_output_or_kernel_witness_missing");
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(SupervisorError::Quarantined);
         }
-        supervisor.native_mark_release_pending(job_id)?;
+        supervisor.native_mark_release_pending(job_id).map_err(|reason| {
+            acceptance_trace("terminal_release_pending_fsync_failed");
+            reason
+        })?;
+        acceptance_trace("terminal_release_pending_fsynced");
         if let Err(error) = broker.release_empty() {
+            acceptance_trace("terminal_scm_release_ack_failed");
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(error);
         }
+        acceptance_trace("terminal_scm_release_ack_fsynced");
         match supervisor.native_finish_with_output(
             job_id,
             exit_code == Some(0) && naturally_empty,
@@ -1570,6 +1599,7 @@ where
         ) {
             Ok(summary) => summary,
             Err(error) => {
+                acceptance_trace("terminal_completion_receipt_fsync_failed");
                 // If terminal fsync fails, the original ReleasePending receipt
                 // remains a restart quarantine. Never infer completion from
                 // Cargo's exit code or a service release acknowledgement.
