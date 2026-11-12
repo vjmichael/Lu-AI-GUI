@@ -37,3 +37,16 @@ test('FIN06 stale project and invented native success fail closed',()=>{
    {...build,requiresReconciliation:true},report,null);
  assert.equal(altered.steps.find(x=>x.id==='tests').observation,'not_observed');
 });
+
+test('FIN06 recovery prevents navigation and native success promotion',()=>{
+ const w=workbench();w.recoveryRequired=true;
+ const journey=checkedFin06Journey(w,id,null,null,null);
+ assert.equal(journey.workerRecoveryRequired,true);
+ assert.equal(checkedFin06Destination(journey,'git',id),null);
+ const sha='f'.repeat(64);
+ const completed={projectId:id,phase:'completed',
+  terminalReceiptSha256:sha,installedAppAccepted:false,
+  requiresReconciliation:false};
+ assert.equal(checkedFin06Journey(w,id,completed,null,null).steps
+   .find(row=>row.id==='build').observation,'unverified');
+});
