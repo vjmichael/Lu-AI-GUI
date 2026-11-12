@@ -8,7 +8,7 @@
 //! LLVM decodes the actual compiler PDB independently of LLDB-DAP.
 //! The parent WindowsDapSession must verify original durable approvals,
 //! source snapshots, receipt hashes and unchanged stopped DAP state again.
-#![cfg(all(windows, debug_assertions, feature = "dev045d4c-ci-oracle"))]
+#![cfg(all(windows, any(all(debug_assertions, feature = "dev045d4c-ci-oracle"), feature = "fin04-release-owner-evidence")))]
 use crate::{
     project_debug_target::SealedProjectDebugTarget,
     windows_kernel_pc::{WindowsLoadedModuleWitness, WindowsThreadRipSample},
