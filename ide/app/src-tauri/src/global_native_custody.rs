@@ -54,7 +54,7 @@ pub struct GlobalAdmissionFence {
 impl GlobalAdmissionFence {
  pub fn acquire(profile:&Path,domain:&'static str)->Result<Self,String>{
   valid_profile(profile)?;
-  if !matches!(domain,"build"|"debug"){return Err("FIN01_UNKNOWN_DOMAIN".into());}
+  if !matches!(domain,"build"|"debug"|"lsp"){return Err("FIN01_UNKNOWN_DOMAIN".into());}
   let marker=marker_path(profile);
   // create_new is the cross-process linearization point. Never unlink an
   // existing marker, regardless of its age or nominal owning PID.
@@ -113,16 +113,45 @@ impl GlobalAdmissionFence {
  pub fn is_released(&self)->bool{self.released}
 }
 
-pub fn sibling_rows(profile:&Path,domain:&str)->Result<Vec<JobSummary>,String>{
+/// All source-domain journals are replayed from their original append-only
+/// records. Build, debug and LSP have independent supervisors; no one journal
+/// can attest to another supervisor's process tree.
+const DOMAINS:[(&str,&str);3]=[
+ ("build","build-job-receipts.jsonl"),
+ ("debug","debug-fixture-receipts.jsonl"),
+ ("lsp","lsp-job-receipts.jsonl"),
+];
+fn rows_for(profile:&Path,domain:&str)->Result<Vec<JobSummary>,String>{
  valid_profile(profile)?;
- let file=match domain{
-  "build"=>"debug-fixture-receipts.jsonl",
-  "debug"=>"build-job-receipts.jsonl",
-  _=>return Err("FIN01_UNKNOWN_DOMAIN".into()),
- };
+ let file=DOMAINS.iter().find(|(id,_)|*id==domain)
+  .map(|(_,file)|*file).ok_or("FIN01_UNKNOWN_DOMAIN")?;
  lu_ide_execution_supervisor::Supervisor::open(profile.join(file))
-  .and_then(|s|s.inspect())
-  .map_err(|_|"FIN01_SIBLING_JOURNAL_UNVERIFIED".into())
+  .and_then(|supervisor|supervisor.inspect())
+  .map_err(|_|"FIN01_ORIGINAL_DOMAIN_JOURNAL_UNVERIFIED".into())
+}
+pub fn sibling_rows(profile:&Path,domain:&str)->Result<Vec<JobSummary>,String>{
+ if !DOMAINS.iter().any(|(id,_)|*id==domain){
+  return Err("FIN01_UNKNOWN_DOMAIN".into());
+ }
+ let mut out=Vec::new();
+ for (id,_) in DOMAINS {
+  if id!=domain {out.extend(rows_for(profile,id)?);}
+ }
+ Ok(out)
+}
+pub fn domain_rows(profile:&Path,domain:&str)->Result<Vec<JobSummary>,String>{
+ rows_for(profile,domain)
+}
+/// A preflight refusal must happen before acquiring the global marker.
+/// Preflight is only an optimization: each native owner must re-read all
+/// other original journals *while holding* the exclusive marker.
+pub fn preflight_global_idle(profile:&Path,domain:&str)->Result<(),String>{
+ let own=domain_rows(profile,domain)?;
+ let others=sibling_rows(profile,domain)?;
+ if durable_busy(&own) || durable_busy(&others) {
+  return Err("FIN01_PREVIOUS_NATIVE_WORKER_NOT_RECONCILED".into());
+ }
+ Ok(())
 }
 
 #[cfg(test)]
@@ -228,6 +257,7 @@ pub struct RecoveryAssessment {
  pub marker_owner_pid:Option<u32>,
  pub build_journal_pending:usize,
  pub debug_journal_pending:usize,
+ pub lsp_journal_pending:usize,
  pub original_journals_reconciled:bool,
  pub native_os_release_independently_verified:bool,
  pub operator_review_required:bool,
@@ -253,7 +283,7 @@ pub fn assess_global_recovery(profile:&Path)->Result<RecoveryAssessment,String>{
   }
   let parts:Vec<_>=body.split(':').collect();
   if parts.len()!=4 || parts[0]!="FIN01-V1" ||
-     !matches!(parts[1],"build"|"debug") ||
+     !matches!(parts[1],"build"|"debug"|"lsp") ||
      parts[3].len()!=16 ||
      !parts[3].bytes().all(|x|x.is_ascii_hexdigit() && !x.is_ascii_uppercase()){
       return Err("FIN01_GLOBAL_MARKER_FORMAT_INVALID".into());
@@ -263,23 +293,20 @@ pub fn assess_global_recovery(profile:&Path)->Result<RecoveryAssessment,String>{
   if parsed==0{return Err("FIN01_GLOBAL_MARKER_OWNER_INVALID".into());}
   domain=Some(parts[1].to_owned());pid=Some(parsed);
  }
- let build=lu_ide_execution_supervisor::Supervisor::open(
-     profile.join("build-job-receipts.jsonl"))
-   .and_then(|s|s.inspect())
-   .map_err(|_|"FIN01_BUILD_JOURNAL_UNVERIFIED")?;
- let debug=lu_ide_execution_supervisor::Supervisor::open(
-     profile.join("debug-fixture-receipts.jsonl"))
-   .and_then(|s|s.inspect())
-   .map_err(|_|"FIN01_DEBUG_JOURNAL_UNVERIFIED")?;
+ let build=domain_rows(profile,"build")?;
+ let debug=domain_rows(profile,"debug")?;
+ let lsp=domain_rows(profile,"lsp")?;
  let pending=|rows:&[JobSummary]|rows.iter().filter(|x|x.requires_reconciliation ||
     !matches!(x.phase,JobPhase::Completed|JobPhase::Cancelled|
       JobPhase::Failed|JobPhase::Denied)).count();
  let build_pending=pending(&build);
  let debug_pending=pending(&debug);
- let reconciled=build_pending==0 && debug_pending==0;
+ let lsp_pending=pending(&lsp);
+ let reconciled=build_pending==0 && debug_pending==0 && lsp_pending==0;
  Ok(RecoveryAssessment{
   marker_present:present,marker_domain:domain,marker_owner_pid:pid,
   build_journal_pending:build_pending,debug_journal_pending:debug_pending,
+  lsp_journal_pending:lsp_pending,
   original_journals_reconciled:reconciled,
   native_os_release_independently_verified:false,
   operator_review_required:present || !reconciled,
