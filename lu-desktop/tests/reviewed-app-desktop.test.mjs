@@ -14,7 +14,7 @@ test('next-Send reviewed Git and media require explicit human selection and nati
   assert.match(ui,/invoke\('lu_reviewed_app_ask',\s*\{/);
   assert.match(desktop,/blocking_pick_file\(\)/);
   assert.match(desktop,/blocking_pick_folder\(\)/);
-  assert.match(desktop,/matches!\(mode.as_str\(\),"git"\|"media"\)/);
+  assert.match(desktop,/matches!\(mode.as_str\(\),"git"\|"media"\|"pdf"\|"image"\)/);
   assert.match(desktop,/PersistedReviewedHumanTurn/);
   assert.match(desktop,/trusted_user_turn_text\(chat,turn\)/);
   assert.match(host,/lu_reviewed_app_ask,/);
@@ -45,7 +45,7 @@ test('reviewed child process uses separate durable receipt and cancellation fenc
   assert.match(desktop,/reader_generations\.lock\(\)/);
   assert.match(desktop,/run_journaled_observed\(/);
   assert.match(desktop,/answer.tool_calls==0/);
-  assert.match(desktop,/host.chats.complete\(&chat_id,&gid_run\)/);
+  assert.match(desktop,/host.chats.complete_reviewed_if_not_revoked\(/);
 });
 
 test('desktop only permits reviewed Git reads or FFprobe WAV/MP4 facts, never arbitrary shell',()=>{
