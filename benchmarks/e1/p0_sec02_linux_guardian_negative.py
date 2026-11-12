@@ -225,6 +225,18 @@ def execute(mode,fixture):
                     raise AssertionError("orphan cgroup unexpectedly empty/removed")
             if not running(control.pid):
                 raise AssertionError("unrelated control process was terminated")
+            if mode=="ancestor-migration" and migrated:
+                # SEC-06 full process-containment acceptance is stricter
+                # than proving a correct UNCERTAIN classification. A
+                # successfully escaped setsid descendant is a SECURITY
+                # DEFECT even when the guardian avoids a false receipt.
+                # Preserve original attack evidence and fail the gate.
+                print("SEC06_BLOCKED_ANCESTOR_CGROUP_ESCAPE=1 "
+                      "original_pidfd=1 no_false_receipt=1 "
+                      "full_process_containment=0",flush=True)
+                raise AssertionError(
+                    "SEC06_SECURITY_BLOCKER: worker migrated outside owned "
+                    "cgroup leaf; cannot accept descendant containment")
             print(
                 f"P0_SEC05_NATIVE_{mode.upper().replace('-','_')}_PASS=1 "
                 if mode=="ancestor-migration" else
