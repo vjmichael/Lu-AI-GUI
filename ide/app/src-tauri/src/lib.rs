@@ -1009,6 +1009,9 @@ async fn ide_git_execute_single_file_restore(
  sessions:State<'_,Arc<PartialStageSessions>>,
  expected:lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReview,
 )->Result<lu_ide_workspace::git_reviewed_restore::SingleFileRestoreReceipt,String>{
+ if !cfg!(feature="fin03-reviewed-restore") {
+  return Err("FIN03_RESTORE_OPT_IN_AND_NATIVE_ACCEPTANCE_REQUIRED".into());
+ }
  let registry=Arc::clone(state.inner());
  let sessions=Arc::clone(sessions.inner());
  let id=expected.project_id.clone();
