@@ -22,6 +22,10 @@ on:
       - ide/app/src-tauri/src/debug_backend.rs
       - ide/app/src-tauri/src/lib.rs
       - ide/host/src/git_divergent_verify.rs
+      - ide/llvm18_owner/apply_llvm18_owner_hook.py
+      - ide/llvm18_owner/Build-PinnedOwnerWindows.ps1
+      - ide/llvm18_owner/test_pinned_chrono_overlay.py
+      - ide/app/src-tauri/build.rs
   workflow_dispatch:
 permissions:
   contents: read
@@ -44,6 +48,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10.11'
+      - name: Pinned original LLVM18 DAP header compile-defect regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m unittest discover -s ide/llvm18_owner -p test_pinned_chrono_overlay.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_PINNED_MSVC_CHRONO_OVERLAY_REGRESSION_FAILED' }
       - name: Exact head and static negative boundary contracts
         shell: pwsh
         run: |
