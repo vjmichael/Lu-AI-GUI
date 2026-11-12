@@ -17,6 +17,7 @@ pub(crate) struct PerfReceipt {
     pub chat_id:String,
     pub generation_id:String,
     pub route:String,
+    pub scheduler_class:Option<String>,
     pub reason_code:String,
     pub terminal_state:String,
     pub evidence_scope:String,
@@ -64,7 +65,8 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
         model_loaded_at_entry:bool)->PerfReceipt{
     PerfReceipt{
         chat_id:chat_id.into(),generation_id:generation_id.into(),
-        route:route.into(),reason_code:reason_code.into(),
+        route:route.into(),scheduler_class:None,
+        reason_code:reason_code.into(),
         terminal_state:"INCOMPLETE".into(),
         evidence_scope:"HOST_OBSERVED_ONLY".into(),
         source_head:source_head(),
@@ -148,6 +150,12 @@ impl ModelTrace{
                 "MODEL_REASONING_REQUIRED",model_loaded),
         }
     }
+    pub fn with_background_origin(mut self,background:bool)->Self{
+        self.row.scheduler_class=Some(if background{
+            "BACKGROUND_TERMINAL"
+        }else{"FOREGROUND_HUMAN"}.into());
+        self
+    }
     pub fn with_model(mut self,model_ref:Option<String>)->Self{
         self.row.model_ref=model_ref;
         self.row.backend_family=Some("llama.cpp".into());
@@ -224,7 +232,8 @@ mod tests{
     #[test]
     fn queued_model_timing_is_host_observed_not_fake_token_throughput(){
         let mut span=ModelTrace::new("c","g",Instant::now(),true)
-            .with_model(Some("model-opaque".into()));
+            .with_model(Some("model-opaque".into()))
+            .with_background_origin(false);
         span.queued();
         span.acquired_slot();
         span.context_ready();
@@ -237,6 +246,7 @@ mod tests{
         assert_eq!(receipt.observed_engine_starts_during_turn,Some(2));
         assert_eq!(receipt.observed_engine_starts_since_host_start,Some(4));
         assert_eq!(receipt.model_ref.as_deref(),Some("model-opaque"));
+        assert_eq!(receipt.scheduler_class.as_deref(),Some("FOREGROUND_HUMAN"));
         assert_eq!(receipt.backend_family.as_deref(),Some("llama.cpp"));
         assert_eq!(receipt.context_limit_tokens,Some(4096));
         assert_eq!(receipt.model_started_by_this_route,None);
