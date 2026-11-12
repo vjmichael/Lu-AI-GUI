@@ -4715,6 +4715,7 @@ function App() {
          evidence.replayAuthorized!==false ||
          typeof evidence.requiresOsCleanup!=='boolean' ||
          typeof evidence.globalOsCleanupRequired!=='boolean' ||
+         typeof evidence.globalUnresolvedActionRequired!=='boolean' ||
          !/^[a-f0-9]{64}$/.test(evidence.originalDebugJournalSha256||'') ||
          !/^[a-f0-9]{64}$/.test(evidence.actionManifestSha256||'') ||
          !Number.isSafeInteger(evidence.originalDebugJobsChecked) ||
@@ -4737,6 +4738,7 @@ function App() {
            r.debuggerExecutionAuthorized===false &&
            r.replayAuthorized===false &&
            typeof r.nativeOsCleanupRequired==='boolean' &&
+           typeof r.independentResultReconciliationRequired==='boolean' &&
            typeof r.independentOsResultClaimed==='boolean'))
         throw Error('FIN04_UNTRUSTED_NATIVE_ACTION_JOURNAL_INVENTORY');
       setFin04Evidence(evidence);
@@ -4780,6 +4782,7 @@ function App() {
          !/^[a-f0-9]{64}$/.test(result.originalDebugJournalSha256||'') ||
          !/^[a-f0-9]{64}$/.test(result.actionManifestSha256||'') ||
          typeof result.globalActionCleanupRequired!=='boolean' ||
+         typeof result.globalUnresolvedActionRequired!=='boolean' ||
          typeof result.reviewedSourceRelativePath!=='string' ||
          result.reviewedSourceRelativePath.length>512 ||
          result.reviewedSourceRelativePath.startsWith('/') ||
@@ -8127,8 +8130,11 @@ function App() {
                         <p>Review SHA-256:
                           {' '}<code>{fin04CandidateReview.reviewSha256}</code></p>
                         {fin04CandidateReview.globalActionCleanupRequired &&
-                          <p role="alert">An original debugger action or job
-                            still requires OS cleanup; review is non-executable.</p>}
+                          <p role="alert">An original protected debugger job
+                            still requires native OS cleanup.</p>}
+                        {fin04CandidateReview.globalUnresolvedActionRequired &&
+                          <p role="alert">An original control action requires
+                            cleanup or independent result reconciliation.</p>}
                         {fin04CandidateReview.blockers.map(reason=>
                           <p key={reason}>Still blocked: {reason.replaceAll('_',' ')}</p>)}
                         <p>This candidate is not a live debugger control or execution grant.</p>
@@ -8144,14 +8150,13 @@ function App() {
                       acceptance: not established.
                       Execution and replay remain denied.</p>
                     {fin04Evidence.globalOsCleanupRequired &&
-                      <p role="alert">An original protected debugger job or
-                        action in this profile requires native OS cleanup.
-                        Other projects' identities are not displayed.
-                        New debugger admission remains blocked.</p>}
-                    {!fin04Evidence.globalOsCleanupRequired &&
-                     fin04Evidence.requiresOsCleanup &&
-                      <p role="alert">This project's original action requires
-                        native OS reconciliation before further execution.</p>}
+                      <p role="alert">An original debugger job or unfinished
+                        action requires native OS process cleanup in this profile.
+                        Other projects' identities are not displayed.</p>}
+                    {fin04Evidence.globalUnresolvedActionRequired &&
+                      <p role="alert">A debugger-control action still requires
+                        independent cleanup or result reconciliation. Historical
+                        receipts cannot authorize another control.</p>}
                     {fin04Evidence.rows.map(row=>
                       <article key={row.actionIdSha256}>
                         <p>Original job: <code>{row.jobId}</code></p>
@@ -8160,6 +8165,9 @@ function App() {
                           {' '}OS cleanup: {row.nativeOsCleanupRequired?'required':'not indicated'}.</p>
                         <p>Last original action receipt:
                           {' '}<code>{row.lastReceiptSha256}</code></p>
+                        {row.independentResultReconciliationRequired &&
+                          <p role="alert">Action outcome uncertain. It requires
+                            independent result reconciliation; no replay is allowed.</p>}
                         {row.independentOsResultClaimed &&
                           <p>Historical OS result was recorded, but current
                             kernel evidence is not independently reverified.</p>}
