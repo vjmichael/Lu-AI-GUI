@@ -29,6 +29,15 @@ fn valid_device_name(s:&str)->bool{
         && !s.contains("..") && s!="none"
 }
 fn nonzero_digest(digest:[u8;32])->bool{digest.iter().any(|b|*b!=0)}
+fn valid_remote_hostname(s:&str)->bool{
+    s.len()>=3&&s.len()<=128&&s.contains('.')&&
+        !s.ends_with('.')&&!s.starts_with('.') &&
+        s.split('.').all(|part|part.len()>=1 && part.len()<=63 &&
+            !part.starts_with('-')&&!part.ends_with('-')&&
+            part.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-')) &&
+        !s.eq_ignore_ascii_case("localhost") &&
+        !s.to_ascii_lowercase().ends_with(".localhost")
+}
 
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum ComputeMode {
@@ -390,7 +399,10 @@ impl<B:crate::inference_host::InferenceBackend+Send+'static> LocalIndependentFle
 #[derive(Debug,Clone)]
 pub struct RemoteNodeDescriptor {
     pub node_id:String,
+    /// Literal host-only, operator-reviewed DNS name. No scheme, paths,
+    /// userinfo, model-supplied URLs or opportunistic discovery.
     pub host:String,
+    pub port:u16,
     pub pinned_tls_cert_sha256:[u8;32],
     pub pinned_engine_sha256:[u8;32],
     pub pinned_model_sha256:[u8;32],
@@ -408,7 +420,8 @@ impl OptionalComputeNodes{
     pub fn register_reviewed(&self,record:RemoteNodeDescriptor)
         ->Result<(),GpuScheduleError>{
         let ok=valid_host_id(&record.node_id) &&
-            valid_host_id(&record.host) &&
+            valid_remote_hostname(&record.host) &&
+            record.port!=0 &&
             record.operator_approved &&
             nonzero_digest(record.pinned_tls_cert_sha256) &&
             nonzero_digest(record.pinned_engine_sha256) &&
@@ -625,9 +638,23 @@ mod tests {
         }
         let remote=OptionalComputeNodes::default();
         assert_eq!(remote.register_reviewed(RemoteNodeDescriptor{
-            node_id:"node1".into(),host:"external.example".into(),
+            node_id:"node1".into(),host:"external.example".into(),port:443,
             pinned_tls_cert_sha256:[0;32],pinned_engine_sha256:[1;32],
             pinned_model_sha256:[1;32],operator_approved:true,
         }),Err(GpuScheduleError::InvalidRequest));
+        let candidate=RemoteNodeDescriptor{
+            node_id:"node-ok".into(),host:"compute.example.org".into(),
+            port:443,pinned_tls_cert_sha256:[1;32],
+            pinned_engine_sha256:[2;32],pinned_model_sha256:[3;32],
+            operator_approved:true,
+        };
+        remote.register_reviewed(candidate).unwrap();
+        assert_eq!(remote.known_nodes().unwrap(),1);
+        assert_eq!(remote.admit_remote_request("node-ok"),
+            Err(GpuScheduleError::RemoteTransportDisabled));
+        for hostile in ["127.0.0.1/evil","localhost","bad host",".example",
+            "node:8443","https://remote.example","node@example.net"]{
+            assert!(!valid_remote_hostname(hostile));
+        }
     }
 }
