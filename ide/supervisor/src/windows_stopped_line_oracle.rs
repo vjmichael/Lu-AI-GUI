@@ -22,13 +22,9 @@ use std::{
     io::Read,
     os::windows::fs::MetadataExt,
     path::{Component, Path},
-    #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
-    process::{Command, Stdio},
-    #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
-    thread,
-    #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
-    time::{Duration, Instant},
 };
+#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
+use std::{process::{Command,Stdio},thread,time::{Duration,Instant}};
 
 const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
 #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
