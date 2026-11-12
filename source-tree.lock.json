@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "de64be4c562ae07dbbbaf62277137538391637a2",
+  "sourceCommitBeforeLock": "db7b9bfedb951145008eb89971b62fb6f4c0a87c",
   "trackedFileCount": 945,
   "files": [
     {
@@ -233,7 +233,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "74980746896d6c7475a867370ade61959d271666"
+      "blob": "ce38c09a0b99f79963850c04600053b9b1320186"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -857,7 +857,7 @@
     },
     {
       "path": "docs/LU_P0_WIN_CHAT_204_20261111.md",
-      "blob": "63b380712a923bc1fa36afb2db56b76d3e88d27d"
+      "blob": "95e49186401966d969c3b91a1b83ecb65b298c6f"
     },
     {
       "path": "docs/LU_P10_IMAGE_BASICS.md",

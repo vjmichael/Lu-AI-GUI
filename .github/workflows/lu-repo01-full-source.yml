@@ -2735,10 +2735,19 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $candidate=(Get-Command git.exe -CommandType Application -ErrorAction Stop).Source
-          $native=(Resolve-Path -LiteralPath $candidate -ErrorAction Stop).Path
+          # Get-Command returns multiple Git installations on Windows.
+          # Select one command object before reading its Source property.
+          $command=Get-Command git.exe -CommandType Application -ErrorAction Stop |
+            Select-Object -First 1
+          if($null -eq $command){throw 'Trusted native Git executable missing'}
+          $resolved=Resolve-Path -LiteralPath ([string]$command.Source) -ErrorAction Stop
+          if(@($resolved).Count -ne 1){throw 'Git selection was ambiguous'}
+          $native=[string]$resolved.ProviderPath
           if(-not [System.IO.Path]::IsPathFullyQualified($native) -or
-             -not (Test-Path -LiteralPath $native -PathType Leaf)){throw 'Git executable unavailable'}
+             -not (Test-Path -LiteralPath $native -PathType Leaf)){
+            throw 'Native absolute Windows Git executable missing'
+          }
+          Write-Host "Pinning exactly one verified Git executable: $native"
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$native"
       - name: Full original Core native regressions (no simulated completion)
         shell: bash
@@ -3001,9 +3010,19 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $git=(Get-Command git.exe -CommandType Application -ErrorAction Stop).Source
-          $native=(Resolve-Path -LiteralPath $git -ErrorAction Stop).Path
-          if(-not [System.IO.Path]::IsPathFullyQualified($native)){throw 'Not a native absolute Git path'}
+          # Previous failure: Get-Command yielded three Git paths and PowerShell
+          # joined all of them into a single invalid Rust filename.
+          $command=Get-Command git.exe -CommandType Application -ErrorAction Stop |
+            Select-Object -First 1
+          if($null -eq $command){throw 'No trusted native Git executable'}
+          $resolved=Resolve-Path -LiteralPath ([string]$command.Source) -ErrorAction Stop
+          if(@($resolved).Count -ne 1){throw 'Git selection ambiguous'}
+          $native=[string]$resolved.ProviderPath
+          if(-not [System.IO.Path]::IsPathFullyQualified($native) -or
+             -not (Test-Path -LiteralPath $native -PathType Leaf)){
+            throw 'No valid native absolute Git executable'
+          }
+          Write-Host "Pinning exactly one verified Git executable: $native"
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "LU_TOOLS03_TEST_GIT_PATH=$native"
       - name: Real native subprocesses, model-to-tool authority and structured image contracts
         shell: bash
@@ -3102,7 +3121,11 @@ jobs:
           printf '%s  %s\n' 2a31195d3769c0b0fd0a4906201666108834848db768af11de1d2cef7cd35e65 "$RUNNER_TEMP/p0-smolvlm.gguf" | sha256sum -c -
           printf '%s  %s\n' 7e943f7c53f0382a6fc41b6ee0c2def63ba4fded9ab8ed039cc9e2ab905e0edd "$RUNNER_TEMP/p0-mmproj.gguf" | sha256sum -c -
           export LU_P0_MM_PORT=18973
-          export LU_P0_MM_API_KEY=2acd1010f6fdded302437faf06647ce83b5d1f02287e8df7332ee840e12a798ce
+          # One-use 256-bit localhost token. The previous literal was 65
+          # characters, so the test failed before any real pixel evaluation.
+          export LU_P0_MM_API_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+          test "${#LU_P0_MM_API_KEY}" -eq 64
+          [[ "$LU_P0_MM_API_KEY" =~ ^[[:xdigit:]]{64}$ ]]
           "$RUNNER_TEMP/p0-build/bin/llama-server" -m "$RUNNER_TEMP/p0-smolvlm.gguf" --mmproj "$RUNNER_TEMP/p0-mmproj.gguf" --host 127.0.0.1 --port "$LU_P0_MM_PORT" -c 4096 -ngl 0 --api-key "$LU_P0_MM_API_KEY" > p0-real-model-evidence/mmproj-server.log 2>&1 &
           pid=$!
           trap 'kill "$pid" 2>/dev/null || true' EXIT
