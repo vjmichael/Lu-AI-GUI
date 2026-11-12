@@ -2173,6 +2173,40 @@ async fn ide_debug_reconcile(
 /// Read-only FIN01 cross-supervisor custody classification. Neither the
 /// renderer nor this command can approve OS cleanup, remove a marker, or
 /// replay an interrupted native job.
+/// FIN-01D: separate one-use native OS consent. Never accept a renderer
+/// authorization boolean, process ID, journal result or kernel witness.
+/// This command only clears the exact stale admission marker after fresh
+/// Windows Job Object or delegated Linux cgroup checks and durable receipts.
+#[tauri::command]
+async fn ide_fin01_clear_stale_marker(app:AppHandle)
+ ->Result<serde_json::Value,String>{
+ #[cfg(all(any(windows,target_os="linux"),
+   any(feature="native-build",feature="native-debug",feature="native-lsp")))]
+ {
+  let profile=app.path().app_data_dir()
+   .map_err(|_|"FIN01_PROFILE_UNAVAILABLE")?;
+  return tauri::async_runtime::spawn_blocking(move||{
+   let consent=app.dialog().message(
+    "Reconcile the previous FIN-01 global admission marker?\n\nThis is NOT a new worker grant. The native host will re-read all original job journals, verify the previous owner exited, and query actual Windows Job Objects or the Linux delegated cgroup-v2 hierarchy. If anything is missing, busy or uncertain, the marker stays blocked. No project code will run or be retried.")
+    .title("Lu IDE · Verify global OS custody")
+    .buttons(MessageDialogButtons::OkCancelCustom(
+      "Verify kernel and clear only if empty".into(),
+      "Leave quarantined".into()))
+    .blocking_show();
+   if !consent {return Err("FIN01_GLOBAL_RECOVERY_NOT_APPROVED".to_owned());}
+   let witness=crate::global_native_custody
+    ::clear_stale_marker_with_kernel_proof(&profile)?;
+   serde_json::to_value(witness)
+    .map_err(|_|"FIN01_GLOBAL_KERNEL_RECEIPT_UNSERIALIZABLE".to_owned())
+  }).await.map_err(|_|"FIN01_KERNEL_RECOVERY_TASK_INTERRUPTED".to_owned())?;
+ }
+ #[cfg(not(all(any(windows,target_os="linux"),
+   any(feature="native-build",feature="native-debug",feature="native-lsp"))))]
+ {
+  let _=app;
+  Err("FIN01_NATIVE_KERNEL_RECOVERY_UNAVAILABLE".into())
+ }
+}
 #[tauri::command]
 async fn ide_fin01_recovery_assessment(app:AppHandle)
  ->Result<serde_json::Value,String>{
@@ -3904,6 +3938,7 @@ pub fn run() {
             ide_review_project_debug_target,
             ide_review_multilang_adapter,
             ide_fin01_recovery_assessment,
+            ide_fin01_clear_stale_marker,
             ide_build_status,
             ide_terminal_open,
             ide_terminal_submit,
