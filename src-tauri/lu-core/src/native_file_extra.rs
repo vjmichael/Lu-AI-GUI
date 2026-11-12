@@ -780,3 +780,8 @@ mod recursive_search_tests {
         std::fs::remove_dir_all(path).unwrap();
     }
 }
+
+// TOOLS-09: native original workspace search hostile-scope test matrix.
+#[cfg(test)]
+#[path = "tools09_search_adversarial_tests.rs"]
+mod tools09_search_adversarial_tests;
