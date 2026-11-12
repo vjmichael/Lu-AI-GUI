@@ -52,8 +52,12 @@ pub(crate) async fn cpu_search_workspace_for_chat(
     state.chats.history_window(&chat_id,None,"older",1)?;
     let before=state.supervisor.status()
         .map_err(|_|"Native model status unavailable")?;
-    if if session_id.is_empty(){before.session_id.is_some()}
-       else{before.session_id.as_deref()!=Some(session_id.as_str())}{
+    let initial_mismatch=if session_id.is_empty(){
+        before.session_id.is_some()
+    }else{
+        before.session_id.as_deref()!=Some(session_id.as_str())
+    };
+    if initial_mismatch {
         return Err("Model session changed before workspace selection".into());
     }
     let chooser=app.clone();
@@ -73,8 +77,15 @@ pub(crate) async fn cpu_search_workspace_for_chat(
         return Err("Model session changed during native folder selection".into())
     }
     let loaded=after.session_id.is_some();
+    let expected_session=after.session_id.clone();
+    let expected_model=after.model_ref.clone();
     let host=Arc::clone(&state);
     tauri::async_runtime::spawn_blocking(move||{
+        let now=host.supervisor.status()
+            .map_err(|_|"Native model session unavailable before CPU file scan")?;
+        if now.session_id!=expected_session||now.model_ref!=expected_model{
+            return Err("Model session changed before CPU file scan".into())
+        }
         let began=std::time::Instant::now();
         let gid=next_id("g-");
         host.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
