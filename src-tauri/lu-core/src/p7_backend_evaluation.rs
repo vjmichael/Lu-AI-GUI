@@ -435,6 +435,7 @@ mod tests{
         manifest.operator_reviewed=false;
         assert!(matches!(manifest.preflight_for_model(&admitted),
             Err(CandidateBlocker::Unreviewed)));
+        drop(verified);
         fs::remove_dir_all(dir).unwrap();
     }
     #[test] fn projector_hash_is_required_for_multimodal_evaluation(){
@@ -454,7 +455,8 @@ mod tests{
             Err(CandidateBlocker::ProjectorMismatch)));
         let reviewed=manifest.preflight_for_model_and_projector(
             &admitted,Some(&projector)).unwrap();
-        assert_eq!(reviewed.projector_path.as_deref(),Some(path.as_path()));
+        let canonical=path.canonicalize().unwrap();
+        assert_eq!(reviewed.projector_path.as_deref(),Some(canonical.as_path()));
         let mut wrong=manifest.clone();
         wrong.expected_projector_sha256=Some([9;32]);
         assert!(matches!(wrong.preflight_for_model_and_projector(
@@ -463,6 +465,7 @@ mod tests{
         fs::write(&path,b"invalid changed image projector").unwrap();
         assert!(manifest.preflight_for_model_and_projector(
             &admitted,Some(&projector)).is_err());
+        drop(reviewed);
         fs::remove_dir_all(dir).unwrap();
     }
     #[test] fn candidate_text_stream_is_bounded_and_vision_and_tools_fail_closed(){
@@ -503,6 +506,7 @@ mod tests{
         backend.load(&admitted).unwrap();
         assert!(backend.generate(&request,&Cancellation::default(),
             &mut |_|Ok(())).is_err());
+        drop(backend);
         fs::remove_dir_all(dir).unwrap();
     }
 }
