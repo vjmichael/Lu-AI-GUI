@@ -165,8 +165,9 @@ mod tests{
         let mut p=preset();p.speculative=Speculative::NgramSimple;
         let args=p.launch_args();
         assert!(args.windows(2).any(|v|
-            v[0]=="--spec-type"&&v[1]=="ngram-simple"));
-        assert!(!args.iter().any(|v|v=="--spec-draft-model"));
+            v[0].to_string_lossy()=="--spec-type"&&
+            v[1].to_string_lossy()=="ngram-simple"));
+        assert!(!args.iter().any(|v|v.to_string_lossy()=="--spec-draft-model"));
     }
     fn write_tokenizer_fixture(dir:&Path,name:&str,token:&str){
         use std::{fs,io::Write};
