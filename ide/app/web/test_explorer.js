@@ -31,6 +31,7 @@ export function checkedTestExplorer(discovery,report,projectId,filter='all') {
     }
   }
   const cases=[];
+  const seenCaseIds=new Set();
   if(report?.projectId===projectId && JOB.test(report.jobId||'') &&
      report.taskAcceptanceAuthorized===false &&
      report.independentlyVerified===false &&
@@ -40,7 +41,8 @@ export function checkedTestExplorer(discovery,report,projectId,filter='all') {
          typeof row.id!=='string' ||
          !/^case_[a-f0-9]{64}$/.test(row.id) ||
          typeof row.name!=='string' || row.name.length>240 ||
-         row.independentlyVerified!==false)return null;
+         row.independentlyVerified!==false || seenCaseIds.has(row.id))return null;
+      seenCaseIds.add(row.id);
       const source=row.source;
       const sourceValid=source && typeof source==='object' &&
         safeRelativeSource(source.relativePath);
