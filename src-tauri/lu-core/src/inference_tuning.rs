@@ -56,7 +56,7 @@ impl TuningProfile {
     pub fn validate_for_model(
         &self, target:&AdmittedModel, projector_present:bool,
     )->Result<(),String>{
-        if projector_present && !matches!(self.speculative,Speculative::Disabled){
+        if projector_present && !matches!(&self.speculative,Speculative::Disabled){
             return Err("speculative decoding not admitted with MMProj".into())
         }
         let Speculative::DraftSimple(draft)=&self.speculative else{return Ok(())};
@@ -117,7 +117,7 @@ impl TuningProfile {
         values
     }
     pub fn label(&self)->&'static str{
-        match self.speculative {
+        match &self.speculative {
             Speculative::Disabled=>"TUNED_NO_SPECULATION",
             Speculative::NgramSimple=>"TUNED_NGRAM_SIMPLE",
             Speculative::DraftSimple(_)=>"TUNED_DRAFT_SIMPLE",
@@ -140,9 +140,9 @@ mod tests{
         assert!(profile.validate_numbers(NonZeroUsize::new(4).unwrap(),4096).is_ok());
         let args=profile.launch_args().into_iter()
             .map(|s|s.to_string_lossy().to_string()).collect::<Vec<_>>();
-        assert!(args.windows(2).any(|p|p==["--batch-size","512"]));
-        assert!(args.windows(2).any(|p|p==["--ubatch-size","128"]));
-        assert!(args.windows(2).any(|p|p==["--spec-type","none"]));
+        assert!(args.windows(2).any(|p|p[0]=="--batch-size"&&p[1]=="512"));
+        assert!(args.windows(2).any(|p|p[0]=="--ubatch-size"&&p[1]=="128"));
+        assert!(args.windows(2).any(|p|p[0]=="--spec-type"&&p[1]=="none"));
         assert_eq!(args.len(),12);
     }
     #[test] fn denies_unbounded_or_mismatched_resource_configuration(){
