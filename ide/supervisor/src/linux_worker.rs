@@ -304,6 +304,28 @@ fn current_cgroup_parent() -> Result<PathBuf, SupervisorError> {
     Ok(parent)
 }
 
+/// FIN-02: read-only OS admission prerequisites for the host's *current*
+/// kernel identity. This does NOT create a cgroup, move a process, claim
+/// authority or prove that a future child entered its assigned worker group.
+pub fn native_delegated_host_readiness() -> Result<(), SupervisorError> {
+    ensure_root_owned_tool(Path::new(BWRAP))?;
+    let parent=current_cgroup_parent()?;
+    if !fs::symlink_metadata(&parent).map_err(|_|denied())?.is_dir(){
+        return Err(denied());
+    }
+    let host=parent.join("lu-ide-host");
+    let observed=fs::canonicalize(&host).map_err(|_|denied())?;
+    let current=fs::read_to_string("/proc/self/cgroup").map_err(|_|denied())?;
+    if current.lines().filter(|row|row.starts_with("0::")).count()!=1 ||
+       observed.file_name().and_then(|v|v.to_str())!=Some("lu-ide-host") {
+        return Err(denied());
+    }
+    for filename in ["cgroup.procs","cgroup.events"]{
+       if !host.join(filename).is_file(){return Err(denied());}
+    }
+    Ok(())
+}
+
 fn make_cgroup(job_id: &str, plan: &JobPlan) -> Result<Cgroup, SupervisorError> {
     if !job_id.starts_with("job-")
         || job_id.len() != 36

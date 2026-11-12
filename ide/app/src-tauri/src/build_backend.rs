@@ -593,16 +593,28 @@ impl NativeBuildRuntime {
         })
     }
     pub fn status(&self, app: &AppHandle, project_id: &str) -> Result<BuildStatus, String> {
-        let availability = installation(app);
+        let installed_cargo=installation(app);
+        // Host OS admission is a different fact from the resource hash.
+        // A normal Linux WebView process is not automatically a delegated
+        // systemd service: it must not advertise a launchable worker.
+        #[cfg(target_os="linux")]
+        let native_os_ready=lu_ide_execution_supervisor::linux_worker
+            ::native_delegated_host_readiness().is_ok();
+        #[cfg(windows)]
+        let native_os_ready=true; // Windows service + Job validated per job.
         let cargo_provenance = runtime_provenance("rust_cargo",
-            availability.as_ref().ok().map(|bundle|bundle.toolchain_sha256.clone()),
-            PINNED_CARGO);
+            installed_cargo.as_ref().ok()
+                .map(|bundle|bundle.toolchain_sha256.clone()),PINNED_CARGO);
+        let availability=if native_os_ready{installed_cargo}
+            else{Err("FIN02_LINUX_DELEGATED_HOST_NOT_ADMITTED".into())};
         let multilang_ready: Vec<MultilangProfileReadiness> = MULTILANG_RECIPES
             .iter()
             .map(|&profile_id| {
                 #[cfg(feature = "native-multilang")]
                 let result: Result<Installation, String> =
-                    if profile_id == "uv_sync_offline" && cfg!(windows) {
+                    if !native_os_ready {
+                        Err("FIN02_LINUX_DELEGATED_HOST_NOT_ADMITTED".into())
+                    } else if profile_id == "uv_sync_offline" && cfg!(windows) {
                         // A valid hash cannot substitute for Windows source
                         // AppContainer ACL acceptance: fail closed.
                         Err("IDE053_WINDOWS_WORKSPACE_ACL_NOT_ACCEPTED".into())
@@ -622,7 +634,9 @@ impl NativeBuildRuntime {
                     provenance,
                     profile_id,
                     ready: result.is_ok(),
-                    code: if profile_id == "uv_sync_offline" && cfg!(windows) {
+                    code: if !native_os_ready {
+                        "FIN02_LINUX_DELEGATED_HOST_NOT_ADMITTED"
+                    } else if profile_id == "uv_sync_offline" && cfg!(windows) {
                         "IDE053_WINDOWS_WORKSPACE_ACL_NOT_ACCEPTED"
                     } else if result.is_ok() {
                         "DEV03_RUNTIME_PIN_VERIFIED_NATIVE_ADMISSION_PER_JOB"
