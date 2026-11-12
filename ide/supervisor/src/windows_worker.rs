@@ -1702,6 +1702,10 @@ pub fn reconcile_windows_interrupted_via_service(
 mod tests {
     use super::*;
     #[test]
+    fn fin01d_kernel_attestation_never_accepts_the_live_recovery_owner(){
+        assert!(verify_global_worker_quiescence(std::process::id(),&[]).is_err());
+    }
+    #[test]
     fn two_windows_streams_preserve_identity_and_offsets() {
         let root = test_tree();
         fs::write(root.join("cargo-stdout.log"), b"output-one").unwrap();
