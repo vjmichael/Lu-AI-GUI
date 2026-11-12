@@ -424,6 +424,8 @@ impl Active {
 
 pub struct NativeLspRuntime {
     supervisor: Arc<Supervisor>,
+    global_custody_profile: PathBuf,
+    global_admission: Mutex<Option<crate::global_native_custody::GlobalAdmissionFence>>,
     stage: PathBuf,
     active: Mutex<Option<Active>>,
     // A failed OS worker close is never interpreted as an exited process.
@@ -449,10 +451,27 @@ impl NativeLspRuntime {
             .iter().any(|job| job.requires_reconciliation);
         Ok(Self {
             supervisor: Arc::new(supervisor),
+            global_custody_profile: root,
+            global_admission: Mutex::new(None),
             stage,
             active: Mutex::new(None),
             cleanup_uncertain: Mutex::new(interrupted),
         })
+    }
+    /// An LSP session keeps its admission until its original native OS
+    /// session close and complete durable journal release have been verified.
+    /// No marker is released merely because the renderer lost the session.
+    fn release_global_if_terminal(&self) -> Result<(), String> {
+        let mut owner=self.global_admission.lock()
+            .map_err(|_|"FIN01_LSP_ADMISSION_OWNER_UNAVAILABLE")?;
+        if let Some(fence)=owner.as_mut() {
+            let own=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
+            let others=crate::global_native_custody::sibling_rows(
+                &self.global_custody_profile,"lsp")?;
+            fence.release_if_terminal(&own,&others)?;
+            *owner=None;
+        }
+        Ok(())
     }
     pub fn poll_status(&self) -> &'static str {
         // A lightweight native worker heartbeat. Poll owns the same mutex as
@@ -543,6 +562,14 @@ impl NativeLspRuntime {
     ) -> Result<Value, String> {
         let result = self.start_approved(app, registry, request);
         if result.is_err() {
+            // An admission that never prepared a native job can be released
+            // only after all three journals remain independently terminal.
+            // Any uncertain child or prepared job keeps the marker.
+            if self.release_global_if_terminal().is_err() {
+                if let Ok(mut state)=self.cleanup_uncertain.lock(){
+                    *state=true;
+                }
+            }
             // Admission can fail after a genuine OS process was spawned.
             // The supervisor journal, not the caller's boolean, determines
             // whether a subsequent session is safe.
@@ -600,6 +627,24 @@ impl NativeLspRuntime {
         if root_now != root || rev_now != saved_revision {
             return Err("LSP_SCOPE_CHANGED_DURING_APPROVAL".into());
         }
+        // FIN-01D: a live language server is a real OS-contained process.
+        // Acquire the same profile-wide exclusive custody as build and debug.
+        // The approval dialog above conveys no permanent process authority.
+        crate::global_native_custody::preflight_global_idle(
+            &self.global_custody_profile,"lsp")?;
+        let fence=crate::global_native_custody::GlobalAdmissionFence
+            ::acquire(&self.global_custody_profile,"lsp")?;
+        let own=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
+        let other=crate::global_native_custody::sibling_rows(
+            &self.global_custody_profile,"lsp")?;
+        if crate::global_native_custody::durable_busy(&own) ||
+           crate::global_native_custody::durable_busy(&other) {
+            // No grant is minted and the existing interrupted custody stays
+            // quarantined; no automatic unlink of an uncertain marker.
+            return Err("FIN01_LSP_GLOBAL_JOURNAL_BUSY".into());
+        }
+        *self.global_admission.lock()
+            .map_err(|_|"FIN01_LSP_ADMISSION_OWNER_UNAVAILABLE")?=Some(fence);
         let input = publish_lsp_input(&root, &self.stage, &request.relative_path, server_id)
             .map_err(|e| e.code())?;
         if input.seal.manifest_sha256 != saved_revision {
@@ -895,6 +940,14 @@ impl NativeLspRuntime {
                 *uncertain = true;
                 return Err(error.code());
             }
+        }
+        drop(uncertain);
+        drop(lock);
+        if let Err(reason)=self.release_global_if_terminal(){
+            if let Ok(mut state)=self.cleanup_uncertain.lock(){
+                *state=true;
+            }
+            return Err(reason);
         }
         Ok(())
     }
