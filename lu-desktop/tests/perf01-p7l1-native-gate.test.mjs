@@ -37,7 +37,11 @@ test('P7L-1 CPU-vs-CPU comparison refuses deceptive Vulkan speedup figures',()=>
   assert.match(comparisons,/#\[ignore = "requires reviewed physical/);
 });
 test('P7L-1 mock still tests actual child custody and never promotes Kobold',()=>{
-  assert.match(adapter,/job\.assign\(&child\)/);
+  assert.match(adapter,/CREATE_NO_WINDOW \| CREATE_SUSPENDED/);
+  assert.match(adapter,/job\.assign_and_resume_suspended\(&child\)/);
+  assert.match(adapter,/job\.terminate_and_verify_empty\(\)/);
+  assert.match(adapter,/let present=unsafe\{kill\(-\(pid as i32\),0\)\}/);
+  assert.match(adapter,/reaped=false;break;/);
   assert.match(adapter,/finish_after_reap\(reaped\)/);
   assert.match(adapter,/process_group\(0\)/);
   assert.match(adapter,/self\.journal\.mark_spawned/);
