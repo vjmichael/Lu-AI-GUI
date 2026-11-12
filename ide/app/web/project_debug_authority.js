@@ -23,8 +23,10 @@ export function checkedProjectDebugWitness(result,build,projectId) {
      result.stackResponseObserved!==true||
      !(Number.isSafeInteger(result.stoppedThread)&&result.stoppedThread>0)||
      result.installedAppAccepted!==false ||
-     result.releaseOwnerSourceLineVerified!==false ||
-     result.releaseOwnerControlAuthorized!==false ||
+     (result.releaseOwnerSourceLineVerified!==undefined &&
+       result.releaseOwnerSourceLineVerified!==false) ||
+     (result.releaseOwnerControlAuthorized!==undefined &&
+       result.releaseOwnerControlAuthorized!==false) ||
      (result.releaseOwnerKernelVerified===true &&
        (!SHA.test(result.releaseOwnerReceiptSha256||'') ||
         !Number.isSafeInteger(result.releaseOwnerEventSequence) ||
