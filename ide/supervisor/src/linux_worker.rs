@@ -540,12 +540,15 @@ fn command_for(
             cmd.arg("/runtime/bin/vcpkg").args([
                 "install",
                 "--no-downloads",
+                "--only-binarycaching",
+                "--vcpkg-root=/runtime",
                 "--x-manifest-root=/workspace",
                 "--x-install-root=/output/installed",
                 "--downloads-root=/output/downloads",
                 "--x-buildtrees-root=/output/buildtrees",
                 "--x-packages-root=/output/packages",
                 "--binarysource=clear",
+                "--binarysource=files,/runtime/binary-cache,read",
             ]);
         }
         "uv_sync_offline" if cfg!(feature = "package-uv-worker") && runtime.is_some() => {
