@@ -52,7 +52,7 @@ test('P0 telemetry measures real generation stages but never invents GPU rate',(
   assert.match(ledger,/gpu_used_percent:None,cache_hit:None/);
   assert.match(ledger,/option_env!\("LU_PERF01_SOURCE_HEAD"\)/);
   assert.match(ledger,/model_started_by_this_route:None/);
-  assert.match(ledger,/result.model_started_by_this_route=Some(false)/);
+  assert.match(ledger,/result\.model_started_by_this_route=Some\(false\)/);
   assert.doesNotMatch(ledger,/raw_prompt|raw_path|file_contents|model_response_text/);
 });
 test('P0 diagnostics keep per-chat bounded original-only samples',()=>{
