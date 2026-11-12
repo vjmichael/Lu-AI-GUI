@@ -103,14 +103,26 @@ impl DapGateway {
         {
             return Err(SupervisorError::NoContainment);
         }
-        let result=self.process.as_mut().ok_or(SupervisorError::NoContainment)?
+        // A helper crash, timeout, malformed output or any lost native
+        // custody cannot leave the original debugger Job running merely
+        // because a caller later decides not to drop its session. Quarantine
+        // immediately, journal uncertainty, and reap *that same* Job.
+        let result=match self.process.as_mut()
+            .ok_or(SupervisorError::NoContainment)?
             .read_protected_pe_pdb(binary,pdb,binary_sha256,pdb_sha256,
-                bundle_sha256,slide,rip)?;
+                bundle_sha256,slide,rip) {
+                Ok(result)=>result,
+                Err(_)=>return self.quarantine(),
+            };
         if self.session.phase()!=DapPhase::Stopped ||
            self.session.source_candidate()
-               .and_then(|f|f.instruction_address)!=Some(rip)
+               .and_then(|f|f.instruction_address)!=Some(rip) ||
+           self.supervisor.inspect()?.iter().all(|job|
+               job.job_id!=self.job_id ||
+               job.plan_sha256!=self.plan_sha256 ||
+               job.phase!=JobPhase::Running || job.requires_reconciliation)
         {
-            return Err(SupervisorError::NoContainment);
+            return self.quarantine();
         }
         Ok(result)
     }
