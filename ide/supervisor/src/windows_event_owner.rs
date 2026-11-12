@@ -3,7 +3,7 @@
 //! debugger command can assert these events. Only the protected Windows
 //! worker's private, one-use inherited pipe and fresh host nonce can do so.
 //! The owner record is source evidence; it is NOT a new execution approval.
-#![cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+#![cfg(all(windows, any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence")))]
 use crate::SupervisorError;
 use std::{
     fs::{self, OpenOptions},
