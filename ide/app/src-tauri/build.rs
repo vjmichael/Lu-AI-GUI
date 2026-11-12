@@ -216,6 +216,230 @@ fn offline_lsp_pins() -> Result<(), String> {
 // FIN-02: never allow an "integrated alpha" build to fall back to the
 // permissive development path in which absent staged LSP pins are accepted
 // only so that the IDE's default (inert) UI can compile.
+
+// FIN-02B: strict native runtime bundle measurements at compile time.
+// These pins are observations, not vendor signatures or OS containment proof.
+fn fin02_scan(root:&Path,dir:&Path,depth:usize,
+    files:&mut Vec<(String,u64,String)>,total:&mut u64)->Result<(),String>{
+    if depth>32 {return Err("FIN02_RUNTIME_DEPTH_DENIED".into());}
+    for child in fs::read_dir(dir).map_err(|_|"FIN02_RUNTIME_DIRECTORY_UNREADABLE")?{
+        let path=child.map_err(|_|"FIN02_RUNTIME_ENTRY_UNAVAILABLE")?.path();
+        let meta=fs::symlink_metadata(&path).map_err(|_|"FIN02_RUNTIME_METADATA_DENIED")?;
+        if meta.file_type().is_symlink(){return Err("FIN02_RUNTIME_LINK_DENIED".into());}
+        if meta.is_dir(){
+            fin02_scan(root,&path,depth+1,files,total)?;
+        }else if meta.is_file(){
+            if meta.len()>1024*1024*1024 || files.len()>=40000{
+                return Err("FIN02_RUNTIME_QUOTA_DENIED".into());
+            }
+            *total=total.checked_add(meta.len())
+                .ok_or("FIN02_RUNTIME_QUOTA_OVERFLOW")?;
+            if *total>4*1024*1024*1024{return Err("FIN02_RUNTIME_SIZE_DENIED".into());}
+            let rel=path.strip_prefix(root).map_err(|_|"FIN02_RUNTIME_PATH_ESCAPED")?
+                .to_str().ok_or("FIN02_RUNTIME_NON_UTF8")?.replace('\\',"/");
+            if rel.len()>1024 || rel.split('/').any(|s|
+                s.is_empty() || s=="." || s==".."){
+                return Err("FIN02_RUNTIME_PATH_DENIED".into());
+            }
+            let sha=digest_file(&path)?;
+            let post=fs::symlink_metadata(&path)
+                .map_err(|_|"FIN02_RUNTIME_CHANGED")?;
+            if post.len()!=meta.len() || !post.is_file(){
+                return Err("FIN02_RUNTIME_CHANGED".into());
+            }
+            files.push((rel,meta.len(),sha));
+        }else{
+            return Err("FIN02_RUNTIME_SPECIAL_FILE_DENIED".into());
+        }
+    }
+    Ok(())
+}
+fn fin02_tree_hash(root:&Path,kind:&str)->Result<String,String>{
+    let meta=fs::symlink_metadata(root).map_err(|_|"FIN02_RUNTIME_ROOT_MISSING")?;
+    if !meta.is_dir() || meta.file_type().is_symlink(){
+        return Err("FIN02_RUNTIME_ROOT_UNTRUSTED".into());
+    }
+    let mut files=Vec::new();let mut total=0u64;
+    fin02_scan(root,root,0,&mut files,&mut total)?;
+    if files.is_empty(){return Err("FIN02_RUNTIME_EMPTY".into());}
+    let mut h=Sha256::new();
+    match kind {
+        "runtime"=>{
+            // Identical ordered tree transcript to the native runtime_bundles
+            // rehash: path, NUL, little-endian size, sha, NUL.
+            h.update(b"lu-ide-runtime-tree-v1\0");
+            files.sort_by(|a,b|a.0.cmp(&b.0));
+            for (name,size,sha) in files {
+                h.update(name.as_bytes());h.update([0]);
+                h.update(size.to_le_bytes());h.update(sha.as_bytes());h.update([0]);
+            }
+        },
+        "windows_cargo"=>{
+            // The Windows native D7 custody hash uses DFS sibling-name
+            // order, not lexicographically flat-path order.
+            fn dfs(root:&Path,dir:&Path,h:&mut Sha256)->Result<(),String>{
+                let mut children=fs::read_dir(dir)
+                    .map_err(|_|"FIN02_CARGO_DIRECTORY_UNAVAILABLE")?
+                    .map(|e|e.map(|x|x.path()).map_err(|_|"FIN02_CARGO_ENTRY_DENIED".into()))
+                    .collect::<Result<Vec<PathBuf>,String>>()?;
+                children.sort_by_key(|p|p.file_name().unwrap().to_os_string());
+                for p in children {
+                    let meta=fs::symlink_metadata(&p).map_err(|_|"FIN02_CARGO_METADATA")?;
+                    if meta.file_type().is_symlink(){
+                        return Err("FIN02_CARGO_LINK_DENIED".into());
+                    }
+                    if meta.is_dir(){dfs(root,&p,h)?;}
+                    else if meta.is_file(){
+                        let rel=p.strip_prefix(root).map_err(|_|"FIN02_CARGO_PATH")?
+                            .to_str().ok_or("FIN02_CARGO_NON_UTF8")?.replace('\\',"/");
+                        h.update(rel.as_bytes());h.update([0]);
+                        h.update(meta.len().to_le_bytes());
+                        h.update(digest_file(&p)?.as_bytes());h.update([0]);
+                    }else{return Err("FIN02_CARGO_SPECIAL".into());}
+                }
+                Ok(())
+            }
+            dfs(root,root,&mut h)?;
+        },
+        "native_bundle"=>return bundle_digest(root,
+            env::var("CARGO_CFG_TARGET_OS").as_deref()==Ok("windows")),
+        _=>return Err("FIN02_UNKNOWN_RUNTIME_KIND".into()),
+    }
+    Ok(format!("{:x}",h.finalize()))
+}
+fn fin02_linux_cargo_hash()->Result<String,String>{
+    let linker=if cfg!(target_arch="x86_64"){
+        vec!["/usr/bin/x86_64-linux-gnu-gcc-14",
+             "/usr/bin/x86_64-linux-gnu-gcc-13",
+             "/usr/bin/x86_64-linux-gnu-gcc-12"]
+    }else{
+        vec!["/usr/bin/aarch64-linux-gnu-gcc-14",
+             "/usr/bin/aarch64-linux-gnu-gcc-13",
+             "/usr/bin/aarch64-linux-gnu-gcc-12"]
+    };
+    let gcc=linker.into_iter()
+        .find(|p|Path::new(p).is_file() &&
+            !fs::symlink_metadata(p).is_ok_and(|m|m.file_type().is_symlink()))
+        .ok_or("FIN02_ROOT_LINKER_MISSING")?;
+    let mut h=Sha256::new();
+    for p in ["/usr/bin/bwrap","/usr/bin/cargo","/usr/bin/rustc",gcc]{
+        let meta=fs::symlink_metadata(p).map_err(|_|"FIN02_SYSTEM_TOOL_MISSING")?;
+        if !meta.is_file() || meta.file_type().is_symlink() ||
+            meta.len()>32*1024*1024 {return Err("FIN02_SYSTEM_TOOL_UNTRUSTED".into());}
+        #[cfg(unix)]{
+            use std::os::unix::fs::MetadataExt;
+            if meta.uid()!=0 || meta.mode()&0o6022!=0{
+                return Err("FIN02_SYSTEM_TOOL_NOT_ROOT_OWNED".into());
+            }
+        }
+        let digest=digest_file(Path::new(p))?;
+        h.update(p.as_bytes());h.update([0]);
+        h.update(digest.as_bytes());h.update([0]);
+    }
+    Ok(format!("{:x}",h.finalize()))
+}
+fn fin02_checked_sha(v:&Value)->Result<&str,String>{
+    let s=v.as_str().ok_or("FIN02_RUNTIME_PIN_MISSING")?;
+    if s.len()!=64 || !s.bytes().all(|c|c.is_ascii_hexdigit() &&
+        !c.is_ascii_uppercase()) || s.bytes().all(|c|c==b'0'){
+        return Err("FIN02_RUNTIME_PIN_INVALID".into());
+    }
+    Ok(s)
+}
+fn fin02_require_runtime_stage()->Result<(),String>{
+    if env::var_os("CARGO_FEATURE_FIN02_PROTECTED_ALPHA").is_none(){
+        return Ok(());
+    }
+    let target=env::var("CARGO_CFG_TARGET_OS")
+        .map_err(|_|"FIN02_TARGET_UNKNOWN")?;
+    if target!="windows" && target!="linux"{
+        return Err("FIN02_UNSUPPORTED_TARGET".into());
+    }
+    let root=PathBuf::from(env::var("CARGO_MANIFEST_DIR")
+        .map_err(|_|"FIN02_DESKTOP_ROOT_UNKNOWN")?);
+    let manifest=root.join("fin02-runtime-pins.json");
+    println!("cargo:rerun-if-changed={}",manifest.display());
+    let data=json(&manifest)?;
+    if data["schema"]!="lu.ide.fin02.runtime-pins.v1" ||
+        data["platform"]!=target || data["releaseInstalled"]!=false ||
+        data["nativeHumanAcceptance"]!=false ||
+        data["executionAuthorized"]!=false {
+        return Err("FIN02_RUNTIME_STAGE_SCHEMA_DENIED".into());
+    }
+    let records=data["pins"].as_object().ok_or("FIN02_RUNTIME_PINS_MISSING")?;
+    let windows=target=="windows";
+    let service="LU_IDE_WO6_WINDOWS_D7D_SERVICE_SHA256";
+    let mut expected=BTreeSet::new();
+    let runtimes=[
+        ("cargo",if windows{"LU_IDE_WO6_WINDOWS_CARGO_BUNDLE_SHA256"}
+            else{"LU_IDE_WO6_LINUX_TOOLCHAIN_SHA256"}),
+        ("python_pytest",if windows{"LU_IDE_DEV03_WINDOWS_PYTHON_SHA256"}
+            else{"LU_IDE_DEV03_LINUX_PYTHON_SHA256"}),
+        ("js_tests",if windows{"LU_IDE_DEV03_WINDOWS_NODE_SHA256"}
+            else{"LU_IDE_DEV03_LINUX_NODE_SHA256"}),
+        ("cpp_cmake_build",if windows{"LU_IDE_DEV03_WINDOWS_CMAKE_SHA256"}
+            else{"LU_IDE_DEV03_LINUX_CMAKE_SHA256"}),
+        ("lldb_dap",if windows{"LU_IDE_WO6_WINDOWS_LLDB_DAP_SHA256"}
+            else{"LU_IDE_WO6_LINUX_LLDB_DAP_SHA256"}),
+    ];
+    for (name,key) in runtimes {
+        expected.insert(key.to_string());
+        let pin=fin02_checked_sha(records.get(key)
+            .ok_or("FIN02_REQUIRED_PIN_ABSENT")?)?;
+        let actual=match name {
+            "cargo" if windows=>{
+                let at=root.join("resources/build-tools/windows-rust-offline");
+                println!("cargo:rerun-if-changed={}",at.display());
+                for required in ["bin/cargo.exe","bin/rustc.exe"]{
+                    if !at.join(required).is_file(){
+                        return Err("FIN02_CARGO_REQUIRED_BINARY_MISSING".into());
+                    }
+                }
+                for required in ["lib","cargo-home"]{
+                    if !at.join(required).is_dir(){
+                        return Err("FIN02_CARGO_REQUIRED_DIRECTORY_MISSING".into());
+                    }
+                }
+                fin02_tree_hash(&at,"windows_cargo")?
+            },
+            "cargo"=>fin02_linux_cargo_hash()?,
+            "lldb_dap"=>{
+                let at=if windows {
+                    root.join("resources/debug-adapters/lldb-dap")
+                }else{
+                    PathBuf::from("/opt/lu-ide/debug-adapters/lldb-dap")
+                };
+                println!("cargo:rerun-if-changed={}",at.display());
+                fin02_tree_hash(&at,"native_bundle")?
+            },
+            profile=>{
+                let at=if windows {
+                    root.join("resources/build-tools/windows-runtimes").join(profile)
+                }else{
+                    PathBuf::from("/opt/lu-ide/runtimes").join(profile)
+                };
+                println!("cargo:rerun-if-changed={}",at.display());
+                fin02_tree_hash(&at,"runtime")?
+            }
+        };
+        if actual!=pin{return Err("FIN02_INSTALLED_RUNTIME_HASH_DIFFERS".into());}
+        println!("cargo:rustc-env={key}={actual}");
+    }
+    if windows {
+        let path=root.join("resources/recovery/windows_recovery_service.exe");
+        let actual=digest_file(&path)?;
+        let pin=fin02_checked_sha(records.get(service)
+            .ok_or("FIN02_RECOVERY_SERVICE_PIN_MISSING")?)?;
+        if pin!=actual{return Err("FIN02_RECOVERY_SERVICE_HASH_DIFFERS".into());}
+        expected.insert(service.to_string());
+        // The same bytes are used by the reviewed LSP and Build/Test paths.
+        println!("cargo:rustc-env={service}={actual}");
+    }
+    if records.keys().cloned().collect::<BTreeSet<_>>()!=expected{
+        return Err("FIN02_EXTRA_OR_MISSING_RUNTIME_PIN".into());
+    }
+    Ok(())
+}
 fn fin02_require_reviewed_lsp_stage() -> Result<(), String> {
     if env::var_os("CARGO_FEATURE_FIN02_PROTECTED_ALPHA").is_none() {
         return Ok(());
@@ -236,6 +460,9 @@ fn main() {
     }
     if let Err(error) = offline_lsp_pins() {
         panic!("offline LSP admission refused: {error}");
+    }
+    if let Err(error) = fin02_require_runtime_stage() {
+        panic!("FIN-02 reviewed native runtime stage denied: {error}");
     }
     tauri_build::build();
 }
