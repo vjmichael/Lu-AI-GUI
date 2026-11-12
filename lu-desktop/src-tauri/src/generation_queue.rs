@@ -138,6 +138,12 @@ impl GenerationQueue {
         } else {
             CancelState::Queued
         };
+        if status == CancelState::Queued {
+            // A cancelled waiter must not hold the head of either priority
+            // lane while its worker is unwinding and releasing its ticket.
+            state.foreground_waiting.retain(|id| id != generation_id);
+            state.background_waiting.retain(|id| id != generation_id);
+        }
         self.ready.notify_all();
         Ok(status)
     }
@@ -160,6 +166,10 @@ impl GenerationQueue {
         let phase=if state.active.as_deref()==Some(generation_id.as_str()){
             CancelState::Active
         }else{CancelState::Queued};
+        if phase==CancelState::Queued {
+            state.foreground_waiting.retain(|id|id!=&generation_id);
+            state.background_waiting.retain(|id|id!=&generation_id);
+        }
         self.ready.notify_all();
         Ok(Some((session_id,generation_id,phase)))
     }
@@ -177,8 +187,9 @@ impl GenerationQueue {
     /// Include queued and active human work; fail closed on lock poisoning.
     pub fn has_foreground_jobs(&self) -> bool {
         self.state.lock()
-            .map(|state| state.jobs.values()
-                .any(|job| job.class == TurnClass::Foreground))
+            .map(|state| state.jobs.iter().any(|(id,job)|
+                job.class == TurnClass::Foreground
+                && (!job.cancelled || state.active.as_deref()==Some(id.as_str()))))
             .unwrap_or(true)
     }
     pub fn has_jobs(&self) -> bool {
@@ -367,6 +378,23 @@ mod tests {
         drop(auto);
         human.wait_for_slot().unwrap();
         drop(human);
+        assert!(!q.has_jobs());
+    }
+    #[test]
+    fn cancelled_foreground_waiter_does_not_block_background_lane() {
+        let q = Arc::new(GenerationQueue::default());
+        let (active, _) = q.enqueue("s", "human-active", "h1").unwrap();
+        active.wait_for_slot().unwrap();
+        let (cancelled, _) = q.enqueue("s", "human-cancel", "h2").unwrap();
+        let (auto, _) = q.enqueue_with_class(
+            "s", "background", "b", TurnClass::Background).unwrap();
+        assert_eq!(q.cancel("s", "h2"), Ok(CancelState::Queued));
+        assert!(cancelled.wait_for_slot().is_err());
+        drop(active);
+        assert!(!q.has_foreground_jobs());
+        auto.wait_for_slot().unwrap();
+        drop(cancelled);
+        drop(auto);
         assert!(!q.has_jobs());
     }
     #[test]
