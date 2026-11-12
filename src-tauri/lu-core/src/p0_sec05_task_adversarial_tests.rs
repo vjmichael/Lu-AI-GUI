@@ -30,6 +30,10 @@ fn sec05_sqlite_writer_cannot_forge_verified_terminal_or_erase_uncertain_task(){
             "UPDATE lu_tasks SET state='CANCELLED' WHERE task_id='sec05-worker'",
             "UPDATE lu_tasks SET state='TIMED_OUT' WHERE task_id='sec05-worker'",
             "DELETE FROM lu_tasks WHERE task_id='sec05-worker'",
+            "UPDATE lu_tasks SET task_id='sec05-forged' WHERE task_id='sec05-worker'",
+            "UPDATE lu_tasks SET workspace_id='c-other' WHERE task_id='sec05-worker'",
+            "UPDATE lu_task_events SET event='COMPLETED' WHERE event='PROCESS_UNCERTAIN'",
+            "DELETE FROM lu_task_events WHERE event='PROCESS_UNCERTAIN'",
         ]{
             assert!(attacker.execute_batch(sql).is_err(),
                 "direct SQL mutation must not clear original custody uncertainty: {sql}");
