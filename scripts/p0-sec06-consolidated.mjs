@@ -62,6 +62,21 @@ function doCase(id,exe,args,opts={}){
      !opts.mustContain.every(t=>result.output.includes(t)))status='FAIL';
   if(status==='PASS'&&opts.mustReject&&
      opts.mustReject.some(t=>result.output.includes(t)))status='FAIL';
+  if(status==='PASS'&&opts.nodeTestSummary){
+    const count=/# tests\s+(\d+)/.exec(result.output);
+    const success=/# pass\s+(\d+)/.exec(result.output);
+    const failures=/# fail\s+(\d+)/.exec(result.output);
+    if(!count||!success||!failures||Number(count[1])<=0||
+       Number(success[1])!==Number(count[1])||Number(failures[1])!==0){
+      status='FAIL';
+    }
+  }
+  if(status==='PASS'&&opts.rustTestSummary){
+    const matches=[...result.output.matchAll(/test result: ok\. (\d+) passed; (\d+) failed/g)];
+    if(!matches.some(m=>Number(m[1])>0&&Number(m[2])===0)){
+      status='FAIL';
+    }
+  }
   if(status!=='PASS')blocked=true;
   const row={id,status,exitCode:result.code,signal:result.signal,
     stderrOrSpawnError:result.error,log:id+'.log',sha256:evidenceDigest};
@@ -103,7 +118,7 @@ function sourceCases(){
     'lu-desktop/tests/agent01l-os-custody.test.mjs',
     'lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs',
     'lu-desktop/tests/background-worker-e2e.test.mjs'
-  ],{timeout:180000});
+  ],{timeout:180000,nodeTestSummary:true});
   doCase('sec06-js-syntax','node',[
     '--check','scripts/p0-sec06-consolidated.mjs'
   ],{timeout:30000});
@@ -126,7 +141,22 @@ function rustCases(){
   ]){
     const args=['test','--locked','--manifest-path',manifest];
     if(filter)args.push(filter);
-    doCase(id,'cargo',args,{timeout:900000});
+    doCase(id,'cargo',args,{timeout:900000,rustTestSummary:true});
+  }
+  for(const [id,manifest] of [
+    ['core-sec-regressions','src-tauri/lu-core/Cargo.toml'],
+    ['desktop-sec-regressions','lu-desktop/src-tauri/Cargo.toml']
+  ]){
+    doCase(id,'cargo',[
+      'test','--locked','--manifest-path',manifest,'sec0','--','--nocapture'
+    ],{timeout:900000,rustTestSummary:true});
+  }
+  if(platform()==='linux'){
+    doCase('worker-sec-regressions','cargo',[
+      'test','--locked','--manifest-path',
+      'src-tauri/lu-win-worker-job/Cargo.toml',
+      '--lib','sec0','--','--nocapture'
+    ],{timeout:600000,rustTestSummary:true});
   }
 }
 if(mode==='verify'){
@@ -162,13 +192,15 @@ if(mode==='verify'){
                  'sec06-js-syntax','linux-negative-python-syntax',
                  'linux-host-crash-python-syntax',
                  'core-native-full','desktop-ansf-native','worker-job-native',
-                 'guardian-test-binaries','linux-original-host-sigkill',
+                 'core-sec-regressions','desktop-sec-regressions',
+                 'worker-sec-regressions','guardian-test-binaries','linux-original-host-sigkill',
                  'linux-reviewed-git-original-journal',
                  'linux-guardian-death','linux-guardian-stall',
                  'linux-worker-stall','linux-ancestor-migration'],
           windows:['exact-head-inventory','security-contracts',
                    'sec06-js-syntax','core-native-full',
                    'desktop-ansf-native','worker-job-native',
+                   'core-sec-regressions','desktop-sec-regressions',
                    'windows-real-two-jobs',
                    'windows-reviewed-git-original-journal'],
         }[target];
