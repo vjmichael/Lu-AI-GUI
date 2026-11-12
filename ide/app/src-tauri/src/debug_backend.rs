@@ -314,6 +314,9 @@ pub struct DebugControlCandidateReview {
     adapter_reported_frame_id:u64,
     original_action_rows_visible:usize,
     original_action_cleanup_required:bool,
+    original_debug_journal_sha256:String,
+    action_manifest_sha256:String,
+    global_action_cleanup_required:bool,
     review_sha256:String,
     blockers:Vec<&'static str>,
     source_bytes_rechecked:bool,
@@ -434,13 +437,13 @@ impl NativeDebugRuntime {
             other_custody.active_in_another_project ||
             self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
             .as_ref().is_some_and(|value| value.project_id != project_id);
-        #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
-        let dangling_action_jobs = self
-            .supervisor
-            .native_debug_action_cleanup_jobs_after_restart()
-            .map_err(|e| e.code().to_owned())?;
-        #[cfg(not(all(windows, debug_assertions, feature = "dev046d-native-dialog")))]
-        let dangling_action_jobs: Vec<String> = Vec::new();
+        // FIN-04: *every* native debugger build replays all original native
+        // action journals, including foreign-project records, before ready
+        // can become true. A terminal Job alone cannot clear an in-flight
+        // debugger action. The inspector discloses only a global blocker.
+        let action_evidence=self.inspect_control_evidence(project_id)?;
+        let original_action_cleanup_required=
+            action_evidence.global_os_cleanup_required;
         // Security decision uses every outstanding job, not the bounded UI list.
         let quarantined: Vec<DebugInterrupted> = durable
             .iter()
@@ -504,12 +507,12 @@ impl NativeDebugRuntime {
             && !unresolved_global_marker
             && current.is_none()
             && !active_in_another_project
-            && dangling_action_jobs.is_empty();
+            && !original_action_cleanup_required;
         Ok(DebugStatus {
             ready: native_admission_available,
             global_recovery_required,
             active_in_another_project,
-            orphaned_debug_action_required: !dangling_action_jobs.is_empty(),
+            orphaned_debug_action_required: !!original_action_cleanup_required,
             project_debug_supported: cfg!(feature = "native-project-debug")
                 && native_admission_available,
             // Test-only D6C permission never becomes installed action authority.
@@ -527,7 +530,7 @@ impl NativeDebugRuntime {
             } else {
                 "DEV046D_NATIVE_HUMAN_ACTION_APPROVAL_NOT_ACCEPTED"
             },
-            code: if !dangling_action_jobs.is_empty() {
+            code: if !!original_action_cleanup_required {
                 "DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED".into()
             } else if global_recovery_required {
                 "IDE_INT04_GLOBAL_KERNEL_RECONCILIATION_REQUIRED".into()
@@ -582,6 +585,8 @@ impl NativeDebugRuntime {
             project_id,job_id,plan_sha256,
             source.terminal_receipt_sha256.as_str(),kind.label(),
             observed.relative_path.as_str(),observed.disk_sha256.as_str(),
+            audit.original_debug_journal_sha256.as_str(),
+            audit.action_manifest_sha256.as_str(),
         ]{
             hash.update((part.len() as u64).to_le_bytes());
             hash.update(part.as_bytes());
@@ -599,6 +604,9 @@ impl NativeDebugRuntime {
         if audit.requires_os_cleanup{
             blockers.push("original_debug_action_os_recovery_required");
         }
+        if audit.global_os_cleanup_required{
+            blockers.push("global_debugger_action_or_job_recovery_required");
+        }
         if matches!(kind,DebugControlReviewKind::InspectReviewedFrame){
             blockers.push("adapter_frame_id_is_not_kernel_frame_proof");
         }
@@ -614,6 +622,9 @@ impl NativeDebugRuntime {
             adapter_reported_frame_id:observed.frame_id,
             original_action_rows_visible:audit.rows.len(),
             original_action_cleanup_required:audit.requires_os_cleanup,
+            original_debug_journal_sha256:audit.original_debug_journal_sha256,
+            action_manifest_sha256:audit.action_manifest_sha256,
+            global_action_cleanup_required:audit.global_os_cleanup_required,
             review_sha256:format!("{:x}",hash.finalize()),
             blockers,source_bytes_rechecked:true,
             live_native_owner_event_verified:false,
@@ -823,14 +834,12 @@ impl NativeDebugRuntime {
         {
             return Err("DEBUG_KERNEL_RECOVERY_REQUIRED_BEFORE_ANY_NEW_RUN".into());
         }
-        #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
-        if !self
-            .supervisor
-            .native_debug_action_cleanup_jobs_after_restart()
-            .map_err(|e| e.code().to_owned())?
-            .is_empty()
-        {
-            return Err("DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED".into());
+        // A profile-wide native action audit is mandatory even when the
+        // current project has no visible interrupted Job. No release build
+        // may infer control safety from a terminal debugger journal alone.
+        if self.inspect_control_evidence(project_id)?
+            .global_os_cleanup_required {
+            return Err("FIN04_ORIGINAL_ACTION_OS_RECOVERY_REQUIRED".into());
         }
         // Cross-supervisor, cross-process admission before reserving the
         // debugger slot or generating fresh native worker authority.
@@ -847,6 +856,16 @@ impl NativeDebugRuntime {
             let after=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
             global_fence.release_before_prepare_if_unchanged(&own_before,&after)?;
             return Err("FIN01_DEBUG_JOURNAL_STILL_OWNS_CUSTODY".into());
+        }
+        // Repeat the original action audit under the new global admission
+        // fence: source-level preflight alone is not enough across processes.
+        // If an action changed since preflight, leave the marker quarantined
+        // rather than dispatch a worker with uncertain authority.
+        if self.inspect_control_evidence(project_id)?
+            .global_os_cleanup_required {
+            let after=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
+            global_fence.release_before_prepare_if_unchanged(&own_before,&after)?;
+            return Err("FIN04_ACTION_RECOVERY_REQUIRED_INSIDE_GLOBAL_FENCE".into());
         }
         let sibling=crate::global_native_custody::sibling_rows(
             &self.global_custody_profile,"debug")?;
