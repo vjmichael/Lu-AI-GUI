@@ -225,7 +225,16 @@ impl IdeWorkspaceRegistry {
   let impact=delta_paths(&repo,&parent_tree,&source_tree)?;
   let head=repo.find_commit(before.head).map_err(|_|"FIN03G_HEAD_DISAPPEARED")?;
   let head_tree=head.tree().map_err(|_|"FIN03G_HEAD_TREE_MISSING")?;
-  let downstream=delta_paths(&repo,&parent_tree,&head_tree)?;
+  // Revert conflicts concern edits made *after* the selected commit.
+  // Comparing its parent to HEAD would falsely count the selected commit's
+  // own changes as an overlap, even when reverting the current tip.
+  // Stash apply instead compares the saved stash base with today's HEAD.
+  let downstream_base=if kind==Fin03ImpactKind::RevertCommit {
+   &source_tree
+  } else {
+   &parent_tree
+  };
+  let downstream=delta_paths(&repo,downstream_base,&head_tree)?;
   let overlaps:Vec<String>=impact.paths.intersection(&downstream.paths).cloned().collect();
   let visible_paths=impact.paths.iter().take(MAX_VISIBLE).cloned().collect();
   let visible_overlaps=overlaps.iter().take(MAX_VISIBLE).cloned().collect();
@@ -242,6 +251,9 @@ impl IdeWorkspaceRegistry {
   if impact.unsupported>0{blockers.push("unsafe_or_nonregular_git_delta");}
   if impact.paths.is_empty(){blockers.push("empty_original_change");}
   if !overlaps.is_empty(){blockers.push("possible_path_overlap");}
+  if kind==Fin03ImpactKind::StashDrop {
+   blockers.push("stash_drop_would_discard_saved_reference");
+  }
   if kind!=Fin03ImpactKind::RevertCommit && commit.parent_count()==3 {
    blockers.push("stash_untracked_parent_not_previewed");
   }
@@ -356,7 +368,7 @@ mod tests {
   assert_eq!(review.selected_commit,f.tip);
   assert_eq!(review.changed_paths_count,1);
   assert_eq!(review.visible_paths,vec!["tracked.txt"]);
-  assert_eq!(review.possible_overlap_count,1);
+  assert_eq!(review.possible_overlap_count,0);
   assert_eq!(review.index_or_worktree_modified,false);
   assert_eq!(review.stash_or_branch_ref_modified,false);
   assert_eq!(review.execution_route_available,false);
