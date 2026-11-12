@@ -661,6 +661,59 @@ impl ChatStore {
         self.append(chat_id,LiveKind::AssistantProgress,text,None,
             Some(generation_id),None,None)
     }
+    /// Capture the durable native cancellation watermark immediately before
+    /// this freshly approved human turn is enqueued. Earlier revocations do
+    /// NOT poison a later, separately authorized turn.
+    pub(crate) fn p0_auth_requested_watermark(
+        &self,chat_id:&str,
+    )->Result<i64,String>{
+        let conn=self.catalog.lock().map_err(to_err)?;
+        if !Self::known(&conn,chat_id)?{
+            return Err("P0_SEC_UNKNOWN_CHAT".into())
+        }
+        crate::p0_auth_custody::requested_watermark(&conn,chat_id)
+    }
+    /// SEC-03: serialize the final original reviewed turn completion against
+    /// a newly committed P0-AUTH cancellation REQUESTED row in this SAME
+    /// catalog mutex. The ANSF book terminal append occurs while the lock is
+    /// held, so cancellation and completion have an exact host-owned order.
+    /// No earlier cancelled grant is reusable; a later freshly approved
+    /// human turn has its own baseline.
+    pub(crate) fn complete_reviewed_if_not_revoked(
+        &self,chat_id:&str,generation_id:&str,watermark:i64,
+    )->Result<(),String>{
+        if !valid_id(generation_id,"g-")||watermark<0{
+            return Err("P0_SEC_INVALID_REVIEWED_TURN".into())
+        }
+        let mut conn=self.catalog.lock().map_err(to_err)?;
+        if !Self::known(&conn,chat_id)?{
+            return Err("P0_SEC_UNKNOWN_CHAT".into())
+        }
+        let observed=crate::p0_auth_custody::requested_watermark(
+            &conn,chat_id)?;
+        if observed!=watermark{
+            return Err("Cancelled reviewed application turn before publication".into())
+        }
+        let book=self.ansf_book(chat_id)?;
+        let event=LiveEvent{
+            event_id:id("e-"),kind:LiveKind::AssistantCompleted,text:String::new(),
+            user_turn_id:None,legacy_turn_id:None,
+            generation_id:Some(generation_id.into()),
+            call_id:None,tool_id:None,
+        };
+        let committed=book.append_host_chat_event(chat_id,&event)
+            .map_err(to_err)?;
+        let tx=conn.transaction().map_err(to_err)?;
+        let seq=bump_seq(&tx)?;
+        tx.execute(
+            "UPDATE ansf_desktop_chats SET updated_seq=?2,last_event_seq=?3
+             WHERE chat_id=?1",
+            params![chat_id,seq as i64,committed.seq]
+        ).map_err(to_err)?;
+        tx.commit().map_err(to_err)?;
+        Ok(())
+    }
+
     pub fn complete(&self,chat_id:&str,generation_id:&str)->Result<(),String>{
         self.append(chat_id,LiveKind::AssistantCompleted,"",None,
             Some(generation_id),None,None)
@@ -1652,6 +1705,86 @@ mod tests{
         std::env::temp_dir().join(format!("lu-ansf-desktop-{}-{}",
             std::process::id(),SystemTime::now()
                 .duration_since(UNIX_EPOCH).unwrap().as_nanos()))
+    }
+    #[test]
+    fn sec03_revoke_before_completion_denies_old_turn_but_not_fresh_approval(){
+        let root=tmp();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        let old=format!("g-{}","1".repeat(32));
+        let fresh=format!("g-{}","2".repeat(32));
+        let before=chats.p0_auth_requested_watermark(&chat).unwrap();
+        chats.append_user_with_turn_id(&chat,&old,"Original reviewed Git").unwrap();
+        chats.append_progress(&chat,&old,"Worker evidence available").unwrap();
+        let request=crate::p0_auth_custody::HostCancelEvent{
+            schema:crate::p0_auth_custody::SCHEMA.into(),
+            attempt_id:format!("au-{}","3".repeat(32)),
+            chat_id:chat.clone(),phase:"REQUESTED".into(),
+            domains:vec![],authority_restored:false,
+            automatic_retry_allowed:false,
+            os_custody_independently_verified:false,
+        };
+        chats.append_p0_auth_cancel(&request).unwrap();
+        assert!(chats.complete_reviewed_if_not_revoked(
+            &chat,&old,before).is_err());
+        let after=chats.p0_auth_requested_watermark(&chat).unwrap();
+        assert!(after>before);
+        // A second genuinely NEW human turn can be admitted by a NEW
+        // native authorization. Old cancelled work cannot be completed.
+        chats.append_user_with_turn_id(&chat,&fresh,"Fresh approved review").unwrap();
+        chats.append_progress(&chat,&fresh,"Fresh reviewed response").unwrap();
+        chats.complete_reviewed_if_not_revoked(&chat,&fresh,after).unwrap();
+        let history=chats.history(&chat).unwrap();
+        assert!(history.iter().any(|x|x.text=="Worker evidence available"
+            &&x.interrupted));
+        assert!(history.iter().any(|x|x.role=="assistant"
+            &&!x.interrupted));
+        drop(chats);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn sec03_concurrent_native_revoke_and_completion_have_one_catalog_order(){
+        use std::sync::{Arc,Barrier};
+        let root=tmp();
+        let chats=Arc::new(ChatStore::open(&root).unwrap());
+        let chat=chats.create_chat().unwrap().chat_id;
+        let turn=format!("g-{}","4".repeat(32));
+        chats.append_user_with_turn_id(&chat,&turn,"Race review").unwrap();
+        chats.append_progress(&chat,&turn,"Race result").unwrap();
+        let before=chats.p0_auth_requested_watermark(&chat).unwrap();
+        let barrier=Arc::new(Barrier::new(3));
+        let a=Arc::clone(&chats);
+        let b=Arc::clone(&barrier);
+        let chat_a=chat.clone();
+        let turn_a=turn.clone();
+        let completing=std::thread::spawn(move||{
+            b.wait();
+            a.complete_reviewed_if_not_revoked(&chat_a,&turn_a,before)
+        });
+        let a=Arc::clone(&chats);
+        let b=Arc::clone(&barrier);
+        let chat_b=chat.clone();
+        let cancelling=std::thread::spawn(move||{
+            b.wait();
+            a.append_p0_auth_cancel(&crate::p0_auth_custody::HostCancelEvent{
+                schema:crate::p0_auth_custody::SCHEMA.into(),
+                attempt_id:format!("au-{}","5".repeat(32)),
+                chat_id:chat_b,phase:"REQUESTED".into(),
+                domains:vec![],authority_restored:false,
+                automatic_retry_allowed:false,
+                os_custody_independently_verified:false,
+            })
+        });
+        barrier.wait();
+        let complete=completing.join().unwrap();
+        cancelling.join().unwrap().unwrap();
+        let messages=chats.history(&chat).unwrap();
+        let is_completed=messages.iter().any(|x|
+            x.role=="assistant"&&!x.interrupted&&!x.cancelled);
+        // Completion may precede the cancellation (valid), or else
+        // cancellation wins and the old turn must not be completed.
+        assert_eq!(complete.is_ok(),is_completed);
+        assert!(chats.p0_auth_requested_watermark(&chat).unwrap()>before);
+        drop(chats);fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn queued_reviewed_turn_before_journals_is_recovered_from_indexed_chat(){

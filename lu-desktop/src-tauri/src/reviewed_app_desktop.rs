@@ -132,10 +132,27 @@ impl TrustedUserTurnVerifier for PersistedReviewedHumanTurn<'_>{
                 .as_deref()==Some(self.expected_text)
     }
 }
-struct ReviewedDesktopPolicy{approved:BTreeSet<String>}
+struct ReviewedDesktopPolicy{
+    approved:BTreeSet<String>,
+    host:Arc<DesktopState>,
+    chat_id:String,
+    revocation_watermark:i64,
+    cancellation:Cancellation,
+}
 impl ToolAuthorizer for ReviewedDesktopPolicy{
     fn authorize(&self,call:&ToolInvocation,descriptor:&ToolDescriptor)
         ->Result<(),AuthorizationError>{
+        // SEC-03: even a previously opened one-use human turn cannot use
+        // an old permission after the original ANSF cancellation REQUESTED
+        // intent has committed. Check at EACH tool dispatch, not merely
+        // at chat publication or source picker admission.
+        if self.cancellation.is_cancelled()
+            ||self.host.chats.p0_auth_requested_watermark(&self.chat_id)
+                .ok()!=Some(self.revocation_watermark){
+            return Err(AuthorizationError::new(
+                "reviewed app original permission revoked during tool dispatch"
+            ))
+        }
         if !self.approved.contains(&descriptor.id)||call.tool_id!=descriptor.id
             ||!matches!(descriptor.effect,ToolEffect::ExecuteCode|ToolEffect::ReadWorkspace)
             ||descriptor.input_type_url!=call.input.type_url{
@@ -570,6 +587,10 @@ async fn reviewed_app_ask_internal(
     if !matches!(mode.as_str(),"git"|"media"|"pdf"|"image"){
         return Err("Unsupported reviewed application operation".into())
     }
+    // Snapshot BEFORE any native source picker or approval dialog. A revoke
+    // racing those human interactions invalidates this exact old invocation.
+    // A future, separately approved human turn takes its own new baseline.
+    let revocation_watermark=host.chats.p0_auth_requested_watermark(&chat_id)?;
     // Planned steps remain restricted to the existing independently
     // accepted Git/FFprobe operations; neither specialist is smuggled
     // into an older plan revision or granted historical worker permission.
@@ -727,6 +748,10 @@ async fn reviewed_app_ask_internal(
     let result=tauri::async_runtime::spawn_blocking(move||{
         let work=(||->Result<String,String>{
             ticket.wait_for_slot()?;
+            if host.chats.p0_auth_requested_watermark(&chat_id)?
+                !=revocation_watermark{
+                return Err("Cancelled reviewed application turn during approval or queue".into())
+            }
             if ticket.cancelled()||cancellation.is_cancelled(){
                 return Err("Cancelled reviewed application turn".into())
             }
@@ -896,6 +921,10 @@ async fn reviewed_app_ask_internal(
                 ).map_err(|e|format!("Exact fresh human step refused: {e:?}"))?;
                 Some(guard)
             }else{None};
+            if host.chats.p0_auth_requested_watermark(&chat_id)?
+                !=revocation_watermark{
+                return Err("Cancelled reviewed application turn before authority admission".into())
+            }
             authority.open_user_task(TaskAuthority{
                 conversation_id:chat_id.clone(),
                 user_turn_id:gid_run.clone(),task_id:gid_run.clone(),
@@ -926,7 +955,11 @@ async fn reviewed_app_ask_internal(
                 )
             );
             let policy:Arc<dyn ToolAuthorizer>=Arc::new(
-                ReviewedDesktopPolicy{approved:granted}
+                ReviewedDesktopPolicy{
+                    approved:granted,host:Arc::clone(&host),
+                    chat_id:chat_id.clone(),revocation_watermark,
+                    cancellation:cancellation.clone(),
+                }
             );
             // Keep the original exact per-human-turn effect journal, rather
             // than making an APPLIED shadow entry in normal chat's journal.
@@ -1150,9 +1183,16 @@ async fn reviewed_app_ask_internal(
                     "executionAuthority":"NOT_AUTHORIZED_FOR_NEXT_STEP"
                 }));
             }
+            if cancellation.is_cancelled()||ticket.cancelled(){
+                return Err("Cancelled reviewed application turn before publication".into())
+            }
             let answer_text=format!("{}{}",answer.answer,host_verified_note);
             host.chats.append_progress(&chat_id,&gid_run,&answer_text)?;
-            host.chats.complete(&chat_id,&gid_run)?;
+            // This final ANSF book terminal event is ordered under the same
+            // native catalog lock as P0-AUTH's durable REQUESTED row. No
+            // cancellation can interleave between the check and publication.
+            host.chats.complete_reviewed_if_not_revoked(
+                &chat_id,&gid_run,revocation_watermark)?;
             // Release only AFTER source evidence, exact historical claim,
             // and the conversation-visible host witness are all durable.
             // The plan cannot be re-admitted with prior authority.

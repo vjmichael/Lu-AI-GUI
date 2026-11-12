@@ -22,6 +22,7 @@ pub(crate) struct AuthorityPosture{
     pub native_workers_cancellable:usize,
     pub interrupted_or_uncertain_native_tasks:usize,
     pub original_reviewed_recovery_status:String,
+    pub security_recovery:crate::p0_sec_recovery::SecurityRecoveryView,
     pub original_host_cancel_events:Vec<HostCancelHistory>,
     pub execution_authorized:bool,
     pub previous_grant_reusable:bool,
@@ -51,6 +52,13 @@ fn posture(owner:&DesktopState,chat:&str)->Result<AuthorityPosture,String>{
         .filter(|r|r.state==TaskState::Interrupted).count();
     let native=dashboard.iter()
         .filter(|r|owner.background_processes.can_cancel(&r.task_id)).count();
+    let cancel_history=owner.chats.p0_auth_cancel_history(chat)?;
+    let security_recovery=owner.catalog_path.parent().and_then(|profile|{
+        crate::p0_sec_recovery::for_original_chat(
+            profile,chat,&owner.chats,&owner.background_tasks,
+            &cancel_history
+        ).ok()
+    }).unwrap_or_else(crate::p0_sec_recovery::SecurityRecoveryView::unavailable);
     let host_recovery=owner.catalog_path.parent().and_then(|profile|{
         agent_recovery_provenance::read_original_recovery(
             profile,chat,&owner.chats
@@ -66,7 +74,8 @@ fn posture(owner:&DesktopState,chat:&str)->Result<AuthorityPosture,String>{
         native_workers_cancellable:native,
         interrupted_or_uncertain_native_tasks:interrupted,
         original_reviewed_recovery_status:host_recovery,
-        original_host_cancel_events:owner.chats.p0_auth_cancel_history(chat)?,
+        security_recovery,
+        original_host_cancel_events:cancel_history,
         execution_authorized:false,previous_grant_reusable:false,
         previous_os_custody_independently_proven:false,
         automatic_retry_allowed:false,
@@ -196,26 +205,15 @@ fn stop_scoped(owner:&DesktopState,chat:&str)->Vec<DomainResult>{
         },
         Err(_)=>records.push(result("scheduled","SCHEDULE_CANCEL_UNCERTAIN"))
     }
-    // Catch actual OS-owned workers that are not scheduled. Dashboard is
-    // filtered by exact authenticated chat BEFORE applying its bound.
-    match owner.background_tasks.dashboard_for_workspace(chat,100){
-        Ok(rows)=>{
-            let capped=rows.len()==100;
-            let owned=rows.into_iter().filter(|row|
-                owner.background_processes.can_cancel(&row.task_id)
-            ).collect::<Vec<_>>();
-            let mut failed=false;
-            for row in &owned{
-                if owner.background_processes.cancel_owned(
-                    &row.task_id,chat
-                ).is_err(){failed=true}
-            }
-            records.push(result("background",if owned.is_empty()&&!capped{
-                "NOT_PRESENT"
-            }else if failed||capped{"STOP_UNCERTAIN_RECONCILE"}
-            else{"NATIVE_TERMINATION_REAP_RETURNED"}))
-        },
-        Err(_)=>records.push(result("background","STOP_UNCERTAIN_RECONCILE"))
+    // SEC-03: do not derive the cancellation target from a truncated
+    // dashboard snapshot. The host-owned supervisor serializes the exact
+    // workspace sweep with in-flight start/poll under its native mutex.
+    // Reviewed per-human-turn workers retain their own generation/authority
+    // cancellation lane above; a generic chat sweep cannot impersonate them.
+    match owner.background_processes.cancel_workspace_owned(chat){
+        Ok(0)=>records.push(result("background","NOT_PRESENT")),
+        Ok(_)=>records.push(result("background","NATIVE_TERMINATION_REAP_RETURNED")),
+        Err(_)=>records.push(result("background","STOP_UNCERTAIN_RECONCILE")),
     }
     records
 }

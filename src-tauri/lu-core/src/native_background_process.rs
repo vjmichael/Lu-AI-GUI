@@ -578,7 +578,7 @@ impl BackgroundProcessSupervisor {
         // unavailable the reviewed tool may retain its existing PGID
         // guardian, but AGENT-01K/01L REFUSE full descendant custody.
         #[cfg(target_os="linux")]
-        let cgroup=if let Some((profile,chat,turn))=reviewed_origin{
+        let mut cgroup=if let Some((profile,chat,turn))=reviewed_origin{
             lu_win_worker_job::unix_owned::LinuxCgroupCustodian::spawn_if_delegated(
                 profile,&chat,&turn,&plan.task_id
             ).map_err(|_|{
@@ -699,6 +699,29 @@ impl BackgroundProcessSupervisor {
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed);
         }
+        // The pre_exec kernel write is necessary but not sufficient proof:
+        // independently read /proc for this exact still-owned Child, and
+        // verify the helper remains alive outside the killable subtree.
+        // No task is marked RUNNING when the guardian died or membership is
+        // missing. This can conservatively reject an extremely fast worker.
+        #[cfg(target_os="linux")]
+        if let Some(guard)=cgroup.as_mut(){
+            if guard.verify_admitted_worker(child.id()).is_err(){
+                // The worker has executed; its side effects are uncertain.
+                // Persist this original task's uncertainty BEFORE returning
+                // even though the worker is still in PENDING transition.
+                let _=child.kill();let _=child.wait();
+                let recorded=self.store.record_process_uncertain(
+                    &plan.task_id,"OS_CUSTODY_UNVERIFIED");
+                let _=guard.stop_and_verify();
+                // Do not mask a failed durable uncertainty write as an
+                // ordinary failed admission after worker execution began.
+                recorded.map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                self.store.fail_pending(&plan.task_id)
+                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                return Err(BackgroundProcessError::SpawnFailed)
+            }
+        }
         // Delay progress consumption until the SQLite RUNNING transition.
         // A fast worker must not lose its first checkpoint to a startup race.
         let progress_pipe=if plan.progress_protocol{child.stdout.take()}else{None};
@@ -752,6 +775,21 @@ impl BackgroundProcessSupervisor {
         let mut workers=self.owned.lock().map_err(|_|BackgroundProcessError::Poisoned)?;
         let mut finished=Vec::new();
         for (id,worker) in workers.iter_mut(){
+            #[cfg(target_os="linux")]
+            if let Some(guard)=worker.cgroup.as_mut(){
+                if guard.require_live_guardian().is_err(){
+                    // The worker may still be running, or its descendants
+                    // may already have escaped the leader. Kill the known
+                    // leader, retain the owned entry, and REFUSE completion
+                    // or independent cgroup-custody status.
+                    let _=worker.child.kill();
+                    let _=worker.child.wait();
+                    self.store.record_process_uncertain(
+                        id,"LINUX_GUARDIAN_LOST")
+                        .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                    return Err(BackgroundProcessError::ProcessUncertain)
+                }
+            }
             match worker.child.try_wait(){
                 Ok(Some(status))=>{
                     #[cfg(windows)]
@@ -766,13 +804,41 @@ impl BackgroundProcessSupervisor {
                                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?
                         );
                     }
+                    #[cfg(target_os="linux")]
+                    {
+                        // Never remove a worker from the owner map before
+                        // native descendant cleanup has succeeded. Otherwise
+                        // a failed cgroup stop would lose the only live
+                        // cancellation handle and strand an uncertain effect.
+                        if let Some(guard)=worker.cgroup.as_mut(){
+                            if guard.stop_and_verify().is_err(){
+                                self.store.record_process_uncertain(
+                                    id,"OS_CUSTODY_UNVERIFIED")
+                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                                return Err(BackgroundProcessError::ProcessUncertain)
+                            }
+                        }
+                        if let Some(guardian)=worker.guardian.as_mut(){
+                            if guardian.stop_and_verify_signal().is_err(){
+                                self.store.record_process_uncertain(
+                                    id,"OS_CUSTODY_UNVERIFIED")
+                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                                return Err(BackgroundProcessError::ProcessUncertain)
+                            }
+                        }
+                    }
                     finished.push((id.clone(),Some(status.success())));
                 },
                 Ok(None)=>{
                     if worker.deadline.is_some_and(|deadline|Instant::now()>=deadline){
                         // Host deadline, never a model decision or an inferred
                         // lost heartbeat. Kill and reap before publishing.
-                        terminate_owned(worker)?;
+                        if terminate_owned(worker).is_err(){
+                            self.store.record_process_uncertain(
+                                id,"OS_CUSTODY_UNVERIFIED")
+                                .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                            return Err(BackgroundProcessError::ProcessUncertain)
+                        }
                         finished.push((id.clone(),None));
                     }
                 },
@@ -786,19 +852,9 @@ impl BackgroundProcessSupervisor {
             let empty_job_witness=owner.job_empty.take();
             #[cfg(windows)]
             drop(owner.job.take()); // The kernel empty-job check preceded CloseHandle.
-            // Shut down the Linux PGID anchor before joining pipes: a
-            // descendant may have inherited worker stdout. A verified
-            // guardian SIGKILL is required, not merely a leader exit.
-            #[cfg(target_os="linux")]
-            if let Some(guard)=owner.cgroup.as_mut(){
-                guard.stop_and_verify()
-                    .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
-            }
-            #[cfg(target_os="linux")]
-            if let Some(guardian)=owner.guardian.as_mut(){
-                guardian.stop_and_verify_signal()
-                    .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
-            }
+            // Linux kernel/PGID cleanup was established BEFORE removal from
+            // the owner map. For deadline outcomes terminate_owned did so.
+            // Any failure must leave task ownership for explicit recovery.
             let had_reader=owner.progress_reader.is_some();
             let had_version_reader=owner.version_reader.is_some();
             let version=owner.version_reader.take()
@@ -937,13 +993,63 @@ impl BackgroundProcessSupervisor {
         if worker.workspace_id!=workspace_id{
             return Err(BackgroundProcessError::WrongWorkspace);
         }
-        terminate_owned(worker)?;
+        if terminate_owned(worker).is_err(){
+            self.store.record_process_uncertain(
+                task_id,"OS_CUSTODY_UNVERIFIED")
+                .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+            return Err(BackgroundProcessError::ProcessUncertain)
+        }
         let mut owner=workers.remove(task_id).expect("live worker owned");
         if let Some(reader)=owner.progress_reader.take(){let _=reader.join();}
         if let Some(reader)=owner.version_reader.take(){let _=reader.join();}
         drop(owner); // Release the Windows Job handle (kills descendants).
         self.store.cancelled(task_id)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)
+    }
+    /// SEC-03: stop every currently owned OS worker for ONE exact
+    /// authenticated host workspace under the SAME mutex that serializes
+    /// task admission and poll. No stale dashboard snapshot, UI PID, or
+    /// 100-row truncation can omit a live native task from this sweep.
+    /// A failure remains owned and uncertain; attempt remaining workers.
+    /// A NEW task admitted after this sweep still requires its own fresh
+    /// human/host authority at the caller; this method grants none.
+    pub fn cancel_workspace_owned(&self,workspace_id:&str)
+        ->Result<usize,BackgroundProcessError>{
+        if !valid_id(workspace_id){
+            return Err(BackgroundProcessError::WrongWorkspace)
+        }
+        let mut workers=self.owned.lock()
+            .map_err(|_|BackgroundProcessError::Poisoned)?;
+        let tasks=workers.iter().filter(|(_,w)|w.workspace_id==workspace_id)
+            .map(|(id,_)|id.clone()).collect::<Vec<_>>();
+        let mut count=0usize;
+        let mut uncertain=false;
+        for id in tasks{
+            let stop=workers.get_mut(&id)
+                .ok_or(BackgroundProcessError::NotOwned)
+                .and_then(terminate_owned);
+            if stop.is_err(){
+                if self.store.record_process_uncertain(
+                    &id,"OS_CUSTODY_UNVERIFIED").is_err(){
+                    uncertain=true;
+                }
+                uncertain=true;
+                continue
+            }
+            let mut owner=workers.remove(&id)
+                .ok_or(BackgroundProcessError::NotOwned)?;
+            if let Some(reader)=owner.progress_reader.take(){
+                if reader.join().is_err(){uncertain=true}
+            }
+            if let Some(reader)=owner.version_reader.take(){
+                if reader.join().is_err(){uncertain=true}
+            }
+            drop(owner);
+            if self.store.cancelled(&id).is_err(){uncertain=true}
+            else{count+=1}
+        }
+        if uncertain{return Err(BackgroundProcessError::ProcessUncertain)}
+        Ok(count)
     }
     /// Local operator action: derive ownership from the host's active map,
     /// never from a model/WebView-supplied workspace or process identifier.
@@ -1232,6 +1338,82 @@ mod tests{
         assert_eq!(manager.cancel_owned("video-1","media"),
             Err(BackgroundProcessError::NotOwned));
     }
+    #[cfg(target_os="linux")]
+    #[test]
+    fn sec03_cancel_workspace_sweeps_all_owned_workers_and_spares_other_chat(){
+        let binary=fs::canonicalize("/bin/sleep").unwrap();
+        let digest=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let manager=BackgroundProcessSupervisor::new(Arc::clone(&store));
+        for (id,workspace) in [
+            ("p0-sweep-1","c-target"),("p0-sweep-2","c-target"),
+            ("p0-unrelated","c-other")
+        ]{
+            manager.start_host_approved(TrustedWorkerPlan{
+                task_id:id.into(),workspace_id:workspace.into(),
+                executable:binary.clone(),expected_sha256:digest.clone(),
+                args:vec!["3".into()],progress_protocol:false,
+                max_runtime_seconds:Some(10),
+            }).unwrap();
+        }
+        assert_eq!(manager.cancel_workspace_owned("c-target").unwrap(),2);
+        for id in ["p0-sweep-1","p0-sweep-2"]{
+            assert_eq!(store.get(id).unwrap().unwrap().state,
+                TaskState::Cancelled);
+            assert!(!manager.can_cancel(id));
+        }
+        assert!(manager.can_cancel("p0-unrelated"));
+        assert_eq!(store.get("p0-unrelated").unwrap().unwrap().state,
+            TaskState::Running);
+        assert_eq!(manager.cancel_workspace_owned("c-target").unwrap(),0);
+        assert_eq!(manager.cancel_workspace_owned("c-other").unwrap(),1);
+    }
+    #[cfg(target_os="linux")]
+    #[test]
+    fn sec03_real_os_cancel_poll_collision_has_one_terminal_receipt(){
+        use std::sync::{Arc,Barrier};
+        let binary=fs::canonicalize("/bin/sleep").unwrap();
+        let digest=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let supervisor=Arc::new(BackgroundProcessSupervisor::new(
+            Arc::clone(&store)));
+        supervisor.start_host_approved(TrustedWorkerPlan{
+            task_id:"sec03-sleep".into(),workspace_id:"c-human".into(),
+            executable:binary,expected_sha256:digest,
+            args:vec!["3".into()],progress_protocol:false,
+            max_runtime_seconds:Some(10),
+        }).unwrap();
+        assert_eq!(supervisor.cancel_owned("sec03-sleep","c-other"),
+            Err(BackgroundProcessError::WrongWorkspace));
+        let barrier=Arc::new(Barrier::new(3));
+        let a=Arc::clone(&supervisor);
+        let b=Arc::clone(&barrier);
+        let poller=std::thread::spawn(move||{
+            b.wait();
+            a.poll()
+        });
+        let a=Arc::clone(&supervisor);
+        let b=Arc::clone(&barrier);
+        let stopper=std::thread::spawn(move||{
+            b.wait();
+            a.cancel_owned("sec03-sleep","c-human")
+        });
+        barrier.wait();
+        let stopped=stopper.join().unwrap();
+        let observed=poller.join().unwrap();
+        assert!(stopped.is_ok()||matches!(stopped,
+            Err(BackgroundProcessError::NotOwned)));
+        assert!(observed.is_ok());
+        let current=store.get("sec03-sleep").unwrap().unwrap().state;
+        assert!(matches!(current,TaskState::Cancelled|TaskState::Completed));
+        let terminal=store.events_after("sec03-sleep","c-human",0,32)
+            .unwrap().into_iter().filter(|r|matches!(
+                r.event.as_str(),"CANCELLED"|"COMPLETED"|"TIMED_OUT"))
+            .collect::<Vec<_>>();
+        assert_eq!(terminal.len(),1,
+            "colliding host poll and stop must not publish two receipts");
+        assert!(!supervisor.can_cancel("sec03-sleep"));
+    }
     /// Actual Linux cgroup-v2 positive acceptance. Not a synthetic PGID
     /// assertion: the test intentionally fails as NOT_AVAILABLE if the
     /// runner has not delegated writable cgroup-v2 ancestry to this process.
@@ -1385,6 +1567,42 @@ mod tests{
         ).is_err(),"OS evidence turn cannot be rebound");
         drop(reopen);
         fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(windows)]
+    #[test]
+    fn sec05_windows_two_jobs_cross_chat_cancel_cannot_terminate_foreign_worker(){
+        // Actual Windows Job membership and kernel ACTIVE_ZERO checks, not
+        // synthetic task state: two long-lived cmd/ping worker trees.
+        let exe=PathBuf::from(std::env::var_os("ComSpec")
+            .unwrap_or_else(||OsString::from(
+                r"C:\Windows\System32\cmd.exe")));
+        assert!(exe.is_file(),"SEC05 requires genuine system cmd.exe");
+        let sha=format!("{:x}",Sha256::digest(fs::read(&exe).unwrap()));
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let manager=BackgroundProcessSupervisor::new(Arc::clone(&store));
+        let a=format!("c-{}","a".repeat(32));
+        let b=format!("c-{}","b".repeat(32));
+        for (id,chat) in [("sec05-job-a",&a),("sec05-job-b",&b)]{
+            manager.start_host_approved(TrustedWorkerPlan{
+                task_id:id.into(),workspace_id:chat.clone(),
+                executable:exe.clone(),expected_sha256:sha.clone(),
+                args:vec!["/D".into(),"/C".into(),
+                    "ping -n 20 127.0.0.1 >NUL".into()],
+                progress_protocol:false,max_runtime_seconds:Some(30),
+            }).unwrap();
+        }
+        assert_eq!(manager.cancel_owned("sec05-job-b",&a),
+            Err(BackgroundProcessError::WrongWorkspace));
+        assert_eq!(manager.cancel_workspace_owned(&a).unwrap(),1);
+        assert_eq!(store.get("sec05-job-a").unwrap().unwrap().state,
+            TaskState::Cancelled);
+        assert!(manager.can_cancel("sec05-job-b"));
+        assert_eq!(store.get("sec05-job-b").unwrap().unwrap().state,
+            TaskState::Running);
+        assert_eq!(manager.cancel_workspace_owned(&a).unwrap(),0);
+        assert_eq!(manager.cancel_workspace_owned(&b).unwrap(),1);
+        assert_eq!(store.get("sec05-job-b").unwrap().unwrap().state,
+            TaskState::Cancelled);
     }
     #[cfg(windows)]
     #[test]
