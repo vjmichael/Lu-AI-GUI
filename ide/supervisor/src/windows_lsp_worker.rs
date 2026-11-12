@@ -1648,6 +1648,120 @@ impl WindowsDapSession {
     ) -> Option<lu_ide_workspace::dap_source_lines::SourceLineCandidate> {
         self.gateway.source_candidate()
     }
+    /// FIN-04R-1: one genuine native human dialog, tied to the newly
+    /// independently mapped, still-owned original OS stop. Creates a
+    /// Prepared/Approved/Revoked original action journal and never a DAP
+    /// dispatch slot, Consumed execution token or action result. Production
+    /// stepping and breakpoints are deliberately disabled.
+    #[cfg(feature="fin04-release-owner-evidence")]
+    pub fn review_one_release_action_without_dispatch(
+        &mut self,
+        supervisor:&Supervisor,
+        job_id:&str,plan:&JobPlan,
+        target:&crate::project_debug_target::SealedProjectDebugTarget,
+        owner:&ReleaseOwnerObservation,
+        intent:crate::debug_command_review::DebugReviewIntent,
+        approve:&mut dyn FnMut(&str)->bool,
+        cancelled:&std::sync::atomic::AtomicBool,
+    )->Result<(String,String,String),SupervisorError>{
+        use crate::{
+            debug_action_receipts::{DebugActionApproval,NativeConsentMarker},
+            debug_command_review::review_from_protected_release_owner,
+        };
+        use std::sync::atomic::Ordering;
+        use lu_ide_workspace::dap_session::DapPhase;
+        if cancelled.load(Ordering::SeqCst) ||
+           self.gateway.phase()!=DapPhase::Stopped ||
+           self.native_job_id!=job_id ||
+           self.native_plan_sha256!=owner.debugger_plan_sha256 ||
+           plan.input_snapshot_sha256!=owner.source_snapshot_sha256 ||
+           owner.debugger_job_id!=job_id ||
+           !owner.source_line_independently_verified ||
+           owner.debugger_control_authorized ||
+           owner.recovery_authorized ||
+           !owner.os_event_owner_verified {
+            return Err(SupervisorError::NoContainment);
+        }
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_|SupervisorError::WrongProjectOrSource)?;
+        let live=self.gateway.verify_lldb_kernel_event_owner(
+            owner.process_id,owner.thread_id,owner.stopped_rip,
+        )?;
+        if live.seq!=owner.owner_sequence ||
+           self.gateway.source_candidate().is_none_or(|f|
+             f.line!=owner.independently_verified_source_line.unwrap_or(0)
+             || f.instruction_address!=Some(owner.stopped_rip)) ||
+           !supervisor.inspect()?.iter().any(|j|
+             j.job_id==job_id && j.plan_sha256==owner.debugger_plan_sha256 &&
+             j.phase==JobPhase::Running && !j.requires_reconciliation) {
+            return Err(SupervisorError::NoContainment);
+        }
+        let mut review=review_from_protected_release_owner(owner)
+            .map_err(|_|SupervisorError::NoContainment)?;
+        let preview=review.preview(intent,owner.owner_sequence)
+            .map_err(|_|SupervisorError::InvalidApproval)?;
+        let binding=review.pending_native_binding(
+            &preview.preview_sha256,owner.owner_sequence,
+        ).map_err(|_|SupervisorError::InvalidApproval)?;
+        let mut action=DebugActionApproval::prepare_native(
+            &supervisor.native_owner_receipt_root()?,
+            binding,preview.clone(),crate::now_ms()?,
+        ).map_err(|_|SupervisorError::JournalUnavailable)?;
+        let challenge=action.challenge_sha256().to_owned();
+        let message=format!(
+            "Review ONE independently mapped protected LLDB action?\n\n\
+            Original Job: {job_id}\n\
+            Native owner event: {}\n\
+            Verified compiler source line: {}\n\
+            Sealed source SHA-256: {}\n\
+            Compiler PDB SHA-256: {}\n\
+            One-use action review: {}\n\
+            One-use challenge: {}\n\n\
+            Production debugger commands remain DISABLED. Approving\
+            will record the decision and immediately REVOKE the review;\
+            no breakpoint, step, scopes, variables or DAP command is sent.",
+            owner.owner_sequence,
+            owner.independently_verified_source_line.unwrap_or(0),
+            owner.independently_verified_source_sha256.as_deref().unwrap_or("missing"),
+            owner.independent_pdb_sha256.as_deref().unwrap_or("missing"),
+            preview.preview_sha256,challenge,
+        );
+        let confirmed=approve(&message);
+        let current=self.gateway.verify_lldb_kernel_event_owner(
+            owner.process_id,owner.thread_id,owner.stopped_rip,
+        );
+        if cancelled.load(Ordering::SeqCst) ||
+           current.map(|e|e.seq).ok()!=Some(owner.owner_sequence) ||
+           self.gateway.phase()!=DapPhase::Stopped ||
+           target.verify().is_err() ||
+           verify_input(&self.source_input).is_err() ||
+           !supervisor.inspect()?.iter().any(|j|
+             j.job_id==job_id && j.plan_sha256==owner.debugger_plan_sha256 &&
+             j.phase==JobPhase::Running && !j.requires_reconciliation) {
+            let _=action.revoke(crate::now_ms()?);
+            return Err(SupervisorError::NoContainment);
+        }
+        let marker=NativeConsentMarker::for_protected_release_modal(
+            &preview.preview_sha256,&challenge,owner.owner_sequence,
+            crate::now_ms()?,confirmed,
+        );
+        action.decide(marker,owner.owner_sequence,crate::now_ms()?)
+            .map_err(|_|SupervisorError::InvalidApproval)?;
+        // Until release-grade post-command OS/PDB acceptance passes, no
+        // Consumed claim is created. Revoke even a genuine human approval.
+        action.revoke(crate::now_ms()?)
+            .map_err(|_|SupervisorError::JournalUnavailable)?;
+        let audit=action.audit_reference("Revoked")
+            .map_err(|_|SupervisorError::JournalCorrupt)?;
+        supervisor.verify_native_debug_action_after_restart(
+            &audit.action_id_sha256,&audit.preview_sha256,
+            &audit.last_receipt_sha256,&audit.final_phase,
+        )?;
+        review.invalidate();
+        Ok((audit.action_id_sha256,audit.last_receipt_sha256,
+            audit.final_phase))
+    }
     /// FIN-04R: re-open original receipts and capture a still-active
     /// first-party LLDB Windows DEBUG_EVENT. Unlike the D5 CI-only source
     /// oracle, this release observer does NOT run an external symbolizer,
