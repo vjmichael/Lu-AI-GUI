@@ -55,3 +55,20 @@ export function isHostModelStatusQuestion(value){
   return ['show local model status','what model is loaded?',
     'is a model loaded?'].includes(value.trim().toLowerCase());
 }
+
+
+/** Human-visible hint only. Native Rust reclassifies and requires an OS picker. */
+export function isHostCpuWorkspaceLookup(value){
+  if(typeof value!=='string')return false;
+  const s=value.trim();
+  const prefix='Search selected workspace for: ';
+  if(s.length>512||!s.startsWith(prefix)||s.includes('<|')||
+     s.toLowerCase().includes('[attached text file:'))return false;
+  const query=s.slice(prefix.length);
+  return query.length>=2&&query.length<=128&&query.trim()===query&&
+    !/[\u0000-\u001f\u007f<>\x60]/.test(query);
+}
+/** Indexed current-ANSF counts, never cross-chat search or task authority. */
+export function isHostCpuChatCountsQuestion(value){
+  return typeof value==='string'&&value.trim()==='Show current chat counts';
+}
