@@ -85,6 +85,7 @@ def check_evidence(raw,mode,host):
     if receipt.exists():
         raise AssertionError("stale proof before first-party cancellation")
     fields["cgroup"]=cgroup
+    fields["original_group"]=original
     fields["receipt"]=receipt
     return fields
 
@@ -194,8 +195,8 @@ def execute(mode,fixture):
                         raise AssertionError("migration attack did not retain "
                                              "its original surviving descendant")
                     migrated_group=pathlib.Path(f"/proc/{escaped}/cgroup").read_text().strip()
-                    if migrated_group==pathlib.Path(
-                        f"/proc/{fields['LEADER']}/cgroup").read_text().strip():
+                    if migrated_group==fields["original_group"] or migrated_group.startswith(
+                        fields["original_group"]+"/"):
                         raise AssertionError("migrated process rejoined killable subtree")
                 else:
                     if not terminated(escaped_fd):
