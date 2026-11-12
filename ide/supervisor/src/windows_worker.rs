@@ -1624,7 +1624,20 @@ pub fn verify_global_worker_quiescence(
             continue;
         }
         let job=Job{handle:Handle::new(raw)?};
-        if !matches!(job.empty(),Ok(true)){
+        // An empty but foreign lookalike Job is not an accepted containment
+        // witness. Query the actual kernel-enforced kill-on-close property
+        // used by the first-party protected launcher.
+        let mut limits=JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        if unsafe{
+            QueryInformationJobObject(
+                job.handle.0,JobObjectExtendedLimitInformation,
+                (&mut limits as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                ptr::null_mut(),
+            )
+        }==0 || limits.BasicLimitInformation.LimitFlags &
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE==0 ||
+            !matches!(job.empty(),Ok(true)){
             return Err(SupervisorError::Quarantined);
         }
         empty+=1;
