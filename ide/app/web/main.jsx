@@ -293,6 +293,18 @@ function App() {
   const [divergentRecovery, setDivergentRecovery] = useState(null);
   const [divergentRecoveryBusy, setDivergentRecoveryBusy] = useState(false);
   const divergentRequest = useRef(0);
+  const [nativeConflicts, setNativeConflicts] = useState(null);
+  const [nativeConflictsBusy, setNativeConflictsBusy] = useState(false);
+  const nativeConflictsRequest = useRef(0);
+  const [conflictDraft, setConflictDraft] = useState(null);
+  const [conflictDraftMode, setConflictDraftMode] = useState('manual');
+  const [conflictReview, setConflictReview] = useState(null);
+  const [conflictReviewBusy, setConflictReviewBusy] = useState(false);
+  const [conflictApplyBusy, setConflictApplyBusy] = useState(false);
+  const [conflictApplyReceipt, setConflictApplyReceipt] = useState(null);
+  const [conflictRecovery, setConflictRecovery] = useState(null);
+  const [conflictRecoveryBusy, setConflictRecoveryBusy] = useState(false);
+  const conflictRequest = useRef(0);
   const [gitFileHistory, setGitFileHistory] = useState(null);
   const [gitFilePath, setGitFilePath] = useState('');
   const [gitFileBusy, setGitFileBusy] = useState(false);
@@ -477,6 +489,16 @@ function App() {
     setDivergentReceipt(null);
     setDivergentRecovery(null);
     setDivergentRecoveryBusy(false);
+    nativeConflictsRequest.current += 1;
+    setNativeConflicts(null);
+    conflictRequest.current += 1;
+    setConflictReview(null);
+    setConflictReviewBusy(false);
+    setConflictApplyReceipt(null);
+    setConflictRecovery(null);
+    setConflictDraft(null);
+    setConflictDraftMode('manual');
+    setNativeConflictsBusy(false);
     setGitFileHistory(null);
     setGitFileBusy(false);
     gitSnapshotRequest.current += 1;
@@ -2117,6 +2139,212 @@ function App() {
     }
   }
 
+  function selectConflictDraft(entry, source) {
+    if (!nativeConflicts || nativeConflicts.projectId !== activeProject?.projectId ||
+        !nativeConflicts.conflicts.some(row => row.relativePath === entry.relativePath)) return;
+    const selected = source === 'ours' ? entry.ours :
+      source === 'theirs' ? entry.theirs : null;
+    // A truncated or binary preview can NEVER be accepted as whole-file text.
+    if (selected && (selected.binaryOrNonUtf8 || selected.previewTruncated ||
+        typeof selected.preview !== 'string')) {
+      setProblem('G06D02_INCOMPLETE_OR_BINARY_BLOB_REQUIRES_FULL_REVIEW');
+      return;
+    }
+    const draftText = selected ? selected.preview : '';
+    setConflictDraft({
+      projectId: nativeConflicts.projectId,
+      currentHead: nativeConflicts.currentHead,
+      indexSha256: nativeConflicts.indexSha256,
+      evidenceSha256: nativeConflicts.evidenceSha256,
+      relativePath: entry.relativePath,
+      candidateText: draftText,
+      origin: source
+    });
+    setConflictDraftMode(source);
+    setConflictReview(null);
+  }
+
+  async function reviewNativeConflictCandidate() {
+    if (!activeProject?.projectId || !nativeConflicts || !conflictDraft ||
+        conflictReviewBusy || conflictApplyBusy) return;
+    const snapshot = { ...conflictDraft };
+    const ticket = ++conflictRequest.current;
+    setConflictReviewBusy(true);
+    setConflictReview(null);
+    setProblem('');
+    try {
+      const reviewed = await invoke('ide_git_review_conflict_resolution', {
+        projectId: snapshot.projectId, relativePath: snapshot.relativePath,
+        inventorySha256: snapshot.evidenceSha256,
+        indexSha256: snapshot.indexSha256, candidateText: snapshot.candidateText,
+      });
+      if (ticket !== conflictRequest.current) return;
+      if (reviewed?.schemaVersion !== 1 ||
+          reviewed.projectId !== snapshot.projectId ||
+          reviewed.relativePath !== snapshot.relativePath ||
+          reviewed.originalIndexSha256 !== snapshot.indexSha256 ||
+          reviewed.inventoryEvidenceSha256 !== snapshot.evidenceSha256 ||
+          reviewed.currentHead !== snapshot.currentHead ||
+          reviewed.proposedBytes !== new TextEncoder().encode(snapshot.candidateText).length ||
+          reviewed.sourceRechecked !== true ||
+          reviewed.requiresSeparateNativeOsApproval !== true ||
+          reviewed.authorityGranted !== false ||
+          reviewed.automaticallyApplied !== false ||
+          reviewed.indexOrWorktreeModified !== false ||
+          reviewed.branchRefModified !== false ||
+          !/^[a-f0-9]{64}$/.test(reviewed.reviewSha256) ||
+          !/^[a-f0-9]{64}$/.test(reviewed.proposedContentSha256)) {
+        throw Error('G06D03_REVIEW_EVIDENCE_UNTRUSTED');
+      }
+      setConflictReview({ ...reviewed, candidateText: snapshot.candidateText });
+    } catch (error) {
+      if (ticket === conflictRequest.current) {
+        setProblem('Native reviewed resolution not available: ' + String(error));
+      }
+    } finally {
+      if (ticket === conflictRequest.current) setConflictReviewBusy(false);
+    }
+  }
+
+  async function applyNativeConflictResolution() {
+    if (!activeProject?.projectId || !conflictReview || !conflictDraft ||
+        conflictReview.projectId !== activeProject.projectId ||
+        conflictReview.candidateText !== conflictDraft.candidateText ||
+        conflictReview.relativePath !== conflictDraft.relativePath ||
+        conflictReview.inventoryEvidenceSha256 !== nativeConflicts?.evidenceSha256 ||
+        conflictApplyBusy || conflictReviewBusy) return;
+    const ticket = ++conflictRequest.current;
+    const reviewed = conflictReview;
+    setConflictApplyBusy(true);
+    setConflictApplyReceipt(null);
+    setProblem('');
+    try {
+      const receipt = await invoke('ide_git_apply_conflict_resolution', {
+        projectId: reviewed.projectId,
+        relativePath: reviewed.relativePath,
+        inventorySha256: reviewed.inventoryEvidenceSha256,
+        indexSha256: reviewed.originalIndexSha256,
+        candidateText: reviewed.candidateText,
+        reviewSha256: reviewed.reviewSha256,
+      });
+      if (ticket !== conflictRequest.current) return;
+      if (receipt?.schemaVersion !== 1 ||
+          receipt.projectId !== reviewed.projectId ||
+          receipt.relativePath !== reviewed.relativePath ||
+          receipt.reviewSha256 !== reviewed.reviewSha256 ||
+          receipt.proposedContentSha256 !== reviewed.proposedContentSha256 ||
+          receipt.nativeOsConsentRequired !== true ||
+          receipt.candidateReadbackVerified !== true ||
+          receipt.targetConflictCleared !== true ||
+          receipt.journalSynced !== true ||
+          receipt.branchRefModified !== false ||
+          receipt.commitCreated !== false || receipt.remoteContacted !== false) {
+        throw Error('G06D04_NATIVE_RECEIPT_INVALID');
+      }
+      setConflictApplyReceipt(receipt);
+      setConflictReview(null);
+      setConflictDraft(null);
+      setNativeConflicts(null); // Index changed; all old source evidence expires.
+    } catch (error) {
+      if (ticket === conflictRequest.current) {
+        setProblem('Protected conflict resolution failed or requires repair: ' + String(error));
+      }
+    } finally {
+      if (ticket === conflictRequest.current) setConflictApplyBusy(false);
+    }
+  }
+
+  async function inspectNativeConflictRecovery() {
+    if (!activeProject?.projectId || conflictRecoveryBusy || conflictApplyBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = ++conflictRequest.current;
+    setConflictRecoveryBusy(true);
+    setProblem('');
+    try {
+      const result = await invoke('ide_git_inspect_conflict_recovery', { projectId });
+      if (ticket !== conflictRequest.current) return;
+      if (result?.schemaVersion !== 1 || result.projectId !== projectId ||
+          result.automaticRetry !== false || result.automaticRestore !== false ||
+          result.automaticIndexWrite !== false || result.automaticRefUpdate !== false) {
+        throw Error('G06D04_RECOVERY_EVIDENCE_INVALID');
+      }
+      setConflictRecovery(result);
+    } catch (error) {
+      if (ticket === conflictRequest.current) {
+        setProblem('Native recovery inspection unavailable: ' + String(error));
+      }
+    } finally {
+      if (ticket === conflictRequest.current) setConflictRecoveryBusy(false);
+    }
+  }
+
+  async function reconcileNativeConflictReceipt() {
+    if (!activeProject?.projectId || conflictRecoveryBusy || conflictApplyBusy ||
+        !['resolved_requires_independent_receipt', 'unpublished_original_source_preserved']
+          .includes(conflictRecovery?.state)) return;
+    const projectId = activeProject.projectId;
+    const ticket = ++conflictRequest.current;
+    setConflictRecoveryBusy(true);
+    setProblem('');
+    try {
+      const result = await invoke('ide_git_reconcile_conflict_receipt', { projectId });
+      if (ticket !== conflictRequest.current) return;
+      if (result?.schemaVersion !== 1 || result.projectId !== projectId ||
+          !['verified_resolved_stage', 'unpublished_original_source_preserved']
+            .includes(result.state) ||
+          result.operatorReviewRequired !== (result.state !== 'verified_resolved_stage')) {
+        throw Error('G06D04_RECOVERY_RECEIPT_INVALID');
+      }
+      setConflictRecovery(result);
+    } catch (error) {
+      if (ticket === conflictRequest.current) {
+        setProblem('Receipt-only reconciliation denied or unavailable: ' + String(error));
+      }
+    } finally {
+      if (ticket === conflictRequest.current) setConflictRecoveryBusy(false);
+    }
+  }
+
+  async function inspectUnresolvedNativeConflicts() {
+    if (!activeProject?.projectId || nativeConflictsBusy) return;
+    const projectId = activeProject.projectId;
+    const ticket = ++nativeConflictsRequest.current;
+    setNativeConflictsBusy(true);
+    setNativeConflicts(null);
+    conflictRequest.current += 1;
+    setConflictReview(null);
+    setConflictReviewBusy(false);
+    setConflictApplyReceipt(null);
+    setConflictRecovery(null);
+    setConflictDraft(null);
+    setConflictDraftMode('manual');
+    setProblem('');
+    try {
+      const result = await invoke('ide_git_inspect_native_conflicts', { projectId });
+      if (ticket !== nativeConflictsRequest.current) return;
+      if (result?.schemaVersion !== 1 || result.projectId !== projectId ||
+          result.sourceRechecked !== true ||
+          result.authorityGranted !== false || result.resolutionWritten !== false ||
+          result.indexOrWorktreeModified !== false || result.branchRefModified !== false ||
+          result.remoteContacted !== false || result.gitProcessStarted !== false ||
+          !Array.isArray(result.conflicts) ||
+          result.conflictCount !== result.conflicts.length ||
+          !/^[a-f0-9]{64}$/.test(result.indexSha256) ||
+          !/^[a-f0-9]{64}$/.test(result.evidenceSha256)) {
+        throw Error('G06D01_NATIVE_CONFLICT_EVIDENCE_UNTRUSTED');
+      }
+      setConflictDraft(null);
+      setConflictDraftMode('manual');
+      setNativeConflicts(result);
+    } catch (error) {
+      if (ticket === nativeConflictsRequest.current) {
+        setProblem('Read-only native Git conflict inspection unavailable: ' + String(error));
+      }
+    } finally {
+      if (ticket === nativeConflictsRequest.current) setNativeConflictsBusy(false);
+    }
+  }
+
   async function verifyDivergentMergeResult() {
     if (!activeProject?.projectId || divergentBusy || divergentExecBusy ||
         branchReviewKind !== 'merge' || mergePlan?.classification !== 'divergent_merge_candidate' ||
@@ -2413,6 +2641,16 @@ function App() {
     setDivergentReceipt(null);
     setDivergentRecovery(null);
     setDivergentRecoveryBusy(false);
+    nativeConflictsRequest.current += 1;
+    setNativeConflicts(null);
+    conflictRequest.current += 1;
+    setConflictReview(null);
+    setConflictReviewBusy(false);
+    setConflictApplyReceipt(null);
+    setConflictRecovery(null);
+    setConflictDraft(null);
+    setConflictDraftMode('manual');
+    setNativeConflictsBusy(false);
     branchReviewRequest.current += 1;
     setBranchReview(null);
     setBranchReviewBusy(false);
@@ -6532,6 +6770,185 @@ function App() {
                     <button type="button" className="ghostBtn" disabled={replayRecoveryBusy}
                       onClick={() => void reconcileReplayReceipt()}>
                       Ask OS permission to verify historical receipt only
+                    </button>}
+                </article>}
+            </div>}
+            {activeProject && <div className="continuityDocument"
+              aria-label="G06D01 native unresolved three-way conflict inspection">
+              <h3>Conflict resolution · exact unresolved Git index stages</h3>
+              <p>Read-only inspection of genuine stage 1 (base), stage 2 (ours),
+                and stage 3 (theirs) Git entries. Source blob identities and
+                bounded previews are shown without modifying files, staging,
+                creating a commit, or granting resolution authority.</p>
+              <button type="button" className="ghostBtn"
+                disabled={nativeConflictsBusy}
+                onClick={() => void inspectUnresolvedNativeConflicts()}>
+                {nativeConflictsBusy ? 'Inspecting original index objects…' :
+                  'Inspect unresolved Git conflicts (read only)'}
+              </button>
+              {nativeConflicts?.projectId === activeProject.projectId &&
+                <article role="status" className="continuityEvent">
+                  <p>Branch: {nativeConflicts.currentBranch}
+                    {' · '}Unresolved files: {nativeConflicts.conflictCount}</p>
+                  <p>Index SHA-256: <code>{nativeConflicts.indexSha256}</code></p>
+                  <p>Review SHA-256: <code>{nativeConflicts.evidenceSha256}</code></p>
+                  {nativeConflicts.conflicts.map(entry =>
+                    <article className="continuityEvent" key={entry.relativePath}>
+                      <strong>{entry.relativePath}</strong>
+                      <p>Classification: {entry.classification.replaceAll('_',' ')}
+                        {' · '}Human resolution required</p>
+                      {[['Base · stage 1', entry.ancestor],
+                        ['Ours · stage 2', entry.ours],
+                        ['Theirs · stage 3', entry.theirs]].map(([name, value]) =>
+                          <div key={name}>
+                            <p>{name}: {value ? <code>{value.oid}</code> : 'absent'}</p>
+                            {value?.binaryOrNonUtf8 &&
+                              <p>Binary or non-UTF8 data: preview withheld</p>}
+                            {value?.preview != null &&
+                              <pre className="continuityEvent">{value.preview}
+                                {value.previewTruncated ? ' [truncated]' : ''}</pre>}
+                          </div>)}
+                    </article>)}
+                  <div aria-label="G06D02 offline three-way conflict draft editor">
+                    <h4>Review a proposed resolution · local draft only</h4>
+                    <p>A proposal is never written to disk. Only a complete, readable
+                      stage preview may be copied. Truncated/binary stages are blocked;
+                      manual drafts start empty. A new inspection invalidates the draft.</p>
+                    {nativeConflicts.conflicts.map(entry =>
+                      <div key={'draft-' + entry.relativePath}>
+                        <strong>{entry.relativePath}</strong>
+                        <div>
+                          <button type="button" className="ghostBtn"
+                            disabled={!entry.ours || entry.ours.binaryOrNonUtf8 ||
+                              entry.ours.previewTruncated || entry.ours.preview == null}
+                            onClick={() => selectConflictDraft(entry, 'ours')}>
+                            Draft from complete ours
+                          </button>
+                          <button type="button" className="ghostBtn"
+                            disabled={!entry.theirs || entry.theirs.binaryOrNonUtf8 ||
+                              entry.theirs.previewTruncated || entry.theirs.preview == null}
+                            onClick={() => selectConflictDraft(entry, 'theirs')}>
+                            Draft from complete theirs
+                          </button>
+                          <button type="button" className="ghostBtn"
+                            onClick={() => selectConflictDraft(entry, 'manual')}>
+                            Draft manually from empty
+                          </button>
+                        </div>
+                      </div>)}
+                    {conflictDraft?.projectId === activeProject.projectId &&
+                      conflictDraft.indexSha256 === nativeConflicts.indexSha256 &&
+                      conflictDraft.evidenceSha256 === nativeConflicts.evidenceSha256 &&
+                      nativeConflicts.conflicts.some(
+                        e => e.relativePath === conflictDraft.relativePath) &&
+                      <article className="continuityEvent" role="status">
+                        <p>Unsaved resolution candidate: <strong>{conflictDraft.relativePath}</strong>
+                          {' · '}Basis: {conflictDraftMode}</p>
+                        <label htmlFor="g06d02-proposed-text">
+                          Proposed full replacement text (not applied)
+                        </label>
+                        <textarea id="g06d02-proposed-text" rows={12}
+                          value={conflictDraft.candidateText}
+                          maxLength={131072}
+                          spellCheck={false}
+                          onChange={e => {
+                            setConflictReview(null);
+                            setConflictDraft(old =>
+                              old ? { ...old, candidateText: e.target.value } : null);
+                          }} />
+                        <p>Bound to Git HEAD <code>{conflictDraft.currentHead}</code>
+                          {' · '}Original index <code>{conflictDraft.indexSha256}</code></p>
+                        <button type="button" className="ghostBtn"
+                          disabled={conflictReviewBusy || conflictApplyBusy ||
+                            conflictDraft.candidateText.length > 131072}
+                          onClick={() => void reviewNativeConflictCandidate()}>
+                          {conflictReviewBusy ? 'Verifying source and proposal…' :
+                            'Review exact replacement with native Git evidence'}
+                        </button>
+                        {conflictReview?.projectId === activeProject.projectId &&
+                          conflictReview.candidateText === conflictDraft.candidateText &&
+                          conflictReview.relativePath === conflictDraft.relativePath &&
+                          conflictReview.originalIndexSha256 === nativeConflicts.indexSha256 &&
+                          conflictReview.inventoryEvidenceSha256 === nativeConflicts.evidenceSha256 &&
+                          <article className="continuityEvent"
+                            aria-label="G06D03 reviewed resolution proposal">
+                            <strong>Native reviewed proposal · no authority</strong>
+                            <p>File: {conflictReview.relativePath}
+                              {' · '}Exact bytes: {conflictReview.proposedBytes}
+                              {' · '}Mode: {conflictReview.fileMode.toString(8)}</p>
+                            <p>Proposed text SHA-256:
+                              <code>{conflictReview.proposedContentSha256}</code></p>
+                            <p>Source review SHA-256:
+                              <code>{conflictReview.reviewSha256}</code></p>
+                            <p>Original file SHA-256:
+                              <code>{conflictReview.originalWorktreeSha256}</code></p>
+                            <p role="alert">This digest is NOT permission. Pressing Apply
+                              requests separate native OS human consent, then verifies
+                              the original HEAD, index, three Git stages and worktree again.
+                              An interrupted file/index update may require manual repair.</p>
+                            <button type="button" className="primaryBtn"
+                              disabled={conflictApplyBusy || conflictReviewBusy}
+                              onClick={() => void applyNativeConflictResolution()}>
+                              {conflictApplyBusy ? 'Native approval / resolution in progress…' :
+                                'Request OS permission to apply this exact resolution'}
+                            </button>
+                            {conflictApplyBusy &&
+                              <button type="button" className="ghostBtn"
+                                onClick={() => void invoke('ide_git_cancel_protected_merge', {
+                                  projectId: activeProject.projectId,
+                                }).catch(e => setProblem(String(e)))}>
+                                Request cancellation before mutation
+                              </button>}
+                          </article>}
+                        <p role="alert">Uncommitted local editor draft. No index stage,
+                          file replacement, branch publication, or authority has been granted.
+                          Closing/restarting this view discards the draft.</p>
+                        <button type="button" className="ghostBtn"
+                          onClick={() => setConflictDraft(null)}>
+                          Discard local resolution draft
+                        </button>
+                      </article>}
+                  </div>
+                  <p>No resolution applied. No checkout, commit, ref update or remote contact.</p>
+                </article>}
+            </div>}
+            {activeProject && <div className="continuityDocument"
+              aria-label="G06D04 protected resolution journal and restart recovery">
+              <h3>Conflict resolution · durable restart recovery</h3>
+              <p>Read-only inspection of app-private journal, original Git HEAD,
+                index stages, resolved blob and original worktree. Partial writes
+                require manual repair; there is no automatic retry or rollback.</p>
+              <button type="button" className="ghostBtn"
+                disabled={conflictRecoveryBusy || conflictApplyBusy}
+                onClick={() => void inspectNativeConflictRecovery()}>
+                {conflictRecoveryBusy ? 'Checking journal and original source…' :
+                  'Inspect protected conflict-resolution recovery'}
+              </button>
+              {conflictApplyReceipt?.projectId === activeProject.projectId &&
+                <article role="status" className="continuityEvent">
+                  <strong>Native resolution applied and independently read back</strong>
+                  <p>Path: {conflictApplyReceipt.relativePath}
+                    {' · '}Resolved blob: <code>{conflictApplyReceipt.candidateBlobOid}</code></p>
+                  <p>Final index: <code>{conflictApplyReceipt.resultingIndexSha256}</code></p>
+                  <p>Original HEAD preserved: <code>{conflictApplyReceipt.finalHead}</code></p>
+                </article>}
+              {conflictRecovery?.projectId === activeProject.projectId &&
+                <article role="status" className="continuityEvent">
+                  <p>State: <strong>{conflictRecovery.state.replaceAll('_', ' ')}</strong></p>
+                  <p>Path: {conflictRecovery.relativePath || 'no operation'}
+                    {' · '}Phase: {conflictRecovery.phase || 'none'}</p>
+                  <p>Original Git HEAD matches: {String(conflictRecovery.originalHeadMatches)}
+                    {' · '}Staged resolution matches: {String(conflictRecovery.candidateIndexEntryMatches)}
+                    {' · '}Target file matches proposal: {String(conflictRecovery.proposedWorktreeMatches)}</p>
+                  {conflictRecovery.state === 'partial_or_drifted_manual_repair' &&
+                    <p role="alert">Interrupted or changed source: manual Git repair required.
+                      No automatic restore, index staging, checkout or ref update.</p>}
+                  {['resolved_requires_independent_receipt',
+                    'unpublished_original_source_preserved'].includes(conflictRecovery.state) &&
+                    <button type="button" className="ghostBtn"
+                      disabled={conflictRecoveryBusy}
+                      onClick={() => void reconcileNativeConflictReceipt()}>
+                      Request separate native OS receipt-only reconciliation
                     </button>}
                 </article>}
             </div>}
