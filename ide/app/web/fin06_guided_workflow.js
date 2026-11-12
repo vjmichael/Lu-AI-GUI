@@ -16,10 +16,12 @@ export function checkedFin06Journey(workbench,projectId,build,report,debug) {
     workbench?.projectId!==projectId ||
     workbench.kind!=='non_atomic_read_only_observations' ||
     workbench.executionAuthorized!==false ||
+    typeof workbench.recoveryRequired!=='boolean' ||
     !Array.isArray(workbench.rows) || workbench.rows.length!==9)return null;
  const lookup=new Map(workbench.rows.map(r=>[r.id,r]));
  if(lookup.size!==9)return null;
- const nativeCompleted=build?.projectId===projectId &&
+ const nativeCompleted=workbench.recoveryRequired===false &&
+   build?.projectId===projectId &&
    build.phase==='completed' &&
    build.requiresReconciliation===false &&
    build.installedAppAccepted===false &&
@@ -29,7 +31,8 @@ export function checkedFin06Journey(workbench,projectId,build,report,debug) {
    report.terminalReceiptSha256===build.terminalReceiptSha256 &&
    report.independentlyVerified===false &&
    report.taskAcceptanceAuthorized===false;
- const stopped=debug?.projectId===projectId &&
+ const stopped=workbench.recoveryRequired===false &&
+   debug?.projectId===projectId &&
    SHA.test(debug.terminalReceiptSha256||'') &&
    debug.installedAppAccepted===false;
  const rows=STEPS.map(step=>{
@@ -59,6 +62,7 @@ export function checkedFin06Journey(workbench,projectId,build,report,debug) {
 }
 export function checkedFin06Destination(journey,id,projectId) {
  if(!journey || journey.kind!=='human_navigation_only' ||
+    journey.workerRecoveryRequired!==false ||
     journey.projectId!==projectId || journey.executionAuthorized!==false ||
     !PROJECT.test(projectId||'') || journey.steps.length!==STEPS.length)
    return null;
