@@ -83,6 +83,37 @@ impl DapGateway {
     ) -> Option<lu_ide_workspace::dap_source_lines::SourceLineCandidate> {
         self.session.source_candidate().cloned()
     }
+    /// FIN-04R-1: only the active protected DAP actor can ask its own
+    /// AppContainer/SCM Job to run the pinned read-only PDB symbolizer.
+    /// Results remain untrusted until the independent source-seal parser
+    /// and the current first-party event owner are rechecked.
+    #[cfg(all(windows, feature = "fin04-release-owner-evidence"))]
+    pub(crate) fn read_pe_pdb_inside_owned_job(
+        &mut self, binary:&std::path::Path, pdb:&std::path::Path,
+        binary_sha256:&str, pdb_sha256:&str, bundle_sha256:&str,
+        slide:u64, rip:u64,
+    )->Result<serde_json::Value,SupervisorError>{
+        if self.session.phase()!=DapPhase::Stopped ||
+           self.session.source_candidate()
+             .and_then(|f|f.instruction_address)!=Some(rip) ||
+           self.supervisor.inspect()?.iter().all(|job|
+             job.job_id!=self.job_id ||
+             job.plan_sha256!=self.plan_sha256 ||
+             job.phase!=JobPhase::Running || job.requires_reconciliation)
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        let result=self.process.as_mut().ok_or(SupervisorError::NoContainment)?
+            .read_protected_pe_pdb(binary,pdb,binary_sha256,pdb_sha256,
+                bundle_sha256,slide,rip)?;
+        if self.session.phase()!=DapPhase::Stopped ||
+           self.session.source_candidate()
+               .and_then(|f|f.instruction_address)!=Some(rip)
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        Ok(result)
+    }
     /// Read-only OS evidence from the *owned* native Job. A module hit is
     /// never a verified stopped x64 thread context or a PDB line-table pass.
     #[cfg(windows)]
