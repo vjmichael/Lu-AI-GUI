@@ -555,6 +555,8 @@ impl NativeDebugRuntime {
                 feature = "dev046d-native-dialog"
             )) {
                 "DEV046D_NATIVE_DIALOG_DEV_ONLY_NOT_RELEASE_ACCEPTED"
+            } else if cfg!(all(windows, feature = "fin04-release-event-observer")) {
+                "FIN04R_RELEASE_OWNER_OBSERVER_ONLY_SOURCE_AND_ACTION_GATES_OPEN"
             } else {
                 "DEV046D_NATIVE_HUMAN_ACTION_APPROVAL_NOT_ACCEPTED"
             },
