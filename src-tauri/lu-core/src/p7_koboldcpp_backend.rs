@@ -346,6 +346,31 @@ impl InferenceBackend for KoboldCppBackend {
             }
             let _=child.kill();
             if child.wait().is_err(){reaped=false;}
+            #[cfg(target_os="linux")]
+            {
+                // A reaped leader is not an empty process group. Probe the
+                // original in-memory PGID until no member remains; a zombie,
+                // a stuck member or an OS query error keeps recovery blocked.
+                // This is NOT a cgroup-v2 or escaped-descendant proof.
+                let pid=child.id();
+                if pid<=i32::MAX as u32 {
+                    let deadline=Instant::now()+Duration::from_secs(2);
+                    loop {
+                        let present=unsafe{kill(-(pid as i32),0)};
+                        if present!=0 {
+                            let code=std::io::Error::last_os_error().raw_os_error();
+                            if code==Some(3){break} // ESRCH: no group members
+                            reaped=false;break;
+                        }
+                        if Instant::now()>=deadline {
+                            reaped=false;break;
+                        }
+                        thread::sleep(Duration::from_millis(20));
+                    }
+                }else{
+                    reaped=false;
+                }
+            }
         }
         #[cfg(windows)]
         {
