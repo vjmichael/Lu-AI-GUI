@@ -83,3 +83,17 @@ test('FIN01D live LSP commands demand matching owner marker',()=>{
  assert.match(shared,/fn journal_fingerprint/);
  assert.match(shared,/options\.mode\(0o600\)/);
 });
+
+test('FIN01D only original strictly pre-OS jobs receive no-worker cancellation',()=>{
+ for(const code of [build,debug]){
+  assert.match(code,/if result\.is_err\(\)/);
+  assert.match(code,/matches!\(state\.phase,JobPhase::Prepared\|JobPhase::Authorized\)/);
+  assert.match(code,/self\.supervisor\.cancel_before_start\(&id\)/);
+ }
+ assert.match(lsp,/let mut admitted_this_call=false/);
+ assert.match(lsp,/let mut prepared_this_call:Option<String>=None/);
+ assert.match(lsp,/JobPhase::Prepared\|JobPhase::Authorized/);
+ assert.match(lsp,/self\.supervisor\.cancel_before_start\(id\)/);
+ assert.match(lsp,/no_active && admitted_this_call/);
+ assert.match(shared,/release_if_terminal/);
+});
