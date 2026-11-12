@@ -139,12 +139,26 @@ impl IdeWorkspaceRegistry {
   ->Result<bool,&'static str>{
   let repo=exact_repo(self,id)?;
   let path=repo.path().join("lu-ide-fin03-restore-active.json");
-  match fs::symlink_metadata(path) {
-   Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Ok(false),
-   Err(_)=>Err("FIN03_RESTORE_RECOVERY_MARKER_UNREADABLE"),
-   Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() &&
-       meta.len()==64=>Ok(true),
-   Ok(_)=>Err("FIN03_RESTORE_RECOVERY_MARKER_UNTRUSTED"),
+  let meta=match fs::symlink_metadata(&path) {
+   Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(false),
+   Err(_)=>return Err("FIN03_RESTORE_RECOVERY_MARKER_UNREADABLE"),
+   Ok(value)=>value,
+  };
+  if !meta.is_file() || meta.file_type().is_symlink() || meta.len()!=64 {
+   return Err("FIN03_RESTORE_RECOVERY_MARKER_UNTRUSTED");
   }
+  let marker=fs::read(&path).map_err(|_|"FIN03_RESTORE_RECOVERY_MARKER_UNREADABLE")?;
+  if marker.len()!=64 || !marker.iter().all(|b|b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+   return Err("FIN03_RESTORE_RECOVERY_MARKER_INVALID");
+  }
+  let hash=std::str::from_utf8(&marker).map_err(|_|"FIN03_RESTORE_RECOVERY_MARKER_INVALID")?;
+  let backup=repo.path().join(format!("lu-ide-fin03-restore-backup-{hash}.bin"));
+  let preserved=fs::symlink_metadata(&backup)
+   .map_err(|_|"FIN03_RESTORE_BACKUP_MISSING")?;
+  if !preserved.is_file() || preserved.file_type().is_symlink() ||
+     preserved.len()>LIMIT as u64 {
+   return Err("FIN03_RESTORE_BACKUP_UNTRUSTED");
+  }
+  Ok(true)
  }
 }
