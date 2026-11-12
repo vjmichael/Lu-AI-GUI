@@ -4714,6 +4714,9 @@ function App() {
          evidence.debuggerExecutionAuthorized!==false ||
          evidence.replayAuthorized!==false ||
          typeof evidence.requiresOsCleanup!=='boolean' ||
+         typeof evidence.globalOsCleanupRequired!=='boolean' ||
+         !/^[a-f0-9]{64}$/.test(evidence.originalDebugJournalSha256||'') ||
+         !/^[a-f0-9]{64}$/.test(evidence.actionManifestSha256||'') ||
          !Number.isSafeInteger(evidence.originalDebugJobsChecked) ||
          !Number.isSafeInteger(evidence.originalActionFilesChecked) ||
          !Number.isSafeInteger(evidence.originalActionFilesVisible) ||
@@ -4774,6 +4777,9 @@ function App() {
          !/^[a-f0-9]{64}$/.test(result.originalTerminalReceiptSha256||'') ||
          !/^[a-f0-9]{64}$/.test(result.reviewedSourceSha256||'') ||
          !/^[a-f0-9]{64}$/.test(result.reviewSha256||'') ||
+         !/^[a-f0-9]{64}$/.test(result.originalDebugJournalSha256||'') ||
+         !/^[a-f0-9]{64}$/.test(result.actionManifestSha256||'') ||
+         typeof result.globalActionCleanupRequired!=='boolean' ||
          typeof result.reviewedSourceRelativePath!=='string' ||
          result.reviewedSourceRelativePath.length>512 ||
          result.reviewedSourceRelativePath.startsWith('/') ||
@@ -8120,6 +8126,9 @@ function App() {
                           {' '}line {fin04CandidateReview.reviewedSourceLine}</p>
                         <p>Review SHA-256:
                           {' '}<code>{fin04CandidateReview.reviewSha256}</code></p>
+                        {fin04CandidateReview.globalActionCleanupRequired &&
+                          <p role="alert">An original debugger action or job
+                            still requires OS cleanup; review is non-executable.</p>}
                         {fin04CandidateReview.blockers.map(reason=>
                           <p key={reason}>Still blocked: {reason.replaceAll('_',' ')}</p>)}
                         <p>This candidate is not a live debugger control or execution grant.</p>
@@ -8130,11 +8139,18 @@ function App() {
                     <p>Original debugger jobs checked: {fin04Evidence.originalDebugJobsChecked}.
                       {' '}Action logs checked: {fin04Evidence.originalActionFilesChecked}.
                       {fin04Evidence.truncated?' Only the first 32 project rows are shown.':''}</p>
-                    <p>Hash chain: verified. Live owner, current kernel and
-                      installed-control acceptance: not established.
+                    <p>Hash chain and original file manifest: verified.
+                      Live owner, current kernel and installed-control
+                      acceptance: not established.
                       Execution and replay remain denied.</p>
-                    {fin04Evidence.requiresOsCleanup &&
-                      <p role="alert">An original debugger action or job requires
+                    {fin04Evidence.globalOsCleanupRequired &&
+                      <p role="alert">An original protected debugger job or
+                        action in this profile requires native OS cleanup.
+                        Other projects' identities are not displayed.
+                        New debugger admission remains blocked.</p>}
+                    {!fin04Evidence.globalOsCleanupRequired &&
+                     fin04Evidence.requiresOsCleanup &&
+                      <p role="alert">This project's original action requires
                         native OS reconciliation before further execution.</p>}
                     {fin04Evidence.rows.map(row=>
                       <article key={row.actionIdSha256}>
