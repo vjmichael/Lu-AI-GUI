@@ -42,8 +42,13 @@ $ownerProvenance=[ordered]@{
   patchedDebuggerThreadSha256=(& $sha256 $patched)
   lldbDapExeSha256=(& $sha256 (Join-Path $bin 'lldb-dap.exe'))
 }
-$ownerProvenance | ConvertTo-Json -Depth 3 |
-  Set-Content -LiteralPath (Join-Path $bundle 'fin04-owner-provenance.json') -Encoding UTF8
+# Windows PowerShell 5's -Encoding UTF8 emits a BOM, which serde_json
+# rejects as a provenance prefix. Emit explicitly BOM-free UTF-8.
+$provenanceFile=Join-Path $bundle 'fin04-owner-provenance.json'
+$utf8NoBom=New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText(
+  $provenanceFile,($ownerProvenance | ConvertTo-Json -Depth 3),$utf8NoBom
+)
 $lock=[ordered]@{schema='lu-ide-d5-ci-only-v1'; llvmCommit=$expected; lldbSha256=(Get-FileHash (Join-Path $bin 'lldb-dap.exe') -Algorithm SHA256).Hash; sourceSha256=(Get-FileHash (Join-Path $root 'lldb/source/Plugins/Process/Windows/Common/DebuggerThread.cpp') -Algorithm SHA256).Hash; releaseApproved=$false}
 $lock | ConvertTo-Json | Set-Content (Join-Path $env:RUNNER_TEMP 'lu-owner-llvm18-lock.json')
 Add-Content $env:GITHUB_ENV "LU_IDE_WO6_DAP_BUNDLE=$bundle"
