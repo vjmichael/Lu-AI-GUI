@@ -75,7 +75,7 @@ test('INT05 missing runtime or global recovery never becomes runnable',()=>{
 test('INT05 package manager review is not uv execution entitlement',()=>{
   const inspection={projectId:project,fingerprint:sha,
     executionAuthorized:false,applySupported:false,networkAccessed:false,
-    candidates:['uv','vcpkg','conan'].map(managerId=>({
+    candidates:['uv','vcpkg','conan2'].map(managerId=>({
       managerId,state:'candidate_needs_review',
       executionAuthorized:false,applySupported:false,resolutionSupported:false,
     }))};
@@ -196,4 +196,17 @@ test('FIN05 private artifacts cannot imply project promotion',async()=>{
     ...s,packageAudits:[{...s.packageAudits[0],
       projectId:'ide-'+'f'.repeat(32)}]
   },project),null);
+});
+
+test('FIN05 accepts only native Conan 2 identity and denies legacy alias',()=>{
+ const inventory=checkedToolchainInventory(status(),project);
+ const make=managerId=>({projectId:project,fingerprint:sha,
+  executionAuthorized:false,applySupported:false,networkAccessed:false,
+  candidates:[{managerId,state:'candidate_needs_review',
+   executionAuthorized:false,applySupported:false,resolutionSupported:false}]});
+ const checked=checkedPackageToolchainReadiness(make('conan2'),inventory,project);
+ assert.equal(checked.length,1);
+ assert.equal(checked[0].managerId,'conan2');
+ assert.equal(checked[0].installAuthorized,false);
+ assert.equal(checkedPackageToolchainReadiness(make('conan'),inventory,project).length,0);
 });
