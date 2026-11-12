@@ -46,6 +46,7 @@ pub struct SupervisorStatus {
 struct Active {
     generation_id: String,
     cancellation: Cancellation,
+    cache_scope: Option<String>,
 }
 struct SessionControl {
     active: Option<Active>,
@@ -341,9 +342,34 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         control.active = Some(Active {
             generation_id: generation_id.into(),
             cancellation: Cancellation::default(),
+            cache_scope: None,
         });
         Ok(())
     }
+    /// Only the desktop host may bind the current generation to the current
+    /// conversation. An unbound turn always disables KV reuse. No model
+    /// supplied fields, permissions or prior-session cache identity count.
+    pub fn bind_reserved_cache_scope(
+        &self,
+        session_id: &str,
+        generation_id: &str,
+        trusted_scope: &str,
+    ) -> Result<(), SupervisorError> {
+        if trusted_scope.is_empty() || trusted_scope.len() > 192 ||
+            !trusted_scope.bytes().all(|ch| ch.is_ascii_alphanumeric()
+                || matches!(ch, b'-' | b'_' | b':' | b'.')) {
+            return Err(SupervisorError::InvalidRequest);
+        }
+        let session=self.session(session_id)?;
+        let mut control=session.control.lock().map_err(|_|SupervisorError::Poisoned)?;
+        if control.closing { return Err(SupervisorError::Busy); }
+        let active=control.active.as_mut().ok_or(SupervisorError::WrongGeneration)?;
+        if active.generation_id != generation_id { return Err(SupervisorError::WrongGeneration); }
+        if active.cache_scope.is_some() { return Err(SupervisorError::InvalidRequest); }
+        active.cache_scope=Some(trusted_scope.to_owned());
+        Ok(())
+    }
+
     fn image_frame(
         session_id: &str,
         generation_id: &str,
@@ -436,6 +462,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         control.active = Some(Active {
             generation_id: generation_id.into(),
             cancellation: Cancellation::default(),
+            cache_scope: None,
         });
         Ok(())
     }
@@ -501,8 +528,9 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             generation_id: generation_id.into(),
         };
         let result = match session.engine.lock() {
-            Ok(mut engine) => engine
-                .generate_with_verified_images(&frame, &images, cancellation, emit)
+            Ok(mut engine) => engine.set_trusted_cache_scope(None)
+                .and_then(|()|engine.generate_with_verified_images(
+                    &frame, &images, cancellation, emit))
                 .map_err(Into::into),
             Err(_) => Err(SupervisorError::Poisoned),
         };
@@ -565,9 +593,12 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             session:Arc::clone(&session),
             generation_id:generation_id.into(),
         };
-        let outcome=session.engine.lock().map_err(|_|SupervisorError::Poisoned)?
-            .generate_browser_function_calls(&frame,cancellation,admitted_read_schemas)
-            .map_err(SupervisorError::Bridge);
+        let outcome={
+            let mut engine=session.engine.lock().map_err(|_|SupervisorError::Poisoned)?;
+            engine.set_trusted_cache_scope(None)?;
+            engine.generate_browser_function_calls(&frame,cancellation,admitted_read_schemas)
+                .map_err(SupervisorError::Bridge)
+        };
         outcome
     }
     pub fn run_reserved_with_history(
@@ -593,7 +624,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             }),
         );
         validate_frame(&frame).map_err(|_| SupervisorError::InvalidRequest)?;
-        let cancellation = {
+        let (cancellation, cache_scope) = {
             let control = session
                 .control
                 .lock()
@@ -605,7 +636,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             if active.generation_id != generation_id {
                 return Err(SupervisorError::WrongGeneration);
             }
-            active.cancellation.clone()
+            (active.cancellation.clone(), active.cache_scope.clone())
         };
         let _cleanup = GenerationCleanup {
             session: Arc::clone(&session),
@@ -613,8 +644,8 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         };
         // Never hold session control while the actual inference runs.
         let outcome = match session.engine.lock() {
-            Ok(mut engine) => engine
-                .generate(&frame, cancellation, emit)
+            Ok(mut engine) => engine.set_trusted_cache_scope(cache_scope.as_deref())
+                .and_then(|()|engine.generate(&frame, cancellation, emit))
                 .map_err(Into::into),
             Err(_) => Err(SupervisorError::Poisoned),
         };
