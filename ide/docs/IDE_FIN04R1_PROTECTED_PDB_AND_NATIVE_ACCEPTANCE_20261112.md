@@ -128,3 +128,30 @@ owner, genuine Windows kernel-runtime and interactive installed
 human/security acceptance remain OPEN/DEFERRED/UNVERIFIED. FIN-02
 remains deferred. No positive post-command debugger action or
 production promotion is enabled.
+
+### Task 4 final source-level result — exact tested code head
+
+**Passed:** Windows preflight [#43311830978] on `5116afe7`
+(compiled release native acceptance example; **19 JS**, **132 Rust
+supervisor `--lib`**, 0 failures; physical-only PowerShell scripts parse).
+The protected DAP fixture now uses a valid single thread, while the
+original host protocol still quarantines an invalid empty list.
+
+**Original OS Job recovery is fail-closed, not waived:** if a worker
+process tree has been reaped but a bounded output publication cannot
+be independently verified, the original immutable job journal records
+`RecoveryRequired/incomplete_os_worker_reap`; after restart
+`Supervisor::open` retains uncertainty and refuses a new plan. Native
+harness now prints only its original Job's fixed stage/phase/outcome/
+evidence classification when a protected build or LLDB admission fails.
+No recovered grant, process replay or global custody-marker clearance
+is possible through this diagnostic.
+
+**Still open/deferred:** Prior native run #43288086009 reached the patched
+LLVM build and protected service setup, then returned the real
+`SUPERVISOR_RECONCILIATION_REQUIRED` error without specific original
+receipt details. Its root cause and OS cleanup are NOT verified or fixed.
+The owner explicitly deferred a genuine Windows kernel/AppContainer/SCM
+Job recovery rerun and interactive installed-app human/security testing.
+Source-level signoff is separate from both; production debugger
+controls, merge and release remain disabled/unapproved.
