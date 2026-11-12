@@ -166,3 +166,34 @@ test('FIN01 global native custody blocks even when foreign jobs are hidden',()=>
   const legacy=status();delete legacy.globalRecoveryRequired;
   assert.equal(checkedToolchainInventory(legacy,project).kind,'unavailable');
 });
+
+test('FIN05 global native worker busy blocks offline uv even when manifest exists',()=>{
+  const native=status();native.globalWorkerBusy=true;
+  const inspection={projectId:project,fingerprint:sha,
+    executionAuthorized:false,applySupported:false,networkAccessed:false,
+    candidates:[{managerId:'uv',state:'candidate_needs_review',
+      executionAuthorized:false,applySupported:false,resolutionSupported:false}]};
+  const found=checkedPackageToolchainReadiness(inspection,
+    checkedToolchainInventory(native,project),project);
+  assert.equal(found[0].nativeOfflineSyncAvailable,false);
+});
+test('FIN05 private artifacts cannot imply project promotion',async()=>{
+  const {checkedPrivatePackageLifecycle}=await import('../web/toolchain_terminal.js');
+  const s=status();s.packageAudits=[{
+    projectId:project,jobId:job,planSha256:sha,
+    terminalReceiptSha256:sha,outputTreeSha256:sha,auditSha256:sha,
+    state:'verified_local_bytes_private_not_promoted',
+    requiresExplicitPrivateCleanup:true,mayExecuteOrRetryWorker:false,
+    installedIntoProject:false,
+  }];
+  const viewed=checkedPrivatePackageLifecycle(s,project);
+  assert.equal(viewed.rows.length,1);
+  assert.equal(viewed.projectPromotionVerified,false);
+  assert.equal(checkedPrivatePackageLifecycle({
+    ...s,packageAudits:[{...s.packageAudits[0],installedIntoProject:true}]
+  },project),null);
+  assert.equal(checkedPrivatePackageLifecycle({
+    ...s,packageAudits:[{...s.packageAudits[0],
+      projectId:'ide-'+'f'.repeat(32)}]
+  },project),null);
+});

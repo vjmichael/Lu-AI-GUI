@@ -143,7 +143,8 @@ export function checkedPackageToolchainReadiness(inspection,inventory,projectId)
     ids.add(c.managerId);
     const candidate=c.state==='candidate_needs_review';
     const offlineUv=c.managerId==='uv' && candidate &&
-      uv?.ready===true && !inventory.blockedByRecovery;
+      uv?.ready===true && !inventory.blockedByRecovery &&
+      inventory.workerBusy===false;
     results.push(Object.freeze({
       managerId:c.managerId,
       state:c.state,
@@ -155,6 +156,7 @@ export function checkedPackageToolchainReadiness(inspection,inventory,projectId)
         c.managerId!=='uv'?'review_only_no_apply':
         !uv?.ready?'offline_runtime_not_available':
         inventory.blockedByRecovery?'reconciliation_required':
+        inventory.workerBusy?'native_worker_busy':
         'runtime_observed_fresh_native_review_required',
     }));
   }
@@ -225,4 +227,47 @@ export function checkedProtectedTerminal(status,output,projectId) {
     outputIndependentlyVerified:false,
     executionAuthorized:false,interactive:false,installedAppAccepted:false,
   });
+}
+
+/** FIN05: provenance of the original protected private-output journal. */
+const PACKAGE_STATES=new Set([
+  'original_package_job_requires_native_reconciliation',
+  'verified_local_bytes_private_not_promoted',
+  'private_output_audit_blocked','private_output_cleanup_pending',
+  'private_output_destroyed',
+]);
+export function checkedPrivatePackageLifecycle(status,projectId) {
+  if(!PROJECT.test(projectId||'') || !status)return null;
+  if(status.packageAudits===undefined)return Object.freeze({
+    projectId,kind:'native_package_feature_not_enabled',rows:[],
+    projectPromotionVerified:false,executionAuthorized:false,
+  });
+  if(!Array.isArray(status.packageAudits) || status.packageAudits.length>32 ||
+     typeof status.globalRecoveryRequired!=='boolean')return null;
+  const seen=new Set(),rows=[];
+  for(const row of status.packageAudits){
+    if(!row || row.projectId!==projectId ||
+       !JOB.test(row.jobId||'') || seen.has(row.jobId) ||
+       !SHA.test(row.planSha256||'') ||
+       !SHA.test(row.terminalReceiptSha256||'') ||
+       !SHA.test(row.outputTreeSha256||'') ||
+       !(row.auditSha256===null||SHA.test(row.auditSha256||'')) ||
+       !PACKAGE_STATES.has(row.state) ||
+       typeof row.requiresExplicitPrivateCleanup!=='boolean' ||
+       row.mayExecuteOrRetryWorker!==false ||
+       row.installedIntoProject!==false)return null;
+    seen.add(row.jobId);
+    rows.push(Object.freeze({
+      projectId,jobId:row.jobId,planSha256:row.planSha256,
+      terminalReceiptSha256:row.terminalReceiptSha256,
+      outputTreeSha256:row.outputTreeSha256,
+      auditSha256:row.auditSha256,state:row.state,
+      cleanupRequired:row.requiresExplicitPrivateCleanup,
+      installedIntoProject:false,executionAuthorized:false,
+    }));
+  }
+  return Object.freeze({projectId,kind:'native_private_output_journal',
+    rows:Object.freeze(rows),projectPromotionVerified:false,
+    executionAuthorized:false,
+    globalRecoveryRequired:status.globalRecoveryRequired});
 }

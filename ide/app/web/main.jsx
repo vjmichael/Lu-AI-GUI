@@ -62,7 +62,8 @@ import {inspectProjectWorkbench, checkedWorkbenchNavigation}
 import { checkedTerminalSession, checkedTerminalReply }
   from './interactive_terminal.js';
 import { checkedToolchainInventory, checkedPackageToolchainReadiness,
-  checkedProtectedTerminal } from './toolchain_terminal.js';
+  checkedProtectedTerminal, checkedPrivatePackageLifecycle }
+  from './toolchain_terminal.js';
 import { boundedBuildTestHints } from './build_test_output_hints.js';
 import { visibleStructuredTestEvidence,
   reviewedTestFailureTarget } from './structured_test_evidence.js';
@@ -311,6 +312,9 @@ function App() {
     checkedPackageToolchainReadiness(packageInspection,toolchainInventory,
       activeProject?.projectId),
     [packageInspection,toolchainInventory,activeProject?.projectId]);
+  const privatePackageLifecycle=useMemo(()=>
+    checkedPrivatePackageLifecycle(buildStatus,activeProject?.projectId),
+    [buildStatus,activeProject?.projectId]);
   const terminalTranscript=useMemo(()=>
     checkedProtectedTerminal(buildStatus,nativeJobOutput,
       activeProject?.projectId),
@@ -1729,6 +1733,9 @@ function App() {
        confirmed?.matchedFreshNativeEvidence!==true ||
        confirmed?.authorizationIssued!==false ||
        !runtime?.ready ||
+       buildStatus?.globalRecoveryRequired!==false ||
+       buildStatus?.globalWorkerBusy!==false ||
+       buildStatus?.activeInAnotherProject!==false ||
        buildStatus?.current || packageRunBusy || buildBusy)return;
     setPackageRunBusy(true);
     setPackageRunResult(null);
@@ -1774,6 +1781,9 @@ function App() {
     if(!projectId || entry?.projectId!==projectId ||
        !entry?.jobId || packageRunBusy || buildBusy ||
        buildStatus?.current ||
+       buildStatus?.globalRecoveryRequired!==false ||
+       buildStatus?.globalWorkerBusy!==false ||
+       buildStatus?.activeInAnotherProject!==false ||
        !['verified_local_bytes_private_not_promoted',
          'original_package_job_requires_native_reconciliation',
          'private_output_cleanup_pending'].includes(entry.state))return;
@@ -7858,9 +7868,11 @@ function App() {
                   <p>No packages were installed into the registered project;
                     a completed worker is not signed installed acceptance.</p>
                 </article>}
-              {Array.isArray(buildStatus?.packageAudits) &&
-                buildStatus.packageAudits.filter(row=>
-                  row.projectId===activeProject?.projectId).map(row=>
+              {privatePackageLifecycle===null &&
+                <p role="alert">Original private-output lifecycle evidence
+                  unavailable; no cleanup or promotion rights inferred.</p>}
+              {privatePackageLifecycle?.kind==='native_private_output_journal' &&
+                privatePackageLifecycle.rows.map(row=>
                   <article className="continuityEvent" key={row.jobId}
                     aria-label="Durable package audit and disposal receipt">
                     <strong>Durable private package status:
@@ -7873,7 +7885,7 @@ function App() {
                       {' '}<code>{row.outputTreeSha256}</code></p>
                     {row.auditSha256 && <p>Local artifact audit:
                       {' '}<code>{row.auditSha256}</code></p>}
-                    <p>May reexecute: {String(row.mayExecuteOrRetryWorker)}
+                    <p>May reexecute: false
                       {' '}· Installed into project: {String(row.installedIntoProject)}</p>
                     {['verified_local_bytes_private_not_promoted',
                       'original_package_job_requires_native_reconciliation',
