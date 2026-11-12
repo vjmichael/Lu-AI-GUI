@@ -11,6 +11,7 @@ on:
       - ide/app/tests/fin04_release_owner_and_os_recovery.test.mjs
       - ide/app/tests/fin04r1_protected_pdb.test.mjs
       - ide/supervisor/src/windows_lsp_worker.rs
+      - ide/supervisor/src/windows_kernel_pc.rs
       - ide/supervisor/src/windows_stopped_line_oracle.rs
       - ide/supervisor/src/debug_control_dispatch.rs
       - ide/supervisor/src/debug_action_receipts.rs
