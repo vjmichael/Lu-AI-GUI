@@ -13,7 +13,7 @@ import {buildSubmittedPrompt, attachmentSummary, MAX_TEXT_FILES} from './attachm
 import {isPotentialImage, normalizedImageFile} from './image_attachment_input.mjs';
 import {stagedImageDimensions,REGION_IMAGE_OPERATIONS,
   imagePointerPixel,imageDragRectangle} from './image_assembly_geometry.mjs';
-import {queuedJob, startedJob, tokenForJob, removeJob} from './generation_jobs.mjs';
+import {queuedJob, startedJob, tokenForJob, resumedJob, removeJob} from './generation_jobs.mjs';
 import {nearTranscriptBottom, restoredScrollTop, isSendKey, isSearchKey, isNewChatKey, matchesChatTitle} from './chat_ui_behavior.mjs';
 import {MAX_HISTORY_ROWS,mergeHistoryWindow,captureHistoryAnchor,restoreHistoryAnchor} from './history_window_geometry.mjs';
 import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppearance,textForBackground,visibleReactionBySeq} from './message_interactions.mjs';
@@ -826,6 +826,7 @@ function App() {
   const [researchQuoteBusy,setResearchQuoteBusy]=useState(false);
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
+  const reconnectPending=useRef(new Set());
   const [perfLatestByChat,setPerfLatestByChat]=useState({}); // host diagnostics, not model proof
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
   const [writeProposals, setWriteProposals] = useState({}); // inert completed model write previews
@@ -2232,6 +2233,28 @@ function App() {
     }catch(e){setError('Next history page unavailable: '+String(e))}
     finally{loadingWindow.current=false}
   }
+  /// A WebView reload does not restore a generation ticket. Reattach only to
+  // the host's exact current model session + conversation, never by
+  // resubmitting the prompt. If the host restarted, show durable ANSF
+  // interrupted partial output instead of claiming completion.
+  async function reconcileActiveStream(targetChat){
+    if(!targetChat || reconnectPending.current.has(targetChat))return;
+    reconnectPending.current.add(targetChat);
+    try{
+      const snapshot=await invoke('lu_stream_reconnect',{chatId:targetChat});
+      if(currentChat.current!==targetChat)return;
+      setJobs(prev=>resumedJob(prev,targetChat,snapshot));
+      if(!snapshot){
+        const durable=await loadLatestUiHistory(targetChat);
+        if(currentChat.current===targetChat)setHistory(durable);
+      }
+    }catch(error){
+      if(currentChat.current===targetChat)
+        setError('Native stream reconciliation unavailable: '+String(error));
+    }finally{
+      reconnectPending.current.delete(targetChat);
+    }
+  }
   async function switchChat(id) {
     if (currentChat.current !== id) {
       // Capture the outgoing reading position before the asynchronous read.
@@ -2258,6 +2281,7 @@ function App() {
     setChatId(id);
     setHistory(entries);
     setError('');
+    void reconcileActiveStream(id);
   }
   useEffect(() => {
     let alive = true;
@@ -2288,7 +2312,13 @@ function App() {
     listen('lu-token', e => {
       if (!alive || !e.payload?.chatId) return;
       setJobs(prev => tokenForJob(prev,e.payload));
-    }).then(fn => { if (alive) stopToken = fn; else fn(); });
+    }).then(fn => {
+      if (alive){
+        stopToken = fn;
+        // Close the window between history loading and event registration.
+        if(currentChat.current)void reconcileActiveStream(currentChat.current);
+      }else fn();
+    });
     listen('lu-read-proposal', e => {
       const proposal = e.payload;
       if (!alive || !proposal?.chatId || !proposal?.proposalId) return;
@@ -2385,6 +2415,21 @@ function App() {
     }).then(fn => { if (alive) stopBackground=fn; else fn(); });
     return () => { alive = false; stopQueued(); stopStart(); stopToken(); stopReadProposal(); stopWriteProposal(); stopEditProposal(); stopNativeAction(); stopToolProgress(); stopTurnCapabilities(); stopBackground(); stopFinished(); stopBrowserChallenge(); stopPlanAdmission(); stopAgentWitness(); stopTaskHandoff(); };
   }, []);
+  // A missing queued/start event or stream-index gap is recovered from the
+  // native same-chat cursor. Do not fill missing bytes with guessed text.
+  useEffect(()=>{
+    for(const [id,job] of Object.entries(jobs)){
+      if(job?.needsSync && currentChat.current===id)
+        void reconcileActiveStream(id);
+    }
+  },[jobs]);
+  // A hidden/reopened WebView may have missed finished or token events.
+  // This is one user-focus read, not periodic inference polling.
+  useEffect(()=>{
+    const resumed=()=>{if(currentChat.current)void reconcileActiveStream(currentChat.current);};
+    window.addEventListener('focus',resumed);
+    return ()=>window.removeEventListener('focus',resumed);
+  },[]);
   // Follow new tokens only if the operator was already reading the end.
   // Remember independent scroll positions when switching conversations.
   function onTranscriptScroll() {
@@ -4400,7 +4445,7 @@ function App() {
           className={'message ' + (entry.role === 'user' ? 'user' : 'assistant')}
           style={{backgroundColor:entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble,
             color:textForBackground(entry.role==='user'?chatAppearance.userBubble:chatAppearance.assistantBubble)}}>
-          <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted' : ''}</span>
+          <span className="messageRole">{entry.role === 'user' ? 'You' : 'Lu'}{entry.cancelled ? ' · stopped' : entry.interrupted ? ' · interrupted (partial saved)' : ''}</span>
           {revision?.replyTo&&<button type="button" className="messageReplyReference"
             onClick={()=>setMessageProvenance({entry,revision})}
             aria-label={'Inspect reply provenance for message '+entry.seq}>
