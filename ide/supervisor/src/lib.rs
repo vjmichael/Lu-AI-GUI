@@ -477,6 +477,18 @@ pub struct GrantSummary {
 /// represented as idle simply because a desktop process lost its live handle.
 /// This is advisory only; the original protected OS worker still authorizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// FIN-01D OS-native readback, produced only by the trusted worker host.
+ /// Counts are kernel queries against named Windows Job Objects or the
+ /// delegated Linux cgroup hierarchy, not frontend or journal assertions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KernelQuiescenceWitness {
+    pub platform: &'static str,
+    pub examined_job_identities: usize,
+    pub kernel_objects_empty: usize,
+    pub kernel_objects_absent: usize,
+    pub marker_owner_exited: bool,
+}
+
 pub struct GlobalCustodyObservation {
     pub recovery_required: bool,
     pub worker_busy_or_unreconciled: bool,
