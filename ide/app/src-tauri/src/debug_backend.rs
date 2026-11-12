@@ -333,6 +333,7 @@ fn bounded_native_debugger_consent(app: &AppHandle, message: &str, cancel: &Atom
 
 pub struct NativeDebugRuntime {
     supervisor: Arc<Supervisor>,
+    global_custody_profile: PathBuf,
     stage: PathBuf,
     active: Mutex<Option<Active>>,
     last: Mutex<Option<DebugWitness>>,
@@ -350,6 +351,7 @@ impl NativeDebugRuntime {
             .map_err(|e| e.code().to_owned())?;
         Ok(Self {
             supervisor: Arc::new(supervisor),
+            global_custody_profile: data.clone(),
             stage,
             active: Mutex::new(None),
             last: Mutex::new(None),
@@ -707,6 +709,15 @@ impl NativeDebugRuntime {
         {
             return Err("DEV046D_INTERRUPTED_ACTION_OS_RECONCILIATION_REQUIRED".into());
         }
+        // Cross-supervisor, cross-process admission before reserving the
+        // debugger slot or generating fresh native worker authority.
+        let mut global_fence=crate::global_native_custody::GlobalAdmissionFence
+            ::acquire(&self.global_custody_profile,"debug")?;
+        let sibling=crate::global_native_custody::sibling_rows(
+            &self.global_custody_profile,"debug")?;
+        if crate::global_native_custody::durable_busy(&sibling){
+            return Err("FIN01_BUILD_JOURNAL_STILL_OWNS_CUSTODY".into());
+        }
         let cancellation = Arc::new(AtomicBool::new(false));
         {
             let mut active = self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?;
@@ -733,6 +744,16 @@ impl NativeDebugRuntime {
         *self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")? = None;
         if let Ok(ref witness) = result {
             *self.last.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")? = Some(witness.clone());
+        }
+        let own=self.supervisor.inspect().map_err(|e|e.code().to_owned());
+        let sibling=crate::global_native_custody::sibling_rows(
+            &self.global_custody_profile,"debug");
+        let release=match (own,sibling){
+            (Ok(own),Ok(sibling))=>global_fence.release_if_terminal(&own,&sibling),
+            _=>Err("FIN01_GLOBAL_TERMINAL_PROOF_UNAVAILABLE".into()),
+        };
+        if let Err(reason)=release {
+            if result.is_ok(){return Err(reason);}
         }
         result
     }
