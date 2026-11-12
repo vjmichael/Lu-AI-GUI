@@ -470,11 +470,11 @@ mod tests{
                 loop {
                     let mut line=String::new();
                     if reader.read_line(&mut line).unwrap()==0{break}
-                    if line=="\\r\\n"||line=="\\n"{break}
+                    if line=="\r\n"||line=="\n"{break}
                 }
                 drop(reader);
                 let _=sock.write_all(
-                    b"HTTP/1.1 200 OK\\r\\nContent-Length: 0\\r\\nConnection: close\\r\\n\\r\\n"
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                 );
             }
         });
