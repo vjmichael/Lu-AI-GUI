@@ -94,14 +94,15 @@ impl GlobalAdmissionFence {
   let marker=marker_path(profile);
   // create_new is the cross-process linearization point. Never unlink an
   // existing marker, regardless of its age or nominal owning PID.
-  let mut file=OpenOptions::new().create_new(true).write(true).open(&marker)
-   .map_err(|_|"FIN01_GLOBAL_ADMISSION_OCCUPIED_OR_UNCERTAIN".to_owned())?;
+  let mut options=OpenOptions::new();
+  options.create_new(true).write(true);
+  // The marker must never be briefly world-readable before chmod.
   #[cfg(unix)]{
-    use std::os::unix::fs::PermissionsExt;
-    if fs::set_permissions(&marker,fs::Permissions::from_mode(0o600)).is_err(){
-      return Err("FIN01_GLOBAL_MARKER_PERMISSIONS".into());
-    }
+    use std::os::unix::fs::OpenOptionsExt;
+    options.mode(0o600);
   }
+  let mut file=options.open(&marker)
+   .map_err(|_|"FIN01_GLOBAL_ADMISSION_OCCUPIED_OR_UNCERTAIN".to_owned())?;
   let owner_bytes=format!("FIN01-V1:{}:{}:{:016x}\n",domain,std::process::id(),rand::random::<u64>()).into_bytes();
   file.write_all(&owner_bytes).and_then(|_|file.sync_all())
    .map_err(|_|"FIN01_GLOBAL_MARKER_SYNC_FAILED".to_owned())?;
