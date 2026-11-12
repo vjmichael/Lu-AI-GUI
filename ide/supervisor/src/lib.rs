@@ -1478,6 +1478,30 @@ mod tests {
             effect_class: "test_build_isolated".into(),
         }
     }
+    #[test]
+    fn fin01_journal_occupied_across_projects_even_without_active_desktop_handle() {
+        let current="ide-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let foreign="ide-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let job=|project:&str,phase:JobPhase,recovery:bool| JobSummary{
+            job_id:"job-cccccccccccccccccccccccccccccccc".into(),
+            project_id:project.into(),plan_sha256:"d".repeat(64),
+            phase,requires_reconciliation:recovery,execution_verified:false,
+        };
+        let idle=observe_global_custody(&[job(foreign,JobPhase::Completed,false)],current);
+        assert!(!idle.worker_busy_or_unreconciled);
+        assert!(!idle.active_in_another_project);
+        let waiting=observe_global_custody(&[job(foreign,JobPhase::Prepared,false)],current);
+        assert!(waiting.worker_busy_or_unreconciled);
+        assert!(waiting.active_in_another_project);
+        assert!(!waiting.recovery_required);
+        let quarantined=observe_global_custody(&[job(foreign,JobPhase::Failed,true)],current);
+        assert!(quarantined.worker_busy_or_unreconciled);
+        assert!(quarantined.active_in_another_project);
+        assert!(quarantined.recovery_required);
+        let own=observe_global_custody(&[job(current,JobPhase::Running,false)],current);
+        assert!(own.worker_busy_or_unreconciled);
+        assert!(!own.active_in_another_project);
+    }
     #[cfg(feature = "package-uv-worker")]
     #[test]
     fn ide053_uv_recipe_binds_one_review_hash_and_strict_offline_limits() {
