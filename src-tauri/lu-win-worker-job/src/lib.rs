@@ -728,6 +728,10 @@ pub mod unix_owned {
             Ok(Some(Self{child,stdin:Some(stdin),subtree:group,receipt,stopped:false,verified_empty:false}))
         }
         pub fn subtree(&self)->&std::path::Path{&self.subtree}
+        // This accessor exists only in a destructive, first-party OS test
+        // binary. Production callers cannot choose or signal a PID.
+        #[cfg(feature="e1-p08-crash-fixture")]
+        pub fn fixture_guardian_pid(&self)->u32{self.child.id()}
         /// A live custodian is required during execution, not merely at
         /// shutdown. Losing it invalidates the cgroup lifetime assurance
         /// even if the worker itself remains alive.
