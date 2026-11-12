@@ -1,0 +1,155 @@
+# FIN-04R-1 exact-head Windows compile and OS-only native evidence.
+# Deliberately does not impersonate an installed human, promote a production
+# step/breakpoint or mark FIN-02/FIN-04 release complete.
+name: IDE FIN-04R1 exact-head Windows protected PDB and native kernel
+on:
+  push:
+    branches:
+      - ide/fin01-07-implementation-20261111
+    paths:
+      - .github/workflows/ide-fin04r1-exact-native.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fin04r1-exact-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-compile:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact head and static negative boundary contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.sha }}') { throw 'FIN04R1_EXACT_SOURCE_HEAD_CHANGED' }
+          node --test ide/app/tests/fin04r1_protected_pdb.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_NEGATIVE_BOUNDARY_TEST_FAILED' }
+          node --test ide/app/tests/fin04_release_owner_and_os_recovery.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R_PRIOR_RELEASE_CONTRACT_FAILED' }
+      - name: Compiler release observer and original post-command verifier
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo check --manifest-path ide/supervisor/Cargo.toml --release --features fin04-release-owner-evidence
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_PROTECTED_RELEASE_SUPERVISOR_COMPILER_FAILED' }
+          cargo check --manifest-path ide/supervisor/Cargo.toml --release --features fin04-release-owner-evidence --example wo6_native_dap_acceptance
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_ACTUAL_NATIVE_SCENARIO_COMPILER_FAILED' }
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib windows_stopped_line_oracle
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_NATIVE_PE_PDB_NEGATIVE_TEST_FAILED' }
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib debug_control_dispatch
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_POSTCOMMAND_HOSTILE_TEST_FAILED' }
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04-release-owner-evidence --lib debug_action_receipts
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_ONE_USE_RESTART_TEST_FAILED' }
+          Write-Host 'FIN04R1_WINDOWS_COMPILER_AND_SOURCE_FIXTURES=PASS_NOT_KERNEL_OR_INSTALLED'
+      - name: Parse physical-only script without synthetic UI interaction
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $scripts=@(
+            'ide/app/fixtures/Test-FIN04R1-PhysicalProtectedPdbReview.ps1',
+            'ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1'
+          )
+          foreach ($path in $scripts) {
+            $tokens=$null
+            $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$errors)|Out-Null
+            if ($errors.Count -ne 0) { throw "FIN04R1_PS_PARSE_FAILED:$path" }
+          }
+          Write-Host 'FIN04R1_PHYSICAL_HUMAN_ACCEPTANCE=NOT_EXECUTED'
+
+  windows-kernel:
+    needs: windows-compile
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Lock exact source HEAD
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.sha }}') { throw 'FIN04R1_NATIVE_EXACT_SOURCE_CHANGED' }
+      - name: Compile exact first-party LLVM18 owner-event and pinned symbolizer
+        shell: pwsh
+        run: |
+          & ide/llvm18_owner/Build-PinnedOwnerWindows.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_LLVM_OWNER_PATCH_OR_LINK_FAILED' }
+      - name: Stage actual Windows compiler SDK under measured native provenance
+        shell: pwsh
+        run: |
+          & ide/supervisor/fixtures/New-PinnedWindowsToolchain.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'fin04r1-msvc') -LockPath (Join-Path $env:RUNNER_TEMP 'fin04r1-msvc-lock.json') -RustVersion '1.99.1' -SdkVersion '10.0.26100.0' -VsVersionPrefix '17.14.' -MsvcVersionPrefix '14.44.'
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_NATIVE_MSVC_SDK_NOT_MEASURED' }
+      - name: Compile release Job/SCM service, host and bootstrap
+        shell: pwsh
+        run: |
+          cargo build --manifest-path ide/supervisor/Cargo.toml --release --features fin04-release-owner-evidence --bin windows_recovery_service --bin windows_null_service_bootstrap --example wo6_native_dap_acceptance
+          if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_RELEASE_SCM_NATIVE_COMPILER_FAILED' }
+      - name: Original protected AppContainer PDB, LLDB event, kernel Job and restart
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $service=(Resolve-Path 'ide/supervisor/target/release/windows_recovery_service.exe').Path
+          $hostExe=(Resolve-Path 'ide/supervisor/target/release/examples/wo6_native_dap_acceptance.exe').Path
+          $bootstrap=(Resolve-Path 'ide/supervisor/target/release/windows_null_service_bootstrap.exe').Path
+          $installed=$false
+          $granted=$false
+          try {
+            & ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1 -ServiceExecutable $service -ExpectedServiceSha256 (Get-FileHash $service -Algorithm SHA256).Hash -ApprovedHostExecutable $hostExe -ExpectedHostSha256 (Get-FileHash $hostExe -Algorithm SHA256).Hash -CiAcceptanceUnsigned -Start
+            if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_SCM_INSTALL_FAILURE' }
+            $installed=$true
+            & $bootstrap --grant-fixed-service
+            if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_FIXED_NUL_LEASE_FAILURE' }
+            $granted=$true
+            & $bootstrap --verify-fixed-service
+            if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_SCM_LEASE_UNVERIFIED' }
+            & ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1 -ExpectedSourceHead '${{ github.sha }}' -PinnedLldbBundle $env:LU_IDE_WO6_DAP_BUNDLE -PinnedCargoBundle $env:LU_IDE_D7_NATIVE_TOOLCHAIN -ProtectedScmServiceExecutable $service -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'fin04r1-native')
+            if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_REAL_KERNEL_PDB_OWNER_RESTART_FAILED' }
+          } finally {
+            if ($granted) {
+              & $bootstrap --revoke-fixed-service
+              if ($LASTEXITCODE -ne 0) { throw 'FIN04R1_SCM_NULL_LEASE_REVOCATION_FAILED' }
+            }
+            if ($installed) {
+              & sc.exe delete LuIdeRecoveryBroker 2>$null | Out-Null
+            }
+          }
+      - name: Preserve native evidence, never a signed release claim
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fin04r1-kernel-source-evidence
+          path: |
+            ${{ runner.temp }}/fin04r1-native/*.json
+            ${{ runner.temp }}/fin04r1-msvc-lock.json
+            ${{ runner.temp }}/lu-owner-llvm18-lock.json
+          if-no-files-found: ignore
+      - name: Installed human approval never synthesized
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host 'FIN04R1_INSTALLED_PHYSICAL_HUMAN=NOT_EXECUTED'
+          Write-Host 'FIN04R1_PRODUCTION_STEP_BREAKPOINT=DISABLED'
