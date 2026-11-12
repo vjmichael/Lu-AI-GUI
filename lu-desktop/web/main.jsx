@@ -20,7 +20,7 @@ import {MESSAGE_REACTIONS,DEFAULT_APPEARANCE,CHAT_APPEARANCE_PRESETS,safeAppeara
 import {revisionsBySequence,canEdit,provenanceLabel,draftReplyTarget,correctedMessageFollowUp} from './message_revisions.mjs';
 import {parseHumanReplanOutline,humanReplanDefaultOutline,REPLAN_REASONS} from './agent_replan.mjs';
 import {SettingsWindow,ModelLibraryWindow} from './native_windows.jsx';
-import {isHostCurrentTimeQuestion} from './native_intent.mjs';
+import {isHostCurrentTimeQuestion,isHostCpuChatLookup} from './native_intent.mjs';
 import {TaskBoardWindow} from './task_board.jsx';
 
 function MessageText({text, role='assistant'}) {
@@ -826,6 +826,7 @@ function App() {
   const [researchQuoteBusy,setResearchQuoteBusy]=useState(false);
   const [textFiles, setTextFiles] = useState([]);
   const [jobs, setJobs] = useState({}); // bounded, per-chat host generation state
+  const [perfLatestByChat,setPerfLatestByChat]=useState({}); // host diagnostics, not model proof
   const [readProposals, setReadProposals] = useState({}); // completed model proposals, never grants
   const [writeProposals, setWriteProposals] = useState({}); // inert completed model write previews
   const [writeRecovery, setWriteRecovery] = useState([]); // read-only durable evidence
@@ -966,11 +967,12 @@ function App() {
   const loadedModel = models.find(m => m.modelRef === runtime.modelRef);
   const viewedDraftImage=imageViewer && images.find(im=>im.imageRef===imageViewer.imageRef);
   const loaded = runtime.phase === 'Ready' || runtime.phase === 'Generating';
-  // The host, not this UI predicate, authorizes the OS-clock-only shortcut.
-  // A no-model Send may ask only an explicit current-time question, with no
-  // attachments or specialist mode; all other prompts require an active GGUF.
+  // Only two host-validated, read-only and model-free shortcuts are shown:
+  // native clock and exact literal search of this original ANSF chat.
+  // The Rust host independently rejects mismatched mode/session/scope.
   const modelFreeClockAllowed=!loaded && !runtime.sessionId &&
-    isHostCurrentTimeQuestion(prompt) && images.length===0 && textFiles.length===0 &&
+    (isHostCurrentTimeQuestion(prompt)||isHostCpuChatLookup(prompt)) &&
+    images.length===0 && textFiles.length===0 &&
     !planDraftNextSend && !browserResearchNextSend && !reviewedAppNextSend &&
     !workspaceToolsNextSend;
   const busy = working || runtime.phase === 'Generating' || Object.keys(jobs).length > 0;
@@ -4040,6 +4042,16 @@ function App() {
       }
       setJobs(prev => removeJob(prev,activeId));
       await refreshCatalog().catch(error => { if (currentChat.current === activeId) setError(String(error)); });
+      // Read only the original host-observed per-chat latency receipt.
+      // The WebView never sends performance records or model permissions.
+      if (completed && currentChat.current===activeId) {
+        const samples=await invoke('lu_perf01_recent',{
+          chatId:activeId,limit:1
+        }).catch(()=>[]);
+        if(samples.length && currentChat.current===activeId){
+          setPerfLatestByChat(prev=>({...prev,[activeId]:samples[0]}));
+        }
+      }
       if (usePlanDraft) await refreshToolActivity(activeId).catch(error=>{
         if (currentChat.current===activeId)setError(String(error));
       });
@@ -5946,13 +5958,24 @@ function App() {
             </span>)}
           </div>}
           <textarea ref={composerRef} aria-label="Message Lu" value={prompt} onChange={e => {draftText.current=e.target.value;setPrompt(e.target.value);}} style={{height:composerHeight}} maxLength={16384}
-            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask for the current time, or load a GGUF model…'}
+            placeholder={loaded ? 'Message Lu… Paste or drop images and text files' : 'Ask the time or Search this chat for: phrase · no model needed'}
             onPaste={handlePaste}
             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/>
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
             {/* Legacy specialist controls retained temporarily for compatibility, but no longer mounted. Native tools enter through the original human chat and per-turn OS approvals. */}
+            {perfLatestByChat[chatId] && <small className="hostPerfLatest"
+              aria-label="Latest host-observed performance receipt"
+              title="Measured by Lu host; missing token/GPU metrics are unverified, not zero.">
+              {perfLatestByChat[chatId].route==='CPU_DETERMINISTIC'?'CPU exact':'GGUF model'}
+              {' · '}{perfLatestByChat[chatId].overallLatencyMs} ms
+              {perfLatestByChat[chatId].queueWaitMs!=null
+                ?' · queue '+perfLatestByChat[chatId].queueWaitMs+' ms':''}
+              {perfLatestByChat[chatId].modelDispatchToFirstChunkMs!=null
+                ?' · first text '+perfLatestByChat[chatId].modelDispatchToFirstChunkMs+' ms':''}
+              {' · '}{perfLatestByChat[chatId].terminalState}
+            </small>}
             
             {chatBusy ? <button className="dangerButton" type="button" onClick={cancel}
                 disabled={!visibleJob.generationId || visibleJob.cancelling}>{visibleJob.cancelling ? 'Stopping…' : visibleJob.phase === 'queued' ? 'Cancel queued' : 'Cancel'}</button>
