@@ -247,3 +247,126 @@ pub fn inspect_debug_control_evidence(
   debugger_execution_authorized:false,replay_authorized:false,rows:all,
  })
 }
+
+#[cfg(test)]
+mod tests{
+ use super::*;
+ use crate::JobPlan;
+ use std::{fs, path::PathBuf};
+ fn fixture()->(PathBuf,Supervisor,String,String){
+  let home=std::env::temp_dir().join(format!("fin04-native-audit-{:032x}",rand::random::<u128>()));
+  fs::create_dir_all(&home).unwrap();
+  let supervisor=Supervisor::open(home.join("debug-fixture-receipts.jsonl")).unwrap();
+  let project=format!("ide-{}","a".repeat(32));
+  let second=format!("ide-{}","b".repeat(32));
+  (home,supervisor,project,second)
+ }
+ fn prepared(supervisor:&Supervisor,project:&str)->JobSummary{
+  supervisor.prepare(JobPlan{
+   project_id:project.to_owned(),recipe_id:"dap_lldb_fixed".into(),
+   source_head:"a".repeat(40),input_snapshot_sha256:"b".repeat(64),
+   manifest_sha256:"c".repeat(64),toolchain_sha256:"d".repeat(64),
+   debug_target_binding_sha256:None,runtime_limit_ms:180000,
+   memory_limit_bytes:512*1024*1024,process_limit:16,log_limit_bytes:65536,
+   effect_class:"debug_inspection_isolated".into(),
+  }).unwrap()
+ }
+ fn write_action(root:&Path,job:&JobSummary,phase:&str)->String{
+  let action=sha(format!("job:{}",job.job_id).as_bytes());
+  let preview=sha(b"review");
+  let owner=sha(b"native owner");
+  let mut events=Vec::<ActionEvent>::new();
+  let chain=if phase=="ResultVerified" {
+   vec![("Prepared","awaiting_fresh_native_operator".to_owned()),
+    ("Approved","ci_only_not_installed_consent".into()),
+    ("Consumed","one_use_slot_consumed_before_dispatch".into()),
+    ("ResultVerified",format!("ci_independent_os_step:{}",sha(b"claim")))]
+  }else{
+   vec![("Prepared","awaiting_fresh_native_operator".to_owned())]
+  };
+  let mut prior="0".repeat(64);
+  for (i,(phase,outcome)) in chain.into_iter().enumerate(){
+   let mut row=ActionEvent{
+    version:1,ordinal:(i+1) as u64,action_id_sha256:action.clone(),
+    preview_sha256:preview.clone(),operation_sha256:sha(b"step-over"),
+    job_id:job.job_id.clone(),plan_sha256:job.plan_sha256.clone(),
+    owner_event_sha256:owner.clone(),owner_sequence:4,phase:phase.into(),
+    outcome_code:outcome,observed_unix_ms:(i+1) as u64,
+    previous_hash:prior,entry_hash:String::new(),
+   };
+   row.entry_hash=sha(&serde_json::to_vec(&row).unwrap());
+   prior=row.entry_hash.clone();events.push(row);
+  }
+  let mut content=Vec::new();
+  for e in &events{
+   content.extend(serde_json::to_vec(e).unwrap());
+   content.push(b'\n');
+  }
+  fs::write(root.join(format!("lu-debug-action-{action}.ndjson")),content).unwrap();
+  action
+ }
+ #[test]
+ fn release_read_only_empty_inventory_never_grants_execution(){
+  let (root,supervisor,project,_)=fixture();
+  let inventory=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
+  assert_eq!(inventory.original_action_files_checked,0);
+  assert!(inventory.rows.is_empty());
+  assert!(!inventory.debugger_execution_authorized);
+  assert!(!inventory.replay_authorized);
+  assert!(!inventory.global_kernel_custody_accepted);
+  fs::remove_dir_all(root).unwrap();
+ }
+ #[test]
+ fn original_hash_chained_action_links_to_the_exact_debugger_job(){
+  let (root,supervisor,project,_)=fixture();
+  let job=prepared(&supervisor,&project);
+  let id=write_action(&root,&job,"Prepared");
+  let inventory=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
+  assert_eq!(inventory.original_debug_jobs_checked,1);
+  assert_eq!(inventory.original_action_files_checked,1);
+  assert_eq!(inventory.rows.len(),1);
+  assert_eq!(inventory.rows[0].action_id_sha256,id);
+  assert_eq!(inventory.rows[0].job_id,job.job_id);
+  assert_eq!(inventory.rows[0].phase,"Prepared");
+  assert!(inventory.rows[0].native_os_cleanup_required);
+  assert!(inventory.requires_os_cleanup);
+  assert!(!inventory.rows[0].debugger_execution_authorized);
+  fs::remove_dir_all(root).unwrap();
+ }
+ #[test]
+ fn historical_claimed_result_is_not_current_kernel_or_replay_proof(){
+  let (root,supervisor,project,_)=fixture();
+  let job=prepared(&supervisor,&project);
+  write_action(&root,&job,"ResultVerified");
+  let inventory=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
+  assert_eq!(inventory.rows[0].phase,"ResultVerified");
+  assert!(inventory.rows[0].independent_os_result_claimed);
+  assert!(!inventory.rows[0].result_reverified_from_current_kernel);
+  assert!(!inventory.installed_debugger_controls_accepted);
+  assert!(!inventory.debugger_execution_authorized);
+  fs::remove_dir_all(root).unwrap();
+ }
+ #[test]
+ fn corrupt_foreign_action_is_denied_before_project_redaction(){
+  let (root,supervisor,project,foreign)=fixture();
+  let foreign_job=prepared(&supervisor,&foreign);
+  let action=write_action(&root,&foreign_job,"Prepared");
+  let file=root.join(format!("lu-debug-action-{action}.ndjson"));
+  let mut bytes=fs::read(&file).unwrap();
+  let index=bytes.iter().position(|b|*b==b'P').unwrap();
+  bytes[index]=b'X';fs::write(&file,&bytes).unwrap();
+  assert!(inspect_debug_control_evidence(&root,&supervisor,&project).is_err());
+  fs::remove_dir_all(root).unwrap();
+ }
+ #[test]
+ fn foreign_valid_action_is_not_project_visible(){
+  let (root,supervisor,project,foreign)=fixture();
+  let foreign_job=prepared(&supervisor,&foreign);
+  write_action(&root,&foreign_job,"Prepared");
+  let inventory=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
+  assert_eq!(inventory.original_action_files_checked,1);
+  assert_eq!(inventory.original_action_files_visible,0);
+  assert!(inventory.rows.is_empty());
+  fs::remove_dir_all(root).unwrap();
+ }
+}
