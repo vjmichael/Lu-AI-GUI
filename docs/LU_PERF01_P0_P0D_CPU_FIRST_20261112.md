@@ -18,7 +18,7 @@
 
 ## P0D implementation: CPU-first actual ANSF retrieval
 
-- The original current-human Send accepts narrowly identified `Search this chat for: <literal>` or `Find in this conversation: <literal>` without a loaded GGUF model. This is in addition to the pre-existing no-model OS clock path.
+- The original current-human Send accepts narrowly identified `Search this chat for: <literal>` or `Find in this conversation: <literal>` without a loaded GGUF model. A second exact phrase (`Show local model status`, `What model is loaded?`, `Is a model loaded?`) returns the current native supervisor phase/model reference without inference. Both extend the pre-existing no-model OS clock path.
 - Classification occurs independently in Rust after the UI hint. Only text-only normal Send may use this path; no attachments, planning, reviewed specialist mode, ambiguous search syntax, embedded control tokens or large/unsafe phrase.
 - Model session identity is still checked against the current supervisor. The active chat is authenticated from the current ANSF profile. Source is read from its original immutable ANSF book and original canonical source IDs, never an arbitrary model-supplied path or a different chat.
 - The CPU scan is strictly bounded: up to 640 source entries, 2 MiB of content, 300 ms elapsed, eight matches, and 4096 characters from any one original. An oversized source, exceeded bound or missing cursor returns a specific PARTIAL status. Zero hits in an incomplete scan are NOT proof of absence.
