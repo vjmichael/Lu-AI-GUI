@@ -40,6 +40,7 @@ pub mod github_ci;
 pub mod github_live;
 pub mod github_pull_review;
 pub mod github_review_state;
+pub mod github_branch_rules;
 pub mod inbox;
 pub mod inventory;
 pub mod inventory_history;

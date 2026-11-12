@@ -417,6 +417,9 @@ function App() {
   const [githubPulls, setGithubPulls] = useState(null);
   const [githubReviewState,setGithubReviewState]=useState(null);
   const [githubReviewBusy,setGithubReviewBusy]=useState(false);
+  const [githubBranchRules,setGithubBranchRules]=useState(null);
+  const [githubRulesBusy,setGithubRulesBusy]=useState(false);
+  const githubRulesTicket=useRef(0);
   const githubReviewTicket=useRef(0);
   const [githubPullsBusy, setGithubPullsBusy] = useState(false);
   const githubPullsRequest = useRef(0);
@@ -700,6 +703,9 @@ function App() {
     setGithubComparison(null);
     githubPullsRequest.current += 1;
     ++githubReviewTicket.current;
+    ++githubRulesTicket.current;
+    setGithubBranchRules(null);
+    setGithubRulesBusy(false);
     setGithubReviewState(null);
     setGithubReviewBusy(false);
     setGithubPulls(null);
@@ -3339,6 +3345,8 @@ function App() {
     const ticket = ++githubPullsRequest.current;
     setGithubPullsBusy(true);
     ++githubReviewTicket.current;
+    ++githubRulesTicket.current;
+    setGithubBranchRules(null);
     setGithubReviewState(null);
     setGithubPulls(null);
     setProblem('');
@@ -3414,6 +3422,40 @@ function App() {
         setProblem('Review state unavailable: '+String(error));
     }finally{if(ticket===githubReviewTicket.current)
       setGithubReviewBusy(false);}
+  }
+  async function inspectGithubBranchRules(pr) {
+    const projectId=activeProject?.projectId;
+    if(!projectId || githubRulesBusy ||
+       githubPulls?.projectId!==projectId ||
+       !githubPulls?.pulls.some(row=>row.number===pr.number &&
+         row.headSha===pr.headSha &&
+         row.baseSha===pr.baseSha &&
+         row.localVsPrHead==='same_commit'))return;
+    const ticket=++githubRulesTicket.current;
+    setGithubRulesBusy(true);setGithubBranchRules(null);
+    try{
+      const result=await invoke('ide_read_github_branch_rules',{
+        projectId,number:pr.number,
+      });
+      if(ticket!==githubRulesTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(result?.schemaVersion!==1 || result.projectId!==projectId ||
+         result.number!==pr.number || result.prHeadSha!==pr.headSha ||
+         result.baseSha!==pr.baseSha ||
+         result.protectionComplete!==false ||
+         result.rulesetsCovered!==false ||
+         result.readOnly!==true || result.credentialsUsed!==false ||
+         result.remoteModified!==false || result.mergeAuthorized!==false ||
+         result.installedAppAccepted!==false ||
+         !Array.isArray(result.requiredStatusContexts))
+        throw Error('FIN03_UNTRUSTED_RULE_STATE');
+      setGithubBranchRules(result);
+    }catch(error){
+      if(ticket===githubRulesTicket.current &&
+        activeProjectIdRef.current===projectId)
+        setProblem('GitHub branch rule observation unavailable: '+String(error));
+    }finally{if(ticket===githubRulesTicket.current)
+      setGithubRulesBusy(false);}
   }
   async function inspectExactHeadCi() {
     if (!activeProject?.projectId || exactCiBusy || gitBusy) return;
@@ -9311,6 +9353,22 @@ function App() {
                          changes requested: {githubReviewState.changesRequested};
                          stale reviewers: {githubReviewState.staleReviewers}.
                          Branch protection and merge authorization remain unverified.
+                       </p>}
+                      <button type="button" className="ghostBtn"
+                        disabled={githubRulesBusy || pr.localVsPrHead!=='same_commit'}
+                        onClick={()=>void inspectGithubBranchRules(pr)}>
+                        {githubRulesBusy?'Observing public rules…':
+                          'Inspect public base-branch protection'}
+                      </button>
+                      {githubBranchRules?.projectId===activeProject?.projectId &&
+                       githubBranchRules.number===pr.number &&
+                       githubBranchRules.prHeadSha===pr.headSha &&
+                       <p role="status">Base branch rules:
+                         {' '}{githubBranchRules.state.replaceAll('_',' ')}.
+                         Public required approvals:
+                         {' '}{githubBranchRules.requiredApprovals ?? 'unknown'}.
+                         Full rulesets, bypass actors and merge eligibility:
+                         {' '}not independently verified.
                        </p>}
                       <p><a href={pr.url} target="_blank"
                         rel="noreferrer">Open this pull request on GitHub</a></p>

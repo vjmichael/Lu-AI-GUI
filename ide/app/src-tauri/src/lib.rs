@@ -1521,6 +1521,17 @@ async fn ide_read_github_review_state(
         registry.inspect_github_review_state(&project_id,number))
         .await.map_err(|_| "G06E02_REVIEW_HOST_UNAVAILABLE".to_owned())
 }
+/// FIN-03: public branch rule metadata is not complete policy or authorization.
+#[tauri::command]
+async fn ide_read_github_branch_rules(
+    state: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id: String,number:u64,
+)->Result<lu_ide_workspace::github_branch_rules::BranchRulesEvidence,String>{
+    let native=Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move||
+        native.inspect_github_branch_rules(&project_id,number))
+        .await.map_err(|_|"FIN03_RULE_INSPECTION_UNAVAILABLE".to_owned())
+}
 /// Explicit read-only public GitHub Actions receipts for the exact local HEAD.
 #[tauri::command]
 async fn ide_read_exact_head_ci(
@@ -3521,6 +3532,7 @@ pub fn run() {
             ide_compare_live_github,
             ide_read_github_pull_requests,
             ide_read_github_review_state,
+            ide_read_github_branch_rules,
             ide_read_exact_head_ci,
             ide_capture_project_inventory,
             ide_compare_project_inventory,
