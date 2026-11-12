@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "315c47ba33cf05d089dbadd28bdd6f9b08c3e48b",
-  "trackedFileCount": 954,
+  "sourceCommitBeforeLock": "a03b1f563d78a35e6b6e7ab1c0de0ea744ed078e",
+  "trackedFileCount": 958,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -365,7 +365,7 @@
     },
     {
       "path": "benchmarks/e1/p0_sec02_linux_guardian_negative.py",
-      "blob": "302848ca811bbfd63ab8e5b5f9a9d97f26bbec25"
+      "blob": "df9889e90511857dcb6fbaa401c28d8115609488"
     },
     {
       "path": "benchmarks/e1/p0_sec05_native_adversarial_manual.sh",
@@ -840,8 +840,12 @@
       "blob": "a37ddd23fba1c6541fd4ddf1eee4127ce910b562"
     },
     {
+      "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
+      "blob": "98ff6979dd29d605059d6a656b8a8d1fc1938f62"
+    },
+    {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
-      "blob": "1da1b9057c491cf11bea63446f8b323c15bcac22"
+      "blob": "f9d95b753deda90a965b48ce8e3dc4fe3a559a09"
     },
     {
       "path": "docs/LU_P0_SOURCE_RECONCILIATION_REPAIRS_20261111.md",
@@ -1441,7 +1445,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_auth_custody.rs",
-      "blob": "101abd75c980a43e7e2b33db83f09947680d39ee"
+      "blob": "df848c38578cc306cf638ea21b04fb8c3bdf2969"
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_auth_desktop.rs",
@@ -1876,6 +1880,10 @@
       "blob": "75c36c20dea6679eeaf7b912ddaf75a76bd3b891"
     },
     {
+      "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
+      "blob": "32716252ae7df6eb176c90708ebc6c163b54b3f4"
+    },
+    {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
       "blob": "d62b8ada2fabf1930054b3752d2d51ec901f16ca"
     },
@@ -1953,7 +1961,7 @@
     },
     {
       "path": "lu-desktop/tests/reviewed-app-desktop.test.mjs",
-      "blob": "77aaa9a49f6f6ded61a90003e281eb285733cbec"
+      "blob": "5231e67cfe9a5dce6bc0486941c3cd505d6385cd"
     },
     {
       "path": "lu-desktop/tests/reviewed-task-continuity.test.mjs",
@@ -2178,6 +2186,14 @@
     {
       "path": "scripts/p0-qwen38-radeon-physical.ps1",
       "blob": "6d33e3546b0611efa64555ff4039ad4a2268143b"
+    },
+    {
+      "path": "scripts/p0-sec06-consolidated.mjs",
+      "blob": "15bc0c618dd5d69f9c1859abcf3681e861ba578a"
+    },
+    {
+      "path": "scripts/p0-sec06-windows-owner-observation.ps1",
+      "blob": "b7c91ed21870dbd8830351866febb191f72928fb"
     },
     {
       "path": "scripts/p0-windows-installed-gui-smoke.ps1",
@@ -3797,7 +3813,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "66f8d0eff1014a90ef5bf0e1b2cec90b750aa0c2"
+      "blob": "2cc3b403de841d7b6663278c47079c7630da923f"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
