@@ -768,6 +768,23 @@ impl NativeDebugRuntime {
             target.as_deref(),
             operation,
         );
+        // A refused debugger consent before OS admission may append only
+        // the original supervisor's strictly Prepared/Authorized terminal
+        // cancellation. Never reclassify a launched or uncertain Job as idle.
+        if result.is_err() {
+            let current_id=self.active.lock()
+                .map_err(|_|"DEBUG_HOST_UNAVAILABLE")?
+                .as_ref().and_then(|a|a.job_id.clone());
+            if let Some(id)=current_id {
+                let state=self.supervisor.inspect().map_err(|e|e.code().to_owned())?
+                    .into_iter().find(|j|j.job_id==id)
+                    .ok_or("FIN01_DEBUG_ORIGINAL_JOB_MISSING")?;
+                if matches!(state.phase,JobPhase::Prepared|JobPhase::Authorized){
+                    self.supervisor.cancel_before_start(&id)
+                        .map_err(|e|e.code().to_owned())?;
+                }
+            }
+        }
         *self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")? = None;
         if let Ok(ref witness) = result {
             *self.last.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")? = Some(witness.clone());
