@@ -43,3 +43,22 @@ test('OS cleanup precedes removal of exact task owner in poll',()=>{
   assert.ok(loop>=0 && stop>loop && remove>stop);
   assert.match(supervisor,/Never remove a worker from the owner map/);
 });
+
+test('a failed OS stop cannot become verified on a later retry',()=>{
+  assert.match(native,/verified_signal:bool/);
+  assert.match(native,/verified_empty:bool/);
+  assert.match(native,/if self\.verified_signal\{Ok\(\(\)\)\}/);
+  assert.match(native,/if self\.verified_empty\{Ok\(\(\)\)\}/);
+  assert.match(native,/failed_or_incomplete_guardian_stop_cannot_turn_into_success_on_retry/);
+});
+const tasks=load('../../src-tauri/lu-core/src/tasks.rs');
+test('durable uncertainty blocks terminal statuses and persists across restart',()=>{
+  assert.match(tasks,/CREATE TABLE IF NOT EXISTS lu_task_custody_uncertainty/);
+  assert.match(tasks,/pub fn record_process_uncertain\(/);
+  assert.match(tasks,/pub fn process_uncertainty\(/);
+  assert.match(tasks,/Immutable OS custody uncertainty/);
+  assert.match(tasks,/uncertainty_is_immutable_durable_and_blocks_false_terminal_success/);
+  assert.match(tasks,/NOT EXISTS\(SELECT 1 FROM lu_task_custody_uncertainty/);
+  assert.match(supervisor,/record_process_uncertain\(/);
+  assert.match(supervisor,/LINUX_GUARDIAN_LOST/);
+});
