@@ -82,6 +82,7 @@ fn run() -> Result<(), String> {
         startup_timeout: Duration::from_secs(120),
         request_timeout: Duration::from_secs(180),
         api_key: env::var("LU_SERVER_API_KEY").map_err(|e| e.to_string())?,
+        tuning:None,
         load_observer: None,
     })?;
     let mut host = InferenceHost::new(engine);
