@@ -376,10 +376,11 @@ impl NativeDebugRuntime {
             .filter(|v| v.project_id == project_id)
             .cloned();
         let durable = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
-        let global_recovery_required =
-            durable.iter().any(|job| job.requires_reconciliation);
-        let active_in_another_project = self
-            .active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
+        let global_custody =
+            lu_ide_execution_supervisor::observe_global_custody(&durable,project_id);
+        let global_recovery_required=global_custody.recovery_required;
+        let active_in_another_project = global_custody.active_in_another_project ||
+            self.active.lock().map_err(|_| "DEBUG_HOST_UNAVAILABLE")?
             .as_ref().is_some_and(|value| value.project_id != project_id);
         #[cfg(all(windows, debug_assertions, feature = "dev046d-native-dialog"))]
         let dangling_action_jobs = self
