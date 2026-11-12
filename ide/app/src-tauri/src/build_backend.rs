@@ -1050,6 +1050,11 @@ impl NativeBuildRuntime {
         // global lease cannot leave a phantom active build.
         let mut global_fence=crate::global_native_custody::GlobalAdmissionFence
             ::acquire(&self.global_custody_profile,"build")?;
+        let own_before=self.supervisor.inspect()
+            .map_err(|e|e.code().to_owned())?;
+        if crate::global_native_custody::durable_busy(&own_before) {
+            return Err("FIN01_BUILD_JOURNAL_STILL_OWNS_CUSTODY".into());
+        }
         let sibling=crate::global_native_custody::sibling_rows(
             &self.global_custody_profile,"build")?;
         if crate::global_native_custody::durable_busy(&sibling) {
