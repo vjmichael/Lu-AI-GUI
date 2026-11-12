@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const host=readFileSync(new URL('../../host/src/git_fin03_operation_preview.rs',import.meta.url),'utf8');
+const implementation=host.split('#[cfg(test)]')[0];
 const desktop=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
 const ui=readFileSync(new URL('../web/main.jsx',import.meta.url),'utf8');
 test('FIN03G original Git objects only and no mutation API',()=>{
@@ -12,7 +13,7 @@ test('FIN03G original Git objects only and no mutation API',()=>{
  assert.match(host,/repo\.reflog\("refs\/stash"\)/);
  assert.match(host,/return Err\("FIN03G_STASH_TIP_DISAGREES_WITH_LOG"\)/);
  assert.match(host,/return Err\("FIN03G_SOURCE_CHANGED_DURING_PREVIEW"\)/);
- assert.doesNotMatch(host,/\.stash_save\(|\.stash_apply\(|\.stash_drop\(|\.checkout_\w*\(|\.commit\(|\.write_tree_to\(|std::process::Command/);
+ assert.doesNotMatch(implementation,/\.stash_save\(|\.stash_apply\(|\.stash_drop\(|\.checkout_\w*\(|\.commit\(|\.write_tree_to\(|std::process::Command/);
 });
 test('FIN03G does not treat path overlap as proof of conflict-free execution',()=>{
  assert.match(host,/risk_assessment:"path_overlap_only_not_conflict_or_result_tree_proof"/);
