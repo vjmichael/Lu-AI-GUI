@@ -928,6 +928,16 @@ async fn ide_git_review_branch_operation(
     .map_err(|_| "G06C_REVIEW_HOST_UNAVAILABLE".to_owned())?
 }
 
+#[tauri::command]
+async fn ide_read_local_stash_inventory(
+ state:State<'_,Arc<IdeWorkspaceRegistry>>,project_id:String,
+)->Result<lu_ide_workspace::git_stash_inventory::StashInventory,String>{
+ let registry=Arc::clone(state.inner());
+ tauri::async_runtime::spawn_blocking(move||
+  registry.read_local_stash_metadata(&project_id))
+  .await.map_err(|_|"FIN03_STASH_READ_THREAD_UNAVAILABLE".to_owned())?
+  .map_err(str::to_owned)
+}
 /// G06C-02: read-only merge plan. No ref writes or user-approved grant.
 #[tauri::command]
 async fn ide_git_preview_local_merge(
@@ -3618,6 +3628,7 @@ pub fn run() {
             ide_read_git_file_history,
             ide_read_git_refs_health,
             ide_git_review_branch_operation,
+            ide_read_local_stash_inventory,
             ide_git_preview_local_merge,
             ide_git_verify_divergent_merge,
             ide_git_inspect_native_conflicts,

@@ -367,6 +367,9 @@ function App() {
   const [gitStatus, setGitStatus] = useState(null);
   const [gitInventory, setGitInventory] = useState(null);
   const [gitRefsHealth, setGitRefsHealth] = useState(null);
+  const [stashInventory,setStashInventory]=useState(null);
+  const [stashBusy,setStashBusy]=useState(false);
+  const stashTicket=useRef(0);
   const [branchReviewKind, setBranchReviewKind] = useState('merge');
   const [branchReviewTarget, setBranchReviewTarget] = useState('');
   const [branchReview, setBranchReview] = useState(null);
@@ -3286,7 +3289,35 @@ function App() {
     }
   }
 
+  async function inspectNativeStash(){
+    const projectId=activeProject?.projectId;
+    if(!projectId || stashBusy)return;
+    const ticket=++stashTicket.current;
+    setStashInventory(null);setStashBusy(true);
+    try{
+      const row=await invoke('ide_read_local_stash_inventory',{projectId});
+      if(ticket!==stashTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(row?.projectId!==projectId ||
+         !/^[a-f0-9]{40}$/.test(row.headSha||'') ||
+         row.sourceRechecked!==true || row.contentsRead!==false ||
+         row.gitProcessStarted!==false || row.refsModified!==false ||
+         row.executionAuthorized!==false ||
+         !Array.isArray(row.entries) || row.entries.length>32 ||
+         !row.entries.every((item,i)=>item.index===i &&
+           /^[a-f0-9]{40}$/.test(item.commitSha||'')))
+           throw Error('FIN03_UNTRUSTED_STASH_INVENTORY');
+      setStashInventory(row);
+    }catch(error){
+      if(ticket===stashTicket.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Stash metadata unavailable: '+String(error));
+    }finally{if(ticket===stashTicket.current)setStashBusy(false);}
+  }
   async function refreshGitStatus() {
+    ++stashTicket.current;
+    setStashInventory(null);
+    setStashBusy(false);
     replayResultRequest.current += 1;
     setReplayResult(null);
     setReplayResultBusy(false);
@@ -8386,6 +8417,24 @@ function App() {
               Tracking information is locally stored and may be stale.
             </p>
             {!activeProject && <p>Open a project to inspect its source control.</p>}
+            {activeProject && <section className="continuityDocument"
+              aria-label="FIN-03 read-only stash inventory">
+              <h3>Local stash references</h3>
+              <p>Commit identities only. No stash contents, pop, apply,
+                drop or Git index changes are authorized.</p>
+              <button className="ghostBtn" type="button"
+                disabled={stashBusy} onClick={()=>void inspectNativeStash()}>
+                {stashBusy?'Reading stash references…':'Inspect local stash'}
+              </button>
+              {stashInventory?.projectId===activeProject.projectId &&
+                <div role="status">
+                  <p>{stashInventory.entries.length} entries observed
+                    {stashInventory.partial?' (partial)':''}.</p>
+                  {stashInventory.entries.map(item=>
+                    <p key={item.index}>#{item.index}:
+                      <code>{item.commitSha}</code></p>)}
+                </div>}
+            </section>}
             {activeProject && <div className="continuityDocument" aria-label="Read-only reviewed hunk selection">
               <h3>Advanced staging · select exact diff hunks (review only)</h3>
               <p>Inspect local changes for one tracked text file. Every hunk is bound to
