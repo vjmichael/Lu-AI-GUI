@@ -166,6 +166,7 @@ fn validate_plan(value: &JobPlan) -> bool {
             value.recipe_id.as_str(),
             "rust_check" | "rust_build" | "rust_tests" | "lu_ide_host_tests"
         ) || rust_exact_case_name(&value.recipe_id).is_some() || (cfg!(feature = "package-uv-worker") && value.recipe_id == "uv_sync_offline")
+            || (cfg!(all(feature = "package-vcpkg-worker", target_os = "linux")) && value.recipe_id == "vcpkg_install_offline")
             || (cfg!(feature = "multilang-worker")
                 && matches!(
                     value.recipe_id.as_str(),
@@ -224,6 +225,13 @@ fn validate_plan(value: &JobPlan) -> bool {
                 // Still bounded by MAX_PIDS=16 with exact OS cgroup/Job proof.
                 && value.process_limit <= 16
                 && value.log_limit_bytes <= 64 * 1024
+        } else if value.recipe_id == "vcpkg_install_offline" {
+            cfg!(all(feature = "package-vcpkg-worker", target_os = "linux"))
+                && value.effect_class.strip_prefix("package_vcpkg_install_offline:")
+                    .is_some_and(|hash| hex_sha(hash,64) && hash.bytes().all(|b|!b.is_ascii_uppercase()))
+                && value.runtime_limit_ms <= 10 * 60_000
+                && value.process_limit <= 12
+                && value.log_limit_bytes <= 128 * 1024
         } else if value.recipe_id == "uv_sync_offline" {
             cfg!(feature = "package-uv-worker")
                 && value
