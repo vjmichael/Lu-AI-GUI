@@ -40,3 +40,11 @@ The real hardware tests are intentionally `#[ignore]`; they still require indepe
 **Latest run check:** Both the parent P7L branch at task start and the new P7L-1 branch after the code changes returned **0 GitHub Actions workflow runs**. Thus there are no original compiler logs or native result artifacts to inspect yet. The workflow file is intentionally manual-only.
 
 **Decision:** P7L-1 source checks/benchmark repair are complete; **native compilation and installed process acceptance remain blocked/not executed**. Do not silently convert this task to complete, infer native results, dispatch CI under an old SHA, or release an alternative runtime.
+
+## Continued P7L-1 source repair — CPU thread parity
+
+An additional benchmark fairness defect was identified: the candidate honors `LU_P7L_THREADS` (1–64, default 4), while the baseline previously always used four inference threads. The evaluation-only `llama()` constructor now reads the same bounded owner setting. A P7L-1 source regression asserts both engine settings remain coupled. This changes no installed Lu configuration and does not claim effective runtime CPU-thread parity without native logs.
+
+Exact fetched-source assertions verified the candidate setting, baseline setting, zero GPU layers, and both regression assertions (six focused checks). These checks are source-only; neither original `node --test` nor Cargo native execution was performed in this continuation. The pinned llama.cpp batch-thread setting remains four, and scheduling/thread effectiveness across engines is still unproven.
+
+**Still OPEN:** no demonstrated Windows/Linux native test results, OS child containment evidence, or real Kobold GGUF/MMProj evaluation. The manual-only workflow may not be dispatchable while absent from the default branch. Do not infer a pass or promote the candidate.
