@@ -533,6 +533,21 @@ mod tests{
   fs::remove_dir_all(root).unwrap();
  }
  #[test]
+ fn terminal_original_no_action_does_not_fabricate_recovery_blocker(){
+  let (root,supervisor,project,_)=fixture();
+  let job=prepared(&supervisor,&project);
+  supervisor.cancel_before_start(&job.job_id).unwrap();
+  let inventory=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
+  assert!(!inventory.global_os_cleanup_required);
+  assert!(!inventory.requires_os_cleanup);
+  assert_eq!(inventory.original_debug_jobs_checked,1);
+  assert_eq!(inventory.original_action_files_checked,0);
+  assert!(inventory.journal_chain_verified);
+  assert!(!inventory.native_owner_event_live_verified);
+  assert!(!inventory.debugger_execution_authorized);
+  fs::remove_dir_all(root).unwrap();
+ }
+ #[test]
  fn in_memory_supervisor_rejects_original_disk_journal_advanced_by_other_host(){
   let (root,supervisor,project,_)=fixture();
   let second=Supervisor::open(root.join("debug-fixture-receipts.jsonl")).unwrap();
@@ -595,6 +610,7 @@ mod tests{
   let inventory=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
   assert_eq!(inventory.original_action_files_checked,0);
   assert_eq!(inventory.original_action_files_visible,0);
+  assert!(inventory.global_os_cleanup_required);
   assert!(inventory.rows.is_empty());
   fs::remove_dir_all(root).unwrap();
  }
