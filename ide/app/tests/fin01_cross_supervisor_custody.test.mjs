@@ -127,3 +127,15 @@ test('FIN01D host requires physical dialog and never promotes replay authority',
  assert.match(main,/Request OS-verified stale-marker clearance/);
  assert.match(main,/FIN01_NATIVE_KERNEL_RECEIPT_UNTRUSTED/);
 });
+
+test('FIN01D stale sidecar and final kernel recheck cannot become UI authority',()=>{
+ assert.match(shared,/fn recover_abandoned_recovery_guard/);
+ assert.match(shared,/FIN01_RECOVERY_OWNER_STILL_ALIVE/);
+ assert.match(shared,/FIN01_ABANDONED_RECOVERY_OWNER_KERNEL_UNVERIFIED/);
+ assert.match(shared,/FIN01_RECOVERY_LOCK_WITHOUT_GLOBAL_MARKER/);
+ assert.match(shared,/FIN01_FINAL_WINDOWS_KERNEL_CUSTODY_UNVERIFIED/);
+ assert.match(shared,/FIN01_FINAL_LINUX_KERNEL_CUSTODY_UNVERIFIED/);
+ assert.match(shared,/FIN01_FINAL_JOURNAL_CHANGED/);
+ assert.match(shared,/FIN01_STALE_MARKER_DIRECTORY_SYNC_FAILED/);
+ assert.doesNotMatch(shared,/fn clear_stale_marker_with_kernel_proof[^]*?execution_authorized:true/);
+});
