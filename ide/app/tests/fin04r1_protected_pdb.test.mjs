@@ -23,6 +23,8 @@ const authority=read('ide/app/web/project_debug_authority.js');
 const nativeScenario=read('ide/supervisor/examples/wo6_native_dap_acceptance.rs');
 const physical=read('ide/app/fixtures/Test-FIN04R1-PhysicalProtectedPdbReview.ps1');
 const nativeScript=read('ide/llvm18_owner/Test-FIN04R1-ProtectedPdbWindows.ps1');
+const eventOwner=read('ide/supervisor/src/windows_event_owner.rs');
+const supervisorSource=read('ide/supervisor/src/lib.rs');
 
 test('old host Command symbolizer is strictly dev-only',()=>{
  assert.match(source,/#\[cfg\(all\(debug_assertions, feature = "dev045d4c-ci-oracle"\)\)\]\s*fn run_measured_reader/);
@@ -153,3 +155,34 @@ test('physical Windows acceptance cannot infer installed approval from source or
  assert.equal(physical.split('$restarted=$false').length-1,1);
  assert.equal(physical.split('EVIDENCE: $evidence').length-1,1);
 });
+
+test('Task 3 release OS continuation is the original live stop and acknowledged only once',()=>{
+ assert.match(eventOwner,/acknowledged_continue: Option<u64>/);
+ assert.match(eventOwner,/event\.kind != RECEIVED \|\| event\.seq != sequence/);
+ assert.match(eventOwner,/self\.acknowledged_continue = Some\(sequence\)/);
+ assert.match(eventOwner,/continued_attestation_requires_one_live_stop_and_is_once_only/);
+ assert.match(eventOwner,/failed_os_continuation_does_not_create_a_second_authority/);
+ assert.match(gate,/wait_owner_continued_for_ci\(seq\)\?/);
+ assert.match(gate,/self\.close\(\)/);
+ assert.match(worker,/close_with_protected_release_owner_continue/);
+});
+test('Task 4 restarted owner receipt is bound to original JobPlan and Running hash',()=>{
+ assert.match(eventOwner,/pub\(crate\) fn parse_persisted_owner_receipt\(/);
+ assert.match(eventOwner,/reopened_receipt_parser_denies_foreign_or_malformed_original_owner/);
+ assert.match(supervisorSource,/parse_persisted_owner_receipt\(/);
+ assert.match(supervisorSource,/entry\.entry_hash==original_running/);
+ assert.match(supervisorSource,/entry\.body\.phase==JobPhase::Running/);
+ assert.match(supervisorSource,/j\.plan_sha256==original_plan/);
+});
+test('Task 4 interrupted action cannot hide behind a terminal label without original OS tree receipt',()=>{
+ const audit=supervisorSource.slice(
+   supervisorSource.indexOf('pub fn native_debug_action_cleanup_jobs_after_restart('),
+   supervisorSource.indexOf('/// Path must be supplied by trusted application profile management.'));
+ assert.match(audit,/let terminal=self\.receipt_history\(&action\.job_id\)\?/);
+ assert.match(audit,/os_tree_termination_verified/);
+ assert.match(audit,/os_orphan_cleanup_verified/);
+ assert.match(audit,/reaped_process_tree_bounded_outputs/);
+ assert.match(audit,/native\.requires_reconciliation \|\| !trusted/);
+ assert.doesNotMatch(audit,/execution_authorized:\s*true/);
+});
+
