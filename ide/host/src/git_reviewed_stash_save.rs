@@ -72,16 +72,31 @@ impl IdeWorkspaceRegistry {
   if original.len()>8*1024*1024{return Err("FIN03_STASH_SOURCE_TOO_LARGE");}
   let backup_name=format!("lu-ide-fin03-stash-original-{}.bin",fresh.review_sha256);
   let backup=repo.path().join(&backup_name);
-  let mut file=OpenOptions::new().create_new(true).write(true).open(&backup)
+  let mut backup_opts=OpenOptions::new();
+  backup_opts.create_new(true).write(true);
+  #[cfg(unix)] {
+   use std::os::unix::fs::OpenOptionsExt;
+   backup_opts.mode(0o600);
+  }
+  let mut file=backup_opts.open(&backup)
    .map_err(|_|"FIN03_STASH_BACKUP_NOT_CREATED")?;
   file.write_all(&original).and_then(|_|file.sync_all())
    .map_err(|_|"FIN03_STASH_BACKUP_SYNC_FAILED")?;
   let marker=repo.path().join("lu-ide-fin03-stash-active");
-  let mut journal=OpenOptions::new().create_new(true).write(true).open(&marker)
+  let mut journal_opts=OpenOptions::new();
+  journal_opts.create_new(true).write(true);
+  #[cfg(unix)] {
+   use std::os::unix::fs::OpenOptionsExt;
+   journal_opts.mode(0o600);
+  }
+  let mut journal=journal_opts.open(&marker)
    .map_err(|_|"FIN03_STASH_INTERRUPTED_OPERATION")?;
   journal.write_all(fresh.review_sha256.as_bytes())
    .and_then(|_|journal.sync_all())
    .map_err(|_|"FIN03_STASH_JOURNAL_SYNC_FAILED")?;
+  #[cfg(unix)]
+  std::fs::File::open(repo.path()).and_then(|dir|dir.sync_all())
+   .map_err(|_|"FIN03_STASH_GIT_DIRECTORY_SYNC_FAILED")?;
   if cancel.compare_exchange(0,1,Ordering::SeqCst,Ordering::SeqCst).is_err(){
    return Err("FIN03_STASH_CANCELLED_RECONCILIATION_REQUIRED");
   }
@@ -126,6 +141,9 @@ impl IdeWorkspaceRegistry {
     return Err("FIN03_STASH_ORIGINAL_BACKUP_CHANGED");
   }
   fs::remove_file(marker).map_err(|_|"FIN03_STASH_JOURNAL_CLEAR_FAILED")?;
+  #[cfg(unix)]
+  std::fs::File::open(repo.path()).and_then(|dir|dir.sync_all())
+   .map_err(|_|"FIN03_STASH_JOURNAL_RELEASE_SYNC_FAILED")?;
   Ok(ReviewedStashReceipt{
    project_id:expected.project_id.clone(),relative_path:fresh.relative_path,
    stash_oid:oid.to_string(),review_sha256:fresh.review_sha256,
@@ -136,10 +154,25 @@ impl IdeWorkspaceRegistry {
  pub fn one_file_stash_recovery_required(&self,id:&str)->Result<bool,&'static str>{
   let repo=exact_repo(self,id)?;
   let marker=repo.path().join("lu-ide-fin03-stash-active");
-  match fs::symlink_metadata(marker){
-   Ok(meta)=>{if !meta.is_file()||meta.file_type().is_symlink()||meta.len()!=64{
-     Err("FIN03_STASH_JOURNAL_CORRUPT")
-    }else{Ok(true)}},
+  match fs::symlink_metadata(&marker){
+   Ok(meta)=>{
+    if !meta.is_file()||meta.file_type().is_symlink()||meta.len()!=64{
+     return Err("FIN03_STASH_JOURNAL_CORRUPT");
+    }
+    let bytes=fs::read(&marker).map_err(|_|"FIN03_STASH_JOURNAL_UNREADABLE")?;
+    if bytes.len()!=64 || !bytes.iter().all(|b|b.is_ascii_hexdigit()&&!b.is_ascii_uppercase()){
+     return Err("FIN03_STASH_JOURNAL_INVALID");
+    }
+    let digest=std::str::from_utf8(&bytes).map_err(|_|"FIN03_STASH_JOURNAL_INVALID")?;
+    let name=format!("lu-ide-fin03-stash-original-{digest}.bin");
+    let backup=fs::symlink_metadata(repo.path().join(name))
+     .map_err(|_|"FIN03_STASH_ORIGINAL_BACKUP_MISSING")?;
+    if !backup.is_file() || backup.file_type().is_symlink() ||
+       backup.len()>8*1024*1024 {
+     return Err("FIN03_STASH_ORIGINAL_BACKUP_UNTRUSTED");
+    }
+    Ok(true)
+   },
    Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Ok(false),
    Err(_)=>Err("FIN03_STASH_RECOVERY_UNAVAILABLE"),
   }
