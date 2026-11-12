@@ -685,6 +685,44 @@ pub mod unix_owned {
             Ok(Some(Self{child,stdin:Some(stdin),subtree:group,receipt,stopped:false}))
         }
         pub fn subtree(&self)->&std::path::Path{&self.subtree}
+        /// A live custodian is required during execution, not merely at
+        /// shutdown. Losing it invalidates the cgroup lifetime assurance
+        /// even if the worker itself remains alive.
+        pub fn require_live_guardian(&mut self)->io::Result<()>{
+            if self.child.try_wait()?.is_some(){
+                return Err(io::Error::other(
+                    "P0_SEC_CGROUP_GUARDIAN_LOST_BEFORE_SHUTDOWN"))
+            }
+            Ok(())
+        }
+        /// Independently read /proc after spawn: the worker must actually
+        /// inhabit the exact kernel subtree. The custodian itself must not.
+        /// A transient observation does not promise against later migration
+        /// to a writable ancestor cgroup; that gate remains separate.
+        pub fn verify_admitted_worker(&mut self,pid:u32)->io::Result<()>{
+            self.require_live_guardian()?;
+            let rel=self.subtree.strip_prefix("/sys/fs/cgroup")
+                .map_err(|_|io::Error::other("Untrusted cgroup subtree"))?;
+            let rel=rel.to_str().ok_or_else(||io::Error::other(
+                "Non UTF-8 kernel cgroup path"))?;
+            let expected=format!("0::/{rel}");
+            let group_of=|pid:u32|->io::Result<String>{
+                let actual=std::fs::read_to_string(format!("/proc/{pid}/cgroup"))?;
+                let lines=actual.lines().collect::<Vec<_>>();
+                if lines.len()!=1||!lines[0].starts_with("0::/"){
+                    return Err(io::Error::other("Invalid kernel cgroup member"))
+                }
+                Ok(lines[0].to_owned())
+            };
+            if group_of(pid)?!=expected{
+                return Err(io::Error::other("Worker was not admitted to owned kernel cgroup"))
+            }
+            let guardian=group_of(self.child.id())?;
+            if guardian==expected||guardian.starts_with(&(expected+"/")){
+                return Err(io::Error::other("Custodian incorrectly entered killable subtree"))
+            }
+            self.require_live_guardian()
+        }
         /// Close the exact lifetime pipe. The separate custodian performs
         /// cgroup.kill, checks recursive cgroup.events populated 0 and writes
         /// a durable receipt. Lu waits for its completion; a missing ack is
