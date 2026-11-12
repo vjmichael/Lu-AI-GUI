@@ -222,3 +222,16 @@ fn tools09_long_relative_result_path_is_not_emitted_or_silently_omitted(){
     assert!(result.limitations.contains(&"RESULT_PATH_LIMIT".into()));
     drop(root);fs::remove_dir_all(path).unwrap();
 }
+
+
+#[test]
+fn tools09_late_line_match_contains_the_provenance_phrase(){
+    let (path,root)=sandbox();
+    let input=format!("{}unique-needle-near-end", "x".repeat(8_000));
+    fs::write(path.join("long-line.rs"),input.as_bytes()).unwrap();
+    let answer=decode(search(&root,request("unique-needle-near-end",false)).unwrap());
+    assert_eq!(answer.hits.len(),1);
+    assert!(answer.hits[0].excerpt.contains("unique-needle-near-end"));
+    assert_eq!(answer.hits[0].sha256_hex,format!("{:x}",Sha256::digest(input.as_bytes())));
+    drop(root);fs::remove_dir_all(path).unwrap();
+}
