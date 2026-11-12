@@ -776,6 +776,28 @@ pub fn clear_stale_marker_with_kernel_proof(
  file.write_all(&serialized).and_then(|_|file.write_all(b"\n"))
   .and_then(|_|file.sync_all())
   .map_err(|_|"FIN01_RECOVERY_AUDIT_SYNC_FAILED")?;
+ // Requery the real kernel immediately before unlink, after durable evidence
+ // was fsynced. A helper returning only a copied journal status would not
+ // satisfy this gate.
+ #[cfg(windows)]
+ let fresh=lu_ide_execution_supervisor::windows_worker
+  ::verify_global_worker_quiescence(owner_pid,&jobs)
+  .map_err(|_|"FIN01_FINAL_WINDOWS_KERNEL_CUSTODY_UNVERIFIED")?;
+ #[cfg(target_os="linux")]
+ let fresh=lu_ide_execution_supervisor::linux_worker
+  ::verify_global_worker_quiescence(owner_pid,&jobs)
+  .map_err(|_|"FIN01_FINAL_LINUX_KERNEL_CUSTODY_UNVERIFIED")?;
+ if !fresh.marker_owner_exited || fresh.platform!=witness.platform ||
+    fresh.examined_job_identities!=jobs.len() ||
+    fresh.kernel_objects_empty+fresh.kernel_objects_absent!=jobs.len(){
+  return Err("FIN01_FINAL_KERNEL_WITNESS_INCOMPLETE".into());
+ }
+ for (i,(domain,_)) in DOMAINS.iter().enumerate(){
+  if journal_fingerprint(profile,domain)?!=baseline[i] ||
+     durable_busy(&domain_rows(profile,domain)?){
+   return Err("FIN01_FINAL_JOURNAL_CHANGED".into());
+  }
+ }
  same_marker(profile,&marker,&metadata)?;
  fs::remove_file(marker_path(profile))
   .map_err(|_|"FIN01_STALE_MARKER_RELEASE_FAILED")?;
