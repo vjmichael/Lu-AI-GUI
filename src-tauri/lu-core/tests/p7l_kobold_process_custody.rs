@@ -156,6 +156,42 @@ fn original_structured_read_tool_sse_is_a_proposal_not_an_action(){
     fs::remove_dir_all(folder).unwrap();
 }
 #[test]
+fn malformed_original_sse_is_terminal_and_reaps_child(){
+    let folder=root();
+    let (mut engine,model)=build(&folder,"malformed");
+    engine.load(&model).unwrap();
+    let failure=engine.generate(
+        &request("P7L_FAKE_BAD_SSE"),
+        &Cancellation::default(),&mut |_part|Ok(())
+    );
+    assert!(failure.is_err(),"malformed native SSE must not be accepted");
+    assert!(engine.pid().is_none(),"failed stream must terminate original child");
+    assert!(!engine.custody_uncertain());
+    assert!(!engine.journal_pending().unwrap());
+    drop(engine);
+    fs::remove_dir_all(folder).unwrap();
+}
+#[test]
+fn unauthorized_original_tool_delta_is_terminal_without_dispatch(){
+    let folder=root();
+    let (mut engine,model)=build(&folder,"unadvertised");
+    engine.load(&model).unwrap();
+    let schema=BrowserModelCodec(BrowserModelKind::Read).schema();
+    let tools=vec![json!({"type":"function","function":{
+        "name":"lu_browser_read","parameters":schema
+    }})];
+    let failure=engine.generate_browser_function_calls(
+        &request("P7L_FAKE_UNAUTHORIZED_TOOL"),&tools,
+        &Cancellation::default(),
+    );
+    assert!(failure.is_err(),"host must reject unadvertised tool");
+    assert!(engine.pid().is_none());
+    assert!(!engine.custody_uncertain());
+    assert!(!engine.journal_pending().unwrap());
+    drop(engine);
+    fs::remove_dir_all(folder).unwrap();
+}
+#[test]
 fn durable_starting_state_survives_reopen_and_refuses_unverified_restart(){
     let folder=root();
     tiny_gguf(&folder);
