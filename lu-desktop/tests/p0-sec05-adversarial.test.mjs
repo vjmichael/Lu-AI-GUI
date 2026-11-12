@@ -29,7 +29,7 @@ test('SEC05 migrated setsid survivor cannot masquerade as independent kernel cus
   assert.match(kernelVerifier,/guardian loss or migrated descendant/);
   assert.match(kernelVerifier,/MIGRATION_ESCAPE_UNVERIFIED/);
   assert.match(kernelVerifier,/MIGRATION_DENIED_NATIVE_CGROUP_EMPTY/);
-  assert.match(kernelVerifier,/unrelated process was terminated/);
+  assert.match(kernelVerifier,/unrelated control process was terminated/);
 });
 test('SEC05 Linux and Windows use actual separate OS workers and scoped stop',()=>{
   assert.match(supervisor,/sec05_windows_two_jobs_cross_chat_cancel_cannot_terminate_foreign_worker/);
