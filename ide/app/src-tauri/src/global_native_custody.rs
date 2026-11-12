@@ -95,3 +95,15 @@ impl GlobalAdmissionFence {
  }
  pub fn is_released(&self)->bool{self.released}
 }
+
+pub fn sibling_rows(profile:&Path,domain:&str)->Result<Vec<JobSummary>,String>{
+ valid_profile(profile)?;
+ let file=match domain{
+  "build"=>"debug-fixture-receipts.jsonl",
+  "debug"=>"build-job-receipts.jsonl",
+  _=>return Err("FIN01_UNKNOWN_DOMAIN".into()),
+ };
+ lu_ide_execution_supervisor::Supervisor::open(profile.join(file))
+  .and_then(|s|s.inspect())
+  .map_err(|_|"FIN01_SIBLING_JOURNAL_UNVERIFIED".into())
+}
