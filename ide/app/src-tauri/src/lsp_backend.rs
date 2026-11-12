@@ -528,11 +528,22 @@ impl NativeLspRuntime {
             .map(|jobs| jobs.iter().any(|job| job.requires_reconciliation))
             .unwrap_or(true);
         if uncertain || quarantine { return "reconciliation_required"; }
-        match self.active.lock() {
-            Ok(active) if active.is_some() => "running",
-            Ok(_) => "idle",
-            Err(_) => "reconciliation_required",
+        // The profile-wide marker is not automatically idle after a desktop
+        // restart, even if the LSP-specific journal looks terminal.
+        let active=match self.active.lock(){
+            Ok(value)=>value.is_some(),
+            Err(_)=>return "reconciliation_required",
+        };
+        if active { return "running"; }
+        if crate::global_native_custody::global_custody_unresolved(
+            &self.global_custody_profile).unwrap_or(true){
+            return "reconciliation_required";
         }
+        if crate::global_native_custody::preflight_global_idle(
+            &self.global_custody_profile,"lsp").is_err(){
+            return "reconciliation_required";
+        }
+        "idle"
     }
     fn validated_registered_text(
         registry: &IdeWorkspaceRegistry,
@@ -562,10 +573,12 @@ impl NativeLspRuntime {
     ) -> Result<Value, String> {
         let result = self.start_approved(app, registry, request);
         if result.is_err() {
-            // An admission that never prepared a native job can be released
-            // only after all three journals remain independently terminal.
-            // Any uncertain child or prepared job keeps the marker.
-            if self.release_global_if_terminal().is_err() {
+            // A rejected second Start must not release or poison an existing
+            // legitimate LSP session. Only a failed admission with NO active
+            // session may attempt terminal-journal release of its own fence.
+            let no_active=self.active.lock()
+                .map(|owner|owner.is_none()).unwrap_or(false);
+            if no_active && self.release_global_if_terminal().is_err() {
                 if let Ok(mut state)=self.cleanup_uncertain.lock(){
                     *state=true;
                 }
