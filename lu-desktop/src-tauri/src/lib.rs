@@ -8,6 +8,7 @@ mod memory_desktop;
 mod file_scan_worker;
 pub use file_scan_worker::run_file_scan_worker;
 mod generation_queue;
+mod stream_delivery;
 mod background_context;
 mod environment_context;
 mod host_clock;
@@ -4896,6 +4897,44 @@ async fn lu_generate(
         prompt,image_refs,max_new_tokens,GenerationOrigin::Human,false).await
 }
 
+/// A coalesced event uses a host-minted contiguous cursor rather than raw
+/// llama.cpp SSE chunk indices. The queue checks exact live session/turn and
+/// refuses over-capacity or cancelled output before any WebView publication.
+/// First forwarding precedes its independent durable ANSF checkpoint.
+fn publish_model_stream_chunk(
+    app:&AppHandle,
+    state:&Arc<DesktopState>,
+    session_id:&str,
+    chat_id:&str,
+    generation_id:&str,
+    chunk:stream_delivery::DeliveryChunk,
+    answer:&str,
+    last_checkpoint:&mut std::time::Instant,
+    last_checkpoint_bytes:&mut usize,
+    perf_trace:&mut perf01_telemetry::ModelTrace,
+)->Result<(),BridgeError>{
+    state.generation_queue.record_chunk(
+        session_id,generation_id,chunk.index,&chunk.text
+    ).map_err(|_|BridgeError::WrongOperation)?;
+    app.emit("lu-token",ChatEvent{
+        chat_id:chat_id.into(),generation_id:generation_id.into(),
+        text:chunk.text,index:chunk.index,
+    }).map_err(|_|BridgeError::WrongOperation)?;
+    perf_trace.chunk_forwarded_to_webview();
+    // First emitted chunk is committed immediately. Subsequent full snapshots
+    // are throttled to bound ANSF write amplification while preserving a
+    // subsecond recovery point and the mandatory final durable checkpoint.
+    if *last_checkpoint_bytes==0 ||
+        answer.len().saturating_sub(*last_checkpoint_bytes)>=16*1024 ||
+        last_checkpoint.elapsed()>=Duration::from_millis(750){
+        state.chats.append_progress(chat_id,generation_id,answer)
+            .map_err(|_|BridgeError::WrongOperation)?;
+        *last_checkpoint_bytes=answer.len();
+        *last_checkpoint=std::time::Instant::now();
+    }
+    Ok(())
+}
+
 /// Only the trusted Lu host may use BackgroundTerminal origin; it is never
 /// exported as a Tauri command. Models cannot synthesize auto turns.
 async fn generate_internal(
@@ -5544,54 +5583,30 @@ async fn generate_internal(
             let mut answer = String::new();
             let mut last_checkpoint = std::time::Instant::now();
             let mut last_checkpoint_bytes = 0usize;
+            let mut delivery=stream_delivery::BoundedStreamDelivery::default();
             let emit = |wire: Vec<u8>| -> Result<(), BridgeError> {
                 let frame = decode_frame(&wire).map_err(BridgeError::Wire)?;
                 if let Some(proto::inference_frame::Body::Event(event)) = frame.body {
                     if let Some(proto::inference_event::Kind::TextChunk(chunk)) = event.kind {
-                        // Bound every live stream and enforce model event index
-                        // continuity BEFORE committing UI text. Reconnecting
-                        // WebViews use the same cursor and cannot splice
-                        // another chat/session's output into this response.
-                        state.generation_queue.record_chunk(
-                            &sid,&gid,chunk.chunk_index,&chunk.text
-                        ).map_err(|_|BridgeError::WrongOperation)?;
+                        // Validate cumulative bytes before growing model output
+                        // or forwarding to the WebView. Backend chunks are
+                        // coalesced into 40ms/2KiB host-owned indexed events.
+                        let ready=delivery.accept(&chunk.text)
+                            .map_err(|_|BridgeError::WrongOperation)?;
                         perf_trace.stream_chunk(chunk.text.len());
                         answer.push_str(&chunk.text);
-                        // Forward each chunk to the UI before doing the
-                        // synchronous SQLite progress checkpoint. This
-                        // matters when llama.cpp emits a >512-byte first
-                        // chunk or a checkpoint timer already expired.
-                        app.emit(
-                            "lu-token",
-                            ChatEvent {
-                                chat_id: chat_id.clone(),
-                                generation_id: gid.clone(),
-                                text: chunk.text,
-                                index: chunk.chunk_index,
-                            },
-                        )
-                        .map_err(|_| BridgeError::WrongOperation)?;
-                        perf_trace.chunk_forwarded_to_webview();
-                        // First chunk is durable immediately *after* its
-                        // UI event. Subsequent full-state checkpoints use a
-                        // larger 16 KiB interval to avoid O(n^2) ANSF writes;
-                        // time-based and terminal checkpoints remain.
-                        if last_checkpoint_bytes == 0
-                            || answer.len().saturating_sub(last_checkpoint_bytes) >= 16 * 1024
-                            || last_checkpoint.elapsed() >= Duration::from_millis(750)
-                        {
-                            state
-                                .chats
-                                .append_progress(&chat_id, &gid, &answer)
-                                .map_err(|_| BridgeError::WrongOperation)?;
-                            last_checkpoint_bytes = answer.len();
-                            last_checkpoint = std::time::Instant::now();
+                        for part in ready {
+                            publish_model_stream_chunk(
+                                &app,&state,&sid,&chat_id,&gid,part,&answer,
+                                &mut last_checkpoint,&mut last_checkpoint_bytes,
+                                &mut perf_trace
+                            )?;
                         }
                     }
                 }
                 Ok(())
             };
-            let result = if images.is_empty() {
+            let mut result = if images.is_empty() {
                 supervisor.run_reserved_with_history(
                     &sid,
                     &gid,
@@ -5613,6 +5628,18 @@ async fn generate_internal(
                     emit,
                 )
             };
+            // Drain a subthreshold final chunk after the original native
+            // inference call. On cancellation, the queue refuses any further
+            // UI chunks; the outer failure path still saves prior partials.
+            if let Some(tail)=delivery.flush(){
+                if let Err(error)=publish_model_stream_chunk(
+                    &app,&state,&sid,&chat_id,&gid,tail,&answer,
+                    &mut last_checkpoint,&mut last_checkpoint_bytes,
+                    &mut perf_trace
+                ){
+                    if result.is_ok(){result=Err(SupervisorError::Bridge(error));}
+                }
+            }
             match result {
                 Ok(()) => {
                     // Final original ANSF publication has a definite order
