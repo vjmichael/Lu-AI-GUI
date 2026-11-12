@@ -196,26 +196,15 @@ fn stop_scoped(owner:&DesktopState,chat:&str)->Vec<DomainResult>{
         },
         Err(_)=>records.push(result("scheduled","SCHEDULE_CANCEL_UNCERTAIN"))
     }
-    // Catch actual OS-owned workers that are not scheduled. Dashboard is
-    // filtered by exact authenticated chat BEFORE applying its bound.
-    match owner.background_tasks.dashboard_for_workspace(chat,100){
-        Ok(rows)=>{
-            let capped=rows.len()==100;
-            let owned=rows.into_iter().filter(|row|
-                owner.background_processes.can_cancel(&row.task_id)
-            ).collect::<Vec<_>>();
-            let mut failed=false;
-            for row in &owned{
-                if owner.background_processes.cancel_owned(
-                    &row.task_id,chat
-                ).is_err(){failed=true}
-            }
-            records.push(result("background",if owned.is_empty()&&!capped{
-                "NOT_PRESENT"
-            }else if failed||capped{"STOP_UNCERTAIN_RECONCILE"}
-            else{"NATIVE_TERMINATION_REAP_RETURNED"}))
-        },
-        Err(_)=>records.push(result("background","STOP_UNCERTAIN_RECONCILE"))
+    // SEC-03: do not derive the cancellation target from a truncated
+    // dashboard snapshot. The host-owned supervisor serializes the exact
+    // workspace sweep with in-flight start/poll under its native mutex.
+    // Reviewed per-human-turn workers retain their own generation/authority
+    // cancellation lane above; a generic chat sweep cannot impersonate them.
+    match owner.background_processes.cancel_workspace_owned(chat){
+        Ok(0)=>records.push(result("background","NOT_PRESENT")),
+        Ok(_)=>records.push(result("background","NATIVE_TERMINATION_REAP_RETURNED")),
+        Err(_)=>records.push(result("background","STOP_UNCERTAIN_RECONCILE")),
     }
     records
 }
