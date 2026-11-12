@@ -463,3 +463,192 @@ pub fn assess_global_recovery(profile:&Path)->Result<RecoveryAssessment,String>{
    else{"FIN01_ORIGINAL_OS_RELEASE_PROOF_REQUIRED"},
  })
 }
+
+#[derive(Debug,Clone,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct KernelClearanceReceipt {
+ pub code:&'static str,
+ pub platform:&'static str,
+ pub original_job_count:usize,
+ pub kernel_objects_empty:usize,
+ pub kernel_objects_absent:usize,
+ pub marker_sha256:String,
+ pub original_journals_sha256:[Option<String>;3],
+ pub replay_authorized:bool,
+ pub execution_authorized:bool,
+ pub original_os_kernel_verified:bool,
+ pub previous_owner_exited:bool,
+}
+/// Separate cross-process recovery mutex. Its unexpected crash residue
+/// prevents another clearance; it does NOT clear or authorize the real
+/// native admission marker.
+struct RecoveryGuard {path:PathBuf, nonce:Vec<u8>}
+impl RecoveryGuard{
+ fn begin(profile:&Path)->Result<Self,String>{
+  let path=profile.join("fin01-global-clearance-v1.lock");
+  let mut options=OpenOptions::new();
+  options.create_new(true).write(true);
+  #[cfg(unix)]{
+   use std::os::unix::fs::OpenOptionsExt;
+   options.mode(0o600);
+  }
+  let mut file=options.open(&path)
+   .map_err(|_|"FIN01_RECOVERY_ALREADY_IN_PROGRESS_OR_INTERRUPTED")?;
+  let nonce=format!("FIN01-RECOVERY:{:016x}\n",rand::random::<u64>()).into_bytes();
+  file.write_all(&nonce).and_then(|_|file.sync_all())
+   .map_err(|_|"FIN01_RECOVERY_LOCK_SYNC_UNVERIFIED")?;
+  #[cfg(unix)]
+  File::open(profile).and_then(|d|d.sync_all())
+   .map_err(|_|"FIN01_RECOVERY_LOCK_DIRECTORY_UNVERIFIED")?;
+  Ok(Self{path,nonce})
+ }
+}
+impl Drop for RecoveryGuard{
+ fn drop(&mut self){
+  // Releasing a failed/rejected request is safe: the actual global
+  // admission marker remains intact and no worker can be admitted.
+  if fs::read(&self.path).ok().as_deref()==Some(self.nonce.as_slice()){
+   let _=fs::remove_file(&self.path);
+  }
+ }
+}
+fn verified_marker_bytes(profile:&Path)->Result<(Vec<u8>,fs::Metadata),String>{
+ if !marker_present(profile)? {return Err("FIN01_NO_STALE_MARKER".into());}
+ let path=marker_path(profile);
+ let metadata=fs::symlink_metadata(&path)
+  .map_err(|_|"FIN01_STALE_MARKER_UNREADABLE")?;
+ let bytes=fs::read(&path).map_err(|_|"FIN01_STALE_MARKER_UNREADABLE")?;
+ if bytes.is_empty() || bytes.len()>MAX_MARKER as usize ||
+    !metadata.is_file() || metadata.file_type().is_symlink() ||
+    bytes.len() as u64!=metadata.len(){
+  return Err("FIN01_STALE_MARKER_UNTRUSTED".into());
+ }
+ Ok((bytes,metadata))
+}
+fn same_marker(profile:&Path,expected:&[u8],meta:&fs::Metadata)->Result<(),String>{
+ let (actual,now)=verified_marker_bytes(profile)?;
+ if actual!=expected || now.len()!=meta.len() ||
+    now.modified().ok()!=meta.modified().ok() {
+  return Err("FIN01_STALE_MARKER_CHANGED".into());
+ }
+ #[cfg(unix)]{
+  use std::os::unix::fs::MetadataExt;
+  if now.ino()!=meta.ino() || now.dev()!=meta.dev(){
+   return Err("FIN01_STALE_MARKER_REPLACED".into());
+  }
+ }
+ Ok(())
+}
+/// Called only by the OS-confirmed Tauri host action after an explicit
+/// native user dialog. A trusted "ok" boolean or journal phase is never
+/// accepted as kernel proof; this function performs the kernel query.
+pub fn clear_stale_marker_with_kernel_proof(
+ profile:&Path
+)->Result<KernelClearanceReceipt,String>{
+ valid_profile(profile)?;
+ let _guard=RecoveryGuard::begin(profile)?;
+ let (marker,metadata)=verified_marker_bytes(profile)?;
+ let assessment=assess_global_recovery(profile)?;
+ if !assessment.marker_present || !assessment.original_journals_reconciled ||
+    assessment.build_journal_pending!=0 || assessment.debug_journal_pending!=0 ||
+    assessment.lsp_journal_pending!=0 {
+  return Err("FIN01_ORIGINAL_JOURNAL_NOT_TERMINAL".into());
+ }
+ let owner_pid=assessment.marker_owner_pid
+  .ok_or("FIN01_STALE_OWNER_ID_MISSING")?;
+ if owner_pid==std::process::id(){
+  return Err("FIN01_LIVE_OWNER_CANNOT_CLEAR_MARKER".into());
+ }
+ let baseline=[
+  journal_fingerprint(profile,"build")?,
+  journal_fingerprint(profile,"debug")?,
+  journal_fingerprint(profile,"lsp")?,
+ ];
+ let mut jobs=Vec::new();
+ for (domain,_) in DOMAINS {
+  let rows=domain_rows(profile,domain)?;
+  if durable_busy(&rows){return Err("FIN01_GLOBAL_WORKER_NOT_RECONCILED".into());}
+  jobs.extend(rows);
+ }
+ if jobs.len()>4096{return Err("FIN01_KERNEL_AUDIT_BUDGET_EXCEEDED".into());}
+ same_marker(profile,&marker,&metadata)?;
+ // These platform calls read the real OS process and kernel containment
+ // objects; no model/webview-supplied witness is accepted.
+ #[cfg(windows)]
+ let witness=lu_ide_execution_supervisor::windows_worker
+  ::verify_global_worker_quiescence(owner_pid,&jobs)
+  .map_err(|_|"FIN01_WINDOWS_KERNEL_CUSTODY_UNVERIFIED")?;
+ #[cfg(target_os="linux")]
+ let witness=lu_ide_execution_supervisor::linux_worker
+  ::verify_global_worker_quiescence(owner_pid,&jobs)
+  .map_err(|_|"FIN01_LINUX_KERNEL_CUSTODY_UNVERIFIED")?;
+ if !witness.marker_owner_exited ||
+    witness.examined_job_identities!=jobs.len() ||
+    witness.kernel_objects_empty+witness.kernel_objects_absent!=jobs.len(){
+  return Err("FIN01_KERNEL_WITNESS_INCOMPLETE".into());
+ }
+ // Recheck exact original bytes after kernel read, closing the simple
+ // journal-change and same-owner marker substitution windows.
+ for (i,(domain,_)) in DOMAINS.iter().enumerate(){
+  if journal_fingerprint(profile,domain)?!=baseline[i] ||
+     durable_busy(&domain_rows(profile,domain)?){
+   return Err("FIN01_JOURNAL_CHANGED_AFTER_KERNEL_WITNESS".into());
+  }
+ }
+ same_marker(profile,&marker,&metadata)?;
+ // Durably append a minimal OS-provenance record BEFORE unlinking. A crash
+ // in this interval leaves the conservative marker in place. No OS proof
+ // or operator approval can be manufactured by WebView field values.
+ let digest=format!("{:x}",Sha256::digest(&marker));
+ let audit=profile.join("fin01-global-clearance-evidence-v1.jsonl");
+ let meta=fs::symlink_metadata(&audit);
+ match meta {
+  Ok(m) if !m.is_file() || m.file_type().is_symlink() ||
+      m.len()>8*1024*1024 =>return Err("FIN01_RECOVERY_AUDIT_UNTRUSTED".into()),
+  Err(e) if e.kind()!=std::io::ErrorKind::NotFound=>
+      return Err("FIN01_RECOVERY_AUDIT_UNREADABLE".into()),
+  _=>{},
+ }
+ let witness_record=serde_json::json!({
+  "schema":"fin01.global-stale-clearance.kernel-v1",
+  "stage":"native_kernel_quiescence_verified_before_marker_unlink",
+  "markerSha256":digest,
+  "originalDomain":assessment.marker_domain,
+  "kernel":witness.platform,
+  "jobCount":jobs.len(),
+  "kernelObjectsEmpty":witness.kernel_objects_empty,
+  "kernelObjectsAbsent":witness.kernel_objects_absent,
+  "ownerExited":true,
+  "originalJournalSha256":baseline,
+  "executionAuthorized":false,
+  "autoRetryAuthorized":false
+ });
+ let serialized=serde_json::to_vec(&witness_record)
+  .map_err(|_|"FIN01_RECOVERY_EVIDENCE_SERIALIZE_FAILED")?;
+ let mut options=OpenOptions::new();
+ options.create(true).append(true);
+ #[cfg(unix)]{
+  use std::os::unix::fs::OpenOptionsExt;
+  options.mode(0o600);
+ }
+ let mut file=options.open(&audit)
+  .map_err(|_|"FIN01_RECOVERY_AUDIT_UNAVAILABLE")?;
+ file.write_all(&serialized).and_then(|_|file.write_all(b"\n"))
+  .and_then(|_|file.sync_all())
+  .map_err(|_|"FIN01_RECOVERY_AUDIT_SYNC_FAILED")?;
+ same_marker(profile,&marker,&metadata)?;
+ fs::remove_file(marker_path(profile))
+  .map_err(|_|"FIN01_STALE_MARKER_RELEASE_FAILED")?;
+ #[cfg(unix)]
+ File::open(profile).and_then(|dir|dir.sync_all())
+  .map_err(|_|"FIN01_STALE_MARKER_DIRECTORY_SYNC_FAILED")?;
+ Ok(KernelClearanceReceipt{
+  code:"FIN01_NATIVE_KERNEL_STALE_MARKER_CLEARED",
+  platform:witness.platform,original_job_count:jobs.len(),
+  kernel_objects_empty:witness.kernel_objects_empty,
+  kernel_objects_absent:witness.kernel_objects_absent,
+  marker_sha256:digest,original_journals_sha256:baseline,
+  replay_authorized:false,execution_authorized:false,
+  original_os_kernel_verified:true,previous_owner_exited:true,
+ })
+}
