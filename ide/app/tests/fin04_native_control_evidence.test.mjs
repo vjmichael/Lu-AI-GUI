@@ -54,3 +54,40 @@ test('FIN04 native desktop exposes only review and audit commands from these cha
  assert.match(ui,/result\.debuggerExecutionAuthorized!==false/);
  assert.match(ui,/result\.liveNativeOwnerEventVerified!==false/);
 });
+
+test('FIN04 full original-action inventory blocks production admission across every project',()=>{
+ assert.match(inspector,/pub global_os_cleanup_required:bool/);
+ assert.match(inspector,/global_action_cleanup \|= parsed\.requires_os_cleanup/);
+ assert.match(inspector,/let global_os_cleanup_required=global_action_cleanup/);
+ assert.match(inspector,/if original\.project_id!=project_id \{continue;\}/);
+ assert.match(inspector,/action_directory_fingerprint/);
+ assert.match(inspector,/FIN04_ACTION_DIRECTORY_CHANGED_DURING_INSPECTION/);
+ assert.match(inspector,/FIN04_ORIGINAL_DEBUG_SUPERVISOR_STATE_STALE/);
+ assert.match(native,/let original_action_cleanup_required=/);
+ assert.match(native,/action_evidence\.global_os_cleanup_required/);
+ assert.match(native,/orphaned_debug_action_required: original_action_cleanup_required/);
+ assert.match(native,/FIN04_ORIGINAL_ACTION_OS_RECOVERY_REQUIRED/);
+ assert.match(native,/FIN04_ACTION_RECOVERY_REQUIRED_INSIDE_GLOBAL_FENCE/);
+ assert.match(native,/release_before_prepare_if_unchanged\(&own_before,&after\)/);
+ assert.doesNotMatch(native,/let dangling_action_jobs: Vec<String> = Vec::new\(\)/);
+});
+test('FIN04 source candidate SHA binds original debugger and action journal identities',()=>{
+ assert.match(inspector,/pub original_debug_journal_sha256:String/);
+ assert.match(inspector,/pub action_manifest_sha256:String/);
+ assert.match(native,/audit\.original_debug_journal_sha256\.as_str\(\)/);
+ assert.match(native,/audit\.action_manifest_sha256\.as_str\(\)/);
+ assert.match(native,/FIN04_READ_ONLY_CONTROL_SOURCE_CHANGED/);
+ assert.match(native,/original_debug_journal_sha256:audit\.original_debug_journal_sha256/);
+ assert.match(native,/action_manifest_sha256:audit\.action_manifest_sha256/);
+ assert.match(native,/global_action_cleanup_required:audit\.global_os_cleanup_required/);
+ assert.match(native,/execution_route_available:false/);
+});
+test('FIN04 web inspector rejects fabricated global flags and missing native journal digests',()=>{
+ assert.match(ui,/typeof evidence\.globalOsCleanupRequired!=='boolean'/);
+ assert.match(ui,/test\(evidence\.originalDebugJournalSha256\|\|''\)/);
+ assert.match(ui,/test\(evidence\.actionManifestSha256\|\|''\)/);
+ assert.match(ui,/fin04Evidence\.globalOsCleanupRequired/);
+ assert.match(ui,/typeof result\.globalActionCleanupRequired!=='boolean'/);
+ assert.match(ui,/result\.executionRouteAvailable!==false/);
+ assert.match(ui,/result\.debuggerExecutionAuthorized!==false/);
+});
