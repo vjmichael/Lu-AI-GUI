@@ -233,6 +233,51 @@ mod tests{
         assert_eq!(got.file_type,Some(15));
         fs::remove_file(p).unwrap();
     }
+    fn token_fixture(vocab:&str,template:&str)->Vec<u8>{
+        let mut s=b"GGUF".to_vec();
+        s.extend(3u32.to_le_bytes());
+        s.extend(1u64.to_le_bytes());
+        s.extend(4u64.to_le_bytes());
+        add_string(&mut s,"general.architecture","qwen3");
+        add_string(&mut s,"tokenizer.ggml.model","gpt2");
+        add_string(&mut s,"tokenizer.chat_template",template);
+        let key="tokenizer.ggml.tokens";
+        s.extend((key.len() as u64).to_le_bytes());
+        s.extend(key.as_bytes());
+        s.extend(9u32.to_le_bytes()); // tokenizer token array
+        s.extend(8u32.to_le_bytes()); // string element type
+        s.extend(2u64.to_le_bytes());
+        for item in ["hello",vocab]{
+            s.extend((item.len() as u64).to_le_bytes());
+            s.extend(item.as_bytes());
+        }
+        s
+    }
+    #[test]
+    fn p5_draft_tokenizer_fingerprint_rejects_equal_labels_but_different_vocab(){
+        let first=temp(&token_fixture("world","template-v1"));
+        let copy=temp(&token_fixture("world","template-v1"));
+        let other_token=temp(&token_fixture("new-token","template-v1"));
+        let other_template=temp(&token_fixture("world","template-v2"));
+        let a=tokenizer_metadata_sha256(&first).unwrap();
+        assert_eq!(a,tokenizer_metadata_sha256(&copy).unwrap());
+        assert_ne!(a,tokenizer_metadata_sha256(&other_token).unwrap());
+        assert_ne!(a,tokenizer_metadata_sha256(&other_template).unwrap());
+        for p in [first,copy,other_token,other_template]{
+            fs::remove_file(p).unwrap();
+        }
+    }
+    #[test]
+    fn p5_draft_tokenizer_rejects_missing_token_arrays(){
+        let mut s=b"GGUF".to_vec();
+        s.extend(3u32.to_le_bytes());
+        s.extend(1u64.to_le_bytes());
+        s.extend(1u64.to_le_bytes());
+        add_string(&mut s,"tokenizer.ggml.model","gpt2");
+        let p=temp(&s);
+        assert!(tokenizer_metadata_sha256(&p).is_err());
+        fs::remove_file(p).unwrap();
+    }
     #[test] fn truncated_and_oversized_metadata_fail_closed(){
         let mut data=bytes();
         add_string(&mut data,"general.architecture","qwen3");
