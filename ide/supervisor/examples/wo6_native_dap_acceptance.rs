@@ -1078,7 +1078,8 @@ mod protected {
                 true,
                 false,
                 Some("breakpoint"),
-            , false);
+                false,
+            );
         }
         let cancel = args.as_slice() == ["--cancel"];
         #[cfg(target_os = "linux")]
