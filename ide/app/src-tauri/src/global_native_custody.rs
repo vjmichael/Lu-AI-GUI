@@ -5,6 +5,7 @@
 //! deliberately leave a marker for operator-reviewed recovery.
 use std::{fs::{self,File,OpenOptions},io::{Read,Write},path::{Path,PathBuf}};
 use lu_ide_execution_supervisor::{JobPhase,JobSummary};
+use sha2::{Digest,Sha256};
 const MARKER:&str="fin01-global-native-custody-v1.lock";
 const MAX_MARKER:u64=128;
 fn marker_path(profile:&Path)->PathBuf {profile.join(MARKER)}
@@ -46,15 +47,50 @@ pub fn durable_busy(rows:&[JobSummary])->bool{
  rows.iter().any(|row|row.requires_reconciliation ||
   !matches!(row.phase,JobPhase::Completed|JobPhase::Cancelled|JobPhase::Failed|JobPhase::Denied))
 }
+/// Exact bytes of an original append-only receipt journal, bounded for
+/// trust. This is NOT an independent OS process-exit witness.
+fn journal_fingerprint(profile:&Path,domain:&str)->Result<Option<String>,String>{
+ valid_profile(profile)?;
+ let name=DOMAINS.iter().find(|(id,_)|*id==domain)
+  .map(|(_,name)|*name).ok_or("FIN01_UNKNOWN_DOMAIN")?;
+ let path=profile.join(name);
+ let meta=match fs::symlink_metadata(&path){
+  Ok(meta)=>meta,
+  Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(None),
+  Err(_)=>return Err("FIN01_JOURNAL_IDENTITY_UNREADABLE".into()),
+ };
+ if !meta.is_file() || meta.file_type().is_symlink() ||
+    meta.len()>64*1024*1024 {
+  return Err("FIN01_JOURNAL_IDENTITY_UNTRUSTED".into());
+ }
+ let file=File::open(&path).map_err(|_|"FIN01_JOURNAL_IDENTITY_UNREADABLE")?;
+ let mut reader=file.take(64*1024*1024+1);
+ let mut digest=Sha256::new();
+ let mut total=0u64;
+ let mut chunk=[0u8;32768];
+ loop {
+  let read=reader.read(&mut chunk).map_err(|_|"FIN01_JOURNAL_IDENTITY_UNREADABLE")?;
+  if read==0 {break;}
+  total+=read as u64;
+  if total>64*1024*1024{return Err("FIN01_JOURNAL_IDENTITY_UNTRUSTED".into());}
+  digest.update(&chunk[..read]);
+ }
+ if total!=meta.len(){return Err("FIN01_JOURNAL_IDENTITY_CHANGED".into());}
+ Ok(Some(format!("{:x}",digest.finalize())))
+}
+
 pub struct GlobalAdmissionFence {
  marker:PathBuf,
  owner_bytes:Vec<u8>,
+ domain:&'static str,
+ journal_identity:Option<String>,
  released:bool,
 }
 impl GlobalAdmissionFence {
  pub fn acquire(profile:&Path,domain:&'static str)->Result<Self,String>{
   valid_profile(profile)?;
   if !matches!(domain,"build"|"debug"|"lsp"){return Err("FIN01_UNKNOWN_DOMAIN".into());}
+  let baseline=journal_fingerprint(profile,domain)?;
   let marker=marker_path(profile);
   // create_new is the cross-process linearization point. Never unlink an
   // existing marker, regardless of its age or nominal owning PID.
@@ -72,7 +108,10 @@ impl GlobalAdmissionFence {
   #[cfg(unix)]
   File::open(profile).and_then(|dir|dir.sync_all())
    .map_err(|_|"FIN01_GLOBAL_MARKER_DIRECTORY_SYNC_FAILED".to_owned())?;
-  Ok(Self{marker,owner_bytes,released:false})
+  if journal_fingerprint(profile,domain)?!=baseline {
+   return Err("FIN01_OWNER_JOURNAL_CHANGED_DURING_ACQUISITION".into());
+  }
+  Ok(Self{marker,owner_bytes,domain,journal_identity:baseline,released:false})
  }
  /// Called only after every known original supervisor job is terminal and
  /// independently reconciled. There is no automatic release on Drop.
@@ -97,6 +136,10 @@ impl GlobalAdmissionFence {
       a.plan_sha256==b.plan_sha256 && a.phase==b.phase &&
       a.requires_reconciliation==b.requires_reconciliation) {
     return Err("FIN01_NEW_JOURNAL_EVENT_BEFORE_ADMISSION_RELEASE".into());
+  }
+  let profile=self.marker.parent().ok_or("FIN01_PROFILE_UNAVAILABLE")?;
+  if journal_fingerprint(profile,self.domain)?!=self.journal_identity {
+   return Err("FIN01_OWNER_JOURNAL_BYTES_CHANGED_BEFORE_ADMISSION_RELEASE".into());
   }
   self.remove_exact_owner_marker()
  }
