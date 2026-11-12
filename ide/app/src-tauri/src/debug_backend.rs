@@ -1628,6 +1628,16 @@ impl NativeDebugRuntime {
             };
         #[cfg(not(all(windows, debug_assertions, feature = "dev046d-native-dialog")))]
         let (operation_outcome_code, operation_receipt_sha256) = {
+            #[cfg(all(windows,feature="fin04-release-event-observer"))]
+            {
+                if let Some(owner)=release_owner.as_ref(){
+                    session.close_with_protected_release_owner_continue(owner.owner_sequence)
+                        .map_err(|e|e.code().to_owned())?;
+                }else{
+                    session.close().map_err(|e|e.code().to_owned())?;
+                }
+            }
+            #[cfg(not(all(windows,feature="fin04-release-event-observer")))]
             session.close().map_err(|e| e.code().to_owned())?;
             #[cfg(all(windows,feature="fin04-release-event-observer"))]
             {
