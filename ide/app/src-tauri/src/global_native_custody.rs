@@ -407,6 +407,16 @@ mod tests{
   fs::remove_dir_all(p).unwrap();
  }
  #[test]
+ fn malformed_abandoned_recovery_lock_never_becomes_clearance_authority(){
+  let p=fixture();
+  let _lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
+  fs::write(p.join("fin01-global-clearance-v1.lock"),b"untrusted-owner").unwrap();
+  assert_eq!(clear_stale_marker_with_kernel_proof(&p).unwrap_err(),
+    "FIN01_RECOVERY_LOCK_INVALID");
+  assert!(global_custody_unresolved(&p).unwrap());
+  fs::remove_dir_all(p).unwrap();
+ }
+ #[test]
  fn current_live_marker_owner_cannot_be_cleared_from_journal_state(){
   let p=fixture();
   let lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
@@ -420,9 +430,11 @@ mod tests{
  #[test]
  fn concurrent_stale_marker_clearance_is_exclusive(){
   let p=fixture();
+  let _lease=GlobalAdmissionFence::acquire(&p,"debug").unwrap();
   let _guard=RecoveryGuard::begin(&p).unwrap();
   assert_eq!(clear_stale_marker_with_kernel_proof(&p).unwrap_err(),
-    "FIN01_RECOVERY_ALREADY_IN_PROGRESS_OR_INTERRUPTED");
+    "FIN01_RECOVERY_OWNER_STILL_ALIVE");
+  assert!(global_custody_unresolved(&p).unwrap());
   fs::remove_dir_all(p).unwrap();
  }
  #[test]
