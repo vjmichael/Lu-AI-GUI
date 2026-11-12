@@ -693,13 +693,13 @@ mod tests{
             &x.profile,&x.preview.digest_sha256,task,None,note).unwrap();
         interrupted.host_instance="lu-plan07c-previous-process-before-crash".into();
         append(&x.profile,interrupted).unwrap();
-        let history=history(&x.profile,&x.register.register_id,true).unwrap();
-        assert_eq!(history.len(),5);
-        assert!(history.iter().any(|e|e.phase==Phase::Interrupted));
-        assert!(history.iter().all(|e|e.no_execution_authority&&
+        let recorded_events=history(&x.profile,&x.register.register_id,true).unwrap();
+        assert_eq!(recorded_events.len(),5);
+        assert!(recorded_events.iter().any(|e|e.phase==Phase::Interrupted));
+        assert!(recorded_events.iter().all(|e|e.no_execution_authority&&
             e.no_completion_authority));
         let reopened=history(&x.profile,&x.register.register_id,true).unwrap();
-        assert_eq!(reopened.len(),history.len());
+        assert_eq!(reopened.len(),recorded_events.len());
         let c=project_register_desktop::library(&x.profile).unwrap();
         let (_p,unchanged,_)=project_register_desktop::load_register(
             &c,&x.register.register_id).unwrap().unwrap();
