@@ -151,9 +151,12 @@ impl ModelTrace{
         }
     }
     pub fn with_background_origin(mut self,background:bool)->Self{
-        self.row.scheduler_class=Some(if background{
+        let label=if background {
             "BACKGROUND_TERMINAL"
-        }else{"FOREGROUND_HUMAN"}.into());
+        } else {
+            "FOREGROUND_HUMAN"
+        };
+        self.row.scheduler_class=Some(label.to_owned());
         self
     }
     pub fn with_model(mut self,model_ref:Option<String>)->Self{
@@ -215,6 +218,17 @@ mod tests{
             &&r.decode_tokens_per_second.is_none()&&r.gpu_used_percent.is_none()));
         assert_eq!(ledger.recent("missing",2).unwrap().len(),0);
         assert!(ledger.recent("a",25).is_err());
+    }
+    #[test]
+    fn background_and_foreground_are_distinct_in_latency_receipts(){
+        let background=ModelTrace::new("chat","g",Instant::now(),true)
+            .with_background_origin(true).finish("CANCELLED");
+        let foreground=ModelTrace::new("chat","h",Instant::now(),true)
+            .with_background_origin(false).finish("COMPLETED");
+        assert_eq!(background.scheduler_class.as_deref(),Some("BACKGROUND_TERMINAL"));
+        assert_eq!(foreground.scheduler_class.as_deref(),Some("FOREGROUND_HUMAN"));
+        assert!(background.turn_to_first_chunk_ms.is_none());
+        assert!(background.turn_to_first_webview_forward_ms.is_none());
     }
     #[test]
     fn absent_or_failed_first_webview_chunk_is_not_reported_as_visible(){
