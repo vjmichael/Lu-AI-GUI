@@ -88,3 +88,24 @@ runtime provisioning/packaging remains deferred; no new destructive
 Git or package execution was enabled. FIN-01D remains open for
 stale-marker OS proof and native acceptance, not a completed
 production authorization contract.
+
+### FIN-01D launch refusal / one-use admission repair
+
+Native build, debugger and language-server hosts now reconcile an error from
+*their own current launch* against its original job ID. Only a job whose
+record remains `Prepared` or `Authorized` can transition through the
+existing `Supervisor::cancel_before_start` API, with a durable
+`no_worker_was_started` receipt. `AdmissionPending`, `Running`,
+`ReleasePending`, `RecoveryRequired` and `Uncertain` never use that
+path: they remain under original OS-proven termination/quarantine. LSP
+tracks whether the marker and job were created **by the current
+invocation** so a rejected second Start cannot cancel or release a
+previous approved session.
+
+The no-worker marker-release path additionally compares complete
+job identities and the bounded original-journal SHA-256 captured
+during admission. A changed journal, stale marker, lost owner, or
+unverified OS release always denies marker deletion. A native
+Windows/Linux interruption matrix and a separately operator-approved
+restart marker clearance with independently observed kernel custody
+are still outstanding. Source tests are committed but unexecuted.
