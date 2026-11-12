@@ -1413,6 +1413,23 @@ pub struct WindowsOwnerEventAccepted {
     pub debugger_commands_authorized: bool,
     pub installed_app_accepted: bool,
 }
+/// FIN-04R: release-capable, *read-only* first-party OS owner witness.
+/// Only the native Windows Job/SCM process and the private LLDB owner pipe
+/// can produce this. A saved receipt is never a live grant, independent PDB
+/// line result, or permission to issue any debugger command.
+#[cfg(feature = "fin04-release-owner-evidence")]
+#[derive(Clone, Debug)]
+pub struct ReleaseOwnerObservation {
+    pub owner_sequence: u64,
+    pub receipt_sha256: String,
+    pub os_event_owner_verified: bool,
+    pub original_debug_job_verified: bool,
+    pub original_build_receipt_verified: bool,
+    pub source_line_independently_verified: bool,
+    pub debugger_control_authorized: bool,
+    pub recovery_authorized: bool,
+}
+
 #[cfg(feature = "dap-transport")]
 pub struct WindowsDapSession {
     gateway: crate::dap_transport::DapGateway,
@@ -1465,6 +1482,122 @@ impl WindowsDapSession {
         &self,
     ) -> Option<lu_ide_workspace::dap_source_lines::SourceLineCandidate> {
         self.gateway.source_candidate()
+    }
+    /// FIN-04R: re-open original receipts and capture a still-active
+    /// first-party LLDB Windows DEBUG_EVENT. Unlike the D5 CI-only source
+    /// oracle, this release observer does NOT run an external symbolizer,
+    /// issue DAP controls or claim that the reported source line is true.
+    /// The EventRecord's one-use pipe is inherited solely by the pinned
+    /// AppContainer LLDB process under a trusted SCM Job; no renderer
+    /// coordinates reach this method.
+    #[cfg(feature = "fin04-release-owner-evidence")]
+    pub fn observe_release_owned_stop(
+        &mut self,
+        supervisor: &Supervisor,
+        job_id: &str,
+        plan: &JobPlan,
+        target: &crate::project_debug_target::SealedProjectDebugTarget,
+    ) -> Result<ReleaseOwnerObservation, SupervisorError> {
+        use crate::windows_event_owner::persist_native_owner_receipt;
+        use lu_ide_workspace::dap_session::DapPhase;
+        if self.gateway.phase() != DapPhase::Stopped
+            || self.native_job_id != job_id
+            || self.native_plan_sha256 !=
+                supervisor.receipt_history(job_id)?.last()
+                    .ok_or(SupervisorError::NoSuchJob)?.body.plan_sha256
+            || plan.recipe_id != "dap_lldb_project"
+            || plan.input_snapshot_sha256 != self.source_input.seal.source_sha256
+            || plan.debug_target_binding_sha256.as_deref() !=
+                Some(target.binding_sha256.as_str())
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        let lineage = self.verify_project_loaded_module(supervisor, job_id, plan, target)?;
+        let origin = self.gateway.verify_windows_native_debug_port(&lineage.module)?;
+        if !origin.kernel_reports_debugger_attached
+            || !origin.debuggee_parent_is_owned_lldb
+            || !origin.job_membership_verified
+            || origin.actual_debug_event_owner_attested
+            || origin.debugger_control_authorized
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        let sample = self.gateway.sample_windows_stopped_thread_rip(&lineage.module)?;
+        if !sample.two_matching_samples
+            || !sample.job_membership_rechecked
+            || sample.debugger_control_authorized
+            || sample.observed_rip != lineage.module.observed_pc
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        let event = self.gateway.verify_lldb_kernel_event_owner(
+            sample.process_id, sample.thread_id, sample.observed_rip,
+        )?;
+        if event.kind != 1
+            || event.seq == 0
+            || event.first_chance != 1
+            || !matches!(event.exception_code, 0x8000_0003 | 0x8000_0004)
+            || event.pid != sample.process_id
+            || event.tid != sample.thread_id
+            || event.rip != sample.observed_rip
+            || event.exception_address < lineage.module.loaded_base
+            || event.exception_address >= lineage.module.loaded_base
+                .checked_add(lineage.module.loaded_size)
+                .ok_or(SupervisorError::NoContainment)?
+        {
+            return Err(SupervisorError::NoContainment);
+        }
+        // Both independently durable original journals must match this
+        // exact running debug session and completed producing build.
+        let debug = supervisor.receipt_history(job_id)?;
+        let running = debug.last().ok_or(SupervisorError::NoSuchJob)?;
+        if running.body.phase != JobPhase::Running
+            || running.body.plan_sha256 != self.native_plan_sha256
+            || running.body.project_id != plan.project_id
+            || running.entry_hash != lineage.debug_running_receipt_sha256
+            || !debug.iter().any(|r|r.body.phase==JobPhase::Authorized
+                && r.body.plan_sha256 == self.native_plan_sha256)
+        {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        let build = supervisor.receipt_history(&target.lineage.build_job_id)?;
+        if build.last().is_none_or(|r|
+            r.body.phase != JobPhase::Completed
+                || r.entry_hash != target.lineage.terminal_receipt_sha256
+                || r.body.plan_sha256 != target.lineage.build_plan_sha256)
+        {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        let receipt = persist_native_owner_receipt(
+            &supervisor.native_owner_receipt_root()?, job_id,
+            &self.native_plan_sha256, &running.entry_hash, &event,
+        )?;
+        // Re-check *live* owner after fsync. A continued/changed event,
+        // swapped input or superseded original receipt invalidates this
+        // observation. A persisted EventRecord cannot be reused as a stop.
+        if self.gateway.verify_lldb_kernel_event_owner(
+            sample.process_id, sample.thread_id, sample.observed_rip,
+        )? != event || self.gateway.phase() != DapPhase::Stopped {
+            return Err(SupervisorError::NoContainment);
+        }
+        target.verify()?;
+        verify_input(&self.source_input)
+            .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        if supervisor.receipt_history(job_id)?.last()
+            .is_none_or(|r|r.entry_hash != running.entry_hash
+                || r.body.phase != JobPhase::Running) {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        Ok(ReleaseOwnerObservation {
+            owner_sequence:event.seq, receipt_sha256:receipt,
+            os_event_owner_verified:true,original_debug_job_verified:true,
+            original_build_receipt_verified:true,
+            source_line_independently_verified:false,
+            debugger_control_authorized:false,recovery_authorized:false,
+        })
     }
     /// Observes only the OS loaded PE image in the REAL protected Job. A
     /// claimed DAP PC inside that module does NOT prove that a thread stopped
