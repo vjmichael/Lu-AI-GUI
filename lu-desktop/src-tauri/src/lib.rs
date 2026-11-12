@@ -1353,7 +1353,10 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
                 ResourceBudget::interactive_admission(
                     logical_cpus,model_resident,foreground_pending,observed
                 );
-            let _=state.background_scheduler.set_budget(admission.budget);
+            // Capacity and the interactive launch hold are one guardian
+            // mutation. Direct native worker leases cannot slip past a
+            // foreground priority gate even when not on the timed queue.
+            let _=state.background_scheduler.apply_interactive_admission(admission);
             if let Ok(mut observed_reason)=state.interactive_admission_reason.lock(){
                 *observed_reason=Some(admission.reason);
             }
