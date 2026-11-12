@@ -25,6 +25,9 @@ pub(crate) struct PerfReceipt {
     pub architecture:String,
     pub model_loaded_at_entry:bool,
     pub model_started_by_this_route:bool,
+    pub model_ref:Option<String>,
+    pub backend_family:Option<String>,
+    pub context_limit_tokens:Option<u32>,
     pub queue_wait_ms:Option<u64>,
     pub context_assembly_ms:Option<u64>,
     pub model_dispatch_to_first_chunk_ms:Option<u64>,
@@ -61,6 +64,7 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
         operating_system:std::env::consts::OS.into(),
         architecture:std::env::consts::ARCH.into(),
         model_loaded_at_entry,model_started_by_this_route:false,
+        model_ref:None,backend_family:None,context_limit_tokens:None,
         queue_wait_ms:None,context_assembly_ms:None,
         model_dispatch_to_first_chunk_ms:None,overall_latency_ms:0,
         original_source_bytes_scanned:None,original_entries_scanned:None,
@@ -124,6 +128,12 @@ impl ModelTrace{
                 "MODEL_REASONING_REQUIRED",model_loaded),
         }
     }
+    pub fn with_model(mut self,model_ref:Option<String>)->Self{
+        self.row.model_ref=model_ref;
+        self.row.backend_family=Some("llama.cpp".into());
+        self.row.context_limit_tokens=Some(4096);
+        self
+    }
     pub fn queued(&mut self){self.queue_entered=Instant::now();}
     pub fn acquired_slot(&mut self){
         self.row.queue_wait_ms=Some(elapsed_ms(self.queue_entered));
@@ -169,7 +179,8 @@ mod tests{
     }
     #[test]
     fn queued_model_timing_is_host_observed_not_fake_token_throughput(){
-        let mut span=ModelTrace::new("c","g",Instant::now(),true);
+        let mut span=ModelTrace::new("c","g",Instant::now(),true)
+            .with_model(Some("model-opaque".into()));
         span.queued();
         span.acquired_slot();
         span.context_ready();
@@ -178,6 +189,9 @@ mod tests{
         span.stream_chunk(20);
         let receipt=span.finish("COMPLETED");
         assert_eq!(receipt.streamed_utf8_bytes,30);
+        assert_eq!(receipt.model_ref.as_deref(),Some("model-opaque"));
+        assert_eq!(receipt.backend_family.as_deref(),Some("llama.cpp"));
+        assert_eq!(receipt.context_limit_tokens,Some(4096));
         assert!(receipt.queue_wait_ms.is_some());
         assert!(receipt.context_assembly_ms.is_some());
         assert!(receipt.model_dispatch_to_first_chunk_ms.is_some());
