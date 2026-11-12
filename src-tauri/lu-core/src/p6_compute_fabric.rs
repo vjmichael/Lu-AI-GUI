@@ -533,6 +533,91 @@ mod tests {
             measured_required_vram_mib:vec![4000],tensor_split_percent:None,
         },110),Err(GpuScheduleError::UnverifiedDevice));
     }
+    struct TestBackend;
+    impl crate::inference_host::InferenceBackend for TestBackend{
+        fn load(&mut self,_:&crate::model_admission::AdmittedModel)
+            ->Result<(),String>{Ok(())}
+        fn unload(&mut self){}
+        fn generate(
+            &mut self,_:&crate::inference_host::GenerationRequest,
+            _:&crate::inference_host::Cancellation,
+            emit:&mut dyn FnMut(crate::inference_host::TokenChunk)
+                ->Result<(),crate::inference_host::EngineError>,
+        )->Result<(),String>{
+            emit(crate::inference_host::TokenChunk{
+                text:"model-output".into(),index:0
+            }).map_err(|_|"receiver unavailable".into())
+        }
+    }
+    #[test]
+    fn two_original_supervisors_choose_separate_resident_instances(){
+        use std::{fs,io::Write};
+        let seed=std::process::id();
+        let dir=std::env::temp_dir().join(format!(
+            "lu-p6-fleet-{seed}-{:?}",std::thread::current().id()));
+        fs::create_dir_all(&dir).unwrap();
+        let mut f=fs::File::create(dir.join("model.gguf")).unwrap();
+        f.write_all(b"GGUF").unwrap();
+        f.write_all(&3u32.to_le_bytes()).unwrap();
+        f.write_all(&1u64.to_le_bytes()).unwrap();
+        f.write_all(&1u64.to_le_bytes()).unwrap();
+        drop(f);
+        let mut admission=crate::model_admission::ModelAdmissionManager::new();
+        let model=admission.admit(&dir,"model.gguf").unwrap().clone();
+        let now=now_unix();
+        let coordinator=LocalGpuCoordinator::new([1;32]).unwrap();
+        coordinator.set_verified_observations(vec![
+            good("Vulkan0",now),good("Vulkan1",now)
+        ],now).unwrap();
+        let mut lanes=Vec::new();
+        for (i,device) in ["Vulkan0","Vulkan1"].iter().enumerate(){
+            let session=format!("s-{i}");
+            let placement=coordinator.reserve(GpuRequest{
+                reservation_id:format!("r-{i}"),session_id:session.clone(),
+                mode:ComputeMode::IndependentInstance,
+                devices:vec![device.to_string()],
+                measured_required_vram_mib:vec![8000],
+                tensor_split_percent:None,
+            },now).unwrap();
+            let supervisor=Arc::new(
+                crate::inference_supervisor::TrustedInferenceSupervisor::new(
+                    "llama-test".into(),512,vec![("model-1".into(),model.clone())],
+                    ||Ok(TestBackend),
+                ).unwrap()
+            );
+            supervisor.load("model-1",session,"load-p6").unwrap();
+            lanes.push(IndependentLane{
+                slot_id:format!("slot-{i}"),placement,supervisor
+            });
+        }
+        let fleet=LocalIndependentFleet::new(lanes,[1;32]).unwrap();
+        let first=fleet.choose_ready("model-1").unwrap();
+        let second=fleet.choose_ready("model-1").unwrap();
+        assert_ne!(first.slot_id,second.slot_id);
+        assert_ne!(first.session_id,second.session_id);
+        first.supervisor.reserve_generation(
+            &first.session_id,"g-1","req-reserve","hello",16
+        ).unwrap();
+        let other=fleet.choose_ready("model-1").unwrap();
+        assert_eq!(other.slot_id,second.slot_id);
+        // Second session can run while the first has a reserved generation.
+        other.supervisor.generate(
+            &other.session_id,"g-2".into(),"req-g2","hi".into(),16,
+            |_frame|Ok(())
+        ).unwrap();
+        first.supervisor.run_reserved(
+            &first.session_id,"g-1","req-reserve","hello".into(),16,
+            |_frame|Ok(())
+        ).unwrap();
+        assert_eq!(first.supervisor.status().unwrap().phase,
+            crate::inference_host::EnginePhase::Ready);
+        for (i,selection) in [first,second].iter().enumerate(){
+            selection.supervisor.unload(
+                &selection.session_id,&format!("unload-{i}")
+            ).unwrap();
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn unsafe_names_and_remote_nodes_fail_closed(){
         for n in ["","none","CUDA0,--api-key","../../path","GPU name","Vulkan0\n--port"]{
