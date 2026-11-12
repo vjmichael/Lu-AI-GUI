@@ -17,7 +17,8 @@ test('failed readiness cleans up the original child and tests silent/invalid rep
   assert.match(native,/struct AdmissionChild\(Option<Child>\)/);
   assert.match(native,/impl Drop for AdmissionChild/);
   assert.match(native,/let _=child\.kill\(\)/);
-  assert.match(native,/let _=child\.wait\(\)/);
+  assert.match(native,/match child\.try_wait\(\)/);
+  assert.match(native,/let deadline=std::time::Instant::now\(\)/);
   assert.match(native,/still_alive_silent_guardian_cannot_block_admission/);
   assert.match(native,/truncated_and_malformed_guardian_banners_are_not_ready/);
   assert.match(native,/unavailable_helper_must_exit_before_no_delegation_result/);
@@ -61,4 +62,44 @@ test('durable uncertainty blocks terminal statuses and persists across restart',
   assert.match(tasks,/NOT EXISTS\(SELECT 1 FROM lu_task_custody_uncertainty/);
   assert.match(supervisor,/record_process_uncertain\(/);
   assert.match(supervisor,/LINUX_GUARDIAN_LOST/);
+});
+
+const sec02=load('../../src-tauri/lu-win-worker-job/src/bin/lu-p0-sec02-linux-negative.rs');
+const sec02Verifier=load('../../benchmarks/e1/p0_sec02_linux_guardian_negative.py');
+const cargo=load('../../src-tauri/lu-win-worker-job/Cargo.toml');
+test('SEC-02 executable destructive cases use real kernel fixture and PIDFD oracle',()=>{
+  assert.match(cargo,/name = "lu-p0-sec02-linux-negative"/);
+  for(const mode of ['guardian-death','guardian-stall','worker-stall']){
+    assert.ok(sec02.includes('"'+mode+'"'));
+    assert.ok(sec02Verifier.includes('"'+mode+'"'));
+  }
+  assert.match(sec02,/custody\.verify_admitted_worker\(worker\.id\(\)\)/);
+  assert.match(sec02,/custody\.fixture_guardian_pid\(\)/);
+  assert.match(sec02,/start_new_session=True/);
+  assert.match(sec02Verifier,/os\.pidfd_open\(guard\)/);
+  assert.match(sec02Verifier,/signal\.pidfd_send_signal\(guard_fd,signal\.SIGKILL\)/);
+  assert.match(sec02Verifier,/signal\.pidfd_send_signal\(guard_fd,signal\.SIGSTOP\)/);
+  assert.match(sec02Verifier,/GUARDIAN_LOST_UNVERIFIED/);
+  assert.match(sec02Verifier,/GUARDIAN_STALLED_UNVERIFIED/);
+  assert.match(sec02Verifier,/WORKER_STALL_NATIVE_CGROUP_EMPTY/);
+  assert.match(sec02Verifier,/unrelated_survived=1/);
+});
+const anfs=load('../src-tauri/src/ansf_chat_store.rs');
+const revocations=load('../src-tauri/src/p0_auth_custody.rs');
+const reviewed=load('../src-tauri/src/reviewed_app_desktop.rs');
+test('SEC-03 durable revocation is ordered with native reviewed publication',()=>{
+  assert.match(revocations,/fn requested_watermark\(/);
+  assert.match(anfs,/fn complete_reviewed_if_not_revoked\(/);
+  assert.match(anfs,/sec03_revoke_before_completion_denies_old_turn_but_not_fresh_approval/);
+  assert.match(anfs,/sec03_concurrent_native_revoke_and_completion_have_one_catalog_order/);
+  assert.match(reviewed,/let revocation_watermark=host\.chats\.p0_auth_requested_watermark/);
+  assert.match(reviewed,/complete_reviewed_if_not_revoked\(/);
+  assert.match(reviewed,/reviewed app original permission revoked during tool dispatch/);
+  assert.match(reviewed,/if self\.cancellation\.is_cancelled\(\)/);
+});
+test('SEC-03 host process cancel and poll collide on actual original PID once',()=>{
+  assert.match(supervisor,/sec03_real_os_cancel_poll_collision_has_one_terminal_receipt/);
+  assert.match(supervisor,/a\.cancel_owned\("sec03-sleep","c-human"\)/);
+  assert.match(supervisor,/a\.poll\(\)/);
+  assert.match(supervisor,/assert_eq!\(terminal\.len\(\),1,/);
 });
