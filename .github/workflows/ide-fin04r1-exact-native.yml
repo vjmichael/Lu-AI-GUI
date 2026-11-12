@@ -20,6 +20,7 @@ on:
       - ide/supervisor/examples/wo6_native_dap_acceptance.rs
       - ide/app/src-tauri/src/debug_backend.rs
       - ide/app/src-tauri/src/lib.rs
+      - ide/host/src/git_divergent_verify.rs
   workflow_dispatch:
 permissions:
   contents: read
