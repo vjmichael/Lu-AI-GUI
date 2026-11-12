@@ -4570,6 +4570,7 @@ async fn lu_generate(
         let current=owner.supervisor.status()
             .map_err(|_|"Native model status unavailable")?;
         let expected_session=current.session_id.clone();
+        let expected_model=current.model_ref.clone();
         let session_matches=if session_id.is_empty(){
             expected_session.is_none()
         }else{
@@ -4583,7 +4584,7 @@ async fn lu_generate(
             owner.chats.history_window(&chat_id,None,"older",1)?;
             let now=owner.supervisor.status()
                 .map_err(|_|"Native model status unavailable")?;
-            if now.session_id!=expected_session{
+            if now.session_id!=expected_session||now.model_ref!=expected_model{
                 return Err("Model changed while reading CPU status".into())
             }
             let answer=format!(
