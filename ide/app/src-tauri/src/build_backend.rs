@@ -675,8 +675,15 @@ impl NativeBuildRuntime {
         let durable = self.supervisor.inspect().map_err(|e| e.code().to_owned())?;
         // This uses the full original durable journal, not the truncated
         // selected-project presentation. No foreign job ID is published.
-        let global_recovery_required =
-            durable.iter().any(|job| job.requires_reconciliation);
+        let global_custody =
+            lu_ide_execution_supervisor::observe_global_custody(&durable,project_id);
+        let global_recovery_required = global_custody.recovery_required;
+        // A durable nonterminal job is busy even after a lost desktop
+        // process handle; never imply global idleness from local store only.
+        let global_worker_busy = global_worker_busy ||
+            global_custody.worker_busy_or_unreconciled;
+        let active_in_another_project = active_in_another_project ||
+            global_custody.active_in_another_project;
         // Serialize only exact project-scoped immutable journal identifiers.
         // Do not reconstruct a BuildRunView or invent a successful native exit
         // code after restart: the original runtime receipt is authoritative.
