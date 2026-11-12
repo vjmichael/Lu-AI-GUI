@@ -102,9 +102,14 @@ function sourceCases(){
     'lu-desktop/tests/reviewed-task-continuity.test.mjs',
     'lu-desktop/tests/background-worker-e2e.test.mjs'
   ],{timeout:180000});
-  doCase('linux-negative-python-syntax','python3',[
-    '-m','py_compile','benchmarks/e1/p0_sec02_linux_guardian_negative.py'
+  doCase('sec06-js-syntax','node',[
+    '--check','scripts/p0-sec06-consolidated.mjs'
   ],{timeout:30000});
+  if(platform()!=='win32'){
+    doCase('linux-negative-python-syntax','python3',[
+      '-m','py_compile','benchmarks/e1/p0_sec02_linux_guardian_negative.py'
+    ],{timeout:30000});
+  }
 }
 function rustCases(){
   for(const [id,manifest,filter] of [
@@ -134,6 +139,8 @@ if(mode==='verify'){
         if(p.schema!=='lu-sec06-native-evidence-v1'||p.target!==target||
            p.head!==currentHead||p.sourceLockSha256!==lockSha||
            p.allNativeCasesPassed!==true||
+           p.localExecutionOnly!==true||p.noReleaseAuthority!==true||
+           p.independentlyVerifiedInstalledHumanAcceptance!==false||
            p.status!==(target==='source'?
              'SOURCE_CONTRACTS_PASS_NATIVE_UNPROVEN':
              'PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING')){
@@ -145,15 +152,15 @@ if(mode==='verify'){
         }
         const required={
           source:['exact-head-inventory','security-contracts',
-                  'linux-negative-python-syntax'],
+                  'sec06-js-syntax'],
           linux:['exact-head-inventory','security-contracts',
-                 'linux-negative-python-syntax','core-native-full',
-                 'desktop-ansf-native','worker-job-native',
+                 'sec06-js-syntax','linux-negative-python-syntax',
+                 'core-native-full','desktop-ansf-native','worker-job-native',
                  'guardian-test-binaries','linux-guardian-death',
                  'linux-guardian-stall','linux-worker-stall',
                  'linux-ancestor-migration'],
           windows:['exact-head-inventory','security-contracts',
-                   'linux-negative-python-syntax','core-native-full',
+                   'sec06-js-syntax','core-native-full',
                    'desktop-ansf-native','worker-job-native',
                    'windows-real-two-jobs'],
         }[target];
