@@ -1519,23 +1519,48 @@ where
         publish_output(&output, &private_parent, job_id).ok()
     };
     let summary = if stopped {
-        supervisor
+        // Cancellation still follows the separately durable native
+        // CancelRequested/Cancelled path. A failed SCM release must never
+        // be silently reported as a successful worker return.
+        let summary = supervisor
             .inspect()?
             .into_iter()
             .find(|j| j.job_id == job_id)
-            .ok_or(SupervisorError::NoSuchJob)?
+            .ok_or(SupervisorError::NoSuchJob)?;
+        broker.release_empty()?;
+        summary
     } else {
-        supervisor.native_finish_with_output(
+        // A verified empty kernel tree and immutable published output are
+        // necessary but NOT sufficient for a terminal receipt: the independent
+        // SCM service must also fsync its exact Job release acknowledgement.
+        // Journal ReleasePending *before* the service release to ensure a
+        // host crash between these operations is quarantined after restart.
+        if !reaped || publication.is_none() {
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(SupervisorError::Quarantined);
+        }
+        supervisor.native_mark_release_pending(job_id)?;
+        if let Err(error) = broker.release_empty() {
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(error);
+        }
+        match supervisor.native_finish_with_output(
             job_id,
-            exit_code == Some(0) && naturally_empty && publication.is_some(),
+            exit_code == Some(0) && naturally_empty,
             reaped,
-            publication.is_some(),
+            true,
             publication.as_ref().map(|(_, _, sha)| sha.as_str()),
-        )?
+        ) {
+            Ok(summary) => summary,
+            Err(error) => {
+                // If terminal fsync fails, the original ReleasePending receipt
+                // remains a restart quarantine. Never infer completion from
+                // Cargo's exit code or a service release acknowledgement.
+                let _ = supervisor.native_quarantine_after_error(job_id);
+                return Err(error);
+            }
+        }
     };
-    // Only after the supervisor terminal receipt is durable and the
-    // kernel Job is verified empty may the recovery keeper be released.
-    broker.release_empty()?;
     let (output_root, output_bytes, output_sha256) =
         publication.unwrap_or((PathBuf::new(), 0, String::new()));
     Ok(WindowsExecutionResult {
