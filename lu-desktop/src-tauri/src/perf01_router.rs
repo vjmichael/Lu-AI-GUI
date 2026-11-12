@@ -163,6 +163,51 @@ pub(crate) fn search_current_chat(
     Ok(CpuSearchResult{answer,complete,scanned_entries,scanned_bytes,matches})
 }
 
+
+pub(crate) fn count_current_chat(
+    chats:&ChatStore,chat_id:&str
+)->Result<CpuSearchResult,String>{
+    let began=Instant::now();
+    let mut before=None;
+    let mut inspected=0usize;
+    let mut users=0usize;
+    let mut assistants=0usize;
+    let mut interrupted=0usize;
+    let mut complete=false;
+    let mut code="PARTIAL_INDEX_LIMIT";
+    // The existing ANSF visible index, not an O(history) replay.
+    for _ in 0..16 {
+        if began.elapsed()>Duration::from_millis(MAX_WALL_MS) {
+            code="PARTIAL_TIME_BUDGET";break;
+        }
+        let page=chats.history_window(chat_id,before,"older",64)?;
+        for e in &page.entries{
+            inspected+=1;
+            if e.role=="user"{users+=1}
+            else if e.role=="assistant"{assistants+=1}
+            if e.interrupted{interrupted+=1}
+        }
+        if !page.has_more{
+            complete=true;code="COMPLETE";break;
+        }
+        let Some(cursor)=page.next_cursor else {
+            code="PARTIAL_CURSOR_UNAVAILABLE";break;
+        };
+        if before==Some(cursor) {
+            code="PARTIAL_CURSOR_UNAVAILABLE";break;
+        }
+        before=Some(cursor);
+    }
+    let answer=format!(
+        "Lu CPU indexed current-chat counts · {code}. Observed visible entries: {inspected}; human messages: {users}; assistant messages: {assistants}; interrupted or cancelled entries: {interrupted}. No model, filesystem access, other-chat scan or task authority was requested. {}",
+        if complete{"The bounded index was exhausted."}
+        else{"Older messages may remain; these are lower-bound counts, not an all-history total."}
+    );
+    Ok(CpuSearchResult{
+        answer,complete,scanned_entries:inspected,scanned_bytes:0,matches:0,
+    })
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
