@@ -56,8 +56,11 @@ impl TuningProfile {
     pub fn validate_for_model(
         &self, target:&AdmittedModel, projector_present:bool,
     )->Result<(),String>{
-        if projector_present && !matches!(&self.speculative,Speculative::Disabled){
-            return Err("speculative decoding not admitted with MMProj".into())
+        // Until a pinned native vision matrix establishes equivalent
+        // behavior, NO experimental P5 profile may change MMProj inference.
+        // Everyday multimodal Lu continues the prior untuned launch.
+        if projector_present {
+            return Err("P5 tuning not admitted with MMProj before vision acceptance".into())
         }
         let Speculative::DraftSimple(draft)=&self.speculative else{return Ok(())};
         target.recheck().map_err(|_|"target GGUF admission changed")?;
