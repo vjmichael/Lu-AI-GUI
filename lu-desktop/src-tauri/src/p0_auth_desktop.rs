@@ -22,6 +22,7 @@ pub(crate) struct AuthorityPosture{
     pub native_workers_cancellable:usize,
     pub interrupted_or_uncertain_native_tasks:usize,
     pub original_reviewed_recovery_status:String,
+    pub security_recovery:crate::p0_sec_recovery::SecurityRecoveryView,
     pub original_host_cancel_events:Vec<HostCancelHistory>,
     pub execution_authorized:bool,
     pub previous_grant_reusable:bool,
@@ -51,6 +52,13 @@ fn posture(owner:&DesktopState,chat:&str)->Result<AuthorityPosture,String>{
         .filter(|r|r.state==TaskState::Interrupted).count();
     let native=dashboard.iter()
         .filter(|r|owner.background_processes.can_cancel(&r.task_id)).count();
+    let cancel_history=owner.chats.p0_auth_cancel_history(chat)?;
+    let security_recovery=owner.catalog_path.parent().and_then(|profile|{
+        crate::p0_sec_recovery::for_original_chat(
+            profile,chat,&owner.chats,&owner.background_tasks,
+            &cancel_history
+        ).ok()
+    }).unwrap_or_else(crate::p0_sec_recovery::SecurityRecoveryView::unavailable);
     let host_recovery=owner.catalog_path.parent().and_then(|profile|{
         agent_recovery_provenance::read_original_recovery(
             profile,chat,&owner.chats
@@ -66,7 +74,8 @@ fn posture(owner:&DesktopState,chat:&str)->Result<AuthorityPosture,String>{
         native_workers_cancellable:native,
         interrupted_or_uncertain_native_tasks:interrupted,
         original_reviewed_recovery_status:host_recovery,
-        original_host_cancel_events:owner.chats.p0_auth_cancel_history(chat)?,
+        security_recovery,
+        original_host_cancel_events:cancel_history,
         execution_authorized:false,previous_grant_reusable:false,
         previous_os_custody_independently_proven:false,
         automatic_retry_allowed:false,
