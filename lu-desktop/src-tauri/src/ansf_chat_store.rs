@@ -1732,6 +1732,7 @@ mod tests{
         // A second genuinely NEW human turn can be admitted by a NEW
         // native authorization. Old cancelled work cannot be completed.
         chats.append_user_with_turn_id(&chat,&fresh,"Fresh approved review").unwrap();
+        chats.append_progress(&chat,&fresh,"Fresh reviewed response").unwrap();
         chats.complete_reviewed_if_not_revoked(&chat,&fresh,after).unwrap();
         let history=chats.history(&chat).unwrap();
         assert!(history.iter().any(|x|x.text=="Worker evidence available"
@@ -1748,6 +1749,7 @@ mod tests{
         let chat=chats.create_chat().unwrap().chat_id;
         let turn=format!("g-{}","4".repeat(32));
         chats.append_user_with_turn_id(&chat,&turn,"Race review").unwrap();
+        chats.append_progress(&chat,&turn,"Race result").unwrap();
         let before=chats.p0_auth_requested_watermark(&chat).unwrap();
         let barrier=Arc::new(Barrier::new(3));
         let a=Arc::clone(&chats);
