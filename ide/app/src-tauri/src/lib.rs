@@ -15,7 +15,7 @@ mod debug_backend;
 #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
 mod lsp_backend;
 mod terminal_broker;
-#[cfg(all(any(windows, target_os = "linux"), any(feature = "native-build", feature = "native-debug")))]
+#[cfg(all(any(windows, target_os = "linux"), any(feature = "native-build", feature = "native-debug", feature = "native-lsp")))]
 mod global_native_custody;
 use std::{
     collections::HashMap,
