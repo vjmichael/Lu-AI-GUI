@@ -5,13 +5,16 @@
 //! snapshot after release pins, registered project and disk revision checks.
 #![cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
 #[cfg(target_os = "linux")]
+use lu_ide_execution_supervisor::linux_worker::reconcile_linux_interrupted;
+#[cfg(target_os = "linux")]
 use lu_ide_execution_supervisor::linux_worker::lsp_native::{
     native_lsp_bundle_digest, start_linux_lsp, LinuxLspSession,
 };
-use lu_ide_execution_supervisor::{snapshot::publish_lsp_input, JobPlan, Supervisor};
+use lu_ide_execution_supervisor::{snapshot::publish_lsp_input, JobPhase, JobPlan, Supervisor};
 #[cfg(windows)]
 use lu_ide_execution_supervisor::{
     windows_broker::TrustedBroker,
+    windows_worker::reconcile_windows_interrupted_via_service,
     windows_worker::lsp_native::{native_lsp_bundle_digest, start_windows_lsp, WindowsLspSession},
 };
 use lu_ide_workspace::IdeWorkspaceRegistry;
@@ -943,6 +946,72 @@ impl NativeLspRuntime {
         serde_json::to_value(replies).map_err(|_| "LSP_RESPONSE_UNAVAILABLE".into())
     }
 
+    /// Project-scoped interrupted job identifiers only. The renderer cannot
+    /// use a job ID as authorization; each cleanup requires an OS-native
+    /// confirmation and the original owner journal.
+    pub fn recoverable_jobs(&self,project_id:&str)->Result<Vec<String>,String>{
+        if !project_id.starts_with("ide-") || project_id.len()!=36 ||
+            !project_id[4..].bytes().all(|x|x.is_ascii_hexdigit()){
+            return Err("FIN01_LSP_RECOVERY_PROJECT_ID_INVALID".into());
+        }
+        let rows=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
+        let mut jobs:Vec<_>=rows.iter().filter(|r|
+            r.project_id==project_id && r.requires_reconciliation)
+            .map(|r|r.job_id.clone()).collect();
+        jobs.sort();
+        if jobs.len()>128{return Err("FIN01_LSP_RECOVERY_INVENTORY_TOO_LARGE".into());}
+        Ok(jobs)
+    }
+    pub fn reconcile(&self,app:&AppHandle,project_id:&str,job_id:&str)
+        ->Result<&'static str,String>{
+        if self.active.lock().map_err(|_|"LSP_HOST_UNAVAILABLE")?.is_some(){
+            return Err("FIN01_LSP_ACTIVE_SESSION_PREVENTS_RECOVERY".into());
+        }
+        let original=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
+        let interrupted=original.iter().find(|j|j.job_id==job_id)
+            .ok_or("FIN01_LSP_ORIGINAL_JOB_NOT_FOUND")?;
+        if interrupted.project_id!=project_id || !interrupted.requires_reconciliation{
+            return Err("FIN01_LSP_RECOVERY_SCOPE_DENIED".into());
+        }
+        // The service image/publisher remains native, remeasured and
+        // first-party; never take an executable or service path from JS.
+        #[cfg(windows)]
+        let broker=["rust-analyzer","clangd","ruff","pyright"].iter()
+            .find_map(|provider|installation(app,provider).ok().map(|x|x.service))
+            .ok_or("FIN01_LSP_TRUSTED_RECOVERY_SERVICE_UNAVAILABLE")?;
+        let consent=app.dialog()
+            .message(format!(
+                "Inspect and clean up exactly the original protected LSP job {job_id} for project {project_id}?\\n\\nNo source, server or debugger will be started. The OS service/cgroup must verify descendant termination and write a terminal journal receipt. The global admission marker may still require separate operator reconciliation."))
+            .title("Lu IDE · Reconcile protected language server")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Verify OS cleanup".into(),"Leave quarantined".into()))
+            .blocking_show();
+        if !consent{return Err("FIN01_LSP_RECOVERY_NOT_APPROVED".into());}
+        #[cfg(windows)]
+        let result=reconcile_windows_interrupted_via_service(
+            &self.supervisor,job_id,&broker)
+            .map_err(|e|e.code().to_owned())?;
+        #[cfg(target_os="linux")]
+        let result={
+            let _=app;
+            reconcile_linux_interrupted(&self.supervisor,job_id)
+                .map_err(|e|e.code().to_owned())?
+        };
+        if result.job_id!=job_id || result.project_id!=project_id ||
+            result.phase!=JobPhase::Cancelled || result.requires_reconciliation {
+            return Err("FIN01_LSP_OS_RECOVERY_UNVERIFIED".into());
+        }
+        let remaining=self.supervisor.inspect().map_err(|e|e.code().to_owned())?;
+        if !crate::global_native_custody::durable_busy(&remaining){
+            *self.cleanup_uncertain.lock()
+                .map_err(|_|"LSP_HOST_UNAVAILABLE")?=false;
+            // A still-owned in-process marker may be released only after all
+            // other native journals are terminal too. After a crash this
+            // object does not have the old fence identity: it cannot unlink.
+            self.release_global_if_terminal()?;
+        }
+        Ok("FIN01_LSP_OS_JOB_RECONCILED_GLOBAL_CUSTODY_RECHECK_REQUIRED")
+    }
     pub fn stop(&self) -> Result<(), String> {
         let mut lock = self.active.lock().map_err(|_| "LSP_HOST_UNAVAILABLE")?;
         let mut uncertain = self.cleanup_uncertain.lock()
