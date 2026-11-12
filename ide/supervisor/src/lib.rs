@@ -1893,6 +1893,9 @@ mod tests {
         let filename = path();
         let supervisor = Supervisor::open(filename.clone()).unwrap();
         let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
         inject_running(&supervisor, &job);
         supervisor.native_mark_release_pending(&job.job_id).unwrap();
         let live = supervisor.inspect().unwrap();
@@ -1923,6 +1926,9 @@ mod tests {
         let filename = path();
         let supervisor = Supervisor::open(filename.clone()).unwrap();
         let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
         inject_running(&supervisor, &job);
         supervisor.native_mark_release_pending(&job.job_id).unwrap();
         assert_eq!(
