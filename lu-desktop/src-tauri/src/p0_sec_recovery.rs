@@ -301,3 +301,8 @@ mod tests{
             .unwrap().0.is_empty());
     }
 }
+
+// SEC-05: original ANSF authority, SQLite and recovery hostile fixtures.
+#[cfg(test)]
+#[path = "p0_sec05_adversarial_tests.rs"]
+mod p0_sec05_adversarial_tests;
