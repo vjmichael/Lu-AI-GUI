@@ -102,6 +102,14 @@ pub struct TaskTerminalNotice {
 /// output, files, or executable paths. Only Lu's trusted desktop host should
 /// expose this to the local user; model-facing tools remain workspace scoped.
 #[derive(Debug,Clone,PartialEq,Eq)]
+/// Original-journal recovery projection; no PID, argv, path, checkpoint,
+/// private bytes, tool grant or action capability is exported.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct SecurityRecoveryRow{
+    pub task_id:String,
+    pub state:TaskState,
+    pub custody_reason:Option<String>,
+}
 pub struct TaskDashboardEntry{
     pub task_id:String,
     pub workspace_id:Option<String>,
@@ -435,7 +443,9 @@ impl TaskStore {
         let tx=connection.transaction()?;
         let changed=tx.execute(
             "UPDATE lu_tasks SET state='RUNNING', updated_at=CURRENT_TIMESTAMP
-             WHERE task_id=?1 AND state IN ('PAUSED','INTERRUPTED')",params![task_id]
+             WHERE task_id=?1 AND state IN ('PAUSED','INTERRUPTED')
+               AND NOT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
+                              WHERE task_id=?1)",params![task_id]
         )?;
         if changed!=1{return Err(TaskStoreError::InvalidTransition);}
         tx.execute(
@@ -496,6 +506,44 @@ impl TaskStore {
         ).optional().map_err(Into::into)
     }
 
+    /// SEC-04: exact journal-scoped operator rows. Historical projection,
+    /// never authorization or automatic resume. Reviewed callers verify
+    /// original (chat,turn) binding; global callers pass an exact chat.
+    pub fn security_recovery_rows(
+        &self,workspace:Option<&str>,limit:usize,
+    )->Result<(Vec<SecurityRecoveryRow>,bool),TaskStoreError>{
+        if limit==0||limit>64||workspace.is_some_and(|w|
+            w.len()<3||w.len()>128||!w.starts_with("c-")
+            ||!w.bytes().all(|x|x.is_ascii_alphanumeric()||x==b'-'||x==b'_')){
+            return Err(TaskStoreError::InvalidTaskId)
+        }
+        let connection=self.connection.lock()
+            .map_err(|_|TaskStoreError::Poisoned)?;
+        let mut stmt=connection.prepare(
+            "SELECT t.task_id,t.state,u.reason FROM lu_tasks t
+             LEFT JOIN lu_task_custody_uncertainty u ON u.task_id=t.task_id
+             WHERE (?1 IS NULL OR t.workspace_id=?1)
+               AND (t.state='INTERRUPTED' OR u.task_id IS NOT NULL)
+             ORDER BY t.updated_at DESC,t.task_id ASC LIMIT ?2"
+        )?;
+        let rows=stmt.query_map(params![workspace,(limit+1) as i64],|r|{
+            let state:String=r.get(1)?;
+            Ok((r.get::<_,String>(0)?,state,r.get::<_,Option<String>>(2)?))
+        })?;
+        let mut result=Vec::new();
+        for row in rows{
+            let (task_id,state,reason)=row?;
+            result.push(SecurityRecoveryRow{
+                task_id,state:TaskState::parse(&state)
+                    .ok_or(TaskStoreError::InvalidStoredState)?,
+                custody_reason:reason,
+            });
+        }
+        let more=result.len()>limit;
+        result.truncate(limit);
+        Ok((result,more))
+    }
+
     pub fn fail(&self, task_id: &str) -> Result<(), TaskStoreError> {
         self.transition(task_id, "RUNNING", TaskState::Failed)
     }
@@ -537,7 +585,7 @@ impl TaskStore {
             .lock()
             .map_err(|_| TaskStoreError::Poisoned)?;
         let tx=connection.transaction()?;
-        if matches!(to,TaskState::Completed|TaskState::Cancelled|TaskState::TimedOut){
+        if matches!(to,TaskState::Running|TaskState::Completed|TaskState::Cancelled|TaskState::TimedOut){
             let uncertain:i64=tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
                  WHERE task_id=?1)",params![task_id],|row|row.get(0)
@@ -625,11 +673,15 @@ impl TaskStore {
         tx.execute(
             "INSERT INTO lu_task_events(task_id,event,progress,detail)
              SELECT task_id,'INTERRUPTED',progress,detail FROM lu_tasks
-             WHERE state='RUNNING'",[],
+             WHERE state='RUNNING' OR (state='PENDING' AND EXISTS(
+                 SELECT 1 FROM lu_task_custody_uncertainty u
+                 WHERE u.task_id=lu_tasks.task_id))",[],
         )?;
         let changed=tx.execute(
             "UPDATE lu_tasks SET state='INTERRUPTED',updated_at=CURRENT_TIMESTAMP
-             WHERE state='RUNNING'",[],
+             WHERE state='RUNNING' OR (state='PENDING' AND EXISTS(
+                 SELECT 1 FROM lu_task_custody_uncertainty u
+                 WHERE u.task_id=lu_tasks.task_id))",[],
         )?;
         tx.commit()?;
         Ok(changed)
