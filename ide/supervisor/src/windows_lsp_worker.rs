@@ -3418,6 +3418,17 @@ impl WindowsDapSession {
     pub fn crash_real_lldb_after_owner_receipt_for_ci(&mut self) -> Result<(), SupervisorError> {
         self.gateway.crash_protected_lldb_for_ci()
     }
+    /// FIN-04R-1 release owner-only close: after the *protected*
+    /// source-line reader finishes, the original LLDB debugger thread
+    /// must emit CONTINUED for that exact one-use kernel event before
+    /// the SCM-held Job is terminally reconciled. This performs only
+    /// the already-allowed fixed session disconnect, no step/breakpoint.
+    #[cfg(feature="fin04-release-owner-evidence")]
+    pub fn close_with_protected_release_owner_continue(
+        self,sequence:u64,
+    )->Result<(),SupervisorError>{
+        self.gateway.close_with_actual_owner_continue_for_ci(sequence)
+    }
     #[cfg(all(debug_assertions, feature = "dev045d5-ci-event-owner"))]
     pub fn close_with_real_owner_continue_for_ci(
         self,
