@@ -336,6 +336,9 @@ function App() {
   const nativeJobOutputRef = useRef(null);
   const buildStatusRequest = useRef(0);
   const [debugStatus, setDebugStatus] = useState(null);
+  const [fin04Evidence,setFin04Evidence]=useState(null);
+  const [fin04EvidenceBusy,setFin04EvidenceBusy]=useState(false);
+  const fin04EvidenceTicket=useRef(0);
   const [fin01Recovery,setFin01Recovery]=useState(null);
   const [fin01RecoveryBusy,setFin01RecoveryBusy]=useState(false);
   const [fin01KernelBusy,setFin01KernelBusy]=useState(false);
@@ -4688,6 +4691,56 @@ function App() {
     }
   }
 
+  async function inspectFin04ControlEvidence(){
+    const projectId=activeProject?.projectId;
+    if(!projectId || fin04EvidenceBusy)return;
+    const ticket=++fin04EvidenceTicket.current;
+    setFin04Evidence(null);setFin04EvidenceBusy(true);
+    try{
+      // The native command takes ONLY the registered project identity,
+      // not a DAP request, action hash, path, OS witness or approval token.
+      const evidence=await invoke('ide_debug_control_evidence',{projectId});
+      if(ticket!==fin04EvidenceTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(evidence?.projectId!==projectId ||
+         evidence.journalChainVerified!==true ||
+         evidence.nativeOwnerEventLiveVerified!==false ||
+         evidence.globalKernelCustodyAccepted!==false ||
+         evidence.installedDebuggerControlsAccepted!==false ||
+         evidence.debuggerExecutionAuthorized!==false ||
+         evidence.replayAuthorized!==false ||
+         typeof evidence.requiresOsCleanup!=='boolean' ||
+         !Number.isSafeInteger(evidence.originalDebugJobsChecked) ||
+         !Number.isSafeInteger(evidence.originalActionFilesChecked) ||
+         !Number.isSafeInteger(evidence.originalActionFilesVisible) ||
+         evidence.originalActionFilesVisible>32 ||
+         evidence.originalActionFilesChecked<evidence.originalActionFilesVisible ||
+         !Array.isArray(evidence.rows) ||
+         evidence.rows.length!==evidence.originalActionFilesVisible ||
+         !evidence.rows.every(r=>
+           /^job-[a-f0-9]{32}$/.test(r.jobId||'') &&
+           /^[a-f0-9]{64}$/.test(r.actionIdSha256||'') &&
+           /^[a-f0-9]{64}$/.test(r.previewSha256||'') &&
+           /^[a-f0-9]{64}$/.test(r.ownerEventSha256||'') &&
+           /^[a-f0-9]{64}$/.test(r.lastReceiptSha256||'') &&
+           Number.isSafeInteger(r.ownerSequence) && r.ownerSequence>0 &&
+           ['Prepared','Approved','Consumed','Denied','Revoked',
+             'ResultVerified','ResultUncertain'].includes(r.phase) &&
+           r.resultReverifiedFromCurrentKernel===false &&
+           r.debuggerExecutionAuthorized===false &&
+           r.replayAuthorized===false &&
+           typeof r.nativeOsCleanupRequired==='boolean' &&
+           typeof r.independentOsResultClaimed==='boolean'))
+        throw Error('FIN04_UNTRUSTED_NATIVE_ACTION_JOURNAL_INVENTORY');
+      setFin04Evidence(evidence);
+    }catch(error){
+      if(ticket===fin04EvidenceTicket.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Original debugger control evidence unavailable: '+String(error));
+    }finally{
+      if(ticket===fin04EvidenceTicket.current)setFin04EvidenceBusy(false);
+    }
+  }
   async function reconcileProtectedDebugger(item) {
     const projectId = activeProject?.projectId;
     if (!item || item.projectId !== projectId ||
@@ -7961,6 +8014,43 @@ function App() {
                   No new debugger execution is authorized—even if the current
                   project has no visible interrupted entries.
                 </p>}
+              {activeProject && <section className="continuityDocument"
+                aria-label="FIN-04 original debugger action journal read-only evidence">
+                <h3>FIN-04 · Native debugger-control evidence</h3>
+                <p>Inspect original action-journal hashes, phases and their
+                  originating debugger jobs. This does not inspect live memory,
+                  approve a breakpoint or step, or grant DAP execution.</p>
+                <button type="button" className="ghostBtn"
+                  disabled={fin04EvidenceBusy}
+                  onClick={()=>void inspectFin04ControlEvidence()}>
+                  {fin04EvidenceBusy?'Verifying original action journals…':
+                    'Inspect debugger action evidence'}
+                </button>
+                {fin04Evidence?.projectId===activeProject.projectId &&
+                  <div role="status">
+                    <p>Original debugger jobs checked: {fin04Evidence.originalDebugJobsChecked}.
+                      {' '}Action logs checked: {fin04Evidence.originalActionFilesChecked}.
+                      {fin04Evidence.truncated?' Only the first 32 project rows are shown.':''}</p>
+                    <p>Hash chain: verified. Live owner, current kernel and
+                      installed-control acceptance: not established.
+                      Execution and replay remain denied.</p>
+                    {fin04Evidence.requiresOsCleanup &&
+                      <p role="alert">An original debugger action or job requires
+                        native OS reconciliation before further execution.</p>}
+                    {fin04Evidence.rows.map(row=>
+                      <article key={row.actionIdSha256}>
+                        <p>Original job: <code>{row.jobId}</code></p>
+                        <p>Action: <code>{row.actionIdSha256}</code></p>
+                        <p>Journal phase: {row.phase}.
+                          {' '}OS cleanup: {row.nativeOsCleanupRequired?'required':'not indicated'}.</p>
+                        <p>Last original action receipt:
+                          {' '}<code>{row.lastReceiptSha256}</code></p>
+                        {row.independentOsResultClaimed &&
+                          <p>Historical OS result was recorded, but current
+                            kernel evidence is not independently reverified.</p>}
+                      </article>)}
+                  </div>}
+              </section>}
               <p>{debugStatus?.description || 'An unpinned adapter cannot execute.'}</p>
               <button type="button" className="ghostBtn"
                 disabled={!activeProject || !debugAdmission.ready ||
