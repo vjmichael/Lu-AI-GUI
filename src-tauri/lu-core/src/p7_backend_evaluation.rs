@@ -79,6 +79,7 @@ pub struct VerifiedCandidate {
     _pinned_projector:Option<File>,
     engine_sha256:[u8;32],
     model_sha256:[u8;32],
+    projector_sha256:Option<[u8;32]>,
 }
 impl VerifiedCandidate {
     pub fn engine_sha256(&self)->[u8;32]{self.engine_sha256}
@@ -101,9 +102,12 @@ impl VerifiedCandidate {
             return Err(CandidateBlocker::ChangedArtifact)
         }
         if let Some(projector_path)=self.projector_path.as_ref(){
-            let (_,same,_) = digest_original_file(
+            let (_,same,actual) = digest_original_file(
                 projector_path,MAX_EVALUATION_MMProj_BYTES)?;
-            if same!=*projector_path{return Err(CandidateBlocker::ChangedArtifact)}
+            if same!=*projector_path||
+                Some(actual)!=self.projector_sha256{
+                return Err(CandidateBlocker::ChangedArtifact)
+            }
             // Only the owner may construct the hash-verified projector
             // manifest; its handle remains pinned for this object lifetime.
             // Do not claim file identity if an original handle was omitted.
@@ -200,6 +204,7 @@ impl CandidateManifest {
             _pinned_executable:exe,_pinned_model:model,
             _pinned_projector:projector_file,
             engine_sha256:sha,model_sha256:model_sha,
+            projector_sha256:self.expected_projector_sha256,
         })
     }
 }
