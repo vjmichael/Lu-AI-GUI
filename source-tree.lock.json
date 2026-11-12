@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "db7b9bfedb951145008eb89971b62fb6f4c0a87c",
-  "trackedFileCount": 945,
+  "sourceCommitBeforeLock": "a410bf64005dd5fc1d530928365b9271f9732f42",
+  "trackedFileCount": 947,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -830,6 +830,10 @@
     {
       "path": "docs/LU_P0_NEXT_PROJECT_AGENT_HANDOFF_20261111.md",
       "blob": "a37ddd23fba1c6541fd4ddf1eee4127ce910b562"
+    },
+    {
+      "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
+      "blob": "cfae92e421532b0136080168b43c292bdbb61fd6"
     },
     {
       "path": "docs/LU_P0_SOURCE_RECONCILIATION_REPAIRS_20261111.md",
@@ -1848,6 +1852,10 @@
       "blob": "6af44cabe7a2f0eef35cd8d5b47299963ae149bd"
     },
     {
+      "path": "lu-desktop/tests/p0-sec-guardian-hardening.test.mjs",
+      "blob": "c4414162b78690ac8c0e2384b2add55075675987"
+    },
+    {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
       "blob": "d62b8ada2fabf1930054b3752d2d51ec901f16ca"
     },
@@ -2817,7 +2825,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "9e5b7a21bb51fb6ddf591662fcd93bc1f72d7be0"
+      "blob": "a1817bd36638f3be32fcdc495e10bd8bdf9ac476"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
@@ -3165,7 +3173,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/tasks.rs",
-      "blob": "78f7532e26f664f301f6d6b097248b28448ddf34"
+      "blob": "5d1f5c8de1814e7f8382b4ec81a0d13b065cc98e"
     },
     {
       "path": "src-tauri/lu-core/src/vision_routing.rs",
@@ -3737,7 +3745,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs",
-      "blob": "1f2cc74315c5d80f99fc9932a80ba849a968e44d"
+      "blob": "ae1348ca25debcfd0075d3c0f97caea4ef727b72"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-crash-parent.rs",
@@ -3761,7 +3769,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "8ba2acc186f71af96b355082c145ca070b30d127"
+      "blob": "270b6f43b3d7a1e928dc96f8b4f36d30694ff63e"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
