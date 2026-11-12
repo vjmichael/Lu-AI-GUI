@@ -45,7 +45,11 @@ export function checkedTestExplorer(discovery,report,projectId,filter='all') {
       seenCaseIds.add(row.id);
       const source=row.source;
       const sourceValid=source && typeof source==='object' &&
-        safeRelativeSource(source.relativePath);
+        safeRelativeSource(source.relativePath) &&
+        /^[a-f0-9]{64}$/.test(source.diskSha256||'') &&
+        Number.isSafeInteger(source.line) &&
+        source.line>=1 && source.line<=250000 &&
+        source.characterUtf16===0;
       // Reporter hints are untrusted source-navigation metadata.
       if(source && !sourceValid)return null;
       cases.push(Object.freeze({id:row.id,name:row.name,status:row.status,
