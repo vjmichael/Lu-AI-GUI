@@ -49,6 +49,11 @@ test('P4 native scheduler maintains process custody and probes immediately befor
   assert.match(desktop,/\|\|state\.generation_queue\.has_foreground_jobs\(\)/);
   assert.match(desktop,/admission\.defer_new_background/);
   assert.match(core,/fn perf01_p4_second_probe_stops_native_starts_after_queue_scan/);
+  assert.match(core,/pub fn apply_interactive_admission\(/);
+  assert.match(core,/interactive_admission_hold:bool/);
+  assert.match(core,/if g\.interactive_admission_hold/);
+  assert.match(core,/fn perf01_p4_guardian_hold_blocks_new_lease_but_preserves_existing_custody/);
+  assert.match(desktop,/apply_interactive_admission\(admission\)/);
 });
 
 test('P4 model response queue prioritizes humans but eventually admits aged background',()=>{
