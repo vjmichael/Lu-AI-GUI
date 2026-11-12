@@ -1339,20 +1339,26 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
             // Host-only guardian admission. A loaded model reserves greater
             // foreground capacity; background GPU jobs stay prohibited until
             // a verified per-backend VRAM monitor establishes an allowance.
-            let mut budget=lu_core::native_background_scheduler::
-                ResourceBudget::interactive_first();
-            if state.supervisor.status().is_ok_and(|s|s.session_id.is_some()){
-                budget.workers=1;budget.cpu=1;budget.ram_mib=512;
-            }
-            let observed=state.background_pressure.sample();
-            let budget=budget.under_host_pressure(observed);
-            let _=state.background_scheduler.set_budget(budget);
-            // PERF-01 P2: new native OS workers do not start behind a
-            // foreground chat request. Already-running approved work is
-            // polled and reconciled without preemption.
+            let model_resident=state.supervisor.status()
+                .is_ok_and(|s|s.session_id.is_some());
             let foreground_pending=state.generation_queue.has_foreground_jobs();
-            let _=state.background_scheduler
-                .tick_foreground_guarded(foreground_pending);
+            let observed=state.background_pressure.sample();
+            let logical_cpus=std::thread::available_parallelism()
+                .map(|n|n.get()).unwrap_or(1);
+            let admission=lu_core::native_background_scheduler::
+                ResourceBudget::interactive_admission(
+                    logical_cpus,model_resident,foreground_pending,observed
+                );
+            let _=state.background_scheduler.set_budget(admission.budget);
+            // PERF-01 P4: no NEW OS worker while the live model needs
+            // foreground resources, physical RAM is unmeasured/critical, or
+            // CPU is saturated. A second host-owned queue probe runs just
+            // before every worker launch to narrow the sampling race.
+            // Existing workers still receive custody/recovery reconciliation.
+            let _=state.background_scheduler.tick_interactive_guarded(
+                admission.defer_new_background,
+                ||state.generation_queue.has_foreground_jobs(),
+            );
             // The existing watchdog also expires Lu-only observation leases.
             state.observe.tick();
             if let Ok(events)=state.background_tasks.pending_terminal_notices_after(
