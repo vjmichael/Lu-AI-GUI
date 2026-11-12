@@ -1048,6 +1048,11 @@ impl NativeBuildRuntime {
         }
         // Acquire before the in-memory current-job slot is set. A denied
         // global lease cannot leave a phantom active build.
+        // Refuse known busy journals BEFORE creating the profile-wide marker.
+        // The exclusive create_new still serializes the final admission, and
+        // the original journals are rechecked while it is held.
+        crate::global_native_custody::preflight_global_idle(
+            &self.global_custody_profile,"build")?;
         let mut global_fence=crate::global_native_custody::GlobalAdmissionFence
             ::acquire(&self.global_custody_profile,"build")?;
         let own_before=self.supervisor.inspect()
