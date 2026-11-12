@@ -16,3 +16,21 @@ test('FIN07 scope only belongs to a real project identifier',()=>{
  assert.equal(fin07ScopeRegister('../../fake'),null);
  assert.equal(fin07ScopeRegister('ide-'+'z'.repeat(32)),null);
 });
+
+test('FIN07 independent evidence never grants feature freeze',async()=>{
+ const {fin07ReconcileEvidence}=await import('../web/fin07_scope_register.js');
+ const result=fin07ReconcileEvidence(id,[{
+  gate:'nativeWindows',projectId:id,status:'independently_verified',
+  sourceHead:'a'.repeat(40),receiptSha256:'b'.repeat(64),
+  independentReview:true,executionAuthorized:false,releaseAuthorized:false
+ }]);
+ assert.equal(result.allEvidenceVerified,false);
+ assert.equal(result.frozen,false);
+ assert.equal(result.releaseAuthorized,false);
+ assert.equal(result.gates.length,8);
+ assert.equal(fin07ReconcileEvidence(id,[{
+  gate:'nativeWindows',projectId:id,status:'independently_verified',
+  sourceHead:'a'.repeat(40),receiptSha256:'bad',
+  independentReview:true,executionAuthorized:false,releaseAuthorized:false
+ }]),null);
+});
