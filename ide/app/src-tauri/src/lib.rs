@@ -1952,6 +1952,67 @@ async fn ide_debug_status(app: AppHandle, project_id: String) -> Result<serde_js
         }))
     }
 }
+/// FIN-04R: one explicit native OS operator decision, original on-disk
+/// source/action/supervisor journal replay and independently re-queried
+/// OS kernel tree. ONLY writes audit evidence of unknown interrupted
+/// debugger outcome. No job restart, action dispatch, marker clearance
+/// or WebView-provided process ID, command, witness, path or consent.
+#[tauri::command]
+async fn ide_debug_action_os_recovery(
+    app:AppHandle,
+    state:State<'_,Arc<IdeWorkspaceRegistry>>,
+    project_id:String,
+)->Result<serde_json::Value,String>{
+    #[cfg(all(feature="native-debug",any(windows,target_os="linux")))]
+    {
+        state.trusted_native_worker_root(&project_id)
+            .map_err(|_|"FIN04REC_PROJECT_NOT_REGISTERED")?;
+        let runtime=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("FIN04REC_NATIVE_SUPERVISOR_UNAVAILABLE")?;
+        let runtime=Arc::clone(runtime.inner());
+        let result=tauri::async_runtime::spawn_blocking(move||{
+            let original=runtime.inspect_control_evidence(&project_id)?;
+            if original.original_action_files_checked==0 ||
+                !original.global_unresolved_action_required {
+                return Err("FIN04REC_NO_SELECTED_PROJECT_ORIGINAL_ACTION".into());
+            }
+            let approved=app.dialog()
+                .message(format!(
+                    "Independently inspect interrupted native debugger action OS custody?\n\n\
+                    Registered project: {project_id}\n\
+                    Original action files: {}\n\
+                    Debug journal SHA-256: {}\n\
+                    Action manifest SHA-256: {}\n\n\
+                    This queries original Windows Job Objects or Linux cgroups,\
+                    requires the old process owner to have exited, and writes\
+                    one audit-only receipt if the original evidence is stable.\n\
+                    No debug action will replay, no DAP command will be sent,\
+                    no previous step will be declared successful, and the\
+                    global admission marker will NOT be cleared.",
+                    original.original_action_files_checked,
+                    original.original_debug_journal_sha256,
+                    original.action_manifest_sha256,
+                ))
+                .title("Lu IDE · OS-only debugger action recovery evidence")
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    "Verify original OS custody only".into(),
+                    "Decline".into(),
+                ))
+                .blocking_show();
+            if !approved {
+                return Err("FIN04REC_OPERATOR_DECLINED".into());
+            }
+            runtime.record_action_os_recovery(&project_id)
+        }).await.map_err(|_|"FIN04REC_NATIVE_TASK_INTERRUPTED".to_owned())??;
+        return serde_json::to_value(result)
+            .map_err(|_|"FIN04REC_RECEIPT_SERIALIZATION_DENIED".into());
+    }
+    #[cfg(not(all(feature="native-debug",any(windows,target_os="linux"))))]
+    {
+        let _=(app,state,project_id);
+        Err("FIN04REC_NATIVE_OS_SUPERVISOR_NOT_INSTALLED".into())
+    }
+}
 /// FIN-04: read-only original debugger action evidence. This must never
 /// accept an action token, OS witness boolean, PID, DAP command or path.
 #[tauri::command]
@@ -4065,6 +4126,7 @@ pub fn run() {
             ide_build_reconcile,
             ide_debug_status,
             ide_debug_control_evidence,
+            ide_debug_action_os_recovery,
             ide_debug_review_control_candidate,
             ide_debug_run_fixture,
             ide_debug_run_project,
