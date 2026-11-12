@@ -287,7 +287,7 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
     let mut session=ReviewedApplicationTurnSession::from_verified_host_task(
         authority.clone(),first_origin.clone(),scope.into(),
         Arc::clone(&tasks),Arc::clone(&supervisor),Arc::clone(&effects),
-        Arc::new(ExplicitHostPolicy::new(true)),git_review,media_review
+        Arc::new(ExplicitHostPolicy::new(true)),git_review,media_review,None
     ).unwrap();
     assert_eq!(session.schemas().unwrap().len(),2);
     let audit=ModelTurnJournal::open(&root.join("model-turn-audit.sqlite")).unwrap();
@@ -457,7 +457,7 @@ fn memory_loop03c_reviewed_git_ffprobe_changed_source_and_exclusive_restart(){
         authority.clone(),fresh_origin.clone(),scope.into(),
         Arc::clone(&new_tasks),Arc::clone(&new_supervisor),
         Arc::clone(&new_effects),
-        Arc::new(ExplicitHostPolicy::new(false)),new_review,None
+        Arc::new(ExplicitHostPolicy::new(false)),new_review,None,None
     ).unwrap();
     let mut fresh_model=scripted(&["lu_reviewed_git_head"]);
     let fresh_report=tauri::async_runtime::block_on(

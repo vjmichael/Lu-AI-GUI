@@ -17,14 +17,47 @@ export function eventKeys(source) {
   return [...block.matchAll(/^  ([a-z][a-z0-9_-]*):/gm)].map((m) => m[1]);
 }
 
+
+/**
+ * PLAN-07D predates the opt-in workflow_dispatch convention. Keep its
+ * operator-reviewed PR #219 transition alive, but never allow its restricted
+ * [edited] trigger to be generalized to other PRs, branches, or SHA markers.
+ * This exception is NOT permission to run arbitrary task-group CI per push.
+ */
+export function isGuardedPlan07D(filename, source, keys) {
+  if (filename !== "lu-plan07d-installed.yml" ||
+      keys.length !== 1 || keys[0] !== "pull_request" ||
+      !/^    types: \[edited\]\s*$/m.test(source)) return false;
+  const body = source.split(/^jobs:\s*$/m)[1];
+  if (!body) return false;
+  const jobs = body.split(/^  ([a-z0-9_-]+):\s*$/gm).slice(1);
+  if (jobs.length !== 6) return false; // exactly 3 job-name/body pairs
+  const expected = new Set([
+    "hosted-windows-nsis",
+    "hosted-debian-installed-human",
+    "hosted-genuine-gguf-original"
+  ]);
+  for (let i = 0; i < jobs.length; i += 2) {
+    if (!expected.delete(jobs[i])) return false;
+    const condition = jobs[i+1].match(/^    if: (.+)$/m)?.[1] || "";
+    if (!condition.includes("github.event.pull_request.number == 219") ||
+        !condition.includes("github.event.pull_request.draft") ||
+        !condition.includes("github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110'") ||
+        !condition.includes("contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha))") ||
+        !condition.includes("!contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha))")) return false;
+  }
+  return expected.size === 0;
+}
+
 export function inspectOne(filename, source) {
   const keys = eventKeys(source);
   const problems = [];
-  if (!keys.includes("workflow_dispatch")) problems.push("NO_GROUP_DISPATCH");
-  if (keys.filter((x) => x === "workflow_dispatch").length !== 1) problems.push("DUPLICATE_DISPATCH");
+  const narrowlyAdmitted = isGuardedPlan07D(filename, source, keys);
+  if (!keys.includes("workflow_dispatch") && !narrowlyAdmitted) problems.push("NO_GROUP_DISPATCH");
+  if (keys.filter((x) => x === "workflow_dispatch").length !== (narrowlyAdmitted ? 0 : 1)) problems.push("DUPLICATE_DISPATCH");
   if (!AUTOMATIC.has(filename) && keys.some((x) => [
     "push", "pull_request", "pull_request_target", "merge_group", "repository_dispatch"
-  ].includes(x))) problems.push("HEAVY_WORKFLOW_AUTOMATIC_FANOUT");
+  ].includes(x)) && !narrowlyAdmitted) problems.push("HEAVY_WORKFLOW_AUTOMATIC_FANOUT");
   if (AUTOMATIC.has(filename) && !keys.includes("pull_request"))
     problems.push("BASELINE_PR_CHECK_MISSING");
   if (!/\njobs:\s*\n/.test(source)) problems.push("NO_JOBS");

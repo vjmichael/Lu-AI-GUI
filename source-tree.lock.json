@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "afcb7ae235de8ae84d3fdc66c127bac6984fa33e",
-  "trackedFileCount": 942,
+  "sourceCommitBeforeLock": "0a5e47fcd9f96b55ac96983f05cb8a385728c666",
+  "trackedFileCount": 943,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -233,7 +233,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "0d70ebdc7b7949a7e296b2b3d23e1b3cdb9aa548"
+      "blob": "4f997c51223a1d177b530472c3797aeb8e7e5ae5"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -820,6 +820,10 @@
       "blob": "c8585c6ff46b9e9618514c899d199edd8c824866"
     },
     {
+      "path": "docs/LU_P0_GATE_20261111.md",
+      "blob": "b03c8994cdcb1c8295972b76782023fbee51cf34"
+    },
+    {
       "path": "docs/LU_P0_MEMORY_ORIGINAL_CROSS_SESSION_CONTINUITY_20261111.md",
       "blob": "34a4a937eda58706b95c5a177d8c562db52123de"
     },
@@ -1373,7 +1377,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/memory_loop03c_reviewed_worker_tests.rs",
-      "blob": "4ac3583adea64dd994e07b8c3226d653725796eb"
+      "blob": "752dbfd8ad2dfa13ff5350ceed368e89448f56aa"
     },
     {
       "path": "lu-desktop/src-tauri/src/model_file_effect_handoff.rs",
@@ -1385,7 +1389,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_action_proposal.rs",
-      "blob": "9c5e8f28bbea6a037674bf6f40b969be6ec9332b"
+      "blob": "9fa10f7edc264cd7700db8a802167c771e05ffcc"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",
@@ -1449,7 +1453,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/project_review_decisions_desktop.rs",
-      "blob": "32dc5ff74181fd733ef90cb8d5590198fadabae2"
+      "blob": "b284f6bd410102d504058d4a4676b0565266d159"
     },
     {
       "path": "lu-desktop/src-tauri/src/project_status_desktop.rs",
@@ -2089,11 +2093,11 @@
     },
     {
       "path": "scripts/lu-ci-group-policy.mjs",
-      "blob": "d8aa882387ed30b5591495b16944e37625b37ef8"
+      "blob": "bcf3c6bfbf67ee84ab11064d83f7e841a861ab7b"
     },
     {
       "path": "scripts/lu-ci-group-policy.test.mjs",
-      "blob": "3ae032d0d11cb735de71cf79fafa1b340be1d488"
+      "blob": "035a42c5e960f871bb0ee86d9077e1340a5467b3"
     },
     {
       "path": "scripts/lu-ci-superseded-queue.mjs",
@@ -3401,7 +3405,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "ffa600a6de6b3b22f789d8ce49f5e0607b96b446"
+      "blob": "6f80fb7ee3547949e4ece4bf5784e524833422a0"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",

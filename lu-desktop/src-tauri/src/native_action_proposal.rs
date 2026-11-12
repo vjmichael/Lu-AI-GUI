@@ -356,7 +356,7 @@ mod tests{
     #[test]
     fn text_bytes_cannot_supply_a_directory_or_approve_themselves(){
         let q=ActionProposalQueue::default();
-        let good=r#"{"kind":"propose_native_action","action":"create_text_file","purpose":"draft a note","textFileDraft":{"fileName":"note.md","content":"# Report\nText"}}"#;
+        let good=r##"{"kind":"propose_native_action","action":"create_text_file","purpose":"draft a note","textFileDraft":{"fileName":"note.md","content":"# Report\nText"}}"##;
         let created=q.stage("p-safe","c-1","g-original",
             "Create a new text file",good).unwrap();
         assert_eq!(created.text_file_draft.as_ref().unwrap().file_name,"note.md");

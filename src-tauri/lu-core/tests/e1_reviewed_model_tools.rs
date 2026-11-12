@@ -183,7 +183,8 @@ impl Fixture{
             Arc::clone(&self.tasks),Arc::clone(&self.supervisor),
             Arc::clone(&self.effects),Arc::new(Allow),
             vec![git_config(git,&self.repo)],
-            probe.map(|image|media_config(image,&self.media))
+            probe.map(|image|media_config(image,&self.media)),
+            None // Specialist probe is not admitted in this legacy Git/media fixture.
         )
     }
     fn turn(&self,names:&[&str])->Result<NativeToolTurn,ToolTurnError>{
@@ -351,7 +352,7 @@ async fn actual_model_selected_reviewed_git_and_media_tools_return_verified_rece
         &f.registry,&mut f.catalog,f.auth.clone(),origin(),
         Arc::clone(&f.tasks),Arc::clone(&f.supervisor),
         Arc::clone(&f.effects),Arc::new(Allow),
-        git_records,Some(media_config(&ffprobe,&f.media))
+        git_records,Some(media_config(&ffprobe,&f.media)),None
     ).unwrap();
     assert_eq!(names,vec![
         "lu_reviewed_git_head","lu_reviewed_git_status",
@@ -696,7 +697,7 @@ async fn real_mp4_video_and_aac_audio_are_independently_verified(){
             &f.registry,&mut f.catalog,f.auth.clone(),origin(),
             Arc::clone(&f.tasks),Arc::clone(&f.supervisor),
             Arc::clone(&f.effects),Arc::new(Allow),
-            vec![],Some(record)
+            vec![],Some(record),None
         ).unwrap();
         assert_eq!(names,vec!["lu_reviewed_media_facts"]);
         let mut turn=f.turn(&["lu_reviewed_media_facts"]).unwrap();
@@ -768,7 +769,7 @@ async fn scripted_model_enters_real_reviewed_turn_session_and_receives_os_feedba
         f.auth.clone(),origin(),"e1-p07-space".into(),
         Arc::clone(&f.tasks),Arc::clone(&f.supervisor),
         Arc::clone(&f.effects),Arc::new(Allow),
-        vec![git_config(&git,&f.repo)],None,
+        vec![git_config(&git,&f.repo)],None,None,
     ).unwrap();
     let schemas=session.schemas().unwrap();
     assert_eq!(schemas.len(),1);
@@ -895,7 +896,7 @@ async fn genuine_gguf_independently_selects_git_and_media_tools_and_survives_jou
         let mut session=ReviewedApplicationTurnSession::from_verified_host_task(
             f.auth.clone(),origin(),"e1-p07-space".into(),
             Arc::clone(&f.tasks),Arc::clone(&f.supervisor),
-            Arc::clone(&f.effects),Arc::new(Allow),records,media
+            Arc::clone(&f.effects),Arc::new(Allow),records,media,None
         ).unwrap();
         let permitted=session.schemas().unwrap();
         assert_eq!(permitted.len(),1);
@@ -1190,7 +1191,7 @@ async fn agent01g_genuine_gguf_requires_fresh_ansf_review_native_git_oracle_and_
     let mut session=ReviewedApplicationTurnSession::from_verified_host_task(
         auth.clone(),fresh_origin.clone(),fresh_turn.clone(),
         Arc::clone(&tasks),Arc::clone(&supervisor),Arc::clone(&effects),
-        Arc::new(Allow),vec![selected],None
+        Arc::new(Allow),vec![selected],None,None
     ).unwrap();
     let bound=session.preflight_scheduled_step(
         &scheduler,&ledger,&revisions,&source,
@@ -1484,7 +1485,7 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     let mut session=ReviewedApplicationTurnSession::from_verified_host_task(
         auth.clone(),fresh_origin.clone(),fresh_turn.clone(),
         Arc::clone(&tasks),Arc::clone(&supervisor),Arc::clone(&effects),
-        Arc::new(Allow),vec![selected],None
+        Arc::new(Allow),vec![selected],None,None
     ).unwrap();
     let bound=session.preflight_scheduled_step(
         &scheduler,&ledger,&revisions,&source,
@@ -1685,7 +1686,7 @@ async fn agent01i_genuine_qwen_two_fresh_approvals_independent_git_and_restart()
     let mut child_session=ReviewedApplicationTurnSession::from_verified_host_task(
         child_auth.clone(),child_origin.clone(),child_turn.clone(),
         Arc::clone(&child_tasks),Arc::clone(&child_supervisor),
-        Arc::clone(&child_effects),Arc::new(Allow),vec![child_git],None
+        Arc::clone(&child_effects),Arc::new(Allow),vec![child_git],None,None
     ).unwrap();
     let child_binding=child_session.preflight_scheduled_step(
         &scheduler,&ledger,&revisions,&source,
