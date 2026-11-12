@@ -508,6 +508,50 @@ mod tests{
   fs::remove_dir_all(root).unwrap();
  }
  #[test]
+ fn foreign_unfinished_action_blocks_global_debugger_without_disclosing_project(){
+  let (root,supervisor,project,foreign)=fixture();
+  let foreign_job=prepared(&supervisor,&foreign);
+  write_action(&root,&foreign_job,"Prepared");
+  let inventory=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
+  assert!(inventory.global_os_cleanup_required);
+  assert!(!inventory.requires_os_cleanup);
+  assert_eq!(inventory.original_debug_jobs_checked,0);
+  assert_eq!(inventory.original_action_files_checked,0);
+  assert!(inventory.rows.is_empty());
+  assert!(!inventory.debugger_execution_authorized);
+  fs::remove_dir_all(root).unwrap();
+ }
+ #[test]
+ fn action_directory_fingerprint_changes_with_same_length_replacement(){
+  let (root,supervisor,project,_)=fixture();
+  let job=prepared(&supervisor,&project);
+  let id=write_action(&root,&job,"Prepared");
+  let baseline=action_directory_fingerprint(&root).unwrap();
+  let file=root.join(format!("lu-debug-action-{id}.ndjson"));
+  let mut raw=fs::read(&file).unwrap();
+  let position=raw.iter().position(|b|*b==b'P').unwrap();
+  raw[position]=b'R';
+  fs::write(&file,raw).unwrap();
+  let changed=action_directory_fingerprint(&root).unwrap();
+  assert_ne!(baseline,changed);
+  assert!(inspect_debug_control_evidence(&root,&supervisor,&project).is_err());
+  fs::remove_dir_all(root).unwrap();
+ }
+ #[test]
+ fn verified_action_manifest_hash_binds_all_original_action_bytes(){
+  let (root,supervisor,project,_)=fixture();
+  let job=prepared(&supervisor,&project);
+  write_action(&root,&job,"Prepared");
+  let first=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
+  let second=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
+  assert_eq!(first.original_debug_journal_sha256,second.original_debug_journal_sha256);
+  assert_eq!(first.action_manifest_sha256,second.action_manifest_sha256);
+  assert_eq!(first.action_manifest_sha256.len(),64);
+  assert!(first.global_os_cleanup_required);
+  assert!(first.requires_os_cleanup);
+  fs::remove_dir_all(root).unwrap();
+ }
+ #[test]
  fn foreign_valid_action_is_not_project_visible(){
   let (root,supervisor,project,foreign)=fixture();
   let foreign_job=prepared(&supervisor,&foreign);
