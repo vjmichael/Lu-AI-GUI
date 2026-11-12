@@ -26,12 +26,12 @@ test('TOOLS09 implements strict original-directory and nofollow leaf scope',()=>
   assert.match(core,/is_reparse\(&meta\)/);
 });
 test('TOOLS09 scan remains bounded and cancellation-aware despite spawn_blocking',()=>{
-  assert.match(core,/const MAX_DIRECTORIES: u32 = 64/);
-  assert.match(core,/const MAX_ENTRIES: usize = 512/);
-  assert.match(core,/const MAX_SEARCH_BYTES: u64 = 4 \* 1024 \* 1024/);
+  assert.match(core,/const MAX_DIRECTORIES: u32 = 128/);
+  assert.match(core,/const MAX_ENTRIES: usize = 1_024/);
+  assert.match(core,/const MAX_SEARCH_BYTES: u64 = 8 \* 1024 \* 1024/);
   assert.match(core,/const MAX_FILE_BYTES: u64 = 64 \* 1024/);
   assert.match(core,/const MAX_SEARCH_OUTPUT_BYTES: usize = 48 \* 1024/);
-  assert.match(core,/const MAX_SEARCH_MILLIS: u64 = 2_000/);
+  assert.match(core,/const MAX_SEARCH_MILLIS: u64 = 3_000/);
   assert.match(core,/struct SearchDropGuard/);
   assert.match(core,/fn drop\(&mut self\)/);
   assert.match(core,/cancelled\(\) \{ return Err\(bad\("CANCELLED"/);
