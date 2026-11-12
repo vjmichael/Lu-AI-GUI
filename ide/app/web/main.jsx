@@ -339,6 +339,10 @@ function App() {
   const [fin04Evidence,setFin04Evidence]=useState(null);
   const [fin04EvidenceBusy,setFin04EvidenceBusy]=useState(false);
   const fin04EvidenceTicket=useRef(0);
+  const [fin04CandidateKind,setFin04CandidateKind]=useState('step_over');
+  const [fin04CandidateReview,setFin04CandidateReview]=useState(null);
+  const [fin04CandidateBusy,setFin04CandidateBusy]=useState(false);
+  const fin04CandidateTicket=useRef(0);
   const [fin01Recovery,setFin01Recovery]=useState(null);
   const [fin01RecoveryBusy,setFin01RecoveryBusy]=useState(false);
   const [fin01KernelBusy,setFin01KernelBusy]=useState(false);
@@ -4741,6 +4745,65 @@ function App() {
       if(ticket===fin04EvidenceTicket.current)setFin04EvidenceBusy(false);
     }
   }
+  async function previewFin04ControlCandidate(){
+    const projectId=activeProject?.projectId;
+    const original=debugStatus?.last;
+    const kind=fin04CandidateKind;
+    if(!projectId || fin04CandidateBusy || debugBusy ||
+       !original || original.projectId!==projectId ||
+       original.target!=='one_exact_private_project_build_in_protected_job' ||
+       original.terminalPhase!=='completed' ||
+       !/^job-[a-f0-9]{32}$/.test(original.jobId||'') ||
+       !/^[a-f0-9]{64}$/.test(original.planSha256||'') ||
+       !['step_over','step_into','step_out',
+         'breakpoint_at_reviewed_line','inspect_reviewed_frame'].includes(kind))
+      return;
+    const ticket=++fin04CandidateTicket.current;
+    setFin04CandidateReview(null);setFin04CandidateBusy(true);
+    try{
+      const result=await invoke('ide_debug_review_control_candidate',{
+        projectId,jobId:original.jobId,
+        planSha256:original.planSha256,kind,
+      });
+      if(ticket!==fin04CandidateTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(result?.projectId!==projectId ||
+         result.originalDebugJobId!==original.jobId ||
+         result.originalPlanSha256!==original.planSha256 ||
+         result.kind!==kind ||
+         !/^[a-f0-9]{64}$/.test(result.originalTerminalReceiptSha256||'') ||
+         !/^[a-f0-9]{64}$/.test(result.reviewedSourceSha256||'') ||
+         !/^[a-f0-9]{64}$/.test(result.reviewSha256||'') ||
+         typeof result.reviewedSourceRelativePath!=='string' ||
+         result.reviewedSourceRelativePath.length>512 ||
+         result.reviewedSourceRelativePath.startsWith('/') ||
+         result.reviewedSourceRelativePath.includes('..') ||
+         !Number.isSafeInteger(result.reviewedSourceLine) ||
+         result.reviewedSourceLine<1 ||
+         !Number.isSafeInteger(result.adapterReportedFrameId) ||
+         result.adapterReportedFrameId<1 ||
+         !Array.isArray(result.blockers) || result.blockers.length>12 ||
+         !result.blockers.includes('no_live_native_owner_event') ||
+         !result.blockers.includes('fin01d_native_kernel_acceptance_not_proven') ||
+         !result.blockers.every(x=>typeof x==='string' && x.length<=100) ||
+         result.sourceBytesRechecked!==true ||
+         result.liveNativeOwnerEventVerified!==false ||
+         result.kernelInstructionSourceLineVerified!==false ||
+         result.reviewedFrameIndependentlyVerified!==false ||
+         result.installedDebuggerControlsAccepted!==false ||
+         result.executionRouteAvailable!==false ||
+         result.debuggerExecutionAuthorized!==false ||
+         result.replayAuthorized!==false)
+        throw Error('FIN04_CONTROL_CANDIDATE_REVIEW_UNTRUSTED');
+      setFin04CandidateReview(result);
+    }catch(error){
+      if(ticket===fin04CandidateTicket.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Debugger control candidate review unavailable: '+String(error));
+    }finally{
+      if(ticket===fin04CandidateTicket.current)setFin04CandidateBusy(false);
+    }
+  }
   async function reconcileProtectedDebugger(item) {
     const projectId = activeProject?.projectId;
     if (!item || item.projectId !== projectId ||
@@ -8026,6 +8089,42 @@ function App() {
                   {fin04EvidenceBusy?'Verifying original action journals…':
                     'Inspect debugger action evidence'}
                 </button>
+                {debugStatus?.last?.projectId===activeProject.projectId &&
+                 debugStatus.last.target==='one_exact_private_project_build_in_protected_job' &&
+                 debugStatus.last.terminalPhase==='completed' &&
+                  <div aria-label="Read-only debugger control candidate from terminal stop">
+                    <p>Review a previously completed debugger stop. There is no
+                      live process to control and this cannot start a new one.</p>
+                    <label htmlFor="fin04-candidate-kind">Control to review</label>
+                    <select id="fin04-candidate-kind" value={fin04CandidateKind}
+                      disabled={fin04CandidateBusy}
+                      onChange={e=>{setFin04CandidateKind(e.target.value);
+                        setFin04CandidateReview(null);}}>
+                      <option value="step_over">Step over</option>
+                      <option value="step_into">Step into</option>
+                      <option value="step_out">Step out</option>
+                      <option value="breakpoint_at_reviewed_line">Breakpoint at reviewed line</option>
+                      <option value="inspect_reviewed_frame">Inspect reviewed frame</option>
+                    </select>
+                    <button type="button" className="ghostBtn"
+                      disabled={fin04CandidateBusy || debugBusy}
+                      onClick={()=>void previewFin04ControlCandidate()}>
+                      {fin04CandidateBusy?'Checking original source and receipts…':
+                        'Review control candidate (no execution)'}
+                    </button>
+                    {fin04CandidateReview?.projectId===activeProject.projectId &&
+                      <div role="status">
+                        <p>Candidate: {fin04CandidateReview.kind.replaceAll('_',' ')}.</p>
+                        <p>Original source:
+                          {' '}<code>{fin04CandidateReview.reviewedSourceRelativePath}</code>
+                          {' '}line {fin04CandidateReview.reviewedSourceLine}</p>
+                        <p>Review SHA-256:
+                          {' '}<code>{fin04CandidateReview.reviewSha256}</code></p>
+                        {fin04CandidateReview.blockers.map(reason=>
+                          <p key={reason}>Still blocked: {reason.replaceAll('_',' ')}</p>)}
+                        <p>This candidate is not a live debugger control or execution grant.</p>
+                      </div>}
+                  </div>}
                 {fin04Evidence?.projectId===activeProject.projectId &&
                   <div role="status">
                     <p>Original debugger jobs checked: {fin04Evidence.originalDebugJobsChecked}.
