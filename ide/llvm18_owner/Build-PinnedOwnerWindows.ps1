@@ -23,6 +23,27 @@ Copy-Item (Join-Path $bin 'llvm-symbolizer.exe') (Join-Path $bundle 'bin\llvm-sy
 Get-ChildItem $bin -Filter '*.dll' -File | Copy-Item -Destination (Join-Path $bundle 'bin')
 & (Join-Path $bin 'clang.exe') -g -O0 -o (Join-Path $bundle 'debuggee\wo6-selftest.exe') ide/supervisor/fixtures/debug/wo6_selftest.c
 if ($LASTEXITCODE -ne 0) { throw 'DENIED: actual first-party fixed debuggee build failed' }
+# FIN-04R first-party provenance for an opt-in READ-ONLY Windows owner
+# observer. This inventory is NOT an installed/kernel acceptance receipt;
+# the independent native OS gate remains mandatory.
+$patched=Join-Path $root 'lldb/source/Plugins/Process/Windows/Common/DebuggerThread.cpp'
+$provenanceDirectory=Join-Path $bundle 'provenance'
+New-Item -ItemType Directory -Force $provenanceDirectory | Out-Null
+Copy-Item -LiteralPath $patched -Destination (Join-Path $provenanceDirectory 'DebuggerThread.cpp')
+$sha256={ param([string]$p) (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() }
+$ownerProvenance=[ordered]@{
+  schema='lu.ide.fin04.first-party-lldb-owner.v1'
+  upstreamCommit=$expected
+  observerOnly=$true
+  productionDebuggerActions=$false
+  replayAuthorized=$false
+  headerSha256=(& $sha256 'ide/llvm18_owner/LuIdeOwnerEvent.h')
+  patcherSha256=(& $sha256 'ide/llvm18_owner/apply_llvm18_owner_hook.py')
+  patchedDebuggerThreadSha256=(& $sha256 $patched)
+  lldbDapExeSha256=(& $sha256 (Join-Path $bin 'lldb-dap.exe'))
+}
+$ownerProvenance | ConvertTo-Json -Depth 3 |
+  Set-Content -LiteralPath (Join-Path $bundle 'fin04-owner-provenance.json') -Encoding utf8NoBOM
 $lock=[ordered]@{schema='lu-ide-d5-ci-only-v1'; llvmCommit=$expected; lldbSha256=(Get-FileHash (Join-Path $bin 'lldb-dap.exe') -Algorithm SHA256).Hash; sourceSha256=(Get-FileHash (Join-Path $root 'lldb/source/Plugins/Process/Windows/Common/DebuggerThread.cpp') -Algorithm SHA256).Hash; releaseApproved=$false}
 $lock | ConvertTo-Json | Set-Content (Join-Path $env:RUNNER_TEMP 'lu-owner-llvm18-lock.json')
 Add-Content $env:GITHUB_ENV "LU_IDE_WO6_DAP_BUNDLE=$bundle"
