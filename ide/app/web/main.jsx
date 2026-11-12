@@ -286,6 +286,9 @@ function App() {
   const [testCaseFilter,setTestCaseFilter]=useState('failed');
   const [testDiscovery,setTestDiscovery] = useState(null);
   const [testExplorerFilter,setTestExplorerFilter]=useState('all');
+  const [testSymbols,setTestSymbols]=useState(null);
+  const [testSymbolsBusy,setTestSymbolsBusy]=useState(false);
+  const testSymbolsTicket=useRef(0);
   const [testDiscoveryBusy,setTestDiscoveryBusy] = useState(false);
   const testDiscoveryTicket=useRef(0);
   const [profileDiscoveryBusy,setProfileDiscoveryBusy] = useState(false);
@@ -3592,11 +3595,49 @@ function App() {
     }
   }
 
+  async function inspectSavedTestSymbols(file) {
+    const projectId=activeProjectIdRef.current;
+    if(!projectId || !file || !testDiscovery ||
+       testDiscovery.projectId!==projectId ||
+       !testDiscovery.files.some(row=>row.path===file.path) ||
+       testSymbolsBusy)return;
+    const ticket=++testSymbolsTicket.current;
+    setTestSymbols(null);setTestSymbolsBusy(true);
+    try{
+      const data=await invoke('ide_inspect_saved_test_symbols',{
+        projectId,relativePath:file.path,
+      });
+      if(ticket!==testSymbolsTicket.current ||
+         activeProjectIdRef.current!==projectId)return;
+      if(data?.schemaVersion!==1 || data.projectId!==projectId ||
+         data.relativePath!==file.path ||
+         !/^[a-f0-9]{64}$/.test(data.sourceRevision||'') ||
+         data.candidateOnly!==true ||
+         data.independentAssertionsVerified!==false ||
+         data.executionAuthorized!==false ||
+         data.sourceContentsExported!==false ||
+         !Array.isArray(data.symbols) || data.symbols.length>128 ||
+         !data.symbols.every(row=>
+           row.candidateOnly===true &&
+           row.executableTestVerified===false &&
+           Number.isSafeInteger(row.line) && row.line>0 &&
+           typeof row.name==='string' && row.name.length<=100))
+         throw Error('FIN04_UNTRUSTED_TEST_SYMBOLS');
+      setTestSymbols(data);
+    }catch(error){
+      if(ticket===testSymbolsTicket.current &&
+         activeProjectIdRef.current===projectId)
+        setProblem('Saved test symbols unavailable: '+String(error));
+    }finally{if(ticket===testSymbolsTicket.current)
+      setTestSymbolsBusy(false);}
+  }
   async function inspectConventionalTests() {
     const projectId=activeProjectIdRef.current;
     if(!projectId || testDiscoveryBusy || buildBusy ||
        explorerIoTicket.current || workspaceLayoutOp.current) return;
     const ticket=++testDiscoveryTicket.current;
+    ++testSymbolsTicket.current;
+    setTestSymbols(null);setTestSymbolsBusy(false);
     setTestDiscoveryBusy(true);
     setProblem('');
     try {
@@ -6728,6 +6769,23 @@ function App() {
                     <strong><code>{file.path}</code></strong>
                     <p>{file.language} · {file.recipe||'No fixed recipe hint'}
                       {' · '}Not independently runnable</p>
+                    <button type="button" className="ghostBtn"
+                      disabled={!activeProject || testSymbolsBusy}
+                      onClick={()=>void inspectSavedTestSymbols(file)}>
+                      Inspect saved test symbols (read-only)
+                    </button>
+                    {testSymbols?.projectId===activeProject?.projectId &&
+                     testSymbols.relativePath===file.path &&
+                     <div role="status">
+                       <p>Saved source revision:
+                         <code>{testSymbols.sourceRevision}</code>.
+                         All symbols are unverified test candidates.</p>
+                       {testSymbols.symbols.map((symbol,index)=>
+                         <p key={index}>
+                           Line {symbol.line}: <code>{symbol.name}</code>
+                           {' · '}Not individually runnable
+                         </p>)}
+                     </div>}
                     <button type="button" className="ghostBtn"
                       disabled={!activeProject || explorerPending}
                       onClick={()=>{const expected=activeProject?.projectId;

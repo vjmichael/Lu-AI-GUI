@@ -2266,6 +2266,19 @@ async fn ide_discover_conventional_tests(
         .map_err(str::to_owned)
 }
 
+/// FIN-04: read bounded native saved test-symbol candidates; NEVER execute.
+#[tauri::command]
+async fn ide_inspect_saved_test_symbols(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    project_id:String,relative_path:String,
+)->Result<lu_ide_workspace::conventional_tests::TestSymbolInspection,String>{
+    let registry=Arc::clone(registry.inner());
+    tauri::async_runtime::spawn_blocking(move||
+        registry.inspect_test_symbol_candidates(&project_id,&relative_path))
+        .await.map_err(|_|"FIN04_SYMBOL_READER_UNAVAILABLE".to_owned())?
+        .map_err(str::to_owned)
+}
+
 /// IDE-05.1 manager-of-managers read-only detection. The WebView supplies
 /// an opaque registered project ID ONLY; manager/tool/path selection is fixed
 /// inside the native host. No subprocess or network access is possible here.
@@ -3475,6 +3488,7 @@ pub fn run() {
             ide_preview_package_operation,
             ide_revalidate_package_operation,
             ide_discover_conventional_tests,
+            ide_inspect_saved_test_symbols,
             ide_review_project_debug_target,
             ide_review_multilang_adapter,
             ide_build_status,
