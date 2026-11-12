@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a410bf64005dd5fc1d530928365b9271f9732f42",
-  "trackedFileCount": 947,
+  "sourceCommitBeforeLock": "eb48a5170d1b2de6de288c299857b701887dc390",
+  "trackedFileCount": 949,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -362,6 +362,10 @@
     {
       "path": "benchmarks/e1/memory_loop03c_reviewed_worker_cases.py",
       "blob": "e55c00715a891971926a679aace1d1359c78f3eb"
+    },
+    {
+      "path": "benchmarks/e1/p0_sec02_linux_guardian_negative.py",
+      "blob": "982cd141cecba0af07f5f002393d19bd80d465fe"
     },
     {
       "path": "benchmarks/e1/plan04_real_gguf_synthesis.py",
@@ -833,7 +837,7 @@
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
-      "blob": "cfae92e421532b0136080168b43c292bdbb61fd6"
+      "blob": "1c277aa772bcdf96c8c8d536ef57ada6967c4e76"
     },
     {
       "path": "docs/LU_P0_SOURCE_RECONCILIATION_REPAIRS_20261111.md",
@@ -1265,7 +1269,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_chat_store.rs",
-      "blob": "b9e2cdc92370f1f5a9dbdbebbdb97dc9fbe5960d"
+      "blob": "112155e74c878e49b97c8264343636b9eccb54c2"
     },
     {
       "path": "lu-desktop/src-tauri/src/ansf_migration.rs",
@@ -1433,11 +1437,11 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_auth_custody.rs",
-      "blob": "5fd403b82f825d1b78b7a32d94ce2b34caac0178"
+      "blob": "23b2cf3ac9d71771ddb7c578f228d619574d8fad"
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_auth_desktop.rs",
-      "blob": "c1a7e8ed4af7ee0604334ca8bd1ff424c57608ba"
+      "blob": "cf2c702ce8bacf8b8ef50c883c2a73dac42b1343"
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_memory_continuity.rs",
@@ -1513,7 +1517,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_desktop.rs",
-      "blob": "0cbb56bbe23714c5426ac322c94641c40ddec984"
+      "blob": "d5ad6c94bc16dd2dd4f844a7c1c40c35b95b7d5e"
     },
     {
       "path": "lu-desktop/src-tauri/src/reviewed_app_recovery.rs",
@@ -1853,7 +1857,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec-guardian-hardening.test.mjs",
-      "blob": "c4414162b78690ac8c0e2384b2add55075675987"
+      "blob": "2345c2f0a1bc10e9bf2371f6ebb12bb4c9f52fed"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2825,7 +2829,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "a1817bd36638f3be32fcdc495e10bd8bdf9ac476"
+      "blob": "ec9d89498cd37acda3572d3a839d6c4f30a027d3"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
@@ -3741,7 +3745,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
-      "blob": "9809c1c10b355bbfbaf9c18f6307c7a7b86e0d6f"
+      "blob": "c1601cf01857d170467d563b6352b053281246f4"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs",
@@ -3760,6 +3764,10 @@
       "blob": "99af70de543faf3c8801de18cf7f6939c7649a5c"
     },
     {
+      "path": "src-tauri/lu-win-worker-job/src/bin/lu-p0-sec02-linux-negative.rs",
+      "blob": "390d42c26935473277b6bbe1f0001fc186d142f1"
+    },
+    {
       "path": "src-tauri/lu-win-worker-job/src/browser_window.rs",
       "blob": "b9e217161d5f505ea18fc17bf0952f79afa144f4"
     },
@@ -3769,7 +3777,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "270b6f43b3d7a1e928dc96f8b4f36d30694ff63e"
+      "blob": "66f8d0eff1014a90ef5bf0e1b2cec90b750aa0c2"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
