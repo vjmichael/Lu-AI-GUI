@@ -38,3 +38,43 @@ export function fin07ScopeRegister(projectId){
    taskAutomaticallyAccepted:false,
  });
 }
+
+/** FIN-07 explicit evidence reconciliation. Source implementations do not
+ * promote themselves to operating-system or release acceptance. Evidence
+ * must remain per-gate, exact-source, and independently reviewed. */
+const FIN07_GATES=Object.freeze([
+ 'sourceCompiler','nativeWindows','nativeLinux',
+ 'installedWindows','installedLinux','physicalHuman',
+ 'security','dependencyLicenses'
+]);
+export function fin07ReconcileEvidence(projectId,records) {
+ const register=fin07ScopeRegister(projectId);
+ if(!register || !Array.isArray(records) || records.length>FIN07_GATES.length)
+   return null;
+ const seen=new Set();
+ const gates=[];
+ for(const gate of FIN07_GATES) {
+   const evidence=records.filter(row=>row?.gate===gate);
+   if(evidence.length>1)return null;
+   const row=evidence[0];
+   if(row && (seen.has(gate) || typeof row!=='object' ||
+      row.projectId!==projectId ||
+      !['missing','stale','pending_owner','review_required','independently_verified'].includes(row.status) ||
+      (row.status==='independently_verified' &&
+        (!/^[a-f0-9]{40}$/.test(row.sourceHead||'') ||
+         !/^[a-f0-9]{64}$/.test(row.receiptSha256||'') ||
+         row.independentReview!==true)) ||
+      row.executionAuthorized!==false ||
+      row.releaseAuthorized!==false))return null;
+   seen.add(gate);
+   gates.push(Object.freeze({gate,status:row?.status||'missing',
+     exactSourceVerified:row?.status==='independently_verified',
+     releaseAuthorized:false}));
+ }
+ return Object.freeze({projectId,kind:'advisory_evidence_reconciliation',
+   gates:Object.freeze(gates),frozen:false,releaseAuthorized:false,
+   ownerFeatureFreezeRequired:true,
+   unresolvedImplementation:register.unresolvedImplementation,
+   allEvidenceVerified:gates.every(row=>row.exactSourceVerified),
+   taskAutomaticallyAccepted:false});
+}
