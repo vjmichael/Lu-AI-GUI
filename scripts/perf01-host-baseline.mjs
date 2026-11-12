@@ -8,6 +8,11 @@ import {argv,exit} from 'node:process';
 
 const args=(key)=>{const i=argv.indexOf(key);return i>=0?argv[i+1]:null};
 const file=args('--input'),expectedHead=args('--head');
+const priorityMode=args('--priority');
+if(priorityMode!==null&&priorityMode!=='foreground-background'){
+  process.stderr.write('PERF01_BASELINE_REFUSED unknown scheduler comparison mode\n');
+  exit(2);
+}
 if(!file||!expectedHead||!/^[a-f0-9]{40}$/.test(expectedHead)){
   process.stderr.write('Usage: node scripts/perf01-host-baseline.mjs --input host-receipts.json --head <exact 40-char SHA>\n');
   exit(2);
@@ -78,13 +83,40 @@ try{
   }
   const min=5;
   const enough=Object.values(byRoute).every(x=>x.total&&x.total.samples>=min);
+  // P4: these remain actual HOST-observed latency distributions, not a
+  // hardware attestation, renderer paint measurement or scheduling proof.
+  // Require separate repeated foreground/background model samples before
+  // stating even that a two-class comparison dataset exists.
+  const schedulerGroups={};
+  for(const label of ['FOREGROUND_HUMAN','BACKGROUND_TERMINAL']){
+    const rows=all.filter(x=>x.route==='MODEL_INFERENCE'
+      &&x.schedulerClass===label
+      &&Number.isSafeInteger(x.turnToFirstWebviewForwardMs)
+      &&x.turnToFirstWebviewForwardMs>=0
+      &&Number.isSafeInteger(x.queueWaitMs)
+      &&x.queueWaitMs>=0);
+    schedulerGroups[label]={
+      total:calc(rows.map(x=>x.overallLatencyMs)),
+      queueWait:calc(rows.map(x=>x.queueWaitMs)),
+      firstForward:calc(rows.map(x=>x.turnToFirstWebviewForwardMs)),
+    };
+  }
+  const priorityEvidenceSufficient=Object.values(schedulerGroups)
+    .every(group=>group.total&&group.total.samples>=min);
   const result={
     schema:'lu-perf01-p0-baseline-v1',expectedHead,
-    status:enough?
-      'LOCAL_HOST_BASELINE_SUMMARIZED_NOT_INDEPENDENTLY_ACCEPTED':
-      'INSUFFICIENT_REPEATS_FOR_BASELINE',
+    status:priorityMode
+      ?(priorityEvidenceSufficient
+        ?'HOST_PRIORITY_SAMPLES_SUMMARIZED_NOT_INDEPENDENTLY_ACCEPTED'
+        :'INSUFFICIENT_REPEATS_FOR_INTERACTIVE_PRIORITY')
+      :(enough
+        ?'LOCAL_HOST_BASELINE_SUMMARIZED_NOT_INDEPENDENTLY_ACCEPTED'
+        :'INSUFFICIENT_REPEATS_FOR_BASELINE'),
     originalHostReceipts:all.length,
     minimumPerRoute:min,
+    schedulerGroups:priorityMode?schedulerGroups:null,
+    priorityEvidenceSufficient:priorityMode?priorityEvidenceSufficient:null,
+    priorityComparisonIndependentlyAccepted:false,
     routeGroups:byRoute,
     comparativePerformanceClaim:false,
     firstPartyPhysicalDeviceAccepted:false,
@@ -94,7 +126,7 @@ try{
     note:'Local file SHA/head is not a signed machine attestation. Independently verify installed source/head and repeat the fixed corpus on the same hardware.',
   };
   process.stdout.write(JSON.stringify(result,null,2)+'\n');
-  if(!enough)process.exitCode=1;
+  if(priorityMode?!priorityEvidenceSufficient:!enough)process.exitCode=1;
 }catch(e){
   process.stderr.write('PERF01_BASELINE_REFUSED '+String(e)+'\n');
   process.exitCode=1;
