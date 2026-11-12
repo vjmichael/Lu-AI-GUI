@@ -1589,3 +1589,8 @@ mod p0_sec_custody_uncertainty_tests{
         let _=std::fs::remove_file(format!("{}-shm",path.display()));
     }
 }
+
+// SEC-05: adversarial original SQLite task state and custody mutations.
+#[cfg(test)]
+#[path = "p0_sec05_task_adversarial_tests.rs"]
+mod p0_sec05_task_adversarial_tests;
