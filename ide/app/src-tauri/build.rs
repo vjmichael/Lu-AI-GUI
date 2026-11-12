@@ -516,14 +516,20 @@ fn fin04_require_reviewed_owner_stage() -> Result<(), String> {
     let header=root.join("../../llvm18_owner/LuIdeOwnerEvent.h");
     let patcher=root.join("../../llvm18_owner/apply_llvm18_owner_hook.py");
     let cpp=stage.join("provenance/DebuggerThread.cpp");
+    // Native MSVC C2039/C3861 proof: the reviewed LLVM 18.1.8 DAP
+    // ProgressEvent.h must be the exact, independently rehashed version
+    // containing the pinned <chrono> include. Never accept an arbitrary
+    // system LLDB or transitive third-party header as proof.
+    let progress=stage.join("provenance/ProgressEvent.h");
     let binary=stage.join("bin/lldb-dap.exe");
-    for file in [&header,&patcher,&cpp,&binary] {
+    for file in [&header,&patcher,&cpp,&progress,&binary] {
         println!("cargo:rerun-if-changed={}",file.display());
     }
     let checks=[
         ("headerSha256",&header),
         ("patcherSha256",&patcher),
         ("patchedDebuggerThreadSha256",&cpp),
+        ("patchedProgressEventHeaderSha256",&progress),
         ("lldbDapExeSha256",&binary),
     ];
     for (key,path) in checks {
@@ -549,6 +555,20 @@ fn fin04_require_reviewed_owner_stage() -> Result<(), String> {
     ] {
         if patched.matches(anchor).count()!=1 {
             return Err("FIN04R_PATCHED_EVENT_OWNER_ANCHOR_MISSING".into());
+        }
+    }
+    let progress_meta=fs::symlink_metadata(&progress)
+        .map_err(|_|"FIN04R_DAP_CHRONO_SOURCE_UNAVAILABLE")?;
+    if !progress_meta.is_file() || progress_meta.file_type().is_symlink()
+        || progress_meta.len()>128*1024 {
+        return Err("FIN04R_DAP_CHRONO_SOURCE_UNTRUSTED".into());
+    }
+    let progress_bytes=fs::read_to_string(&progress)
+        .map_err(|_|"FIN04R_DAP_CHRONO_SOURCE_UNREADABLE")?;
+    for anchor in ["#include <atomic>", "#include <chrono>",
+                   "std::chrono::system_clock::now()"] {
+        if progress_bytes.matches(anchor).count()!=1 {
+            return Err("FIN04R_PINNED_LLVM_DAP_CHRONO_PATCH_MISSING".into());
         }
     }
     Ok(())
