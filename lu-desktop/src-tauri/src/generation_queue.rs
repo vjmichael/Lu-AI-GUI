@@ -7,6 +7,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Condvar, Mutex},
+    time::{Duration,Instant},
 };
 use serde::Serialize;
 
@@ -20,6 +21,10 @@ pub const MAX_CHUNK_BYTES: usize = 64 * 1024;
 // Admit one already-approved background turn after four consecutive
 // foreground turns, preventing indefinite starvation without preempting UI.
 const MAX_FOREGROUND_BURST: u8 = 4;
+// A just-queued automatic continuation never steals the next human TTFT
+// merely because four *previous* human turns already ran. Fairness remains
+// guaranteed once the approved background waiter has genuinely aged.
+const MIN_BACKGROUND_DWELL: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TurnClass { Foreground, Background }
@@ -37,8 +42,10 @@ impl State {
     fn next_ready(&self) -> Option<&str> {
         let foreground = self.foreground_waiting.front();
         let background = self.background_waiting.front();
+        let background_aged=background.and_then(|id|self.jobs.get(id))
+            .is_some_and(|job|job.queued_at.elapsed()>=MIN_BACKGROUND_DWELL);
         if foreground.is_some()
-            && (self.foreground_streak < MAX_FOREGROUND_BURST || background.is_none()) {
+            && (self.foreground_streak < MAX_FOREGROUND_BURST || !background_aged) {
             foreground.map(String::as_str)
         } else {
             background.or(foreground).map(String::as_str)
@@ -53,6 +60,7 @@ struct Job {
     completed: bool,
     text: String,
     next_index: u32,
+    queued_at: Instant,
 }
 
 #[derive(Default)]
@@ -79,6 +87,18 @@ pub struct LiveStreamSnapshot {
     pub text: String,
     pub next_index: u32,
     pub cancelling: bool,
+}
+
+/// Operator-only aggregate scheduling visibility, never an authority grant.
+/// Does not expose other conversations' IDs, prompts or model output.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct PrioritySnapshot {
+    pub waiting_foreground:usize,
+    pub waiting_background:usize,
+    pub active_class:Option<&'static str>,
+    pub oldest_background_wait_ms:Option<u64>,
+    pub foreground_streak:u8,
 }
 
 /// Owns its place in the queue; releases the slot on every exit path.
@@ -132,6 +152,7 @@ impl GenerationQueue {
                 completed: false,
                 text: String::new(),
                 next_index: 0,
+                queued_at: Instant::now(),
             },
         );
         match class {
@@ -215,6 +236,26 @@ impl GenerationQueue {
             .map_err(|_|"generation queue poisoned")?;
         Ok(state.jobs.iter().find(|(_,job)|job.chat_id==chat_id)
             .map(|(id,_)|state.active.as_deref()==Some(id.as_str())))
+    }
+    /// Aggregate original scheduler queue pressure for native diagnostics,
+    /// not a generated answer or authorization for any native effect.
+    pub fn priority_snapshot(&self)->Result<PrioritySnapshot,String>{
+        let state=self.state.lock().map_err(|_|"generation queue poisoned")?;
+        let active_class=state.active.as_ref()
+            .and_then(|id|state.jobs.get(id)).map(|job|match job.class{
+                TurnClass::Foreground=>"FOREGROUND",
+                TurnClass::Background=>"BACKGROUND",
+            });
+        let oldest_background_wait_ms=state.background_waiting.front()
+            .and_then(|id|state.jobs.get(id))
+            .map(|job|job.queued_at.elapsed().as_millis()
+                .min(u128::from(u64::MAX)) as u64);
+        Ok(PrioritySnapshot {
+            waiting_foreground:state.foreground_waiting.len(),
+            waiting_background:state.background_waiting.len(),
+            active_class,oldest_background_wait_ms,
+            foreground_streak:state.foreground_streak,
+        })
     }
     /// Conservative foreground gate for background-worker admission.
     /// Include queued and active human work; fail closed on lock poisoning.
@@ -563,11 +604,40 @@ mod tests {
         }
         let (auto, _) = q.enqueue_with_class(
             "s", "background", "b", TurnClass::Background).unwrap();
+        {
+            let mut state=q.state.lock().unwrap();
+            state.jobs.get_mut("b").unwrap().queued_at=
+                Instant::now()-MIN_BACKGROUND_DWELL-Duration::from_millis(1);
+        }
         let (human, _) = q.enqueue("s", "later-human", "h").unwrap();
         auto.wait_for_slot().unwrap();
         drop(auto);
         human.wait_for_slot().unwrap();
         drop(human);
+        assert!(!q.has_jobs());
+    }
+    #[test]
+    fn perf01_p4_recent_background_yields_next_foreground_ttft_after_burst(){
+        let q=Arc::new(GenerationQueue::default());
+        for i in 0..MAX_FOREGROUND_BURST {
+            let (t,_)=q.enqueue("s",&format!("human-{i}"),&format!("h{i}")).unwrap();
+            t.wait_for_slot().unwrap();
+            drop(t);
+        }
+        let (auto,_)=q.enqueue_with_class("s","auto","b",TurnClass::Background).unwrap();
+        let (human,_)=q.enqueue("s","new-human","h").unwrap();
+        let stats=q.priority_snapshot().unwrap();
+        assert_eq!(stats.waiting_foreground,1);
+        assert_eq!(stats.waiting_background,1);
+        assert!(stats.oldest_background_wait_ms.is_some());
+        assert_eq!(stats.active_class,None);
+        // The historical 4-turn streak does not penalize an arriving
+        // human when the background request has waited <2 seconds.
+        human.wait_for_slot().unwrap();
+        assert_eq!(q.priority_snapshot().unwrap().active_class,Some("FOREGROUND"));
+        drop(human);
+        auto.wait_for_slot().unwrap();
+        drop(auto);
         assert!(!q.has_jobs());
     }
     #[test]
