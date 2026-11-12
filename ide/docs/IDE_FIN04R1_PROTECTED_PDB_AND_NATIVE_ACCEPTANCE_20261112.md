@@ -38,3 +38,23 @@
 5. Obtain independent exact-head acceptance, then separately consider whether the owner authorizes promotion. FIN-02 remains deferred; no default feature, production debugger command, merge, installer acceptance, signed release or task completion is asserted.
 
 **Safety rule:** In the meantime, `operationControlSupported=false` in production, and the protected release-owner feature permits *only* source observation and immediately revoked one-use action review. Unknown effects remain unknown.
+
+## FIN-04R-1 native failure-path acceptance extension (staged independently)
+
+A separate exact-head staging branch adds
+`--project-debug-protected-pdb-cancel` as a fixed, protected, **no DAP
+mutation** scenario. It first requires the same first-party kernel stop and
+separately AppContainer/SCM Job-contained PDB source mapping as the positive
+scenario, then drops the original native gateway, forcing the original
+`CancelRequested → Cancelled` receipt and complete Job tree reaping. A
+newly reopened Supervisor must find both terminal Job records and the
+original immutable native owner receipt, with no old authorization replay.
+`Test-FIN04R1-ProtectedPdbWindows.ps1` now runs both normal and
+interrupted scenarios before a positive native receipt is emitted.
+
+**No actual kernel test run has executed this staged extension yet.** It
+does not prove unexpected LLDB process death, intentional process-tree
+escape, physical desktop restart, or installed operator approval. Those
+remain separate acceptance gates. The main acceptance branch continues
+building its immutable LLVM head; do not invalidate its long-running
+original job by merging this test during compilation.
