@@ -1293,6 +1293,52 @@ mod tests{
         assert_eq!(manager.cancel_owned("video-1","media"),
             Err(BackgroundProcessError::NotOwned));
     }
+    #[cfg(target_os="linux")]
+    #[test]
+    fn sec03_real_os_cancel_poll_collision_has_one_terminal_receipt(){
+        use std::sync::{Arc,Barrier};
+        let binary=fs::canonicalize("/bin/sleep").unwrap();
+        let digest=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let store=Arc::new(TaskStore::open(Path::new(":memory:")).unwrap());
+        let supervisor=Arc::new(BackgroundProcessSupervisor::new(
+            Arc::clone(&store)));
+        supervisor.start_host_approved(TrustedWorkerPlan{
+            task_id:"sec03-sleep".into(),workspace_id:"c-human".into(),
+            executable:binary,expected_sha256:digest,
+            args:vec!["3".into()],progress_protocol:false,
+            max_runtime_seconds:Some(10),
+        }).unwrap();
+        assert_eq!(supervisor.cancel_owned("sec03-sleep","c-other"),
+            Err(BackgroundProcessError::WrongWorkspace));
+        let barrier=Arc::new(Barrier::new(3));
+        let a=Arc::clone(&supervisor);
+        let b=Arc::clone(&barrier);
+        let poller=std::thread::spawn(move||{
+            b.wait();
+            a.poll()
+        });
+        let a=Arc::clone(&supervisor);
+        let b=Arc::clone(&barrier);
+        let stopper=std::thread::spawn(move||{
+            b.wait();
+            a.cancel_owned("sec03-sleep","c-human")
+        });
+        barrier.wait();
+        let stopped=stopper.join().unwrap();
+        let observed=poller.join().unwrap();
+        assert!(stopped.is_ok()||matches!(stopped,
+            Err(BackgroundProcessError::NotOwned)));
+        assert!(observed.is_ok());
+        let current=store.get("sec03-sleep").unwrap().unwrap().state;
+        assert!(matches!(current,TaskState::Cancelled|TaskState::Completed));
+        let terminal=store.events_after("sec03-sleep","c-human",0,32)
+            .unwrap().into_iter().filter(|r|matches!(
+                r.event.as_str(),"CANCELLED"|"COMPLETED"|"TIMED_OUT"))
+            .collect::<Vec<_>>();
+        assert_eq!(terminal.len(),1,
+            "colliding host poll and stop must not publish two receipts");
+        assert!(!supervisor.can_cancel("sec03-sleep"));
+    }
     /// Actual Linux cgroup-v2 positive acceptance. Not a synthetic PGID
     /// assertion: the test intentionally fails as NOT_AVAILABLE if the
     /// runner has not delegated writable cgroup-v2 ancestry to this process.
