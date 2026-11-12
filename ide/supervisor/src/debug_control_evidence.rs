@@ -90,6 +90,19 @@ fn read_verified(path:&Path,action:&str)->Result<VerifiedAction,&'static str>{
     bytes.len() as u64 !=meta.len() || !bytes.ends_with(b"\n"){
   return Err("FIN04_ACTION_JOURNAL_CHANGED_OR_TRUNCATED");
  }
+ let latest=fs::symlink_metadata(path)
+  .map_err(|_|"FIN04_ACTION_JOURNAL_CHANGED_OR_TRUNCATED")?;
+ if !latest.is_file()||latest.file_type().is_symlink()||
+    latest.len()!=meta.len() ||
+    latest.modified().ok()!=meta.modified().ok(){
+  return Err("FIN04_ACTION_JOURNAL_CHANGED_OR_REPLACED");
+ }
+ #[cfg(unix)]{
+  use std::os::unix::fs::MetadataExt;
+  if latest.ino()!=meta.ino()||latest.dev()!=meta.dev(){
+   return Err("FIN04_ACTION_JOURNAL_CHANGED_OR_REPLACED");
+  }
+ }
  let mut first:Option<ActionEvent>=None;
  let mut previous="0".repeat(64);
  let mut old_phase="";
@@ -273,12 +286,17 @@ pub fn inspect_debug_control_evidence(
  let requires_os_cleanup=all.iter().any(|r|r.native_os_cleanup_required) ||
   jobs.iter().any(|j|j.project_id==project_id && (j.requires_reconciliation ||
      !matches!(j.phase,JobPhase::Completed|JobPhase::Cancelled|JobPhase::Failed|JobPhase::Denied)));
+ // All journal files were verified; reveal only selected-project counts
+ // to the renderer. Foreign project identities and activity remain private.
+ let project_action_count=all.len();
+ let project_job_count=jobs.iter().filter(|job|job.project_id==project_id).count();
  let truncated=all.len()>MAX_VISIBLE;
  let visible=all.len().min(MAX_VISIBLE);
  all.truncate(MAX_VISIBLE);
  Ok(DebugControlEvidenceInventory{
-  project_id:project_id.into(),original_debug_jobs_checked:jobs.len(),
-  original_action_files_checked:checked,original_action_files_visible:visible,
+  project_id:project_id.into(),original_debug_jobs_checked:project_job_count,
+  original_action_files_checked:project_action_count,
+  original_action_files_visible:visible,
   truncated,requires_os_cleanup,journal_chain_verified:true,
   native_owner_event_live_verified:false,global_kernel_custody_accepted:false,
   installed_debugger_controls_accepted:false,
@@ -402,7 +420,7 @@ mod tests{
   let foreign_job=prepared(&supervisor,&foreign);
   write_action(&root,&foreign_job,"Prepared");
   let inventory=inspect_debug_control_evidence(&root,&supervisor,&project).unwrap();
-  assert_eq!(inventory.original_action_files_checked,1);
+  assert_eq!(inventory.original_action_files_checked,0);
   assert_eq!(inventory.original_action_files_visible,0);
   assert!(inventory.rows.is_empty());
   fs::remove_dir_all(root).unwrap();
