@@ -27,6 +27,15 @@ if ($LASTEXITCODE -ne 0) { throw 'DENIED: actual first-party fixed debuggee buil
 # observer. This inventory is NOT an installed/kernel acceptance receipt;
 # the independent native OS gate remains mandatory.
 $patched=Join-Path $root 'lldb/source/Plugins/Process/Windows/Common/DebuggerThread.cpp'
+# Prior native MSVC job 130020178608 failed C2039/C3861 because the pinned
+# ProgressEvent.h uses std::chrono::system_clock without a direct <chrono>
+# include. Require the exact anchored repair and record its source digest.
+$progress=Join-Path $root 'lldb/tools/lldb-dap/ProgressEvent.h'
+$progressText=Get-Content -LiteralPath $progress -Raw
+if (!$progressText.Contains('#include <chrono>') -or
+    !$progressText.Contains('std::chrono::system_clock::now()')) {
+  throw 'DENIED: pinned LLVM DAP chrono compile repair absent'
+}
 $provenanceDirectory=Join-Path $bundle 'provenance'
 New-Item -ItemType Directory -Force $provenanceDirectory | Out-Null
 Copy-Item -LiteralPath $patched -Destination (Join-Path $provenanceDirectory 'DebuggerThread.cpp')
