@@ -6415,6 +6415,19 @@ function App() {
           <span>Workers: {backgroundGuardian.workerUsed}/{backgroundGuardian.workerCapacity} · CPU slots: {backgroundGuardian.cpuUsed}/{backgroundGuardian.cpuCapacity} · RAM reservation: {backgroundGuardian.ramUsedMib}/{backgroundGuardian.ramCapacityMib} MiB</span>
           <small>{backgroundGuardian.observedAvailableRamMib==null?'Physical RAM probe unavailable':('Physical RAM available: '+backgroundGuardian.observedAvailableRamMib+' MiB')}{backgroundGuardian.observedCpuBusyPercent==null?'':' · CPU busy '+backgroundGuardian.observedCpuBusyPercent+'%'}</small>
           <small>GPU tasks stay disabled without verified backend VRAM availability. CPU/RAM admission reacts to host pressure; reservations are not actual per-worker consumption.</small>
+          <small>Interactive model: {backgroundGuardian.activeModelGenerationClass||'no active turn'}
+            {' '}· Waiting human: {backgroundGuardian.waitingForegroundGenerations??0}
+            {' '}· Waiting automatic: {backgroundGuardian.waitingBackgroundGenerations??0}</small>
+          <small>New background worker launches: {
+            backgroundGuardian.newBackgroundAdmissionDeferred===null ||
+            backgroundGuardian.newBackgroundAdmissionDeferred===undefined
+              ?'not yet sampled'
+              :backgroundGuardian.newBackgroundAdmissionDeferred?'deferred':'eligible'}
+            {' '}· Host reason: {String(backgroundGuardian.interactiveAdmissionReason||
+              'UNMEASURED').replaceAll('_',' ').toLowerCase()}.</small>
+          <small>This is Lu's conservative launch policy, not actual
+            GPU/VRAM allocation or proof that an already-running worker paused.
+            Existing workers retain cancellation and restart custody.</small>
         </div>}
         <div className="backgroundScanLaunch">
           <button type="button" className="primaryButton"
