@@ -13,6 +13,7 @@ use crate::inference_host::{
 };
 use crate::mmproj_admission::AdmittedProjector;
 use crate::model_admission::AdmittedModel;
+use crate::prefix_kv_cache::PromptCacheGate;
 use crate::multimodal_http::generate_chat_stream_body;
 use crate::multimodal_saved_turn::{build_structured_chat_request, PinnedImage};
 use sha2::{Digest, Sha256};
@@ -49,6 +50,8 @@ pub struct PersistentLlamaBackend {
     pinned_projector_file: Option<File>,
     process: Option<Child>,
     port: Option<u16>,
+    cache_gate: PromptCacheGate,
+    next_trusted_cache_scope: Option<String>,
     #[cfg(windows)]
     job: Option<lu_win_worker_job::Job>,
 }
@@ -118,12 +121,20 @@ impl PersistentLlamaBackend {
         admitted_read_schemas:&[serde_json::Value],
         cancel:&Cancellation,
     )->Result<Vec<crate::browser_tool_stream::CompletedToolCall>,String>{
+        // Tool schemas are per-turn grants; no chat KV can cross them.
+        self.cache_gate.invalidate();
+        self.next_trusted_cache_scope=None;
         if cancel.is_cancelled(){return Err("browser tool generation cancelled".into());}
         let port=self.active_port()?;
         let body=crate::browser_model_request::build_read_only_browser_tool_request(
             &request.prompt,&request.history,&[],request.max_new_tokens,
             admitted_read_schemas,
         ).map_err(|_|"unapproved llama.cpp browser tool schema")?;
+        let mut json:serde_json::Value=serde_json::from_str(&body)
+            .map_err(|_|"invalid scoped browser JSON")?;
+        self.cache_gate.disable_for_other_body(&mut json)
+            .map_err(str::to_owned)?;
+        let body=json.to_string();
         crate::multimodal_http::generate_browser_tool_stream_body(
             port,&self.config.api_key,&body,self.config.request_timeout,
             ||cancel.is_cancelled(),
@@ -152,6 +163,8 @@ impl PersistentLlamaBackend {
             pinned_projector_file: None,
             process: None,
             port: None,
+            cache_gate: PromptCacheGate::default(),
+            next_trusted_cache_scope: None,
             #[cfg(windows)]
             job: None,
         })
@@ -213,6 +226,9 @@ impl InferenceBackend for PersistentLlamaBackend {
     fn process_id(&self) -> Option<u32> {
         self.pid()
     }
+    fn set_trusted_cache_scope(&mut self, scope: Option<&str>) {
+        self.next_trusted_cache_scope=scope.map(str::to_owned);
+    }
     fn generate_browser_function_calls(
         &mut self,
         request:&GenerationRequest,
@@ -234,6 +250,10 @@ impl InferenceBackend for PersistentLlamaBackend {
         if self.process.is_some() {
             return Err("persistent engine already owns a model".into());
         }
+        // Every model/projector/engine identity is confined to one child.
+        // New weights or MMProj must never inherit a prior process' KV.
+        self.cache_gate.invalidate();
+        self.next_trusted_cache_scope=None;
         admitted.recheck().map_err(|e| format!("{e:?}"))?;
         // Windows share-read mode rejects normal replacement of the model file.
         // A production loader must additionally pin the complete engine package
@@ -371,6 +391,8 @@ impl InferenceBackend for PersistentLlamaBackend {
         Ok(())
     }
     fn unload(&mut self) {
+        self.cache_gate.invalidate();
+        self.next_trusted_cache_scope=None;
         if let Some(mut child) = self.process.take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -392,6 +414,10 @@ impl InferenceBackend for PersistentLlamaBackend {
         cancel: &Cancellation,
         emit: &mut dyn FnMut(TokenChunk) -> Result<(), EngineError>,
     ) -> Result<(), String> {
+        // Pixels and changing MMProj projection invalidate the text KV lane.
+        // Future multimodal reuse requires separate pixel-token proof.
+        self.cache_gate.invalidate();
+        self.next_trusted_cache_scope=None;
         // Without a successfully loaded MMProj, image content must NEVER be
         // downgraded to a text-only completion, even if llama-server is alive.
         if self.pinned_projector_file.is_none() {
@@ -405,6 +431,11 @@ impl InferenceBackend for PersistentLlamaBackend {
             request.max_new_tokens,
         )
         .map_err(|_| "invalid structured image request".to_string())?;
+        let mut json:serde_json::Value=serde_json::from_str(&body)
+            .map_err(|_|"invalid structured image JSON")?;
+        self.cache_gate.disable_for_other_body(&mut json)
+            .map_err(str::to_owned)?;
+        let body=json.to_string();
         let mut piece = 0u32;
         generate_chat_stream_body(
             port,
@@ -430,6 +461,7 @@ impl InferenceBackend for PersistentLlamaBackend {
             return Err("generation cancelled".into());
         }
         let port = self.active_port()?;
+        let trusted_scope=self.next_trusted_cache_scope.take();
         let body = build_structured_chat_request(
             &request.prompt,
             &request.history,
@@ -437,8 +469,13 @@ impl InferenceBackend for PersistentLlamaBackend {
             request.max_new_tokens,
         )
         .map_err(|_| "invalid structured text request".to_string())?;
+        let mut json:serde_json::Value=serde_json::from_str(&body)
+            .map_err(|_|"invalid structured text JSON")?;
+        let attempt=self.cache_gate.begin_text(trusted_scope.as_deref(),&mut json)
+            .map_err(str::to_owned)?;
+        let body=json.to_string();
         let mut piece = 0u32;
-        generate_chat_stream_body(
+        let result=generate_chat_stream_body(
             port,
             &self.config.api_key,
             &body,
@@ -450,7 +487,9 @@ impl InferenceBackend for PersistentLlamaBackend {
                 piece = piece.saturating_add(1);
                 Ok(())
             },
-        )
+        );
+        self.cache_gate.complete(attempt,result.is_ok() && !cancel.is_cancelled());
+        result
     }
 }
 impl Drop for PersistentLlamaBackend {
