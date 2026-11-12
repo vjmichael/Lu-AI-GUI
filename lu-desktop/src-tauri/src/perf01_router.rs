@@ -12,6 +12,7 @@ const MAX_WALL_MS:u64=300;
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub(crate) enum Route {
     CurrentChatLiteral(String),
+    LocalModelStatus,
     ModelRequired(&'static str),
 }
 
@@ -25,6 +26,11 @@ pub(crate) fn classify(prompt:&str,has_images:bool,other_mode:bool)->Route {
     if input.len()>512||input.contains('\0')||input.contains("<|")
         ||input.to_ascii_lowercase().contains("[attached text file:") {
         return Route::ModelRequired("COMPLEX_OR_ATTACHED_REQUEST");
+    }
+    if matches!(input.to_ascii_lowercase().as_str(),
+        "show local model status" | "what model is loaded?" |
+        "is a model loaded?"){
+        return Route::LocalModelStatus;
     }
     let needle=["Search this chat for: ","Find in this conversation: "]
         .iter().find_map(|prefix|input.strip_prefix(prefix));
@@ -156,8 +162,13 @@ mod tests{
             Route::CurrentChatLiteral("needle".into()));
         assert_eq!(classify("Find in this conversation: alpha beta",false,false),
             Route::CurrentChatLiteral("alpha beta".into()));
+        assert_eq!(classify("What model is loaded?",false,false),
+            Route::LocalModelStatus);
+        assert_eq!(classify("Show local model status",false,false),
+            Route::LocalModelStatus);
         for prompt in ["Please search this chat for needle",
-            "Explain the phrase needle","Search this chat for: ",
+            "Explain the phrase needle","How to load a model?",
+            "Explain local model architecture","Search this chat for: ",
             "Search this chat for: a","Search this chat for: \u{60}exec\u{60}",
             "Search this chat for: <script>","Search this chat for: a\nb",
             "Search this chat for: needle [Attached text file: x]"]{
