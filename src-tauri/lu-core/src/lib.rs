@@ -224,6 +224,8 @@ pub mod rollback_approval_ledger;
 pub mod ownership_store;
 pub mod passive_diagnostics;
 pub mod passive_localization;
+pub mod p7_kobold_custody;
+pub mod p7_koboldcpp_backend;
 pub mod p7_backend_evaluation;
 pub mod p6_compute_fabric;
 pub mod inference_tuning;
