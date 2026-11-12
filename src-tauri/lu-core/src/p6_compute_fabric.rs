@@ -7,7 +7,7 @@
 use std::{
     collections::{BTreeMap,BTreeSet},
     ffi::OsString,
-    sync::Mutex,
+    sync::{Arc,Mutex,Weak},
     time::{SystemTime,UNIX_EPOCH},
 };
 
@@ -96,13 +96,13 @@ struct GpuState{
 }
 /// Reservation ledger is host-owned. An absent native probe has no fabricated
 /// free memory; no speculative GPU admission is made during offline startup.
-pub struct LocalGpuCoordinator{inner:Mutex<GpuState>}
+pub struct LocalGpuCoordinator{inner:Arc<Mutex<GpuState>>}
 impl LocalGpuCoordinator {
     pub fn new(engine_sha256:[u8;32])->Result<Self,GpuScheduleError>{
         if !nonzero_digest(engine_sha256){return Err(GpuScheduleError::InvalidRequest)}
-        Ok(Self{inner:Mutex::new(GpuState{
+        Ok(Self{inner:Arc::new(Mutex::new(GpuState{
             engine_sha256,observations:BTreeMap::new(),leases:BTreeMap::new()
-        })})
+        }))})
     }
     /// Update readings only when there are no outstanding native processes.
     /// Never treat reduced device inventory as proof an old GPU child died.
@@ -212,6 +212,9 @@ impl LocalGpuCoordinator {
         }
         let approved=ApprovedLocalGpuPlacement{
             engine_sha256:state.engine_sha256,
+            reservation_id:request.reservation_id.clone(),
+            session_id:request.session_id.clone(),
+            owner:Arc::downgrade(&self.inner),
             mode:request.mode,
             devices:request.devices.clone(),
             tensor_split_percent:request.tensor_split_percent.clone(),
@@ -247,17 +250,44 @@ impl LocalGpuCoordinator {
     /// proves a previous model process has been reaped. Native acceptance
     /// must reconcile children before new measurements and admissions.
 }
-#[derive(Debug,Clone,PartialEq,Eq)]
+#[derive(Debug,Clone)]
 pub struct ApprovedLocalGpuPlacement{
     engine_sha256:[u8;32],
+    reservation_id:String,
+    session_id:String,
+    owner:Weak<Mutex<GpuState>>,
     mode:ComputeMode,
     devices:Vec<String>,
     tensor_split_percent:Option<Vec<u8>>,
 }
+impl PartialEq for ApprovedLocalGpuPlacement{
+    fn eq(&self,b:&Self)->bool{
+        self.engine_sha256==b.engine_sha256 &&
+        self.reservation_id==b.reservation_id &&
+        self.session_id==b.session_id &&
+        self.mode==b.mode &&
+        self.devices==b.devices &&
+        self.tensor_split_percent==b.tensor_split_percent
+    }
+}
+impl Eq for ApprovedLocalGpuPlacement{}
 impl ApprovedLocalGpuPlacement{
+    /// This approval becomes invalid when its exact original reservation
+    /// is released or the host manager disappears. A copied plan cannot
+    /// mint a replacement engine after revocation/restart.
     pub fn verify_engine(&self,sha:[u8;32])->Result<(),GpuScheduleError>{
         if self.engine_sha256!=sha {
             return Err(GpuScheduleError::InvalidRequest)
+        }
+        let owner=self.owner.upgrade().ok_or(GpuScheduleError::NotFound)?;
+        let state=owner.lock().map_err(|_|GpuScheduleError::Poisoned)?;
+        if state.engine_sha256!=sha{return Err(GpuScheduleError::InvalidRequest)}
+        let lease=state.leases.get(&self.reservation_id)
+            .ok_or(GpuScheduleError::NotFound)?;
+        if lease.session!=self.session_id ||
+            lease.devices.iter().map(|v|v.0.as_str())
+                .ne(self.devices.iter().map(String::as_str)){
+            return Err(GpuScheduleError::WrongSession)
         }
         Ok(())
     }
@@ -374,6 +404,7 @@ mod tests {
         assert_eq!(co.release_verified("split","s1",false),
             Err(GpuScheduleError::ProcessCustodyUncertain));
         co.release_verified("split","s1",true).unwrap();
+        assert_eq!(first.verify_engine([1;32]),Err(GpuScheduleError::NotFound));
         let a=co.reserve(GpuRequest{
             reservation_id:"a".into(),session_id:"sa".into(),
             mode:ComputeMode::IndependentInstance,devices:vec!["Vulkan0".into()],
