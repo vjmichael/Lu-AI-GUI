@@ -1952,6 +1952,33 @@ async fn ide_debug_status(app: AppHandle, project_id: String) -> Result<serde_js
         }))
     }
 }
+/// FIN-04: read-only original debugger action evidence. This must never
+/// accept an action token, OS witness boolean, PID, DAP command or path.
+#[tauri::command]
+async fn ide_debug_control_evidence(
+ app:AppHandle,
+ state:State<'_,Arc<IdeWorkspaceRegistry>>,
+ project_id:String,
+)->Result<serde_json::Value,String>{
+ #[cfg(all(feature="native-debug",any(windows,target_os="linux")))]
+ {
+  state.trusted_native_worker_root(&project_id)
+   .map_err(|_|"FIN04_PROJECT_NOT_REGISTERED_OR_CLOSED")?;
+  let backend=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+   .ok_or("FIN04_NATIVE_DEBUG_SUPERVISOR_UNAVAILABLE")?;
+  let backend=Arc::clone(backend.inner());
+  let inventory=tauri::async_runtime::spawn_blocking(move||
+   backend.inspect_control_evidence(&project_id))
+   .await.map_err(|_|"FIN04_ACTION_EVIDENCE_TASK_INTERRUPTED".to_owned())??;
+  return serde_json::to_value(inventory)
+   .map_err(|_|"FIN04_ACTION_EVIDENCE_SERIALIZATION_FAILED".into());
+ }
+ #[cfg(not(all(feature="native-debug",any(windows,target_os="linux"))))]
+ {
+  let _=(app,state,project_id);
+  Err("FIN04_NATIVE_DEBUG_EVIDENCE_NOT_INSTALLED".into())
+ }
+}
 #[tauri::command]
 async fn ide_debug_run_fixture(
     app: AppHandle,
@@ -3969,6 +3996,7 @@ pub fn run() {
             ide_build_cancel,
             ide_build_reconcile,
             ide_debug_status,
+            ide_debug_control_evidence,
             ide_debug_run_fixture,
             ide_debug_run_project,
             ide_debug_step_project,
