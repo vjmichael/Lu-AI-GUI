@@ -113,7 +113,7 @@ use std::{
     io::{Read, Write},
     num::NonZeroUsize,
     path::{Path, PathBuf},
-    sync::{atomic::{AtomicBool,Ordering},Arc, Mutex},
+    sync::{atomic::{AtomicBool,AtomicU64,Ordering},Arc, Mutex},
     time::Duration,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -768,6 +768,7 @@ struct DesktopState {
     observed_image_owners: Mutex<HashMap<String,String>>,
     generation_queue: Arc<GenerationQueue>,
     load_trace: Arc<Mutex<LoadTrace>>,
+    engine_start_events:Arc<AtomicU64>,
     reader_generations: Mutex<HashMap<String,ReaderRunControl>>,
     source_reuse: lu_core::ai_operations::SourceReuseIndex,
     supervisor: Arc<TrustedInferenceSupervisor<PersistentLlamaBackend>>,
@@ -1178,6 +1179,8 @@ impl DesktopState {
         // can report real child lifecycle events without acquiring engine locks.
         let load_trace = Arc::new(Mutex::new(LoadTrace::default()));
         let engine_trace = Arc::clone(&load_trace);
+        let engine_start_events=Arc::new(AtomicU64::new(0));
+        let engine_start_observer=Arc::clone(&engine_start_events);
         let supervisor = TrustedInferenceSupervisor::new(
             // Explicit test-only installed CPU package must not claim AMD
             // Vulkan offload; normal desktop builds retain Vulkan identity.
@@ -1189,6 +1192,7 @@ impl DesktopState {
                 OsRng.fill_bytes(&mut raw);
                 let key = raw.iter().map(|b| format!("{b:02x}")).collect::<String>();
                 let engine_trace_for_load = Arc::clone(&engine_trace);
+                let engine_start_for_load=Arc::clone(&engine_start_observer);
                 PersistentLlamaBackend::new(PersistentEngineConfig {
                     executable: executable.clone(),
                     expected_sha256: decode_sha(selected_engine_sha)?,
@@ -1198,6 +1202,9 @@ impl DesktopState {
                     request_timeout: Duration::from_secs(180),
                     api_key: key,
                     load_observer: Some(Arc::new(move |phase, pid| {
+                        if phase=="engine_spawned"&&pid.is_some(){
+                            engine_start_for_load.fetch_add(1,Ordering::Relaxed);
+                        }
                         if let Ok(mut trace) = engine_trace_for_load.lock() {
                             trace.record_engine(phase, None, pid);
                         }
@@ -1307,6 +1314,7 @@ impl DesktopState {
             observed_image_owners: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
             load_trace,
+            engine_start_events,
             supervisor: Arc::new(supervisor),
         })
     }
@@ -4918,6 +4926,7 @@ async fn generate_internal(
     }
     let generation_id = next_id("g-");
     let request_id = next_id("req-");
+    let observed_engine_starts_before=state.engine_start_events.load(Ordering::Relaxed);
     let mut perf_trace=perf01_telemetry::ModelTrace::new(
         &chat_id,&generation_id,perf_turn_start,true
     ).with_model(runtime.model_ref.clone());
@@ -5720,10 +5729,15 @@ async fn generate_internal(
             Err(e) if e.contains("Cancelled") || e.contains("Canceled") => "cancelled",
             Err(_) => "failed",
         };
-        let _=state.perf01.record(perf_trace.finish(
-            if phase=="completed"{"COMPLETED"}
-            else if phase=="cancelled"{"CANCELLED"}else{"FAILED"}
-        ));
+        let observed_engine_starts_after=state.engine_start_events.load(Ordering::Relaxed);
+        let _=state.perf01.record(perf_trace
+            .with_engine_start_events(
+                observed_engine_starts_before,observed_engine_starts_after
+            ).finish(
+                if phase=="completed"{"COMPLETED"}
+                else if phase=="cancelled"{"CANCELLED"}else{"FAILED"}
+            )
+        );
         // Observe & Learn is OFF by default. While a human-authorized
         // Lu-only observation is active, a genuine failed native model
         // generation produces a small verified-host-origin note, never a
