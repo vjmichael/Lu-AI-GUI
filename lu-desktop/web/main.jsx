@@ -4721,6 +4721,43 @@ function App() {
               {' '}· Prior permissions reusable: NO
               {' '}· Automatic retry: NO
               {' '}· Independent past OS custody proven here: NO.</small>
+            {authorityPostureByChat[chatId].securityRecovery&&
+              <section className="recoveryProvenanceOperation" role="region"
+                aria-label="SEC-04 original security recovery and unresolved custody">
+                <strong>SEC-04 · Original security recovery</strong>
+                <small role="status" aria-live="polite">
+                  {authorityPostureByChat[chatId].securityRecovery.status.replaceAll('_',' ')}
+                </small>
+                <small>Original reviewed journals examined:
+                  {' '+authorityPostureByChat[chatId].securityRecovery.originalJournalsExamined}
+                  {' '}· Cancellation requests without outcomes:
+                  {' '+authorityPostureByChat[chatId].securityRecovery.pendingCancelIntents}
+                  {' '}· Cancellation outcomes requiring OS/effect review:
+                  {' '+authorityPostureByChat[chatId].securityRecovery.cancellationOutcomesStillRequireReview}
+                </small>
+                {(authorityPostureByChat[chatId].securityRecovery.problems||[]).length>0&&
+                  <ul aria-label="Original security exceptions">
+                    {authorityPostureByChat[chatId].securityRecovery.problems.map((record,index)=>
+                      <li key={index}>
+                        <strong>{record.reason.replaceAll('_',' ')}</strong>
+                        <small>{record.source.replaceAll('_',' ')}
+                          {record.originalHumanTurnId&&
+                            ' · Original turn '+record.originalHumanTurnId}
+                          {record.taskId&&' · Task '+record.taskId}
+                          {' · '+record.state.replaceAll('_',' ')}
+                        </small>
+                      </li>)}
+                  </ul>}
+                {(authorityPostureByChat[chatId].securityRecovery.additionalProblemsNotDisplayed||
+                  authorityPostureByChat[chatId].securityRecovery.olderOriginalTurnsNotInspected)&&
+                  <small>Bounded recovery view incomplete. Additional original
+                    tasks or older turns require host reconciliation.</small>}
+                <small>Previous authority: REVOKED / NOT REUSABLE.
+                  {' '}Automatic replay: DISALLOWED.
+                  {' '}Historical OS cleanup: NOT independently proven by this view.
+                  {' '}Inspect original task, effect and kernel custody
+                  evidence before authorizing any new effect.</small>
+              </section>}
             {(authorityPostureByChat[chatId].originalHostCancelEvents||[]).map(entry=>
               <article className="recoveryProvenanceOperation" key={entry.attemptId}>
                 <strong>{entry.status.replaceAll('_',' ')}</strong>
