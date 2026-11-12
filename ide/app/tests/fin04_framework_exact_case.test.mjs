@@ -6,7 +6,7 @@ import {readFileSync} from 'node:fs';
 const root=new URL('../',import.meta.url);
 const host=readFileSync(new URL('src-tauri/src/lib.rs',root),'utf8');
 const web=readFileSync(new URL('web/main.jsx',root),'utf8');
-const supervisor=readFileSync(new URL('../../supervisor/src/lib.rs',root),'utf8');
+const supervisor=readFileSync(new URL('../supervisor/src/lib.rs',root),'utf8');
 const build=readFileSync(new URL('src-tauri/src/build_backend.rs',root),'utf8');
 test('FIN04H native Tauri action is explicit and remains feature-gated',()=>{
   assert.match(host,/async fn ide_run_protected_framework_test_case\(/);
