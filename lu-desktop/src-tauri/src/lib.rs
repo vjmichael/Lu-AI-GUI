@@ -4008,7 +4008,7 @@ fn lu_cancel(
 }
 
 /// Rebind a reloaded WebView to the exact host-owned in-flight generation.
-//// Only the original session currently loaded in Lu can expose its bounded
+/// Only the original session currently loaded in Lu can expose its bounded
 /// live text. A host restart leaves no in-memory stream to reattach; the
 /// existing ANSF history window reports its last durable interrupted progress.
 #[tauri::command]
@@ -5615,8 +5615,14 @@ async fn generate_internal(
             };
             match result {
                 Ok(()) => {
-                    state.chats.append_progress(&chat_id, &gid, &answer)?;
-                    state.chats.complete(&chat_id, &gid)?;
+                    // Final original ANSF publication has a definite order
+                    // against native Stop. No completed stream can be
+                    // committed after its generation was cancelled.
+                    ticket.commit_completed(&sid,||{
+                        state.chats.append_progress(&chat_id, &gid, &answer)?;
+                        state.chats.complete(&chat_id, &gid)?;
+                        Ok(())
+                    })?;
                     if plan_only{
                         let result=plan_source.as_ref()
                             .ok_or_else(||"Original plan identity unavailable".to_string())
