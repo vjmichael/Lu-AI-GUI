@@ -49,6 +49,7 @@ import { belongsToSelectedProject } from './job_render_guard.js';
 import { ingestJobProgress, visibleJobProgress } from './job_progress.js';
 import { safeConventionalTestDiscovery } from './conventional_tests.js';
 import {checkedTestExplorer} from './test_explorer.js';
+import {checkedGithubPrEvidence} from './github_pr_evidence.js';
 import {fin07ScopeRegister} from './fin07_scope_register.js';
 import {checkedFin06Journey,checkedFin06Destination}
   from './fin06_guided_workflow.js';
@@ -9370,6 +9371,22 @@ function App() {
                          Full rulesets, bypass actors and merge eligibility:
                          {' '}not independently verified.
                        </p>}
+                      {(() => {
+                        const evidence=checkedGithubPrEvidence(
+                          githubPulls,githubReviewState,githubBranchRules,
+                          exactCi,activeProject?.projectId,pr.number);
+                        return evidence ? <p role="status">
+                          Source-bound evidence: reviews
+                          {' '}{evidence.reviewObserved?'observed':'unverified'};
+                          base policy
+                          {' '}{evidence.branchProtectionPartial?
+                            'partially observed':'unverified'};
+                          exact-head required Actions
+                          {' '}{evidence.currentExactHeadActionsObserved?
+                            'observed':'not independently verified'}.
+                          Merge/remote publication: not authorized.
+                        </p> : null;
+                      })()}
                       <p><a href={pr.url} target="_blank"
                         rel="noreferrer">Open this pull request on GitHub</a></p>
                     </article>)}
