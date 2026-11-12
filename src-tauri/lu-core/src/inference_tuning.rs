@@ -165,6 +165,62 @@ mod tests{
             v[0]=="--spec-type"&&v[1]=="ngram-simple"));
         assert!(!args.iter().any(|v|v=="--spec-draft-model"));
     }
+    fn write_tokenizer_fixture(dir:&Path,name:&str,token:&str){
+        use std::{fs,io::Write};
+        fs::create_dir_all(dir).unwrap();
+        let mut data=b"GGUF".to_vec();
+        data.extend(3u32.to_le_bytes());
+        data.extend(1u64.to_le_bytes()); // dummy tensor header
+        data.extend(3u64.to_le_bytes()); // exactly 3 metadata fields
+        let mut add_string=|key:&str,value:&str|{
+            data.extend((key.len() as u64).to_le_bytes());
+            data.extend(key.as_bytes());
+            data.extend(8u32.to_le_bytes());
+            data.extend((value.len() as u64).to_le_bytes());
+            data.extend(value.as_bytes());
+        };
+        add_string("general.architecture","qwen3");
+        add_string("tokenizer.ggml.model","gpt2");
+        let key="tokenizer.ggml.tokens";
+        data.extend((key.len() as u64).to_le_bytes());
+        data.extend(key.as_bytes());
+        data.extend(9u32.to_le_bytes()); // array
+        data.extend(8u32.to_le_bytes()); // strings
+        data.extend(2u64.to_le_bytes()); // two tokens
+        for tok in ["first",token] {
+            data.extend((tok.len() as u64).to_le_bytes());
+            data.extend(tok.as_bytes());
+        }
+        let mut file=fs::File::create(dir.join(name)).unwrap();
+        file.write_all(&data).unwrap();
+    }
+    #[test]
+    fn draft_model_preflight_checks_original_distinct_admitted_files_and_vocab(){
+        use std::{fs,time::{SystemTime,UNIX_EPOCH}};
+        let seed=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root=std::env::temp_dir().join(format!(
+            "lu-p5-draft-{}-{seed}",std::process::id()));
+        let main_dir=root.join("main");
+        let draft_dir=root.join("draft");
+        write_tokenizer_fixture(&main_dir,"main.gguf","second");
+        write_tokenizer_fixture(&draft_dir,"draft.gguf","second");
+        let mut target_admission=crate::model_admission::ModelAdmissionManager::new();
+        let mut draft_admission=crate::model_admission::ModelAdmissionManager::new();
+        let target=target_admission.admit(&main_dir,"main.gguf").unwrap().clone();
+        let draft=draft_admission.admit(&draft_dir,"draft.gguf").unwrap().clone();
+        let mut p=preset();
+        p.speculative=Speculative::DraftSimple(draft.clone());
+        assert!(p.validate_for_model(&target,false).is_ok());
+        assert!(p.validate_for_model(&target,true).is_err());
+        p.speculative=Speculative::DraftSimple(target.clone());
+        assert!(p.validate_for_model(&target,false).is_err());
+        p.speculative=Speculative::DraftSimple(draft);
+        // A changed vocabulary is never admitted, even though the model
+        // reports the same architecture and tokenizer name.
+        write_tokenizer_fixture(&draft_dir,"draft.gguf","DIFFERENT");
+        assert!(p.validate_for_model(&target,false).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test] fn default_profile_is_always_not_applied_automatically(){
         let default:Option<TuningProfile>=None;
         assert!(default.is_none());
