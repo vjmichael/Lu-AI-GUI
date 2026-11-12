@@ -52,8 +52,10 @@ jobs:
             lu-desktop/tests/perf01-p7l-koboldcpp-native-contract.test.mjs \
             lu-desktop/tests/perf01-p7l-comparison-null-tokens.test.mjs \
             lu-desktop/tests/perf01-p7-evaluation-contract.test.mjs \
-            lu-desktop/tests/perf01-p7-backend-comparison.test.mjs
-          node --check scripts/perf01-p7-backend-comparison.mjs
+            lu-desktop/tests/perf01-p7-backend-comparison.test.mjs \
+            2>&1 | tee p7l1-evidence/p7l1-node-regression.log
+          node --check scripts/perf01-p7-backend-comparison.mjs \
+            2>&1 | tee p7l1-evidence/p7l1-node-syntax.log
       - name: Preserve exact source-node acceptance report
         if: always()
         uses: actions/upload-artifact@v4
