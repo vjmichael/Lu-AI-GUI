@@ -34,6 +34,10 @@ pub(crate) struct PerfReceipt {
     pub queue_wait_ms:Option<u64>,
     pub context_assembly_ms:Option<u64>,
     pub model_dispatch_to_first_chunk_ms:Option<u64>,
+    // Wall-clock measurements from original Send to genuine model chunk and
+    // first successfully enqueued Tauri UI event. Not a painted-frame claim.
+    pub turn_to_first_chunk_ms:Option<u64>,
+    pub turn_to_first_webview_forward_ms:Option<u64>,
     pub overall_latency_ms:u64,
     pub original_source_bytes_scanned:Option<u64>,
     pub original_entries_scanned:Option<u32>,
@@ -71,7 +75,9 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
         observed_engine_starts_since_host_start:None,
         model_ref:None,backend_family:None,context_limit_tokens:None,
         queue_wait_ms:None,context_assembly_ms:None,
-        model_dispatch_to_first_chunk_ms:None,overall_latency_ms:0,
+        model_dispatch_to_first_chunk_ms:None,
+        turn_to_first_chunk_ms:None,turn_to_first_webview_forward_ms:None,
+        overall_latency_ms:0,
         original_source_bytes_scanned:None,original_entries_scanned:None,
         source_result_complete:None,streamed_utf8_bytes:0,
         prefill_tokens_per_second:None,decode_tokens_per_second:None,
@@ -160,9 +166,15 @@ impl ModelTrace{
     pub fn stream_chunk(&mut self,bytes:usize){
         if self.row.model_dispatch_to_first_chunk_ms.is_none(){
             self.row.model_dispatch_to_first_chunk_ms=self.dispatch_entered.map(elapsed_ms);
+            self.row.turn_to_first_chunk_ms=Some(elapsed_ms(self.started));
         }
         self.row.streamed_utf8_bytes=self.row.streamed_utf8_bytes
             .saturating_add(bytes as u64);
+    }
+    pub fn chunk_forwarded_to_webview(&mut self) {
+        if self.row.turn_to_first_webview_forward_ms.is_none(){
+            self.row.turn_to_first_webview_forward_ms=Some(elapsed_ms(self.started));
+        }
     }
     pub fn with_engine_start_events(mut self,before:u64,after:u64)->Self{
         self.row=self.row.with_engine_start_events(before,after);
@@ -197,6 +209,19 @@ mod tests{
         assert!(ledger.recent("a",25).is_err());
     }
     #[test]
+    fn absent_or_failed_first_webview_chunk_is_not_reported_as_visible(){
+        let mut trace=ModelTrace::new("c","g",Instant::now(),true);
+        trace.queued();
+        trace.acquired_slot();
+        trace.context_ready();
+        trace.dispatched();
+        trace.stream_chunk(512);
+        let receipt=trace.finish("FAILED");
+        assert!(receipt.turn_to_first_chunk_ms.is_some());
+        assert!(receipt.turn_to_first_webview_forward_ms.is_none());
+        assert!(receipt.decode_tokens_per_second.is_none());
+    }
+    #[test]
     fn queued_model_timing_is_host_observed_not_fake_token_throughput(){
         let mut span=ModelTrace::new("c","g",Instant::now(),true)
             .with_model(Some("model-opaque".into()));
@@ -205,6 +230,7 @@ mod tests{
         span.context_ready();
         span.dispatched();
         span.stream_chunk(10);
+        span.chunk_forwarded_to_webview();
         span.stream_chunk(20);
         let receipt=span.with_engine_start_events(2,4).finish("COMPLETED");
         assert_eq!(receipt.streamed_utf8_bytes,30);
@@ -217,6 +243,10 @@ mod tests{
         assert!(receipt.queue_wait_ms.is_some());
         assert!(receipt.context_assembly_ms.is_some());
         assert!(receipt.model_dispatch_to_first_chunk_ms.is_some());
+        assert!(receipt.turn_to_first_chunk_ms.is_some());
+        assert!(receipt.turn_to_first_webview_forward_ms.is_some());
+        assert!(receipt.turn_to_first_webview_forward_ms
+            >=receipt.turn_to_first_chunk_ms);
         assert!(receipt.decode_tokens_per_second.is_none());
         assert_eq!(receipt.evidence_scope,"HOST_OBSERVED_ONLY");
     }
