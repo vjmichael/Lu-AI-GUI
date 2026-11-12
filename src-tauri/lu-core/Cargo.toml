@@ -31,5 +31,14 @@ prost-build = "0.14"
 protoc-bin-vendored = "3"
 
 
+[features]
+# Explicit opt-in native fake HTTP process test. Not in normal/release Lu.
+p7l-native-fixture = []
+
+[[bin]]
+name = "lu-p7l-kobold-http-fixture"
+path = "src/bin/lu_p7l_kobold_http_fixture.rs"
+required-features = ["p7l-native-fixture"]
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
