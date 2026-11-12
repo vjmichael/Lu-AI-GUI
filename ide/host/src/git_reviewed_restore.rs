@@ -121,9 +121,9 @@ impl IdeWorkspaceRegistry {
   output.set_permissions(target_permissions).map_err(|_|"FIN03_RESTORE_PERMISSIONS_PRESERVE")?;
   output.write_all(&bytes).and_then(|_|output.sync_all())
    .map_err(|_|"FIN03_RESTORE_TEMP_SYNC_FAILED")?;
-  // Windows replacement requires removing the old destination; preserve it
-  // in the Git-private backup first. A failed rename requires operator repair.
-  fs::remove_file(&target).map_err(|_|"FIN03_RESTORE_REPLACE_DENIED")?;
+  // Use a single filesystem replacement operation instead of deleting the
+  // destination first. If a platform refuses replacement, fail closed and
+  // retain the original target plus the private backup and recovery marker.
   fs::rename(&tmp,&target).map_err(|_|"FIN03_RESTORE_RENAME_FAILED")?;
   if digest(&fs::read(&target).map_err(|_|"FIN03_RESTORE_READBACK")?)!=fresh.restored_sha256 {
     return Err("FIN03_RESTORE_READBACK_MISMATCH");
@@ -138,6 +138,13 @@ impl IdeWorkspaceRegistry {
  pub fn single_file_restore_recovery_required(&self,id:&str)
   ->Result<bool,&'static str>{
   let repo=exact_repo(self,id)?;
-  Ok(repo.path().join("lu-ide-fin03-restore-active.json").exists())
+  let path=repo.path().join("lu-ide-fin03-restore-active.json");
+  match fs::symlink_metadata(path) {
+   Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Ok(false),
+   Err(_)=>Err("FIN03_RESTORE_RECOVERY_MARKER_UNREADABLE"),
+   Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() &&
+       meta.len()==64=>Ok(true),
+   Ok(_)=>Err("FIN03_RESTORE_RECOVERY_MARKER_UNTRUSTED"),
+  }
  }
 }
