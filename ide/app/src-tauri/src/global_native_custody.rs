@@ -200,3 +200,68 @@ mod tests{
   fs::remove_dir_all(p).unwrap();
  }
 }
+
+#[derive(Debug,Clone,serde::Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct RecoveryAssessment {
+ pub marker_present:bool,
+ pub marker_domain:Option<String>,
+ pub marker_owner_pid:Option<u32>,
+ pub build_journal_pending:usize,
+ pub debug_journal_pending:usize,
+ pub original_journals_reconciled:bool,
+ pub native_os_release_independently_verified:bool,
+ pub operator_review_required:bool,
+ pub marker_removal_authorized:bool,
+ pub auto_retry_authorized:bool,
+ pub code:&'static str,
+}
+/// Read-only host assessment; a serialized assessment is not an authorization
+/// token and cannot clear the global marker or acknowledge OS process release.
+pub fn assess_global_recovery(profile:&Path)->Result<RecoveryAssessment,String>{
+ let present=marker_present(profile)?;
+ let mut domain=None;
+ let mut pid=None;
+ if present {
+  let bytes=fs::read(marker_path(profile))
+   .map_err(|_|"FIN01_GLOBAL_MARKER_UNREADABLE")?;
+  let marker=std::str::from_utf8(&bytes)
+   .map_err(|_|"FIN01_GLOBAL_MARKER_FORMAT_INVALID")?;
+  let parts:Vec<_>=marker.trim_end_matches('\n').split(':').collect();
+  if parts.len()!=4 || parts[0]!="FIN01-V1" ||
+     !matches!(parts[1],"build"|"debug") ||
+     parts[3].len()!=16 ||
+     !parts[3].bytes().all(|x|x.is_ascii_hexdigit() && !x.is_ascii_uppercase()){
+      return Err("FIN01_GLOBAL_MARKER_FORMAT_INVALID".into());
+  }
+  let parsed=parts[2].parse::<u32>()
+   .map_err(|_|"FIN01_GLOBAL_MARKER_OWNER_INVALID")?;
+  if parsed==0{return Err("FIN01_GLOBAL_MARKER_OWNER_INVALID".into());}
+  domain=Some(parts[1].to_owned());pid=Some(parsed);
+ }
+ let build=lu_ide_execution_supervisor::Supervisor::open(
+     profile.join("build-job-receipts.jsonl"))
+   .and_then(|s|s.inspect())
+   .map_err(|_|"FIN01_BUILD_JOURNAL_UNVERIFIED")?;
+ let debug=lu_ide_execution_supervisor::Supervisor::open(
+     profile.join("debug-fixture-receipts.jsonl"))
+   .and_then(|s|s.inspect())
+   .map_err(|_|"FIN01_DEBUG_JOURNAL_UNVERIFIED")?;
+ let pending=|rows:&[JobSummary]|rows.iter().filter(|x|x.requires_reconciliation ||
+    !matches!(x.phase,JobPhase::Completed|JobPhase::Cancelled|
+      JobPhase::Failed|JobPhase::Denied)).count();
+ let build_pending=pending(&build);
+ let debug_pending=pending(&debug);
+ let reconciled=build_pending==0 && debug_pending==0;
+ Ok(RecoveryAssessment{
+  marker_present:present,marker_domain:domain,marker_owner_pid:pid,
+  build_journal_pending:build_pending,debug_journal_pending:debug_pending,
+  original_journals_reconciled:reconciled,
+  native_os_release_independently_verified:false,
+  operator_review_required:present || !reconciled,
+  marker_removal_authorized:false,auto_retry_authorized:false,
+  code:if !present && reconciled{"FIN01_GLOBAL_NO_UNRESOLVED_CUSTODY_OBSERVED"}
+   else if !reconciled{"FIN01_ORIGINAL_JOURNAL_RECOVERY_REQUIRED"}
+   else{"FIN01_ORIGINAL_OS_RELEASE_PROOF_REQUIRED"},
+ })
+}
