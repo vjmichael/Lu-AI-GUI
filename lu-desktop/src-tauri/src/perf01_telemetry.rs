@@ -25,6 +25,9 @@ pub(crate) struct PerfReceipt {
     pub architecture:String,
     pub model_loaded_at_entry:bool,
     pub model_started_by_this_route:Option<bool>,
+    // Original llama backend engine_spawned callback events. Not GPU telemetry.
+    pub observed_engine_starts_during_turn:Option<u64>,
+    pub observed_engine_starts_since_host_start:Option<u64>,
     pub model_ref:Option<String>,
     pub backend_family:Option<String>,
     pub context_limit_tokens:Option<u32>,
@@ -64,6 +67,8 @@ fn base(chat_id:&str,generation_id:&str,route:&str,reason_code:&str,
         operating_system:std::env::consts::OS.into(),
         architecture:std::env::consts::ARCH.into(),
         model_loaded_at_entry,model_started_by_this_route:None,
+        observed_engine_starts_during_turn:None,
+        observed_engine_starts_since_host_start:None,
         model_ref:None,backend_family:None,context_limit_tokens:None,
         queue_wait_ms:None,context_assembly_ms:None,
         model_dispatch_to_first_chunk_ms:None,overall_latency_ms:0,
@@ -112,6 +117,14 @@ pub(crate) fn cpu_receipt(
     result.source_result_complete=complete;
     result
 }
+impl PerfReceipt {
+    pub(crate) fn with_engine_start_events(mut self, before:u64,after:u64)->Self{
+        self.observed_engine_starts_during_turn=
+            Some(after.saturating_sub(before));
+        self.observed_engine_starts_since_host_start=Some(after);
+        self
+    }
+}
 pub(crate) struct ModelTrace{
     started:Instant,
     queue_entered:Instant,
@@ -151,6 +164,10 @@ impl ModelTrace{
         self.row.streamed_utf8_bytes=self.row.streamed_utf8_bytes
             .saturating_add(bytes as u64);
     }
+    pub fn with_engine_start_events(mut self,before:u64,after:u64)->Self{
+        self.row=self.row.with_engine_start_events(before,after);
+        self
+    }
     pub fn finish(mut self,terminal:&str)->PerfReceipt{
         self.row.terminal_state=terminal.into();
         self.row.overall_latency_ms=elapsed_ms(self.started);
@@ -189,8 +206,10 @@ mod tests{
         span.dispatched();
         span.stream_chunk(10);
         span.stream_chunk(20);
-        let receipt=span.finish("COMPLETED");
+        let receipt=span.with_engine_start_events(2,4).finish("COMPLETED");
         assert_eq!(receipt.streamed_utf8_bytes,30);
+        assert_eq!(receipt.observed_engine_starts_during_turn,Some(2));
+        assert_eq!(receipt.observed_engine_starts_since_host_start,Some(4));
         assert_eq!(receipt.model_ref.as_deref(),Some("model-opaque"));
         assert_eq!(receipt.backend_family.as_deref(),Some("llama.cpp"));
         assert_eq!(receipt.context_limit_tokens,Some(4096));
