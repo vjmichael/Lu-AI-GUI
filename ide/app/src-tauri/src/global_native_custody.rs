@@ -385,6 +385,28 @@ mod tests{
   fs::remove_dir_all(p).unwrap();
  }
  #[test]
+ fn native_clearance_rejects_original_prepared_job_even_with_marker(){
+  let p=fixture();
+  let supervisor=lu_ide_execution_supervisor::Supervisor::open(
+    p.join("build-job-receipts.jsonl")).unwrap();
+  let plan=lu_ide_execution_supervisor::JobPlan{
+   project_id:format!("ide-{}","b".repeat(32)),
+   recipe_id:"lu_ide_host_tests".into(),source_head:"a".repeat(40),
+   input_snapshot_sha256:"c".repeat(64),manifest_sha256:"d".repeat(64),
+   toolchain_sha256:"e".repeat(64),debug_target_binding_sha256:None,
+   runtime_limit_ms:60_000,memory_limit_bytes:128*1024*1024,
+   process_limit:4,log_limit_bytes:16*1024,
+   effect_class:"test_build_isolated".into(),
+  };
+  let prepared=supervisor.prepare(plan).unwrap();
+  assert_eq!(prepared.phase,JobPhase::Prepared);
+  let _lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
+  assert_eq!(clear_stale_marker_with_kernel_proof(&p).unwrap_err(),
+    "FIN01_ORIGINAL_JOURNAL_NOT_TERMINAL");
+  assert!(global_custody_unresolved(&p).unwrap());
+  fs::remove_dir_all(p).unwrap();
+ }
+ #[test]
  fn current_live_marker_owner_cannot_be_cleared_from_journal_state(){
   let p=fixture();
   let lease=GlobalAdmissionFence::acquire(&p,"build").unwrap();
