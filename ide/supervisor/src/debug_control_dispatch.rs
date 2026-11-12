@@ -2,7 +2,7 @@
 //! Not a renderer/AI tool; never linked in a default or release Lu build.
 //! Real D5 owner-event custody and independently verified post-command
 //! stop/PDB must be established BEFORE any successful outcome is recorded.
-#![cfg(any(test, all(windows, debug_assertions, feature = "dev046c-ci-control")))]
+#![cfg(any(test, all(windows, debug_assertions, feature = "dev046c-ci-control"), all(windows, feature = "fin04-release-owner-evidence")))]
 use crate::{
     debug_action_receipts::{op_digest, ConsumedControlClaim},
     debug_command_review::{DebugReviewIntent, StepKind},
@@ -147,6 +147,16 @@ impl CiControlSlot {
             debug_assertions,
             feature = "dev046d-native-dialog"
         ));
+        // FIN-04R may compile the independent post-command *verifier* for
+        // native review but MUST NOT admit a step/breakpoint/variables slot.
+        // The release path lacks a protected independent PDB worker and its
+        // own production-grade consent constructor. No CI/dev token, even
+        // with matching SHA strings, can cross this boundary.
+        if cfg!(all(windows, feature = "fin04-release-owner-evidence"))
+            && !cfg!(all(debug_assertions, feature = "dev046d-native-dialog"))
+        {
+            return Err(ControlDenial::Unreviewed);
+        }
         if (!claim.ci_fixture_only && !trusted_native_dialog)
             || claim.execution_authorized
             || !hash64(&claim.approved_receipt_sha256)
