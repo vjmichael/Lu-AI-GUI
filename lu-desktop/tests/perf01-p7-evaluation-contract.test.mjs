@@ -17,7 +17,7 @@ test('P7 keeps installed llama.cpp and single-GPU offline backend unchanged',()=
   assert.match(desktop,/tuning:None/);
   assert.match(picker,/enum BackendChoice \{ Cpu, Vulkan \}/);
   assert.doesNotMatch(picker,/CandidateKind/);
-  for(const id of ['mistral_rs','koboldcpp','vllm_gguf']){
+  for(const id of ['mistral_rs','koboldcpp','vllm']){
     assert.ok(desktop.includes('backend:"'+id+'"'),id+' missing from inventory');
   }
   assert.match(desktop,/selectable:false,selected_on_next_start:false/);
