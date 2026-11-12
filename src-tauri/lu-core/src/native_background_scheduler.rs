@@ -349,6 +349,17 @@ impl BackgroundScheduler{
         self.tick_at(now_unix())
     }
     pub fn tick_at(&self,now:u64)->Result<usize,SchedulerError>{
+        self.tick_at_guarded(now,false)
+    }
+    /// The desktop's trusted foreground model queue gates only NEW worker
+    /// dispatch. Existing native operations retain custody, may complete and
+    /// are reconciled above this gate; no running effect is preempted.
+    pub fn tick_foreground_guarded(&self,foreground_pending:bool)
+        ->Result<usize,SchedulerError>{
+        self.tick_at_guarded(now_unix(),foreground_pending)
+    }
+    fn tick_at_guarded(&self,now:u64,foreground_pending:bool)
+        ->Result<usize,SchedulerError>{
         self.process.poll().map_err(|_|SchedulerError::WorkerControl)?;
         let mut g=self.inner.lock().map_err(|_|SchedulerError::Poisoned)?;
         let active_ids=g.running.keys().cloned().collect::<Vec<_>>();
@@ -398,6 +409,10 @@ impl BackgroundScheduler{
                 });
             }
         }
+        // Preserve terminal reconciliation and durable receipts above while
+        // a human model turn is queued/running; do not launch a new worker
+        // that competes with the user's first token.
+        if foreground_pending { return Ok(0); }
         let mut queued=Vec::new();
         {
             let mut stmt=g.db.prepare(
@@ -759,6 +774,22 @@ mod tests{
         assert!(queue.admit_host_worker("c-one","obs-frame-1",claim).is_err());
         drop(lease);
         assert!(queue.admit_host_worker("c-one","obs-frame-1",claim).is_ok());
+    }
+    #[test]
+    fn foreground_gate_holds_due_workers_without_revoking_reviewed_approval(){
+        let (_,_,queue)=test_scheduler();
+        let now=now_unix();
+        queue.enqueue_host_plan(plan("held-for-human"),
+            ScheduleOptions::file_scan(now,None,Priority::Interactive)).unwrap();
+        assert_eq!(queue.tick_at_guarded(now,true).unwrap(),0);
+        assert_eq!(queue.state_for("held-for-human","c-owner").unwrap().as_deref(),
+            Some("QUEUED"));
+        assert_eq!(queue.guardian_snapshot("c-owner").unwrap().used.workers,0);
+        // After foreground clears, original admission still applies.
+        // Our intentionally invalid test hash is never executed by the OS.
+        assert_eq!(queue.tick_at_guarded(now,false).unwrap(),0);
+        assert_eq!(queue.state_for("held-for-human","c-owner").unwrap().as_deref(),
+            Some("FAILED"));
     }
     #[test]
     fn priority_and_resource_admission_reject_gpu_without_verified_budget(){
