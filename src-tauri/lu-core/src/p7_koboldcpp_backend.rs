@@ -35,9 +35,9 @@ use std::{
 
 #[cfg(windows)]
 use lu_win_worker_job::Job;
-#[cfg(unix)]
+#[cfg(target_os="linux")]
 use std::os::unix::process::CommandExt;
-#[cfg(unix)]
+#[cfg(target_os="linux")]
 unsafe extern "C" {
     fn kill(pid:i32,sig:i32)->i32;
 }
@@ -329,7 +329,7 @@ impl InferenceBackend for KoboldCppBackend {
         self.port=None;
         let mut reaped=true;
         if let Some(mut child)=self.process.take(){
-            #[cfg(unix)]
+            #[cfg(target_os="linux")]
             {
                 let pid=child.id();
                 if pid>i32::MAX as u32 {
