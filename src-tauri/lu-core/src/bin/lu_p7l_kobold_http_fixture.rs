@@ -126,10 +126,24 @@ fn handle(mut socket:TcpStream,password:String){
         b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
     ).is_err(){return}
     let is_tool=body.get("tools").is_some();
+    let prompt=body.pointer("/messages/0/content").and_then(|v|v.as_str())
+        .unwrap_or("");
+    if prompt.contains("P7L_FAKE_BAD_SSE"){
+        let _=send_event(&mut socket,
+            "{\"choices\":[{\"delta\":{\"content\":7}}]}");
+        let _=send_event(&mut socket,"[DONE]");
+        let _=socket.write_all(b"0\r\n\r\n");
+        return;
+    }
     if is_tool {
+        let tool_name=if prompt.contains("P7L_FAKE_UNAUTHORIZED_TOOL"){
+            "lu_browser_interact"
+        }else{
+            "lu_browser_read"
+        };
         let fragment=json!({"choices":[{"delta":{"tool_calls":[{
             "index":0,"id":"call-p7l-1","type":"function",
-            "function":{"name":"lu_browser_read",
+            "function":{"name":tool_name,
                 "arguments":"{\"operation\":\"navigate\",\"url\":\"https://example.org\"}"}
         }]}}]}).to_string();
         if !send_event(&mut socket,&fragment){return}
