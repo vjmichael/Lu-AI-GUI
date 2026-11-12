@@ -56,6 +56,8 @@ import { checkedProjectDebugWitness } from './project_debug_authority.js';
 import { debugAdmissionStatus, checkedDebugStoppedSource,
   checkedReviewedDebugSource, checkedRedactedDebugLocals } from './debugger_integration.js';
 import { acceptNativeOutput } from './native_build_output.js';
+import { checkedTerminalSession, checkedTerminalReply }
+  from './interactive_terminal.js';
 import { checkedToolchainInventory, checkedPackageToolchainReadiness,
   checkedProtectedTerminal } from './toolchain_terminal.js';
 import { boundedBuildTestHints } from './build_test_output_hints.js';
@@ -71,6 +73,7 @@ const sections = [
   { id: 'continuity', title: 'Continuity', glyph: '▦' },
   { id: 'languages', title: 'Language services', glyph: '⌁' },
   { id: 'packages', title: 'Packages & workflows', glyph: '⬡' },
+  { id: 'terminal', title: 'Terminal', glyph: '⌨' },
   { id: 'source', title: 'Source control', glyph: '⑂' },
   { id: 'tasks', title: 'Job requests', glyph: '▶' },
 ];
@@ -283,6 +286,11 @@ function App() {
   const [buildResult, setBuildResult] = useState(null);
   const [jobProgressEvents, setJobProgressEvents] = useState([]);
   const [nativeJobOutput,setNativeJobOutput] = useState(null);
+  const [terminalSession,setTerminalSession]=useState(null);
+  const [terminalLine,setTerminalLine]=useState('');
+  const [terminalBusy,setTerminalBusy]=useState(false);
+  const [terminalHistory,setTerminalHistory]=useState([]);
+  const terminalTicket=useRef(0);
   const buildOutputHints=useMemo(()=>
     boundedBuildTestHints(nativeJobOutput,
       activeProject?.projectId,nativeJobOutput?.jobId),
@@ -582,6 +590,11 @@ function App() {
     setTestNavigationBusy(false);
     setProfileDiscoveryBusy(false);
     packageInspectionRequest.current += 1;
+    ++terminalTicket.current;
+    setTerminalSession(null);
+    setTerminalLine('');
+    setTerminalHistory([]);
+    setTerminalBusy(false);
     setPackageInspection(null);
     setPackageInspectionBusy(false);
     packagePreviewRequest.current += 1;
@@ -986,9 +999,10 @@ function App() {
   const isLanguages = section === 'languages';
   const isContinuity = section === 'continuity';
   const isJobs = section === 'tasks';
+  const isTerminal = section === 'terminal';
   useEffect(() => {
     const projectId = activeProject?.projectId;
-    if ((section !== 'tasks' && section !== 'packages') || !projectId) return;
+    if ((section !== 'tasks' && section !== 'packages' && section !== 'terminal') || !projectId) return;
     let alive = true;
     async function update() {
       try {
@@ -1431,6 +1445,73 @@ function App() {
       }
     } catch (error) { setProblem(String(error)); }
     finally { setPending(false); }
+  }
+
+  async function openTypedTerminal() {
+    const projectId=activeProject?.projectId;
+    if(!projectId || terminalBusy)return;
+    const ticket=++terminalTicket.current;
+    setTerminalBusy(true);setTerminalSession(null);setTerminalHistory([]);
+    setTerminalLine('');
+    try {
+      const native=await invoke('ide_terminal_open',{projectId});
+      if(ticket!==terminalTicket.current ||
+        activeProjectIdRef.current!==projectId)return;
+      const accepted=checkedTerminalSession(native,projectId);
+      if(!accepted)throw Error('INT05D_SESSION_REJECTED');
+      setTerminalSession(accepted);
+    }catch(error){
+      if(ticket===terminalTicket.current)
+        setProblem('Native typed terminal unavailable: '+String(error));
+    }finally{if(ticket===terminalTicket.current)setTerminalBusy(false);}
+  }
+
+  async function submitTypedTerminal() {
+    const projectId=activeProject?.projectId;
+    const current=terminalSession;
+    const line=terminalLine;
+    if(!projectId || !current || current.projectId!==projectId ||
+       terminalBusy || !line.trim())return;
+    const ticket=++terminalTicket.current;
+    const sequence=current.sequence+1;
+    const recipe=line.trim().startsWith('run ') ?
+      line.trim().slice(4) : null;
+    const expectedManifestSha256=recipe &&
+      selectedBuildPlan?.recipeId===recipe &&
+      isCurrentProtectedBuildPlan(selectedBuildPlan,projectRunProfiles,
+        buildStatus,projectId)
+      ? selectedBuildPlan.expectedManifestSha256 : null;
+    setTerminalBusy(true);setTerminalLine('');
+    try{
+      const native=await invoke('ide_terminal_submit',{
+        projectId,sessionId:current.sessionId,sequence,line,
+        expectedManifestSha256,
+      });
+      if(ticket!==terminalTicket.current ||
+        activeProjectIdRef.current!==projectId)return;
+      const answer=checkedTerminalReply(native,current,sequence);
+      if(!answer)throw Error('INT05D_REPLY_REJECTED');
+      // Never echo raw input, rejected fragments or credentials in history.
+      setTerminalHistory(prev=>[...prev,{
+        sequence,kind:answer.kind,message:answer.message,
+        receipt:answer.kind==='native_job_result' ?
+          answer.nativeResult.terminalReceiptSha256 : null,
+        job:answer.kind==='native_job_result' ?
+          answer.nativeResult.jobId : null,
+      }].slice(-32));
+      setTerminalSession({...current,sequence});
+      if(answer.kind==='native_job_result' ||
+         answer.kind==='cancellation_requested'){
+        await refreshProtectedBuildStatus();
+      }
+    }catch(error){
+      if(ticket===terminalTicket.current){
+        // A native failure may have consumed its sequence. Do not replay.
+        setTerminalSession(null);
+        setProblem('Terminal command denied or interrupted. Open a fresh session: '+
+          String(error));
+      }
+    }finally{if(ticket===terminalTicket.current)setTerminalBusy(false);}
   }
 
   async function inspectPackageManagers() {
@@ -6291,7 +6372,8 @@ function App() {
             ((item.id === 'explorer' || item.id === 'project-search') && !activeProject)}
           aria-current={section === item.id ? 'page' : undefined}
           title={item.pending ? item.title + ' — not enabled yet' : item.title}
-          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'packages') void readWorkflowRuns(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
+          onClick={() => { setSection(item.id); if (item.id === 'proposals') void refreshProposals(); if (item.id === 'capabilities') void refreshCapabilities(); if (item.id === 'continuity') void refreshContext(); if (item.id === 'source') void refreshGitStatus(); if (item.id === 'packages') void readWorkflowRuns();
+            if (item.id === 'terminal') void refreshProtectedBuildStatus(); if (item.id === 'tasks') void refreshIntents(); if (item.id === 'languages') void invoke('ide_list_language_servers').then(setLanguageServers).catch(() => setLanguageServers([])); }}>
           <span aria-hidden="true">{item.glyph}</span>{item.title}
           {item.pending && <small>Soon</small>}
         </button>)}
@@ -6306,9 +6388,10 @@ function App() {
     <main className="ideMain">
       <header className="ideTopBar">
         <div><div className="eyebrow">LOCAL DEVELOPMENT ENVIRONMENT</div>
-          <h1 aria-label={isJobs ? 'Execution requests' : undefined}>{isProjectSearch ? 'Find in project' : isJobs ? 'Execution requests' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
+          <h1 aria-label={isJobs ? 'Execution requests' : undefined}>{isProjectSearch ? 'Find in project' : isJobs ? 'Execution requests' : isTerminal ? 'Terminal' : isPackages ? 'Packages & workflows' : isSource ? 'Source control' : isContinuity ? 'Project continuity' : isCapabilities ? 'IDE capabilities' : isLanguages ? 'Language services' : isProposals ? 'Coding proposals' : isExplorer ? (activeProject?.displayName || 'Source editor') : 'Workspace projects'}</h1>
           <p>{isProjectSearch ? 'Saved-source search · Revision-checked hits · No writes' :
             isJobs ? 'Historical review intents · Protected native Run/Test · Explicit cancellation' :
+            isTerminal ? 'Native typed commands · Protected OS jobs · No arbitrary shell' :
             isPackages ? 'Local package manager inspection · Multi-project release review · No install permission' :
             isSource ? 'Read-only local Git status · No staging, commits, fetch or push' :
             isContinuity ? 'Development history · Revisioned sources · Explicit unknowns' :
@@ -6322,7 +6405,7 @@ function App() {
           {isExplorer && <button className="ghostBtn" onClick={() => setSection('projects')}>
             All projects</button>}
           <button className="ghostBtn" disabled={pending || explorerPending || !!savingKey}
-            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isPackages ? (inspectPackageManagers(), readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? Promise.all([
+            onClick={() => isJobs ? (refreshIntents(), refreshProtectedBuildStatus()) : isTerminal ? refreshProtectedBuildStatus() : isPackages ? (inspectPackageManagers(), readWorkflowRuns(), workflowInspection && previewMultiProjectWorkflow()) : isSource ? refreshGitStatus() : isContinuity ? refreshContext() : isCapabilities ? refreshCapabilities() : isLanguages ? Promise.all([
                 invoke('ide_list_language_servers'),
                 invoke('ide_lsp_worker_status'),
               ]).then(([servers,worker])=>{
@@ -7199,6 +7282,76 @@ function App() {
             </div>
           </div>
         </section>
+
+        : isTerminal
+        ? <section className="workspaceContent continuityWorkspace"
+            aria-label="INT05-D protected interactive terminal">
+            <section className="continuityDocument">
+              <h2>Native typed terminal</h2>
+              <p>Optional restricted command interface. This is not bash,
+                PowerShell, cmd or an arbitrary executable launcher. Every
+                `run` requires a reviewed Build/Test profile, exact saved
+                manifest SHA and a fresh native OS approval. No command
+                history or environment secrets are saved to disk.</p>
+              <button type="button" className="ghostBtn"
+                disabled={!activeProject || terminalBusy}
+                onClick={()=>void openTypedTerminal()}>
+                {terminalSession?'Replace this session':'Open native terminal session'}
+              </button>
+              {terminalSession &&
+                <form onSubmit={event=>{event.preventDefault();
+                  void submitTypedTerminal();}}>
+                  <label htmlFor="ideInt05TerminalInput">
+                    Command (help, status, toolchains, packages,
+                    run &lt;reviewed profile&gt;, cancel &lt;job ID&gt;)
+                  </label>
+                  <input id="ideInt05TerminalInput" type="text"
+                    autoComplete="off" spellCheck={false} maxLength={96}
+                    aria-label="Restricted native terminal command"
+                    value={terminalLine} disabled={terminalBusy}
+                    onChange={event=>setTerminalLine(event.target.value)} />
+                  <button className="primaryBtn" type="submit"
+                    disabled={terminalBusy || !terminalLine.trim()}>
+                    {terminalBusy?'Native command in progress…':'Submit typed command'}
+                  </button>
+                </form>}
+              {terminalSession && <p role="status">Session:
+                {' '}<code>{terminalSession.sessionId}</code>
+                {' · '}Sequence {terminalSession.sequence}. No shell authority.</p>}
+              <div role="log" aria-live="polite" aria-label="Native terminal command replies">
+                {terminalHistory.map(entry=>
+                  <p key={entry.sequence}><code>#{entry.sequence}</code>
+                    {' · '}{entry.kind.replaceAll('_',' ')}
+                    {' · '}{entry.message}
+                    {entry.job && <> Job <code>{entry.job}</code></>}
+                    {entry.receipt && <> Original receipt:
+                      <code>{entry.receipt}</code></>}</p>)}
+              </div>
+              <p>To run a fixed profile, review it first in Job requests.
+                Failed or interrupted native commands are never automatically
+                retried. For cancellation and recovery, native receipts and
+                independent process-tree reconciliation remain authoritative.</p>
+            </section>
+            <section className="continuityDocument"
+              aria-label="Protected terminal live process output">
+              <h3>Project-owned output (read-only)</h3>
+              {terminalTranscript.kind!=='unavailable' ?
+                <>
+                  <p>{terminalTranscript.kind.replaceAll('_',' ')}
+                    {' · '}Job <code>{terminalTranscript.jobId}</code></p>
+                  {terminalTranscript.truncated &&
+                    <p role="status">Earlier output truncated.</p>}
+                  <pre tabIndex={0} aria-label="Untrusted terminal output"
+                    style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+                      maxHeight:'22rem',overflow:'auto'}}>
+                    {terminalTranscript.chunks.map(chunk=>
+                      '['+chunk.stream+'] '+chunk.text).join('')}
+                  </pre>
+                </>
+                : <p role="status">No project-bound native output available.
+                    Output is not restored from a prior process after restart.</p>}
+            </section>
+          </section>
         : isPackages
         ? <section className="workspaceContent continuityWorkspace" aria-label="Advanced packaging and multi-project workflows">
             <section className="continuityDocument"

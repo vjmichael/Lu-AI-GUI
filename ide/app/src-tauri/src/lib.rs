@@ -14,6 +14,7 @@ mod build_backend;
 mod debug_backend;
 #[cfg(all(any(windows, target_os = "linux"), feature = "native-lsp"))]
 mod lsp_backend;
+mod terminal_broker;
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -3221,6 +3222,126 @@ async fn ide_discard_proposal(
     .map_err(|_| "INBOX_TASK_UNAVAILABLE".to_owned())?
 }
 
+
+// IDE-INT05-D: optional typed interactive terminal, never a general shell.
+// Every command is consumed once inside the native, project-bound session.
+// Only the existing fixed D3 runner can launch code; it still requires fresh
+// frozen manifest verification, independent OS human dialog and custody.
+#[tauri::command]
+async fn ide_terminal_open(
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<terminal_broker::TerminalSessions>>,
+    project_id: String,
+) -> Result<terminal_broker::TerminalSessionView, String> {
+    registry.source_capability(&project_id)
+        .map_err(|_| "INT05D_REGISTERED_PROJECT_REQUIRED")?;
+    sessions.open(&project_id).map_err(str::to_owned)
+}
+#[tauri::command]
+async fn ide_terminal_submit(
+    app: AppHandle,
+    registry: State<'_, Arc<IdeWorkspaceRegistry>>,
+    sessions: State<'_, Arc<terminal_broker::TerminalSessions>>,
+    project_id: String,
+    session_id: String,
+    sequence: u64,
+    line: String,
+    expected_manifest_sha256: Option<String>,
+) -> Result<terminal_broker::TerminalReply, String> {
+    registry.source_capability(&project_id)
+        .map_err(|_| "INT05D_REGISTERED_PROJECT_REQUIRED")?;
+    let action = sessions.consume(&project_id, &session_id, sequence, &line)
+        .map_err(str::to_owned)?;
+    use terminal_broker::{TerminalAction, TerminalReply};
+    let (kind, message, value) = match action {
+        TerminalAction::Help => {
+            if expected_manifest_sha256.is_some() {
+                return Err("INT05D_UNEXPECTED_MANIFEST_IDENTITY".into());
+            }
+            ("help", "Commands: help, status, toolchains, packages, run <fixed reviewed profile>, cancel <exact native job ID>. No shell, pipes, scripts, network, or arbitrary arguments.", None)
+        }
+        TerminalAction::Packages => {
+            if expected_manifest_sha256.is_some() {
+                return Err("INT05D_UNEXPECTED_MANIFEST_IDENTITY".into());
+            }
+            let registry = Arc::clone(registry.inner());
+            let project = project_id.clone();
+            let report = tauri::async_runtime::spawn_blocking(move ||
+                registry.inspect_package_managers(&project).map_err(str::to_owned))
+                .await.map_err(|_|"INT05D_PACKAGE_INSPECTION_UNAVAILABLE")??;
+            ("packages", "Native read-only manifest inspection; no package manager executed.",
+                Some(serde_json::to_value(report).map_err(|_|"INT05D_SERIALIZE_DENIED")?))
+        }
+        TerminalAction::Status | TerminalAction::Toolchains => {
+            if expected_manifest_sha256.is_some() {
+                return Err("INT05D_UNEXPECTED_MANIFEST_IDENTITY".into());
+            }
+            #[cfg(all(feature="native-build",any(windows,target_os="linux")))]
+            {
+                let native = app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+                    .ok_or("INT05D_NATIVE_SUPERVISOR_NOT_INSTALLED")?;
+                let native = Arc::clone(native.inner());
+                let app_copy=app.clone();
+                let project=project_id.clone();
+                let status=tauri::async_runtime::spawn_blocking(move ||
+                    native.status(&app_copy,&project))
+                    .await.map_err(|_|"INT05D_NATIVE_STATUS_UNAVAILABLE")??;
+                ("status", "Native runtime and recovery status; readiness is not execution approval.",
+                    Some(serde_json::to_value(status).map_err(|_|"INT05D_SERIALIZE_DENIED")?))
+            }
+            #[cfg(not(all(feature="native-build",any(windows,target_os="linux"))))]
+            {
+                ("status","Protected native toolchains are not installed; execution denied.",None)
+            }
+        }
+        TerminalAction::Run(recipe) => {
+            let sha=expected_manifest_sha256.ok_or("INT05D_REVIEWED_MANIFEST_REQUIRED")?;
+            #[cfg(all(feature="native-build",any(windows,target_os="linux")))]
+            {
+                registry.trusted_native_worker_root(&project_id)
+                    .map_err(|_|"INT05D_PROJECT_WORKER_SCOPE_DENIED")?;
+                let native=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+                    .ok_or("INT05D_NATIVE_SUPERVISOR_NOT_INSTALLED")?;
+                let native=Arc::clone(native.inner());
+                let registry=Arc::clone(registry.inner());
+                let project=project_id.clone();
+                let app_copy=app.clone();
+                // The exact recipe comes ONLY from the enum above; the SHA is
+                // rehashed natively and one-use consent happens in run_profile.
+                let completed=tauri::async_runtime::spawn_blocking(move ||
+                    native.run_profile(&app_copy,&registry,&project,recipe,&sha))
+                    .await.map_err(|_|"INT05D_RUN_WORKER_UNAVAILABLE")??;
+                ("native_job_result","Native worker returned; inspect its original terminal receipt and cleanup evidence.",
+                    Some(serde_json::to_value(completed).map_err(|_|"INT05D_SERIALIZE_DENIED")?))
+            }
+            #[cfg(not(all(feature="native-build",any(windows,target_os="linux"))))]
+            {
+                let _=(app,registry,recipe,sha);
+                return Err("INT05D_PROTECTED_NATIVE_RUNNER_NOT_INSTALLED".into())
+            }
+        }
+        TerminalAction::Cancel(job) => {
+            if expected_manifest_sha256.is_some() {
+                return Err("INT05D_UNEXPECTED_MANIFEST_IDENTITY".into());
+            }
+            #[cfg(all(feature="native-build",any(windows,target_os="linux")))]
+            {
+                let native=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+                    .ok_or("INT05D_NATIVE_SUPERVISOR_NOT_INSTALLED")?;
+                let receipt=native.cancel(&project_id,job.as_deref())?;
+                ("cancellation_requested","Cancellation requested, NOT yet confirmed. Native OS-tree cleanup must be verified.",
+                    Some(serde_json::json!({"nativeRequest":receipt})))
+            }
+            #[cfg(not(all(feature="native-build",any(windows,target_os="linux"))))]
+            {
+                let _=(app,job);
+                return Err("INT05D_PROTECTED_NATIVE_RUNNER_NOT_INSTALLED".into())
+            }
+        }
+    };
+    Ok(TerminalReply::new(project_id,session_id,sequence,kind,message,value))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -3242,6 +3363,7 @@ pub fn run() {
             .map_err(|_| std::io::Error::other("IDE private navigation unavailable"))?;
             app.manage(Arc::new(navigation));
             app.manage(Arc::new(PartialStageSessions::default()));
+            app.manage(Arc::new(terminal_broker::TerminalSessions::default()));
             app.manage(Arc::new(registry));
             let snapshots = InventorySnapshots::new(data.join("evidence-baselines.json"))
                 .map_err(|_| std::io::Error::other("IDE evidence history failed to open"))?;
@@ -3306,6 +3428,8 @@ pub fn run() {
             ide_review_project_debug_target,
             ide_review_multilang_adapter,
             ide_build_status,
+            ide_terminal_open,
+            ide_terminal_submit,
             ide_build_read_output,
             ide_build_run_profile,
             ide_build_review_test_target,
