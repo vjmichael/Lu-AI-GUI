@@ -768,6 +768,9 @@ struct DesktopState {
     /// permanently tainted while registered, and remain chat-bound.
     observed_image_owners: Mutex<HashMap<String,String>>,
     generation_queue: Arc<GenerationQueue>,
+    /// Last observed native P4 scheduler decision. This is a view only;
+    /// neither UI nor the model may approve a background process with it.
+    interactive_admission_reason:Mutex<Option<lu_core::native_background_scheduler::InteractiveAdmissionReason>>,
     load_trace: Arc<Mutex<LoadTrace>>,
     engine_start_events:Arc<AtomicU64>,
     reader_generations: Mutex<HashMap<String,ReaderRunControl>>,
@@ -1314,6 +1317,7 @@ impl DesktopState {
             images: Mutex::new(HashMap::new()),
             observed_image_owners: Mutex::new(HashMap::new()),
             generation_queue: Arc::new(GenerationQueue::default()),
+            interactive_admission_reason:Mutex::new(None),
             load_trace,
             engine_start_events,
             supervisor: Arc::new(supervisor),
@@ -1350,6 +1354,9 @@ fn start_background_watchdog(app:AppHandle,state:Arc<DesktopState>){
                     logical_cpus,model_resident,foreground_pending,observed
                 );
             let _=state.background_scheduler.set_budget(admission.budget);
+            if let Ok(mut observed_reason)=state.interactive_admission_reason.lock(){
+                *observed_reason=Some(admission.reason);
+            }
             // PERF-01 P4: no NEW OS worker while the live model needs
             // foreground resources, physical RAM is unmeasured/critical, or
             // CPU is saturated. A second host-owned queue probe runs just
@@ -5920,6 +5927,12 @@ struct BackgroundGuardianView {
     network_capacity:u16,network_used:u16,
     observed_available_ram_mib:Option<u64>,
     observed_cpu_busy_percent:Option<u8>,
+    interactive_admission_reason:Option<String>,
+    new_background_admission_deferred:Option<bool>,
+    waiting_foreground_generations:usize,
+    waiting_background_generations:usize,
+    active_model_generation_class:Option<String>,
+    oldest_background_wait_ms:Option<u64>,
 }
 /// Native file-picker admission. The model never selects the executable,
 /// file path or task ID, and the same Lu installation performs the scan as
@@ -6239,6 +6252,9 @@ fn lu_background_guardian_status(
     let snapshot=state.background_scheduler.guardian_snapshot(&chat_id)
         .map_err(|e|format!("Guardian status unavailable: {e:?}"))?;
     let observed=state.background_pressure.sample();
+    let priority=state.generation_queue.priority_snapshot()?;
+    let reason=*state.interactive_admission_reason.lock()
+        .map_err(|_|"Interactive admission status unavailable")?;
     Ok(BackgroundGuardianView{
         queued:snapshot.queued,running:snapshot.running,paused:snapshot.paused,
         worker_capacity:snapshot.capacity.workers,worker_used:snapshot.used.workers,
@@ -6249,6 +6265,13 @@ fn lu_background_guardian_status(
         network_capacity:snapshot.capacity.network,network_used:snapshot.used.network,
         observed_available_ram_mib:observed.available_ram_mib,
         observed_cpu_busy_percent:observed.cpu_busy_percent,
+        interactive_admission_reason:reason.map(|value|value.as_str().to_owned()),
+        new_background_admission_deferred:reason.map(|value|value!=
+            lu_core::native_background_scheduler::InteractiveAdmissionReason::BackgroundPermitted),
+        waiting_foreground_generations:priority.waiting_foreground,
+        waiting_background_generations:priority.waiting_background,
+        active_model_generation_class:priority.active_class.map(str::to_owned),
+        oldest_background_wait_ms:priority.oldest_background_wait_ms,
     })
 }
 #[tauri::command]
