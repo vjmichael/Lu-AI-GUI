@@ -139,9 +139,11 @@ from the lu-core Rust test crate on the physical Windows host.
 
 ### Hardening implemented
 
-- The original P0-AUTH cancellation watermark now validates the most recent
-  immutable REQUESTED row's raw JSON, SHA-256, scope and fixed schema before
-  admitting each reviewed tool dispatch. Historical mismatches deny authority.
+- The original P0-AUTH cancellation watermark validates the latest
+  REQUESTED row's raw JSON, SHA-256, scope and fixed schema, and rejects
+  orphan RESULT entries discovered in bounded original history before
+  admitting reviewed tool dispatch. Historical corruption or orphan outcomes
+  deny authority instead of silently restoring old execution permissions.
 - ANSF original cancellation rows have no-update and guarded no-direct-delete
   SQLite triggers. Deleting an entire human-owned chat via the original
   parent FK cascade remains supported; model/renderer cannot select rows.
