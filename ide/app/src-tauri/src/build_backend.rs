@@ -679,13 +679,23 @@ impl NativeBuildRuntime {
         // selected-project presentation. No foreign job ID is published.
         let global_custody =
             lu_ide_execution_supervisor::observe_global_custody(&durable,project_id);
-        let global_recovery_required = global_custody.recovery_required;
+        let unresolved_global_marker=crate::global_native_custody
+            ::global_custody_unresolved(&self.global_custody_profile)?;
+        let other=crate::global_native_custody::sibling_rows(
+            &self.global_custody_profile,"build")?;
+        let other_custody=lu_ide_execution_supervisor
+            ::observe_global_custody(&other,project_id);
+        let global_recovery_required = global_custody.recovery_required ||
+            other_custody.recovery_required || unresolved_global_marker;
         // A durable nonterminal job is busy even after a lost desktop
         // process handle; never imply global idleness from local store only.
         let global_worker_busy = global_worker_busy ||
-            global_custody.worker_busy_or_unreconciled;
+            unresolved_global_marker ||
+            global_custody.worker_busy_or_unreconciled ||
+            other_custody.worker_busy_or_unreconciled;
         let active_in_another_project = active_in_another_project ||
-            global_custody.active_in_another_project;
+            global_custody.active_in_another_project ||
+            other_custody.active_in_another_project;
         // Serialize only exact project-scoped immutable journal identifiers.
         // Do not reconstruct a BuildRunView or invent a successful native exit
         // code after restart: the original runtime receipt is authoritative.
