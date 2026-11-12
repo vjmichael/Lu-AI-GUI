@@ -68,7 +68,7 @@ pub(crate) trait RestrictedLspProcess: Send {
     fn crash_owned_lldb_for_ci(&mut self) -> Result<(), SupervisorError> {
         Err(SupervisorError::NoContainment)
     }
-    #[cfg(all(windows, feature = "dev045d5-ci-event-owner", debug_assertions))]
+    #[cfg(all(windows, any(all(feature = "dev045d5-ci-event-owner", debug_assertions), feature="fin04-release-owner-evidence")))]
     fn wait_owner_continued_for_ci(&mut self, _seq: u64) -> Result<(), SupervisorError> {
         Err(SupervisorError::NoContainment)
     }
