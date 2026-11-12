@@ -132,10 +132,27 @@ impl TrustedUserTurnVerifier for PersistedReviewedHumanTurn<'_>{
                 .as_deref()==Some(self.expected_text)
     }
 }
-struct ReviewedDesktopPolicy{approved:BTreeSet<String>}
+struct ReviewedDesktopPolicy{
+    approved:BTreeSet<String>,
+    host:Arc<DesktopState>,
+    chat_id:String,
+    revocation_watermark:i64,
+    cancellation:Cancellation,
+}
 impl ToolAuthorizer for ReviewedDesktopPolicy{
     fn authorize(&self,call:&ToolInvocation,descriptor:&ToolDescriptor)
         ->Result<(),AuthorizationError>{
+        // SEC-03: even a previously opened one-use human turn cannot use
+        // an old permission after the original ANSF cancellation REQUESTED
+        // intent has committed. Check at EACH tool dispatch, not merely
+        // at chat publication or source picker admission.
+        if self.cancellation.is_cancelled()
+            ||self.host.chats.p0_auth_requested_watermark(&self.chat_id)
+                .ok()!=Some(self.revocation_watermark){
+            return Err(AuthorizationError::new(
+                "reviewed app original permission revoked during tool dispatch"
+            ))
+        }
         if !self.approved.contains(&descriptor.id)||call.tool_id!=descriptor.id
             ||!matches!(descriptor.effect,ToolEffect::ExecuteCode|ToolEffect::ReadWorkspace)
             ||descriptor.input_type_url!=call.input.type_url{
@@ -938,7 +955,11 @@ async fn reviewed_app_ask_internal(
                 )
             );
             let policy:Arc<dyn ToolAuthorizer>=Arc::new(
-                ReviewedDesktopPolicy{approved:granted}
+                ReviewedDesktopPolicy{
+                    approved:granted,host:Arc::clone(&host),
+                    chat_id:chat_id.clone(),revocation_watermark,
+                    cancellation:cancellation.clone(),
+                }
             );
             // Keep the original exact per-human-turn effect journal, rather
             // than making an APPLIED shadow entry in normal chat's journal.
