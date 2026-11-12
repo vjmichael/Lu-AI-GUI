@@ -50,6 +50,7 @@ $ownerProvenance=[ordered]@{
   headerSha256=(& $sha256 'ide/llvm18_owner/LuIdeOwnerEvent.h')
   patcherSha256=(& $sha256 'ide/llvm18_owner/apply_llvm18_owner_hook.py')
   patchedDebuggerThreadSha256=(& $sha256 $patched)
+  patchedProgressEventHeaderSha256=(& $sha256 $progress)
   lldbDapExeSha256=(& $sha256 (Join-Path $bin 'lldb-dap.exe'))
 }
 # Windows PowerShell 5's -Encoding UTF8 emits a BOM, which serde_json
