@@ -472,6 +472,34 @@ pub struct GrantSummary {
     pub executable_from_desktop: bool,
 }
 
+/// FIN-01: conservative, read-only global custody derived from the complete
+/// native supervisor journal. A nonterminal durable job can never be
+/// represented as idle simply because a desktop process lost its live handle.
+/// This is advisory only; the original protected OS worker still authorizes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GlobalCustodyObservation {
+    pub recovery_required: bool,
+    pub worker_busy_or_unreconciled: bool,
+    pub active_in_another_project: bool,
+}
+pub fn observe_global_custody(rows: &[JobSummary], project_id: &str)
+    -> GlobalCustodyObservation {
+    let mut recovery_required=false;
+    let mut worker_busy_or_unreconciled=false;
+    let mut active_in_another_project=false;
+    for job in rows {
+        let nonterminal=!matches!(job.phase,
+            JobPhase::Completed|JobPhase::Cancelled|JobPhase::Failed|JobPhase::Denied);
+        let custody=nonterminal || job.requires_reconciliation;
+        recovery_required |= job.requires_reconciliation;
+        worker_busy_or_unreconciled |= custody;
+        active_in_another_project |= custody && job.project_id!=project_id;
+    }
+    GlobalCustodyObservation {
+        recovery_required,worker_busy_or_unreconciled,active_in_another_project,
+    }
+}
+
 pub struct Supervisor {
     journal_path: PathBuf,
     session_id: String,
