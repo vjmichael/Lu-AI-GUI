@@ -49,6 +49,7 @@ import { belongsToSelectedProject } from './job_render_guard.js';
 import { ingestJobProgress, visibleJobProgress } from './job_progress.js';
 import { safeConventionalTestDiscovery } from './conventional_tests.js';
 import {checkedTestExplorer} from './test_explorer.js';
+import {fin07ScopeRegister} from './fin07_scope_register.js';
 import {checkedFin06Journey,checkedFin06Destination}
   from './fin06_guided_workflow.js';
 import { projectJobLifecycle } from './protected_job_lifecycle.js';
@@ -808,6 +809,9 @@ function App() {
       buildResult,structuredTestReport,debugResult),
     [int06Workbench,activeProject?.projectId,buildResult,
       structuredTestReport,debugResult]);
+  const fin07Register=useMemo(()=>
+    fin07ScopeRegister(activeProject?.projectId),
+    [activeProject?.projectId]);
   const testExplorerModel=useMemo(()=>
     checkedTestExplorer(testDiscovery,structuredTestReport,
       activeProject?.projectId,testExplorerFilter),
@@ -6627,6 +6631,18 @@ function App() {
                           onClick={()=>navigateFin06Stage(step.id)}>
                           Open review stage
                         </button>
+                      </article>)}
+                  </section>}
+                  {fin07Register && <section aria-label="FIN-07 source implementation scope register">
+                    <h3>FIN-07 · Implementation scope register</h3>
+                    <p>Feature scope frozen: <strong>No</strong>.
+                      All native compiler, installed and physical-human
+                      acceptance gates remain unverified.</p>
+                    {fin07Register.rows.map(item=>
+                      <article key={item.id} className="continuityEvent">
+                        <strong>{item.id} · {item.title}</strong>
+                        <p>{item.priority} · {item.state.replaceAll('_',' ')}</p>
+                        <p>Remaining: {item.remaining}</p>
                       </article>)}
                   </section>}
                   <p>Acceptance status:
