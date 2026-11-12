@@ -2139,6 +2139,57 @@ async fn ide_debug_run_project(
     }
 }
 
+/// FIN-04R-1: selected original action kind is DATA for the native review
+/// dialog, not a debugger instruction. The release observer requires the
+/// protected first-party OS event and independently mapped PE/PDB before
+/// showing a one-use OS dialog; any operator approval is DURABLY REVOKED
+/// without dispatch. No PID, path, source line, DAP bytes or consent bool
+/// is accepted from the renderer.
+#[tauri::command]
+async fn ide_debug_review_release_action(
+    app:AppHandle,
+    registry:State<'_,Arc<IdeWorkspaceRegistry>>,
+    project_id:String,kind:String,
+)->Result<serde_json::Value,String>{
+    #[cfg(all(windows,feature="fin04-release-event-observer",
+        feature="native-project-debug"))]
+    {
+        let action=match kind.as_str(){
+            "stepOver"=>debug_backend::ReviewedNativeAction::StepOver,
+            "breakpointAtVerifiedLine"=>
+                debug_backend::ReviewedNativeAction::SameLineBreakpoint,
+            _=>return Err("FIN04R_REVIEW_KIND_UNSUPPORTED".into()),
+        };
+        let debug=app.try_state::<Arc<debug_backend::NativeDebugRuntime>>()
+            .ok_or("FIN04R_DEBUG_HOST_UNAVAILABLE")?;
+        let builds=app.try_state::<Arc<build_backend::NativeBuildRuntime>>()
+            .ok_or("FIN04R_BUILD_PROVENANCE_UNAVAILABLE")?;
+        let debug=Arc::clone(debug.inner());
+        let builds=Arc::clone(builds.inner());
+        let registry=Arc::clone(registry.inner());
+        let witness=tauri::async_runtime::spawn_blocking(move||{
+            let target=builds.native_project_debug_target(&project_id)?;
+            debug.run_project_release_review(
+                &app,&registry,&project_id,target,action)
+        }).await.map_err(|_|"FIN04R_REVIEW_NATIVE_THREAD_INTERRUPTED".to_owned())??;
+        if witness.operation_outcome_code!=
+            Some("release_one_use_human_review_revoked_no_dispatch") ||
+           witness.operation_receipt_sha256.is_none() ||
+           !witness.release_owner_source_line_verified ||
+           witness.release_owner_control_authorized ||
+           witness.installed_app_accepted {
+            return Err("FIN04R_REVIEW_RECEIPT_OR_PROTECTED_PDB_MISSING".into());
+        }
+        return serde_json::to_value(witness)
+            .map_err(|_|"FIN04R_REVIEW_EVIDENCE_SERIALIZATION_DENIED".into());
+    }
+    #[cfg(not(all(windows,feature="fin04-release-event-observer",
+        feature="native-project-debug")))]
+    {
+        let _=(app,registry,project_id,kind);
+        Err("FIN04R_RELEASE_ACTION_REVIEW_NOT_INSTALLED".into())
+    }
+}
 /// Only fixed operations can be proposed by the renderer; no DAP request,
 /// source path, thread ID or approval can be supplied to the native host.
 #[tauri::command]
@@ -4130,6 +4181,7 @@ pub fn run() {
             ide_debug_review_control_candidate,
             ide_debug_run_fixture,
             ide_debug_run_project,
+            ide_debug_review_release_action,
             ide_debug_step_project,
             ide_debug_breakpoint_project,
             ide_debug_inspect_project_variables,
