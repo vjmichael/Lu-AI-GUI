@@ -4555,6 +4555,64 @@ async fn lu_generate(
         return generate_internal(app,Arc::clone(state.inner()),session_id,chat_id,
             prompt,image_refs,max_new_tokens,GenerationOrigin::Human,true).await
     }
+    // P0D: exactly worded current-human workspace request enters the
+    // ORIGINAL TOOLS-09 scanner only after a fresh native OS folder picker.
+    // This branch needs no model, and is never a WebView filesystem grant.
+    if let perf01_router::Route::ApprovedWorkspaceLiteral(needle)=
+        perf01_router::classify(
+            &prompt,!image_refs.is_empty(),
+            read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
+        ){
+        if max_new_tokens!=512 {
+            return Err("CPU workspace search uses fixed 512-token Send".into())
+        }
+        return workspace_desktop::cpu_search_workspace_for_chat(
+            app,Arc::clone(state.inner()),session_id,chat_id,prompt,needle
+        ).await;
+    }
+    if matches!(perf01_router::classify(
+        &prompt,!image_refs.is_empty(),
+        read_only_workspace.unwrap_or(false)||plan_only.unwrap_or(false)
+    ),perf01_router::Route::CurrentChatCounts){
+        if !(1..=4096).contains(&max_new_tokens){
+            return Err("Invalid bounded CPU chat-count request".into())
+        }
+        let host=Arc::clone(state.inner());
+        let current=host.supervisor.status()
+            .map_err(|_|"Native model status unavailable")?;
+        let loaded=current.session_id.is_some();
+        if if session_id.is_empty(){loaded}
+           else{current.session_id.as_deref()!=Some(session_id.as_str())}{
+            return Err("Model session changed before CPU indexed count".into())
+        }
+        let began=std::time::Instant::now();
+        return tauri::async_runtime::spawn_blocking(move||{
+            host.chats.history_window(&chat_id,None,"older",1)?;
+            let result=perf01_router::count_current_chat(&host.chats,&chat_id)?;
+            let gid=next_id("g-");
+            host.chats.append_user_with_turn_id(&chat_id,&gid,&prompt)?;
+            let _=app.emit("lu-generation-queued",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"queued",position:0
+            });
+            let _=app.emit("lu-generation-start",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid.clone(),
+                phase:"running",position:0
+            });
+            host.chats.append_progress(&chat_id,&gid,&result.answer)?;
+            host.chats.complete(&chat_id,&gid)?;
+            let _=host.perf01.record(perf01_telemetry::cpu_receipt(
+                &chat_id,&gid,"INDEXED_CURRENT_CHAT_COUNTS",began,
+                loaded,None,Some(result.scanned_entries),
+                Some(result.complete),if result.complete{"COMPLETED"}else{"PARTIAL"}
+            ));
+            let _=app.emit("lu-generation-finish",GenerationEvent{
+                chat_id:chat_id.clone(),generation_id:gid,
+                phase:"finished",position:0
+            });
+            Ok(result.answer)
+        }).await.map_err(|_|"CPU indexed count worker interrupted")?;
+    }
     // PERF-01 P0D: deterministic supervisor metadata, not an inference,
     // not an inference-engine capability/progress claim and no tool grant.
     if matches!(
