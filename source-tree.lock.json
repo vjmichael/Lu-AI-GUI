@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8b2026847c0b6e02df36679236b6c5a4cb78f117",
-  "trackedFileCount": 983,
+  "sourceCommitBeforeLock": "a022d8850d9cefbfe4420b527aeeac50517d9b88",
+  "trackedFileCount": 984,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "060ef4717828f513b8b1d9bfbf14ba29cbf597b6"
+      "blob": "6dc78ea019966f699ee965153726ce4ee6fd912e"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -1389,7 +1389,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/host_clock.rs",
-      "blob": "1a00b124c991fc976695f01cb4bba26b119d99c5"
+      "blob": "8576777296b6fea893326bc18940dea52c51f7fc"
     },
     {
       "path": "lu-desktop/src-tauri/src/host_safe_continuation.rs",
@@ -1718,6 +1718,10 @@
     {
       "path": "lu-desktop/tests/browser-visibility-settings.test.mjs",
       "blob": "364bc8f0b28e03d503c784ad9720b5b83260af52"
+    },
+    {
+      "path": "lu-desktop/tests/core01d-normal-chat-boundary.test.mjs",
+      "blob": "a663a215b60b2483ecbb6b5fde76f03cb110e406"
     },
     {
       "path": "lu-desktop/tests/filesystem-discovery.test.mjs",
@@ -2157,7 +2161,7 @@
     },
     {
       "path": "lu-desktop/web/native_intent.mjs",
-      "blob": "7d4ecef081db80ee908abcdbe11eb097fb133529"
+      "blob": "daab0d2040c8cd508c78cafd5aceb98ca3b6fa5e"
     },
     {
       "path": "lu-desktop/web/native_windows.jsx",

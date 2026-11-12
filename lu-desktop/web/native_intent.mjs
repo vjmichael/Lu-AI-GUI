@@ -23,10 +23,13 @@ export function isHostCurrentTimeQuestion(value){
   if(!s||s.length>256||s.includes('[attached text file:')||s.includes('<|'))return false;
   if(["don't","do not","without","how to","what is time complexity",
       "time travel","time zone difference","timing estimate"].some(term=>s.includes(term)))return false;
+  // Presentation-only mirror of Rust's complete-question requirement.
+  // A combined clock + tool request must not bypass model readiness.
+  const exact=s.replace(/\?+$/,'').trimEnd();
   return ["what time is it","what's the time","what is the current time",
     "what time is it right now","tell me the time",
     "give me the current time","what is my local time",
-    "what's the current time","what's the local time"].some(prefix=>s.startsWith(prefix));
+    "what's the current time","what's the local time"].includes(exact);
 }
 
 
