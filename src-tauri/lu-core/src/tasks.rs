@@ -296,7 +296,19 @@ impl TaskStore {
                BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
              CREATE TRIGGER IF NOT EXISTS lu_task_os_custody_no_delete
                BEFORE DELETE ON lu_task_windows_job_custody
-               BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;"
+               BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
+             CREATE TABLE IF NOT EXISTS lu_task_custody_uncertainty(
+               task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
+               reason TEXT NOT NULL CHECK(reason IN
+                 ('LINUX_GUARDIAN_LOST','OS_CUSTODY_UNVERIFIED')),
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertainty_no_update
+               BEFORE UPDATE ON lu_task_custody_uncertainty
+               BEGIN SELECT RAISE(ABORT,'Immutable OS custody uncertainty'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_uncertainty_no_delete
+               BEFORE DELETE ON lu_task_custody_uncertainty
+               BEGIN SELECT RAISE(ABORT,'Immutable OS custody uncertainty'); END;"
         )?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -439,6 +451,51 @@ impl TaskStore {
         self.transition(task_id, "RUNNING", TaskState::Completed)
     }
 
+    /// P0-SEC: persist the FIRST host-observed OS custody failure without
+    /// changing RUNNING into a misleading completed/cancelled state. Restart
+    /// later reconciles RUNNING to INTERRUPTED; this immutable row survives.
+    /// Only host-owned fixed enum reason codes are admitted.
+    pub fn record_process_uncertain(
+        &self,task_id:&str,reason:&str,
+    )->Result<(),TaskStoreError>{
+        if !matches!(reason,"LINUX_GUARDIAN_LOST"|"OS_CUSTODY_UNVERIFIED"){
+            return Err(TaskStoreError::InvalidTransition)
+        }
+        let mut conn=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=conn.transaction()?;
+        let changed=tx.execute(
+            "INSERT OR IGNORE INTO lu_task_custody_uncertainty(task_id,reason)
+             SELECT task_id,?2 FROM lu_tasks
+             WHERE task_id=?1 AND state IN ('PENDING','RUNNING')",
+            params![task_id,reason],
+        )?;
+        if changed==1{
+            tx.execute(
+                "INSERT INTO lu_task_events(task_id,event,progress,detail)
+                 SELECT task_id,'PROCESS_UNCERTAIN',progress,detail
+                 FROM lu_tasks WHERE task_id=?1",
+                params![task_id],
+            )?;
+        }else{
+            let exists:i64=tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
+                 WHERE task_id=?1)",params![task_id],|row|row.get(0)
+            )?;
+            if exists!=1{return Err(TaskStoreError::InvalidTransition)}
+        }
+        tx.commit()?;
+        Ok(())
+    }
+    /// Host-only historical uncertainty view, never an execution grant.
+    pub fn process_uncertainty(&self,task_id:&str)
+        ->Result<Option<String>,TaskStoreError>{
+        let conn=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        conn.query_row(
+            "SELECT reason FROM lu_task_custody_uncertainty
+             WHERE task_id=?1",params![task_id],|row|row.get(0)
+        ).optional().map_err(Into::into)
+    }
+
     pub fn fail(&self, task_id: &str) -> Result<(), TaskStoreError> {
         self.transition(task_id, "RUNNING", TaskState::Failed)
     }
@@ -449,7 +506,9 @@ impl TaskStore {
         let tx=connection.transaction()?;
         let changed=tx.execute(
             "UPDATE lu_tasks SET state='CANCELLED',updated_at=CURRENT_TIMESTAMP
-             WHERE task_id=?1 AND state IN ('PENDING','RUNNING','PAUSED')",
+             WHERE task_id=?1 AND state IN ('PENDING','RUNNING','PAUSED')
+               AND NOT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
+                              WHERE task_id=?1)",
             params![task_id],
         )?;
         if changed!=1{return Err(TaskStoreError::InvalidTransition);}
@@ -478,6 +537,13 @@ impl TaskStore {
             .lock()
             .map_err(|_| TaskStoreError::Poisoned)?;
         let tx=connection.transaction()?;
+        if matches!(to,TaskState::Completed|TaskState::Cancelled|TaskState::TimedOut){
+            let uncertain:i64=tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
+                 WHERE task_id=?1)",params![task_id],|row|row.get(0)
+            )?;
+            if uncertain!=0{return Err(TaskStoreError::InvalidTransition)}
+        }
         let changed=tx.execute(
             "UPDATE lu_tasks SET state=?1, updated_at=CURRENT_TIMESTAMP
              WHERE task_id=?2 AND state=?3",
@@ -930,7 +996,9 @@ impl TaskStore {
         let tx=conn.transaction()?;
         let changed=tx.execute(
             "UPDATE lu_tasks SET state='COMPLETED',updated_at=CURRENT_TIMESTAMP
-             WHERE task_id=?1 AND state='RUNNING' AND progress=100 AND detail=?2",
+             WHERE task_id=?1 AND state='RUNNING' AND progress=100 AND detail=?2
+               AND NOT EXISTS(SELECT 1 FROM lu_task_custody_uncertainty
+                              WHERE task_id=?1)",
             params![task_id,expected]
         )?;
         if changed!=1{return Err(TaskStoreError::InvalidTransition)}
@@ -1414,5 +1482,43 @@ mod e1_p15_origin_binding_tests{
         let _=std::fs::remove_file(&file);
         let _=std::fs::remove_file(format!("{}-wal",file.display()));
         let _=std::fs::remove_file(format!("{}-shm",file.display()));
+    }
+}
+
+#[cfg(test)]
+mod p0_sec_custody_uncertainty_tests{
+    use super::*;
+    #[test]
+    fn uncertainty_is_immutable_durable_and_blocks_false_terminal_success(){
+        let path=std::env::temp_dir().join(format!(
+            "lu-p0-sec-{}-{}.sqlite",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        {
+            let store=TaskStore::open(&path).unwrap();
+            store.create("sec-1",Some("c-owner"),None).unwrap();
+            store.start("sec-1").unwrap();
+            assert!(store.record_process_uncertain("sec-1","MODEL_CLAIM").is_err());
+            store.record_process_uncertain("sec-1","LINUX_GUARDIAN_LOST").unwrap();
+            store.record_process_uncertain("sec-1","OS_CUSTODY_UNVERIFIED").unwrap();
+            assert_eq!(store.process_uncertainty("sec-1").unwrap().as_deref(),
+                Some("LINUX_GUARDIAN_LOST"));
+            assert!(store.complete("sec-1").is_err());
+            assert!(store.cancelled("sec-1").is_err());
+            assert!(store.timed_out("sec-1").is_err());
+        }
+        {
+            let store=TaskStore::open(&path).unwrap();
+            assert_eq!(store.process_uncertainty("sec-1").unwrap().as_deref(),
+                Some("LINUX_GUARDIAN_LOST"));
+            assert_eq!(store.reconcile_interrupted().unwrap(),1);
+            assert_eq!(store.get("sec-1").unwrap().unwrap().state,
+                TaskState::Interrupted);
+            assert!(store.complete("sec-1").is_err());
+        }
+        let _=std::fs::remove_file(&path);
+        let _=std::fs::remove_file(format!("{}-wal",path.display()));
+        let _=std::fs::remove_file(format!("{}-shm",path.display()));
     }
 }
