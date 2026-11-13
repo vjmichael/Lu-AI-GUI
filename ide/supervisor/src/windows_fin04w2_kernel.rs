@@ -19,7 +19,7 @@ use windows_sys::Win32::{
         JobObjects::{
             CreateJobObjectW, IsProcessInJob, QueryInformationJobObject,
             SetInformationJobObject, JobObjectBasicAccountingInformation,
-            JobObjectExtendedLimitInformation, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+            JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
             JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
             JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         },
@@ -231,6 +231,38 @@ pub(crate) fn create_bounded_empty_debugger_job() -> Result<EmptyAuditJob, Super
         || observed.BasicLimitInformation.ActiveProcessLimit != CAP
         || observed.JobMemoryLimit != MEMORY
     { return Err(denied()); }
+    // CPU cap uses the same 50% hard cap as the original protected
+    // Windows worker, but is configured by the separate SCM guardian.
+    // This does not change production debugger or user process limits.
+    #[repr(C)]
+    struct CpuRate {
+        flags: u32,
+        rate: u32,
+    }
+    const HARD_CAP: u32 = 0x1 | 0x4;
+    const HALF: u32 = 5000;
+    let cpu = CpuRate { flags: HARD_CAP, rate: HALF };
+    if unsafe {
+        SetInformationJobObject(
+            job.0, JobObjectCpuRateControlInformation,
+            (&raw const cpu).cast(), size_of::<CpuRate>() as u32,
+        )
+    } == 0 {
+        return Err(denied());
+    }
+    let mut observed_cpu = CpuRate { flags: 0, rate: 0 };
+    if unsafe {
+        QueryInformationJobObject(
+            job.0, JobObjectCpuRateControlInformation,
+            (&mut observed_cpu as *mut CpuRate).cast(),
+            size_of::<CpuRate>() as u32, ptr::null_mut(),
+        )
+    } == 0
+        || observed_cpu.flags & HARD_CAP != HARD_CAP
+        || observed_cpu.rate != HALF
+    {
+        return Err(denied());
+    }
     let mut usage = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
     if unsafe {
         QueryInformationJobObject(
