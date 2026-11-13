@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "9e9562c395ca36466189fd9a70cb1fba09330dd3",
-  "trackedFileCount": 987,
+  "sourceCommitBeforeLock": "a859c72f5a4e8b4015ecf3e122820bc53c392e3a",
+  "trackedFileCount": 991,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "294c0cdc41b34ada800d37d4979e1b6a7512779f"
+      "blob": "79bdf745a7c20326c12a44b4399baf88af42243f"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -597,7 +597,15 @@
     },
     {
       "path": "docs/LU_CORE01F_MERGE_CONSOLIDATION_20261112.md",
-      "blob": "8095fce3d0eba409a1353225549e90ae6892707a"
+      "blob": "4ac75efeb015eaa48a4ccb87d55b8c2f18ce9c06"
+    },
+    {
+      "path": "docs/LU_CORE01F_P0_BRIDGE_BLOB_REVIEW_20261112.json",
+      "blob": "b15ca328418b09b1de24018d00b9fc68c8467dbe"
+    },
+    {
+      "path": "docs/LU_CORE01F_P0_BRIDGE_REVIEW_20261112.md",
+      "blob": "b98f2da569eeef6f5441187cec2267b39ae8474b"
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
@@ -2210,6 +2218,14 @@
     {
       "path": "scripts/core01-verify-scope.test.mjs",
       "blob": "226dc38b4215e8df8297bbc378d580f0ef08637f"
+    },
+    {
+      "path": "scripts/core01f-bridge-review.mjs",
+      "blob": "32c6ef6083aaaebc7bdc98953dab329a9f70d5ed"
+    },
+    {
+      "path": "scripts/core01f-bridge-review.test.mjs",
+      "blob": "425ee98148cb22082ad79d1c6c03030f8bf9986c"
     },
     {
       "path": "scripts/core01f-merge-preflight.mjs",

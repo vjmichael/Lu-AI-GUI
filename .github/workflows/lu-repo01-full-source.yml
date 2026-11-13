@@ -48,6 +48,11 @@ jobs:
       - name: CORE-01F isolated read-only merge preflight source contracts
         if: hashFiles('scripts/core01f-merge-preflight.test.mjs') != ''
         run: node --test scripts/core01f-merge-preflight.test.mjs
+      - name: CORE-01F full P0 bridge original blob and provenance audit
+        if: hashFiles('scripts/core01f-bridge-review.test.mjs') != ''
+        run: |
+          node --test scripts/core01f-bridge-review.test.mjs
+          node scripts/core01f-bridge-review.mjs
       - name: Audit grouped-CI trigger policy and queue cleanup safety
         if: hashFiles('scripts/lu-ci-group-policy.mjs') != ''
         run: |

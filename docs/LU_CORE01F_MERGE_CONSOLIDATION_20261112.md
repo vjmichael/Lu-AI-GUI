@@ -46,3 +46,23 @@ CORE-01F source-contract tests only when the new test file exists. This is
 a lightweight source job, not new native job fanout; it does not alter
 CORE-01E's protected branch, native thresholds, or installed-workflow
 admission. A green source run remains no merge authority.
+
+## 01F-02 source bridge review and original Git blob accounting
+
+See `docs/LU_CORE01F_P0_BRIDGE_REVIEW_20261112.md` and
+`docs/LU_CORE01F_P0_BRIDGE_BLOB_REVIEW_20261112.json`. Frozen original
+R00 → P0 bridge: 257 ancestral commits, 125 changed paths, zero deletions.
+All 125 paths are present at the CORE-01E reviewed snapshot `97dd1e89`;
+105 exact Git blob identities, 20 subsequently revised blobs, zero excluded
+IDE/KoboldCpp/P7L source. The existing REPO-01 source-only verification now
+tests negative tamper, missing/extra and cross-scope cases and inspects the
+original historical Git trees/diff. No extra native CI admission.
+
+**Concurrent CORE-01E branch motion:** after that frozen source snapshot,
+CORE-01E advanced by two commits to `54c1cf305fade7bfbfe0f19e181ea18d3e4af3b5`;
+the actual delta only changes the REPO-01 acceptance workflow and source
+lock. Those are already in the 20 downstream-changed path set. This
+CORE-01F branch remains deliberately stacked on its original reviewed
+CORE-01E parent and has NOT been automatically rebased. Before merge,
+refresh the CORE-01E accepted head and restack/reverify CORE-01F with
+an owner-reviewed safe source and main-ledger reconciliation.
