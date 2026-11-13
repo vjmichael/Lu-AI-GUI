@@ -234,8 +234,22 @@ try {
     # to reclaim the service-only evidence directory for independent audit.
     # It must remain inaccessible to the untrusted original desktop user
     # for the entire service execution.
+    $stopped=$false
+    for ($attempt=0;$attempt -lt 40;$attempt++) {
+      $serviceState=Get-CimInstance Win32_Service -Filter "Name='$name'" -ErrorAction SilentlyContinue
+      if (!$serviceState -or $serviceState.State -eq 'Stopped') {$stopped=$true;break}
+      Start-Sleep -Milliseconds 250
+    }
+    if (!$stopped) {throw 'DENIED: cannot reclaim evidence while protected SCM still running'}
     & takeown.exe /F $serviceRoot /A /R /D Y | Out-Null
+    if ($LASTEXITCODE -ne 0) {throw 'DENIED: post-SCM protected evidence takeover failed'}
     & icacls.exe $serviceRoot /grant:r 'Administrators:(OI)(CI)F' /T | Out-Null
+    if ($LASTEXITCODE -ne 0) {throw 'DENIED: post-SCM evidence subtree ACL reclaim failed'}
+    # The installer-protected config has a non-inheriting DACL. A parent
+    # grant alone need not grant DELETE on this leaf. Reclaim ONLY after
+    # independent service stop; never relax the runtime or source ACL.
+    & icacls.exe $cfg /grant:r 'Administrators:F' | Out-Null
+    if ($LASTEXITCODE -ne 0) {throw 'DENIED: post-SCM protected config ACL reclaim failed'}
     $oneUse=@(Get-ChildItem -LiteralPath $serviceRoot -File -Filter 'fin04w2-c2-*.receipt')
     if ($oneUse.Count -ne 1) {
       throw 'DENIED: exactly one original service-side durable one-use record required'
