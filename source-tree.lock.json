@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "15a9272ca597afab312b20634c0dafd68e80d474",
+  "sourceCommitBeforeLock": "e9b9b3ed3daec45842235884b063a118287bb4dd",
   "trackedFileCount": 984,
   "files": [
     {
@@ -1493,7 +1493,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/p0_sec_recovery.rs",
-      "blob": "86fdf9e9183a3f89ffedf3abfc0e677a5ccd6f24"
+      "blob": "c7f2abd3215c1ff50ccf7bfefe837fd18fc30485"
     },
     {
       "path": "lu-desktop/src-tauri/src/perf01_router.rs",
@@ -1637,7 +1637,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01e-progress-ui.test.mjs",
-      "blob": "baaead669415fba10d0168fb34aec012789e7334"
+      "blob": "c0e0ef95e2d99b27abb96f8bc7068ed3aa857fa1"
     },
     {
       "path": "lu-desktop/tests/agent01f-model-plan-ingress.test.mjs",
