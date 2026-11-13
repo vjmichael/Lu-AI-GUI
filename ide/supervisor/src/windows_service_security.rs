@@ -32,6 +32,7 @@ use windows_sys::Win32::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
             ConvertStringSidToSidW, GetNamedSecurityInfoW, GetSecurityInfo, SE_FILE_OBJECT,
+            SE_KERNEL_OBJECT,
         },
         CheckTokenMembership, DuplicateToken, EqualSid, GetAce, GetAclInformation,
         GetSecurityDescriptorControl, GetTokenInformation, IsTokenRestricted, LookupAccountNameW,
@@ -772,6 +773,67 @@ impl JobSecurity {
             descriptor: owned,
         })
     }
+}
+
+/// Inspect the actual kernel Job object's DACL, not merely the SDDL
+/// that the independent service asked CreateJobObjectW to apply. Only
+/// SYSTEM and the separate debugger service SID are allowed; no desktop
+/// host, administrators, Users or Everyone ACE is permitted.
+pub(crate) fn verify_debugger_job_kernel_acl(job: HANDLE) -> Result<(), SupervisorError> {
+    let system = parse_sid("S-1-5-18")?;
+    let service = parse_sid(&sid_of_named_service("LuIdeDebuggerBroker")?)?;
+    let mut dacl = ptr::null_mut();
+    let mut descriptor = ptr::null_mut();
+    if unsafe {
+        GetSecurityInfo(
+            job, SE_KERNEL_OBJECT, DACL_SECURITY_INFORMATION,
+            ptr::null_mut(), ptr::null_mut(), &mut dacl,
+            ptr::null_mut(), &mut descriptor,
+        )
+    } != 0 || dacl.is_null() || descriptor.is_null() {
+        return Err(denied());
+    }
+    let _owned = OwnedSid(descriptor);
+    let mut control = 0u16;
+    let mut revision = 0u32;
+    if unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0
+        || control & SE_DACL_PROTECTED == 0 {
+        return Err(denied());
+    }
+    let mut info = ACL_SIZE_INFORMATION::default();
+    if unsafe {
+        GetAclInformation(
+            dacl, (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32, AclSizeInformation,
+        )
+    } == 0 || info.AceCount != 2 {
+        return Err(denied());
+    }
+    let (mut system_seen, mut service_seen) = (false, false);
+    for index in 0..info.AceCount {
+        let mut raw = ptr::null_mut();
+        if unsafe { GetAce(dacl, index, &mut raw) } == 0 || raw.is_null() {
+            return Err(denied());
+        }
+        let ace = unsafe { &*(raw as *const ACCESS_ALLOWED_ACE) };
+        if ace.Header.AceType != 0 || ace.Header.AceFlags != 0
+            || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16
+            || ace.Mask == 0 {
+            return Err(denied());
+        }
+        let sid = (&ace.SidStart as *const u32).cast_mut().cast();
+        if unsafe { EqualSid(sid, system.0) } != 0 {
+            if system_seen { return Err(denied()); }
+            system_seen = true;
+        } else if unsafe { EqualSid(sid, service.0) } != 0 {
+            if service_seen { return Err(denied()); }
+            service_seen = true;
+        } else {
+            return Err(denied());
+        }
+    }
+    if !system_seen || !service_seen { return Err(denied()); }
+    Ok(())
 }
 
 /// Client-side server attestation. A spoofed, same-user pipe instance cannot
