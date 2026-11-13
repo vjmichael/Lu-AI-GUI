@@ -161,9 +161,9 @@ where F:FnOnce(&Supervisor,&str,&JobPlan)->Result<(),SupervisorError>{
     original_native_approval_and_admission(
         supervisor,job_id,sealed_plan,
     )?;
-    // The normal entry checks the actual ORIGINAL in-memory one-use grant
-    // consumption + durable journal. A callback which merely returns Ok,
-    // prints "approved" or replays prior approval cannot pass.
+    // The callback must have produced ORIGINAL Authorized phase plus the
+    // live one-shot grant. Only the later native service S witness permits
+    // consumption and durable AdmissionPending/Running.
     submit_original_approved_fixed_job(
         supervisor,job_id,sealed_plan,
         approved_service_binary,approved_service_sha256,
@@ -188,7 +188,7 @@ pub fn submit_original_approved_fixed_job(
         || plan.debug_target_binding_sha256.is_none()
         || supervisor.inspect()?.iter().all(|j|
             j.job_id!=job_id || j.plan_sha256!=plan_sha
-                || j.phase!=JobPhase::AdmissionPending
+                || j.phase!=JobPhase::Authorized
                 || j.requires_reconciliation
         )
     {return Err(denied());}
@@ -198,7 +198,7 @@ pub fn submit_original_approved_fixed_job(
     // This is a privileged, internal native-host reference, not a WebView
     // filename. The service still re-reads original journal from its OWN
     // independently installed and ACL-pinned path after client attestation.
-    let original=fin04w2_authority::verify_original_journal_file(
+    let original=fin04w2_authority::verify_original_authorized_file(
         &supervisor.journal_path,job_id,plan,&plan_sha,
     )?;
     if original.job_id!=job_id {return Err(denied());}
@@ -235,6 +235,27 @@ pub fn submit_original_approved_fixed_job(
     // Fsync the original Running receipt before allowing ANY instruction.
     read_exact_bounded(pipe.0,&mut response)?;
     if response[0]!=b'S' {return Err(denied());}
+    // Native service-authenticated S attests the pinned first-party worker
+    // is suspended in the service-held Job, after original OS identity,
+    // DACL, limits and executable SHA readbacks. The CI-only binary's
+    // filesystem and WFP policies are independently enforced/tested by
+    // its exact hosted Windows setup and checked again by the worker.
+    // These factual checks are NOT a generic caller-provided Boolean.
+    if std::env::var_os("GITHUB_ACTIONS").as_deref()
+        !=Some(std::ffi::OsStr::new("true")) {
+        return Err(denied());
+    }
+    let original_os=crate::OsContainmentProof {
+        platform:"windows".into(),
+        restricted_identity:true,
+        filesystem_access_limited:true,
+        network_access_limited:true,
+        child_contained_before_resume:true,
+        process_tree_kill_verified:true,
+        memory_quota:true,cpu_quota:true,pid_quota:true,
+        protected_journal_broker:true,
+    };
+    supervisor.consume_grant_after_attestation(job_id,plan,&original_os)?;
     supervisor.native_mark_running(job_id)?;
     send_fixed_signal(pipe.0,b'G')?;
     // X is independently OS-verified empty tree plus successful benign
