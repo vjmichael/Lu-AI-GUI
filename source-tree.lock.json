@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "785bfb157c740c9798f36a1553f78d9384520800",
+  "sourceCommitBeforeLock": "e1c2eae55c8f895beabca4b0ddbb02a2717daf7d",
   "trackedFileCount": 997,
   "files": [
     {
@@ -1449,7 +1449,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",
-      "blob": "9bdc7a97d2fd73957178aa39e3b8ed1fc79cfaa0"
+      "blob": "615f28be292dac185d8bd8f1ee9b6e39eea7b915"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_edit.rs",
@@ -1677,11 +1677,11 @@
     },
     {
       "path": "lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs",
-      "blob": "7d22612ba9dc556f7c94fe13b27fee859feed501"
+      "blob": "cc0eed2ff0b3d95444511b8c0473b3210ee0af15"
     },
     {
       "path": "lu-desktop/tests/agent01l-os-custody.test.mjs",
-      "blob": "c9fe155a857e2fbdf60ccefaf5b38f6d731a205d"
+      "blob": "1f72e83aadd495df7edef094f7d20b52dd9c40eb"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
@@ -1925,7 +1925,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec-guardian-hardening.test.mjs",
-      "blob": "11c1604d7bd758ab3570b370c314f31570eb0607"
+      "blob": "d05e3ee0f40fd5edfa8349efd37994ccd54fd76c"
     },
     {
       "path": "lu-desktop/tests/p0-sec05-adversarial.test.mjs",
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "4eb33498d4f4e5e6709063d22b99872d981f3739"
+      "blob": "1030da0e6acaf7d52242b4c8544178bc2c9b71b4"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -3925,7 +3925,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/Cargo.toml",
-      "blob": "c1601cf01857d170467d563b6352b053281246f4"
+      "blob": "824ab80d866ccda34ffa61f2439e14d9086216d6"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs",
@@ -3957,7 +3957,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "99596409b9f3e94dc9cdfdd432584b8da5750544"
+      "blob": "b22b96528a8f9fc98008689180b41339a7634bf5"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
