@@ -11,11 +11,13 @@ use windows_sys::Win32::{
     Foundation::{CloseHandle, HANDLE},
     Security::{
         CheckTokenMembership, CreateWellKnownSid, EqualSid, GetTokenInformation,
-        IsTokenRestricted, TokenIsAppContainer, TokenUser, WinLocalServiceSid,
+        IsTokenRestricted, LookupAccountNameW, TokenIsAppContainer, TokenUser, WinLocalServiceSid,
         TOKEN_QUERY, TOKEN_USER,
     },
-    Security::Authorization::LookupAccountNameW,
-    System::Threading::{GetCurrentProcess, IsProcessInJob, OpenProcessToken},
+    System::{
+        JobObjects::IsProcessInJob,
+        Threading::{GetCurrentProcess, OpenProcessToken},
+    },
 };
 
 fn denied() -> SupervisorError {
