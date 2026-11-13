@@ -205,6 +205,29 @@ fn signal(pipe:HANDLE,byte:u8)->Result<(),SupervisorError>{
     }==0||written!=1{return Err(denied());}
     Ok(())
 }
+// Windows DisconnectNamedPipe can discard a message the peer has not
+// yet read. A final F/J reply must remain readable until the authenticated
+// host closes its pipe; no additional request or authority is accepted.
+#[cfg(feature="fin04w2-c2")]
+fn deliver_terminal_reply(pipe:HANDLE,reply:u8)->Result<(),SupervisorError>{
+    if reply!=b'F'&&reply!=b'J'{return Err(denied());}
+    signal(pipe,reply)?;
+    let until=Instant::now()+Duration::from_secs(8);
+    loop{
+        if STOP.load(Ordering::SeqCst)||Instant::now()>=until{
+            return Err(denied());
+        }
+        let mut available=0u32;
+        // A broken pipe here is the expected host-close acknowledgement.
+        // Unexpected client bytes are NEVER interpreted as new commands.
+        if unsafe{
+            PeekNamedPipe(pipe,ptr::null_mut(),0,ptr::null_mut(),
+                &mut available,ptr::null_mut())
+        }==0{return Ok(());}
+        if available!=0{return Err(denied());}
+        thread::sleep(Duration::from_millis(20));
+    }
+}
 #[cfg(feature="fin04w2-c2")]
 fn expect_signal(pipe:HANDLE,expected:u8)->Result<(),SupervisorError>{
     let until=Instant::now()+Duration::from_secs(8);
@@ -308,12 +331,20 @@ fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
     child.resume_and_verify()?;
     signal(pipe,b'X')?;
     expect_signal(pipe,b'R')?;
-    fin04w2_c2::verify_original_path(
+    if let Err(error)=fin04w2_c2::verify_original_path(
         &config.original_supervisor_journal,&config.original_job_id,
         &config.review_only_plan,C2JournalGate::ReleasePending,
-    )?;
+    ){
+        // Fail closed: J is a rejection only, never a release approval.
+        // The owned Job remains held until the peer closes (or this
+        // bounded routine errors), then kernel kill-on-close applies.
+        let _=deliver_terminal_reply(pipe,b'J');
+        return Err(error);
+    }
     drop(job);
-    signal(pipe,b'F')?;
+    // Keep the exact fixed protocol unchanged. F is evidence the kernel
+    // Job was released only after the original ReleasePending was verified.
+    deliver_terminal_reply(pipe,b'F')?;
     Ok(())
 }
 #[cfg(not(feature="fin04w2-c2"))]
