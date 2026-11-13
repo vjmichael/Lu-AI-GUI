@@ -49,10 +49,32 @@ export function isGuardedPlan07D(filename, source, keys) {
   return expected.size === 0;
 }
 
+/**
+ * Main's authoritative metadata ledger is deliberately scheduled and main-push
+ * verified. Its jobs cannot run the heavyweight Core matrix and refresh only
+ * docs/LU_DEVELOPMENT_LEDGER.md from checked-out main. This narrowly scoped
+ * exception does not admit other scheduled/push workflows.
+ */
+export function isGuardedMainLedger(filename, source, keys) {
+  if (filename !== "lu-development-ledger.yml" ||
+      keys.join(",") !== "push,workflow_dispatch,schedule") return false;
+  if (!/^on:\s*\n  push:\s*\n    branches: \[main\]\s*\n    paths:\s*\n      - '\.github\/workflows\/lu-development-ledger\.yml'\s*\n      - 'scripts\/lu-ledger\.mjs'\s*\n      - 'scripts\/lu-ledger\.test\.mjs'\s*\n  workflow_dispatch:\s*\n  schedule:\s*\n    - cron: '17 13 \* \* \*'/m.test(source)) return false;
+  if ([...source.matchAll(/^  ([a-z][a-z0-9-]*):\s*$/gm)]
+      .map(m => m[1]).filter(x => x === "refresh" || x === "verify-on-source-change")
+      .join(",") !== "verify-on-source-change,refresh") return false;
+  if (!/verify-on-source-change:\s*\n    if: github\.event_name == 'push'/.test(source) ||
+      !/refresh:\s*\n    if: github\.repository == 'vjmichael\/Lu-AI-GUI' && github\.event_name != 'push'/.test(source) ||
+      !/ref: main/.test(source) ||
+      !/git add -- docs\/LU_DEVELOPMENT_LEDGER\.md/.test(source) ||
+      !/git push origin HEAD:main/.test(source)) return false;
+  const jobs = source.slice(source.indexOf("\njobs:\n"));
+  return !/^  (?!verify-on-source-change:|refresh:)[a-z][a-z0-9_-]*:\s*$/m.test(jobs);
+}
+
 export function inspectOne(filename, source) {
   const keys = eventKeys(source);
   const problems = [];
-  const narrowlyAdmitted = isGuardedPlan07D(filename, source, keys);
+  const narrowlyAdmitted = isGuardedPlan07D(filename, source, keys) || isGuardedMainLedger(filename, source, keys);
   if (!keys.includes("workflow_dispatch") && !narrowlyAdmitted) problems.push("NO_GROUP_DISPATCH");
   if (keys.filter((x) => x === "workflow_dispatch").length !== (narrowlyAdmitted ? 0 : 1)) problems.push("DUPLICATE_DISPATCH");
   if (!AUTOMATIC.has(filename) && keys.some((x) => [

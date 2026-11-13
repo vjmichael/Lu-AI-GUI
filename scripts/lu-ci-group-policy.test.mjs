@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectOne, inspectDirectory } from "./lu-ci-group-policy.mjs";
+import { inspectOne, inspectDirectory, isGuardedMainLedger } from "./lu-ci-group-policy.mjs";
 import fs from "node:fs";
 
 const manual = "name: One\non:\n  workflow_dispatch:\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n";
@@ -39,4 +39,22 @@ test("PLAN-07D exception requires all three exact PR219/branch/SHA guards", () =
   ]) {
     assert.ok(inspectOne("lu-plan07d-installed.yml", unsafe).problems.includes("HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
   }
+});
+
+test("existing main-only development ledger is narrowly admitted, never a general heavy CI exception", () => {
+  const src = fs.readFileSync(".github/workflows/lu-development-ledger.yml", "utf8");
+  assert.equal(isGuardedMainLedger("lu-development-ledger.yml", src, ["push","workflow_dispatch","schedule"]), true);
+  assert.deepEqual(inspectOne("lu-development-ledger.yml", src).problems, []);
+  for (const unsafe of [
+    src.replace("branches: [main]", "branches: [main, dev]"),
+    src.replace("    - cron: '17 13 * * *'", "    - cron: '* * * * *'"),
+    src.replace("if: github.event_name == 'push'", "if: always()"),
+    src.replace("ref: main", "ref: ${{ github.sha }}"),
+    src.replace("git add -- docs/LU_DEVELOPMENT_LEDGER.md", "git add -- ."),
+    src.replace("git push origin HEAD:main", "git push --force origin HEAD:main"),
+    src.replace("\n  refresh:\n", "\n  rogue-heavy:\n    runs-on: ubuntu-latest\n  refresh:\n")
+  ]) {
+    assert.ok(inspectOne("lu-development-ledger.yml", unsafe).problems.includes("HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
+  }
+  assert.ok(inspectOne("lu-unknown-heavy.yml", src).problems.includes("HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
 });
