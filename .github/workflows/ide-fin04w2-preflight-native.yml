@@ -1,5 +1,6 @@
-# FIN-04W2-A/B contract and Windows kernel *negative* preflight.
-# No installer, SCM service creation, debugger launch or runtime authority.
+# FIN-04W2-A/B broker grammar and genuine Windows SCM kernel preflight.
+# Disposable hosted-CI SCM installation is NOT creator-authorized desktop installation.
+# No LLDB, WFP policy, debuggee process or production debugger authority.
 name: IDE FIN-04W2 broker protocol and native preflight
 on:
   pull_request:
@@ -94,6 +95,56 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: restricted SID configuration failed' }
             & sc.exe privs $name 'SeChangeNotifyPrivilege/SeImpersonatePrivilege' | Out-Host
             if ($LASTEXITCODE -ne 0) { throw 'DENIED: required minimal service privilege setup failed' }
+            # CI-only install pins the exact service and current native pwsh
+            # client hashes and provides a strictly REVIEW-ONLY plan. There
+            # is no build receipt, no child Job, no WFP policy and no launch.
+            $root=Join-Path $env:ProgramData 'LuIDEDebuggerBroker'
+            if (Test-Path -LiteralPath $root) { throw 'DENIED: debugger evidence root already exists' }
+            $hostExe=(Get-Process -Id $PID).Path
+            $hostHash=(Get-FileHash -LiteralPath $hostExe -Algorithm SHA256).Hash
+            $serviceSid='NT SERVICE\LuIdeDebuggerBroker'
+            $system='NT AUTHORITY\SYSTEM'
+            New-Item -Force -ItemType Directory -Path $root | Out-Null
+            $plan=[ordered]@{
+              projectId=('ide-' + ('a'*32))
+              recipeId='dap_lldb_project'
+              sourceHead=('b'*40)
+              inputSnapshotSha256=('c'*64)
+              manifestSha256=('d'*64)
+              toolchainSha256=('e'*64)
+              debugTargetBindingSha256=('f'*64)
+              runtimeLimitMs=90000
+              memoryLimitBytes=536870912
+              processLimit=16
+              logLimitBytes=65536
+              effectClass='debug_inspection_isolated'
+            }
+            $config=[ordered]@{
+              schema='lu.ide.fin04w2.audit.v1'
+              serviceName=$name
+              endpoint='\\.\pipe\LuIdeDebuggerBroker.v1'
+              expectedServiceSha256=$expected.ToLowerInvariant()
+              expectedHostSha256=$hostHash.ToLowerInvariant()
+              approvedHostExecutable=$hostExe
+              approvedHostUserSid=$identity.User.Value
+              reviewOnlyPlan=$plan
+              reviewOnlyPlanHash=('aa'*32)
+              reviewOnlyNonce=('42'*16)
+            }
+            $cfg=Join-Path $root 'service.json'
+            $config|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $cfg -Encoding utf8 -NoNewline
+            & icacls.exe $cfg /inheritance:r /grant:r ($system+':F') ($serviceSid+':M') | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: debugger service config DACL' }
+            & icacls.exe $root /inheritance:r /grant:r ($system+':(OI)(CI)F') ($serviceSid+':(OI)(CI)M') | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: debugger service evidence DACL' }
+            $rootAcl=Get-Acl -LiteralPath $root
+            if (!$rootAcl.AreAccessRulesProtected -or
+                @($rootAcl.Access|Where-Object {
+                  $_.AccessControlType -ne 'Allow' -or
+                  $_.IdentityReference.Value -notin @($system,$serviceSid)
+                }).Count) {
+              throw 'DENIED: debugger evidence has inherited or unknown ACE'
+            }
             $sid=@(& sc.exe qsidtype $name 2>&1 | ForEach-Object {[string]$_})
             if ($LASTEXITCODE -ne 0 -or -not (($sid -join ' ') -match 'RESTRICTED')) {
               throw 'DENIED: kernel SCM config does not report restricted service SID'
@@ -120,6 +171,43 @@ jobs:
             Write-Host 'FIN04W2_NATIVE_RESTRICTED_LOCAL_SERVICE_TOKEN=PASS'
             Write-Host 'FIN04W2_NATIVE_SCM_RUNNING_AND_SERVICE_SID=PASS'
             Write-Host 'FIN04W2_CHILD_JOB_ACL_WFP_AND_LLDB=NOT_VERIFIED'
+            # This never sends a runnable DAP/LLDB request. The broker
+            # authenticates the real named-pipe client PID, birth timestamp,
+            # installed host executable and original user token, then checks
+            # only the fixed 92-byte staged review contract.
+            $packet=New-Object byte[] 92
+            [Text.Encoding]::ASCII.GetBytes('LUFW2A01').CopyTo($packet,0)
+            $packet[8]=1; $packet[9]=1
+            for ($i=12;$i -lt 44;$i++) { $packet[$i]=170 }
+            for ($i=44;$i -lt 76;$i++) { $packet[$i]=255 }
+            for ($i=76;$i -lt 92;$i++) { $packet[$i]=66 }
+            function Invoke-CiBrokerAudit([byte[]]$value) {
+              $client=[System.IO.Pipes.NamedPipeClientStream]::new(
+                '.', 'LuIdeDebuggerBroker.v1',
+                [System.IO.Pipes.PipeDirection]::InOut,
+                [System.IO.Pipes.PipeOptions]::None,
+                [Security.Principal.TokenImpersonationLevel]::Impersonation)
+              try {
+                $client.Connect(5000)
+                $client.Write($value,0,$value.Length)
+                $client.Flush()
+                try { return $client.ReadByte() } catch { return -1 }
+              } finally { $client.Dispose() }
+            }
+            $bad=[byte[]]$packet.Clone()
+            $bad[9]=255
+            if ((Invoke-CiBrokerAudit $bad) -eq 65) {
+              throw 'DENIED: unknown debugger broker method incorrectly accepted'
+            }
+            if ((Invoke-CiBrokerAudit $packet) -ne 65) {
+              throw 'DENIED: actual Windows kernel client authentication or review grammar absent'
+            }
+            Write-Host 'FIN04W2_NATIVE_AUTHENTICATED_CLIENT_AND_FIXED_PIPE_ACL=PASS'
+            if ((Invoke-CiBrokerAudit $packet) -eq 65) {
+              throw 'DENIED: duplicate broker audit packet accepted'
+            }
+            Write-Host 'FIN04W2_NATIVE_AUDIT_ONLY_REPLAY_DENIAL=PASS'
+            Write-Host 'FIN04W2_LIVE_LAUNCH_AND_WFP_EGRESS=NOT_VERIFIED'
           } finally {
             if ($created) {
               & sc.exe stop $name 2>$null | Out-Null
