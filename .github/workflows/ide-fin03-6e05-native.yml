@@ -1,0 +1,56 @@
+# FIN-03 / 6E-05A: one coherent native read-only remote publication gate.
+# No GitHub credentials, remote writes, native consent simulation, install
+# or release authority. Exact source identity and original host fixture only.
+name: IDE FIN-03 6E-05 native publication preflight
+on:
+  pull_request:
+    paths:
+      - 'ide/host/**'
+      - 'ide/app/tests/fin03e05_remote_preflight.test.mjs'
+      - 'ide/docs/IDE_FIN03E05_REMOTE_PUBLICATION_PREFLIGHT.md'
+      - '.github/workflows/ide-fin03-6e05-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ide-fin03-6e05-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-registered-origin:
+    name: exact source and native host (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Exact source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "FIN03_6E05_EXACT_SOURCE=VERIFIED"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Native read-only Git origin/index and hostile fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/host/Cargo.toml --lib github_remote_publication -- --nocapture
+          echo "FIN03_6E05_ORIGINAL_NATIVE_PREVIEW_TESTS=PASS"
+          echo "FIN03_6E05_REMOTE_MUTATION_AND_OS_CONSENT=NOT_TESTED"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: No remote write or credential UI route
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test ide/app/tests/fin03e05_remote_preflight.test.mjs
+          echo "FIN03_6E05_NO_EXECUTION_SURFACE=PASS"
