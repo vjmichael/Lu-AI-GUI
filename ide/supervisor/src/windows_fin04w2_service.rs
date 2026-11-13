@@ -184,6 +184,12 @@ fn run_service(handle: windows_sys::Win32::System::Services::SERVICE_STATUS_HAND
     -> Result<(), SupervisorError> {
     windows_fin04w2_kernel::inspect_current_service_principal()?;
     let config = InstalledAuditConfig::read()?;
+    // Before accepting even a REVIEW-ONLY request, the genuine Windows
+    // kernel must create a protected, separately named, zero-member Job
+    // and confirm exact memory/process/kill-on-close limits plus its actual
+    // DACL. The Job is held until the SCM service stops. It has no API to
+    // enroll a debuggee; WFP and descendant tests remain mandatory.
+    let _empty_audit_job = windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
     let sid = security::sid_of_named_service(NAME)?;
     let pipe_acl = security::PipeSecurity::new_for_service(
         &config.approved_host_user_sid, &sid,
