@@ -55,13 +55,11 @@ fn service_sid() -> Result<Vec<usize>, SupervisorError> {
     Ok(sid)
 }
 
-/// Verify the **current actual process** is already executing under a
-/// non-AppContainer, restricted LocalService token with the NEW debugger
-/// service SID and is already assigned to a kernel Job. No self-reported
-/// service name, environment variable, user SID, or caller-supplied PID.
-/// This is insufficient until the broker separately verifies its *named* Job,
-/// original fsynced SCM receipt, sealed bytes and OS ACL/WFP egress denial.
-pub(crate) fn inspect_current_worker_prerequisites() -> Result<(), SupervisorError> {
+/// The service process is intentionally *outside* the per-debuggee Job:
+/// the independent SCM guardian must survive and retain the Job lease.
+/// Only its OS token, not any string or caller-supplied PID, identifies it.
+/// This is insufficient for service request admission, WFP or debugger launch.
+pub(crate) fn inspect_current_service_principal() -> Result<(), SupervisorError> {
     let mut raw = ptr::null_mut();
     if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
         return Err(denied());
@@ -108,6 +106,15 @@ pub(crate) fn inspect_current_worker_prerequisites() -> Result<(), SupervisorErr
     } == 0 || enabled == 0 {
         return Err(denied());
     }
+    Ok(())
+}
+
+/// Separate read-only preflight for an OS worker that the independent
+/// service has already placed into the correct named Job. Checking *some*
+/// job membership is not a substitute for the separate exact Job+receipt
+/// witness, which is mandatory before any debugger execution is admitted.
+pub(crate) fn inspect_current_worker_prerequisites() -> Result<(), SupervisorError> {
+    inspect_current_service_principal()?;
     let mut job_member = 0i32;
     if unsafe { IsProcessInJob(GetCurrentProcess(), ptr::null_mut(), &mut job_member) } == 0
         || job_member == 0 {
@@ -124,6 +131,7 @@ mod tests {
         // The GitHub runner is intentionally NOT the installed independently
         // restricted LuIdeDebuggerBroker identity. A deny is required, even
         // when a parent CI runner happens to be inside some Job Object.
+        assert!(inspect_current_service_principal().is_err());
         assert!(inspect_current_worker_prerequisites().is_err());
     }
 }
