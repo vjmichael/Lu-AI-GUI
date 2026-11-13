@@ -542,6 +542,30 @@ impl Drop for Impersonation {
         }
     }
 }
+/// FIN-04W2: an independent service must never trust a claimed PID or
+/// process birth timestamp carried inside its fixed broker packet. Obtain
+/// both directly from Windows' named-pipe kernel association and recheck
+/// against the same original process handle inside authenticate_client.
+pub(crate) fn authenticate_client_from_kernel_pipe(
+    pipe: HANDLE,
+    approved_host_path: &Path,
+    approved_host_sha256: &str,
+    approved_host_user_sid: &str,
+) -> Result<VerifiedClientLease, SupervisorError> {
+    let mut pid = 0u32;
+    if unsafe { GetNamedPipeClientProcessId(pipe, &mut pid) } == 0 || pid == 0 {
+        return Err(denied());
+    }
+    let process = Handle::new(unsafe {
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid)
+    })?;
+    let created = process_creation(process.0)?;
+    authenticate_client(
+        pipe, pid, created, approved_host_path,
+        approved_host_sha256, approved_host_user_sid,
+    )
+}
+
 pub fn authenticate_client(
     pipe: HANDLE,
     asserted_pid: u32,
