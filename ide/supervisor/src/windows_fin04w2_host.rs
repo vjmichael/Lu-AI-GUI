@@ -75,7 +75,12 @@ fn connect(service_binary:&Path,service_sha:&str)
 fn read_exact_bounded(pipe:HANDLE,bytes:&mut [u8])
     ->Result<(),SupervisorError>{
     if bytes.is_empty() || bytes.len()>32 {return Err(denied());}
-    let deadline=Instant::now()+Duration::from_secs(5);
+    // The original fixed benign worker holds a real descendant for five
+    // seconds; X is emitted only after full OS Job accounting reaches zero.
+    // A 5-second read cutoff would spuriously abort successful native
+    // containment. Keep a bounded 18-second phase wait, never indefinite.
+    let limit=if bytes.len()==1{18}else{5};
+    let deadline=Instant::now()+Duration::from_secs(limit);
     loop {
         if Instant::now()>=deadline {return Err(denied());}
         let mut available=0u32;
