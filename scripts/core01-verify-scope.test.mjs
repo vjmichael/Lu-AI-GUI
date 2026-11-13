@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { forbiddenPath, suspectSource, verifyInventory } from './core01-verify-scope.mjs';
@@ -22,4 +23,11 @@ test('manifest rejects extras and modified blobs, not just path prefixes', () =>
   assert.doesNotThrow(()=>verifyInventory(a,m));
   assert.throws(()=>verifyInventory([...a,{path:'extra.rs',blob:'b'.repeat(40)}],m),/REFUSED/);
   assert.throws(()=>verifyInventory(a,{...m,files:[{path:'a.rs',blob:'b'.repeat(40)}]}),/REFUSED/);
+});
+
+test('PERF-01 warm model source retains the pressure branch outside comments', () => {
+  const original = readFileSync(new URL('../src-tauri/lu-core/src/warm_model_residency.rs', import.meta.url), 'utf8');
+  assert.ok(original.includes('if idle_for.is_some_and(|elapsed| elapsed >= Duration::from_secs(30))'));
+  assert.ok(original.includes('return WarmDecision::EvictMeasuredPressure;'));
+  assert.ok(!original.includes('\\\\n        if idle_for'), 'Literal escaped newlines must not swallow control flow');
 });

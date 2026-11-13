@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "26d2210dec1d16886e6259a554bf87829abcfdb7",
+  "sourceCommitBeforeLock": "a8a5ac8bc2478179a7cafc9210b0957138ebc2e2",
   "trackedFileCount": 984,
   "files": [
     {
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "1d0c540e6009e71ea0c343fe886481488a22061d"
+      "blob": "39a1eefc1f2236be11c4a7d4b0c309ee9eda3f0d"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -2205,7 +2205,7 @@
     },
     {
       "path": "scripts/core01-verify-scope.test.mjs",
-      "blob": "662c3e244432cbb9aff8f3ae3613ea1226dfaf76"
+      "blob": "52c0d3dee5d3c3b27475c7feb2fd3dafbc6c93fd"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
@@ -3317,7 +3317,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/warm_model_residency.rs",
-      "blob": "2a616503b67c633cb6539a51f37dea3b7f4b10c1"
+      "blob": "61ad29f3edc4637d829be964baab5b02c212b5cf"
     },
     {
       "path": "src-tauri/lu-core/src/web_catalog_crossref.rs",

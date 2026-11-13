@@ -44,7 +44,10 @@ impl WarmResidencyPolicy {
         if !has_session || has_reserved_generation || idle_for.is_none() {
             return WarmDecision::RetainActive;
         }
-        // Give newly loaded models a short first-turn opportunity even if the\n        // host is already under pressure. Never thrash GPU initialization.\n        if idle_for.is_some_and(|elapsed| elapsed >= Duration::from_secs(30))\n            && available_ram_mib.is_some_and(|mib| mib < self.critical_available_ram_mib) {
+        // Give newly loaded models a short first-turn opportunity even if the
+        // host is already under pressure. Never thrash GPU initialization.
+        if idle_for.is_some_and(|elapsed| elapsed >= Duration::from_secs(30))
+            && available_ram_mib.is_some_and(|mib| mib < self.critical_available_ram_mib) {
             return WarmDecision::EvictMeasuredPressure;
         }
         if idle_for.is_some_and(|elapsed| elapsed >= self.idle_grace) {
