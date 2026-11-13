@@ -22,11 +22,11 @@ use windows_sys::Win32::{
         GetTokenInformation, ImpersonateLoggedOnUser, RevertToSelf, SecurityImpersonation,
         TokenImpersonation,
         IsTokenRestricted, IsValidSid, SetTokenInformation, TokenIntegrityLevel,
-        TokenIsAppContainer, TokenUser, TOKEN_USER, SID_AND_ATTRIBUTES,
+        TokenIsAppContainer, SID_AND_ATTRIBUTES,
         TOKEN_MANDATORY_LABEL, TOKEN_DUPLICATE, TOKEN_ASSIGN_PRIMARY,
         TOKEN_ADJUST_DEFAULT, TOKEN_IMPERSONATE,
         TOKEN_QUERY, DISABLE_MAX_PRIVILEGE, LUA_TOKEN,
-        WinLowLabelSid, WinBuiltinUsersSid,
+        WinLowLabelSid, WinBuiltinAnyPackageSid,
     },
     Storage::FileSystem::{CreateFileW, OPEN_EXISTING},
     System::Threading::{GetCurrentProcess, OpenProcessToken},
@@ -130,7 +130,10 @@ fn verify_token(token: HANDLE) -> Result<(), SupervisorError> {
 
 pub(crate) struct RestrictedPrimaryToken(OwnedToken);
 impl RestrictedPrimaryToken {
-    pub(crate) fn create() -> Result<Self, SupervisorError> {
+    pub(crate) fn create(package_sid: windows_sys::Win32::Security::PSID) -> Result<Self, SupervisorError> {
+        if package_sid.is_null() || unsafe { IsValidSid(package_sid) } == 0 {
+            return Err(denied());
+        }
         let mut original = ptr::null_mut();
         if unsafe {
             OpenProcessToken(
@@ -143,46 +146,25 @@ impl RestrictedPrimaryToken {
             return Err(denied());
         }
         let original = OwnedToken(original);
-        // IsTokenRestricted only recognizes an actual restricting SID list.
-        // Allow the original account's sealed LocalState and BUILTIN Users'
-        // system runtime DLLs, but strip original privileges and lower IL.
-        // This is an experimental boundary, NOT production filesystem or
-        // network isolation.
-        let mut user_size = 0u32;
-        unsafe {
-            GetTokenInformation(original.0, TokenUser, ptr::null_mut(), 0, &mut user_size);
-        }
-        if user_size < size_of::<TOKEN_USER>() as u32 || user_size > 4096 {
-            return Err(denied());
-        }
-        let mut user_bytes =
-            vec![0usize; (user_size as usize).div_ceil(size_of::<usize>())];
-        let mut user_observed = 0u32;
-        if unsafe {
-            GetTokenInformation(
-                original.0, TokenUser, user_bytes.as_mut_ptr().cast(),
-                user_size, &mut user_observed,
-            )
-        } == 0 || user_observed != user_size {
-            return Err(denied());
-        }
-        let user = unsafe { &*(user_bytes.as_ptr() as *const TOKEN_USER) };
-        if user.User.Sid.is_null() || unsafe { IsValidSid(user.User.Sid) } == 0 {
-            return Err(denied());
-        }
-        let mut users_sid = vec![0usize; 96usize.div_ceil(size_of::<usize>())];
-        let mut users_size = 96u32;
+        // Actual original per-job AppContainer SID controls access to the
+        // exact package LocalState files. Global All Application Packages
+        // controls access to Windows system runtime files. In contrast,
+        // BUILTIN Users and the parent user's SID would let a restricted
+        // process read unrelated same-user projects and must NOT be present
+        // in the restricted allowlist.
+        let mut any_package_sid = vec![0usize; 96usize.div_ceil(size_of::<usize>())];
+        let mut any_package_size = 96u32;
         if unsafe {
             CreateWellKnownSid(
-                WinBuiltinUsersSid, ptr::null_mut(),
-                users_sid.as_mut_ptr().cast(), &mut users_size,
+                WinBuiltinAnyPackageSid, ptr::null_mut(),
+                any_package_sid.as_mut_ptr().cast(), &mut any_package_size,
             )
-        } == 0 || users_size == 0 || users_size > 96 {
+        } == 0 || any_package_size == 0 || any_package_size > 96 {
             return Err(denied());
         }
         let restricted_sids = [
-            SID_AND_ATTRIBUTES { Sid: user.User.Sid, Attributes: 0 },
-            SID_AND_ATTRIBUTES { Sid: users_sid.as_mut_ptr().cast(), Attributes: 0 },
+            SID_AND_ATTRIBUTES { Sid: package_sid, Attributes: 0 },
+            SID_AND_ATTRIBUTES { Sid: any_package_sid.as_mut_ptr().cast(), Attributes: 0 },
         ];
         let mut restricted = ptr::null_mut();
         if unsafe {
@@ -250,7 +232,16 @@ pub(crate) fn ci_probe_child_loader_access(
         return Err(denied());
     }
     let impersonation = OwnedToken(raw);
+    // The disposable CI owner creates one tiny unrelated same-user file.
+    // Success reading it under the child's restricted token would expose
+    // ambient user documents and MUST block any promotion.
+    let outside_root = std::env::var_os("RUNNER_TEMP").ok_or_else(denied)?;
+    let outside = Path::new(&outside_root).join(format!(
+        "lu-fin04w-external-{:032x}.tmp", rand::random::<u128>()
+    ));
+    std::fs::write(&outside, b"x").map_err(|_| denied())?;
     if unsafe { ImpersonateLoggedOnUser(impersonation.0) } == 0 {
+        let _ = std::fs::remove_file(&outside);
         eprintln!("FIN04W_LOADER_PROBE=impersonation_denied");
         return Err(denied());
     }
@@ -258,18 +249,19 @@ pub(crate) fn ci_probe_child_loader_access(
     // selected solely by the already sealed host worker/OS.
     let system_dll = std::env::var_os("SystemRoot")
         .map(|root| Path::new(&root).join("System32/kernel32.dll"));
-    let candidates: [(&str, Option<&Path>, u32); 3] = [
-        ("sealed_executable", Some(executable), 0xa000_0000),
-        ("sealed_workdir", Some(working_dir), 0x8000_0000),
-        ("system_dll", system_dll.as_deref(), 0xa000_0000),
+    let candidates: [(&str, Option<&Path>, u32, u32); 3] = [
+        ("sealed_executable", Some(executable), 0xa000_0000, 0),
+        // Opening a directory as a HANDLE requires BACKUP_SEMANTICS.
+        ("sealed_workdir", Some(working_dir), 0x8000_0000, 0x0200_0000),
+        ("system_dll", system_dll.as_deref(), 0xa000_0000, 0),
     ];
-    for (label, candidate, desired_access) in candidates {
+    for (label, candidate, desired_access, flags) in candidates {
         let result = if let Some(candidate) = candidate {
             let raw = unsafe {
                 CreateFileW(
                     super::wide(candidate.as_os_str()).as_ptr(),
                     desired_access, 0x0000_0007, ptr::null(),
-                    OPEN_EXISTING, 0, ptr::null_mut(),
+                    OPEN_EXISTING, flags, ptr::null_mut(),
                 )
             };
             if raw == INVALID_HANDLE_VALUE || raw.is_null() {
@@ -288,10 +280,32 @@ pub(crate) fn ci_probe_child_loader_access(
         };
         eprintln!("FIN04W_LOADER_{label}={result}");
     }
-    // Reversion is a mandatory protection before the host can touch
-    // the original privileged Job, SCM or durable receipt again.
+    let outside_read = unsafe {
+        CreateFileW(
+            super::wide(outside.as_os_str()).as_ptr(),
+            0x8000_0000, 0x0000_0007, ptr::null(),
+            OPEN_EXISTING, 0, ptr::null_mut(),
+        )
+    };
+    let outside_result = if outside_read == INVALID_HANDLE_VALUE || outside_read.is_null() {
+        match unsafe { GetLastError() } {
+            5 => "access_denied",
+            _ => "other_kernel_failure",
+        }
+    } else {
+        unsafe { CloseHandle(outside_read); }
+        "unexpected_read_allowed"
+    };
+    // Reversion is mandatory before any privileged Job/SCM action.
     if unsafe { RevertToSelf() } == 0 {
         return Err(SupervisorError::Quarantined);
+    }
+    if std::fs::remove_file(&outside).is_err() {
+        return Err(SupervisorError::Quarantined);
+    }
+    eprintln!("FIN04W_LOADER_OUTSIDE_PRIVATE={outside_result}");
+    if outside_result != "access_denied" {
+        return Err(SupervisorError::NoContainment);
     }
     eprintln!("FIN04W_LOADER_PROBE=completed_reverted_no_authority");
     Ok(())

@@ -707,7 +707,7 @@ fn spawn_contained_stdio(
     // Neither a shell nor an interactive/elevated token fallback is allowed.
     #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
     let created = if fin04w {
-        let token = super::fin04w::RestrictedPrimaryToken::create()?;
+        let token = super::fin04w::RestrictedPrimaryToken::create(profile.sid)?;
         native_lsp_trace("fin04w_low_restricted_token_verified");
         unsafe {
             CreateProcessAsUserW(

@@ -323,15 +323,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let began = Instant::now();
             let (mut stopped, mut threads, mut stack) = (None, false, false);
             let (mut requested_threads, mut requested_stack) = (false, false);
+            let mut launch_acknowledged = false;
+            let mut config_requested = false;
+            let mut native_continued = false;
             while began.elapsed() < Duration::from_secs(35) {
                 for event in dap.poll().map_err(|e| e.code())? {
                     match event {
                         DapEvent::ConfigurationRequested => {
+                            config_requested = true;
+                            eprintln!("FIN04_D3_LINUX_DAP_EVENT=configuration_requested");
                             dap.configuration_done().map_err(|e| e.code())?
                         }
-                        DapEvent::Stopped { thread_id } => stopped = Some(thread_id),
-                        DapEvent::ThreadsReceived => threads = true,
-                        DapEvent::StackTraceReceived => stack = true,
+                        DapEvent::Stopped { thread_id } => {
+                            eprintln!("FIN04_D3_LINUX_DAP_EVENT=real_stopped");
+                            stopped = Some(thread_id);
+                        },
+                        DapEvent::ThreadsReceived => {
+                            eprintln!("FIN04_D3_LINUX_DAP_EVENT=threads_received");
+                            threads = true;
+                        },
+                        DapEvent::StackTraceReceived => {
+                            eprintln!("FIN04_D3_LINUX_DAP_EVENT=stack_received");
+                            stack = true;
+                        },
+                        DapEvent::LaunchAcknowledged => {
+                            eprintln!("FIN04_D3_LINUX_DAP_EVENT=launch_acknowledged");
+                            launch_acknowledged = true;
+                        },
+                        DapEvent::Continued => native_continued = true,
                         DapEvent::Terminated => {
                             return Err("DENIED: project debuggee exited before stack".into())
                         }
@@ -353,6 +372,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 thread::sleep(Duration::from_millis(30));
             }
             if stopped.is_none() || !threads || !stack {
+                // Fixed booleans only; never forward adapter output, process
+                // identity, source bytes or an unverified OS stop.
+                eprintln!(
+                    "FIN04_D3_LINUX_DAP_STOP_REFUSAL launch_ack={};config_event={};continued={};stopped={};threads={};stack={};phase={:?}",
+                    launch_acknowledged, config_requested, native_continued,
+                    stopped.is_some(), threads, stack, dap.phase(),
+                );
                 return Err("DENIED: real project debug stop/stack absent".into());
             }
             // Unlike D2's adapter-only PC claim, this requires a genuine
