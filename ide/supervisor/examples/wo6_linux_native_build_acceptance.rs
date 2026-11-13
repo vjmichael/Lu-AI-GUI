@@ -388,6 +388,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 thread::sleep(Duration::from_millis(30));
             }
             if stopped.is_none() || !threads || !stack {
+                // Observe OS-owned child state and cgroup counters before
+                // fail-closed cleanup. No command, source, PID or raw stderr.
+                dap.ci_trace_absent_source_stop();
                 // Fixed booleans only; never forward adapter output, process
                 // identity, source bytes or an unverified OS stop.
                 eprintln!(
