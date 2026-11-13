@@ -705,12 +705,13 @@ impl BackgroundProcessSupervisor {
                 return Err(BackgroundProcessError::StoreUnavailable)
             }
         }
-        // SEC-06C is the sole kernel authority for any previously guardian-
-        // protected reviewed operation. A missing fixed, root-owned broker
+        // SEC-06C is the sole kernel authority for EVERY production Linux
+        // reviewed-host operation, not just the old typed Git/probe path.
+        // A missing fixed, root-owned broker
         // is an admission DENIAL, not permission to restart the old same-UID
         // cgroup custodian or an unverified process-group-only worker.
         #[cfg(target_os="linux")]
-        if typed_capture.is_some()||(self.profile.is_some()&&native_candidate){
+        if self.profile.is_some()||typed_capture.is_some(){
             if os_owned_git_spawn.is_none()&&os_owned_probe_spawn.is_none()
                 &&os_owned_native_spawn.is_none(){
                 self.store.fail_pending(&plan.task_id)

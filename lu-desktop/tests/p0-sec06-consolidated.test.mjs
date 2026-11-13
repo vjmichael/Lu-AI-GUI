@@ -501,7 +501,7 @@ test('SEC06C reviewed Linux workers have no same-UID guardian or mutable-profile
     /worker\.cgroup/,/worker\.guardian/]){
     assert.doesNotMatch(host,legacy,'retired guardian still launches production workers');
   }
-  assert.match(host,/self\.profile\.is_some\(\)\&\&native_candidate/);
+  assert.match(host,/if self\.profile\.is_some\(\)\|\|typed_capture\.is_some\(\)/);
   assert.match(host,/os_owned_git_spawn\.is_none\(\)/);
   assert.match(host,/os_owned_probe_spawn\.is_none\(\)/);
   assert.match(host,/os_owned_native_spawn\.is_none\(\)/);
@@ -529,4 +529,17 @@ test('SEC06C retires production guardian binaries and fences uncovered Linux bro
   assert.match(browser,/Self::require_browser_kernel_custody\(\)\?/);
   assert.match(browser,/self\.package_verified\(\)[\s\S]{0,100}Self::require_browser_kernel_custody\(\)\.is_ok\(\)/);
   assert.doesNotMatch(browser,/systemd-run|sudo|Command::new/);
+});
+
+// Every public Linux direct-spawn browser path must independently reject
+// uncontained starts, even if an internal caller bypasses the desktop gate.
+test('SEC06C public Linux Chromium and Node launch paths both fail closed until joint unit exists',()=>{
+  const chrome=readFileSync(join(root,'src-tauri/lu-core/src/browser_chromium_launcher.rs'),'utf8');
+  const node=readFileSync(join(root,'src-tauri/lu-core/src/browser_worker_supervisor.rs'),'utf8');
+  assert.match(chrome,/KernelCustodyUnavailable/);
+  assert.match(chrome,/require_joint_os_owned_browser_scope\(\)\?/);
+  assert.match(chrome,/#\[cfg\(target_os="linux"\)\]/);
+  assert.match(node,/KernelCustodyUnavailable/);
+  assert.match(node,/require_joint_os_owned_node_scope\(\)\?/);
+  assert.match(node,/#\[cfg\(target_os="linux"\)\]/);
 });

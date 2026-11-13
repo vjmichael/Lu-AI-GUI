@@ -28,6 +28,7 @@ pub enum BrowserSupervisorError {
     WorkerExited,
     UnauthorizedVisibility,
     MissingChromiumCustody,
+    KernelCustodyUnavailable,
 }
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum BrowserOperation {
@@ -154,9 +155,18 @@ pub struct OwnedBrowserWorker {
     #[cfg(windows)]
     _chromium_job:Option<lu_win_worker_job::Job>,
 }
+#[cfg(target_os="linux")]
+fn require_joint_os_owned_node_scope()->Result<(),BrowserSupervisorError>{
+    Err(BrowserSupervisorError::KernelCustodyUnavailable)
+}
 impl OwnedBrowserWorker {
     pub fn launch(config:BrowserLaunchConfig,browser:Option<OwnedBrowserWindow>)
         ->Result<Self,BrowserSupervisorError>{
+        // Before verified joint SEC-06C browser custody exists, the old
+        // stand-alone Node entry point cannot execute on Linux even when
+        // called outside NativeBrowserHost or its reviewed grant path.
+        #[cfg(target_os="linux")]
+        require_joint_os_owned_node_scope()?;
         config.validate()?;
         if config.visibility==BrowserVisibilityPreference::AutomaticHidden
             && (browser.is_none()||config.cdp_endpoint.is_none()){

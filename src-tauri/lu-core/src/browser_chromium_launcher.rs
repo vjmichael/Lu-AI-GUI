@@ -19,6 +19,7 @@ pub enum BrowserLaunchError {
     StartupFailed,
     Deadline,
     UntrustedEndpoint,
+    KernelCustodyUnavailable,
 }
 /// Keep this guard in the same supervisor that owns the Chromium Child.
 /// It prevents a second Lu instance from sharing the same cookies/profile.
@@ -86,11 +87,20 @@ fn loopback_port_from_file(path:&Path)->Result<Option<u16>,BrowserLaunchError>{
     if port==0 {return Err(BrowserLaunchError::UntrustedEndpoint);}
     Ok(Some(port))
 }
+#[cfg(target_os="linux")]
+fn require_joint_os_owned_browser_scope()->Result<(),BrowserLaunchError>{
+    Err(BrowserLaunchError::KernelCustodyUnavailable)
+}
 pub fn launch_owned_headed_chromium(
     browser_executable:&Path,
     dedicated_profile:&Path,
     timeout:Duration,
 )->Result<LaunchedChromium,BrowserLaunchError>{
+    // Direct Linux Chromium cannot inherit the new SEC-06C root-owned
+    // boundary from a previously launched Node/Playwright process. Refuse
+    // this public entry point itself; caller-side admission is insufficient.
+    #[cfg(target_os="linux")]
+    require_joint_os_owned_browser_scope()?;
     if !browser_executable.is_absolute()||!browser_executable.is_file()
         ||!dedicated_profile.is_absolute()||!dedicated_profile.is_dir()
         ||timeout<Duration::from_millis(100)||timeout>Duration::from_secs(30){
