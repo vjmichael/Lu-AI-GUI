@@ -203,6 +203,59 @@ mod tests{
             &plan,&[7;16]).is_err());
         assert!(verify_fixed_request(&packet[..73],&job,&plan,&[7;16]).is_err());
     }
+    #[test]fn actual_original_journal_replay_uses_plan_sha_not_discarded_plan(){
+        use crate::{Supervisor,OsContainmentProof};
+        let path=std::env::temp_dir().join(format!(
+            "fin04w2-c2-original-{:032x}.jsonl",rand::random::<u128>(),
+        ));
+        let plan=JobPlan{
+            project_id:format!("ide-{}","a".repeat(32)),
+            recipe_id:"dap_lldb_project".into(),
+            source_head:"b".repeat(40),input_snapshot_sha256:"c".repeat(64),
+            manifest_sha256:"d".repeat(64),toolchain_sha256:"e".repeat(64),
+            debug_target_binding_sha256:Some("f".repeat(64)),
+            runtime_limit_ms:90_000,memory_limit_bytes:512*1024*1024,
+            process_limit:16,log_limit_bytes:65536,
+            effect_class:"debug_inspection_isolated".into(),
+        };
+        let supervisor=Supervisor::open(path.clone()).unwrap();
+        let job=supervisor.prepare(plan.clone()).unwrap();
+        let sha=crate::fingerprint(&plan).unwrap();
+        assert!(verify_original_path(
+            &path,&job.job_id,&plan,C2JournalGate::Authorized,
+        ).is_err());
+        supervisor.record_human_approval(
+            &job.job_id,&sha,&plan.source_head,true,
+        ).unwrap(); // simulated unit approval, NOT physical native dialog.
+        verify_original_path(&path,&job.job_id,&plan,C2JournalGate::Authorized)
+            .unwrap();
+        // This isolated unit proof is deliberately NOT an OS/CI acceptance;
+        // it exercises only original durable transitions after authorization.
+        let simulated=OsContainmentProof{
+            platform:"windows".into(),restricted_identity:true,
+            filesystem_access_limited:true,network_access_limited:true,
+            child_contained_before_resume:true,
+            process_tree_kill_verified:true,memory_quota:true,cpu_quota:true,
+            pid_quota:true,protected_journal_broker:true,
+        };
+        supervisor.consume_grant_after_attestation(
+            &job.job_id,&plan,&simulated,
+        ).unwrap();
+        supervisor.native_mark_running(&job.job_id).unwrap();
+        verify_original_path(&path,&job.job_id,&plan,C2JournalGate::Running)
+            .unwrap();
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        verify_original_path(&path,&job.job_id,&plan,C2JournalGate::ReleasePending)
+            .unwrap();
+        supervisor.native_finish(&job.job_id,true,true,true).unwrap();
+        assert!(verify_original_path(
+            &path,&job.job_id,&plan,C2JournalGate::Authorized,
+        ).is_err());
+        assert!(verify_original_path(
+            &path,&job.job_id,&plan,C2JournalGate::Running,
+        ).is_err());
+        let _=std::fs::remove_file(&path);
+    }
     #[test]fn missing_authorization_is_not_a_service_grant(){
         let plan=JobPlan{
             project_id:format!("ide-{}","a".repeat(32)),
