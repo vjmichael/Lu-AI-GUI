@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "27ae7de426fce43110a2f3510a62e0292008fdad",
-  "trackedFileCount": 984,
+  "sourceCommitBeforeLock": "09233d39cd5b07a6a7f4b9068a06046e216273c9",
+  "trackedFileCount": 985,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
-      "blob": "6cf584f67245fea02fc1730cb43e13e0dc6e1938"
+      "blob": "35c5de7ab6bb4e4b50db76f785064809f342396b"
     },
     {
       "path": ".github/workflows/lu-e1-app-admission.yml",
@@ -596,6 +596,10 @@
       "blob": "69338481a7272999d7525a2762054b3579059f4e"
     },
     {
+      "path": "docs/LU_CORE01F_03_04_INTEGRATION_GATE_20261112.md",
+      "blob": "93c6f7f351955fd1e90b804b856a2fa0f1128757"
+    },
+    {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
       "blob": "00bed37c61ca754e41a9ae15a808f847b62c6a43"
     },
@@ -633,7 +637,7 @@
     },
     {
       "path": "docs/LU_DEVELOPMENT_LEDGER.md",
-      "blob": "6daf2707002a82351e06cd06334e842f45a3131e"
+      "blob": "627cb6f4a5b464a0631fd7f25cbb267eab0729f8"
     },
     {
       "path": "docs/LU_E1_NATIVE_EVIDENCE_20261107.md",
