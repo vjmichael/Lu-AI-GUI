@@ -68,7 +68,7 @@ fin04w-ci-bridge = ["dev045d4c-ci-oracle"]
 fin04w2-protocol = ["dap-transport"]
 # Distinct debugger SCM service: kernel token proof only; no IPC, Job worker,
 # WFP, LLDB or generic process launch. Native CI feature, default OFF.
-fin04w2-scm = ["fin04w2-protocol"]
+fin04w2-scm = ["fin04w2-protocol", "windows-worker"]
 # A reviewed, patched LLVM 18 debugger owner-event sideband under one-use
 # Job/SCM custody, NEVER a default Windows release capability.
 dev045d5-ci-event-owner = ["dev045d4c-ci-oracle"]
