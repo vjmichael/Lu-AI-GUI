@@ -95,12 +95,12 @@ fn read_exact_bounded(pipe:HANDLE,bytes:&mut [u8])
     Ok(())
 }
 fn write_exact(pipe:HANDLE,bytes:&[u8])->Result<(),SupervisorError>{
-    if bytes.len()!=92 {return Err(denied());}
+    if bytes.len()!=108 {return Err(denied());}
     let mut written=0u32;
     if unsafe{
         WriteFile(pipe,bytes.as_ptr().cast(),
             bytes.len() as u32,&mut written,ptr::null_mut())
-    }==0 || written!=92 {return Err(denied());}
+    }==0 || written!=108 {return Err(denied());}
     Ok(())
 }
 fn send_fixed_signal(pipe:HANDLE, marker:u8)->Result<(),SupervisorError>{
@@ -167,7 +167,17 @@ pub fn submit_original_approved_fixed_job(
     if challenge[0]!=b'C' || challenge[1..].iter().all(|b|*b==0){
         return Err(denied());
     }
-    let mut packet=[0u8;92];
+    // The original native Job ID is a separate fixed 16-byte binding:
+    // another job with identical source/plan SHA cannot spend this grant.
+    if job_id.len()!=36 || !job_id.starts_with("job-") {
+        return Err(denied());
+    }
+    let mut job_bytes=[0u8;16];
+    for (i,item) in job_bytes.iter_mut().enumerate(){
+        *item=u8::from_str_radix(&job_id[4+i*2..4+i*2+2],16)
+            .map_err(|_|denied())?;
+    }
+    let mut packet=[0u8;108];
     packet[..8].copy_from_slice(b"LUFW2A01");
     packet[8]=1;
     packet[9]=2; // ONLY LaunchSealed; no arbitrary method.
@@ -176,6 +186,7 @@ pub fn submit_original_approved_fixed_job(
         plan.debug_target_binding_sha256.as_ref().ok_or_else(denied)?,
     )?);
     packet[76..92].copy_from_slice(&challenge[1..17]);
+    packet[92..108].copy_from_slice(&job_bytes);
     write_exact(pipe.0,&packet)?;
     let mut response=[0u8;1];
     // S is emitted only by the original restricted service after it has
