@@ -305,6 +305,23 @@ impl TaskStore {
              CREATE TRIGGER IF NOT EXISTS lu_task_os_custody_no_delete
                BEFORE DELETE ON lu_task_windows_job_custody
                BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
+             CREATE TABLE IF NOT EXISTS lu_task_linux_os_owned_native_admission(
+               task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
+               chat TEXT NOT NULL, turn TEXT NOT NULL,
+               nonce TEXT NOT NULL UNIQUE CHECK(length(nonce)=32),
+               kind TEXT NOT NULL CHECK(kind IN(
+                 'scan-file','archive-preview','archive-extract',
+                 'fixed-version','fixed-artifact','app-version')),
+               binary_sha256 TEXT NOT NULL CHECK(length(binary_sha256)=64),
+               argv_sha256 TEXT NOT NULL CHECK(length(argv_sha256)=64),
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_native_admission_no_update
+               BEFORE UPDATE ON lu_task_linux_os_owned_native_admission
+               BEGIN SELECT RAISE(ABORT,'Immutable Linux OS-owned native admission'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_native_admission_no_delete
+               BEFORE DELETE ON lu_task_linux_os_owned_native_admission
+               BEGIN SELECT RAISE(ABORT,'Immutable Linux OS-owned native admission'); END;
              CREATE TABLE IF NOT EXISTS lu_task_linux_os_owned_probe_admission(
                task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
                chat TEXT NOT NULL, turn TEXT NOT NULL,
@@ -472,6 +489,43 @@ impl TaskStore {
         )?;
         tx.commit()?;
         Ok(())
+    }
+    /// SEC-06C original nonroot scanner/archive/utility execution is bound
+    /// to an immutable host-approved task/one-use nonce/kind/binary/argv hash.
+    /// A receipt never grants WriteWorkspace or ExecuteCode by itself.
+    #[cfg(target_os="linux")]
+    pub fn bind_linux_os_owned_native_admission(
+        &self,task_id:&str,chat:&str,turn:&str,nonce:&str,
+        kind:&str,binary_sha:&str,argv_sha:&str,
+    )->Result<(),TaskStoreError>{
+        let hex=|v:&str,n:usize|v.len()==n&&v.bytes().all(|b|
+            b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
+        let identity=|v:&str,p:&str|v.len()==p.len()+32&&v.starts_with(p)
+            &&hex(&v[p.len()..],32);
+        if !identity(chat,"c-")||!identity(turn,"g-")||!hex(nonce,32)
+            ||!hex(binary_sha,64)||!hex(argv_sha,64)
+            ||!matches!(kind,"scan-file"|"archive-preview"|"archive-extract"
+                |"fixed-version"|"fixed-artifact"|"app-version")
+            ||task_id.is_empty()||task_id.len()>128{
+            return Err(TaskStoreError::InvalidTaskId)
+        }
+        let mut db=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=db.transaction()?;
+        let count:i64=tx.query_row(
+            "SELECT COUNT(*) FROM lu_tasks t
+             JOIN lu_reviewed_turn_origin o ON o.singleton=1
+             WHERE t.task_id=?1 AND t.workspace_id=?2 AND t.state='PENDING'
+               AND o.conversation_id=?3 AND o.user_turn_id=?2",
+            params![task_id,turn,chat],|r|r.get(0)
+        )?;
+        if count!=1{return Err(TaskStoreError::InvalidTransition)}
+        tx.execute(
+            "INSERT INTO lu_task_linux_os_owned_native_admission(
+               task_id,chat,turn,nonce,kind,binary_sha256,argv_sha256)
+             VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![task_id,chat,turn,nonce,kind,binary_sha,argv_sha]
+        )?;
+        tx.commit()?;Ok(())
     }
     /// SEC-06C distinct finite metadata/media root-owned operation:
     /// immutable one-use nonce, exact original chat/turn/task and two original

@@ -25,10 +25,12 @@ import time
 
 GIT_WORKER=pathlib.Path("/usr/libexec/lu/lu-sec06c-owned-git-worker")
 PROBE_WORKER=pathlib.Path("/usr/libexec/lu/lu-sec06c-owned-probe-worker")
+NATIVE_WORKER=pathlib.Path("/usr/libexec/lu/lu-sec06c-owned-native-worker")
 PYTHON=pathlib.Path("/usr/bin/python3").resolve(strict=True)
 APPROVAL=pathlib.Path("/run/lu-sec06c")
 GIT_RECEIPTS=pathlib.Path("/var/lib/lu-sec06c/receipts")
 PROBE_RECEIPTS=pathlib.Path("/var/lib/lu-sec06c/probe-receipts")
+NATIVE_RECEIPTS=pathlib.Path("/var/lib/lu-sec06c/native-receipts")
 CGROUP=pathlib.Path("/sys/fs/cgroup")
 ID=re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 HEX32=re.compile(r"^[a-f0-9]{32}$")
@@ -36,6 +38,8 @@ HEX64=re.compile(r"^[a-f0-9]{64}$")
 OPS={
  "git": {"head","status","branch","count"},
  "probe": {"ffprobe-wav","ffprobe-mp4","pdfinfo-pdf","exiftool-image"},
+ "native": {"scan-file","archive-preview","archive-extract",
+            "fixed-version","fixed-artifact","app-version"},
 }
 MS_RDONLY=1
 MS_REMOUNT=32
@@ -185,7 +189,54 @@ def original_root_file(path,body):
     try:os.fsync(folder)
     finally:os.close(folder)
 
+def finite_native(kind,arguments):
+    def name(x):
+        return 0<len(x)<=128 and not x.startswith(".") and ".." not in x and all(
+            c.isascii() and (c.isalnum() or c in "._-") for c in x)
+    def absolute(raw,dir=False):
+        p=pathlib.Path(raw)
+        return p.is_absolute() and not p.is_symlink() and p.resolve(strict=True)==p and (
+            p.is_dir() if dir else p.is_file())
+    def new_target(raw):
+        p=pathlib.Path(raw)
+        return p.is_absolute() and absolute(str(p.parent),True) and name(p.name) and not p.exists()
+    if kind=="scan-file":
+        return len(arguments)==2 and arguments[0]=="--lu-file-scan-worker" and absolute(arguments[1])
+    if kind=="archive-preview":
+        return len(arguments)==6 and arguments[0]=="--lu-archive-preview-worker" and (
+            absolute(arguments[1],True) and name(arguments[2])
+            and new_target(arguments[3]) and HEX64.fullmatch(arguments[4]+arguments[4])
+            and arguments[5].isdigit() and int(arguments[5])>1)
+    if kind=="archive-extract":
+        return len(arguments)==9 and arguments[0]=="--lu-archive-extract-worker" and (
+            absolute(arguments[1],True) and name(arguments[2])
+            and absolute(arguments[3],True) and name(arguments[4])
+            and HEX64.fullmatch(arguments[5]) and
+            HEX64.fullmatch(arguments[6]+arguments[6]) and
+            HEX64.fullmatch(arguments[7]+arguments[7])
+            and arguments[8].isdigit() and int(arguments[8])>1)
+    if kind=="fixed-version":return arguments==["--lu-e1-version-one-shot"]
+    if kind=="fixed-artifact":return (len(arguments)==2 and
+        arguments[0]=="--lu-e1-artifact-one-shot" and arguments[1] in ("docx","xlsx"))
+    if kind=="app-version":return arguments in (["--version"],["-version"])
+    return False
+
 def one_use_worker_args(args):
+    if args.domain=="native":
+        if (args.op not in OPS["native"] or not args.binary or not args.binary_sha
+            or not args.args_sha or not HEX64.fullmatch(args.args_sha)
+            or len(args.arg)>12 or any(len(x)>4096 or "\0" in x or
+                any(ord(c)<32 for c in x) for x in args.arg)):
+            refuse("reviewed native finite source contract absent")
+        reviewed=digest_file(args.binary,args.binary_sha)
+        digest=hashlib.sha256(("\0".join([str(reviewed)]+args.arg)+"\0")
+                              .encode("utf-8")).hexdigest()
+        if digest!=args.args_sha or not finite_native(args.op,args.arg):
+            refuse("native reviewed argument digest or finite kind changed")
+        return [str(PYTHON),str(NATIVE_WORKER),"--nonce",args.nonce,
+                "--kind",args.op,"--binary",str(reviewed),
+                "--binary-sha",args.binary_sha,"--args-sha",args.args_sha,
+                *["--arg="+arg for arg in args.arg]]
     if args.domain=="git":
         if args.op not in OPS["git"] or not args.git or not args.sha or not args.repo:
             refuse("finite Git review not supplied")
@@ -263,11 +314,15 @@ def run(args):
         refuse("first-party worker must run as original nonroot UID")
     checked_root_file(pathlib.Path(__file__).resolve())
     checked_root_file(PYTHON)
-    checked_root_file(GIT_WORKER if args.domain=="git" else PROBE_WORKER)
+    checked_root_file(
+        GIT_WORKER if args.domain=="git" else
+        PROBE_WORKER if args.domain=="probe" else NATIVE_WORKER)
     parent,unit=first_party_unit(args.nonce,args.domain)
     argv=one_use_worker_args(args)
     checked_root_dir(APPROVAL)
-    receipts=GIT_RECEIPTS if args.domain=="git" else PROBE_RECEIPTS
+    receipts=(
+        GIT_RECEIPTS if args.domain=="git" else
+        PROBE_RECEIPTS if args.domain=="probe" else NATIVE_RECEIPTS)
     checked_root_dir(receipts)
     receipt=receipts/(args.nonce+".receipt")
     go=APPROVAL/(args.nonce+".go")
@@ -297,6 +352,12 @@ def run(args):
     kernel_verified=False
     exit_status=93
     output=b""
+    native_output=bytearray()
+    native_limit=(
+        16*1024*1024 if args.domain=="native" and args.op=="fixed-artifact"
+        else 128*1024 if args.domain=="native" and args.op=="scan-file"
+        else 32*1024 if args.domain=="native"
+        and args.op in ("fixed-version","app-version") else 0)
     try:
         # All privileged namespace/cgroup operations happen before drop.
         child=subprocess.Popen(argv,stdin=sys.stdin.buffer,
@@ -312,12 +373,24 @@ def run(args):
         original_pidfd=os.pidfd_open(child.pid)
         try:
             original_root_file(go,"LU_SEC06C_GO_V1\n"+args.nonce+"\n")
-            deadline=time.monotonic()+70
+            deadline=time.monotonic()+(620 if args.domain=="native" else 70)
             while time.monotonic()<deadline:
                 readable,_,_=select.select([sys.stdin.buffer],[],[],0)
                 if readable and not sys.stdin.buffer.read(1):
                     exit_status=93
                     break
+                if args.domain=="native":
+                    # Drain original bounded progress/captured output BEFORE
+                    # worker exit, preventing a full pipe from deadlocking
+                    # the host while the root kernel supervisor runs.
+                    ready,_,_=select.select([child.stdout],[],[],0)
+                    if ready:
+                        chunk=os.read(child.stdout.fileno(),65536)
+                        if chunk:
+                            native_output.extend(chunk)
+                            if len(native_output)>native_limit:
+                                exit_status=93
+                                break
                 poll=child.poll()
                 if poll is not None:
                     exit_status=poll
@@ -336,8 +409,16 @@ def run(args):
                 child.wait(timeout=10)
             kernel_verified=True
             if exit_status==0:
-                output=child.stdout.read(MAX_OUTPUT+1)
-                if len(output)>MAX_OUTPUT:refuse("bounded worker stdout violated")
+                if args.domain=="native":
+                    tail=child.stdout.read(native_limit+1-len(native_output))
+                    native_output.extend(tail)
+                    if len(native_output)>native_limit:
+                        refuse("finite native worker exceeded reviewed stdout bound")
+                    output=bytes(native_output)
+                else:
+                    output=child.stdout.read(MAX_OUTPUT+1)
+                    if len(output)>MAX_OUTPUT:
+                        refuse("bounded worker stdout violated")
             else:output=b""
         finally:
             os.close(original_pidfd)
@@ -353,7 +434,17 @@ def run(args):
         events.close()
         if kernel_verified:leaf.rmdir()
     if not kernel_verified:refuse("kernel leaf was never verified empty")
-    if args.domain=="git":
+    if args.domain=="native":
+        evidence="\n".join([
+            "LU_SEC06C_OWNED_NATIVE_V1",
+            "NONCE="+args.nonce,"CHAT="+args.chat,"TURN="+args.turn,
+            "CALL="+args.call,"KIND="+args.op,
+            "BINARY_SHA256="+args.binary_sha,
+            "ARGV_SHA256="+args.args_sha,
+            "UNIT="+unit,"ORIGINAL_UID="+str(args.uid),
+            "KERNEL_EMPTY=1",
+            "EFFECT="+("COMPLETED" if exit_status==0 else "INTERRUPTED"),""])
+    elif args.domain=="git":
         evidence="\n".join([
             "LU_SEC06C_OWNED_GIT_V1",
             "NONCE="+args.nonce,"CHAT="+args.chat,"TURN="+args.turn,
@@ -389,8 +480,10 @@ def main():
     ap=argparse.ArgumentParser(allow_abbrev=False)
     for name in ("nonce","domain","chat","turn","call","uid"):
         ap.add_argument("--"+name,required=True)
-    for name in ("git","sha","repo","op","binary","binary_sha","file","resource_sha"):
+    for name in ("git","sha","repo","op","binary","binary_sha",
+                 "file","resource_sha","args_sha"):
         ap.add_argument("--"+name.replace("_","-"))
+    ap.add_argument("--arg",action="append",default=[])
     args=ap.parse_args()
     try:
         args.uid=int(args.uid)

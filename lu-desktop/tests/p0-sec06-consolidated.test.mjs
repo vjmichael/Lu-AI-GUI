@@ -209,6 +209,80 @@ test('SEC06C finite reviewed FFprobe/PDFInfo/ExifTool remain separate non-generi
   assert.match(gate,/linux-ancestor-migration/);
 });
 
+test('SEC06C finite scanner archive and utility root-owned native contracts are not an arbitrary exec broker',()=>{
+  const native=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/os_owned_native.rs'),'utf8');
+  const host=readFileSync(join(root,'src-tauri/lu-core/src/native_background_process.rs'),'utf8');
+  const tasks=readFileSync(join(root,'src-tauri/lu-core/src/tasks.rs'),'utf8');
+  const oracle=readFileSync(join(root,'src-tauri/lu-core/src/agent_os_custody.rs'),'utf8');
+  const launcher=readFileSync(join(root,'scripts/lu-sec06c-owned-native-launcher.py'),'utf8');
+  const worker=readFileSync(join(root,'scripts/lu-sec06c-owned-native-worker.py'),'utf8');
+  const manager=readFileSync(join(root,'scripts/lu-sec06c-owned-kernel-manager.py'),'utf8');
+  for(const kind of ['scan-file','archive-preview','archive-extract',
+     'fixed-version','fixed-artifact','app-version']){
+    for(const source of [native,launcher,worker,manager]){
+      assert.ok(source.includes(kind),'missing native finite enum '+kind);
+    }
+  }
+  assert.match(native,/finite_kind/);
+  assert.match(native,/SEC06C native reviewed worker finite argv contract denied/);
+  assert.match(native,/--lu-file-scan-worker/);
+  assert.match(native,/--lu-archive-preview-worker/);
+  assert.match(native,/--lu-archive-extract-worker/);
+  assert.match(native,/--lu-e1-version-one-shot/);
+  assert.match(native,/--lu-e1-artifact-one-shot/);
+  assert.match(native,/NOFOLLOW/);
+  assert.match(native,/\/usr\/libexec\/lu\/lu-sec06c-launch-native/);
+  assert.match(launcher,/str\(MANAGER\)/);
+  assert.match(launcher,/Delegate=yes/);
+  assert.match(launcher,/Kernel|kernel/i);
+  assert.match(launcher,/PrivateNetwork=yes/);
+  assert.match(launcher,/RuntimeMaxSec=900/);
+  assert.match(worker,/root_go/);
+  assert.match(worker,/os\.getpid\(\)/);
+  assert.match(worker,/original Lu host cancelled or died/);
+  assert.match(worker,/SEC06C_NATIVE_MEDIATOR_DENIED/);
+  assert.match(manager,/NATIVE_WORKER/);
+  assert.match(manager,/finite_native/);
+  assert.match(manager,/def negative_original_ancestor_probe/);
+  assert.match(manager,/wait_kernel_zero/);
+  assert.match(manager,/LU_SEC06C_OWNED_NATIVE_V1/);
+  assert.match(tasks,/Immutable Linux OS-owned native admission/);
+  assert.match(tasks,/bind_linux_os_owned_native_admission/);
+  assert.match(host,/LinuxOsOwnedReviewedNative::spawn_if_installed/);
+  assert.match(host,/os_owned_native/);
+  assert.match(oracle,/linux_os_owned_native_original_receipt/);
+  assert.doesNotMatch(launcher,/shell=True|os\.system\(/);
+  assert.doesNotMatch(worker,/shell=True|os\.system\(/);
+  assert.match(gate,/linux-os-owned-reviewed-native-syntax/);
+  assert.match(gate,/linux-ancestor-migration/);
+  assert.match(gate,/linux-guardian-death/);
+  const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8')
+    .replace(/\r\n/g,'\n');
+  assert.match(workflow,/core01e-sec06c-os-owned-native/);
+  assert.match(workflow,/SEC06_REVIEWED_NATIVE_JOB/);
+  assert.match(workflow,/sec06c_root_owned_scanner_utility_original_journal/);
+});
+
+test('SEC06C native one-shot admission cannot substitute for jointly owned headed Chromium and Node',()=>{
+  const native=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/os_owned_native.rs'),'utf8');
+  const launcher=readFileSync(join(root,'scripts/lu-sec06c-owned-native-launcher.py'),'utf8');
+  const manager=readFileSync(join(root,'scripts/lu-sec06c-owned-kernel-manager.py'),'utf8');
+  const browser=readFileSync(join(root,'src-tauri/lu-core/src/browser_worker_supervisor.rs'),'utf8');
+  const chromium=readFileSync(join(root,'src-tauri/lu-core/src/browser_chromium_launcher.rs'),'utf8');
+  assert.doesNotMatch(native,/browser-chromium|browser-node|browser-launch/);
+  assert.doesNotMatch(launcher,/browser-chromium|browser-node|browser-launch/);
+  assert.doesNotMatch(manager,/"browser":\s*\{/);
+  assert.match(browser,/Command::new\(&config\.trusted_node\)/);
+  assert.match(chromium,/Command::new\(browser_executable\)/);
+  assert.match(browser,/launch_attached/);
+  assert.match(browser,/OwnedBrowserWindow/);
+  // Production browser acceptance requires BOTH independent processes in the
+  // same trusted OS custody boundary, not a Node-only generic privileged
+  // launch, and cannot borrow a scanner/utility kernel receipt.
+  assert.match(gate,/linux-guardian-death/);
+  assert.match(gate,/linux-ancestor-migration/);
+});
+
 test('SEC06C root-owned boundary prototype must deny external same-UID migration and use OS group cleanup',()=>{
   const prototype=readFileSync(join(root,'benchmarks/e1/sec06c_root_owned_systemd_boundary.py'),'utf8');
   assert.match(prototype,/--property=Delegate=no/);
@@ -319,6 +393,7 @@ test('SEC06 verifier rejects changed original native log with correct head and l
       'linux-root-owned-unit-cancel','linux-root-owned-unit-host-crash',
       'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
       'linux-os-owned-kernel-manager-syntax',
+      'linux-os-owned-reviewed-native-syntax',
       'core-native-full','desktop-ansf-native','worker-job-native',
       'core-sec-regressions','desktop-sec-regressions',
       'worker-sec-regressions',

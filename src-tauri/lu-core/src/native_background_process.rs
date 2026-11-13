@@ -48,6 +48,10 @@ struct OwnedWorker {
     os_owned_git:Option<lu_win_worker_job::os_owned_git::LinuxOsOwnedReviewedGit>,
     #[cfg(target_os="linux")]
     os_owned_probe:Option<lu_win_worker_job::os_owned_probe::LinuxOsOwnedReviewedProbe>,
+    // Finite scanner, archive and version/artifact operations share the
+    // root-owned kernel boundary but NEVER a general-purpose executor.
+    #[cfg(target_os="linux")]
+    os_owned_native:Option<lu_win_worker_job::os_owned_native::LinuxOsOwnedReviewedNative>,
 }
 pub struct BackgroundProcessSupervisor {
     store:Arc<TaskStore>,
@@ -580,7 +584,16 @@ impl BackgroundProcessSupervisor {
         }
         // Reject an invalid reviewed origin before creating durable task state.
         #[cfg(target_os="linux")]
-        let reviewed_origin=if let Some(profile)=self.profile.as_deref().filter(|_|typed_capture.is_some()){
+        let native_candidate=matches!(plan.args.first().and_then(|arg|arg.to_str()),
+            Some("--lu-file-scan-worker"|"--lu-archive-preview-worker"
+                |"--lu-archive-extract-worker"|"--lu-e1-version-one-shot"
+                |"--lu-e1-artifact-one-shot"))
+            ||(typed_capture.is_some()&&matches!(
+                plan.args.first().and_then(|arg|arg.to_str()),
+                Some("--version"|"-version")));
+        #[cfg(target_os="linux")]
+        let reviewed_origin=if let Some(profile)=self.profile.as_deref()
+            .filter(|_|typed_capture.is_some()||native_candidate){
             let (chat,turn)=self.store.reviewed_human_origin()
                 .map_err(|_|BackgroundProcessError::StoreUnavailable)?
                 .ok_or(BackgroundProcessError::InvalidPlan)?;
@@ -656,6 +669,46 @@ impl BackgroundProcessSupervisor {
                 return Err(BackgroundProcessError::StoreUnavailable)
             }
         }
+        // The old same-UID delegated guardian is NOT a substitute for an
+        // actual root-owned kernel leaf. Only the reviewed finite native
+        // scanner/archive/utility mode may request this separate OS manager;
+        // original ANSF human turn and exact binary/argv SHA are immutable.
+        #[cfg(target_os="linux")]
+        let mut os_owned_native_spawn=if native_candidate{
+            if let Some((_,chat,turn))=reviewed_origin.as_ref(){
+                use std::os::unix::ffi::OsStrExt;
+                let mut sha=Sha256::new();
+                sha.update(executable.as_os_str().as_bytes());
+                sha.update([0u8]);
+                for arg in &plan.args{
+                    sha.update(arg.as_bytes());
+                    sha.update([0u8]);
+                }
+                let args_sha=format!("{:x}",sha.finalize());
+                lu_win_worker_job::os_owned_native::LinuxOsOwnedReviewedNative::spawn_if_installed(
+                    &executable,&plan.expected_sha256,&plan.args,&args_sha,
+                    chat,turn,&plan.task_id
+                ).map_err(|_|{
+                    let _=self.store.fail_pending(&plan.task_id);
+                    BackgroundProcessError::SpawnFailed
+                })?
+            }else{None}
+        }else{None};
+        #[cfg(target_os="linux")]
+        if let Some((ref mut child,ref mut scope))=os_owned_native_spawn{
+            let (_,chat,turn)=reviewed_origin.as_ref()
+                .ok_or(BackgroundProcessError::StoreUnavailable)?;
+            if self.store.bind_linux_os_owned_native_admission(
+                &plan.task_id,chat,turn,scope.nonce(),scope.kind(),
+                scope.binary_sha(),scope.args_sha(),
+            ).is_err(){
+                let _=scope.stop_and_verify(child);
+                let _=self.store.record_process_uncertain(
+                    &plan.task_id,"OS_CUSTODY_UNVERIFIED");
+                let _=self.store.fail_pending(&plan.task_id);
+                return Err(BackgroundProcessError::StoreUnavailable)
+            }
+        }
         // Prefer a delegated kernel cgroup subtree for reviewed typed tools.
         // The independent helper lives outside it and kills the entire
         // subtree on EOF even if Lu is SIGKILLed. When OS delegation is
@@ -663,7 +716,7 @@ impl BackgroundProcessSupervisor {
         // guardian, but AGENT-01K/01L REFUSE full descendant custody.
         #[cfg(target_os="linux")]
         let mut cgroup=if os_owned_git_spawn.is_some()
-            ||os_owned_probe_spawn.is_some(){None}
+            ||os_owned_probe_spawn.is_some()||os_owned_native_spawn.is_some(){None}
         else if let Some((profile,chat,turn))=reviewed_origin{
             lu_win_worker_job::unix_owned::LinuxCgroupCustodian::spawn_if_delegated(
                 profile,&chat,&turn,&plan.task_id
@@ -674,7 +727,8 @@ impl BackgroundProcessSupervisor {
         }else{None};
         #[cfg(target_os="linux")]
         let guardian=if typed_capture.is_some()&&cgroup.is_none()
-            &&os_owned_git_spawn.is_none()&&os_owned_probe_spawn.is_none(){
+            &&os_owned_git_spawn.is_none()&&os_owned_probe_spawn.is_none()
+            &&os_owned_native_spawn.is_none(){
             lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian::spawn_if_available()
                 .map_err(|_|{
                     let _=self.store.fail_pending(&plan.task_id);
@@ -780,11 +834,16 @@ impl BackgroundProcessSupervisor {
         #[cfg(target_os="linux")]
         let mut os_owned_probe=None;
         #[cfg(target_os="linux")]
+        let mut os_owned_native=None;
+        #[cfg(target_os="linux")]
         let mut child=if let Some((managed_child,proof))=os_owned_git_spawn{
             os_owned_git=Some(proof);
             managed_child
         }else if let Some((managed_child,proof))=os_owned_probe_spawn{
             os_owned_probe=Some(proof);
+            managed_child
+        }else if let Some((managed_child,proof))=os_owned_native_spawn{
+            os_owned_native=Some(proof);
             managed_child
         }else{
             command.spawn().map_err(|_|{
@@ -849,6 +908,8 @@ impl BackgroundProcessSupervisor {
             os_owned_git,
             #[cfg(target_os="linux")]
             os_owned_probe,
+            #[cfg(target_os="linux")]
+            os_owned_native,
         };
         workers.insert(plan.task_id.clone(),owner);
         if self.store.start(&plan.task_id).is_err(){
@@ -927,6 +988,14 @@ impl BackgroundProcessSupervisor {
                             }
                         }
                         if let Some(os_unit)=worker.os_owned_probe.as_mut(){
+                            if os_unit.verify_original_kernel_receipt().is_err(){
+                                self.store.record_process_uncertain(
+                                    id,"OS_CUSTODY_UNVERIFIED")
+                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                                return Err(BackgroundProcessError::ProcessUncertain)
+                            }
+                        }
+                        if let Some(os_unit)=worker.os_owned_native.as_mut(){
                             if os_unit.verify_original_kernel_receipt().is_err(){
                                 self.store.record_process_uncertain(
                                     id,"OS_CUSTODY_UNVERIFIED")
@@ -1205,6 +1274,9 @@ fn terminate_owned(worker:&mut OwnedWorker)->Result<(),BackgroundProcessError>{
                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
         }else if let Some(probe)=worker.os_owned_probe.as_mut(){
             probe.stop_and_verify(&mut worker.child)
+                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+        }else if let Some(native)=worker.os_owned_native.as_mut(){
+            native.stop_and_verify(&mut worker.child)
                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
         }else if let Some(guard)=worker.cgroup.as_mut(){
             guard.stop_and_verify()
@@ -2035,6 +2107,78 @@ mod tests{
         }
         drop(reopened);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    /// SEC-06C genuine root-owned first-party scanner and version: the
+    /// original OS worker creates a one-use journal/nonce and kernel-empty
+    /// witness, with real durable progress and independent restart lookup.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="native nonroot Ubuntu with root-owned scanner + fixed native broker"]
+    fn sec06c_root_owned_scanner_utility_original_journal(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        use std::{path::Path,fs};
+        let scanner=PathBuf::from("/usr/libexec/lu/lu-file-scan-worker-acceptance");
+        let version=PathBuf::from("/usr/libexec/lu/lu-e1-reviewed-version-worker");
+        assert!(Path::new("/usr/libexec/lu/lu-sec06c-launch-native").is_file(),
+            "SEC06C_BLOCKED: native first-party OS launcher unavailable");
+        assert!(scanner.is_file()&&version.is_file(),
+            "SEC06C_BLOCKED: actual pinned first-party scanner/version unavailable");
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-scanner-native-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(&root).unwrap();
+        let input=root.join("original-input.bin");
+        let bytes=vec![b's';1024*1024+17];
+        fs::write(&input,&bytes).unwrap();
+        let expected=format!("{:x}",Sha256::digest(&bytes));
+        let chat=format!("c-{}","4".repeat(32));
+        let turn=format!("g-{}","5".repeat(32));
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let worker=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),root.clone());
+        let scenarios=[
+            ("sec06c-native-scanner",scanner,
+              vec!["--lu-file-scan-worker".into(),input.as_os_str().into()],true),
+            ("sec06c-native-version",version,
+              vec!["--lu-e1-version-one-shot".into()],true),
+        ];
+        for (call,exe,args,progress) in scenarios{
+            let sha=format!("{:x}",Sha256::digest(fs::read(&exe).unwrap()));
+            worker.start_host_approved(TrustedWorkerPlan{
+                task_id:call.into(),workspace_id:turn.clone(),executable:exe,
+                expected_sha256:sha,args,progress_protocol:progress,
+                max_runtime_seconds:Some(30),
+            }).expect("original root-owned finite scanner/version execution");
+            let deadline=Instant::now()+Duration::from_secs(45);
+            while store.get(call).unwrap().unwrap().state!=TaskState::Completed{
+                worker.poll().expect("SEC06C original kernel scanner/version custody not verified");
+                assert!(Instant::now()<deadline,"original worker bounded deadline exceeded");
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            assert!(store.process_uncertainty(call).unwrap().is_none());
+            assert!(HostOriginalJobCustody::from_host_profile(&root)
+                .worker_and_descendants_ended(&chat,&turn,call),
+                "original independent kernel scanner/version completion missing");
+        }
+        let scan=store.get("sec06c-native-scanner").unwrap().unwrap();
+        assert_eq!(scan.state,TaskState::Completed);
+        assert_eq!(
+            store.verified_result("sec06c-native-scanner",&turn)
+                .unwrap().unwrap().sha256,expected
+        );
+        drop(worker);drop(store);
+        let reopened=TaskStore::open(&journal).unwrap();
+        for call in ["sec06c-native-scanner","sec06c-native-version"]{
+            assert_eq!(reopened.get(call).unwrap().unwrap().state,TaskState::Completed);
+        }
+        drop(reopened);fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(windows)]
