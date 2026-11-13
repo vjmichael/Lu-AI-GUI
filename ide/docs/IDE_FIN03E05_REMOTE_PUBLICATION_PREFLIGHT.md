@@ -73,3 +73,52 @@ six-phase benign-worker transaction failed with
 [run #43483699020](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/43483699020).
 LLDB and W2-D are not authorized. This independent FIN-03 branch does
 not change PR #227 or its original acceptance conditions.
+
+
+## 6E-05B — Native-only authenticated LIVE read (Nov 13)
+
+Implemented the next, strictly read-only native module
+`ide/host/src/github_remote_live_policy.rs`.
+
+- Takes **only** a registered project ID and a `NativeGitHubReadCredentialVault`
+  implemented by the trusted native OS host. It never accepts a model token,
+  user-controlled URL, Git configuration credential, cookie, account ID,
+  WebView message, arbitrary HTTP method or command string. The OS keychain
+  adapter itself is **not provisioned or accepted** yet.
+- Executes **six bounded, no-redirect GETs** solely to fixed HTTPS
+  `api.github.com/repos/{owner}/{repo}` endpoints: exact current
+  `git/ref/heads/{branch}`, branch protection, applied rules for the
+  branch, then the same three again.
+- Requires each ref body to identify the exact `refs/heads/{branch}`
+  with a 40-hex commit SHA. Ref changes, JSON/protocol errors, status
+  errors, paginated/incomplete responses, protection/ruleset shape errors
+  and policy drift reject rather than infer an unprotected repository.
+  Rechecks the original registered local branch/HEAD/index/tracking
+  evidence *after* all reads.
+- The result is **observation**, not authority: it always reports
+  `liveRefCompareAndSwapAuthorized=false`,
+  `currentRemoteWriteLease=false`,
+  `remoteWriteRouteAvailable=false`,
+  `nativeApprovalVerified=false`,
+  `remoteMutationPerformed=false` and
+  `installedAccepted=false`.
+  A stable six-read snapshot can immediately become stale and cannot
+  replace an atomic remote ref compare-and-swap.
+- Includes pure hostile-response tests for a moved ref, altered applied
+  rules, truncated/inapplicable policy, malicious branch input and
+  malformed response. An exact-head Windows/Linux CI batch checks
+  the module and existing preflight.
+
+**Actual authenticated live GitHub acceptance:** NOT YET ESTABLISHED.
+The credential-vault interface is deliberately host-only; no linked OS
+keychain implementation is supplied, and no credentials have been used.
+Do not call this `6E-05B complete` from unit tests. The remaining
+6E-05B integration must add native Windows Credential Manager/Linux
+secret service custody and independently prove real API read-only
+behavior against a user-authorized test repo; then move to 6E-05C
+original one-use physical authorization, atomic publication receipt,
+concurrent-writer refusal and recovery.
+
+**Independent FIN-04 gate:** FIN-04W2-C original Windows six-phase
+transaction remains blocked. New W2-C2 work must be isolated from
+6E-05B and must not admit LLDB or W2-D.
