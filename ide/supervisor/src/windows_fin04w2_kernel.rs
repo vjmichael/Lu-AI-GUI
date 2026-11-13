@@ -278,121 +278,141 @@ pub(crate) fn create_bounded_empty_debugger_job() -> Result<EmptyAuditJob, Super
     Ok(EmptyAuditJob { _owned: job })
 }
 
-// CI-only harmless test. This is intentionally NOT a general native
-// process-launch method: only the exact installer-hashed fixed fixture is
-// accepted and this code never receives a request from the pipe protocol.
-#[cfg(feature = "fin04w2-contained-probe")]
-impl EmptyAuditJob {
-    pub(crate) fn verify_fixed_probe(
-        &self,
-        reviewed_exe: &std::path::Path,
-        reviewed_sha256: &str,
-        owner_private_file: &std::path::Path,
-    ) -> Result<(), SupervisorError> {
-        use windows_sys::Win32::System::{
-            JobObjects::AssignProcessToJobObject,
-            Threading::{
-                CreateProcessW, GetExitCodeProcess, ResumeThread, TerminateProcess,
-                CREATE_NO_WINDOW, CREATE_SUSPENDED, PROCESS_INFORMATION,
-                STARTUPINFOW, WaitForSingleObject,
-            },
+// The only admitted executable in W2-C remains the service-verified,
+// hash-pinned CI fixture. The split admission deliberately supports an
+// ORIGINAL fsynced Running receipt BEFORE a suspended child is resumed.
+// This is NOT a generic debugger launcher or native host command.
+#[cfg(feature="fin04w2-contained-probe")]
+pub(crate) struct PendingFixedWorker<'a> {
+    job: &'a EmptyAuditJob,
+    child: Token,
+    thread: Token,
+    active: bool,
+}
+#[cfg(feature="fin04w2-contained-probe")]
+impl Drop for PendingFixedWorker<'_> {
+    fn drop(&mut self) {
+        if self.active {
+            use windows_sys::Win32::System::Threading::{TerminateProcess,WaitForSingleObject};
+            // Any failure, timeout or host disconnect kills the actual OS
+            // child handle. The independently held Job subsequently reaps
+            // all descendants; never leave an unassigned suspended process.
+            unsafe { TerminateProcess(self.child.0,77); }
+            let _=unsafe { WaitForSingleObject(self.child.0,5000) };
+        }
+    }
+}
+#[cfg(feature="fin04w2-contained-probe")]
+impl PendingFixedWorker<'_> {
+    pub(crate) fn resume_and_verify(mut self)->Result<(),SupervisorError>{
+        use windows_sys::Win32::System::Threading::{
+            ResumeThread,GetExitCodeProcess,WaitForSingleObject,
         };
-        use std::time::{Duration, Instant};
-        if !reviewed_exe.is_absolute()
-            || !owner_private_file.is_absolute()
-            || reviewed_exe.to_string_lossy().contains('"')
-            || owner_private_file.to_string_lossy().contains('"')
-            || owner_private_file.to_string_lossy().contains('\0')
-        {
+        use std::time::{Duration,Instant};
+        if unsafe {ResumeThread(self.thread.0)}==u32::MAX {
             return Err(denied());
         }
-        crate::windows_service_security::hash_executable(
-            reviewed_exe, reviewed_sha256,
-        )?;
-        let application: Vec<u16> = reviewed_exe.as_os_str()
-            .encode_wide().chain([0]).collect();
-        // This fixed program has precisely one reviewed task and one
-        // installer-provided seeded negative file. No caller PID, shell,
-        // arbitrary command, environment, DAP or LLDB argument.
-        let command = format!(
-            "\"{}\" --worker \"{}\"", reviewed_exe.display(),
-            owner_private_file.display(),
-        );
-        let mut command_wide: Vec<u16> = command.encode_utf16().chain([0]).collect();
-        let mut startup = STARTUPINFOW::default();
-        startup.cb = size_of::<STARTUPINFOW>() as u32;
-        let mut process = PROCESS_INFORMATION::default();
-        if unsafe {
-            CreateProcessW(
-                application.as_ptr(), command_wide.as_mut_ptr(),
-                ptr::null(), ptr::null(), 0,
-                CREATE_SUSPENDED | CREATE_NO_WINDOW,
-                ptr::null(), ptr::null(),
-                &startup, &mut process,
-            )
-        } == 0 { return Err(denied()); }
-        let child = Token(process.hProcess);
-        let thread = Token(process.hThread);
-        // The fixed worker has not executed a single instruction. Reject
-        // any failure to atomically capture its original PID into this
-        // exact owner-held kernel Job BEFORE ResumeThread.
-        if unsafe { AssignProcessToJobObject(self._owned.0, child.0) } == 0 {
-            // A suspended child that was NEVER enrolled would otherwise
-            // survive Job close. Reap it using the original OS process
-            // handle; no uncontained process may be resumed or abandoned.
-            unsafe { TerminateProcess(child.0, 77); }
-            let _ = unsafe { WaitForSingleObject(child.0, 5000) };
-            return Err(denied());
-        }
-        let mut enrolled = 0i32;
-        if unsafe { IsProcessInJob(child.0, self._owned.0, &mut enrolled) } == 0
-            || enrolled == 0
-        {
-            unsafe { TerminateProcess(child.0, 77); }
-            let _ = unsafe { WaitForSingleObject(child.0, 5000) };
-            return Err(denied());
-        }
-        if unsafe { ResumeThread(thread.0) } == u32::MAX {
-            unsafe { TerminateProcess(child.0, 77); }
-            let _ = unsafe { WaitForSingleObject(child.0, 5000) };
-            return Err(denied());
-        }
-        // Original kernel accounting, not process output or a forged PID
-        // string, must show TWO captured processes (worker + descendant).
-        let limit = Instant::now() + Duration::from_secs(15);
-        let mut saw_descendant = false;
-        let mut empty = false;
-        while Instant::now() < limit {
-            let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+        // The exact OS Job must show both parent and descendant, then
+        // zero live members. A child-reported exit code alone is not enough.
+        let until=Instant::now()+Duration::from_secs(15);
+        let mut saw_two=false;
+        let mut empty=false;
+        while Instant::now()<until{
+            let mut info=JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
             if unsafe {
                 QueryInformationJobObject(
-                    self._owned.0, JobObjectBasicAccountingInformation,
-                    (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+                    self.job._owned.0,JobObjectBasicAccountingInformation,
+                    (&mut info as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
                     size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
                     ptr::null_mut(),
                 )
-            } == 0 { return Err(denied()); }
-            if accounting.TotalProcesses >= 2 && accounting.ActiveProcesses >= 2 {
-                saw_descendant = true;
-            }
-            if saw_descendant && accounting.ActiveProcesses == 0 {
-                empty = true;
-                break;
-            }
+            }==0{return Err(denied());}
+            if info.TotalProcesses>=2 && info.ActiveProcesses>=2 {saw_two=true;}
+            if saw_two && info.ActiveProcesses==0 {empty=true;break;}
             std::thread::sleep(Duration::from_millis(100));
         }
-        if !saw_descendant || !empty
-            || unsafe { WaitForSingleObject(child.0, 0) } != WAIT_OBJECT_0
-        { return Err(denied()); }
-        let mut exit = u32::MAX;
-        if unsafe { GetExitCodeProcess(child.0, &mut exit) } == 0 || exit != 0 {
+        if !saw_two || !empty
+            || unsafe {WaitForSingleObject(self.child.0,0)}!=WAIT_OBJECT_0 {
             return Err(denied());
         }
-        // A success proves the fixed worker and its descendant stayed
-        // captured, read/write foreign-file access was denied, and its
-        // outbound socket was not established. WFP filter readback and
-        // positive host-network baseline remain independent CI gates.
+        let mut exit=u32::MAX;
+        if unsafe {GetExitCodeProcess(self.child.0,&mut exit)}==0 || exit!=0 {
+            return Err(denied());
+        }
+        self.active=false;
         Ok(())
+    }
+}
+#[cfg(feature="fin04w2-contained-probe")]
+impl EmptyAuditJob {
+    pub(crate) fn prepare_fixed_probe(
+        &self,
+        reviewed_exe:&std::path::Path,
+        reviewed_sha256:&str,
+        owner_private_file:&std::path::Path,
+    )->Result<PendingFixedWorker<'_>,SupervisorError>{
+        use windows_sys::Win32::System::{
+            JobObjects::AssignProcessToJobObject,
+            Threading::{
+                CreateProcessW,TerminateProcess,WaitForSingleObject,
+                CREATE_NO_WINDOW,CREATE_SUSPENDED,PROCESS_INFORMATION,
+                STARTUPINFOW,
+            },
+        };
+        if !reviewed_exe.is_absolute() || !owner_private_file.is_absolute()
+            || reviewed_exe.to_string_lossy().contains('"')
+            || owner_private_file.to_string_lossy().contains('"')
+            || owner_private_file.to_string_lossy().contains('\0')
+        {return Err(denied());}
+        crate::windows_service_security::hash_executable(
+            reviewed_exe,reviewed_sha256,
+        )?;
+        let exe:Vec<u16>=reviewed_exe.as_os_str().encode_wide().chain([0]).collect();
+        // Never interpolate client-controlled text. Both absolute paths
+        // originate solely in admin-pinned, private service configuration.
+        let command=format!(
+            "\"{}\" --worker \"{}\"",reviewed_exe.display(),
+            owner_private_file.display(),
+        );
+        let mut wide:Vec<u16>=command.encode_utf16().chain([0]).collect();
+        let mut startup=STARTUPINFOW::default();
+        startup.cb=size_of::<STARTUPINFOW>() as u32;
+        let mut process=PROCESS_INFORMATION::default();
+        if unsafe {
+            CreateProcessW(
+                exe.as_ptr(),wide.as_mut_ptr(),ptr::null(),ptr::null(),0,
+                CREATE_SUSPENDED|CREATE_NO_WINDOW,ptr::null(),ptr::null(),
+                &startup,&mut process,
+            )
+        }==0 {return Err(denied());}
+        let child=Token(process.hProcess);
+        let thread=Token(process.hThread);
+        if unsafe {AssignProcessToJobObject(self._owned.0,child.0)}==0 {
+            unsafe {TerminateProcess(child.0,77);}
+            let _=unsafe {WaitForSingleObject(child.0,5000)};
+            return Err(denied());
+        }
+        let mut included=0i32;
+        if unsafe{IsProcessInJob(child.0,self._owned.0,&mut included)}==0
+            || included==0 {
+            unsafe {TerminateProcess(child.0,77);}
+            let _=unsafe {WaitForSingleObject(child.0,5000)};
+            return Err(denied());
+        }
+        Ok(PendingFixedWorker {
+            job:self,child,thread,active:true,
+        })
+    }
+    /// W2-B's original exact native admission still uses the same two
+    /// phases locally; it needs no host journal because it is explicitly
+    /// a disposable OS containment fixture, not an approved operation.
+    pub(crate) fn verify_fixed_probe(
+        &self,reviewed_exe:&std::path::Path,reviewed_sha256:&str,
+        owner_private_file:&std::path::Path,
+    )->Result<(),SupervisorError>{
+        self.prepare_fixed_probe(
+            reviewed_exe,reviewed_sha256,owner_private_file,
+        )?.resume_and_verify()
     }
 }
 
