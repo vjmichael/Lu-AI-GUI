@@ -78,7 +78,14 @@ pub(crate) fn check_original_receipts(
     if !full.quarantine.is_empty(){return Err(denied());}
     let job=full.jobs.get(job_id).ok_or_else(denied)?;
     let sha=crate::fingerprint(plan)?;
-    if job.phase!=gate.phase()||job.plan_hash!=sha||job.plan!=*plan {
+    // The original durable journal intentionally stores ONLY the
+    // plan digest and project coordinate. Store::replay reconstructs a
+    // blank plan to ensure no serialized approval can become an
+    // executable grant after restart. Never require that blank plan to
+    // equal the full sealed plan pinned independently by the service:
+    // verify its complete SHA-256 and project binding instead.
+    if job.phase!=gate.phase()||job.plan_hash!=sha
+        ||job.plan.project_id!=plan.project_id{
         return Err(denied());
     }
     let own:Vec<&Receipt>=rows.iter().filter(|r|r.body.job_id==job_id).collect();
