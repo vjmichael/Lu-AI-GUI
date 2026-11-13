@@ -14,7 +14,7 @@ use serde::Deserialize;
 use std::{
     ffi::c_void, fs, io::Read, os::windows::fs::MetadataExt,
     path::{Path, PathBuf}, ptr,
-    sync::atomic::{AtomicBool, Ordering}, thread,
+    sync::atomic::{AtomicBool, AtomicU32, Ordering}, thread,
     time::{Duration, Instant},
 };
 use windows_sys::Win32::{
@@ -35,6 +35,10 @@ const ROOT: &str = "LuIDEDebuggerBroker";
 const MAX_CONFIG: u64 = 8192;
 const FIRST_PIPE_INSTANCE: u32 = 0x0008_0000;
 static STOP: AtomicBool = AtomicBool::new(false);
+// Fixed, non-sensitive native startup stage for the SCM service status
+// report (not request output). 1=token, 2=config, 3=Job, 4=fixture,
+// 5=pipe DACL template, 6=pipe creation, 7=kernel DACL, 8=ready.
+static STARTUP_STAGE: AtomicU32 = AtomicU32::new(0);
 static AUDIT_USED: AtomicBool = AtomicBool::new(false);
 fn denied() -> SupervisorError { SupervisorError::NoContainment }
 fn wide(value: &str) -> Vec<u16> { value.encode_utf16().chain([0]).collect() }
@@ -158,8 +162,10 @@ fn status(state: u32, controls: u32, exit: u32) -> SERVICE_STATUS {
         dwServiceType: SERVICE_WIN32_OWN_PROCESS,
         dwCurrentState: state,
         dwControlsAccepted: controls,
-        dwWin32ExitCode: exit,
-        dwServiceSpecificExitCode: 0,
+        dwWin32ExitCode: if exit != 0 { 1066 } else { 0 },
+        dwServiceSpecificExitCode: if exit != 0 {
+            100 + STARTUP_STAGE.load(Ordering::Relaxed)
+        } else { 0 },
         dwCheckPoint: 0,
         dwWaitHint: if matches!(state, SERVICE_START_PENDING | SERVICE_STOP_PENDING) { 15000 } else { 0 },
     }
@@ -206,13 +212,16 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
 }
 fn run_service(handle: windows_sys::Win32::System::Services::SERVICE_STATUS_HANDLE)
     -> Result<(), SupervisorError> {
+    STARTUP_STAGE.store(1, Ordering::Relaxed);
     windows_fin04w2_kernel::inspect_current_service_principal()?;
+    STARTUP_STAGE.store(2, Ordering::Relaxed);
     let config = InstalledAuditConfig::read()?;
     // Before accepting even a REVIEW-ONLY request, the genuine Windows
     // kernel must create a protected, separately named, zero-member Job
     // and confirm exact memory/process/kill-on-close limits plus its actual
     // DACL. The Job is held until the SCM service stops. It has no API to
     // enroll a debuggee; WFP and descendant tests remain mandatory.
+    STARTUP_STAGE.store(3, Ordering::Relaxed);
     let _empty_audit_job = windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
     // Only the frozen CI binary can execute in this branch. There is no
     // caller action to launch it and no LLDB binary/command path. The
@@ -220,11 +229,15 @@ fn run_service(handle: windows_sys::Win32::System::Services::SERVICE_STATUS_HAND
     // outbound-socket probes do not agree. The independent admin CI step
     // must also establish actual WFP rule identity and host baseline.
     #[cfg(feature = "fin04w2-contained-probe")]
-    _empty_audit_job.verify_fixed_probe(
+    {
+        STARTUP_STAGE.store(4, Ordering::Relaxed);
+        _empty_audit_job.verify_fixed_probe(
         &config.fixed_probe.executable,
         &config.fixed_probe.expected_sha256,
         &config.fixed_probe.foreign_file,
-    )?;
+        )?;
+    }
+    STARTUP_STAGE.store(5, Ordering::Relaxed);
     let sid = security::sid_of_named_service(NAME)?;
     let pipe_acl = security::PipeSecurity::new_for_service(
         &config.approved_host_user_sid, &sid,
@@ -233,6 +246,7 @@ fn run_service(handle: windows_sys::Win32::System::Services::SERVICE_STATUS_HAND
     AUDIT_USED.store(false, Ordering::SeqCst);
     let mut first = true;
     loop {
+        STARTUP_STAGE.store(6, Ordering::Relaxed);
         let access = PIPE_ACCESS_DUPLEX | if first { FIRST_PIPE_INSTANCE } else { 0 };
         let raw = unsafe {
             CreateNamedPipeW(
@@ -243,10 +257,12 @@ fn run_service(handle: windows_sys::Win32::System::Services::SERVICE_STATUS_HAND
         };
         let pipe = Handle(raw);
         if raw == INVALID_HANDLE_VALUE || raw.is_null() { return Err(denied()); }
+        STARTUP_STAGE.store(7, Ordering::Relaxed);
         security::verify_created_pipe_security_for(
             raw, &config.approved_host_user_sid, &sid,
         )?;
         if first {
+            STARTUP_STAGE.store(8, Ordering::Relaxed);
             if unsafe {
                 SetServiceStatus(handle, &status(SERVICE_RUNNING, SERVICE_ACCEPT_STOP, 0))
             } == 0 { return Err(denied()); }
