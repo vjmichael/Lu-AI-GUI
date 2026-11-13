@@ -163,6 +163,9 @@ function sourceCases(){
       '-m','py_compile','scripts/lu-sec06c-owned-probe-launcher.py',
       'scripts/lu-sec06c-owned-probe-worker.py'
     ],{timeout:30000});
+    doCase('linux-os-owned-kernel-manager-syntax','python3',[
+      '-m','py_compile','scripts/lu-sec06c-owned-kernel-manager.py'
+    ],{timeout:30000});
   }
 }
 function rustCases(){
@@ -253,13 +256,15 @@ if(mode==='verify'){
           source:['exact-head-inventory','security-contracts',
                   'sec06-js-syntax','linux-delegated-python-syntax',
                   'linux-root-owned-prototype-syntax',
-                  'linux-os-owned-git-syntax','linux-os-owned-probe-syntax'],
+                  'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
+                  'linux-os-owned-kernel-manager-syntax'],
           linux:['exact-head-inventory','security-contracts',
                  'sec06-js-syntax','linux-negative-python-syntax',
                  'linux-host-crash-python-syntax','linux-delegated-python-syntax',
                  'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
                  'linux-root-owned-unit-cancel','linux-root-owned-unit-host-crash',
                  'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
+                 'linux-os-owned-kernel-manager-syntax',
                  'core-native-full','desktop-ansf-native','worker-job-native',
                  'core-sec-regressions','desktop-sec-regressions',
                  'worker-sec-regressions',

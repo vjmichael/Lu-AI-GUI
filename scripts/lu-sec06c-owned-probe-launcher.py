@@ -26,6 +26,7 @@ RUN=pathlib.Path("/usr/bin/systemd-run")
 CTL=pathlib.Path("/usr/bin/systemctl")
 APPROVAL=pathlib.Path("/run/lu-sec06c")
 RECEIPTS=pathlib.Path("/var/lib/lu-sec06c/probe-receipts")
+MANAGER=pathlib.Path("/usr/libexec/lu/lu-sec06c-owned-kernel-manager")
 OPS={
   "ffprobe-wav": ("ffprobe",("wav",),256*1024*1024),
   "ffprobe-mp4": ("ffprobe",("mp4",),256*1024*1024),
@@ -144,126 +145,69 @@ def kernel_empty(stream):
     except OSError:return False
 def run(args):
     if os.geteuid()!=0 or "SUDO_UID" not in os.environ:
-        deny("only explicitly authorized sudo invocation may create service")
+        deny("finite probe broker needs original sudo admission")
     uid=int(os.environ["SUDO_UID"])
     if uid<=0 or pwd.getpwuid(uid).pw_uid!=uid:
-        deny("service must run as genuine original nonroot UID")
+        deny("finite media worker must run as original nonroot UID")
     if any(not IDENT.fullmatch(x) for x in [args.chat,args.turn,args.call]):
-        deny("original Lu task identity invalid")
+        deny("original human resource identity invalid")
     if not NONCE.fullmatch(args.nonce) or args.kind not in OPS:
-        deny("one-use nonce or finite kind invalid")
-    for file in [pathlib.Path(__file__).resolve(),WORKER,PYTHON,RUN,CTL]:
-        secure_file(file)
+        deny("not one of four finite reviewed probe kinds")
+    for f in (pathlib.Path(__file__).resolve(),WORKER,PYTHON,MANAGER,RUN,CTL):
+        secure_file(f)
     binary=pinned_binary(args.binary,args.binary_sha,args.kind)
     resource=approved_resource(args.file,args.kind,args.resource_sha)
     secure_directory(APPROVAL);secure_directory(RECEIPTS)
-    nonce=args.nonce
-    unit=f"lu-sec06c-probe-{nonce}.service"
-    receipt=RECEIPTS/(nonce+".receipt")
-    go=APPROVAL/(nonce+".go")
+    receipt=RECEIPTS/(args.nonce+".receipt")
+    go=APPROVAL/(args.nonce+".go")
     if receipt.exists() or go.exists():
-        deny("original one-use worker nonce already consumed")
+        deny("original probe nonce already consumed")
+    unit=f"lu-sec06c-probe-{args.nonce}.service"
+    # Unlike Git, this fixed broker has its own finite media-kind/resource
+    # arguments, SHA256 and root receipt type. The only systemd ExecStart
+    # is the SAME trusted root-owned kernel manager, which permits only its
+    # two separately reviewed first-party worker domains, never user CLI.
     command=[
-        str(RUN),"--system","--quiet","--pipe","--wait",
-        "--remain-after-exit",
+        str(RUN),"--system","--quiet","--wait","--pipe",
         "--no-ask-password","--service-type=exec",f"--unit={unit}",
-        f"--property=User={uid}","--property=Delegate=no",
+        "--property=User=root","--property=Delegate=yes",
         "--property=KillMode=control-group",
-        # The fixed first-party worker exits 93 on a denied/cancelled action;
-        # keep the unit available for a root-owned kernel-empty observation,
-        # but NEVER convert ExecMainStatus 93 to EFFECT=COMPLETED.
-        "--property=SuccessExitStatus=93",
-        "--property=ProtectControlGroups=yes",
-        "--property=NoNewPrivileges=yes",
-        "--property=CapabilityBoundingSet=",
-        "--property=RestrictSUIDSGID=yes",
         "--property=PrivateNetwork=yes",
+        "--property=NoNewPrivileges=yes",
+        "--property=CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL",
+        "--property=RestrictSUIDSGID=yes",
         "--property=TasksMax=32","--property=MemoryMax=536870912",
         "--property=RuntimeMaxSec=90",
-        str(PYTHON),str(WORKER),"--nonce",nonce,
-        "--kind",args.kind,"--binary",str(binary),
-        "--binary-sha",args.binary_sha,"--file",str(resource),
-        "--resource-sha",args.resource_sha,
+        str(PYTHON),str(MANAGER),"--domain","probe",
+        "--nonce",args.nonce,"--chat",args.chat,"--turn",args.turn,
+        "--call",args.call,"--uid",str(uid),
+        "--op",args.kind,"--binary",str(binary),
+        "--binary-sha",args.binary_sha,
+        "--file",str(resource),"--resource-sha",args.resource_sha,
     ]
-    # stdin carries only the original Lu-host lifetime: not model bytes.
-    process=subprocess.Popen(command,cwd="/",stdin=None,stdout=None,stderr=None)
-    group=None;events=None;started=False;result=99
-    kernel_verified=False
-    try:
-        until=time.monotonic()+20
-        while time.monotonic()<until:
-            if process.poll() is not None:
-                deny("systemd exited before first-worker kernel admission")
-            group=native_cgroup(unit)
-            if group is not None:break
-            time.sleep(.035)
-        if group is None:deny("system manager did not create OS-owned cgroup")
-        events=(group/"cgroup.events").open("r",encoding="ascii")
-        readable,_,_=select.select([sys.stdin.buffer],[],[],0)
-        if readable and not sys.stdin.buffer.read(1):
-            deny("original host died before first-worker approval")
-        root_record(go,"LU_SEC06C_GO_V1\n"+nonce+"\n")
-        started=True
-        # RemainAfterExit keeps the ORIGINAL kernel unit registered until the
-        # trusted manager observes an empty recursive subtree. --wait alone
-        # can unload cgroup.events before anyone can attest populated=0.
-        deadline=time.monotonic()+75
-        while time.monotonic()<deadline:
-            waiting,_,_=select.select([sys.stdin.buffer],[],[],0)
-            if waiting and not sys.stdin.buffer.read(1):
-                # Cancellation/host death: kernel kills the exact unit,
-                # then we independently demand its recursive empty event.
-                kill_exact_root_owned_subtree(group)
-                result=73
-                break
-            result=original_service_main(unit)
-            if result is not None:
-                break
-            if process.poll() is not None:
-                deny("systemd-run exited before original main completion")
-            time.sleep(.035)
-        else:
-            kill_exact_root_owned_subtree(group)
-            deny("original managed service exceeded bounded runtime")
-        if result!=0:
-            kill_exact_root_owned_subtree(group)
-        if not wait_populated_zero(events,15):
-            # Even a successful main process is NOT descendant containment.
-            kill_exact_root_owned_subtree(group)
-            result=73
-            if not wait_populated_zero(events,15):
-                deny("OS kernel never confirmed original recursive populated-zero")
-        kernel_verified=True
-    finally:
-        if group is not None and not kernel_verified:
-            try:kill_exact_root_owned_subtree(group)
-            except (OSError,RuntimeError):pass
-        if started or group is not None:
-            stopped=subprocess.run([str(CTL),"stop",unit],check=False,timeout=15,
-                stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-            if stopped.returncode!=0:kernel_verified=False
-        if process.poll() is None:
-            try:process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                process.kill();process.wait(timeout=5)
-        if go.exists():go.unlink()
-    # Completion was witnessed while the exact systemd unit still existed,
-    # before its stop/unload. A removed cgroup or stale log is never proof.
-    if not kernel_verified:
-        deny("kernel populated-zero never witnessed before OS unit removal")
-    events.close()
-    original="\n".join([
+    process=subprocess.run(command,cwd="/",timeout=105,check=False)
+    if not receipt.is_file() or receipt.is_symlink():
+        deny("root-owned kernel manager issued no independent media receipt")
+    st=receipt.stat()
+    if st.st_uid!=0 or st.st_nlink!=1 or st.st_mode&0o022 or st.st_size>1024:
+        deny("original root-owned probe receipt is altered")
+    with receipt.open("r",encoding="ascii") as f:
+        proof=f.read(1025)
+    prefix="\n".join([
         "LU_SEC06C_OWNED_PROBE_V1",
-        "NONCE="+nonce,"CHAT="+args.chat,"TURN="+args.turn,
+        "NONCE="+args.nonce,"CHAT="+args.chat,"TURN="+args.turn,
         "CALL="+args.call,"KIND="+args.kind,
         "BINARY_SHA256="+args.binary_sha,
         "RESOURCE_SHA256="+args.resource_sha,
         "UNIT="+unit,"ORIGINAL_UID="+str(uid),
-        "KERNEL_EMPTY=1",
-        "EFFECT="+("COMPLETED" if result==0 else "INTERRUPTED"),""
+        "KERNEL_EMPTY=1","EFFECT=",
     ])
-    root_record(receipt,original)
-    return 0 if result==0 else 73
+    if proof==prefix+"COMPLETED\n" and process.returncode==0:
+        return 0
+    if proof==prefix+"INTERRUPTED\n" and process.returncode!=0:
+        return 73
+    deny("original probe OS process and root-owned kernel receipt disagree")
+
 def main():
     ap=argparse.ArgumentParser(allow_abbrev=False)
     for arg in ("nonce","chat","turn","call","kind","binary","binary_sha","file","resource_sha"):

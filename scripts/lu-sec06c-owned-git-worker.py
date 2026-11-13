@@ -54,24 +54,23 @@ def kernel_unit(nonce):
     rows = pathlib.Path("/proc/self/cgroup").read_text().splitlines()
     if len(rows) != 1 or not rows[0].startswith("0::/"):
         deny("missing genuine unified cgroup-v2 membership")
-    # ProtectControlGroups=yes creates a private cgroup namespace, where
-    # /proc/self/cgroup often shows 0::/. The privileged manager checks the
-    # original MainPID's full unit membership OUTSIDE this namespace before
-    # issuing a root-owned one-use GO file; the worker verifies that file.
+    # The trusted root systemd manager remains in the operation service;
+    # this unprivileged worker is pinned into a separate ROOT-owned leaf
+    # before dropping UID. Never accept a service root or / group.
     relative = rows[0][3:]
-    if relative != "/" and not relative.endswith(
-            "/lu-sec06c-git-" + nonce + ".service"):
-        deny("not running inside the protected systemd operation unit")
+    expected = ("/lu-sec06c-git-" + nonce + ".service/"
+                + "lu-sec06c-leaf-" + nonce)
+    if not relative.endswith(expected):
+        deny("not inside the exact separate root-owned worker leaf")
     group = (pathlib.Path("/sys/fs/cgroup") / relative.lstrip("/")).resolve(strict=True)
     if group.stat().st_uid == os.geteuid():
         deny("worker owns its own process-control boundary")
     procs = group / "cgroup.procs"
     if not procs.is_file() or os.access(procs, os.W_OK):
         deny("operation cgroup is writable to worker")
-    if relative != "/":
-        parent = group.parent / "cgroup.procs"
-        if not parent.is_file() or os.access(parent, os.W_OK):
-            deny("ancestor migration is writable to worker")
+    parent = group.parent / "cgroup.procs"
+    if group.parent.stat().st_uid != 0 or not parent.is_file() or os.access(parent, os.W_OK):
+        deny("original root-owned ancestor migration is writable to worker")
     # systemd ProtectControlGroups=yes makes this a read-only mount.
     mountinfo = pathlib.Path("/proc/self/mountinfo").read_text().splitlines()
     mounts = [r for r in mountinfo

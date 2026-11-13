@@ -80,13 +80,14 @@ test('SEC06 Linux original Core suite receives absolute host-pinned Git without 
   assert.equal(section.includes('--skip-ancestor-migration'),false);
 });
 
-test('SEC06C trusted OS-owned Git launch binds original journal nonce and finite root-managed worker',()=>{
+test('SEC06C fixed Git path binds original immutable journal nonce and finite nonroot worker',()=>{
   const host=readFileSync(join(root,'src-tauri/lu-core/src/native_background_process.rs'),'utf8');
   const native=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/os_owned_git.rs'),'utf8');
   const tasks=readFileSync(join(root,'src-tauri/lu-core/src/tasks.rs'),'utf8');
   const historical=readFileSync(join(root,'src-tauri/lu-core/src/agent_os_custody.rs'),'utf8');
   const launcher=readFileSync(join(root,'scripts/lu-sec06c-owned-git-launcher.py'),'utf8');
   const worker=readFileSync(join(root,'scripts/lu-sec06c-owned-git-worker.py'),'utf8');
+  const manager=readFileSync(join(root,'scripts/lu-sec06c-owned-kernel-manager.py'),'utf8');
   assert.match(host,/LinuxOsOwnedReviewedGit::spawn_if_installed/);
   assert.match(host,/bind_linux_os_owned_git_admission/);
   assert.match(host,/verify_original_kernel_receipt/);
@@ -102,18 +103,23 @@ test('SEC06C trusted OS-owned Git launch binds original journal nonce and finite
   assert.match(tasks,/Immutable Linux OS-owned admission/);
   assert.match(historical,/linux_os_owned_git_original_receipt/);
   assert.match(historical,/KERNEL_EMPTY=1/);
-  for(const text of ['--property=Delegate=no','--property=KillMode=control-group',
-    '--property=ProtectControlGroups=strict','--property=NoNewPrivileges=yes',
-    '--property=User=','root_owned_file(WORKER)','SUDO_UID',
-    'SEC06C_OS_BROKER_DENIED','cgroup.events']){
-    assert.ok(launcher.includes(text),'missing OS-owned manager contract '+text);
-  }
+  for(const attr of [
+    '--property=Delegate=yes','--property=User=root',
+    '--property=KillMode=control-group','--property=PrivateNetwork=yes',
+    '--property=NoNewPrivileges=yes','--property=TasksMax=32',
+    '--property=MemoryMax=536870912','--property=RuntimeMaxSec=90',
+    'root_owned_file(MANAGER)','SUDO_UID','str(MANAGER)',
+    'SEC06C_OS_BROKER_DENIED'
+  ])assert.ok(launcher.includes(attr),'missing fixed root-owned manager contract '+attr);
   assert.match(worker,/core\.fsmonitor=false/);
-  assert.match(worker,/start_new_session|Popen/);
+  assert.match(worker,/Popen/);
   assert.match(worker,/authorized_go\(args\.nonce\)/);
   assert.match(worker,/original Lu host died before one-use admission/);
   assert.match(worker,/original Lu host cancelled before reviewed Git spawn/);
-  assert.match(launcher,/original host lifetime ended before systemd GO/);
+  assert.match(worker,/exact separate root-owned worker leaf/);
+  assert.match(manager,/GIT_WORKER/);
+  assert.match(manager,/PROBE_WORKER/);
+  assert.match(manager,/OPS=\{/);
   assert.match(worker,/SEC06C_GIT_WORKER_BLOCKED/);
   assert.doesNotMatch(launcher,/shell=True|subprocess\.getoutput|os\.system\(/);
   assert.doesNotMatch(worker,/shell=True|os\.system\(/);
@@ -121,71 +127,76 @@ test('SEC06C trusted OS-owned Git launch binds original journal nonce and finite
   assert.match(gate,/linux-ancestor-migration/);
 });
 
-test('SEC06C kernel populated-zero is witnessed before root-owned service teardown, never inferred after removal',()=>{
-  for(const path of [
-    'scripts/lu-sec06c-owned-git-launcher.py',
-    'scripts/lu-sec06c-owned-probe-launcher.py'
-  ]){
-    const source=readFileSync(join(root,path),'utf8');
-    assert.match(source,/--remain-after-exit/);
-    assert.match(source,/--wait/);
-    assert.match(source,/--property=SuccessExitStatus=93/);
-    assert.match(source,/--property=KillMode=control-group/);
-    assert.match(source,/--property=ProtectControlGroups=yes/);
-    assert.match(source,/def original_service_main\(/);
-    assert.match(source,/ExecMainCode/);
-    assert.match(source,/ExecMainStatus/);
-    assert.match(source,/SubState/);
-    assert.match(source,/def wait_populated_zero\(/);
-    assert.match(source,/def kill_exact_root_owned_subtree\(/);
-    assert.match(source,/cgroup\.kill/);
-    assert.match(source,/if not wait_populated_zero\(events,15\)/);
-    assert.match(source,/kernel_verified=True/);
-    assert.match(source,/if not kernel_verified:/);
-    const verified=source.indexOf('kernel_verified=True');
-    const stop=source.indexOf('stopped=subprocess.run(');
-    assert.ok(verified>=0&&stop>verified,
-      'original kernel proof must precede systemd stop/unload in '+path);
-    assert.doesNotMatch(source,/if events is None or not kernel_empty\(events\):/);
-    assert.match(source,/EFFECT=/);
-  }
-  assert.match(gate,/linux-ancestor-migration/);
+test('SEC06C trusted root supervisor pins the separate leaf and proves populated-zero while it exists',()=>{
+  const manager=readFileSync(join(root,'scripts/lu-sec06c-owned-kernel-manager.py'),'utf8');
+  assert.match(manager,/def first_party_unit\(/);
+  assert.match(manager,/Delegate=yes/);
+  assert.match(manager,/original systemd service or ancestor is not root-owned/);
+  assert.match(manager,/def preexec_leaf\(/);
+  assert.match(manager,/with \(leaf\/"cgroup\.procs"\)\.open\("w"/);
+  assert.match(manager,/CLONE_NEWNS/);
+  assert.match(manager,/MS_REMOUNT\|MS_BIND\|MS_RDONLY/);
+  assert.match(manager,/PR_SET_NO_NEW_PRIVS/);
+  assert.match(manager,/os\.setgroups\(\[\]\)/);
+  assert.match(manager,/os\.setgid\(gid\)/);
+  assert.match(manager,/os\.setuid\(uid\)/);
+  assert.match(manager,/def wait_kernel_zero\(/);
+  assert.match(manager,/if not wait_kernel_zero\(events,15\)/);
+  assert.match(manager,/leaf\/"cgroup\.kill"/);
+  assert.match(manager,/os\.pidfd_open\(child\.pid\)/);
+  assert.match(manager,/def negative_original_ancestor_probe\(/);
+  assert.match(manager,/start_new_session=True/);
+  assert.match(manager,/parent\/"cgroup\.procs"/);
+  assert.match(manager,/SEC06C_ANCESTOR_ESCAPE_SUCCEEDED/);
+  assert.match(manager,/attacker\.wait\(timeout=10\)/);
+  assert.match(manager,/same-UID hostile-ancestor attack/);
+  assert.match(manager,/original user\/call identity invalid|original chat\/turn hashes invalid/);
+  assert.match(manager,/kernel_verified=True/);
+  assert.match(manager,/if kernel_verified:leaf\.rmdir\(\)/);
+  assert.match(manager,/original_root_file\(receipt,evidence\)/);
+  assert.match(manager,/NoNewPrivileges|no new privileges/);
+  assert.match(manager,/no arbitrary executable|No arbitrary executable/);
+  const observed=manager.indexOf('kernel_verified=True');
+  const removed=manager.indexOf('if kernel_verified:leaf.rmdir()');
+  const receipt=manager.indexOf('original_root_file(receipt,evidence)');
+  assert.ok(observed>=0&&removed>observed&&receipt>removed,
+    'no release receipt before genuine kernel leaf emptiness and removal');
+  assert.doesNotMatch(manager,/shell=True|os\.system\(/);
   assert.match(gate,/linux-guardian-death/);
+  assert.match(gate,/linux-ancestor-migration/);
 });
 
-test('SEC06C has separate finite root-owned FFprobe/PDFInfo/ExifTool service boundary',()=>{
+test('SEC06C finite reviewed FFprobe/PDFInfo/ExifTool remain separate non-generic OS operations',()=>{
   const native=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/os_owned_probe.rs'),'utf8');
   const launcher=readFileSync(join(root,'scripts/lu-sec06c-owned-probe-launcher.py'),'utf8');
   const worker=readFileSync(join(root,'scripts/lu-sec06c-owned-probe-worker.py'),'utf8');
+  const manager=readFileSync(join(root,'scripts/lu-sec06c-owned-kernel-manager.py'),'utf8');
   const host=readFileSync(join(root,'src-tauri/lu-core/src/native_background_process.rs'),'utf8');
   const tasks=readFileSync(join(root,'src-tauri/lu-core/src/tasks.rs'),'utf8');
   const custody=readFileSync(join(root,'src-tauri/lu-core/src/agent_os_custody.rs'),'utf8');
   assert.match(native,/SEC06C forbids arbitrary media\/metadata argv/);
-  assert.match(native,/ffprobe-wav/);
-  assert.match(native,/ffprobe-mp4/);
-  assert.match(native,/pdfinfo-pdf/);
-  assert.match(native,/exiftool-image/);
+  for(const item of ['ffprobe-wav','ffprobe-mp4','pdfinfo-pdf','exiftool-image']){
+    assert.ok(native.includes(item));assert.ok(manager.includes(item));assert.ok(worker.includes(item));
+  }
   assert.match(native,/\/usr\/libexec\/lu\/lu-sec06c-launch-probe/);
   assert.match(host,/LinuxOsOwnedReviewedProbe::spawn_if_installed/);
   assert.match(host,/bind_linux_os_owned_probe_admission/);
-  assert.match(host,/os_owned_probe/);
   assert.match(tasks,/Immutable Linux OS-owned probe admission/);
   assert.match(custody,/linux_os_owned_probe_original_receipt/);
-  for(const attr of ['Delegate=no','KillMode=control-group',
-    'ProtectControlGroups=yes','PrivateNetwork=yes','NoNewPrivileges=yes',
+  for(const attr of ['Delegate=yes','KillMode=control-group',
+    'User=root','PrivateNetwork=yes','NoNewPrivileges=yes',
     'CapabilityBoundingSet=','TasksMax=32','MemoryMax=536870912',
-    'secure_file','secure_directory','kernel_empty','cgroup.events']){
-    assert.ok(launcher.includes(attr),'missing original kernel/probe contract '+attr);
+    'secure_file','secure_directory','str(MANAGER)']){
+    assert.ok(launcher.includes(attr),'missing finite root manager contract '+attr);
   }
   assert.match(worker,/os\.O_NOFOLLOW/);
   assert.match(worker,/pass_fds=\(fd,\)/);
   assert.match(worker,/hashlib\.sha256/);
   assert.match(worker,/select\.select/);
-  assert.match(worker,/ffprobe-wav/);
-  assert.match(worker,/ffprobe-mp4/);
-  assert.match(worker,/pdfinfo-pdf/);
-  assert.match(worker,/exiftool-image/);
   assert.match(worker,/approved_first_launch/);
+  assert.match(worker,/exact separate root-owned media leaf/);
+  assert.match(manager,/input_resource\(/);
+  assert.match(manager,/Root never opens user file bytes/);
   assert.doesNotMatch(launcher,/shell=True|os\.system\(/);
   assert.doesNotMatch(worker,/shell=True|os\.system\(/);
   assert.match(gate,/linux-os-owned-probe-syntax/);
@@ -301,6 +312,7 @@ test('SEC06 verifier rejects changed original native log with correct head and l
       'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
       'linux-root-owned-unit-cancel','linux-root-owned-unit-host-crash',
       'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
+      'linux-os-owned-kernel-manager-syntax',
       'core-native-full','desktop-ansf-native','worker-job-native',
       'core-sec-regressions','desktop-sec-regressions',
       'worker-sec-regressions',

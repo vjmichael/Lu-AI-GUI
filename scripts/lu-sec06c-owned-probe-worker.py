@@ -47,14 +47,16 @@ def kernel_guard(nonce):
     if len(rows)!=1 or not rows[0].startswith("0::/"):
         deny("unified kernel cgroup missing")
     group=rows[0][3:]
-    if group!="/" and not group.endswith("/lu-sec06c-probe-"+nonce+".service"):
-        deny("not original root-owned operation unit")
+    expected=("/lu-sec06c-probe-"+nonce+".service/"
+              "lu-sec06c-leaf-"+nonce)
+    if not group.endswith(expected):
+        deny("not in the exact separate root-owned media leaf")
     mount=pathlib.Path("/sys/fs/cgroup")
     p=(mount/group.lstrip("/")).resolve(strict=True)
     if p.stat().st_uid==os.geteuid() or os.access(p/"cgroup.procs",os.W_OK):
         deny("worker controls operation cgroup")
-    if group!="/" and os.access(p.parent/"cgroup.procs",os.W_OK):
-        deny("worker can migrate into ancestor")
+    if p.parent.stat().st_uid!=0 or os.access(p.parent/"cgroup.procs",os.W_OK):
+        deny("worker can migrate into root-owned ancestor")
     mounts=[x for x in pathlib.Path("/proc/self/mountinfo").read_text().splitlines()
         if " - cgroup2 " in x and x.split(" - ",1)[0].split()[4]=="/sys/fs/cgroup"]
     if len(mounts)!=1 or "ro" not in mounts[0].split(" - ",1)[0].split()[5].split(","):

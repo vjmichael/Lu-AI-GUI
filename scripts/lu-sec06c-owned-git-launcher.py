@@ -25,6 +25,7 @@ RUN = pathlib.Path("/usr/bin/systemd-run")
 CTL = pathlib.Path("/usr/bin/systemctl")
 READY = pathlib.Path("/run/lu-sec06c")
 RECEIPTS = pathlib.Path("/var/lib/lu-sec06c/receipts")
+MANAGER = pathlib.Path("/usr/libexec/lu/lu-sec06c-owned-kernel-manager")
 PROOF = "LU_SEC06C_OWNED_GIT_V1"
 OPS = {"head", "status", "branch", "count"}
 ID = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
@@ -156,149 +157,78 @@ def create_root_file(path, payload):
         os.close(directory)
 
 def run(args):
-    if os.geteuid() != 0 or "SUDO_UID" not in os.environ:
-        deny("broker needs explicit OS approval, not a root worker process")
-    caller = int(os.environ["SUDO_UID"])
-    if caller <= 0 or caller == 0 or pwd.getpwuid(caller).pw_uid != caller:
-        deny("caller is not a valid original nonroot user")
-    if any(not ID.fullmatch(x) for x in [args.chat, args.turn, args.call]):
-        deny("invalid original host authority identity")
+    # The only privileged surface is this installed, root-owned *finite* Git
+    # launcher; it never accepts an arbitrary manager/worker program, shell
+    # command or model-selected systemd unit.
+    if os.geteuid()!=0 or "SUDO_UID" not in os.environ:
+        deny("fixed Git broker requires original sudo admission")
+    caller=int(os.environ["SUDO_UID"])
+    if caller<=0 or pwd.getpwuid(caller).pw_uid!=caller:
+        deny("original Lu caller must remain nonroot")
+    if any(not ID.fullmatch(x) for x in [args.chat,args.turn,args.call]):
+        deny("original human task identity invalid")
     if not NONCE.fullmatch(args.nonce) or args.op not in OPS:
-        deny("invalid one-use native operation")
-    root_owned_file(pathlib.Path(__file__).resolve())
-    root_owned_file(WORKER)
-    root_owned_file(WORKER_PYTHON)
-    root_owned_file(RUN)
-    root_owned_file(CTL)
-    git = pinned_git(args.git, args.sha)
-    repo = pathlib.Path(args.repo).resolve(strict=True)
+        deny("original one-use Git operation invalid")
+    for file in (pathlib.Path(__file__).resolve(),WORKER,WORKER_PYTHON,
+                 MANAGER,RUN,CTL):
+        root_owned_file(file)
+    git=pinned_git(args.git,args.sha)
+    repo=pathlib.Path(args.repo).resolve(strict=True)
     if not pathlib.Path(args.repo).is_absolute() or not repo.is_dir():
-        deny("untrusted reviewed repository")
-    if not (repo.joinpath(".git").exists()):
-        deny("reviewed repository not enrolled")
+        deny("reviewed Git repository not canonical")
+    if not (repo/".git").is_dir():
+        deny("reviewed Git repository not enrolled")
     root_owned_dir(READY)
     root_owned_dir(RECEIPTS)
-    nonce = args.nonce
-    unit = f"lu-sec06c-git-{nonce}.service"
-    result_path = RECEIPTS / (nonce + ".receipt")
-    go = READY / (nonce + ".go")
-    if result_path.exists() or go.exists():
-        deny("one-use operation nonce has already been admitted")
-    worker_argv = [
-        str(WORKER_PYTHON), str(WORKER),
-        "--nonce", nonce, "--git", str(git),
-        "--sha", args.sha, "--repo", str(repo), "--op", args.op,
-    ]
-    service = [
-        str(RUN), "--system", "--quiet", "--pipe", "--wait",
-        "--remain-after-exit",
-        "--service-type=exec", "--no-ask-password", f"--unit={unit}",
-        f"--property=User={caller}", "--property=Delegate=no",
+    receipt=RECEIPTS/(args.nonce+".receipt")
+    go=READY/(args.nonce+".go")
+    if receipt.exists() or go.exists():
+        deny("original Git nonce already consumed")
+    unit=f"lu-sec06c-git-{args.nonce}.service"
+    # Root-owned SYSTEMD outer cgroup. The separately installed first-party
+    # root supervisor stays in this unit, creates one ROOT-owned child leaf
+    # under Delegate=yes and drops the reviewed worker to the original UID
+    # inside that leaf. The unprivileged worker can neither move to the root
+    # parent nor make cgroupfs writable in its private mount namespace.
+    argv=[
+        str(RUN),"--system","--quiet","--wait","--pipe",
+        "--no-ask-password","--service-type=exec",f"--unit={unit}",
+        "--property=User=root","--property=Delegate=yes",
         "--property=KillMode=control-group",
-        # The fixed first-party worker exits 93 on a denied/cancelled action;
-        # keep the unit available for a root-owned kernel-empty observation,
-        # but NEVER convert ExecMainStatus 93 to EFFECT=COMPLETED.
-        "--property=SuccessExitStatus=93",
-        "--property=ProtectControlGroups=yes",
+        "--property=PrivateNetwork=yes",
         "--property=NoNewPrivileges=yes",
-        "--property=CapabilityBoundingSet=",
+        "--property=CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL",
         "--property=RestrictSUIDSGID=yes",
-        f"--working-directory={repo}", *worker_argv,
+        "--property=TasksMax=32","--property=MemoryMax=536870912",
+        "--property=RuntimeMaxSec=90",
+        str(WORKER_PYTHON),str(MANAGER),"--domain","git",
+        "--nonce",args.nonce,"--chat",args.chat,"--turn",args.turn,
+        "--call",args.call,"--uid",str(caller),
+        "--git",str(git),"--sha",args.sha,
+        "--repo",str(repo),"--op",args.op,
     ]
-    process = subprocess.Popen(service, stdin=None, stdout=None, stderr=None,
-                               cwd="/")
-    cgroup = None
-    events = None
-    started = False
-    status = 99
-    kernel_verified=False
-    try:
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            if process.poll() is not None:
-                deny("system manager exited before secure worker admission")
-            cgroup = kernel_group(unit)
-            if cgroup is not None:
-                break
-            time.sleep(.04)
-        if cgroup is None:
-            deny("system manager never created a genuine root-owned unit")
-        # Pin the genuine kernel events FD *before* the unit is stopped.
-        events = (cgroup / "cgroup.events").open("r", encoding="ascii")
-        if not (cgroup / "cgroup.kill").is_file():
-            deny("systemd operation lacks real kernel cgroup.kill")
-        # The host's one-use original lifetime pipe must still be live at
-        # the exact authorization point; SIGKILL/EOF forbids first launch.
-        waiting, _, _ = select.select([sys.stdin.buffer], [], [], 0)
-        if waiting and not sys.stdin.buffer.read(1):
-            deny("original host lifetime ended before systemd GO")
-        create_root_file(go, "LU_SEC06C_GO_V1\n" + nonce + "\n")
-        started = True
-        # RemainAfterExit keeps the ORIGINAL kernel unit registered until the
-        # trusted manager observes an empty recursive subtree. --wait alone
-        # can unload cgroup.events before anyone can attest populated=0.
-        deadline=time.monotonic()+75
-        while time.monotonic()<deadline:
-            waiting,_,_=select.select([sys.stdin.buffer],[],[],0)
-            if waiting and not sys.stdin.buffer.read(1):
-                # Cancellation/host death: kernel kills the exact unit,
-                # then we independently demand its recursive empty event.
-                kill_exact_root_owned_subtree(cgroup)
-                status=73
-                break
-            status=original_service_main(unit)
-            if status is not None:
-                break
-            if process.poll() is not None:
-                deny("systemd-run exited before original main completion")
-            time.sleep(.035)
-        else:
-            kill_exact_root_owned_subtree(cgroup)
-            deny("original managed service exceeded bounded runtime")
-        if status!=0:
-            kill_exact_root_owned_subtree(cgroup)
-        if not wait_populated_zero(events,15):
-            # Even a successful main process is NOT descendant containment.
-            kill_exact_root_owned_subtree(cgroup)
-            status=73
-            if not wait_populated_zero(events,15):
-                deny("OS kernel never confirmed original recursive populated-zero")
-        kernel_verified=True
-    finally:
-        # Only the exact random unit created here is stopped. Neither
-        # a model-selected unit nor an arbitrary PID can be signalled.
-        if cgroup is not None and not kernel_verified:
-            try:kill_exact_root_owned_subtree(cgroup)
-            except (OSError,RuntimeError):pass
-        if started or cgroup is not None:
-            stopped=subprocess.run([str(CTL), "stop", unit], check=False, timeout=15,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if stopped.returncode!=0:
-                kernel_verified=False
-        if process.poll() is None:
-            try:
-                process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-        if go.exists():
-            go.unlink()
-    # Completion was witnessed while the exact systemd unit still existed,
-    # before its stop/unload. A removed cgroup or stale log is never proof.
-    if not kernel_verified:
-        deny("kernel populated-zero never witnessed before OS unit removal")
-    events.close()
-    # This historical cleanup receipt is owned by root in a root-owned
-    # directory, not by a worker/model or a mutable Lu profile.
-    receipt = "\n".join([
-        PROOF, "NONCE=" + nonce, "CHAT=" + args.chat,
-        "TURN=" + args.turn, "CALL=" + args.call,
-        "GIT_SHA256=" + args.sha, "UNIT=" + unit,
-        "ORIGINAL_UID=" + str(caller), "KERNEL_EMPTY=1",
-        "EFFECT=" + ("COMPLETED" if status == 0 else "INTERRUPTED"), "",
+    process=subprocess.run(argv,cwd="/",timeout=105,check=False)
+    # A systemd-run client success is *never* independent kernel custody.
+    # Read exactly the root supervisor's own one-use receipt and original
+    # kernel leaf fields; immutable Lu journal verifies it separately too.
+    if not receipt.is_file() or receipt.is_symlink():
+        deny("root-owned inner kernel supervisor issued no original receipt")
+    st=receipt.stat()
+    if st.st_uid!=0 or st.st_nlink!=1 or st.st_mode&0o022 or st.st_size>1024:
+        deny("kernel supervisor receipt is untrusted")
+    with receipt.open("r",encoding="ascii") as f:
+        proof=f.read(1025)
+    expected="\n".join([
+        PROOF,"NONCE="+args.nonce,"CHAT="+args.chat,"TURN="+args.turn,
+        "CALL="+args.call,"GIT_SHA256="+args.sha,
+        "UNIT="+unit,"ORIGINAL_UID="+str(caller),
+        "KERNEL_EMPTY=1","EFFECT=",
     ])
-    create_root_file(result_path, receipt)
-    return 0 if status == 0 else 73
+    if proof==expected+"COMPLETED\n" and process.returncode==0:
+        return 0
+    if proof==expected+"INTERRUPTED\n" and process.returncode!=0:
+        return 73
+    deny("original fixed Git OS process and root kernel receipt disagree")
 
 def main():
     ap = argparse.ArgumentParser(allow_abbrev=False)

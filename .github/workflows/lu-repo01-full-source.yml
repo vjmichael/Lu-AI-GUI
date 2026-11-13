@@ -2931,7 +2931,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           node scripts/verify-source-tree.mjs
-          python3 -m py_compile scripts/lu-sec06c-owned-git-launcher.py scripts/lu-sec06c-owned-git-worker.py
+          python3 -m py_compile scripts/lu-sec06c-owned-git-launcher.py scripts/lu-sec06c-owned-git-worker.py scripts/lu-sec06c-owned-kernel-manager.py
           cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_git -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c --no-run
       - name: Provision fixed root-owned CI-only native broker boundary
@@ -2943,6 +2943,7 @@ jobs:
           sudo install -d -o root -g root -m 0755 /usr/libexec/lu
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-launcher.py /usr/libexec/lu/lu-sec06c-launch-git
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
           printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-ci >/dev/null
           sudo chmod 0440 /etc/sudoers.d/lu-sec06c-ci
           sudo visudo -cf /etc/sudoers.d/lu-sec06c-ci
@@ -2995,7 +2996,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
           node scripts/verify-source-tree.mjs
-          python3 -m py_compile scripts/lu-sec06c-owned-probe-launcher.py scripts/lu-sec06c-owned-probe-worker.py
+          python3 -m py_compile scripts/lu-sec06c-owned-probe-launcher.py scripts/lu-sec06c-owned-probe-worker.py scripts/lu-sec06c-owned-kernel-manager.py
           cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_probe -- --nocapture
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c --no-run
       - name: Provision only reviewed finite probe binaries and fixed test-only OS broker
@@ -3007,6 +3008,7 @@ jobs:
           sudo install -d -o root -g root -m 0755 /usr/libexec/lu
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-launcher.py /usr/libexec/lu/lu-sec06c-launch-probe
           sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-worker.py /usr/libexec/lu/lu-sec06c-owned-probe-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
           printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-probe *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-probe-ci >/dev/null
           sudo chmod 0440 /etc/sudoers.d/lu-sec06c-probe-ci
           sudo visudo -cf /etc/sudoers.d/lu-sec06c-probe-ci
