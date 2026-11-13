@@ -400,6 +400,9 @@ fn valid_change(previous: Option<JobPhase>, next: JobPhase) -> bool {
             | (Some(JobPhase::Prepared), JobPhase::Cancelled)
             | (Some(JobPhase::Authorized), JobPhase::AdmissionPending)
             | (Some(JobPhase::Authorized), JobPhase::Cancelled)
+            // FIN-04W2-C: authenticated service may have reserved a
+            // one-use admission while the host loses the connection.
+            | (Some(JobPhase::Authorized), JobPhase::RecoveryRequired)
             | (Some(JobPhase::AdmissionPending), JobPhase::Running)
             | (Some(JobPhase::AdmissionPending), JobPhase::Denied)
             | (Some(JobPhase::AdmissionPending), JobPhase::RecoveryRequired)
@@ -1069,7 +1072,8 @@ impl Supervisor {
             .clone();
         if !matches!(
             job.phase,
-            JobPhase::AdmissionPending
+            JobPhase::Authorized
+                | JobPhase::AdmissionPending
                 | JobPhase::Running
                 | JobPhase::ReleasePending
                 | JobPhase::CancelRequested
