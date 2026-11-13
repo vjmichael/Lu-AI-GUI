@@ -73,6 +73,9 @@ use windows_sys::Win32::{
     },
 };
 
+#[cfg(all(windows, debug_assertions, feature = "fin04w-ci-bridge"))]
+#[path = "windows_fin04w_bridge.rs"]
+pub(crate) mod fin04w;
 #[cfg(all(feature = "lsp-transport", feature = "protected-recovery-service"))]
 #[path = "windows_lsp_worker.rs"]
 pub mod lsp_native;
