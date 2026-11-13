@@ -27,6 +27,10 @@ mod fin04w2_protocol;
 // separate identity/ACL/WFP/service custody must precede any debugger launch.
 #[cfg(all(windows, debug_assertions, feature = "fin04w2-protocol"))]
 mod windows_fin04w2_kernel;
+// Separate SCM-only debugger broker, with no worker launch or IPC until the
+// Windows ACL/WFP/exact-Job and authenticated protocol gates are complete.
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
+pub mod windows_fin04w2_service;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
 pub mod live_output;
