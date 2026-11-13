@@ -123,7 +123,8 @@ def stage(label: str, argv: list[str], target: str) -> bool:
                     if item.get("success") is True:
                         got_launch = True
                     else:
-                        raw_error = item.get("body", {}).get("error", {})
+                        body = item.get("body")
+                        raw_error = body.get("error", {}) if isinstance(body, dict) else {}
                         detail = (raw_error.get("format", "") if isinstance(raw_error, dict)
                                   else str(raw_error))
                         failure = classify(str(detail) + " " + str(item.get("message", "")))
