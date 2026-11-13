@@ -14,7 +14,7 @@ use crate::{
     live_output::LiveOutput,
     snapshot::{verify_input, PublishedInput},
     windows_broker::TrustedBroker,
-    windows_cap_tree::{audit_tree, digest_tree, live_output_quota, publish_into_native_parent},
+    windows_cap_tree::{audit_tree, digest_tree, live_output_quota, publish_into_native_parent, publish_closed_compiler_output},
     JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
@@ -281,6 +281,7 @@ fn publish_output(
     child_output: &Path,
     trusted_native_parent: &Path,
     id: &str,
+    compiler_build: bool,
 ) -> Result<(PathBuf, u64, String), SupervisorError> {
     if !valid_job_id(id) || !clean_meta(trusted_native_parent)?.is_dir() {
         return Err(denied());
@@ -290,20 +291,26 @@ fn publish_output(
     if parent.starts_with(&source) || source.starts_with(&parent) {
         return Err(denied());
     }
-    let (bytes, original_hash) = output_seal(child_output)?;
-    // The native parent and newly created job directory are pinned by
-    // cap_std handles until all bytes have been copied and re-sealed.
-    let (published_bytes, published_hash) = publish_into_native_parent(
-        child_output,
-        &parent,
-        OsStr::new(id),
-        MAX_OUTPUT_FILES,
-        MAX_OUTPUT_BYTES,
-        MAX_OUTPUT_FILE_BYTES,
-    )?;
-    if original_hash != published_hash || bytes != published_bytes {
-        return Err(denied());
-    }
+    // Cargo's native rust_build emits two NTFS names for the same binary.
+    // Only this exact recipe can prove the complete in-root alias group and
+    // publish independent one-link copies. All other recipes and ALL staged
+    // toolchains/source input retain the original strict nNumberOfLinks=1 rule.
+    let (published_bytes, published_hash) = if compiler_build {
+        publish_closed_compiler_output(
+            child_output, &parent, OsStr::new(id),
+            MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES, MAX_OUTPUT_FILE_BYTES,
+        )?
+    } else {
+        let (bytes, original_hash) = output_seal(child_output)?;
+        let (published_bytes, published_hash) = publish_into_native_parent(
+            child_output, &parent, OsStr::new(id),
+            MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES, MAX_OUTPUT_FILE_BYTES,
+        )?;
+        if original_hash != published_hash || bytes != published_bytes {
+            return Err(denied());
+        }
+        (published_bytes, published_hash)
+    };
     Ok((parent.join(id), published_bytes, published_hash))
 }
 
@@ -1532,7 +1539,7 @@ where
     let publication = if stopped {
         None
     } else {
-        match publish_output(&output, &private_parent, job_id) {
+        match publish_output(&output, &private_parent, job_id, plan.recipe_id == "rust_build") {
             Ok(published) => {
                 acceptance_trace("terminal_output_published_and_resealed");
                 Some(published)
