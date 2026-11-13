@@ -557,10 +557,22 @@ pub(crate) fn authenticate_client_from_kernel_pipe(
     if unsafe { GetNamedPipeClientProcessId(pipe, &mut pid) } == 0 || pid == 0 {
         return Err(denied());
     }
-    let process = Handle::new(unsafe {
-        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid)
-    })?;
-    let created = process_creation(process.0)?;
+    // The restricted service must NOT try to OpenProcess on a foreign
+    // interactive user's process using its own LocalService token. The
+    // original recovery service already impersonates the *kernel-attested*
+    // named-pipe client before this exact operation. Repeat that narrow
+    // query here, reverting BEFORE original client/receipt authentication.
+    // Do not request more token rights or grant the service ambient access.
+    let created = {
+        if unsafe { ImpersonateNamedPipeClient(pipe) } == 0 {
+            return Err(denied());
+        }
+        let _revert = Impersonation;
+        let process = Handle::new(unsafe {
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid)
+        })?;
+        process_creation(process.0)?
+    };
     authenticate_client(
         pipe, pid, created, approved_host_path,
         approved_host_sha256, approved_host_user_sid,
