@@ -22,7 +22,7 @@ use windows_sys::Win32::{
         GetTokenInformation, ImpersonateLoggedOnUser, RevertToSelf, SecurityImpersonation,
         TokenImpersonation,
         IsTokenRestricted, IsValidSid, SetTokenInformation, TokenIntegrityLevel,
-        TokenIsAppContainer, SID_AND_ATTRIBUTES,
+        TokenIsAppContainer, TokenRestrictedSids, SID_AND_ATTRIBUTES, TOKEN_GROUPS,
         TOKEN_MANDATORY_LABEL, TOKEN_DUPLICATE, TOKEN_ASSIGN_PRIMARY,
         TOKEN_ADJUST_DEFAULT, TOKEN_IMPERSONATE,
         TOKEN_QUERY, DISABLE_MAX_PRIVILEGE, LUA_TOKEN,
@@ -87,8 +87,38 @@ fn low_sid() -> Result<(Vec<usize>, u32), SupervisorError> {
     Ok((memory, length))
 }
 
-fn verify_token(token: HANDLE) -> Result<(), SupervisorError> {
-    if unsafe { IsTokenRestricted(token) } == 0 {
+fn verify_token(token: HANDLE, package_sid: windows_sys::Win32::Security::PSID) -> Result<(), SupervisorError> {
+    if package_sid.is_null() || unsafe { IsValidSid(package_sid) } == 0
+        || unsafe { IsTokenRestricted(token) } == 0
+    {
+        return Err(denied());
+    }
+    let mut group_len=0u32;
+    unsafe { GetTokenInformation(token, TokenRestrictedSids, ptr::null_mut(), 0, &mut group_len); }
+    if group_len < size_of::<TOKEN_GROUPS>() as u32 || group_len > 4096 {
+        return Err(denied());
+    }
+    let mut group_data=vec![0usize; (group_len as usize).div_ceil(size_of::<usize>())];
+    let mut observed_groups=0u32;
+    if unsafe {
+        GetTokenInformation(token, TokenRestrictedSids, group_data.as_mut_ptr().cast(),
+            group_len, &mut observed_groups)
+    } == 0 || observed_groups != group_len {
+        return Err(denied());
+    }
+    let groups=unsafe { &*(group_data.as_ptr() as *const TOKEN_GROUPS) };
+    if groups.GroupCount != 2 {
+        return Err(denied());
+    }
+    let entries=unsafe { std::slice::from_raw_parts(groups.Groups.as_ptr(), 2) };
+    let expected_global = any_package_sid()?;
+    let global_sid = expected_global.as_ptr().cast_mut().cast();
+    let found_package=entries.iter().any(|g| !g.Sid.is_null()
+        && unsafe { EqualSid(g.Sid,package_sid) }!=0);
+    let found_global=entries.iter().any(|g| !g.Sid.is_null()
+        && unsafe { EqualSid(g.Sid,global_sid) }!=0);
+    if !found_package || !found_global
+        || unsafe { EqualSid(package_sid,global_sid) } != 0 {
         return Err(denied());
     }
     let mut appcontainer = 1_u32;
@@ -128,6 +158,17 @@ fn verify_token(token: HANDLE) -> Result<(), SupervisorError> {
     Ok(())
 }
 
+fn any_package_sid() -> Result<Vec<usize>, SupervisorError> {
+    let mut any_package_sid=vec![0usize; 96usize.div_ceil(size_of::<usize>())];
+    let mut any_package_size=96u32;
+    if unsafe {
+        CreateWellKnownSid(WinBuiltinAnyPackageSid, ptr::null_mut(),
+            any_package_sid.as_mut_ptr().cast(), &mut any_package_size)
+    } == 0 || any_package_size == 0 || any_package_size > 96 {
+        return Err(denied());
+    }
+    Ok(any_package_sid)
+}
 pub(crate) struct RestrictedPrimaryToken(OwnedToken);
 impl RestrictedPrimaryToken {
     pub(crate) fn create(package_sid: windows_sys::Win32::Security::PSID) -> Result<Self, SupervisorError> {
@@ -152,16 +193,7 @@ impl RestrictedPrimaryToken {
         // BUILTIN Users and the parent user's SID would let a restricted
         // process read unrelated same-user projects and must NOT be present
         // in the restricted allowlist.
-        let mut any_package_sid = vec![0usize; 96usize.div_ceil(size_of::<usize>())];
-        let mut any_package_size = 96u32;
-        if unsafe {
-            CreateWellKnownSid(
-                WinBuiltinAnyPackageSid, ptr::null_mut(),
-                any_package_sid.as_mut_ptr().cast(), &mut any_package_size,
-            )
-        } == 0 || any_package_size == 0 || any_package_size > 96 {
-            return Err(denied());
-        }
+        let mut any_package_sid=any_package_sid()?;
         let restricted_sids = [
             SID_AND_ATTRIBUTES { Sid: package_sid, Attributes: 0 },
             SID_AND_ATTRIBUTES { Sid: any_package_sid.as_mut_ptr().cast(), Attributes: 0 },
@@ -193,7 +225,7 @@ impl RestrictedPrimaryToken {
         } == 0 {
             return Err(denied());
         }
-        verify_token(restricted.0)?;
+        verify_token(restricted.0, package_sid)?;
         Ok(Self(restricted))
     }
     pub(crate) fn raw(&self) -> HANDLE {
@@ -209,6 +241,7 @@ impl RestrictedPrimaryToken {
 // categories are emitted; no source contents, absolute paths or token IDs.
 pub(crate) fn ci_probe_child_loader_access(
     child_process: HANDLE,
+    package_sid: windows_sys::Win32::Security::PSID,
     executable: &Path,
     working_dir: &Path,
 ) -> Result<(), SupervisorError> {
@@ -220,7 +253,7 @@ pub(crate) fn ci_probe_child_loader_access(
         return Err(denied());
     }
     let original = OwnedToken(original);
-    verify_token(original.0)?;
+    verify_token(original.0, package_sid)?;
     let mut raw = ptr::null_mut();
     if unsafe {
         DuplicateTokenEx(
@@ -311,13 +344,13 @@ pub(crate) fn ci_probe_child_loader_access(
     Ok(())
 }
 
-pub(crate) fn attest_child(process: HANDLE) -> Result<(), SupervisorError> {
+pub(crate) fn attest_child(process: HANDLE, package_sid: windows_sys::Win32::Security::PSID) -> Result<(), SupervisorError> {
     let mut token = ptr::null_mut();
     if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
         return Err(denied());
     }
     let token = OwnedToken(token);
-    verify_token(token.0)
+    verify_token(token.0, package_sid)
 }
 
 #[cfg(test)]

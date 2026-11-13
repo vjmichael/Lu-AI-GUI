@@ -745,7 +745,7 @@ fn spawn_contained_stdio(
     // Child already belongs to Job on return from CreateProcess.
     #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
     let token_verified = if fin04w {
-        super::fin04w::attest_child(process.0).is_ok()
+        super::fin04w::attest_child(process.0, profile.sid).is_ok()
     } else {
         verify_suspended_appcontainer_token(process.0, profile.sid).is_ok()
     };
@@ -1629,7 +1629,7 @@ fn start_windows_dap_inner(
     #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
     if fin04w {
         if let Err(reason) =
-            super::fin04w::ci_probe_child_loader_access(process.0, &executable, &workspace)
+            super::fin04w::ci_probe_child_loader_access(process.0, profile.sid, &executable, &workspace)
         {
             let _ = job.kill_and_verify();
             let _ = supervisor.native_quarantine_after_error(job_id);
