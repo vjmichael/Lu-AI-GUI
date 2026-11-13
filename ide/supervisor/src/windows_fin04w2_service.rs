@@ -11,6 +11,8 @@ use crate::{
     windows_service_security as security, JobPlan, SupervisorError,
 };
 use serde::Deserialize;
+#[cfg(feature="fin04w2-approved-fixed-exec")]
+use crate::fin04w2_authority;
 use std::{
     ffi::c_void, fs, io::Read, os::windows::fs::MetadataExt,
     path::{Path, PathBuf}, ptr,
@@ -65,6 +67,12 @@ struct InstalledAuditConfig {
     review_only_plan: JobPlan,
     review_only_plan_hash: String,
     review_only_nonce: String,
+    // An administrator-pinned original supervisor receipt path and native
+    // Job ID, never supplied by a pipe client. Only W2-C has these fields.
+    #[cfg(feature="fin04w2-approved-fixed-exec")]
+    original_supervisor_journal: PathBuf,
+    #[cfg(feature="fin04w2-approved-fixed-exec")]
+    original_job_id: String,
     // CI-only first-party fixture. This cannot be selected or influenced by
     // a named-pipe client; only the preinstalled private service.json pins it.
     #[cfg(feature = "fin04w2-contained-probe")]
@@ -103,7 +111,9 @@ impl InstalledAuditConfig {
             .take(MAX_CONFIG+1).read_to_end(&mut bytes).map_err(|_|denied())?;
         if bytes.len() as u64 > MAX_CONFIG { return Err(denied()); }
         let result: Self = serde_json::from_slice(&bytes).map_err(|_|denied())?;
-        if result.schema != "lu.ide.fin04w2.audit.v1"
+        if !(result.schema == "lu.ide.fin04w2.audit.v1"
+            || (cfg!(feature="fin04w2-approved-fixed-exec")
+                && result.schema == "lu.ide.fin04w2.approved-fixed.v1"))
             || result.service_name != NAME || result.endpoint != ENDPOINT
             || !result.approved_host_executable.is_absolute()
             || !crate::validate_plan(&result.review_only_plan)
@@ -117,6 +127,20 @@ impl InstalledAuditConfig {
             ).is_err()
         {
             return Err(denied());
+        }
+        #[cfg(feature = "fin04w2-approved-fixed-exec")]
+        {
+            if result.schema!="lu.ide.fin04w2.approved-fixed.v1"
+                || !result.original_supervisor_journal.is_absolute()
+                || result.original_job_id.len()!=36
+                || !result.original_job_id.starts_with("job-")
+                || !result.original_job_id[4..].bytes().all(|b|b.is_ascii_hexdigit())
+                || result.review_only_plan_hash != crate::fingerprint(&result.review_only_plan)?
+            {return Err(denied());}
+            security::verify_original_approval_journal_acl(
+                &result.original_supervisor_journal,
+                &result.approved_host_user_sid,
+            )?;
         }
         #[cfg(feature = "fin04w2-contained-probe")]
         {
@@ -202,11 +226,50 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
         &frame[..92], &config.review_only_plan,
         &config.review_only_plan_hash, &nonce(&config.review_only_nonce)?,
     )?;
-    // Shape validity does NOT confer original creator authorization or a
-    // completed build receipt. Do not even acknowledge LaunchSealed/threads/
-    // stack/stop as an accepted audit. Only the harmless Initialize review
-    // receives 'A'; the remaining verbs all fail closed until the original
-    // journal, service-issued one-use grant and PE/PDB kernel gates exist.
+    // LaunchSealed never accepts a caller PID, executable, path or arbitrary
+    // DAP instruction. Only W2-C's distinct compile-time feature may admit
+    // the separately pinned *harmless fixed worker*, after genuine ORIGINAL
+    // human approval was consumed in the native supervisor journal. The
+    // service requires the kernel-attested original client, protected host
+    // journal ACL, fresh full journal replay and fsynced one-use barrier
+    // BEFORE creating a new suspended worker. No LLDB route exists here.
+    #[cfg(feature="fin04w2-approved-fixed-exec")]
+    if reviewed.operation == fin04w2_protocol::ReviewedOperation::LaunchSealed {
+        let original = fin04w2_authority::verify_original_journal_file(
+            &config.original_supervisor_journal,
+            &config.original_job_id,
+            &config.review_only_plan,
+            &config.review_only_plan_hash,
+        )?;
+        let private_root=std::env::var_os("ProgramData")
+            .ok_or_else(denied).map(PathBuf::from)?.join(ROOT);
+        let sid=security::sid_of_named_service(NAME)?;
+        security::verify_original_approval_journal_acl(
+            &config.original_supervisor_journal,
+            &config.approved_host_user_sid,
+        )?;
+        security::verify_private_evidence_root_for(&private_root,&sid)?;
+        fin04w2_authority::consume_once_in_private_service_root(
+            &private_root,&original,
+        )?;
+        // W2-C test-only approved execution is the single exact hash-pinned
+        // benign fixture, not LLDB. Independent source/debugger receipt and
+        // network policy gates remain separate prerequisites for W2-D.
+        let approved_job=windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
+        approved_job.verify_fixed_probe(
+            &config.fixed_probe.executable,
+            &config.fixed_probe.expected_sha256,
+            &config.fixed_probe.foreign_file,
+        )?;
+        let mut written=0u32;
+        let response=[b'X']; // Completed original-approved BENIGN probe.
+        if unsafe {
+            WriteFile(pipe,response.as_ptr().cast(),1,&mut written,ptr::null_mut())
+        }==0 || written!=1 {return Err(denied());}
+        return Ok(());
+    }
+    // All unauthenticated methods including LaunchSealed must fail. The
+    // audit-only Initialize response 'A' is never executable authority.
     if reviewed.operation != fin04w2_protocol::ReviewedOperation::Initialize {
         return Err(denied());
     }
