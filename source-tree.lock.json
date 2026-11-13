@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "32b8d1e0000a1c2387f464c87427df78451c20ae",
+  "sourceCommitBeforeLock": "7f1ed05910c0114c2c3ee6965775901a7779deff",
   "trackedFileCount": 984,
   "files": [
     {
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "39a1eefc1f2236be11c4a7d4b0c309ee9eda3f0d"
+      "blob": "959a30ae530f303008e8fc6d94081a0d02df16bd"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -1909,7 +1909,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
-      "blob": "9d50c027947e510e4cbd68158f3710beb400b527"
+      "blob": "eaa01cb0e3c3a8d30457ad2e1f78aaf9f248ade9"
     },
     {
       "path": "lu-desktop/tests/p0-qwen38-radeon-handoff.test.mjs",
