@@ -77,6 +77,6 @@ test('E: native dialogs are required for approve, reject, cancel; never tool exe
   assert.match(ui,/plan\.pendingSourceChecks>0/);
   assert.match(review,/fn goal_event_is_current\(/);
   assert.match(review,/assumption_source_is_readable/);
-  assert.match(review,/fn assumption_source_is_readable[\s\S]*?\n\s*false\n/);
+  assert.match(review,/fn assumption_source_is_readable[\s\S]*?\r?\n\s*false\r?\n/);
   assert.doesNotMatch(review,/Command::new|\.spawn\(|run_journaled_observed\(/);
 });

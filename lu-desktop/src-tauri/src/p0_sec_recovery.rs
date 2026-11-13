@@ -13,7 +13,9 @@ use crate::{
     reviewed_task_continuity::sec04_reviewed_turn_security,
 };
 
-const MAX_PRIOR_ORIGINAL_TURNS:usize=24;
+// ANSF indexed original-turn reader enforces 1..=16. A saturated
+// window must remain visibly incomplete, never authorize prior effects.
+const MAX_PRIOR_ORIGINAL_TURNS:usize=16;
 const MAX_VISIBLE_PROBLEMS:usize=48;
 
 #[derive(Clone,Debug,Serialize)]
@@ -281,6 +283,27 @@ mod tests{
             record.reason=="LINUX_GUARDIAN_LOST"));
         assert!(!persisted.automatic_retry_allowed);
         drop(tasks);drop(background);drop(restarted_chats);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn sec04_saturated_original_ansf_turn_window_requires_human_reconciliation(){
+        let root=temp();
+        let chats=ChatStore::open(&root).unwrap();
+        let chat=chats.create_chat().unwrap().chat_id;
+        for i in 0..18u32{
+            let turn=format!("g-{i:032x}");
+            chats.append_user_with_turn_id(&chat,&turn,"Original human request").unwrap();
+        }
+        let background=TaskStore::open(
+            &root.join("lu-background-tasks.sqlite")).unwrap();
+        let view=for_original_chat(&root,&chat,&chats,&background,&[]).unwrap();
+        assert!(view.older_original_turns_not_inspected);
+        assert!(view.human_reconciliation_required);
+        assert!(!view.old_os_custody_independently_proven);
+        assert!(!view.prior_authority_reusable);
+        assert!(!view.automatic_retry_allowed);
+        assert_eq!(view.status,"ORIGINAL_SECURITY_RECONCILIATION_REQUIRED");
+        drop(background);drop(chats);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
