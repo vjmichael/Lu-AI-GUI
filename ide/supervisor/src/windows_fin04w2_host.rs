@@ -12,7 +12,7 @@
 use crate::{fin04w2_authority, windows_service_security as security,
     JobPhase, JobPlan, Supervisor, SupervisorError};
 use std::{
-    mem::size_of, path::Path, ptr, thread,
+    path::Path, ptr, thread,
     time::{Duration,Instant},
 };
 use windows_sys::Win32::{
@@ -103,6 +103,31 @@ fn write_exact(pipe:HANDLE,bytes:&[u8])->Result<(),SupervisorError>{
     }==0 || written!=92 {return Err(denied());}
     Ok(())
 }
+fn send_fixed_signal(pipe:HANDLE, marker:u8)->Result<(),SupervisorError>{
+    let mut written=0u32;
+    if unsafe {
+        WriteFile(pipe,(&marker as *const u8).cast(),1,
+            &mut written,ptr::null_mut())
+    }==0 || written!=1 {return Err(denied());}
+    Ok(())
+}
+// If the host loses the service, exits early, cannot fsync a receipt or
+// observes an invalid fixed signal, preserve an original RecoveryRequired
+// receipt rather than inventing Completed, silently restarting or replaying
+// a consumed creator grant. The independently held service Job is dropped
+// and terminated on its corresponding pipe loss.
+struct RecoveryGuard<'a>{
+    supervisor:&'a Supervisor,
+    job_id:&'a str,
+    completed:bool,
+}
+impl Drop for RecoveryGuard<'_>{
+    fn drop(&mut self){
+        if !self.completed {
+            let _=self.supervisor.native_quarantine_after_error(self.job_id);
+        }
+    }
+}
 /// Native bridge may be called only AFTER the original host obtained a
 /// genuine, fresh desktop approval and consumed it through original OS
 /// admission. It refuses to convert a prepared/authorized-only grant or a
@@ -126,6 +151,9 @@ pub fn submit_original_approved_fixed_job(
                 || j.requires_reconciliation
         )
     {return Err(denied());}
+    let mut recovery=RecoveryGuard {
+        supervisor,job_id,completed:false,
+    };
     // This is a privileged, internal native-host reference, not a WebView
     // filename. The service still re-reads original journal from its OWN
     // independently installed and ACL-pinned path after client attestation.
@@ -150,10 +178,28 @@ pub fn submit_original_approved_fixed_job(
     packet[76..92].copy_from_slice(&challenge[1..17]);
     write_exact(pipe.0,&packet)?;
     let mut response=[0u8;1];
-    // A is only audit; R/READY is not a terminal. X must originate from
-    // the authenticated, original service after Job empty+tree reaped.
+    // S is emitted only by the original restricted service after it has
+    // created a suspended hash-pinned child INSIDE its exact held Job.
+    // Fsync the original Running receipt before allowing ANY instruction.
+    read_exact_bounded(pipe.0,&mut response)?;
+    if response[0]!=b'S' {return Err(denied());}
+    supervisor.native_mark_running(job_id)?;
+    send_fixed_signal(pipe.0,b'G')?;
+    // X is independently OS-verified empty tree plus successful benign
+    // worker/descendant exit, but the SCM Job is still retained.
     read_exact_bounded(pipe.0,&mut response)?;
     if response[0]!=b'X' {return Err(denied());}
+    supervisor.native_mark_release_pending(job_id)?;
+    send_fixed_signal(pipe.0,b'R')?;
+    // F is sent only AFTER the service releases the original Job handle.
+    // No Completed receipt is allowed on early pipe failure or unverified
+    // release, even if the process wrote a successful stdout message.
+    read_exact_bounded(pipe.0,&mut response)?;
+    if response[0]!=b'F' {return Err(denied());}
+    let terminal=supervisor.native_finish(job_id,true,true,true)?;
+    if terminal.phase!=JobPhase::Completed
+        || terminal.requires_reconciliation {return Err(denied());}
+    recovery.completed=true;
     Ok(())
 }
 #[cfg(test)]
