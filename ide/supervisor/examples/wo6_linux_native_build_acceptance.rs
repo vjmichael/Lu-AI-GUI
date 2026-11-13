@@ -485,12 +485,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let entries = supervisor
                     .receipt_history(&debug_job.job_id)
                     .map_err(|e| e.code())?;
-                if !entries.windows(2).any(|pair| {
-                    pair[0].body.phase == JobPhase::CancelRequested
-                        && pair[1].body.phase == JobPhase::Cancelled
+                // The original FIN-01D SCM lease protocol is *three* durable
+                // transitions, not two: intent before kernel kill, verified
+                // empty process tree while service release is pending, then
+                // terminal only after independent service release. The prior
+                // two-adjacent-entry assertion incorrectly rejected a valid
+                // OS-reaped, fsynced cancellation after genuine source stop.
+                if !entries.windows(3).any(|chain| {
+                    chain[0].body.phase == JobPhase::CancelRequested
+                        && chain[0].body.outcome_code == "cancel_requested_before_os_kill"
+                        && chain[1].body.phase == JobPhase::ReleasePending
+                        && chain[1].body.outcome_code
+                            == "os_cancel_tree_reaped_service_release_pending"
+                        && chain[2].body.phase == JobPhase::Cancelled
+                        && chain[2].body.outcome_code
+                            == "native_cancel_service_release_verified"
+                        && chain.iter().all(|entry| {
+                            entry.body.plan_sha256 == stopped_witness.debugger_plan_sha256
+                                && entry.body.job_id == debug_job.job_id
+                        })
                 }) {
                     return Err(
-                        "DENIED: real project LLDB cancellation not durable before kernel kill"
+                        "DENIED: real project LLDB cancel intent, kernel reap, or independent service release receipt missing"
                             .into(),
                     );
                 }
