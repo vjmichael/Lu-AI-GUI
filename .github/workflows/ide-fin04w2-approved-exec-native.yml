@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          echo FIN04W2_C_EXACT_SOURCE=VERIFIED
+          echo FIN04W2_C2_EXACT_SOURCE=VERIFIED
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
@@ -39,20 +39,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-approved-fixed-exec --lib fin04w2_authority -- --nocapture
-          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-approved-fixed-exec --lib approved_packet_must_match_original_job -- --nocapture
-          echo FIN04W2_C_EXACT_JOB_AND_CHALLENGE_PACKET=PASS
-          echo FIN04W2_C_ORIGINAL_SUPERVISOR_GRANT_AND_REPLAY_CONTRACT=PASS
-          echo FIN04W2_C_NATIVE_HUMAN_APPROVAL=NOT_TESTED
-          echo FIN04W2_C_LLDB_EXECUTION=NOT_TESTED
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-c2 --lib fin04w2_c2 -- --nocapture
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-c2 --lib one_fixed_operation_has_no_path_pid_or_dynamic_command -- --nocapture
+          echo FIN04W2_C2_EXACT_JOB_AND_CHALLENGE_PACKET=PASS
+          echo FIN04W2_C2_ORIGINAL_SUPERVISOR_GRANT_AND_REPLAY_CONTRACT=PASS
+          echo FIN04W2_C2_NATIVE_HUMAN_APPROVAL=NOT_TESTED
+          echo FIN04W2_C2_LLDB_EXECUTION=NOT_TESTED
       - name: Build actual W2-C restricted service and fixed test worker
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          cargo build --manifest-path ide/supervisor/Cargo.toml --features fin04w2-approved-fixed-exec --bin windows_fin04w2_debugger_service --bin windows_fin04w2_fixed_probe
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features fin04w2-c2 --bin windows_fin04w2_debugger_service --bin windows_fin04w2_fixed_probe
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: Windows original approval bridge failed native compiler' }
-          Write-Host FIN04W2_C_NATIVE_WINDOWS_APPROVAL_BRIDGE_COMPILER=PASS
+          Write-Host FIN04W2_C2_NATIVE_WINDOWS_APPROVAL_BRIDGE_COMPILER=PASS
 
   original-windows-scm-six-phase:
     runs-on: windows-2022
@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          echo FIN04W2_C_SIX_PHASE_EXACT_SOURCE=VERIFIED
+          echo FIN04W2_C2_SIX_PHASE_EXACT_SOURCE=VERIFIED
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.99.1'
@@ -75,17 +75,17 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          cargo build --manifest-path ide/supervisor/Cargo.toml --features fin04w2-approved-fixed-exec --bin windows_fin04w2_native_host_acceptance --bin windows_fin04w2_debugger_service --bin windows_fin04w2_fixed_probe
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features fin04w2-c2 --bin windows_fin04w2_native_host_acceptance --bin windows_fin04w2_debugger_service --bin windows_fin04w2_fixed_probe
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: original Windows native host/service/worker compiler failed' }
-          Write-Host FIN04W2_C_ORIGINAL_HOST_AND_NATIVE_SCM_COMPILED=PASS
+          Write-Host FIN04W2_C2_ORIGINAL_HOST_AND_NATIVE_SCM_COMPILED=PASS
       - name: Full original one-use approval, native suspended Job, six fsynced receipts, WFP and restart
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           & ./ide/supervisor/fixtures/Test-FIN04W2OriginalApprovedNative.ps1
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native original service transaction failed' }
-          Write-Host FIN04W2_C_SCM_ADMITTED_BENIGN_TRANSACTION=PASS
-          Write-Host FIN04W2_C_PHYSICAL_HUMAN_APPROVAL_AND_LLDB=NOT_TESTED
+          Write-Host FIN04W2_C2_SCM_ADMITTED_BENIGN_TRANSACTION=PASS
+          Write-Host FIN04W2_C2_PHYSICAL_HUMAN_APPROVAL_AND_LLDB=NOT_TESTED
       - name: Preserve exact original and service-side durable receipts
         if: success()
         uses: actions/upload-artifact@v4
