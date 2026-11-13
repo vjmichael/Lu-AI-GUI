@@ -81,6 +81,12 @@ const MAX_JOBS: usize = 64;
 const MAX_LOG_BYTES: u64 = 256 * 1024;
 const MAX_MEMORY_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_PIDS: u32 = 16;
+// DEV04.5D3: the *real project* LLDB-DAP launches an additional traced
+// Cargo debuggee and helper threads. Native cgroup pids.events reported a
+// pids.max rejection at the 16-task cap, with no OOM. Keep the larger
+// allowance exclusive to a sealed, human-approved dap_lldb_project plan;
+// the ordinary workers and fixed debugger retain their exact previous caps.
+const MAX_PROJECT_DAP_PIDS: u32 = 48;
 const MAX_RUNTIME_MS: u64 = 10 * 60 * 1000;
 const GRANT_TTL_MS: u64 = 60_000;
 const GENESIS: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -246,7 +252,9 @@ fn validate_plan(value: &JobPlan) -> bool {
         && value.memory_limit_bytes >= 32 * 1024 * 1024
         && value.memory_limit_bytes <= MAX_MEMORY_BYTES
         && value.process_limit > 0
-        && value.process_limit <= MAX_PIDS
+        && (value.process_limit <= MAX_PIDS
+            || (value.recipe_id == "dap_lldb_project"
+                && value.process_limit <= MAX_PROJECT_DAP_PIDS))
         && value.log_limit_bytes > 0
         && value.log_limit_bytes <= MAX_LOG_BYTES
         && if value.recipe_id.starts_with("lsp_") {
@@ -268,11 +276,20 @@ fn validate_plan(value: &JobPlan) -> bool {
             cfg!(feature = "dap-transport")
                 && value.effect_class == "debug_inspection_isolated"
                 && value.runtime_limit_ms <= 3 * 60_000
-                // LLDB initializes its own kernel threads. Cgroup pids.max
-                // counts threads, not just child processes; 4 tasks was
-                // insufficient even for the fixed adapter initialize.
-                // Still bounded by MAX_PIDS=16 with exact OS cgroup/Job proof.
-                && value.process_limit <= 16
+                // Cgroup pids.max counts debugger/debuggee threads.
+                // Original Linux project LLDB-DAP native OS logs had
+                // pids.events max=yes and an existing traced stopped task
+                // but no DAP stopped event. Restore bounded headroom ONLY
+                // for the independently sealed project debugger; fixed LLDB
+                // and every other worker retain their old admission caps.
+                // All OS cgroup/Job, resource, journal and approval gates
+                // remain required, regardless of the task count.
+                && value.process_limit
+                    <= if value.recipe_id == "dap_lldb_project" {
+                        MAX_PROJECT_DAP_PIDS
+                    } else {
+                        MAX_PIDS
+                    }
                 && value.log_limit_bytes <= 64 * 1024
         } else if value.recipe_id == "vcpkg_install_offline" {
             cfg!(all(feature = "package-vcpkg-worker", target_os = "linux"))
@@ -1790,6 +1807,31 @@ mod tests {
         assert!(!legacy.contains("debugTargetBindingSha256"));
         fixed.debug_target_binding_sha256 = Some("a".repeat(64));
         assert!(!validate_plan(&fixed)); // no target for Cargo/LSP/fixed DAP
+    }
+    #[cfg(feature = "dap-transport")]
+    #[test]
+    fn native_project_dap_thread_headroom_is_exclusive_and_bounded() {
+        let mut plan = plan();
+        plan.recipe_id = "dap_lldb_project".into();
+        plan.effect_class = "debug_inspection_isolated".into();
+        plan.debug_target_binding_sha256 = Some("f".repeat(64));
+        plan.process_limit = MAX_PROJECT_DAP_PIDS;
+        assert!(validate_plan(&plan));
+        plan.process_limit = MAX_PROJECT_DAP_PIDS + 1;
+        assert!(!validate_plan(&plan));
+        plan.process_limit = MAX_PROJECT_DAP_PIDS;
+        plan.debug_target_binding_sha256 = None;
+        assert!(!validate_plan(&plan));
+        plan.debug_target_binding_sha256 = Some("f".repeat(64));
+        plan.recipe_id = "dap_lldb_fixed".into();
+        plan.debug_target_binding_sha256 = None;
+        assert!(!validate_plan(&plan));
+        plan.process_limit = MAX_PIDS;
+        assert!(validate_plan(&plan));
+        plan.recipe_id = "rust_check".into();
+        plan.effect_class = "test_build_isolated".into();
+        plan.process_limit = MAX_PROJECT_DAP_PIDS;
+        assert!(!validate_plan(&plan));
     }
     #[test]
     fn rejects_unpinned_or_unbounded_plans() {
