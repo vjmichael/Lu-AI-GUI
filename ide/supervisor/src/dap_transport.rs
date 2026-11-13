@@ -381,6 +381,17 @@ impl DapGateway {
     ) -> Option<lu_ide_workspace::dap_session::CiControlObservation> {
         self.session.ci_take_control_observation()
     }
+    // Strictly read-only, debug-CI native diagnostics at a failed source
+    // stop. This does not send a DAP command, inspect source bytes, open a
+    // process, or mint debugger authority. It classifies only the OS-owned
+    // worker's existing stderr and cgroup counters before fail-closed Drop.
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub(crate) fn ci_trace_absent_source_stop(&mut self) {
+        if let Some(process) = self.process.as_mut() {
+            process.trace_native_fault("project_source_stop_absent");
+        }
+    }
+
     pub(crate) fn poll(&mut self) -> Result<Vec<DapEvent>, SupervisorError> {
         if self.started.elapsed() > MAX_LIFETIME {
             return self.quarantine();
