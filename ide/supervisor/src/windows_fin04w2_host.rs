@@ -128,6 +128,47 @@ impl Drop for RecoveryGuard<'_>{
         }
     }
 }
+/// The native IDE host may supply its existing original approval-and-OS
+/// admission workflow as a synchronous callback AFTER all sealed-source
+/// preflight. That trusted workflow MUST obtain a genuine current desktop
+/// confirmation, call Supervisor::record_human_approval, and consume the
+/// original grant only after its independently verified OS custody proof.
+/// No Boolean, CI flag, model result, WebView message or shell command can
+/// stand in for that callback. This adapter refuses to proceed unless the
+/// original supervisor actually reached a fresh fsynced AdmissionPending.
+/// We deliberately do NOT fabricate an OsContainmentProof in this module.
+pub fn execute_after_original_native_approval<F>(
+    supervisor:&Supervisor,
+    job_id:&str,
+    sealed_plan:&JobPlan,
+    current_host_observed_source_head:&str,
+    approved_service_binary:&Path,
+    approved_service_sha256:&str,
+    original_native_approval_and_admission:F,
+)->Result<(),SupervisorError>
+where F:FnOnce(&Supervisor,&str,&JobPlan)->Result<(),SupervisorError>{
+    let sha=crate::fingerprint(sealed_plan)?;
+    if sealed_plan.source_head!=current_host_observed_source_head
+        || !crate::validate_plan(sealed_plan)
+        || sealed_plan.recipe_id!="dap_lldb_project"
+        || supervisor.inspect()?.iter().all(|job|
+            job.job_id!=job_id || job.plan_sha256!=sha
+                || job.phase!=JobPhase::Prepared
+                || job.requires_reconciliation
+        ) {
+        return Err(SupervisorError::WrongProjectOrSource);
+    }
+    original_native_approval_and_admission(
+        supervisor,job_id,sealed_plan,
+    )?;
+    // The normal entry checks the actual ORIGINAL in-memory one-use grant
+    // consumption + durable journal. A callback which merely returns Ok,
+    // prints "approved" or replays prior approval cannot pass.
+    submit_original_approved_fixed_job(
+        supervisor,job_id,sealed_plan,
+        approved_service_binary,approved_service_sha256,
+    )
+}
 /// Native bridge may be called only AFTER the original host obtained a
 /// genuine, fresh desktop approval and consumed it through original OS
 /// admission. It refuses to convert a prepared/authorized-only grant or a
