@@ -40,6 +40,8 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-approved-fixed-exec --lib fin04w2_authority -- --nocapture
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-approved-fixed-exec --lib approved_packet_must_match_original_job -- --nocapture
+          echo FIN04W2_C_EXACT_JOB_AND_CHALLENGE_PACKET=PASS
           echo FIN04W2_C_ORIGINAL_SUPERVISOR_GRANT_AND_REPLAY_CONTRACT=PASS
           echo FIN04W2_C_NATIVE_HUMAN_APPROVAL=NOT_TESTED
           echo FIN04W2_C_LLDB_EXECUTION=NOT_TESTED
