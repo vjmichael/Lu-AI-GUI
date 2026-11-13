@@ -927,7 +927,7 @@ pub fn authenticate_service_server(
 /// W2-C native host verifies the *new* debugger service's actual SCM PID,
 /// exact image hash and restricting SID before consuming its original
 /// one-use grant. A spoofed same-user named pipe can never mint approval.
-#[cfg(feature="fin04w2-approved-fixed-exec")]
+#[cfg(feature="fin04w2-c2")]
 pub(crate) fn authenticate_debugger_service_server(
     pipe: HANDLE,
     approved_service_path: &Path,
@@ -1025,7 +1025,7 @@ fn authenticate_fixed_service_server(
 /// debugger service and any reparse point. Host owner/SYSTEM may write
 /// original native receipts; the debugger service can only READ them.
 /// The OS token and exact pinned host binary are checked separately.
-#[cfg(feature = "fin04w2-approved-fixed-exec")]
+#[cfg(feature="fin04w2-c2")]
 pub(crate) fn verify_original_approval_journal_acl(
     path: &Path, host_user_sid: &str,
 ) -> Result<(), SupervisorError> {

@@ -11,8 +11,8 @@ use crate::{
     windows_service_security as security, JobPlan, SupervisorError,
 };
 use serde::Deserialize;
-#[cfg(feature="fin04w2-approved-fixed-exec")]
-use crate::fin04w2_authority;
+#[cfg(feature="fin04w2-c2")]
+use crate::fin04w2_c2::{self,C2JournalGate};
 use std::{
     ffi::c_void, fs, io::Read, os::windows::fs::MetadataExt,
     path::{Path, PathBuf}, ptr,
@@ -69,9 +69,9 @@ struct InstalledAuditConfig {
     review_only_nonce: String,
     // An administrator-pinned original supervisor receipt path and native
     // Job ID, never supplied by a pipe client. Only W2-C has these fields.
-    #[cfg(feature="fin04w2-approved-fixed-exec")]
+    #[cfg(feature="fin04w2-c2")]
     original_supervisor_journal: PathBuf,
-    #[cfg(feature="fin04w2-approved-fixed-exec")]
+    #[cfg(feature="fin04w2-c2")]
     original_job_id: String,
     // CI-only first-party fixture. This cannot be selected or influenced by
     // a named-pipe client; only the preinstalled private service.json pins it.
@@ -112,8 +112,8 @@ impl InstalledAuditConfig {
         if bytes.len() as u64 > MAX_CONFIG { return Err(denied()); }
         let result: Self = serde_json::from_slice(&bytes).map_err(|_|denied())?;
         if !(result.schema == "lu.ide.fin04w2.audit.v1"
-            || (cfg!(feature="fin04w2-approved-fixed-exec")
-                && result.schema == "lu.ide.fin04w2.approved-fixed.v1"))
+            || (cfg!(feature="fin04w2-c2")
+                && result.schema == "lu.ide.fin04w2.c2.v1"))
             || result.service_name != NAME || result.endpoint != ENDPOINT
             || !result.approved_host_executable.is_absolute()
             || !crate::validate_plan(&result.review_only_plan)
@@ -128,9 +128,9 @@ impl InstalledAuditConfig {
         {
             return Err(denied());
         }
-        #[cfg(feature = "fin04w2-approved-fixed-exec")]
+        #[cfg(feature = "fin04w2-c2")]
         {
-            if result.schema!="lu.ide.fin04w2.approved-fixed.v1"
+            if result.schema!="lu.ide.fin04w2.c2.v1"
                 || !result.original_supervisor_journal.is_absolute()
                 || result.original_job_id.len()!=36
                 || !result.original_job_id.starts_with("job-")
@@ -194,190 +194,199 @@ fn status(state: u32, controls: u32, exit: u32) -> SERVICE_STATUS {
         dwWaitHint: if matches!(state, SERVICE_START_PENDING | SERVICE_STOP_PENDING) { 15000 } else { 0 },
     }
 }
-// W2-C two-phase original-journal protocol. Every one-byte control is
-// fixed and bounded: S=service-owned *suspended* Job admission, G=original
-// host Running receipt fsynced / permission to resume, X=verified empty
-// process tree, R=original host ReleasePending fsynced, F=service Job
-// handle released. None is a DAP/LLDB command or a general execution API.
-#[cfg(feature="fin04w2-approved-fixed-exec")]
-fn send_fixed_signal(pipe:HANDLE, value:u8)->Result<(),SupervisorError>{
+// C2 is the only executable route, with a fixed 74-byte request and
+// one first-party benign fixture. W2-A's audit-only 92-byte grammar stays
+// separate. Neither route admits LLDB, custom command or caller-selected PID.
+#[cfg(feature="fin04w2-c2")]
+fn signal(pipe:HANDLE,byte:u8)->Result<(),SupervisorError>{
     let mut written=0u32;
     if unsafe{
-        WriteFile(pipe,(&value as *const u8).cast(),1,&mut written,ptr::null_mut())
-    }==0 || written!=1 {return Err(denied());}
+        WriteFile(pipe,(&byte as *const u8).cast(),1,&mut written,ptr::null_mut())
+    }==0||written!=1{return Err(denied());}
     Ok(())
 }
-#[cfg(feature="fin04w2-approved-fixed-exec")]
-fn require_fixed_signal(pipe:HANDLE, expected:u8)->Result<(),SupervisorError>{
-    let deadline=Instant::now()+Duration::from_secs(8);
+// Windows DisconnectNamedPipe can discard a message the peer has not
+// yet read. A final F/J reply must remain readable until the authenticated
+// host closes its pipe; no additional request or authority is accepted.
+#[cfg(feature="fin04w2-c2")]
+fn deliver_terminal_reply(pipe:HANDLE,reply:u8)->Result<(),SupervisorError>{
+    if reply!=b'F'&&reply!=b'J'{return Err(denied());}
+    signal(pipe,reply)?;
+    let until=Instant::now()+Duration::from_secs(8);
     loop{
-        if STOP.load(Ordering::SeqCst) || Instant::now()>=deadline{
+        if STOP.load(Ordering::SeqCst)||Instant::now()>=until{
             return Err(denied());
         }
-        let mut amount=0u32;
+        let mut available=0u32;
+        // A broken pipe here is the expected host-close acknowledgement.
+        // Unexpected client bytes are NEVER interpreted as new commands.
         if unsafe{
             PeekNamedPipe(pipe,ptr::null_mut(),0,ptr::null_mut(),
-                &mut amount,ptr::null_mut())
-        }==0 || amount>1{return Err(denied());}
-        if amount==1{break;}
+                &mut available,ptr::null_mut())
+        }==0{return Ok(());}
+        if available!=0{return Err(denied());}
         thread::sleep(Duration::from_millis(20));
     }
-    let mut value=0u8;
-    let mut received=0u32;
+}
+#[cfg(feature="fin04w2-c2")]
+fn expect_signal(pipe:HANDLE,expected:u8)->Result<(),SupervisorError>{
+    let until=Instant::now()+Duration::from_secs(8);
+    loop{
+        if STOP.load(Ordering::SeqCst)||Instant::now()>=until{
+            return Err(denied());
+        }
+        let mut available=0u32;
+        if unsafe{
+            PeekNamedPipe(pipe,ptr::null_mut(),0,ptr::null_mut(),
+                &mut available,ptr::null_mut())
+        }==0||available>1{return Err(denied());}
+        if available==1{break;}
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut read=0u32;
+    let mut byte=0u8;
     if unsafe{
-        ReadFile(pipe,(&mut value as *mut u8).cast(),1,
-            &mut received,ptr::null_mut())
-    }==0 || received!=1 || value!=expected {
+        ReadFile(pipe,(&mut byte as *mut u8).cast(),1,
+            &mut read,ptr::null_mut())
+    }==0||read!=1||byte!=expected{
         return Err(denied());
     }
     Ok(())
 }
-
-// Fail closed even if a caller has connected: no command can execute.
-// Only an authenticated *matching installer-staged review fixture* receives
-// the byte 'A' ("audited, NEVER authorized"); all other inputs disconnect.
-fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), SupervisorError> {
-    // W2-C is intentionally a DIFFERENT handshake from W2-A's audit-only
-    // static test correlation. A fresh native SCM-generated challenge
-    // binds exactly one connected, kernel-attested client to this attempt.
-    // The challenge is not a grant and is never accepted on another pipe.
-    #[cfg(feature="fin04w2-approved-fixed-exec")]
-    let challenge: [u8;16] = {
-        use rand::{rngs::OsRng, RngCore};
-        let mut value=[0u8;16];
-        OsRng.fill_bytes(&mut value);
-        let mut message=[0u8;17];
-        message[0]=b'C'; // service challenge only, never execution.
-        message[1..].copy_from_slice(&value);
-        let mut wrote=0u32;
-        if unsafe {
-            WriteFile(pipe,message.as_ptr().cast(),17,&mut wrote,ptr::null_mut())
-        }==0 || wrote!=17 {return Err(denied());}
-        value
-    };
-    let until = Instant::now() + Duration::from_secs(2);
-    // W2-A remains the 92-byte audit grammar. W2-C adds exactly sixteen
-    // bytes for its original native Job ID, not an arbitrary request body.
-    let expected_size=if cfg!(feature="fin04w2-approved-fixed-exec"){108u32}else{92u32};
-    let mut available = 0u32;
-    loop {
-        if STOP.load(Ordering::SeqCst) || Instant::now() >= until { return Err(denied()); }
-        if unsafe {
-            PeekNamedPipe(pipe, ptr::null_mut(), 0, ptr::null_mut(),
-                &mut available, ptr::null_mut())
-        } == 0 { return Err(denied()); }
-        if available > expected_size { return Err(denied()); }
-        if available >= expected_size { break; }
+#[cfg(feature="fin04w2-c2")]
+fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
+    ->Result<(),SupervisorError>{
+    // The independent SCM guardian has already passed real kernel token,
+    // protected Job and private service-config readback at startup.
+    use rand::{rngs::OsRng,RngCore};
+    let mut nonce=[0u8;16];
+    OsRng.fill_bytes(&mut nonce);
+    let mut challenge=[0u8;17];
+    challenge[0]=b'C';challenge[1..].copy_from_slice(&nonce);
+    let mut wrote=0u32;
+    if unsafe{
+        WriteFile(pipe,challenge.as_ptr().cast(),17,
+            &mut wrote,ptr::null_mut())
+    }==0||wrote!=17{return Err(denied());}
+    let until=Instant::now()+Duration::from_secs(2);
+    loop{
+        if STOP.load(Ordering::SeqCst)||Instant::now()>=until{
+            return Err(denied());
+        }
+        let mut available=0u32;
+        if unsafe{
+            PeekNamedPipe(pipe,ptr::null_mut(),0,ptr::null_mut(),
+                &mut available,ptr::null_mut())
+        }==0||available>fin04w2_c2::WIRE_BYTES as u32{
+            return Err(denied());
+        }
+        if available==fin04w2_c2::WIRE_BYTES as u32{break;}
         thread::sleep(Duration::from_millis(20));
     }
-    let mut frame = [0u8;109];
-    let mut got = 0u32;
-    if unsafe {
-        ReadFile(pipe, frame.as_mut_ptr().cast(), expected_size,
-            &mut got, ptr::null_mut())
-    } == 0 || got != expected_size {
-        return Err(denied());
-    }
-    let _client = security::authenticate_client_from_kernel_pipe(
-        pipe, &config.approved_host_executable, &config.expected_host_sha256,
+    let mut packet=[0u8;fin04w2_c2::WIRE_BYTES];
+    let mut count=0u32;
+    if unsafe{
+        ReadFile(pipe,packet.as_mut_ptr().cast(),
+            packet.len() as u32,&mut count,ptr::null_mut())
+    }==0||count!=packet.len() as u32{return Err(denied());}
+    security::authenticate_client_from_kernel_pipe(
+        pipe,&config.approved_host_executable,
+        &config.expected_host_sha256,&config.approved_host_user_sid,
+    )?;
+    fin04w2_c2::verify_fixed_request(
+        &packet,&config.original_job_id,&config.review_only_plan,&nonce,
+    )?;
+    security::verify_original_approval_journal_acl(
+        &config.original_supervisor_journal,
         &config.approved_host_user_sid,
     )?;
-    #[cfg(feature="fin04w2-approved-fixed-exec")]
-    let expected_challenge=&challenge;
-    #[cfg(not(feature="fin04w2-approved-fixed-exec"))]
-    let configured_nonce=nonce(&config.review_only_nonce)?;
-    #[cfg(not(feature="fin04w2-approved-fixed-exec"))]
-    let expected_challenge=&configured_nonce;
-    #[cfg(feature="fin04w2-approved-fixed-exec")]
-    let reviewed=fin04w2_protocol::inspect_approved_exact_job(
-        &frame[..108],&config.review_only_plan,
-        &config.review_only_plan_hash,expected_challenge,
-        &config.original_job_id,
+    fin04w2_c2::verify_original_path(
+        &config.original_supervisor_journal,&config.original_job_id,
+        &config.review_only_plan,C2JournalGate::Authorized,
     )?;
-    #[cfg(not(feature="fin04w2-approved-fixed-exec"))]
-    let reviewed = fin04w2_protocol::inspect_shape_only(
-        &frame[..92], &config.review_only_plan,
-        &config.review_only_plan_hash, expected_challenge,
+    let root=std::env::var_os("ProgramData").ok_or_else(denied)
+        .map(PathBuf::from)?.join(ROOT);
+    let sid=security::sid_of_named_service(NAME)?;
+    security::verify_private_evidence_root_for(&root,&sid)?;
+    // Atomic reservation is fsynced before any suspended process exists.
+    fin04w2_c2::reserve_once(
+        &root,&config.original_job_id,&config.review_only_plan,
     )?;
-    // LaunchSealed never accepts a caller PID, executable, path or arbitrary
-    // DAP instruction. Only W2-C's distinct compile-time feature may admit
-    // the separately pinned *harmless fixed worker*, after genuine ORIGINAL
-    // human approval is present in the original native supervisor journal.
-    // The service prepares the child SUSPENDED BEFORE allowing the original
-    // host to consume the one-use grant. The host MUST then fsync
-    // AdmissionPending and Running; the service reopens and verifies BOTH
-    // original receipts before any ResumeThread. No LLDB route exists.
-    #[cfg(feature="fin04w2-approved-fixed-exec")]
-    if reviewed.operation == fin04w2_protocol::ReviewedOperation::LaunchSealed {
-        let original = fin04w2_authority::verify_original_authorized_file(
-            &config.original_supervisor_journal,
-            &config.original_job_id,
-            &config.review_only_plan,
-            &config.review_only_plan_hash,
-        )?;
-        let private_root=std::env::var_os("ProgramData")
-            .ok_or_else(denied).map(PathBuf::from)?.join(ROOT);
-        let sid=security::sid_of_named_service(NAME)?;
-        security::verify_original_approval_journal_acl(
-            &config.original_supervisor_journal,
-            &config.approved_host_user_sid,
-        )?;
-        security::verify_private_evidence_root_for(&private_root,&sid)?;
-        fin04w2_authority::reserve_fresh_original_authorization(
-            &private_root,&original,
-        )?;
-        // W2-C permits ONLY the first-party, hash-pinned harmless fixture.
-        // The child remains suspended inside the exact service-owned Job
-        // until the original trusted host fsyncs Running and sends G.
-        // Any pipe loss, early G, failed journal fsync or service death
-        // kills the original process handle and the entire owned Job tree.
-        let approved_job=windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
-        let suspended=approved_job.prepare_fixed_probe(
-            &config.fixed_probe.executable,
-            &config.fixed_probe.expected_sha256,
-            &config.fixed_probe.foreign_file,
-        )?;
-        send_fixed_signal(pipe,b'S')?;
-        require_fixed_signal(pipe,b'G')?;
-        // Re-open original private host journal and replay authentic native
-        // transitions AFTER G, not merely trust the incoming byte.
-        fin04w2_authority::verify_original_execution_phase(
-            &config.original_supervisor_journal,
-            &config.original_job_id,&config.review_only_plan,
-            &config.review_only_plan_hash,crate::JobPhase::Running,
-        )?;
-        suspended.resume_and_verify()?;
-        // The original service Job is now genuinely empty, not merely an
-        // adapter-declared complete event. Host must fsync ReleasePending
-        // BEFORE requesting closure of this independently held kernel Job.
-        send_fixed_signal(pipe,b'X')?;
-        require_fixed_signal(pipe,b'R')?;
-        // Do not release OS Job custody until the ORIGINAL native host
-        // has durably fsynced its release intent. A missing or forged R
-        // message keeps this Job under independent SCM custody.
-        fin04w2_authority::verify_original_execution_phase(
-            &config.original_supervisor_journal,
-            &config.original_job_id,&config.review_only_plan,
-            &config.review_only_plan_hash,crate::JobPhase::ReleasePending,
-        )?;
-        drop(approved_job);
-        // Only after actual Job-handle release may the original host
-        // write a terminal receipt. This is BENIGN CI fixture acceptance,
-        // never a source debugger/RIP/PDB success.
-        send_fixed_signal(pipe,b'F')?;
-        return Ok(());
+    // Every return on failure drops this exact owned Job and its suspended
+    // child; no service-command path or alternate execution fallback.
+    let job=windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
+    let child=job.prepare_fixed_probe(
+        &config.fixed_probe.executable,
+        &config.fixed_probe.expected_sha256,
+        &config.fixed_probe.foreign_file,
+    )?;
+    signal(pipe,b'S')?;
+    expect_signal(pipe,b'G')?;
+    // The service—not the client G byte—verifies actual original fsynced
+    // grant consumption and Running state before ResumeThread.
+    fin04w2_c2::verify_original_path(
+        &config.original_supervisor_journal,&config.original_job_id,
+        &config.review_only_plan,C2JournalGate::Running,
+    )?;
+    child.resume_and_verify()?;
+    signal(pipe,b'X')?;
+    expect_signal(pipe,b'R')?;
+    if let Err(error)=fin04w2_c2::verify_original_path(
+        &config.original_supervisor_journal,&config.original_job_id,
+        &config.review_only_plan,C2JournalGate::ReleasePending,
+    ){
+        // Fail closed: J is a rejection only, never a release approval.
+        // The owned Job remains held until the peer closes (or this
+        // bounded routine errors), then kernel kill-on-close applies.
+        let _=deliver_terminal_reply(pipe,b'J');
+        return Err(error);
     }
-    // All unauthenticated methods including LaunchSealed must fail. The
-    // audit-only Initialize response 'A' is never executable authority.
-    if reviewed.operation != fin04w2_protocol::ReviewedOperation::Initialize {
+    drop(job);
+    // Keep the exact fixed protocol unchanged. F is evidence the kernel
+    // Job was released only after the original ReleasePending was verified.
+    deliver_terminal_reply(pipe,b'F')?;
+    Ok(())
+}
+#[cfg(not(feature="fin04w2-c2"))]
+fn review_only(pipe:HANDLE,config:&InstalledAuditConfig)
+    ->Result<(),SupervisorError>{
+    let until=Instant::now()+Duration::from_secs(2);
+    loop{
+        if STOP.load(Ordering::SeqCst)||Instant::now()>=until{
+            return Err(denied());
+        }
+        let mut available=0u32;
+        if unsafe{
+            PeekNamedPipe(pipe,ptr::null_mut(),0,ptr::null_mut(),
+                &mut available,ptr::null_mut())
+        }==0||available>92{return Err(denied());}
+        if available==92{break;}
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut packet=[0u8;92];
+    let mut read=0u32;
+    if unsafe{
+        ReadFile(pipe,packet.as_mut_ptr().cast(),92,
+            &mut read,ptr::null_mut())
+    }==0||read!=92{return Err(denied());}
+    security::authenticate_client_from_kernel_pipe(
+        pipe,&config.approved_host_executable,
+        &config.expected_host_sha256,&config.approved_host_user_sid,
+    )?;
+    let reviewed=fin04w2_protocol::inspect_shape_only(
+        &packet,&config.review_only_plan,
+        &config.review_only_plan_hash,&nonce(&config.review_only_nonce)?,
+    )?;
+    if reviewed.operation!=fin04w2_protocol::ReviewedOperation::Initialize
+        ||AUDIT_USED.swap(true,Ordering::SeqCst){
         return Err(denied());
     }
-    if AUDIT_USED.swap(true, Ordering::SeqCst) { return Err(denied()); }
-    let response = [b'A']; // Not a debugger authorization or process grant.
-    let mut written = 0u32;
-    if unsafe {
-        WriteFile(pipe, response.as_ptr().cast(), 1, &mut written, ptr::null_mut())
-    } == 0 || written != 1 { return Err(denied()); }
+    let reply=[b'A'];
+    let mut sent=0u32;
+    if unsafe{
+        WriteFile(pipe,reply.as_ptr().cast(),1,
+            &mut sent,ptr::null_mut())
+    }==0||sent!=1{return Err(denied());}
     Ok(())
 }
 fn run_service(handle: windows_sys::Win32::System::Services::SERVICE_STATUS_HANDLE)
@@ -404,7 +413,7 @@ fn run_service(handle: windows_sys::Win32::System::Services::SERVICE_STATUS_HAND
     // journal was independently replayed, and a service receipt fsynced.
     #[cfg(all(
         feature = "fin04w2-contained-probe",
-        not(feature = "fin04w2-approved-fixed-exec")
+        not(feature = "fin04w2-c2")
     ))]
     {
         STARTUP_STAGE.store(4, Ordering::Relaxed);

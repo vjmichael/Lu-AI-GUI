@@ -131,7 +131,7 @@ try {
   }
   New-Item -ItemType Directory -Path $serviceRoot | Out-Null
   $config=[ordered]@{
-    schema='lu.ide.fin04w2.approved-fixed.v1'
+    schema='lu.ide.fin04w2.c2.v1'
     serviceName=$name
     endpoint='\\.\pipe\LuIdeDebuggerBroker.v1'
     expectedServiceSha256=$serviceSha
@@ -192,7 +192,7 @@ try {
   $resultPath=Join-Path $ownerRoot 'result.json'
   if (!(Test-Path $resultPath)) {throw 'DENIED: durable final original host result missing'}
   $result=Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
-  if ($result.schema -ne 'lu.ide.fin04w2.c.native.final.v1' -or $result.sourceHead -ne $head -or $result.jobId -ne $manifest.jobId -or $result.planSha256 -ne $manifest.planSha256 -or $result.originalEventCount -ne 6 -or $result.terminalOutcomeCode -ne 'native_worker_completed' -or $result.restartReplay -ne 'CompletedNoGrant' -or $result.secondUse -ne 'Denied' -or $result.approvalKind -ne 'CI_SIMULATED_NOT_PHYSICAL') {
+  if ($result.schema -ne 'lu.ide.fin04w2.c2.native.final.v1' -or $result.sourceHead -ne $head -or $result.jobId -ne $manifest.jobId -or $result.planSha256 -ne $manifest.planSha256 -or $result.originalEventCount -ne 6 -or $result.terminalOutcomeCode -ne 'native_worker_completed' -or $result.restartReplay -ne 'CompletedNoGrant' -or $result.secondUse -ne 'Denied' -or $result.approvalKind -ne 'CI_SIMULATED_NOT_PHYSICAL') {
     throw 'DENIED: original native terminal/restart/replay receipt mismatch'
   }
   $nativeRows=@(Get-Content -LiteralPath $journal | Where-Object {$_} | ForEach-Object {$_|ConvertFrom-Json})
@@ -234,14 +234,28 @@ try {
     # to reclaim the service-only evidence directory for independent audit.
     # It must remain inaccessible to the untrusted original desktop user
     # for the entire service execution.
+    $stopped=$false
+    for ($attempt=0;$attempt -lt 40;$attempt++) {
+      $serviceState=Get-CimInstance Win32_Service -Filter "Name='$name'" -ErrorAction SilentlyContinue
+      if (!$serviceState -or $serviceState.State -eq 'Stopped') {$stopped=$true;break}
+      Start-Sleep -Milliseconds 250
+    }
+    if (!$stopped) {throw 'DENIED: cannot reclaim evidence while protected SCM still running'}
     & takeown.exe /F $serviceRoot /A /R /D Y | Out-Null
+    if ($LASTEXITCODE -ne 0) {throw 'DENIED: post-SCM protected evidence takeover failed'}
     & icacls.exe $serviceRoot /grant:r 'Administrators:(OI)(CI)F' /T | Out-Null
-    $oneUse=@(Get-ChildItem -LiteralPath $serviceRoot -File -Filter 'fin04w2-consumed-*.receipt')
+    if ($LASTEXITCODE -ne 0) {throw 'DENIED: post-SCM evidence subtree ACL reclaim failed'}
+    # The installer-protected config has a non-inheriting DACL. A parent
+    # grant alone need not grant DELETE on this leaf. Reclaim ONLY after
+    # independent service stop; never relax the runtime or source ACL.
+    & icacls.exe $cfg /grant:r 'Administrators:F' | Out-Null
+    if ($LASTEXITCODE -ne 0) {throw 'DENIED: post-SCM protected config ACL reclaim failed'}
+    $oneUse=@(Get-ChildItem -LiteralPath $serviceRoot -File -Filter 'fin04w2-c2-*.receipt')
     if ($oneUse.Count -ne 1) {
       throw 'DENIED: exactly one original service-side durable one-use record required'
     }
     $text=Get-Content -LiteralPath $oneUse[0].FullName -Raw
-    if ($text -notmatch 'fin04w2-original-consumed-v1' -or $text -notmatch [regex]::Escape([string]$manifest.jobId) -or $text -notmatch [regex]::Escape([string]$manifest.planSha256)) {
+    if ($text -notmatch 'fin04w2-c2-one-use-v1' -or $text -notmatch [regex]::Escape([string]$manifest.jobId) -or $text -notmatch [regex]::Escape([string]$manifest.planSha256)) {
       throw 'DENIED: actual service-side admission record scope mismatch'
     }
     $ownerCopy=Join-Path $ownerRoot 'service-one-use-verified.receipt'
