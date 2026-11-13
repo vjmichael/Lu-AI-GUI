@@ -38,10 +38,6 @@ struct OwnedWorker {
     job:Option<lu_win_worker_job::Job>,
     #[cfg(windows)]
     job_empty:Option<lu_win_worker_job::WindowsJobEmptyProof>,
-    #[cfg(target_os="linux")]
-    guardian:Option<lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian>,
-    #[cfg(target_os="linux")]
-    cgroup:Option<lu_win_worker_job::unix_owned::LinuxCgroupCustodian>,
     // The Linux system service manager, not the reviewed user/worker, owns
     // this per-operation cgroup. Only the fixed finite Git-read broker uses it.
     #[cfg(target_os="linux")]
@@ -709,32 +705,19 @@ impl BackgroundProcessSupervisor {
                 return Err(BackgroundProcessError::StoreUnavailable)
             }
         }
-        // Prefer a delegated kernel cgroup subtree for reviewed typed tools.
-        // The independent helper lives outside it and kills the entire
-        // subtree on EOF even if Lu is SIGKILLed. When OS delegation is
-        // unavailable the reviewed tool may retain its existing PGID
-        // guardian, but AGENT-01K/01L REFUSE full descendant custody.
+        // SEC-06C is the sole kernel authority for any previously guardian-
+        // protected reviewed operation. A missing fixed, root-owned broker
+        // is an admission DENIAL, not permission to restart the old same-UID
+        // cgroup custodian or an unverified process-group-only worker.
         #[cfg(target_os="linux")]
-        let mut cgroup=if os_owned_git_spawn.is_some()
-            ||os_owned_probe_spawn.is_some()||os_owned_native_spawn.is_some(){None}
-        else if let Some((profile,chat,turn))=reviewed_origin{
-            lu_win_worker_job::unix_owned::LinuxCgroupCustodian::spawn_if_delegated(
-                profile,&chat,&turn,&plan.task_id
-            ).map_err(|_|{
-                let _=self.store.fail_pending(&plan.task_id);
-                BackgroundProcessError::SpawnFailed
-            })?
-        }else{None};
-        #[cfg(target_os="linux")]
-        let guardian=if typed_capture.is_some()&&cgroup.is_none()
-            &&os_owned_git_spawn.is_none()&&os_owned_probe_spawn.is_none()
-            &&os_owned_native_spawn.is_none(){
-            lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian::spawn_if_available()
-                .map_err(|_|{
-                    let _=self.store.fail_pending(&plan.task_id);
-                    BackgroundProcessError::SpawnFailed
-                })?
-        }else{None};
+        if typed_capture.is_some()||(self.profile.is_some()&&native_candidate){
+            if os_owned_git_spawn.is_none()&&os_owned_probe_spawn.is_none()
+                &&os_owned_native_spawn.is_none(){
+                self.store.fail_pending(&plan.task_id)
+                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                return Err(BackgroundProcessError::SpawnFailed)
+            }
+        }
         let mut command=Command::new(&executable);
         command.args(&plan.args).env_clear().stdin(Stdio::null())
             .stdout(if plan.progress_protocol||typed_capture.is_some(){
@@ -751,21 +734,12 @@ impl BackgroundProcessSupervisor {
         {
             use std::os::unix::process::CommandExt;
             #[cfg(target_os="linux")]
-            command.process_group(guardian.as_ref()
-                .map_or(0,|w|w.group_id()));
+            command.process_group(0);
             #[cfg(not(target_os="linux"))]
             command.process_group(0);
         }
         #[cfg(target_os="linux")]
         {
-            if let Some(ref guard)=cgroup{
-                lu_win_worker_job::unix_owned::bind_worker_to_cgroup_before_exec(
-                    &mut command,guard
-                ).map_err(|_|{
-                    let _=self.store.fail_pending(&plan.task_id);
-                    BackgroundProcessError::SpawnFailed
-                })?;
-            }
             let quota=match plan.args.first().and_then(|s|s.to_str()){
                 Some("--lu-file-scan-worker")=>Some(1024*1024*1024u64),
                 Some("--lu-e1-version-one-shot")|
@@ -863,29 +837,9 @@ impl BackgroundProcessSupervisor {
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed);
         }
-        // The pre_exec kernel write is necessary but not sufficient proof:
-        // independently read /proc for this exact still-owned Child, and
-        // verify the helper remains alive outside the killable subtree.
-        // No task is marked RUNNING when the guardian died or membership is
-        // missing. This can conservatively reject an extremely fast worker.
-        #[cfg(target_os="linux")]
-        if let Some(guard)=cgroup.as_mut(){
-            if guard.verify_admitted_worker(child.id()).is_err(){
-                // The worker has executed; its side effects are uncertain.
-                // Persist this original task's uncertainty BEFORE returning
-                // even though the worker is still in PENDING transition.
-                let _=child.kill();let _=child.wait();
-                let recorded=self.store.record_process_uncertain(
-                    &plan.task_id,"OS_CUSTODY_UNVERIFIED");
-                let _=guard.stop_and_verify();
-                // Do not mask a failed durable uncertainty write as an
-                // ordinary failed admission after worker execution began.
-                recorded.map_err(|_|BackgroundProcessError::StoreUnavailable)?;
-                self.store.fail_pending(&plan.task_id)
-                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
-                return Err(BackgroundProcessError::SpawnFailed)
-            }
-        }
+        // SEC-06C has already pinned every reviewed worker in a root-owned
+        // systemd leaf before execution. The live client and durable receipt
+        // remain mandatory for cancellation, poll, and restart reconciliation.
         // Delay progress consumption until the SQLite RUNNING transition.
         // A fast worker must not lose its first checkpoint to a startup race.
         let progress_pipe=if plan.progress_protocol{child.stdout.take()}else{None};
@@ -900,10 +854,6 @@ impl BackgroundProcessSupervisor {
             job:Some(job),
             #[cfg(windows)]
             job_empty:None,
-            #[cfg(target_os="linux")]
-            guardian,
-            #[cfg(target_os="linux")]
-            cgroup,
             #[cfg(target_os="linux")]
             os_owned_git,
             #[cfg(target_os="linux")]
@@ -945,21 +895,6 @@ impl BackgroundProcessSupervisor {
         let mut workers=self.owned.lock().map_err(|_|BackgroundProcessError::Poisoned)?;
         let mut finished=Vec::new();
         for (id,worker) in workers.iter_mut(){
-            #[cfg(target_os="linux")]
-            if let Some(guard)=worker.cgroup.as_mut(){
-                if guard.require_live_guardian().is_err(){
-                    // The worker may still be running, or its descendants
-                    // may already have escaped the leader. Kill the known
-                    // leader, retain the owned entry, and REFUSE completion
-                    // or independent cgroup-custody status.
-                    let _=worker.child.kill();
-                    let _=worker.child.wait();
-                    self.store.record_process_uncertain(
-                        id,"LINUX_GUARDIAN_LOST")
-                        .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
-                    return Err(BackgroundProcessError::ProcessUncertain)
-                }
-            }
             match worker.child.try_wait(){
                 Ok(Some(status))=>{
                     #[cfg(windows)]
@@ -1003,26 +938,8 @@ impl BackgroundProcessSupervisor {
                                 return Err(BackgroundProcessError::ProcessUncertain)
                             }
                         }
-                        // Never remove a worker from the owner map before
-                        // native descendant cleanup has succeeded. Otherwise
-                        // a failed cgroup stop would lose the only live
-                        // cancellation handle and strand an uncertain effect.
-                        if let Some(guard)=worker.cgroup.as_mut(){
-                            if guard.stop_and_verify().is_err(){
-                                self.store.record_process_uncertain(
-                                    id,"OS_CUSTODY_UNVERIFIED")
-                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
-                                return Err(BackgroundProcessError::ProcessUncertain)
-                            }
-                        }
-                        if let Some(guardian)=worker.guardian.as_mut(){
-                            if guardian.stop_and_verify_signal().is_err(){
-                                self.store.record_process_uncertain(
-                                    id,"OS_CUSTODY_UNVERIFIED")
-                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
-                                return Err(BackgroundProcessError::ProcessUncertain)
-                            }
-                        }
+                        // Only an original SEC-06C root-owned kernel-empty
+                        // receipt permits completion of reviewed Linux work.
                     }
                     finished.push((id.clone(),Some(status.success())));
                 },
@@ -1278,16 +1195,10 @@ fn terminate_owned(worker:&mut OwnedWorker)->Result<(),BackgroundProcessError>{
         }else if let Some(native)=worker.os_owned_native.as_mut(){
             native.stop_and_verify(&mut worker.child)
                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
-        }else if let Some(guard)=worker.cgroup.as_mut(){
-            guard.stop_and_verify()
-                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
-        }else if let Some(guardian)=worker.guardian.as_mut(){
-            // The guardian is an independently-running PGID anchor. Closing
-            // its Lu-owned pipe makes it SIGKILL its own group. We require
-            // the exact kernel SIGKILL termination as an acknowledgement.
-            guardian.stop_and_verify_signal()
-                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
         }else{
+            // Unreviewed local workers have no full descendant-custody proof;
+            // all previously guardian-protected reviewed workers were denied
+            // at admission unless assigned to a finite SEC-06C OS unit.
             lu_win_worker_job::unix_owned::kill_owned_group(&worker.child)
                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
         }

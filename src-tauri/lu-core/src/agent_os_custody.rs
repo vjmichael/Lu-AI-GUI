@@ -305,33 +305,12 @@ fn linux_original_cgroup_empty(
     if let Some(accepted)=linux_os_owned_native_original_receipt(
         &db,chat,turn,call
     ){return accepted}
-    // The legacy mutable-profile cgroup receipt is supported only for its
-    // preexisting finite original Git/FFprobe task suffixes; all newer native
-    // tasks require their separate immutable root-owned receipt instead.
-    if !["-gh","-gs","-gb","-gc","-fm"]
-        .iter().any(|suffix|call.ends_with(suffix)){return false}
-    let receipt=profile.join(format!("lu-cgroup-os-{turn}-{call}.receipt"));
-    let Ok(meta)=fs::symlink_metadata(&receipt)else{return false};
-    if !meta.is_file()||meta.file_type().is_symlink()
-        ||meta.len()==0||meta.len()>4096
-        ||meta.permissions().mode()&0o077!=0{
-        return false
-    }
-    let Ok(data)=fs::read_to_string(&receipt)else{return false};
-    // Strictly one proof per exact task and human turn. No model-supplied
-    // path, arbitrary PID or mutation of the old TaskStore is consulted.
-    let lines=data.lines().collect::<Vec<_>>();
-    if lines.len()!=6
-        ||lines[0]!="LU_CGROUP_V2_EMPTY_V1"
-        ||lines[1]!=format!("CHAT={chat}")
-        ||lines[2]!=format!("TURN={turn}")
-        ||lines[3]!=format!("CALL={call}")
-        ||lines[5]!="POPULATED=0"{
-        return false
-    }
-    let Some(nonce)=lines[4].strip_prefix("NONCE=")else{return false};
-    nonce.len()==32&&nonce.bytes().all(|b|
-        b.is_ascii_digit()||(b'a'..=b'f').contains(&b))
+    // Retired: the former same-UID helper could write into the user's
+    // mutable profile. Historical receipts from that helper cannot prove
+    // SEC-06C custody, even when the original SQLite task says COMPLETED.
+    // All accepted Linux descendants now require the independent root-owned
+    // Git, probe or finite-native receipt above.
+    false
 }
 impl IndependentProcessCustody for HostOriginalJobCustody<'_>{
     fn worker_and_descendants_ended(
