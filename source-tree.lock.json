@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "de850de1f42267b1c08503a1d5282c817774f2fd",
+  "sourceCommitBeforeLock": "1d6ae81ec9db8c2fe8232fe4ab5c6ed3e6f10fae",
   "trackedFileCount": 984,
   "files": [
     {
@@ -2141,7 +2141,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "805ee4204880051acd721b01d2e6ff1403fe55f1"
+      "blob": "ec78bc921c1d67a74e1159558085ff5c4156844c"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
