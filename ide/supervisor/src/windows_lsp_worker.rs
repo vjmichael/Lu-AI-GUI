@@ -584,6 +584,8 @@ fn spawn_contained_stdio(
     ),
     SupervisorError,
 > {
+    // FIN-04W categories only: no child paths, SIDs, PIDs, handles or stderr.
+    if fin04w { native_lsp_trace("fin04w_stdio_admission_begin"); }
     let (child_stdin, host_stdin) = inheritable_pipe()?;
     let (host_stdout, child_stdout) = inheritable_pipe()?;
     uninheritable(host_stdin.0)?;
@@ -630,7 +632,9 @@ fn spawn_contained_stdio(
     if fin04w && !cfg!(all(debug_assertions, feature = "fin04w-ci-bridge")) {
         return Err(denied());
     }
+    if fin04w { native_lsp_trace("fin04w_stdio_pipes_ready"); }
     let mut attributes = Attributes::with_count(if fin04w { 2 } else { 3 })?;
+    if fin04w { native_lsp_trace("fin04w_attribute_list_ready"); }
     if !fin04w {
         let mut capabilities = SECURITY_CAPABILITIES::default();
         capabilities.AppContainerSid = profile.sid;
@@ -663,8 +667,10 @@ fn spawn_contained_stdio(
         )
     } == 0
     {
+        if fin04w { native_lsp_trace("fin04w_job_list_attribute_denied"); }
         return Err(denied());
     }
+    if fin04w { native_lsp_trace("fin04w_job_list_attribute_ready"); }
     let mut child_handles = vec![child_stdin.0, child_stdout.0, stderr.0];
     if let Some((_, event_write, _)) = event_pipe.as_ref() {
         child_handles.push(event_write.0);
@@ -684,8 +690,10 @@ fn spawn_contained_stdio(
         )
     } == 0
     {
+        if fin04w { native_lsp_trace("fin04w_handle_list_attribute_denied"); }
         return Err(denied());
     }
+    if fin04w { native_lsp_trace("fin04w_handle_list_attribute_ready"); }
     let mut startup = STARTUPINFOEXW::default();
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
@@ -709,6 +717,7 @@ fn spawn_contained_stdio(
     let created = if fin04w {
         let token = super::fin04w::RestrictedPrimaryToken::create(profile.sid)?;
         native_lsp_trace("fin04w_low_restricted_token_verified");
+        native_lsp_trace("fin04w_create_process_as_user_attempted");
         unsafe {
             CreateProcessAsUserW(
                 token.raw(), exe_wide.as_ptr(), command.as_mut_ptr(),
@@ -738,8 +747,26 @@ fn spawn_contained_stdio(
     };
     if created == 0 {
         native_lsp_trace("fin04w_or_appcontainer_os_creation_denied");
+        #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
+        if fin04w {
+            // Report one fixed Win32 error category only; fail closed.
+            let kind = match unsafe { GetLastError() } {
+                5 => "access_denied",
+                2 | 3 => "image_or_workdir_missing",
+                87 => "invalid_parameter",
+                1314 => "required_privilege_missing",
+                1300 => "privilege_not_assigned",
+                740 => "elevation_required",
+                1450 => "os_resource_exhausted",
+                _ => "other_kernel_failure",
+            };
+            if native_lsp_debug_enabled() {
+                eprintln!("FIN04W_CREATE_PROCESS_CLASS={kind}");
+            }
+        }
         return Err(denied());
     }
+    if fin04w { native_lsp_trace("fin04w_suspended_child_created"); }
     let process = Handle::new(child.hProcess)?;
     let thread = Handle::new(child.hThread)?;
     // Child already belongs to Job on return from CreateProcess.
