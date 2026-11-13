@@ -39,7 +39,9 @@ test('FIN03 6E05A never converts a cached tracking ref or CI into authority', ()
   assert.match(native, /origin_push_url_override_denied/);
   assert.match(native, /foreign_git_lock_present/);
   assert.match(native, /local_descendant_of_stored_tracking/);
-  assert.doesNotMatch(production, /\.push\s*\(/);
+  // A Vec::push of blocker labels is not a Git remote push. Reject an
+  // execution call on native Git/HTTP handles rather than every method push.
+  assert.doesNotMatch(production, /(?:remote|repository|repo|git_remote)\.push\s*\(/);
   assert.doesNotMatch(production, /\.push_to\s*\(/);
   assert.doesNotMatch(production, /\.set_target\s*\(/);
   assert.doesNotMatch(production, /\.remote_set_url\s*\(/);
