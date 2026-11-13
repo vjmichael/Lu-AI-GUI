@@ -23,6 +23,10 @@ pub mod debug_symbol_verification;
 // No installed/production feature enables this default-off module.
 #[cfg(feature = "fin04w2-protocol")]
 mod fin04w2_protocol;
+// Original supervisor receipt-chain verification and one-use service replay
+// barrier, exposed only to the separately approved W2-C benign CI feature.
+#[cfg(feature = "fin04w2-approved-fixed-exec")]
+mod fin04w2_authority;
 // Actual Win32 service-principal and current-Job inspection is review-only;
 // separate identity/ACL/WFP/service custody must precede any debugger launch.
 #[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
