@@ -133,7 +133,9 @@ pub(crate) fn consume_once_in_private_service_root(
     let mut digest=Sha256::new();
     digest.update(proof.job_id.as_bytes());
     digest.update(proof.plan_sha256.as_bytes());
-    digest.update(proof.admission_entry_sha256.as_bytes());
+    // One admitted Job may never execute twice, even if a previously
+    // consumed host journal is rewritten with a different admission receipt.
+    // The entry SHA is stored as evidence, NOT used to mint a new filename.
     let filename=format!("fin04w2-consumed-{:x}.receipt",digest.finalize());
     let destination=private_root.join(filename);
     // create_new is atomic; stale partial files MUST remain blockers.
