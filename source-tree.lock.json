@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a859c72f5a4e8b4015ecf3e122820bc53c392e3a",
+  "sourceCommitBeforeLock": "750036fce91d4daa24e42963d58d96e6e20d97bd",
   "trackedFileCount": 991,
   "files": [
     {
@@ -605,7 +605,7 @@
     },
     {
       "path": "docs/LU_CORE01F_P0_BRIDGE_REVIEW_20261112.md",
-      "blob": "b98f2da569eeef6f5441187cec2267b39ae8474b"
+      "blob": "29f0568bc53947baee15f38343090e49b21a58de"
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
@@ -2225,7 +2225,7 @@
     },
     {
       "path": "scripts/core01f-bridge-review.test.mjs",
-      "blob": "425ee98148cb22082ad79d1c6c03030f8bf9986c"
+      "blob": "290962ff72e599f9463ecbe8809927e3d329fb14"
     },
     {
       "path": "scripts/core01f-merge-preflight.mjs",

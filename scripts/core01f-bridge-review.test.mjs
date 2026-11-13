@@ -56,3 +56,33 @@ test('cannot forge acceptance or omit source bridge data',()=>{
    assert.throws(()=>verifyBridgeManifest(m),/REFUSED/);
  }
 });
+
+
+const source=path=>readFileSync(resolve(dirname(fileURLToPath(import.meta.url)),'..',path),'utf8');
+test('P0 review keeps exact human authorization and protected scoped cancellation',()=>{
+ const authority=source('src-tauri/lu-core/src/conversation_authority.rs');
+ assert.match(authority,/pub fn with_authorized_worker_launch/);
+ assert.match(authority,/pub fn revoke_conversation/);
+ const desktop=source('lu-desktop/src-tauri/src/p0_auth_desktop.rs');
+ assert.match(desktop,/background_scheduler\.list_owned\(chat,100\)/);
+ assert.match(desktop,/background_processes\.cancel_workspace_owned\(chat\)/);
+ const journal=source('lu-desktop/src-tauri/src/p0_auth_custody.rs');
+ assert.match(journal,/automatic_retry_allowed:false/);
+ assert.match(journal,/os_custody_independently_verified:false/);
+});
+test('P0 bridge never treats remembered sources or task proposals as execution grants',()=>{
+ const sourceReceipt=source('lu-desktop/src-tauri/src/ansf_source_evidence.rs');
+ assert.match(sourceReceipt,/execution_authorized:false/);
+ const continuation=source('lu-desktop/src-tauri/src/p0_memory_continuity.rs');
+ assert.match(continuation,/"taskCompleted":false/);
+ const register=source('src-tauri/lu-core/src/project_task_register.rs');
+ assert.match(register,/execution_authorized:false/);
+ const transfer=source('lu-desktop/src-tauri/src/model_transfer_desktop.rs');
+ assert.match(transfer,/INTERRUPTED_REVIEW_REQUIRED/);
+});
+test('packaging review cannot claim missing browser payload',()=>{
+ const manifest=JSON.parse(source('lu-desktop/src-tauri/resources/lu-browser/manifest.json'));
+ assert.equal(manifest.status,'not-packaged');
+ assert.deepEqual(manifest.files,[]);
+ assert.equal(manifest.platform,'none');
+});

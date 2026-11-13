@@ -131,3 +131,26 @@ read-only source checkout. The verifier rejects absent or changed blobs,
 missing paths, false acceptance flags, excluded provider/IDE paths,
 deleted source, non-ancestral refs, and incomplete Git history. It reads
 only; it cannot merge, replay worker authority, or modify user files.
+
+## Final source-trust and UI command audit
+
+The CORE-01F source-only regression now also checks that reviewed
+worker launch and conversation revocation are wired, scheduled and
+unscheduled chat-scoped cancellation remain distinct, original
+cancel/audit evidence cannot claim automatic retries or independent
+OS-custody success, original ANSF sources and model task proposals
+cannot grant execution, interrupted HF transfers require new review,
+and the Browser runtime manifest remains honestly `not-packaged`.
+These are static source contracts, **not** native runtime substitutes.
+
+The original P0 bridge desktop `main.jsx` exposed 176 distinct
+`invoke("lu_*")` command names. A source comparison against CORE-01E
+found all 176 retained and precisely two new command names:
+`lu_stream_reconnect` and `lu_perf01_recent`. The original
+`src-tauri/lu-core/src/lib.rs` module list retained all 223 and
+added `prefix_kv_cache` and `warm_model_residency`. No removed
+commands or modules were found in these source comparisons.
+
+These checks close the frozen bridge's source-level trust review,
+but no running native Job, installed OS dialog, or model inference
+is established by a string or blob test.
