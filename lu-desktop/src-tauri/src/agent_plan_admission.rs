@@ -241,11 +241,14 @@ mod tests{
         agent_plan_revisions::AgentPlanRevisionStore,
     };
     use std::time::{SystemTime,UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64,Ordering};
+    static TEST_ROOT_SEQUENCE:AtomicU64=AtomicU64::new(0);
     fn id(prefix:&str,n:u8)->String{format!("{prefix}{n:032x}")}
     fn setup()->(PathBuf,ChatStore,String,String,GoalEvent){
         let root=std::env::temp_dir().join(format!(
-            "lu-agent01f-{}-{}",std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            "lu-agent01f-{}-{}-{}",std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+            TEST_ROOT_SEQUENCE.fetch_add(1,Ordering::Relaxed)
         ));
         fs::create_dir_all(&root).unwrap();
         let chats=ChatStore::open(&root).unwrap();
@@ -271,6 +274,24 @@ mod tests{
             ProposedStep{kind:PlanStepKind::Present,depends_on:Some(1),
                 expected:ExpectedDeliverable::Explanation},
         ]
+    }
+    #[test]
+    fn parallel_plan_fixtures_cannot_reuse_any_original_sqlite_directory(){
+        let paths=std::thread::scope(|scope|{
+            let tasks=(0..64).map(|_|scope.spawn(||{
+                let root=std::env::temp_dir().join(format!(
+                    "lu-agent01f-{}-{}-{}",std::process::id(),
+                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+                    TEST_ROOT_SEQUENCE.fetch_add(1,Ordering::Relaxed)
+                ));
+                root
+            })).collect::<Vec<_>>();
+            tasks.into_iter().map(|thread|thread.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        let unique=paths.iter().collect::<std::collections::HashSet<_>>();
+        assert_eq!(unique.len(),64,
+            "no Windows coarse-clock SQLite setup collision permitted");
     }
     #[test]
     fn real_saved_turn_and_current_goal_stage_only_reviewable_draft(){

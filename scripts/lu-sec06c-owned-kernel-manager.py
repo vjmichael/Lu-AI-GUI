@@ -126,27 +126,41 @@ def input_resource(path,expected,op):
 
 def preexec_leaf(leaf,uid,gid,readonly=True):
     """Called only in forked child, still root; no untrusted exec yet."""
-    # Move into root-owned kernel leaf before dropping any privilege.
-    with (leaf/"cgroup.procs").open("w",encoding="ascii") as f:
-        f.write(str(os.getpid()))
-    if readonly:
+    # A diagnostic is ONLY the failing kernel syscall phase/errno. It cannot
+    # authorize execution, attest cleanup or expose arbitrary model bytes.
+    stage="cgroup-migrate"
+    try:
+        # Move into root-owned kernel leaf before dropping any privilege.
+        with (leaf/"cgroup.procs").open("w",encoding="ascii") as f:
+            f.write(str(os.getpid()))
         libc=ctypes.CDLL(None,use_errno=True)
-        if libc.unshare(CLONE_NEWNS)!=0:
-            raise OSError(ctypes.get_errno(),"mount namespace isolation")
-        if libc.mount(None,b"/",None,MS_REC|MS_PRIVATE,None)!=0:
-            raise OSError(ctypes.get_errno(),"private mount propagation")
-        if libc.mount(None,b"/sys/fs/cgroup",None,
-                      MS_REMOUNT|MS_BIND|MS_RDONLY,None)!=0:
-            raise OSError(ctypes.get_errno(),"worker cgroup mount readonly")
-    else:
-        # Independent first-party same-UID hostile-migration probe runs with
-        # original rw mount, exercising actual root-owned parent permissions.
-        libc=ctypes.CDLL(None,use_errno=True)
-    if libc.prctl(PR_SET_NO_NEW_PRIVS,1,0,0,0)!=0:
-        raise OSError(ctypes.get_errno(),"no new privileges")
-    os.setgroups([])
-    os.setgid(gid)
-    os.setuid(uid)
+        if readonly:
+            stage="unshare-private-mount"
+            if libc.unshare(CLONE_NEWNS)!=0:
+                raise OSError(ctypes.get_errno(),"mount namespace isolation")
+            stage="private-mount-propagation"
+            if libc.mount(None,b"/",None,MS_REC|MS_PRIVATE,None)!=0:
+                raise OSError(ctypes.get_errno(),"private mount propagation")
+            stage="readonly-kernel-cgroup-mount"
+            if libc.mount(None,b"/sys/fs/cgroup",None,
+                          MS_REMOUNT|MS_BIND|MS_RDONLY,None)!=0:
+                raise OSError(ctypes.get_errno(),"worker cgroup mount readonly")
+        # The hostile-migration probe intentionally retains a genuine rw
+        # cgroup mount. It still drops root and never receives cgroup rights.
+        stage="prctl-no-new-privileges"
+        if libc.prctl(PR_SET_NO_NEW_PRIVS,1,0,0,0)!=0:
+            raise OSError(ctypes.get_errno(),"no new privileges")
+        stage="clear-root-supplementary-groups"
+        os.setgroups([])
+        stage="drop-group-identity"
+        os.setgid(gid)
+        stage="drop-user-identity"
+        os.setuid(uid)
+    except OSError as exc:
+        number=exc.errno if isinstance(exc.errno,int) else -1
+        msg=f"SEC06C_KERNEL_PREEXEC_DENIED stage={stage} errno={number}"+chr(10)
+        os.write(2,msg.encode("ascii"))
+        raise
 
 def kernel_empty(stream):
     try:
@@ -273,7 +287,7 @@ def run(args):
         str(PYTHON),str(pathlib.Path(__file__).resolve()),
         "--attack-leaf","--nonce",args.nonce
     ],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
-       stderr=subprocess.DEVNULL,
+       stderr=None,
        preexec_fn=lambda:preexec_leaf(leaf,args.uid,user.pw_gid,readonly=False))
     if attacker.wait(timeout=10)!=0 or not wait_kernel_zero(events,5):
         try:(leaf/"cgroup.kill").write_text("1",encoding="ascii")
@@ -286,7 +300,7 @@ def run(args):
     try:
         # All privileged namespace/cgroup operations happen before drop.
         child=subprocess.Popen(argv,stdin=sys.stdin.buffer,
-             stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+             stdout=subprocess.PIPE,stderr=None,
              cwd="/",env={"PATH":"/usr/bin:/bin","LC_ALL":"C",
                           "HOME":user.pw_dir,"GIT_CONFIG_NOSYSTEM":"1"},
              preexec_fn=lambda:preexec_leaf(leaf,args.uid,user.pw_gid),

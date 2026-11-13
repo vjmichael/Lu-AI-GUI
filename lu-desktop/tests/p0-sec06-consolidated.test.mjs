@@ -137,6 +137,12 @@ test('SEC06C trusted root supervisor pins the separate leaf and proves populated
   assert.match(manager,/CLONE_NEWNS/);
   assert.match(manager,/MS_REMOUNT\|MS_BIND\|MS_RDONLY/);
   assert.match(manager,/PR_SET_NO_NEW_PRIVS/);
+  assert.match(manager,/SEC06C_KERNEL_PREEXEC_DENIED stage=/);
+  assert.match(manager,/errno=/);
+  assert.match(manager,/stage="cgroup-migrate"/);
+  assert.match(manager,/stage="unshare-private-mount"/);
+  assert.match(manager,/stage="readonly-kernel-cgroup-mount"/);
+  assert.match(manager,/stage="drop-user-identity"/);
   assert.match(manager,/os\.setgroups\(\[\]\)/);
   assert.match(manager,/os\.setgid\(gid\)/);
   assert.match(manager,/os\.setuid\(uid\)/);
