@@ -10,10 +10,10 @@ use std::{ffi::OsStr, mem::size_of, os::windows::ffi::OsStrExt, ptr};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, HANDLE},
     Security::{
-        CheckTokenMembership, CreateWellKnownSid, EqualSid, GetTokenInformation,
+        CheckTokenMembership, CreateWellKnownSid, DuplicateToken, EqualSid, GetTokenInformation,
         IsTokenRestricted, LookupAccountNameW, TokenGroups, TokenRestrictedSids,
-        TokenIsAppContainer, TokenUser, WinLocalServiceSid,
-        SID_AND_ATTRIBUTES, TOKEN_GROUPS, TOKEN_QUERY, TOKEN_USER,
+        TokenIsAppContainer, TokenUser, WinLocalServiceSid, SecurityImpersonation,
+        SID_AND_ATTRIBUTES, TOKEN_DUPLICATE, TOKEN_GROUPS, TOKEN_QUERY, TOKEN_USER,
     },
     System::{
         JobObjects::IsProcessInJob,
@@ -105,7 +105,7 @@ fn contains_sid(
 /// This is insufficient for service request admission, WFP or debugger launch.
 pub(crate) fn inspect_current_service_principal() -> Result<(), SupervisorError> {
     let mut raw = ptr::null_mut();
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &mut raw) } == 0 {
         return Err(denied());
     }
     let token = Token(raw);
@@ -144,9 +144,17 @@ pub(crate) fn inspect_current_service_principal() -> Result<(), SupervisorError>
         return Err(denied());
     }
     let mut service = service_sid()?;
+    // CheckTokenMembership requires an impersonation token. The kernel
+    // primary token is duplicated for this READ-ONLY query; neither
+    // impersonation nor its resulting handle is used for execution.
+    let mut duplicate = ptr::null_mut();
+    if unsafe { DuplicateToken(token.0, SecurityImpersonation, &mut duplicate) } == 0 {
+        return Err(denied());
+    }
+    let duplicate = Token(duplicate);
     let mut enabled = 0i32;
     if unsafe {
-        CheckTokenMembership(token.0, service.as_mut_ptr().cast(), &mut enabled)
+        CheckTokenMembership(duplicate.0, service.as_mut_ptr().cast(), &mut enabled)
     } == 0 || enabled == 0
         || !contains_sid(token.0, TokenGroups, service.as_mut_ptr().cast())?
         || !contains_sid(token.0, TokenRestrictedSids, service.as_mut_ptr().cast())?
