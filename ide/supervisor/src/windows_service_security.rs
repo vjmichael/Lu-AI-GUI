@@ -920,6 +920,29 @@ pub fn authenticate_service_server(
     approved_service_path: &Path,
     service_sha256: &str,
 ) -> Result<(), SupervisorError> {
+    authenticate_fixed_service_server(
+        pipe,approved_service_path,service_sha256,"LuIdeRecoveryBroker",
+    )
+}
+/// W2-C native host verifies the *new* debugger service's actual SCM PID,
+/// exact image hash and restricting SID before consuming its original
+/// one-use grant. A spoofed same-user named pipe can never mint approval.
+#[cfg(feature="fin04w2-approved-fixed-exec")]
+pub(crate) fn authenticate_debugger_service_server(
+    pipe: HANDLE,
+    approved_service_path: &Path,
+    service_sha256: &str,
+) -> Result<(), SupervisorError> {
+    authenticate_fixed_service_server(
+        pipe,approved_service_path,service_sha256,"LuIdeDebuggerBroker",
+    )
+}
+fn authenticate_fixed_service_server(
+    pipe: HANDLE,
+    approved_service_path: &Path,
+    service_sha256: &str,
+    service_name: &str,
+) -> Result<(), SupervisorError> {
     let mut pid = 0u32;
     if unsafe { GetNamedPipeServerProcessId(pipe, &mut pid) } == 0 || pid == 0 {
         ci_service_attestation_stage("service_kernel_pid_denied");
@@ -970,7 +993,7 @@ pub fn authenticate_service_server(
         return Err(denied());
     }
     let token = Handle::new(raw)?;
-    let service = parse_sid(&sid_of_service()?).map_err(|_| {
+    let service = parse_sid(&sid_of_named_service(service_name)?).map_err(|_| {
         ci_service_attestation_stage("service_sid_lookup_denied");
         denied()
     })?;
