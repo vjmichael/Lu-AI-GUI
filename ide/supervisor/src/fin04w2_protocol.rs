@@ -86,66 +86,9 @@ pub(crate) fn inspect_shape_only(
     })
 }
 
-/// W2-C's fixed request adds a 16-byte original Job ID after the
-/// exact 92-byte base frame. That is the only additional wire field: no
-/// process ID, executable path, adapter method or command-line string.
-/// A grant for the same plan in ANOTHER job is not interchangeable.
-#[cfg(feature="fin04w2-approved-fixed-exec")]
-pub(crate) fn inspect_approved_exact_job(
-    bytes:&[u8],plan:&JobPlan,plan_sha:&str,nonce:&[u8;16],
-    expected_job_id:&str,
-)->Result<ReviewedPacket,SupervisorError>{
-    if bytes.len()!=108
-        || expected_job_id.len()!=36
-        || !expected_job_id.starts_with("job-")
-    {return Err(SupervisorError::InvalidPlan);}
-    let suffix=&expected_job_id[4..];
-    if !suffix.bytes().all(|b|b.is_ascii_hexdigit()){
-        return Err(SupervisorError::InvalidPlan);
-    }
-    let mut job_bytes=[0u8;16];
-    for (i,item) in job_bytes.iter_mut().enumerate(){
-        *item=u8::from_str_radix(&suffix[i*2..i*2+2],16)
-            .map_err(|_|SupervisorError::InvalidPlan)?;
-    }
-    if bytes[92..108]!=job_bytes {
-        return Err(SupervisorError::WrongProjectOrSource);
-    }
-    let packet=inspect_shape_only(&bytes[..92],plan,plan_sha,nonce)?;
-    if packet.operation!=ReviewedOperation::LaunchSealed {
-        return Err(SupervisorError::InvalidApproval);
-    }
-    Ok(packet)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature="fin04w2-approved-fixed-exec")]
-    #[test]
-    fn approved_packet_must_match_original_job_not_only_plan() {
-        let job_a=format!("job-{}","11".repeat(16));
-        let job_b=format!("job-{}","22".repeat(16));
-        let mut data=Vec::from(packet(2));
-        data.extend_from_slice(&[0x11;16]);
-        assert!(inspect_approved_exact_job(
-            &data,&plan(),&"aa".repeat(32),&[0x42;16],&job_a
-        ).is_ok());
-        assert!(inspect_approved_exact_job(
-            &data,&plan(),&"aa".repeat(32),&[0x42;16],&job_b
-        ).is_err());
-        data[9]=1;
-        assert!(inspect_approved_exact_job(
-            &data,&plan(),&"aa".repeat(32),&[0x42;16],&job_a
-        ).is_err());
-        data[9]=2;
-        data.pop();
-        assert!(inspect_approved_exact_job(
-            &data,&plan(),&"aa".repeat(32),&[0x42;16],&job_a
-        ).is_err());
-    }
-
-
     fn plan() -> JobPlan {
         JobPlan {
             project_id: format!("ide-{}", "a".repeat(32)),
