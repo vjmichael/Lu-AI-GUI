@@ -46,6 +46,8 @@ struct OwnedWorker {
     // this per-operation cgroup. Only the fixed finite Git-read broker uses it.
     #[cfg(target_os="linux")]
     os_owned_git:Option<lu_win_worker_job::os_owned_git::LinuxOsOwnedReviewedGit>,
+    #[cfg(target_os="linux")]
+    os_owned_probe:Option<lu_win_worker_job::os_owned_probe::LinuxOsOwnedReviewedProbe>,
 }
 pub struct BackgroundProcessSupervisor {
     store:Arc<TaskStore>,
@@ -474,7 +476,9 @@ impl BackgroundProcessSupervisor {
         if !correct_extension{return Err(BackgroundProcessError::InvalidPlan)}
         let observed=verified_media_input(input,reviewed_media_sha256)?;
         if observed==0{return Err(BackgroundProcessError::InvalidPlan)}
-        self.start_host_approved_internal(plan,Some((output_limit,false)),true)
+        self.start_host_approved_internal_with_probe_sha(
+            plan,Some((output_limit,false)),true,Some(reviewed_media_sha256)
+        )
     }
     /// P0-TOOLS-04: finite, host-only PDFInfo and ExifTool read operations.
     /// These exact argument shapes are compiled in Lu; no Tauri/model input
@@ -524,11 +528,20 @@ impl BackgroundProcessSupervisor {
         }
         let length=verified_media_input(file,original_file_sha256)?;
         if length>32*1024*1024{return Err(BackgroundProcessError::InvalidPlan)}
-        self.start_host_approved_internal(plan,Some((limit,false)),true)
+        self.start_host_approved_internal_with_probe_sha(
+            plan,Some((limit,false)),true,Some(original_file_sha256)
+        )
     }
     fn start_host_approved_internal(
         &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>,
-        _linux_media_probe:bool
+        linux_media_probe:bool,
+    )->Result<(),BackgroundProcessError>{
+        self.start_host_approved_internal_with_probe_sha(
+            plan,typed_capture,linux_media_probe,None)
+    }
+    fn start_host_approved_internal_with_probe_sha(
+        &self,plan:TrustedWorkerPlan,typed_capture:Option<(usize,bool)>,
+        _linux_media_probe:bool,reviewed_probe_sha:Option<&str>,
     )->Result<(),BackgroundProcessError>{
         if !valid_id(&plan.task_id)||!valid_id(&plan.workspace_id)
           ||plan.max_runtime_seconds.is_some_and(|n|n==0||n>86_400)
@@ -613,13 +626,44 @@ impl BackgroundProcessSupervisor {
                 return Err(BackgroundProcessError::StoreUnavailable)
             }
         }
+        // Separate fixed root-owned OS probe launcher: ONLY host-authenticated
+        // finite FFprobe WAV/MP4, PDFInfo PDF or ExifTool PNG/JPEG operations.
+        // This route cannot execute a model-supplied program or arbitrary CLI.
+        #[cfg(target_os="linux")]
+        let mut os_owned_probe_spawn=if let Some(resource_sha)=reviewed_probe_sha{
+            if let Some((_,chat,turn))=reviewed_origin.as_ref(){
+                lu_win_worker_job::os_owned_probe::LinuxOsOwnedReviewedProbe::spawn_if_installed(
+                    &executable,&plan.expected_sha256,&plan.args,resource_sha,
+                    chat,turn,&plan.task_id
+                ).map_err(|_|{
+                    let _=self.store.fail_pending(&plan.task_id);
+                    BackgroundProcessError::SpawnFailed
+                })?
+            }else{None}
+        }else{None};
+        #[cfg(target_os="linux")]
+        if let Some((ref mut client,ref mut proof))=os_owned_probe_spawn{
+            let (_,chat,turn)=reviewed_origin.as_ref()
+                .ok_or(BackgroundProcessError::StoreUnavailable)?;
+            if self.store.bind_linux_os_owned_probe_admission(
+                &plan.task_id,chat,turn,proof.nonce(),proof.kind(),
+                proof.executable_sha(),proof.resource_sha(),
+            ).is_err(){
+                let _=proof.stop_and_verify(client);
+                let _=self.store.record_process_uncertain(
+                    &plan.task_id,"OS_CUSTODY_UNVERIFIED");
+                let _=self.store.fail_pending(&plan.task_id);
+                return Err(BackgroundProcessError::StoreUnavailable)
+            }
+        }
         // Prefer a delegated kernel cgroup subtree for reviewed typed tools.
         // The independent helper lives outside it and kills the entire
         // subtree on EOF even if Lu is SIGKILLed. When OS delegation is
         // unavailable the reviewed tool may retain its existing PGID
         // guardian, but AGENT-01K/01L REFUSE full descendant custody.
         #[cfg(target_os="linux")]
-        let mut cgroup=if os_owned_git_spawn.is_some(){None}
+        let mut cgroup=if os_owned_git_spawn.is_some()
+            ||os_owned_probe_spawn.is_some(){None}
         else if let Some((profile,chat,turn))=reviewed_origin{
             lu_win_worker_job::unix_owned::LinuxCgroupCustodian::spawn_if_delegated(
                 profile,&chat,&turn,&plan.task_id
@@ -630,7 +674,7 @@ impl BackgroundProcessSupervisor {
         }else{None};
         #[cfg(target_os="linux")]
         let guardian=if typed_capture.is_some()&&cgroup.is_none()
-            &&os_owned_git_spawn.is_none(){
+            &&os_owned_git_spawn.is_none()&&os_owned_probe_spawn.is_none(){
             lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian::spawn_if_available()
                 .map_err(|_|{
                     let _=self.store.fail_pending(&plan.task_id);
@@ -734,8 +778,13 @@ impl BackgroundProcessSupervisor {
         #[cfg(target_os="linux")]
         let mut os_owned_git=None;
         #[cfg(target_os="linux")]
+        let mut os_owned_probe=None;
+        #[cfg(target_os="linux")]
         let mut child=if let Some((managed_child,proof))=os_owned_git_spawn{
             os_owned_git=Some(proof);
+            managed_child
+        }else if let Some((managed_child,proof))=os_owned_probe_spawn{
+            os_owned_probe=Some(proof);
             managed_child
         }else{
             command.spawn().map_err(|_|{
@@ -798,6 +847,8 @@ impl BackgroundProcessSupervisor {
             cgroup,
             #[cfg(target_os="linux")]
             os_owned_git,
+            #[cfg(target_os="linux")]
+            os_owned_probe,
         };
         workers.insert(plan.task_id.clone(),owner);
         if self.store.start(&plan.task_id).is_err(){
@@ -868,6 +919,14 @@ impl BackgroundProcessSupervisor {
                         // killed descendant tree. Verify the independent
                         // original root-owned OS receipt first.
                         if let Some(os_unit)=worker.os_owned_git.as_mut(){
+                            if os_unit.verify_original_kernel_receipt().is_err(){
+                                self.store.record_process_uncertain(
+                                    id,"OS_CUSTODY_UNVERIFIED")
+                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                                return Err(BackgroundProcessError::ProcessUncertain)
+                            }
+                        }
+                        if let Some(os_unit)=worker.os_owned_probe.as_mut(){
                             if os_unit.verify_original_kernel_receipt().is_err(){
                                 self.store.record_process_uncertain(
                                     id,"OS_CUSTODY_UNVERIFIED")
@@ -1143,6 +1202,9 @@ fn terminate_owned(worker:&mut OwnedWorker)->Result<(),BackgroundProcessError>{
             // unprivileged broker to stop and the root-owned unit to reap
             // its subtree; only a real kernel-empty receipt ends custody.
             os_unit.stop_and_verify(&mut worker.child)
+                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+        }else if let Some(probe)=worker.os_owned_probe.as_mut(){
+            probe.stop_and_verify(&mut worker.child)
                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
         }else if let Some(guard)=worker.cgroup.as_mut(){
             guard.stop_and_verify()
@@ -1819,6 +1881,159 @@ mod tests{
             .worker_and_descendants_ended(&chat,&turn,call),
             "interrupted old effect cannot borrow a historical kernel cleanup as completion");
         drop(db);drop(reopened);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// SEC-06C: four real, separately finite host-reviewed probes must run
+    /// under the root-owned service broker with immutable resource SHA and
+    /// original chat/call/turn, kernel cgroup-empty and restart verification.
+    /// A negative/fake receipt never upgrades a cancelled or changed input.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="native Ubuntu with installed fixed root-owned probe broker and ffmpeg/poppler/exiftool"]
+    fn sec06c_root_owned_media_metadata_probes_original_journal(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        use std::process::Command;
+        assert!(Path::new("/usr/libexec/lu/lu-sec06c-launch-probe").is_file(),
+            "SEC06C_NOT_AVAILABLE: genuine fixed root-owned probe broker missing");
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-probes-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let wav=root.join("sound.wav");
+        let mut sound=Vec::new();
+        sound.extend_from_slice(b"RIFF");
+        sound.extend_from_slice(&(36u32+64).to_le_bytes());
+        sound.extend_from_slice(b"WAVEfmt ");
+        sound.extend_from_slice(&16u32.to_le_bytes());
+        sound.extend_from_slice(&1u16.to_le_bytes());
+        sound.extend_from_slice(&1u16.to_le_bytes());
+        sound.extend_from_slice(&8000u32.to_le_bytes());
+        sound.extend_from_slice(&16000u32.to_le_bytes());
+        sound.extend_from_slice(&2u16.to_le_bytes());
+        sound.extend_from_slice(&16u16.to_le_bytes());
+        sound.extend_from_slice(b"data");
+        sound.extend_from_slice(&64u32.to_le_bytes());
+        sound.extend_from_slice(&[0u8;64]);
+        fs::write(&wav,sound).unwrap();
+        let mp4=root.join("frame.mp4");
+        let ffmpeg=fs::canonicalize("/usr/bin/ffmpeg")
+            .expect("genuine ffmpeg fixture generator is required");
+        assert!(Command::new(&ffmpeg).args([
+            "-nostdin","-hide_banner","-loglevel","error",
+            "-f","lavfi","-i","color=c=black:s=16x16:d=0.4",
+            "-c:v","mpeg4","-y",
+        ]).arg(&mp4).status().unwrap().success());
+        let pdf=root.join("paper.pdf");
+        let mut content=b"%PDF-1.4\n".to_vec();
+        let mut offsets=Vec::new();
+        let objects=[
+          "<< /Type /Catalog /Pages 2 0 R >>",
+          "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+          "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+        ];
+        for (index,text) in objects.iter().enumerate(){
+            offsets.push(content.len());
+            content.extend_from_slice(format!(
+                "{} 0 obj\n{}\nendobj\n",index+1,text).as_bytes());
+        }
+        let startxref=content.len();
+        content.extend_from_slice(b"xref\n0 4\n0000000000 65535 f \n");
+        for offset in offsets{
+            content.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        content.extend_from_slice(format!(
+            "trailer\n<< /Root 1 0 R /Size 4 >>\nstartxref\n{startxref}\n%%EOF\n"
+        ).as_bytes());
+        fs::write(&pdf,content).unwrap();
+        let png=root.join("pixel.png");
+        fs::write(&png,&[
+            137u8,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,
+            0,0,0,1,0,0,0,1,8,4,0,0,0,181,28,12,2,0,0,0,11,
+            73,68,65,84,120,218,99,252,255,31,0,3,3,2,0,238,
+            254,105,221,0,0,0,0,73,69,78,68,174,66,96,130,
+        ]).unwrap();
+        let chat=format!("c-{}","7".repeat(32));
+        let turn=format!("g-{}","6".repeat(32));
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let supervisor=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),root.clone());
+        let probes=[
+          ("ffprobe-wav","/usr/bin/ffprobe",wav),
+          ("ffprobe-mp4","/usr/bin/ffprobe",mp4),
+          ("pdfinfo-pdf","/usr/bin/pdfinfo",pdf),
+          ("exiftool-image","/usr/bin/exiftool",png),
+        ];
+        for (kind,binary,input) in probes{
+            let canonical=fs::canonicalize(binary).unwrap();
+            let exe_sha=format!("{:x}",Sha256::digest(fs::read(&canonical).unwrap()));
+            let resource_sha=format!("{:x}",Sha256::digest(fs::read(&input).unwrap()));
+            let call=format!("sec06c-{kind}-fm");
+            let input_arg=input.as_os_str().to_owned();
+            let args:Vec<OsString>=match kind{
+                "ffprobe-wav"|"ffprobe-mp4"=>vec![
+                    "-v".into(),"error".into(),
+                    "-protocol_whitelist".into(),"file".into(),
+                    "-f".into(),(if kind=="ffprobe-wav"{"wav"}else{"mov"}).into(),
+                    "-show_entries".into(),
+                    "format=duration:stream=index,codec_type,codec_name,width,height,sample_rate,channels".into(),
+                    "-of".into(),"json".into(),"-i".into(),input_arg],
+                "pdfinfo-pdf"=>vec!["-isodates".into(),input_arg],
+                "exiftool-image"=>vec![
+                    "-j".into(),"-n".into(),"-ImageWidth".into(),
+                    "-ImageHeight".into(),"-FileType".into(),
+                    "-FileSize#".into(),"--".into(),input_arg],
+                _=>unreachable!(),
+            };
+            let plan=TrustedWorkerPlan{
+                task_id:call.clone(),workspace_id:turn.clone(),
+                executable:canonical,expected_sha256:exe_sha,
+                args,progress_protocol:false,max_runtime_seconds:Some(30),
+            };
+            if kind.starts_with("ffprobe-"){
+                supervisor.start_host_approved_media_probe(plan,16384,&resource_sha)
+                    .expect("actual finite original FFprobe admission");
+            }else{
+                supervisor.start_host_approved_specialist_probe(
+                    plan,8192,&resource_sha,
+                    if kind=="pdfinfo-pdf"{"pdfinfo"}else{"exiftool"}
+                ).expect("actual finite metadata probe admission");
+            }
+            let deadline=Instant::now()+Duration::from_secs(45);
+            loop{
+                supervisor.poll().expect(
+                    "SEC06C kernel probe receipt missing or original worker uncertain");
+                let record=store.get(&call).unwrap().unwrap();
+                if record.state==TaskState::Completed{break}
+                assert_eq!(record.state,TaskState::Running);
+                assert!(Instant::now()<deadline,"bounded OS probe never finished");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            let data=supervisor.take_local_version_stdout(&call,&turn)
+                .unwrap().expect("no bounded original read-only probe output");
+            assert!(!data.bytes.is_empty());
+            let independent=HostOriginalJobCustody::from_host_profile(&root);
+            assert!(independent.worker_and_descendants_ended(&chat,&turn,&call),
+                "SEC06C independent root-owned kernel receipt missing");
+            assert!(!independent.worker_and_descendants_ended(
+                &format!("c-{}","3".repeat(32)),&turn,&call));
+        }
+        drop(supervisor);drop(store);
+        let reopened=TaskStore::open(&journal).unwrap();
+        for kind in ["ffprobe-wav","ffprobe-mp4","pdfinfo-pdf","exiftool-image"]{
+            let call=format!("sec06c-{kind}-fm");
+            assert_eq!(reopened.get(&call).unwrap().unwrap().state,
+                TaskState::Completed);
+            assert!(reopened.process_uncertainty(&call).unwrap().is_none());
+        }
+        drop(reopened);
         fs::remove_dir_all(root).unwrap();
     }
 

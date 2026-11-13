@@ -121,6 +121,45 @@ test('SEC06C trusted OS-owned Git launch binds original journal nonce and finite
   assert.match(gate,/linux-ancestor-migration/);
 });
 
+test('SEC06C has separate finite root-owned FFprobe/PDFInfo/ExifTool service boundary',()=>{
+  const native=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/os_owned_probe.rs'),'utf8');
+  const launcher=readFileSync(join(root,'scripts/lu-sec06c-owned-probe-launcher.py'),'utf8');
+  const worker=readFileSync(join(root,'scripts/lu-sec06c-owned-probe-worker.py'),'utf8');
+  const host=readFileSync(join(root,'src-tauri/lu-core/src/native_background_process.rs'),'utf8');
+  const tasks=readFileSync(join(root,'src-tauri/lu-core/src/tasks.rs'),'utf8');
+  const custody=readFileSync(join(root,'src-tauri/lu-core/src/agent_os_custody.rs'),'utf8');
+  assert.match(native,/SEC06C forbids arbitrary media\/metadata argv/);
+  assert.match(native,/ffprobe-wav/);
+  assert.match(native,/ffprobe-mp4/);
+  assert.match(native,/pdfinfo-pdf/);
+  assert.match(native,/exiftool-image/);
+  assert.match(native,/\/usr\/libexec\/lu\/lu-sec06c-launch-probe/);
+  assert.match(host,/LinuxOsOwnedReviewedProbe::spawn_if_installed/);
+  assert.match(host,/bind_linux_os_owned_probe_admission/);
+  assert.match(host,/os_owned_probe/);
+  assert.match(tasks,/Immutable Linux OS-owned probe admission/);
+  assert.match(custody,/linux_os_owned_probe_original_receipt/);
+  for(const attr of ['Delegate=no','KillMode=control-group',
+    'ProtectControlGroups=strict','PrivateNetwork=yes','NoNewPrivileges=yes',
+    'CapabilityBoundingSet=','TasksMax=32','MemoryMax=536870912',
+    'secure_file','secure_directory','kernel_empty','cgroup.events']){
+    assert.ok(launcher.includes(attr),'missing original kernel/probe contract '+attr);
+  }
+  assert.match(worker,/os\.O_NOFOLLOW/);
+  assert.match(worker,/pass_fds=\(fd,\)/);
+  assert.match(worker,/hashlib\.sha256/);
+  assert.match(worker,/select\.select/);
+  assert.match(worker,/ffprobe-wav/);
+  assert.match(worker,/ffprobe-mp4/);
+  assert.match(worker,/pdfinfo-pdf/);
+  assert.match(worker,/exiftool-image/);
+  assert.match(worker,/approved_first_launch/);
+  assert.doesNotMatch(launcher,/shell=True|os\.system\(/);
+  assert.doesNotMatch(worker,/shell=True|os\.system\(/);
+  assert.match(gate,/linux-os-owned-probe-syntax/);
+  assert.match(gate,/linux-ancestor-migration/);
+});
+
 test('SEC06C root-owned boundary prototype must deny external same-UID migration and use OS group cleanup',()=>{
   const prototype=readFileSync(join(root,'benchmarks/e1/sec06c_root_owned_systemd_boundary.py'),'utf8');
   assert.match(prototype,/--property=Delegate=no/);
@@ -207,7 +246,7 @@ test('SEC06 verifier rejects changed original native log with correct head and l
       'exact-head-inventory','security-contracts','sec06-js-syntax',
       'linux-negative-python-syntax','linux-host-crash-python-syntax','linux-delegated-python-syntax',
       'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
-      'linux-os-owned-git-syntax',
+      'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
       'core-native-full','desktop-ansf-native','worker-job-native',
       'core-sec-regressions','desktop-sec-regressions',
       'worker-sec-regressions',

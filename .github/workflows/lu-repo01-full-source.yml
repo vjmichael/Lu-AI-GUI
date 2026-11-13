@@ -2970,6 +2970,67 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+  core01e-sec06c-os-owned-probes:
+    name: SEC-06C original root-owned finite media/metadata (Linux)
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 226 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && contains(github.event.pull_request.body, format('LU_CORE01E_SEC06_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_CORE01E_SEC06_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source and compile finite read-only kernel probe integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          node scripts/verify-source-tree.mjs
+          python3 -m py_compile scripts/lu-sec06c-owned-probe-launcher.py scripts/lu-sec06c-owned-probe-worker.py
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_probe -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c --no-run
+      - name: Provision only reviewed finite probe binaries and fixed test-only OS broker
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get -qq update
+          sudo apt-get -y -qq install --no-install-recommends ffmpeg poppler-utils libimage-exiftool-perl
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-launcher.py /usr/libexec/lu/lu-sec06c-launch-probe
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-probe-worker.py /usr/libexec/lu/lu-sec06c-owned-probe-worker
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-probe *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-probe-ci >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-sec06c-probe-ci
+          sudo visudo -cf /etc/sudoers.d/lu-sec06c-probe-ci
+          test "$(id -u)" -ne 0
+          for bin in ffmpeg ffprobe pdfinfo exiftool; do
+            path="$(readlink -e "$(command -v "$bin")")"
+            test -f "$path" && test "$(stat -c %u "$path")" = 0
+          done
+      - name: Run reviewed WAV MP4 PDF PNG finite OS-managed tasks and recovery
+        shell: bash
+        env:
+          LU_SEC06C_BROKER_DEBUG: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p sec06c-probe-native-evidence
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c_root_owned_media_metadata_probes_original_journal -- --ignored --nocapture 2>&1 | tee sec06c-probe-native-evidence/native-probes.log
+          grep -Fq '1 passed; 0 failed' sec06c-probe-native-evidence/native-probes.log
+          echo 'FFprobe, PDFInfo and ExifTool finite original native execution is not release acceptance; independent hostile migration, process-custody and SEC-06F remain mandatory.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-sec06c-finite-probes-${{ github.event.pull_request.head.sha }}
+          path: sec06c-probe-native-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
   p0-gate-installed-windows:
     name: P0-GATE genuine hosted Windows NSIS, UIA, restart, uninstall
     needs: p0-gate-native

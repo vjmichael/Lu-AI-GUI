@@ -138,6 +138,66 @@ fn linux_os_owned_git_original_receipt(
     if uid.parse::<u32>().ok().is_none_or(|n|n==0){return Some(false)}
     Some(remaining=="KERNEL_EMPTY=1\nEFFECT=COMPLETED\n")
 }
+/// SEC-06C distinct reviewed metadata/media worker: only an immutable
+/// original Lu task->nonce+binary+resource+kind binding can join the matching
+/// root-owned systemd kernel-empty receipt. A cancelled/abandoned operation
+/// remains unaccepted even after its original cgroup eventually becomes empty.
+#[cfg(target_os="linux")]
+fn linux_os_owned_probe_original_receipt(
+    db:&Connection,chat:&str,turn:&str,call:&str,
+)->Option<bool>{
+    let row:Result<Option<(String,String,String,String,String,String,String)>,_>=
+        db.query_row(
+          "SELECT a.chat,a.turn,a.nonce,a.kind,
+                  a.binary_sha256,a.resource_sha256,t.state
+           FROM lu_task_linux_os_owned_probe_admission a
+           JOIN lu_tasks t ON t.task_id=a.task_id
+           JOIN lu_reviewed_turn_origin o ON o.singleton=1
+           WHERE a.task_id=?1 AND a.chat=?2 AND a.turn=?3
+             AND t.workspace_id=?3 AND o.conversation_id=?2
+             AND o.user_turn_id=?3",
+          params![call,chat,turn],
+          |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,
+                 r.get(4)?,r.get(5)?,r.get(6)?))
+        ).optional();
+    let (saved_chat,saved_turn,nonce,kind,binary,resource,state)=match row{
+        Ok(Some(x))=>x,
+        _=>return None,
+    };
+    let hex=|v:&str,n:usize|v.len()==n&&v.bytes().all(|b|
+        b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
+    if state!="COMPLETED"||saved_chat!=chat||saved_turn!=turn
+        ||!hex(&nonce,32)||!hex(&binary,64)||!hex(&resource,64)
+        ||!matches!(kind.as_str(),"ffprobe-wav"|"ffprobe-mp4"
+            |"pdfinfo-pdf"|"exiftool-image"){
+        return Some(false)
+    }
+    let root=Path::new("/var/lib/lu-sec06c/probe-receipts");
+    let Ok(meta)=fs::symlink_metadata(root)else{return Some(false)};
+    if !meta.is_dir()||meta.file_type().is_symlink()||meta.uid()!=0
+        ||meta.permissions().mode()&0o022!=0{return Some(false)}
+    let path=root.join(format!("{nonce}.receipt"));
+    const NOFOLLOW:i32=0o400000;
+    let Ok(mut file)=OpenOptions::new().read(true)
+        .custom_flags(NOFOLLOW).open(path)else{return Some(false)};
+    let Ok(meta)=file.metadata()else{return Some(false)};
+    if !meta.is_file()||meta.uid()!=0||meta.nlink()!=1
+        ||meta.len()>1024||meta.permissions().mode()&0o022!=0{
+        return Some(false)
+    }
+    let mut bytes=Vec::new();
+    if file.take(1025).read_to_end(&mut bytes).is_err(){
+        return Some(false)
+    }
+    let Ok(raw)=String::from_utf8(bytes)else{return Some(false)};
+    let prefix=format!(
+        "LU_SEC06C_OWNED_PROBE_V1\nNONCE={nonce}\nCHAT={chat}\nTURN={turn}\nCALL={call}\nKIND={kind}\nBINARY_SHA256={binary}\nRESOURCE_SHA256={resource}\nUNIT=lu-sec06c-probe-{nonce}.service\nORIGINAL_UID=",
+    );
+    let Some(rem)=raw.strip_prefix(&prefix)else{return Some(false)};
+    let Some((uid,outcome))=rem.split_once("\n")else{return Some(false)};
+    if uid.parse::<u32>().ok().is_none_or(|v|v==0){return Some(false)}
+    Some(outcome=="KERNEL_EMPTY=1\nEFFECT=COMPLETED\n")
+}
 /// Kernel-custodian receipt is written from an out-of-process first-party
 /// executable on EOF after cgroup.kill and recursive cgroup.events populated0.
 /// It remains historical data only: AGENT-01K separately rechecks the actual
@@ -179,6 +239,9 @@ fn linux_original_cgroup_empty(
         return false
     }
     if let Some(accepted)=linux_os_owned_git_original_receipt(
+        &db,chat,turn,call
+    ){return accepted}
+    if let Some(accepted)=linux_os_owned_probe_original_receipt(
         &db,chat,turn,call
     ){return accepted}
     let receipt=profile.join(format!("lu-cgroup-os-{turn}-{call}.receipt"));

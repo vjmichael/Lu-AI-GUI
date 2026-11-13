@@ -105,7 +105,10 @@ impl LinuxOsOwnedReviewedGit{
             .arg("--repo").arg(repo).arg("--op").arg(op);
         command.env_clear().env("PATH","/usr/bin:/bin")
             .stdin(Stdio::piped()).stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(if cfg!(debug_assertions)
+                &&std::env::var_os("LU_SEC06C_BROKER_DEBUG").is_some(){
+                Stdio::inherit() // Explicit debug/test invocation only.
+            }else{Stdio::null()});
         let mut child=command.spawn()?;
         let lifetime=child.stdin.take().ok_or_else(||io::Error::other(
             "SEC06C host lifetime pipe missing"))?;
