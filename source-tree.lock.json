@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2221e25783b1530282dcd9eface4cce86e9053f9",
+  "sourceCommitBeforeLock": "ddedf730740c9767baddd5cdc3b8b88d8d1cef3e",
   "trackedFileCount": 990,
   "files": [
     {
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "ea7b4f1906315acac71a570564670951f68b2cf3"
+      "blob": "3efc35dc1b79c0c1704cc39beff404b2f3a19a34"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -389,7 +389,7 @@
     },
     {
       "path": "benchmarks/e1/sec06c_root_owned_systemd_boundary.py",
-      "blob": "183e4a8e33acf0b9be6d8b4d09ccddaa47ec5c34"
+      "blob": "79552a2882adf1113820d26a9f6e769e7ef10d65"
     },
     {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
@@ -601,7 +601,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "7d0fd1482ab62327d41dce74ed117ed99c3124ea"
+      "blob": "79e56a8991b3ab7dac9b91f499c442c3de7a0b36"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -853,7 +853,7 @@
     },
     {
       "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
-      "blob": "4078273dde8f21b8b4a96c6ca2487dbfceac8a5f"
+      "blob": "700be0bde062a1c1226c9d1c72a4731e9b6b1527"
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "26ab168b9ee6ea9f4c4e2694cec2a1c93d112e4d"
+      "blob": "0f0d62e5b6a9ec80459c5af8c8223eac275c0738"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2253,11 +2253,11 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
-      "blob": "a395c97bb1c630f289bfe15cd8a29bee7d60a6ab"
+      "blob": "902bd4564e905f43b7492d62b92cdff99f10c596"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-worker.py",
-      "blob": "7225f146dc96c7b90efa7002c998b093963efee5"
+      "blob": "58d3228801ac9fff615a840e286611ac4837d430"
     },
     {
       "path": "scripts/m3-windows-installed-acceptance.ps1",
@@ -2281,7 +2281,7 @@
     },
     {
       "path": "scripts/p0-sec06-consolidated.mjs",
-      "blob": "3512c5f1fce73cd45c871c92ece3743ec76812a6"
+      "blob": "78f6480767d91ca04db55410eeda73151e1e309c"
     },
     {
       "path": "scripts/p0-sec06-windows-owner-observation.ps1",
@@ -2969,7 +2969,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "60dba8d135fad95106bb864fbc4c8e286406fc8e"
+      "blob": "ee61aa9a04b2cd1008978ffb9b63978c64977fb3"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
