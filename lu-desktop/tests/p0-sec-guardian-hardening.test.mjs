@@ -4,6 +4,10 @@ import {readFileSync} from 'node:fs';
 const load=(p)=>readFileSync(new URL(p,import.meta.url),'utf8');
 const native=load('../../src-tauri/lu-win-worker-job/src/lib.rs');
 const supervisor=load('../../src-tauri/lu-core/src/native_background_process.rs');
+const rootManager=load('../../scripts/lu-sec06c-owned-kernel-manager.py');
+const osGit=load('../../src-tauri/lu-win-worker-job/src/os_owned_git.rs');
+const osProbe=load('../../src-tauri/lu-win-worker-job/src/os_owned_probe.rs');
+const osNative=load('../../src-tauri/lu-win-worker-job/src/os_owned_native.rs');
 const fixture=load('../../src-tauri/lu-win-worker-job/src/bin/lu-e1-p08-linux-cgroup-crash-parent.rs');
 
 test('Linux guardian handshakes are bounded and cannot strand stdout reader threads',()=>{
@@ -29,20 +33,32 @@ test('real worker and custodian kernel membership are verified before RUNNING',(
   assert.match(native,/pub fn verify_admitted_worker\(&mut self,pid:u32\)/);
   assert.match(native,/group_of\(pid\)\?!=expected/);
   assert.match(native,/guardian==expected\|\|guardian\.starts_with/);
-  assert.match(supervisor,/guard\.verify_admitted_worker\(child\.id\(\)\)/);
+  assert.match(rootManager,/child\.pid<=1 or pathlib\.Path\(f"\/proc\/\{child\.pid\}\/cgroup"\)/);
+  assert.match(rootManager,/preexec_fn=lambda:preexec_leaf\(leaf,args\.uid,user\.pw_gid\)/);
+  assert.doesNotMatch(supervisor,/guard\.verify_admitted_worker\(child\.id\(\)\)/);
   assert.match(fixture,/custodian\.verify_admitted_worker\(worker\.id\(\)\)/);
 });
-test('premature guardian death is process-uncertain, never worker completion',()=>{
-  assert.match(supervisor,/guard\.require_live_guardian\(\)\.is_err\(\)/);
-  assert.match(supervisor,/let _=worker\.child\.kill\(\)/);
+test('retired guardian cannot issue success; missing SEC06C root-owned receipt is process-uncertain',()=>{
+  assert.doesNotMatch(supervisor,/guard\.require_live_guardian\(\)\.is_err\(\)/);
+  assert.match(supervisor,/os_unit\.verify_original_kernel_receipt\(\)\.is_err\(\)/);
+  assert.match(supervisor,/record_process_uncertain\(/);
   assert.match(supervisor,/return Err\(BackgroundProcessError::ProcessUncertain\)/);
+  assert.match(rootManager,/if not kernel_verified:refuse\("kernel leaf was never verified empty"\)/);
+  assert.match(fixture,/custodian\.verify_admitted_worker\(worker\.id\(\)\)/);
 });
 test('OS cleanup precedes removal of exact task owner in poll',()=>{
   const loop=supervisor.indexOf('for (id,worker) in workers.iter_mut()');
   const remove=supervisor.indexOf('let mut owner=workers.remove(&id)');
-  const stop=supervisor.indexOf('guard.stop_and_verify()',loop);
-  assert.ok(loop>=0 && stop>loop && remove>stop);
-  assert.match(supervisor,/Never remove a worker from the owner map/);
+  const git=supervisor.indexOf('os_unit.verify_original_kernel_receipt()',loop);
+  const probe=supervisor.indexOf('worker.os_owned_probe.as_mut()',git);
+  const native=supervisor.indexOf('worker.os_owned_native.as_mut()',probe);
+  assert.ok(loop>=0 && git>loop && probe>git && native>probe && remove>native,
+    'kernel-empty receipt must precede removal of original task ownership');
+  for(const proof of [osGit,osProbe,osNative]){
+    assert.match(proof,/pub fn verify_original_kernel_receipt\(&mut self\)/);
+    assert.match(proof,/pub fn stop_and_verify\(&mut self,/);
+    assert.match(proof,/KERNEL_EMPTY=1/);
+  }
 });
 
 test('a failed OS stop cannot become verified on a later retry',()=>{
@@ -61,7 +77,8 @@ test('durable uncertainty blocks terminal statuses and persists across restart',
   assert.match(tasks,/uncertainty_is_immutable_durable_and_blocks_false_terminal_success/);
   assert.match(tasks,/NOT EXISTS\(SELECT 1 FROM lu_task_custody_uncertainty/);
   assert.match(supervisor,/record_process_uncertain\(/);
-  assert.match(supervisor,/LINUX_GUARDIAN_LOST/);
+  assert.match(supervisor,/OS_CUSTODY_UNVERIFIED/);
+  assert.doesNotMatch(supervisor,/LINUX_GUARDIAN_LOST/);
 });
 
 const sec02=load('../../src-tauri/lu-win-worker-job/src/bin/lu-p0-sec02-linux-negative.rs');
