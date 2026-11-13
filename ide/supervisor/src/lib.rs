@@ -27,6 +27,8 @@ mod fin04w2_protocol;
 // barrier, exposed only to the separately approved W2-C benign CI feature.
 #[cfg(feature = "fin04w2-approved-fixed-exec")]
 mod fin04w2_authority;
+#[cfg(all(windows, debug_assertions, feature="fin04w2-approved-fixed-exec"))]
+pub mod windows_fin04w2_host;
 // Actual Win32 service-principal and current-Job inspection is review-only;
 // separate identity/ACL/WFP/service custody must precede any debugger launch.
 #[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
