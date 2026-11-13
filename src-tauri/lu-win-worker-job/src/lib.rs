@@ -563,14 +563,16 @@ pub mod unix_owned {
     /// independently running first-party guardian, not the disposable
     /// Git/FFprobe leader. After an abnormal Lu exit its stdin pipe reaches
     /// EOF and it kills its OWN process group. No stale saved PID is signalled.
-    #[cfg(target_os="linux")]
+    // Historical destructive fixture only. Production Lu no longer compiles
+    // the same-UID group guardian or admits it as process custody.
+    #[cfg(all(target_os="linux",any(test,feature="e1-p08-crash-fixture")))]
     pub struct LinuxOwnedGroupGuardian{
         child:Child,
         stdin:Option<std::process::ChildStdin>,
         stopped:bool,
         verified_signal:bool,
     }
-    #[cfg(target_os="linux")]
+    #[cfg(all(target_os="linux",any(test,feature="e1-p08-crash-fixture")))]
     impl LinuxOwnedGroupGuardian{
         /// Release builds require the sibling first-party installed helper.
         /// Debug builds can run old independent worker tests without bundling
@@ -655,7 +657,7 @@ pub mod unix_owned {
             }
         }
     }
-    #[cfg(target_os="linux")]
+    #[cfg(all(target_os="linux",any(test,feature="e1-p08-crash-fixture")))]
     impl Drop for LinuxOwnedGroupGuardian{
         fn drop(&mut self){
             if !self.stopped{let _=self.stop_and_verify_signal();}
@@ -670,7 +672,7 @@ pub mod unix_owned {
     /// replaced, linked, oversized, relaxed-mode, or edited receipt is
     /// NOT a native cleanup witness. This is local evidence validation,
     /// not protection from another process with full profile privileges.
-    #[cfg(target_os="linux")]
+    #[cfg(all(target_os="linux",any(test,feature="e1-p08-crash-fixture")))]
     fn validate_linux_cgroup_receipt(
         path:&std::path::Path,expected:&str,
     )->io::Result<()>{
@@ -694,7 +696,7 @@ pub mod unix_owned {
         }
         Ok(())
     }
-    #[cfg(target_os="linux")]
+    #[cfg(all(target_os="linux",any(test,feature="e1-p08-crash-fixture")))]
     fn securely_owned_cgroup_parent(group:&std::path::Path)->io::Result<bool>{
         use std::os::unix::fs::MetadataExt;
         unsafe extern "C"{fn geteuid()->u32;}
@@ -713,7 +715,9 @@ pub mod unix_owned {
             Err(e)=>Err(e),
         }
     }
-    #[cfg(target_os="linux")]
+    // Only original destructive fixtures may compile the former delegated
+    // same-user custodian. Release code must use the SEC-06C OS manager.
+    #[cfg(all(target_os="linux",any(test,feature="e1-p08-crash-fixture")))]
     pub struct LinuxCgroupCustodian{
         child:Child,
         stdin:Option<std::process::ChildStdin>,
@@ -723,7 +727,7 @@ pub mod unix_owned {
         stopped:bool,
         verified_empty:bool,
     }
-    #[cfg(target_os="linux")]
+    #[cfg(all(target_os="linux",any(test,feature="e1-p08-crash-fixture")))]
     impl LinuxCgroupCustodian{
         pub fn spawn_if_delegated(
             profile:&std::path::Path,chat:&str,turn:&str,call:&str,
@@ -924,7 +928,7 @@ pub mod unix_owned {
             }
         }
     }
-    #[cfg(target_os="linux")]
+    #[cfg(all(target_os="linux",any(test,feature="e1-p08-crash-fixture")))]
     impl Drop for LinuxCgroupCustodian{
         fn drop(&mut self){
             if !self.stopped{let _=self.stop_and_verify();}
@@ -934,7 +938,7 @@ pub mod unix_owned {
     /// This occurs BEFORE exec of the reviewed binary: even a malicious
     /// executable cannot fork or setsid before the cgroup membership exists.
     /// The host-only original /proc delegation checks happen beforehand.
-    #[cfg(target_os="linux")]
+    #[cfg(all(target_os="linux",any(test,feature="e1-p08-crash-fixture")))]
     pub fn bind_worker_to_cgroup_before_exec(
         cmd:&mut std::process::Command,group:&LinuxCgroupCustodian
     )->io::Result<()>{

@@ -127,6 +127,16 @@ fn enumerate_package_files(dir:&Path,base:&Path,out:&mut Vec<String>)->bool {
     true
 }
 impl DesktopBrowserHost {
+    /// SEC-06C sole Linux authority: the old direct Node/Chromium spawns
+    /// must never turn a reviewed browser grant into uncontained execution.
+    /// This intentionally remains a denial until the dedicated finite,
+    /// jointly OS-owned browser session is installed and natively verified.
+    fn require_browser_kernel_custody()->Result<(),String>{
+        #[cfg(target_os="linux")]
+        {return Err("SEC06C_BROWSER_JOINT_KERNEL_CUSTODY_UNAVAILABLE".into())}
+        #[cfg(not(target_os="linux"))]
+        {Ok(())}
+    }
     pub fn new(resources:PathBuf,app_data:PathBuf)->Self {
         Self {resources,app_data,session:Mutex::new(None)}
     }
@@ -191,7 +201,8 @@ impl DesktopBrowserHost {
         }
         drop(session);
         let package_available=self.packaged_components_present();
-        let launch_ready=self.package_verified();
+        let launch_ready=self.package_verified()
+            &&Self::require_browser_kernel_custody().is_ok();
         let reason=if launch_ready{
             "Verified browser package ready".into()
         }else if package_available{
@@ -212,6 +223,7 @@ impl DesktopBrowserHost {
     pub(crate) fn launch_for_native_grant(
         &self, approved_origins:Vec<String>,preferences:&BrowserPreferences
     )->Result<(),String>{
+        Self::require_browser_kernel_custody()?;
         self.require_launch_ready()?;
         let mut owned=self.session.lock()
             .map_err(|_|"browser supervisor lock poisoned")?;

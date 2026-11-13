@@ -511,3 +511,22 @@ test('SEC06C reviewed Linux workers have no same-UID guardian or mutable-profile
   assert.match(oracle,/linux_os_owned_native_original_receipt/);
   assert.doesNotMatch(oracle,/lu-cgroup-os-\{turn\}-\{call\}\.receipt/);
 });
+
+// Regression: old guard binaries are CI-only and the Linux browser cannot
+// execute from the former direct-spawn path until one OS-owned session covers
+// both Node and Chromium. This is a fail-closed gate, NOT browser acceptance.
+test('SEC06C retires production guardian binaries and fences uncovered Linux browser',()=>{
+  const manifest=readFileSync(join(root,'src-tauri/lu-win-worker-job/Cargo.toml'),'utf8');
+  const lib=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/lib.rs'),'utf8');
+  const browser=readFileSync(join(root,'lu-desktop/src-tauri/src/native_browser_host.rs'),'utf8');
+  for(const kind of ['lu-linux-cgroup-guard','lu-linux-group-guard']){
+    const start=manifest.indexOf('name = "'+kind+'"');
+    assert.ok(start>=0,'missing original CI-only bin '+kind);
+    assert.match(manifest.slice(start,start+180),/required-features = \["e1-p08-crash-fixture"\]/);
+  }
+  assert.match(lib,/cfg\(all\(target_os="linux",any\(test,feature="e1-p08-crash-fixture"\)\)\)/);
+  assert.match(browser,/SEC06C_BROWSER_JOINT_KERNEL_CUSTODY_UNAVAILABLE/);
+  assert.match(browser,/Self::require_browser_kernel_custody\(\)\?/);
+  assert.match(browser,/self\.package_verified\(\)[\s\S]{0,100}Self::require_browser_kernel_custody\(\)\.is_ok\(\)/);
+  assert.doesNotMatch(browser,/systemd-run|sudo|Command::new/);
+});
