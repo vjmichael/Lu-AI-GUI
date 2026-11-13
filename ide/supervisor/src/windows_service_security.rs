@@ -96,7 +96,15 @@ impl Drop for OwnedSid {
     }
 }
 pub fn sid_of_service() -> Result<String, SupervisorError> {
-    let name = ws(&format!("NT SERVICE\\{SERVICE_NAME}"));
+    sid_of_named_service(SERVICE_NAME)
+}
+// Fixed two independently installed service identities, never a request-
+ // supplied name. The recovery service retains its original identity.
+pub(crate) fn sid_of_named_service(service_name: &str) -> Result<String, SupervisorError> {
+    if !matches!(service_name, "LuIdeRecoveryBroker" | "LuIdeDebuggerBroker") {
+        return Err(denied());
+    }
+    let name = ws(&format!("NT SERVICE\\{service_name}"));
     let mut sid_size = 0_u32;
     let mut domain_size = 0_u32;
     let mut use_type = 0_i32;
@@ -293,7 +301,18 @@ pub fn validate_approved_host_user_sid(value: &str) -> Result<(), SupervisorErro
 }
 impl PipeSecurity {
     pub fn new(approved_user_sid: &str) -> Result<Self, SupervisorError> {
+        Self::new_for_service(approved_user_sid, &sid_of_service()?)
+    }
+    pub(crate) fn new_for_service(
+        approved_user_sid: &str,
+        pinned_service_sid: &str,
+    ) -> Result<Self, SupervisorError> {
         validate_approved_host_user_sid(approved_user_sid)?;
+        // An arbitrary SID cannot be introduced from a caller's request.
+        if !pinned_service_sid.starts_with("S-1-5-80-") {
+            return Err(denied());
+        }
+        let _parsed = parse_sid(pinned_service_sid)?;
         // For this exact installer-pinned host SID, allow mapped FILE
         // read/write data, attributes, EAs, READ_CONTROL and SYNCHRONIZE.
         // Exclude bit 4: FILE_APPEND_DATA is FILE_CREATE_PIPE_INSTANCE on
@@ -315,7 +334,7 @@ impl PipeSecurity {
         // Authorization still requires kernel PID/token + pinned image hash.
         let sddl = format!(
             "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x0012019b;;;{})S:(ML;;NW;;;ME)",
-            sid_of_service()?,
+            pinned_service_sid,
             approved_user_sid
         );
         let mut descriptor = ptr::null_mut();
@@ -352,9 +371,19 @@ pub fn verify_created_pipe_security(
     pipe: HANDLE,
     approved_user_sid: &str,
 ) -> Result<(), SupervisorError> {
+    verify_created_pipe_security_for(pipe, approved_user_sid, &sid_of_service()?)
+}
+pub(crate) fn verify_created_pipe_security_for(
+    pipe: HANDLE,
+    approved_user_sid: &str,
+    pinned_service_sid: &str,
+) -> Result<(), SupervisorError> {
     validate_approved_host_user_sid(approved_user_sid)?;
+    if !pinned_service_sid.starts_with("S-1-5-80-") {
+        return Err(denied());
+    }
     let user = parse_sid(approved_user_sid)?;
-    let service = parse_sid(&sid_of_service()?)?;
+    let service = parse_sid(pinned_service_sid)?;
     let system = parse_sid("S-1-5-18")?;
     let mut dacl = ptr::null_mut();
     let mut descriptor = ptr::null_mut();
