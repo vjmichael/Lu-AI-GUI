@@ -91,6 +91,25 @@ fn loopback_port_from_file(path:&Path)->Result<Option<u16>,BrowserLaunchError>{
 fn require_joint_os_owned_browser_scope()->Result<(),BrowserLaunchError>{
     Err(BrowserLaunchError::KernelCustodyUnavailable)
 }
+/// Host-only profile lease used by both Windows direct launch and the
+/// SEC-06C Linux root-owned session. No second process may reuse cookies.
+pub(crate) fn acquire_original_browser_profile(
+    dedicated_profile:&Path,
+)->Result<ChromiumProfileLease,BrowserLaunchError>{
+    if !dedicated_profile.is_absolute()||!dedicated_profile.is_dir(){
+        return Err(BrowserLaunchError::InvalidConfig)
+    }
+    let lock_path=dedicated_profile.join(LOCK_FILE);
+    let file=OpenOptions::new().write(true).create_new(true).open(&lock_path)
+        .map_err(|e|if e.kind()==io::ErrorKind::AlreadyExists{
+            BrowserLaunchError::ProfileInUse
+        }else{BrowserLaunchError::Spawn(e)})?;
+    let lease=ChromiumProfileLease{_file:file,lock_path};
+    if dedicated_profile.join(PORT_FILE).exists(){
+        return Err(BrowserLaunchError::InvalidConfig);
+    }
+    Ok(lease)
+}
 pub fn launch_owned_headed_chromium(
     browser_executable:&Path,
     dedicated_profile:&Path,
@@ -106,18 +125,8 @@ pub fn launch_owned_headed_chromium(
         ||timeout<Duration::from_millis(100)||timeout>Duration::from_secs(30){
         return Err(BrowserLaunchError::InvalidConfig);
     }
-    let lock_path=dedicated_profile.join(LOCK_FILE);
-    let lock=OpenOptions::new().write(true).create_new(true).open(&lock_path)
-        .map_err(|e|if e.kind()==io::ErrorKind::AlreadyExists{
-            BrowserLaunchError::ProfileInUse
-        }else{BrowserLaunchError::Spawn(e)})?;
-    let lease=ChromiumProfileLease{_file:lock,lock_path};
-    // Ignore stale DevTools port records; profile must be fresh or prepared
-    // by the trusted host before starting a new child.
+    let lease=acquire_original_browser_profile(dedicated_profile)?;
     let port_file=dedicated_profile.join(PORT_FILE);
-    if port_file.exists(){
-        return Err(BrowserLaunchError::InvalidConfig);
-    }
     #[cfg(windows)]
     let job=lu_win_worker_job::Job::new().map_err(BrowserLaunchError::Spawn)?;
     let mut child=Command::new(browser_executable)

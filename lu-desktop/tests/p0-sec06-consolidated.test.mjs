@@ -543,3 +543,65 @@ test('SEC06C public Linux Chromium and Node launch paths both fail closed until 
   assert.match(node,/require_joint_os_owned_node_scope\(\)\?/);
   assert.match(node,/#\[cfg\(target_os="linux"\)\]/);
 });
+
+// SEC-06C browser process admission is a NEW original root-owned service.
+// This source test does not replace kernel-native browser and hostile tests.
+test('SEC06C browser puts Chrome, Node and setsid descendants under one root-owned leaf',()=>{
+  const path=(p)=>readFileSync(join(root,p),'utf8');
+  const launcher=path('scripts/lu-sec06c-owned-browser-launcher.py');
+  const manager=path('scripts/lu-sec06c-owned-browser-manager.py');
+  const mediator=path('scripts/lu-sec06c-owned-browser-worker.py');
+  const proof=path('src-tauri/lu-win-worker-job/src/os_owned_browser.rs');
+  const host=path('src-tauri/lu-core/src/browser_worker_supervisor.rs');
+  const desktop=path('lu-desktop/src-tauri/src/native_browser_host.rs');
+  const rust=path('src-tauri/lu-win-worker-job/src/lib.rs');
+  const x11=path('src-tauri/lu-core/src/browser_process_owner.rs');
+  const grant=path('lu-desktop/src-tauri/src/lib.rs');
+  for(const kind of ['chromium','node','script','policy_sha']){
+    assert.ok(launcher.includes(kind),'missing root broker SHA contract '+kind);
+    assert.ok(manager.includes(kind),'missing original kernel identity '+kind);
+  }
+  for(const value of ['--property=User=root','--property=Delegate=yes',
+      '--property=KillMode=control-group','--property=NoNewPrivileges=yes',
+      '--property=AmbientCapabilities=CAP_SETUID','--property=TasksMax=128',
+      '--property=MemoryMax=4294967296']){
+    assert.ok(launcher.includes(value),'missing fixed browser systemd property '+value);
+  }
+  assert.match(manager,/runpy\.run_path\(str\(KERNEL\)/);
+  assert.match(manager,/k\["first_party_unit"\]\(a\.nonce,"browser"\)/);
+  assert.match(manager,/k\["preexec_leaf"\]\(leaf,a\.uid,user\.pw_gid/);
+  assert.match(manager,/--attack-leaf/);
+  assert.match(manager,/SEC06C_BROWSER_ORIGINAL_ANCESTOR_MIGRATION_NOT_DENIED/);
+  assert.match(manager,/parse_pair\(frame,a\.nonce,leaf\)/);
+  assert.match(manager,/for pid in \(cpid,npid\)/);
+  assert.match(manager,/leaf\/"cgroup\.kill"/);
+  assert.match(manager,/k\["wait_kernel_zero"\]\(events,15\)/);
+  assert.match(manager,/k\["original_root_file"\]\(receipt/);
+  assert.match(manager,/EFFECT=.*STOPPED/);
+  assert.match(mediator,/chrome=subprocess\.Popen/);
+  assert.match(mediator,/node=subprocess\.Popen/);
+  assert.match(mediator,/require_go\(a\.nonce\)/);
+  assert.match(mediator,/connectOverCDP|cdpEndpoint/);
+  assert.match(proof,/BrowserKernelAdmission/);
+  assert.match(proof,/verified_member\(chrome_pid/);
+  assert.match(proof,/verified_member\(node_pid/);
+  assert.match(proof,/SEC06C browser original kernel receipt\/one-use identity mismatch/);
+  assert.match(proof,/EFFECT=STOPPED/);
+  assert.match(host,/pub fn launch_sec06c/);
+  assert.match(host,/pub fn stop_verified/);
+  assert.match(host,/scope\.stop_and_verify\(&mut self\.child\)/);
+  assert.match(desktop,/OwnedBrowserWorker::launch_sec06c/);
+  assert.match(desktop,/worker\.stop_verified\(\)/);
+  assert.match(x11,/original_leaf_member\(pid,&leaf\)/);
+  assert.match(x11,/set_verified_browser_pid_visible/);
+  assert.match(grant,/&chat_id,&turn_id,&launch_task_id/);
+  assert.match(rust,/pub mod os_owned_browser/);
+  assert.doesNotMatch(launcher,/shell=True|os\.system\(/);
+  assert.doesNotMatch(manager,/shell=True|os\.system\(/);
+  assert.doesNotMatch(mediator,/shell=True|os\.system\(/);
+  assert.match(gate,/linux-os-owned-browser-syntax/);
+  // No direct Linux browser launch, no borrowed scanner/native receipt.
+  assert.match(host,/require_joint_os_owned_node_scope\(\)\?/);
+  assert.match(path('src-tauri/lu-core/src/browser_chromium_launcher.rs'),
+    /require_joint_os_owned_browser_scope\(\)\?/);
+});

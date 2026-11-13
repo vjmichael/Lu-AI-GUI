@@ -170,6 +170,11 @@ function sourceCases(){
       '-m','py_compile','scripts/lu-sec06c-owned-native-launcher.py',
       'scripts/lu-sec06c-owned-native-worker.py'
     ],{timeout:30000});
+    doCase('linux-os-owned-browser-syntax','python3',[
+      '-m','py_compile','scripts/lu-sec06c-owned-browser-launcher.py',
+      'scripts/lu-sec06c-owned-browser-manager.py',
+      'scripts/lu-sec06c-owned-browser-worker.py'
+    ],{timeout:30000});
   }
 }
 function rustCases(){
@@ -262,7 +267,8 @@ if(mode==='verify'){
                   'linux-root-owned-prototype-syntax',
                   'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
                   'linux-os-owned-kernel-manager-syntax',
-                  'linux-os-owned-reviewed-native-syntax'],
+                  'linux-os-owned-reviewed-native-syntax',
+                  'linux-os-owned-browser-syntax'],
           linux:['exact-head-inventory','security-contracts',
                  'sec06-js-syntax','linux-negative-python-syntax',
                  'linux-host-crash-python-syntax','linux-delegated-python-syntax',

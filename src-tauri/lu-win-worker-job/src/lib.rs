@@ -1082,6 +1082,8 @@ pub mod os_owned_git;
 pub mod os_owned_probe;
 #[cfg(target_os="linux")]
 pub mod os_owned_native;
+#[cfg(target_os="linux")]
+pub mod os_owned_browser;
 
 #[cfg(all(windows,test))]
 mod agent01l_kernel_job_tests{

@@ -7,9 +7,18 @@ use crate::{
     browser_host_bridge::VisibilityBridge,
     browser_process_owner::OwnedBrowserWindow,
     browser_chromium_launcher::{LaunchedChromium,ChromiumProfileLease},
+
     browser_visibility_settings::BrowserVisibilityPreference,
 };
 use serde_json::{json,Value};
+#[cfg(target_os="linux")]
+use crate::browser_chromium_launcher::acquire_original_browser_profile;
+#[cfg(target_os="linux")]
+use lu_win_worker_job::os_owned_browser::LinuxOsOwnedBrowserSession;
+#[cfg(target_os="linux")]
+use sha2::{Digest,Sha256};
+#[cfg(target_os="linux")]
+use std::{fs::File,io::Read,path::Path};
 use std::{
     io::{self,BufRead,BufReader,Write},
     path::PathBuf,
@@ -140,12 +149,14 @@ fn read_bounded_worker_line<R:BufRead>(reader:&mut R)->io::Result<Option<String>
 }
 pub struct OwnedBrowserWorker {
     child:Child,
-    stdin:ChildStdin,
+    stdin:Option<ChildStdin>,
     output:Receiver<Result<String,io::Error>>,
     reader:Option<thread::JoinHandle<()>>,
     bridge:VisibilityBridge,
     browser:Option<OwnedBrowserWindow>,
     _profile_lease:Option<ChromiumProfileLease>,
+    #[cfg(target_os="linux")]
+    kernel_session:Option<LinuxOsOwnedBrowserSession>,
     visibility:BrowserVisibilityPreference,
     timeout:Duration,
     startup_pending:bool,
@@ -159,7 +170,36 @@ pub struct OwnedBrowserWorker {
 fn require_joint_os_owned_node_scope()->Result<(),BrowserSupervisorError>{
     Err(BrowserSupervisorError::KernelCustodyUnavailable)
 }
+
+#[cfg(target_os="linux")]
+fn original_image_sha(path:&Path)->Result<String,BrowserSupervisorError>{
+    let mut file=File::open(path).map_err(BrowserSupervisorError::Spawn)?;
+    let mut h=Sha256::new();
+    let mut chunk=[0u8;65536];
+    loop{
+        let size=file.read(&mut chunk).map_err(BrowserSupervisorError::Spawn)?;
+        if size==0{break;}
+        h.update(&chunk[..size]);
+    }
+    Ok(format!("{:x}",h.finalize()))
+}
+#[cfg(target_os="linux")]
+fn original_browser_policy_sha(config:&BrowserLaunchConfig)->Result<String,BrowserSupervisorError>{
+    let profile=config.trusted_profile.to_str()
+        .ok_or(BrowserSupervisorError::InvalidConfig)?;
+    let mut hasher=Sha256::new();
+    for part in std::iter::once(profile)
+        .chain(std::iter::once(config.visibility.worker_mode()))
+        .chain(config.approved_origins.iter().map(String::as_str)){
+        hasher.update(part.as_bytes());hasher.update([0u8]);
+    }
+    Ok(format!("{:x}",hasher.finalize()))
+}
 impl OwnedBrowserWorker {
+    #[cfg(target_os="linux")]
+    pub fn sec06c_installed()->bool{
+        LinuxOsOwnedBrowserSession::installed()
+    }
     pub fn launch(config:BrowserLaunchConfig,browser:Option<OwnedBrowserWindow>)
         ->Result<Self,BrowserSupervisorError>{
         // Before verified joint SEC-06C browser custody exists, the old
@@ -211,14 +251,83 @@ impl OwnedBrowserWorker {
             }
         });
         Ok(Self {
-            child,stdin,output:rx,reader:Some(reader),
+            child,stdin:Some(stdin),output:rx,reader:Some(reader),
             bridge:VisibilityBridge::new(),browser,_profile_lease:None,
+            #[cfg(target_os="linux")]
+            kernel_session:None,
             visibility:config.visibility,timeout:config.command_timeout,
             startup_pending:true,failed:false,
             #[cfg(windows)]
             _node_job:Some(node_job),
             #[cfg(windows)]
             _chromium_job:None,
+        })
+    }
+    /// Joint Linux browser startup under the dedicated, fixed root-owned
+    /// SEC-06C unit. Node and headed Chromium share ONE non-user-writable
+    /// cgroup leaf. The original user-turn task ID, binary SHA-256s, and
+    /// exact HTTPS origin policy are bound to a single one-use OS nonce.
+    #[cfg(target_os="linux")]
+    pub fn launch_sec06c(
+        mut config:BrowserLaunchConfig,chromium:&Path,
+        trusted_xdotool:PathBuf,
+        chat:&str,turn:&str,call:&str,
+        display:&str,xauthority:Option<&Path>,
+    )->Result<Self,BrowserSupervisorError>{
+        config.validate()?;
+        if config.cdp_endpoint.is_some()||!chromium.is_absolute()
+            ||!chromium.is_file()||!trusted_xdotool.is_absolute()
+            ||!trusted_xdotool.is_file(){
+            return Err(BrowserSupervisorError::InvalidConfig);
+        }
+        let lease=acquire_original_browser_profile(&config.trusted_profile)
+            .map_err(|_|BrowserSupervisorError::InvalidConfig)?;
+        let chromium_sha=original_image_sha(chromium)?;
+        let node_sha=original_image_sha(&config.trusted_node)?;
+        let script_sha=original_image_sha(&config.trusted_script)?;
+        let policy_sha=original_browser_policy_sha(&config)?;
+        let (mut child,mut kernel)=LinuxOsOwnedBrowserSession::spawn_if_installed(
+            chromium,&chromium_sha,
+            &config.trusted_node,&node_sha,
+            &config.trusted_script,&script_sha,
+            &config.trusted_profile,&policy_sha,
+            config.visibility.worker_mode(),display,xauthority,
+            &config.approved_origins,chat,turn,call,
+        ).map_err(BrowserSupervisorError::Spawn)?
+            .ok_or(BrowserSupervisorError::KernelCustodyUnavailable)?;
+        let admission=kernel.admission();
+        config.cdp_endpoint=Some(admission.endpoint.clone());
+        let browser=OwnedBrowserWindow::from_sec06c_admission(
+            admission.chromium_pid,admission.cgroup.clone(),trusted_xdotool);
+        let browser=match browser{
+            Ok(x)=>x,
+            Err(_)=>{
+                drop(child.stdin.take());
+                let _=kernel.stop_and_verify(&mut child);
+                return Err(BrowserSupervisorError::MissingChromiumCustody);
+            }
+        };
+        let stdin=child.stdin.take()
+            .ok_or(BrowserSupervisorError::Protocol)?;
+        let stdout=child.stdout.take()
+            .ok_or(BrowserSupervisorError::Protocol)?;
+        let (tx,rx)=mpsc::sync_channel(32);
+        let reader=thread::spawn(move||{
+            let mut reader=BufReader::new(stdout);
+            loop{
+                match read_bounded_worker_line(&mut reader){
+                    Ok(None)=>break,
+                    Ok(Some(line))=>if tx.send(Ok(line)).is_err(){break;},
+                    Err(err)=>{let _=tx.send(Err(err));break;}
+                }
+            }
+        });
+        Ok(Self{
+            child,stdin:Some(stdin),output:rx,reader:Some(reader),
+            bridge:VisibilityBridge::new(),browser:Some(browser),
+            _profile_lease:Some(lease),kernel_session:Some(kernel),
+            visibility:config.visibility,timeout:config.command_timeout,
+            startup_pending:true,failed:false,
         })
     }
     /// Establish matching ownership: same profile, same host-launched
@@ -263,9 +372,10 @@ impl OwnedBrowserWorker {
             // replies to a future command. Poison this session and kill its
             // entire owned browser; recovery must explicitly launch anew.
             self.failed=true;
-            let _=self.child.kill();
-            let _=self.child.wait();
-            self.browser.take();
+            // Linux cancellation closes the ORIGINAL root broker pipe and
+            // requires its independent one-use cgroup-empty receipt. Never
+            // kill only the sudo PID and call Chrome/Node descendants gone.
+            let _=self.stop_verified();
         }
         result
     }
@@ -281,9 +391,12 @@ impl OwnedBrowserWorker {
         request.insert("op".into(),json!(operation.operation_name()));
         let encoded=Value::Object(request).to_string();
         if encoded.len()>8192{return Err(BrowserSupervisorError::Protocol);}
-        self.stdin.write_all(encoded.as_bytes())
-            .and_then(|_|self.stdin.write_all(b"\n"))
-            .and_then(|_|self.stdin.flush())
+        self.stdin.as_mut().ok_or(BrowserSupervisorError::WorkerExited)?
+            .write_all(encoded.as_bytes())
+            .and_then(|_|self.stdin.as_mut().ok_or_else(||io::Error::other("closed browser owner"))?
+                .write_all(b"\n"))
+            .and_then(|_|self.stdin.as_mut().ok_or_else(||io::Error::other("closed browser owner"))?
+                .flush())
             .map_err(|_|BrowserSupervisorError::WorkerExited)?;
         // The first worker command also launches the headed browser, which
         // requests the initial native hide before returning READY.
@@ -328,9 +441,12 @@ impl OwnedBrowserWorker {
                     BrowserSupervisorError::MissingChromiumCustody)?;
                 let reply=self.bridge.process_owned_window(&frame,browser)
                     .map_err(|_|BrowserSupervisorError::UnauthorizedVisibility)?;
-                self.stdin.write_all(reply.as_bytes())
-                    .and_then(|_|self.stdin.write_all(b"\n"))
-                    .and_then(|_|self.stdin.flush())
+                self.stdin.as_mut().ok_or(BrowserSupervisorError::WorkerExited)?
+                    .write_all(reply.as_bytes())
+                    .and_then(|_|self.stdin.as_mut().ok_or_else(||io::Error::other("closed browser owner"))?
+                        .write_all(b"\n"))
+                    .and_then(|_|self.stdin.as_mut().ok_or_else(||io::Error::other("closed browser owner"))?
+                        .flush())
                     .map_err(|_|BrowserSupervisorError::WorkerExited)?;
                 continue;
             }
@@ -345,14 +461,39 @@ impl OwnedBrowserWorker {
     pub fn is_alive(&mut self)->bool {
         !self.failed && matches!(self.child.try_wait(),Ok(None))
             &&self.browser.as_mut().is_some_and(|browser|browser.is_alive())
+            &&{
+                #[cfg(target_os="linux")]
+                {self.kernel_session.as_ref().is_none_or(|session|session.session_live())}
+                #[cfg(not(target_os="linux"))]
+                {true}
+            }
     }
-    pub fn worker_pid(&self)->u32 {self.child.id()}
+    pub fn worker_pid(&self)->u32 {
+        #[cfg(target_os="linux")]
+        if let Some(scope)=self.kernel_session.as_ref(){return scope.admission().node_pid}
+        self.child.id()
+    }
+    /// Stop the root-owned joint browser subtree and independently verify
+    /// the durable fsynced kernel-empty receipt before publishing a stop.
+    pub fn stop_verified(&mut self)->Result<(),BrowserSupervisorError>{
+        self.failed=true;
+        drop(self.stdin.take());
+        #[cfg(target_os="linux")]
+        if let Some(scope)=self.kernel_session.as_mut(){
+            scope.stop_and_verify(&mut self.child)
+                .map_err(BrowserSupervisorError::Spawn)?;
+            self.browser.take();
+            return Ok(())
+        }
+        let _=self.child.kill();
+        self.child.wait().map_err(BrowserSupervisorError::Spawn)?;
+        self.browser.take();
+        Ok(())
+    }
 }
 impl Drop for OwnedBrowserWorker {
     fn drop(&mut self){
-        let _=self.child.kill();
-        let _=self.child.wait();
-        self.browser.take();
+        let _=self.stop_verified();
         // A descendant may have inherited stdout. Waiting forever on a
         // blocking reader thread would deadlock Lu shutdown; detach rather
         // than join until OS process-tree containment is fully verified.

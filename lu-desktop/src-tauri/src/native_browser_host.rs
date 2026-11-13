@@ -133,7 +133,15 @@ impl DesktopBrowserHost {
     /// jointly OS-owned browser session is installed and natively verified.
     fn require_browser_kernel_custody()->Result<(),String>{
         #[cfg(target_os="linux")]
-        {return Err("SEC06C_BROWSER_JOINT_KERNEL_CUSTODY_UNAVAILABLE".into())}
+        {
+            if !OwnedBrowserWorker::sec06c_installed(){
+                return Err("SEC06C_BROWSER_JOINT_KERNEL_CUSTODY_UNAVAILABLE".into())
+            }
+            if std::env::var("DISPLAY").is_err(){
+                return Err("SEC06C_BROWSER_X11_DISPLAY_UNAVAILABLE".into())
+            }
+            Ok(())
+        }
         #[cfg(not(target_os="linux"))]
         {Ok(())}
     }
@@ -221,7 +229,8 @@ impl DesktopBrowserHost {
     /// A verified signed browser package is mandatory before spawning.
     #[allow(dead_code)]
     pub(crate) fn launch_for_native_grant(
-        &self, approved_origins:Vec<String>,preferences:&BrowserPreferences
+        &self, approved_origins:Vec<String>,preferences:&BrowserPreferences,
+        original_chat:&str,original_turn:&str,original_task:&str,
     )->Result<(),String>{
         Self::require_browser_kernel_custody()?;
         self.require_launch_ready()?;
@@ -241,6 +250,7 @@ impl DesktopBrowserHost {
         let preference=preferences.visibility()
             .map_err(|e|format!("browser visibility unavailable: {e:?}"))?;
         let directory=self.package_dir();
+        #[cfg(windows)]
         let launched=launch_owned_headed_chromium(
             &directory.join(CHROMIUM_NAME),&profile,Duration::from_secs(20)
         ).map_err(|e|format!("browser process launch refused: {e:?}"))?;
@@ -256,8 +266,15 @@ impl DesktopBrowserHost {
         #[cfg(windows)]
         let worker=OwnedBrowserWorker::launch_attached(config,launched);
         #[cfg(target_os="linux")]
-        let worker=OwnedBrowserWorker::launch_attached(config,launched,
-            directory.join("xdotool"));
+        let worker={
+            let display=std::env::var("DISPLAY")
+                .map_err(|_|"SEC06C_BROWSER_X11_DISPLAY_UNAVAILABLE")?;
+            let xauth=std::env::var_os("XAUTHORITY").map(PathBuf::from);
+            OwnedBrowserWorker::launch_sec06c(
+                config,&directory.join(CHROMIUM_NAME),directory.join("xdotool"),
+                original_chat,original_turn,original_task,
+                &display,xauth.as_deref())
+        };
         #[cfg(not(any(windows,target_os="linux")))]
         return Err("Native browser host unsupported on this OS".into());
         #[cfg(any(windows,target_os="linux"))]
@@ -327,7 +344,12 @@ impl DesktopBrowserHost {
     pub fn stop(&self)->Result<bool,String>{
         let mut session=self.session.lock()
             .map_err(|_|"browser supervisor lock poisoned")?;
-        Ok(session.take().is_some()) // Drops worker; kills/reaps child processes
+        if let Some(mut worker)=session.take(){
+            worker.stop_verified().map_err(|e|
+                format!("SEC06C_BROWSER_KERNEL_CLEANUP_UNVERIFIED: {e:?}"))?;
+            return Ok(true)
+        }
+        Ok(false)
     }
     /// Host call only. The native Tauri API must not accept a model-supplied
     /// executable, browser profile, PID or uncontrolled origin grant.

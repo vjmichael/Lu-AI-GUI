@@ -2647,15 +2647,17 @@ async fn start_browser_for_exact_turn(
         }
         *state=Some(ActiveBrowserGrant{
             task_id:task_id.clone(),chat_id:chat_id.clone(),
-            user_turn_id:turn_id,origins:allowed.clone(),
+            user_turn_id:turn_id.clone(),origins:allowed.clone(),
             active_read:None,starting:true,
         });
     }
     let launch_owner=Arc::clone(&owner);
+    let launch_task_id=task_id.clone();
     let result=tauri::async_runtime::spawn_blocking(move||{
         launch_owner.observe.deny_observation_network_egress(&chat_id)?;
         launch_owner.browser_runtime.launch_for_native_grant(
-            allowed,&launch_owner.browser_preferences
+            allowed,&launch_owner.browser_preferences,
+            &chat_id,&turn_id,&launch_task_id
         )
     }).await.map_err(|_|"Browser launch worker unavailable".to_owned())
         .and_then(|x|x);

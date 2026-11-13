@@ -39,12 +39,19 @@ pub fn set_owned_browser_visible(
     xdotool:&Path,
     visible:bool,
 )->Result<(),X11VisibilityError>{
+    set_verified_browser_pid_visible(child.id(),xdotool,visible)
+}
+/// The PID is taken only from the original SEC-06C manager's verified
+/// Chromium cgroup admission; it is NEVER a tool/model/UI-selected PID.
+/// The caller checks the same exact live kernel leaf before each transition.
+pub(crate) fn set_verified_browser_pid_visible(
+    pid:u32,xdotool:&Path,visible:bool,
+)->Result<(),X11VisibilityError>{
     approved_display()?;
     if !xdotool.is_absolute() || !xdotool.is_file() {
         return Err(X11VisibilityError::ToolUnavailable);
     }
-    let pid=child.id();
-    if pid==0{return Err(X11VisibilityError::WindowNotFound);}
+    if pid<=1{return Err(X11VisibilityError::WindowNotFound);}
     // Always search mapped AND unmapped windows of the exact owned PID.
     // An unmapped window must remain discoverable when human verification
     // requires re-showing the original Chromium session.
