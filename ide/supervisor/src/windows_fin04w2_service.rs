@@ -256,6 +256,9 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
         value
     };
     let until = Instant::now() + Duration::from_secs(2);
+    // W2-A remains the 92-byte audit grammar. W2-C adds exactly sixteen
+    // bytes for its original native Job ID, not an arbitrary request body.
+    let expected_size=if cfg!(feature="fin04w2-approved-fixed-exec"){108u32}else{92u32};
     let mut available = 0u32;
     loop {
         if STOP.load(Ordering::SeqCst) || Instant::now() >= until { return Err(denied()); }
@@ -263,16 +266,16 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
             PeekNamedPipe(pipe, ptr::null_mut(), 0, ptr::null_mut(),
                 &mut available, ptr::null_mut())
         } == 0 { return Err(denied()); }
-        if available > 92 { return Err(denied()); }
-        if available >= 92 { break; }
+        if available > expected_size { return Err(denied()); }
+        if available >= expected_size { break; }
         thread::sleep(Duration::from_millis(20));
     }
-    let mut frame = [0u8;93];
+    let mut frame = [0u8;109];
     let mut got = 0u32;
     if unsafe {
-        ReadFile(pipe, frame.as_mut_ptr().cast(), frame.len() as u32,
+        ReadFile(pipe, frame.as_mut_ptr().cast(), expected_size,
             &mut got, ptr::null_mut())
-    } == 0 || got != 92 {
+    } == 0 || got != expected_size {
         return Err(denied());
     }
     let _client = security::authenticate_client_from_kernel_pipe(
@@ -285,6 +288,13 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
     let configured_nonce=nonce(&config.review_only_nonce)?;
     #[cfg(not(feature="fin04w2-approved-fixed-exec"))]
     let expected_challenge=&configured_nonce;
+    #[cfg(feature="fin04w2-approved-fixed-exec")]
+    let reviewed=fin04w2_protocol::inspect_approved_exact_job(
+        &frame[..108],&config.review_only_plan,
+        &config.review_only_plan_hash,expected_challenge,
+        &config.original_job_id,
+    )?;
+    #[cfg(not(feature="fin04w2-approved-fixed-exec"))]
     let reviewed = fin04w2_protocol::inspect_shape_only(
         &frame[..92], &config.review_only_plan,
         &config.review_only_plan_hash, expected_challenge,
