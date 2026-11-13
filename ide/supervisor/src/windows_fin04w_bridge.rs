@@ -298,9 +298,45 @@ impl RestrictedPrimaryToken {
                 == Some(std::ffi::OsStr::new("true")) {
                 eprintln!("FIN04W_RESTRICTED_TOKEN_OS_FAILURE={kind}");
             }
-            return Err(denied());
+            // ERROR_INVALID_PARAMETER can arise from combining LUA filtering
+            // with the two exact restricting SIDs. Never drop either
+            // restriction or substitute Everyone/Users. The two-stage path
+            // first applies the SAME privilege/LUA reductions and then adds
+            // precisely the SAME SIDs. CreateRestrictedToken only narrows an
+            // existing token; verify_token below rejects even a successful
+            // call unless the final primary token has both exact SIDs.
+            // CI/debug only, no production launcher or token escape.
+            if error != 87 {
+                return Err(denied());
+            }
+            let mut intermediate = ptr::null_mut();
+            if unsafe {
+                CreateRestrictedToken(
+                    original.0, DISABLE_MAX_PRIVILEGE | LUA_TOKEN, 0,
+                    ptr::null_mut(), 0, ptr::null_mut(), 0,
+                    ptr::null(), &mut intermediate,
+                )
+            } == 0 {
+                stage("two_stage_lua_privilege_reduction_denied");
+                return Err(denied());
+            }
+            let intermediate = OwnedToken(intermediate);
+            stage("two_stage_lua_privilege_reduction_created");
+            if unsafe {
+                CreateRestrictedToken(
+                    intermediate.0, DISABLE_MAX_PRIVILEGE, 0,
+                    ptr::null_mut(), 0, ptr::null_mut(),
+                    restricted_sids.len() as u32,
+                    restricted_sids.as_ptr(), &mut restricted,
+                )
+            } == 0 {
+                stage("two_stage_exact_restricting_sids_denied");
+                return Err(denied());
+            }
+            stage("two_stage_exact_restricting_sids_created_unverified");
+        } else {
+            stage("create_restricted_token_success");
         }
-        stage("create_restricted_token_success");
         let restricted = OwnedToken(restricted);
         let (sid, sid_length) = low_sid()?;
         let mut label = TOKEN_MANDATORY_LABEL::default();
