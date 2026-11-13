@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a78089271db41a1475557d8e9734f6d6707eacef",
+  "sourceCommitBeforeLock": "2b07b027b277583b3423be7e91436878cb7e9040",
   "trackedFileCount": 993,
   "files": [
     {
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "4fa3fbd1035edac7ad65e9eb0636ae758bacfa58"
+      "blob": "08cd3c6553250b3f9e1b19e668aa67dd3bca5b5b"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -601,7 +601,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "c9180814d32600593d5b3ccd72181433dc10b01c"
+      "blob": "09e7ea9a96794d5b64560909315b7b4575ef5d82"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -853,7 +853,7 @@
     },
     {
       "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
-      "blob": "0461105dad7bcbb96c9c841b455031c4197ff119"
+      "blob": "34fa81cfba9b73208562f8b6889e82576784ae79"
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "32c72a09dd0903ec693be2b10c74c81e8d7afb95"
+      "blob": "aef910234682556bb419acaa842519a763fd8977"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2253,19 +2253,19 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
-      "blob": "902bd4564e905f43b7492d62b92cdff99f10c596"
+      "blob": "242097dad4ec863744cc58607cfb9dcb0508d08b"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-worker.py",
-      "blob": "58d3228801ac9fff615a840e286611ac4837d430"
+      "blob": "a022460e1dd46bfc72930fcbcd302c46df7a630d"
     },
     {
       "path": "scripts/lu-sec06c-owned-probe-launcher.py",
-      "blob": "37c4c669a8ac44d483fb5afe28c1eca938786e3f"
+      "blob": "cce39f265dd9ec4a5d4244e1ed26132fde297f5e"
     },
     {
       "path": "scripts/lu-sec06c-owned-probe-worker.py",
-      "blob": "41cf89267513d948dc826fd58512e4f49d6fe4e5"
+      "blob": "5fa2c2f51aef67fe0c13bff0d276cc8519d61913"
     },
     {
       "path": "scripts/m3-windows-installed-acceptance.ps1",
