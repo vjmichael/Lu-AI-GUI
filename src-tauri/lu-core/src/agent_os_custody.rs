@@ -261,11 +261,14 @@ fn linux_os_owned_native_original_receipt(
 fn linux_original_cgroup_empty(
     profile:&Path,chat:&str,turn:&str,call:&str,
 )->bool{
+    // The original full human-turn/journal identity is required for ALL
+    // finite OS-owned domains. Never restrict it to legacy Git/FFprobe
+    // suffixes BEFORE independently checking the new root-owned native
+    // scanner/archive/version receipt. The legacy mutable-profile fallback
+    // remains suffix-restricted below, after all root-owned proof checks.
     if !exact_id(chat,"c-")||!exact_id(turn,"g-")
         ||call.len()>128||call.is_empty()||!call.bytes().all(|b|
-            b.is_ascii_alphanumeric()||b==b'-'||b==b'_')
-        ||!["-gh","-gs","-gb","-gc","-fm"]
-            .iter().any(|s|call.ends_with(s)){
+            b.is_ascii_alphanumeric()||b==b'-'||b==b'_'){
         return false
     }
     let task=profile.join(format!("lu-reviewed-task-{turn}.sqlite"));
