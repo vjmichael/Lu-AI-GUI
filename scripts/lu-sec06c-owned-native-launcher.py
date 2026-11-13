@@ -116,6 +116,7 @@ def run(opts):
         "--property=KillMode=control-group","--property=PrivateNetwork=yes",
         "--property=NoNewPrivileges=yes",
         "--property=CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL",
+        "--property=AmbientCapabilities=CAP_SETUID",
         "--property=RestrictSUIDSGID=yes",
         "--property=TasksMax=32","--property=MemoryMax=536870912",
         "--property=RuntimeMaxSec=900",

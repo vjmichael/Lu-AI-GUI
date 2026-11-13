@@ -128,6 +128,29 @@ test('SEC06C fixed Git path binds original immutable journal nonce and finite no
   assert.match(gate,/linux-ancestor-migration/);
 });
 
+test('SEC06C trusted UID drop retains only supervisor CAP_SETUID and removes all worker capabilities',()=>{
+  const manager=readFileSync(join(root,'scripts/lu-sec06c-owned-kernel-manager.py'),'utf8');
+  for(const domain of ['git','probe','native']){
+    const launcher=readFileSync(join(root,'scripts/lu-sec06c-owned-'+domain+'-launcher.py'),'utf8');
+    assert.match(launcher,/--property=AmbientCapabilities=CAP_SETUID/);
+    assert.match(launcher,/--property=CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL/);
+    assert.match(launcher,/--property=NoNewPrivileges=yes/);
+    assert.match(launcher,/--property=RestrictSUIDSGID=yes/);
+    assert.match(launcher,/--property=Delegate=yes/);
+    assert.match(launcher,/--property=KillMode=control-group/);
+    assert.doesNotMatch(launcher,/AmbientCapabilities=CAP_SYS_ADMIN|AmbientCapabilities=CAP_SETGID|AmbientCapabilities=CAP_KILL/);
+  }
+  assert.match(manager,/systemd supervisor lacks effective and permitted CAP_SETUID/);
+  assert.match(manager,/PR_SET_KEEPCAPS=8/);
+  assert.match(manager,/libc.prctl\(PR_SET_KEEPCAPS,0,0,0,0\)/);
+  assert.match(manager,/verify-complete-nonroot-drop/);
+  assert.match(manager,/os.getresuid\(\)!=\(uid,uid,uid\)/);
+  assert.match(manager,/os.getresgid\(\)!=\(gid,gid,gid\)/);
+  assert.match(manager,/\("CapEff","CapPrm","CapAmb"\)/);
+  assert.match(manager,/SEC06C_ANCESTOR_ESCAPE_SUCCEEDED/);
+  assert.match(manager,/leaf\/"cgroup.kill"/);
+});
+
 test('SEC06C trusted root supervisor pins the separate leaf and proves populated-zero while it exists',()=>{
   const manager=readFileSync(join(root,'scripts/lu-sec06c-owned-kernel-manager.py'),'utf8');
   assert.match(manager,/def first_party_unit\(/);

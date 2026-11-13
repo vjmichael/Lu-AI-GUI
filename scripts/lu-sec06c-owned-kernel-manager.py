@@ -48,6 +48,7 @@ MS_REC=16384
 MS_PRIVATE=1<<18
 CLONE_NEWNS=0x00020000
 PR_SET_NO_NEW_PRIVS=38
+PR_SET_KEEPCAPS=8
 MAX_OUTPUT=16384
 
 def refuse(reason):
@@ -128,6 +129,13 @@ def input_resource(path,expected,op):
     # and verifies the original host resource digest before any probe exec.
     return p
 
+def process_capability_bits(name):
+    # Read the original kernel process mask, not the bounding-set promise.
+    for record in pathlib.Path("/proc/self/status").read_text(encoding="ascii").splitlines():
+        if record.startswith(name+":"):
+            return int(record.split(":",1)[1].strip(),16)
+    raise OSError(1,"original kernel capability mask unavailable")
+
 def preexec_leaf(leaf,uid,gid,readonly=True):
     """Called only in forked child, still root; no untrusted exec yet."""
     # A diagnostic is ONLY the failing kernel syscall phase/errno. It cannot
@@ -154,12 +162,23 @@ def preexec_leaf(leaf,uid,gid,readonly=True):
         stage="prctl-no-new-privileges"
         if libc.prctl(PR_SET_NO_NEW_PRIVS,1,0,0,0)!=0:
             raise OSError(ctypes.get_errno(),"no new privileges")
+        # The root manager requires only CAP_SETUID to admit a nonroot worker.
+        # systemd AmbientCapabilities pins this ability across its Python exec.
+        # Never retain systemd's keep-caps transition policy inside a worker.
+        stage="disable-keep-caps-before-uid-drop"
+        if libc.prctl(PR_SET_KEEPCAPS,0,0,0,0)!=0:
+            raise OSError(ctypes.get_errno(),"disable retained capabilities")
         stage="clear-root-supplementary-groups"
         os.setgroups([])
         stage="drop-group-identity"
         os.setgid(gid)
         stage="drop-user-identity"
         os.setuid(uid)
+        stage="verify-complete-nonroot-drop"
+        if os.getresuid()!=(uid,uid,uid) or os.getresgid()!=(gid,gid,gid) or os.getgroups():
+            raise OSError(1,"reviewed worker retained original root identity")
+        if any(process_capability_bits(k)!=0 for k in ("CapEff","CapPrm","CapAmb")):
+            raise OSError(1,"reviewed worker retained privileged capabilities")
     except OSError as exc:
         number=exc.errno if isinstance(exc.errno,int) else -1
         # The original native failure is setuid EPERM after setgid. Observe
@@ -326,6 +345,12 @@ def run(args):
         refuse("original chat/turn hashes invalid")
     if args.uid<=0 or pwd.getpwuid(args.uid).pw_uid!=args.uid:
         refuse("first-party worker must run as original nonroot UID")
+    # CAP_SETUID in CapBnd alone is insufficient; earlier originals had
+    # CapEff=...0060, CapBnd=...00e0 and setuid EPERM. Fail BEFORE launch.
+    if not process_capability_bits("CapEff")&(1<<7) or not process_capability_bits("CapPrm")&(1<<7):
+        refuse("systemd supervisor lacks effective and permitted CAP_SETUID")
+    if not process_capability_bits("CapEff")&(1<<6):
+        refuse("systemd supervisor lacks effective CAP_SETGID")
     checked_root_file(pathlib.Path(__file__).resolve())
     checked_root_file(PYTHON)
     checked_root_file(
