@@ -8,7 +8,7 @@
 use crate::SupervisorError;
 use std::{ffi::OsStr, mem::size_of, os::windows::ffi::OsStrExt, ptr};
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, HANDLE},
+    Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE},
     Security::{
         CheckTokenMembership, CreateWellKnownSid, DuplicateToken, EqualSid, GetTokenInformation,
         IsTokenRestricted, LookupAccountNameW, TokenGroups, TokenRestrictedSids,
@@ -16,7 +16,13 @@ use windows_sys::Win32::{
         SID_AND_ATTRIBUTES, TOKEN_DUPLICATE, TOKEN_GROUPS, TOKEN_QUERY, TOKEN_USER,
     },
     System::{
-        JobObjects::IsProcessInJob,
+        JobObjects::{
+            CreateJobObjectW, IsProcessInJob, QueryInformationJobObject,
+            SetInformationJobObject, JobObjectBasicAccountingInformation,
+            JobObjectExtendedLimitInformation, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+            JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        },
         Threading::{GetCurrentProcess, OpenProcessToken},
     },
 };
@@ -176,6 +182,68 @@ pub(crate) fn inspect_current_worker_prerequisites() -> Result<(), SupervisorErr
         return Err(denied());
     }
     Ok(())
+}
+
+/// A genuinely kernel-created, service-owned and EMPTY Job Object.
+/// It has no method to enroll or launch a child. A WFP restriction,
+/// verified debuggee descendant capture, guardian-loss and real OS RIP
+/// are separate positive gates before FIN-04 can enable LLDB.
+pub(crate) struct EmptyAuditJob {
+    _owned: Token,
+}
+pub(crate) fn create_bounded_empty_debugger_job() -> Result<EmptyAuditJob, SupervisorError> {
+    inspect_current_service_principal()?;
+    let acl = crate::windows_service_security::JobSecurity::new_debugger_service_owned()?;
+    // The name is derived only inside the authenticated service process,
+    // not from the original untrusted client packet.
+    let unique = format!("Local\\LuIdeFin04W2Audit_{:016x}", rand::random::<u64>());
+    let name: Vec<u16> = unique.encode_utf16().chain([0]).collect();
+    let raw = unsafe { CreateJobObjectW(&acl.attributes, name.as_ptr()) };
+    if raw.is_null() { return Err(denied()); }
+    let creation_error = unsafe { GetLastError() };
+    let job = Token(raw);
+    if creation_error == ERROR_ALREADY_EXISTS { return Err(denied()); }
+    const CAP: u32 = 16;
+    const MEMORY: usize = 512 * 1024 * 1024;
+    const REQUIRED: u32 = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        | JOB_OBJECT_LIMIT_ACTIVE_PROCESS | JOB_OBJECT_LIMIT_JOB_MEMORY;
+    let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    limits.BasicLimitInformation.LimitFlags = REQUIRED;
+    limits.BasicLimitInformation.ActiveProcessLimit = CAP;
+    limits.JobMemoryLimit = MEMORY;
+    if unsafe {
+        SetInformationJobObject(
+            job.0, JobObjectExtendedLimitInformation,
+            (&raw const limits).cast(),
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+    } == 0 { return Err(denied()); }
+    let mut observed = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    if unsafe {
+        QueryInformationJobObject(
+            job.0, JobObjectExtendedLimitInformation,
+            (&mut observed as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            ptr::null_mut(),
+        )
+    } == 0
+        || observed.BasicLimitInformation.LimitFlags & REQUIRED != REQUIRED
+        || observed.BasicLimitInformation.ActiveProcessLimit != CAP
+        || observed.JobMemoryLimit != MEMORY
+    { return Err(denied()); }
+    let mut usage = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+    if unsafe {
+        QueryInformationJobObject(
+            job.0, JobObjectBasicAccountingInformation,
+            (&mut usage as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+            size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+            ptr::null_mut(),
+        )
+    } == 0 || usage.ActiveProcesses != 0 {
+        return Err(denied());
+    }
+    crate::windows_service_security::verify_debugger_job_kernel_acl(job.0)?;
+    Ok(EmptyAuditJob { _owned: job })
 }
 
 #[cfg(test)]
