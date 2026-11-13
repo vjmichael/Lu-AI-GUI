@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "fcee05b6f5ba1cdc2b5e5d037051512916a198a8",
+  "sourceCommitBeforeLock": "7e9b1778b8b462c05f71490efd739662d9749e6b",
   "trackedFileCount": 986,
   "files": [
     {
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "c23c4bddac5b252ab337716f309947cb0377a738"
+      "blob": "5d257222dc0a0a94e962c83dd9253f9a580b6e23"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -849,7 +849,7 @@
     },
     {
       "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
-      "blob": "2cab8fd2085822944dc25864c2548f102a4c3056"
+      "blob": "1355537d3ccf24ce1970d83cecdb7cde92a16e9c"
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
@@ -1929,7 +1929,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "e9c6d9991df255488aa47259d36f6444b249ae65"
+      "blob": "ee7b635aa14a2940fee05c9cdc30d8ca422e6095"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -3565,7 +3565,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/e1_reviewed_model_tools.rs",
-      "blob": "6f80fb7ee3547949e4ece4bf5784e524833422a0"
+      "blob": "cd5083f89a3058e5d527714a9c3b3c0714a1c7c8"
     },
     {
       "path": "src-tauri/lu-core/tests/edit_safety.rs",
