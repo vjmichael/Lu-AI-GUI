@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8564f12df53305abb2eec4bf64e243827c35fb3f",
-  "trackedFileCount": 1001,
+  "sourceCommitBeforeLock": "097c95e7e6f6048341b6bee6ed4cc8d6fbc8c267",
+  "trackedFileCount": 1002,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "00a155eb65b69fa4f6d98fe6e4f7ce2533e6f49a"
+      "blob": "f2450c58081e97dd01595dd8cdbdbde602f07193"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -386,6 +386,10 @@
     {
       "path": "benchmarks/e1/r00_genuine_kiaf_comparison.py",
       "blob": "532e83256556951c5df8156d812235b2bb17997f"
+    },
+    {
+      "path": "benchmarks/e1/sec06c_browser_real_native.py",
+      "blob": "95f1ea74c14062c5ad16086235366cc2a8f5f8bc"
     },
     {
       "path": "benchmarks/e1/sec06c_root_owned_systemd_boundary.py",
@@ -1933,7 +1937,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "e0effe9546bb6e37a5d98e3d9cb35f6ddbbe699d"
+      "blob": "0f3a0b045687b496b73b0176e9c2fa49c6c86bc6"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
