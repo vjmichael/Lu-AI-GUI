@@ -161,7 +161,7 @@ jobs:
               if ($observedService -and $observedService.State -eq 'Stopped') { break }
             }
             if (!$observedService -or $observedService.State -ne 'Running' -or $observedService.ProcessId -le 0) {
-              $why=if ($observedService) { "state=$($observedService.State);win32=$($observedService.ExitCode)" } else { 'unavailable' }
+              $why=if ($observedService) { "state=$($observedService.State);win32=$($observedService.ExitCode);nativeStage=$($observedService.ServiceSpecificExitCode)" } else { 'unavailable' }
               throw "DENIED: harmless native kernel and WFP preflight failed ($why)"
             }
             if ($observedService.StartName -notmatch 'LocalService') { throw 'DENIED: service identity mismatch' }
