@@ -64,7 +64,7 @@ test('explicit native opt-in is required before Lu can proactively ask the model
   assert.ok(host.includes('set_auto_continue(&chat_id,approved)'));
   assert.ok(host.includes('auto_continue_enabled(&chat_id)'));
   assert.ok(host.includes('fn start_background_watchdog('));
-  assert.ok(host.includes('if state.generation_queue.has_jobs(){continue;}'));
+  assert.match(host,/if admission\.defer_new_background \|\|\s*state\.generation_queue\.has_jobs\(\)\{continue;\}/);
   assert.ok(host.includes('let Some(session_id)=model.session_id else{continue};'));
   assert.ok(host.includes('GenerationOrigin::BackgroundTerminal'));
   assert.ok(host.includes('generate_internal('));

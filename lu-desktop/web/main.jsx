@@ -6024,6 +6024,13 @@ function App() {
           <div className="composerFooter"><input ref={fileInput} type="file" className="visuallyHidden" multiple
               accept=".png,.jpg,.jpeg,.txt,.md,.csv,.json,.log,.py,.rs,.js,.jsx,.ts,.tsx" onChange={e => {void importAttachments(e.target.files);e.target.value='';}}/>
             <button type="button" className="subtleButton" disabled={!loaded} onClick={() => fileInput.current?.click()}>+ Attach</button>
+            <label className="planDraftOptIn">
+              <input type="checkbox" aria-label="Draft plan with Lu"
+                checked={planDraftNextSend}
+                disabled={!loaded || working || chatBusy || images.length>0 || textFiles.length>0}
+                onChange={e=>setPlanDraftNextSend(e.target.checked)}/>
+              Draft plan with Lu — no tools will run
+            </label>
             {/* Legacy specialist controls retained temporarily for compatibility, but no longer mounted. Native tools enter through the original human chat and per-turn OS approvals. */}
             {perfLatestByChat[chatId] && <small className="hostPerfLatest"
               aria-label="Latest host-observed performance receipt"

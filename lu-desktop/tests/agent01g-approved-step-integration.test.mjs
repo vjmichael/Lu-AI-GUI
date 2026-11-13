@@ -79,7 +79,8 @@ test('failure after schedule admission is never silently treated as owner-free',
   assert.match(host,/guard\.release_after_durable_chat\(\)\?/);
 });
 test('a verified step can release authority only after durable conversation completion',()=>{
-  const persist=host.indexOf('host.chats.complete(&chat_id,&gid_run)?');
+  const persist=host.indexOf('host.chats.complete_reviewed_if_not_revoked(');
+  assert.match(host,/&chat_id,&gid_run,revocation_watermark\)\?/);
   const release=host.indexOf('guard.release_after_durable_chat()?');
   assert.ok(persist>=0&&release>persist);
   assert.match(host,/scheduler\.release_without_dispatch\(/);
