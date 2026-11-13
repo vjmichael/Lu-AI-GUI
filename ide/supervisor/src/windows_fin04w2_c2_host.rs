@@ -156,14 +156,15 @@ pub fn run_fixed_after_original_approval(
     let mut challenge=[0u8;17];
     read_fixed(pipe.0,&mut challenge,Duration::from_secs(5)).map_err(|error| { eprintln!("FIN04W2_C2_STAGE=SERVICE_CHALLENGE_DENIED"); error })?;
     if challenge[0]!=b'C'||challenge[1..].iter().all(|v|*v==0){
+        eprintln!("FIN04W2_C2_STAGE=SERVICE_NONCE_SHAPE_DENIED");
         return Err(denied());
     }
     let mut nonce=[0u8;16];nonce.copy_from_slice(&challenge[1..]);
     let packet=fin04w2_c2::approved_request(job_id,plan,&nonce)?;
-    write_fixed(pipe.0,&packet)?;
+    write_fixed(pipe.0,&packet).map_err(|error|{eprintln!("FIN04W2_C2_STAGE=FIXED_REQUEST_WRITE_DENIED");error})?;
     let mut status=[0u8;1];
     read_fixed(pipe.0,&mut status,Duration::from_secs(8)).map_err(|error| { eprintln!("FIN04W2_C2_STAGE=SUSPENDED_JOB_ACK_DENIED"); error })?;
-    if status[0]!=b'S'{return Err(denied());}
+    if status[0]!=b'S'{eprintln!("FIN04W2_C2_STAGE=SUSPENDED_JOB_ACK_WRONG");return Err(denied());}
     let admission=TrustedC2Admission{
         job_id:job_id.to_owned(),plan_sha:source,
         service_sha:pinned_service_sha.to_owned(),
@@ -172,15 +173,16 @@ pub fn run_fixed_after_original_approval(
         job_id,plan,&admission,
     ).map_err(|error| { eprintln!("FIN04W2_C2_STAGE=ONE_USE_GRANT_DENIED"); error })?;
     supervisor.native_mark_running(job_id)?;
-    write_fixed(pipe.0,b"G")?;
+    write_fixed(pipe.0,b"G").map_err(|error|{eprintln!("FIN04W2_C2_STAGE=RUN_GRANT_WRITE_DENIED");error})?;
     read_fixed(pipe.0,&mut status,Duration::from_secs(18)).map_err(|error| { eprintln!("FIN04W2_C2_STAGE=KERNEL_TREE_EMPTY_ACK_DENIED"); error })?;
-    if status[0]!=b'X'{return Err(denied());}
+    if status[0]!=b'X'{eprintln!("FIN04W2_C2_STAGE=KERNEL_TREE_EMPTY_ACK_WRONG");return Err(denied());}
     supervisor.native_mark_release_pending(job_id)?;
-    write_fixed(pipe.0,b"R")?;
-    read_fixed(pipe.0,&mut status,Duration::from_secs(8))?;
-    if status[0]!=b'F'{return Err(denied());}
+    write_fixed(pipe.0,b"R").map_err(|error|{eprintln!("FIN04W2_C2_STAGE=RELEASE_WRITE_DENIED");error})?;
+    read_fixed(pipe.0,&mut status,Duration::from_secs(8)).map_err(|error|{eprintln!("FIN04W2_C2_STAGE=SERVICE_RELEASE_ACK_DENIED");error})?;
+    if status[0]!=b'F'{eprintln!("FIN04W2_C2_STAGE=SERVICE_RELEASE_ACK_WRONG");return Err(denied());}
     let done=supervisor.native_finish(job_id,true,true,true)?;
     if done.phase!=JobPhase::Completed||done.requires_reconciliation{
+        eprintln!("FIN04W2_C2_STAGE=ORIGINAL_TERMINAL_RECEIPT_DENIED");
         return Err(denied());
     }
     recovery.done=true;
