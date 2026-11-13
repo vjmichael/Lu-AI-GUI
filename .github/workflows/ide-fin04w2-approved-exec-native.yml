@@ -86,3 +86,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: native original service transaction failed' }
           Write-Host FIN04W2_C_SCM_ADMITTED_BENIGN_TRANSACTION=PASS
           Write-Host FIN04W2_C_PHYSICAL_HUMAN_APPROVAL_AND_LLDB=NOT_TESTED
+      - name: Preserve exact original and service-side durable receipts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fin04w2-c-original-native-receipts
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/Fin04W2OriginalNativeAdmission/original-supervisor.jsonl
+            ${{ runner.temp }}/Fin04W2OriginalNativeAdmission/result.json
+            ${{ runner.temp }}/Fin04W2OriginalNativeAdmission/service-one-use-verified.receipt
