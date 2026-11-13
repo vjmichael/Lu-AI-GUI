@@ -27,6 +27,21 @@ test("actual checked-in Lu workflow suite uses task-group batching", () => {
   assert.deepEqual(report.failures, []);
 });
 
+test("CORE-01E installed gate requires independent PR226 one-use exact-SHA marker", () => {
+  const src = fs.readFileSync(".github/workflows/lu-plan07d-installed.yml", "utf8");
+  assert.deepEqual(inspectOne("lu-plan07d-installed.yml", src).problems, []);
+  for (const unsafe of [
+    src.replace("number == 226", "number == 999"),
+    src.replace("LU_CORE01E_INSTALLED_SHA={0}", "LU_CORE01E_NATIVE_GATE_SHA={0}"),
+    src.replace("!contains(github.event.changes.body.from, format('LU_CORE01E_INSTALLED_SHA", "contains(github.event.changes.body.from, format('LU_CORE01E_INSTALLED_SHA"),
+    src.replace("head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112'", "head.ref == 'main'"),
+    src.replace(") || (github.event.pull_request.number == 226", ") || (true) || (github.event.pull_request.number == 226"),
+    src.replace("REVIEW_MARKER: ${{ github.event.pull_request.number == 226", "REVIEW_MARKER: ${{ github.event.pull_request.number == 999")
+  ]) {
+    assert.ok(inspectOne("lu-plan07d-installed.yml", unsafe).problems.includes("HEAVY_WORKFLOW_AUTOMATIC_FANOUT"));
+  }
+});
+
 test("PLAN-07D exception requires all three exact PR219/branch/SHA guards", () => {
   const src = fs.readFileSync(".github/workflows/lu-plan07d-installed.yml", "utf8");
   assert.deepEqual(inspectOne("lu-plan07d-installed.yml", src).problems, []);

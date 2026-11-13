@@ -27,26 +27,34 @@ export function eventKeys(source) {
 export function isGuardedPlan07D(filename, source, keys) {
   if (filename !== "lu-plan07d-installed.yml" ||
       keys.length !== 1 || keys[0] !== "pull_request" ||
-      !/^    types: \[edited\]\s*$/m.test(source)) return false;
-  const body = source.split(/^jobs:\s*$/m)[1];
+      !/^    types: \\[edited\\]\\s*$/m.test(source)) return false;
+  const body = source.split(/^jobs:\\s*$/m)[1];
   if (!body) return false;
-  const jobs = body.split(/^  ([a-z0-9_-]+):\s*$/gm).slice(1);
-  if (jobs.length !== 6) return false; // exactly 3 job-name/body pairs
+  const jobs = body.split(/^  ([a-z0-9_-]+):\\s*$/gm).slice(1);
+  if (jobs.length !== 6) return false; // exactly three admission-scoped jobs
   const expected = new Set([
     "hosted-windows-nsis",
     "hosted-debian-installed-human",
     "hosted-genuine-gguf-original"
   ]);
+  const legacy = "github.event.pull_request.number == 219 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110' && contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha))";
+  const core = "github.event.pull_request.number == 226 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && contains(github.event.pull_request.body, format('LU_CORE01E_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_CORE01E_INSTALLED_SHA={0}', github.event.pull_request.head.sha))";
+  const exactAdmission = '${{ (' + legacy + ') || (' + core + ') }}';
   for (let i = 0; i < jobs.length; i += 2) {
     if (!expected.delete(jobs[i])) return false;
     const condition = jobs[i+1].match(/^    if: (.+)$/m)?.[1] || "";
-    if (!condition.includes("github.event.pull_request.number == 219") ||
-        !condition.includes("github.event.pull_request.draft") ||
-        !condition.includes("github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110'") ||
-        !condition.includes("contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha))") ||
-        !condition.includes("!contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha))")) return false;
+    // Prevent permissive OR clauses, wrong PR, branch, or repeated approvals.
+    if (condition !== exactAdmission) return false;
   }
-  return expected.size === 0;
+  if (expected.size !== 0) return false;
+  // Each platform checks the marker once more INSIDE the original process,
+  // including independent source-tree verification at the exact checked SHA.
+  const win = /REVIEW_MARKER: \\$\\{\\{ github\\.event\\.pull_request\\.number == 226 && 'LU_CORE01E_INSTALLED_SHA' \\|\\| 'LU_PLAN07D_INSTALLED_SHA' \\}\\}/g;
+  if ([...source.matchAll(win)].length !== 3) return false;
+  if (!source.includes("re.escape(os.environ['REVIEW_MARKER'])") ||
+      !source.includes('re.escape(os.environ["REVIEW_MARKER"])') ||
+      !source.includes("[regex]::Escape($env:REVIEW_MARKER)")) return false;
+  return true;
 }
 
 export function inspectOne(filename, source) {

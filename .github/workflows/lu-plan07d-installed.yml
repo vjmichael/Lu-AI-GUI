@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   hosted-windows-nsis:
-    if: ${{ github.event.pull_request.number == 219 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110' && contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) }}
+    if: ${{ (github.event.pull_request.number == 219 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110' && contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha))) || (github.event.pull_request.number == 226 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && contains(github.event.pull_request.body, format('LU_CORE01E_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_CORE01E_INSTALLED_SHA={0}', github.event.pull_request.head.sha))) }}
     runs-on: windows-2025
     timeout-minutes: 180
     steps:
@@ -28,10 +28,12 @@ jobs:
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
           REVIEW_BODY: ${{ github.event.pull_request.body }}
+          REVIEW_MARKER: ${{ github.event.pull_request.number == 226 && 'LU_CORE01E_INSTALLED_SHA' || 'LU_PLAN07D_INSTALLED_SHA' }}
         run: |
           $ErrorActionPreference='Stop'
           if((git rev-parse HEAD).Trim() -cne $env:SOURCE_SHA){throw 'Wrong original source commit'}
-          $markers=[regex]::Matches($env:REVIEW_BODY,'(?m)^LU_PLAN07D_INSTALLED_SHA=([0-9a-f]{40})$')
+          $regex='(?m)^'+[regex]::Escape($env:REVIEW_MARKER)+'=([0-9a-f]{40})$'
+          $markers=[regex]::Matches($env:REVIEW_BODY,$regex)
           if($markers.Count -ne 1 -or $markers[0].Groups[1].Value -cne $env:SOURCE_SHA){throw 'PLAN07D one-use exact SHA gate invalid'}
           node scripts/verify-source-tree.mjs
           if($LASTEXITCODE -ne 0){throw 'Tracked source manifest invalid'}
@@ -134,7 +136,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   hosted-debian-installed-human:
-    if: ${{ github.event.pull_request.number == 219 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110' && contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) }}
+    if: ${{ (github.event.pull_request.number == 219 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110' && contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha))) || (github.event.pull_request.number == 226 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && contains(github.event.pull_request.body, format('LU_CORE01E_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_CORE01E_INSTALLED_SHA={0}', github.event.pull_request.head.sha))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
@@ -153,12 +155,14 @@ jobs:
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BODY: ${{ github.event.pull_request.body }}
+          REVIEW_MARKER: ${{ github.event.pull_request.number == 226 && 'LU_CORE01E_INSTALLED_SHA' || 'LU_PLAN07D_INSTALLED_SHA' }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$HEAD_SHA"
           python3 - <<'PY'
           import os,re
-          assert re.findall(r'(?m)^LU_PLAN07D_INSTALLED_SHA=([0-9a-f]{40})$',os.environ['BODY']) == [os.environ['HEAD_SHA']]
+          pattern=r'(?m)^'+re.escape(os.environ['REVIEW_MARKER'])+r'=([0-9a-f]{40})$'
+          assert re.findall(pattern,os.environ['BODY']) == [os.environ['HEAD_SHA']]
           PY
           node scripts/verify-source-tree.mjs
           python3 -m py_compile scripts/plan07d-debian-installed-human.py scripts/plan07d-debian-installed-smoke.py scripts/plan07d-readonly-ansf-witness.py
@@ -262,7 +266,7 @@ jobs:
     # One exact SHA and the SAME consolidated PLAN-07D approval event.
     # Real loaded Qwen3-0.6B/ANSF host evidence is separate from installed UI,
     # production FIFO cancellation, physical Qwen3.8 27B and AMD Vulkan.
-    if: ${{ github.event.pull_request.number == 219 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110' && contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) }}
+    if: ${{ (github.event.pull_request.number == 219 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/plan07-evidence-driven-task-updates-20261110' && contains(github.event.pull_request.body, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_PLAN07D_INSTALLED_SHA={0}', github.event.pull_request.head.sha))) || (github.event.pull_request.number == 226 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && contains(github.event.pull_request.body, format('LU_CORE01E_INSTALLED_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_CORE01E_INSTALLED_SHA={0}', github.event.pull_request.head.sha))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 160
     env:
@@ -284,13 +288,15 @@ jobs:
         shell: bash
         env:
           BODY: ${{ github.event.pull_request.body }}
+          REVIEW_MARKER: ${{ github.event.pull_request.number == 226 && 'LU_CORE01E_INSTALLED_SHA' || 'LU_PLAN07D_INSTALLED_SHA' }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$PLAN07B_REAL_HEAD"
           python3 - <<'PY'
           import os,re
           expected=os.environ["PLAN07B_REAL_HEAD"]
-          markers=re.findall(r'(?m)^LU_PLAN07D_INSTALLED_SHA=([0-9a-f]{40})$',os.environ["BODY"])
+          pattern=r'(?m)^'+re.escape(os.environ["REVIEW_MARKER"])+r'=([0-9a-f]{40})$'
+          markers=re.findall(pattern,os.environ["BODY"])
           if markers!=[expected]:
               raise SystemExit("PLAN07D_GENUINE_MODEL_EXACT_HEAD_REFUSED")
           PY
