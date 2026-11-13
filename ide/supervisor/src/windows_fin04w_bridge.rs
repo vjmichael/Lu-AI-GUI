@@ -21,13 +21,17 @@ use windows_sys::Win32::{
         CreateRestrictedToken, CreateWellKnownSid, EqualSid, GetTokenInformation,
         IsTokenRestricted, IsValidSid, SetTokenInformation, TokenIntegrityLevel,
         TokenIsAppContainer, TokenUser, TOKEN_USER, SID_AND_ATTRIBUTES,
-        TOKEN_MANDATORY_LABEL, TOKEN_DUPLICATE,
-        TOKEN_QUERY, DISABLE_MAX_PRIVILEGE, LUA_TOKEN, SE_GROUP_INTEGRITY,
+        TOKEN_MANDATORY_LABEL, TOKEN_DUPLICATE, TOKEN_ASSIGN_PRIMARY,
+        TOKEN_ADJUST_DEFAULT, TOKEN_IMPERSONATE,
+        TOKEN_QUERY, DISABLE_MAX_PRIVILEGE, LUA_TOKEN,
         WinLowLabelSid, WinBuiltinUsersSid,
     },
     System::Threading::{GetCurrentProcess, OpenProcessToken},
 };
 
+// Windows SDK WinNT.h SE_GROUP_INTEGRITY (not exported in windows-sys 0.61).
+// A mandatory integrity SID must carry this attribute, not ENABLED.
+const SE_GROUP_INTEGRITY_VALUE: u32 = 0x0000_0020;
 fn denied() -> SupervisorError {
     SupervisorError::NoContainment
 }
@@ -127,7 +131,10 @@ impl RestrictedPrimaryToken {
         let mut original = ptr::null_mut();
         if unsafe {
             OpenProcessToken(
-                GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &mut original,
+                GetCurrentProcess(),
+                TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY
+                    | TOKEN_ADJUST_DEFAULT | TOKEN_IMPERSONATE,
+                &mut original,
             )
         } == 0 {
             return Err(denied());
@@ -190,7 +197,7 @@ impl RestrictedPrimaryToken {
         let (sid, sid_length) = low_sid()?;
         let mut label = TOKEN_MANDATORY_LABEL::default();
         label.Label.Sid = sid.as_ptr().cast_mut().cast();
-        label.Label.Attributes = SE_GROUP_INTEGRITY;
+        label.Label.Attributes = SE_GROUP_INTEGRITY_VALUE;
         if unsafe {
             SetTokenInformation(
                 restricted.0,
