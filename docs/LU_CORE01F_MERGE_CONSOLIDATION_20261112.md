@@ -38,3 +38,11 @@ With the required full Git objects already fetched locally, run:
 The script never fetches, rebases, pushes, creates a merge, or interprets old CI as acceptance. It reports main-only changes, the exact frozen ancestry, excluded source paths, current CORE-01E head drift, and full current source-lock verification. A source-only PASS still outputs mergeAuthorized=false and releaseAuthorized=false. If the upstream Core tip moves, freeze a new reviewed chain; do not silently bless the new source.
 
 **Outcome:** Merge preflight authored. Execution and merge authority remain blocked on accepted CORE-01E OS/installed receipts, reviewed bridge, current main collision check, and explicit integration approval.
+
+## Source-only CI test admission
+
+The original REPO-01 source verifier now runs the five new read-only
+CORE-01F source-contract tests only when the new test file exists. This is
+a lightweight source job, not new native job fanout; it does not alter
+CORE-01E's protected branch, native thresholds, or installed-workflow
+admission. A green source run remains no merge authority.
