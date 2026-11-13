@@ -74,9 +74,10 @@ export function isGuardedMainLedger(filename, source, keys) {
 export function inspectOne(filename, source) {
   const keys = eventKeys(source);
   const problems = [];
-  const narrowlyAdmitted = isGuardedPlan07D(filename, source, keys) || isGuardedMainLedger(filename, source, keys);
-  if (!keys.includes("workflow_dispatch") && !narrowlyAdmitted) problems.push("NO_GROUP_DISPATCH");
-  if (keys.filter((x) => x === "workflow_dispatch").length !== (narrowlyAdmitted ? 0 : 1)) problems.push("DUPLICATE_DISPATCH");
+  const legacyPlan07D = isGuardedPlan07D(filename, source, keys);
+  const narrowlyAdmitted = legacyPlan07D || isGuardedMainLedger(filename, source, keys);
+  if (!keys.includes("workflow_dispatch") && !legacyPlan07D) problems.push("NO_GROUP_DISPATCH");
+  if (keys.filter((x) => x === "workflow_dispatch").length !== (legacyPlan07D ? 0 : 1)) problems.push("DUPLICATE_DISPATCH");
   if (!AUTOMATIC.has(filename) && keys.some((x) => [
     "push", "pull_request", "pull_request_target", "merge_group", "repository_dispatch"
   ].includes(x)) && !narrowlyAdmitted) problems.push("HEAVY_WORKFLOW_AUTOMATIC_FANOUT");
