@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "2b07b027b277583b3423be7e91436878cb7e9040",
+  "sourceCommitBeforeLock": "08662e0ab78312a8b4a7a20315131b80f639bc09",
   "trackedFileCount": 993,
   "files": [
     {
@@ -601,7 +601,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "09e7ea9a96794d5b64560909315b7b4575ef5d82"
+      "blob": "f0fc8a6d07304b0b1a450c90c05f4308d7c13654"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -853,7 +853,7 @@
     },
     {
       "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
-      "blob": "34fa81cfba9b73208562f8b6889e82576784ae79"
+      "blob": "f7fdea2046c76aced4d67bbac25c23b98de4af5f"
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "aef910234682556bb419acaa842519a763fd8977"
+      "blob": "4aec381c41d508f072d924b2da0c3881f2c1309c"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2253,7 +2253,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
-      "blob": "242097dad4ec863744cc58607cfb9dcb0508d08b"
+      "blob": "1e17cffc45d48e85a4e07238ec86ab8cd049b6e5"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-worker.py",
@@ -2261,7 +2261,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-probe-launcher.py",
-      "blob": "cce39f265dd9ec4a5d4244e1ed26132fde297f5e"
+      "blob": "327cdc1efd805c3d72cf5c7c759fb3407f6fc04d"
     },
     {
       "path": "scripts/lu-sec06c-owned-probe-worker.py",
