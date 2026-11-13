@@ -2856,6 +2856,18 @@ jobs:
             printf 'SEC06_COMPILER_ONLY_NOT_ENGINE' > "lu-desktop/src-tauri/resources/lu-inference/$f"
           done
           (cd lu-desktop && npm ci --no-audit --no-fund && npm run build && npm run check)
+      - name: Pin real Linux Git executable for SEC-06 original Core regressions
+        if: matrix.mode == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This is the same host-selected Git required by native_git_inspect.rs;
+          # model-supplied executables and PATH lookup inside the test are denied.
+          selected="$(command -v git)"
+          native="$(readlink -e -- "$selected")"
+          [[ "$native" = /* ]] && test -f "$native" && test -x "$native"
+          echo "LU_TOOLS03_TEST_GIT_PATH=$native" >> "$GITHUB_ENV"
+          echo 'SEC06_LINUX_TRUSTED_GIT_PINNED=1'
       - name: Pin real Windows Git executable for reviewed native worker
         if: matrix.mode == 'windows'
         shell: pwsh

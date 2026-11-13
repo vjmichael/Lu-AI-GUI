@@ -57,6 +57,23 @@ test('SEC06 requires specific native cases and re-hashes original logs',()=>{
   assert.match(gate,/ownerOperatedInstalledAppAccepted:false/);
   assert.match(gate,/process\.exitCode=1/);
 });
+test('SEC06 Linux original Core suite receives absolute host-pinned Git without relaxing cgroup gates',()=>{
+  const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8');
+  const section=workflow.split('  core01e-sec06-native:\n')[1]
+    ?.split('  p0-gate-installed-windows:')[0];
+  assert.ok(section,'missing original SEC-06 job');
+  const linuxPin=section.indexOf('Pin real Linux Git executable for SEC-06');
+  const windowsPin=section.indexOf('Pin real Windows Git executable for reviewed native worker');
+  const originalRun=section.indexOf('Run independent SEC-06 including Linux ancestor-migration containment');
+  assert.ok(linuxPin>=0 && windowsPin>linuxPin && originalRun>windowsPin);
+  assert.match(section,/native="\\$\\(readlink -e -- "\\$selected"\\)"/);
+  assert.match(section,/test -f "\\$native" && test -x "\\$native"/);
+  assert.match(section,/LU_TOOLS03_TEST_GIT_PATH=\\$native/);
+  assert.match(section,/LU_TOOLS03_TEST_GIT_PATH=\\$path/);
+  assert.match(section,/node scripts\\/p0-sec06-consolidated\\.mjs --mode/);
+  assert.doesNotMatch(section,/SEC06_RELEASE_ACCEPTED=1|--skip-ancestor-migration/);
+});
+
 test('SEC06 actual kernel oracle treats escaped descendant as security blocker',()=>{
   assert.match(negative,/SEC06_BLOCKED_ANCESTOR_CGROUP_ESCAPE=1/);
   assert.match(negative,/SEC06_SECURITY_BLOCKER/);

@@ -4,7 +4,7 @@
 **Implementation status:** consolidated original-evidence runner, OS test
 requirements, receipt hardening, rejection fixtures and owner starter created.
 **Security acceptance status:** **OPEN / NOT YET ATTESTED**.
-**No CI dispatched; no owner-operated installed tests run; no merge or release.**
+**Exact-head native CI dispatched:** run #43455392307 at `159fb75fd4c3d24d8b4aaf814de61abe4ad7deb9`; Linux SEC-06 blocked. No owner-operated installed tests, merge or release.
 
 ## Purpose and strict evidence rule
 
@@ -26,10 +26,10 @@ and owner physical acceptance remain mandatory.
 
 | ID | Gate | Native evidence required | Current status |
 | --- | --- | --- | --- |
-| SEC-06A | Exact source and negative verifier | Frozen source lock, Node contracts including verifier tamper cases, Python probe compilation | Authored / not executed |
-| SEC-06B | Core native regression | Full lu-core, desktop ANSF and OS helper Rust tests; explicit SEC-02/03/04/05/06 filters; compile exact production file-scanner acceptance binary and run 12-MiB real scanner E2E | Authored / not executed |
-| SEC-06C | Linux delegated containment | Original Lu test host SIGKILL; independent guardian kills nested setsid descendant; real Git restart journal; guardian-death and stall negatives; ancestor-migration blocked; original receipts | Authored / not executed |
-| SEC-06D | Windows Job containment | Real two-Job cross-chat cancellation and genuine reviewed Git native Job receipt, original chat/task binding and post-restart | Authored / not executed |
+| SEC-06A | Exact source and negative verifier | Frozen source lock, Node contracts including verifier tamper cases, Python probe compilation | **PASS at 159fb75**: SEC-06 source job |
+| SEC-06B | Core native regression | Full lu-core, desktop ANSF and OS helper Rust tests; explicit SEC-02/03/04/05/06 filters; compile exact production file-scanner acceptance binary and run 12-MiB real scanner E2E | **OPEN**: original Linux SEC-06 runner omitted required absolute trusted Git path (6 native Git tests fail); independent P0-GATE Windows/Linux full suites PASS. Provision Git and rerun exact head |
+| SEC-06C | Linux delegated containment | Original Lu test host SIGKILL; independent guardian kills nested setsid descendant; real Git restart journal; guardian-death and stall negatives; ancestor-migration blocked; original receipts | **BLOCKED / NOT_AVAILABLE**: hosted Linux lacks writable delegated cgroup-v2; no ancestor-migration attack executed (exit 77). Requires genuine nonroot kernel delegation and independent original proof |
+| SEC-06D | Windows Job containment | Real two-Job cross-chat cancellation and genuine reviewed Git native Job receipt, original chat/task binding and post-restart | **NATIVE PASS at 159fb75**: independent Windows SEC-06 job; receipt review and installed owner gate remain separate |
 | SEC-06E | Installed-app human operation | Exact installed executable, approved vs denied tools, cancel/revoke races, cross-chat isolation, restart/uncertain-effects UI, accessibility, preservation | Deferred owner acceptance |
 | SEC-06F | Independent reconciliation | Matching exact HEAD/lock across all original logs; no NOT_AVAILABLE, false positives, stopped tests, missing OS witness, or unreviewed owner steps | OPEN |
 
@@ -165,3 +165,13 @@ single-Send/native host routing and SEC-03 revocation-fenced terminal append.
 The removed specialist-mode toolbar labels must not be resurrected merely
 to satisfy an obsolete source assertion; the OS picker and one-turn
 authorization still bind real execution.
+
+## 2026-11-13 original exact-head receipt reconciliation
+
+Original replacement [run #43455392307](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/43455392307) used head `159fb75fd4c3d24d8b4aaf814de61abe4ad7deb9`. Source, Windows/Linux compilers, P0-WIN-CHAT Windows/Linux native, real hosted small Qwen/SmolVLM, full P0-GATE Windows/Linux Core and desktop suites, and SEC-06 Windows native jobs passed. SEC-06 Linux failed; the installed jobs were skipped by the PR #226 installation safety gate.
+
+The **original** SEC-06 Linux artifact #14055672688 contains 22 case logs with SHA-256 digests; all 22 archived log hashes match the recorded native receipt. `core-native-full` failed in six `tests/native_git_inspect.rs` cases with `CI must set an absolute trusted Git executable for this test`; the separately provisioned full P0-GATE Ubuntu job passed. This is a native **test-harness Git-path omission**, not evidence that the policy must accept arbitrary model-selected executables. The source-locked SEC-06 workflow now requires an actual canonical absolute executable and exports `LU_TOOLS03_TEST_GIT_PATH` on Linux, symmetric with its existing Windows pin.
+
+All native Linux custody negatives remain **unaccepted**: host SIGKILL reported `AGENT01L_CGROUP_DELEGATION_NOT_AVAILABLE=1`, original Git journal panicked `NOT_AVAILABLE` without a delegated populated-zero witness, and guardian/ancestor fixtures exited code 77 before their kernel tests. There was **no observed successful ancestor escape** in this run, nor any evidence that migration is contained. Neither missing delegation nor a surviving escaped descendant is an allowable PASS. Use an actual ordinary nonroot delegated cgroup-v2 host and preserve all original `cgroup.events`, `cgroup.kill`, `pidfd`, guardian, journal and setsid receipts. Reconcile the same exact SHA and case log hashes with Windows and source receipts before attempting SEC-06F. Any new source fix requires a new SHA and complete exact-head acceptance.
+
+No one-use installed authorization is present; hosted NSIS/Debian installation and physical owner acceptance remain separate and BLOCKED.
