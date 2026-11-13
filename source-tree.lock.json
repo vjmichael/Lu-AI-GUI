@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a8a5ac8bc2478179a7cafc9210b0957138ebc2e2",
+  "sourceCommitBeforeLock": "32b8d1e0000a1c2387f464c87427df78451c20ae",
   "trackedFileCount": 984,
   "files": [
     {
@@ -2205,7 +2205,7 @@
     },
     {
       "path": "scripts/core01-verify-scope.test.mjs",
-      "blob": "52c0d3dee5d3c3b27475c7feb2fd3dafbc6c93fd"
+      "blob": "226dc38b4215e8df8297bbc378d580f0ef08637f"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",

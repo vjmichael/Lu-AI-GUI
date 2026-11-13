@@ -29,5 +29,5 @@ test('PERF-01 warm model source retains the pressure branch outside comments', (
   const original = readFileSync(new URL('../src-tauri/lu-core/src/warm_model_residency.rs', import.meta.url), 'utf8');
   assert.ok(original.includes('if idle_for.is_some_and(|elapsed| elapsed >= Duration::from_secs(30))'));
   assert.ok(original.includes('return WarmDecision::EvictMeasuredPressure;'));
-  assert.ok(!original.includes('\\\\n        if idle_for'), 'Literal escaped newlines must not swallow control flow');
+  assert.ok(!original.includes('\\n        if idle_for'), 'Literal escaped newlines must not swallow control flow');
 });
