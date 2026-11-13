@@ -1,0 +1,42 @@
+# FIN-04W2-A/B contract and Windows kernel *negative* preflight.
+# No installer, SCM service creation, debugger launch or runtime authority.
+name: IDE FIN-04W2 broker protocol and native preflight
+on:
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - '.github/workflows/ide-fin04w2-preflight-native.yml'
+permissions:
+  contents: read
+concurrency:
+  group: ide-fin04w2-preflight-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  read-only-contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'FIN04W2_TEST_SOURCE=EXACT_HEAD'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Build and test only default-off broker preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-protocol --lib fin04w2 -- --nocapture
+          echo 'FIN04W2_BROKER_SHAPE_AND_KERNEL_NEGATIVE_PREFLIGHT=PASS'
+          echo 'FIN04W2_SERVICE_EXECUTION_OR_WFP_CONTAINMENT=NOT_TESTED'
