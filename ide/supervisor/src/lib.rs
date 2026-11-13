@@ -253,7 +253,8 @@ fn validate_plan(value: &JobPlan) -> bool {
         && value.memory_limit_bytes <= MAX_MEMORY_BYTES
         && value.process_limit > 0
         && (value.process_limit <= MAX_PIDS
-            || (value.recipe_id == "dap_lldb_project"
+            || (cfg!(target_os = "linux")
+                && value.recipe_id == "dap_lldb_project"
                 && value.process_limit <= MAX_PROJECT_DAP_PIDS))
         && value.log_limit_bytes > 0
         && value.log_limit_bytes <= MAX_LOG_BYTES
@@ -285,7 +286,7 @@ fn validate_plan(value: &JobPlan) -> bool {
                 // All OS cgroup/Job, resource, journal and approval gates
                 // remain required, regardless of the task count.
                 && value.process_limit
-                    <= if value.recipe_id == "dap_lldb_project" {
+                    <= if cfg!(target_os = "linux") && value.recipe_id == "dap_lldb_project" {
                         MAX_PROJECT_DAP_PIDS
                     } else {
                         MAX_PIDS
@@ -1816,7 +1817,9 @@ mod tests {
         plan.effect_class = "debug_inspection_isolated".into();
         plan.debug_target_binding_sha256 = Some("f".repeat(64));
         plan.process_limit = MAX_PROJECT_DAP_PIDS;
-        assert!(validate_plan(&plan));
+        // The higher cap counts *threads* under Linux cgroup v2. Never
+        // widen Windows SCM Job's process-count limit to match it.
+        assert_eq!(validate_plan(&plan), cfg!(target_os = "linux"));
         plan.process_limit = MAX_PROJECT_DAP_PIDS + 1;
         assert!(!validate_plan(&plan));
         plan.process_limit = MAX_PROJECT_DAP_PIDS;
