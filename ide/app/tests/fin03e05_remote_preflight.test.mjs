@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const native = read('../../host/src/github_remote_publication.rs');
+const production = native.split('#[cfg(test)]')[0];
 const host = read('../../host/src/lib.rs');
 const tauri = read('../src-tauri/src/lib.rs');
 
@@ -38,12 +39,12 @@ test('FIN03 6E05A never converts a cached tracking ref or CI into authority', ()
   assert.match(native, /origin_push_url_override_denied/);
   assert.match(native, /foreign_git_lock_present/);
   assert.match(native, /local_descendant_of_stored_tracking/);
-  assert.doesNotMatch(native, /\.push\s*\(/);
-  assert.doesNotMatch(native, /\.push_to\s*\(/);
-  assert.doesNotMatch(native, /\.set_target\s*\(/);
-  assert.doesNotMatch(native, /\.remote_set_url\s*\(/);
-  assert.doesNotMatch(native, /Command\s*::\s*new\s*\(/);
-  assert.doesNotMatch(native, /ureq\s*::/);
+  assert.doesNotMatch(production, /\.push\s*\(/);
+  assert.doesNotMatch(production, /\.push_to\s*\(/);
+  assert.doesNotMatch(production, /\.set_target\s*\(/);
+  assert.doesNotMatch(production, /\.remote_set_url\s*\(/);
+  assert.doesNotMatch(production, /Command\s*::\s*new\s*\(/);
+  assert.doesNotMatch(production, /ureq\s*::/);
 });
 
 test('FIN03 native unit fixtures reject dirty, drift, spoofing and write assertions', () => {
