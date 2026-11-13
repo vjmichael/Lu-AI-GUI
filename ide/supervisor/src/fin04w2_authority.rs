@@ -23,6 +23,14 @@ pub(crate) struct ConsumedOriginalApproval {
     pub(crate) admission_entry_sha256: String,
     pub(crate) session_id: String,
 }
+/// Pre-exec service reservation is bound to the genuine original Authorized
+/// entry. It is not itself proof that the original host grant was consumed.
+pub(crate) struct FreshOriginalAuthorization {
+    pub(crate) job_id: String,
+    pub(crate) plan_sha256: String,
+    pub(crate) approved_entry_sha256: String,
+    pub(crate) session_id: String,
+}
 fn valid_job(value: &str) -> bool {
     value.len() == 36
         && value.starts_with("job-")
@@ -99,7 +107,7 @@ pub(crate) fn verify_consumed_original_approval(
 /// the original host AFTER native custody is proven, can authorize resume.
 pub(crate) fn verify_fresh_original_authorized(
     receipts:&[Receipt],job_id:&str,plan:&JobPlan,sha:&str,now:u64,
-)->Result<(),SupervisorError>{
+)->Result<FreshOriginalAuthorization,SupervisorError>{
     if !valid_job(job_id) || now==0 || !crate::validate_plan(plan)
         || plan.recipe_id!="dap_lldb_project"
         || plan.effect_class!="debug_inspection_isolated"
@@ -123,11 +131,16 @@ pub(crate) fn verify_fresh_original_authorized(
         || now.saturating_sub(current[1].body.observed_unix_ms)>MAX_AGE_MS {
         return Err(denied());
     }
-    Ok(())
+    Ok(FreshOriginalAuthorization {
+        job_id:job_id.to_owned(),
+        plan_sha256:sha.to_owned(),
+        approved_entry_sha256:current[1].entry_hash.clone(),
+        session_id:current[1].body.session_id.clone(),
+    })
 }
 pub(crate) fn verify_original_authorized_file(
     path:&Path,job_id:&str,plan:&JobPlan,sha:&str,
-)->Result<(),SupervisorError>{
+)->Result<FreshOriginalAuthorization,SupervisorError>{
     let rows=original_receipts_from_path(path)?;
     verify_fresh_original_authorized(&rows,job_id,plan,sha,now_ms()?)
 }
@@ -209,6 +222,26 @@ pub(crate) fn verify_original_journal_file(
     verify_consumed_original_approval(
         &receipts, job_id, plan, expected_plan_sha256, now_ms()?,
     )
+}
+
+/// One irreversible service-side reservation *before* a suspended
+/// process is created. The original grant is still only Authorized at this
+/// point. Failure to complete the later host grant consumption requires
+/// recovery, never replay.
+#[cfg(windows)]
+pub(crate) fn reserve_fresh_original_authorization(
+    root:&Path, authorized:&FreshOriginalAuthorization,
+)->Result<(),SupervisorError>{
+    if authorized.approved_entry_sha256.len()!=64
+        || !authorized.approved_entry_sha256.bytes().all(|b|b.is_ascii_hexdigit())
+    {return Err(denied());}
+    let proof=ConsumedOriginalApproval {
+        job_id:authorized.job_id.clone(),
+        plan_sha256:authorized.plan_sha256.clone(),
+        admission_entry_sha256:authorized.approved_entry_sha256.clone(),
+        session_id:authorized.session_id.clone(),
+    };
+    consume_once_in_private_service_root(root,&proof)
 }
 
 /// Durable one-use SERVICE-side denial of replay (including restart).
