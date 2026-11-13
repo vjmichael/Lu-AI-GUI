@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "7e9b1778b8b462c05f71490efd739662d9749e6b",
-  "trackedFileCount": 986,
+  "sourceCommitBeforeLock": "3f548cc3c65524ca8350779fe0b1d9bb651e374c",
+  "trackedFileCount": 987,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -388,6 +388,10 @@
       "blob": "532e83256556951c5df8156d812235b2bb17997f"
     },
     {
+      "path": "benchmarks/e1/sec06c_root_owned_systemd_boundary.py",
+      "blob": "183e4a8e33acf0b9be6d8b4d09ccddaa47ec5c34"
+    },
+    {
       "path": "benchmarks/e1/test_agent01g_qwen_plan_probe.py",
       "blob": "83d07a6930624a375f8ded7a1c826a2d454813c6"
     },
@@ -597,7 +601,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "5d257222dc0a0a94e962c83dd9253f9a580b6e23"
+      "blob": "d39b1fb1927a2f06feb3c940149b8e8d30d036db"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -849,7 +853,7 @@
     },
     {
       "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
-      "blob": "1355537d3ccf24ce1970d83cecdb7cde92a16e9c"
+      "blob": "6fa966ea52de3f1a4a8dfeba0c0a967f89ec8a03"
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
@@ -1929,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "ee7b635aa14a2940fee05c9cdc30d8ca422e6095"
+      "blob": "b8176c9841fd8c3b6bb0287ebfdd2d6cfc864b17"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2269,7 +2273,7 @@
     },
     {
       "path": "scripts/p0-sec06-consolidated.mjs",
-      "blob": "8bf42d00dae04140199b183caf5607f35a93f802"
+      "blob": "371f17d97800156aae22296914389e5b7673a62c"
     },
     {
       "path": "scripts/p0-sec06-windows-owner-observation.ps1",
