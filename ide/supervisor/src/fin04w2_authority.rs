@@ -71,6 +71,9 @@ pub(crate) fn verify_consumed_original_approval(
         || consumed.body.phase != JobPhase::AdmissionPending
         || consumed.body.outcome_code != "grant_consumed_pending_os_admission"
         || consumed.body.evidence_code != "no_worker_yet_started"
+        || consumed.body.session_id.len() != 40
+        || !consumed.body.session_id.starts_with("session-")
+        || !consumed.body.session_id[8..].bytes().all(|b|b.is_ascii_hexdigit())
         || prepared.body.session_id != approved.body.session_id
         || approved.body.session_id != consumed.body.session_id
         || prepared.body.project_id != plan.project_id
@@ -123,6 +126,14 @@ pub(crate) fn consume_once_in_private_service_root(
     private_root: &Path,
     proof: &ConsumedOriginalApproval,
 ) -> Result<(), SupervisorError> {
+    let root_meta=fs::symlink_metadata(private_root).map_err(|_|denied())?;
+    if !root_meta.is_dir() || root_meta.file_type().is_symlink() {
+        return Err(denied());
+    }
+    use std::os::windows::fs::MetadataExt;
+    if root_meta.file_attributes() & 0x400 != 0 {
+        return Err(denied());
+    }
     if !private_root.is_absolute()
         || !valid_job(&proof.job_id)
         || proof.plan_sha256.len() != 64
