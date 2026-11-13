@@ -32,7 +32,7 @@ use windows_sys::Win32::{
     Security::SECURITY_ATTRIBUTES,
     Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING},
     System::{
-        Pipes::{CreatePipe, PeekNamedPipe},
+        Pipes::{CreateNamedPipeW, CreatePipe, PeekNamedPipe},
         Threading::STARTF_USESTDHANDLES,
     },
 };
@@ -497,6 +497,37 @@ fn trace_dap_token_access(process: HANDLE, bundle: &Path, source: &Path, local: 
         }
     };
     eprintln!("FIN04_WIN_LOWBOX_NUL_WRITE={nul_status}");
+    // LLDB's pre-DAP startup may use OS named pipes. Test the kernel under
+    // the actual suspended lowbox token without publishing a reusable name,
+    // forwarding any pipe handle or granting an AppContainer capability.
+    // Distinguish the default pipe namespace from AppContainer LOCAL.
+    for (kind, scope) in [
+        ("default", r"\\.\pipe\"),
+        ("local", r"\\.\pipe\LOCAL\"),
+    ] {
+        let unique = format!("{scope}lu-fin04-{}-{:016x}", std::process::id(), rand::random::<u64>());
+        let handle = unsafe {
+            CreateNamedPipeW(
+                wide(OsStr::new(&unique)).as_ptr(),
+                0x0000_0003, // PIPE_ACCESS_DUPLEX
+                0x0000_0000, // PIPE_TYPE_BYTE | PIPE_WAIT
+                1, 512, 512, 0,
+                ptr::null(),
+            )
+        };
+        let category = if handle == INVALID_HANDLE_VALUE || handle.is_null() {
+            match unsafe { GetLastError() } {
+                5 => "access_denied",
+                2 | 3 => "namespace_unavailable",
+                87 => "invalid_parameter",
+                _ => "other_kernel_failure",
+            }
+        } else {
+            unsafe { CloseHandle(handle) };
+            "create_allowed"
+        };
+        eprintln!("FIN04_WIN_LOWBOX_PIPE_{kind}={category}");
+    }
 
     // Never continue privileged SCM custody under a lowbox impersonation.
     if unsafe { RevertToSelf() } == 0 {

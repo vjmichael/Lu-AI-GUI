@@ -944,13 +944,18 @@ impl LinuxDapSession {
         }
         #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
         eprintln!("FIN04_D3_LINUX_STAGE=both_receipt_chains_verified");
-        let candidate = self
-            .gateway
-            .source_candidate()
-            .ok_or(SupervisorError::NoContainment)?;
-        let pc = candidate
-            .instruction_address
-            .ok_or(SupervisorError::NoContainment)?;
+        let candidate = self.gateway.source_candidate().ok_or_else(|| {
+            #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+            eprintln!("FIN04_D3_LINUX_DENIAL=correlated_dap_stack_lacks_source");
+            SupervisorError::NoContainment
+        })?;
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=correlated_dap_source_present");
+        let pc = candidate.instruction_address.ok_or_else(|| {
+            #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+            eprintln!("FIN04_D3_LINUX_DENIAL=correlated_dap_stack_lacks_pc");
+            SupervisorError::NoContainment
+        })?;
         // The source path must be the native-only read-only snapshot mounted
         // as /workspace; no arbitrary path or suffix/basename lookup.
         #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
@@ -958,7 +963,11 @@ impl LinuxDapSession {
         let relative = candidate
             .adapter_path
             .strip_prefix("/workspace/")
-            .ok_or(SupervisorError::WrongProjectOrSource)?;
+            .ok_or_else(|| {
+                #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+                eprintln!("FIN04_D3_LINUX_DENIAL=source_outside_sealed_workspace");
+                SupervisorError::WrongProjectOrSource
+            })?;
         let clean = std::path::Path::new(relative);
         if clean.components().count() == 0
             || !clean
