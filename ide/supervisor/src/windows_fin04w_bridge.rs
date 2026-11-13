@@ -227,6 +227,26 @@ impl RestrictedPrimaryToken {
                 &mut restricted,
             )
         } == 0 {
+            // The same Windows kernel failure that denied the original
+            // restricted-token launch. Emit only a fixed Win32 category
+            // before any other API/logging can change LastError. Never
+            // create a less-restricted child as a fallback.
+            let error = unsafe { GetLastError() };
+            stage("create_restricted_token_denied");
+            let kind = match error {
+                5 => "access_denied",
+                6 => "invalid_input_handle",
+                8 | 14 => "out_of_memory",
+                87 => "invalid_parameter",
+                1314 => "required_privilege_missing",
+                1300 => "privilege_not_assigned",
+                1337 | 1338 => "invalid_or_inconsistent_sid_acl",
+                _ => "other_kernel_failure",
+            };
+            if std::env::var_os("GITHUB_ACTIONS").as_deref()
+                == Some(std::ffi::OsStr::new("true")) {
+                eprintln!("FIN04W_RESTRICTED_TOKEN_OS_FAILURE={kind}");
+            }
             return Err(denied());
         }
         stage("create_restricted_token_success");
