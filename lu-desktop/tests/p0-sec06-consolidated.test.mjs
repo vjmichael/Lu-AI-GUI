@@ -8,6 +8,7 @@ import {join,resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
+import {canonicalSourceLockSha256} from '../../scripts/sec06-source-lock-digest.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const gate=readFileSync(join(root,'scripts/p0-sec06-consolidated.mjs'),'utf8');
@@ -153,4 +154,27 @@ test('SEC06 verifier rejects changed original native log with correct head and l
     assert.equal(JSON.parse(modified.stdout).proofs.linux.status,
       'UNTRUSTED_OR_INCOMPLETE');
   }finally{rmSync(temp,{recursive:true,force:true})}
+});
+
+
+test('SEC06 lock witness is identical for original Git blob on LF and Windows CRLF and rejects tampering',()=>{
+  const repo=mkdtempSync(join(tmpdir(),'lu-sec06-lock-'));
+  const git=(...args)=>{
+    const r=spawnSync('git',['-C',repo,...args],{encoding:'utf8',timeout:30000});
+    assert.equal(r.status,0,r.stderr);
+  };
+  try{
+    git('init','-q');
+    const lock=join(repo,'source-tree.lock.json');
+    writeFileSync(lock,'{"schema":1}\n');
+    git('-c','core.autocrlf=false','add','--','source-tree.lock.json');
+    git('-c','user.name=Lu Test','-c','user.email=lu@example.invalid',
+      'commit','--no-gpg-sign','-q','-m','original canonical source lock');
+    const immutableDigest=canonicalSourceLockSha256(repo);
+    writeFileSync(lock,'{"schema":1}\r\n');
+    assert.equal(canonicalSourceLockSha256(repo),immutableDigest);
+    writeFileSync(lock,'{"schema":2}\r\n');
+    assert.throws(()=>canonicalSourceLockSha256(repo),/SEC06_SOURCE_LOCK_WORKTREE_MISMATCH/);
+    assert.match(gate,/canonicalSourceLockSha256\(root\)/);
+  }finally{rmSync(repo,{recursive:true,force:true})}
 });

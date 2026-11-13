@@ -9,6 +9,7 @@ import {constants,existsSync,accessSync,mkdirSync,readFileSync,writeFileSync,mkd
 import {join,dirname,resolve} from 'node:path';
 import {tmpdir,platform,arch,release} from 'node:os';
 import {fileURLToPath} from 'node:url';
+import {canonicalSourceLockSha256} from './sec06-source-lock-digest.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const argv=process.argv.slice(2);
@@ -37,8 +38,7 @@ const git=(...a)=>{
 };
 const sha=/^[a-f0-9]{64}$/;
 const receiptId=/^[a-f0-9]{40}$/;
-const sourceLock=join(root,'source-tree.lock.json');
-const lockSha=hash(readFileSync(sourceLock));
+const lockSha=canonicalSourceLockSha256(root);
 let currentHead;
 try{currentHead=git('rev-parse','HEAD')}catch(e){
   process.stderr.write(String(e)+'\n');process.exit(2);
