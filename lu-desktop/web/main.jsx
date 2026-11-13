@@ -4870,6 +4870,37 @@ function App() {
           </div>
 
           <section className="readProposalCard" role="region"
+            aria-label="Native multipart archive operations">
+            <strong>Native archive splitting and recovery · P08</strong>
+            <small>Lu raw-byte parts are not natively spanned ZIP/RAR/7z archives.
+              The original is unchanged. Each write requires a fresh native
+              file/folder picker, host authorization and a durable task receipt.
+              Interrupted publications must be reviewed; never auto-retried.</small>
+            <label className="nativeField">Maximum part size (MiB)
+              <select value={p08PartMib} disabled={p08Busy}
+                onChange={e=>setP08PartMib(Number(e.target.value))}>
+                <option value={4}>4 MiB</option>
+                <option value={32}>32 MiB</option>
+                <option value={128}>128 MiB</option>
+                <option value={512}>512 MiB</option>
+              </select>
+            </label>
+            <div className="settingsActions">
+              <button type="button" disabled={!chatId||working||chatBusy||p08Busy}
+                onClick={()=>void runP08Multipart('split')}>Split archive into Lu parts</button>
+              <button type="button" disabled={!chatId||working||chatBusy||p08Busy}
+                onClick={()=>void runP08Multipart('resume')}>Resume Lu split stage</button>
+              <button type="button" disabled={!chatId||working||chatBusy||p08Busy}
+                onClick={()=>void runP08Multipart('join')}>Reassemble Lu archive parts</button>
+              <button type="button" disabled={!chatId||working||chatBusy||p08Busy}
+                onClick={()=>void runP08Multipart('review')}>Review interrupted Lu split (read-only)</button>
+            </div>
+            {p08ResultByChat[chatId]&&
+              <small>Original host reply: {p08ResultByChat[chatId].status||'Receipt recorded'}.
+                This UI label does not independently prove kernel process custody.</small>}
+          </section>
+
+          <section className="readProposalCard" role="region"
             aria-label="ANSF native source provenance">
             <strong>Original ANSF source provenance · P0-TOOLS-03</strong>
             <small>Read-only records of actual native Browser, Reader, and OCR
