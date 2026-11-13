@@ -159,7 +159,7 @@ jobs:
               if ($state -and $state.State -eq 'Stopped') { break }
             }
             if (!$state -or $state.State -ne 'Running' -or $state.ProcessId -le 0) {
-              $why=if ($state) { "state=$($state.State);exit=$($state.ExitCode)" } else { 'service_missing' }
+              $why=if ($state) { "state=$($state.State);exit=$($state.ExitCode);nativeStage=$($state.ServiceSpecificExitCode)" } else { 'service_missing' }
               throw "DENIED: native token/SCM admission rejected ($why)"
             }
             if ($state.StartName -notmatch 'LocalService') {
