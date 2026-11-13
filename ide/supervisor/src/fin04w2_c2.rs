@@ -13,6 +13,39 @@ use std::{fs::OpenOptions,io::Write};
 #[cfg(windows)]
 use sha2::{Digest,Sha256};
 
+pub(crate) const WIRE_BYTES:usize=74;
+const C2_MAGIC:&[u8;8]=b"LUC2RUN1";
+// One fixed operation, one exact Job, one sealed plan and one service nonce.
+// Zero path/PID/argument/DAP/chosen-executable fields or extension lengths.
+pub(crate) fn approved_request(
+    job_id:&str,plan:&JobPlan,nonce:&[u8;16],
+)->Result<[u8;WIRE_BYTES],SupervisorError>{
+    if !job_id_valid(job_id)||!crate::validate_plan(plan){
+        return Err(denied());
+    }
+    let plan_sha=crate::fingerprint(plan)?;
+    let mut out=[0u8;WIRE_BYTES];
+    out[..8].copy_from_slice(C2_MAGIC);
+    out[8]=1;out[9]=1; // protocol version and ONLY fixed benign worker.
+    for (i,slot) in out[10..26].iter_mut().enumerate(){
+        *slot=u8::from_str_radix(&job_id[4+i*2..6+i*2],16)
+            .map_err(|_|denied())?;
+    }
+    for (i,slot) in out[26..58].iter_mut().enumerate(){
+        *slot=u8::from_str_radix(&plan_sha[i*2..i*2+2],16)
+            .map_err(|_|denied())?;
+    }
+    out[58..74].copy_from_slice(nonce);
+    Ok(out)
+}
+pub(crate) fn verify_fixed_request(
+    packet:&[u8],job_id:&str,plan:&JobPlan,nonce:&[u8;16],
+)->Result<(),SupervisorError>{
+    if packet!=approved_request(job_id,plan,nonce)?{
+        return Err(denied());
+    }
+    Ok(())
+}
 fn denied()->SupervisorError{SupervisorError::InvalidApproval}
 fn job_id_valid(id:&str)->bool{
     id.len()==36&&id.starts_with("job-")
@@ -141,6 +174,28 @@ pub(crate) fn reserve_once(root:&Path,job_id:&str,plan:&JobPlan)
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]fn one_fixed_operation_has_no_path_pid_or_dynamic_command(){
+        let plan=JobPlan{
+            project_id:format!("ide-{}","a".repeat(32)),
+            recipe_id:"dap_lldb_project".into(),
+            source_head:"b".repeat(40),input_snapshot_sha256:"c".repeat(64),
+            manifest_sha256:"d".repeat(64),toolchain_sha256:"e".repeat(64),
+            debug_target_binding_sha256:Some("f".repeat(64)),
+            runtime_limit_ms:90_000,memory_limit_bytes:512*1024*1024,
+            process_limit:16,log_limit_bytes:65536,
+            effect_class:"debug_inspection_isolated".into(),
+        };
+        let job=format!("job-{}","0".repeat(32));
+        let packet=approved_request(&job,&plan,&[7;16]).unwrap();
+        assert_eq!(packet.len(),74);
+        assert!(verify_fixed_request(&packet,&job,&plan,&[7;16]).is_ok());
+        let mut forged=packet;forged[9]=2;
+        assert!(verify_fixed_request(&forged,&job,&plan,&[7;16]).is_err());
+        assert!(verify_fixed_request(&packet,&job,&plan,&[8;16]).is_err());
+        assert!(verify_fixed_request(&packet,&format!("job-{}","1".repeat(32)),
+            &plan,&[7;16]).is_err());
+        assert!(verify_fixed_request(&packet[..73],&job,&plan,&[7;16]).is_err());
+    }
     #[test]fn missing_authorization_is_not_a_service_grant(){
         let plan=JobPlan{
             project_id:format!("ide-{}","a".repeat(32)),
