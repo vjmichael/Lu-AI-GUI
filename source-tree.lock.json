@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "377d23dcc642a6ae0b10ffad83e3cf2dfd7c4910",
+  "sourceCommitBeforeLock": "a09c162bef0a3b12406b94c21bd2c9208399a1b9",
   "trackedFileCount": 984,
   "files": [
     {
@@ -1653,7 +1653,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01g-real-model-chain-contract.test.mjs",
-      "blob": "82519eef9688cfc7410f49448e84fbf48331e428"
+      "blob": "d4dbc203a6c6d4da3018a371635ab797f487447c"
     },
     {
       "path": "lu-desktop/tests/agent01h-next-step-preview.test.mjs",
@@ -1661,7 +1661,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01i-fresh-continuation.test.mjs",
-      "blob": "ff3223985c47098a701ba2518a3fbb48f68acafe"
+      "blob": "ed5deaf55574af4912a19e1d8cc37f3b2e041307"
     },
     {
       "path": "lu-desktop/tests/agent01j-lineage-recovery.test.mjs",
@@ -1717,7 +1717,7 @@
     },
     {
       "path": "lu-desktop/tests/browser-visibility-settings.test.mjs",
-      "blob": "364bc8f0b28e03d503c784ad9720b5b83260af52"
+      "blob": "edafe79988852529ddda839264a53977f9c7f6ec"
     },
     {
       "path": "lu-desktop/tests/core01d-normal-chat-boundary.test.mjs",
