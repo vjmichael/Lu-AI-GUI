@@ -26,7 +26,7 @@ use windows_sys::Win32::{
         TOKEN_MANDATORY_LABEL, TOKEN_DUPLICATE, TOKEN_ASSIGN_PRIMARY,
         TOKEN_ADJUST_DEFAULT, TOKEN_IMPERSONATE,
         TOKEN_QUERY, DISABLE_MAX_PRIVILEGE, LUA_TOKEN,
-        WinLowLabelSid, WinBuiltinAnyPackageSid,
+        WinLowLabelSid, WinBuiltinAnyPackageSid, WinRestrictedCodeSid,
     },
     Storage::FileSystem::{CreateFileW, OPEN_EXISTING},
     System::Threading::{GetCurrentProcess, OpenProcessToken},
@@ -204,6 +204,39 @@ fn ci_compare_restricted_token_inputs(
         SID_AND_ATTRIBUTES { Sid: package_sid, Attributes: 0 },
         SID_AND_ATTRIBUTES { Sid: global_sid, Attributes: 0 },
     ];
+    // NT AUTHORITY\\RESTRICTED (S-1-5-12) is a documented ordinary
+    // restricting SID. It is a *discarded* control input, never a substitute
+    // for the original exact per-job AppContainer + all-package requirement.
+    let mut nt_restricted = vec![0usize; 96usize.div_ceil(size_of::<usize>())];
+    let mut nt_restricted_size = 96u32;
+    let native_control_ready = unsafe {
+        CreateWellKnownSid(
+            WinRestrictedCodeSid, ptr::null_mut(),
+            nt_restricted.as_mut_ptr().cast(), &mut nt_restricted_size,
+        )
+    } != 0 && nt_restricted_size > 0 && nt_restricted_size <= 96;
+    if native_control_ready {
+        let entries = [SID_AND_ATTRIBUTES {
+            Sid: nt_restricted.as_mut_ptr().cast(), Attributes: 0,
+        }];
+        let mut disposable = ptr::null_mut();
+        let accepted = unsafe {
+            CreateRestrictedToken(
+                source, DISABLE_MAX_PRIVILEGE | LUA_TOKEN, 0,
+                ptr::null_mut(), 0, ptr::null_mut(),
+                1, entries.as_ptr(), &mut disposable,
+            )
+        } != 0;
+        if !disposable.is_null() {
+            unsafe { CloseHandle(disposable); }
+        }
+        eprintln!(
+            "FIN04W_TOKEN_INPUT_CONTROL_nt_restricted_sid={}",
+            if accepted { "accepted_never_launch" } else { "rejected" },
+        );
+    } else {
+        eprintln!("FIN04W_TOKEN_INPUT_CONTROL_nt_restricted_sid=unavailable");
+    }
     for (label, flags, entries) in [
         ("no_restricting_sids", DISABLE_MAX_PRIVILEGE | LUA_TOKEN, &[][..]),
         ("package_sid_only", DISABLE_MAX_PRIVILEGE | LUA_TOKEN, &package_only[..]),
