@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "156d66c9357cc78ce93041498be735cadcdf281e",
+  "sourceCommitBeforeLock": "377d23dcc642a6ae0b10ffad83e3cf2dfd7c4910",
   "trackedFileCount": 984,
   "files": [
     {
@@ -1645,7 +1645,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01g-approved-step-integration.test.mjs",
-      "blob": "36f0d6e3812e8ddd59473a5771c4e68ed2d1b747"
+      "blob": "e07941243f06b9bf515d0b88cf9d7c7755f2df4f"
     },
     {
       "path": "lu-desktop/tests/agent01g-physical-installer-contract.test.mjs",
@@ -1681,11 +1681,11 @@
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
-      "blob": "0d188a7a72f7c4147ff662e1da864b7757a65315"
+      "blob": "6c8ebc1debab976bb42062a5d4a65fa9212ded94"
     },
     {
       "path": "lu-desktop/tests/background-scheduler.test.mjs",
-      "blob": "62705ca9f9dd2c550b7ec4341deee0138841ce2b"
+      "blob": "499e10f4a58288e07a7b267bf31ae8f622cfcca3"
     },
     {
       "path": "lu-desktop/tests/background-worker-e2e.test.mjs",
@@ -1905,7 +1905,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-native-window-separation.test.mjs",
-      "blob": "200503a22677351eea84c27d87f97d2c6882664f"
+      "blob": "5f826475969b64a48238b78b153ada36e360bcc1"
     },
     {
       "path": "lu-desktop/tests/p0-physical-ux-contract.test.mjs",
@@ -2141,7 +2141,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "f22dea47d59c9e5d32f5b027825a22d9836e1ca2"
+      "blob": "6ed84f8e548f2050389771bc2ed977ee3f76afaa"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
