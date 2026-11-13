@@ -22,9 +22,9 @@ fn main() {
     if !foreign.is_absolute() || foreign.to_string_lossy().len() > 384 { fail(); }
     let mut in_job = 0i32;
     if unsafe { IsProcessInJob(GetCurrentProcess(), std::ptr::null_mut(), &mut in_job) } == 0 || in_job == 0 { fail(); }
-    let denial = |e: std::io::Error| e.kind() == ErrorKind::PermissionDenied || e.raw_os_error() == Some(5);
-    match File::open(foreign) { Err(e) if denial(e) => (), _ => fail() }
-    match OpenOptions::new().write(true).open(foreign) { Err(e) if denial(e) => (), _ => fail() }
+    let denial = |e: &std::io::Error| e.kind() == ErrorKind::PermissionDenied || e.raw_os_error() == Some(5);
+    match File::open(foreign) { Err(e) if denial(&e) => (), _ => fail() }
+    match OpenOptions::new().write(true).open(foreign) { Err(e) if denial(&e) => (), _ => fail() }
     // A separate OS-level WFP firewall rule for this exact executable is
     // admin-provisioned and independently read back by CI. A failed socket
     // by itself is NOT proof of WFP enforcement (host could lack Internet).
