@@ -63,7 +63,8 @@ test('CI requires two raw Qwen model choices, native worker receipts and restart
   assert.match(model,/let mut child_model=GenuineGgufStep/);
   assert.match(model,/link_verified_scheduled_worker_outcome/g);
   assert.match(model,/AGENT01I_TWO_STEP_REAL_QWEN_AND_NATIVE_ORACLE_PASS/);
-  assert.match(model,/child_auth\.permitted_tool_ids\(&child_origin\)\.is_err\(\)/);
+  assert.match(model,/forbidden_child\.permitted_tool_ids\(&child_origin\)\.is_err\(\)/);
+  assert.match(model,/child_auth\.permitted_tool_ids\(&child_origin\)\.is_ok_and\(\|names\|names\.is_empty\(\)\)/);
   assert.match(ggufCI,/agent01i-two-step-real-qwen-native\.log/);
   assert.match(ggufCI,/test result: ok\. 1 passed; 0 failed;/);
 });
