@@ -27,10 +27,10 @@ export function eventKeys(source) {
 export function isGuardedPlan07D(filename, source, keys) {
   if (filename !== "lu-plan07d-installed.yml" ||
       keys.length !== 1 || keys[0] !== "pull_request" ||
-      !/^    types: \\[edited\\]\\s*$/m.test(source)) return false;
-  const body = source.split(/^jobs:\\s*$/m)[1];
+      !/^    types: \[edited\]\s*$/m.test(source)) return false;
+  const body = source.split(/^jobs:\s*$/m)[1];
   if (!body) return false;
-  const jobs = body.split(/^  ([a-z0-9_-]+):\\s*$/gm).slice(1);
+  const jobs = body.split(/^  ([a-z0-9_-]+):\s*$/gm).slice(1);
   if (jobs.length !== 6) return false; // exactly three admission-scoped jobs
   const expected = new Set([
     "hosted-windows-nsis",
@@ -49,7 +49,7 @@ export function isGuardedPlan07D(filename, source, keys) {
   if (expected.size !== 0) return false;
   // Each platform checks the marker once more INSIDE the original process,
   // including independent source-tree verification at the exact checked SHA.
-  const win = /REVIEW_MARKER: \\$\\{\\{ github\\.event\\.pull_request\\.number == 226 && 'LU_CORE01E_INSTALLED_SHA' \\|\\| 'LU_PLAN07D_INSTALLED_SHA' \\}\\}/g;
+  const win = /REVIEW_MARKER: \$\{\{ github\.event\.pull_request\.number == 226 && 'LU_CORE01E_INSTALLED_SHA' \|\| 'LU_PLAN07D_INSTALLED_SHA' \}\}/g;
   if ([...source.matchAll(win)].length !== 3) return false;
   if (!source.includes("re.escape(os.environ['REVIEW_MARKER'])") ||
       !source.includes('re.escape(os.environ["REVIEW_MARKER"])') ||
