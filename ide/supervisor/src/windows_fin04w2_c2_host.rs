@@ -146,9 +146,9 @@ pub fn run_fixed_after_original_approval(
         &supervisor.journal_path,job_id,plan,C2JournalGate::Authorized,
     )?;
     let mut recovery=Recovery{supervisor,job:job_id,done:false};
-    let pipe=connect_exact_service(pinned_service_binary,pinned_service_sha)?;
+    let pipe=connect_exact_service(pinned_service_binary,pinned_service_sha).map_err(|error| { eprintln!("FIN04W2_C2_STAGE=SERVICE_PEER_ATTESTATION_DENIED"); error })?;
     let mut challenge=[0u8;17];
-    read_fixed(pipe.0,&mut challenge,Duration::from_secs(5))?;
+    read_fixed(pipe.0,&mut challenge,Duration::from_secs(5)).map_err(|error| { eprintln!("FIN04W2_C2_STAGE=SERVICE_CHALLENGE_DENIED"); error })?;
     if challenge[0]!=b'C'||challenge[1..].iter().all(|v|*v==0){
         return Err(denied());
     }
@@ -156,7 +156,7 @@ pub fn run_fixed_after_original_approval(
     let packet=fin04w2_c2::approved_request(job_id,plan,&nonce)?;
     write_fixed(pipe.0,&packet)?;
     let mut status=[0u8;1];
-    read_fixed(pipe.0,&mut status,Duration::from_secs(8))?;
+    read_fixed(pipe.0,&mut status,Duration::from_secs(8)).map_err(|error| { eprintln!("FIN04W2_C2_STAGE=SUSPENDED_JOB_ACK_DENIED"); error })?;
     if status[0]!=b'S'{return Err(denied());}
     let admission=TrustedC2Admission{
         job_id:job_id.to_owned(),plan_sha:source,
@@ -164,10 +164,10 @@ pub fn run_fixed_after_original_approval(
     };
     supervisor.consume_grant_after_c2_service_admission(
         job_id,plan,&admission,
-    )?;
+    ).map_err(|error| { eprintln!("FIN04W2_C2_STAGE=ONE_USE_GRANT_DENIED"); error })?;
     supervisor.native_mark_running(job_id)?;
     write_fixed(pipe.0,b"G")?;
-    read_fixed(pipe.0,&mut status,Duration::from_secs(18))?;
+    read_fixed(pipe.0,&mut status,Duration::from_secs(18)).map_err(|error| { eprintln!("FIN04W2_C2_STAGE=KERNEL_TREE_EMPTY_ACK_DENIED"); error })?;
     if status[0]!=b'X'{return Err(denied());}
     supervisor.native_mark_release_pending(job_id)?;
     write_fixed(pipe.0,b"R")?;
