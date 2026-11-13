@@ -263,32 +263,33 @@ impl DapSession {
         if self.phase != DapPhase::Ready {
             return Err(DapError::InvalidPhase);
         }
-        let linux = program
-            .strip_prefix("/debug-target/target/debug/")
-            .is_some_and(|file| {
-                !file.is_empty()
-                    && file.len() <= 200
-                    && !file.contains('.')
-                    && file
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
-            });
-        let windows = if program.len() <= 1024 {
+        // DAP may only refer to the native worker's exact sealed target.
+        // CARGO_TARGET_DIR at the native output root gives debug/<binary>,
+        // whereas retained historical built snapshots use target/debug.
+        // Neither is an arbitrary user-provided executable or nested path.
+        let safe_stem = |file: &str| {
+            !file.is_empty()
+                && file.len() <= 200
+                && file.bytes().all(|b| {
+                    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')
+                })
+        };
+        let linux = program.strip_prefix("/debug-target/debug/")
+            .or_else(|| program.strip_prefix("/debug-target/target/debug/"))
+            .is_some_and(safe_stem);
+        let windows = if program.len() <= 1024
+            && std::path::Path::new(program).is_absolute()
+        {
             let normalized = program.replace('/', "\\");
             let pieces: Vec<_> = normalized.split('\\').collect();
-            pieces.len() > 4
-                && pieces.iter().any(|part| *part == "debug-target")
-                && normalized.contains("\\debug-target\\target\\debug\\")
-                && normalized.to_ascii_lowercase().ends_with(".exe")
-                && pieces.last().is_some_and(|name| {
-                    let base = name.strip_suffix(".exe").unwrap_or("");
-                    !base.is_empty()
-                        && base.len() <= 196
-                        && base
-                            .bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
-                })
-                && std::path::Path::new(program).is_absolute()
+            let name = pieces.last().copied().unwrap_or("");
+            let stem = name.strip_suffix(".exe").unwrap_or("");
+            let sealed_suffix = pieces.len() >= 3
+                && ((pieces[pieces.len() - 3..pieces.len() - 1] == ["debug-target", "debug"])
+                    || (pieces.len() >= 4
+                        && pieces[pieces.len() - 4..pieces.len() - 1]
+                            == ["debug-target", "target", "debug"]));
+            sealed_suffix && safe_stem(stem)
         } else {
             false
         };
@@ -1389,6 +1390,51 @@ mod tests {
                 .unwrap_err(),
             DapError::InvalidPhase
         );
+    }
+    #[test]
+    fn sealed_native_cargo_debug_root_is_exact_and_nested_paths_are_refused() {
+        let mut linux = DapSession::new();
+        linux.phase = DapPhase::Ready;
+        #[cfg(target_os = "linux")]
+        {
+            let message = linux.launch_verified_project("/debug-target/debug/fixture").unwrap();
+            assert!(String::from_utf8(message).unwrap().contains("/debug-target/debug/fixture"));
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            // The Linux path is not an absolute Windows executable.
+            assert!(linux.launch_verified_project("/debug-target/debug/fixture").is_err());
+        }
+        for forbidden in [
+            "/debug-target/debug/deps/fixture",
+            "/debug-target/debug/../fixture",
+            "/debug-target/debug/fixture.so",
+            "/debug-target/release/fixture",
+            "/workspace/debug/fixture",
+        ] {
+            let mut session = DapSession::new();
+            session.phase = DapPhase::Ready;
+            assert_eq!(session.launch_verified_project(forbidden).unwrap_err(), DapError::InvalidMessage);
+        }
+    }
+    #[cfg(windows)]
+    #[test]
+    fn native_appcontainer_sealed_cargo_debug_path_is_accepted_without_foreign_paths() {
+        let mut session = DapSession::new();
+        session.phase = DapPhase::Ready;
+        let program = r"C:\Users\runner\AppData\Local\Packages\abc\LocalState\debug-target\debug\fixture.exe";
+        assert!(String::from_utf8(session.launch_verified_project(program).unwrap())
+            .unwrap().contains("stopOnEntry"));
+        for forbidden in [
+            r"C:\Windows\System32\cmd.exe",
+            r"C:\Temp\debug-target\debug\deps\fixture.exe",
+            r"C:\Temp\debug-target\debug\..\fixture.exe",
+            r"C:\Temp\debug-target\release\fixture.exe",
+        ] {
+            let mut isolated = DapSession::new();
+            isolated.phase = DapPhase::Ready;
+            assert_eq!(isolated.launch_verified_project(forbidden).unwrap_err(), DapError::InvalidMessage);
+        }
     }
     #[cfg(windows)]
     #[test]
