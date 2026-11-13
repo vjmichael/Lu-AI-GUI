@@ -746,11 +746,15 @@ fn spawn_contained_stdio(
         )
     };
     if created == 0 {
+        // Capture the immediate native failure before even fixed diagnostic
+        // output can alter the thread-local Win32 LastError value.
+        #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
+        let os_error = unsafe { GetLastError() };
         native_lsp_trace("fin04w_or_appcontainer_os_creation_denied");
         #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
         if fin04w {
             // Report one fixed Win32 error category only; fail closed.
-            let kind = match unsafe { GetLastError() } {
+            let kind = match os_error {
                 5 => "access_denied",
                 2 | 3 => "image_or_workdir_missing",
                 87 => "invalid_parameter",
