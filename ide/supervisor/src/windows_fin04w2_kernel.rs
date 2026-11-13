@@ -11,8 +11,9 @@ use windows_sys::Win32::{
     Foundation::{CloseHandle, HANDLE},
     Security::{
         CheckTokenMembership, CreateWellKnownSid, EqualSid, GetTokenInformation,
-        IsTokenRestricted, LookupAccountNameW, TokenIsAppContainer, TokenUser, WinLocalServiceSid,
-        TOKEN_QUERY, TOKEN_USER,
+        IsTokenRestricted, LookupAccountNameW, TokenGroups, TokenRestrictedSids,
+        TokenIsAppContainer, TokenUser, WinLocalServiceSid,
+        SID_AND_ATTRIBUTES, TOKEN_GROUPS, TOKEN_QUERY, TOKEN_USER,
     },
     System::{
         JobObjects::IsProcessInJob,
@@ -53,6 +54,49 @@ fn service_sid() -> Result<Vec<usize>, SupervisorError> {
         return Err(denied());
     }
     Ok(sid)
+}
+
+// Both membership and the *restricted* SID allowlist are mandatory.
+// A service SID that appears only in enabled groups is not a protected
+// service-SID execution boundary. Bounded token query, read-only.
+fn contains_sid(
+    token: HANDLE, class: windows_sys::Win32::Security::TOKEN_INFORMATION_CLASS,
+    expected: windows_sys::Win32::Security::PSID,
+) -> Result<bool, SupervisorError> {
+    let mut needed = 0u32;
+    unsafe { GetTokenInformation(token, class, ptr::null_mut(), 0, &mut needed); }
+    if needed < size_of::<TOKEN_GROUPS>() as u32 || needed > 4096 {
+        return Err(denied());
+    }
+    let mut storage = vec![0usize; (needed as usize).div_ceil(size_of::<usize>())];
+    let mut received = 0u32;
+    if unsafe {
+        GetTokenInformation(
+            token, class, storage.as_mut_ptr().cast(), needed, &mut received,
+        )
+    } == 0 || received != needed {
+        return Err(denied());
+    }
+    let groups = unsafe { &*(storage.as_ptr() as *const TOKEN_GROUPS) };
+    if groups.GroupCount == 0 || groups.GroupCount > 64 {
+        return Err(denied());
+    }
+    let total = size_of::<TOKEN_GROUPS>()
+        .checked_add(
+            (groups.GroupCount as usize - 1)
+                .checked_mul(size_of::<SID_AND_ATTRIBUTES>())
+                .ok_or_else(denied)?,
+        )
+        .ok_or_else(denied)?;
+    if total > storage.len() * size_of::<usize>() {
+        return Err(denied());
+    }
+    let entries = unsafe {
+        std::slice::from_raw_parts(groups.Groups.as_ptr(), groups.GroupCount as usize)
+    };
+    Ok(entries.iter().any(|entry| {
+        !entry.Sid.is_null() && unsafe { EqualSid(entry.Sid, expected) } != 0
+    }))
 }
 
 /// The service process is intentionally *outside* the per-debuggee Job:
@@ -103,7 +147,10 @@ pub(crate) fn inspect_current_service_principal() -> Result<(), SupervisorError>
     let mut enabled = 0i32;
     if unsafe {
         CheckTokenMembership(token.0, service.as_mut_ptr().cast(), &mut enabled)
-    } == 0 || enabled == 0 {
+    } == 0 || enabled == 0
+        || !contains_sid(token.0, TokenGroups, service.as_mut_ptr().cast())?
+        || !contains_sid(token.0, TokenRestrictedSids, service.as_mut_ptr().cast())?
+    {
         return Err(denied());
     }
     Ok(())
