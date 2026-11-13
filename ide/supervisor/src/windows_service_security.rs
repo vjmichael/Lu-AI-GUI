@@ -995,6 +995,88 @@ pub fn authenticate_service_server(
     Ok(())
 }
 
+/// FIN-04W2-C independently attests the ORIGINAL host supervisor journal
+/// before the service reads its approval chain. The journal path is pinned
+/// in protected service configuration, never supplied by the client frame.
+/// This rejects broad principals, inherited DACLs, write access for the
+/// debugger service and any reparse point. Host owner/SYSTEM may write
+/// original native receipts; the debugger service can only READ them.
+/// The OS token and exact pinned host binary are checked separately.
+#[cfg(feature = "fin04w2-approved-fixed-exec")]
+pub(crate) fn verify_original_approval_journal_acl(
+    path: &Path, host_user_sid: &str,
+) -> Result<(), SupervisorError> {
+    validate_approved_host_user_sid(host_user_sid)?;
+    let meta=fs::symlink_metadata(path).map_err(|_|denied())?;
+    if !path.is_absolute() || !meta.is_file()
+        || meta.file_attributes() & 0x400 != 0
+        || meta.len() == 0 || meta.len() > 2 * 1024 * 1024 {
+        return Err(denied());
+    }
+    let system=parse_sid("S-1-5-18")?;
+    let host=parse_sid(host_user_sid)?;
+    let service=parse_sid(&sid_of_named_service("LuIdeDebuggerBroker")?)?;
+    let mut dacl=ptr::null_mut();
+    let mut sd=ptr::null_mut();
+    if unsafe {
+        GetNamedSecurityInfoW(
+            wide(path.as_os_str()).as_ptr() as *mut u16,
+            SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),ptr::null_mut(),&mut dacl,
+            ptr::null_mut(),&mut sd,
+        )
+    } != 0 || dacl.is_null() || sd.is_null() {
+        return Err(denied());
+    }
+    let _descriptor=OwnedSid(sd);
+    let mut control=0u16;
+    let mut revision=0u32;
+    if unsafe {GetSecurityDescriptorControl(sd,&mut control,&mut revision)}==0
+        || control & SE_DACL_PROTECTED == 0 {
+        return Err(denied());
+    }
+    let mut count=ACL_SIZE_INFORMATION::default();
+    if unsafe {
+        GetAclInformation(
+            dacl,(&mut count as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32,AclSizeInformation
+        )
+    }==0 || count.AceCount!=3 { return Err(denied()); }
+    let(mut seen_host,mut seen_system,mut seen_service)=(false,false,false);
+    // FILE_WRITE_DATA, APPEND, WRITE_EA, WRITE_ATTRIBUTES, DELETE,
+    // WRITE_DAC, WRITE_OWNER, GENERIC_WRITE and GENERIC_ALL are prohibited.
+    const FORBIDDEN_SERVICE: u32 =
+        0x0000_0002 | 0x0000_0004 | 0x0000_0010 | 0x0000_0100
+        | 0x0001_0000 | 0x0004_0000 | 0x0008_0000
+        | 0x4000_0000 | 0x1000_0000;
+    const SERVICE_READ: u32=0x0012_0089;
+    for i in 0..count.AceCount {
+        let mut entry=ptr::null_mut();
+        if unsafe {GetAce(dacl,i,&mut entry)}==0 || entry.is_null() {
+            return Err(denied());
+        }
+        let ace=unsafe { &*(entry as *const ACCESS_ALLOWED_ACE) };
+        if ace.Header.AceType!=0 || ace.Header.AceFlags!=0
+            || ace.Header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16 {
+            return Err(denied());
+        }
+        let sid=(&ace.SidStart as *const u32).cast_mut().cast();
+        if unsafe {EqualSid(sid,service.0)}!=0 {
+            if seen_service || ace.Mask != SERVICE_READ
+                || ace.Mask & FORBIDDEN_SERVICE != 0 { return Err(denied()); }
+            seen_service=true;
+        } else if unsafe {EqualSid(sid,host.0)}!=0 {
+            if seen_host || ace.Mask==0 {return Err(denied());}
+            seen_host=true;
+        } else if unsafe {EqualSid(sid,system.0)}!=0 {
+            if seen_system || ace.Mask==0 {return Err(denied());}
+            seen_system=true;
+        } else {return Err(denied());}
+    }
+    if !seen_host || !seen_system || !seen_service {return Err(denied());}
+    Ok(())
+}
+
 pub fn verify_private_evidence_root(root: &Path) -> Result<(), SupervisorError> {
     verify_private_evidence_root_for(root, &sid_of_service()?)
 }
