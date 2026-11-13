@@ -19,10 +19,11 @@ use windows_sys::Win32::{
     Foundation::{CloseHandle, HANDLE},
     Security::{
         CreateRestrictedToken, CreateWellKnownSid, EqualSid, GetTokenInformation,
-        IsTokenRestricted, SetTokenInformation, TokenIntegrityLevel,
-        TokenIsAppContainer, TOKEN_MANDATORY_LABEL, TOKEN_DUPLICATE,
+        IsTokenRestricted, IsValidSid, SetTokenInformation, TokenIntegrityLevel,
+        TokenIsAppContainer, TokenUser, TOKEN_USER, SID_AND_ATTRIBUTES,
+        TOKEN_MANDATORY_LABEL, TOKEN_DUPLICATE,
         TOKEN_QUERY, DISABLE_MAX_PRIVILEGE, LUA_TOKEN, SE_GROUP_INTEGRITY,
-        WinLowLabelSid,
+        WinLowLabelSid, WinBuiltinUsersSid,
     },
     System::Threading::{GetCurrentProcess, OpenProcessToken},
 };
@@ -132,11 +133,54 @@ impl RestrictedPrimaryToken {
             return Err(denied());
         }
         let original = OwnedToken(original);
+        // IsTokenRestricted only recognizes an actual restricting SID list.
+        // Allow the original account's sealed LocalState and BUILTIN Users'
+        // system runtime DLLs, but strip original privileges and lower IL.
+        // This is an experimental boundary, NOT production filesystem or
+        // network isolation.
+        let mut user_size = 0u32;
+        unsafe {
+            GetTokenInformation(original.0, TokenUser, ptr::null_mut(), 0, &mut user_size);
+        }
+        if user_size < size_of::<TOKEN_USER>() as u32 || user_size > 4096 {
+            return Err(denied());
+        }
+        let mut user_bytes =
+            vec![0usize; (user_size as usize).div_ceil(size_of::<usize>())];
+        let mut user_observed = 0u32;
+        if unsafe {
+            GetTokenInformation(
+                original.0, TokenUser, user_bytes.as_mut_ptr().cast(),
+                user_size, &mut user_observed,
+            )
+        } == 0 || user_observed != user_size {
+            return Err(denied());
+        }
+        let user = unsafe { &*(user_bytes.as_ptr() as *const TOKEN_USER) };
+        if user.User.Sid.is_null() || unsafe { IsValidSid(user.User.Sid) } == 0 {
+            return Err(denied());
+        }
+        let mut users_sid = vec![0usize; 96usize.div_ceil(size_of::<usize>())];
+        let mut users_size = 96u32;
+        if unsafe {
+            CreateWellKnownSid(
+                WinBuiltinUsersSid, ptr::null_mut(),
+                users_sid.as_mut_ptr().cast(), &mut users_size,
+            )
+        } == 0 || users_size == 0 || users_size > 96 {
+            return Err(denied());
+        }
+        let restricted_sids = [
+            SID_AND_ATTRIBUTES { Sid: user.User.Sid, Attributes: 0 },
+            SID_AND_ATTRIBUTES { Sid: users_sid.as_mut_ptr().cast(), Attributes: 0 },
+        ];
         let mut restricted = ptr::null_mut();
         if unsafe {
             CreateRestrictedToken(
                 original.0, DISABLE_MAX_PRIVILEGE | LUA_TOKEN, 0,
-                ptr::null_mut(), 0, ptr::null_mut(), 0, ptr::null_mut(),
+                ptr::null_mut(), 0, ptr::null_mut(),
+                restricted_sids.len() as u32,
+                restricted_sids.as_ptr(),
                 &mut restricted,
             )
         } == 0 {
