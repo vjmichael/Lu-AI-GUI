@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "3d4c50d6414a81bcce446b0114ed61d48c886144",
+  "sourceCommitBeforeLock": "fcee05b6f5ba1cdc2b5e5d037051512916a198a8",
   "trackedFileCount": 986,
   "files": [
     {
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "a15152767e019b28402428ecaf897830c806a6ec"
+      "blob": "c23c4bddac5b252ab337716f309947cb0377a738"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -849,7 +849,7 @@
     },
     {
       "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
-      "blob": "4521c43a6a6ef3940d2bc6b593f1d03554703cca"
+      "blob": "2cab8fd2085822944dc25864c2548f102a4c3056"
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
@@ -1673,7 +1673,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01l-linux-cgroup-v2.test.mjs",
-      "blob": "68fac50680c4123e757ae605155fca50a316d61a"
+      "blob": "7d22612ba9dc556f7c94fe13b27fee859feed501"
     },
     {
       "path": "lu-desktop/tests/agent01l-os-custody.test.mjs",
@@ -1929,7 +1929,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "632252460448c86b1c2f887073b66ba4553d2fc8"
+      "blob": "e9c6d9991df255488aa47259d36f6444b249ae65"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -3905,7 +3905,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs",
-      "blob": "28f6d487a58bb403edb85b35ddbb9987542fba2a"
+      "blob": "78650b979d0c960cb0067e11ad04595594c2be0f"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/bin/lu-linux-group-guard.rs",
@@ -3925,7 +3925,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/lib.rs",
-      "blob": "2cc3b403de841d7b6663278c47079c7630da923f"
+      "blob": "0faa7017321dc0250dc5ab28e2c117dabad00358"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/metadata_guard.rs",
