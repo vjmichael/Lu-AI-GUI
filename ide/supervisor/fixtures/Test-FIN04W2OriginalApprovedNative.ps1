@@ -201,6 +201,7 @@ try {
   if (!(Test-Path $resultPath)) {throw 'DENIED: durable final original host result missing'}
   $result=Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
   if ($result.schema -ne 'lu.ide.fin04w2.c.native.final.v1'
+      -or $result.sourceHead -ne $head
       -or $result.jobId -ne $manifest.jobId
       -or $result.planSha256 -ne $manifest.planSha256
       -or $result.originalEventCount -ne 6
