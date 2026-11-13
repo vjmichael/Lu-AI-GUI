@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "1d6ae81ec9db8c2fe8232fe4ab5c6ed3e6f10fae",
+  "sourceCommitBeforeLock": "ee30825fb72909d38110b0acde06e0bf0236a277",
   "trackedFileCount": 984,
   "files": [
     {
@@ -1813,7 +1813,7 @@
     },
     {
       "path": "lu-desktop/tests/memory-loop02-verified-feedback.test.mjs",
-      "blob": "7aed2ab0694b961c36ce054b931eacc4cc63c4dd"
+      "blob": "4a20ad324ce0c7429334e55964eb56b28b82a8bf"
     },
     {
       "path": "lu-desktop/tests/memory-loop02b-host-safe-decision.test.mjs",
@@ -2009,7 +2009,7 @@
     },
     {
       "path": "lu-desktop/tests/r21-image-ux.test.mjs",
-      "blob": "72604fc2d0cd400e4f345ee4a986320f1ff8a020"
+      "blob": "a74d277d209b8bdd3e15a6ebc11d52e4ad19e1db"
     },
     {
       "path": "lu-desktop/tests/reader-desktop.test.mjs",
@@ -2141,7 +2141,7 @@
     },
     {
       "path": "lu-desktop/web/main.jsx",
-      "blob": "ec78bc921c1d67a74e1159558085ff5c4156844c"
+      "blob": "9ed1ef0e0b3a6ae19859a1bfac529d7262d6fc15"
     },
     {
       "path": "lu-desktop/web/markdown_view.jsx",
