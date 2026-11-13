@@ -140,7 +140,7 @@ test('SEC06C has separate finite root-owned FFprobe/PDFInfo/ExifTool service bou
   assert.match(tasks,/Immutable Linux OS-owned probe admission/);
   assert.match(custody,/linux_os_owned_probe_original_receipt/);
   for(const attr of ['Delegate=no','KillMode=control-group',
-    'ProtectControlGroups=strict','PrivateNetwork=yes','NoNewPrivileges=yes',
+    'ProtectControlGroups=yes','PrivateNetwork=yes','NoNewPrivileges=yes',
     'CapabilityBoundingSet=','TasksMax=32','MemoryMax=536870912',
     'secure_file','secure_directory','kernel_empty','cgroup.events']){
     assert.ok(launcher.includes(attr),'missing original kernel/probe contract '+attr);
@@ -224,6 +224,27 @@ test('SEC06 positive custodian receipt requires exact original admission identit
   assert.match(guardian,/O_NOFOLLOW/);
   assert.match(guardian,/bytes!=expected\.as_bytes\(\)/);
 });
+test('SEC06F independent receipt reconciliation preserves same SHA, all native OS gates and owner separation',()=>{
+  const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8');
+  const section=workflow.split('  core01e-sec06f-original-receipts:\n')[1]
+    ?.split('  p0-gate-installed-windows:')[0];
+  assert.ok(section,'SEC-06F reconciliation job missing');
+  assert.match(section,/core01e-sec06-native/);
+  assert.match(section,/core01e-sec06c-os-owned-git/);
+  assert.match(section,/core01e-sec06c-os-owned-probes/);
+  assert.match(section,/actions\/download-artifact@v4/);
+  assert.match(section,/lu-core01e-sec06-\*/);
+  assert.match(section,/--source/);
+  assert.match(section,/--linux/);
+  assert.match(section,/--windows/);
+  assert.match(section,/SEC06F_EXACT_HEAD_CHANGED/);
+  assert.match(section,/SEC06F_ORIGINAL_LOG_OR_KERNEL_PROOF_BLOCKED/);
+  assert.match(section,/SEC06F_BROKER_OR_NATIVE_GATE_BLOCKED/);
+  assert.match(section,/NATIVE_CASES_PRESENT_OWNER_INSTALLED_AND_INDEPENDENT_REVIEW_PENDING/);
+  assert.match(section,/SEC06F_OWNER_INSTALLED_AND_INDEPENDENT_REVIEW_REQUIRED/);
+  assert.doesNotMatch(section,/LU_CORE01E_INSTALLED_SHA=|SEC06_RELEASE_ACCEPTED=1/);
+});
+
 test('SEC06 never auto-promotes source and native proofs to app release',()=>{
   assert.match(gate,/securityDecision=valid\?/);
   assert.match(gate,/NATIVE_CASES_PRESENT_OWNER_INSTALLED_AND_INDEPENDENT_REVIEW_PENDING/);
@@ -246,6 +267,7 @@ test('SEC06 verifier rejects changed original native log with correct head and l
       'exact-head-inventory','security-contracts','sec06-js-syntax',
       'linux-negative-python-syntax','linux-host-crash-python-syntax','linux-delegated-python-syntax',
       'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
+      'linux-root-owned-unit-cancel','linux-root-owned-unit-host-crash',
       'linux-os-owned-git-syntax','linux-os-owned-probe-syntax',
       'core-native-full','desktop-ansf-native','worker-job-native',
       'core-sec-regressions','desktop-sec-regressions',

@@ -2951,6 +2951,8 @@ jobs:
           test "$(id -u)" -ne 0
       - name: Execute original reviewed Git under systemd-owned kernel unit and reopen journal
         shell: bash
+        env:
+          LU_SEC06C_BROKER_DEBUG: '1'
         run: |
           set -euo pipefail
           mkdir -p sec06c-os-owned-evidence
@@ -3030,6 +3032,78 @@ jobs:
           path: sec06c-probe-native-evidence/
           retention-days: 14
           if-no-files-found: warn
+
+  core01e-sec06f-original-receipts:
+    name: SEC-06F original Windows/Linux/source receipt reconciliation only
+    needs:
+      - verify-source
+      - core01e-sec06-native
+      - core01e-sec06c-os-owned-git
+      - core01e-sec06c-os-owned-probes
+    if: ${{ always() && github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 226 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && contains(github.event.pull_request.body, format('LU_CORE01E_SEC06_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_CORE01E_SEC06_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        continue-on-error: true # Missing native artifacts are recorded as BLOCKED.
+        with:
+          pattern: lu-core01e-sec06-*-${{ github.event.pull_request.head.sha }}
+          path: sec06f-inbound/
+          merge-multiple: false
+      - name: Independently inspect original SEC-06F source Windows Linux and all native broker results
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          SEC06_GIT_JOB: ${{ needs.core01e-sec06c-os-owned-git.result }}
+          SEC06_PROBE_JOB: ${{ needs.core01e-sec06c-os-owned-probes.result }}
+          SEC06_NATIVE_JOB: ${{ needs.core01e-sec06-native.result }}
+        run: |
+          set -euo pipefail
+          mkdir -p sec06f-evidence
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          # The native artifact verifier *always* returns 1 because no
+          # automatic owner-installed/release acceptance can be granted.
+          set +e
+          node scripts/p0-sec06-consolidated.mjs --mode verify \
+            --source "sec06f-inbound/lu-core01e-sec06-source-$EXPECTED_SHA/source.receipt.json" \
+            --linux "sec06f-inbound/lu-core01e-sec06-linux-$EXPECTED_SHA/linux.receipt.json" \
+            --windows "sec06f-inbound/lu-core01e-sec06-windows-$EXPECTED_SHA/windows.receipt.json" \
+            > sec06f-evidence/original-review.json 2> sec06f-evidence/verifier-stderr.log
+          status=$?
+          set -e
+          test "$status" -eq 1 || { echo 'SEC06F_VERIFIER_RETURN_CHANGED=1' >&2; exit 1; }
+          python3 - <<'PY'
+          import json,os,pathlib
+          summary=json.loads(pathlib.Path('sec06f-evidence/original-review.json').read_text())
+          expected=os.environ['EXPECTED_SHA']
+          assert summary['head']==expected,'SEC06F_EXACT_HEAD_CHANGED'
+          for target in ('source','linux','windows'):
+              assert summary['proofs'][target]['status']=='NATIVE_EVIDENCE_PRESENT_UNREVIEWED',(
+                  'SEC06F_ORIGINAL_LOG_OR_KERNEL_PROOF_BLOCKED',target,summary['proofs'][target])
+          for name in ('SEC06_GIT_JOB','SEC06_PROBE_JOB','SEC06_NATIVE_JOB'):
+              assert os.environ[name]=='success',('SEC06F_BROKER_OR_NATIVE_GATE_BLOCKED',name,os.environ[name])
+          assert summary['securityDecision']==(
+              'NATIVE_CASES_PRESENT_OWNER_INSTALLED_AND_INDEPENDENT_REVIEW_PENDING'
+          ),'SEC06F_SECURITY_DECISION_CHANGED'
+          print('SEC06F_EXACT_HEAD_NATIVE_RECEIPTS_PRESENT_UNREVIEWED=1')
+          print('SEC06F_OWNER_INSTALLED_AND_INDEPENDENT_REVIEW_REQUIRED=1')
+          PY
+          echo 'Native evidence remains UNREVIEWED; no owner installation, merge or release is permitted.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-sec06f-original-reconciliation-${{ github.event.pull_request.head.sha }}
+          path: sec06f-evidence/
+          if-no-files-found: warn
+          retention-days: 14
 
   p0-gate-installed-windows:
     name: P0-GATE genuine hosted Windows NSIS, UIA, restart, uninstall

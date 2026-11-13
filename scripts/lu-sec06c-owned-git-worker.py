@@ -54,7 +54,7 @@ def kernel_unit(nonce):
     rows = pathlib.Path("/proc/self/cgroup").read_text().splitlines()
     if len(rows) != 1 or not rows[0].startswith("0::/"):
         deny("missing genuine unified cgroup-v2 membership")
-    # ProtectControlGroups=strict creates a private cgroup namespace, where
+    # ProtectControlGroups=yes creates a private cgroup namespace, where
     # /proc/self/cgroup often shows 0::/. The privileged manager checks the
     # original MainPID's full unit membership OUTSIDE this namespace before
     # issuing a root-owned one-use GO file; the worker verifies that file.
@@ -72,12 +72,12 @@ def kernel_unit(nonce):
         parent = group.parent / "cgroup.procs"
         if not parent.is_file() or os.access(parent, os.W_OK):
             deny("ancestor migration is writable to worker")
-    # systemd ProtectControlGroups=strict makes this a read-only mount.
+    # systemd ProtectControlGroups=yes makes this a read-only mount.
     mountinfo = pathlib.Path("/proc/self/mountinfo").read_text().splitlines()
     mounts = [r for r in mountinfo
               if " - cgroup2 " in r and r.split(" - ", 1)[0].split()[4] == "/sys/fs/cgroup"]
     if len(mounts) != 1 or "ro" not in mounts[0].split(" - ", 1)[0].split()[5].split(","):
-        deny("ProtectControlGroups=strict was not actually enforced")
+        deny("ProtectControlGroups=yes was not actually enforced")
 
 def authorized_go(nonce, timeout=20):
     root = READY

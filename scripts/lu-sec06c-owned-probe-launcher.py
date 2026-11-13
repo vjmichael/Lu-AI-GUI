@@ -132,7 +132,7 @@ def run(args):
         "--no-ask-password","--service-type=exec",f"--unit={unit}",
         f"--property=User={uid}","--property=Delegate=no",
         "--property=KillMode=control-group",
-        "--property=ProtectControlGroups=strict",
+        "--property=ProtectControlGroups=yes",
         "--property=NoNewPrivileges=yes",
         "--property=CapabilityBoundingSet=",
         "--property=RestrictSUIDSGID=yes",

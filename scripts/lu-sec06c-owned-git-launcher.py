@@ -158,7 +158,7 @@ def run(args):
         "--service-type=exec", "--no-ask-password", f"--unit={unit}",
         f"--property=User={caller}", "--property=Delegate=no",
         "--property=KillMode=control-group",
-        "--property=ProtectControlGroups=strict",
+        "--property=ProtectControlGroups=yes",
         "--property=NoNewPrivileges=yes",
         "--property=CapabilityBoundingSet=",
         "--property=RestrictSUIDSGID=yes",

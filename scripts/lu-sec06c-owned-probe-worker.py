@@ -58,7 +58,7 @@ def kernel_guard(nonce):
     mounts=[x for x in pathlib.Path("/proc/self/mountinfo").read_text().splitlines()
         if " - cgroup2 " in x and x.split(" - ",1)[0].split()[4]=="/sys/fs/cgroup"]
     if len(mounts)!=1 or "ro" not in mounts[0].split(" - ",1)[0].split()[5].split(","):
-        deny("systemd ProtectControlGroups=strict missing")
+        deny("systemd ProtectControlGroups=yes missing")
 def approved_first_launch(nonce):
     if RUN_DIR.is_symlink() or RUN_DIR.stat().st_uid!=0 or RUN_DIR.stat().st_mode & 0o022:
         deny("root first-worker approval directory writable")
