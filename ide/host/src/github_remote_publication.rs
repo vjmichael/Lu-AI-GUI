@@ -201,7 +201,7 @@ impl IdeWorkspaceRegistry{
         if before!=after{
             return Err("FIN03_REMOTE_SOURCE_DRIFT_DURING_PREVIEW");
         }
-        let checked=relationship(&repo,after.head,after.cached)?;
+        let checked=self::relationship(&repo,after.head,after.cached)?;
         if checked!=relationship{
             return Err("FIN03_REMOTE_ANCESTRY_DRIFT");
         }
