@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "cf67b6e3bc9a6200acae4d717fff1a34a2c2f05c",
+  "sourceCommitBeforeLock": "785bfb157c740c9798f36a1553f78d9384520800",
   "trackedFileCount": 997,
   "files": [
     {
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "62dd5712e47d26ee9bccc3adde728b8fd79ab30e"
+      "blob": "4eb33498d4f4e5e6709063d22b99872d981f3739"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2537,7 +2537,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_os_custody.rs",
-      "blob": "573dc996e1b1b6780d365c2f21cee667d2ccc02a"
+      "blob": "ed2bd128249563c67053c1fd6f7fdd547f00c44c"
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_ledger.rs",
@@ -2989,7 +2989,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "9b738c0132fd1181a593e5c183afed3a5125373f"
+      "blob": "d1e1ef04a9c39edcba064e3caa7ad6a5691e6146"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
