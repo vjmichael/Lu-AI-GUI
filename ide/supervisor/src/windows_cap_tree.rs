@@ -225,6 +225,7 @@ fn visit(
     file_limit: usize,
     byte_limit: u64,
     item_limit: u64,
+    closed_aliases: Option<&ClosedAliases>,
 ) -> Result<(), SupervisorError> {
     if depth > MAX_DEPTH {
         return Err(denied());
@@ -239,7 +240,9 @@ fn visit(
     for name in names {
         clean_name(&name)?;
         let metadata = source.symlink_metadata(&name).map_err(|_| denied())?;
-        if metadata.file_type().is_symlink() {
+        if metadata.file_type().is_symlink()
+            || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        {
             return Err(denied());
         }
         let child_path = relative.join(&name);
@@ -261,6 +264,7 @@ fn visit(
                 file_limit,
                 byte_limit,
                 item_limit,
+                closed_aliases,
             )?;
         } else if metadata.is_file() {
             // Read the last component with explicit no-follow. Even if a
@@ -271,7 +275,7 @@ fn visit(
                 .open_with(&name, &options)
                 .map_err(|_| denied())?
                 .into_std();
-            let (expected, changed_at) = valid_leaf(&input)?;
+            let (expected, changed_at) = valid_leaf(&input, closed_aliases)?;
             if expected != metadata.len() {
                 acceptance_tree_denial("file_size_changed");
                 return Err(denied());
@@ -320,7 +324,7 @@ fn visit(
             if read_bytes != expected {
                 return Err(denied());
             }
-            let (after_bytes, after_time) = valid_leaf(&input)?;
+            let (after_bytes, after_time) = valid_leaf(&input, closed_aliases)?;
             if after_bytes != expected || after_time != changed_at {
                 acceptance_tree_denial("file_mutated_during_seal");
                 return Err(denied());
@@ -417,7 +421,7 @@ fn live_visit(
             let mut options = OpenOptions::new();
             options.read(true).follow(FollowSymlinks::No);
             match source.open_with(&name, &options) {
-                Ok(opened) => match valid_leaf(&opened.into_std()) {
+                Ok(opened) => match valid_leaf(&opened.into_std(), None) {
                     Ok((size, _)) if size == metadata.len() => {}
                     Ok(_) | Err(_) => stable = false,
                 },
@@ -482,6 +486,7 @@ pub(crate) fn audit_tree(
         max_files,
         max_bytes,
         single_file_limit,
+        None,
     )?;
     Ok((budget.bytes, format!("{:x}", tree.finalize())))
 }
@@ -523,6 +528,7 @@ pub(crate) fn publish_into_native_parent(
         max_files,
         max_bytes,
         item_limit,
+        None,
     )?;
     let copied_hash = format!("{:x}", tree.finalize());
 
@@ -540,6 +546,7 @@ pub(crate) fn publish_into_native_parent(
         max_files,
         max_bytes,
         item_limit,
+        None,
     )?;
     let seal = format!("{:x}", verified_hash.finalize());
     if budget.bytes != verified.bytes || seal != copied_hash {
