@@ -135,7 +135,7 @@ fn linux_os_owned_git_original_receipt(
     );
     let Some(uid_tail)=raw.strip_prefix(&expected)else{return Some(false)};
     let Some((uid,remaining))=uid_tail.split_once("\n")else{return Some(false)};
-    if uid=="0"||uid.parse::<u32>().is_err(){return Some(false)}
+    if uid.parse::<u32>().ok().is_none_or(|n|n==0){return Some(false)}
     Some(remaining=="KERNEL_EMPTY=1\nEFFECT=COMPLETED\n")
 }
 /// Kernel-custodian receipt is written from an out-of-process first-party

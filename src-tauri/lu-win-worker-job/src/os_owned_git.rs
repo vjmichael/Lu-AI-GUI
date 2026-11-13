@@ -185,9 +185,9 @@ mod tests{
             vec!["rev-parse","HEAD","--exec-path"],
         ]{
             let mut args:Vec<OsString>=["-c","core.fsmonitor=false",
-                "--no-optional-locks","-C"].iter().map(OsString::from).collect();
+                "--no-optional-locks","-C"].iter().map(|v|OsString::from(*v)).collect();
             args.push(repo.as_os_str().to_owned());
-            args.extend(tail.iter().map(OsString::from));
+            args.extend(tail.iter().map(|v|OsString::from(*v)));
             assert!(reviewed_op(&args).is_err());
         }
     }

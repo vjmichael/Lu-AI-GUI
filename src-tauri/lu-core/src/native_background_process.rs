@@ -586,7 +586,7 @@ impl BackgroundProcessSupervisor {
         let mut os_owned_git_spawn=if typed_capture.is_some()
             &&executable.file_name()==Some(std::ffi::OsStr::new("git"))
             &&plan.args.len()==8{
-            if let Some((_,ref chat,ref turn))=reviewed_origin{
+            if let Some((_,chat,turn))=reviewed_origin.as_ref(){
                 lu_win_worker_job::os_owned_git::LinuxOsOwnedReviewedGit::spawn_if_installed(
                     &executable,&plan.expected_sha256,&plan.args,
                     chat,turn,&plan.task_id

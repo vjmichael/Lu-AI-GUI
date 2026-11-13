@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """Lu SEC-06C first-party, *unprivileged* Git-read worker.
 
 Only a root-owned systemd unit created by the fixed broker may execute this

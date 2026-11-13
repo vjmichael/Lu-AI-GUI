@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """Lu SEC-06C fixed, privileged systemd operation launcher.
 
 Install ROOT-OWNED at /usr/libexec/lu/lu-sec06c-launch-git with a narrowly
@@ -19,6 +19,7 @@ import sys
 import time
 
 WORKER = pathlib.Path("/usr/libexec/lu/lu-sec06c-owned-git-worker")
+WORKER_PYTHON = pathlib.Path("/usr/bin/python3").resolve(strict=True)
 RUN = pathlib.Path("/usr/bin/systemd-run")
 CTL = pathlib.Path("/usr/bin/systemctl")
 READY = pathlib.Path("/run/lu-sec06c")
@@ -129,6 +130,7 @@ def run(args):
         deny("invalid one-use native operation")
     root_owned_file(pathlib.Path(__file__).resolve())
     root_owned_file(WORKER)
+    root_owned_file(WORKER_PYTHON)
     root_owned_file(RUN)
     root_owned_file(CTL)
     git = pinned_git(args.git, args.sha)
@@ -146,7 +148,8 @@ def run(args):
     if result_path.exists() or go.exists():
         deny("one-use operation nonce has already been admitted")
     worker_argv = [
-        str(WORKER), "--nonce", nonce, "--git", str(git),
+        str(WORKER_PYTHON), str(WORKER),
+        "--nonce", nonce, "--git", str(git),
         "--sha", args.sha, "--repo", str(repo), "--op", args.op,
     ]
     service = [
