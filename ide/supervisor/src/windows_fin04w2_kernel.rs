@@ -8,7 +8,7 @@
 use crate::SupervisorError;
 use std::{ffi::OsStr, mem::size_of, os::windows::ffi::OsStrExt, ptr};
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE},
+    Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, WAIT_OBJECT_0},
     Security::{
         CheckTokenMembership, CreateWellKnownSid, DuplicateToken, EqualSid, GetTokenInformation,
         IsTokenRestricted, LookupAccountNameW, TokenGroups, TokenRestrictedSids,
@@ -262,7 +262,7 @@ impl EmptyAuditJob {
             Threading::{
                 CreateProcessW, GetExitCodeProcess, ResumeThread,
                 CREATE_NO_WINDOW, CREATE_SUSPENDED, PROCESS_INFORMATION,
-                STARTUPINFOW, WaitForSingleObject, WAIT_OBJECT_0,
+                STARTUPINFOW, WaitForSingleObject,
             },
         };
         use std::time::{Duration, Instant};
