@@ -279,7 +279,7 @@ pub(crate) fn consume_once_in_private_service_root(
     let destination=private_root.join(filename);
     // create_new is atomic; stale partial files MUST remain blockers.
     let mut file=OpenOptions::new().write(true).create_new(true)
-        .open(destination).map_err(|_|denied())?;
+        .open(&destination).map_err(|_|denied())?;
     let text=format!("fin04w2-original-consumed-v1\n{}\n{}\n{}\n{}\n",
         proof.job_id, proof.plan_sha256,
         proof.admission_entry_sha256, proof.session_id);
