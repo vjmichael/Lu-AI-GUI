@@ -38,6 +38,18 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           echo "DEV045D2_EXACT_HEAD=PASS"
+      - name: Provision exact Linux native LLVM18 symbolizer for diagnostic comparison
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends llvm-18 clang-18 binutils
+          test -x /usr/lib/llvm-18/bin/llvm-symbolizer
+          test "$(stat -c %u /usr/lib/llvm-18/bin/llvm-symbolizer)" = 0
+          sha256sum /usr/lib/llvm-18/bin/llvm-symbolizer
+          echo '/usr/lib/llvm-18/bin' >> "$GITHUB_PATH"
+          echo 'DEV045D2_LINUX_LLVM18_TOOL=PINNED_VERSION_HOSTED_CI_NOT_PRODUCTION'
       - name: Verify native LLVM compiler and independent symbol oracle available
         shell: pwsh
         run: |

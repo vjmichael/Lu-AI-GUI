@@ -391,7 +391,7 @@ fn inspect_debug_stderr(handle: Option<&Handle>) {
 // read access to a fixed list of previously sealed files. Neither a token
 // handle nor a file handle escapes; no ACLs/capabilities are changed.
 #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
-fn trace_dap_token_access(process: HANDLE, bundle: &Path, source: &Path) -> Result<(), SupervisorError> {
+fn trace_dap_token_access(process: HANDLE, bundle: &Path, source: &Path, local: &Path) -> Result<(), SupervisorError> {
     if !native_lsp_debug_enabled() {
         return Ok(());
     }
@@ -443,8 +443,67 @@ fn trace_dap_token_access(process: HANDLE, bundle: &Path, source: &Path) -> Resu
         };
         eprintln!("FIN04_WIN_LOWBOX_{kind}={category}");
     }
+    // Independently exercise CREATE_NEW in only this profile's private
+    // LocalState. No inherited handle and no ACL edit; detect an actual
+    // kernel write denial rather than assuming directory rights from read.
+    let scratch = local.join("fin04-lowbox-write-probe.tmp");
+    let scratch_handle = unsafe {
+        CreateFileW(
+            wide(scratch.as_os_str()).as_ptr(),
+            GENERIC_WRITE_ACCESS,
+            FILE_SHARE_READ_VALUE | FILE_SHARE_WRITE_VALUE,
+            ptr::null(),
+            CREATE_NEW,
+            FILE_ATTRIBUTE_NORMAL_VALUE,
+            ptr::null_mut(),
+        )
+    };
+    let scratch_created = scratch_handle != INVALID_HANDLE_VALUE && !scratch_handle.is_null();
+    let scratch_status = if scratch_created {
+        unsafe { CloseHandle(scratch_handle) };
+        "write_allowed"
+    } else {
+        match unsafe { GetLastError() } {
+            5 => "access_denied",
+            2 | 3 => "parent_unavailable",
+            80 | 183 => "already_exists",
+            _ => "other_kernel_failure",
+        }
+    };
+    eprintln!("FIN04_WIN_LOWBOX_LOCALSTATE_CREATE={scratch_status}");
+
+    // The original protected SCM service independently journals one exact
+    // NUL lease. Check whether that device can be reopened under the child
+    // token, without changing the service grant or giving the child a handle.
+    let nul = unsafe {
+        CreateFileW(
+            wide(OsStr::new("NUL")).as_ptr(),
+            NUL_GENERIC_WRITE,
+            FILE_SHARE_READ_VALUE | FILE_SHARE_WRITE_VALUE,
+            ptr::null(),
+            OPEN_EXISTING,
+            0,
+            ptr::null_mut(),
+        )
+    };
+    let nul_status = if nul != INVALID_HANDLE_VALUE && !nul.is_null() {
+        unsafe { CloseHandle(nul) };
+        "write_allowed"
+    } else {
+        match unsafe { GetLastError() } {
+            5 => "access_denied",
+            2 | 3 => "device_unavailable",
+            _ => "other_kernel_failure",
+        }
+    };
+    eprintln!("FIN04_WIN_LOWBOX_NUL_WRITE={nul_status}");
+
     // Never continue privileged SCM custody under a lowbox impersonation.
     if unsafe { RevertToSelf() } == 0 {
+        return Err(SupervisorError::Quarantined);
+    }
+    if scratch_created && fs::remove_file(&scratch).is_err() {
+        // An unremovable diagnostic file is not an accepted clean stage.
         return Err(SupervisorError::Quarantined);
     }
     Ok(())
@@ -1484,7 +1543,7 @@ fn start_windows_dap_inner(
         };
     #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
     if matches!(plan.recipe_id.as_str(), "dap_lldb_fixed" | "dap_lldb_project") {
-        if let Err(reason) = trace_dap_token_access(process.0, &bundle, &staged_document) {
+        if let Err(reason) = trace_dap_token_access(process.0, &bundle, &staged_document, &local) {
             let _ = job.kill_and_verify();
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(reason);
