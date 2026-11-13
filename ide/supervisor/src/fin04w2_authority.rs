@@ -285,6 +285,11 @@ pub(crate) fn consume_once_in_private_service_root(
         proof.admission_entry_sha256, proof.session_id);
     file.write_all(text.as_bytes()).map_err(|_|denied())?;
     file.sync_all().map_err(|_|denied())?;
+    drop(file);
+    // Re-open the original service-only record after sync and verify its
+    // exact bytes, not merely successful write/close return values.
+    let readback=fs::read(&destination).map_err(|_|denied())?;
+    if readback != text.as_bytes() {return Err(denied());}
     Ok(())
 }
 
@@ -334,6 +339,11 @@ mod tests {
             &job.job_id,&sha,&plan.source_head,true,
         ).unwrap(); // isolated fixture-only simulated GUI approval
         let approved=supervisor.receipt_history(&job.job_id).unwrap();
+        let pre=verify_original_authorized_file(&source,&job.job_id,&plan,&sha).unwrap();
+        assert_eq!(pre.approved_entry_sha256,approved[1].entry_hash);
+        assert!(verify_original_execution_phase(
+            &source,&job.job_id,&plan,&sha,JobPhase::Running,
+        ).is_err());
         assert!(verify_consumed_original_approval(
             &approved,&job.job_id,&plan,&sha,now_ms().unwrap()
         ).is_err());
@@ -365,8 +375,22 @@ mod tests {
             &receipts,&other,&plan,&sha,now_ms().unwrap()
         ).is_err());
         supervisor.native_mark_running(&job.job_id).unwrap();
+        assert!(verify_original_execution_phase(
+            &source,&job.job_id,&plan,&sha,JobPhase::Running,
+        ).is_ok());
+        assert!(verify_original_execution_phase(
+            &source,&job.job_id,&plan,&sha,JobPhase::ReleasePending,
+        ).is_err());
         assert!(verify_original_journal_file(
             &source,&job.job_id,&plan,&sha,
+        ).is_err());
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        assert!(verify_original_execution_phase(
+            &source,&job.job_id,&plan,&sha,JobPhase::ReleasePending,
+        ).is_ok());
+        supervisor.native_finish(&job.job_id,true,true,true).unwrap();
+        assert!(verify_original_execution_phase(
+            &source,&job.job_id,&plan,&sha,JobPhase::ReleasePending,
         ).is_err());
         let _=std::fs::remove_file(&source);
     }
