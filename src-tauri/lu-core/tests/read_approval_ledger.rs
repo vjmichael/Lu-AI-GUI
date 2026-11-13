@@ -1,9 +1,14 @@
 use lu_core::read_approval_ledger::{ReadApprovalLedger, ReadDecision, ReadLedgerError};
-use std::{fs, time::{SystemTime, UNIX_EPOCH}};
+use std::{fs, sync::atomic::{AtomicU64, Ordering}, time::{SystemTime, UNIX_EPOCH}};
+
+// Windows timestamps can share the same system-clock tick across parallel tests.
+// Make independent SQLite files unique even when pid and nanoseconds coincide.
+static NEXT_LEDGER_PATH: AtomicU64 = AtomicU64::new(0);
 fn path() -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
-        "lu-read-approval-{}-{}.sqlite", std::process::id(),
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()))
+        "lu-read-approval-{}-{}-{}.sqlite", std::process::id(),
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+        NEXT_LEDGER_PATH.fetch_add(1, Ordering::Relaxed)))
 }
 #[test]
 fn approval_decisions_persist_reject_replay_and_do_not_mint_permission() {
@@ -104,4 +109,16 @@ fn upgrades_early_approval_schema_without_erasing_old_decisions() {
     );
     drop(upgraded);
     fs::remove_file(p).unwrap();
+}
+
+#[test]
+fn parallel_read_approval_test_paths_never_alias() {
+    let workers: Vec<_> = (0..64)
+        .map(|_| std::thread::spawn(path))
+        .collect();
+    let paths: std::collections::HashSet<_> = workers
+        .into_iter()
+        .map(|worker| worker.join().expect("ledger fixture thread"))
+        .collect();
+    assert_eq!(paths.len(), 64, "independent approvals must never share a SQLite test file");
 }
