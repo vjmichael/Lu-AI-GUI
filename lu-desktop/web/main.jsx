@@ -1054,6 +1054,14 @@ function App() {
     }catch(e){setResearchError(String(e));}
     finally{setResearchBusy(false);}
   }
+  async function copyResearchReference(value) {
+    if(typeof value!=='string'||!value){setResearchError('No reviewed reference available to copy.');return;}
+    try {
+      if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable in current WebView.');
+      await navigator.clipboard.writeText(value);
+      setActivity('Reviewed reference copied. Copying does not verify its contents.');
+    }catch(error){setResearchError(String(error));}
+  }
   async function previewSblCriticalEdition(){
     if(!chatId)return;
     setSblEditionPreview(null);setResearchError('');
@@ -4899,6 +4907,227 @@ function App() {
               <small>Original host reply: {p08ResultByChat[chatId].status||'Receipt recorded'}.
                 This UI label does not independently prove kernel process custody.</small>}
           </section>
+
+          <details className="readProposalCard" aria-label="Native Research evidence tools">
+            <summary><strong>Research evidence and citations · native-source review</strong></summary>
+            <small>Public research requires the host's separately reviewed, pinned HTTPS client.
+              Search results are unverified leads. Every network request requires native approval;
+              no Browser excerpt is a verified citation, passage, quotation or model fact.</small>
+            {researchError&&<p role="alert">{researchError}</p>}
+            {!researchAvailable&&<small>Pinned Research network client unavailable. No remote lookup is authorized.</small>}
+            <div className="settingsActions">
+              <input aria-label="Research question or terms" value={researchQuery} maxLength={512}
+                onChange={e=>setResearchQuery(e.target.value)} placeholder="OpenAlex search terms"/>
+              <button type="button" disabled={!chatId||!researchAvailable||researchBusy||!researchQuery.trim()}
+                onClick={()=>void runResearchDiscovery(1)}>Search reviewed public catalog</button>
+              <button type="button" disabled={!chatId||researchCampaignBusy}
+                onClick={()=>void refreshResearchCampaigns(chatId)}>Restore saved research jobs</button>
+              <button type="button" disabled={!chatId||researchBusy||browserEvidenceBusy}
+                onClick={()=>void reviewBrowserEvidence()}>Review observed Browser evidence</button>
+            </div>
+            {researchResult?.chatId===chatId&&<>
+              <small>OpenAlex source identity: {researchResult.observedSha256} ·
+                {researchResult.sourceCount} unverified discovery leads.</small>
+              <div className="settingsActions">
+                <button disabled={researchBusy||researchResult.page<=1}
+                  onClick={()=>void runResearchDiscovery(researchResult.page-1)}>Previous discovery page</button>
+                <button disabled={researchBusy||!researchResult.nextPage}
+                  onClick={()=>void runResearchDiscovery(researchResult.nextPage)}>Next discovery page</button>
+              </div>
+              {(researchResult.leads||[]).map(l=><article className="nativeOption" key={l.sourceId}>
+                <strong>{l.title}</strong>
+                <small>{l.sourceId} · {l.authors} · Unverified discovery metadata</small>
+                <div className="settingsActions">
+                  <button disabled={researchBusy} onClick={()=>void checkResearchMetadata(l.sourceId)}>
+                    Check independent Crossref metadata</button>
+                  <button disabled={researchBusy||researchCitationBusy}
+                    onClick={()=>void previewResearchCitation(l.sourceId)}>
+                    Preview evidence-bound citation</button>
+                  <button disabled={researchBusy||researchCitationBusy}
+                    onClick={()=>void reviewResearchCitationRevision(l.sourceId)}>
+                    Review changed Crossref metadata</button>
+                  <button disabled={researchBusy}
+                    onClick={()=>void retrieveResearchDocument(l.sourceId)}>
+                    Retrieve bounded PDF/HTML document</button>
+                </div>
+                {researchMetadataByChat[chatId+'|'+l.sourceId]&&
+                  <small>Crossref source metadata independently checked.
+                    Citation verified: no; exact source passage still required.</small>}
+                {researchCitationsByChat[chatId+'|'+l.sourceId]&&<div className="nativeOption">
+                  <strong>Crossref-backed citation preview · REVIEW REQUIRED</strong>
+                  <p>{researchCitationsByChat[chatId+'|'+l.sourceId].bibliography}</p>
+                  <small>Source response SHA-256:
+                    {researchCitationsByChat[chatId+'|'+l.sourceId].catalogResponseSha256}.
+                    Bibliographic identity alone does not verify publication particulars, quotations,
+                    passages, page numbering or factual interpretations.</small>
+                  <textarea readOnly rows={3} aria-label="Reviewed CSL JSON"
+                    value={JSON.stringify(researchCitationsByChat[chatId+'|'+l.sourceId].cslJson,null,2)}/>
+                  <button onClick={()=>void copyResearchReference(
+                    JSON.stringify(researchCitationsByChat[chatId+'|'+l.sourceId].cslJson,null,2))}>
+                    Copy reviewed CSL JSON</button>
+                </div>}
+                {researchCitationRevisionByChat[chatId+'|'+l.sourceId]&&
+                  <small>Catalog revision independently reviewed:
+                    {researchCitationRevisionByChat[chatId+'|'+l.sourceId].currentSha256}</small>}
+                {researchDocumentsByChat[chatId+'|'+l.sourceId]&&<div className="nativeOption">
+                  <p>Retrieved document: {researchDocumentsByChat[chatId+'|'+l.sourceId].format}.
+                    Original content SHA-256:
+                    {researchDocumentsByChat[chatId+'|'+l.sourceId].responseSha256}</p>
+                  <textarea readOnly rows={4} aria-label="Bounded original document excerpt"
+                    value={researchDocumentsByChat[chatId+'|'+l.sourceId].excerpt||''}/>
+                  <textarea rows={2} maxLength={4096} aria-label="Exact text to verify in original document"
+                    value={researchDocumentQuotes[chatId+'|'+l.sourceId]||''}
+                    onChange={e=>setResearchDocumentQuotes(old=>({
+                      ...old,[chatId+'|'+l.sourceId]:e.target.value
+                    }))}/>
+                  <button disabled={researchBusy} onClick={()=>void verifyResearchDocumentPassage(l.sourceId)}>
+                    Check exact document passage</button>
+                  {researchDocumentPassages[chatId+'|'+l.sourceId]&&
+                    <small>Native passage review:
+                      {researchDocumentPassages[chatId+'|'+l.sourceId].verificationStatus||'not verified'}</small>}
+                </div>}
+              </article>)}
+            </>}
+            <section className="nativeOption">
+              <strong>Reviewed bibliography and report</strong>
+              <label>Citation style
+                <select value={researchCitationStyle}
+                  onChange={e=>setResearchCitationStyle(e.target.value)}>
+                  <option value="apa7">APA 7</option>
+                  <option value="mla9">MLA 9</option>
+                  <option value="chicago18">Chicago 18</option>
+                  <option value="ieee">IEEE</option>
+                  <option value="sbl2">SBL 2</option>
+                </select>
+              </label>
+              <div className="settingsActions">
+                <button disabled={!chatId||researchBibliographyBusy}
+                  onClick={()=>void previewResearchBibliography()}>
+                  Compile reviewed bibliography offline</button>
+                <button disabled={!chatId||researchBibliographyBusy}
+                  onClick={()=>void exportResearchBibliography('markdown')}>
+                  Save new bibliography Markdown</button>
+                <button disabled={!chatId||researchBibliographyBusy}
+                  onClick={()=>void exportResearchBibliography('csl-json')}>
+                  Save new bibliography CSL-JSON</button>
+              </div>
+              {researchBibliographiesByChat[chatId]&&<>
+                <small>Only host-reviewed sealed Crossref catalog records:
+                  {researchBibliographiesByChat[chatId].sourceCount} sources.
+                  Citation identity is reviewed; publication details remain unverified.</small>
+                <textarea readOnly rows={4} aria-label="Offline reviewed bibliography"
+                  value={researchBibliographiesByChat[chatId].markdown}/>
+              </>}
+              <label>Report title
+                <input value={researchReportTitle} maxLength={180}
+                  onChange={e=>setResearchReportTitle(e.target.value)}/></label>
+              <label><input type="checkbox" checked={researchReportIncludeBibliography}
+                onChange={e=>setResearchReportIncludeBibliography(e.target.checked)}/>
+                Include reviewed P07 bibliography</label>
+              <div className="settingsActions">
+                <button disabled={!chatId||researchReportBusy||!researchReportTitle.trim()}
+                  onClick={()=>void exportResearchReport('markdown')}>Save Markdown report</button>
+                <button disabled={!chatId||researchReportBusy||!researchReportTitle.trim()}
+                  onClick={()=>void exportResearchReport('json')}>Save evidence JSON</button>
+              </div>
+              {researchReportSavedByChat[chatId]&&
+                <small>Native new-file export receipt recorded; prior files are not overwritten.</small>}
+            </section>
+            <section className="nativeOption">
+              <strong>SBL2 canonical Scripture locator and reviewed critical editions</strong>
+              <small>This is not a bibliography item or scholarly source attestation.
+                Text readings, verse-numbering equivalences, translations and manuscript
+                witnesses are not independently verified by a locator.</small>
+              <div className="settingsActions">
+                <label>Book <input maxLength={40} value={sblScriptureBook}
+                  onChange={e=>setSblScriptureBook(e.target.value)}/></label>
+                <label>Chapter <input type="number" min={1} max={150} value={sblScriptureChapter}
+                  onChange={e=>setSblScriptureChapter(e.target.value)}/></label>
+                <label>First verse <input type="number" min={1} max={176} value={sblScriptureFirstVerse}
+                  onChange={e=>setSblScriptureFirstVerse(e.target.value)}/></label>
+                <label>Last verse (optional) <input type="number" min={1} max={176}
+                  value={sblScriptureLastVerse} onChange={e=>setSblScriptureLastVerse(e.target.value)}/></label>
+                <label>Translation <input maxLength={16} value={sblScriptureTranslation}
+                  onChange={e=>setSblScriptureTranslation(e.target.value)}/></label>
+                <label>Edition <select value={sblEditionId} onChange={e=>setSblEditionId(e.target.value)}>
+                  <option value="NA28">NA28</option><option value="UBS5">UBS5</option>
+                  <option value="BHS">BHS</option>
+                </select></label>
+              </div>
+              <div className="settingsActions">
+                <button disabled={!chatId} onClick={()=>void previewSblScriptureLocator()}>
+                  SBL2 canonical Scripture locator</button>
+                <button disabled={!sblScripturePreview?.reference}
+                  onClick={()=>void copyResearchReference(sblScripturePreview.reference)}>
+                  Copy Scripture reference</button>
+                <button disabled={!chatId} onClick={()=>void previewSblCriticalEdition()}>
+                  Review curated critical edition</button>
+                <button disabled={!sblEditionPreview?.reference}
+                  onClick={()=>void copyResearchReference(sblEditionPreview.reference)}>
+                  Copy critical-edition reference</button>
+              </div>
+              {sblScripturePreview&&
+                <small>{sblScripturePreview.reference} · Citation/translation not independently verified</small>}
+              {sblEditionPreview&&
+                <small>{sblEditionPreview.reference} ·
+                  edition metadata, not independently verified text readings</small>}
+            </section>
+            <section className="nativeOption">
+              <strong>Research campaigns, claims and original passage verification</strong>
+              <div className="settingsActions">
+                <button disabled={!chatId||!researchAvailable||researchCampaignBusy||!researchQuery.trim()}
+                  onClick={()=>void runResearchCampaign()}>Start bounded research campaign</button>
+                <button disabled={!chatId||researchCampaignBusy}
+                  onClick={()=>void refreshResearchCampaigns(chatId)}>Restore saved research jobs</button>
+              </div>
+              {(researchCampaignsByChat[chatId]||[]).map(c=><div className="settingsActions" key={c.campaignId}>
+                <small>Campaign {c.campaignId} · {c.state||'Needs review'}</small>
+                <button disabled={researchCampaignBusy} onClick={()=>void resumeResearchCampaign(c.campaignId)}>
+                  Review campaign resume</button>
+                <button disabled={researchCampaignBusy} onClick={()=>void cancelResearchCampaign(c.campaignId)}>
+                  Cancel campaign</button>
+              </div>)}
+              <label>Reviewed source ID
+                <input value={researchClaimDraft.sourceId} maxLength={128}
+                  onChange={e=>setResearchClaimDraft(old=>({...old,sourceId:e.target.value}))}/></label>
+              <label>Interpretation
+                <textarea rows={2} value={researchClaimDraft.claim} maxLength={4096}
+                  onChange={e=>setResearchClaimDraft(old=>({...old,claim:e.target.value}))}/></label>
+              <label>Exact observed quote
+                <textarea rows={2} value={researchClaimDraft.quote} maxLength={4096}
+                  onChange={e=>setResearchClaimDraft(old=>({...old,quote:e.target.value}))}/></label>
+              <label>Reasoning
+                <textarea rows={2} value={researchClaimDraft.reasoning} maxLength={4096}
+                  onChange={e=>setResearchClaimDraft(old=>({...old,reasoning:e.target.value}))}/></label>
+              <button disabled={!chatId||researchReportBusy||!researchClaimDraft.quote.trim()}
+                onClick={()=>void submitResearchClaim()}>Save my evidence interpretation</button>
+              <small>Unresolved: contrary or qualifying evidence remains.
+                Interpretations are human review records, not verified model facts.</small>
+            </section>
+            <section className="nativeOption">
+              <strong>Observed Browser evidence · read-only and chat-scoped</strong>
+              {(browserEvidenceByChat[chatId]||[]).map(item=>{
+                const key=chatId+'|'+item.generationId+'|'+item.callId;
+                return <article key={key}>
+                  <small>Observed Browser evidence: {item.sourceUrl}.
+                    Untrusted excerpt · citation verified: no</small>
+                  <textarea readOnly rows={3} value={item.excerpt||''}
+                    aria-label="Original bounded Browser excerpt"/>
+                  <textarea rows={2} value={researchQuoteDraftByKey[key]||''} maxLength={2048}
+                    aria-label="Exact Browser passage to verify"
+                    onChange={e=>setResearchQuoteDraftByKey(old=>({...old,[key]:e.target.value}))}/>
+                  <input value={researchQuoteSourceByKey[key]||''} maxLength={128}
+                    placeholder="Optional independently corroborated OpenAlex source ID"
+                    onChange={e=>setResearchQuoteSourceByKey(old=>({...old,[key]:e.target.value}))}/>
+                  <button disabled={researchQuoteBusy} onClick={()=>void verifyObservedQuote(item)}>
+                    Check exact source passage</button>
+                  {researchQuoteProofByKey[key]&&
+                    <small>Native exact-passage outcome:
+                      {researchQuoteProofByKey[key].citationVerified?'publisher URL and quote matched':'not citation verified'}</small>}
+                </article>;
+              })}
+            </section>
+          </details>
 
           <section className="readProposalCard" role="region"
             aria-label="ANSF native source provenance">
