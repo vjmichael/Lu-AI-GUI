@@ -4878,6 +4878,34 @@ function App() {
           </div>
 
           <section className="readProposalCard" role="region"
+            aria-label="Native Reader document selection">
+            <strong>Reader · one native-picked document per review</strong>
+            <small>Reader source selection and text extraction are bounded by the
+              original OS picker and host-owned source hash. Neither a WebView
+              path nor a prior attachment can silently grant a new read.</small>
+            <label className="nativeField">Reader section
+              <input maxLength={80} value={readerSelector}
+                placeholder="Optional document section selector"
+                onChange={e=>setReaderSelector(e.target.value)}/>
+            </label>
+            <div className="settingsActions">
+              <button type="button" disabled={working||chatBusy}
+                onClick={()=>void attachReaderDocument(false)}>Read file</button>
+              <button type="button" disabled={working||chatBusy||!runtime.sessionId||!prompt.trim()}
+                onClick={()=>void askReaderDocument()}>Ask Reader</button>
+              <button type="button" disabled={working||chatBusy||
+                !readerContinuation||readerContinuation.chatId!==(currentChat.current||'new')||
+                readerContinuation.selector!==readerSelector||readerContinuation.nextOffset===null}
+                onClick={()=>void attachReaderDocument(true)}>
+                Continue Reader at {readerContinuation?.nextOffset??'unavailable'} characters
+              </button>
+            </div>
+            <small>Ask Reader is an independent human-requested read-only tool turn;
+              sending the ordinary chat draft never silently selects a document.
+              Each continuation rechecks the original SHA-256 and selector.</small>
+          </section>
+
+          <section className="readProposalCard" role="region"
             aria-label="Native multipart archive operations">
             <strong>Native archive splitting and recovery · P08</strong>
             <small>Lu raw-byte parts are not natively spanned ZIP/RAR/7z archives.

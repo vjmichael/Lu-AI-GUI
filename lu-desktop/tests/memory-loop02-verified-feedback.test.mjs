@@ -37,7 +37,11 @@ test('next model reasoning turn observes prior independent evidence without scan
   assert.match(desktop,/origin==GenerationOrigin::Human&&images\.is_empty\(\)/);
   assert.match(feedback,/prior_authenticated_turn_ids\(/);
   assert.match(feedback,/reviewed_turn_continuity\(profile,chat,&turn\)/);
-  assert.doesNotMatch(feedback,/read_dir\(|glob\(|\.walk\(|Command::new\(|\.spawn\(/);
+  // The genuine-Git test-only fixture is intentionally allowed to start Git.
+  // Production feedback generation is still forbidden to enumerate directories
+  // or execute subprocesses, including when tests are compiled alongside it.
+  const production=feedback.split('#[cfg(test)]')[0];
+  assert.doesNotMatch(production,/read_dir\(|glob\(|\.walk\(|Command::new\(|\.spawn\(/);
 });
 test('source VERIFIED alone is not claimed as descendant termination',()=>{
   assert.match(feedback,/HostOriginalJobCustody::from_host_profile\(profile\)/);
