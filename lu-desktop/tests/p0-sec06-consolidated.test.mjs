@@ -66,12 +66,17 @@ test('SEC06 Linux original Core suite receives absolute host-pinned Git without 
   const windowsPin=section.indexOf('Pin real Windows Git executable for reviewed native worker');
   const originalRun=section.indexOf('Run independent SEC-06 including Linux ancestor-migration containment');
   assert.ok(linuxPin>=0 && windowsPin>linuxPin && originalRun>windowsPin);
-  assert.match(section,/native="\\$\\(readlink -e -- "\\$selected"\\)"/);
-  assert.match(section,/test -f "\\$native" && test -x "\\$native"/);
-  assert.match(section,/LU_TOOLS03_TEST_GIT_PATH=\\$native/);
-  assert.match(section,/LU_TOOLS03_TEST_GIT_PATH=\\$path/);
-  assert.match(section,/node scripts\\/p0-sec06-consolidated\\.mjs --mode/);
-  assert.doesNotMatch(section,/SEC06_RELEASE_ACCEPTED=1|--skip-ancestor-migration/);
+  for(const snippet of [
+    'native="$(readlink -e -- "$selected")"',
+    'test -f "$native" && test -x "$native"',
+    'LU_TOOLS03_TEST_GIT_PATH=$native',
+    'LU_TOOLS03_TEST_GIT_PATH=$path',
+    'node scripts/p0-sec06-consolidated.mjs --mode'
+  ]){
+    assert.ok(section.includes(snippet),'Missing native admission contract '+snippet);
+  }
+  assert.equal(section.includes('SEC06_RELEASE_ACCEPTED=1'),false);
+  assert.equal(section.includes('--skip-ancestor-migration'),false);
 });
 
 test('SEC06 actual kernel oracle treats escaped descendant as security blocker',()=>{
