@@ -199,6 +199,14 @@ jobs:
             if ((Invoke-CiBrokerAudit $bad) -eq 65) {
               throw 'DENIED: unknown debugger broker method incorrectly accepted'
             }
+            foreach ($verb in @(2,3,4,5,6)) {
+              $unapproved=[byte[]]$packet.Clone()
+              $unapproved[9]=[byte]$verb
+              if ((Invoke-CiBrokerAudit $unapproved) -eq 65) {
+                throw 'DENIED: valid-shaped executable/control request was incorrectly acknowledged'
+              }
+            }
+            Write-Host 'FIN04W2_NATIVE_UNAUTHORIZED_LAUNCH_AND_CONTROL=DENIED'
             if ((Invoke-CiBrokerAudit $packet) -ne 65) {
               throw 'DENIED: actual Windows kernel client authentication or review grammar absent'
             }
