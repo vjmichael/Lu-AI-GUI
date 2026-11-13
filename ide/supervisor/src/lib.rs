@@ -25,7 +25,7 @@ pub mod debug_symbol_verification;
 mod fin04w2_protocol;
 // Actual Win32 service-principal and current-Job inspection is review-only;
 // separate identity/ACL/WFP/service custody must precede any debugger launch.
-#[cfg(all(windows, debug_assertions, feature = "fin04w2-protocol"))]
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
 mod windows_fin04w2_kernel;
 // Separate SCM-only debugger broker, with no worker launch or IPC until the
 // Windows ACL/WFP/exact-Job and authenticated protocol gates are complete.
