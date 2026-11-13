@@ -1,5 +1,19 @@
 # IDE Group 6E — GitHub integration register
 
+## 6E-05A — native-only remote publication preflight (Nov 13)
+
+Implemented separately on `ide/fin03-6e05-protected-remote-preflight-20261113`
+from the FIN-01D base. See `IDE_FIN03E05_REMOTE_PUBLICATION_PREFLIGHT.md`.
+This is an exact registered local checkout/branch/index/source-HEAD,
+canonical GitHub-origin and cached remote-tracking-ref review with a
+source recheck. It reports all missing live CAS, credentials, independent
+one-use native human consent, durable action journal and result readback
+as mandatory blockers. It does **not** send a GitHub mutation, reveal
+credentials, submit reviews, push branches or expose a Tauri command.
+Rust/Node tests exist but are not yet native accepted. Source-only
+6E-05A is distinct from a functioning remote publishing workflow.
+
+
 Group 6E follows 6D conflict resolution and precedes 6F security/recovery and 6G native acceptance. Work remains isolated in the IDE portion of `vjmichael/Lu-AI-GUI`. GitHub is the user's repository, not a CI-only gating requirement for continued source development.
 
 ## 6E-01 — Read-only exact-origin pull request inspection
