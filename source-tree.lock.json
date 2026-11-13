@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "8932dc3a0df16af7a4079897ae1d8885a622a800",
+  "sourceCommitBeforeLock": "26d2210dec1d16886e6259a554bf87829abcfdb7",
   "trackedFileCount": 984,
   "files": [
     {
@@ -229,7 +229,7 @@
     },
     {
       "path": ".github/workflows/lu-perf01-p0-p0d-exact-head.yml",
-      "blob": "c4e65b35dd0cafaed5a83f6e2473cdf2c50875f9"
+      "blob": "e6b83222bfaf3f0deaee06a6184d92725a2b54e1"
     },
     {
       "path": ".github/workflows/lu-plan07d-installed.yml",
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "24420a3896c86e6639b53a100cb9f4da0fdb0b6d"
+      "blob": "1d0c540e6009e71ea0c343fe886481488a22061d"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",

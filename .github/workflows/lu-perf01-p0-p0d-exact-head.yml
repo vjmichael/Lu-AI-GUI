@@ -1,8 +1,7 @@
 name: Lu PERF-01 P0/P0D exact-head native acceptance
+# CORE-01E: this older P0/P0D task-group suite cannot fan out on push.
+# Operators can still dispatch the identical native Windows/Linux matrix.
 on:
-  push:
-    branches:
-      - lu/perf01-p0-p0d-closeout-20261112
   workflow_dispatch:
 permissions:
   contents: read
