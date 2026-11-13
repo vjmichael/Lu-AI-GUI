@@ -101,6 +101,42 @@ def native_cgroup(unit):
     if membership!="0::"+group:deny("OS unit PID/cgroup identity mismatch")
     if not (path/"cgroup.kill").is_file():deny("no genuine cgroup.kill")
     return path
+def original_service_main(unit):
+    """Trusted systemd fields for the exact randomly pinned operation unit."""
+    status=subprocess.run([str(CTL),"show",unit,
+        "-p","ActiveState","-p","SubState",
+        "-p","ExecMainCode","-p","ExecMainStatus","--no-pager"],
+        capture_output=True,text=True,timeout=4)
+    if status.returncode:
+        deny("root-owned systemd operation status cannot be observed")
+    p=dict(row.split("=",1) for row in status.stdout.splitlines() if "=" in row)
+    if p.get("ActiveState") not in ("active","activating"):
+        deny("trusted operation unit deactivated before kernel-empty witness")
+    if p.get("SubState")=="exited" and p.get("ExecMainCode")=="1":
+        try:
+            code=int(p["ExecMainStatus"])
+        except (ValueError,KeyError):
+            deny("missing original service main exit status")
+        return code
+    return None
+
+def wait_populated_zero(events,timeout):
+    """Never accept absence of a unit/cgroup as proof of empty descendants."""
+    until=time.monotonic()+timeout
+    while time.monotonic()<until:
+        if kernel_empty(events):return True
+        time.sleep(.025)
+    return False
+
+def kill_exact_root_owned_subtree(group):
+    """Only the kernel cgroup pinned from systemd's exact original unit."""
+    f=group/"cgroup.kill"
+    if not f.is_file():
+        deny("original cgroup.kill disappeared")
+    with f.open("w",encoding="ascii") as out:
+        out.write("1")
+        out.flush()
+
 def kernel_empty(stream):
     try:
         stream.seek(0)
@@ -129,9 +165,14 @@ def run(args):
         deny("original one-use worker nonce already consumed")
     command=[
         str(RUN),"--system","--quiet","--pipe","--wait",
+        "--remain-after-exit",
         "--no-ask-password","--service-type=exec",f"--unit={unit}",
         f"--property=User={uid}","--property=Delegate=no",
         "--property=KillMode=control-group",
+        # The fixed first-party worker exits 93 on a denied/cancelled action;
+        # keep the unit available for a root-owned kernel-empty observation,
+        # but NEVER convert ExecMainStatus 93 to EFFECT=COMPLETED.
+        "--property=SuccessExitStatus=93",
         "--property=ProtectControlGroups=yes",
         "--property=NoNewPrivileges=yes",
         "--property=CapabilityBoundingSet=",
@@ -147,6 +188,7 @@ def run(args):
     # stdin carries only the original Lu-host lifetime: not model bytes.
     process=subprocess.Popen(command,cwd="/",stdin=None,stdout=None,stderr=None)
     group=None;events=None;started=False;result=99
+    kernel_verified=False
     try:
         until=time.monotonic()+20
         while time.monotonic()<until:
@@ -162,19 +204,53 @@ def run(args):
             deny("original host died before first-worker approval")
         root_record(go,"LU_SEC06C_GO_V1\n"+nonce+"\n")
         started=True
-        try:result=process.wait(timeout=75)
-        except subprocess.TimeoutExpired:deny("native media probe exceeded 75 seconds")
+        # RemainAfterExit keeps the ORIGINAL kernel unit registered until the
+        # trusted manager observes an empty recursive subtree. --wait alone
+        # can unload cgroup.events before anyone can attest populated=0.
+        deadline=time.monotonic()+75
+        while time.monotonic()<deadline:
+            waiting,_,_=select.select([sys.stdin.buffer],[],[],0)
+            if waiting and not sys.stdin.buffer.read(1):
+                # Cancellation/host death: kernel kills the exact unit,
+                # then we independently demand its recursive empty event.
+                kill_exact_root_owned_subtree(group)
+                result=73
+                break
+            result=original_service_main(unit)
+            if result is not None:
+                break
+            if process.poll() is not None:
+                deny("systemd-run exited before original main completion")
+            time.sleep(.035)
+        else:
+            kill_exact_root_owned_subtree(group)
+            deny("original managed service exceeded bounded runtime")
+        if result!=0:
+            kill_exact_root_owned_subtree(group)
+        if not wait_populated_zero(events,15):
+            # Even a successful main process is NOT descendant containment.
+            kill_exact_root_owned_subtree(group)
+            result=73
+            if not wait_populated_zero(events,15):
+                deny("OS kernel never confirmed original recursive populated-zero")
+        kernel_verified=True
     finally:
+        if group is not None and not kernel_verified:
+            try:kill_exact_root_owned_subtree(group)
+            except (OSError,RuntimeError):pass
         if started or group is not None:
-            subprocess.run([str(CTL),"stop",unit],check=False,timeout=15,
+            stopped=subprocess.run([str(CTL),"stop",unit],check=False,timeout=15,
                 stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            if stopped.returncode!=0:kernel_verified=False
         if process.poll() is None:
             try:process.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 process.kill();process.wait(timeout=5)
         if go.exists():go.unlink()
-    if events is None or not kernel_empty(events):
-        deny("independent kernel cgroup populated-zero unavailable")
+    # Completion was witnessed while the exact systemd unit still existed,
+    # before its stop/unload. A removed cgroup or stale log is never proof.
+    if not kernel_verified:
+        deny("kernel populated-zero never witnessed before OS unit removal")
     events.close()
     original="\n".join([
         "LU_SEC06C_OWNED_PROBE_V1",

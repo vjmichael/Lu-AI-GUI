@@ -121,6 +121,38 @@ test('SEC06C trusted OS-owned Git launch binds original journal nonce and finite
   assert.match(gate,/linux-ancestor-migration/);
 });
 
+test('SEC06C kernel populated-zero is witnessed before root-owned service teardown, never inferred after removal',()=>{
+  for(const path of [
+    'scripts/lu-sec06c-owned-git-launcher.py',
+    'scripts/lu-sec06c-owned-probe-launcher.py'
+  ]){
+    const source=readFileSync(join(root,path),'utf8');
+    assert.match(source,/--remain-after-exit/);
+    assert.match(source,/--wait/);
+    assert.match(source,/--property=SuccessExitStatus=93/);
+    assert.match(source,/--property=KillMode=control-group/);
+    assert.match(source,/--property=ProtectControlGroups=yes/);
+    assert.match(source,/def original_service_main\(/);
+    assert.match(source,/ExecMainCode/);
+    assert.match(source,/ExecMainStatus/);
+    assert.match(source,/SubState/);
+    assert.match(source,/def wait_populated_zero\(/);
+    assert.match(source,/def kill_exact_root_owned_subtree\(/);
+    assert.match(source,/cgroup\.kill/);
+    assert.match(source,/if not wait_populated_zero\(events,15\)/);
+    assert.match(source,/kernel_verified=True/);
+    assert.match(source,/if not kernel_verified:/);
+    const verified=source.indexOf('kernel_verified=True');
+    const stop=source.indexOf('stopped=subprocess.run(');
+    assert.ok(verified>=0&&stop>verified,
+      'original kernel proof must precede systemd stop/unload in '+path);
+    assert.doesNotMatch(source,/if events is None or not kernel_empty\(events\):/);
+    assert.match(source,/EFFECT=/);
+  }
+  assert.match(gate,/linux-ancestor-migration/);
+  assert.match(gate,/linux-guardian-death/);
+});
+
 test('SEC06C has separate finite root-owned FFprobe/PDFInfo/ExifTool service boundary',()=>{
   const native=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/os_owned_probe.rs'),'utf8');
   const launcher=readFileSync(join(root,'scripts/lu-sec06c-owned-probe-launcher.py'),'utf8');
