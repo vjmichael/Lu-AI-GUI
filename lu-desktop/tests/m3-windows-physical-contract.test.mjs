@@ -29,5 +29,9 @@ test('NSIS actual install and uninstall cannot pass by artifact hash alone',()=>
   }
   assert.ok(cycle.includes('webViewUiAndModelInference='));
   assert.doesNotMatch(cycle,/webViewUiAndModelInference='PASS'/);
-  assert.doesNotMatch(cycle,/Invoke-WebRequest|curl.exe/i);
+  // A separately SHA-pinned installed research client is named curl.exe;
+  // merely verifying its local bytes is not an acceptance-time download.
+  assert.match(cycle,/\$researchExe=Verified-Exe/);
+  assert.match(cycle,/ExpectedResearchSha256/);
+  assert.doesNotMatch(cycle,/Invoke-WebRequest|DownloadFile|curl\.exe\s+https?:\/\//i);
 });

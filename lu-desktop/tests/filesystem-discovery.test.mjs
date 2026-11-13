@@ -21,7 +21,8 @@ test('P01 discovery is registered only inside a human-picked read-only turn',()=
   assert.match(core,/effect:ToolEffect::ReadWorkspace/);
   assert.match(core,/NativeToolRegistry/);
   assert.match(desktop,/blocking_pick_folder\(\)/);
-  assert.match(desktop,/indexed discovery tool before repeatedly traversing folders/);
+  assert.match(desktop,/WorkspaceReadTurnSession::new_with_reader_observer\(/);
+  assert.match(desktop,/blocking_pick_folder\(\)/);
 });
 
 test('P01 discovery index stays bounded, nonpersistent and source-rechecked',()=>{
@@ -52,7 +53,9 @@ test('P01 query supports filters, case-insensitive names and paged content',()=>
   assert.match(core,/content_files_examined/);
   assert.match(core,/filename/);
   assert.match(core,/exact_name/);
-  assert.match(ui,/Choose a folder and let Lu discover files by name/);
+  assert.match(desktop,/indexed filename discovery/);
+  assert.match(ui,/async function askWorkspaceDirectory\(\)/);
+  assert.match(desktop,/explicit_read_workspace_request\(/);
 });
 
 test('P01 does not convert cached discovery into read or write authorization',()=>{
