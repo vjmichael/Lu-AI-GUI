@@ -93,6 +93,101 @@ pub(crate) fn verify_consumed_original_approval(
     })
 }
 
+/// An Authorized receipt is not by itself executable authority. It
+/// allows the separately authenticated, fixed service to PREPARE a child
+/// suspended in an OS Job; only the original in-memory grant, consumed by
+/// the original host AFTER native custody is proven, can authorize resume.
+pub(crate) fn verify_fresh_original_authorized(
+    receipts:&[Receipt],job_id:&str,plan:&JobPlan,sha:&str,now:u64,
+)->Result<(),SupervisorError>{
+    if !valid_job(job_id) || now==0 || !crate::validate_plan(plan)
+        || plan.recipe_id!="dap_lldb_project"
+        || plan.effect_class!="debug_inspection_isolated"
+        || sha!=crate::fingerprint(plan)? {return Err(denied());}
+    let store=crate::Store::replay(receipts.to_vec())?;
+    if !store.quarantine.is_empty(){return Err(denied());}
+    let job=store.jobs.get(job_id).ok_or_else(denied)?;
+    if job.phase!=JobPhase::Authorized || job.plan_hash!=sha
+        || job.plan.project_id!=plan.project_id {return Err(denied());}
+    let current:Vec<&Receipt>=receipts.iter().filter(|x|x.body.job_id==job_id).collect();
+    if current.len()!=2 {return Err(denied());}
+    if current[0].body.phase!=JobPhase::Prepared
+        || current[0].body.outcome_code!="host_plan_prepared"
+        || current[1].body.phase!=JobPhase::Authorized
+        || current[1].body.outcome_code!="fresh_human_approval"
+        || current[0].body.session_id!=current[1].body.session_id
+        || current.iter().any(|x|x.body.plan_sha256!=sha
+            || x.body.project_id!=plan.project_id)
+        || current[1].body.observed_unix_ms<current[0].body.observed_unix_ms
+        || current[1].body.observed_unix_ms>now
+        || now.saturating_sub(current[1].body.observed_unix_ms)>MAX_AGE_MS {
+        return Err(denied());
+    }
+    Ok(())
+}
+pub(crate) fn verify_original_authorized_file(
+    path:&Path,job_id:&str,plan:&JobPlan,sha:&str,
+)->Result<(),SupervisorError>{
+    let rows=original_receipts_from_path(path)?;
+    verify_fresh_original_authorized(&rows,job_id,plan,sha,now_ms()?)
+}
+/// Original host receives S only after the service has already inserted a
+/// suspended worker into the same Job it will retain through release. On G,
+/// the service independently verifies the original native journal contains
+/// both fsynced AdmissionPending and Running for this exact Job/session,
+/// preserving the matching original consumed grant. On R, it requires a
+/// further original ReleasePending for the exact same sequence.
+pub(crate) fn verify_original_execution_phase(
+    path:&Path,job_id:&str,plan:&JobPlan,sha:&str,
+    expected:JobPhase,
+)->Result<(),SupervisorError>{
+    let rows=original_receipts_from_path(path)?;
+    let store=crate::Store::replay(rows.clone())?;
+    let job=store.jobs.get(job_id).ok_or_else(denied)?;
+    if job.phase!=expected || job.plan_hash!=sha
+        || !matches!(expected,JobPhase::Running|JobPhase::ReleasePending)
+        || store.quarantine.iter().any(|x|x!=job_id)
+    {return Err(denied());}
+    let mine:Vec<&Receipt>=rows.iter().filter(|x|x.body.job_id==job_id).collect();
+    let needed=if expected==JobPhase::Running{4}else{5};
+    if mine.len()!=needed {return Err(denied());}
+    let consumed=verify_consumed_original_approval(
+        &rows[..rows.iter().position(|x|x.body.job_id==job_id
+            && x.body.phase==JobPhase::Running).ok_or_else(denied)?],
+        job_id,plan,sha,now_ms()?,
+    )?;
+    if consumed.job_id!=job_id || consumed.plan_sha256!=sha {
+        return Err(denied());
+    }
+    if mine[3].body.phase!=JobPhase::Running
+        || mine[3].body.outcome_code!="native_contained_worker_started"
+        || mine[3].body.evidence_code!="os_admission_and_input_seal_checked"
+        || mine[3].body.session_id!=consumed.session_id
+    {return Err(denied());}
+    if expected==JobPhase::ReleasePending
+        && (mine[4].body.phase!=JobPhase::ReleasePending
+            || mine[4].body.outcome_code!="native_tree_empty_release_pending"
+            || mine[4].body.evidence_code!="independent_service_ack_required"
+            || mine[4].body.session_id!=consumed.session_id)
+    {return Err(denied());}
+    Ok(())
+}
+
+fn original_receipts_from_path(path:&Path)->Result<Vec<Receipt>,SupervisorError>{
+    if !path.is_absolute(){return Err(denied());}
+    let meta=fs::symlink_metadata(path).map_err(|_|denied())?;
+    if !meta.is_file() || meta.file_type().is_symlink()
+        || meta.len()==0 || meta.len()>2*1024*1024 {
+        return Err(denied());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes() & 0x400 != 0 {return Err(denied());}
+    }
+    crate::read_journal(&path.to_path_buf())
+}
+
 /// The service independently reads a fixed installer-pinned journal path.
 /// OS ACL, location, host PID and image SHA are checked by service caller;
 /// this routine never accepts a journal or a path from a named-pipe frame.
