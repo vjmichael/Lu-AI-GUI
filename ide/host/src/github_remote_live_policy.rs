@@ -74,7 +74,6 @@ fn encode_branch(branch:&str)->Result<String,&'static str>{
     }
     Ok(encoded)
 }
-fn fingerprint(data:&[u8])->String{format!("{:x}",Sha256::digest(data))}
 fn read_fixed(
     agent:&ureq::Agent,token:&str,owner:&str,repo:&str,
     fixed_path:&str,
@@ -139,6 +138,27 @@ fn policy_shape(protection:&Value,rules:&Value)->Result<(),&'static str>{
     }
     Ok(())
 }
+// The network caller obtains six independent, strictly ordered reads.
+// Pure reconciliation allows hostile-movement fixtures without any token,
+// credential storage, external website or remote mutation.
+fn reconcile_six_reads(
+    branch:&str,a:&[u8],p:&[u8],rules:&[u8],
+    b:&[u8],p_again:&[u8],rules_again:&[u8],
+)->Result<(String,String),&'static str>{
+    let first=exact_ref(&parse_fixed_json(a)?,branch)?;
+    let second=exact_ref(&parse_fixed_json(b)?,branch)?;
+    if first!=second{return Err("FIN03_LIVE_REF_MOVED_DURING_READ");}
+    policy_shape(&parse_fixed_json(p)?,&parse_fixed_json(rules)?)?;
+    if p!=p_again||rules!=rules_again{
+        return Err("FIN03_LIVE_POLICY_MOVED_DURING_READ");
+    }
+    let mut hasher=Sha256::new();
+    hasher.update((p.len() as u64).to_le_bytes());
+    hasher.update(p);
+    hasher.update((rules.len() as u64).to_le_bytes());
+    hasher.update(rules);
+    Ok((first,format!("{:x}",hasher.finalize())))
+}
 fn blank(preview:&RemotePublicationPreflight)->LiveBranchPolicyEvidence{
     LiveBranchPolicyEvidence{
         schema_version:1,project_id:preview.project_id.clone(),
@@ -200,13 +220,9 @@ impl IdeWorkspaceRegistry {
             Ok((a,p,rules,b,p2,rules2))
         })?;
         let (a,p,r,b,p2,r2)=observed;
-        let live_a=exact_ref(&parse_fixed_json(&a)?,&before.local_branch)?;
-        let live_b=exact_ref(&parse_fixed_json(&b)?,&before.local_branch)?;
-        if live_a!=live_b{return Err("FIN03_LIVE_REF_MOVED_DURING_READ");}
-        policy_shape(&parse_fixed_json(&p)?,&parse_fixed_json(&r)?)?;
-        if p!=p2||r!=r2{
-            return Err("FIN03_LIVE_POLICY_MOVED_DURING_READ");
-        }
+        let (live_a,policy_digest)=reconcile_six_reads(
+            &before.local_branch,&a,&p,&r,&b,&p2,&r2,
+        )?;
         let after=self.review_github_remote_publication(project_id)?;
         if before.preview_evidence_sha256!=after.preview_evidence_sha256
             ||before.local_head!=after.local_head
@@ -227,7 +243,7 @@ impl IdeWorkspaceRegistry {
         out.branch_protection_observed=true;
         out.branch_rules_observed=true;
         out.policy_same_on_recheck=true;
-        out.policy_response_sha256=Some(fingerprint(&[p,r].concat()));
+        out.policy_response_sha256=Some(policy_digest);
         out.checked_unix_seconds=SystemTime::now()
             .duration_since(UNIX_EPOCH).map_err(|_|"FIN03_LIVE_CLOCK_INVALID")?
             .as_secs();
@@ -251,6 +267,31 @@ mod tests{
         assert!(exact_ref(&serde_json::json!({
             "ref":"refs/tags/main","object":{"type":"commit","sha":"a".repeat(40)}
         }),"main").is_err());
+    }
+    #[test]fn independent_live_ref_and_policy_reads_reject_move_and_partial(){
+        let ref_of=|s:&str|serde_json::to_vec(&serde_json::json!({
+            "ref":"refs/heads/main","object":{"type":"commit","sha":s}
+        })).unwrap();
+        let old=ref_of(&"a".repeat(40));
+        let new=ref_of(&"b".repeat(40));
+        let protection=serde_json::to_vec(&serde_json::json!({
+            "url":"https://api.github.com/repos/acme/widgets/branches/main/protection"
+        })).unwrap();
+        let rules=serde_json::to_vec(&serde_json::json!([{
+            "type":"pull_request","parameters":{"required_approving_review_count":2}
+        }])).unwrap();
+        let pass=reconcile_six_reads("main",&old,&protection,&rules,
+            &old,&protection,&rules).unwrap();
+        assert_eq!(pass.0,"a".repeat(40));
+        assert_eq!(pass.1.len(),64);
+        assert!(reconcile_six_reads("main",&old,&protection,&rules,
+            &new,&protection,&rules).is_err());
+        assert!(reconcile_six_reads("main",&old,&protection,&rules,
+            &old,b"{}",&rules).is_err());
+        assert!(reconcile_six_reads("main",&old,&protection,b"{}",
+            &old,&protection,b"{}").is_err());
+        assert!(reconcile_six_reads("main",&old,&protection,&rules,
+            &old,&protection,b"[]").is_err());
     }
     #[test]fn partial_or_missing_policy_is_unknown_not_approval(){
         assert!(policy_shape(&serde_json::json!({}),
