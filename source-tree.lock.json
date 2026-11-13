@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "88e34abd04e91c7ac14c20656673d3c7a5d59a3f",
-  "trackedFileCount": 984,
+  "sourceCommitBeforeLock": "9e9562c395ca36466189fd9a70cb1fba09330dd3",
+  "trackedFileCount": 987,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "f0e67ec8dddc99330df55e6ba892fdc1b1d6f841"
+      "blob": "294c0cdc41b34ada800d37d4979e1b6a7512779f"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -594,6 +594,10 @@
     {
       "path": "docs/LU_CI_TASK_GROUP_GATES_20261109.md",
       "blob": "69338481a7272999d7525a2762054b3579059f4e"
+    },
+    {
+      "path": "docs/LU_CORE01F_MERGE_CONSOLIDATION_20261112.md",
+      "blob": "8095fce3d0eba409a1353225549e90ae6892707a"
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
@@ -2206,6 +2210,14 @@
     {
       "path": "scripts/core01-verify-scope.test.mjs",
       "blob": "226dc38b4215e8df8297bbc378d580f0ef08637f"
+    },
+    {
+      "path": "scripts/core01f-merge-preflight.mjs",
+      "blob": "b4508116cedb7c20ea7ed16905f81a83bd2d78c5"
+    },
+    {
+      "path": "scripts/core01f-merge-preflight.test.mjs",
+      "blob": "48c0149fabd0ca6ea8de5b31e63faa1daa0012ed"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",

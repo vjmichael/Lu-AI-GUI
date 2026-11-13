@@ -45,6 +45,9 @@ jobs:
       - name: CORE-01D normal-chat and ANSF status source contracts
         if: hashFiles('lu-desktop/tests/core01d-normal-chat-boundary.test.mjs') != ''
         run: node --test lu-desktop/tests/core01d-normal-chat-boundary.test.mjs
+      - name: CORE-01F isolated read-only merge preflight source contracts
+        if: hashFiles('scripts/core01f-merge-preflight.test.mjs') != ''
+        run: node --test scripts/core01f-merge-preflight.test.mjs
       - name: Audit grouped-CI trigger policy and queue cleanup safety
         if: hashFiles('scripts/lu-ci-group-policy.mjs') != ''
         run: |
