@@ -1395,16 +1395,10 @@ mod tests {
     fn sealed_native_cargo_debug_root_is_exact_and_nested_paths_are_refused() {
         let mut linux = DapSession::new();
         linux.phase = DapPhase::Ready;
-        #[cfg(target_os = "linux")]
-        {
-            let message = linux.launch_verified_project("/debug-target/debug/fixture").unwrap();
-            assert!(String::from_utf8(message).unwrap().contains("/debug-target/debug/fixture"));
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            // The Linux path is not an absolute Windows executable.
-            assert!(linux.launch_verified_project("/debug-target/debug/fixture").is_err());
-        }
+        // The DAP wire constructor is platform-neutral. Only the native
+        // worker, source seal and Job/cgroup determine actual OS authority.
+        let message = linux.launch_verified_project("/debug-target/debug/fixture").unwrap();
+        assert!(String::from_utf8(message).unwrap().contains("/debug-target/debug/fixture"));
         for forbidden in [
             "/debug-target/debug/deps/fixture",
             "/debug-target/debug/../fixture",

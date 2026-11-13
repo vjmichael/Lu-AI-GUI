@@ -634,7 +634,10 @@ fn start_linux_dap_inner(
         }
         _ => return Err(SupervisorError::InvalidPlan),
     }
-    let executable = "lldb-dap";
+    // Genuine fixed-target probes established that the SHA-verified copied
+    // LLVM18 adapter launches only at the distro executable location.
+    // Keep reviewed bytes and overlay only inside the confined namespace.
+    const LLVM18_DAP_ENTRY: &str = "/usr/bin/lldb-dap-18";
     let args: &[&str] = &[];
     if plan.source_head != current_native_head
         || plan.input_snapshot_sha256 != input.seal.source_sha256
@@ -653,6 +656,15 @@ fn start_linux_dap_inner(
         return Err(SupervisorError::WrongProjectOrSource);
     }
     native_linux_lsp_trace("bundle_digest_verified");
+    // Require an existing root-owned non-writable LLVM18 distro entry.
+    // Never execute those host bytes: bind the verified bundle over it
+    // inside the already cgroup-contained and unprivileged Bubblewrap.
+    let distro_entry = fs::metadata(LLVM18_DAP_ENTRY).map_err(|_| denied())?;
+    if !distro_entry.is_file() || distro_entry.uid() != 0 || distro_entry.mode() & 0o022 != 0 {
+        return Err(denied());
+    }
+    let reviewed_adapter = release_root.join("bin/lldb-dap");
+    ensure_root_owned_tool(&reviewed_adapter)?;
     ensure_root_owned_tool(Path::new(BWRAP))?;
     native_linux_lsp_trace("root_owned_bwrap_verified");
     let group = make_cgroup(job_id, plan)?;
@@ -664,7 +676,7 @@ fn start_linux_dap_inner(
         .map_err(|_| denied())?;
     native_linux_lsp_trace("kernel_cgroup_procs_handle_open");
     let descriptor = proc_file.as_raw_fd();
-    let native_executable = format!("/ls/bin/{executable}");
+    let native_executable = LLVM18_DAP_ENTRY;
     let mut command = Command::new(BWRAP);
     command
         .env_clear()
@@ -690,6 +702,11 @@ fn start_linux_dap_inner(
         .arg("--ro-bind")
         .arg(release_root)
         .arg("/ls")
+        // Source: sealed root-owned host bundle. Destination: fixed guest
+        // distro LLVM18 path; no host OS change or uncontained fallback.
+        .arg("--ro-bind")
+        .arg(&reviewed_adapter)
+        .arg(LLVM18_DAP_ENTRY)
         .arg("--tmpfs")
         .arg("/tmp")
         .arg("--proc")

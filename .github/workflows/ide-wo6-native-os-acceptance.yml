@@ -129,6 +129,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed loader probe unit tests failed' }
           python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: copied adapter cannot initialize outside AppContainer; no native containment claim' }
+          # CI-only comparison using LocalState-shaped minimal variables
+          # outside AppContainer. Distinguishes environment construction from
+          # the genuine kernel token/ACL issue without granting new rights.
+          python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py --mirrored-env
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: mirrored environment diagnostic itself failed' }
       - name: Prepare exact offline MSVC and SDK for DEV-04.5B project build
         shell: pwsh
         run: |
