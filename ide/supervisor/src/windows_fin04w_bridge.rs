@@ -35,6 +35,14 @@ use windows_sys::Win32::{
 // Windows SDK WinNT.h SE_GROUP_INTEGRITY (not exported in windows-sys 0.61).
 // A mandatory integrity SID must carry this attribute, not ENABLED.
 const SE_GROUP_INTEGRITY_VALUE: u32 = 0x0000_0020;
+// Only fixed stage/category names, no SIDs, paths, token handles or raw
+// untrusted error strings. This is a disposable native acceptance diagnostic.
+fn stage(marker: &'static str) {
+    if std::env::var_os("GITHUB_ACTIONS").as_deref()
+        == Some(std::ffi::OsStr::new("true")) {
+        eprintln!("FIN04W_TOKEN_STAGE={marker}");
+    }
+}
 fn denied() -> SupervisorError {
     SupervisorError::NoContainment
 }
@@ -88,11 +96,13 @@ fn low_sid() -> Result<(Vec<usize>, u32), SupervisorError> {
 }
 
 fn verify_token(token: HANDLE, package_sid: windows_sys::Win32::Security::PSID) -> Result<(), SupervisorError> {
+    stage("verify_token_start");
     if package_sid.is_null() || unsafe { IsValidSid(package_sid) } == 0
         || unsafe { IsTokenRestricted(token) } == 0
     {
         return Err(denied());
     }
+    stage("verify_token_restricted_present");
     let mut group_len=0u32;
     unsafe { GetTokenInformation(token, TokenRestrictedSids, ptr::null_mut(), 0, &mut group_len); }
     if group_len < size_of::<TOKEN_GROUPS>() as u32 || group_len > 4096 {
@@ -108,8 +118,10 @@ fn verify_token(token: HANDLE, package_sid: windows_sys::Win32::Security::PSID) 
     }
     let groups=unsafe { &*(group_data.as_ptr() as *const TOKEN_GROUPS) };
     if groups.GroupCount != 2 {
+        stage("verify_token_restricting_sid_count_mismatch");
         return Err(denied());
     }
+    stage("verify_token_restricting_sid_count_two");
     let entries=unsafe { std::slice::from_raw_parts(groups.Groups.as_ptr(), 2) };
     let expected_global = any_package_sid()?;
     let global_sid = expected_global.as_ptr().cast_mut().cast();
@@ -119,8 +131,10 @@ fn verify_token(token: HANDLE, package_sid: windows_sys::Win32::Security::PSID) 
         && unsafe { EqualSid(g.Sid,global_sid) }!=0);
     if !found_package || !found_global
         || unsafe { EqualSid(package_sid,global_sid) } != 0 {
+        stage("verify_token_restricting_sid_identity_mismatch");
         return Err(denied());
     }
+    stage("verify_token_restricting_sid_identities_verified");
     let mut appcontainer = 1_u32;
     let mut read = 0_u32;
     if unsafe {
@@ -131,6 +145,7 @@ fn verify_token(token: HANDLE, package_sid: windows_sys::Win32::Security::PSID) 
     } == 0 || read != size_of::<u32>() as u32 || appcontainer != 0 {
         return Err(denied());
     }
+    stage("verify_token_non_appcontainer_verified");
     let (sid, _) = low_sid()?;
     let mut size = 0u32;
     unsafe {
@@ -155,6 +170,7 @@ fn verify_token(token: HANDLE, package_sid: windows_sys::Win32::Security::PSID) 
     {
         return Err(denied());
     }
+    stage("verify_token_low_integrity_verified");
     Ok(())
 }
 
@@ -175,6 +191,7 @@ impl RestrictedPrimaryToken {
         if package_sid.is_null() || unsafe { IsValidSid(package_sid) } == 0 {
             return Err(denied());
         }
+        stage("open_owner_primary_token_start");
         let mut original = ptr::null_mut();
         if unsafe {
             OpenProcessToken(
@@ -186,6 +203,7 @@ impl RestrictedPrimaryToken {
         } == 0 {
             return Err(denied());
         }
+        stage("open_owner_primary_token_success");
         let original = OwnedToken(original);
         // Actual original per-job AppContainer SID controls access to the
         // exact package LocalState files. Global All Application Packages
@@ -198,6 +216,7 @@ impl RestrictedPrimaryToken {
             SID_AND_ATTRIBUTES { Sid: package_sid, Attributes: 0 },
             SID_AND_ATTRIBUTES { Sid: any_package_sid.as_mut_ptr().cast(), Attributes: 0 },
         ];
+        stage("create_restricted_token_start");
         let mut restricted = ptr::null_mut();
         if unsafe {
             CreateRestrictedToken(
@@ -210,6 +229,7 @@ impl RestrictedPrimaryToken {
         } == 0 {
             return Err(denied());
         }
+        stage("create_restricted_token_success");
         let restricted = OwnedToken(restricted);
         let (sid, sid_length) = low_sid()?;
         let mut label = TOKEN_MANDATORY_LABEL::default();
@@ -225,7 +245,9 @@ impl RestrictedPrimaryToken {
         } == 0 {
             return Err(denied());
         }
+        stage("assign_low_integrity_success");
         verify_token(restricted.0, package_sid)?;
+        stage("restricted_primary_ready");
         Ok(Self(restricted))
     }
     pub(crate) fn raw(&self) -> HANDLE {

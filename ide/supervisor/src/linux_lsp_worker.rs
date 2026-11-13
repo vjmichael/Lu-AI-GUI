@@ -875,6 +875,10 @@ impl LinuxDapSession {
     pub fn configuration_needed(&self) -> bool {
         self.gateway.configuration_needed()
     }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn ci_configuration_done_acknowledged(&self) -> bool {
+        self.gateway.ci_configuration_done_acknowledged()
+    }
     pub fn configuration_done(&mut self) -> Result<(), SupervisorError> {
         self.gateway.configuration_done()
     }

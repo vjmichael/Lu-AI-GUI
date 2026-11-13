@@ -375,8 +375,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Fixed booleans only; never forward adapter output, process
                 // identity, source bytes or an unverified OS stop.
                 eprintln!(
-                    "FIN04_D3_LINUX_DAP_STOP_REFUSAL launch_ack={};config_event={};continued={};stopped={};threads={};stack={};phase={:?}",
-                    launch_acknowledged, config_requested, native_continued,
+                    "FIN04_D3_LINUX_DAP_STOP_REFUSAL launch_ack={};config_event={};config_ack={};continued={};stopped={};threads={};stack={};phase={:?}",
+                    launch_acknowledged, config_requested,
+                    dap.ci_configuration_done_acknowledged(), native_continued,
                     stopped.is_some(), threads, stack, dap.phase(),
                 );
                 return Err("DENIED: real project debug stop/stack absent".into());

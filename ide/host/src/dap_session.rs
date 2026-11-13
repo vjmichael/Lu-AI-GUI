@@ -131,6 +131,8 @@ pub struct DapSession {
     initialized_event: bool,
     launch_sent: bool,
     configuration_done_sent: bool,
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    configuration_done_acknowledged: bool,
     // Ephemeral, untrusted adapter coordinates; NEVER a symbol-line proof.
     last_source_candidate: Option<SourceLineCandidate>,
     #[cfg(feature = "dev046c-ci-control")]
@@ -155,6 +157,8 @@ impl DapSession {
             initialized_event: false,
             launch_sent: false,
             configuration_done_sent: false,
+            #[cfg(feature = "dev045d3-ci-source-trap")]
+            configuration_done_acknowledged: false,
             last_source_candidate: None,
             #[cfg(feature = "dev046c-ci-control")]
             ci_control: None,
@@ -327,6 +331,10 @@ impl DapSession {
     /// Read-only pending signal for adapters that emit initialized immediately
     /// after the response (even before the fixed launch is sent). The trusted
     /// native host may examine this after launch; no DAP instruction is sent.
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    pub fn ci_configuration_done_acknowledged(&self) -> bool {
+        self.configuration_done_acknowledged
+    }
     pub fn configuration_needed(&self) -> bool {
         self.launch_sent
             && self.initialized_event
@@ -728,6 +736,10 @@ impl DapSession {
                                 DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped
                             ) =>
                     {
+                        #[cfg(feature = "dev045d3-ci-source-trap")]
+                        {
+                            self.configuration_done_acknowledged = true;
+                        }
                         Ok(None)
                     }
                     "threads" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
