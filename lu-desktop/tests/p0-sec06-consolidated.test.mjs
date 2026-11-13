@@ -498,16 +498,16 @@ test('SEC06C reviewed Linux workers have no same-UID guardian or mutable-profile
   const oracle=readFileSync(join(root,'src-tauri/lu-core/src/agent_os_custody.rs'),'utf8');
   for(const legacy of [/LinuxCgroupCustodian/,/LinuxOwnedGroupGuardian/,
     /bind_worker_to_cgroup_before_exec/,/spawn_if_delegated/,
-    /worker\\.cgroup/,/worker\\.guardian/]){
+    /worker\.cgroup/,/worker\.guardian/]){
     assert.doesNotMatch(host,legacy,'retired guardian still launches production workers');
   }
-  assert.match(host,/self\\.profile\\.is_some\\(\\)\\&\\&native_candidate/);
-  assert.match(host,/os_owned_git_spawn\\.is_none\\(\\)/);
-  assert.match(host,/os_owned_probe_spawn\\.is_none\\(\\)/);
-  assert.match(host,/os_owned_native_spawn\\.is_none\\(\\)/);
+  assert.match(host,/self\.profile\.is_some\(\)\&\&native_candidate/);
+  assert.match(host,/os_owned_git_spawn\.is_none\(\)/);
+  assert.match(host,/os_owned_probe_spawn\.is_none\(\)/);
+  assert.match(host,/os_owned_native_spawn\.is_none\(\)/);
   assert.match(host,/BackgroundProcessError::SpawnFailed/);
   assert.match(oracle,/linux_os_owned_git_original_receipt/);
   assert.match(oracle,/linux_os_owned_probe_original_receipt/);
   assert.match(oracle,/linux_os_owned_native_original_receipt/);
-  assert.doesNotMatch(oracle,/lu-cgroup-os-\\{turn\\}-\\{call\\}\\.receipt/);
+  assert.doesNotMatch(oracle,/lu-cgroup-os-\{turn\}-\{call\}\.receipt/);
 });
