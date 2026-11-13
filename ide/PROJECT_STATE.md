@@ -1,5 +1,14 @@
 # Lu IDE — Current project state (authoritative handoff)
 
+## FIN-03 / Group 6E-05A — separate protected remote-publication preflight (Nov 13, 2026)
+
+**Next unblocked task while FIN-04W2-C remains denied.** Independent branch `ide/fin03-6e05-protected-remote-preflight-20261113` is based on the existing `ide/fin01d-custody-closeout-20261112` head, **not** FIN-04 PR #227. Implemented a native-only, read-only publication candidate for a registered ordinary local Git checkout, with canonical same-origin GitHub identity, exact branch/HEAD/index SHA, cached remote-tracking commit, clean/dirty/conflict and foreign-lock checks, source reobservation and conservative local ancestry. Even a locally fast-forwardable branch is NOT live remote-ref evidence. Every review explicitly denies remote execution, credentials, OS approval, publication success and installed acceptance. Added Rust real-Git fixtures and frontend source-boundary tests. **No CI/native/compiler run or physical consent is claimed at this commit.** Detailed scope: `ide/docs/IDE_FIN03E05_REMOTE_PUBLICATION_PREFLIGHT.md`.
+
+FIN-04W2-C remains **BLOCKED** separately. Actual original run [#43483699020](https://github.com/vjmichael/Lu-AI-GUI/actions/runs/43483699020) had Windows/Linux compiler/authorization unit PASS, W2-A/B OS tests PASS, but its genuine Windows original host denied `SUPERVISOR_OS_CONTAINMENT_NOT_VERIFIED` after restricted SCM READY, WFP filter and original Prepared receipt. The six-phase native transaction and service one-use receipt are **NOT ACCEPTED**. No LLDB, W2-D, NSIS installation or production debugger grant is authorized. A later W2-C repair must use its own branch and exact-head native receipts.
+
+**Next 6E-05 work:** host-authenticated credential design and independently verified current remote ref/ruleset observation, separate per-use OS consent, fsynced remote update receipts and restart/cancellation/competing-writer denial. Group 6F consolidated Git security/recovery and 6G native/installed acceptance follow; physical-user approval remains separate. Local desktop/worktree/Delivered inspection: **UNKNOWN, NOT INSPECTED** from remote GitHub tool access.
+
+
 ## Group 6B-05 — installed commit/amend and independent Git recovery (Nov 10, 2026)
 
 Built a disposable real-Git integrity oracle and 12 cross-platform adversarial tests,
