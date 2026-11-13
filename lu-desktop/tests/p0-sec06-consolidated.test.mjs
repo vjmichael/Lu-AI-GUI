@@ -80,6 +80,21 @@ test('SEC06 Linux original Core suite receives absolute host-pinned Git without 
   assert.equal(section.includes('--skip-ancestor-migration'),false);
 });
 
+test('SEC06C root-owned boundary prototype must deny external same-UID migration and use OS group cleanup',()=>{
+  const prototype=readFileSync(join(root,'benchmarks/e1/sec06c_root_owned_systemd_boundary.py'),'utf8');
+  assert.match(prototype,/--property=Delegate=no/);
+  assert.match(prototype,/--property=KillMode=control-group/);
+  assert.match(prototype,/os\.get(e)?uid\(\) == 0/);
+  assert.match(prototype,/start_new_session=True/);
+  assert.match(prototype,/parent \/ "cgroup\.procs"/);
+  assert.match(prototype,/signal\.pidfd_send_signal\(mainfd, signal\.SIGKILL\)/);
+  assert.match(prototype,/pidfd_terminated\(childfd, 15\)/);
+  assert.match(prototype,/SEC06C_ANCESTOR_ESCAPE_SUCCEEDED/);
+  assert.match(prototype,/noReleaseOrInstallAuthority/);
+  assert.match(gate,/linux-root-owned-unit-prototype/);
+  assert.match(gate,/linux-ancestor-migration/);
+});
+
 test('SEC06C original ancestor escape forbids a false positive receipt even with real delegation',()=>{
   const helper=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs'),'utf8');
   const native=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/lib.rs'),'utf8');
@@ -148,6 +163,7 @@ test('SEC06 verifier rejects changed original native log with correct head and l
     const required=[
       'exact-head-inventory','security-contracts','sec06-js-syntax',
       'linux-negative-python-syntax','linux-host-crash-python-syntax','linux-delegated-python-syntax',
+      'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
       'core-native-full','desktop-ansf-native','worker-job-native',
       'core-sec-regressions','desktop-sec-regressions',
       'worker-sec-regressions',

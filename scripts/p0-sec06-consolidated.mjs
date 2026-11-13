@@ -152,6 +152,9 @@ function sourceCases(){
     doCase('linux-delegated-python-syntax','python3',[
       '-m','py_compile','scripts/sec06-linux-delegated-runner.py'
     ],{timeout:30000});
+    doCase('linux-root-owned-prototype-syntax','python3',[
+      '-m','py_compile','benchmarks/e1/sec06c_root_owned_systemd_boundary.py'
+    ],{timeout:30000});
   }
 }
 function rustCases(){
@@ -240,10 +243,12 @@ if(mode==='verify'){
         }
         const required={
           source:['exact-head-inventory','security-contracts',
-                  'sec06-js-syntax','linux-delegated-python-syntax'],
+                  'sec06-js-syntax','linux-delegated-python-syntax',
+                  'linux-root-owned-prototype-syntax'],
           linux:['exact-head-inventory','security-contracts',
                  'sec06-js-syntax','linux-negative-python-syntax',
                  'linux-host-crash-python-syntax','linux-delegated-python-syntax',
+                 'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
                  'core-native-full','desktop-ansf-native','worker-job-native',
                  'core-sec-regressions','desktop-sec-regressions',
                  'worker-sec-regressions',
@@ -327,6 +332,20 @@ if(mode==='verify'){
             reject('original compiled first-party helper binaries not found');
           }else{
             const env={...process.env,LU_AGENT01L_TEST_CGROUP_GUARD:helper};
+            // Additional independent OS-owned candidate boundary: the
+            // system manager retains the cgroup root, so an equal-UID
+            // external attacker must not be able to write ancestor.procs.
+            // This is an engineering prototype, NOT original Lu custody
+            // acceptance; the original destructive fixtures remain below.
+            doCase('linux-root-owned-unit-prototype','python3',[
+              'benchmarks/e1/sec06c_root_owned_systemd_boundary.py',
+              '--outer','--expected-sha',currentHead,
+              '--evidence',join(evidence,'kernel-root-owned')
+            ],{
+              timeout:180000,env,
+              mustContain:['SEC06C_ROOT_OWNED_UNIT_KERNEL_PROTOTYPE_PASS=1'],
+              mustReject:['SEC06C_ROOT_OWNED_BOUNDARY_BLOCKED']
+            });
             doCase('linux-original-host-sigkill','python3',[
               'benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py',
               '--guard',helper,'--parent',crashHost
