@@ -185,6 +185,52 @@ fn any_package_sid() -> Result<Vec<usize>, SupervisorError> {
     }
     Ok(any_package_sid)
 }
+// CI-only discriminating probe for ERROR_INVALID_PARAMETER from the exact
+// token request. These temporary handles are *never* used for execution,
+// impersonation, ACL changes or as a process-creation fallback. A successful
+// call proves only that Windows accepted that input combination.
+fn ci_compare_restricted_token_inputs(
+    source: HANDLE,
+    package_sid: windows_sys::Win32::Security::PSID,
+    global_sid: windows_sys::Win32::Security::PSID,
+) {
+    if std::env::var_os("GITHUB_ACTIONS").as_deref()
+        != Some(std::ffi::OsStr::new("true")) {
+        return;
+    }
+    let package_only = [SID_AND_ATTRIBUTES { Sid: package_sid, Attributes: 0 }];
+    let global_only = [SID_AND_ATTRIBUTES { Sid: global_sid, Attributes: 0 }];
+    let both = [
+        SID_AND_ATTRIBUTES { Sid: package_sid, Attributes: 0 },
+        SID_AND_ATTRIBUTES { Sid: global_sid, Attributes: 0 },
+    ];
+    for (label, flags, entries) in [
+        ("no_restricting_sids", DISABLE_MAX_PRIVILEGE | LUA_TOKEN, &[][..]),
+        ("package_sid_only", DISABLE_MAX_PRIVILEGE | LUA_TOKEN, &package_only[..]),
+        ("all_packages_only", DISABLE_MAX_PRIVILEGE | LUA_TOKEN, &global_only[..]),
+        // Diagnosis only. Never substitute this weaker LUA-free token.
+        ("two_sids_without_lua", DISABLE_MAX_PRIVILEGE, &both[..]),
+    ] {
+        let mut observed = ptr::null_mut();
+        let ok = unsafe {
+            CreateRestrictedToken(
+                source, flags, 0, ptr::null_mut(), 0, ptr::null_mut(),
+                entries.len() as u32,
+                if entries.is_empty() { ptr::null() } else { entries.as_ptr() },
+                &mut observed,
+            )
+        } != 0;
+        // Do not retain any diagnostic token; never launch from it.
+        if !observed.is_null() {
+            unsafe { CloseHandle(observed); }
+        }
+        eprintln!(
+            "FIN04W_TOKEN_INPUT_CONTROL_{label}={}",
+            if ok { "accepted_no_authority" } else { "rejected" }
+        );
+    }
+}
+
 pub(crate) struct RestrictedPrimaryToken(OwnedToken);
 impl RestrictedPrimaryToken {
     pub(crate) fn create(package_sid: windows_sys::Win32::Security::PSID) -> Result<Self, SupervisorError> {
@@ -233,6 +279,11 @@ impl RestrictedPrimaryToken {
             // create a less-restricted child as a fallback.
             let error = unsafe { GetLastError() };
             stage("create_restricted_token_denied");
+            if error == 87 {
+                ci_compare_restricted_token_inputs(
+                    original.0, package_sid, any_package_sid.as_mut_ptr().cast(),
+                );
+            }
             let kind = match error {
                 5 => "access_denied",
                 6 => "invalid_input_handle",
