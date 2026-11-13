@@ -375,6 +375,8 @@ fn valid_change(previous: Option<JobPhase>, next: JobPhase) -> bool {
             | (Some(JobPhase::Running), JobPhase::Completed)
             | (Some(JobPhase::Running), JobPhase::Failed)
             | (Some(JobPhase::Running), JobPhase::RecoveryRequired)
+            | (Some(JobPhase::CancelRequested), JobPhase::ReleasePending)
+            | (Some(JobPhase::ReleasePending), JobPhase::Cancelled)
             | (Some(JobPhase::CancelRequested), JobPhase::Cancelled)
             | (Some(JobPhase::CancelRequested), JobPhase::Uncertain)
             | (Some(JobPhase::CancelRequested), JobPhase::RecoveryRequired)
@@ -1124,6 +1126,16 @@ impl Supervisor {
         if !matches!(job.phase, JobPhase::Running | JobPhase::ReleasePending) {
             return Err(SupervisorError::InvalidTransition);
         }
+        // A cancellation has its own verified terminal after SCM ACK. It may
+        // never be mislabeled Completed/Failed through the output path.
+        if job.phase == JobPhase::ReleasePending
+            && state.receipts.last().is_some_and(|receipt|
+                receipt.body.job_id == job_id
+                    && receipt.body.outcome_code == "os_cancel_tree_reaped_service_release_pending"
+            )
+        {
+            return Err(SupervisorError::InvalidTransition);
+        }
         if !tree_reaped || !outputs_bounded {
             self.append(
                 &mut state,
@@ -1262,6 +1274,87 @@ impl Supervisor {
         })
     }
 
+    /// FIN-01D: protected cancellation cannot report a durable Cancelled
+    /// terminal before the independent SCM/Job holder has fsynced its release
+    /// ACK. Existing Linux/non-service cancellation keeps its separate path.
+    fn cancel_running_with_service_release_pending(
+        &self,
+        job_id: &str,
+        broker: &mut impl NativeTreeTerminator,
+    ) -> Result<JobSummary, SupervisorError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
+        if job.phase != JobPhase::Running {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        self.append(
+            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
+            JobPhase::CancelRequested, "cancel_requested_before_os_kill",
+            "tree_termination_pending",
+        )?;
+        state.jobs.get_mut(job_id).unwrap().phase = JobPhase::CancelRequested;
+        let killed = broker.terminate_and_verify_tree(job_id, &job.plan_hash);
+        let (phase, code) = if matches!(killed, Ok(true)) {
+            (JobPhase::ReleasePending, "os_cancel_tree_reaped_service_release_pending")
+        } else {
+            (JobPhase::Uncertain, "os_termination_not_verified")
+        };
+        self.append(
+            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
+            phase, code, "native_supervisor_tree_kill_evidence",
+        )?;
+        state.jobs.get_mut(job_id).unwrap().phase = phase;
+        if phase == JobPhase::Uncertain {
+            state.quarantine.insert(job_id.to_owned());
+        }
+        Ok(JobSummary {
+            job_id: job_id.to_owned(),
+            project_id: job.plan.project_id,
+            plan_sha256: job.plan_hash,
+            phase,
+            requires_reconciliation: phase == JobPhase::Uncertain,
+            execution_verified: false,
+        })
+    }
+
+    /// Called only after the original protected lease returned a verified
+    /// empty-Job, fsynced service release ACK. No frontend can call this.
+    fn native_finish_cancelled_after_service_release(
+        &self,
+        job_id: &str,
+    ) -> Result<JobSummary, SupervisorError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SupervisorError::JournalUnavailable)?;
+        let job = state.jobs.get(job_id).ok_or(SupervisorError::NoSuchJob)?.clone();
+        let exact_cancel_intent = state.receipts.last().is_some_and(|last|
+            last.body.job_id == job_id
+                && last.body.phase == JobPhase::ReleasePending
+                && last.body.outcome_code == "os_cancel_tree_reaped_service_release_pending"
+        );
+        if job.phase != JobPhase::ReleasePending || !exact_cancel_intent {
+            return Err(SupervisorError::InvalidTransition);
+        }
+        self.append(
+            &mut state, job_id, &job.plan.project_id, &job.plan_hash,
+            JobPhase::Cancelled, "native_cancel_service_release_verified",
+            "tree_empty_and_independent_service_ack",
+        )?;
+        state.jobs.get_mut(job_id).unwrap().phase = JobPhase::Cancelled;
+        Ok(JobSummary {
+            job_id: job_id.to_owned(),
+            project_id: job.plan.project_id,
+            plan_sha256: job.plan_hash,
+            phase: JobPhase::Cancelled,
+            requires_reconciliation: false,
+            execution_verified: false,
+        })
+    }
+
     /// D7D protected recovery phase 1: write durable RecoveryRequired BEFORE
     /// asking the service to relinquish its independently-held Job handle.
     /// This never clears quarantine and never authorizes further execution.
@@ -1284,7 +1377,8 @@ impl Supervisor {
         }
         if !matches!(
             job.phase,
-            JobPhase::AdmissionPending | JobPhase::Running | JobPhase::CancelRequested
+            JobPhase::AdmissionPending | JobPhase::Running
+                | JobPhase::ReleasePending | JobPhase::CancelRequested
         ) {
             return Err(SupervisorError::InvalidTransition);
         }
@@ -1323,7 +1417,8 @@ impl Supervisor {
         }
         if matches!(
             job.phase,
-            JobPhase::AdmissionPending | JobPhase::Running | JobPhase::CancelRequested
+            JobPhase::AdmissionPending | JobPhase::Running
+                | JobPhase::ReleasePending | JobPhase::CancelRequested
         ) {
             self.append(
                 &mut state,
@@ -1804,6 +1899,33 @@ mod tests {
         drop(restarted);
         fs::remove_file(p).unwrap();
     }
+    #[cfg(all(windows, feature = "protected-recovery-service"))]
+    #[test]
+    fn protected_release_pending_reenters_recovery_without_invented_scm_ack() {
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        drop(supervisor);
+        let interrupted = Supervisor::open(filename.clone()).unwrap();
+        assert!(interrupted.inspect().unwrap()[0].requires_reconciliation);
+        interrupted.mark_protected_recovery_pending(&job.job_id).unwrap();
+        let rows = interrupted.inspect().unwrap();
+        assert_eq!(rows[0].phase, JobPhase::RecoveryRequired);
+        assert!(rows[0].requires_reconciliation);
+        assert_eq!(interrupted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        drop(interrupted);
+        let restarted = Supervisor::open(filename.clone()).unwrap();
+        assert_eq!(restarted.inspect().unwrap()[0].phase, JobPhase::RecoveryRequired);
+        assert!(restarted.inspect().unwrap()[0].requires_reconciliation);
+        drop(restarted);
+        fs::remove_file(filename).unwrap();
+    }
+
     #[test]
     fn persisted_receipts_survive_restart_but_grants_do_not() {
         let p = path();
@@ -1886,6 +2008,181 @@ mod tests {
         .unwrap();
         state.jobs.get_mut(&job.job_id).unwrap().phase = JobPhase::Running;
     }
+    #[test]
+    fn protected_cancellation_waits_for_distinct_fsynced_release_receipt() {
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        let mut killer = TestTerminator { verified: true, requests: 0 };
+        let pending = supervisor
+            .cancel_running_with_service_release_pending(&job.job_id, &mut killer)
+            .unwrap();
+        assert_eq!(killer.requests, 1);
+        assert_eq!(pending.phase, JobPhase::ReleasePending);
+        assert_eq!(
+            supervisor.native_finish(&job.job_id, true, true, true).unwrap_err(),
+            SupervisorError::InvalidTransition
+        );
+        drop(supervisor);
+        let interrupted = Supervisor::open(filename.clone()).unwrap();
+        assert!(interrupted.inspect().unwrap()[0].requires_reconciliation);
+        assert_eq!(interrupted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        drop(interrupted);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn verified_cancel_service_release_must_be_a_separate_terminal_transition() {
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        let mut killer = TestTerminator { verified: true, requests: 0 };
+        supervisor
+            .cancel_running_with_service_release_pending(&job.job_id, &mut killer)
+            .unwrap();
+        // Mock-only: the caller supplies the absent real SCM ACK boundary.
+        let finished = supervisor
+            .native_finish_cancelled_after_service_release(&job.job_id)
+            .unwrap();
+        assert_eq!(finished.phase, JobPhase::Cancelled);
+        drop(supervisor);
+        let reopened = Supervisor::open(filename.clone()).unwrap();
+        assert_eq!(reopened.inspect().unwrap()[0].phase, JobPhase::Cancelled);
+        assert!(!reopened.inspect().unwrap()[0].requires_reconciliation);
+        drop(reopened);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn interrupted_release_clears_quarantine_only_on_verified_os_tree_cleanup() {
+        // The mock is NOT a native kernel witness; this tests the exact
+        // original-journal phase transition and prohibits replayed grants.
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        drop(supervisor);
+        let restarted = Supervisor::open(filename.clone()).unwrap();
+        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        let mut verified = TestTerminator { verified: true, requests: 0 };
+        let result = restarted.reconcile_interrupted_with(&job.job_id, &mut verified).unwrap();
+        assert_eq!(verified.requests, 1);
+        assert_eq!(result.phase, JobPhase::Cancelled);
+        assert!(!result.requires_reconciliation);
+        let history = restarted.receipt_history(&job.job_id).unwrap();
+        assert_eq!(history[history.len() - 2].body.phase, JobPhase::RecoveryRequired);
+        assert_eq!(history.last().unwrap().body.phase, JobPhase::Cancelled);
+        assert_eq!(
+            restarted.record_human_approval(
+                &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+            ).unwrap_err(),
+            SupervisorError::InvalidTransition
+        );
+        assert!(restarted.prepare(plan()).is_ok());
+        drop(restarted);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn interrupted_release_requires_independent_os_cleanup_before_reconciliation() {
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        drop(supervisor);
+        let restarted = Supervisor::open(filename.clone()).unwrap();
+        let mut unverified = TestTerminator { verified: false, requests: 0 };
+        let result = restarted.reconcile_interrupted_with(&job.job_id, &mut unverified).unwrap();
+        assert_eq!(unverified.requests, 1);
+        assert_eq!(result.phase, JobPhase::Uncertain);
+        assert!(result.requires_reconciliation);
+        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        drop(restarted);
+        let replay = Supervisor::open(filename.clone()).unwrap();
+        assert_eq!(replay.inspect().unwrap()[0].phase, JobPhase::Uncertain);
+        assert!(replay.inspect().unwrap()[0].requires_reconciliation);
+        drop(replay);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn interrupted_protected_release_is_quarantined_on_journal_restart() {
+        // An SCM ACK is NOT a journal terminal. A host crash after release
+        // intent but before the terminal receipt must preserve uncertainty.
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        let live = supervisor.inspect().unwrap();
+        assert_eq!(live[0].phase, JobPhase::ReleasePending);
+        let receipts = supervisor.receipt_history(&job.job_id).unwrap();
+        assert_eq!(receipts.last().unwrap().body.phase, JobPhase::ReleasePending);
+        drop(supervisor);
+
+        let restarted = Supervisor::open(filename.clone()).unwrap();
+        let jobs = restarted.inspect().unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].phase, JobPhase::ReleasePending);
+        assert!(jobs[0].requires_reconciliation);
+        assert_eq!(restarted.prepare(plan()).unwrap_err(), SupervisorError::Quarantined);
+        assert_eq!(
+            restarted.record_human_approval(
+                &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+            ).unwrap_err(),
+            SupervisorError::Quarantined
+        );
+        drop(restarted);
+        fs::remove_file(filename).unwrap();
+    }
+
+    #[test]
+    fn protected_release_terminal_is_a_distinct_durable_receipt() {
+        // Source-level transition only: no test substitutes for an SCM ACK.
+        let filename = path();
+        let supervisor = Supervisor::open(filename.clone()).unwrap();
+        let job = supervisor.prepare(plan()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &"b".repeat(40), true
+        ).unwrap();
+        inject_running(&supervisor, &job);
+        supervisor.native_mark_release_pending(&job.job_id).unwrap();
+        assert_eq!(
+            supervisor.native_finish(&job.job_id, true, true, true).unwrap().phase,
+            JobPhase::Completed
+        );
+        let history = supervisor.receipt_history(&job.job_id).unwrap();
+        let phases: Vec<_> = history.iter().rev().take(2)
+            .map(|receipt| receipt.body.phase).collect();
+        assert_eq!(phases, vec![JobPhase::Completed, JobPhase::ReleasePending]);
+        drop(supervisor);
+        let reopened = Supervisor::open(filename.clone()).unwrap();
+        let jobs = reopened.inspect().unwrap();
+        assert_eq!(jobs[0].phase, JobPhase::Completed);
+        assert!(!jobs[0].requires_reconciliation);
+        drop(reopened);
+        fs::remove_file(filename).unwrap();
+    }
+
     #[test]
     fn published_output_digest_is_bound_to_durable_terminal_receipt() {
         let filename = path();

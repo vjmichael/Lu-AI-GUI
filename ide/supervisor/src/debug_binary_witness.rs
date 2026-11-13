@@ -35,7 +35,12 @@ pub struct DebugBinaryWitness {
 
 fn candidate(entry: &ArtifactEntry) -> bool {
     let p = entry.relative_path.as_str();
-    let Some(base) = p.strip_prefix("target/debug/") else {
+    // The sealed Windows worker sets CARGO_TARGET_DIR directly to its output
+    // root, yielding debug/<bin>.exe rather than target/debug/<bin>.exe.
+    // Only these exact two fixed Cargo layouts are accepted; nested deps
+    // binaries are still excluded, and multiple root candidates deny.
+    let Some(base) = p.strip_prefix("target/debug/")
+        .or_else(|| p.strip_prefix("debug/")) else {
         return false;
     };
     if base.is_empty()
@@ -272,6 +277,19 @@ pub fn audit_debug_binary_candidate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn sealed_windows_cargo_target_dir_uses_exact_debug_root() {
+        let candidate_at = |name: &str| ArtifactEntry {
+            relative_path: name.into(), bytes: 16, sha256: "a".repeat(64)
+        };
+        assert!(candidate(&candidate_at("debug/fixture.exe")));
+        assert!(candidate(&candidate_at("target/debug/fixture.exe")));
+        assert!(!candidate(&candidate_at("debug/deps/fixture-hash.exe")));
+        assert!(!candidate(&candidate_at("debug/fixture.pdb")));
+        assert!(!candidate(&candidate_at("release/fixture.exe")));
+        assert!(!candidate(&candidate_at("other/debug/fixture.exe")));
+    }
     #[test]
     fn only_direct_compiled_binary_names() {
         assert!(!candidate(&ArtifactEntry {

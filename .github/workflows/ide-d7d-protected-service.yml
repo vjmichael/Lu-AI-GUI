@@ -29,9 +29,15 @@ jobs:
         run: |
           rustup toolchain install 1.88.0 --profile minimal
           rustup override set 1.88.0
-          cargo check --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --all-targets
-          cargo test --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --lib
+          $ErrorActionPreference='Stop'
+          # Debug-control evidence fixtures require the original DAP feature;
+          # do not run them with a deliberately invalid DAP JobPlan.
+          cargo check --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service,dap-transport --all-targets
+          if ($LASTEXITCODE -ne 0) { throw 'D7D_WINDOWS_ALL_TARGETS_COMPILER_FAILED' }
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service,dap-transport --lib
+          if ($LASTEXITCODE -ne 0) { throw 'D7D_WINDOWS_FULL_RUST_REGRESSION_FAILED' }
           cargo build --manifest-path ide/supervisor/Cargo.toml --features protected-recovery-service --bin windows_recovery_service --bin windows_null_service_bootstrap --bin d7d_service_smoke_fixture
+          if ($LASTEXITCODE -ne 0) { throw 'D7D_NATIVE_SCM_EXE_COMPILER_FAILED' }
       - name: Parse pinned protected installer before privileged execution
         shell: pwsh
         run: |

@@ -499,17 +499,26 @@ impl Drop for DapGateway {
             };
             // Record CancelRequested BEFORE OS termination; a failed
             // descendant kill leaves Uncertain and blocks later admissions.
-            if self
-                .supervisor
-                .cancel_running_with(&self.job_id, &mut broker)
-                .is_ok()
+            match self.supervisor
+                .cancel_running_with_service_release_pending(&self.job_id, &mut broker)
             {
-                if process.release_after_verified_terminal().is_err() {
+                Ok(summary) if summary.phase == JobPhase::ReleasePending => {
+                    if process.release_after_verified_terminal().is_ok() {
+                        if self.supervisor
+                            .native_finish_cancelled_after_service_release(&self.job_id)
+                            .is_err()
+                        {
+                            let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
+                        }
+                    } else {
+                        let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
+                    }
+                }
+                Ok(_) => {} // Uncertain kill already has its quarantine receipt.
+                Err(_) => {
+                    let _ = process.terminate_tree_and_verify();
                     let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
                 }
-            } else {
-                let _ = process.terminate_tree_and_verify();
-                let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
             }
         }
     }
@@ -563,6 +572,7 @@ mod tests {
         pending: Mutex<VecDeque<Vec<u8>>>,
         terminated: Mutex<usize>,
         released: Mutex<usize>,
+        fail_release: Mutex<bool>,
     }
     struct Mock {
         shared: Arc<Fixture>,
@@ -586,6 +596,9 @@ mod tests {
             Ok(true)
         }
         fn release_after_verified_terminal(&mut self) -> Result<(), SupervisorError> {
+            if *self.shared.fail_release.lock().unwrap() {
+                return Err(SupervisorError::NoContainment);
+            }
             *self.shared.released.lock().unwrap() += 1;
             Ok(())
         }
@@ -611,6 +624,44 @@ mod tests {
         drop(supervisor);
         let _ = std::fs::remove_file(journal);
     }
+    #[test]
+    fn dropped_dap_requires_original_scm_release_ack_or_recovery_quarantine() {
+        let journal = std::env::temp_dir().join(format!(
+            "wo6-dap-release-fail-{}", rand::random::<u128>()
+        ));
+        let supervisor = Arc::new(Supervisor::open(journal.clone()).unwrap());
+        let plan = plan();
+        let job = supervisor.prepare(plan.clone()).unwrap();
+        supervisor.record_human_approval(
+            &job.job_id, &job.plan_sha256, &plan.source_head, true
+        ).unwrap();
+        supervisor.consume_grant_after_attestation(
+            &job.job_id, &plan, &proof()
+        ).unwrap();
+        supervisor.native_mark_running(&job.job_id).unwrap();
+        let shared = Arc::new(Fixture::default());
+        *shared.fail_release.lock().unwrap() = true;
+        let gateway = DapGateway::attach_native(
+            Arc::clone(&supervisor),
+            &job.job_id,
+            &job.plan_sha256,
+            &proof(),
+            Box::new(Mock { shared: Arc::clone(&shared) }),
+        ).unwrap();
+        drop(gateway);
+        assert_eq!(*shared.terminated.lock().unwrap(), 1);
+        assert_eq!(*shared.released.lock().unwrap(), 0);
+        drop(supervisor);
+        let reopened = Supervisor::open(journal.clone()).unwrap();
+        let jobs = reopened.inspect().unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].phase, JobPhase::RecoveryRequired);
+        assert!(jobs[0].requires_reconciliation);
+        assert_eq!(reopened.prepare(plan).unwrap_err(), SupervisorError::Quarantined);
+        drop(reopened);
+        let _ = std::fs::remove_file(journal);
+    }
+
     #[test]
     fn read_only_dap_session_requires_durable_protected_release() {
         let journal = std::env::temp_dir().join(format!("wo6-dap-{}", rand::random::<u128>()));

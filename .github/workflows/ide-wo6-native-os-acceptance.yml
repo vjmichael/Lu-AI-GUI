@@ -16,7 +16,10 @@ concurrency:
   cancel-in-progress: true
 jobs:
   native-windows-fixed-debugger:
-    runs-on: windows-2025
+    # The fixed 17.14/14.44 MSVC pin is supplied by the reviewed
+    # Windows 2022 runner image, not by Windows 2025's newer VS image.
+    # Never loosen New-PinnedWindowsToolchain.ps1 to accept an unreviewed SDK.
+    runs-on: windows-2022
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -262,6 +265,13 @@ jobs:
           # distro resource lookup from genuine kernel/stdio/DAP failures.
           # Only fixed categories are shown; raw stderr and paths are hidden.
           python3 ide/supervisor/fixtures/debug/probe_lldb_dap_initialize.py
+      - name: Classify exact fixed LLDB launch under distro, copied and Bwrap namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Diagnostic only, no altered ptrace/AppArmor/sysctl privileges.
+          # A positive result is NOT cgroup custody or original debugger acceptance.
+          python3 ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py
       - name: Compile trusted fixed delegated OS host and native DAP fixture
         shell: bash
         run: |

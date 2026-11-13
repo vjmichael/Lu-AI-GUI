@@ -609,17 +609,25 @@ pub fn verify_build_debug_symbols(
         let Some(rsds) = pe32plus_rsds(&executable) else {
             return Ok(None);
         };
-        let leaf = binary
-            .relative_path
-            .strip_prefix("target/debug/")
+        // Bind the exact PDB sibling to the independently selected native
+        // executable. Sealed Windows CARGO_TARGET_DIR uses debug/; retained
+        // historical snapshots use target/debug/. Never mix the two roots.
+        let prefix = if binary.relative_path.starts_with("debug/") {
+            "debug/"
+        } else if binary.relative_path.starts_with("target/debug/") {
+            "target/debug/"
+        } else {
+            return Ok(None);
+        };
+        let leaf = binary.relative_path.strip_prefix(prefix)
             .and_then(|n| n.strip_suffix(".exe"));
         let Some(stem) = leaf else {
             return Ok(None);
         };
-        if rsds.name != format!("{stem}.pdb") {
+        if stem.is_empty() || stem.contains('/') || rsds.name != format!("{stem}.pdb") {
             return Ok(None);
         }
-        let pdb_relative = format!("target/debug/{}", rsds.name);
+        let pdb_relative = format!("{prefix}{}", rsds.name);
         let pdbs: Vec<_> = output
             .files
             .iter()
@@ -874,6 +882,30 @@ mod tests {
         put32(&mut pdb, dbi + 8, 1);
         put16(&mut pdb, dbi + 58, 0x8664);
         pdb
+    }
+    #[cfg(windows)]
+    #[test]
+    fn sealed_cargo_output_debug_root_requires_matching_sibling_pdb() {
+        use crate::{
+            debug_binary_witness::audit_debug_binary_candidate,
+            wo6_output_evidence::audit_published_output,
+        };
+        let root = std::env::temp_dir().join(format!(
+            "fin01d-native-cargo-debug-{:032x}", rand::random::<u128>()
+        ));
+        fs::create_dir_all(root.join("debug")).unwrap();
+        fs::write(root.join("debug/fixture.exe"), minimal_pe()).unwrap();
+        fs::write(root.join("debug/fixture.pdb"), minimal_matching_pdb()).unwrap();
+        let manifest = audit_published_output(&root).unwrap();
+        let binary = audit_debug_binary_candidate(&root, &manifest).unwrap().unwrap();
+        assert_eq!(binary.relative_path, "debug/fixture.exe");
+        let symbols = verify_build_debug_symbols(&root, &manifest, &binary)
+            .unwrap().unwrap();
+        assert_eq!(symbols.symbols_kind, "external_pdb_guid_age_dbi_match");
+        assert_eq!(symbols.symbols_relative_path.as_deref(), Some("debug/fixture.pdb"));
+        fs::write(root.join("debug/fixture.pdb"), b"forged PDB").unwrap();
+        assert!(verify_build_debug_symbols(&root, &manifest, &binary).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
     #[cfg(windows)]
     #[test]

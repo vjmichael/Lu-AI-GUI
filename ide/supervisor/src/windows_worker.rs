@@ -14,7 +14,7 @@ use crate::{
     live_output::LiveOutput,
     snapshot::{verify_input, PublishedInput},
     windows_broker::TrustedBroker,
-    windows_cap_tree::{audit_tree, digest_tree, live_output_quota, publish_into_native_parent},
+    windows_cap_tree::{audit_tree, digest_tree, live_output_quota, publish_into_native_parent, publish_closed_compiler_output},
     JobPhase, JobPlan, JobSummary, NativeTreeTerminator, OsContainmentProof, Supervisor,
     SupervisorError,
 };
@@ -281,6 +281,7 @@ fn publish_output(
     child_output: &Path,
     trusted_native_parent: &Path,
     id: &str,
+    compiler_build: bool,
 ) -> Result<(PathBuf, u64, String), SupervisorError> {
     if !valid_job_id(id) || !clean_meta(trusted_native_parent)?.is_dir() {
         return Err(denied());
@@ -290,20 +291,26 @@ fn publish_output(
     if parent.starts_with(&source) || source.starts_with(&parent) {
         return Err(denied());
     }
-    let (bytes, original_hash) = output_seal(child_output)?;
-    // The native parent and newly created job directory are pinned by
-    // cap_std handles until all bytes have been copied and re-sealed.
-    let (published_bytes, published_hash) = publish_into_native_parent(
-        child_output,
-        &parent,
-        OsStr::new(id),
-        MAX_OUTPUT_FILES,
-        MAX_OUTPUT_BYTES,
-        MAX_OUTPUT_FILE_BYTES,
-    )?;
-    if original_hash != published_hash || bytes != published_bytes {
-        return Err(denied());
-    }
+    // Cargo's native rust_build emits two NTFS names for the same binary.
+    // Only this exact recipe can prove the complete in-root alias group and
+    // publish independent one-link copies. All other recipes and ALL staged
+    // toolchains/source input retain the original strict nNumberOfLinks=1 rule.
+    let (published_bytes, published_hash) = if compiler_build {
+        publish_closed_compiler_output(
+            child_output, &parent, OsStr::new(id),
+            MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES, MAX_OUTPUT_FILE_BYTES,
+        )?
+    } else {
+        let (bytes, original_hash) = output_seal(child_output)?;
+        let (published_bytes, published_hash) = publish_into_native_parent(
+            child_output, &parent, OsStr::new(id),
+            MAX_OUTPUT_FILES, MAX_OUTPUT_BYTES, MAX_OUTPUT_FILE_BYTES,
+        )?;
+        if original_hash != published_hash || bytes != published_bytes {
+            return Err(denied());
+        }
+        (published_bytes, published_hash)
+    };
     Ok((parent.join(id), published_bytes, published_hash))
 }
 
@@ -1391,6 +1398,7 @@ where
         )
         .is_err()
         {
+            acceptance_trace("runtime_stream_output_rejected");
             let _ = job.kill_and_verify();
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(SupervisorError::Quarantined);
@@ -1399,16 +1407,20 @@ where
         if waited == WAIT_OBJECT_0 {
             let mut code = 1_u32;
             if unsafe { GetExitCodeProcess(process.0, &mut code) } == 0 {
+                acceptance_trace("runtime_exit_code_query_failed");
                 let _ = supervisor.native_quarantine_after_error(job_id);
                 return Err(denied());
             }
+            acceptance_trace(if code == 0 { "runtime_parent_exited_zero" } else { "runtime_parent_exited_nonzero" });
             break Some(code);
         }
         if waited != WAIT_TIMEOUT {
+            acceptance_trace("runtime_kernel_wait_failed");
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(denied());
         }
         if !broker.alive() {
+            acceptance_trace("runtime_scm_owner_lost");
             let _ = job.kill_and_verify();
             let _ = supervisor.native_quarantine_after_error(job_id);
             return Err(SupervisorError::Quarantined);
@@ -1457,11 +1469,19 @@ where
                 id: job_id,
                 hash: &plan_hash,
             };
-            if let Err(reason) = supervisor.cancel_running_with(job_id, &mut terminator) {
-                let _ = supervisor.native_quarantine_after_error(job_id);
-                return Err(reason);
-            }
+            let cancelling = match supervisor
+                .cancel_running_with_service_release_pending(job_id, &mut terminator)
+            {
+                Ok(summary) if summary.phase == JobPhase::ReleasePending => summary,
+                Ok(_) => return Err(SupervisorError::Quarantined),
+                Err(reason) => {
+                    let _ = supervisor.native_quarantine_after_error(job_id);
+                    return Err(reason);
+                }
+            };
+            debug_assert_eq!(cancelling.phase, JobPhase::ReleasePending);
             if unsafe { WaitForSingleObject(process.0, 5000) } != WAIT_OBJECT_0 {
+                let _ = supervisor.native_quarantine_after_error(job_id);
                 return Err(SupervisorError::Quarantined);
             }
             break None;
@@ -1476,6 +1496,7 @@ where
     )
     .is_err()
     {
+        acceptance_trace("terminal_stream_output_rejected");
         let _ = job.kill_and_verify();
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(SupervisorError::Quarantined);
@@ -1483,6 +1504,7 @@ where
     // All descendants must exit or be killed, including after the Cargo
     // parent process exits. Job Object handle remains open through receipt.
     let naturally_empty = job.await_empty(REAP_LIMIT);
+    acceptance_trace(if naturally_empty { "terminal_kernel_job_naturally_empty" } else { "terminal_kernel_job_requires_reap" });
     let reaped = if naturally_empty {
         true
     } else {
@@ -1495,6 +1517,7 @@ where
         }
     };
     if !reaped {
+        acceptance_trace("terminal_kernel_descendants_unverified");
         let _ = supervisor.native_quarantine_after_error(job_id);
         return Err(SupervisorError::Quarantined);
     }
@@ -1516,26 +1539,82 @@ where
     let publication = if stopped {
         None
     } else {
-        publish_output(&output, &private_parent, job_id).ok()
+        match publish_output(&output, &private_parent, job_id, plan.recipe_id == "rust_build") {
+            Ok(published) => {
+                acceptance_trace("terminal_output_published_and_resealed");
+                Some(published)
+            }
+            Err(_) => {
+                // Never publish a terminal receipt for an unreadable or
+                // altered child output tree. Fixed operation category only:
+                // no user paths, output bytes, or filesystem authority.
+                acceptance_trace("terminal_output_publication_denied");
+                None
+            }
+        }
     };
     let summary = if stopped {
-        supervisor
-            .inspect()?
-            .into_iter()
-            .find(|j| j.job_id == job_id)
-            .ok_or(SupervisorError::NoSuchJob)?
+        // Cancellation is pending until the independent SCM holder has
+        // acknowledged the empty Job and durable NUL-lease revocation.
+        // A failed ACK leaves the original ReleasePending receipt, which
+        // replays as quarantine rather than a false Cancelled terminal.
+        if !reaped {
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(SupervisorError::Quarantined);
+        }
+        if let Err(error) = broker.release_empty() {
+            acceptance_trace("terminal_cancel_scm_release_ack_failed");
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(error);
+        }
+        acceptance_trace("terminal_cancel_scm_release_ack_fsynced");
+        match supervisor.native_finish_cancelled_after_service_release(job_id) {
+            Ok(summary) => summary,
+            Err(error) => {
+                let _ = supervisor.native_quarantine_after_error(job_id);
+                return Err(error);
+            }
+        }
     } else {
-        supervisor.native_finish_with_output(
+        // A verified empty kernel tree and immutable published output are
+        // necessary but NOT sufficient for a terminal receipt: the independent
+        // SCM service must also fsync its exact Job release acknowledgement.
+        // Journal ReleasePending *before* the service release to ensure a
+        // host crash between these operations is quarantined after restart.
+        if !reaped || publication.is_none() {
+            acceptance_trace("terminal_output_or_kernel_witness_missing");
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(SupervisorError::Quarantined);
+        }
+        supervisor.native_mark_release_pending(job_id).map_err(|reason| {
+            acceptance_trace("terminal_release_pending_fsync_failed");
+            reason
+        })?;
+        acceptance_trace("terminal_release_pending_fsynced");
+        if let Err(error) = broker.release_empty() {
+            acceptance_trace("terminal_scm_release_ack_failed");
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(error);
+        }
+        acceptance_trace("terminal_scm_release_ack_fsynced");
+        match supervisor.native_finish_with_output(
             job_id,
-            exit_code == Some(0) && naturally_empty && publication.is_some(),
+            exit_code == Some(0) && naturally_empty,
             reaped,
-            publication.is_some(),
+            true,
             publication.as_ref().map(|(_, _, sha)| sha.as_str()),
-        )?
+        ) {
+            Ok(summary) => summary,
+            Err(error) => {
+                acceptance_trace("terminal_completion_receipt_fsync_failed");
+                // If terminal fsync fails, the original ReleasePending receipt
+                // remains a restart quarantine. Never infer completion from
+                // Cargo's exit code or a service release acknowledgement.
+                let _ = supervisor.native_quarantine_after_error(job_id);
+                return Err(error);
+            }
+        }
     };
-    // Only after the supervisor terminal receipt is durable and the
-    // kernel Job is verified empty may the recovery keeper be released.
-    broker.release_empty()?;
     let (output_root, output_bytes, output_sha256) =
         publication.unwrap_or((PathBuf::new(), 0, String::new()));
     Ok(WindowsExecutionResult {

@@ -16,6 +16,7 @@ use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt, OsMetadataExt};
 use cap_std::fs::{Dir, OpenOptions};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashMap,
     ffi::OsStr,
     fs::{self, File},
     io::{Read, Write},
@@ -36,6 +37,17 @@ const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 
 fn denied() -> SupervisorError {
     SupervisorError::NoContainment
+}
+// Debug/CI-only fixed output-category diagnostics. They cannot authorize an
+// alias or expose a file name, path, user bytes, SID or compiler arguments.
+fn acceptance_tree_denial(kind: &'static str) {
+    if cfg!(debug_assertions)
+        && std::env::var_os("GITHUB_ACTIONS").as_deref() == Some(OsStr::new("true"))
+        && std::env::var_os("LU_IDE_NATIVE_ACCEPTANCE_TRACE").as_deref()
+            == Some(OsStr::new("1"))
+    {
+        eprintln!("FIN01D_CAP_TREE_DENIED={kind}");
+    }
 }
 fn clean_name(name: &OsStr) -> Result<(), SupervisorError> {
     let text = name.to_str().ok_or_else(denied)?;
@@ -73,23 +85,41 @@ fn safe_root(path: &Path) -> Result<Dir, SupervisorError> {
     // uses this pinned kernel directory handle, never an ambient path.
     Ok(Dir::from_std_file(root_file))
 }
-fn valid_leaf(file: &File) -> Result<(u64, std::time::SystemTime), SupervisorError> {
+// File ID includes the NTFS volume, forbidding cross-volume identity matches.
+type KernelFileId = (u32, u32, u32);
+type ClosedAliases = HashMap<KernelFileId, u32>;
+fn kernel_link_identity(file: &File) -> Result<(KernelFileId, u32), SupervisorError> {
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0 {
+        acceptance_tree_denial("kernel_file_id_unavailable");
+        return Err(denied());
+    }
+    if info.nNumberOfLinks == 0 {
+        return Err(denied());
+    }
+    Ok(((info.dwVolumeSerialNumber, info.nFileIndexHigh, info.nFileIndexLow), info.nNumberOfLinks))
+}
+fn valid_leaf(
+    file: &File,
+    closed_aliases: Option<&ClosedAliases>,
+) -> Result<(u64, std::time::SystemTime), SupervisorError> {
     let meta = file.metadata().map_err(|_| denied())?;
     if !meta.is_file() || meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(denied());
     }
-    let mut info = BY_HANDLE_FILE_INFORMATION::default();
-    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0
-        || info.nNumberOfLinks != 1
-    {
-        // A second NTFS hardlink could name an object outside the root.
+    let (identity, links) = kernel_link_identity(file)?;
+    if links != 1 && closed_aliases.and_then(|aliases| aliases.get(&identity)) != Some(&links) {
+        // Staging and normal auditing still deny ALL multi-link files.
+        // Only original, kernel-empty compiler output may supply a complete
+        // identity-bound in-root alias proof. External aliases remain denied.
+        acceptance_tree_denial("multi_link_alias");
         return Err(denied());
     }
     Ok((meta.len(), meta.modified().map_err(|_| denied())?))
 }
 fn checked_child_dir(parent: &Dir, name: &OsStr) -> Result<Dir, SupervisorError> {
     let md = parent.symlink_metadata(name).map_err(|_| denied())?;
-    if !md.is_dir() || md.file_type().is_symlink() {
+    if !md.is_dir() || md.file_type().is_symlink() || md.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(denied());
     }
     // No ambient pathname here. cap_std resolves relative to parent handle.
@@ -114,6 +144,77 @@ struct Budget {
     files: usize,
     bytes: u64,
 }
+// Exhaustively enumerate every file name beneath this live capability root.
+// If NTFS reports more links to any inode than we can find inside the root,
+// its other name is outside the publication boundary and MUST be rejected.
+fn inventory_compiler_links(
+    dir: &Dir,
+    depth: usize,
+    budget: &mut Budget,
+    groups: &mut HashMap<KernelFileId, (u32, u32)>,
+    max_files: usize,
+    max_bytes: u64,
+    item_limit: u64,
+) -> Result<(), SupervisorError> {
+    if depth > MAX_DEPTH { return Err(denied()); }
+    let mut names = dir.entries().map_err(|_| denied())?
+        .map(|entry| entry.map(|item| item.file_name()).map_err(|_| denied()))
+        .collect::<Result<Vec<_>, _>>()?;
+    names.sort();
+    for name in names {
+        clean_name(&name)?;
+        let meta = dir.symlink_metadata(&name).map_err(|_| denied())?;
+        if meta.file_type().is_symlink()
+            || meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        { return Err(denied()); }
+        if meta.is_dir() {
+            let child = checked_child_dir(dir, &name)?;
+            inventory_compiler_links(
+                &child, depth + 1, budget, groups, max_files, max_bytes, item_limit
+            )?;
+        } else if meta.is_file() {
+            let mut options = OpenOptions::new();
+            options.read(true).follow(FollowSymlinks::No);
+            let opened = dir.open_with(&name, &options).map_err(|_| denied())?.into_std();
+            let verified = opened.metadata().map_err(|_| denied())?;
+            if !verified.is_file()
+                || verified.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+                || verified.len() != meta.len()
+                || verified.len() > item_limit
+                || verified.len() > MAX_ITEM_BYTES
+            { return Err(denied()); }
+            budget.files = budget.files.checked_add(1).ok_or_else(denied)?;
+            budget.bytes = budget.bytes.checked_add(verified.len()).ok_or_else(denied)?;
+            if budget.files > max_files || budget.bytes > max_bytes { return Err(denied()); }
+            let (id, nlinks) = kernel_link_identity(&opened)?;
+            let group = groups.entry(id).or_insert((nlinks, 0));
+            if group.0 != nlinks { return Err(denied()); }
+            group.1 = group.1.checked_add(1).ok_or_else(denied)?;
+        } else { return Err(denied()); }
+    }
+    Ok(())
+}
+fn prove_closed_compiler_aliases(
+    source: &Dir,
+    max_files: usize,
+    max_bytes: u64,
+    item_limit: u64,
+) -> Result<ClosedAliases, SupervisorError> {
+    let mut budget = Budget::default();
+    let mut groups = HashMap::new();
+    inventory_compiler_links(
+        source, 0, &mut budget, &mut groups, max_files, max_bytes, item_limit
+    )?;
+    let mut accepted = ClosedAliases::new();
+    for (id, (kernel_count, in_root_count)) in groups {
+        if kernel_count != in_root_count {
+            acceptance_tree_denial("outside_root_hardlink_alias");
+            return Err(denied());
+        }
+        if kernel_count > 1 { accepted.insert(id, kernel_count); }
+    }
+    Ok(accepted)
+}
 fn visit(
     source: &Dir,
     output: Option<&Dir>,
@@ -124,6 +225,7 @@ fn visit(
     file_limit: usize,
     byte_limit: u64,
     item_limit: u64,
+    closed_aliases: Option<&ClosedAliases>,
 ) -> Result<(), SupervisorError> {
     if depth > MAX_DEPTH {
         return Err(denied());
@@ -138,7 +240,9 @@ fn visit(
     for name in names {
         clean_name(&name)?;
         let metadata = source.symlink_metadata(&name).map_err(|_| denied())?;
-        if metadata.file_type().is_symlink() {
+        if metadata.file_type().is_symlink()
+            || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        {
             return Err(denied());
         }
         let child_path = relative.join(&name);
@@ -160,6 +264,7 @@ fn visit(
                 file_limit,
                 byte_limit,
                 item_limit,
+                closed_aliases,
             )?;
         } else if metadata.is_file() {
             // Read the last component with explicit no-follow. Even if a
@@ -170,13 +275,23 @@ fn visit(
                 .open_with(&name, &options)
                 .map_err(|_| denied())?
                 .into_std();
-            let (expected, changed_at) = valid_leaf(&input)?;
-            if expected != metadata.len() || expected > item_limit || expected > MAX_ITEM_BYTES {
+            let (expected, changed_at) = valid_leaf(&input, closed_aliases)?;
+            if expected != metadata.len() {
+                acceptance_tree_denial("file_size_changed");
+                return Err(denied());
+            }
+            if expected > item_limit || expected > MAX_ITEM_BYTES {
+                acceptance_tree_denial("per_file_byte_limit");
                 return Err(denied());
             }
             budget.files = budget.files.checked_add(1).ok_or_else(denied)?;
             budget.bytes = budget.bytes.checked_add(expected).ok_or_else(denied)?;
-            if budget.files > file_limit || budget.bytes > byte_limit {
+            if budget.files > file_limit {
+                acceptance_tree_denial("file_count_limit");
+                return Err(denied());
+            }
+            if budget.bytes > byte_limit {
+                acceptance_tree_denial("tree_byte_limit");
                 return Err(denied());
             }
             let mut output_file = if let Some(dst) = output {
@@ -209,8 +324,9 @@ fn visit(
             if read_bytes != expected {
                 return Err(denied());
             }
-            let (after_bytes, after_time) = valid_leaf(&input)?;
+            let (after_bytes, after_time) = valid_leaf(&input, closed_aliases)?;
             if after_bytes != expected || after_time != changed_at {
+                acceptance_tree_denial("file_mutated_during_seal");
                 return Err(denied());
             }
             if let Some(out) = output_file.as_mut() {
@@ -305,7 +421,7 @@ fn live_visit(
             let mut options = OpenOptions::new();
             options.read(true).follow(FollowSymlinks::No);
             match source.open_with(&name, &options) {
-                Ok(opened) => match valid_leaf(&opened.into_std()) {
+                Ok(opened) => match valid_leaf(&opened.into_std(), None) {
                     Ok((size, _)) if size == metadata.len() => {}
                     Ok(_) | Err(_) => stable = false,
                 },
@@ -370,6 +486,7 @@ pub(crate) fn audit_tree(
         max_files,
         max_bytes,
         single_file_limit,
+        None,
     )?;
     Ok((budget.bytes, format!("{:x}", tree.finalize())))
 }
@@ -411,6 +528,7 @@ pub(crate) fn publish_into_native_parent(
         max_files,
         max_bytes,
         item_limit,
+        None,
     )?;
     let copied_hash = format!("{:x}", tree.finalize());
 
@@ -428,6 +546,7 @@ pub(crate) fn publish_into_native_parent(
         max_files,
         max_bytes,
         item_limit,
+        None,
     )?;
     let seal = format!("{:x}", verified_hash.finalize());
     if budget.bytes != verified.bytes || seal != copied_hash {
@@ -436,9 +555,103 @@ pub(crate) fn publish_into_native_parent(
     Ok((verified.bytes, seal))
 }
 
+/// FIN-01D: only a terminated, original-Job Cargo *build* may use this
+/// publisher. The NTFS kernel link count must match every alias inventoried
+/// under the same pinned capability root. No external alias is acceptable.
+/// Target files are new one-link copies, never links to child/host data.
+pub(crate) fn publish_closed_compiler_output(
+    source_path: &Path,
+    trusted_parent: &Path,
+    child_name: &OsStr,
+    max_files: usize,
+    max_bytes: u64,
+    item_limit: u64,
+) -> Result<(u64, String), SupervisorError> {
+    clean_name(child_name)?;
+    let source = safe_root(source_path)?;
+    let closed = prove_closed_compiler_aliases(&source, max_files, max_bytes, item_limit)?;
+    // Hash all immutable output bytes before trusting any copy.
+    let mut original_budget = Budget::default();
+    let mut original_hash = Sha256::new();
+    visit(&source, None, Path::new(""), 0, &mut original_budget,
+        &mut original_hash, max_files, max_bytes, item_limit, Some(&closed))?;
+    let original_seal = format!("{:x}", original_hash.finalize());
+
+    let parent = safe_root(trusted_parent)?;
+    parent.create_dir(child_name).map_err(|_| denied())?;
+    let target = checked_child_dir(&parent, child_name)?;
+    let mut copied = Budget::default();
+    let mut copied_hash = Sha256::new();
+    visit(&source, Some(&target), Path::new(""), 0, &mut copied,
+        &mut copied_hash, max_files, max_bytes, item_limit, Some(&closed))?;
+    if copied.bytes != original_budget.bytes
+        || format!("{:x}", copied_hash.finalize()) != original_seal
+        || prove_closed_compiler_aliases(&source, max_files, max_bytes, item_limit)? != closed
+    {
+        return Err(denied());
+    }
+    // A second, fully strict scan proves the copied target no longer
+    // contains ANY multi-link objects or reparse traversal opportunities.
+    let mut verified = Budget::default();
+    let mut verified_hash = Sha256::new();
+    visit(&target, None, Path::new(""), 0, &mut verified,
+        &mut verified_hash, max_files, max_bytes, item_limit, None)?;
+    if verified.bytes != copied.bytes
+        || format!("{:x}", verified_hash.finalize()) != original_seal
+    {
+        return Err(denied());
+    }
+    Ok((verified.bytes, original_seal))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compiler_hardlinks_need_all_kernel_names_inside_pinned_output() {
+        let base = std::env::temp_dir().join(format!(
+            "fin01d-ntfs-link-{:032x}", rand::random::<u128>()
+        ));
+        let source = base.join("worker");
+        let parent = base.join("published");
+        fs::create_dir_all(source.join("target/debug/deps")).unwrap();
+        fs::create_dir(&parent).unwrap();
+        let binary = source.join("target/debug/fixed.exe");
+        let alias = source.join("target/debug/deps/fixed-hash.exe");
+        fs::write(&binary, b"MZfixed native compiler output").unwrap();
+        fs::hard_link(&binary, &alias).unwrap();
+        // The original strict stage/input scanner still refuses hardlinks.
+        assert!(audit_tree(&source, None, 100, 10000, 10000).is_err());
+        let (bytes, digest) = publish_closed_compiler_output(
+            &source, &parent, OsStr::new("job-closed"), 100, 10000, 10000
+        ).unwrap();
+        assert_eq!(bytes, 2 * b"MZfixed native compiler output".len() as u64);
+        assert_eq!(digest, audit_tree(
+            &parent.join("job-closed"), None, 100, 10000, 10000
+        ).unwrap().1);
+        // A third hardlink OUTSIDE source makes the original two-link proof
+        // incomplete, so no outside-root bytes can be silently published.
+        let outside = base.join("outside-alias.exe");
+        fs::hard_link(&binary, &outside).unwrap();
+        assert!(publish_closed_compiler_output(
+            &source, &parent, OsStr::new("job-escaped"), 100, 10000, 10000
+        ).is_err());
+        assert!(!parent.join("job-escaped").exists());
+        fs::remove_file(&outside).unwrap();
+        // Reparse points are refused even when the original two hardlinks
+        // remain a complete pair elsewhere inside the source tree.
+        let foreign = base.join("foreign");
+        fs::create_dir(&foreign).unwrap();
+        std::os::windows::fs::symlink_dir(
+            &foreign, source.join("target/debug/escape-junction")
+        ).expect("Windows native hostile test requires junction creation");
+        assert!(publish_closed_compiler_output(
+            &source, &parent, OsStr::new("job-junction"), 100, 10000, 10000
+        ).is_err());
+        assert!(!parent.join("job-junction").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
     #[test]
     fn hostile_concurrent_child_rename_cannot_escape_pinned_root() {
         use std::sync::{

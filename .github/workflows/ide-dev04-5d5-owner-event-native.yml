@@ -20,7 +20,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   windows-pinned-llvm18-native:
-    runs-on: windows-2025
+    # The fixed CMake VS17.2022 generator must run where a genuine
+    # registered VS2022 instance exists. Windows 2025 failed this exact
+    # native configure before compiling LLVM; never substitute an unpinned
+    # generator or treat offline MSVC files as a registered VS instance.
+    runs-on: windows-2022
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -50,17 +54,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: real Windows host owner-event compile failed' }
           cargo check --release --manifest-path ide/supervisor/Cargo.toml --features 'dap-transport,protected-recovery-service'
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: Windows regular release compile regressed' }
-      - name: Compile real source-pinned LLVM18 DebuggerThread and produce hashed owner binary
-        shell: pwsh
-        run: |
-          & ide/llvm18_owner/Build-PinnedOwnerWindows.ps1
-          if ($LASTEXITCODE -ne 0) { throw 'DENIED: modified LLVM18 LLDB Windows build failed' }
       - name: Stage exact reviewed offline Windows SDK and MSVC toolchain
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           & ./ide/supervisor/fixtures/New-PinnedWindowsToolchain.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'dev045d5-offline-msvc') -LockPath (Join-Path $env:RUNNER_TEMP 'dev045d5-msvc-lock.json') -RustVersion '1.99.1' -SdkVersion '10.0.26100.0' -VsVersionPrefix '17.14.' -MsvcVersionPrefix '14.44.'
           if ($LASTEXITCODE -ne 0) { throw 'DENIED: independent offline Cargo/SDK bundle failed' }
+      - name: Require a registered original Visual Studio 17.14 generator before LLVM
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (!(Test-Path -LiteralPath $vswhere -PathType Leaf)) { throw 'FIN04_LLVM_REGISTERED_VSWHERE_MISSING' }
+          $instances=@((& $vswhere -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json) | ConvertFrom-Json)
+          $matching=@($instances | Where-Object { $_.installationVersion -match '^17\.14\.' -and (Test-Path -LiteralPath $_.installationPath -PathType Container) })
+          if ($matching.Count -ne 1) { throw 'FIN04_LLVM_REGISTERED_VS17_14_UNAVAILABLE' }
+          Write-Host 'FIN04_LLVM_REGISTERED_VS17_14=VERIFIED_NOT_KERNEL_ACCEPTED'
+      - name: Compile real source-pinned LLVM18 DebuggerThread and produce hashed owner binary
+        shell: pwsh
+        run: |
+          & ide/llvm18_owner/Build-PinnedOwnerWindows.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: modified LLVM18 LLDB Windows build failed' }
       - name: Real SCM/AppContainer owner stop, PE/PDB, cancellation and journal restart
         shell: pwsh
         run: |

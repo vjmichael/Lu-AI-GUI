@@ -355,15 +355,28 @@ impl Drop for LspGateway {
                 job_id: &self.job_id,
                 plan_sha256: &self.plan_sha256,
             };
-            if self
-                .supervisor
-                .cancel_running_with(&self.job_id, &mut killer)
-                .is_ok()
+            match self.supervisor
+                .cancel_running_with_service_release_pending(&self.job_id, &mut killer)
             {
-                let _ = process.release_after_verified_terminal();
-            } else {
-                let _ = process.terminate_tree_and_verify();
-                let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
+                Ok(summary) if summary.phase == JobPhase::ReleasePending => {
+                    if process.release_after_verified_terminal().is_ok() {
+                        if self.supervisor
+                            .native_finish_cancelled_after_service_release(&self.job_id)
+                            .is_err()
+                        {
+                            let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
+                        }
+                    } else {
+                        // The already-durable ReleasePending receipt cannot be
+                        // promoted to Cancelled without original service ACK.
+                        let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
+                    }
+                }
+                Ok(_) => {} // Uncertain kill is already durably quarantined.
+                Err(_) => {
+                    let _ = process.terminate_tree_and_verify();
+                    let _ = self.supervisor.native_quarantine_after_error(&self.job_id);
+                }
             }
         }
     }
@@ -578,6 +591,47 @@ mod tests {
         assert!(!read[0].requires_reconciliation);
         let _ = std::fs::remove_file(journal);
     }
+    #[test]
+    fn dropped_protected_lsp_with_unacknowledged_service_release_stays_quarantined() {
+        let (supervisor, id, sha, journal) = admitted_fixture();
+        let evidence = Arc::new(MockState::default());
+        let gateway = LspGateway::attach_native(
+            Arc::clone(&supervisor),
+            &id,
+            &sha,
+            &proof_fixture(),
+            Box::new(MockProcess {
+                state: Arc::clone(&evidence),
+                fail_release: true,
+            }),
+            "clangd",
+        ).unwrap();
+        drop(gateway);
+        assert!(evidence.killed.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+        assert_eq!(evidence.released.load(std::sync::atomic::Ordering::SeqCst), 0);
+        drop(supervisor);
+        let restarted = Supervisor::open(journal.clone()).unwrap();
+        let rows = restarted.inspect().unwrap();
+        assert_eq!(rows[0].phase, JobPhase::RecoveryRequired);
+        assert!(rows[0].requires_reconciliation);
+        assert_eq!(restarted.prepare(crate::JobPlan {
+            project_id: format!("ide-{}", "a".repeat(32)),
+            recipe_id: "lsp_clangd".into(),
+            source_head: "b".repeat(40),
+            input_snapshot_sha256: "c".repeat(64),
+            manifest_sha256: "d".repeat(64),
+            toolchain_sha256: "e".repeat(64),
+            debug_target_binding_sha256: None,
+            runtime_limit_ms: 60_000,
+            memory_limit_bytes: 128 * 1024 * 1024,
+            process_limit: 2,
+            log_limit_bytes: 32 * 1024,
+            effect_class: "language_analysis_isolated".into(),
+        }).unwrap_err(), SupervisorError::Quarantined);
+        drop(restarted);
+        let _ = std::fs::remove_file(journal);
+    }
+
     #[test]
     fn failed_protected_service_release_quarantines_even_when_tree_is_empty() {
         let (supervisor, id, sha, journal) = admitted_fixture();
