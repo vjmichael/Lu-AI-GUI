@@ -5,25 +5,25 @@
 //! The FIRST-PARTY restricted SCM service must create the exact pinned
 //! benign worker suspended under its original protected kernel Job.
 //! All transaction receipts are written to the ORIGINAL Supervisor journal.
-#![cfg_attr(not(all(windows,debug_assertions,feature="fin04w2-approved-fixed-exec")),
+#![cfg_attr(not(all(windows,debug_assertions,feature="fin04w2-c2")),
     allow(unused))]
-#[cfg(all(windows,debug_assertions,feature="fin04w2-approved-fixed-exec"))]
+#[cfg(all(windows,debug_assertions,feature="fin04w2-c2"))]
 fn main() {
     if let Err(error)=run() {
         eprintln!("FIN04W2_C_ORIGINAL_NATIVE_TRANSACTION=DENIED:{}",error.code());
         std::process::exit(1);
     }
 }
-#[cfg(not(all(windows,debug_assertions,feature="fin04w2-approved-fixed-exec")))]
+#[cfg(not(all(windows,debug_assertions,feature="fin04w2-c2")))]
 fn main() {
     eprintln!("FIN04W2_C_ORIGINAL_NATIVE_TRANSACTION=DISABLED");
     std::process::exit(2);
 }
-#[cfg(all(windows,debug_assertions,feature="fin04w2-approved-fixed-exec"))]
+#[cfg(all(windows,debug_assertions,feature="fin04w2-c2"))]
 fn run()->Result<(),lu_ide_execution_supervisor::SupervisorError>{
     use lu_ide_execution_supervisor::{
         JobPhase, JobPlan, Supervisor, SupervisorError,
-        windows_fin04w2_host,
+        windows_fin04w2_c2_host,
     };
     use std::{
         fs::{self,File,OpenOptions},
@@ -114,13 +114,11 @@ fn run()->Result<(),lu_ide_execution_supervisor::SupervisorError>{
     let plan_sha=prepared.plan_sha256.clone();
     // Explicitly simulated original API event ONLY in disposable native CI.
     // Never claim this was a human clicking the desktop OS-native dialog.
-    windows_fin04w2_host::execute_after_original_native_approval(
-        &supervisor,&prepared.job_id,&plan,&plan.source_head,
-        &service,&service_sha,
-        |s,id,p|{
-            s.record_human_approval(id,&plan_sha,&p.source_head,true)?;
-            Ok(())
-        },
+    supervisor.record_human_approval(
+        &prepared.job_id,&plan_sha,&plan.source_head,true,
+    )?; // CI-SIMULATED approval, NEVER physical operator consent.
+    windows_fin04w2_c2_host::run_fixed_after_original_approval(
+        &supervisor,&prepared.job_id,&plan,&service,&service_sha,
     )?;
     let events=supervisor.receipt_history(&prepared.job_id)?;
     let expect=[
@@ -147,13 +145,13 @@ fn run()->Result<(),lu_ide_execution_supervisor::SupervisorError>{
         || jobs[0].requires_reconciliation {
         return Err(denied());
     }
-    if windows_fin04w2_host::submit_original_approved_fixed_job(
+    if windows_fin04w2_c2_host::run_fixed_after_original_approval(
         &supervisor,&prepared.job_id,&plan,&service,&service_sha,
     ).is_ok(){
         return Err(denied());
     }
     let result=serde_json::json!({
-        "schema":"lu.ide.fin04w2.c.native.final.v1",
+        "schema":"lu.ide.fin04w2.c2.native.final.v1",
         "sourceHead":plan.source_head,
         "jobId":prepared.job_id,
         "planSha256":prepared.plan_sha256,
