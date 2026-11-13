@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a3c0f35a2a90006ad834fe9e38f7036fd4e29082",
+  "sourceCommitBeforeLock": "297b2dd052d93fc5bd945d0aea3736f94d65104f",
   "trackedFileCount": 997,
   "files": [
     {
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "d82ef589fd77d4999152d0922364143f94a61651"
+      "blob": "62dd5712e47d26ee9bccc3adde728b8fd79ab30e"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2253,7 +2253,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
-      "blob": "940aabc20f5271509a45be16a4d4ddd8a62e6e9e"
+      "blob": "370e5cb7d90c3cac9d68ec805b623ec8d409979c"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-worker.py",
@@ -2261,11 +2261,11 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-kernel-manager.py",
-      "blob": "a3e3087d20fdacbbfc8bafa54e856b7be200c1ef"
+      "blob": "3e1045728301c6f088812e37981702ba98a20e09"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-launcher.py",
-      "blob": "b2703a2287a27a29e52d210792e802b86b0aba80"
+      "blob": "371d21353701bcd3ac9c6feabee1d9184ed875d1"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-worker.py",
@@ -2273,7 +2273,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-probe-launcher.py",
-      "blob": "0bbfba89f13ae02887600148840747a00ff7df24"
+      "blob": "a4a5c7eebc39b0675c5677f93774df0a0c2370a3"
     },
     {
       "path": "scripts/lu-sec06c-owned-probe-worker.py",
