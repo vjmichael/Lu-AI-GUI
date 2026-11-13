@@ -2043,13 +2043,13 @@ mod tests {
         let launch = session
             .launch_verified_project_source_trap_for_ci("/debug-target/debug/fixture")
             .unwrap();
-        assert!(String::from_utf8(launch).unwrap().contains("\\"stopOnEntry\\":false"));
+        assert!(String::from_utf8(launch).unwrap().contains(r#""stopOnEntry":false"#));
         assert!(!session.configuration_needed());
         assert!(session.ci_fixed_source_breakpoint_needed());
         let wire = session.ci_set_fixed_source_breakpoint().unwrap();
         let command = String::from_utf8(wire).unwrap();
         assert!(command.contains("/workspace/src/main.rs"));
-        assert!(command.contains("\\"line\\":3"));
+        assert!(command.contains(r#""line":3"#));
         assert!(!session.configuration_needed());
         let seq = session.seq - 1;
         session.receive(&framed(json!({
