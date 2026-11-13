@@ -273,7 +273,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 debug_target_binding_sha256: Some(target.binding_sha256.clone()),
                 runtime_limit_ms: 90_000,
                 memory_limit_bytes: 512 * 1024 * 1024,
-                process_limit: 16,
+                // Exact project-debug-only bounded thread allowance. Native
+                // cgroup pids.events max>0 at 16 with a traced stop but no
+                // delivered DAP event; fixed LLDB and Cargo remain unchanged.
+                process_limit: 48,
                 log_limit_bytes: 64 * 1024,
                 effect_class: "debug_inspection_isolated".into(),
             };
