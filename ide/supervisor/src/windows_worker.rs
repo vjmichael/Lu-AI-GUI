@@ -1761,6 +1761,7 @@ pub fn verify_global_worker_quiescence(
     })
 }
 
+#[cfg(feature = "protected-recovery-service")]
 pub fn reconcile_windows_interrupted_via_service(
     supervisor: &Supervisor,
     id: &str,
@@ -1814,6 +1815,7 @@ pub fn reconcile_windows_interrupted_via_service(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "protected-recovery-service")]
     #[test]
     fn fin01d_kernel_attestation_never_accepts_the_live_recovery_owner(){
         assert!(verify_global_worker_quiescence(std::process::id(),&[]).is_err());
