@@ -59,7 +59,7 @@ test('SEC06 requires specific native cases and re-hashes original logs',()=>{
   assert.match(gate,/process\.exitCode=1/);
 });
 test('SEC06 Linux original Core suite receives absolute host-pinned Git without relaxing cgroup gates',()=>{
-  const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8');
+  const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8').replace(/\r\n/g,'\n');
   const section=workflow.split('  core01e-sec06-native:\n')[1]
     ?.split('  p0-gate-installed-windows:')[0];
   assert.ok(section,'missing original SEC-06 job');
@@ -93,7 +93,7 @@ test('SEC06C original ancestor escape forbids a false positive receipt even with
 
 test('SEC06C provisions real systemd delegation and never runs kernel cases as root',()=>{
   const python=readFileSync(join(root,'scripts/sec06-linux-delegated-runner.py'),'utf8');
-  const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8');
+  const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8').replace(/\r\n/g,'\n');
   const linux=workflow.split('  core01e-sec06-native:\n')[1]
     ?.split('  p0-gate-installed-windows:')[0];
   assert.ok(linux);
@@ -144,7 +144,7 @@ test('SEC06 verifier rejects changed original native log with correct head and l
     });
     assert.equal(current.status,0);
     const head=current.stdout.trim();
-    const lockHash=digest(readFileSync(join(root,'source-tree.lock.json')));
+    const lockHash=canonicalSourceLockSha256(root);
     const required=[
       'exact-head-inventory','security-contracts','sec06-js-syntax',
       'linux-negative-python-syntax','linux-host-crash-python-syntax','linux-delegated-python-syntax',
