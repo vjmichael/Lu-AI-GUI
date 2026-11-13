@@ -63,6 +63,20 @@ jobs:
           if (Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue) { throw 'DENIED: preexisting WFP deny rule' }
           if (Test-Path -LiteralPath $root) { throw 'DENIED: existing debugger evidence root' }
           if (Test-Path -LiteralPath $foreign) { throw 'DENIED: existing owner-only seed' }
+          # A defined rule is not enforcement when the active firewall
+          # profile is disabled. Fail rather than misattribute an offline
+          # socket failure to WFP.
+          $activeProfiles=@(Get-NetConnectionProfile | Where-Object {
+            $_.IPv4Connectivity -ne 'Disconnected'
+          } | ForEach-Object {
+            if ([string]$_.NetworkCategory -eq 'DomainAuthenticated') { 'Domain' }
+            else { [string]$_.NetworkCategory }
+          } | Select-Object -Unique)
+          if ($activeProfiles.Count -eq 0) { throw 'DENIED: no active Windows firewall profile to attest' }
+          foreach ($profileName in $activeProfiles) {
+            $profile=Get-NetFirewallProfile -Name $profileName -ErrorAction Stop
+            if (!$profile.Enabled) { throw 'DENIED: active WFP/Defender firewall profile is disabled' }
+          }
           $baseline=[Net.Sockets.TcpClient]::new()
           try {
             $async=$baseline.BeginConnect('1.1.1.1',443,$null,$null)
