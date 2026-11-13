@@ -924,6 +924,8 @@ impl LinuxDapSession {
         {
             return Err(SupervisorError::InvalidTransition);
         }
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=plan_running_verified");
         let debug_receipts = supervisor.receipt_history(job_id)?;
         if !debug_receipts.iter().any(|r| {
             r.body.phase == JobPhase::Authorized && r.body.plan_sha256 == self.native_plan_sha256
@@ -940,6 +942,8 @@ impl LinuxDapSession {
         }) {
             return Err(SupervisorError::InvalidTransition);
         }
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=both_receipt_chains_verified");
         let candidate = self
             .gateway
             .source_candidate()
@@ -949,6 +953,8 @@ impl LinuxDapSession {
             .ok_or(SupervisorError::NoContainment)?;
         // The source path must be the native-only read-only snapshot mounted
         // as /workspace; no arbitrary path or suffix/basename lookup.
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=dap_stopped_pc_present");
         let relative = candidate
             .adapter_path
             .strip_prefix("/workspace/")
@@ -982,6 +988,8 @@ impl LinuxDapSession {
             &native_candidate,
         )
         .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=source_snapshot_line_verified");
         let binary = target.root.join(target.confined_relative_binary());
         let kernel = observe_linux_project_pc(
             &self.native_cgroup_dir,
@@ -990,6 +998,8 @@ impl LinuxDapSession {
             &target.binary.binary_sha256,
             pc,
         )?;
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=live_kernel_pc_and_cgroup_verified");
         // Second validation closes source/binary TOCTOU after /proc maps.
         target.verify()?;
         verify_input(&self.source_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
@@ -1039,7 +1049,9 @@ impl LinuxDapSession {
         {
             let mut witness =
                 self.verify_stopped_project_image(supervisor, job_id, plan, target)?;
+            eprintln!("FIN04_D3_LINUX_STAGE=kernel_stop_lineage_complete");
             crate::native_kernel_pc::verify_independent_dwarf_line_for_ci(&mut witness, target)?;
+            eprintln!("FIN04_D3_LINUX_STAGE=independent_llvm_dwarf_line_verified");
             Ok(witness)
         }
     }
