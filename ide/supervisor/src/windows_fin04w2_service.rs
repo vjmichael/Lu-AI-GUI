@@ -198,10 +198,18 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
         pipe, &config.approved_host_executable, &config.expected_host_sha256,
         &config.approved_host_user_sid,
     )?;
-    fin04w2_protocol::inspect_shape_only(
+    let reviewed = fin04w2_protocol::inspect_shape_only(
         &frame[..92], &config.review_only_plan,
         &config.review_only_plan_hash, &nonce(&config.review_only_nonce)?,
     )?;
+    // Shape validity does NOT confer original creator authorization or a
+    // completed build receipt. Do not even acknowledge LaunchSealed/threads/
+    // stack/stop as an accepted audit. Only the harmless Initialize review
+    // receives 'A'; the remaining verbs all fail closed until the original
+    // journal, service-issued one-use grant and PE/PDB kernel gates exist.
+    if reviewed.operation != fin04w2_protocol::ReviewedOperation::Initialize {
+        return Err(denied());
+    }
     if AUDIT_USED.swap(true, Ordering::SeqCst) { return Err(denied()); }
     let response = [b'A']; // Not a debugger authorization or process grant.
     let mut written = 0u32;
