@@ -75,7 +75,16 @@ pub(crate) fn check_original_receipts(
         ||plan.effect_class!="debug_inspection_isolated"
         ||now_ms==0{return Err(denied());}
     let full=Store::replay(rows.to_vec())?;
-    if !full.quarantine.is_empty(){return Err(denied());}
+    // Store::replay conservatively flags an interrupted Running or
+    // ReleasePending job as requiring recovery. The service is checking
+    // the ORIGINAL active host's fsynced phase under authenticated pipe
+    // custody: permit ONLY the exact target job's expected in-progress
+    // quarantine, never foreign or a resurrected Authorized grant.
+    if full.quarantine.iter().any(|id|id!=job_id)
+        || (gate==C2JournalGate::Authorized
+            && full.quarantine.contains(job_id)){
+        return Err(denied());
+    }
     let job=full.jobs.get(job_id).ok_or_else(denied)?;
     let sha=crate::fingerprint(plan)?;
     // The original durable journal intentionally stores ONLY the
