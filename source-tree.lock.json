@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "d638b7b14169782534b30c2c242974561e66c581",
+  "sourceCommitBeforeLock": "a58b9790c218358081c8a839d1b29536042ef11f",
   "trackedFileCount": 994,
   "files": [
     {
@@ -601,7 +601,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "8637baafc7ca22bfa8f25e8905a0014db90c6818"
+      "blob": "5ec2bb0203bbe8bb576747c0b417cbbc0e8a9ecc"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -853,7 +853,7 @@
     },
     {
       "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
-      "blob": "9a9aa362a0aff9688b0b4cd1f752357bdacb14a9"
+      "blob": "0c55b4b7969cf79d625893f1ec11969d4448a77b"
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
@@ -1281,7 +1281,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_admission.rs",
-      "blob": "98d86faf7d5f8b2b9c9e6593941811969b9d9807"
+      "blob": "460ef85d0733d829a8d496fed1d1f3b93c95b6c4"
     },
     {
       "path": "lu-desktop/src-tauri/src/agent_plan_continuation_desktop.rs",
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "3b7866599ba245cdc83fd2ba8f6273ae69ed7c76"
+      "blob": "25f25c7587f23682773188df9aaa43b444fd231d"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2261,7 +2261,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-kernel-manager.py",
-      "blob": "fecef5f6a284b5a13acc285bf5f75962cbc258e9"
+      "blob": "175a048dc457d2833c2d78c3aa381f74f9741fae"
     },
     {
       "path": "scripts/lu-sec06c-owned-probe-launcher.py",
