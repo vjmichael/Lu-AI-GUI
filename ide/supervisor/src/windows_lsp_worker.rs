@@ -22,6 +22,11 @@ use std::{
     },
     thread::JoinHandle,
 };
+#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
+use windows_sys::Win32::Security::{
+    DuplicateTokenEx, ImpersonateLoggedOnUser, RevertToSelf, SecurityImpersonation,
+    TokenImpersonation, TOKEN_DUPLICATE, TOKEN_IMPERSONATE,
+};
 use windows_sys::Win32::{
     Foundation::{SetHandleInformation, INVALID_HANDLE_VALUE},
     Security::SECURITY_ATTRIBUTES,
@@ -380,6 +385,69 @@ fn inspect_debug_stderr(handle: Option<&Handle>) {
         "PROTECTED_LSP_NATIVE_DENIAL_CONTEXT={}",
         classify_debug_denial_context(&output[..read as usize])
     );
+}
+
+// Diagnostic only: use the actual suspended child lowbox token to request
+// read access to a fixed list of previously sealed files. Neither a token
+// handle nor a file handle escapes; no ACLs/capabilities are changed.
+#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
+fn trace_dap_token_access(process: HANDLE, bundle: &Path, source: &Path) -> Result<(), SupervisorError> {
+    if !native_lsp_debug_enabled() {
+        return Ok(());
+    }
+    let targets = [
+        ("adapter", bundle.join("bin/lldb-dap.exe")),
+        ("liblldb", bundle.join("bin/liblldb.dll")),
+        ("python", bundle.join("bin/python310.dll")),
+        ("source", source.to_path_buf()),
+    ];
+    let exists: Vec<bool> = targets.iter().map(|(_, path)| path.is_file()).collect();
+    let mut raw = ptr::null_mut();
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY | TOKEN_DUPLICATE, &mut raw) } == 0 {
+        eprintln!("FIN04_WIN_LOWBOX_READ_PROBE=token_unavailable");
+        return Ok(());
+    }
+    let original = Handle::new(raw)?;
+    raw = ptr::null_mut();
+    if unsafe { DuplicateTokenEx(
+        original.0, TOKEN_QUERY | TOKEN_IMPERSONATE, ptr::null(),
+        SecurityImpersonation, TokenImpersonation, &mut raw,
+    ) } == 0 {
+        eprintln!("FIN04_WIN_LOWBOX_READ_PROBE=duplicate_unavailable");
+        return Ok(());
+    }
+    let impersonation = Handle::new(raw)?;
+    if unsafe { ImpersonateLoggedOnUser(impersonation.0) } == 0 {
+        eprintln!("FIN04_WIN_LOWBOX_READ_PROBE=impersonation_denied");
+        return Ok(());
+    }
+    for ((kind, path), present) in targets.iter().zip(exists) {
+        if !present {
+            eprintln!("FIN04_WIN_LOWBOX_{kind}=absent");
+            continue;
+        }
+        let handle = unsafe { CreateFileW(
+            wide(path.as_os_str()).as_ptr(), 0x8000_0000,
+            FILE_SHARE_READ_VALUE | FILE_SHARE_WRITE_VALUE,
+            ptr::null(), OPEN_EXISTING, 0, ptr::null_mut(),
+        ) };
+        let category = if handle == INVALID_HANDLE_VALUE || handle.is_null() {
+            match unsafe { GetLastError() } {
+                5 => "access_denied",
+                2 | 3 => "missing",
+                _ => "other_kernel_failure",
+            }
+        } else {
+            unsafe { CloseHandle(handle) };
+            "read_allowed"
+        };
+        eprintln!("FIN04_WIN_LOWBOX_{kind}={category}");
+    }
+    // Never continue privileged SCM custody under a lowbox impersonation.
+    if unsafe { RevertToSelf() } == 0 {
+        return Err(SupervisorError::Quarantined);
+    }
+    Ok(())
 }
 
 fn nul_stderr() -> Result<Handle, SupervisorError> {
@@ -1414,6 +1482,14 @@ fn start_windows_dap_inner(
                 return Err(SupervisorError::Quarantined);
             }
         };
+    #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
+    if matches!(plan.recipe_id.as_str(), "dap_lldb_fixed" | "dap_lldb_project") {
+        if let Err(reason) = trace_dap_token_access(process.0, &bundle, &staged_document) {
+            let _ = job.kill_and_verify();
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(reason);
+        }
+    }
     if !lease.alive() {
         native_lsp_trace("scm_lease_lost_before_resume");
         let _ = job.kill_and_verify();
