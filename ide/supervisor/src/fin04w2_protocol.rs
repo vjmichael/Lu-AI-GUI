@@ -126,7 +126,7 @@ mod tests {
         }
     }
     #[test]
-    fn reject_foreign_receipt_replay_extra_bytes_and_unsealed_target() {
+    fn reject_wrong_plan_stale_nonce_extra_bytes_and_unsealed_target() {
         let original = packet(2);
         assert!(inspect_shape_only(&original, &plan(), &"bb".repeat(32), &[0x42;16]).is_err());
         assert!(inspect_shape_only(&original, &plan(), &"aa".repeat(32), &[0x41;16]).is_err());
@@ -135,6 +135,15 @@ mod tests {
         assert!(inspect_shape_only(&extra, &plan(), &"aa".repeat(32), &[0x42;16]).is_err());
         let mut changed = original;
         changed[10] = 1;
+        assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42;16]).is_err());
+        changed = original;
+        changed[0] ^= 1; // fixed magic
+        assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42;16]).is_err());
+        changed = original;
+        changed[8] = 2; // wrong version
+        assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42;16]).is_err());
+        changed = original;
+        changed[TARGET_START] ^= 1; // target changed
         assert!(inspect_shape_only(&changed, &plan(), &"aa".repeat(32), &[0x42;16]).is_err());
         let mut wrong = plan();
         wrong.debug_target_binding_sha256 = None;
