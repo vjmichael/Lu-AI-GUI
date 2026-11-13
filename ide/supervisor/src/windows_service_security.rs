@@ -896,8 +896,17 @@ pub fn authenticate_service_server(
 }
 
 pub fn verify_private_evidence_root(root: &Path) -> Result<(), SupervisorError> {
+    verify_private_evidence_root_for(root, &sid_of_service()?)
+}
+pub(crate) fn verify_private_evidence_root_for(
+    root: &Path,
+    service_sid: &str,
+) -> Result<(), SupervisorError> {
+    if !service_sid.starts_with("S-1-5-80-") {
+        return Err(denied());
+    }
     let system = parse_sid("S-1-5-18")?;
-    let service = parse_sid(&sid_of_service()?)?;
+    let service = parse_sid(service_sid)?;
     for path in [root.to_path_buf(), root.join("service.json")] {
         let meta = fs::symlink_metadata(&path).map_err(|_| denied())?;
         if meta.file_attributes() & 0x400 != 0 {
