@@ -20,6 +20,12 @@ CASES = (
     ("copied_bundle", [COPIED], FIXED_HOST),
     ("distro_binary_in_bwrap", NAMESPACE[:-1] + [SOURCE], "/ls/debuggee/wo6-selftest"),
     ("copied_binary_in_bwrap", NAMESPACE, "/ls/debuggee/wo6-selftest"),
+    # Exact same copied reviewed adapter bytes, but mounted at the distro
+    # executable location. If this alone repairs launch, LLDB helper/resource
+    # discovery depends on executable layout; NOT a protected-cgroup pass.
+    ("copied_at_distro_path_in_bwrap",
+     NAMESPACE[:-2] + ["--ro-bind", COPIED, SOURCE, "--", SOURCE],
+     "/ls/debuggee/wo6-selftest"),
 )
 
 def classify(fragment: str) -> str:

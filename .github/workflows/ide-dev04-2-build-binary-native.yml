@@ -43,17 +43,19 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           node --test ide/app/tests/debug_binary_evidence.test.mjs
+      # The supervisor and IDE Tauri crates do not check in Cargo.lock.
+      # Keep native source tests running; these are NOT pinned release builds.
       - name: Rust native compiler and independently rehashed synthetic byte tests
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked debug_binary_witness
-          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked wo6_build_test_evidence
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib debug_binary_witness
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib wo6_build_test_evidence
       - name: Exact integrated native Tauri build
         shell: bash
         run: |
           set -euo pipefail
-          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --all-targets --locked
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --all-targets
       - name: Distinguish protected process acceptance
         shell: bash
         run: |
