@@ -194,6 +194,45 @@ fn status(state: u32, controls: u32, exit: u32) -> SERVICE_STATUS {
         dwWaitHint: if matches!(state, SERVICE_START_PENDING | SERVICE_STOP_PENDING) { 15000 } else { 0 },
     }
 }
+// W2-C two-phase original-journal protocol. Every one-byte control is
+// fixed and bounded: S=service-owned *suspended* Job admission, G=original
+// host Running receipt fsynced / permission to resume, X=verified empty
+// process tree, R=original host ReleasePending fsynced, F=service Job
+// handle released. None is a DAP/LLDB command or a general execution API.
+#[cfg(feature="fin04w2-approved-fixed-exec")]
+fn send_fixed_signal(pipe:HANDLE, value:u8)->Result<(),SupervisorError>{
+    let mut written=0u32;
+    if unsafe{
+        WriteFile(pipe,(&value as *const u8).cast(),1,&mut written,ptr::null_mut())
+    }==0 || written!=1 {return Err(denied());}
+    Ok(())
+}
+#[cfg(feature="fin04w2-approved-fixed-exec")]
+fn require_fixed_signal(pipe:HANDLE, expected:u8)->Result<(),SupervisorError>{
+    let deadline=Instant::now()+Duration::from_secs(8);
+    loop{
+        if STOP.load(Ordering::SeqCst) || Instant::now()>=deadline{
+            return Err(denied());
+        }
+        let mut amount=0u32;
+        if unsafe{
+            PeekNamedPipe(pipe,ptr::null_mut(),0,ptr::null_mut(),
+                &mut amount,ptr::null_mut())
+        }==0 || amount>1{return Err(denied());}
+        if amount==1{break;}
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut value=0u8;
+    let mut received=0u32;
+    if unsafe{
+        ReadFile(pipe,(&mut value as *mut u8).cast(),1,
+            &mut received,ptr::null_mut())
+    }==0 || received!=1 || value!=expected {
+        return Err(denied());
+    }
+    Ok(())
+}
+
 // Fail closed even if a caller has connected: no command can execute.
 // Only an authenticated *matching installer-staged review fixture* receives
 // the byte 'A' ("audited, NEVER authorized"); all other inputs disconnect.
@@ -276,20 +315,30 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
         fin04w2_authority::consume_once_in_private_service_root(
             &private_root,&original,
         )?;
-        // W2-C test-only approved execution is the single exact hash-pinned
-        // benign fixture, not LLDB. Independent source/debugger receipt and
-        // network policy gates remain separate prerequisites for W2-D.
+        // W2-C permits ONLY the first-party, hash-pinned harmless fixture.
+        // The child remains suspended inside the exact service-owned Job
+        // until the original trusted host fsyncs Running and sends G.
+        // Any pipe loss, early G, failed journal fsync or service death
+        // kills the original process handle and the entire owned Job tree.
         let approved_job=windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
-        approved_job.verify_fixed_probe(
+        let suspended=approved_job.prepare_fixed_probe(
             &config.fixed_probe.executable,
             &config.fixed_probe.expected_sha256,
             &config.fixed_probe.foreign_file,
         )?;
-        let mut written=0u32;
-        let response=[b'X']; // Completed original-approved BENIGN probe.
-        if unsafe {
-            WriteFile(pipe,response.as_ptr().cast(),1,&mut written,ptr::null_mut())
-        }==0 || written!=1 {return Err(denied());}
+        send_fixed_signal(pipe,b'S')?;
+        require_fixed_signal(pipe,b'G')?;
+        suspended.resume_and_verify()?;
+        // The original service Job is now genuinely empty, not merely an
+        // adapter-declared complete event. Host must fsync ReleasePending
+        // BEFORE requesting closure of this independently held kernel Job.
+        send_fixed_signal(pipe,b'X')?;
+        require_fixed_signal(pipe,b'R')?;
+        drop(approved_job);
+        // Only after actual Job-handle release may the original host
+        // write a terminal receipt. This is BENIGN CI fixture acceptance,
+        // never a source debugger/RIP/PDB success.
+        send_fixed_signal(pipe,b'F')?;
         return Ok(());
     }
     // All unauthenticated methods including LaunchSealed must fail. The
