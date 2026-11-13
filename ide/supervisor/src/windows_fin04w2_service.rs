@@ -302,13 +302,14 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
     // LaunchSealed never accepts a caller PID, executable, path or arbitrary
     // DAP instruction. Only W2-C's distinct compile-time feature may admit
     // the separately pinned *harmless fixed worker*, after genuine ORIGINAL
-    // human approval was consumed in the native supervisor journal. The
-    // service requires the kernel-attested original client, protected host
-    // journal ACL, fresh full journal replay and fsynced one-use barrier
-    // BEFORE creating a new suspended worker. No LLDB route exists here.
+    // human approval is present in the original native supervisor journal.
+    // The service prepares the child SUSPENDED BEFORE allowing the original
+    // host to consume the one-use grant. The host MUST then fsync
+    // AdmissionPending and Running; the service reopens and verifies BOTH
+    // original receipts before any ResumeThread. No LLDB route exists.
     #[cfg(feature="fin04w2-approved-fixed-exec")]
     if reviewed.operation == fin04w2_protocol::ReviewedOperation::LaunchSealed {
-        let original = fin04w2_authority::verify_original_journal_file(
+        let original = fin04w2_authority::verify_original_authorized_file(
             &config.original_supervisor_journal,
             &config.original_job_id,
             &config.review_only_plan,
@@ -322,7 +323,7 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
             &config.approved_host_user_sid,
         )?;
         security::verify_private_evidence_root_for(&private_root,&sid)?;
-        fin04w2_authority::consume_once_in_private_service_root(
+        fin04w2_authority::reserve_fresh_original_authorization(
             &private_root,&original,
         )?;
         // W2-C permits ONLY the first-party, hash-pinned harmless fixture.
@@ -338,12 +339,27 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
         )?;
         send_fixed_signal(pipe,b'S')?;
         require_fixed_signal(pipe,b'G')?;
+        // Re-open original private host journal and replay authentic native
+        // transitions AFTER G, not merely trust the incoming byte.
+        fin04w2_authority::verify_original_execution_phase(
+            &config.original_supervisor_journal,
+            &config.original_job_id,&config.review_only_plan,
+            &config.review_only_plan_hash,crate::JobPhase::Running,
+        )?;
         suspended.resume_and_verify()?;
         // The original service Job is now genuinely empty, not merely an
         // adapter-declared complete event. Host must fsync ReleasePending
         // BEFORE requesting closure of this independently held kernel Job.
         send_fixed_signal(pipe,b'X')?;
         require_fixed_signal(pipe,b'R')?;
+        // Do not release OS Job custody until the ORIGINAL native host
+        // has durably fsynced its release intent. A missing or forged R
+        // message keeps this Job under independent SCM custody.
+        fin04w2_authority::verify_original_execution_phase(
+            &config.original_supervisor_journal,
+            &config.original_job_id,&config.review_only_plan,
+            &config.review_only_plan_hash,crate::JobPhase::ReleasePending,
+        )?;
         drop(approved_job);
         // Only after actual Job-handle release may the original host
         // write a terminal receipt. This is BENIGN CI fixture acceptance,
