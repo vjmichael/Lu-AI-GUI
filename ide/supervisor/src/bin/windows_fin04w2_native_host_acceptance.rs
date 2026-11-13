@@ -107,16 +107,21 @@ fn run()->Result<(),lu_ide_execution_supervisor::SupervisorError>{
         if Instant::now()>=until{return Err(denied());}
         std::thread::sleep(Duration::from_millis(75));
     }
+    eprintln!("FIN04W2_C2_STAGE=CI_PROVISIONING_MARKER_OBSERVED");
     let service=PathBuf::from(std::env::var_os("LU_FIN04W2_SERVICE_BINARY")
-        .ok_or_else(denied)?);
+        .ok_or_else(|| {eprintln!("FIN04W2_C2_STAGE=SERVICE_BINARY_ENV_MISSING");denied()})?);
     let service_sha=std::env::var("LU_FIN04W2_SERVICE_SHA256")
-        .map_err(|_|denied())?;
+        .map_err(|_|{eprintln!("FIN04W2_C2_STAGE=SERVICE_SHA_ENV_MISSING");denied()})?;
     let plan_sha=prepared.plan_sha256.clone();
     // Explicitly simulated original API event ONLY in disposable native CI.
     // Never claim this was a human clicking the desktop OS-native dialog.
     supervisor.record_human_approval(
         &prepared.job_id,&plan_sha,&plan.source_head,true,
-    )?; // CI-SIMULATED approval, NEVER physical operator consent.
+    ).map_err(|error|{
+        eprintln!("FIN04W2_C2_STAGE=SIMULATED_ORIGINAL_APPROVAL_DENIED");
+        error
+    })?; // CI-SIMULATED approval, NEVER physical operator consent.
+    eprintln!("FIN04W2_C2_STAGE=ORIGINAL_APPROVAL_RECORDED");
     windows_fin04w2_c2_host::run_fixed_after_original_approval(
         &supervisor,&prepared.job_id,&plan,&service,&service_sha,
     )?;
