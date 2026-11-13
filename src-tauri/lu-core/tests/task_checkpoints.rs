@@ -37,18 +37,48 @@ fn durable_progress_survives_restart_without_forced_timeout() {
         let record = tasks.get("run-1").unwrap().unwrap();
         assert_eq!(record.state, TaskState::Interrupted);
         assert_eq!(record.checkpoint, b"protobuf-task-state");
-        tasks.resume("run-1").unwrap();
-        tasks
-            .checkpoint("run-1", 90, "render finished", b"saved")
-            .unwrap();
-        tasks.complete("run-1").unwrap();
-        assert!(matches!(
+        // Restart preserves the immutable original checkpoint, not the
+        // execution authority. INTERRUPTED cannot be promoted back to
+        // RUNNING, even by a caller using the original task ID.
+        assert_eq!(
+            tasks.resume("run-1"),
+            Err(TaskStoreError::InvalidTransition)
+        );
+        assert_eq!(
             tasks.heartbeat("run-1"),
             Err(TaskStoreError::InvalidTransition)
-        ));
+        );
+        assert_eq!(
+            tasks.checkpoint("run-1", 90, "unapproved replay", b"replay"),
+            Err(TaskStoreError::InvalidTransition)
+        );
+        assert_eq!(
+            tasks.complete("run-1"),
+            Err(TaskStoreError::InvalidTransition)
+        );
+        let original = tasks.get("run-1").unwrap().unwrap();
+        assert_eq!(original.state, TaskState::Interrupted);
+        assert_eq!(original.progress, 25);
+        assert_eq!(original.checkpoint, b"protobuf-task-state");
+        assert_eq!(original.output_folder.as_deref(), Some("results"));
+
+        // An independently authorized caller may start a NEW task identity.
+        // TaskStore::create does not itself grant fresh tool authorization.
+        tasks
+            .create("run-1-new", Some("nvp-session"), Some("results"))
+            .unwrap();
+        tasks.start("run-1-new").unwrap();
+        tasks
+            .checkpoint("run-1-new", 90, "new task progress", b"new checkpoint")
+            .unwrap();
+        tasks.complete("run-1-new").unwrap();
+        assert_eq!(
+            tasks.get("run-1-new").unwrap().unwrap().state,
+            TaskState::Completed
+        );
         assert_eq!(
             tasks.get("run-1").unwrap().unwrap().state,
-            TaskState::Completed
+            TaskState::Interrupted
         );
     }
     let _ = fs::remove_dir_all(dir);

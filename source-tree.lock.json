@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "5f9595f7568774b94f64bec4c84a369380d87a66",
+  "sourceCommitBeforeLock": "88e34abd04e91c7ac14c20656673d3c7a5d59a3f",
   "trackedFileCount": 984,
   "files": [
     {
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "408b632eb5140beddd8749affe5b8a6f61f88193"
+      "blob": "00bed37c61ca754e41a9ae15a808f847b62c6a43"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -3833,7 +3833,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/task_checkpoints.rs",
-      "blob": "c6ad146785f59abac417e92d117c9dc9d0a825a4"
+      "blob": "ee9ce5840502fcf14536f9c65adb1721269231dd"
     },
     {
       "path": "src-tauri/lu-core/tests/unified_native_catalog.rs",
