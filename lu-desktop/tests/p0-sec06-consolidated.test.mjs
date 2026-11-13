@@ -80,6 +80,28 @@ test('SEC06 Linux original Core suite receives absolute host-pinned Git without 
   assert.equal(section.includes('--skip-ancestor-migration'),false);
 });
 
+test('SEC06C provisions real systemd delegation and never runs kernel cases as root',()=>{
+  const python=readFileSync(join(root,'scripts/sec06-linux-delegated-runner.py'),'utf8');
+  const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8');
+  const linux=workflow.split('  core01e-sec06-native:\n')[1]
+    ?.split('  p0-gate-installed-windows:')[0];
+  assert.ok(linux);
+  assert.match(linux,/sec06-linux-delegated-runner\.py --outer/);
+  assert.match(linux,/kernel-delegation\.json/);
+  assert.match(python,/--property=Delegate=yes/);
+  assert.match(python,/--property=User=/);
+  assert.match(python,/os\.geteuid\(\) == 0/);
+  assert.match(python,/os\.getxattr\(path, "user\.delegate"\)/);
+  assert.match(python,/child\.mkdir\(\)/);
+  assert.match(python,/cgroup\.kill/);
+  assert.match(python,/ancestorCgroupProcsUserWritable/);
+  assert.match(python,/SEC06C_BLOCKED: native case or ancestor containment failed/);
+  assert.match(python,/return 77/);
+  assert.doesNotMatch(python,/chmod\s+777|mount\s+-t\s+cgroup2/);
+  assert.match(gate,/delegationWitnessSha256/);
+  assert.match(gate,/missing or altered genuine Linux OS delegation witness/);
+});
+
 test('SEC06 actual kernel oracle treats escaped descendant as security blocker',()=>{
   assert.match(negative,/SEC06_BLOCKED_ANCESTOR_CGROUP_ESCAPE=1/);
   assert.match(negative,/SEC06_SECURITY_BLOCKER/);
@@ -114,7 +136,7 @@ test('SEC06 verifier rejects changed original native log with correct head and l
     const lockHash=digest(readFileSync(join(root,'source-tree.lock.json')));
     const required=[
       'exact-head-inventory','security-contracts','sec06-js-syntax',
-      'linux-negative-python-syntax','linux-host-crash-python-syntax',
+      'linux-negative-python-syntax','linux-host-crash-python-syntax','linux-delegated-python-syntax',
       'core-native-full','desktop-ansf-native','worker-job-native',
       'core-sec-regressions','desktop-sec-regressions',
       'worker-sec-regressions',
@@ -130,12 +152,21 @@ test('SEC06 verifier rejects changed original native log with correct head and l
       writeFileSync(join(temp,log),bytes);
       return {id,status:'PASS',log,sha256:digest(bytes)};
     });
+    const delegation=Buffer.from(JSON.stringify({
+      schema:'lu-sec06c-native-delegation-v1',
+      status:'DELEGATED_KERNEL_PREFLIGHT_ONLY',
+      head,euid:1000,realDelegation:true,systemdDelegateXattr:true,
+      kernelCgroupKillPresent:true,probePopulatedZero:true,
+      kernelTestAccepted:false,releaseOrInstallAuthorized:false
+    }));
+    writeFileSync(join(temp,'kernel-delegation.json'),delegation);
     const receipt=join(temp,'linux.receipt.json');
     writeFileSync(receipt,JSON.stringify({
       schema:'lu-sec06-native-evidence-v1',target:'linux',head,
       sourceLockSha256:lockHash,machine:{platform:'linux'},
       status:'PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING',
       allNativeCasesPassed:true,localExecutionOnly:true,
+      delegationWitnessSha256:digest(delegation),
       noReleaseAuthority:true,
       independentlyVerifiedInstalledHumanAcceptance:false,
       cases

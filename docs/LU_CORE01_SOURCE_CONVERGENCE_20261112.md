@@ -144,3 +144,7 @@ SEC-06C independently remains **BLOCKED** because hosted Linux did not provide n
 ### CORE-01E SEC-06F original digest mismatch — 2026-11-13
 
 Same-commit independent Windows and Linux SEC-06 native receipts on `159fb75fd4c3d24d8b4aaf814de61abe4ad7deb9` have individually correct saved log SHA-256 hashes (Windows 14/14, Linux 22/22) but **different hash of the checked-out `source-tree.lock.json`**, despite both passing original REPO-01 source verification. This is an additional demonstrated exact-head reconciliation blocker, separate from the SEC-06B missing native Linux Git fixture path and SEC-06C unavailable delegated cgroup. The fix hashes the canonical Git blob with strict working-tree CRLF-equivalence only; an actual Git fixture tests cross-platform digest stability and refusal of modified JSON. Original SEC-06 source/Linux/Windows OS receipts must be regenerated on the repaired source before SEC-06F is reviewed; no promotion from old receipts and no installed authorization.
+
+### SEC-06C Linux delegated-cgroup runner (2026-11-13)
+
+Added a genuine systemd `Delegate=yes` per-run scope for the independent SEC-06 Linux case suite, with a nonroot service identity, a kernel-proven child cgroup, `user.delegate=1` and populated-zero; its preflight witness is SHA-256-linked to the original Linux SEC-06 receipt. The original worker/guardian/setsid/migration attacks still run unchanged. Lack of delegation or a successful ancestor escape continues to BLOCK acceptance; no installed/merge/release approval is issued by this code.

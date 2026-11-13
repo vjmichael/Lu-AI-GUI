@@ -85,6 +85,26 @@ function doCase(id,exe,args,opts={}){
   return row;
 }
 function writeReceipt(target){
+  let delegationWitnessSha256=null;
+  if(target==='linux'){
+    try{
+      const witnessPath=join(evidence,'kernel-delegation.json');
+      const bytes=readFileSync(witnessPath);
+      const proof=JSON.parse(bytes.toString('utf8'));
+      if(proof.schema!=='lu-sec06c-native-delegation-v1'||
+         proof.status!=='DELEGATED_KERNEL_PREFLIGHT_ONLY'||
+         proof.head!==currentHead||!Number.isInteger(proof.euid)||
+         proof.euid<=0||proof.realDelegation!==true||
+         proof.systemdDelegateXattr!==true||
+         proof.kernelCgroupKillPresent!==true||
+         proof.probePopulatedZero!==true||
+         proof.kernelTestAccepted!==false||
+         proof.releaseOrInstallAuthorized!==false){
+        throw new Error('invalid or not actually delegated OS preflight');
+      }
+      delegationWitnessSha256=hash(bytes);
+    }catch(e){reject('SEC06C Linux delegated-kernel witness missing: '+String(e))}
+  }
   const status=blocked?'BLOCKED_NATIVE_SECURITY':
     target==='source'?'SOURCE_CONTRACTS_PASS_NATIVE_UNPROVEN':
     'PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING';
@@ -93,6 +113,7 @@ function writeReceipt(target){
     target,head:currentHead,sourceLockSha256:lockSha,
     machine:{platform:platform(),arch:arch(),release:release()},
     status,allNativeCasesPassed:!blocked,
+    ...(target==='linux'?{delegationWitnessSha256}:{}),
     localExecutionOnly:true,noReleaseAuthority:true,
     independentlyVerifiedInstalledHumanAcceptance:false,
     cases:results,
@@ -127,6 +148,9 @@ function sourceCases(){
     ],{timeout:30000});
     doCase('linux-host-crash-python-syntax','python3',[
       '-m','py_compile','benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py'
+    ],{timeout:30000});
+    doCase('linux-delegated-python-syntax','python3',[
+      '-m','py_compile','scripts/sec06-linux-delegated-runner.py'
     ],{timeout:30000});
   }
 }
@@ -195,16 +219,31 @@ if(mode==='verify'){
              'PROVISIONAL_NATIVE_PASS_OWNER_GATE_PENDING')){
           throw new Error('wrong original source identity or unaccepted native result');
         }
+        if(target==='linux'){
+          const dpath=join(dirname(path),'kernel-delegation.json');
+          const dbytes=readFileSync(dpath);
+          const witness=JSON.parse(dbytes.toString('utf8'));
+          if(witness.schema!=='lu-sec06c-native-delegation-v1'||
+             witness.status!=='DELEGATED_KERNEL_PREFLIGHT_ONLY'||
+             witness.head!==currentHead||
+             witness.euid<=0||!Number.isInteger(witness.euid)||
+             witness.realDelegation!==true||witness.systemdDelegateXattr!==true||
+             witness.kernelCgroupKillPresent!==true||witness.probePopulatedZero!==true||
+             witness.kernelTestAccepted!==false||witness.releaseOrInstallAuthorized!==false||
+             hash(dbytes)!==p.delegationWitnessSha256){
+            throw new Error('missing or altered genuine Linux OS delegation witness');
+          }
+        }
         if(target==='linux'&&p.machine.platform!=='linux'||
            target==='windows'&&p.machine.platform!=='win32'){
           throw new Error('wrong original OS proof');
         }
         const required={
           source:['exact-head-inventory','security-contracts',
-                  'sec06-js-syntax'],
+                  'sec06-js-syntax','linux-delegated-python-syntax'],
           linux:['exact-head-inventory','security-contracts',
                  'sec06-js-syntax','linux-negative-python-syntax',
-                 'linux-host-crash-python-syntax',
+                 'linux-host-crash-python-syntax','linux-delegated-python-syntax',
                  'core-native-full','desktop-ansf-native','worker-job-native',
                  'core-sec-regressions','desktop-sec-regressions',
                  'worker-sec-regressions',

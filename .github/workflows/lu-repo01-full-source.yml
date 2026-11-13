@@ -2886,7 +2886,16 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           mkdir -p sec06-native-evidence
-          node scripts/p0-sec06-consolidated.mjs --mode "$SEC06_MODE" --evidence sec06-native-evidence 2>&1 | tee sec06-native-evidence/runner-console.log
+          if [[ "$SEC06_MODE" == "linux" ]]; then
+            # Only systemd provisions Delegate=yes. Original tests are nonroot.
+            python3 scripts/sec06-linux-delegated-runner.py --outer \
+              --expected-sha "$EXPECTED_SHA" --evidence sec06-native-evidence \
+              2>&1 | tee sec06-native-evidence/runner-console.log
+            test -s sec06-native-evidence/kernel-delegation.json
+          else
+            node scripts/p0-sec06-consolidated.mjs --mode "$SEC06_MODE" \
+              --evidence sec06-native-evidence 2>&1 | tee sec06-native-evidence/runner-console.log
+          fi
           test -s "sec06-native-evidence/$SEC06_MODE.receipt.json"
           echo 'SEC-06 evidence is provisional; no installation or release is approved.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
