@@ -2763,6 +2763,18 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib --tests -- --nocapture 2>&1 | tee p0-native-evidence/core-tests.log
+      # The end-to-end UI suite starts this exact, compiled Rust scanner in
+      # a real child process. An absent binary is a test-provisioning failure,
+      # not a reason to skip its digest/authorization regressions.
+      - name: Build exact production scanner worker test binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --manifest-path lu-desktop/tests/native-file-scan/Cargo.toml --bin lu-file-scan-worker-acceptance 2>&1 | tee p0-native-evidence/file-scan-worker-build.log
+          exe="lu-desktop/tests/native-file-scan/target/debug/lu-file-scan-worker-acceptance"
+          if [ "$RUNNER_OS" = "Windows" ]; then exe="${exe}.exe"; fi
+          test -f "$exe" || { echo "MISSING_COMPILED_NATIVE_SCANNER=$exe" >&2; exit 1; }
+          echo "COMPILED_NATIVE_SCANNER=$exe" | tee -a p0-native-evidence/file-scan-worker-build.log
       # Tauri generate_context! requires frontendDist during desktop lib-test compilation.
       # Build the actual frontend first; do not substitute an inert dist placeholder.
       - name: Production frontend and P0 UI regression suite
