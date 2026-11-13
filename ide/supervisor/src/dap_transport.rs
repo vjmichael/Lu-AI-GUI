@@ -289,6 +289,19 @@ impl DapGateway {
     pub(crate) fn ci_configuration_done_acknowledged(&self) -> bool {
         self.session.ci_configuration_done_acknowledged()
     }
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub(crate) fn ci_fixed_source_breakpoint_needed(&self) -> bool {
+        self.session.ci_fixed_source_breakpoint_needed()
+    }
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub(crate) fn ci_set_fixed_source_breakpoint(&mut self) -> Result<(), SupervisorError> {
+        let frame = self.session.ci_set_fixed_source_breakpoint().map_err(protocol_denied)?;
+        self.send(&frame)
+    }
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub(crate) fn ci_fixed_source_breakpoint_verified(&self) -> bool {
+        self.session.ci_fixed_source_breakpoint_verified()
+    }
     pub(crate) fn configuration_done(&mut self) -> Result<(), SupervisorError> {
         // The pinned native adapter can emit initialized only after launch.
         // This is the empty, nonexecuting DAP configuration confirmation.

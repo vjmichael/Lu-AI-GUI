@@ -879,6 +879,18 @@ impl LinuxDapSession {
     pub fn ci_configuration_done_acknowledged(&self) -> bool {
         self.gateway.ci_configuration_done_acknowledged()
     }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn ci_fixed_source_breakpoint_needed(&self) -> bool {
+        self.gateway.ci_fixed_source_breakpoint_needed()
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn ci_set_fixed_source_breakpoint(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.ci_set_fixed_source_breakpoint()
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn ci_fixed_source_breakpoint_verified(&self) -> bool {
+        self.gateway.ci_fixed_source_breakpoint_verified()
+    }
     pub fn configuration_done(&mut self) -> Result<(), SupervisorError> {
         self.gateway.configuration_done()
     }

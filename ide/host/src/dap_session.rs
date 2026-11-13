@@ -133,6 +133,12 @@ pub struct DapSession {
     configuration_done_sent: bool,
     #[cfg(feature = "dev045d3-ci-source-trap")]
     configuration_done_acknowledged: bool,
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    source_trap_mode: bool,
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    source_trap_breakpoint_sent: bool,
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    source_trap_breakpoint_verified: bool,
     // Ephemeral, untrusted adapter coordinates; NEVER a symbol-line proof.
     last_source_candidate: Option<SourceLineCandidate>,
     #[cfg(feature = "dev046c-ci-control")]
@@ -159,6 +165,12 @@ impl DapSession {
             configuration_done_sent: false,
             #[cfg(feature = "dev045d3-ci-source-trap")]
             configuration_done_acknowledged: false,
+            #[cfg(feature = "dev045d3-ci-source-trap")]
+            source_trap_mode: false,
+            #[cfg(feature = "dev045d3-ci-source-trap")]
+            source_trap_breakpoint_sent: false,
+            #[cfg(feature = "dev045d3-ci-source-trap")]
+            source_trap_breakpoint_verified: false,
             last_source_candidate: None,
             #[cfg(feature = "dev046c-ci-control")]
             ci_control: None,
@@ -274,7 +286,41 @@ impl DapSession {
     pub fn launch_verified_project_source_trap_for_ci(
         &mut self, program: &str,
     ) -> Result<Vec<u8>, DapError> {
-        self.launch_verified_project_with_stop(program, false)
+        let frame = self.launch_verified_project_with_stop(program, false)?;
+        self.source_trap_mode = true;
+        Ok(frame)
+    }
+    /// The native sealed CI fixture is compiled with an x86_64 trap on
+    /// src/main.rs:3. A *single* fixed breakpoint is installed BEFORE
+    /// configurationDone resumes the target. The adapter's verified ACK
+    /// does not count as a hit, PC, source line, or authorization.
+    /// This function is unavailable to release builds and cannot take
+    /// any path, line, thread, expression, PID or user argument.
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    pub fn ci_fixed_source_breakpoint_needed(&self) -> bool {
+        self.source_trap_mode && self.launch_sent
+            && self.initialized_event
+            && !self.source_trap_breakpoint_sent
+            && !self.configuration_done_sent
+            && matches!(self.phase, DapPhase::Ready | DapPhase::Launching)
+    }
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    pub fn ci_set_fixed_source_breakpoint(&mut self) -> Result<Vec<u8>, DapError> {
+        if !self.ci_fixed_source_breakpoint_needed() {
+            return Err(DapError::InvalidPhase);
+        }
+        let frame = self.request(
+            "setBreakpoints",
+            json!({"source": {"path": "/workspace/src/main.rs"},
+                "breakpoints":[{"line":3}],
+                "sourceModified":false}),
+        )?;
+        self.source_trap_breakpoint_sent = true;
+        Ok(frame)
+    }
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    pub fn ci_fixed_source_breakpoint_verified(&self) -> bool {
+        self.source_trap_mode && self.source_trap_breakpoint_verified
     }
     fn launch_verified_project_with_stop(
         &mut self, program: &str, stop_on_entry: bool
@@ -339,6 +385,12 @@ impl DapSession {
         self.launch_sent
             && self.initialized_event
             && !self.configuration_done_sent
+            && {
+                #[cfg(feature = "dev045d3-ci-source-trap")]
+                { !self.source_trap_mode || self.source_trap_breakpoint_verified }
+                #[cfg(not(feature = "dev045d3-ci-source-trap"))]
+                { true }
+            }
             && matches!(
                 self.phase,
                 DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped
@@ -906,6 +958,26 @@ impl DapSession {
                             return Err(DapError::InvalidMessage);
                         }
                         active.response_ack = true;
+                        Ok(None)
+                    }
+                    #[cfg(feature = "dev045d3-ci-source-trap")]
+                    "setBreakpoints"
+                        if self.source_trap_mode && self.source_trap_breakpoint_sent
+                            && !self.source_trap_breakpoint_verified
+                            && !self.configuration_done_sent
+                            && matches!(self.phase, DapPhase::Launching | DapPhase::Ready) =>
+                    {
+                        let entries = obj.get("body")
+                            .and_then(|v| v.get("breakpoints"))
+                            .and_then(Value::as_array)
+                            .ok_or(DapError::InvalidMessage)?;
+                        if entries.len() != 1
+                            || entries[0].get("verified") != Some(&Value::Bool(true))
+                            || entries[0].get("line").and_then(Value::as_u64) != Some(3)
+                        {
+                            return Err(DapError::InvalidMessage);
+                        }
+                        self.source_trap_breakpoint_verified = true;
                         Ok(None)
                     }
                     #[cfg(feature = "dev046c-ci-control")]
@@ -1962,4 +2034,57 @@ mod tests {
         assert_eq!(s.phase(), DapPhase::Quarantined);
         assert!(s.source_candidate().is_none());
     }
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    #[test]
+    fn reviewed_source_trap_requires_verified_fixed_breakpoint_before_resume() {
+        let mut session = DapSession::new();
+        session.phase = DapPhase::Ready;
+        session.initialized_event = true;
+        let launch = session
+            .launch_verified_project_source_trap_for_ci("/debug-target/debug/fixture")
+            .unwrap();
+        assert!(String::from_utf8(launch).unwrap().contains("\\"stopOnEntry\\":false"));
+        assert!(!session.configuration_needed());
+        assert!(session.ci_fixed_source_breakpoint_needed());
+        let wire = session.ci_set_fixed_source_breakpoint().unwrap();
+        let command = String::from_utf8(wire).unwrap();
+        assert!(command.contains("/workspace/src/main.rs"));
+        assert!(command.contains("\\"line\\":3"));
+        assert!(!session.configuration_needed());
+        let seq = session.seq - 1;
+        session.receive(&framed(json!({
+            "seq":14, "type":"response", "request_seq":seq,
+            "command":"setBreakpoints", "success":true,
+            "body":{"breakpoints":[{"verified":true,"line":3}]}
+        }))).unwrap();
+        assert!(session.ci_fixed_source_breakpoint_verified());
+        assert!(session.configuration_needed());
+        assert!(!session.ci_configuration_done_acknowledged());
+        session.configuration_done().unwrap();
+        assert!(!session.ci_fixed_source_breakpoint_needed());
+        assert!(!session.ci_configuration_done_acknowledged());
+        // The breakpoint ACK cannot establish an actual stopped thread,
+        // program counter, DWARF line, or independent kernel custody.
+        assert!(session.source_candidate().is_none());
+    }
+
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    #[test]
+    fn unverified_breakpoint_never_authorizes_configuration_resume() {
+        let mut session = DapSession::new();
+        session.phase = DapPhase::Ready;
+        session.initialized_event = true;
+        session.launch_verified_project_source_trap_for_ci("/debug-target/debug/fixture").unwrap();
+        session.ci_set_fixed_source_breakpoint().unwrap();
+        let seq = session.seq - 1;
+        assert_eq!(session.receive(&framed(json!({
+            "seq":14, "type":"response", "request_seq":seq,
+            "command":"setBreakpoints", "success":true,
+            "body":{"breakpoints":[{"verified":false,"line":3}]}
+        }))).unwrap_err(), DapError::InvalidMessage);
+        assert!(!session.ci_fixed_source_breakpoint_verified());
+        assert!(!session.configuration_needed());
+        assert!(session.configuration_done().is_err());
+    }
+
 }

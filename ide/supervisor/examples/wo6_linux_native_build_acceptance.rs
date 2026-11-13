@@ -317,6 +317,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Run without entry stop only in this disposable native fixture;
             // the first genuine SIGTRAP must have the original source line.
             dap.launch_project_source_trap_for_ci().map_err(|e| e.code())?;
+            // LLDB 18 resumes on configurationDone(stopOnEntry=false).
+            // First bind a single breakpoint to the fixed, sealed source
+            // file/line, and await its verified adapter response. Only a
+            // subsequent real stopped event, native PC and independent
+            // DWARF line may satisfy the acceptance gate.
+            if dap.ci_fixed_source_breakpoint_needed() {
+                dap.ci_set_fixed_source_breakpoint().map_err(|e| e.code())?;
+            }
             if dap.configuration_needed() {
                 dap.configuration_done().map_err(|e| e.code())?;
             }
@@ -332,7 +340,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         DapEvent::ConfigurationRequested => {
                             config_requested = true;
                             eprintln!("FIN04_D3_LINUX_DAP_EVENT=configuration_requested");
-                            dap.configuration_done().map_err(|e| e.code())?
+                            if dap.ci_fixed_source_breakpoint_needed() {
+                                dap.ci_set_fixed_source_breakpoint().map_err(|e| e.code())?;
+                            }
                         }
                         DapEvent::Stopped { thread_id } => {
                             eprintln!("FIN04_D3_LINUX_DAP_EVENT=real_stopped");
@@ -357,6 +367,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         _ => {}
                     }
                 }
+                if dap.ci_fixed_source_breakpoint_needed() {
+                    dap.ci_set_fixed_source_breakpoint().map_err(|e| e.code())?;
+                }
+                if dap.configuration_needed() {
+                    dap.configuration_done().map_err(|e| e.code())?;
+                }
                 if stopped.is_some() && !requested_threads && dap.phase() == DapPhase::Stopped {
                     dap.threads().map_err(|e| e.code())?;
                     requested_threads = true;
@@ -375,8 +391,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Fixed booleans only; never forward adapter output, process
                 // identity, source bytes or an unverified OS stop.
                 eprintln!(
-                    "FIN04_D3_LINUX_DAP_STOP_REFUSAL launch_ack={};config_event={};config_ack={};continued={};stopped={};threads={};stack={};phase={:?}",
+                    "FIN04_D3_LINUX_DAP_STOP_REFUSAL launch_ack={};config_event={};bp_verified={};config_ack={};continued={};stopped={};threads={};stack={};phase={:?}",
                     launch_acknowledged, config_requested,
+                    dap.ci_fixed_source_breakpoint_verified(),
                     dap.ci_configuration_done_acknowledged(), native_continued,
                     stopped.is_some(), threads, stack, dap.phase(),
                 );
