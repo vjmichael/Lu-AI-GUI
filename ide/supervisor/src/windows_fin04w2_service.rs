@@ -198,6 +198,24 @@ fn status(state: u32, controls: u32, exit: u32) -> SERVICE_STATUS {
 // Only an authenticated *matching installer-staged review fixture* receives
 // the byte 'A' ("audited, NEVER authorized"); all other inputs disconnect.
 fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), SupervisorError> {
+    // W2-C is intentionally a DIFFERENT handshake from W2-A's audit-only
+    // static test correlation. A fresh native SCM-generated challenge
+    // binds exactly one connected, kernel-attested client to this attempt.
+    // The challenge is not a grant and is never accepted on another pipe.
+    #[cfg(feature="fin04w2-approved-fixed-exec")]
+    let challenge: [u8;16] = {
+        use rand::{rngs::OsRng, RngCore};
+        let mut value=[0u8;16];
+        OsRng.fill_bytes(&mut value);
+        let mut message=[0u8;17];
+        message[0]=b'C'; // service challenge only, never execution.
+        message[1..].copy_from_slice(&value);
+        let mut wrote=0u32;
+        if unsafe {
+            WriteFile(pipe,message.as_ptr().cast(),17,&mut wrote,ptr::null_mut())
+        }==0 || wrote!=17 {return Err(denied());}
+        value
+    };
     let until = Instant::now() + Duration::from_secs(2);
     let mut available = 0u32;
     loop {
@@ -222,9 +240,15 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
         pipe, &config.approved_host_executable, &config.expected_host_sha256,
         &config.approved_host_user_sid,
     )?;
+    #[cfg(feature="fin04w2-approved-fixed-exec")]
+    let expected_challenge=&challenge;
+    #[cfg(not(feature="fin04w2-approved-fixed-exec"))]
+    let configured_nonce=nonce(&config.review_only_nonce)?;
+    #[cfg(not(feature="fin04w2-approved-fixed-exec"))]
+    let expected_challenge=&configured_nonce;
     let reviewed = fin04w2_protocol::inspect_shape_only(
         &frame[..92], &config.review_only_plan,
-        &config.review_only_plan_hash, &nonce(&config.review_only_nonce)?,
+        &config.review_only_plan_hash, expected_challenge,
     )?;
     // LaunchSealed never accepts a caller PID, executable, path or arbitrary
     // DAP instruction. Only W2-C's distinct compile-time feature may admit
