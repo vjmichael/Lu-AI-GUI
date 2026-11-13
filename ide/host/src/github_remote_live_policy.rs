@@ -24,6 +24,53 @@ pub trait NativeGitHubReadCredentialVault {
     fn with_token<R,F>(&self,repo:&str,f:F)->Result<R,&'static str>
     where F:FnOnce(&str)->Result<R,&'static str>;
 }
+// Native OS-only implementation. The secret is read exclusively from
+// Windows Credential Manager or Linux Secret Service (never an in-process
+// mock, environment variable, CLI argument, URL, Git config or project
+// file). Host OS account/provisioning remain independently authorized.
+// Neither a token value nor vault identity crosses the WebView boundary.
+#[cfg(all(feature="fin03-native-vault",any(windows,linux)))]
+pub struct NativeOsGitHubReadVault {
+    serialized:std::sync::Mutex<()>,
+}
+#[cfg(all(feature="fin03-native-vault",any(windows,linux)))]
+impl Default for NativeOsGitHubReadVault {
+    fn default()->Self{Self{
+        serialized:std::sync::Mutex::new(()),
+    }}
+}
+#[cfg(all(feature="fin03-native-vault",any(windows,linux)))]
+impl NativeGitHubReadCredentialVault for NativeOsGitHubReadVault {
+    fn with_token<R,F>(&self,repo:&str,f:F)->Result<R,&'static str>
+    where F:FnOnce(&str)->Result<R,&'static str>{
+        let (owner,name)=repo.split_once('/')
+            .ok_or("FIN03_VAULT_REPOSITORY_INVALID")?;
+        if !safe_component(owner)||!safe_component(name)
+            ||name.contains('/') {
+            return Err("FIN03_VAULT_REPOSITORY_INVALID");
+        }
+        let _guard=self.serialized.lock()
+            .map_err(|_|"FIN03_NATIVE_VAULT_UNAVAILABLE")?;
+        // service+account are fixed OS-credential selectors, not a
+        // user-provided arbitrary keychain path. Read only; no setter.
+        let entry=keyring::Entry::new(
+            "Lu IDE GitHub Read Only v1",repo,
+        ).map_err(|_|"FIN03_NATIVE_VAULT_UNAVAILABLE")?;
+        let secret=zeroize::Zeroizing::new(
+            entry.get_password()
+                .map_err(|_|"FIN03_NATIVE_CREDENTIAL_NOT_PROVISIONED")?
+        );
+        if secret.is_empty()||secret.len()>4096
+            ||secret.bytes().any(|b|!b.is_ascii_graphic()){
+            return Err("FIN03_NATIVE_CREDENTIAL_MALFORMED");
+        }
+        // The borrowed token is confined to an immediate, pinned-origin
+        // native HTTPS GET. Its in-memory copy is zeroized on scope exit.
+        // TLS/HTTP stacks may make transient copies; this does not claim
+        // hardware-backed non-extractability or token-scope restriction.
+        f(secret.as_str())
+    }
+}
 #[derive(Debug,Clone,Serialize)]
 #[serde(rename_all="camelCase")]
 pub struct LiveBranchPolicyEvidence {
