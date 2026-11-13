@@ -152,6 +152,107 @@ pub(crate) fn consume_once_in_private_service_root(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn project_plan() -> JobPlan {
+        JobPlan {
+            project_id:format!("ide-{}","a".repeat(32)),
+            recipe_id:"dap_lldb_project".into(),
+            source_head:"b".repeat(40),
+            input_snapshot_sha256:"c".repeat(64),
+            manifest_sha256:"d".repeat(64),
+            toolchain_sha256:"e".repeat(64),
+            debug_target_binding_sha256:Some("f".repeat(64)),
+            runtime_limit_ms:90_000,memory_limit_bytes:512*1024*1024,
+            process_limit:16,log_limit_bytes:65536,
+            effect_class:"debug_inspection_isolated".into(),
+        }
+    }
+    #[test]
+    fn original_supervisor_one_use_grant_replay_stale_and_tampering() {
+        use crate::{Supervisor,OsContainmentProof};
+        // A unit-level stand-in for the independently verified native
+        // OS worker proof. This test does NOT claim to test Windows kernel
+        // admission or genuine interactive human UI confirmation.
+        let os=OsContainmentProof {
+            platform:"windows".into(),
+            restricted_identity:true,
+            filesystem_access_limited:true,network_access_limited:true,
+            child_contained_before_resume:true,process_tree_kill_verified:true,
+            memory_quota:true,cpu_quota:true,pid_quota:true,
+            protected_journal_broker:true,
+        };
+        let source=std::env::temp_dir().join(format!(
+            "fin04w2-original-{:016x}.jsonl",rand::random::<u64>()
+        ));
+        let plan=project_plan();
+        let sha=crate::fingerprint(&plan).unwrap();
+        let supervisor=Supervisor::open(source.clone()).unwrap();
+        let job=supervisor.prepare(plan.clone()).unwrap();
+        let pending=supervisor.receipt_history(&job.job_id).unwrap();
+        assert!(verify_consumed_original_approval(
+            &pending,&job.job_id,&plan,&sha,now_ms().unwrap()
+        ).is_err());
+        supervisor.record_human_approval(
+            &job.job_id,&sha,&plan.source_head,true,
+        ).unwrap(); // isolated fixture-only simulated GUI approval
+        let approved=supervisor.receipt_history(&job.job_id).unwrap();
+        assert!(verify_consumed_original_approval(
+            &approved,&job.job_id,&plan,&sha,now_ms().unwrap()
+        ).is_err());
+        supervisor.consume_grant_after_attestation(
+            &job.job_id,&plan,&os,
+        ).unwrap(); // test-only OS proof, NOT a real service receipt
+        assert!(supervisor.consume_grant_after_attestation(
+            &job.job_id,&plan,&os,
+        ).is_err());
+        let receipts=supervisor.receipt_history(&job.job_id).unwrap();
+        let witnessed=verify_consumed_original_approval(
+            &receipts,&job.job_id,&plan,&sha,now_ms().unwrap()
+        ).unwrap();
+        assert_eq!(witnessed.admission_entry_sha256,receipts[2].entry_hash);
+        assert!(verify_original_journal_file(
+            &source,&job.job_id,&plan,&sha,
+        ).is_ok());
+        assert!(verify_consumed_original_approval(
+            &receipts,&job.job_id,&plan,&sha,
+            receipts[1].body.observed_unix_ms + MAX_AGE_MS + 1,
+        ).is_err());
+        let mut corrupted=receipts.clone();
+        corrupted[1].body.outcome_code="frontend_click_claimed".into();
+        assert!(verify_consumed_original_approval(
+            &corrupted,&job.job_id,&plan,&sha,now_ms().unwrap()
+        ).is_err());
+        let other=format!("job-{}","e".repeat(32));
+        assert!(verify_consumed_original_approval(
+            &receipts,&other,&plan,&sha,now_ms().unwrap()
+        ).is_err());
+        supervisor.native_mark_running(&job.job_id).unwrap();
+        assert!(verify_original_journal_file(
+            &source,&job.job_id,&plan,&sha,
+        ).is_err());
+        let _=std::fs::remove_file(&source);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn service_one_use_replay_barrier_survives_reopen() {
+        let root=std::env::temp_dir().join(format!(
+            "fin04w2-barrier-{:016x}",rand::random::<u64>()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let proof=ConsumedOriginalApproval {
+            job_id:format!("job-{}","c".repeat(32)),
+            plan_sha256:"d".repeat(64),
+            admission_entry_sha256:"e".repeat(64),
+            session_id:"session-ci".into(),
+        };
+        consume_once_in_private_service_root(&root,&proof).unwrap();
+        assert!(consume_once_in_private_service_root(&root,&proof).is_err());
+        let mut rewritten=proof.clone();
+        rewritten.admission_entry_sha256="f".repeat(64);
+        assert!(consume_once_in_private_service_root(&root,&rewritten).is_err());
+        let _=std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn reject_missing_original_approval_or_fake_staged_hashes() {
         let plan=JobPlan {
