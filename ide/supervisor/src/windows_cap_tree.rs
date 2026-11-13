@@ -555,9 +555,103 @@ pub(crate) fn publish_into_native_parent(
     Ok((verified.bytes, seal))
 }
 
+/// FIN-01D: only a terminated, original-Job Cargo *build* may use this
+/// publisher. The NTFS kernel link count must match every alias inventoried
+/// under the same pinned capability root. No external alias is acceptable.
+/// Target files are new one-link copies, never links to child/host data.
+pub(crate) fn publish_closed_compiler_output(
+    source_path: &Path,
+    trusted_parent: &Path,
+    child_name: &OsStr,
+    max_files: usize,
+    max_bytes: u64,
+    item_limit: u64,
+) -> Result<(u64, String), SupervisorError> {
+    clean_name(child_name)?;
+    let source = safe_root(source_path)?;
+    let closed = prove_closed_compiler_aliases(&source, max_files, max_bytes, item_limit)?;
+    // Hash all immutable output bytes before trusting any copy.
+    let mut original_budget = Budget::default();
+    let mut original_hash = Sha256::new();
+    visit(&source, None, Path::new(""), 0, &mut original_budget,
+        &mut original_hash, max_files, max_bytes, item_limit, Some(&closed))?;
+    let original_seal = format!("{:x}", original_hash.finalize());
+
+    let parent = safe_root(trusted_parent)?;
+    parent.create_dir(child_name).map_err(|_| denied())?;
+    let target = checked_child_dir(&parent, child_name)?;
+    let mut copied = Budget::default();
+    let mut copied_hash = Sha256::new();
+    visit(&source, Some(&target), Path::new(""), 0, &mut copied,
+        &mut copied_hash, max_files, max_bytes, item_limit, Some(&closed))?;
+    if copied.bytes != original_budget.bytes
+        || format!("{:x}", copied_hash.finalize()) != original_seal
+        || prove_closed_compiler_aliases(&source, max_files, max_bytes, item_limit)? != closed
+    {
+        return Err(denied());
+    }
+    // A second, fully strict scan proves the copied target no longer
+    // contains ANY multi-link objects or reparse traversal opportunities.
+    let mut verified = Budget::default();
+    let mut verified_hash = Sha256::new();
+    visit(&target, None, Path::new(""), 0, &mut verified,
+        &mut verified_hash, max_files, max_bytes, item_limit, None)?;
+    if verified.bytes != copied.bytes
+        || format!("{:x}", verified_hash.finalize()) != original_seal
+    {
+        return Err(denied());
+    }
+    Ok((verified.bytes, original_seal))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compiler_hardlinks_need_all_kernel_names_inside_pinned_output() {
+        let base = std::env::temp_dir().join(format!(
+            "fin01d-ntfs-link-{:032x}", rand::random::<u128>()
+        ));
+        let source = base.join("worker");
+        let parent = base.join("published");
+        fs::create_dir_all(source.join("target/debug/deps")).unwrap();
+        fs::create_dir(&parent).unwrap();
+        let binary = source.join("target/debug/fixed.exe");
+        let alias = source.join("target/debug/deps/fixed-hash.exe");
+        fs::write(&binary, b"MZfixed native compiler output").unwrap();
+        fs::hard_link(&binary, &alias).unwrap();
+        // The original strict stage/input scanner still refuses hardlinks.
+        assert!(audit_tree(&source, None, 100, 10000, 10000).is_err());
+        let (bytes, digest) = publish_closed_compiler_output(
+            &source, &parent, OsStr::new("job-closed"), 100, 10000, 10000
+        ).unwrap();
+        assert_eq!(bytes, 2 * b"MZfixed native compiler output".len() as u64);
+        assert_eq!(digest, audit_tree(
+            &parent.join("job-closed"), None, 100, 10000, 10000
+        ).unwrap().1);
+        // A third hardlink OUTSIDE source makes the original two-link proof
+        // incomplete, so no outside-root bytes can be silently published.
+        let outside = base.join("outside-alias.exe");
+        fs::hard_link(&binary, &outside).unwrap();
+        assert!(publish_closed_compiler_output(
+            &source, &parent, OsStr::new("job-escaped"), 100, 10000, 10000
+        ).is_err());
+        assert!(!parent.join("job-escaped").exists());
+        fs::remove_file(&outside).unwrap();
+        // Reparse points are refused even when the original two hardlinks
+        // remain a complete pair elsewhere inside the source tree.
+        let foreign = base.join("foreign");
+        fs::create_dir(&foreign).unwrap();
+        std::os::windows::fs::symlink_dir(
+            &foreign, source.join("target/debug/escape-junction")
+        ).expect("Windows native hostile test requires junction creation");
+        assert!(publish_closed_compiler_output(
+            &source, &parent, OsStr::new("job-junction"), 100, 10000, 10000
+        ).is_err());
+        assert!(!parent.join("job-junction").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
     #[test]
     fn hostile_concurrent_child_rename_cannot_escape_pinned_root() {
         use std::sync::{
