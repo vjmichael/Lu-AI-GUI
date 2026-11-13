@@ -605,3 +605,31 @@ test('SEC06C browser puts Chrome, Node and setsid descendants under one root-own
   assert.match(path('src-tauri/lu-core/src/browser_chromium_launcher.rs'),
     /require_joint_os_owned_browser_scope\(\)\?/);
 });
+
+// Native SEC-06C browser acceptance must use ORIGINAL headed Chromium and
+// Node, a real X11 human takeover, a scoped root systemd unit and root receipt.
+// Source assertions alone cannot certify kernel custody or installation.
+test('SEC06C real browser native job is a mandatory independent SEC06F gate',()=>{
+  const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8');
+  const fixture=readFileSync(join(root,'benchmarks/e1/sec06c_browser_real_native.py'),'utf8');
+  assert.match(workflow,/core01e-sec06c-os-owned-browser:/);
+  assert.match(workflow,/SEC-06C real jointly owned headed Chromium and Node/);
+  assert.match(workflow,/playwright@1\.64\.1/);
+  assert.match(workflow,/assemble-browser-ci-candidate\.mjs/);
+  assert.match(workflow,/xvfb-run -a/);
+  assert.match(workflow,/sec06c_browser_real_native\.py/);
+  assert.match(workflow,/SEC06C_GENUINE_BROWSER_KERNEL_PASS=1/);
+  assert.match(workflow,/SEC06_BROWSER_JOB:/);
+  assert.match(workflow,/for name in \('SEC06_GIT_JOB'[\s\S]{0,180}'SEC06_BROWSER_JOB'/);
+  assert.match(fixture,/os\.pidfd_open\(pid\)/);
+  assert.match(fixture,/membership\(chrome_pid\)/);
+  assert.match(fixture,/membership\(node_pid\)/);
+  assert.match(fixture,/xdotool/);
+  assert.match(fixture,/browser_call\(proc,chrome_pid,"show_browser"\)/);
+  assert.match(fixture,/browser_call\(proc,chrome_pid,"hide_browser"\)/);
+  assert.match(fixture,/proc\.stdin\.close\(\)/);
+  assert.match(fixture,/root_receipt\(before,nonce/);
+  assert.match(fixture,/nonce_replay_denied=1/);
+  assert.match(fixture,/unrelated_survived=1/);
+  assert.doesNotMatch(fixture,/MOCK_|FAKE_|SIMULATED_KERNEL_PASS/);
+});

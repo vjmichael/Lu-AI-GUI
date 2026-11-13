@@ -3095,6 +3095,83 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  core01e-sec06c-os-owned-browser:
+    name: SEC-06C real jointly owned headed Chromium and Node (Linux)
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 226 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && contains(github.event.pull_request.body, format('LU_CORE01E_SEC06_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_CORE01E_SEC06_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Verify reviewed source and compile browser kernel authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          node scripts/verify-source-tree.mjs
+          python3 -m py_compile scripts/lu-sec06c-owned-browser-launcher.py scripts/lu-sec06c-owned-browser-manager.py scripts/lu-sec06c-owned-browser-worker.py benchmarks/e1/sec06c_browser_real_native.py
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_browser -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib browser_worker_supervisor -- --nocapture
+      - name: Provision exact headed Playwright Chromium, Node and X11
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb xdotool xauth
+          npm install --prefix src-tauri/lu-core/workers --no-save --no-package-lock playwright@1.64.1
+          node src-tauri/lu-core/workers/node_modules/playwright/cli.js install --no-shell chromium
+          sudo env "PATH=$PATH" node src-tauri/lu-core/workers/node_modules/playwright/cli.js install-deps chromium
+          echo "LU_BROWSER_XDOTOOL=$(command -v xdotool)" >> "$GITHUB_ENV"
+      - name: Build real browser package and establish immutable root-only CI custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          node lu-desktop/scripts/assemble-browser-ci-candidate.mjs
+          node --test lu-desktop/tests/browser-ci-candidate.test.mjs
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu /usr/lib/lu /usr/lib/lu/browser
+          sudo cp -a out/lu-browser-candidate/. /usr/lib/lu/browser/
+          sudo chown -R root:root /usr/lib/lu/browser
+          sudo chmod -R go-w /usr/lib/lu/browser
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-browser-launcher.py /usr/libexec/lu/lu-sec06c-launch-browser
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-browser-manager.py /usr/libexec/lu/lu-sec06c-owned-browser-manager
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-browser-worker.py /usr/libexec/lu/lu-sec06c-owned-browser-worker
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-kernel-manager.py /usr/libexec/lu/lu-sec06c-owned-kernel-manager
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-browser *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-browser-ci >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-sec06c-browser-ci
+          sudo visudo -cf /etc/sudoers.d/lu-sec06c-browser-ci
+          test "$(id -u)" -ne 0
+          for file in /usr/lib/lu/browser/chrome /usr/lib/lu/browser/node /usr/lib/lu/browser/lu_browser_worker.mjs /usr/libexec/lu/lu-sec06c-owned-browser-manager; do
+            test -f "$file" && test "$(stat -c %u "$file")" = 0
+          done
+      - name: Execute ACTUAL same-unit Chrome and Node, X11 human show/hide, cancellation and replay denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p sec06c-browser-evidence
+          xvfb-run -a -s "-screen 0 1280x800x24" \
+            python3 benchmarks/e1/sec06c_browser_real_native.py \
+              --bundle /usr/lib/lu/browser \
+              --launcher /usr/libexec/lu/lu-sec06c-launch-browser \
+              2>&1 | tee sec06c-browser-evidence/original-browser-kernel.log
+          grep -Fq 'SEC06C_GENUINE_BROWSER_KERNEL_PASS=1' sec06c-browser-evidence/original-browser-kernel.log
+          echo 'Actual OS-owned browser candidate; NO production package approval or release grant.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-sec06c-genuine-browser-${{ github.event.pull_request.head.sha }}
+          path: sec06c-browser-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
   core01e-sec06f-original-receipts:
     name: SEC-06F original Windows/Linux/source receipt reconciliation only
     needs:
@@ -3103,6 +3180,7 @@ jobs:
       - core01e-sec06c-os-owned-git
       - core01e-sec06c-os-owned-probes
       - core01e-sec06c-os-owned-native
+      - core01e-sec06c-os-owned-browser
     if: ${{ always() && github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 226 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && contains(github.event.pull_request.body, format('LU_CORE01E_SEC06_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_CORE01E_SEC06_SHA={0}', github.event.pull_request.head.sha)) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -3127,6 +3205,7 @@ jobs:
           SEC06_GIT_JOB: ${{ needs.core01e-sec06c-os-owned-git.result }}
           SEC06_PROBE_JOB: ${{ needs.core01e-sec06c-os-owned-probes.result }}
           SEC06_REVIEWED_NATIVE_JOB: ${{ needs.core01e-sec06c-os-owned-native.result }}
+          SEC06_BROWSER_JOB: ${{ needs.core01e-sec06c-os-owned-browser.result }}
           SEC06_NATIVE_JOB: ${{ needs.core01e-sec06-native.result }}
         run: |
           set -euo pipefail
@@ -3153,7 +3232,7 @@ jobs:
               assert summary['proofs'][target]['status']=='NATIVE_EVIDENCE_PRESENT_UNREVIEWED',(
                   'SEC06F_ORIGINAL_LOG_OR_KERNEL_PROOF_BLOCKED',target,summary['proofs'][target])
           for name in ('SEC06_GIT_JOB','SEC06_PROBE_JOB','SEC06_NATIVE_JOB',
-                       'SEC06_REVIEWED_NATIVE_JOB'):
+                       'SEC06_REVIEWED_NATIVE_JOB','SEC06_BROWSER_JOB'):
               assert os.environ[name]=='success',('SEC06F_BROKER_OR_NATIVE_GATE_BLOCKED',name,os.environ[name])
           assert summary['securityDecision']==(
               'NATIVE_CASES_PRESENT_OWNER_INSTALLED_AND_INDEPENDENT_REVIEW_PENDING'
