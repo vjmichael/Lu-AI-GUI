@@ -19,6 +19,10 @@ pub mod debug_control_evidence;
 #[cfg(any(test, all(windows, debug_assertions, feature = "dev046c-ci-control"), all(windows, feature = "fin04-release-owner-evidence")))]
 mod debug_control_dispatch;
 pub mod debug_symbol_verification;
+// FIN-04W2 shape inspection is not an OS debugger worker or IPC endpoint.
+// No installed/production feature enables this default-off module.
+#[cfg(feature = "fin04w2-protocol")]
+mod fin04w2_protocol;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
 pub mod live_output;
