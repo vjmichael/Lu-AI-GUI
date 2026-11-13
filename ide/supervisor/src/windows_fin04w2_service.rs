@@ -299,7 +299,14 @@ fn run_service(handle: windows_sys::Win32::System::Services::SERVICE_STATUS_HAND
     // service will not report RUNNING if actual kernel Job, foreign-file or
     // outbound-socket probes do not agree. The independent admin CI step
     // must also establish actual WFP rule identity and host baseline.
-    #[cfg(feature = "fin04w2-contained-probe")]
+    // W2-B is an isolated startup smoke test, without creator authority.
+    // W2-C must NOT inherit this behavior: its fixed worker is runnable
+    // only after a fresh ORIGINAL in-memory grant was consumed, the host
+    // journal was independently replayed, and a service receipt fsynced.
+    #[cfg(all(
+        feature = "fin04w2-contained-probe",
+        not(feature = "fin04w2-approved-fixed-exec")
+    ))]
     {
         STARTUP_STAGE.store(4, Ordering::Relaxed);
         _empty_audit_job.verify_fixed_probe(
