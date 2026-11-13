@@ -717,6 +717,32 @@ pub struct JobSecurity {
     pub attributes: SECURITY_ATTRIBUTES,
 }
 impl JobSecurity {
+    /// FIN-04W2: a NEW named Job is owned by the distinct restricted
+    /// debugger service, never by the desktop host user. Only SYSTEM and
+    /// this original kernel-resolved service SID get any Job rights.
+    /// The actual kernel descriptor must still be independently read back
+    /// before an OS worker is accepted.
+    pub(crate) fn new_debugger_service_owned() -> Result<Self, SupervisorError> {
+        let sid = sid_of_named_service("LuIdeDebuggerBroker")?;
+        let sddl = format!("D:P(A;;GA;;;SY)(A;;GA;;;{})", sid);
+        let mut descriptor = ptr::null_mut();
+        if unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                ws(&sddl).as_ptr(), 1, &mut descriptor, ptr::null_mut(),
+            )
+        } == 0 || descriptor.is_null() {
+            return Err(denied());
+        }
+        let owned = OwnedSid(descriptor);
+        Ok(Self {
+            attributes: SECURITY_ATTRIBUTES {
+                nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+                lpSecurityDescriptor: owned.0,
+                bInheritHandle: 0,
+            },
+            descriptor: owned,
+        })
+    }
     pub fn new() -> Result<Self, SupervisorError> {
         let sddl = format!(
             "D:P(A;;GA;;;SY)(A;;GA;;;{})(A;;0x0010000C;;;{})",
