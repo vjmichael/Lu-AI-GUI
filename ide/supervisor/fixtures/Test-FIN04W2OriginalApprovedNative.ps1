@@ -262,7 +262,19 @@ try {
         -or $text -notmatch [regex]::Escape([string]$manifest.planSha256)) {
       throw 'DENIED: actual service-side admission record scope mismatch'
     }
+    $ownerCopy=Join-Path $ownerRoot 'service-one-use-verified.receipt'
+    Copy-Item -LiteralPath $oneUse[0].FullName -Destination $ownerCopy -ErrorAction Stop
+    $copy=Get-Content -LiteralPath $ownerCopy -Raw
+    if ($copy -ne $text) {
+      throw 'DENIED: independent original service receipt copy changed bytes'
+    }
+    foreach ($name in @('original-supervisor.jsonl','result.json','service-one-use-verified.receipt')) {
+      $file=Join-Path $ownerRoot $name
+      $hash=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+      Write-Host "FIN04W2_C_DURABLE_ARTIFACT_SHA256=$name:$hash"
+    }
     Write-Host 'FIN04W2_C_INDEPENDENT_SERVICE_SIDE_FSYNC_RECEIPT=PASS'
+    Remove-Item -LiteralPath $serviceRoot -Recurse -Force -ErrorAction Stop
   }
   if (Test-Path -LiteralPath $negative) {Remove-Item -LiteralPath $negative -Force}
 }
