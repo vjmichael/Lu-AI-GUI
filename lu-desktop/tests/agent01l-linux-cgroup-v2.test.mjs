@@ -80,3 +80,21 @@ test('cgroup receipt never acts as tool grant or automatic task replay',()=>{
   assert.match(receiver,/state=="COMPLETED"/);
   assert.match(receiver,/lines\[5\]!="POPULATED=0"/);
 });
+
+test('SEC06C refuses writable same-UID ancestor before first worker admission and rechecks before receipt',()=>{
+  assert.match(helper,/fn protected_ancestor\(root:&Path\)/);
+  assert.match(helper,/meta\.uid\(\)==unsafe\{geteuid\(\)\}/);
+  assert.match(helper,/OpenOptions::new\(\)\.write\(true\)\.open\(&procs\)/);
+  const source=helper.indexOf('if !protected_ancestor(&group_root)?');
+  const admitted=helper.indexOf('writeln!(io::stdout(),"READY');
+  const finalCheck=helper.lastIndexOf('if !protected_ancestor(&group_root)?');
+  const receipt=helper.indexOf('save_receipt(&profile,chat,turn,call_id,&nonce)?');
+  assert.ok(source>=0&&admitted>source,'admission must be blocked before READY');
+  assert.ok(finalCheck>admitted&&receipt>finalCheck,
+    'final witness must reject writable ancestor before writing receipt');
+  assert.match(helper,/UNSAFE_ANCESTOR/);
+  assert.match(native,/SEC06C_BLOCKED_UNSAFE_WRITABLE_ANCESTOR/);
+  assert.match(native,/fn securely_owned_cgroup_parent\(/);
+  assert.match(native,/meta\.uid\(\)==uid/);
+  assert.match(native,/if !securely_owned_cgroup_parent\(&group\)?/);
+});

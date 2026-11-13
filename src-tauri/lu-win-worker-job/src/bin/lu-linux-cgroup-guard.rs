@@ -51,6 +51,26 @@ mod linux{
         }
         Ok(root)
     }
+    // SEC-06C: a user who can write the nearest common ancestor's
+    // cgroup.procs can move an escaped setsid descendant out of this
+    // custodian's killable leaf. The original native attack demonstrated
+    // a false positive populated-zero receipt on such a topology.
+    // Requiring a non-writable, independently owned ancestor is necessary
+    // even if Delegate=yes and user.delegate=1 are both genuine.
+    fn protected_ancestor(root:&Path)->io::Result<bool>{
+        if unsafe{geteuid()}==0{return Ok(false)}
+        let procs=root.join("cgroup.procs");
+        let meta=fs::symlink_metadata(&procs)?;
+        if !meta.is_file()||meta.file_type().is_symlink()
+            ||meta.uid()==unsafe{geteuid()}{
+            return Ok(false)
+        }
+        match OpenOptions::new().write(true).open(&procs){
+            Ok(_)=>Ok(false),
+            Err(e) if e.kind()==io::ErrorKind::PermissionDenied=>Ok(true),
+            Err(e)=>Err(e),
+        }
+    }
     fn populated_zero(path:&Path)->io::Result<bool>{
         let s=fs::read_to_string(path.join("cgroup.events"))?;
         let mut observed=None;
@@ -155,6 +175,14 @@ mod linux{
                 return Ok(())
             }
         };
+        // Deny admission *before* launching any worker or minting a
+        // guardian receipt; a plain same-user delegated systemd service
+        // is NOT a secure worker isolation boundary.
+        if !protected_ancestor(&group_root)?{
+            io::stdout().write_all(b"UNSAFE_ANCESTOR\n")?;
+            io::stdout().flush()?;
+            return Ok(())
+        }
         let nonce=nonce()?;
         let group=group_root.join(format!("lu-review-{nonce}"));
         // No privilege escalation: if the OS has not delegated this parent
@@ -205,6 +233,11 @@ mod linux{
                 Err(ref e) if e.kind()==io::ErrorKind::Interrupted=>{},
                 Err(_)=>break,
             }
+        }
+        // Defence in depth: never publish a positive kernel cleanup receipt
+        // if the outer control boundary is writable at final verification.
+        if !protected_ancestor(&group_root)?{
+            return Err(io::Error::other("SEC06C_BLOCKED_UNSAFE_WRITABLE_ANCESTOR"))
         }
         end_owned_subtree(&group)?;
         let mut cleanup_budget=1024;

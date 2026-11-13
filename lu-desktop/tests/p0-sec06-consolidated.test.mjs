@@ -80,6 +80,17 @@ test('SEC06 Linux original Core suite receives absolute host-pinned Git without 
   assert.equal(section.includes('--skip-ancestor-migration'),false);
 });
 
+test('SEC06C original ancestor escape forbids a false positive receipt even with real delegation',()=>{
+  const helper=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/bin/lu-linux-cgroup-guard.rs'),'utf8');
+  const native=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/lib.rs'),'utf8');
+  assert.match(helper,/UNSAFE_ANCESTOR/);
+  assert.match(helper,/SEC06C_BLOCKED_UNSAFE_WRITABLE_ANCESTOR/);
+  assert.match(native,/SEC06C_BLOCKED_UNSAFE_WRITABLE_ANCESTOR/);
+  assert.match(negative,/FAIL_ESCAPED_DESCENDANT_MINTED_FALSE_EMPTY_RECEIPT/);
+  assert.match(negative,/SEC06_BLOCKED_ANCESTOR_CGROUP_ESCAPE=1/);
+  assert.match(gate,/linux-ancestor-migration/);
+});
+
 test('SEC06C provisions real systemd delegation and never runs kernel cases as root',()=>{
   const python=readFileSync(join(root,'scripts/sec06-linux-delegated-runner.py'),'utf8');
   const workflow=readFileSync(join(root,'.github/workflows/lu-repo01-full-source.yml'),'utf8');

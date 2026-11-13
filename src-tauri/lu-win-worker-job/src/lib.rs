@@ -695,6 +695,25 @@ pub mod unix_owned {
         Ok(())
     }
     #[cfg(target_os="linux")]
+    fn securely_owned_cgroup_parent(group:&std::path::Path)->io::Result<bool>{
+        use std::os::unix::fs::MetadataExt;
+        unsafe extern "C"{fn geteuid()->u32;}
+        let uid=unsafe{geteuid()};
+        if uid==0{return Ok(false)}
+        let parent=group.parent().ok_or_else(||io::Error::other(
+            "Missing cgroup parent"))?;
+        let procs=parent.join("cgroup.procs");
+        let meta=std::fs::symlink_metadata(&procs)?;
+        if !meta.is_file()||meta.file_type().is_symlink()||meta.uid()==uid{
+            return Ok(false)
+        }
+        match std::fs::OpenOptions::new().write(true).open(&procs){
+            Ok(_)=>Ok(false),
+            Err(e) if e.kind()==io::ErrorKind::PermissionDenied=>Ok(true),
+            Err(e)=>Err(e),
+        }
+    }
+    #[cfg(target_os="linux")]
     pub struct LinuxCgroupCustodian{
         child:Child,
         stdin:Option<std::process::ChildStdin>,
@@ -770,6 +789,18 @@ pub mod unix_owned {
                 }
                 return Ok(None)
             }
+            if banner=="UNSAFE_ANCESTOR\n"{
+                let status=bounded_guardian_exit(admission.child(),
+                    std::time::Duration::from_secs(2))?;
+                if !status.success(){
+                    return Err(io::Error::other(
+                        "Unsafe ancestor rejection helper failed"))
+                }
+                // This is a SECURITY BLOCKER, not missing delegation and
+                // never a reason to fall back to PGID for an escaped worker.
+                return Err(io::Error::other(
+                    "SEC06C_BLOCKED_UNSAFE_WRITABLE_ANCESTOR"))
+            }
             let Some(encoded)=banner.strip_prefix("READY\t")
                 .and_then(|x|x.strip_suffix('\n')) else{
                 return Err(io::Error::other("Unrecognized OS cgroup handshake"))
@@ -791,6 +822,10 @@ pub mod unix_owned {
                 group.parent()!=Some(std::path::Path::new("/sys/fs/cgroup")
                     .join(own[0].trim_start_matches('/')).as_path()){
                 return Err(io::Error::other("Cgroup helper left Lu's delegated root"))
+            }
+            if !securely_owned_cgroup_parent(&group)?{
+                return Err(io::Error::other(
+                    "SEC06C_BLOCKED_UNSAFE_WRITABLE_ANCESTOR"))
             }
             let stdin=admission.child().stdin.take().ok_or_else(||{
                 io::Error::other("Lifetime pipe missing")
