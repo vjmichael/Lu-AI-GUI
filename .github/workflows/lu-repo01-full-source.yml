@@ -2957,6 +2957,10 @@ jobs:
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c_root_owned_reviewed_git_worker_original_journal -- --ignored --nocapture 2>&1 | tee sec06c-os-owned-evidence/original-native.log
           grep -Fq '1 passed; 0 failed' sec06c-os-owned-evidence/original-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c_root_owned_git_cancel_original_journal -- --ignored --nocapture 2>&1 | tee sec06c-os-owned-evidence/cancel-native.log
+          grep -Fq '1 passed; 0 failed' sec06c-os-owned-evidence/cancel-native.log
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c_owned_git_host_sigkill_recovery_original_journal -- --ignored --nocapture 2>&1 | tee sec06c-os-owned-evidence/crash-recovery-native.log
+          grep -Fq '1 passed; 0 failed' sec06c-os-owned-evidence/crash-recovery-native.log
           echo 'OS-owned broker test is historical native evidence only; SEC-06C original adversarial matrix and independent SEC-06F remain mandatory.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()

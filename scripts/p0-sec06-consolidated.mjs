@@ -254,6 +254,7 @@ if(mode==='verify'){
                  'sec06-js-syntax','linux-negative-python-syntax',
                  'linux-host-crash-python-syntax','linux-delegated-python-syntax',
                  'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
+                 'linux-root-owned-unit-cancel','linux-root-owned-unit-host-crash',
                  'linux-os-owned-git-syntax',
                  'core-native-full','desktop-ansf-native','worker-job-native',
                  'core-sec-regressions','desktop-sec-regressions',
@@ -352,6 +353,25 @@ if(mode==='verify'){
               mustContain:['SEC06C_ROOT_OWNED_UNIT_KERNEL_PROTOTYPE_PASS=1'],
               mustReject:['SEC06C_ROOT_OWNED_BOUNDARY_BLOCKED']
             });
+            // Additional non-delegated, systemd-owned boundary interrupt
+            // probes. These are separate cases, NOT substitutions for
+            // the original Linux SEC-06 attacker/guardian matrix below.
+            for(const [id,scenario] of [
+              ['linux-root-owned-unit-cancel','cancel'],
+              ['linux-root-owned-unit-host-crash','host-crash']
+            ]){
+              doCase(id,'python3',[
+                'benchmarks/e1/sec06c_root_owned_systemd_boundary.py',
+                '--outer','--expected-sha',currentHead,
+                '--scenario',scenario,
+                '--evidence',join(evidence,'kernel-root-owned-'+scenario)
+              ],{
+                timeout:180000,env,
+                mustContain:['SEC06C_ROOT_OWNED_UNIT_KERNEL_PROTOTYPE_PASS=1',
+                             'scenario='+scenario],
+                mustReject:['SEC06C_ROOT_OWNED_BOUNDARY_BLOCKED']
+              });
+            }
             doCase('linux-original-host-sigkill','python3',[
               'benchmarks/e1/agent01l_cgroup_escape_crash_acceptance.py',
               '--guard',helper,'--parent',crashHost

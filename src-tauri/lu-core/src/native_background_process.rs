@@ -1620,7 +1620,7 @@ mod tests{
         assert!(completed,"SEC06C managed native Git not completed in bounded time");
         let stdout=supervisor.take_local_version_stdout(call,&turn)
             .unwrap().expect("original OS-owned Git stdout missing");
-        let sha=String::from_utf8(stdout.bytes).unwrap();
+        let sha=String::from_utf8_lossy(&stdout.bytes);
         assert_eq!(sha.trim().len(),40);
         assert!(sha.trim().bytes().all(|b|b.is_ascii_hexdigit()));
         drop(supervisor);drop(store);
@@ -1639,6 +1639,189 @@ mod tests{
             &chat,&turn,"sec06c-other-gh"));
         fs::remove_dir_all(root).unwrap();
     }
+    /// SEC-06C real OS-owned Git cancellation: no old task can become
+    /// completed, and a historical kernel-empty unit does not imply a
+    /// fresh model/user authorization or restart replay.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="needs root-owned fixed systemd broker and genuine kernel cgroup"]
+    fn sec06c_root_owned_git_cancel_original_journal(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        use std::process::Command;
+        assert!(Path::new("/usr/libexec/lu/lu-sec06c-launch-git").exists(),
+            "SEC06C_NOT_AVAILABLE: fixed installed kernel broker missing");
+        let binary=fs::canonicalize("/usr/bin/git").unwrap();
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-cancel-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let repo=root.join("repo");fs::create_dir_all(&repo).unwrap();
+        assert!(Command::new(&binary).args(["init","-q"])
+            .current_dir(&repo).status().unwrap().success());
+        assert!(Command::new(&binary).args([
+            "-c","user.name=Lu","-c","user.email=lu@example.invalid",
+            "commit","--allow-empty","-q","-m","SEC06C cancellation"
+        ]).current_dir(&repo).status().unwrap().success());
+        let digest=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let chat=format!("c-{}","8".repeat(32));
+        let turn=format!("g-{}","9".repeat(32));
+        let call="sec06c-cancel-gh";
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let supervisor=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),root.clone());
+        supervisor.start_host_approved_git_read(TrustedWorkerPlan{
+            task_id:call.to_owned(),workspace_id:turn.clone(),
+            executable:binary,expected_sha256:digest,
+            args:vec!["-c".into(),"core.fsmonitor=false".into(),
+                "--no-optional-locks".into(),"-C".into(),repo.as_os_str().into(),
+                "rev-parse".into(),"--verify".into(),"HEAD".into()],
+            progress_protocol:false,max_runtime_seconds:Some(30),
+        },16_384).expect("fixed native OS worker must start");
+        assert!(supervisor.cancel_owned(call,&turn).is_ok(),
+            "cancel must obtain a genuine root-managed cgroup-empty receipt");
+        assert_eq!(store.get(call).unwrap().unwrap().state,TaskState::Cancelled);
+        assert!(!supervisor.can_cancel(call));
+        drop(supervisor);drop(store);
+        let reopen=TaskStore::open(&journal).unwrap();
+        assert_eq!(reopen.get(call).unwrap().unwrap().state,TaskState::Cancelled);
+        assert!(reopen.resume(call).is_err(),
+            "cancelled original operation may not auto-replay");
+        drop(reopen);
+        let independent=HostOriginalJobCustody::from_host_profile(&root);
+        assert!(!independent.worker_and_descendants_ended(&chat,&turn,call),
+            "interrupted or cancelled effect is NOT a completed custody grant");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Test-only child process, launched by the independent parent below.
+    /// Killing THIS process must not create a replay grant for a completed
+    /// native effect or a surviving root-managed service.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="original SEC06C subprocess; must be run only from first-party SIGKILL parent"]
+    fn sec06c_owned_git_host_sigkill_child(){
+        if std::env::var("LU_SEC06C_CRASH_CHILD").ok().as_deref()!=Some("1"){
+            return
+        }
+        use std::process::Command;
+        let root=PathBuf::from(std::env::var_os("LU_SEC06C_CRASH_ROOT")
+            .expect("original first-party test profile must be set"));
+        let binary=fs::canonicalize("/usr/bin/git").unwrap();
+        fs::create_dir_all(&root).unwrap();
+        let repo=root.join("repo");fs::create_dir_all(&repo).unwrap();
+        assert!(Command::new(&binary).args(["init","-q"])
+            .current_dir(&repo).status().unwrap().success());
+        assert!(Command::new(&binary).args([
+            "-c","user.name=Lu","-c","user.email=lu@example.invalid",
+            "commit","--allow-empty","-q","-m","SEC06C host crash"
+        ]).current_dir(&repo).status().unwrap().success());
+        let sha=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let chat=format!("c-{}","a".repeat(32));
+        let turn=format!("g-{}","b".repeat(32));
+        let call="sec06c-crash-gh";
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let supervisor=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),root.clone());
+        supervisor.start_host_approved_git_read(TrustedWorkerPlan{
+            task_id:call.into(),workspace_id:turn.clone(),
+            executable:binary,expected_sha256:sha,
+            args:vec!["-c".into(),"core.fsmonitor=false".into(),
+                "--no-optional-locks".into(),"-C".into(),repo.as_os_str().into(),
+                "rev-parse".into(),"--verify".into(),"HEAD".into()],
+            progress_protocol:false,max_runtime_seconds:Some(30),
+        },16_384).unwrap();
+        fs::write(root.join("original-host-ready"),b"RUNNING").unwrap();
+        loop{std::thread::sleep(Duration::from_secs(1))}
+    }
+    /// A real SIGKILL of the Lu original host leaves the durable task as
+    /// INTERRUPTED, never completed; the OS systemd broker must still
+    /// provide the exact root-owned cgroup-empty receipt independently.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="requires installed root-owned service broker and native Linux kernel"]
+    fn sec06c_owned_git_host_sigkill_recovery_original_journal(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-hostkill-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(&root).unwrap();
+        let mut original=Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored","--nocapture","sec06c_owned_git_host_sigkill_child"])
+            .env("LU_SEC06C_CRASH_CHILD","1")
+            .env("LU_SEC06C_CRASH_ROOT",&root)
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().unwrap();
+        let deadline=Instant::now()+Duration::from_secs(90);
+        let path=root.join("original-host-ready");
+        while !path.is_file(){
+            if original.try_wait().unwrap().is_some(){
+                panic!("original managed Git process died before host-kill test")
+            }
+            assert!(Instant::now()<deadline,
+                "original Lu host never admitted reviewed OS-owned worker");
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        // Original first-party Child ID only, never a model-provided PID.
+        let status=Command::new("/bin/kill")
+            .arg("-KILL").arg(original.id().to_string())
+            .status().unwrap();
+        assert!(status.success(),"kernel SIGKILL of original Lu host denied");
+        assert!(!original.wait().unwrap().success(),
+            "host unexpectedly returned normally instead of SIGKILL");
+        let turn=format!("g-{}","b".repeat(32));
+        let chat=format!("c-{}","a".repeat(32));
+        let call="sec06c-crash-gh";
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let reopened=TaskStore::open(&journal).unwrap();
+        assert_eq!(reopened.get(call).unwrap().unwrap().state,TaskState::Running);
+        assert_eq!(reopened.reconcile_interrupted().unwrap(),1,
+            "original running task must reconcile to interrupted, not replay");
+        assert_eq!(reopened.get(call).unwrap().unwrap().state,TaskState::Interrupted);
+        assert!(reopened.resume(call).is_err());
+        // Trusted nonce is only the original durable task row. Demand a
+        // genuinely root-owned OS receipt before concluding OS cleanup,
+        // but never use it to turn the INTERRUPTED effect into a PASS.
+        let db=rusqlite::Connection::open(&journal).unwrap();
+        let nonce:String=db.query_row(
+            "SELECT nonce FROM lu_task_linux_os_owned_git_admission
+             WHERE task_id=?1",["sec06c-crash-gh"],|row|row.get(0)
+        ).unwrap();
+        assert_eq!(nonce.len(),32);
+        let receipt=Path::new("/var/lib/lu-sec06c/receipts")
+            .join(format!("{nonce}.receipt"));
+        let end=Instant::now()+Duration::from_secs(60);
+        while !receipt.exists()&&Instant::now()<end{
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(receipt.exists(),
+            "SEC06C_BLOCKED: OS broker failed to reconcile after Lu host SIGKILL");
+        let data=fs::read_to_string(receipt).unwrap();
+        assert!(data.contains("KERNEL_EMPTY=1\n"),
+            "SEC06C_BLOCKED: root-owned kernel cleanup not proven");
+        assert!(data.contains(&format!("NONCE={nonce}\n")));
+        assert!(data.contains(&format!("CHAT={chat}\n")));
+        assert!(data.contains(&format!("TURN={turn}\n")));
+        assert!(!HostOriginalJobCustody::from_host_profile(&root)
+            .worker_and_descendants_ended(&chat,&turn,call),
+            "interrupted old effect cannot borrow a historical kernel cleanup as completion");
+        drop(db);drop(reopened);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(windows)]
     #[test]
     fn agent01l_real_git_job_attests_original_turn_and_reopens_without_replay(){

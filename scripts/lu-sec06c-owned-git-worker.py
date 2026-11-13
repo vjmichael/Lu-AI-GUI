@@ -86,6 +86,11 @@ def authorized_go(nonce, timeout=20):
     path = root / (nonce + ".go")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        # A dying original Lu host must not leave a gate-waiting worker
+        # eligible to start Git on a stale, subsequently delivered GO.
+        waiting, _, _ = select.select([sys.stdin.buffer], [], [], 0)
+        if waiting and not sys.stdin.buffer.read(1):
+            deny("original Lu host died before one-use admission")
         try:
             meta = path.lstat()
             if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != 0
@@ -115,6 +120,9 @@ def main():
     if not repo.is_dir() or not ((repo / ".git").is_dir() or (repo / ".git").is_file()):
         deny("not a reviewed Git repository")
     authorized_go(args.nonce)
+    waiting, _, _ = select.select([sys.stdin.buffer], [], [], 0)
+    if waiting and not sys.stdin.buffer.read(1):
+        deny("original Lu host cancelled before reviewed Git spawn")
     argv = [str(git), "-c", "core.fsmonitor=false",
             "--no-optional-locks", "-C", str(repo), *OPS[args.op]]
     with tempfile.TemporaryFile() as output:

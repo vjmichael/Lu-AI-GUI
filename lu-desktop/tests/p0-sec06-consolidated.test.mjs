@@ -90,6 +90,9 @@ test('SEC06C trusted OS-owned Git launch binds original journal nonce and finite
   assert.match(host,/LinuxOsOwnedReviewedGit::spawn_if_installed/);
   assert.match(host,/bind_linux_os_owned_git_admission/);
   assert.match(host,/verify_original_kernel_receipt/);
+  assert.match(host,/sec06c_root_owned_git_cancel_original_journal/);
+  assert.match(host,/sec06c_owned_git_host_sigkill_recovery_original_journal/);
+  assert.match(host,/reconcile_interrupted\(\)/);
   assert.match(host,/os_unit\.stop_and_verify/);
   assert.match(native,/\/usr\/libexec\/lu\/lu-sec06c-launch-git/);
   assert.match(native,/\/var\/lib\/lu-sec06c\/receipts/);
@@ -108,6 +111,9 @@ test('SEC06C trusted OS-owned Git launch binds original journal nonce and finite
   assert.match(worker,/core\.fsmonitor=false/);
   assert.match(worker,/start_new_session|Popen/);
   assert.match(worker,/authorized_go\(args\.nonce\)/);
+  assert.match(worker,/original Lu host died before one-use admission/);
+  assert.match(worker,/original Lu host cancelled before reviewed Git spawn/);
+  assert.match(launcher,/original host lifetime ended before systemd GO/);
   assert.match(worker,/SEC06C_GIT_WORKER_BLOCKED/);
   assert.doesNotMatch(launcher,/shell=True|subprocess\.getoutput|os\.system\(/);
   assert.doesNotMatch(worker,/shell=True|os\.system\(/);
@@ -136,7 +142,9 @@ test('SEC06C original ancestor escape forbids a false positive receipt even with
   assert.match(helper,/UNSAFE_ANCESTOR/);
   assert.match(helper,/SEC06C_BLOCKED_UNSAFE_WRITABLE_ANCESTOR/);
   assert.match(native,/SEC06C_BLOCKED_UNSAFE_WRITABLE_ANCESTOR/);
-  assert.match(negative,/FAIL_ESCAPED_DESCENDANT_MINTED_FALSE_EMPTY_RECEIPT/);
+  assert.match(negative,/MIGRATION_ESCAPE_UNVERIFIED/);
+  assert.match(negative,/SEC05 MIGRATION SECURITY FAILURE/);
+  assert.match(negative,/migrated survivor MUST NEVER/);
   assert.match(negative,/SEC06_BLOCKED_ANCESTOR_CGROUP_ESCAPE=1/);
   assert.match(gate,/linux-ancestor-migration/);
 });

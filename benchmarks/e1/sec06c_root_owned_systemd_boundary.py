@@ -24,7 +24,7 @@ import subprocess
 import sys
 import time
 
-REPO = pathlib.Path(__file__).resolve().parent.parent
+REPO = pathlib.Path(__file__).resolve().parents[2]
 MOUNT = pathlib.Path("/sys/fs/cgroup")
 FORMAT = "lu-sec06c-os-owned-boundary-native-v1"
 
@@ -88,8 +88,13 @@ def inside(unit, evidence, expected):
             "allProcessesWithinOSOwnedUnit": True,
             "releaseOrInstallAuthorized": False,
         })
+        # Mirror the real Lu-owned service worker's crash/cancel lifetime
+        # pipe. An explicitly open stdin keeps it alive; a killed host
+        # closes that pipe and must trigger own-child reaping.
         while True:
-            signal.pause()
+            readable, _, _ = select.select([sys.stdin.buffer], [], [], .1)
+            if readable and not sys.stdin.buffer.read(1):
+                break
     finally:
         # The independent test kills the main PID by exact pidfd, bypassing
         # Python cleanup; normal early errors still reap the disposable child.
@@ -102,7 +107,7 @@ def pidfd_terminated(fd, timeout):
     waiter.register(fd, select.POLLIN)
     return bool(waiter.poll(round(timeout * 1000)))
 
-def outer(unit, evidence, expected):
+def outer(unit, evidence, expected, scenario):
     head(expected)
     if sys.platform != "linux" or os.geteuid() == 0:
         fail("verifier must be nonroot native Linux")
@@ -122,8 +127,9 @@ def outer(unit, evidence, expected):
         "--expected-sha", expected, "--evidence", str(evidence), "--unit", unit,
     ]
     os.makedirs(evidence, mode=0o700, exist_ok=True)
-    service_process = subprocess.Popen(argv, cwd=REPO, stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE)
+    service_process = subprocess.Popen(
+        argv, cwd=REPO, stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     mainfd = childfd = None
     worker_pid = child_pid = None
     try:
@@ -168,11 +174,38 @@ def outer(unit, evidence, expected):
             migrated = True
         if migrated or proc_group(child_pid) != original:
             fail("SEC06C_ANCESTOR_ESCAPE_SUCCEEDED")
-        signal.pidfd_send_signal(mainfd, signal.SIGKILL)
-        if not pidfd_terminated(mainfd, 15):
-            fail("SIGKILL did not terminate original service main")
+        if scenario == "cancel":
+            # The root-owned system manager, not an attacker-chosen PID,
+            # stops this exact disposable unit and must reap setsid children.
+            cancelled = subprocess.run(
+                [str(sudo), "-n", "/usr/bin/systemctl", "stop", unit],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                timeout=20,
+            )
+            if cancelled.returncode != 0:
+                fail("native OS-managed cancellation rejected")
+        elif scenario == "host-crash":
+            # The original nonroot launcher client dies outside the unit.
+            # A surviving worker is a blocker; don't substitute a successful
+            # stop-by-verifier after the fact for actual automatic recovery.
+            launcher_fd = os.pidfd_open(service_process.pid)
+            try:
+                # The Lu host's private original stdin is now gone. The
+                # service worker must notice EOF and reap its child; a
+                # surviving service after launcher death is not accepted.
+                service_process.stdin.close()
+                service_process.stdin = None
+                signal.pidfd_send_signal(launcher_fd, signal.SIGKILL)
+                if not pidfd_terminated(launcher_fd, 15):
+                    fail("original host launcher survived SIGKILL")
+            finally:
+                os.close(launcher_fd)
+        else:
+            signal.pidfd_send_signal(mainfd, signal.SIGKILL)
+            if not pidfd_terminated(mainfd, 15):
+                fail("SIGKILL did not terminate original service main")
         if not pidfd_terminated(childfd, 15):
-            fail("setsid descendant survived systemd control-group cleanup")
+            fail("setsid descendant survived OS-managed "+scenario+" recovery")
         if live(child_pid):
             fail("original escaped descendant still runnable after manager cleanup")
         atomic_observation(evidence / "kernel-boundary-proof.json", {
@@ -182,10 +215,11 @@ def outer(unit, evidence, expected):
             "rootOwnedUnit": True, "ancestorMigrationDenied": True,
             "exactOriginalPidfds": True, "nativeMainSigkill": True,
             "setsidDescendantReaped": True,
+            "recoveryScenario": scenario,
             "systemdKillMode": "control-group",
             "noReleaseOrInstallAuthority": True,
         })
-        print("SEC06C_ROOT_OWNED_UNIT_KERNEL_PROTOTYPE_PASS=1", flush=True)
+        print("SEC06C_ROOT_OWNED_UNIT_KERNEL_PROTOTYPE_PASS=1 scenario="+scenario, flush=True)
         return 0
     finally:
         if childfd is not None:
@@ -221,6 +255,9 @@ def main():
     parser.add_argument("--expected-sha", required=True)
     parser.add_argument("--evidence", required=True)
     parser.add_argument("--unit")
+    parser.add_argument("--scenario", choices=["worker-main-sigkill",
+                                                "cancel", "host-crash"],
+                        default="worker-main-sigkill")
     args = parser.parse_args()
     if len(args.expected_sha) != 40 or any(c not in "0123456789abcdef" for c in args.expected_sha):
         parser.error("invalid source SHA")
@@ -231,7 +268,7 @@ def main():
     if args.inside and (not unit.startswith("lu-sec06c-boundary-") or not unit.endswith(".service")):
         parser.error("unsafe systemd unit identity")
     try:
-        return inside(unit, path, args.expected_sha) if args.inside else outer(unit, path, args.expected_sha)
+        return inside(unit, path, args.expected_sha) if args.inside else outer(unit, path, args.expected_sha, args.scenario)
     except Exception as exc:
         print(f"SEC06C_ROOT_OWNED_BOUNDARY_BLOCKED: {exc}", file=sys.stderr)
         return 1

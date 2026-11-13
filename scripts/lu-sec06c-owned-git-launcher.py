@@ -12,6 +12,7 @@ import hashlib
 import os
 import pathlib
 import pwd
+import select
 import re
 import stat
 import subprocess
@@ -184,6 +185,11 @@ def run(args):
         events = (cgroup / "cgroup.events").open("r", encoding="ascii")
         if not (cgroup / "cgroup.kill").is_file():
             deny("systemd operation lacks real kernel cgroup.kill")
+        # The host's one-use original lifetime pipe must still be live at
+        # the exact authorization point; SIGKILL/EOF forbids first launch.
+        waiting, _, _ = select.select([sys.stdin.buffer], [], [], 0)
+        if waiting and not sys.stdin.buffer.read(1):
+            deny("original host lifetime ended before systemd GO")
         create_root_file(go, "LU_SEC06C_GO_V1\n" + nonce + "\n")
         started = True
         try:
