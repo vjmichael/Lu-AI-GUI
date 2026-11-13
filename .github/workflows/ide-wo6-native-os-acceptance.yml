@@ -265,6 +265,13 @@ jobs:
           # distro resource lookup from genuine kernel/stdio/DAP failures.
           # Only fixed categories are shown; raw stderr and paths are hidden.
           python3 ide/supervisor/fixtures/debug/probe_lldb_dap_initialize.py
+      - name: Classify exact fixed LLDB launch under distro, copied and Bwrap namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Diagnostic only, no altered ptrace/AppArmor/sysctl privileges.
+          # A positive result is NOT cgroup custody or original debugger acceptance.
+          python3 ide/supervisor/fixtures/debug/probe_lldb_dap_launch.py
       - name: Compile trusted fixed delegated OS host and native DAP fixture
         shell: bash
         run: |
