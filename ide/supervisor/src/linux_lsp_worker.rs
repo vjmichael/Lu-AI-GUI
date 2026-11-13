@@ -290,6 +290,47 @@ impl LinuxLspProcess {
             Some(_) => "multiple",
             None => "unavailable",
         });
+        // Separate a live traced-stop from a running target or missing
+        // debuggee. Only process IDs supplied by the already-owned native
+        // cgroup are sampled, with a strict bound and fixed output labels.
+        // Observations are diagnostic, NOT an OS-stop acceptance witness:
+        // the original independently sealed ELF/PC/DWARF gate still applies.
+        let process_state = std::fs::read_to_string(self.group.dir.join("cgroup.procs"))
+            .ok()
+            .filter(|data| data.len() <= 4096)
+            .and_then(|data| {
+                let members: Vec<_> = data.lines().collect();
+                if members.len() > 32 {
+                    return None;
+                }
+                let mut tracing = false;
+                let mut traced_stop = false;
+                for line in members {
+                    let pid = line.parse::<u32>().ok()?;
+                    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+                    if status.len() > 8192 {
+                        return None;
+                    }
+                    let tracer = status.lines()
+                        .find_map(|row| row.strip_prefix("TracerPid:"))
+                        .and_then(|v| v.trim().parse::<u32>().ok())?;
+                    let state = status.lines()
+                        .find_map(|row| row.strip_prefix("State:"))?.trim_start();
+                    if tracer != 0 {
+                        tracing = true;
+                        if state.starts_with("t ") {
+                            traced_stop = true;
+                        }
+                    }
+                }
+                Some((tracing, traced_stop))
+            });
+        eprintln!("PROTECTED_LINUX_DAP_CGROUP_TRACE_CLASS={}", match process_state {
+            Some((_, true)) => "traced_stop_present_not_attested",
+            Some((true, false)) => "traced_running_or_other_state",
+            Some((false, false)) => "no_traced_member",
+            None => "unavailable",
+        });
         if let Some(stderr) = &mut self.debug_stderr {
             let fd = stderr.as_raw_fd();
             let readable = poll_fd(fd, libc::POLLIN | libc::POLLHUP, 0).unwrap_or(false);
