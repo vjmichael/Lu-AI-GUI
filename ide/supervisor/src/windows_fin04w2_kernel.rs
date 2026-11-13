@@ -3,7 +3,7 @@
 //! The independent debugger SCM broker, Job lease, ACL/WFP denial and
 //! original one-use approval have separate mandatory acceptance gates.
 //! Even a successful preflight is NEVER an execution or source-line receipt.
-#![cfg(all(windows, debug_assertions, feature = "fin04w2-protocol"))]
+#![cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
 
 use crate::SupervisorError;
 use std::{ffi::OsStr, mem::size_of, os::windows::ffi::OsStrExt, ptr};
