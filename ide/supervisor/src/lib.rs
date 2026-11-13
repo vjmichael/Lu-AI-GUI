@@ -941,6 +941,27 @@ impl Supervisor {
         if !proof.complete() {
             return Err(SupervisorError::NoContainment);
         }
+        self.consume_grant_after_verified_os_custody(job_id, refreshed_plan)
+    }
+
+    // Unlike old W2-C, this does not create an all-true OsContainmentProof
+    // from CI environment flags. A typed admission witness is minted only
+    // by the exact authenticated Windows SCM peer, after the fixed service
+    // confirms the first-party worker is already suspended IN its OS Job.
+    #[cfg(all(windows, debug_assertions, feature="fin04w2-c2"))]
+    fn consume_grant_after_c2_service_admission(
+        &self, job_id:&str, refreshed_plan:&JobPlan,
+        witness:&windows_fin04w2_c2_host::TrustedC2Admission,
+    )->Result<(),SupervisorError>{
+        if !witness.matches(job_id,refreshed_plan)?{
+            return Err(SupervisorError::NoContainment);
+        }
+        self.consume_grant_after_verified_os_custody(job_id,refreshed_plan)
+    }
+
+    fn consume_grant_after_verified_os_custody(
+        &self,job_id:&str,refreshed_plan:&JobPlan,
+    )->Result<(),SupervisorError>{
         if !validate_plan(refreshed_plan) {
             return Err(SupervisorError::WrongProjectOrSource);
         }
