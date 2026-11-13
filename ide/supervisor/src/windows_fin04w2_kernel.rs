@@ -292,7 +292,7 @@ impl EmptyAuditJob {
         use windows_sys::Win32::System::{
             JobObjects::AssignProcessToJobObject,
             Threading::{
-                CreateProcessW, GetExitCodeProcess, ResumeThread,
+                CreateProcessW, GetExitCodeProcess, ResumeThread, TerminateProcess,
                 CREATE_NO_WINDOW, CREATE_SUSPENDED, PROCESS_INFORMATION,
                 STARTUPINFOW, WaitForSingleObject,
             },
@@ -337,15 +337,24 @@ impl EmptyAuditJob {
         // any failure to atomically capture its original PID into this
         // exact owner-held kernel Job BEFORE ResumeThread.
         if unsafe { AssignProcessToJobObject(self._owned.0, child.0) } == 0 {
-            return Err(denied()); // closing the Job kills suspended child
+            // A suspended child that was NEVER enrolled would otherwise
+            // survive Job close. Reap it using the original OS process
+            // handle; no uncontained process may be resumed or abandoned.
+            unsafe { TerminateProcess(child.0, 77); }
+            let _ = unsafe { WaitForSingleObject(child.0, 5000) };
+            return Err(denied());
         }
         let mut enrolled = 0i32;
         if unsafe { IsProcessInJob(child.0, self._owned.0, &mut enrolled) } == 0
             || enrolled == 0
         {
+            unsafe { TerminateProcess(child.0, 77); }
+            let _ = unsafe { WaitForSingleObject(child.0, 5000) };
             return Err(denied());
         }
         if unsafe { ResumeThread(thread.0) } == u32::MAX {
+            unsafe { TerminateProcess(child.0, 77); }
+            let _ = unsafe { WaitForSingleObject(child.0, 5000) };
             return Err(denied());
         }
         // Original kernel accounting, not process output or a forged PID
