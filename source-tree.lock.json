@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e9b9b3ed3daec45842235884b063a118287bb4dd",
+  "sourceCommitBeforeLock": "6b41d6095807cb9492a92d36468732273e2a4139",
   "trackedFileCount": 984,
   "files": [
     {
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "93a7768f168d2c25c0df56d769fccfd8c5ea0052"
+      "blob": "7431c8ba374b8672cfa22606a27624642f412ac2"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -3805,7 +3805,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/read_approval_ledger.rs",
-      "blob": "7e50fd235570ba460e42923bb5c90ac4355e2464"
+      "blob": "8ac28bd7c5798805d4ac49721752dc2f7a7a5dbb"
     },
     {
       "path": "src-tauri/lu-core/tests/real_gguf_import.rs",
