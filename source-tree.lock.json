@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "88e34abd04e91c7ac14c20656673d3c7a5d59a3f",
+  "sourceCommitBeforeLock": "27ae7de426fce43110a2f3510a62e0292008fdad",
   "trackedFileCount": 984,
   "files": [
     {
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "f0e67ec8dddc99330df55e6ba892fdc1b1d6f841"
+      "blob": "082de549107ff917821f8d4d2dca2c62c37915af"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
