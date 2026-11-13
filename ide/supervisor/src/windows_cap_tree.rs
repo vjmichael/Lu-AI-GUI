@@ -16,6 +16,7 @@ use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt, OsMetadataExt};
 use cap_std::fs::{Dir, OpenOptions};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashMap,
     ffi::OsStr,
     fs::{self, File},
     io::{Read, Write},
@@ -84,20 +85,33 @@ fn safe_root(path: &Path) -> Result<Dir, SupervisorError> {
     // uses this pinned kernel directory handle, never an ambient path.
     Ok(Dir::from_std_file(root_file))
 }
-fn valid_leaf(file: &File) -> Result<(u64, std::time::SystemTime), SupervisorError> {
-    let meta = file.metadata().map_err(|_| denied())?;
-    if !meta.is_file() || meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(denied());
-    }
+// File ID includes the NTFS volume, forbidding cross-volume identity matches.
+type KernelFileId = (u32, u32, u32);
+type ClosedAliases = HashMap<KernelFileId, u32>;
+fn kernel_link_identity(file: &File) -> Result<(KernelFileId, u32), SupervisorError> {
     let mut info = BY_HANDLE_FILE_INFORMATION::default();
     if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0 {
         acceptance_tree_denial("kernel_file_id_unavailable");
         return Err(denied());
     }
-    if info.nNumberOfLinks != 1 {
-        // A second NTFS hardlink could name an object outside the root.
-        // Keep rejection; a future source change may only permit aliases
-        // with independently proven complete in-tree NTFS identities.
+    if info.nNumberOfLinks == 0 {
+        return Err(denied());
+    }
+    Ok(((info.dwVolumeSerialNumber, info.nFileIndexHigh, info.nFileIndexLow), info.nNumberOfLinks))
+}
+fn valid_leaf(
+    file: &File,
+    closed_aliases: Option<&ClosedAliases>,
+) -> Result<(u64, std::time::SystemTime), SupervisorError> {
+    let meta = file.metadata().map_err(|_| denied())?;
+    if !meta.is_file() || meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(denied());
+    }
+    let (identity, links) = kernel_link_identity(file)?;
+    if links != 1 && closed_aliases.and_then(|aliases| aliases.get(&identity)) != Some(&links) {
+        // Staging and normal auditing still deny ALL multi-link files.
+        // Only original, kernel-empty compiler output may supply a complete
+        // identity-bound in-root alias proof. External aliases remain denied.
         acceptance_tree_denial("multi_link_alias");
         return Err(denied());
     }
@@ -105,7 +119,7 @@ fn valid_leaf(file: &File) -> Result<(u64, std::time::SystemTime), SupervisorErr
 }
 fn checked_child_dir(parent: &Dir, name: &OsStr) -> Result<Dir, SupervisorError> {
     let md = parent.symlink_metadata(name).map_err(|_| denied())?;
-    if !md.is_dir() || md.file_type().is_symlink() {
+    if !md.is_dir() || md.file_type().is_symlink() || md.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(denied());
     }
     // No ambient pathname here. cap_std resolves relative to parent handle.
@@ -129,6 +143,77 @@ fn checked_child_dir(parent: &Dir, name: &OsStr) -> Result<Dir, SupervisorError>
 struct Budget {
     files: usize,
     bytes: u64,
+}
+// Exhaustively enumerate every file name beneath this live capability root.
+// If NTFS reports more links to any inode than we can find inside the root,
+// its other name is outside the publication boundary and MUST be rejected.
+fn inventory_compiler_links(
+    dir: &Dir,
+    depth: usize,
+    budget: &mut Budget,
+    groups: &mut HashMap<KernelFileId, (u32, u32)>,
+    max_files: usize,
+    max_bytes: u64,
+    item_limit: u64,
+) -> Result<(), SupervisorError> {
+    if depth > MAX_DEPTH { return Err(denied()); }
+    let mut names = dir.entries().map_err(|_| denied())?
+        .map(|entry| entry.map(|item| item.file_name()).map_err(|_| denied()))
+        .collect::<Result<Vec<_>, _>>()?;
+    names.sort();
+    for name in names {
+        clean_name(&name)?;
+        let meta = dir.symlink_metadata(&name).map_err(|_| denied())?;
+        if meta.file_type().is_symlink()
+            || meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        { return Err(denied()); }
+        if meta.is_dir() {
+            let child = checked_child_dir(dir, &name)?;
+            inventory_compiler_links(
+                &child, depth + 1, budget, groups, max_files, max_bytes, item_limit
+            )?;
+        } else if meta.is_file() {
+            let mut options = OpenOptions::new();
+            options.read(true).follow(FollowSymlinks::No);
+            let opened = dir.open_with(&name, &options).map_err(|_| denied())?.into_std();
+            let verified = opened.metadata().map_err(|_| denied())?;
+            if !verified.is_file()
+                || verified.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+                || verified.len() != meta.len()
+                || verified.len() > item_limit
+                || verified.len() > MAX_ITEM_BYTES
+            { return Err(denied()); }
+            budget.files = budget.files.checked_add(1).ok_or_else(denied)?;
+            budget.bytes = budget.bytes.checked_add(verified.len()).ok_or_else(denied)?;
+            if budget.files > max_files || budget.bytes > max_bytes { return Err(denied()); }
+            let (id, nlinks) = kernel_link_identity(&opened)?;
+            let group = groups.entry(id).or_insert((nlinks, 0));
+            if group.0 != nlinks { return Err(denied()); }
+            group.1 = group.1.checked_add(1).ok_or_else(denied)?;
+        } else { return Err(denied()); }
+    }
+    Ok(())
+}
+fn prove_closed_compiler_aliases(
+    source: &Dir,
+    max_files: usize,
+    max_bytes: u64,
+    item_limit: u64,
+) -> Result<ClosedAliases, SupervisorError> {
+    let mut budget = Budget::default();
+    let mut groups = HashMap::new();
+    inventory_compiler_links(
+        source, 0, &mut budget, &mut groups, max_files, max_bytes, item_limit
+    )?;
+    let mut accepted = ClosedAliases::new();
+    for (id, (kernel_count, in_root_count)) in groups {
+        if kernel_count != in_root_count {
+            acceptance_tree_denial("outside_root_hardlink_alias");
+            return Err(denied());
+        }
+        if kernel_count > 1 { accepted.insert(id, kernel_count); }
+    }
+    Ok(accepted)
 }
 fn visit(
     source: &Dir,
