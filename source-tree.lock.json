@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f563eb7463b49ca897d6efa0cff36f77f5952872",
+  "sourceCommitBeforeLock": "a3c0f35a2a90006ad834fe9e38f7036fd4e29082",
   "trackedFileCount": 997,
   "files": [
     {
@@ -601,7 +601,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "06753b7cfb0261524a96e91623fb91315618feb9"
+      "blob": "e396f688ed2e19aad264b1ef40e08ab742fcc521"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -853,7 +853,7 @@
     },
     {
       "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
-      "blob": "e65609c62099dcf8b0ee89de24f065d9f934f3e9"
+      "blob": "e19898aeb0ea509c6e9c9e90ca1bf38ee752521f"
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "c276ada4f20d20bcd55db77d75a293fbdd62bfe1"
+      "blob": "d82ef589fd77d4999152d0922364143f94a61651"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2261,7 +2261,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-kernel-manager.py",
-      "blob": "af712884c2b0974e9b8c1f0213bdc61b93421089"
+      "blob": "a3e3087d20fdacbbfc8bafa54e856b7be200c1ef"
     },
     {
       "path": "scripts/lu-sec06c-owned-native-launcher.py",
