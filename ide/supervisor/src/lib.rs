@@ -23,6 +23,10 @@ pub mod debug_symbol_verification;
 // No installed/production feature enables this default-off module.
 #[cfg(feature = "fin04w2-protocol")]
 mod fin04w2_protocol;
+// Actual Win32 service-principal and current-Job inspection is review-only;
+// separate identity/ACL/WFP/service custody must precede any debugger launch.
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-protocol"))]
+mod windows_fin04w2_kernel;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
 pub mod live_output;
