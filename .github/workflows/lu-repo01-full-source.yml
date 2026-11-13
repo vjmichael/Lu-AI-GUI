@@ -2763,16 +2763,18 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib --tests -- --nocapture 2>&1 | tee p0-native-evidence/core-tests.log
-      - name: Original desktop ANSF and authorization native tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib -- --nocapture 2>&1 | tee p0-native-evidence/desktop-tests.log
+      # Tauri generate_context! requires frontendDist during desktop lib-test compilation.
+      # Build the actual frontend first; do not substitute an inert dist placeholder.
       - name: Production frontend and P0 UI regression suite
         shell: bash
         run: |
           set -euo pipefail
           (cd lu-desktop && npm ci --no-audit --no-fund && npm run build && npm run check && npm run test:ui) 2>&1 | tee p0-native-evidence/frontend-regressions.log
+      - name: Original desktop ANSF and authorization native tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path lu-desktop/src-tauri/Cargo.toml --lib -- --nocapture 2>&1 | tee p0-native-evidence/desktop-tests.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
