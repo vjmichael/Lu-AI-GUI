@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "355786f79caa4e54e602d48ec095555781269bfa",
-  "trackedFileCount": 984,
+  "sourceCommitBeforeLock": "6b016f0eb5ec65660d5d6cd6cf79f766616f8869",
+  "trackedFileCount": 985,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "b7eec4f928e3d2fc73f41747d711cf9b351e09b9"
+      "blob": "26ce52437692995d6182296d1dcf9f8282690fa7"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -849,7 +849,7 @@
     },
     {
       "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
-      "blob": "609e14dc0a0c7d1d514622495e5913ac375ba524"
+      "blob": "2a9d8a724b5f793b058de56de8b6f24d1bb0933c"
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
@@ -1929,7 +1929,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "3884fedbaf132423d21788fc1f48d66551b5c057"
+      "blob": "5fde2b8cb8f1979613ac1b897a08efcaabad297d"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2269,7 +2269,7 @@
     },
     {
       "path": "scripts/p0-sec06-consolidated.mjs",
-      "blob": "15bc0c618dd5d69f9c1859abcf3681e861ba578a"
+      "blob": "96e6dc4ff3dc4ca9a918d8ad7d7ff2181ac8402f"
     },
     {
       "path": "scripts/p0-sec06-windows-owner-observation.ps1",
@@ -2354,6 +2354,10 @@
     {
       "path": "scripts/run-qwen38-27b-local.ps1",
       "blob": "6b2be09b124f522e1d28a0fbd58cac49983dd54c"
+    },
+    {
+      "path": "scripts/sec06-source-lock-digest.mjs",
+      "blob": "9c2dd066562bf328395cc33af7129dc2b8e47753"
     },
     {
       "path": "scripts/source-identity.mjs",
