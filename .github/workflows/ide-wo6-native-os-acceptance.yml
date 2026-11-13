@@ -387,6 +387,7 @@ jobs:
               --property=Group=runner \
               --property='Delegate=cpu memory pids' \
               --property=DelegateSubgroup=lu-ide-host \
+              --setenv=LU_IDE_E2_NATIVE_TRACE=1 \
               "$host" "$mode" || rc=$?
             if [[ "$rc" -ne 0 ]]; then
               echo 'DENIED: actual delegated Linux Cargo OS evidence failed'
