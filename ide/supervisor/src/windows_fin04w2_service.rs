@@ -61,6 +61,18 @@ struct InstalledAuditConfig {
     review_only_plan: JobPlan,
     review_only_plan_hash: String,
     review_only_nonce: String,
+    // CI-only first-party fixture. This cannot be selected or influenced by
+    // a named-pipe client; only the preinstalled private service.json pins it.
+    #[cfg(feature = "fin04w2-contained-probe")]
+    fixed_probe: FixedProbe,
+}
+#[cfg(feature = "fin04w2-contained-probe")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FixedProbe {
+    executable: PathBuf,
+    expected_sha256: String,
+    foreign_file: PathBuf,
 }
 fn nonce(value: &str) -> Result<[u8;16], SupervisorError> {
     if value.len() != 32 || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -101,6 +113,18 @@ impl InstalledAuditConfig {
             ).is_err()
         {
             return Err(denied());
+        }
+        #[cfg(feature = "fin04w2-contained-probe")]
+        {
+            let probe = &result.fixed_probe;
+            if !probe.executable.is_absolute()
+                || !probe.foreign_file.is_absolute()
+                || probe.expected_sha256.len() != 64
+                || !probe.expected_sha256.bytes().all(|b| b.is_ascii_hexdigit())
+            {
+                return Err(denied());
+            }
+            security::hash_executable(&probe.executable, &probe.expected_sha256)?;
         }
         let sid = security::sid_of_named_service(NAME)?;
         security::verify_private_evidence_root_for(&root, &sid)?;
@@ -190,6 +214,17 @@ fn run_service(handle: windows_sys::Win32::System::Services::SERVICE_STATUS_HAND
     // DACL. The Job is held until the SCM service stops. It has no API to
     // enroll a debuggee; WFP and descendant tests remain mandatory.
     let _empty_audit_job = windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
+    // Only the frozen CI binary can execute in this branch. There is no
+    // caller action to launch it and no LLDB binary/command path. The
+    // service will not report RUNNING if actual kernel Job, foreign-file or
+    // outbound-socket probes do not agree. The independent admin CI step
+    // must also establish actual WFP rule identity and host baseline.
+    #[cfg(feature = "fin04w2-contained-probe")]
+    _empty_audit_job.verify_fixed_probe(
+        &config.fixed_probe.executable,
+        &config.fixed_probe.expected_sha256,
+        &config.fixed_probe.foreign_file,
+    )?;
     let sid = security::sid_of_named_service(NAME)?;
     let pipe_acl = security::PipeSecurity::new_for_service(
         &config.approved_host_user_sid, &sid,
