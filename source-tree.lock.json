@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "e1c2eae55c8f895beabca4b0ddbb02a2717daf7d",
+  "sourceCommitBeforeLock": "72839d2a5f45d3524c311a6b395cee02a1f8c1d5",
   "trackedFileCount": 997,
   "files": [
     {
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "1030da0e6acaf7d52242b4c8544178bc2c9b71b4"
+      "blob": "8d1bbbd3745b1ef6f58704b99d6995929302a16c"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2633,7 +2633,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/browser_chromium_launcher.rs",
-      "blob": "9e1d441c89ec138b6431e2d6735f12ac2dbc2cdf"
+      "blob": "69450e6f0e73693b45dca3872a94bb76517fc807"
     },
     {
       "path": "src-tauri/lu-core/src/browser_host_bridge.rs",
@@ -2669,7 +2669,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/browser_worker_supervisor.rs",
-      "blob": "51f03af2c3a38f7d8246aee85331427960482eaa"
+      "blob": "99de61addebf4fdc389dd33b82c9e238d9fbc675"
     },
     {
       "path": "src-tauri/lu-core/src/capability_router.rs",
@@ -2989,7 +2989,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "d1e1ef04a9c39edcba064e3caa7ad6a5691e6146"
+      "blob": "5cccf16cd1f88903bfc3cddaa3331c8f9f897efb"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
