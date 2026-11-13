@@ -154,7 +154,7 @@ fn run()->Result<(),lu_ide_execution_supervisor::SupervisorError>{
     }
     let result=serde_json::json!({
         "schema":"lu.ide.fin04w2.c.native.final.v1",
-        "sourceHead":std::env::var("GITHUB_SHA").unwrap_or_default(),
+        "sourceHead":plan.source_head,
         "jobId":prepared.job_id,
         "planSha256":prepared.plan_sha256,
         "originalEventCount":events.len(),
