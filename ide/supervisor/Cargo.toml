@@ -65,7 +65,7 @@ dev045d4c-ci-oracle = ["dap-transport", "protected-recovery-service"]
 fin04w-ci-bridge = ["dev045d4c-ci-oracle"]
 # FIN-04W2 fixed message grammar only; no service, worker or runnable IPC.
 # Can be tested on both Windows and Linux without kernel privileges.
-fin04w2-protocol = []
+fin04w2-protocol = ["dap-transport"]
 # A reviewed, patched LLVM 18 debugger owner-event sideband under one-use
 # Job/SCM custody, NEVER a default Windows release capability.
 dev045d5-ci-event-owner = ["dev045d4c-ci-oracle"]
