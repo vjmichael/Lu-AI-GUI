@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "b6546c08ca8733aecca896a0eb43b7d697ee49e7",
+  "sourceCommitBeforeLock": "2221e25783b1530282dcd9eface4cce86e9053f9",
   "trackedFileCount": 990,
   "files": [
     {
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "325e16a138c774233d769566f60c291d7bb3c2be"
+      "blob": "ea7b4f1906315acac71a570564670951f68b2cf3"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -2253,11 +2253,11 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
-      "blob": "31b6e294f684194c4a9a386d3256612b6ffc88b4"
+      "blob": "a395c97bb1c630f289bfe15cd8a29bee7d60a6ab"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-worker.py",
-      "blob": "74cf2d6da0dac01f2be3cd5d2542281e47f39da6"
+      "blob": "7225f146dc96c7b90efa7002c998b093963efee5"
     },
     {
       "path": "scripts/m3-windows-installed-acceptance.ps1",
@@ -2517,7 +2517,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_os_custody.rs",
-      "blob": "840b2b65b1094216b59e55b2a7a35185a333623d"
+      "blob": "88243c60595cd0ec9e5c2f568d4892cf3d8de896"
     },
     {
       "path": "src-tauri/lu-core/src/agent_plan_ledger.rs",
@@ -2969,7 +2969,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_background_process.rs",
-      "blob": "950cee048b2b29b29c072e28c4d4b98062e5300f"
+      "blob": "60dba8d135fad95106bb864fbc4c8e286406fc8e"
     },
     {
       "path": "src-tauri/lu-core/src/native_background_result.rs",
@@ -3945,7 +3945,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/os_owned_git.rs",
-      "blob": "5604970d3e8ec9b8b42298e7985f660b7913a870"
+      "blob": "53fda54769c861217408689c173fcc4233bdcafb"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/system_memory.rs",
