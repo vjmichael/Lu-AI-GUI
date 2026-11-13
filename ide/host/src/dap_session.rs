@@ -260,6 +260,21 @@ impl DapSession {
     /// This builds DAP bytes ONLY; actual authority resides in the D3 plan
     /// with an exact sealed build target digest and native OS containment.
     pub fn launch_verified_project(&mut self, program: &str) -> Result<Vec<u8>, DapError> {
+        self.launch_verified_project_with_stop(program, true)
+    }
+    /// CI-only original-source trap fixture. This is not a debugger control:
+    /// it only selects whether the already sealed project stops at loader
+    /// entry or runs to a trap physically compiled into reviewed source.
+    /// No user project can select this mode in a release binary.
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    pub fn launch_verified_project_source_trap_for_ci(
+        &mut self, program: &str,
+    ) -> Result<Vec<u8>, DapError> {
+        self.launch_verified_project_with_stop(program, false)
+    }
+    fn launch_verified_project_with_stop(
+        &mut self, program: &str, stop_on_entry: bool
+    ) -> Result<Vec<u8>, DapError> {
         if self.phase != DapPhase::Ready {
             return Err(DapError::InvalidPhase);
         }
@@ -299,7 +314,7 @@ impl DapSession {
         let frame = self.request(
             "launch",
             json!({
-                "program":program,"stopOnEntry":true,"noDebug":false,
+                "program":program,"stopOnEntry":stop_on_entry,"noDebug":false,
                 "disableASLR":false,"disableSTDIO":true,
                 "args":[],"env":{},"runInTerminal":false
             }),

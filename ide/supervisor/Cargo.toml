@@ -51,7 +51,7 @@ ci-native-null-lease = ["windows-worker"]
 ide056-ci-acl-positive = ["windows-worker"]
 # CI-only ELF oracle outside the child cgroup, never packaged into a desktop.
 # Without this precise opt-in the native method fails closed at runtime.
-dev045d3-ci-oracle = ["dap-transport", "linux-worker"]
+dev045d3-ci-oracle = ["dap-transport", "linux-worker", "lu-ide-workspace/dev045d3-ci-source-trap"]
 # FIN-04R: the first-party LLDB event sideband under native Windows
 # AppContainer / Job Object and SCM custody is observation-only.
 # No DAP control, CI symbolizer, action grant, or replay authority.

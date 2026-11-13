@@ -1626,6 +1626,16 @@ fn start_windows_dap_inner(
                 return Err(SupervisorError::Quarantined);
             }
         };
+    #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
+    if fin04w {
+        if let Err(reason) =
+            super::fin04w::ci_probe_child_loader_access(process.0, &executable, &workspace)
+        {
+            let _ = job.kill_and_verify();
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(reason);
+        }
+    }
     #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
     if !fin04w && matches!(plan.recipe_id.as_str(), "dap_lldb_fixed" | "dap_lldb_project") {
         if let Err(reason) = trace_dap_token_access(process.0, &bundle, &staged_document, &local) {

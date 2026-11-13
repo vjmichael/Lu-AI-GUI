@@ -858,6 +858,12 @@ impl LinuxDapSession {
             .ok_or(SupervisorError::InvalidPlan)?;
         self.gateway.launch_verified_project(target)
     }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn launch_project_source_trap_for_ci(&mut self) -> Result<(), SupervisorError> {
+        let target = self.project_debuggee.as_deref()
+            .ok_or(SupervisorError::InvalidPlan)?;
+        self.gateway.launch_verified_project_source_trap_for_ci(target)
+    }
     pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {
         self.gateway.phase()
     }

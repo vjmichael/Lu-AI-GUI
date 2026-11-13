@@ -14,11 +14,13 @@
 #![cfg(all(windows, debug_assertions, feature = "fin04w-ci-bridge"))]
 
 use crate::{JobPlan, SupervisorError};
-use std::{mem::size_of, ptr};
+use std::{ffi::OsStr, mem::size_of, path::Path, ptr};
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, HANDLE},
+    Foundation::{CloseHandle, GetLastError, HANDLE, INVALID_HANDLE_VALUE},
     Security::{
-        CreateRestrictedToken, CreateWellKnownSid, EqualSid, GetTokenInformation,
+        CreateRestrictedToken, CreateWellKnownSid, DuplicateTokenEx, EqualSid,
+        GetTokenInformation, ImpersonateLoggedOnUser, RevertToSelf, SecurityImpersonation,
+        TokenImpersonation,
         IsTokenRestricted, IsValidSid, SetTokenInformation, TokenIntegrityLevel,
         TokenIsAppContainer, TokenUser, TOKEN_USER, SID_AND_ATTRIBUTES,
         TOKEN_MANDATORY_LABEL, TOKEN_DUPLICATE, TOKEN_ASSIGN_PRIMARY,
@@ -26,6 +28,7 @@ use windows_sys::Win32::{
         TOKEN_QUERY, DISABLE_MAX_PRIVILEGE, LUA_TOKEN,
         WinLowLabelSid, WinBuiltinUsersSid,
     },
+    Storage::FileSystem::{CreateFileW, OPEN_EXISTING},
     System::Threading::{GetCurrentProcess, OpenProcessToken},
 };
 
@@ -214,6 +217,84 @@ impl RestrictedPrimaryToken {
     pub(crate) fn raw(&self) -> HANDLE {
         self.0.0
     }
+}
+
+
+// FIN-04W OS-only diagnostic: the actual *suspended child* token is
+// impersonated briefly to ask Windows about fixed loader/file operations.
+// This is NOT evidence that the image loader's internal call succeeded and
+// may never lead to a broad ACL grant or permission fallback. Only static
+// categories are emitted; no source contents, absolute paths or token IDs.
+pub(crate) fn ci_probe_child_loader_access(
+    child_process: HANDLE,
+    executable: &Path,
+    working_dir: &Path,
+) -> Result<(), SupervisorError> {
+    let mut original = ptr::null_mut();
+    if unsafe {
+        OpenProcessToken(child_process, TOKEN_QUERY | TOKEN_DUPLICATE, &mut original)
+    } == 0 {
+        eprintln!("FIN04W_LOADER_PROBE=child_token_unavailable");
+        return Err(denied());
+    }
+    let original = OwnedToken(original);
+    verify_token(original.0)?;
+    let mut raw = ptr::null_mut();
+    if unsafe {
+        DuplicateTokenEx(
+            original.0, TOKEN_QUERY | TOKEN_IMPERSONATE, ptr::null(),
+            SecurityImpersonation, TokenImpersonation, &mut raw,
+        )
+    } == 0 {
+        eprintln!("FIN04W_LOADER_PROBE=impersonation_token_unavailable");
+        return Err(denied());
+    }
+    let impersonation = OwnedToken(raw);
+    if unsafe { ImpersonateLoggedOnUser(impersonation.0) } == 0 {
+        eprintln!("FIN04W_LOADER_PROBE=impersonation_denied");
+        return Err(denied());
+    }
+    // Do not expose arbitrary user paths. These three locations are
+    // selected solely by the already sealed host worker/OS.
+    let system_dll = std::env::var_os("SystemRoot")
+        .map(|root| Path::new(&root).join("System32/kernel32.dll"));
+    let candidates: [(&str, Option<&Path>, u32); 3] = [
+        ("sealed_executable", Some(executable), 0xa000_0000),
+        ("sealed_workdir", Some(working_dir), 0x8000_0000),
+        ("system_dll", system_dll.as_deref(), 0xa000_0000),
+    ];
+    for (label, candidate, desired_access) in candidates {
+        let result = if let Some(candidate) = candidate {
+            let raw = unsafe {
+                CreateFileW(
+                    super::wide(candidate.as_os_str()).as_ptr(),
+                    desired_access, 0x0000_0007, ptr::null(),
+                    OPEN_EXISTING, 0, ptr::null_mut(),
+                )
+            };
+            if raw == INVALID_HANDLE_VALUE || raw.is_null() {
+                match unsafe { GetLastError() } {
+                    5 => "access_denied",
+                    2 | 3 => "missing_path",
+                    32 => "sharing_violation",
+                    _ => "other_kernel_failure",
+                }
+            } else {
+                unsafe { CloseHandle(raw); }
+                "read_execute_allowed"
+            }
+        } else {
+            "source_unavailable"
+        };
+        eprintln!("FIN04W_LOADER_{label}={result}");
+    }
+    // Reversion is a mandatory protection before the host can touch
+    // the original privileged Job, SCM or durable receipt again.
+    if unsafe { RevertToSelf() } == 0 {
+        return Err(SupervisorError::Quarantined);
+    }
+    eprintln!("FIN04W_LOADER_PROBE=completed_reverted_no_authority");
+    Ok(())
 }
 
 pub(crate) fn attest_child(process: HANDLE) -> Result<(), SupervisorError> {

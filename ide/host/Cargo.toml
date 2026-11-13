@@ -12,6 +12,9 @@ default = []
 # Source-only, disposable protected Windows native acceptance. No Tauri
 # control route or released debugger execution rights.
 dev046c-ci-control = []
+# Disposable Linux original-source trap only. Not an installed/debugger
+# control: the source must be fixed, compiler built and externally sealed.
+dev045d3-ci-source-trap = []
 
 [dependencies]
 prost = "0.14"

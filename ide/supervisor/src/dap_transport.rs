@@ -273,6 +273,15 @@ impl DapGateway {
             .map_err(protocol_denied)?;
         self.send(&frame)
     }
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub(crate) fn launch_verified_project_source_trap_for_ci(
+        &mut self, target: &str,
+    ) -> Result<(), SupervisorError> {
+        let frame = self.session
+            .launch_verified_project_source_trap_for_ci(target)
+            .map_err(protocol_denied)?;
+        self.send(&frame)
+    }
     pub(crate) fn configuration_needed(&self) -> bool {
         self.session.configuration_needed()
     }

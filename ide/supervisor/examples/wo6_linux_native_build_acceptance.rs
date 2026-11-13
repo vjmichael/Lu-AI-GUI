@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     fs::write(
         source.join("src/main.rs"),
-        "fn main(){ println!(\"fixed WO6 isolated job\"); }\n",
+        "fn main(){\n    #[cfg(target_arch=\"x86_64\")]\n    unsafe { core::arch::asm!(\"int3\", options(nomem, nostack, preserves_flags)); }\n    println!(\"fixed WO6 isolated job\");\n}\n",
     )?;
     let input = publish_input(&source, &stage, recipe).map_err(|e| e.code())?;
     let digest = installed_toolchain_digest().map_err(|e| e.code())?;
@@ -311,7 +311,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             target
                 .verify()
                 .map_err(|_| "DENIED: target changed before launch")?;
-            dap.launch_project_target().map_err(|e| e.code())?;
+            // This exact CI-reviewed source contains a real x86_64 INT3
+            // instruction. A stop-on-entry in the dynamic loader has no
+            // source line and cannot satisfy independent DWARF evidence.
+            // Run without entry stop only in this disposable native fixture;
+            // the first genuine SIGTRAP must have the original source line.
+            dap.launch_project_source_trap_for_ci().map_err(|e| e.code())?;
             if dap.configuration_needed() {
                 dap.configuration_done().map_err(|e| e.code())?;
             }
