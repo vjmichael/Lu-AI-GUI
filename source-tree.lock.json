@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6b016f0eb5ec65660d5d6cd6cf79f766616f8869",
-  "trackedFileCount": 985,
+  "sourceCommitBeforeLock": "3d4c50d6414a81bcce446b0114ed61d48c886144",
+  "trackedFileCount": 986,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "ddf39324a507a4f607d38ad25218b1566d7e9780"
+      "blob": "2f7a95b1ba6a6c928461196d210166b0140c7f4a"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "26ce52437692995d6182296d1dcf9f8282690fa7"
+      "blob": "a15152767e019b28402428ecaf897830c806a6ec"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -849,7 +849,7 @@
     },
     {
       "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
-      "blob": "2a9d8a724b5f793b058de56de8b6f24d1bb0933c"
+      "blob": "4521c43a6a6ef3940d2bc6b593f1d03554703cca"
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
@@ -1929,7 +1929,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "5fde2b8cb8f1979613ac1b897a08efcaabad297d"
+      "blob": "632252460448c86b1c2f887073b66ba4553d2fc8"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2269,7 +2269,7 @@
     },
     {
       "path": "scripts/p0-sec06-consolidated.mjs",
-      "blob": "96e6dc4ff3dc4ca9a918d8ad7d7ff2181ac8402f"
+      "blob": "8bf42d00dae04140199b183caf5607f35a93f802"
     },
     {
       "path": "scripts/p0-sec06-windows-owner-observation.ps1",
@@ -2354,6 +2354,10 @@
     {
       "path": "scripts/run-qwen38-27b-local.ps1",
       "blob": "6b2be09b124f522e1d28a0fbd58cac49983dd54c"
+    },
+    {
+      "path": "scripts/sec06-linux-delegated-runner.py",
+      "blob": "e8b961829985cb5a302d711d87987c078921fdd8"
     },
     {
       "path": "scripts/sec06-source-lock-digest.mjs",
