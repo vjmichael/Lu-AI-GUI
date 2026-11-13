@@ -63,3 +63,25 @@ test('FIN03 native unit fixtures reject dirty, drift, spoofing and write asserti
   assert.match(native,/FIN03_REMOTE_TRACKING_UNVERIFIED/);
   assert.match(native,/remote_write_route_available:false/);
 });
+
+test('FIN03 6E05B uses OS native credential read only, not WebView secrets', () => {
+  const live = read('../../host/src/github_remote_live_policy.rs');
+  const code = live.split('#[cfg(test)]')[0];
+  assert.match(host, /pub mod github_remote_live_policy;/);
+  assert.match(live, /NativeOsGitHubReadVault/);
+  assert.match(live, /keyring::Entry::new\(/);
+  assert.match(live, /entry\.get_password\(\)/);
+  assert.match(live, /zeroize::Zeroizing::new/);
+  assert.match(live, /fin03-native-vault/);
+  assert.doesNotMatch(code, /\.set_password\s*\(/);
+  assert.doesNotMatch(code, /\.set_secret\s*\(/);
+  assert.doesNotMatch(code, /\.delete_credential\s*\(/);
+  assert.doesNotMatch(code, /std::env::var\s*\(/);
+  assert.doesNotMatch(tauri, /ide_github_read_token|ide_github_publish_branch/);
+  for (const fence of [
+    'live_ref_compare_and_swap_authorized:false',
+    'native_approval_verified:false',
+    'remote_mutation_performed:false',
+    'remote_write_route_available:false',
+  ]) assert.ok(code.includes(fence), fence);
+});
