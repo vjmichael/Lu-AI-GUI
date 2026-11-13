@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "08662e0ab78312a8b4a7a20315131b80f639bc09",
-  "trackedFileCount": 993,
+  "sourceCommitBeforeLock": "d638b7b14169782534b30c2c242974561e66c581",
+  "trackedFileCount": 994,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "08cd3c6553250b3f9e1b19e668aa67dd3bca5b5b"
+      "blob": "c4746cdc3f4f9a23c4fc3fb5bc7960cce35eeda9"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -601,7 +601,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "f0fc8a6d07304b0b1a450c90c05f4308d7c13654"
+      "blob": "8637baafc7ca22bfa8f25e8905a0014db90c6818"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
@@ -853,7 +853,7 @@
     },
     {
       "path": "docs/LU_P0_SEC06_CONSOLIDATED_ACCEPTANCE_20261111.md",
-      "blob": "f7fdea2046c76aced4d67bbac25c23b98de4af5f"
+      "blob": "9a9aa362a0aff9688b0b4cd1f752357bdacb14a9"
     },
     {
       "path": "docs/LU_P0_SEC_GUARDIAN_SECURITY_GAP_20261111.md",
@@ -1933,7 +1933,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "4aec381c41d508f072d924b2da0c3881f2c1309c"
+      "blob": "3b7866599ba245cdc83fd2ba8f6273ae69ed7c76"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2253,19 +2253,23 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-git-launcher.py",
-      "blob": "1e17cffc45d48e85a4e07238ec86ab8cd049b6e5"
+      "blob": "940aabc20f5271509a45be16a4d4ddd8a62e6e9e"
     },
     {
       "path": "scripts/lu-sec06c-owned-git-worker.py",
-      "blob": "a022460e1dd46bfc72930fcbcd302c46df7a630d"
+      "blob": "10c51689e5f9e791c128482ca6da7ee55167899e"
+    },
+    {
+      "path": "scripts/lu-sec06c-owned-kernel-manager.py",
+      "blob": "fecef5f6a284b5a13acc285bf5f75962cbc258e9"
     },
     {
       "path": "scripts/lu-sec06c-owned-probe-launcher.py",
-      "blob": "327cdc1efd805c3d72cf5c7c759fb3407f6fc04d"
+      "blob": "0bbfba89f13ae02887600148840747a00ff7df24"
     },
     {
       "path": "scripts/lu-sec06c-owned-probe-worker.py",
-      "blob": "5fa2c2f51aef67fe0c13bff0d276cc8519d61913"
+      "blob": "b28aa11daedbca89b94034e79a726b1bbca33e93"
     },
     {
       "path": "scripts/m3-windows-installed-acceptance.ps1",
@@ -2289,7 +2293,7 @@
     },
     {
       "path": "scripts/p0-sec06-consolidated.mjs",
-      "blob": "dabbb39256cf4543b0410ce65f04e7f036699a2b"
+      "blob": "6ecacbee1ef3c4c21ca0b1940eda6fe293ff0675"
     },
     {
       "path": "scripts/p0-sec06-windows-owner-observation.ps1",
