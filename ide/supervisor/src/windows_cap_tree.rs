@@ -37,6 +37,17 @@ const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 fn denied() -> SupervisorError {
     SupervisorError::NoContainment
 }
+// Debug/CI-only fixed output-category diagnostics. They cannot authorize an
+// alias or expose a file name, path, user bytes, SID or compiler arguments.
+fn acceptance_tree_denial(kind: &'static str) {
+    if cfg!(debug_assertions)
+        && std::env::var_os("GITHUB_ACTIONS").as_deref() == Some(OsStr::new("true"))
+        && std::env::var_os("LU_IDE_NATIVE_ACCEPTANCE_TRACE").as_deref()
+            == Some(OsStr::new("1"))
+    {
+        eprintln!("FIN01D_CAP_TREE_DENIED={kind}");
+    }
+}
 fn clean_name(name: &OsStr) -> Result<(), SupervisorError> {
     let text = name.to_str().ok_or_else(denied)?;
     if text.is_empty()
@@ -79,10 +90,15 @@ fn valid_leaf(file: &File) -> Result<(u64, std::time::SystemTime), SupervisorErr
         return Err(denied());
     }
     let mut info = BY_HANDLE_FILE_INFORMATION::default();
-    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0
-        || info.nNumberOfLinks != 1
-    {
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0 {
+        acceptance_tree_denial("kernel_file_id_unavailable");
+        return Err(denied());
+    }
+    if info.nNumberOfLinks != 1 {
         // A second NTFS hardlink could name an object outside the root.
+        // Keep rejection; a future source change may only permit aliases
+        // with independently proven complete in-tree NTFS identities.
+        acceptance_tree_denial("multi_link_alias");
         return Err(denied());
     }
     Ok((meta.len(), meta.modified().map_err(|_| denied())?))
@@ -171,12 +187,22 @@ fn visit(
                 .map_err(|_| denied())?
                 .into_std();
             let (expected, changed_at) = valid_leaf(&input)?;
-            if expected != metadata.len() || expected > item_limit || expected > MAX_ITEM_BYTES {
+            if expected != metadata.len() {
+                acceptance_tree_denial("file_size_changed");
+                return Err(denied());
+            }
+            if expected > item_limit || expected > MAX_ITEM_BYTES {
+                acceptance_tree_denial("per_file_byte_limit");
                 return Err(denied());
             }
             budget.files = budget.files.checked_add(1).ok_or_else(denied)?;
             budget.bytes = budget.bytes.checked_add(expected).ok_or_else(denied)?;
-            if budget.files > file_limit || budget.bytes > byte_limit {
+            if budget.files > file_limit {
+                acceptance_tree_denial("file_count_limit");
+                return Err(denied());
+            }
+            if budget.bytes > byte_limit {
+                acceptance_tree_denial("tree_byte_limit");
                 return Err(denied());
             }
             let mut output_file = if let Some(dst) = output {
@@ -211,6 +237,7 @@ fn visit(
             }
             let (after_bytes, after_time) = valid_leaf(&input)?;
             if after_bytes != expected || after_time != changed_at {
+                acceptance_tree_denial("file_mutated_during_seal");
                 return Err(denied());
             }
             if let Some(out) = output_file.as_mut() {
