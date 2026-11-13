@@ -51,10 +51,19 @@ fn run()->Result<(),lu_ide_execution_supervisor::SupervisorError>{
         || root.join("result.json").exists(){
         return Err(denied());
     }
+    // The CI parent checked out an EXACT PR head and independently
+    // supplies that native Git identity. Never assert a dummy source head
+    // as verified current code; all other build/target hashes here remain
+    // explicit benign-fixture coordinates, not a production PE/PDB seal.
+    let source_head=std::env::var("LU_FIN04W2_NATIVE_SOURCE_HEAD")
+        .map_err(|_|denied())?;
+    if source_head.len()!=40 || !source_head.bytes().all(|b|b.is_ascii_hexdigit()){
+        return Err(denied());
+    }
     let plan=JobPlan {
         project_id:format!("ide-{}","a".repeat(32)),
         recipe_id:"dap_lldb_project".into(),
-        source_head:"b".repeat(40),
+        source_head:source_head.clone(),
         input_snapshot_sha256:"c".repeat(64),
         manifest_sha256:"d".repeat(64),
         toolchain_sha256:"e".repeat(64),
