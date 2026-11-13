@@ -162,7 +162,21 @@ def preexec_leaf(leaf,uid,gid,readonly=True):
         os.setuid(uid)
     except OSError as exc:
         number=exc.errno if isinstance(exc.errno,int) else -1
-        msg=f"SEC06C_KERNEL_PREEXEC_DENIED stage={stage} errno={number}"+chr(10)
+        # The original native failure is setuid EPERM after setgid. Observe
+        # only fixed kernel capability masks and numeric original IDs; this
+        # is diagnostic, not permission or proof. Never dump environment,
+        # paths, model content or user data into process logs.
+        masks={}
+        try:
+            for row in pathlib.Path("/proc/self/status").read_text().splitlines():
+                for key in ("CapEff","CapPrm","CapBnd"):
+                    if row.startswith(key+":"):
+                        masks[key]=row.split(":",1)[1].strip()
+        except OSError:pass
+        mask=" ".join(key+"="+masks.get(key,"unavailable")
+            for key in ("CapEff","CapPrm","CapBnd"))
+        msg=(f"SEC06C_KERNEL_PREEXEC_DENIED stage={stage} errno={number} "
+             f"euid={os.geteuid()} egid={os.getegid()} {mask}"+chr(10))
         os.write(2,msg.encode("ascii"))
         raise
 

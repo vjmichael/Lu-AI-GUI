@@ -108,7 +108,7 @@ test('SEC06C fixed Git path binds original immutable journal nonce and finite no
     '--property=KillMode=control-group','--property=PrivateNetwork=yes',
     '--property=NoNewPrivileges=yes','--property=TasksMax=32',
     '--property=MemoryMax=536870912','--property=RuntimeMaxSec=90',
-    'root_owned_file(MANAGER)','SUDO_UID','str(MANAGER)',
+    'MANAGER','root_owned_file(file)','SUDO_UID','str(MANAGER)',
     'SEC06C_OS_BROKER_DENIED'
   ])assert.ok(launcher.includes(attr),'missing fixed root-owned manager contract '+attr);
   assert.match(worker,/core\.fsmonitor=false/);
@@ -117,6 +117,7 @@ test('SEC06C fixed Git path binds original immutable journal nonce and finite no
   assert.match(worker,/original Lu host died before one-use admission/);
   assert.match(worker,/original Lu host cancelled before reviewed Git spawn/);
   assert.match(worker,/exact separate root-owned worker leaf/);
+  assert.match(launcher,/for file in \(pathlib\.Path\(__file__\)\.resolve\(\),WORKER,WORKER_PYTHON,/);
   assert.match(manager,/GIT_WORKER/);
   assert.match(manager,/PROBE_WORKER/);
   assert.match(manager,/OPS=\{/);
