@@ -80,6 +80,41 @@ test('SEC06 Linux original Core suite receives absolute host-pinned Git without 
   assert.equal(section.includes('--skip-ancestor-migration'),false);
 });
 
+test('SEC06C trusted OS-owned Git launch binds original journal nonce and finite root-managed worker',()=>{
+  const host=readFileSync(join(root,'src-tauri/lu-core/src/native_background_process.rs'),'utf8');
+  const native=readFileSync(join(root,'src-tauri/lu-win-worker-job/src/os_owned_git.rs'),'utf8');
+  const tasks=readFileSync(join(root,'src-tauri/lu-core/src/tasks.rs'),'utf8');
+  const historical=readFileSync(join(root,'src-tauri/lu-core/src/agent_os_custody.rs'),'utf8');
+  const launcher=readFileSync(join(root,'scripts/lu-sec06c-owned-git-launcher.py'),'utf8');
+  const worker=readFileSync(join(root,'scripts/lu-sec06c-owned-git-worker.py'),'utf8');
+  assert.match(host,/LinuxOsOwnedReviewedGit::spawn_if_installed/);
+  assert.match(host,/bind_linux_os_owned_git_admission/);
+  assert.match(host,/verify_original_kernel_receipt/);
+  assert.match(host,/os_unit\.stop_and_verify/);
+  assert.match(native,/\/usr\/libexec\/lu\/lu-sec06c-launch-git/);
+  assert.match(native,/\/var\/lib\/lu-sec06c\/receipts/);
+  assert.match(native,/SEC06C forbids arbitrary Git commands/);
+  assert.match(native,/NOFOLLOW/);
+  assert.match(tasks,/lu_task_linux_os_owned_git_admission/);
+  assert.match(tasks,/Immutable Linux OS-owned admission/);
+  assert.match(historical,/linux_os_owned_git_original_receipt/);
+  assert.match(historical,/KERNEL_EMPTY=1/);
+  for(const text of ['--property=Delegate=no','--property=KillMode=control-group',
+    '--property=ProtectControlGroups=strict','--property=NoNewPrivileges=yes',
+    '--property=User=','root_owned_file(WORKER)','SUDO_UID',
+    'SEC06C_OS_BROKER_DENIED','cgroup.events']){
+    assert.ok(launcher.includes(text),'missing OS-owned manager contract '+text);
+  }
+  assert.match(worker,/core\.fsmonitor=false/);
+  assert.match(worker,/start_new_session|Popen/);
+  assert.match(worker,/authorized_go\(args\.nonce\)/);
+  assert.match(worker,/SEC06C_GIT_WORKER_BLOCKED/);
+  assert.doesNotMatch(launcher,/shell=True|subprocess\.getoutput|os\.system\(/);
+  assert.doesNotMatch(worker,/shell=True|os\.system\(/);
+  assert.match(gate,/linux-os-owned-git-syntax/);
+  assert.match(gate,/linux-ancestor-migration/);
+});
+
 test('SEC06C root-owned boundary prototype must deny external same-UID migration and use OS group cleanup',()=>{
   const prototype=readFileSync(join(root,'benchmarks/e1/sec06c_root_owned_systemd_boundary.py'),'utf8');
   assert.match(prototype,/--property=Delegate=no/);
@@ -164,6 +199,7 @@ test('SEC06 verifier rejects changed original native log with correct head and l
       'exact-head-inventory','security-contracts','sec06-js-syntax',
       'linux-negative-python-syntax','linux-host-crash-python-syntax','linux-delegated-python-syntax',
       'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
+      'linux-os-owned-git-syntax',
       'core-native-full','desktop-ansf-native','worker-job-native',
       'core-sec-regressions','desktop-sec-regressions',
       'worker-sec-regressions',

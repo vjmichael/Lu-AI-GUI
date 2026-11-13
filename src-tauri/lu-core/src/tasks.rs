@@ -305,6 +305,20 @@ impl TaskStore {
              CREATE TRIGGER IF NOT EXISTS lu_task_os_custody_no_delete
                BEFORE DELETE ON lu_task_windows_job_custody
                BEGIN SELECT RAISE(ABORT,'Immutable Windows Job observation'); END;
+             CREATE TABLE IF NOT EXISTS lu_task_linux_os_owned_git_admission(
+               task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
+               chat TEXT NOT NULL,
+               turn TEXT NOT NULL,
+               nonce TEXT NOT NULL UNIQUE CHECK(length(nonce)=32),
+               git_sha256 TEXT NOT NULL CHECK(length(git_sha256)=64),
+               recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+             );
+             CREATE TRIGGER IF NOT EXISTS lu_task_os_owned_git_admission_no_update
+               BEFORE UPDATE ON lu_task_linux_os_owned_git_admission
+               BEGIN SELECT RAISE(ABORT,'Immutable Linux OS-owned admission'); END;
+             CREATE TRIGGER IF NOT EXISTS lu_task_os_owned_git_admission_no_delete
+               BEFORE DELETE ON lu_task_linux_os_owned_git_admission
+               BEGIN SELECT RAISE(ABORT,'Immutable Linux OS-owned admission'); END;
              CREATE TABLE IF NOT EXISTS lu_task_custody_uncertainty(
                task_id TEXT PRIMARY KEY NOT NULL REFERENCES lu_tasks(task_id),
                reason TEXT NOT NULL CHECK(reason IN
@@ -439,6 +453,43 @@ impl TaskStore {
             "INSERT INTO lu_task_windows_job_custody(
               task_id,workspace_id,method) VALUES(?1,?2,?3)",
             params![task_id,workspace_id,proof.method()]
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+    /// SEC-06C: bind the unforgeable-in-process one-use systemd unit nonce
+    /// to the original PENDING, human-reviewed Git task before authorizing
+    /// completion. The row is immutable, unique, and NEVER a new permission.
+    #[cfg(target_os="linux")]
+    pub fn bind_linux_os_owned_git_admission(
+        &self,task_id:&str,chat:&str,turn:&str,nonce:&str,git_sha256:&str,
+    )->Result<(),TaskStoreError>{
+        let original=|v:&str,prefix:&str|
+            v.len()==prefix.len()+32&&v.starts_with(prefix)
+                &&v[prefix.len()..].bytes().all(|c|
+                    c.is_ascii_hexdigit()&&!c.is_ascii_uppercase());
+        if !original(chat,"c-")||!original(turn,"g-")
+            ||nonce.len()!=32||!nonce.bytes().all(|c|
+                c.is_ascii_digit()||(b'a'..=b'f').contains(&c))
+            ||git_sha256.len()!=64||!git_sha256.bytes().all(|c|
+                c.is_ascii_digit()||(b'a'..=b'f').contains(&c))
+            ||task_id.is_empty()||task_id.len()>128{
+            return Err(TaskStoreError::InvalidTaskId)
+        }
+        let mut db=self.connection.lock().map_err(|_|TaskStoreError::Poisoned)?;
+        let tx=db.transaction()?;
+        let matches:i64=tx.query_row(
+            "SELECT COUNT(*) FROM lu_tasks t
+             JOIN lu_reviewed_turn_origin o ON o.singleton=1
+             WHERE t.task_id=?1 AND t.workspace_id=?2 AND t.state='PENDING'
+               AND o.conversation_id=?3 AND o.user_turn_id=?2",
+            params![task_id,turn,chat],|r|r.get(0)
+        )?;
+        if matches!=1{return Err(TaskStoreError::InvalidTransition)}
+        tx.execute(
+            "INSERT INTO lu_task_linux_os_owned_git_admission(
+              task_id,chat,turn,nonce,git_sha256) VALUES(?1,?2,?3,?4,?5)",
+            params![task_id,chat,turn,nonce,git_sha256]
         )?;
         tx.commit()?;
         Ok(())
@@ -1607,3 +1658,47 @@ mod p0_sec_custody_uncertainty_tests{
 #[cfg(test)]
 #[path = "p0_sec05_task_adversarial_tests.rs"]
 mod p0_sec05_task_adversarial_tests;
+
+
+#[cfg(all(test,target_os="linux"))]
+mod sec06c_os_owned_git_admission_tests{
+    use super::*;
+    #[test]
+    fn fixed_os_owned_git_nonce_is_immutable_one_use_and_original_turn_bound(){
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-journal-{}-{}",std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path=root.join("original.sqlite");
+        let store=TaskStore::open(&path).unwrap();
+        let chat=format!("c-{}","a".repeat(32));
+        let turn=format!("g-{}","b".repeat(32));
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        store.create("sec06c-native-gh",Some(&turn),None).unwrap();
+        let nonce="c".repeat(32);
+        let digest="d".repeat(64);
+        assert!(store.bind_linux_os_owned_git_admission(
+            "sec06c-native-gh",&chat,&turn,&nonce,&digest).is_ok());
+        assert!(store.bind_linux_os_owned_git_admission(
+            "sec06c-native-gh",&chat,&turn,&nonce,&digest).is_err());
+        store.create("sec06c-other-gh",Some(&turn),None).unwrap();
+        assert!(store.bind_linux_os_owned_git_admission(
+            "sec06c-other-gh",&chat,&turn,&nonce,&digest).is_err(),
+            "the same root-owned operation nonce must never be reused");
+        assert!(store.bind_linux_os_owned_git_admission(
+            "sec06c-other-gh","c-00000000000000000000000000000000",
+            &turn,&"e".repeat(32),&digest).is_err());
+        let conn=rusqlite::Connection::open(&path).unwrap();
+        assert!(conn.execute(
+            "UPDATE lu_task_linux_os_owned_git_admission SET nonce=?1 WHERE task_id=?2",
+            rusqlite::params!["e".repeat(32),"sec06c-native-gh"]
+        ).is_err());
+        assert!(conn.execute(
+            "DELETE FROM lu_task_linux_os_owned_git_admission WHERE task_id=?1",
+            rusqlite::params!["sec06c-native-gh"]
+        ).is_err());
+        drop(conn);drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

@@ -1072,6 +1072,9 @@ pub mod unix_owned {
     }
 }
 
+#[cfg(target_os="linux")]
+pub mod os_owned_git;
+
 #[cfg(all(windows,test))]
 mod agent01l_kernel_job_tests{
     use super::Job;

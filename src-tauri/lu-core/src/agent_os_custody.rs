@@ -12,7 +12,7 @@
 use crate::agent_recovery_decision::IndependentProcessCustody;
 use std::{fs,path::{Path,PathBuf}};
 #[cfg(target_os="linux")]
-use std::os::unix::fs::PermissionsExt;
+use std::{io::Read,fs::OpenOptions,os::unix::fs::{MetadataExt,OpenOptionsExt,PermissionsExt}};
 #[cfg(any(windows,target_os="linux"))]
 use rusqlite::{params,Connection,OpenFlags,OptionalExtension};
 
@@ -83,6 +83,61 @@ fn windows_original_job_empty(
         if state=="COMPLETED"&&workspace==turn&&saved_chat==chat
            &&saved_turn==turn&&method=="WINDOWS_JOB_ACTIVE_ZERO_V1")
 }
+/// SEC-06C: the fixed systemd Git broker's original nonce is durably
+/// bound before the reviewed operation in Lu's task journal. The historical
+/// kernel-empty receipt is then read only from root-owned OS storage.
+/// Neither an arbitrary same-UID file nor a fabricated model result is proof.
+#[cfg(target_os="linux")]
+fn linux_os_owned_git_original_receipt(
+    db:&Connection,chat:&str,turn:&str,call:&str,
+)->Option<bool>{
+    let row:Result<Option<(String,String,String,String,String)>,_>=db.query_row(
+        "SELECT a.chat,a.turn,a.nonce,a.git_sha256,t.state
+         FROM lu_task_linux_os_owned_git_admission a
+         JOIN lu_tasks t ON t.task_id=a.task_id
+         JOIN lu_reviewed_turn_origin o ON o.singleton=1
+         WHERE a.task_id=?1 AND a.chat=?2 AND a.turn=?3
+           AND t.workspace_id=?3
+           AND o.conversation_id=?2 AND o.user_turn_id=?3",
+        params![call,chat,turn],
+        |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))
+    ).optional();
+    let (saved_chat,saved_turn,nonce,digest,state)=match row{
+        Ok(Some(row))=>row,
+        Ok(None)=>return None, // Older owned-cgroup receipt format.
+        Err(_)=>return None, // Legacy DB may predate this schema.
+    };
+    let valid_hex=|s:&str,n:usize|
+        s.len()==n&&s.bytes().all(|b|
+            b.is_ascii_digit()||(b'a'..=b'f').contains(&b));
+    if state!="COMPLETED"||saved_chat!=chat||saved_turn!=turn
+        ||!valid_hex(&nonce,32)||!valid_hex(&digest,64){
+        return Some(false)
+    }
+    let root=Path::new("/var/lib/lu-sec06c/receipts");
+    let Ok(meta)=fs::symlink_metadata(root)else{return Some(false)};
+    if !meta.is_dir()||meta.file_type().is_symlink()||meta.uid()!=0
+        ||meta.permissions().mode()&0o022!=0{return Some(false)}
+    let path=root.join(format!("{nonce}.receipt"));
+    const NOFOLLOW:i32=0o400000;
+    let Ok(mut input)=OpenOptions::new().read(true)
+        .custom_flags(NOFOLLOW).open(path)else{return Some(false)};
+    let Ok(meta)=input.metadata()else{return Some(false)};
+    if !meta.is_file()||meta.uid()!=0||meta.nlink()!=1
+        ||meta.permissions().mode()&0o022!=0||meta.len()>1024{
+        return Some(false)
+    }
+    let mut bytes=Vec::new();
+    if input.take(1025).read_to_end(&mut bytes).is_err(){return Some(false)}
+    let Ok(raw)=String::from_utf8(bytes)else{return Some(false)};
+    let expected=format!(
+        "LU_SEC06C_OWNED_GIT_V1\nNONCE={nonce}\nCHAT={chat}\nTURN={turn}\nCALL={call}\nGIT_SHA256={digest}\nUNIT=lu-sec06c-git-{nonce}.service\nORIGINAL_UID=",
+    );
+    let Some(uid_tail)=raw.strip_prefix(&expected)else{return Some(false)};
+    let Some((uid,remaining))=uid_tail.split_once("\n")else{return Some(false)};
+    if uid=="0"||uid.parse::<u32>().is_err(){return Some(false)}
+    Some(remaining=="KERNEL_EMPTY=1\nEFFECT=COMPLETED\n")
+}
 /// Kernel-custodian receipt is written from an out-of-process first-party
 /// executable on EOF after cgroup.kill and recursive cgroup.events populated0.
 /// It remains historical data only: AGENT-01K separately rechecks the actual
@@ -123,6 +178,9 @@ fn linux_original_cgroup_empty(
             &&saved_turn==turn){
         return false
     }
+    if let Some(accepted)=linux_os_owned_git_original_receipt(
+        &db,chat,turn,call
+    ){return accepted}
     let receipt=profile.join(format!("lu-cgroup-os-{turn}-{call}.receipt"));
     let Ok(meta)=fs::symlink_metadata(&receipt)else{return false};
     if !meta.is_file()||meta.file_type().is_symlink()

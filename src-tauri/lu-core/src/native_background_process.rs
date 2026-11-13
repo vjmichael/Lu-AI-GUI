@@ -42,6 +42,10 @@ struct OwnedWorker {
     guardian:Option<lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian>,
     #[cfg(target_os="linux")]
     cgroup:Option<lu_win_worker_job::unix_owned::LinuxCgroupCustodian>,
+    // The Linux system service manager, not the reviewed user/worker, owns
+    // this per-operation cgroup. Only the fixed finite Git-read broker uses it.
+    #[cfg(target_os="linux")]
+    os_owned_git:Option<lu_win_worker_job::os_owned_git::LinuxOsOwnedReviewedGit>,
 }
 pub struct BackgroundProcessSupervisor {
     store:Arc<TaskStore>,
@@ -572,13 +576,51 @@ impl BackgroundProcessSupervisor {
         }else{None};
         self.store.create(&plan.task_id,Some(&plan.workspace_id),None)
             .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+        // Genuine root-owned systemd operation services can launch exactly
+        // the four already-authenticated read-only Git operations. The
+        // privileged launcher is FIXED and root-owned, never an arbitrary
+        // systemd-run command chosen by the model or by a tool argument.
+        // Its one-use Linux kernel cleanup receipt is mandatory to publish
+        // a completed reviewed effect; service exit alone is insufficient.
+        #[cfg(target_os="linux")]
+        let mut os_owned_git_spawn=if typed_capture.is_some()
+            &&executable.file_name()==Some(std::ffi::OsStr::new("git"))
+            &&plan.args.len()==8{
+            if let Some((_,ref chat,ref turn))=reviewed_origin{
+                lu_win_worker_job::os_owned_git::LinuxOsOwnedReviewedGit::spawn_if_installed(
+                    &executable,&plan.expected_sha256,&plan.args,
+                    chat,turn,&plan.task_id
+                ).map_err(|_|{
+                    let _=self.store.fail_pending(&plan.task_id);
+                    BackgroundProcessError::SpawnFailed
+                })?
+            }else{None}
+        }else{None};
+        #[cfg(target_os="linux")]
+        if let Some((ref mut client,ref mut scope))=os_owned_git_spawn{
+            let (_,chat,turn)=reviewed_origin.as_ref()
+                .ok_or(BackgroundProcessError::StoreUnavailable)?;
+            if self.store.bind_linux_os_owned_git_admission(
+                &plan.task_id,chat,turn,scope.nonce(),scope.reviewed_git_digest()
+            ).is_err(){
+                // The managed first worker may have begun execution. The
+                // original task is now UNCERTAIN and its one-use broker must
+                // be stopped; never leave an unrecorded service running.
+                let _=scope.stop_and_verify(client);
+                let _=self.store.record_process_uncertain(
+                    &plan.task_id,"OS_CUSTODY_UNVERIFIED");
+                let _=self.store.fail_pending(&plan.task_id);
+                return Err(BackgroundProcessError::StoreUnavailable)
+            }
+        }
         // Prefer a delegated kernel cgroup subtree for reviewed typed tools.
         // The independent helper lives outside it and kills the entire
         // subtree on EOF even if Lu is SIGKILLed. When OS delegation is
         // unavailable the reviewed tool may retain its existing PGID
         // guardian, but AGENT-01K/01L REFUSE full descendant custody.
         #[cfg(target_os="linux")]
-        let mut cgroup=if let Some((profile,chat,turn))=reviewed_origin{
+        let mut cgroup=if os_owned_git_spawn.is_some(){None}
+        else if let Some((profile,chat,turn))=reviewed_origin{
             lu_win_worker_job::unix_owned::LinuxCgroupCustodian::spawn_if_delegated(
                 profile,&chat,&turn,&plan.task_id
             ).map_err(|_|{
@@ -587,7 +629,8 @@ impl BackgroundProcessSupervisor {
             })?
         }else{None};
         #[cfg(target_os="linux")]
-        let guardian=if typed_capture.is_some()&&cgroup.is_none(){
+        let guardian=if typed_capture.is_some()&&cgroup.is_none()
+            &&os_owned_git_spawn.is_none(){
             lu_win_worker_job::unix_owned::LinuxOwnedGroupGuardian::spawn_if_available()
                 .map_err(|_|{
                     let _=self.store.fail_pending(&plan.task_id);
@@ -688,6 +731,19 @@ impl BackgroundProcessSupervisor {
             let _=self.store.fail_pending(&plan.task_id);
             return Err(BackgroundProcessError::SpawnFailed)
         }
+        #[cfg(target_os="linux")]
+        let mut os_owned_git=None;
+        #[cfg(target_os="linux")]
+        let mut child=if let Some((managed_child,proof))=os_owned_git_spawn{
+            os_owned_git=Some(proof);
+            managed_child
+        }else{
+            command.spawn().map_err(|_|{
+                let _=self.store.fail_pending(&plan.task_id);
+                BackgroundProcessError::SpawnFailed
+            })?
+        };
+        #[cfg(not(target_os="linux"))]
         let mut child=command.spawn().map_err(|_|{
             let _=self.store.fail_pending(&plan.task_id);
             BackgroundProcessError::SpawnFailed
@@ -740,6 +796,8 @@ impl BackgroundProcessSupervisor {
             guardian,
             #[cfg(target_os="linux")]
             cgroup,
+            #[cfg(target_os="linux")]
+            os_owned_git,
         };
         workers.insert(plan.task_id.clone(),owner);
         if self.store.start(&plan.task_id).is_err(){
@@ -806,6 +864,17 @@ impl BackgroundProcessSupervisor {
                     }
                     #[cfg(target_os="linux")]
                     {
+                        // A completed systemd-run client does not attest a
+                        // killed descendant tree. Verify the independent
+                        // original root-owned OS receipt first.
+                        if let Some(os_unit)=worker.os_owned_git.as_mut(){
+                            if os_unit.verify_original_kernel_receipt().is_err(){
+                                self.store.record_process_uncertain(
+                                    id,"OS_CUSTODY_UNVERIFIED")
+                                    .map_err(|_|BackgroundProcessError::StoreUnavailable)?;
+                                return Err(BackgroundProcessError::ProcessUncertain)
+                            }
+                        }
                         // Never remove a worker from the owner map before
                         // native descendant cleanup has succeeded. Otherwise
                         // a failed cgroup stop would lose the only live
@@ -1069,7 +1138,13 @@ impl BackgroundProcessSupervisor {
 fn terminate_owned(worker:&mut OwnedWorker)->Result<(),BackgroundProcessError>{
     #[cfg(target_os="linux")]
     {
-        if let Some(guard)=worker.cgroup.as_mut(){
+        if let Some(os_unit)=worker.os_owned_git.as_mut(){
+            // Closing Lu's original lifetime pipe forces the fixed
+            // unprivileged broker to stop and the root-owned unit to reap
+            // its subtree; only a real kernel-empty receipt ends custody.
+            os_unit.stop_and_verify(&mut worker.child)
+                .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
+        }else if let Some(guard)=worker.cgroup.as_mut(){
             guard.stop_and_verify()
                 .map_err(|_|BackgroundProcessError::ProcessUncertain)?;
         }else if let Some(guardian)=worker.guardian.as_mut(){
@@ -1484,6 +1559,84 @@ mod tests{
         assert!(!witness.worker_and_descendants_ended(
             &chat,&format!("g-{}","6".repeat(32)),call));
         assert!(!witness.worker_and_descendants_ended(&chat,&turn,"other-gh"));
+        fs::remove_dir_all(root).unwrap();
+    }
+    /// SEC-06C: genuine first worker starts through the fixed, root-owned
+    /// systemd service broker, not under a writable same-UID cgroup ancestor.
+    /// The durable original task binding is reopened independently after
+    /// Lu's supervisor is dropped; no new permission or automatic replay.
+    #[cfg(target_os="linux")]
+    #[test]
+    #[ignore="needs installed root-owned fixed Git broker, native systemd and kernel cgroup v2"]
+    fn sec06c_root_owned_reviewed_git_worker_original_journal(){
+        use crate::{
+            agent_os_custody::HostOriginalJobCustody,
+            agent_recovery_decision::IndependentProcessCustody,
+        };
+        use std::process::Command;
+        assert!(Path::new("/usr/libexec/lu/lu-sec06c-launch-git").exists(),
+            "SEC06C_NOT_AVAILABLE: root-owned service broker absent");
+        let binary=fs::canonicalize("/usr/bin/git").unwrap();
+        let root=std::env::temp_dir().join(format!(
+            "lu-sec06c-os-git-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(
+                std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let repo=root.join("repo");fs::create_dir_all(&repo).unwrap();
+        assert!(Command::new(&binary).args(["init","-q"])
+            .current_dir(&repo).status().unwrap().success());
+        assert!(Command::new(&binary).args([
+            "-c","user.name=Lu","-c","user.email=lu@example.test",
+            "commit","--allow-empty","-q","-m","SEC06C original Git"
+        ]).current_dir(&repo).status().unwrap().success());
+        let sha=format!("{:x}",Sha256::digest(fs::read(&binary).unwrap()));
+        let chat=format!("c-{}","1".repeat(32));
+        let turn=format!("g-{}","2".repeat(32));
+        let call="sec06c-owned-git-gh";
+        let journal=root.join(format!("lu-reviewed-task-{turn}.sqlite"));
+        let store=Arc::new(TaskStore::open(&journal).unwrap());
+        store.bind_reviewed_human_turn(&chat,&turn).unwrap();
+        let supervisor=BackgroundProcessSupervisor::new_for_reviewed_host(
+            Arc::clone(&store),root.clone());
+        supervisor.start_host_approved_git_read(TrustedWorkerPlan{
+            task_id:call.to_owned(),workspace_id:turn.clone(),
+            executable:binary,expected_sha256:sha,
+            args:vec!["-c".into(),"core.fsmonitor=false".into(),
+                "--no-optional-locks".into(),"-C".into(),repo.as_os_str().into(),
+                "rev-parse".into(),"--verify".into(),"HEAD".into()],
+            progress_protocol:false,max_runtime_seconds:Some(30),
+        },16_384).expect("trusted host originally admitted fixed OS-owned Git");
+        let mut completed=false;
+        for _ in 0..2500{
+            supervisor.poll().expect(
+                "SEC06C original host kernel custody must not be uncertain");
+            if store.get(call).unwrap().unwrap().state==TaskState::Completed{
+                completed=true;break
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(completed,"SEC06C managed native Git not completed in bounded time");
+        let stdout=supervisor.take_local_version_stdout(call,&turn)
+            .unwrap().expect("original OS-owned Git stdout missing");
+        let sha=String::from_utf8(stdout.bytes).unwrap();
+        assert_eq!(sha.trim().len(),40);
+        assert!(sha.trim().bytes().all(|b|b.is_ascii_hexdigit()));
+        drop(supervisor);drop(store);
+        let reopened=TaskStore::open(&journal).unwrap();
+        assert_eq!(reopened.get(call).unwrap().unwrap().state,TaskState::Completed);
+        assert!(reopened.process_uncertainty(call).unwrap().is_none());
+        drop(reopened);
+        let independent=HostOriginalJobCustody::from_host_profile(&root);
+        assert!(independent.worker_and_descendants_ended(&chat,&turn,call),
+            "SEC06C original root-owned kernel receipt did not match durable admission");
+        assert!(!independent.worker_and_descendants_ended(
+            &format!("c-{}","3".repeat(32)),&turn,call));
+        assert!(!independent.worker_and_descendants_ended(
+            &chat,&format!("g-{}","4".repeat(32)),call));
+        assert!(!independent.worker_and_descendants_ended(
+            &chat,&turn,"sec06c-other-gh"));
         fs::remove_dir_all(root).unwrap();
     }
     #[cfg(windows)]

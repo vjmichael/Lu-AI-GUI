@@ -2906,6 +2906,63 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+  core01e-sec06c-os-owned-git:
+    name: SEC-06C original root-owned reviewed Git (Linux)
+    needs: verify-source
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 226 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && contains(github.event.pull_request.body, format('LU_CORE01E_SEC06_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_CORE01E_SEC06_SHA={0}', github.event.pull_request.head.sha)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.0'
+      - name: Pin original source and compile exact native integration
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/verify-source-tree.mjs
+          python3 -m py_compile scripts/lu-sec06c-owned-git-launcher.py scripts/lu-sec06c-owned-git-worker.py
+          cargo test --locked --manifest-path src-tauri/lu-win-worker-job/Cargo.toml --lib os_owned_git -- --nocapture
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c --no-run
+      - name: Provision fixed root-owned CI-only native broker boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This provisions ONE ephemeral native test VM. It does not install
+          # Lu, grant installer permission, or add a general sudo systemd-run.
+          sudo install -d -o root -g root -m 0755 /usr/libexec/lu
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-launcher.py /usr/libexec/lu/lu-sec06c-launch-git
+          sudo install -o root -g root -m 0755 scripts/lu-sec06c-owned-git-worker.py /usr/libexec/lu/lu-sec06c-owned-git-worker
+          printf '%s ALL=(root) NOPASSWD: /usr/libexec/lu/lu-sec06c-launch-git *\n' "$USER" | sudo tee /etc/sudoers.d/lu-sec06c-ci >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/lu-sec06c-ci
+          sudo visudo -cf /etc/sudoers.d/lu-sec06c-ci
+          sudo test "$(stat -c %u /usr/libexec/lu/lu-sec06c-launch-git)" = 0
+          sudo test "$(stat -c %u /usr/libexec/lu/lu-sec06c-owned-git-worker)" = 0
+          test "$(id -u)" -ne 0
+      - name: Execute original reviewed Git under systemd-owned kernel unit and reopen journal
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p sec06c-os-owned-evidence
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          cargo test --locked --manifest-path src-tauri/lu-core/Cargo.toml --lib sec06c_root_owned_reviewed_git_worker_original_journal -- --ignored --nocapture 2>&1 | tee sec06c-os-owned-evidence/original-native.log
+          grep -Fq '1 passed; 0 failed' sec06c-os-owned-evidence/original-native.log
+          echo 'OS-owned broker test is historical native evidence only; SEC-06C original adversarial matrix and independent SEC-06F remain mandatory.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lu-sec06c-root-owned-git-${{ github.event.pull_request.head.sha }}
+          path: sec06c-os-owned-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
   p0-gate-installed-windows:
     name: P0-GATE genuine hosted Windows NSIS, UIA, restart, uninstall
     needs: p0-gate-native

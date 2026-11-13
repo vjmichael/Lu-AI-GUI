@@ -155,6 +155,10 @@ function sourceCases(){
     doCase('linux-root-owned-prototype-syntax','python3',[
       '-m','py_compile','benchmarks/e1/sec06c_root_owned_systemd_boundary.py'
     ],{timeout:30000});
+    doCase('linux-os-owned-git-syntax','python3',[
+      '-m','py_compile','scripts/lu-sec06c-owned-git-launcher.py',
+      'scripts/lu-sec06c-owned-git-worker.py'
+    ],{timeout:30000});
   }
 }
 function rustCases(){
@@ -244,11 +248,13 @@ if(mode==='verify'){
         const required={
           source:['exact-head-inventory','security-contracts',
                   'sec06-js-syntax','linux-delegated-python-syntax',
-                  'linux-root-owned-prototype-syntax'],
+                  'linux-root-owned-prototype-syntax',
+                  'linux-os-owned-git-syntax'],
           linux:['exact-head-inventory','security-contracts',
                  'sec06-js-syntax','linux-negative-python-syntax',
                  'linux-host-crash-python-syntax','linux-delegated-python-syntax',
                  'linux-root-owned-prototype-syntax','linux-root-owned-unit-prototype',
+                 'linux-os-owned-git-syntax',
                  'core-native-full','desktop-ansf-native','worker-job-native',
                  'core-sec-regressions','desktop-sec-regressions',
                  'worker-sec-regressions',
