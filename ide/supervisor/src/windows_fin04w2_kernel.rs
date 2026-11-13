@@ -227,7 +227,7 @@ pub(crate) fn create_bounded_empty_debugger_job() -> Result<EmptyAuditJob, Super
             ptr::null_mut(),
         )
     } == 0
-        || observed.BasicLimitInformation.LimitFlags & REQUIRED != REQUIRED
+        || observed.BasicLimitInformation.LimitFlags != REQUIRED
         || observed.BasicLimitInformation.ActiveProcessLimit != CAP
         || observed.JobMemoryLimit != MEMORY
     { return Err(denied()); }
