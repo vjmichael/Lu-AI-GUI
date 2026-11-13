@@ -26,6 +26,7 @@ jobs:
           # Verify the immutable reviewed branch head, not a moving merge.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+          fetch-depth: 0 # CORE-01A checks ancestry against its frozen P0 baseline
       - name: Assert exact reviewed source commit
         shell: bash
         env:
@@ -2629,7 +2630,7 @@ jobs:
   p0-gate-compiler:
     name: P0-GATE exact-head compiler diagnostics (${{ matrix.os }})
     needs: verify-source
-    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-gate-consolidated-20261111' && contains(github.event.pull_request.body, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) }}
+    if: ${{ (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-gate-consolidated-20261111' && contains(github.event.pull_request.body, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha))) || (github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && (github.event.action == 'opened' || (github.event.action == 'edited' && !contains(github.event.changes.body.from, format('LU_CORE01E_NATIVE_GATE_SHA={0}', github.event.pull_request.head.sha)))) && contains(github.event.pull_request.body, format('LU_CORE01E_NATIVE_GATE_SHA={0}', github.event.pull_request.head.sha)) && contains(github.event.pull_request.body, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) && contains(github.event.pull_request.body, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha))) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
     strategy:
@@ -2970,7 +2971,7 @@ jobs:
   p0-win-chat-native:
     name: P0-WIN-CHAT native model/tool, image and UI (${{ matrix.os }})
     needs: verify-source
-    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 224 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-win-chat-204-20261111' && contains(github.event.pull_request.body, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha)) }}
+    if: ${{ (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 224 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-win-chat-204-20261111' && contains(github.event.pull_request.body, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha))) || (github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && (github.event.action == 'opened' || (github.event.action == 'edited' && !contains(github.event.changes.body.from, format('LU_CORE01E_NATIVE_GATE_SHA={0}', github.event.pull_request.head.sha)))) && contains(github.event.pull_request.body, format('LU_CORE01E_NATIVE_GATE_SHA={0}', github.event.pull_request.head.sha)) && contains(github.event.pull_request.body, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) && contains(github.event.pull_request.body, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha))) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 130
     strategy:
@@ -3062,7 +3063,7 @@ jobs:
   p0-win-chat-genuine-model:
     name: P0-WIN-CHAT real Qwen native tool choice and SmolVLM MMProj pixel inference
     needs: verify-source
-    if: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 224 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-win-chat-204-20261111' && contains(github.event.pull_request.body, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha)) }}
+    if: ${{ (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.pull_request.number == 224 && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/p0-win-chat-204-20261111' && contains(github.event.pull_request.body, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha)) && !contains(github.event.changes.body.from, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha))) || (github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'lu/core01-source-convergence-no-ide-no-kobold-20261112' && (github.event.action == 'opened' || (github.event.action == 'edited' && !contains(github.event.changes.body.from, format('LU_CORE01E_NATIVE_GATE_SHA={0}', github.event.pull_request.head.sha)))) && contains(github.event.pull_request.body, format('LU_CORE01E_NATIVE_GATE_SHA={0}', github.event.pull_request.head.sha)) && contains(github.event.pull_request.body, format('LU_P0_GATE_SHA={0}', github.event.pull_request.head.sha)) && contains(github.event.pull_request.body, format('LU_P0_WIN_CHAT_MATRIX_SHA={0}', github.event.pull_request.head.sha))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:

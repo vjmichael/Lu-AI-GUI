@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "6f6508408f606bea73fb56dcef47b07638b08312",
+  "sourceCommitBeforeLock": "8932dc3a0df16af7a4079897ae1d8885a622a800",
   "trackedFileCount": 984,
   "files": [
     {
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "7b82b264df51a64889591bc020c6b9fcbaf16812"
+      "blob": "f0e67ec8dddc99330df55e6ba892fdc1b1d6f841"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -597,7 +597,7 @@
     },
     {
       "path": "docs/LU_CORE01_SOURCE_CONVERGENCE_20261112.md",
-      "blob": "ea9a868609016916c65bf5393d87cd34e693ca6c"
+      "blob": "24420a3896c86e6639b53a100cb9f4da0fdb0b6d"
     },
     {
       "path": "docs/LU_CORE_22_DIVERGENT_STATUS_20261109.md",
