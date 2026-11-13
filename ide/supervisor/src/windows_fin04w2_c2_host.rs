@@ -137,14 +137,20 @@ pub fn run_fixed_after_original_approval(
     pinned_service_binary:&Path,pinned_service_sha:&str,
 )->Result<(),SupervisorError>{
     let source=crate::fingerprint(plan)?;
+    // Do not disclose plan bytes or journal paths in diagnostic output.
+    // Keep the exact pre-admission guard; stage reporting never admits a job.
     if supervisor.inspect()?.iter().all(|j|
         j.job_id!=job_id||j.plan_sha256!=source
             ||j.phase!=JobPhase::Authorized||j.requires_reconciliation){
+        eprintln!("FIN04W2_C2_STAGE=LIVE_SUPERVISOR_AUTHORIZED_MISMATCH");
         return Err(denied());
     }
     fin04w2_c2::verify_original_path(
         &supervisor.journal_path,job_id,plan,C2JournalGate::Authorized,
-    )?;
+    ).map_err(|error| {
+        eprintln!("FIN04W2_C2_STAGE=ORIGINAL_AUTHORIZED_JOURNAL_DENIED");
+        error
+    })?;
     let mut recovery=Recovery{supervisor,job:job_id,done:false};
     let pipe=connect_exact_service(pinned_service_binary,pinned_service_sha).map_err(|error| { eprintln!("FIN04W2_C2_STAGE=SERVICE_PEER_ATTESTATION_DENIED"); error })?;
     let mut challenge=[0u8;17];
