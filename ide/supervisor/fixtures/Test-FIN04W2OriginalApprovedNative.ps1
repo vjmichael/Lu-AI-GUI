@@ -271,7 +271,7 @@ try {
     foreach ($name in @('original-supervisor.jsonl','result.json','service-one-use-verified.receipt')) {
       $file=Join-Path $ownerRoot $name
       $hash=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
-      Write-Host "FIN04W2_C_DURABLE_ARTIFACT_SHA256=$name:$hash"
+      Write-Host "FIN04W2_C_DURABLE_ARTIFACT_SHA256=${name}:$hash"
     }
     Write-Host 'FIN04W2_C_INDEPENDENT_SERVICE_SIDE_FSYNC_RECEIPT=PASS'
     Remove-Item -LiteralPath $serviceRoot -Recurse -Force -ErrorAction Stop
