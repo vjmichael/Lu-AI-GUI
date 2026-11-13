@@ -278,6 +278,18 @@ impl LinuxLspProcess {
             "PROTECTED_LINUX_DAP_MEMORY_OOM_HIT={}",
             kernel_limit_hit(&self.group.dir.join("memory.events"), "oom_kill")
         );
+        // Count only: no cgroup member identities or /proc values leave
+        // this CI-only OS diagnostic. The fixed source-debug fixture can
+        // distinguish a live debugger with no debuggee from a two-process
+        // stop without changing the cgroup's permissions or membership.
+        let member_count = std::fs::read_to_string(self.group.dir.join("pids.current"))
+            .ok().and_then(|v| v.trim().parse::<u64>().ok());
+        eprintln!("PROTECTED_LINUX_DAP_CGROUP_MEMBER_COUNT_CLASS={}", match member_count {
+            Some(0) => "empty",
+            Some(1) => "one",
+            Some(_) => "multiple",
+            None => "unavailable",
+        });
         if let Some(stderr) = &mut self.debug_stderr {
             let fd = stderr.as_raw_fd();
             let readable = poll_fd(fd, libc::POLLIN | libc::POLLHUP, 0).unwrap_or(false);
@@ -890,6 +902,10 @@ impl LinuxDapSession {
     #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
     pub fn ci_fixed_source_breakpoint_verified(&self) -> bool {
         self.gateway.ci_fixed_source_breakpoint_verified()
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn ci_trace_absent_source_stop(&mut self) {
+        self.gateway.ci_trace_absent_source_stop();
     }
     pub fn configuration_done(&mut self) -> Result<(), SupervisorError> {
         self.gateway.configuration_done()
