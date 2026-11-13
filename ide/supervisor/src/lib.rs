@@ -23,12 +23,13 @@ pub mod debug_symbol_verification;
 // No installed/production feature enables this default-off module.
 #[cfg(feature = "fin04w2-protocol")]
 mod fin04w2_protocol;
-// Original supervisor receipt-chain verification and one-use service replay
-// barrier, exposed only to the separately approved W2-C benign CI feature.
-#[cfg(feature = "fin04w2-approved-fixed-exec")]
-mod fin04w2_authority;
-#[cfg(all(windows, debug_assertions, feature="fin04w2-approved-fixed-exec"))]
-pub mod windows_fin04w2_host;
+// W2-C2 replaces experimental W2-C with one fixed request and original
+// journal verification. Its Windows host must authenticate the SCM service
+// and NEVER construct synthetic all-true OsContainmentProof values.
+#[cfg(feature = "fin04w2-c2")]
+mod fin04w2_c2;
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-c2"))]
+pub mod windows_fin04w2_c2_host;
 // Actual Win32 service-principal and current-Job inspection is review-only;
 // separate identity/ACL/WFP/service custody must precede any debugger launch.
 #[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
