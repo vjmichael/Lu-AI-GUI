@@ -53,6 +53,8 @@ pub mod github_remote_live_policy;
 mod github_remote_publication_intent;
 // Group 6F native read-only cross-domain recovery veto. No authority route.
 pub mod git_security_recovery_matrix;
+// 6E-05C native consent DISPLAY packet only; no OS grant or remote CAS.
+mod github_remote_native_consent;
 pub mod inbox;
 pub mod inventory;
 pub mod inventory_history;

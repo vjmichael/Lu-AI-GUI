@@ -149,3 +149,21 @@ test('FIN03 6E05B actually compiles native Linux Secret Service and Windows vaul
   assert.match(diag,/authenticated_host_read/);
   assert.doesNotMatch(diag,/set_password\(|std::process::Command|GitHub\s*PATCH|push\s*\(/i);
 });
+
+test('FIN03 6E05C native consent review cannot claim an OS grant or remotely execute', () => {
+  const code=read('../../host/src/github_remote_native_consent.rs');
+  const production=code.split('#[cfg(test)]')[0];
+  assert.match(host,/mod github_remote_native_consent;/);
+  assert.match(production,/review_exact_remote_publication_consent/);
+  for (const word of [
+    'native_operator_approval_granted:false',
+    'remote_write_route_available:false',
+    'remote_mutation_performed:false',
+    'independent_remote_cas_required:true',
+    'original_native_os_dialog_required:true',
+  ]) assert.ok(production.includes(word),word);
+  for (const danger of [
+    /ureq\s*::/,/\.push\s*\(/,/\.set_target\s*\(/,
+    /std::process::Command/,/\.set_password\s*\(/,
+  ]) assert.doesNotMatch(production,danger);
+});

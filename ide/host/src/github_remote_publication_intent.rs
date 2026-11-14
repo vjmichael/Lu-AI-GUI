@@ -442,6 +442,24 @@ mod tests{
         fs::write(&path,b"{\"phase\":\"approved\"}").unwrap();
         assert!(recover_prepared_intent(&journal,&i.intent_sha256).is_err());
     }
+    #[test]fn native_consent_preview_binds_exact_policy_and_denies_competing_tip(){
+        let f=fixture();let observed=observed(&f);
+        let i=f.registry.prepare_github_remote_publication_intent(&f.id,&observed).unwrap();
+        let review=f.registry.review_exact_remote_publication_consent(
+            &f.id,&i,&observed,
+        ).unwrap();
+        assert_eq!(review.previous_remote_commit,f.old);
+        assert_eq!(review.proposed_local_commit,f.new);
+        assert!(review.original_native_os_dialog_required);
+        assert!(!review.native_operator_approval_granted);
+        assert!(!review.remote_write_route_available);
+        assert!(!review.remote_mutation_performed);
+        let mut moved=observed(&f);
+        moved.remote_head_sha256=Some("f".repeat(40));
+        assert!(f.registry.review_exact_remote_publication_consent(
+            &f.id,&i,&moved,
+        ).is_err());
+    }
     #[test]fn group6f_cross_domain_remote_recovery_stays_denied_for_matching_tip(){
         let f=fixture();let old=observed(&f);
         let intent=f.registry.prepare_github_remote_publication_intent(&f.id,&old).unwrap();

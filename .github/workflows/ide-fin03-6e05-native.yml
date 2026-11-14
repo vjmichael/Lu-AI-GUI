@@ -53,6 +53,7 @@ jobs:
           cargo test --manifest-path ide/host/Cargo.toml --lib github_remote_live_policy -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --lib github_remote_publication_intent -- --nocapture
           cargo test --manifest-path ide/host/Cargo.toml --lib git_security_recovery_matrix -- --nocapture
+          cargo test --manifest-path ide/host/Cargo.toml --lib github_remote_native_consent -- --nocapture
           # Compile native OS credential-manager integration explicitly;
           # no account token is provisioned, invoked, echoed or mocked.
           cargo test --manifest-path ide/host/Cargo.toml --features fin03-native-vault --lib github_remote_live_policy -- --nocapture

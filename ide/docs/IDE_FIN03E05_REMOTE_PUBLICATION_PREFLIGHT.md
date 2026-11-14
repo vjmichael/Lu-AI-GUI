@@ -247,3 +247,19 @@ restore and stash legitimately operate on modified sources.
 This new gate does not replace or mint original OS approval, lock/CAS
 witnesses, private file receipt or native installed consent. Exact-head
 Windows/Linux regressions and hostile cancellation/recovery remain pending.
+
+## 6E-05C-02 — Native exact-scope publication consent review
+
+The host-only `github_remote_native_consent.rs` now prepares a bounded
+review packet containing the original expected remote commit, proposed
+local commit, repository/branch, original intent digest and policy digest.
+It requires a fresh authenticated 6E-05B read, exact unchanged remote tip,
+local clean nine-domain Group 6F recovery, and original intent hash
+reconstruction. A moved ref or altered policy fails closed.
+
+All result flags `nativeOperatorApprovalGranted`,
+`remoteWriteRouteAvailable`, `remoteMutationPerformed` and
+`releaseAccepted` are always false. **This does not yet display a
+native OS dialog or provide a one-use consent token.** A separately
+owned OS dialog, a true atomic remote compare-and-swap and durable
+remote readback/hostile restart acceptance are still required.
