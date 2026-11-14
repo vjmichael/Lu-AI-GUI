@@ -716,20 +716,26 @@ mod tests {
     #[test]
     fn vcpkg_sync_rejects_malformed_manifest_without_invoking_manager() {
         let (_t, registry, id, dir) = fixture();
-        fs::write(dir.join("vcpkg.json"), b"{not-json").unwrap();
+        // Sync intentionally accepts no package name or version. The
+        // generic Add/Remove request fixture supplies a package name.
+        let mut sync = request("vcpkg", PackageOperation::Sync);
+        sync.package_name = None;
         assert!(matches!(
             registry.preview_package_operation(&id, request("vcpkg", PackageOperation::Sync)),
+            Err("IDE052_SYNC_TAKES_NO_PACKAGE_ARGUMENTS")
+        ));
+        fs::write(dir.join("vcpkg.json"), b"{not-json").unwrap();
+        assert!(matches!(
+            registry.preview_package_operation(&id, sync.clone()),
             Err("IDE052_VCPKG_JSON_INVALID")
         ));
         fs::write(dir.join("vcpkg.json"), br#"{"dependencies":[123]}"#).unwrap();
         assert!(matches!(
-            registry.preview_package_operation(&id, request("vcpkg", PackageOperation::Sync)),
+            registry.preview_package_operation(&id, sync.clone()),
             Err("IDE052_VCPKG_DEPENDENCIES_UNSUPPORTED")
         ));
         fs::write(dir.join("vcpkg.json"), br#"{"dependencies":["fmt"]}"#).unwrap();
-        let safe = registry
-            .preview_package_operation(&id, request("vcpkg", PackageOperation::Sync))
-            .unwrap();
+        let safe = registry.preview_package_operation(&id, sync).unwrap();
         assert_eq!(
             safe.proposed_changes[0].observed_direct_declaration,
             "not_applicable_to_sync"
