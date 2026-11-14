@@ -28,9 +28,10 @@ one_time_label="$2"
   die 'run from a GitHub-verified Linux x64 runner installation directory'
 [[ ! -e .runner && ! -e .credentials ]] || die 'this directory is already registered'
 [[ "$(stat -c %u .)" == "$(id -u)" ]] || die 'runner directory owned by another account'
-if (( $(stat -c %a .) % 10 != 0 )); then
-  die 'runner directory must not be accessible by others'
-fi
+# The runner stores short-lived registration credentials in this directory.
+# Deny both group and world access; never rely on the last octal digit only.
+python3 -c 'import os,sys;sys.exit(0 if (os.stat(".").st_mode & 0o077)==0 else 1)' ||
+  die 'runner directory must have owner-only access (chmod 700)'
 [[ "${BASH_SOURCE[0]}" != "$0" || -t 0 ]] || die 'interactive local terminal required'
 
 printf '\nRepository: %s\n' "$REPOSITORY_URL"
@@ -48,7 +49,7 @@ trap 'unset registration_token' EXIT
 
 # GitHub automatically deregisters after exactly one job.
 # The runner gets no repository token outside the job and no sudo grant.
-runner_name="lu-c4-$(hostname -s | tr -cd 'a-zA-Z0-9-' | head -c 24)-${one_time_label#lu-c4-}"
+runner_name="lu-c4-${one_time_label#lu-c4-}"
 ./config.sh \
   --unattended \
   --url "$REPOSITORY_URL" \
