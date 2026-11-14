@@ -1442,6 +1442,15 @@ fn start_windows_dap_inner(
     trusted_service: &TrustedBroker,
     project_target: Option<&crate::project_debug_target::SealedProjectDebugTarget>,
 ) -> Result<WindowsDapSession, SupervisorError> {
+    // In FIN-04W2 split builds the native LLDB must never be created
+    // under this LSP-style AppContainer launcher. Only the independent
+    // SCM-owned non-lowbox debugger service is permitted to start it,
+    // and only the service-created AppContainer target may be attached.
+    // This legacy entrypoint fails closed until that native service path
+    // and its original WFP/Job/receipt/recovery gates are implemented.
+    if cfg!(feature = "fin04w2-split-native") {
+        return Err(SupervisorError::NoContainment);
+    }
     if plan.effect_class != "debug_inspection_isolated" {
         return Err(SupervisorError::InvalidPlan);
     }
