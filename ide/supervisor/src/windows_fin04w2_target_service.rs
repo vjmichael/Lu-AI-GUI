@@ -322,7 +322,7 @@ fn prepare_one_target(
     crate::windows_fin04w2_wfp::require_target_outbound_blocks(suspended.image())?;
     pair.reobserve()?;
     suspended.resume_after_original_running()?;
-    write_all(pipe,b'T')?;
+    write_all(pipe,b"T")?;
     // Native readback is independent of the LLDB-DAP stopped message.
     // V carries only the DAP-observed PC for comparison with actual Job,
     // loaded image, and two matching Win32 stopped-thread RIP samples.

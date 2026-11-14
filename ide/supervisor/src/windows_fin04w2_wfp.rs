@@ -19,6 +19,10 @@ use windows_sys::Win32::{
     },
 };
 fn denied()->SupervisorError{SupervisorError::NoContainment}
+// Win32 GUID is a C record without PartialEq in windows-sys; compare every field.
+fn same_guid(a:&windows_sys::core::GUID,b:&windows_sys::core::GUID)->bool{
+    a.data1==b.data1&&a.data2==b.data2&&a.data3==b.data3&&a.data4==b.data4
+}
 struct Engine(HANDLE);
 impl Drop for Engine{
     fn drop(&mut self){if !self.0.is_null(){unsafe{FwpmEngineClose0(self.0);}}}
@@ -50,7 +54,7 @@ fn application_id(path:&Path)->Result<Blob,SupervisorError>{
 }
 fn matches_app(expected:&Blob,cond:&windows_sys::Win32::NetworkManagement::
     WindowsFilteringPlatform::FWPM_FILTER_CONDITION0)->bool{
-    if cond.fieldKey!=FWPM_CONDITION_ALE_APP_ID
+    if !same_guid(&cond.fieldKey,&FWPM_CONDITION_ALE_APP_ID)
         ||cond.matchType!=FWP_MATCH_EQUAL
         ||cond.conditionValue.r#type!=FWP_BYTE_BLOB_TYPE{return false;}
     let ptr=unsafe{cond.conditionValue.Anonymous.byteBlob};
@@ -115,8 +119,8 @@ fn require_application_blocks(paths:&[&Path])->Result<(),SupervisorError>{
             let pointer=unsafe{*page.add(i)};
             if pointer.is_null(){continue;}
             let f=unsafe{&*pointer};
-            let family=if f.layerKey==FWPM_LAYER_ALE_AUTH_CONNECT_V4{0}
-                else if f.layerKey==FWPM_LAYER_ALE_AUTH_CONNECT_V6{1}
+            let family=if same_guid(&f.layerKey,&FWPM_LAYER_ALE_AUTH_CONNECT_V4){0}
+                else if same_guid(&f.layerKey,&FWPM_LAYER_ALE_AUTH_CONNECT_V6){1}
                 else {continue};
             if f.flags&FWPM_FILTER_FLAG_DISABLED!=0
                 ||f.action.r#type!=FWP_ACTION_BLOCK||f.numFilterConditions!=1

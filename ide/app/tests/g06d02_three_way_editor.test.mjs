@@ -14,7 +14,9 @@ test('6D02 draft stage selection cannot treat truncated or binary text as comple
 test('6D02 proposal is local and bound to unchanged source evidence', () => {
   assert.match(source, /conflictDraft\.indexSha256 === nativeConflicts\.indexSha256/);
   assert.match(source, /conflictDraft\.evidenceSha256 === nativeConflicts\.evidenceSha256/);
-  assert.match(source, /conflictDraft\.projectId === activeProject\.projectId/);
+  // Optional chain prevents dereferencing absent draft; all three
+  // project/index/evidence coordinates remain bound together.
+  assert.match(source, /conflictDraft\?\.projectId === activeProject\.projectId/);
   assert.match(source, /setConflictDraft\(null\);/);
   assert.match(source, /value=\{conflictDraft\.candidateText\}/);
   assert.match(source, /maxLength=\{131072\}/);

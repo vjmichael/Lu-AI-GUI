@@ -73,7 +73,12 @@ test('IDE-MERGE-03 never accepts two Jobs from one SCM service as independent cu
   assert.match(security,/new_target_service_owned\(/);
   assert.match(security,/verify_target_job_kernel_acl\(/);
   assert.match(targetSeal,/LuIdeDebugTargetBroker/);
-  assert.doesNotMatch(targetSeal,/"LuIdeDebuggerBroker"/);
+  // Cross-SCM PDB resolution needs ONLY the fixed debugger service's
+  // read/traverse file ACE, never target Job custody or filesystem writes.
+  assert.match(targetSeal,/sid_of_named_service\(\s*"LuIdeDebuggerBroker"/);
+  assert.match(targetSeal,/which>=2\{READ_EXECUTE\}else\{ALL\}/);
+  assert.match(targetSeal,/seen!=\[true,true,true\]/);
+  assert.doesNotMatch(launcher,/create_bounded_empty_debugger_job\(/);
   assert.match(pair,/OpenSCManagerW/);
   assert.match(pair,/QueryServiceStatusEx/);
   assert.match(pair,/restricted_service_token/);
