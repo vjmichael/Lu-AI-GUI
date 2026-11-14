@@ -265,8 +265,23 @@ pub(crate) fn stage_and_verify(
     if root.exists(){return Err(denied());}
     fs::create_dir(&root).map_err(|_|denied())?;
     let mut incomplete=IncompleteStage{path:root.clone(),armed:true};
-    let exe=root.join("debug-target.exe");
-    let symbols=root.join("debug-target.pdb");
+    // The PE's RSDS CodeView record names its original PDB. Renaming to
+    // a generic debug-target.pdb could pass SHA checks yet make LLDB miss
+    // the symbols. Keep the two reviewed basenames and require one stem.
+    let image_name=image.file_name().and_then(|n|n.to_str()).ok_or_else(denied)?;
+    let pdb_name=pdb.file_name().and_then(|n|n.to_str()).ok_or_else(denied)?;
+    let valid=|s:&str|{
+        !s.is_empty()&&s.len()<=128
+            &&s.bytes().all(|c|c.is_ascii_alphanumeric()||matches!(c,b'.'|b'-'|b'_'))
+    };
+    let exe_stem=image_name.strip_suffix(".exe").ok_or_else(denied)?;
+    let pdb_stem=pdb_name.strip_suffix(".pdb").ok_or_else(denied)?;
+    if !valid(exe_stem)||!valid(pdb_stem)
+        ||!exe_stem.eq_ignore_ascii_case(pdb_stem) {
+        return Err(denied());
+    }
+    let exe=root.join(image_name);
+    let symbols=root.join(pdb_name);
     fs::copy(image,&exe).map_err(|_|denied())?;
     fs::copy(pdb,&symbols).map_err(|_|denied())?;
     windows_service_security::hash_executable(&exe,image_sha256)?;

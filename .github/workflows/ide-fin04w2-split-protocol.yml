@@ -21,6 +21,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: fin04w2-split-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   windows-split-contract:
     runs-on: windows-2022

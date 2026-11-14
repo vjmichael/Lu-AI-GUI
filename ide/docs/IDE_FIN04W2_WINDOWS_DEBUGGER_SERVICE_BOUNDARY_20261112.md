@@ -149,8 +149,8 @@ WFP pass merely because one blocked rule was observed.
 
 **Unimplemented release gates**: actually wire the service to its two
 native suspended-process preparations; independently verified immutable
-read-only executable/PDB staging (the current candidate target file is
-staged into writable profile LocalState and therefore MUST NOT resume);
+independently audited PE/PDB staging under the service-only root,
+preserving the reviewed PDB basename for PE CodeView symbol resolution;
 independent per-process WFP tests, exact LLDB DLL closure, live DAP attach,
 full original hostile/cancellation/restart matrix and installed approval.
 Do NOT substitute a same-user, unrestricted launcher for these gates.
