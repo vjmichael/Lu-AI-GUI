@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "63875cd73d526056551bb020a7d04ffd022b9b27",
+  "sourceCommitBeforeLock": "3ccb7ad9738f07efae6610ac7970fd169455dd71",
   "trackedFileCount": 1006,
   "files": [
     {
@@ -397,7 +397,7 @@
     },
     {
       "path": "benchmarks/e1/sec06c_browser_real_native.py",
-      "blob": "4382fce5511341e5db0c49b7b53a8d500980677a"
+      "blob": "655ac567b7768a1961137a1e949e7af1090b67f9"
     },
     {
       "path": "benchmarks/e1/sec06c_browser_xauthority_contract.py",
@@ -1949,7 +1949,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "50ab348e98f54412bb64e9b85928fc272d3b64ae"
+      "blob": "d11636a2e5f758c0878885bbb7f1ccfd7cdf556a"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2273,7 +2273,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-launcher.py",
-      "blob": "005029e3b23d919bfdc1d680bb2ee95b767a9170"
+      "blob": "b65f5a3fb142f9c4fa8995769015829556d4b1a3"
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-manager.py",
