@@ -20,6 +20,8 @@ param(
   [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$DebuggerImageSha256,
   [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$OriginalRunningReceiptSha256,
   [Parameter(Mandatory)][string]$EvidenceDirectory,
+  [Parameter()][int[]]$DescendantPids=@(),
+  [Parameter()][switch]$RestartServiceAfterLoss,
   [Parameter(Mandatory)][switch]$ExecuteOneUseDestructiveFailure
 )
 Set-StrictMode -Version Latest
@@ -68,6 +70,40 @@ foreach($svc in $services){
     Deny 'debug_worker_running_in_service_process'
   }
 }
+# Descendants must exist BEFORE the destructive test. A supplied PID alone
+# proves nothing: walk its actual original kernel-reported parent chain back
+# to the one authorized target or trusted LLDB, rejecting cycles and orphans.
+if($DescendantPids.Count -gt 32){Deny 'unbounded_descendant_inventory'}
+$seen=New-Object 'System.Collections.Generic.HashSet[int]'
+$descendants=@()
+foreach($childPid in $DescendantPids){
+  if($childPid -le 0 -or $childPid -in @($TargetPid,$LldbPid) -or
+     !$seen.Add($childPid)){Deny 'invalid_or_duplicate_descendant'}
+  $child=Get-CimInstance Win32_Process -Filter ("ProcessId="+$childPid)
+  if(!$child -or !$child.ExecutablePath){Deny 'descendant_missing_or_unobservable'}
+  $cursor=[int]$child.ParentProcessId
+  $visited=New-Object 'System.Collections.Generic.HashSet[int]'
+  $linked=$false
+  for($depth=0;$depth -lt 16;$depth++){
+    if($cursor -eq $TargetPid -or $cursor -eq $LldbPid){$linked=$true;break}
+    if($cursor -le 0 -or !$visited.Add($cursor)){break}
+    $parent=Get-CimInstance Win32_Process -Filter ("ProcessId="+$cursor)
+    if(!$parent){break}
+    $cursor=[int]$parent.ParentProcessId
+  }
+  if(!$linked){Deny 'descendant_not_in_original_worker_ancestry'}
+  $descendants+= [pscustomobject]@{
+    pid=$childPid;parentPid=[int]$child.ParentProcessId
+    creation=[string]$child.CreationDate
+    image=(Resolve-Path -LiteralPath $child.ExecutablePath).Path
+  }
+}
+function Get-ObservedAlive {
+  foreach($candidate in (@($TargetPid,$LldbPid)+@($DescendantPids))){
+    $found=Get-CimInstance Win32_Process -Filter ("ProcessId="+$candidate)
+    if($found){$found}
+  }
+}
 $oldSvcId=[int]$victim[0].ProcessId
 $time=[DateTime]::UtcNow
 if($LossMode -eq 'HardKill'){
@@ -82,29 +118,66 @@ if($LossMode -eq 'HardKill'){
 # original supervisor/SCM kernel witnesses before any release receipt.
 $limit=[DateTime]::UtcNow.AddSeconds(12)
 do{
-  $current=Get-CimInstance Win32_Process -Filter (
-    "ProcessId="+$TargetPid+" OR ProcessId="+$LldbPid
-  )
-  if(!@($current)){break}
+  $current=@(Get-ObservedAlive)
+  if($current.Count -eq 0){break}
   Start-Sleep -Milliseconds 100
 }while([DateTime]::UtcNow -lt $limit)
-if(@(Get-CimInstance Win32_Process -Filter (
-  "ProcessId="+$TargetPid+" OR ProcessId="+$LldbPid
-)).Count -ne 0){Deny 'separate_kernel_Job_trees_not_terminated'}
+if(@(Get-ObservedAlive).Count -ne 0){
+  Deny 'original_workers_or_descendants_not_terminated'
+}
 $after=Get-CimInstance Win32_Service -Filter ("Name='"+$ServiceToLose+"'")
 if(!$after -or ($LossMode -eq 'HardKill' -and $after.ProcessId -eq $oldSvcId
   -and $after.State -eq 'Running')){Deny 'original_SCM_service_loss_not_observed'}
+# Restart tests only that old workers do not *spontaneously* resurrect.
+# A true malicious replay requires a separate original C2 IPC attempt with
+# the already-consumed journal; this read-only observer CANNOT certify it.
+$restartWithoutAutoReplay=$false
+if($RestartServiceAfterLoss){
+  $state=Get-CimInstance Win32_Service -Filter ("Name='"+$ServiceToLose+"'")
+  if(!$state){Deny 'service_disappeared_after_loss'}
+  if($state.State -ne 'Running'){
+    Start-Service -Name $ServiceToLose -ErrorAction Stop
+  }
+  $until=[DateTime]::UtcNow.AddSeconds(15)
+  do{
+    $fresh=Get-CimInstance Win32_Service -Filter ("Name='"+$ServiceToLose+"'")
+    if($fresh -and $fresh.State -eq 'Running' -and
+       $fresh.ProcessId -gt 0 -and $fresh.ProcessId -ne $oldSvcId){break}
+    Start-Sleep -Milliseconds 100
+  }while([DateTime]::UtcNow -lt $until)
+  if(!$fresh -or $fresh.State -ne 'Running' -or
+     $fresh.ProcessId -le 0 -or $fresh.ProcessId -eq $oldSvcId){
+    Deny 'fresh_SCM_service_restart_not_verified'
+  }
+  if(@(Get-ObservedAlive).Count -ne 0){Deny 'old_worker_resurrected_after_restart'}
+  # The original acceptance fixture is exclusive on this host; no new
+  # process of either original worker image may silently appear on restart.
+  foreach($process in @(Get-CimInstance Win32_Process |
+      Where-Object {$_.ExecutablePath -and
+        ($_.ExecutablePath -ieq $target.path -or
+         $_.ExecutablePath -ieq $debugger.path)})){
+    Deny 'new_unapproved_debug_worker_spawned_after_restart'
+  }
+  $restartWithoutAutoReplay=$true
+}
 $dir=New-Item -ItemType Directory -Path $EvidenceDirectory -Force
 $out=Join-Path $dir.FullName 'fin04w2-one-service-loss.json'
 $record=[ordered]@{
   schema='fin04w2.native-service-loss-process-observation.v1'
   exactSourceHead=$ExactHead;service=$ServiceToLose;mode=$LossMode
   originalRunningReceiptSha256=$OriginalRunningReceiptSha256
-  observedBefore=[ordered]@{target=$target;debugger=$debugger;servicePid=$oldSvcId}
+  observedBefore=[ordered]@{
+    target=$target;debugger=$debugger;servicePid=$oldSvcId
+    originalDescendantObservations=$descendants
+  }
   observedLossUtc=$time.ToString('o')
   bothOriginalProcessPidsExitedWithin12s=$true
+  independentlyObservedDescendantPidsExitedWithin12s=($DescendantPids.Count -gt 0)
+  freshServiceRestartWithoutSpontaneousWorkerReplay=$restartWithoutAutoReplay
   nativeJobKernelAccountingReceiptVerified=$false
   independentHostRecoveryJournalVerified=$false
+  # Only an actual rejected authenticated C2 replay with original fsynced
+  # journal can set this; restarting SCM without work is NOT enough.
   rejectedRestartReplayVerified=$false
   secondServiceLossFreshAuthorizationVerified=$false
   installedPhysicalCreatorAcceptance=$false
