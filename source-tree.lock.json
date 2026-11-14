@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "097c95e7e6f6048341b6bee6ed4cc8d6fbc8c267",
+  "sourceCommitBeforeLock": "a3d8a680e375b5506b760f09ac136d15dbcaabfe",
   "trackedFileCount": 1002,
   "files": [
     {
@@ -1685,7 +1685,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01l-os-custody.test.mjs",
-      "blob": "1f72e83aadd495df7edef094f7d20b52dd9c40eb"
+      "blob": "5cf627d1733aad28f473cda173c0056dce4db1da"
     },
     {
       "path": "lu-desktop/tests/background-pane.test.mjs",
