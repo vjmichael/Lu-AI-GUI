@@ -58,11 +58,10 @@ fn contained(process:HANDLE,job:HANDLE)->Result<(),SupervisorError>{
     }
     Ok(())
 }
-fn job_attribute(attrs:&mut windows_worker::Attributes,job:HANDLE)
+fn job_attribute(attrs:&mut windows_worker::Attributes,jobs:&[HANDLE;1])
     ->Result<(),SupervisorError>{
-    let one=[job];
     if unsafe{UpdateProcThreadAttribute(attrs.raw(),0,JOB_LIST,
-        one.as_ptr().cast(),size_of::<HANDLE>(),
+        jobs.as_ptr().cast(),size_of::<HANDLE>(),
         ptr::null_mut(),ptr::null())}==0{return Err(denied());}
     Ok(())
 }
@@ -145,7 +144,10 @@ pub(crate) fn prepare_appcontainer_target(
         size_of::<SECURITY_CAPABILITIES>(),
         ptr::null_mut(),ptr::null())}==0{return Err(denied());}
     let kernel_job=job.held_split_job_handle();
-    job_attribute(&mut attrs,kernel_job)?;
+    // UpdateProcThreadAttribute may reference the supplied HANDLE array
+    // through CreateProcessW; keep storage alive in this stack frame.
+    let job_array=[kernel_job];
+    job_attribute(&mut attrs,&job_array)?;
     let exe=wide(image.as_os_str());
     let cwd=wide(local.as_os_str());
     let mut args=wide(OsStr::new(&format!("\"{}\"",image.display())));
@@ -230,7 +232,10 @@ pub(crate) fn prepare_external_debugger(
     let child_handles=[stdin.read.0,stdout.write.0,stderr.write.0];
     let mut attrs=windows_worker::Attributes::with_count(2)?;
     let kernel_job=job.held_split_job_handle();
-    job_attribute(&mut attrs,kernel_job)?;
+    // UpdateProcThreadAttribute may reference the supplied HANDLE array
+    // through CreateProcessW; keep storage alive in this stack frame.
+    let job_array=[kernel_job];
+    job_attribute(&mut attrs,&job_array)?;
     if unsafe{UpdateProcThreadAttribute(attrs.raw(),0,HANDLE_LIST,
         child_handles.as_ptr().cast(),
         child_handles.len()*size_of::<HANDLE>(),
