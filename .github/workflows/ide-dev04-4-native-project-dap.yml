@@ -49,19 +49,23 @@ jobs:
         run: |
           set -euo pipefail
           node --test ide/app/tests/debug_binary_evidence.test.mjs ide/app/tests/debug_symbol_evidence.test.mjs ide/app/tests/project_debug_authority.test.mjs
+      # The IDE host, supervisor and Tauri source packages do not check in
+      # Cargo.lock files. This source-level matrix must not pretend it has a
+      # locked release dependency graph. Genuine toolchain, dependency pin,
+      # production packaging and native kernel acceptance remain separate.
       - name: DAP parser and sealed private target native unit tests
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --manifest-path ide/host/Cargo.toml --lib --locked dap_session
-          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked --features dap-transport project_debug_target
-          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked --features dap-transport debug_symbol_verification
-          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked --features dap-transport project_debug_requires_exact
+          cargo test --manifest-path ide/host/Cargo.toml --lib dap_session
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --features dap-transport project_debug_target
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --features dap-transport debug_symbol_verification
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --features dap-transport project_debug_requires_exact
       - name: Native protected project LLDB-DAP plus Cargo Tauri compilation
         shell: bash
         run: |
           set -euo pipefail
-          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --locked --all-targets --features native-project-debug
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --all-targets --features native-project-debug
       - name: Actual kernel acceptance remains independent
         if: always()
         shell: bash

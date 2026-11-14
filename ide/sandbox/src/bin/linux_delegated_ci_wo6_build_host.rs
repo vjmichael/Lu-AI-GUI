@@ -41,11 +41,23 @@ fn run() -> Result<(), &'static str> {
     if !result.success() {
         return Err("real kernel cgroup delegation denied");
     }
-    let result = Command::new(&fixture)
+    // The delegated systemd-run unit receives one explicit trace flag.
+    // Propagate ONLY this fixed boolean to the original native fixture;
+    // never inherit the service environment, arbitrary variables or PATH.
+    // Without this the diagnostic was discarded by env_clear before the
+    // original LLDB/cgroup source-stop refusal could be inspected.
+    let native_trace = env::var_os("LU_IDE_E2_NATIVE_TRACE")
+        .as_deref() == Some(std::ffi::OsStr::new("1"));
+    let mut fixture_command = Command::new(&fixture);
+    fixture_command
         .arg(first)
         .env_clear()
         .env("HOME", "/tmp")
-        .env("LANG", "C")
+        .env("LANG", "C");
+    if native_trace {
+        fixture_command.env("LU_IDE_E2_NATIVE_TRACE", "1");
+    }
+    let result = fixture_command
         .status()
         .map_err(|_| "native Cargo fixed fixture spawn failed")?;
     if !result.success() {

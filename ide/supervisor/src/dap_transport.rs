@@ -257,9 +257,57 @@ impl DapGateway {
         trace_dap("initialize_request_built");
         self.send(&message)
     }
+    /// Split Windows FIN-04W2: the native SCM service, not LLDB, created
+    /// the sealed untrusted target with the kernel AppContainer attribute.
+    /// The target PID comes ONLY from reobserving the service-held process
+    /// HANDLE and correct Job/SID. It cannot originate in the WebView, a
+    /// project manifest or a DAP reverse request.
+    ///
+    /// This API is intentionally unavailable to release builds. The original
+    /// native service must retain both Jobs/handles through cancellation;
+    /// WFP and creator authorization are mandatory upstream admission gates.
+    #[cfg(all(windows, debug_assertions, feature="fin04w2-split-native"))]
+    pub(crate) fn attach_service_held_appcontainer_target(
+        &mut self,
+        debugger: windows_sys::Win32::Foundation::HANDLE,
+        debugger_job: windows_sys::Win32::Foundation::HANDLE,
+        child: windows_sys::Win32::Foundation::HANDLE,
+        target_job: windows_sys::Win32::Foundation::HANDLE,
+        appcontainer_sid: windows_sys::Win32::Security::PSID,
+        sealed_binary: &std::path::Path,
+        binary_sha256: &str,
+        journal: &std::path::Path,
+        job_id: &str,
+        plan: &crate::JobPlan,
+        plan_sha256: &str,
+    ) -> Result<(), SupervisorError> {
+        // Verify both real process identities, distinct Job memberships,
+        // exact original service restricted SID, and the target zero-capability
+        // AppContainer. A bare PID or LLDB DAP claim never grants attach.
+        // Observe OS identity twice, including immediately BEFORE send.
+        // A stale plan, dead service, escaped target or swapped image denies.
+        let get_pid=||crate::windows_fin04w2_split::attest_split_pair(
+            debugger,debugger_job,child,target_job,appcontainer_sid,
+            sealed_binary,binary_sha256,journal,job_id,plan,plan_sha256,
+        );
+        let pid=get_pid()?;
+        if self.job_id!=job_id || self.plan_sha256!=plan_sha256
+            || self.session.phase()!=DapPhase::Ready
+        {return self.quarantine();}
+        let frame=self.session.attach_preverified_native_target(pid)
+            .map_err(protocol_denied)?;
+        if get_pid()?!=pid {return self.quarantine();}
+        self.send(&frame)
+    }
+
     /// The native OS worker provides a single immutable bundled self-test
     /// executable path. The WebView cannot choose or modify this target.
     pub(crate) fn launch_fixed_fixture(&mut self, target: &str) -> Result<(), SupervisorError> {
+        // The outside-AppContainer debugger must NEVER launch a child
+        // using its own service token. It may attach only to a target
+        // independently created under the verified AppContainer Job.
+        #[cfg(all(windows, feature="fin04w2-split-native"))]
+        { let _=target; return Err(SupervisorError::InvalidApproval); }
         let frame = self
             .session
             .launch_fixed_fixture(target)
@@ -267,14 +315,45 @@ impl DapGateway {
         self.send(&frame)
     }
     pub(crate) fn launch_verified_project(&mut self, target: &str) -> Result<(), SupervisorError> {
+        // The outside-AppContainer debugger must NEVER launch a child
+        // using its own service token. It may attach only to a target
+        // independently created under the verified AppContainer Job.
+        #[cfg(all(windows, feature="fin04w2-split-native"))]
+        { let _=target; return Err(SupervisorError::InvalidApproval); }
         let frame = self
             .session
             .launch_verified_project(target)
             .map_err(protocol_denied)?;
         self.send(&frame)
     }
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub(crate) fn launch_verified_project_source_trap_for_ci(
+        &mut self, target: &str,
+    ) -> Result<(), SupervisorError> {
+        let frame = self.session
+            .launch_verified_project_source_trap_for_ci(target)
+            .map_err(protocol_denied)?;
+        self.send(&frame)
+    }
     pub(crate) fn configuration_needed(&self) -> bool {
         self.session.configuration_needed()
+    }
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub(crate) fn ci_configuration_done_acknowledged(&self) -> bool {
+        self.session.ci_configuration_done_acknowledged()
+    }
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub(crate) fn ci_fixed_source_breakpoint_needed(&self) -> bool {
+        self.session.ci_fixed_source_breakpoint_needed()
+    }
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub(crate) fn ci_set_fixed_source_breakpoint(&mut self) -> Result<(), SupervisorError> {
+        let frame = self.session.ci_set_fixed_source_breakpoint().map_err(protocol_denied)?;
+        self.send(&frame)
+    }
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub(crate) fn ci_fixed_source_breakpoint_verified(&self) -> bool {
+        self.session.ci_fixed_source_breakpoint_verified()
     }
     pub(crate) fn configuration_done(&mut self) -> Result<(), SupervisorError> {
         // The pinned native adapter can emit initialized only after launch.
@@ -355,6 +434,17 @@ impl DapGateway {
     ) -> Option<lu_ide_workspace::dap_session::CiControlObservation> {
         self.session.ci_take_control_observation()
     }
+    // Strictly read-only, debug-CI native diagnostics at a failed source
+    // stop. This does not send a DAP command, inspect source bytes, open a
+    // process, or mint debugger authority. It classifies only the OS-owned
+    // worker's existing stderr and cgroup counters before fail-closed Drop.
+    #[cfg(all(target_os = "linux", debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub(crate) fn ci_trace_absent_source_stop(&mut self) {
+        if let Some(process) = self.process.as_mut() {
+            process.trace_native_fault("project_source_stop_absent");
+        }
+    }
+
     pub(crate) fn poll(&mut self) -> Result<Vec<DapEvent>, SupervisorError> {
         if self.started.elapsed() > MAX_LIFETIME {
             return self.quarantine();

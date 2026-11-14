@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FIN-04 read-only CI diagnostic: fixed LLDB-DAP launch in three OS contexts.
+"""FIN-04 read-only CI diagnostic: fixed LLDB-DAP launch in four OS contexts.
 
 This is NOT a protected execution grant, a debugger acceptance, or a runner
 policy change. It executes only the repository's compiled wo6-selftest,
@@ -18,7 +18,14 @@ FIXED_HOST = BUNDLE + "/debuggee/wo6-selftest"
 CASES = (
     ("host_distro", [SOURCE], FIXED_HOST),
     ("copied_bundle", [COPIED], FIXED_HOST),
-    ("bwrap_namespace", NAMESPACE, "/ls/debuggee/wo6-selftest"),
+    ("distro_binary_in_bwrap", NAMESPACE[:-1] + [SOURCE], "/ls/debuggee/wo6-selftest"),
+    ("copied_binary_in_bwrap", NAMESPACE, "/ls/debuggee/wo6-selftest"),
+    # Exact same copied reviewed adapter bytes, but mounted at the distro
+    # executable location. If this alone repairs launch, LLDB helper/resource
+    # discovery depends on executable layout; NOT a protected-cgroup pass.
+    ("copied_at_distro_path_in_bwrap",
+     NAMESPACE[:-2] + ["--ro-bind", COPIED, SOURCE, "--", SOURCE],
+     "/ls/debuggee/wo6-selftest"),
 )
 
 def classify(fragment: str) -> str:
@@ -53,6 +60,8 @@ def stage(label: str, argv: list[str], target: str) -> bool:
     buffer = bytearray()
     stderr = bytearray()
     sent_launch = False
+    initialized_event = False
+    config_sent = False
     got_launch = False
     got_stop = False
     failure = "timeout_or_disconnect"
@@ -129,8 +138,22 @@ def stage(label: str, argv: list[str], target: str) -> bool:
                                   else str(raw_error))
                         failure = classify(str(detail) + " " + str(item.get("message", "")))
                         break
+                elif item.get("type") == "event" and item.get("event") == "initialized":
+                    initialized_event = True
+                elif item.get("type") == "response" and item.get("request_seq") == 3:
+                    if item.get("command") != "configurationDone" or item.get("success") is not True:
+                        failure = "fixed_configuration_rejected"
+                        break
                 elif item.get("type") == "event" and item.get("event") == "stopped":
                     got_stop = True
+                # LLDB-DAP can emit initialized before or after the launch
+                # response. Only send the exact empty configuration request
+                # once both have occurred; without this LLDB holds its target
+                # before emitting a stopped event (a false-negative probe).
+                if initialized_event and got_launch and not config_sent:
+                    child.stdin.write(request(3, "configurationDone", {}))
+                    child.stdin.flush()
+                    config_sent = True
             if got_launch and got_stop:
                 break
             if failure != "timeout_or_disconnect":

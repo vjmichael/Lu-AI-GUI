@@ -131,6 +131,14 @@ pub struct DapSession {
     initialized_event: bool,
     launch_sent: bool,
     configuration_done_sent: bool,
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    configuration_done_acknowledged: bool,
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    source_trap_mode: bool,
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    source_trap_breakpoint_sent: bool,
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    source_trap_breakpoint_verified: bool,
     // Ephemeral, untrusted adapter coordinates; NEVER a symbol-line proof.
     last_source_candidate: Option<SourceLineCandidate>,
     #[cfg(feature = "dev046c-ci-control")]
@@ -155,6 +163,14 @@ impl DapSession {
             initialized_event: false,
             launch_sent: false,
             configuration_done_sent: false,
+            #[cfg(feature = "dev045d3-ci-source-trap")]
+            configuration_done_acknowledged: false,
+            #[cfg(feature = "dev045d3-ci-source-trap")]
+            source_trap_mode: false,
+            #[cfg(feature = "dev045d3-ci-source-trap")]
+            source_trap_breakpoint_sent: false,
+            #[cfg(feature = "dev045d3-ci-source-trap")]
+            source_trap_breakpoint_verified: false,
             last_source_candidate: None,
             #[cfg(feature = "dev046c-ci-control")]
             ci_control: None,
@@ -255,11 +271,86 @@ impl DapSession {
         Ok(frame)
     }
 
+    /// FIN-04W2 split-trust DAP: LLDB-DAP is a separately supervised native
+    /// process OUTSIDE the target's AppContainer. The independent SCM service
+    /// must first create the sealed debuggee INSIDE a zero-capability
+    /// AppContainer and reobserve its live process HANDLE, exact Job,
+    /// lowbox SID, build hash, original one-use plan and WFP policy.
+    ///
+    /// There is deliberately no UI/IPC accessor for the pid: this encodes
+    /// a protocol frame only. The native gateway must obtain it from the
+    /// attested kernel handle, never from user/project data. A successful DAP
+    /// response is not containment or a debugger stop.
+    #[cfg(all(windows, feature = "fin04w2-split-protocol"))]
+    pub fn attach_preverified_native_target(&mut self, kernel_pid: u32) -> Result<Vec<u8>, DapError> {
+        if self.phase != DapPhase::Ready {
+            return Err(DapError::InvalidPhase);
+        }
+        if kernel_pid == 0 || kernel_pid == u32::MAX {
+            return Err(DapError::InvalidMessage);
+        }
+        // LLDB-DAP's documented attach-by-pid form. No executable path,
+        // args, shell, evaluate, PID selection via protocol or runInTerminal.
+        let frame = self.request("attach", json!({"pid":kernel_pid}))?;
+        self.launch_sent = true;
+        self.phase = DapPhase::Launching;
+        Ok(frame)
+    }
+
     /// DEV-04.4: accept ONLY a native staged, OS-owned debug target.
     /// A caller cannot select any other path, process, arguments or env.
     /// This builds DAP bytes ONLY; actual authority resides in the D3 plan
     /// with an exact sealed build target digest and native OS containment.
     pub fn launch_verified_project(&mut self, program: &str) -> Result<Vec<u8>, DapError> {
+        self.launch_verified_project_with_stop(program, true)
+    }
+    /// CI-only original-source trap fixture. This is not a debugger control:
+    /// it only selects whether the already sealed project stops at loader
+    /// entry or runs to a trap physically compiled into reviewed source.
+    /// No user project can select this mode in a release binary.
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    pub fn launch_verified_project_source_trap_for_ci(
+        &mut self, program: &str,
+    ) -> Result<Vec<u8>, DapError> {
+        let frame = self.launch_verified_project_with_stop(program, false)?;
+        self.source_trap_mode = true;
+        Ok(frame)
+    }
+    /// The native sealed CI fixture is compiled with an x86_64 trap on
+    /// src/main.rs:3. A *single* fixed breakpoint is installed BEFORE
+    /// configurationDone resumes the target. The adapter's verified ACK
+    /// does not count as a hit, PC, source line, or authorization.
+    /// This function is unavailable to release builds and cannot take
+    /// any path, line, thread, expression, PID or user argument.
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    pub fn ci_fixed_source_breakpoint_needed(&self) -> bool {
+        self.source_trap_mode && self.launch_sent
+            && self.initialized_event
+            && !self.source_trap_breakpoint_sent
+            && !self.configuration_done_sent
+            && matches!(self.phase, DapPhase::Ready | DapPhase::Launching)
+    }
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    pub fn ci_set_fixed_source_breakpoint(&mut self) -> Result<Vec<u8>, DapError> {
+        if !self.ci_fixed_source_breakpoint_needed() {
+            return Err(DapError::InvalidPhase);
+        }
+        let frame = self.request(
+            "setBreakpoints",
+            json!({"source": {"path": "/workspace/src/main.rs"},
+                "breakpoints":[{"line":3}],
+                "sourceModified":false}),
+        )?;
+        self.source_trap_breakpoint_sent = true;
+        Ok(frame)
+    }
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    pub fn ci_fixed_source_breakpoint_verified(&self) -> bool {
+        self.source_trap_mode && self.source_trap_breakpoint_verified
+    }
+    fn launch_verified_project_with_stop(
+        &mut self, program: &str, stop_on_entry: bool
+    ) -> Result<Vec<u8>, DapError> {
         if self.phase != DapPhase::Ready {
             return Err(DapError::InvalidPhase);
         }
@@ -299,7 +390,7 @@ impl DapSession {
         let frame = self.request(
             "launch",
             json!({
-                "program":program,"stopOnEntry":true,"noDebug":false,
+                "program":program,"stopOnEntry":stop_on_entry,"noDebug":false,
                 "disableASLR":false,"disableSTDIO":true,
                 "args":[],"env":{},"runInTerminal":false
             }),
@@ -312,10 +403,20 @@ impl DapSession {
     /// Read-only pending signal for adapters that emit initialized immediately
     /// after the response (even before the fixed launch is sent). The trusted
     /// native host may examine this after launch; no DAP instruction is sent.
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    pub fn ci_configuration_done_acknowledged(&self) -> bool {
+        self.configuration_done_acknowledged
+    }
     pub fn configuration_needed(&self) -> bool {
         self.launch_sent
             && self.initialized_event
             && !self.configuration_done_sent
+            && {
+                #[cfg(feature = "dev045d3-ci-source-trap")]
+                { !self.source_trap_mode || self.source_trap_breakpoint_verified }
+                #[cfg(not(feature = "dev045d3-ci-source-trap"))]
+                { true }
+            }
             && matches!(
                 self.phase,
                 DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped
@@ -644,6 +745,7 @@ impl DapSession {
                             "PROTECTED_DAP_FAILED_REQUEST={}",
                             match expected {
                                 "launch" => "sealed_target_launch",
+                                "attach" => "kernel_bound_target_attach",
                                 "configurationDone" => "fixed_configuration",
                                 "initialize" => "fixed_initialize",
                                 "threads" | "stackTrace" => "read_only_stack",
@@ -700,6 +802,15 @@ impl DapSession {
                         self.phase = DapPhase::Ready;
                         Ok(Some(DapEvent::Initialized))
                     }
+                    #[cfg(all(windows, feature = "fin04w2-split-protocol"))]
+                    "attach" if matches!(self.phase, DapPhase::Launching | DapPhase::Stopped) => {
+                        if self.phase == DapPhase::Launching {
+                            self.phase = DapPhase::Ready;
+                        }
+                        // The adapter ACK is not a kernel debug owner, RIP,
+                        // process Job attestation, or permission for stepping.
+                        Ok(Some(DapEvent::LaunchAcknowledged))
+                    }
                     "launch" if matches!(self.phase, DapPhase::Launching | DapPhase::Stopped) => {
                         if self.phase == DapPhase::Launching {
                             self.phase = DapPhase::Ready;
@@ -713,6 +824,10 @@ impl DapSession {
                                 DapPhase::Launching | DapPhase::Ready | DapPhase::Stopped
                             ) =>
                     {
+                        #[cfg(feature = "dev045d3-ci-source-trap")]
+                        {
+                            self.configuration_done_acknowledged = true;
+                        }
                         Ok(None)
                     }
                     "threads" if matches!(self.phase, DapPhase::Ready | DapPhase::Stopped) => {
@@ -879,6 +994,26 @@ impl DapSession {
                             return Err(DapError::InvalidMessage);
                         }
                         active.response_ack = true;
+                        Ok(None)
+                    }
+                    #[cfg(feature = "dev045d3-ci-source-trap")]
+                    "setBreakpoints"
+                        if self.source_trap_mode && self.source_trap_breakpoint_sent
+                            && !self.source_trap_breakpoint_verified
+                            && !self.configuration_done_sent
+                            && matches!(self.phase, DapPhase::Launching | DapPhase::Ready) =>
+                    {
+                        let entries = obj.get("body")
+                            .and_then(|v| v.get("breakpoints"))
+                            .and_then(Value::as_array)
+                            .ok_or(DapError::InvalidMessage)?;
+                        if entries.len() != 1
+                            || entries[0].get("verified") != Some(&Value::Bool(true))
+                            || entries[0].get("line").and_then(Value::as_u64) != Some(3)
+                        {
+                            return Err(DapError::InvalidMessage);
+                        }
+                        self.source_trap_breakpoint_verified = true;
                         Ok(None)
                     }
                     #[cfg(feature = "dev046c-ci-control")]
@@ -1359,6 +1494,53 @@ mod tests {
         );
         assert_eq!(stack.phase(), DapPhase::Quarantined);
     }
+    #[cfg(all(windows, feature = "fin04w2-split-protocol"))]
+    #[test]
+    fn split_debugger_uses_attach_without_spawning_an_unrestricted_program() {
+        let mut session = DapSession::new();
+        assert_eq!(session.attach_preverified_native_target(100).unwrap_err(), DapError::InvalidPhase);
+        session.initialize().unwrap();
+        session.receive(&framed(json!({
+            "seq":2,"type":"response","request_seq":1,
+            "command":"initialize","success":true
+        }))).unwrap();
+        for bad in [0, u32::MAX] {
+            assert_eq!(session.attach_preverified_native_target(bad).unwrap_err(), DapError::InvalidMessage);
+        }
+        let wire=session.attach_preverified_native_target(317).unwrap();
+        let frame: serde_json::Value = serde_json::from_slice(
+            wire.split(|b| *b == b'\n').last().unwrap(),
+        ).unwrap();
+        assert_eq!(frame["command"], "attach");
+        assert_eq!(frame["arguments"], json!({"pid":317}));
+        assert!(frame["arguments"].get("program").is_none());
+        assert!(frame["arguments"].get("runInTerminal").is_none());
+        assert_eq!(session.attach_preverified_native_target(318).unwrap_err(), DapError::InvalidPhase);
+        assert_eq!(session.phase(), DapPhase::Launching);
+        session.receive(&framed(json!({
+            "seq":3,"type":"response","request_seq":2,
+            "command":"attach","success":true
+        }))).unwrap();
+        assert_eq!(session.phase(), DapPhase::Ready);
+    }
+
+    #[cfg(all(windows, feature = "fin04w2-split-protocol"))]
+    #[test]
+    fn split_attach_wrong_response_quarantines_without_any_target_launch() {
+        let mut session = DapSession::new();
+        session.initialize().unwrap();
+        session.receive(&framed(json!({
+            "seq":2,"type":"response","request_seq":1,
+            "command":"initialize","success":true
+        }))).unwrap();
+        let _=session.attach_preverified_native_target(317).unwrap();
+        assert_eq!(session.receive(&framed(json!({
+            "seq":3,"type":"response","request_seq":2,
+            "command":"launch","success":true
+        }))).unwrap_err(),DapError::AdapterFailed);
+        assert_eq!(session.phase(),DapPhase::Quarantined);
+    }
+
     #[test]
     fn only_native_sealed_project_path_can_form_project_launch_without_arguments() {
         let mut session = DapSession::new();
@@ -1395,16 +1577,10 @@ mod tests {
     fn sealed_native_cargo_debug_root_is_exact_and_nested_paths_are_refused() {
         let mut linux = DapSession::new();
         linux.phase = DapPhase::Ready;
-        #[cfg(target_os = "linux")]
-        {
-            let message = linux.launch_verified_project("/debug-target/debug/fixture").unwrap();
-            assert!(String::from_utf8(message).unwrap().contains("/debug-target/debug/fixture"));
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            // The Linux path is not an absolute Windows executable.
-            assert!(linux.launch_verified_project("/debug-target/debug/fixture").is_err());
-        }
+        // The DAP wire constructor is platform-neutral. Only the native
+        // worker, source seal and Job/cgroup determine actual OS authority.
+        let message = linux.launch_verified_project("/debug-target/debug/fixture").unwrap();
+        assert!(String::from_utf8(message).unwrap().contains("/debug-target/debug/fixture"));
         for forbidden in [
             "/debug-target/debug/deps/fixture",
             "/debug-target/debug/../fixture",
@@ -1941,4 +2117,57 @@ mod tests {
         assert_eq!(s.phase(), DapPhase::Quarantined);
         assert!(s.source_candidate().is_none());
     }
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    #[test]
+    fn reviewed_source_trap_requires_verified_fixed_breakpoint_before_resume() {
+        let mut session = DapSession::new();
+        session.phase = DapPhase::Ready;
+        session.initialized_event = true;
+        let launch = session
+            .launch_verified_project_source_trap_for_ci("/debug-target/debug/fixture")
+            .unwrap();
+        assert!(String::from_utf8(launch).unwrap().contains(r#""stopOnEntry":false"#));
+        assert!(!session.configuration_needed());
+        assert!(session.ci_fixed_source_breakpoint_needed());
+        let wire = session.ci_set_fixed_source_breakpoint().unwrap();
+        let command = String::from_utf8(wire).unwrap();
+        assert!(command.contains("/workspace/src/main.rs"));
+        assert!(command.contains(r#""line":3"#));
+        assert!(!session.configuration_needed());
+        let seq = session.seq - 1;
+        session.receive(&framed(json!({
+            "seq":14, "type":"response", "request_seq":seq,
+            "command":"setBreakpoints", "success":true,
+            "body":{"breakpoints":[{"verified":true,"line":3}]}
+        }))).unwrap();
+        assert!(session.ci_fixed_source_breakpoint_verified());
+        assert!(session.configuration_needed());
+        assert!(!session.ci_configuration_done_acknowledged());
+        session.configuration_done().unwrap();
+        assert!(!session.ci_fixed_source_breakpoint_needed());
+        assert!(!session.ci_configuration_done_acknowledged());
+        // The breakpoint ACK cannot establish an actual stopped thread,
+        // program counter, DWARF line, or independent kernel custody.
+        assert!(session.source_candidate().is_none());
+    }
+
+    #[cfg(feature = "dev045d3-ci-source-trap")]
+    #[test]
+    fn unverified_breakpoint_never_authorizes_configuration_resume() {
+        let mut session = DapSession::new();
+        session.phase = DapPhase::Ready;
+        session.initialized_event = true;
+        session.launch_verified_project_source_trap_for_ci("/debug-target/debug/fixture").unwrap();
+        session.ci_set_fixed_source_breakpoint().unwrap();
+        let seq = session.seq - 1;
+        assert_eq!(session.receive(&framed(json!({
+            "seq":14, "type":"response", "request_seq":seq,
+            "command":"setBreakpoints", "success":true,
+            "body":{"breakpoints":[{"verified":false,"line":3}]}
+        }))).unwrap_err(), DapError::InvalidMessage);
+        assert!(!session.ci_fixed_source_breakpoint_verified());
+        assert!(!session.configuration_needed());
+        assert!(session.configuration_done().is_err());
+    }
+
 }

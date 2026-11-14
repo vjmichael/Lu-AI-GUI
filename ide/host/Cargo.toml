@@ -12,6 +12,13 @@ default = []
 # Source-only, disposable protected Windows native acceptance. No Tauri
 # control route or released debugger execution rights.
 dev046c-ci-control = []
+# Disposable Linux original-source trap only. Not an installed/debugger
+# control: the source must be fixed, compiler built and externally sealed.
+dev045d3-ci-source-trap = []
+# Native-only Windows FIN-04W2 split debug protocol, not a desktop action.
+# The supervised service must create/attest an AppContainer target before
+# this DAP attach grammar may be used. No arbitrary PID or launch fallback.
+fin04w2-split-protocol = []
 
 [dependencies]
 prost = "0.14"

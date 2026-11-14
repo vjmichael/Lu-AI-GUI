@@ -1,0 +1,240 @@
+# FIN-04W diagnostic reuses the original verified AppContainer launch contract.
+# Retired the unsupported package-SID CreateRestrictedToken path (Win32 87).
+# Fail closed on missing SCM/Job/NUL lease, sandbox identity or LLDB evidence.
+name: IDE FIN-04W CI-only AppContainer debugger integration
+on:
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - '.github/workflows/ide-fin04w-bridge-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fin04w-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  fin04w-windows-restricted-debugger-ci:
+    # The fixed 17.14/14.44 MSVC pin is supplied by the reviewed
+    # Windows 2022 runner image, not by Windows 2025's newer VS image.
+    # Never loosen New-PinnedWindowsToolchain.ps1 to accept an unreviewed SDK.
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact reviewed commit before native kernel tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'DEV045B_NATIVE_EXACT_HEAD=VERIFIED'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: actions/setup-python@v5
+        with:
+          # Pinned upstream Windows Python used only for OS test DLL closure.
+          python-version: '3.10.11'
+      - name: Compile protected service, bootstrap and genuine LLDB-DAP fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features 'fin04w-ci-bridge' --bin windows_recovery_service --bin windows_null_service_bootstrap --example wo6_native_dap_acceptance
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: native debugger test compilation failed' }
+      - name: Stage test-only self-measured LLDB-DAP and fixed debuggee
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $candidate=Get-Command lldb-dap.exe -ErrorAction SilentlyContinue
+          $lldb=if ($candidate) { $candidate.Source } else { 'C:\Program Files\LLVM\bin\lldb-dap.exe' }
+          if (!(Test-Path -LiteralPath $lldb)) { throw 'DENIED: no real LLDB-DAP installed; no fake adapter allowed' }
+          $origin=Split-Path $lldb -Parent
+          $clang=Join-Path $origin 'clang.exe'
+          if (!(Test-Path -LiteralPath $clang)) { throw 'DENIED: matching Clang unavailable' }
+          $symbolizer=Join-Path $origin 'llvm-symbolizer.exe'
+          if (!(Test-Path -LiteralPath $symbolizer -PathType Leaf)) {
+            throw 'DENIED: independent LLVM PDB reader missing from same reviewed native toolchain'
+          }
+          $bundle=Join-Path $env:RUNNER_TEMP 'wo6-dap-bundle'
+          New-Item -Force -ItemType Directory (Join-Path $bundle 'bin') | Out-Null
+          New-Item -Force -ItemType Directory (Join-Path $bundle 'debuggee') | Out-Null
+          Copy-Item -LiteralPath $lldb -Destination (Join-Path $bundle 'bin\lldb-dap.exe')
+          Copy-Item -LiteralPath $symbolizer -Destination (Join-Path $bundle 'bin\llvm-symbolizer.exe')
+          Get-ChildItem -LiteralPath $origin -Filter '*.dll' -File | Copy-Item -Destination (Join-Path $bundle 'bin')
+          Write-Host "DEV045D4C_INDEPENDENT_LLVM_PDB_READER_SHA256=$((Get-FileHash $symbolizer -Algorithm SHA256).Hash)"
+          Write-Host 'DEV045D4C_LLVM_READER_SCOPE=CI_ONLY_BUNDLE_BOUND'
+          # Actual PE audit on run 42391111210 identified precisely this DLL.
+          # No unpinned PATH search, arbitrary binary or general OS rights grant.
+          $python=(Get-Command python.exe -ErrorAction Stop).Source
+          $runtime=Join-Path (Split-Path $python -Parent) 'python310.dll'
+          if (!(Test-Path -LiteralPath $runtime -PathType Leaf)) {
+            throw 'DENIED: pinned Python 3.10 DLL unavailable'
+          }
+          $copied=Join-Path $bundle 'bin\python310.dll'
+          Copy-Item -LiteralPath $runtime -Destination $copied
+          Write-Host "P03_LLDB_PYTHON310_CI_DLL_SHA256=$((Get-FileHash $copied -Algorithm SHA256).Hash)"
+          Write-Host 'P03_LLDB_PYTHON310_SCOPE=CI_ONLY_NOT_RELEASE_APPROVED'
+          & $clang -g -O0 -o (Join-Path $bundle 'debuggee\wo6-selftest.exe') 'ide/supervisor/fixtures/debug/wo6_selftest.c'
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: first-party debuggee build failed' }
+          $adapter=Join-Path $bundle 'bin\lldb-dap.exe'
+          if (!(Test-Path -LiteralPath $adapter)) { throw 'DENIED: fixed native adapter missing' }
+          # LLDB-DAP --help and --version flags are NOT standardized DAP
+          # operations and may return nonzero for a healthy adapter. Real
+          # protected initialize/launch and OS cleanup below are mandatory;
+          # never substitute this file-existence check for executable proof.
+          Add-Content $env:GITHUB_ENV "LU_IDE_WO6_DAP_BUNDLE=$bundle"
+      - name: Audit bounded transitive Windows LLVM DLL imports before AppContainer admission
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $bin=Join-Path $env:LU_IDE_WO6_DAP_BUNDLE 'bin'
+          $origin=Get-Command lldb-dap.exe -ErrorAction SilentlyContinue
+          $reader=if ($origin) { Join-Path (Split-Path $origin.Source -Parent) 'llvm-readobj.exe' } else { 'C:\Program Files\LLVM\bin\llvm-readobj.exe' }
+          if (!(Test-Path -LiteralPath $reader)) {
+            Write-Host 'P03_LLDB_PE_IMPORT_AUDIT=reader_unavailable_not_a_pass'
+          } else {
+            $files=@(Get-ChildItem -LiteralPath $bin -File | Where-Object { $_.Extension -in @('.dll','.exe') })
+            if ($files.Count -gt 512) { throw 'DENIED: transitive LLVM import audit exceeds fixed entry limit' }
+            $fileCount=0
+            $missing=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            foreach ($file in $files) {
+              $fileCount++
+              $raw=@(& $reader --coff-imports $file.FullName 2>&1)
+              if ($LASTEXITCODE -ne 0) { throw 'DENIED: LLVM PE import analysis rejected a staged binary' }
+              foreach ($item in $raw) {
+                $line=([string]$item).Trim().ToLowerInvariant()
+                if (!$line.StartsWith('name: ') -or !$line.EndsWith('.dll')) { continue }
+                $dll=$line.Substring(6)
+                if ($dll -notmatch '^[a-z0-9_.-]+\.dll$') { throw 'DENIED: invalid native import module name' }
+                if ($dll.StartsWith('api-ms-win-') -or $dll.StartsWith('ext-ms-')) { continue }
+                $inBundle=Test-Path -LiteralPath (Join-Path $bin $dll)
+                $inSystem=Test-Path -LiteralPath (Join-Path $env:SystemRoot ('System32\' + $dll))
+                if (!$inBundle -and !$inSystem) { [void]$missing.Add($dll) }
+              }
+            }
+            Write-Host "P03_LLDB_NATIVE_PE_FILES_AUDITED=$fileCount"
+            foreach ($dll in @($missing | Sort-Object)) { Write-Host "P03_LLDB_UNRESOLVED_TRANSITIVE_DLL=$dll" }
+            Write-Host "P03_LLDB_UNRESOLVED_TRANSITIVE_IMPORTS=$($missing.Count)"
+            Write-Host 'P03_LLDB_PE_IMPORT_AUDIT=diagnostic_only_not_a_loader_or_containment_pass'
+          }
+      - name: Unit-test bounded loader diagnosis and independently probe fixed LLDB initialize
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m unittest ide/supervisor/fixtures/debug/test_probe_windows_dap_initialize.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed loader probe unit tests failed' }
+          python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: copied adapter cannot initialize outside AppContainer; no native containment claim' }
+          # CI-only comparison using LocalState-shaped minimal variables
+          # outside AppContainer. Distinguishes environment construction from
+          # the genuine kernel token/ACL issue without granting new rights.
+          python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py --mirrored-env
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: mirrored environment diagnostic itself failed' }
+      - name: Prepare exact offline MSVC and SDK for DEV-04.5B project build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/New-PinnedWindowsToolchain.ps1 -OutputRoot (Join-Path $env:RUNNER_TEMP 'dev045b-offline-msvc') -LockPath (Join-Path $env:RUNNER_TEMP 'dev045b-observed-toolchain.json') -RustVersion '1.99.1' -SdkVersion '10.0.26100.0' -VsVersionPrefix '17.14.' -MsvcVersionPrefix '14.44.'
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: reviewed native Windows compiler bundle could not be staged' }
+          $lock=Get-Content (Join-Path $env:RUNNER_TEMP 'dev045b-observed-toolchain.json') -Raw | ConvertFrom-Json
+          if ($lock.windowsSdk -ne '10.0.26100.0' -or $lock.target -ne 'x86_64-pc-windows-msvc' -or $lock.reviewedPinMatched -or $lock.bundleSha256.Length -ne 64) {
+            throw 'DENIED: measured Windows SDK/LLVM Cargo bundle lock invalid'
+          }
+          Write-Host 'DEV045B_WINDOWS_OFFLINE_TOOLCHAIN=CI_ONLY_SELF_MEASURED'
+      # Observer runs OUTSIDE the sandbox. It does not modify execution
+      # authority and cannot convert a failure into a pass.
+      - name: Start signed Windows kernel denied-operation observer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/debug/Invoke-FIN04WDeniedOperationTrace.ps1 -Phase Start -Root (Join-Path $env:RUNNER_TEMP 'fin04w-native-op-dx')
+      - name: CI-only FIN-04W zero-capability AppContainer debugger with original SCM Job and receipts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $service=(Resolve-Path 'ide/supervisor/target/debug/windows_recovery_service.exe').Path
+          $hostExe=(Resolve-Path 'ide/supervisor/target/debug/examples/wo6_native_dap_acceptance.exe').Path
+          $bootstrap=(Resolve-Path 'ide/supervisor/target/debug/windows_null_service_bootstrap.exe').Path
+          $installed=$false
+          $nulTouched=$false
+          try {
+            & 'ide/supervisor/fixtures/Install-ProtectedRecoveryService.ps1' -ServiceExecutable $service -ExpectedServiceSha256 (Get-FileHash $service -Algorithm SHA256).Hash -ApprovedHostExecutable $hostExe -ExpectedHostSha256 (Get-FileHash $hostExe -Algorithm SHA256).Hash -CiAcceptanceUnsigned -Start
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: restricted service installation failed' }
+            $installed=$true
+            $nulTouched=$true
+            & $bootstrap --grant-fixed-service
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: NUL bootstrap grant failed' }
+            & $bootstrap --verify-fixed-service
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact service NUL readback failed' }
+            $env:LU_IDE_WO6_DAP_TRUSTED_SERVICE=$service
+            $env:LU_IDE_E2_NATIVE_TRACE='1'
+            # Debug-only selection now uses the SAME documented AppContainer
+            # SECURITY_CAPABILITIES process-creation contract. Never grants a
+            # lower-integrity non-AppContainer fallback or release authority.
+            $env:LU_IDE_FIN04W_CI_BRIDGE='1'
+            & $hostExe
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected native debugger normal acceptance failed' }
+            & $hostExe --cancel
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected native debugger cancellation/restart failed' }
+            # One and only verified project-DAP case: a genuine separately
+            # approved protected Cargo build → PE/PDB seal → SCM/AppContainer
+            # LLDB stop/threads/stack → durable restart + one-use replay denial.
+            & $hostExe --project-debug
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: real protected Cargo to project LLDB failed' }
+            & $hostExe --project-debug-cancel
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: real protected project LLDB cancellation, SCM Job reaping or durable receipts failed' }
+            # D4 has its own read-only OS module evidence, not a PDB line
+            # or thread RIP success. It must use this same restricted SCM
+            # service + AppContainer Job, never a standalone process.
+            & $hostExe --project-debug-module
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: live Job-scoped PE base and original durable build/debug receipts not independently verified' }
+            & $hostExe --project-debug-thread
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: real SCM Job scoped read-only thread context unavailable; no inferred PDB acceptance' }
+            & $hostExe --project-debug-line
+            if ($LASTEXITCODE -ne 0) {
+              throw 'DENIED: REAL protected LLDB Job/RIP, independent sealed PE/PDB line and two fsynced receipt chains did not all agree'
+            }
+            & $hostExe --project-debug-line-cancel
+            if ($LASTEXITCODE -ne 0) {
+              throw 'DENIED: REAL protected LLDB/PDB stop did not produce fsynced cancellation, full Job-tree termination and replay denial'
+            }
+          } finally {
+            if ($nulTouched) {
+              & $bootstrap --revoke-fixed-service
+              if ($LASTEXITCODE -ne 0) { throw 'DENIED: exact service NUL revoke failed' }
+            }
+            if ($installed) {
+              & sc.exe delete LuIdeRecoveryBroker 2>$null | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected SCM service delete failed' }
+            }
+            $global:LASTEXITCODE=0
+          }
+      - name: Collect LLDB-DAP exact denied operations
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/debug/Invoke-FIN04WDeniedOperationTrace.ps1 -Phase Collect -Root (Join-Path $env:RUNNER_TEMP 'fin04w-native-op-dx')
+      - name: Preserve sanitized kernel-op findings (not raw PML or CSV)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fin04w-signed-kernel-denied-op-summary
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/fin04w-native-op-dx/denied-operation-summary.json
+            ${{ runner.temp }}/fin04w-native-op-dx/monitor-provenance.json
+      - name: Upload CI-only observed compiler identity
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev045b-windows-observed-msvc-lock
+          path: ${{ runner.temp }}/dev045b-observed-toolchain.json
+          if-no-files-found: ignore
+      - name: Label evidence
+        if: always()
+        run: echo "Test-only independently measured binaries; NOT license/signing/installed debugger release approval."

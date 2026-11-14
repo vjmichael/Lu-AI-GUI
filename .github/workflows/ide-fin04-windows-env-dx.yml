@@ -1,0 +1,233 @@
+# FIN-04 diagnostic only. Does not grant debugger or production authorization.
+name: IDE FIN-04 Windows environment compatibility DX
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ide-fin04-windows-env-dx.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  win2022-diagnostic:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - name: OS, restricted-token and LLDB baseline diagnostics
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'Fin04WindowsDx'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          $os=Get-CimInstance Win32_OperatingSystem
+          $p=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+          $r=[ordered]@{schema='lu.fin04.win_env_dx.v1';source_sha=$env:GITHUB_SHA;os=$os.Caption;version=$os.Version;build=$os.BuildNumber;interactive=[Environment]::UserInteractive;elevated=$p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);lldb='NOT_RUN'}
+          $cs=@'
+          using System;
+          using System.Runtime.InteropServices;
+          public class Fin04Dx {
+            [StructLayout(LayoutKind.Sequential)] public struct SA {public IntPtr sid;public uint attr;}
+            [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+            [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+            [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr CreateJobObject(IntPtr a,string name);
+            [DllImport("advapi32.dll",SetLastError=true)] static extern bool OpenProcessToken(IntPtr p,uint access,out IntPtr t);
+            [DllImport("advapi32.dll",SetLastError=true)] static extern bool CreateRestrictedToken(IntPtr t,uint flags,uint n,IntPtr d,uint pn,IntPtr p,uint c,IntPtr a,out IntPtr result);
+            [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool ConvertStringSidToSid(string s,out IntPtr a);
+            [DllImport("advapi32.dll")] static extern IntPtr FreeSid(IntPtr sid);
+            [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr h);
+            [DllImport("userenv.dll",CharSet=CharSet.Unicode)] static extern int DeriveAppContainerSidFromAppContainerName(string s,out IntPtr sid);
+            public static string Job(){IntPtr j=CreateJobObject(IntPtr.Zero,null);if(j==IntPtr.Zero)return "win32_"+Marshal.GetLastWin32Error();CloseHandle(j);return "created_discarded";}
+            public static string Token(int mode){
+              IntPtr t=IntPtr.Zero,r=IntPtr.Zero,a=IntPtr.Zero,g=IntPtr.Zero,n=IntPtr.Zero,m=IntPtr.Zero;bool owned=false;
+              try {
+                if(!OpenProcessToken(GetCurrentProcess(),10,out t))return "open_win32_"+Marshal.GetLastWin32Error();
+                int hr=DeriveAppContainerSidFromAppContainerName("LuIdeFin04DxTemp",out a);owned=(hr==0&&a!=IntPtr.Zero);
+                if(mode==3&&!owned)return "derive_hresult_"+hr.ToString("X8");
+                if(!ConvertStringSidToSid("S-1-15-2-1",out g))return "global_sid_error";
+                if(!ConvertStringSidToSid("S-1-5-12",out n))return "nt_sid_error";
+                IntPtr[] s=mode==0?new IntPtr[0]:mode==1?new[]{n}:mode==2?new[]{g}:new[]{a,g};
+                int stride=Marshal.SizeOf(typeof(SA));if(s.Length>0){m=Marshal.AllocHGlobal(stride*s.Length);for(int i=0;i<s.Length;i++)Marshal.StructureToPtr(new SA{sid=s[i],attr=0},IntPtr.Add(m,i*stride),false);}
+                bool ok=CreateRestrictedToken(t,5,0,IntPtr.Zero,0,IntPtr.Zero,(uint)s.Length,m,out r);
+                int err=ok?0:Marshal.GetLastWin32Error();return ok?"accepted_discarded":"win32_"+err;
+              } finally {
+                if(m!=IntPtr.Zero)Marshal.FreeHGlobal(m);if(r!=IntPtr.Zero)CloseHandle(r);if(t!=IntPtr.Zero)CloseHandle(t);
+                if(owned)FreeSid(a);if(g!=IntPtr.Zero)LocalFree(g);if(n!=IntPtr.Zero)LocalFree(n);
+              }
+            }
+          }
+          '@
+          try{
+            Add-Type -TypeDefinition $cs -Language CSharp -ErrorAction Stop
+            $r.job_create=[Fin04Dx]::Job()
+            $r.token_none=[Fin04Dx]::Token(0)
+            $r.token_nt_restricted=[Fin04Dx]::Token(1)
+            $r.token_all_packages=[Fin04Dx]::Token(2)
+            $r.token_app_and_all=[Fin04Dx]::Token(3)
+          }catch{$r.native_api_exception=$_.Exception.GetType().Name}
+          $lldb='C:\Program Files\LLVM\bin\lldb.exe'
+          $clang='C:\Program Files\LLVM\bin\clang.exe'
+          if(!(Test-Path $lldb)){$cmd=Get-Command lldb.exe -ErrorAction SilentlyContinue;if($cmd){$lldb=$cmd.Source}}
+          if(!(Test-Path $clang)){$cmd=Get-Command clang.exe -ErrorAction SilentlyContinue;if($cmd){$clang=$cmd.Source}}
+          if(!(Test-Path $lldb)){$r.lldb='SKIP_lldb_missing'}
+          elseif(!(Test-Path $clang)){$r.lldb='SKIP_compiler_missing'}
+          else{
+            $r.lldb_sha256=(Get-FileHash $lldb -Algorithm SHA256).Hash.ToLowerInvariant()
+            $src=Join-Path $out 'main.c';$exe=Join-Path $out 'main.exe'
+            '__declspec(noinline) int f(int n){volatile int v=n+1;return v;} int main(void){volatile int v=f(6);return v==7?0:1;}'|Set-Content $src -Encoding Ascii
+            $compileOutput=& $clang -g -O0 -gcodeview -o $exe $src 2>&1
+            $compileCode=$LASTEXITCODE
+            $compileOutput|Select-Object -Last 25|Set-Content (Join-Path $out 'compile.log')
+            if($compileCode -ne 0 -or !(Test-Path $exe)){$r.lldb='SKIP_compilation_failed'}
+            else{
+              $stdout=Join-Path $out 'lldb.out';$stderr=Join-Path $out 'lldb.err'
+              $args=@('--batch','--no-lldbinit','-o','"breakpoint set --name main"','-o','run','-o','"thread list"','--',('"'+$exe+'"'))
+              $proc=Start-Process -FilePath $lldb -ArgumentList $args -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+              if(-not $proc.WaitForExit(45000)){try{$proc.Kill()}catch{};$r.lldb='FAIL_timeout'}
+              else{
+                $output=(Get-Content $stdout -Raw)+(Get-Content $stderr -Raw)
+                $r.lldb_exit=$proc.ExitCode
+                $r.lldb=if($output -match 'stop reason\s*=\s*breakpoint' -and $output -match '(?i)thread\s*#?[0-9]+'){'PASS_stopped_thread'}else{'FAIL_no_stopped_thread'}
+              }
+            }
+          }
+          $r.note='Diagnostics only: not a Lu security grant, human click, kernel debugger custody or release gate'
+          $r|ConvertTo-Json -Depth 4|Set-Content (Join-Path $out 'report.json')
+          Get-Content (Join-Path $out 'report.json')
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      # Python runtime is deliberately provisioned AFTER the first baseline:
+      # do not conceal the native hosted-VM 0xC0000135 by changing PATH first.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10.11'
+      - name: Independently stage and test CLI and actual LLDB-DAP with pinned Python DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $folder=Join-Path $env:GITHUB_WORKSPACE 'Fin04WindowsDx'
+          $root=Join-Path $env:RUNNER_TEMP 'Fin04WindowsDxRuntime'
+          $bin=Join-Path $root 'bin'
+          New-Item -ItemType Directory -Path $bin -Force | Out-Null
+          $r=[ordered]@{
+            schema='lu.fin04.windows_dll_probe.v1'
+            exact_head=$env:GITHUB_SHA
+            cli_staged='NOT_TESTED'
+            dap_staged='NOT_TESTED'
+            dll_closure='NOT_TESTED'
+            python_runtime='python310.dll'
+            comparison='unbundled_cli_vs_python310_staged_cli_and_real_DAP'
+            note='Disposable unconfined loader diagnosis; not original SCM/Job/LLDB release authority'
+          }
+          $original='C:\Program Files\LLVM\bin'
+          $adapter=Get-Command lldb-dap.exe -ErrorAction SilentlyContinue
+          if($adapter){$original=Split-Path $adapter.Source -Parent}
+          $lldb=Join-Path $original 'lldb.exe'
+          $dap=Join-Path $original 'lldb-dap.exe'
+          $python=(Get-Command python.exe -ErrorAction Stop).Source
+          $runtime=Join-Path (Split-Path $python -Parent) 'python310.dll'
+          if(!(Test-Path $lldb -PathType Leaf) -or !(Test-Path $dap -PathType Leaf)){
+            $r.cli_staged='SKIP_reviewed_LLVM_binary_missing'
+            $r.dap_staged='SKIP_reviewed_LLVM_binary_missing'
+          }elseif(!(Test-Path $runtime -PathType Leaf)){
+            $r.cli_staged='SKIP_pinned_Python_DLL_missing'
+            $r.dap_staged='SKIP_pinned_Python_DLL_missing'
+          }else{
+            Copy-Item -LiteralPath $lldb -Destination (Join-Path $bin 'lldb.exe')
+            Copy-Item -LiteralPath $dap -Destination (Join-Path $bin 'lldb-dap.exe')
+            Get-ChildItem -LiteralPath $original -Filter '*.dll' -File | Copy-Item -Destination $bin
+            # Same CLI, all other LLVM DLLs and debuggee. Remove only
+            # Python 3.10 from disposable bin before the first run.
+            $stagedPython=Join-Path $bin 'python310.dll'
+            if(Test-Path -LiteralPath $stagedPython){Remove-Item -LiteralPath $stagedPython -Force}
+            $testTarget=Join-Path $folder 'main.exe'
+            if(Test-Path -LiteralPath $testTarget -PathType Leaf) {
+              $withoutOut=Join-Path $folder 'without-python310.out'
+              $withoutErr=Join-Path $folder 'without-python310.err'
+              $unmodifiedPath=$env:PATH
+              try {
+                $env:PATH=$bin + ';' + (Join-Path $env:SystemRoot 'System32')
+                $ablateArgs=@('--batch','--no-lldbinit','-o','"breakpoint set --name main"','-o','run','-o','"thread list"','--',('"'+$testTarget+'"'))
+                $without=Start-Process -FilePath (Join-Path $bin 'lldb.exe') -ArgumentList $ablateArgs -PassThru -NoNewWindow -RedirectStandardOutput $withoutOut -RedirectStandardError $withoutErr
+                if(-not $without.WaitForExit(30000)){
+                  try{$without.Kill()}catch{}
+                  $r.cli_without_python310='FAIL_timeout'
+                }else{
+                  $r.cli_without_python310_exit=$without.ExitCode
+                  $r.cli_without_python310=if($without.ExitCode -eq -1073741515){'FAIL_missing_dll_0xC0000135'}else{'OTHER_exit_' + $without.ExitCode}
+                }
+              }finally{$env:PATH=$unmodifiedPath}
+            }else{$r.cli_without_python310='SKIP_debuggee_missing'}
+            # Only add pinned Python DLL before the second staged LLDB run.
+            Copy-Item -LiteralPath $runtime -Destination $stagedPython -Force
+            $r.cli_sha256=(Get-FileHash $lldb -Algorithm SHA256).Hash.ToLowerInvariant()
+            $r.dap_sha256=(Get-FileHash $dap -Algorithm SHA256).Hash.ToLowerInvariant()
+            $r.python310_sha256=(Get-FileHash $runtime -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Previous exact hosted-run SHA256 pinned by original FIN-04W run
+            # #43549136359. A runtime change is evidence, not authority.
+            $r.python310_matches_reviewed_ci_bytes=($r.python310_sha256 -eq '14b06796f288bc6599e458fb23a944ab0c843e9868058f02a91d4606533505ed')
+            $readobj=Join-Path $original 'llvm-readobj.exe'
+            if(Test-Path -LiteralPath $readobj -PathType Leaf){
+              $missing=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+              $files=@(Get-ChildItem -LiteralPath $bin -File | Where-Object {$_.Extension -in @('.exe','.dll')})
+              if($files.Count -gt 512){throw 'DENIED: DLL audit exceeds bounded file count'}
+              foreach($file in $files){
+                $raw=@(& $readobj --coff-imports $file.FullName 2>&1)
+                if($LASTEXITCODE -ne 0){throw 'DENIED: import reader rejected staged image'}
+                foreach($line in $raw){
+                  $name=([string]$line).Trim().ToLowerInvariant()
+                  if(!$name.StartsWith('name: ') -or !$name.EndsWith('.dll')){continue}
+                  $dll=$name.Substring(6)
+                  if($dll -notmatch '^[a-z0-9_.-]+\.dll$'){throw 'DENIED: malformed PE DLL import name'}
+                  if($dll.StartsWith('api-ms-win-') -or $dll.StartsWith('ext-ms-')){continue}
+                  if(!(Test-Path -LiteralPath (Join-Path $bin $dll)) -and
+                     !(Test-Path -LiteralPath (Join-Path $env:SystemRoot ('System32\' + $dll)))){
+                    [void]$missing.Add($dll)
+                  }
+                }
+              }
+              $r.dll_closure=if($missing.Count -eq 0){'STATIC_DIRECT_IMPORTS_RESOLVED'}else{'UNRESOLVED_STATIC_IMPORTS'}
+              $r.unresolved_direct_imports=@($missing | Sort-Object)
+            }else{$r.dll_closure='SKIP_llvm_readobj_missing'}
+            $testExe=Join-Path $folder 'main.exe'
+            if(Test-Path -LiteralPath $testExe -PathType Leaf){
+              $stdout=Join-Path $folder 'staged-lldb.out'
+              $stderr=Join-Path $folder 'staged-lldb.err'
+              $args=@('--batch','--no-lldbinit','-o','"breakpoint set --name main"','-o','run','-o','"thread list"','--',('"'+$testExe+'"'))
+              $beforeSecond=$env:PATH
+              try {
+                $env:PATH=$bin + ';' + (Join-Path $env:SystemRoot 'System32')
+                $proc=Start-Process -FilePath (Join-Path $bin 'lldb.exe') -ArgumentList $args -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+                if(-not $proc.WaitForExit(40000)){
+                  try{$proc.Kill()}catch{}
+                  $r.cli_staged='FAIL_timeout'
+                }else{
+                  $code=$proc.ExitCode
+                  $r.cli_exit_uint32=([uint32]($code -band 0xffffffff)).ToString('X8')
+                  $output=(Get-Content -Raw $stdout)+(Get-Content -Raw $stderr)
+                  $r.cli_staged=if($code -eq 0 -and $output -match 'stop reason\s*=\s*breakpoint' -and $output -match '(?i)thread\s*#?[0-9]+'){'PASS_stopped_thread'}else{'FAIL_no_verified_stop'}
+                }
+              }finally{$env:PATH=$beforeSecond}
+            }else{$r.cli_staged='SKIP_compiled_debuggee_missing'}
+            $env:LU_IDE_WO6_DAP_BUNDLE=$root
+            $probe=@(& python ide/supervisor/fixtures/debug/probe_windows_dap_initialize.py 2>&1)
+            $r.dap_probe_exit=$LASTEXITCODE
+            $r.dap_staged=if($LASTEXITCODE -eq 0 -and ($probe -join ' ') -match 'initialize_pass_no_containment_claim'){'PASS_initialize_no_containment'}else{'FAIL_initialize'}
+            # Only the bounded classification line, never arbitrary child stderr.
+            $r.dap_probe_class=(@($probe|Where-Object{[string]$_ -match '^PROTECTED_WO6_DAP_PREFLIGHT='})|Select-Object -First 1) -join ''
+          }
+          $r.python310_single_file_fix_confirmed=(
+            $r.cli_without_python310 -eq 'FAIL_missing_dll_0xC0000135' -and
+            $r.cli_staged -eq 'PASS_stopped_thread' -and
+            $r.python310_matches_reviewed_ci_bytes -eq $true)
+          $r|ConvertTo-Json -Depth 6 | Set-Content (Join-Path $folder 'runtime-report.json')
+          Get-Content (Join-Path $folder 'runtime-report.json')
+          Write-Host FIN04_BUNDLED_LLDB_NATIVE_DIAG_NOT_APPROVAL
+      - name: Retain diagnostic observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fin04-win2022-dx
+          retention-days: 14
+          if-no-files-found: warn
+          path: Fin04WindowsDx

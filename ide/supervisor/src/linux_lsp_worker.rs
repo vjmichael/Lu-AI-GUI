@@ -278,6 +278,59 @@ impl LinuxLspProcess {
             "PROTECTED_LINUX_DAP_MEMORY_OOM_HIT={}",
             kernel_limit_hit(&self.group.dir.join("memory.events"), "oom_kill")
         );
+        // Count only: no cgroup member identities or /proc values leave
+        // this CI-only OS diagnostic. The fixed source-debug fixture can
+        // distinguish a live debugger with no debuggee from a two-process
+        // stop without changing the cgroup's permissions or membership.
+        let member_count = std::fs::read_to_string(self.group.dir.join("pids.current"))
+            .ok().and_then(|v| v.trim().parse::<u64>().ok());
+        eprintln!("PROTECTED_LINUX_DAP_CGROUP_MEMBER_COUNT_CLASS={}", match member_count {
+            Some(0) => "empty",
+            Some(1) => "one",
+            Some(_) => "multiple",
+            None => "unavailable",
+        });
+        // Separate a live traced-stop from a running target or missing
+        // debuggee. Only process IDs supplied by the already-owned native
+        // cgroup are sampled, with a strict bound and fixed output labels.
+        // Observations are diagnostic, NOT an OS-stop acceptance witness:
+        // the original independently sealed ELF/PC/DWARF gate still applies.
+        let process_state = std::fs::read_to_string(self.group.dir.join("cgroup.procs"))
+            .ok()
+            .filter(|data| data.len() <= 4096)
+            .and_then(|data| {
+                let members: Vec<_> = data.lines().collect();
+                if members.len() > 32 {
+                    return None;
+                }
+                let mut tracing = false;
+                let mut traced_stop = false;
+                for line in members {
+                    let pid = line.parse::<u32>().ok()?;
+                    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+                    if status.len() > 8192 {
+                        return None;
+                    }
+                    let tracer = status.lines()
+                        .find_map(|row| row.strip_prefix("TracerPid:"))
+                        .and_then(|v| v.trim().parse::<u32>().ok())?;
+                    let state = status.lines()
+                        .find_map(|row| row.strip_prefix("State:"))?.trim_start();
+                    if tracer != 0 {
+                        tracing = true;
+                        if state.starts_with("t ") {
+                            traced_stop = true;
+                        }
+                    }
+                }
+                Some((tracing, traced_stop))
+            });
+        eprintln!("PROTECTED_LINUX_DAP_CGROUP_TRACE_CLASS={}", match process_state {
+            Some((_, true)) => "traced_stop_present_not_attested",
+            Some((true, false)) => "traced_running_or_other_state",
+            Some((false, false)) => "no_traced_member",
+            None => "unavailable",
+        });
         if let Some(stderr) = &mut self.debug_stderr {
             let fd = stderr.as_raw_fd();
             let readable = poll_fd(fd, libc::POLLIN | libc::POLLHUP, 0).unwrap_or(false);
@@ -634,7 +687,10 @@ fn start_linux_dap_inner(
         }
         _ => return Err(SupervisorError::InvalidPlan),
     }
-    let executable = "lldb-dap";
+    // Genuine fixed-target probes established that the SHA-verified copied
+    // LLVM18 adapter launches only at the distro executable location.
+    // Keep reviewed bytes and overlay only inside the confined namespace.
+    const LLVM18_DAP_ENTRY: &str = "/usr/bin/lldb-dap-18";
     let args: &[&str] = &[];
     if plan.source_head != current_native_head
         || plan.input_snapshot_sha256 != input.seal.source_sha256
@@ -653,6 +709,15 @@ fn start_linux_dap_inner(
         return Err(SupervisorError::WrongProjectOrSource);
     }
     native_linux_lsp_trace("bundle_digest_verified");
+    // Require an existing root-owned non-writable LLVM18 distro entry.
+    // Never execute those host bytes: bind the verified bundle over it
+    // inside the already cgroup-contained and unprivileged Bubblewrap.
+    let distro_entry = fs::metadata(LLVM18_DAP_ENTRY).map_err(|_| denied())?;
+    if !distro_entry.is_file() || distro_entry.uid() != 0 || distro_entry.mode() & 0o022 != 0 {
+        return Err(denied());
+    }
+    let reviewed_adapter = release_root.join("bin/lldb-dap");
+    ensure_root_owned_tool(&reviewed_adapter)?;
     ensure_root_owned_tool(Path::new(BWRAP))?;
     native_linux_lsp_trace("root_owned_bwrap_verified");
     let group = make_cgroup(job_id, plan)?;
@@ -664,7 +729,7 @@ fn start_linux_dap_inner(
         .map_err(|_| denied())?;
     native_linux_lsp_trace("kernel_cgroup_procs_handle_open");
     let descriptor = proc_file.as_raw_fd();
-    let native_executable = format!("/ls/bin/{executable}");
+    let native_executable = LLVM18_DAP_ENTRY;
     let mut command = Command::new(BWRAP);
     command
         .env_clear()
@@ -690,6 +755,11 @@ fn start_linux_dap_inner(
         .arg("--ro-bind")
         .arg(release_root)
         .arg("/ls")
+        // Source: sealed root-owned host bundle. Destination: fixed guest
+        // distro LLVM18 path; no host OS change or uncontained fallback.
+        .arg("--ro-bind")
+        .arg(&reviewed_adapter)
+        .arg(LLVM18_DAP_ENTRY)
         .arg("--tmpfs")
         .arg("/tmp")
         .arg("--proc")
@@ -841,6 +911,12 @@ impl LinuxDapSession {
             .ok_or(SupervisorError::InvalidPlan)?;
         self.gateway.launch_verified_project(target)
     }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn launch_project_source_trap_for_ci(&mut self) -> Result<(), SupervisorError> {
+        let target = self.project_debuggee.as_deref()
+            .ok_or(SupervisorError::InvalidPlan)?;
+        self.gateway.launch_verified_project_source_trap_for_ci(target)
+    }
     pub fn phase(&self) -> lu_ide_workspace::dap_session::DapPhase {
         self.gateway.phase()
     }
@@ -851,6 +927,26 @@ impl LinuxDapSession {
     }
     pub fn configuration_needed(&self) -> bool {
         self.gateway.configuration_needed()
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn ci_configuration_done_acknowledged(&self) -> bool {
+        self.gateway.ci_configuration_done_acknowledged()
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn ci_fixed_source_breakpoint_needed(&self) -> bool {
+        self.gateway.ci_fixed_source_breakpoint_needed()
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn ci_set_fixed_source_breakpoint(&mut self) -> Result<(), SupervisorError> {
+        self.gateway.ci_set_fixed_source_breakpoint()
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn ci_fixed_source_breakpoint_verified(&self) -> bool {
+        self.gateway.ci_fixed_source_breakpoint_verified()
+    }
+    #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+    pub fn ci_trace_absent_source_stop(&mut self) {
+        self.gateway.ci_trace_absent_source_stop();
     }
     pub fn configuration_done(&mut self) -> Result<(), SupervisorError> {
         self.gateway.configuration_done()
@@ -907,6 +1003,8 @@ impl LinuxDapSession {
         {
             return Err(SupervisorError::InvalidTransition);
         }
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=plan_running_verified");
         let debug_receipts = supervisor.receipt_history(job_id)?;
         if !debug_receipts.iter().any(|r| {
             r.body.phase == JobPhase::Authorized && r.body.plan_sha256 == self.native_plan_sha256
@@ -923,19 +1021,32 @@ impl LinuxDapSession {
         }) {
             return Err(SupervisorError::InvalidTransition);
         }
-        let candidate = self
-            .gateway
-            .source_candidate()
-            .ok_or(SupervisorError::NoContainment)?;
-        let pc = candidate
-            .instruction_address
-            .ok_or(SupervisorError::NoContainment)?;
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=both_receipt_chains_verified");
+        let candidate = self.gateway.source_candidate().ok_or_else(|| {
+            #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+            eprintln!("FIN04_D3_LINUX_DENIAL=correlated_dap_stack_lacks_source");
+            SupervisorError::NoContainment
+        })?;
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=correlated_dap_source_present");
+        let pc = candidate.instruction_address.ok_or_else(|| {
+            #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+            eprintln!("FIN04_D3_LINUX_DENIAL=correlated_dap_stack_lacks_pc");
+            SupervisorError::NoContainment
+        })?;
         // The source path must be the native-only read-only snapshot mounted
         // as /workspace; no arbitrary path or suffix/basename lookup.
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=dap_stopped_pc_present");
         let relative = candidate
             .adapter_path
             .strip_prefix("/workspace/")
-            .ok_or(SupervisorError::WrongProjectOrSource)?;
+            .ok_or_else(|| {
+                #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+                eprintln!("FIN04_D3_LINUX_DENIAL=source_outside_sealed_workspace");
+                SupervisorError::WrongProjectOrSource
+            })?;
         let clean = std::path::Path::new(relative);
         if clean.components().count() == 0
             || !clean
@@ -965,6 +1076,8 @@ impl LinuxDapSession {
             &native_candidate,
         )
         .map_err(|_| SupervisorError::WrongProjectOrSource)?;
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=source_snapshot_line_verified");
         let binary = target.root.join(target.confined_relative_binary());
         let kernel = observe_linux_project_pc(
             &self.native_cgroup_dir,
@@ -973,6 +1086,8 @@ impl LinuxDapSession {
             &target.binary.binary_sha256,
             pc,
         )?;
+        #[cfg(all(debug_assertions, feature = "dev045d3-ci-oracle"))]
+        eprintln!("FIN04_D3_LINUX_STAGE=live_kernel_pc_and_cgroup_verified");
         // Second validation closes source/binary TOCTOU after /proc maps.
         target.verify()?;
         verify_input(&self.source_input).map_err(|_| SupervisorError::WrongProjectOrSource)?;
@@ -1022,7 +1137,9 @@ impl LinuxDapSession {
         {
             let mut witness =
                 self.verify_stopped_project_image(supervisor, job_id, plan, target)?;
+            eprintln!("FIN04_D3_LINUX_STAGE=kernel_stop_lineage_complete");
             crate::native_kernel_pc::verify_independent_dwarf_line_for_ci(&mut witness, target)?;
+            eprintln!("FIN04_D3_LINUX_STAGE=independent_llvm_dwarf_line_verified");
             Ok(witness)
         }
     }

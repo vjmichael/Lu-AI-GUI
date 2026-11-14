@@ -1,0 +1,186 @@
+# CI-only fixed harmless Windows worker, not LLDB and not installer authority.
+# Separate from the audit-only SCM and grammar jobs.
+name: IDE FIN-04W2 native fixed worker kernel and WFP denial
+on:
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - '.github/workflows/ide-fin04w2-contained-native.yml'
+permissions:
+  contents: read
+concurrency:
+  group: fin04w2-contained-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-windows-fixed-worker:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact original source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo 'FIN04W2_FIXED_WORKER_EXACT_SOURCE=VERIFIED'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Compile ONLY distinct SCM broker and harmless pinned fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features fin04w2-contained-probe --bin windows_fin04w2_debugger_service --bin windows_fin04w2_fixed_probe
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: fixed native service/worker compilation failed' }
+          Write-Host 'FIN04W2_FIXED_WORKER_COMPILED=PASS'
+      - name: Windows service Job, owner-file ACL and WFP native matrix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $name='LuIdeDebuggerBroker'
+          $ruleName='LuIdeFin04W2FixedWorkerDeny'
+          $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal=[Security.Principal.WindowsPrincipal]::new($identity)
+          if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+            throw 'DENIED: native CI fixture requires elevation'
+          }
+          $service=(Resolve-Path 'ide/supervisor/target/debug/windows_fin04w2_debugger_service.exe').Path
+          $worker=(Resolve-Path 'ide/supervisor/target/debug/windows_fin04w2_fixed_probe.exe').Path
+          $serviceSha=(Get-FileHash $service -Algorithm SHA256).Hash
+          $workerSha=(Get-FileHash $worker -Algorithm SHA256).Hash
+          $hostExe=(Get-Process -Id $PID).Path
+          $hostSha=(Get-FileHash $hostExe -Algorithm SHA256).Hash
+          $root=Join-Path $env:ProgramData 'LuIDEDebuggerBroker'
+          $foreign=Join-Path $env:RUNNER_TEMP 'fin04w2-owner-only-probe.txt'
+          $sid='NT SERVICE\LuIdeDebuggerBroker'
+          $system='NT AUTHORITY\SYSTEM'
+          $created=$false
+          $ruleCreated=$false
+          if (Get-Service -Name $name -ErrorAction SilentlyContinue) { throw 'DENIED: service already installed' }
+          if (Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue) { throw 'DENIED: preexisting WFP deny rule' }
+          if (Test-Path -LiteralPath $root) { throw 'DENIED: existing debugger evidence root' }
+          if (Test-Path -LiteralPath $foreign) { throw 'DENIED: existing owner-only seed' }
+          # A defined rule is not enforcement when the active firewall
+          # profile is disabled. Fail rather than misattribute an offline
+          # socket failure to WFP.
+          $activeProfiles=@(Get-NetConnectionProfile | Where-Object {
+            $_.IPv4Connectivity -ne 'Disconnected'
+          } | ForEach-Object {
+            if ([string]$_.NetworkCategory -eq 'DomainAuthenticated') { 'Domain' }
+            else { [string]$_.NetworkCategory }
+          } | Select-Object -Unique)
+          if ($activeProfiles.Count -eq 0) { throw 'DENIED: no active Windows firewall profile to attest' }
+          foreach ($profileName in $activeProfiles) {
+            $profile=Get-NetFirewallProfile -Name $profileName -ErrorAction Stop
+            if (!$profile.Enabled) { throw 'DENIED: active WFP/Defender firewall profile is disabled' }
+          }
+          $baseline=[Net.Sockets.TcpClient]::new()
+          try {
+            $async=$baseline.BeginConnect('1.1.1.1',443,$null,$null)
+            if (!$async.AsyncWaitHandle.WaitOne(4000)) { throw 'DENIED: no positive host TCP baseline' }
+            $baseline.EndConnect($async)
+          } finally { $baseline.Dispose() }
+          Write-Host 'FIN04W2_HOST_TCP_BASELINE=PASS'
+          try {
+            Set-Content -LiteralPath $foreign -Value 'owner-private-not-for-service' -NoNewline
+            & icacls.exe $foreign /inheritance:r /grant:r ('*'+$identity.User.Value+':F') ($system+':F') | Out-Null
+            if ($LASTEXITCODE -ne 0 -or (Get-Content -LiteralPath $foreign -Raw) -ne 'owner-private-not-for-service') {
+              throw 'DENIED: exact owner-only ACL fixture cannot be independently verified'
+            }
+            $rule=New-NetFirewallRule -Name $ruleName -DisplayName $ruleName -Program $worker -Direction Outbound -Action Block -Enabled True -Profile Any -RemoteAddress Any
+            $ruleCreated=$true
+            $observed=Get-NetFirewallRule -Name $ruleName -PolicyStore ActiveStore -ErrorAction Stop
+            $app=$observed | Get-NetFirewallApplicationFilter
+            $addr=$observed | Get-NetFirewallAddressFilter
+            if ($observed.Action -ne 'Block' -or $observed.Direction -ne 'Outbound' -or $observed.Enabled -ne 'True' -or
+                ![string]::Equals([string]$app.Program,[string]$worker,[StringComparison]::OrdinalIgnoreCase) -or
+                [string]$addr.RemoteAddress -ne 'Any') {
+              throw 'DENIED: Windows WFP application filter actual policy mismatch'
+            }
+            Write-Host 'FIN04W2_WFP_ACTIVESTORE_EXACT_PROGRAM_DENY=PASS'
+            $scArgs=@('create',$name,'binPath=',$service,'type=','own','start=','demand','obj=','NT AUTHORITY\LocalService')
+            & sc.exe @scArgs | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: service creation failed' }
+            $created=$true
+            & sc.exe sidtype $name restricted | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: restricted service SID setup failed' }
+            & sc.exe privs $name 'SeChangeNotifyPrivilege/SeImpersonatePrivilege' | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: minimal restricted service privileges setup failed' }
+            New-Item -Force -ItemType Directory -Path $root | Out-Null
+            $plan=[ordered]@{
+              projectId=('ide-'+('a'*32))
+              recipeId='dap_lldb_project'
+              sourceHead=('b'*40)
+              inputSnapshotSha256=('c'*64)
+              manifestSha256=('d'*64)
+              toolchainSha256=('e'*64)
+              debugTargetBindingSha256=('f'*64)
+              runtimeLimitMs=90000
+              memoryLimitBytes=536870912
+              processLimit=16
+              logLimitBytes=65536
+              effectClass='debug_inspection_isolated'
+            }
+            $config=[ordered]@{
+              schema='lu.ide.fin04w2.audit.v1'
+              serviceName=$name
+              endpoint='\\.\pipe\LuIdeDebuggerBroker.v1'
+              expectedServiceSha256=$serviceSha.ToLowerInvariant()
+              expectedHostSha256=$hostSha.ToLowerInvariant()
+              approvedHostExecutable=$hostExe
+              approvedHostUserSid=$identity.User.Value
+              reviewOnlyPlan=$plan
+              reviewOnlyPlanHash=('aa'*32)
+              reviewOnlyNonce=('42'*16)
+              fixedProbe=[ordered]@{
+                executable=$worker
+                expectedSha256=$workerSha.ToLowerInvariant()
+                foreignFile=$foreign
+              }
+            }
+            $cfg=Join-Path $root 'service.json'
+            $config|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $cfg -Encoding utf8 -NoNewline
+            & icacls.exe $cfg /inheritance:r /grant:r ($system+':F') ($sid+':M') | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: protected SCM configuration ACL failed' }
+            & icacls.exe $root /inheritance:r /grant:r ($system+':(OI)(CI)F') ($sid+':(OI)(CI)M') | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: private SCM evidence ACL failed' }
+            $acl=Get-Acl -LiteralPath $root
+            if (!$acl.AreAccessRulesProtected -or @($acl.Access|Where-Object {
+              $_.AccessControlType -ne 'Allow' -or $_.IdentityReference.Value -notin @($system,$sid)
+            }).Count) { throw 'DENIED: unknown or inherited evidence ACL' }
+            & sc.exe start $name | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw 'DENIED: SCM failed to start restricted service' }
+            $observedService=$null
+            for ($i=0; $i -lt 40; $i++) {
+              Start-Sleep -Milliseconds 500
+              $observedService=Get-CimInstance Win32_Service -Filter "Name='$name'"
+              if ($observedService -and $observedService.State -eq 'Running' -and $observedService.ProcessId -gt 0) { break }
+              if ($observedService -and $observedService.State -eq 'Stopped') { break }
+            }
+            if (!$observedService -or $observedService.State -ne 'Running' -or $observedService.ProcessId -le 0) {
+              $why=if ($observedService) { "state=$($observedService.State);win32=$($observedService.ExitCode);nativeStage=$($observedService.ServiceSpecificExitCode)" } else { 'unavailable' }
+              throw "DENIED: harmless native kernel and WFP preflight failed ($why)"
+            }
+            if ($observedService.StartName -notmatch 'LocalService') { throw 'DENIED: service identity mismatch' }
+            Write-Host 'FIN04W2_NATIVE_RESTRICTED_SERVICE_FIXED_JOB_DESCENDANT=PASS'
+            Write-Host 'FIN04W2_NATIVE_OWNER_FILE_AND_WFP_DENIAL=PASS'
+            Write-Host 'FIN04W2_LLDB_AND_FINAL_SECURITY_RECOVERY=NOT_TESTED'
+          } finally {
+            if ($created) {
+              & sc.exe stop $name 2>$null | Out-Null
+              Start-Sleep -Seconds 2
+              & sc.exe delete $name 2>$null | Out-Null
+            }
+            if ($ruleCreated) {
+              Remove-NetFirewallRule -Name $ruleName -ErrorAction Stop
+              if (Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue) {
+                throw 'DENIED: temporary WFP rule was not revoked'
+              }
+            }
+            if (Test-Path -LiteralPath $foreign) {
+              Remove-Item -LiteralPath $foreign -Force -ErrorAction Stop
+            }
+          }

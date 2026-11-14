@@ -13,6 +13,7 @@ use lu_ide_workspace::{
     lsp::DiagnosticSource,
     lsp_session::{LspEvent, LspPhase, Position},
 };
+// Shared LSP/DAP pipe writer imports must compile irrespective of FIN-04W.
 use std::{
     ffi::OsStr,
     io,
@@ -22,12 +23,17 @@ use std::{
     },
     thread::JoinHandle,
 };
+#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
+use windows_sys::Win32::Security::{
+    DuplicateTokenEx, ImpersonateLoggedOnUser, RevertToSelf, SecurityImpersonation,
+    TokenImpersonation, TOKEN_DUPLICATE, TOKEN_IMPERSONATE,
+};
 use windows_sys::Win32::{
     Foundation::{SetHandleInformation, INVALID_HANDLE_VALUE},
     Security::SECURITY_ATTRIBUTES,
     Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING},
     System::{
-        Pipes::{CreatePipe, PeekNamedPipe},
+        Pipes::{CreateNamedPipeW, CreatePipe, PeekNamedPipe},
         Threading::STARTF_USESTDHANDLES,
     },
 };
@@ -382,6 +388,159 @@ fn inspect_debug_stderr(handle: Option<&Handle>) {
     );
 }
 
+// Diagnostic only: use the actual suspended child lowbox token to request
+// read access to a fixed list of previously sealed files. Neither a token
+// handle nor a file handle escapes; no ACLs/capabilities are changed.
+#[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
+fn trace_dap_token_access(process: HANDLE, bundle: &Path, source: &Path, local: &Path) -> Result<(), SupervisorError> {
+    if !native_lsp_debug_enabled() {
+        return Ok(());
+    }
+    let targets = [
+        ("adapter", bundle.join("bin/lldb-dap.exe")),
+        ("liblldb", bundle.join("bin/liblldb.dll")),
+        ("python", bundle.join("bin/python310.dll")),
+        ("source", source.to_path_buf()),
+    ];
+    let exists: Vec<bool> = targets.iter().map(|(_, path)| path.is_file()).collect();
+    let mut raw = ptr::null_mut();
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY | TOKEN_DUPLICATE, &mut raw) } == 0 {
+        eprintln!("FIN04_WIN_LOWBOX_READ_PROBE=token_unavailable");
+        return Ok(());
+    }
+    let original = Handle::new(raw)?;
+    raw = ptr::null_mut();
+    if unsafe { DuplicateTokenEx(
+        original.0, TOKEN_QUERY | TOKEN_IMPERSONATE, ptr::null(),
+        SecurityImpersonation, TokenImpersonation, &mut raw,
+    ) } == 0 {
+        eprintln!("FIN04_WIN_LOWBOX_READ_PROBE=duplicate_unavailable");
+        return Ok(());
+    }
+    let impersonation = Handle::new(raw)?;
+    if unsafe { ImpersonateLoggedOnUser(impersonation.0) } == 0 {
+        eprintln!("FIN04_WIN_LOWBOX_READ_PROBE=impersonation_denied");
+        return Ok(());
+    }
+    for ((kind, path), present) in targets.iter().zip(exists) {
+        if !present {
+            eprintln!("FIN04_WIN_LOWBOX_{kind}=absent");
+            continue;
+        }
+        let handle = unsafe { CreateFileW(
+            wide(path.as_os_str()).as_ptr(), 0x8000_0000,
+            FILE_SHARE_READ_VALUE | FILE_SHARE_WRITE_VALUE,
+            ptr::null(), OPEN_EXISTING, 0, ptr::null_mut(),
+        ) };
+        let category = if handle == INVALID_HANDLE_VALUE || handle.is_null() {
+            match unsafe { GetLastError() } {
+                5 => "access_denied",
+                2 | 3 => "missing",
+                _ => "other_kernel_failure",
+            }
+        } else {
+            unsafe { CloseHandle(handle) };
+            "read_allowed"
+        };
+        eprintln!("FIN04_WIN_LOWBOX_{kind}={category}");
+    }
+    // Independently exercise CREATE_NEW in only this profile's private
+    // LocalState. No inherited handle and no ACL edit; detect an actual
+    // kernel write denial rather than assuming directory rights from read.
+    let scratch = local.join("fin04-lowbox-write-probe.tmp");
+    let scratch_handle = unsafe {
+        CreateFileW(
+            wide(scratch.as_os_str()).as_ptr(),
+            GENERIC_WRITE_ACCESS,
+            FILE_SHARE_READ_VALUE | FILE_SHARE_WRITE_VALUE,
+            ptr::null(),
+            CREATE_NEW,
+            FILE_ATTRIBUTE_NORMAL_VALUE,
+            ptr::null_mut(),
+        )
+    };
+    let scratch_created = scratch_handle != INVALID_HANDLE_VALUE && !scratch_handle.is_null();
+    let scratch_status = if scratch_created {
+        unsafe { CloseHandle(scratch_handle) };
+        "write_allowed"
+    } else {
+        match unsafe { GetLastError() } {
+            5 => "access_denied",
+            2 | 3 => "parent_unavailable",
+            80 | 183 => "already_exists",
+            _ => "other_kernel_failure",
+        }
+    };
+    eprintln!("FIN04_WIN_LOWBOX_LOCALSTATE_CREATE={scratch_status}");
+
+    // The original protected SCM service independently journals one exact
+    // NUL lease. Check whether that device can be reopened under the child
+    // token, without changing the service grant or giving the child a handle.
+    let nul = unsafe {
+        CreateFileW(
+            wide(OsStr::new("NUL")).as_ptr(),
+            NUL_GENERIC_WRITE,
+            FILE_SHARE_READ_VALUE | FILE_SHARE_WRITE_VALUE,
+            ptr::null(),
+            OPEN_EXISTING,
+            0,
+            ptr::null_mut(),
+        )
+    };
+    let nul_status = if nul != INVALID_HANDLE_VALUE && !nul.is_null() {
+        unsafe { CloseHandle(nul) };
+        "write_allowed"
+    } else {
+        match unsafe { GetLastError() } {
+            5 => "access_denied",
+            2 | 3 => "device_unavailable",
+            _ => "other_kernel_failure",
+        }
+    };
+    eprintln!("FIN04_WIN_LOWBOX_NUL_WRITE={nul_status}");
+    // LLDB's pre-DAP startup may use OS named pipes. Test the kernel under
+    // the actual suspended lowbox token without publishing a reusable name,
+    // forwarding any pipe handle or granting an AppContainer capability.
+    // Distinguish the default pipe namespace from AppContainer LOCAL.
+    for (kind, scope) in [
+        ("default", r"\\.\pipe\"),
+        ("local", r"\\.\pipe\LOCAL\"),
+    ] {
+        let unique = format!("{scope}lu-fin04-{}-{:016x}", std::process::id(), rand::random::<u64>());
+        let handle = unsafe {
+            CreateNamedPipeW(
+                wide(OsStr::new(&unique)).as_ptr(),
+                0x0000_0003, // PIPE_ACCESS_DUPLEX
+                0x0000_0000, // PIPE_TYPE_BYTE | PIPE_WAIT
+                1, 512, 512, 0,
+                ptr::null(),
+            )
+        };
+        let category = if handle == INVALID_HANDLE_VALUE || handle.is_null() {
+            match unsafe { GetLastError() } {
+                5 => "access_denied",
+                2 | 3 => "namespace_unavailable",
+                87 => "invalid_parameter",
+                _ => "other_kernel_failure",
+            }
+        } else {
+            unsafe { CloseHandle(handle) };
+            "create_allowed"
+        };
+        eprintln!("FIN04_WIN_LOWBOX_PIPE_{kind}={category}");
+    }
+
+    // Never continue privileged SCM custody under a lowbox impersonation.
+    if unsafe { RevertToSelf() } == 0 {
+        return Err(SupervisorError::Quarantined);
+    }
+    if scratch_created && fs::remove_file(&scratch).is_err() {
+        // An unremovable diagnostic file is not an accepted clean stage.
+        return Err(SupervisorError::Quarantined);
+    }
+    Ok(())
+}
+
 fn nul_stderr() -> Result<Handle, SupervisorError> {
     let mut attrs = SECURITY_ATTRIBUTES {
         nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
@@ -412,6 +571,7 @@ fn spawn_contained_stdio(
     cwd: &Path,
     env: &mut Vec<u16>,
     owner_event_channel: bool,
+    fin04w: bool,
 ) -> Result<
     (
         Handle,
@@ -423,6 +583,8 @@ fn spawn_contained_stdio(
     ),
     SupervisorError,
 > {
+    // FIN-04W categories only: no child paths, SIDs, PIDs, handles or stderr.
+    if fin04w { native_lsp_trace("fin04w_stdio_admission_begin"); }
     let (child_stdin, host_stdin) = inheritable_pipe()?;
     let (host_stdout, child_stdout) = inheritable_pipe()?;
     uninheritable(host_stdin.0)?;
@@ -462,11 +624,19 @@ fn spawn_contained_stdio(
     } else {
         None
     };
+    // FIN-04W's previous CreateRestrictedToken branch was rejected by the
+    // kernel (error 87) before LLDB started. The diagnostic now uses the
+    // same documented AppContainer creation attributes as normal workers.
+    // No alternate primary token or wider sandbox may be substituted.
+    if fin04w && !cfg!(all(debug_assertions, feature = "fin04w-ci-bridge")) {
+        return Err(denied());
+    }
+    if fin04w { native_lsp_trace("fin04w_appcontainer_stdio_ready"); }
+    let mut attributes = Attributes::with_count(3)?;
     let mut capabilities = SECURITY_CAPABILITIES::default();
     capabilities.AppContainerSid = profile.sid;
     capabilities.Capabilities = ptr::null_mut();
     capabilities.CapabilityCount = 0;
-    let mut attributes = Attributes::with_count(3)?;
     if unsafe {
         UpdateProcThreadAttribute(
             attributes.raw(),
@@ -477,10 +647,10 @@ fn spawn_contained_stdio(
             ptr::null_mut(),
             ptr::null(),
         )
-    } == 0
-    {
+    } == 0 {
         return Err(denied());
     }
+    if fin04w { native_lsp_trace("fin04w_appcontainer_security_capabilities_ready"); }
     let jobs = [job.handle.0];
     if unsafe {
         UpdateProcThreadAttribute(
@@ -494,8 +664,10 @@ fn spawn_contained_stdio(
         )
     } == 0
     {
+        if fin04w { native_lsp_trace("fin04w_job_list_attribute_denied"); }
         return Err(denied());
     }
+    if fin04w { native_lsp_trace("fin04w_job_list_attribute_ready"); }
     let mut child_handles = vec![child_stdin.0, child_stdout.0, stderr.0];
     if let Some((_, event_write, _)) = event_pipe.as_ref() {
         child_handles.push(event_write.0);
@@ -515,8 +687,10 @@ fn spawn_contained_stdio(
         )
     } == 0
     {
+        if fin04w { native_lsp_trace("fin04w_handle_list_attribute_denied"); }
         return Err(denied());
     }
+    if fin04w { native_lsp_trace("fin04w_handle_list_attribute_ready"); }
     let mut startup = STARTUPINFOEXW::default();
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
@@ -529,32 +703,55 @@ fn spawn_contained_stdio(
     let mut child = PROCESS_INFORMATION::default();
     // InheritHandles=TRUE is safe here ONLY because the kernel handle list
     // restricts inheritance to 3 normal or 4 explicit CI-only pipe ends.
-    if unsafe {
+    let flags = CREATE_NO_WINDOW
+        | CREATE_SUSPENDED
+        | CREATE_UNICODE_ENVIRONMENT
+        | EXTENDED_STARTUPINFO_PRESENT;
+    // Security-capabilities, Job list and handle allowlist are all passed to
+    // CreateProcessW before the child runs. The child starts suspended and
+    // its actual kernel AppContainer identity is independently reobserved.
+    // This is the SAME launch path in release and diagnostic builds.
+    if fin04w { native_lsp_trace("fin04w_create_appcontainer_process_attempted"); }
+    let created = unsafe {
         CreateProcessW(
-            exe_wide.as_ptr(),
-            command.as_mut_ptr(),
-            ptr::null(),
-            ptr::null(),
-            1,
-            CREATE_NO_WINDOW
-                | CREATE_SUSPENDED
-                | CREATE_UNICODE_ENVIRONMENT
-                | EXTENDED_STARTUPINFO_PRESENT,
-            env.as_ptr().cast(),
-            cwd_wide.as_ptr(),
-            &startup.StartupInfo,
-            &mut child,
+            exe_wide.as_ptr(), command.as_mut_ptr(), ptr::null(),
+            ptr::null(), 1, flags,
+            env.as_ptr().cast(), cwd_wide.as_ptr(),
+            &startup.StartupInfo, &mut child,
         )
-    } == 0
-    {
+    };
+    if created == 0 {
+        // Capture the immediate native failure before even fixed diagnostic
+        // output can alter the thread-local Win32 LastError value.
+        #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
+        let os_error = unsafe { GetLastError() };
+        native_lsp_trace("fin04w_or_appcontainer_os_creation_denied");
+        #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
+        if fin04w {
+            // Report one fixed Win32 error category only; fail closed.
+            let kind = match os_error {
+                5 => "access_denied",
+                2 | 3 => "image_or_workdir_missing",
+                87 => "invalid_parameter",
+                1314 => "required_privilege_missing",
+                1300 => "privilege_not_assigned",
+                740 => "elevation_required",
+                1450 => "os_resource_exhausted",
+                _ => "other_kernel_failure",
+            };
+            if native_lsp_debug_enabled() {
+                eprintln!("FIN04W_CREATE_PROCESS_CLASS={kind}");
+            }
+        }
         return Err(denied());
     }
+    if fin04w { native_lsp_trace("fin04w_suspended_child_created"); }
     let process = Handle::new(child.hProcess)?;
     let thread = Handle::new(child.hThread)?;
     // Child already belongs to Job on return from CreateProcess.
-    if !matches!(job.empty(), Ok(false))
-        || verify_suspended_appcontainer_token(process.0, profile.sid).is_err()
-    {
+    let token_verified = verify_suspended_appcontainer_token(process.0, profile.sid).is_ok();
+    if fin04w && token_verified { native_lsp_trace("fin04w_suspended_appcontainer_token_verified"); }
+    if !matches!(job.empty(), Ok(false)) || !token_verified {
         if !matches!(job.kill_and_verify(), Ok(true)) {
             return Err(SupervisorError::Quarantined);
         }
@@ -732,7 +929,7 @@ impl RestrictedLspProcess for WindowsLspProcess {
         let mut env=min_environment(&local,&bundle)?;
         let (child,thread,stdin,stdout,stderr,owner_channel)=
             spawn_contained_stdio(
-                &self._profile,&self.job,&tool,&mut command,&local,&mut env,false,
+                &self._profile,&self.job,&tool,&mut command,&local,&mut env,false,false,
             )?;
         if owner_channel.is_some(){return Err(bad());}
         drop(stdin); // fixed command needs no interactive input or DAP pipe
@@ -1114,6 +1311,7 @@ pub fn start_windows_lsp(
             &workspace,
             &mut env,
             false,
+            false,
         ) {
             Ok(value) => {
                 native_lsp_trace("suspended_child_attested");
@@ -1244,6 +1442,15 @@ fn start_windows_dap_inner(
     trusted_service: &TrustedBroker,
     project_target: Option<&crate::project_debug_target::SealedProjectDebugTarget>,
 ) -> Result<WindowsDapSession, SupervisorError> {
+    // In FIN-04W2 split builds the native LLDB must never be created
+    // under this LSP-style AppContainer launcher. Only the independent
+    // SCM-owned non-lowbox debugger service is permitted to start it,
+    // and only the service-created AppContainer target may be attached.
+    // This legacy entrypoint fails closed until that native service path
+    // and its original WFP/Job/receipt/recovery gates are implemented.
+    if cfg!(feature = "fin04w2-split-native") {
+        return Err(SupervisorError::NoContainment);
+    }
     if plan.effect_class != "debug_inspection_isolated" {
         return Err(SupervisorError::InvalidPlan);
     }
@@ -1370,6 +1577,13 @@ fn start_windows_dap_inner(
     native_lsp_trace("scm_lease_start");
     let mut lease = BrokerLease::begin(job.handle.0, job_id, &plan_hash, trusted_service)?;
     native_lsp_trace("scm_lease_fsynced");
+    #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
+    let fin04w = super::fin04w::select_ci(plan);
+    #[cfg(not(all(debug_assertions, feature = "fin04w-ci-bridge")))]
+    let fin04w = false;
+    if fin04w {
+        native_lsp_trace("fin04w_bridge_selected_ci_only");
+    }
     // Clangd and the Windows runtime can open the NUL device by name after
     // AppContainer launch, just as pinned Cargo/rustc does. Obtain an exact
     // package-SID NUL lease from the independently restricted SCM service
@@ -1378,8 +1592,12 @@ fn start_windows_dap_inner(
     // interactive/user ACL edit, blanket AppContainer grant or launch bypass.
     // The LSP adapter is compiled only with protected-recovery-service.
     native_lsp_trace("scm_exact_nul_lease_requested");
+    // AppContainer requires the original, independently authorized exact
+    // package-SID NUL lease. The SCM holder journals/revokes it exactly as
+    // for ordinary workers. Never bypass or broaden the machine-wide ACL.
     lease.grant_null()?;
     native_lsp_trace("scm_exact_nul_lease_fsynced");
+    if fin04w { native_lsp_trace("fin04w_exact_package_nul_lease_fsynced"); }
     // G04C: the real project-only DAP launcher, not ordinary LSP, owns
     // this sealed target. Revalidate its bytes immediately before the
     // one-use OS grant is consumed, after staging and SCM admission.
@@ -1398,6 +1616,7 @@ fn start_windows_dap_inner(
             &mut env,
             plan.recipe_id == "dap_lldb_project"
                 && cfg!(any(all(debug_assertions, feature = "dev045d5-ci-event-owner"), feature = "fin04-release-owner-evidence")),
+            fin04w,
         ) {
             Ok(value) => {
                 native_lsp_trace("suspended_child_attested");
@@ -1414,6 +1633,14 @@ fn start_windows_dap_inner(
                 return Err(SupervisorError::Quarantined);
             }
         };
+    #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
+    if matches!(plan.recipe_id.as_str(), "dap_lldb_fixed" | "dap_lldb_project") {
+        if let Err(reason) = trace_dap_token_access(process.0, &bundle, &staged_document, &local) {
+            let _ = job.kill_and_verify();
+            let _ = supervisor.native_quarantine_after_error(job_id);
+            return Err(reason);
+        }
+    }
     if !lease.alive() {
         native_lsp_trace("scm_lease_lost_before_resume");
         let _ = job.kill_and_verify();

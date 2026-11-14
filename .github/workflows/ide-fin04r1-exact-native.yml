@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - ide/fin01-07-implementation-20261111
+      # FIN-04 protected convergence branch; GitHub push SHA is the exact
+      # source head, never the synthetic pull-request merge commit.
+      - ide/fin04-native-debugger-20261112
     paths:
       - .github/workflows/ide-fin04r1-exact-native.yml
       - ide/app/tests/fin04_release_owner_and_os_recovery.test.mjs

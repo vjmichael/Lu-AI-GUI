@@ -1,0 +1,99 @@
+# FIN-04W2-C original supervisor grant bridge.
+# This DOES NOT simulate a human click on a public runner, admit LLDB,
+# or manufacture a production approval. The only possible service action
+# behind this feature is the first-party hash-pinned harmless worker.
+name: IDE FIN-04W2 original one-use grant bridge acceptance
+on:
+  pull_request:
+    paths:
+      - 'ide/supervisor/**'
+      - '.github/workflows/ide-fin04w2-approved-exec-native.yml'
+permissions:
+  contents: read
+concurrency:
+  group: fin04w2-authority-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  original-grant-bridge:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo FIN04W2_C_EXACT_SOURCE=VERIFIED
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Original journal grant/consumption/replay and compiler contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-approved-fixed-exec --lib fin04w2_authority -- --nocapture
+          cargo test --manifest-path ide/supervisor/Cargo.toml --features fin04w2-approved-fixed-exec --lib approved_packet_must_match_original_job -- --nocapture
+          echo FIN04W2_C_EXACT_JOB_AND_CHALLENGE_PACKET=PASS
+          echo FIN04W2_C_ORIGINAL_SUPERVISOR_GRANT_AND_REPLAY_CONTRACT=PASS
+          echo FIN04W2_C_NATIVE_HUMAN_APPROVAL=NOT_TESTED
+          echo FIN04W2_C_LLDB_EXECUTION=NOT_TESTED
+      - name: Build actual W2-C restricted service and fixed test worker
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features fin04w2-approved-fixed-exec --bin windows_fin04w2_debugger_service --bin windows_fin04w2_fixed_probe
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: Windows original approval bridge failed native compiler' }
+          Write-Host FIN04W2_C_NATIVE_WINDOWS_APPROVAL_BRIDGE_COMPILER=PASS
+
+  original-windows-scm-six-phase:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify reviewed source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo FIN04W2_C_SIX_PHASE_EXACT_SOURCE=VERIFIED
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - name: Compile native original Supervisor host and fixed restricted SCM binaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo build --manifest-path ide/supervisor/Cargo.toml --features fin04w2-approved-fixed-exec --bin windows_fin04w2_native_host_acceptance --bin windows_fin04w2_debugger_service --bin windows_fin04w2_fixed_probe
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: original Windows native host/service/worker compiler failed' }
+          Write-Host FIN04W2_C_ORIGINAL_HOST_AND_NATIVE_SCM_COMPILED=PASS
+      - name: Full original one-use approval, native suspended Job, six fsynced receipts, WFP and restart
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/Test-FIN04W2OriginalApprovedNative.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'DENIED: native original service transaction failed' }
+          Write-Host FIN04W2_C_SCM_ADMITTED_BENIGN_TRANSACTION=PASS
+          Write-Host FIN04W2_C_PHYSICAL_HUMAN_APPROVAL_AND_LLDB=NOT_TESTED
+      - name: Preserve exact original and service-side durable receipts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fin04w2-c-original-native-receipts
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/Fin04W2OriginalNativeAdmission/original-supervisor.jsonl
+            ${{ runner.temp }}/Fin04W2OriginalNativeAdmission/result.json
+            ${{ runner.temp }}/Fin04W2OriginalNativeAdmission/service-one-use-verified.receipt

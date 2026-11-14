@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     fs::write(
         source.join("src/main.rs"),
-        "fn main(){ println!(\"fixed WO6 isolated job\"); }\n",
+        "fn main(){\n    #[cfg(target_arch=\"x86_64\")]\n    unsafe { core::arch::asm!(\"int3\", options(nomem, nostack, preserves_flags)); }\n    println!(\"fixed WO6 isolated job\");\n}\n",
     )?;
     let input = publish_input(&source, &stage, recipe).map_err(|e| e.code())?;
     let digest = installed_toolchain_digest().map_err(|e| e.code())?;
@@ -273,7 +273,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 debug_target_binding_sha256: Some(target.binding_sha256.clone()),
                 runtime_limit_ms: 90_000,
                 memory_limit_bytes: 512 * 1024 * 1024,
-                process_limit: 16,
+                // Exact project-debug-only bounded thread allowance. Native
+                // cgroup pids.events max>0 at 16 with a traced stop but no
+                // delivered DAP event; fixed LLDB and Cargo remain unchanged.
+                process_limit: 48,
                 log_limit_bytes: 64 * 1024,
                 effect_class: "debug_inspection_isolated".into(),
             };
@@ -311,27 +314,67 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             target
                 .verify()
                 .map_err(|_| "DENIED: target changed before launch")?;
-            dap.launch_project_target().map_err(|e| e.code())?;
+            // This exact CI-reviewed source contains a real x86_64 INT3
+            // instruction. A stop-on-entry in the dynamic loader has no
+            // source line and cannot satisfy independent DWARF evidence.
+            // Run without entry stop only in this disposable native fixture;
+            // the first genuine SIGTRAP must have the original source line.
+            dap.launch_project_source_trap_for_ci().map_err(|e| e.code())?;
+            // LLDB 18 resumes on configurationDone(stopOnEntry=false).
+            // First bind a single breakpoint to the fixed, sealed source
+            // file/line, and await its verified adapter response. Only a
+            // subsequent real stopped event, native PC and independent
+            // DWARF line may satisfy the acceptance gate.
+            if dap.ci_fixed_source_breakpoint_needed() {
+                dap.ci_set_fixed_source_breakpoint().map_err(|e| e.code())?;
+            }
             if dap.configuration_needed() {
                 dap.configuration_done().map_err(|e| e.code())?;
             }
             let began = Instant::now();
             let (mut stopped, mut threads, mut stack) = (None, false, false);
             let (mut requested_threads, mut requested_stack) = (false, false);
+            let mut launch_acknowledged = false;
+            let mut config_requested = false;
+            let mut native_continued = false;
             while began.elapsed() < Duration::from_secs(35) {
                 for event in dap.poll().map_err(|e| e.code())? {
                     match event {
                         DapEvent::ConfigurationRequested => {
-                            dap.configuration_done().map_err(|e| e.code())?
+                            config_requested = true;
+                            eprintln!("FIN04_D3_LINUX_DAP_EVENT=configuration_requested");
+                            if dap.ci_fixed_source_breakpoint_needed() {
+                                dap.ci_set_fixed_source_breakpoint().map_err(|e| e.code())?;
+                            }
                         }
-                        DapEvent::Stopped { thread_id } => stopped = Some(thread_id),
-                        DapEvent::ThreadsReceived => threads = true,
-                        DapEvent::StackTraceReceived => stack = true,
+                        DapEvent::Stopped { thread_id } => {
+                            eprintln!("FIN04_D3_LINUX_DAP_EVENT=real_stopped");
+                            stopped = Some(thread_id);
+                        },
+                        DapEvent::ThreadsReceived => {
+                            eprintln!("FIN04_D3_LINUX_DAP_EVENT=threads_received");
+                            threads = true;
+                        },
+                        DapEvent::StackTraceReceived => {
+                            eprintln!("FIN04_D3_LINUX_DAP_EVENT=stack_received");
+                            stack = true;
+                        },
+                        DapEvent::LaunchAcknowledged => {
+                            eprintln!("FIN04_D3_LINUX_DAP_EVENT=launch_acknowledged");
+                            launch_acknowledged = true;
+                        },
+                        DapEvent::Continued => native_continued = true,
                         DapEvent::Terminated => {
                             return Err("DENIED: project debuggee exited before stack".into())
                         }
                         _ => {}
                     }
+                }
+                if dap.ci_fixed_source_breakpoint_needed() {
+                    dap.ci_set_fixed_source_breakpoint().map_err(|e| e.code())?;
+                }
+                if dap.configuration_needed() {
+                    dap.configuration_done().map_err(|e| e.code())?;
                 }
                 if stopped.is_some() && !requested_threads && dap.phase() == DapPhase::Stopped {
                     dap.threads().map_err(|e| e.code())?;
@@ -348,6 +391,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 thread::sleep(Duration::from_millis(30));
             }
             if stopped.is_none() || !threads || !stack {
+                // Observe OS-owned child state and cgroup counters before
+                // fail-closed cleanup. No command, source, PID or raw stderr.
+                dap.ci_trace_absent_source_stop();
+                // Fixed booleans only; never forward adapter output, process
+                // identity, source bytes or an unverified OS stop.
+                eprintln!(
+                    "FIN04_D3_LINUX_DAP_STOP_REFUSAL launch_ack={};config_event={};bp_verified={};config_ack={};continued={};stopped={};threads={};stack={};phase={:?}",
+                    launch_acknowledged, config_requested,
+                    dap.ci_fixed_source_breakpoint_verified(),
+                    dap.ci_configuration_done_acknowledged(), native_continued,
+                    stopped.is_some(), threads, stack, dap.phase(),
+                );
                 return Err("DENIED: real project debug stop/stack absent".into());
             }
             // Unlike D2's adapter-only PC claim, this requires a genuine
@@ -430,12 +485,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let entries = supervisor
                     .receipt_history(&debug_job.job_id)
                     .map_err(|e| e.code())?;
-                if !entries.windows(2).any(|pair| {
-                    pair[0].body.phase == JobPhase::CancelRequested
-                        && pair[1].body.phase == JobPhase::Cancelled
+                // The original FIN-01D SCM lease protocol is *three* durable
+                // transitions, not two: intent before kernel kill, verified
+                // empty process tree while service release is pending, then
+                // terminal only after independent service release. The prior
+                // two-adjacent-entry assertion incorrectly rejected a valid
+                // OS-reaped, fsynced cancellation after genuine source stop.
+                if !entries.windows(3).any(|chain| {
+                    chain[0].body.phase == JobPhase::CancelRequested
+                        && chain[0].body.outcome_code == "cancel_requested_before_os_kill"
+                        && chain[1].body.phase == JobPhase::ReleasePending
+                        && chain[1].body.outcome_code
+                            == "os_cancel_tree_reaped_service_release_pending"
+                        && chain[2].body.phase == JobPhase::Cancelled
+                        && chain[2].body.outcome_code
+                            == "native_cancel_service_release_verified"
+                        && chain.iter().all(|entry| {
+                            entry.body.plan_sha256 == stopped_witness.debugger_plan_sha256
+                                && entry.body.job_id == debug_job.job_id
+                        })
                 }) {
                     return Err(
-                        "DENIED: real project LLDB cancellation not durable before kernel kill"
+                        "DENIED: real project LLDB cancel intent, kernel reap, or independent service release receipt missing"
                             .into(),
                     );
                 }

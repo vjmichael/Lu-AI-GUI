@@ -44,26 +44,28 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           node --test ide/app/tests/debug_binary_evidence.test.mjs ide/app/tests/debug_symbol_evidence.test.mjs
+      # The supervisor and IDE Tauri crates do not check in Cargo.lock.
+      # Keep native source tests running; these are NOT pinned release builds.
       - name: Native ELF/DWARF or PE/RSDS/PDB format security tests
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked debug_symbol_verification -- --nocapture
-          cargo test --manifest-path ide/supervisor/Cargo.toml --lib --locked debug_binary_witness
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib debug_symbol_verification -- --nocapture
+          cargo test --manifest-path ide/supervisor/Cargo.toml --lib debug_binary_witness
       - name: Compile actual protected Windows/Linux Cargo acceptance fixture
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cargo check --manifest-path ide/supervisor/Cargo.toml --features windows-worker --example d7_windows_acceptance --locked
+            cargo check --manifest-path ide/supervisor/Cargo.toml --features windows-worker --example d7_windows_acceptance
           else
-            cargo check --manifest-path ide/supervisor/Cargo.toml --features linux-worker --example wo6_linux_native_build_acceptance --locked
+            cargo check --manifest-path ide/supervisor/Cargo.toml --features linux-worker --example wo6_linux_native_build_acceptance
           fi
       - name: Compile integrated Tauri with native build gate
         shell: bash
         run: |
           set -euo pipefail
-          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --all-targets --locked
+          cargo check --manifest-path ide/app/src-tauri/Cargo.toml --features native-build --all-targets
       - name: Strict acceptance boundary
         shell: bash
         run: |

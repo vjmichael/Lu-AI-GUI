@@ -71,6 +71,13 @@ def parse_initialize_response(stream):
 
 
 def run():
+    # Test-only environmental comparison. This still runs OUTSIDE the
+    # AppContainer and grants no native sandbox, debugger, or ACL authority.
+    if sys.argv[1:] not in ([], ["--mirrored-env"]):
+        print("PROTECTED_WO6_DAP_PREFLIGHT=denied_unknown_mode")
+        return 2
+    mirrored = sys.argv[1:] == ["--mirrored-env"]
+    prefix = "PROTECTED_WO6_DAP_MIRRORED_ENV" if mirrored else "PROTECTED_WO6_DAP_PREFLIGHT"
     if sys.platform != "win32" or os.environ.get("GITHUB_ACTIONS") != "true":
         print("PROTECTED_WO6_DAP_PREFLIGHT=denied_non_ci_windows")
         return 2
@@ -91,13 +98,21 @@ def run():
         "PATH": str(exe.parent) + ";" + str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"),
         "TEMP": str(temp), "TMP": str(temp),
     }
+    if mirrored:
+        # Under RUNNER_TEMP only; this mimics min_environment's variables,
+        # NOT the AppContainer package SID, directory ACLs, or OS token.
+        local = temp / "wo6-unconfined-env-probe" / "LocalState"
+        local.mkdir(parents=True, exist_ok=True)
+        env.update({key: str(local) for key in (
+            "APPDATA", "HOME", "LOCALAPPDATA", "USERPROFILE", "TEMP", "TMP"
+        )})
     try:
         child = subprocess.Popen([str(exe)], cwd=str(exe.parent),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=env, creationflags=subprocess.CREATE_NO_WINDOW)
     except OSError:
-        print("PROTECTED_WO6_DAP_PREFLIGHT=adapter_spawn_denied")
-        return 2
+        print(prefix + "=adapter_spawn_denied")
+        return 0 if mirrored else 2
     # Do not use communicate(): it can buffer unlimited adapter output until
     # timeout. Reader threads capture at most MAX_BYTES+1 for each OS pipe.
     lock = threading.Lock()
@@ -153,16 +168,16 @@ def run():
     status = classify_exit(actual_exit)
     # No raw stdout/stderr, absolute paths, user project data or file names.
     if status not in ("other", "timeout_or_unreaped"):
-        print("PROTECTED_WO6_DAP_PREFLIGHT_LOADER=" + status)
+        print(prefix + "_LOADER=" + status)
     if oversized.is_set():
-        print("PROTECTED_WO6_DAP_PREFLIGHT=denied_unbounded_output")
-        return 2
+        print(prefix + "=denied_unbounded_output")
+        return 0 if mirrored else 2
     if ready and parse_initialize_response(stdout):
-        print("PROTECTED_WO6_DAP_PREFLIGHT=initialize_pass_no_containment_claim")
+        print(prefix + "=initialize_pass_no_containment_claim")
         return 0
-    print("PROTECTED_WO6_DAP_PREFLIGHT="
+    print(prefix + "="
           + ("no_initialize_timeout" if timed_out else "no_initialize_" + status))
-    return 2
+    return 0 if mirrored else 2
 
 
 if __name__ == "__main__":

@@ -253,7 +253,7 @@ mod tests {
         let mut index = repo.index().unwrap();
         index.add_path(Path::new("conflict.txt")).unwrap();
         index.write().unwrap();
-        let ancestor = index.get_path(Path::new("conflict.txt"), 0).unwrap();
+        let mut ancestor = index.get_path(Path::new("conflict.txt"), 0).unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
         repo.commit(Some("HEAD"), &sig, &sig, "baseline", &tree, &[]).unwrap();
         drop(tree);
@@ -263,11 +263,10 @@ mod tests {
             (2u16, b"ours\n".as_slice()),
             (3u16, b"theirs\n".as_slice()),
         ] {
-            let mut entry = ancestor.clone();
-            entry.id = repo.blob(bytes).unwrap();
-            entry.file_size = bytes.len() as u32;
-            entry.flags = (entry.flags & !0x3000) | (stage << 12);
-            index.add(&entry).unwrap();
+            ancestor.id = repo.blob(bytes).unwrap();
+            ancestor.file_size = bytes.len() as u32;
+            ancestor.flags = (ancestor.flags & !0x3000) | (stage << 12);
+            index.add(&ancestor).unwrap();
         }
         index.write().unwrap();
         assert!(index.has_conflicts());

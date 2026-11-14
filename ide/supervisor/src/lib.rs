@@ -19,6 +19,41 @@ pub mod debug_control_evidence;
 #[cfg(any(test, all(windows, debug_assertions, feature = "dev046c-ci-control"), all(windows, feature = "fin04-release-owner-evidence")))]
 mod debug_control_dispatch;
 pub mod debug_symbol_verification;
+// FIN-04W2 shape inspection is not an OS debugger worker or IPC endpoint.
+// No installed/production feature enables this default-off module.
+#[cfg(feature = "fin04w2-protocol")]
+mod fin04w2_protocol;
+// Original supervisor receipt-chain verification and one-use service replay
+// barrier, exposed only to the separately approved W2-C benign CI feature.
+#[cfg(feature = "fin04w2-approved-fixed-exec")]
+mod fin04w2_authority;
+#[cfg(all(windows, debug_assertions, feature="fin04w2-approved-fixed-exec"))]
+pub mod windows_fin04w2_host;
+// Actual Win32 service-principal and current-Job inspection is review-only;
+// separate identity/ACL/WFP/service custody must precede any debugger launch.
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
+mod windows_fin04w2_kernel;
+// Default-OFF split-trust target witness. Only the independent Windows
+// service can derive a PID from a live AppContainer process HANDLE.
+// This does not create LLDB or grant a DAP attach in any released build.
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_split;
+// Service-only OS process preparation: two SUSPENDED independent Jobs,
+// restricted non-AppContainer debugger and zero-capability target lowbox.
+// No native resume, DAP attach or production grant in this module.
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_split_launcher;
+// Original source/PDB copies are staged under a service-only root with
+// explicit package read-execute ACLs, independently reobserved from Windows.
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-split-native"))]
+mod windows_fin04w2_target_seal;
+// Live Windows BFE/WFP effective filter readback: no stale rule flags.
+#[cfg(all(windows, debug_assertions, feature="fin04w2-split-native"))]
+mod windows_fin04w2_wfp;
+// Separate SCM-only debugger broker, with no worker launch or IPC until the
+// Windows ACL/WFP/exact-Job and authenticated protocol gates are complete.
+#[cfg(all(windows, debug_assertions, feature = "fin04w2-scm"))]
+pub mod windows_fin04w2_service;
 #[cfg(all(target_os = "linux", feature = "linux-worker"))]
 pub mod linux_worker;
 pub mod live_output;
@@ -81,6 +116,12 @@ const MAX_JOBS: usize = 64;
 const MAX_LOG_BYTES: u64 = 256 * 1024;
 const MAX_MEMORY_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_PIDS: u32 = 16;
+// DEV04.5D3: the *real project* LLDB-DAP launches an additional traced
+// Cargo debuggee and helper threads. Native cgroup pids.events reported a
+// pids.max rejection at the 16-task cap, with no OOM. Keep the larger
+// allowance exclusive to a sealed, human-approved dap_lldb_project plan;
+// the ordinary workers and fixed debugger retain their exact previous caps.
+const MAX_PROJECT_DAP_PIDS: u32 = 48;
 const MAX_RUNTIME_MS: u64 = 10 * 60 * 1000;
 const GRANT_TTL_MS: u64 = 60_000;
 const GENESIS: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -246,7 +287,10 @@ fn validate_plan(value: &JobPlan) -> bool {
         && value.memory_limit_bytes >= 32 * 1024 * 1024
         && value.memory_limit_bytes <= MAX_MEMORY_BYTES
         && value.process_limit > 0
-        && value.process_limit <= MAX_PIDS
+        && (value.process_limit <= MAX_PIDS
+            || (cfg!(target_os = "linux")
+                && value.recipe_id == "dap_lldb_project"
+                && value.process_limit <= MAX_PROJECT_DAP_PIDS))
         && value.log_limit_bytes > 0
         && value.log_limit_bytes <= MAX_LOG_BYTES
         && if value.recipe_id.starts_with("lsp_") {
@@ -268,11 +312,20 @@ fn validate_plan(value: &JobPlan) -> bool {
             cfg!(feature = "dap-transport")
                 && value.effect_class == "debug_inspection_isolated"
                 && value.runtime_limit_ms <= 3 * 60_000
-                // LLDB initializes its own kernel threads. Cgroup pids.max
-                // counts threads, not just child processes; 4 tasks was
-                // insufficient even for the fixed adapter initialize.
-                // Still bounded by MAX_PIDS=16 with exact OS cgroup/Job proof.
-                && value.process_limit <= 16
+                // Cgroup pids.max counts debugger/debuggee threads.
+                // Original Linux project LLDB-DAP native OS logs had
+                // pids.events max=yes and an existing traced stopped task
+                // but no DAP stopped event. Restore bounded headroom ONLY
+                // for the independently sealed project debugger; fixed LLDB
+                // and every other worker retain their old admission caps.
+                // All OS cgroup/Job, resource, journal and approval gates
+                // remain required, regardless of the task count.
+                && value.process_limit
+                    <= if cfg!(target_os = "linux") && value.recipe_id == "dap_lldb_project" {
+                        MAX_PROJECT_DAP_PIDS
+                    } else {
+                        MAX_PIDS
+                    }
                 && value.log_limit_bytes <= 64 * 1024
         } else if value.recipe_id == "vcpkg_install_offline" {
             cfg!(all(feature = "package-vcpkg-worker", target_os = "linux"))
@@ -364,6 +417,9 @@ fn valid_change(previous: Option<JobPhase>, next: JobPhase) -> bool {
             | (Some(JobPhase::Prepared), JobPhase::Cancelled)
             | (Some(JobPhase::Authorized), JobPhase::AdmissionPending)
             | (Some(JobPhase::Authorized), JobPhase::Cancelled)
+            // FIN-04W2-C: authenticated service may have reserved a
+            // one-use admission while the host loses the connection.
+            | (Some(JobPhase::Authorized), JobPhase::RecoveryRequired)
             | (Some(JobPhase::AdmissionPending), JobPhase::Running)
             | (Some(JobPhase::AdmissionPending), JobPhase::Denied)
             | (Some(JobPhase::AdmissionPending), JobPhase::RecoveryRequired)
@@ -1033,7 +1089,8 @@ impl Supervisor {
             .clone();
         if !matches!(
             job.phase,
-            JobPhase::AdmissionPending
+            JobPhase::Authorized
+                | JobPhase::AdmissionPending
                 | JobPhase::Running
                 | JobPhase::ReleasePending
                 | JobPhase::CancelRequested
@@ -1790,6 +1847,33 @@ mod tests {
         assert!(!legacy.contains("debugTargetBindingSha256"));
         fixed.debug_target_binding_sha256 = Some("a".repeat(64));
         assert!(!validate_plan(&fixed)); // no target for Cargo/LSP/fixed DAP
+    }
+    #[cfg(feature = "dap-transport")]
+    #[test]
+    fn native_project_dap_thread_headroom_is_exclusive_and_bounded() {
+        let mut plan = plan();
+        plan.recipe_id = "dap_lldb_project".into();
+        plan.effect_class = "debug_inspection_isolated".into();
+        plan.debug_target_binding_sha256 = Some("f".repeat(64));
+        plan.process_limit = MAX_PROJECT_DAP_PIDS;
+        // The higher cap counts *threads* under Linux cgroup v2. Never
+        // widen Windows SCM Job's process-count limit to match it.
+        assert_eq!(validate_plan(&plan), cfg!(target_os = "linux"));
+        plan.process_limit = MAX_PROJECT_DAP_PIDS + 1;
+        assert!(!validate_plan(&plan));
+        plan.process_limit = MAX_PROJECT_DAP_PIDS;
+        plan.debug_target_binding_sha256 = None;
+        assert!(!validate_plan(&plan));
+        plan.debug_target_binding_sha256 = Some("f".repeat(64));
+        plan.recipe_id = "dap_lldb_fixed".into();
+        plan.debug_target_binding_sha256 = None;
+        assert!(!validate_plan(&plan));
+        plan.process_limit = MAX_PIDS;
+        assert!(validate_plan(&plan));
+        plan.recipe_id = "rust_check".into();
+        plan.effect_class = "test_build_isolated".into();
+        plan.process_limit = MAX_PROJECT_DAP_PIDS;
+        assert!(!validate_plan(&plan));
     }
     #[test]
     fn rejects_unpinned_or_unbounded_plans() {
