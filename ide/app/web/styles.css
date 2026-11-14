@@ -49,6 +49,13 @@ button:focus-visible{outline:2px solid #84c4fd;outline-offset:3px}
 .sourceTree{overflow:auto;border-right:1px solid #30445b;background:#101b2b}
 .sourceTreeHeader{padding:18px 18px 12px;display:flex;justify-content:space-between;align-items:center;font-size:13px}
 .sourceTreeHeader span{font-size:10px;color:#a3c5db;border:1px solid #3d5d75;padding:4px 7px;border-radius:4px}
+.sourceMutationToolbar{display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 9px}
+.sourceMutationToolbar button{font-size:11px;padding:5px 8px}
+.sourceMutationForm{margin:0 12px 12px;padding:10px;border:1px solid #3d5d75;border-radius:6px;display:grid;gap:6px}
+.sourceMutationForm label{color:#c6d9ec;font-size:12px}
+.sourceMutationForm input,.sourceMutationForm select{min-width:0;width:100%;box-sizing:border-box;padding:7px;border:1px solid #4c6885;border-radius:4px;background:#0c1828;color:#f2f6fc}
+.sourceMutationForm p{font-size:11px;line-height:1.45;color:#b2c7d9;margin:4px 0}
+.sourceMutationButtons{display:flex;flex-wrap:wrap;gap:7px}
 .sourcePath{padding:5px 18px 14px;color:#9db3c8;font-size:12px;overflow-wrap:anywhere}
 .pathLink{color:#a2d5ff;text-decoration:underline;border:0;background:none;padding:0}
 .fileRow{display:flex;gap:10px;align-items:center;text-align:left;padding:9px 18px;border:0;width:100%;color:#dbe8f5;background:transparent;min-width:0;font-size:12px}
