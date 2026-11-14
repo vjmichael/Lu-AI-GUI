@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "f9bfb9afe466a4c12f2922dedb34078de0c5deab",
+  "sourceCommitBeforeLock": "093b92e03338b6549d79d8aabbcf106bf498f14d",
   "trackedFileCount": 991,
   "files": [
     {
@@ -237,7 +237,7 @@
     },
     {
       "path": ".github/workflows/lu-repo01-full-source.yml",
-      "blob": "856281b10a6d87f66f874ae186b909d6c40767f9"
+      "blob": "bf40276323b06d7992bb21f9ae19ba3a606c7c6c"
     },
     {
       "path": ".github/workflows/lu-tools-01-05-integration.yml",
@@ -2229,11 +2229,11 @@
     },
     {
       "path": "scripts/core01f-merge-preflight.mjs",
-      "blob": "aa4ca24a30e65faf2bd65890561fc090485803e6"
+      "blob": "c8c2035165e5edfe6f148518d0d440d9da407159"
     },
     {
       "path": "scripts/core01f-merge-preflight.test.mjs",
-      "blob": "70bc5c2a3150f689585d3e7181b27f5e1bda8578"
+      "blob": "7a03d9bef72c447d1cdf902f0bec53cd7ca7bde7"
     },
     {
       "path": "scripts/linux/org.lu.desktop.observe-learn.policy",
