@@ -1235,7 +1235,10 @@ impl DesktopState {
                     top_k: profile.top_k,
                     min_p: profile.min_p,
                 })?;
-                Ok((backend,profile.context_tokens,profile.max_new_tokens))
+                // Preserve the existing 4096-token ceiling for separately
+                // supervised planning/tool requests. The saved per-model
+                // maxNewTokens is the normal human Send response budget.
+                Ok((backend,profile.context_tokens,4096))
             },
         )
         .map_err(|e| format!("supervisor init: {e:?}"))?;

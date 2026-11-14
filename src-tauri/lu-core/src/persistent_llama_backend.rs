@@ -549,6 +549,23 @@ impl Drop for PersistentLlamaBackend {
 mod tests {
     use super::*;
     #[test]
+    fn host_sampling_profile_preserves_text_and_image_template_guards(){
+        let mut body=serde_json::json!({
+            "messages":[{"role":"user","content":"hello"}],
+            "temperature":0.0,
+            "chat_template_kwargs":{"enable_thinking":false}
+        });
+        let sample=SamplingProfile{
+            temperature:0.6,top_p:0.9,top_k:30,min_p:0.04
+        }.validate().unwrap();
+        sample.apply(&mut body);
+        assert_eq!(body["temperature"],serde_json::json!(0.6_f32));
+        assert_eq!(body["top_k"],30);
+        assert_eq!(body["chat_template_kwargs"]["enable_thinking"],false);
+        assert!(SamplingProfile{temperature:f32::NAN,..sample}.validate().is_err());
+        assert!(SamplingProfile{top_p:0.0,..sample}.validate().is_err());
+    }
+    #[test]
     fn api_key_requires_full_host_entropy() {
         assert!(!valid_api_key("1234"));
         assert!(valid_api_key(&"0a".repeat(32)));

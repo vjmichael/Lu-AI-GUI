@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {DEFAULT_PROFILE, normalizeProfile, profileField} from '../web/inference_profile.mjs';
 test('legacy installed GGUF behavior is preserved until explicit host save',()=>{
  const p=normalizeProfile(DEFAULT_PROFILE);
@@ -36,3 +37,21 @@ test('profile cannot be set with malformed sampling or output limits',()=>{
  assert.throws(()=>normalizeProfile({...DEFAULT_PROFILE,threads:0}));
 });
 
+
+test('source-witness: model-specific settings reach protected llama.cpp runtime',()=>{
+ const code=readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+ const engine=readFileSync(new URL('../../src-tauri/lu-core/src/persistent_llama_backend.rs',import.meta.url),'utf8');
+ const sup=readFileSync(new URL('../../src-tauri/lu-core/src/inference_supervisor.rs',import.meta.url),'utf8');
+ const settings=readFileSync(new URL('../web/native_windows.jsx',import.meta.url),'utf8');
+ for(const name of ['lu_model_inference_profile','lu_model_save_inference_profile'])
+   assert.match(code,new RegExp('fn '+name+'\\\\('));
+ assert.match(code,/new_with_model_profile/);
+ assert.match(code,/threads: NonZeroUsize::new\(profile\.threads as usize\)/);
+ assert.match(code,/context_tokens: profile\.context_tokens/);
+ assert.match(code,/with_sampling_profile/);
+ assert.match(code,/Ok\(\(backend,profile\.context_tokens,4096\)\)/);
+ assert.match(sup,/max_output_tokens/);
+ assert.equal((engine.match(/self\.sampling\.apply\(&mut json\)/g)||[]).length,3);
+ assert.match(settings,/Save model inference settings/);
+ assert.match(settings,/normalizeProfile\(profileSettings\)/);
+});

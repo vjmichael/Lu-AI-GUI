@@ -65,10 +65,26 @@ pub fn valid_model_ref(id: &str) -> bool {
 }
 
 pub fn read(path: &Path) -> Result<HashMap<String, InferenceProfile>, String> {
-    if !path.exists() {
-        return Ok(HashMap::new());
-    }
-    let meta = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta)=>meta,
+        Err(error) if error.kind()==std::io::ErrorKind::NotFound=>{
+            // R23 crash-safe Windows replace may stop after moving the
+            // original file to the backup. Reopen and VALIDATE its contents
+            // before restoring it under the exclusive app-owner lease.
+            let backup=path.with_extension("json.bak");
+            match fs::symlink_metadata(&backup) {
+                Ok(meta) if meta.file_type().is_file()=>{
+                    let verified=read(&backup)?;
+                    fs::rename(&backup,path).map_err(|e|e.to_string())?;
+                    return Ok(verified);
+                },
+                Ok(_)=>return Err("profile backup is not a regular file".into()),
+                Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(HashMap::new()),
+                Err(e)=>return Err(e.to_string())
+            }
+        },
+        Err(error)=>return Err(error.to_string()),
+    };
     if !meta.file_type().is_file() || meta.len() > MAX_PROFILE_FILE_BYTES {
         return Err("profile storage is not a bounded regular file".into());
     }
@@ -109,9 +125,11 @@ pub fn write(path: &Path, profiles: &HashMap<String, InferenceProfile>) -> Resul
     ) {
         return Err("profile parent is not an approved regular directory".into());
     }
-    if path.exists() && !fs::symlink_metadata(path)
-        .map_err(|e| e.to_string())?.file_type().is_file() {
-        return Err("profile destination is not a regular file".into());
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_file()=>{},
+        Ok(_)=>return Err("profile destination is not a regular file".into()),
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},
+        Err(e)=>return Err(e.to_string()),
     }
     let data = serde_json::to_vec_pretty(profiles).map_err(|e| e.to_string())?;
     if data.len() as u64 > MAX_PROFILE_FILE_BYTES {
@@ -210,5 +228,27 @@ mod source_reconciliation_tests {
         let mut bad=HashMap::new();
         bad.insert("../other".into(),InferenceProfile::default());
         assert!(write(&std::env::temp_dir().join("ignored-profiles.json"),&bad).is_err());
+    }
+}
+
+#[cfg(test)]
+mod crash_profile_recovery_tests{
+    use super::*;
+    #[test]
+    fn completed_profile_recovered_from_validated_backup_after_restart(){
+        let folder=std::env::temp_dir().join(format!(
+            "lu-profile-crash-{}-{}",std::process::id(),rand::random::<u64>()
+        ));
+        fs::create_dir_all(&folder).unwrap();
+        let source=folder.join("inference-profiles.json");
+        let backup=source.with_extension("json.bak");
+        let mut profiles=HashMap::new();
+        profiles.insert("m-0123456789abcdef0123456789abcdef".into(),InferenceProfile::default());
+        write(&source,&profiles).unwrap();
+        fs::rename(&source,&backup).unwrap();
+        assert_eq!(read(&source).unwrap(),profiles);
+        assert!(source.is_file());
+        assert!(!backup.exists());
+        fs::remove_dir_all(folder).unwrap();
     }
 }
