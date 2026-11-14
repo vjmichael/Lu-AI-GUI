@@ -16,6 +16,7 @@ import stat
 import subprocess
 import sys
 import time
+import tempfile
 
 MAX_REQUEST=8192
 MAX_REPLY=3_000_000
@@ -92,6 +93,23 @@ def forward(src,dst,limit,partial):
         partial[:]=remain
     if len(partial)>limit:reject("unbounded browser frame")
     return True
+def chrome_pre_admission_failure(chrome,log,profile,xauthority):
+    """Only post-exit, bounded original Chromium stderr; never page output.
+
+    Chromium's exit status alone cannot distinguish X11, executable, linker,
+    sandbox or namespace admission. The browser protocol stays opaque; a
+    crash at this stage NEVER releases a valid browser kernel receipt.
+    """
+    log.flush()
+    log.seek(0)
+    text=log.read(4096).decode("utf-8",errors="replace")
+    for private in (str(profile),xauthority):
+        if private:text=text.replace(private,"<original-user-private-path>")
+    text=" ".join(x for x in text.replace("\x1b","").split() if x)
+    text=text[:1800] if text else "<no-chromium-diagnostic>"
+    print("SEC06C_BROWSER_CHROMIUM_PRE_ADMISSION_FAILED "
+          +"exit="+str(chrome.returncode)+" stderr="+text,file=sys.stderr,flush=True)
+
 def run(a):
     if os.geteuid()==0:reject("browser process mediator must never run as root")
     if not HEX32.fullmatch(a.nonce):reject("original manager nonce invalid")
@@ -120,22 +138,34 @@ def run(a):
     require_go(a.nonce)
     portfile=profile/"DevToolsActivePort"
     if portfile.exists():reject("stale CDP endpoint or reused user profile")
-    chrome=subprocess.Popen([a.chromium,
-         "--remote-debugging-port=0","--remote-debugging-address=127.0.0.1",
-         "--no-first-run","--no-default-browser-check",
-         "--disable-background-networking","--user-data-dir="+str(profile),
-         "about:blank"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
-         stderr=subprocess.DEVNULL,env=env,cwd="/",close_fds=True)
+    # An unlinked nonroot scratch file cannot block Chrome if it logs more
+    # than a pipe's capacity. Read only a small sanitized prefix after a
+    # proven pre-admission exit; do not weaken any sandbox flags.
+    startup_log=tempfile.TemporaryFile(mode="w+b")
+    try:
+        chrome=subprocess.Popen([a.chromium,
+             "--remote-debugging-port=0","--remote-debugging-address=127.0.0.1",
+             "--no-first-run","--no-default-browser-check",
+             "--disable-background-networking","--user-data-dir="+str(profile),
+             "about:blank"],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
+             stderr=startup_log,env=env,cwd="/",close_fds=True)
+    except Exception:
+        startup_log.close()
+        raise
     node=None
     try:
         until=time.monotonic()+25
         port=None
         while time.monotonic()<until:
-            if chrome.poll() is not None:reject("original Chromium died before admission")
+            if chrome.poll() is not None:
+                chrome_pre_admission_failure(chrome,startup_log,profile,a.xauthority)
+                reject("original Chromium died before admission")
             port=loopback_port(portfile)
             if port is not None:break
             time.sleep(.05)
-        if port is None:reject("Chromium never established genuine loopback CDP")
+        if port is None:
+            chrome_pre_admission_failure(chrome,startup_log,profile,a.xauthority)
+            reject("Chromium never established genuine loopback CDP")
         env["LU_BROWSER_HOST_CONFIG"]=json.dumps({
              "origins":a.origin,"profileDirectory":str(profile),
              "visibilityMode":a.mode,
@@ -144,6 +174,8 @@ def run(a):
             stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
             env=env,cwd=str(pathlib.Path(a.script).parent),close_fds=True)
         if chrome.poll() is not None or node.poll() is not None:
+            if chrome.poll() is not None:
+                chrome_pre_admission_failure(chrome,startup_log,profile,a.xauthority)
             reject("browser pair exited before original admission")
         # The privileged root manager independently reads BOTH /proc cgroups
         # before it forwards this fixed tuple to the desktop host.
@@ -166,6 +198,7 @@ def run(a):
             node.kill();node.wait(timeout=8)
         if chrome.poll() is None:
             chrome.kill();chrome.wait(timeout=8)
+        startup_log.close()
 def main():
     p=argparse.ArgumentParser(allow_abbrev=False)
     for name in ("nonce","chromium","chromium_sha","node","node_sha",

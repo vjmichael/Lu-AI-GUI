@@ -58,7 +58,7 @@ def atomic_observation(path, data):
         file.flush()
         os.fsync(file.fileno())
 
-def inside(unit, evidence, expected):
+def inside(unit, evidence, expected, scenario):
     head(expected)
     if sys.platform != "linux" or os.geteuid() == 0:
         fail("worker must be nonroot native Linux")
@@ -91,10 +91,20 @@ def inside(unit, evidence, expected):
         # Mirror the real Lu-owned service worker's crash/cancel lifetime
         # pipe. An explicitly open stdin keeps it alive; a killed host
         # closes that pipe and must trigger own-child reaping.
-        while True:
-            readable, _, _ = select.select([sys.stdin.buffer], [], [], .1)
-            if readable and not sys.stdin.buffer.read(1):
-                break
+        if scenario=="worker-main-sigkill":
+            # This exact destructive case MUST retain a live original manager
+            # until the independent verifier sends SIGKILL via its pidfd.
+            # systemd-run --pipe may close stdin while the unit is still
+            # starting; treating that as EOF here races away the real victim
+            # and makes pidfd_send_signal fail ESRCH. Cancel and host-crash
+            # still independently exercise host-owned pipe/EOF behavior.
+            while True:
+                time.sleep(.1)
+        else:
+            while True:
+                readable, _, _ = select.select([sys.stdin.buffer], [], [], .1)
+                if readable and not sys.stdin.buffer.read(1):
+                    break
     finally:
         # The independent test kills the main PID by exact pidfd, bypassing
         # Python cleanup; normal early errors still reap the disposable child.
@@ -125,6 +135,7 @@ def outer(unit, evidence, expected, scenario):
         f"--working-directory={REPO}",
         python, str(pathlib.Path(__file__).resolve()), "--inside",
         "--expected-sha", expected, "--evidence", str(evidence), "--unit", unit,
+        "--scenario", scenario,
     ]
     os.makedirs(evidence, mode=0o700, exist_ok=True)
     service_process = subprocess.Popen(
@@ -201,6 +212,8 @@ def outer(unit, evidence, expected, scenario):
             finally:
                 os.close(launcher_fd)
         else:
+            if not live(worker_pid) or pidfd_terminated(mainfd,0):
+                fail("original root service main exited BEFORE exact pidfd SIGKILL")
             signal.pidfd_send_signal(mainfd, signal.SIGKILL)
             if not pidfd_terminated(mainfd, 15):
                 fail("SIGKILL did not terminate original service main")
@@ -268,7 +281,7 @@ def main():
     if args.inside and (not unit.startswith("lu-sec06c-boundary-") or not unit.endswith(".service")):
         parser.error("unsafe systemd unit identity")
     try:
-        return inside(unit, path, args.expected_sha) if args.inside else outer(unit, path, args.expected_sha, args.scenario)
+        return inside(unit, path, args.expected_sha, args.scenario) if args.inside else outer(unit, path, args.expected_sha, args.scenario)
     except Exception as exc:
         print(f"SEC06C_ROOT_OWNED_BOUNDARY_BLOCKED: {exc}", file=sys.stderr)
         return 1

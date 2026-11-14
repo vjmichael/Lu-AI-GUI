@@ -671,3 +671,14 @@ test('SEC06C real browser native job is a mandatory independent SEC06F gate',()=
   assert.match(fixture,/unrelated_survived=1/);
   assert.doesNotMatch(fixture,/MOCK_|FAKE_|SIMULATED_KERNEL_PASS/);
 });
+
+test('SEC06C Chrome startup failure logs bounded redacted stderr without bypassing OS custody',()=>{
+  const mediator=readFileSync(join(root,'scripts/lu-sec06c-owned-browser-worker.py'),'utf8');
+  assert.match(mediator,/def chrome_pre_admission_failure\(/);
+  assert.match(mediator,/log\.read\(4096\)/);
+  assert.match(mediator,/text\.replace\(private,"<original-user-private-path>"\)/);
+  assert.match(mediator,/SEC06C_BROWSER_CHROMIUM_PRE_ADMISSION_FAILED/);
+  assert.match(mediator,/stderr=startup_log/);
+  assert.match(mediator,/reject\("original Chromium died before admission"\)/);
+  assert.doesNotMatch(mediator,/--no-sandbox|--disable-setuid-sandbox/);
+});
