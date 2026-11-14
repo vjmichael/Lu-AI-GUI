@@ -64,6 +64,9 @@ fin04w2-scm = ["fin04w2-protocol", "windows-worker"]
 fin04w2-contained-probe = ["fin04w2-scm"]
 # C2 fixed one-use service admission. Windows debug native tests only.
 fin04w2-c2 = ["fin04w2-contained-probe"]
+# Source-only two-process Job/AppContainer preparation; never a released debugger.
+# Older split authority is quarantined for reconciliation with the C2 original one-use service.
+fin04w2-split-native = ["fin04w2-c2"]
 # D4C runs a pinned, native first-party LLVM PE/PDB reader only in
 # disposable debug CI; not a Lu release, Tauri command or general tool.
 dev045d4c-ci-oracle = ["dap-transport", "protected-recovery-service"]
@@ -89,5 +92,6 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_Security_Isolation", "Win32_Storage_FileSystem",
   "Win32_System_Com", "Win32_System_JobObjects", "Win32_System_Threading",
   "Win32_System_Pipes", "Win32_System_Services",
-  "Win32_System_Diagnostics_ToolHelp", "Win32_System_Diagnostics_Debug"
+  "Win32_System_Diagnostics_ToolHelp", "Win32_System_Diagnostics_Debug",
+  "Win32_NetworkManagement_WindowsFilteringPlatform", "Win32_Security_Authentication_Identity"
 ] }
