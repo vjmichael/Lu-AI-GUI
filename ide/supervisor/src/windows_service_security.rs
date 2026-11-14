@@ -742,7 +742,7 @@ impl JobSecurity {
     pub(crate) fn new_target_service_owned() -> Result<Self, SupervisorError> {
         Self::new_split_service_owned("LuIdeDebugTargetBroker")
     }
-    fn new_split_service_owned(service_name: &str) -> Result<Self, SupervisorError> {
+    pub(crate) fn new_split_service_owned(service_name: &str) -> Result<Self, SupervisorError> {
         if service_name != "LuIdeDebuggerBroker"
             && service_name != "LuIdeDebugTargetBroker" {
             return Err(denied());
@@ -809,7 +809,7 @@ pub(crate) fn verify_debugger_job_kernel_acl(job: HANDLE) -> Result<(), Supervis
 pub(crate) fn verify_target_job_kernel_acl(job: HANDLE) -> Result<(), SupervisorError> {
     verify_split_job_kernel_acl(job, "LuIdeDebugTargetBroker")
 }
-fn verify_split_job_kernel_acl(job: HANDLE, service_name: &str) -> Result<(), SupervisorError> {
+pub(crate) fn verify_split_job_kernel_acl(job: HANDLE, service_name: &str) -> Result<(), SupervisorError> {
     if service_name != "LuIdeDebuggerBroker"
         && service_name != "LuIdeDebugTargetBroker" {
         return Err(denied());
