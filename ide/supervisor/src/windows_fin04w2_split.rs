@@ -11,7 +11,7 @@ use crate::{fin04w2_authority, windows_fin04w2_kernel,
 use std::{mem::size_of, path::Path, ptr};
 use windows_sys::Win32::{
     Foundation::{CloseHandle,HANDLE},
-    Security::{EqualSid,GetTokenInformation,IsTokenRestricted,TokenRestrictedSids,TokenAppContainerSid,
+    Security::{EqualSid,GetTokenInformation,IsTokenRestricted,TokenAppContainerSid,
         TokenCapabilities,TokenIsAppContainer,PSID,TOKEN_QUERY},
     System::{JobObjects::IsProcessInJob,
         Threading::{GetProcessId,OpenProcessToken,QueryFullProcessImageNameW}},
@@ -73,12 +73,7 @@ pub(crate) fn attest_separate_debugger_worker(
     }
     // Actual worker must retain the debugger service-specific restricting
     // SID; LocalService alone is not sufficient authority.
-    let sid=windows_service_security::sid_of_named_service("LuIdeDebuggerBroker")?;
-    if !windows_fin04w2_kernel::contains_sid(
-        token.0,TokenRestrictedSids,sid.as_ptr().cast_mut().cast(),
-    )? {
-        return Err(denied());
-    }
+    windows_service_security::verify_restricted_debugger_service_sid(token.0)?;
     Ok(())
 }
 
