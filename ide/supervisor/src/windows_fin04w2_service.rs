@@ -379,6 +379,44 @@ fn review_only(pipe: HANDLE, config: &InstalledAuditConfig) -> Result<(), Superv
         fin04w2_authority::reserve_fresh_original_authorization(
             &private_root,&original,
         )?;
+        #[cfg(feature="fin04w2-split-native")]
+        {
+            // W2-C original authenticated challenge, one-use service
+            // reservation, native journal and creator grant are reused;
+            // split-mode credentials CANNOT be supplied over the pipe.
+            let split=config.split_pair.as_ref().ok_or_else(denied)?;
+            let target_job=windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
+            let debugger_job=windows_fin04w2_kernel::create_bounded_empty_debugger_job()?;
+            // This prepares TWO suspended native processes under separate
+            // service-owned Job leases. The target executable and PDB were
+            // copied to and independently audited in a read-only service
+            // directory, not AppContainer LocalState.
+            let pair=windows_fin04w2_split_launcher::prepare_pair(
+                &target_job,&debugger_job,&private_root,
+                &config.original_supervisor_journal,&config.original_job_id,
+                &config.review_only_plan,&config.review_only_plan_hash,
+                &split.target_executable,&split.target_sha256,
+                &split.target_pdb,&split.pdb_sha256,
+                &split.lldb_dap_executable,&split.lldb_dap_sha256,
+            )?;
+            // This positive handshake is limited to creation while
+            // SUSPENDED. It is not an LLDB "initialize", stop or release.
+            send_fixed_signal(pipe,b'S')?;
+            require_fixed_signal(pipe,b'G')?;
+            fin04w2_authority::verify_original_execution_phase(
+                &config.original_supervisor_journal,
+                &config.original_job_id,&config.review_only_plan,
+                &config.review_only_plan_hash,crate::JobPhase::Running,
+            )?;
+            // Explicit fail-closed integration gate: until independent
+            // ACTIVE WFP policy is reobserved for BOTH exact image paths
+            // and the original DAP attach/RIP/PDB/recovery transaction has
+            // been proven, never resume either suspended worker. Drop of
+            // pair terminates both process handles; the SCM Job owners
+            // subsequently kill/reap both trees on every failure.
+            let _=pair;
+            return Err(denied());
+        }
         // W2-C permits ONLY the first-party, hash-pinned harmless fixture.
         // The child remains suspended inside the exact service-owned Job
         // until the original trusted host fsyncs Running and sends G.
