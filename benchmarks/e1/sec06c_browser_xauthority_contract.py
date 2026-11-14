@@ -30,8 +30,8 @@ def check():
         auth.chmod(0o600)
         profile=top/"lu-browser-profile"
         profile.mkdir(mode=0o700)
-        for module in (broker,manager):
-            lexical=module["unprivileged_xauthority_path"]
+        for loaded_contract in (broker,manager):
+            lexical=loaded_contract["unprivileged_xauthority_path"]
             assert lexical(str(auth)), "legitimate private X11 file not recognized lexically"
             assert lexical(str(profile)), "legitimate private user browser profile denied"
             assert lexical(""), "absence of optional user X11 cookie is allowed"

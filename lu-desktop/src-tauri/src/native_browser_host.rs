@@ -214,10 +214,14 @@ impl DesktopBrowserHost {
                 }
             }
         }
+        // Snapshot the original ownership state BEFORE releasing the guard;
+        // recovery is permitted only when no unresolved kernel handle remains.
+        #[cfg(target_os="linux")]
+        let session_absent=session.is_none();
         drop(session);
         let package_available=self.packaged_components_present();
         #[cfg(target_os="linux")]
-        let recovery_ready=running||(!session.is_some()
+        let recovery_ready=running||(session_absent
             &&OwnedBrowserWorker::sec06c_reconcile_previous(
                 &self.app_data.join("lu-browser-profile")).is_ok());
         #[cfg(not(target_os="linux"))]
