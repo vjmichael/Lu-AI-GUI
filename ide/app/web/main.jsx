@@ -214,6 +214,15 @@ function App() {
   const [quickOpenBusy, setQuickOpenBusy] = useState(false);
   const quickOpenBusyRef = useRef(false);
   const quickOpenSerial = useRef(0);
+  // IDE-MERGE-02: explicit human-only file operations; private drafts and editor panes are untouched.
+  const [sourceActionMode, setSourceActionMode] = useState('');
+  const [sourceActionProjectId, setSourceActionProjectId] = useState(null);
+  const [sourceActionPath, setSourceActionPath] = useState('');
+  const [sourceActionDestination, setSourceActionDestination] = useState('');
+  const [sourceRestoreToken, setSourceRestoreToken] = useState('');
+  const [sourceRestoreChoices, setSourceRestoreChoices] = useState([]);
+  const [sourceActionPending, setSourceActionPending] = useState(false);
+  const sourceActionTicket = useRef(null);
   const [directoryPageBusy, setDirectoryPageBusy] = useState(false);
   const [listing, setListing] = useState(null);
   const [visibleTreeCount, setVisibleTreeCount] = useState(INITIAL_VISIBLE_TREE_ENTRIES);
@@ -5573,6 +5582,155 @@ function App() {
         'they were preserved separately as private draft checkpoints.' : '');
     if (window.confirm(message)) {
       void operation('ide_unregister_project', { projectId: project.projectId });
+    }
+  }
+
+  // New/move/trash/restore never reuses Save, private draft or Quick Open state.
+  // The active registered project and its navigation epoch are authoritative.
+  async function selectSourceAction(mode) {
+    const projectId=activeProject?.projectId;
+    if (!projectId || !activeProject.active || !['new-file','new-folder','move','trash','restore'].includes(mode) ||
+        sourceActionTicket.current || explorerIoTicket.current ||
+        workspaceTransitionRef.current || workspaceLayoutOp.current ||
+        savingKeyRef.current || pending || mergeBusy || explorerPending) return;
+    const ticket=Symbol('source-action-choose');
+    sourceActionTicket.current=ticket;
+    setSourceActionPending(true);
+    setSourceActionMode(mode);
+    setSourceActionProjectId(projectId);
+    setSourceActionPath('');
+    setSourceActionDestination('');
+    setSourceRestoreToken('');
+    setSourceRestoreChoices([]);
+    const epoch=projectNavigationEpoch.current;
+    try {
+      if (mode==='restore') {
+        const entries=await invoke('ide_list_trashed_sources',{projectId});
+        if (sourceActionTicket.current!==ticket || activeProjectIdRef.current!==projectId ||
+            projectNavigationEpoch.current!==epoch) return;
+        if (!Array.isArray(entries)) throw Error('SOURCE_TRASH_LIST_INVALID');
+        const safe=entries.filter(item=>item && typeof item.token==='string' &&
+          typeof item.originalRelativePath==='string' &&
+          verifiedRelativeSourcePath(item.originalRelativePath) &&
+          item.payloadPresent && !item.originalPresent);
+        setSourceRestoreChoices(safe);
+        setSourceRestoreToken(safe[0]?.token || '');
+      }
+    } catch(error) {
+      setProblem('Source action could not be prepared: '+String(error));
+      setSourceActionMode('');
+    } finally {
+      if (sourceActionTicket.current===ticket) sourceActionTicket.current=null;
+      setSourceActionPending(false);
+    }
+  }
+
+  async function commitSourceAction() {
+    const mode=sourceActionMode, projectId=activeProject?.projectId;
+    if (!projectId || !activeProject.active || sourceActionProjectId!==projectId ||
+        !['new-file','new-folder','move','trash','restore'].includes(mode) ||
+        sourceActionTicket.current || explorerIoTicket.current || workspaceTransitionRef.current ||
+        workspaceLayoutOp.current || pending || savingKeyRef.current ||
+        explorerPending || mergeBusy || draftRecoveryBusy) return;
+    const ticket=Symbol('source-action-mutation');
+    const epoch=projectNavigationEpoch.current, relativeDir=directory;
+    sourceActionTicket.current=ticket;
+    workspaceTransitionRef.current=ticket;
+    setSourceActionPending(true);
+    setProblem('');
+    try {
+      let command, params, affected;
+      if (mode==='new-file' || mode==='new-folder') {
+        const name=sourceActionPath.trim();
+        if (!name || name==='.' || name==='..' || name.includes('/') ||
+            name.includes('\\') || name.length>255)
+          throw Error('SOURCE_CREATE_INVALID_NAME');
+        command='ide_create_source_entry';
+        params={projectId,relativeDir,name,kind:mode==='new-file'?'file':'directory'};
+        affected=relativeDir ? relativeDir+'/'+name : name;
+      } else if (mode==='move' || mode==='trash') {
+        const path=verifiedRelativeSourcePath(sourceActionPath.trim());
+        if (!path) throw Error('INVALID_RELATIVE_PATH');
+        if (tabsRef.current.some(tab=>tab.projectId===projectId && tab.relativePath===path))
+          throw Error('Close this file tab first; live edits and private drafts will not be discarded.');
+        affected=path;
+        if (mode==='move') {
+          const destination=verifiedRelativeSourcePath(sourceActionDestination.trim());
+          if (!destination || destination===path) throw Error('SOURCE_MOVE_INVALID_DESTINATION');
+          if (tabsRef.current.some(tab=>tab.projectId===projectId && tab.relativePath===destination))
+            throw Error('Destination is open in an editor. Close its tab first.');
+          command='ide_move_source_file';
+          params={projectId,sourcePath:path,destinationPath:destination};
+        } else {
+          command='ide_trash_source_file';
+          params={projectId,sourcePath:path};
+        }
+        const preview=await invoke('ide_preview_source_file',{projectId,relativePath:path});
+        if (preview?.projectId!==projectId || preview?.relativePath!==path ||
+            typeof preview?.revision!=='string' || !preview.revision)
+          throw Error('SOURCE_REVISION_UNVERIFIED');
+        params.expectedRevision=preview.revision;
+      } else {
+        const choice=sourceRestoreChoices.find(x=>x.token===sourceRestoreToken);
+        if (!choice || !verifiedRelativeSourcePath(choice.originalRelativePath))
+          throw Error('SOURCE_RESTORE_SELECTION_REQUIRED');
+        if (tabsRef.current.some(tab=>tab.projectId===projectId &&
+            tab.relativePath===choice.originalRelativePath))
+          throw Error('Close the destination editor tab before restoring.');
+        const fresh=await invoke('ide_list_trashed_sources',{projectId});
+        if (!Array.isArray(fresh) || !fresh.some(x=>x?.token===choice.token &&
+            x.originalRelativePath===choice.originalRelativePath &&
+            x.payloadPresent && !x.originalPresent))
+          throw Error('SOURCE_TRASH_CHANGED_RELOAD_REQUIRED');
+        command='ide_restore_source_file';
+        params={projectId,token:choice.token};
+        affected=choice.originalRelativePath;
+      }
+      if (sourceActionTicket.current!==ticket || workspaceTransitionRef.current!==ticket ||
+          activeProjectIdRef.current!==projectId || projectNavigationEpoch.current!==epoch)
+        throw Error('SOURCE_ACTION_PROJECT_CHANGED');
+      if (mode!=='new-file' && mode!=='new-folder') {
+        const message=mode==='move' ? 'Move '+affected+' to '+params.destinationPath+'? No existing file will be overwritten.' :
+          mode==='trash' ? 'Move '+affected+' to recoverable project trash? This will not erase private draft checkpoints.' :
+          'Restore '+affected+' from project trash? No existing file will be overwritten.';
+        if (!window.confirm(message)) return;
+      }
+      // A stale editor, project switch, or overlapping native I/O denies mutation.
+      if (sourceActionTicket.current!==ticket || workspaceTransitionRef.current!==ticket ||
+          activeProjectIdRef.current!==projectId || projectNavigationEpoch.current!==epoch ||
+          ((mode==='move'||mode==='trash'||mode==='restore') &&
+            tabsRef.current.some(tab=>tab.projectId===projectId &&
+              (tab.relativePath===affected || (mode==='move' &&
+                tab.relativePath===params.destinationPath)))))
+        throw Error('SOURCE_ACTION_CONTEXT_CHANGED');
+      const receipt=await invoke(command,params);
+      if (sourceActionTicket.current!==ticket || workspaceTransitionRef.current!==ticket ||
+          activeProjectIdRef.current!==projectId || projectNavigationEpoch.current!==epoch) return;
+      if (receipt?.projectId!==projectId ||
+          (mode!=='restore' && mode!=='new-file' && mode!=='new-folder' &&
+           receipt?.originalRelativePath!==affected))
+        throw Error('SOURCE_ACTION_RECEIPT_MISMATCH');
+      const raw=await invoke('ide_list_source_directory_page',{
+        projectId,relativeDir,after:null,
+      });
+      if (sourceActionTicket.current===ticket && workspaceTransitionRef.current===ticket &&
+          activeProjectIdRef.current===projectId && projectNavigationEpoch.current===epoch &&
+          directory===relativeDir) {
+        setListing(checkedDirectoryPage(raw,projectId,relativeDir,null));
+        setVisibleTreeCount(INITIAL_VISIBLE_TREE_ENTRIES);
+        setHint('Source action completed: '+mode.replaceAll('-',' ')+' · '+affected+
+          '. Existing editors and private draft checkpoints were preserved.');
+        setSourceActionMode('');
+        setSourceRestoreChoices([]);
+      }
+    } catch(error) {
+      if (sourceActionTicket.current===ticket)
+        setProblem('Source action not verified: '+String(error)+
+          '. Refresh the directory before retrying; the file may have changed.');
+    } finally {
+      if (workspaceTransitionRef.current===ticket) workspaceTransitionRef.current=null;
+      if (sourceActionTicket.current===ticket) sourceActionTicket.current=null;
+      setSourceActionPending(false);
     }
   }
 
@@ -11095,6 +11253,58 @@ function App() {
             <div className="sourceTreeHeader">
               <strong>Files</strong><span>Project</span>
             </div>
+            <div className="sourceMutationToolbar" role="toolbar" aria-label="Human-controlled source file operations">
+              {[
+                ['new-file','New file'],['new-folder','New folder'],['move','Move file'],
+                ['trash','Trash file'],['restore','Restore file'],
+              ].map(([mode,label])=><button key={mode} type="button" className="ghostBtn"
+                aria-pressed={sourceActionMode===mode && sourceActionProjectId===activeProject?.projectId}
+                disabled={!activeProject?.active || sourceActionPending || explorerPending ||
+                  !!savingKey || !!workspaceTransitionRef.current}
+                onClick={()=>void selectSourceAction(mode)}>{label}</button>)}
+            </div>
+            {sourceActionMode && sourceActionProjectId===activeProject?.projectId &&
+              <form className="sourceMutationForm" aria-label="Review source file action"
+                onSubmit={event=>{event.preventDefault();void commitSourceAction();}}>
+                {sourceActionMode==='restore' ? <>
+                  <label htmlFor="source-restore-entry">Recoverable source</label>
+                  <select id="source-restore-entry" aria-label="Recoverable project source file"
+                    value={sourceRestoreToken} disabled={sourceActionPending}
+                    onChange={event=>setSourceRestoreToken(event.target.value)}>
+                    <option value="">Choose recoverable file</option>
+                    {sourceRestoreChoices.map(entry=><option key={entry.token} value={entry.token}>
+                      {entry.originalRelativePath}</option>)}
+                  </select>
+                  {!sourceRestoreChoices.length && <p>No verified recoverable project files.</p>}
+                </> : <>
+                  <label htmlFor="source-action-path">
+                    {sourceActionMode==='new-file'||sourceActionMode==='new-folder'
+                      ? 'New name in current folder' : 'Project-relative source file'}</label>
+                  <input id="source-action-path" autoComplete="off" spellCheck={false}
+                    aria-label="Source action path or new name" maxLength={1024}
+                    value={sourceActionPath} disabled={sourceActionPending}
+                    placeholder={sourceActionMode.startsWith('new-')?'name.ext':'src/file.rs'}
+                    onChange={event=>setSourceActionPath(event.target.value)}/>
+                  {sourceActionMode==='move' && <>
+                    <label htmlFor="source-action-destination">Project-relative destination</label>
+                    <input id="source-action-destination" autoComplete="off" spellCheck={false}
+                      aria-label="Project-relative move destination" maxLength={1024}
+                      value={sourceActionDestination} disabled={sourceActionPending}
+                      placeholder="src/renamed.rs"
+                      onChange={event=>setSourceActionDestination(event.target.value)}/>
+                  </>}
+                </>}
+                <div className="sourceMutationButtons">
+                  <button type="submit" disabled={sourceActionPending ||
+                    (sourceActionMode==='restore' ? !sourceRestoreToken : !sourceActionPath.trim())}>
+                    {sourceActionPending?'Checking…':'Review and apply'}</button>
+                  <button type="button" className="ghostBtn" disabled={sourceActionPending}
+                    onClick={()=>setSourceActionMode('')}>Cancel</button>
+                </div>
+                <p>One registered project only. No overwrite, no execution.
+                  Move and Trash require closing the source tab first.
+                  Unsaved editors and private draft checkpoints are preserved.</p>
+              </form>}
             <form className="sourceGoToFile" onSubmit={event=>{
               event.preventDefault(); void openRelativeSourcePath();
             }}>
