@@ -58,6 +58,7 @@ struct Session<B: InferenceBackend> {
     model_ref: String,
     pid: Option<u32>,
     engine: Mutex<InferenceBridge<B>>,
+    max_output_tokens: u32,
     control: Mutex<SessionControl>,
 }
 /// Always release a generation reservation on return or panic; never leave
@@ -89,7 +90,9 @@ pub struct TrustedInferenceSupervisor<B: InferenceBackend + Send + 'static> {
     context_tokens: u32,
     models: Mutex<HashMap<String, AdmittedModel>>,
     projectors: Mutex<HashMap<String, AdmittedProjector>>,
-    factory: Arc<dyn Fn() -> Result<B, String> + Send + Sync>,
+    // The host chooses a validated profile for the admitted model exactly
+    // once, before starting its pinned backend. No model-issued flags.
+    factory: Arc<dyn Fn(&str) -> Result<(B,u32,u32), String> + Send + Sync>,
     current: Mutex<Option<Arc<Session<B>>>>,
 }
 impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
@@ -98,6 +101,20 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         context_tokens: u32,
         models: Vec<(String, AdmittedModel)>,
         factory: impl Fn() -> Result<B, String> + Send + Sync + 'static,
+    ) -> Result<Self, SupervisorError> {
+        Self::new_with_model_profile(backend_id,context_tokens,models,move |_| {
+            Ok((factory()?,context_tokens,32_768))
+        })
+    }
+
+    /// R23 adaptation: exactly one host-owned model-specific context/output
+    /// snapshot is bound to the pinned backend and wire load request.
+    /// This overload preserves the existing no-profile factory for old hosts.
+    pub fn new_with_model_profile(
+        backend_id: String,
+        context_tokens: u32,
+        models: Vec<(String, AdmittedModel)>,
+        factory: impl Fn(&str) -> Result<(B,u32,u32), String> + Send + Sync + 'static,
     ) -> Result<Self, SupervisorError> {
         if models.len() > 64 || context_tokens < 256 {
             return Err(SupervisorError::InvalidRequest);
@@ -252,12 +269,17 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         } else {
             None
         };
-        let backend = (self.factory)().map_err(|_| SupervisorError::Backend)?;
+        let (backend,model_context_tokens,max_output_tokens) =
+            (self.factory)(model_ref).map_err(|_| SupervisorError::Backend)?;
+        if !(256..=1_048_576).contains(&model_context_tokens)
+            || !(1..=32_768).contains(&max_output_tokens) {
+            return Err(SupervisorError::InvalidRequest);
+        }
         let mut engine = InferenceBridge::new(
             backend,
             session_id.clone(),
             self.backend_id.clone(),
-            self.context_tokens,
+            model_context_tokens,
         )?;
         let request = Self::frame(
             request_id,
@@ -265,7 +287,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
                 model_ref: model_ref.into(),
                 backend_id: self.backend_id.clone(),
                 projector_ref: projector_ref.clone(),
-                context_tokens: self.context_tokens,
+                context_tokens: model_context_tokens,
             }),
         );
         let frame = engine.load_with_projector(
@@ -282,6 +304,7 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
             model_ref: model_ref.into(),
             pid,
             engine: Mutex::new(engine),
+            max_output_tokens,
             control: Mutex::new(SessionControl {
                 active: None,
                 closing: false,
@@ -319,6 +342,9 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         history: &[proto::InferenceChatTurn],
     ) -> Result<(), SupervisorError> {
         let session = self.session(session_id)?;
+        if max_new_tokens > session.max_output_tokens {
+            return Err(SupervisorError::InvalidRequest);
+        }
         let frame = Self::frame(
             request_id,
             proto::inference_frame::Body::Generate(proto::InferenceGenerateRequest {
@@ -442,6 +468,9 @@ impl<B: InferenceBackend + Send + 'static> TrustedInferenceSupervisor<B> {
         history: &[proto::InferenceChatTurn],
     ) -> Result<(), SupervisorError> {
         let session = self.session(session_id)?;
+        if max_new_tokens > session.max_output_tokens {
+            return Err(SupervisorError::InvalidRequest);
+        }
         Self::image_frame(
             session_id,
             generation_id,
