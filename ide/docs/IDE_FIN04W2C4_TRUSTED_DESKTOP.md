@@ -27,6 +27,12 @@ and a real NO-default Yes click, then rechecks the complete plan. Only then
 can C2's unchanged authenticated SCM peer, suspended native Job, fixed benign
 probe, six original fsynced receipts and separate one-use service receipt run.
 There is no LLDB, arbitrary PID/command, debuggee or fallback path.
+The host also acquires the original FIN-01 global native-worker custody marker
+before preparing any C4 job. It independently replays and denies busy
+build/debug/LSP journals, checks the original marker during the approval
+dialog and releases only once the C4 and sibling original jobs are terminal.
+An uncertain death/restart retains the marker for separate kernel recovery.
+
 Cancel only terminates a still-Prepared original job. Uncertain admission remains
 quarantined, not replayable.
 

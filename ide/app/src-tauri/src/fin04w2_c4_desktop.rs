@@ -6,7 +6,10 @@
 //! It prepares one genuine sealed Cargo build and waits for an independently
 //! administrator-pinned C2 service configuration for that exact Job+plan.
 #![cfg(all(windows, debug_assertions, feature = "fin04w2-c4-desktop"))]
-use crate::build_backend::NativeBuildRuntime;
+use crate::{
+    build_backend::NativeBuildRuntime,
+    global_native_custody::{self, GlobalAdmissionFence},
+};
 use lu_ide_execution_supervisor::{
     project_debug_target::SealedProjectDebugTarget,
     snapshot::{publish_input, retire_input, verify_input},
@@ -158,10 +161,12 @@ struct Pending {
     plan_sha256: String,
     plan: JobPlan,
     sealed_build: Arc<SealedProjectDebugTarget>,
+    global_fence: GlobalAdmissionFence,
 }
 enum LocalState { Empty, Working, Prepared(Pending) }
 struct C4Gate {
     original: Supervisor,
+    profile: PathBuf,
     journal: PathBuf,
     stage: PathBuf,
     state: Mutex<LocalState>,
@@ -176,7 +181,7 @@ impl C4Gate {
         Ok(Self {
             original: Supervisor::open(journal.clone())
                 .map_err(|e| e.code().to_owned())?,
-            journal, stage, state: Mutex::new(LocalState::Empty),
+            profile: base, journal, stage, state: Mutex::new(LocalState::Empty),
         })
     }
     fn begin(&self) -> Result<(), String> {
@@ -193,8 +198,23 @@ impl C4Gate {
     ) -> Result<String, String> {
         self.begin()?;
         let mut prepared_id: Option<String> = None;
+        let mut fence: Option<GlobalAdmissionFence> = None;
+        let mut normal_debug_before = None;
         let candidate = (|| {
             forbidden_automated_session()?;
+            // FIN-01's global cross-process marker serializes C4 with every
+            // build/debug/LSP worker. No C4-specific permission bypass.
+            global_native_custody::preflight_global_idle(&self.profile,"debug")?;
+            let baseline=global_native_custody::domain_rows(&self.profile,"debug")?;
+            fence=Some(GlobalAdmissionFence::acquire(&self.profile,"debug")?);
+            normal_debug_before=Some(baseline);
+            if global_native_custody::durable_busy(
+                &global_native_custody::domain_rows(&self.profile,"debug")?
+            ) || global_native_custody::durable_busy(
+                &global_native_custody::sibling_rows(&self.profile,"debug")?
+            ) {
+                return Err(denied("FIN04C4_GLOBAL_WORKER_ALREADY_ACTIVE"));
+            }
             // A recovered interrupted C2 admission must not silently issue
             // another job. Manual independent native recovery is required.
             if self.original.inspect().map_err(|e| e.code().to_owned())?
@@ -239,8 +259,11 @@ impl C4Gate {
                 .map_err(|_| denied("FIN04C4_PRIVATE_PROPOSAL_SERIALIZE_DENIED"))?)
                 .map_err(|_| denied("FIN04C4_PRIVATE_PROPOSAL_WRITE_DENIED"))?;
             f.sync_all().map_err(|_| denied("FIN04C4_PRIVATE_PROPOSAL_FSYNC_DENIED"))?;
+            fence.as_ref().ok_or("FIN04C4_GLOBAL_FENCE_UNAVAILABLE")?
+                .marker_owner_intact()?;
             Ok(Pending {project_id:project,job_id:prepared.job_id,
-                plan_sha256:prepared.plan_sha256,plan,sealed_build:target})
+                plan_sha256:prepared.plan_sha256,plan,sealed_build:target,
+                global_fence:fence.take().ok_or("FIN04C4_GLOBAL_FENCE_UNAVAILABLE")?})
         })();
         let mut state = self.state.lock().map_err(|_| denied("FIN04C4_NATIVE_GATE_POISONED"))?;
         match candidate {
@@ -252,20 +275,38 @@ impl C4Gate {
                 Ok(display)
             }
             Err(code) => {
-                if let Some(id) = prepared_id {
-                    let _ = self.original.cancel_before_start(&id);
+                if let Some(ref id) = prepared_id {
+                    let _ = self.original.cancel_before_start(id);
                 }
+                let release = if let Some(mut owner) = fence {
+                    if prepared_id.is_some() {
+                        self.release_after_original_terminal(&mut owner)
+                    } else if let Some(before) = normal_debug_before {
+                        global_native_custody::domain_rows(&self.profile,"debug")
+                            .and_then(|after|
+                                owner.release_before_prepare_if_unchanged(&before,&after))
+                    } else { Err(denied("FIN04C4_GLOBAL_FENCE_BASELINE_MISSING")) }
+                } else { Ok(()) };
                 *state = LocalState::Empty;
+                release?;
                 Err(code)
             }
         }
+    }
+    fn release_after_original_terminal(
+        &self, fence: &mut GlobalAdmissionFence,
+    ) -> Result<(), String> {
+        let mut owned=self.original.inspect().map_err(|e|e.code().to_owned())?;
+        owned.extend(global_native_custody::domain_rows(&self.profile,"debug")?);
+        let siblings=global_native_custody::sibling_rows(&self.profile,"debug")?;
+        fence.release_if_terminal(&owned,&siblings)
     }
     fn approve(
         &self, app: &AppHandle, registry: &IdeWorkspaceRegistry,
         builds: &NativeBuildRuntime, window: &tauri::WebviewWindow,
     ) -> Result<String, String> {
         forbidden_automated_session()?;
-        let pending = {
+        let mut pending = {
             let mut state = self.state.lock().map_err(|_| denied("FIN04C4_NATIVE_GATE_POISONED"))?;
             match std::mem::replace(&mut *state, LocalState::Working) {
                 LocalState::Prepared(p) => p,
@@ -276,6 +317,12 @@ impl C4Gate {
             }
         };
         let result = (|| {
+            pending.global_fence.marker_owner_intact()?;
+            if global_native_custody::durable_busy(
+                &global_native_custody::sibling_rows(&self.profile,"debug")?
+            ) {
+                return Err(denied("FIN04C4_SIBLING_BECAME_ACTIVE"));
+            }
             if window.label() != "main" {
                 return Err(denied("FIN04C4_FOREIGN_IDE_WINDOW"));
             }
@@ -291,9 +338,13 @@ impl C4Gate {
             windows_fin04w2_c2_host::run_fixed_after_visible_native_consent(
                 &self.original,&pending.job_id,&pending.plan,
                 owner.0.cast(),
-                || original_plan(app,registry,builds,
-                    &pending.project_id,&pending.sealed_build,&self.stage)
-                    .map_err(|_| lu_ide_execution_supervisor::SupervisorError::WrongProjectOrSource),
+                || {
+                    pending.global_fence.marker_owner_intact()
+                        .map_err(|_|lu_ide_execution_supervisor::SupervisorError::NoContainment)?;
+                    original_plan(app,registry,builds,
+                        &pending.project_id,&pending.sealed_build,&self.stage)
+                        .map_err(|_|lu_ide_execution_supervisor::SupervisorError::WrongProjectOrSource)
+                },
                 &service,&service_sha,
             ).map_err(|e| e.code().to_owned())?;
             let rows = self.original.receipt_history(&pending.job_id)
@@ -315,12 +366,14 @@ impl C4Gate {
                 let _ = self.original.cancel_before_start(&pending.job_id);
             }
         }
+        let release=self.release_after_original_terminal(&mut pending.global_fence);
         if let Ok(mut guard) = self.state.lock() { *guard = LocalState::Empty; }
+        release?;
         result
     }
     fn cancel(&self) -> Result<String,String> {
         let mut state = self.state.lock().map_err(|_| denied("FIN04C4_NATIVE_GATE_POISONED"))?;
-        let pending = match std::mem::replace(&mut *state, LocalState::Working) {
+        let mut pending = match std::mem::replace(&mut *state, LocalState::Working) {
             LocalState::Prepared(p) => p,
             previous => {
                 *state = previous;
@@ -330,7 +383,9 @@ impl C4Gate {
         let result = self.original.cancel_before_start(&pending.job_id)
             .map_err(|e| e.code().to_owned())
             .map(|_| format!("Prepared native job {} cancelled. It can never be approved or replayed.", pending.job_id));
+        let release=self.release_after_original_terminal(&mut pending.global_fence);
         *state = LocalState::Empty;
+        release?;
         result
     }
 }

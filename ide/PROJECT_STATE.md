@@ -12,6 +12,13 @@ hashed private snapshot. Only then does it record an original fsynced
 Supervisor Prepared receipt and a non-authoritative administrator-review
 manifest. This is NOT consent or an executable capability.
 
+C4 also holds the existing FIN-01 global cross-process build/debug/LSP
+admission marker from native preparation through terminal completion or
+cancel. It replays sibling original journals while holding the marker,
+checks its owner again before and during human consent, and releases only
+after all original domains are terminal. Uncertain states leave the marker
+occupied for independently verified native recovery, never automatic replay.
+
 The second operator action requires an independently provisioned
 administrator-pinned service config for the exact Job+plan and a compiled
 fixed service SHA, Tauri-owned main Win32 HWND, real NO-default native

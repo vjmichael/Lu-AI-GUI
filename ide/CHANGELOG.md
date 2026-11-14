@@ -12,6 +12,11 @@ retains its in-memory one-use grant and fsynced journal across both
 menu stages; service is separately administrator-configured for that
 exact Job+plan. No service config writer, new executable/command/PID,
 LLDB/DAP, JS invoke, simulated approval or installer authority.
+The new host reuses the existing FIN-01 create_new global native-worker
+fence across the entire pending/consent/SCM lifecycle, with original
+build/debug/LSP journal checks, anti-replacement marker checks and release
+only after terminal reconciliation. Stale/uncertain admissions keep it.
+
 Native Windows tests and original OS receipt gates require exact-head
 reconciliation; physical operator consent is NOT claimed.
 
