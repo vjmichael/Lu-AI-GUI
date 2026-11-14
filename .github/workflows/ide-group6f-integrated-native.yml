@@ -126,10 +126,18 @@ jobs:
               --features fin04w2-split-native --lib
             cargo check --locked --manifest-path ide/supervisor/Cargo.toml \
               --features fin04w2-split-native --bin windows_fin04w2_target_service
+            cargo check --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --bin windows_fin04w2_debugger_service
             cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
               --features fin04w2-split-native --lib windows_fin04w2_target_service::tests -- --nocapture
             cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
               --features fin04w2-split-native --lib windows_fin04w2_scm_pair::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib windows_fin04w2_target_ipc::tests -- --nocapture
+            cargo test --locked --manifest-path ide/supervisor/Cargo.toml \
+              --features fin04w2-split-native --lib windows_service_security::tests -- --nocapture
+            echo "IDE_MERGE03_TARGET_IPC_FORGED_RECEIPT_NEGATIVES=PASS"
+            echo "IDE_MERGE03_TWO_SERVICES_NATIVE_IPC_AND_SUSPENDED_JOBS=NOT_TESTED"
             echo "IDE_MERGE03_TARGET_SCM_SOURCE_COMPILE=PASS"
             echo "IDE_MERGE03_INDEPENDENT_TARGET_SCM_INSTALLED=NOT_TESTED"
             echo "IDE_MERGE03_SPLIT_SOURCE_COMPILE=PASS"
