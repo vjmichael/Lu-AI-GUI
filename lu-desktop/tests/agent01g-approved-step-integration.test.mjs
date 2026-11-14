@@ -108,8 +108,13 @@ test('C3 planned execution demands verified independent native Protobuf outcome'
   assert.match(loop,/ObservationRequiredBeforeFinal/);
   assert.match(loop,/ensure_continuation_authorized\(authority\)/);
   assert.match(session,/verify_actual_broker_session\(/);
+  assert.match(session,/self\.turn\.require_native_continuation_capabilities\(/);
+  assert.match(loop,/pub fn require_native_continuation_capabilities\(/);
+  assert.match(session,/binding\.reviewed_execute_id,binding\.reviewed_read_id/);
   assert.match(session,/self\.turn\.require_verified_independent_outcome\(\)/);
   assert.ok(session.indexOf('verify_actual_broker_session(')<
+    session.indexOf('self.turn.require_native_continuation_capabilities('));
+  assert.ok(session.indexOf('self.turn.require_native_continuation_capabilities(')<
     session.indexOf('self.turn.require_verified_independent_outcome()'));
 });
 
