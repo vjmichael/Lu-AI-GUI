@@ -144,6 +144,13 @@ jobs:
             throw 'DENIED: measured Windows SDK/LLVM Cargo bundle lock invalid'
           }
           Write-Host 'DEV045B_WINDOWS_OFFLINE_TOOLCHAIN=CI_ONLY_SELF_MEASURED'
+      # Observer runs OUTSIDE the sandbox. It does not modify execution
+      # authority and cannot convert a failure into a pass.
+      - name: Start signed Windows kernel denied-operation observer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/debug/Invoke-FIN04WDeniedOperationTrace.ps1 -Phase Start -Root (Join-Path $env:RUNNER_TEMP 'fin04w-native-op-dx')
       - name: CI-only FIN-04W zero-capability AppContainer debugger with original SCM Job and receipts
         shell: pwsh
         run: |
@@ -205,6 +212,22 @@ jobs:
             }
             $global:LASTEXITCODE=0
           }
+      - name: Collect LLDB-DAP exact denied operations
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./ide/supervisor/fixtures/debug/Invoke-FIN04WDeniedOperationTrace.ps1 -Phase Collect -Root (Join-Path $env:RUNNER_TEMP 'fin04w-native-op-dx')
+      - name: Preserve sanitized kernel-op findings (not raw PML or CSV)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fin04w-signed-kernel-denied-op-summary
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/fin04w-native-op-dx/denied-operation-summary.json
+            ${{ runner.temp }}/fin04w-native-op-dx/monitor-provenance.json
       - name: Upload CI-only observed compiler identity
         if: always()
         uses: actions/upload-artifact@v4
