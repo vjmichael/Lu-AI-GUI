@@ -56,6 +56,29 @@ fn stable_read_evidence(value: &Value) -> Value {
     }
 }
 
+// Exact native worker/oracle method pairing. Model text and an arbitrary
+// first-party codec's "ok" field cannot promote a planned deliverable.
+fn verified_reviewed_oracle(tool_id: &str, data: &Value) -> bool {
+    if data.get("ok").and_then(Value::as_bool) != Some(true) {
+        return false;
+    }
+    let method = data.pointer("/result/independentOutcome/method")
+        .and_then(Value::as_str);
+    let status = data.pointer("/result/independentOutcome/status")
+        .and_then(Value::as_str);
+    if status != Some("VERIFIED") { return false; }
+    match tool_id {
+        "lu.reviewed.git.head" => method == Some("GIT_HEAD_DIRECT_V1"),
+        "lu.reviewed.git.status" => method == Some("GIT_STATUS_INDEX_TREE_V1"),
+        "lu.reviewed.git.branch" => method == Some("GIT_BRANCH_DIRECT_V1"),
+        "lu.reviewed.git.history" => matches!(method,
+            Some("GIT_HISTORY_LOOSE_DAG_V1" | "GIT_HISTORY_OBJECT_DAG_V2")),
+        "lu.reviewed.media.facts" => matches!(method,
+            Some("WAV_PCM_DIRECT_V1" | "MP4_BOXES_DIRECT_V1")),
+        _ => false,
+    }
+}
+
 fn substantive_read_digest(data: &Value) -> Option<String> {
     if data.get("ok")?.as_bool()? != true { return None; }
     let observed = data.get("result")?.as_object()?;
@@ -618,12 +641,9 @@ impl NativeToolTurn {
             .map_err(ToolTurnError::Catalog)?;
         if data.get("ok").and_then(Value::as_bool) == Some(true) {
             self.observed_tool_result = true;
-            // The reviewed native codec only exposes this field after it has
-            // inspected the independent original worker/oracle receipt.
-            // A successful dispatch, UNSUPPORTED source or model assertion
-            // outside the native decoded result cannot certify a plan step.
-            if data.pointer("/result/independentOutcome/status")
-                .and_then(Value::as_str) == Some("VERIFIED") {
+            // Only the exact reviewed native operation and its independent
+            // original-source method can satisfy scheduled model finalization.
+            if verified_reviewed_oracle(&descriptor.id, &data) {
                 self.observed_verified_independent_outcome = true;
             }
         }
@@ -676,6 +696,26 @@ impl NativeToolTurn {
 mod semantic_progress_tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn planned_completion_requires_exact_independently_verified_native_method() {
+        use super::verified_reviewed_oracle;
+        let evidence = serde_json::json!({"ok":true,"result":{
+            "independentOutcome":{"status":"VERIFIED","method":"GIT_HEAD_DIRECT_V1"}
+        }});
+        assert!(verified_reviewed_oracle("lu.reviewed.git.head",&evidence));
+        assert!(!verified_reviewed_oracle("lu.files.read_text",&evidence));
+        assert!(!verified_reviewed_oracle("lu.reviewed.git.status",&evidence));
+        let unsupported = serde_json::json!({"ok":true,"result":{
+            "independentOutcome":{"status":"UNSUPPORTED","method":"GIT_HEAD_DIRECT_V1"}
+        }});
+        assert!(!verified_reviewed_oracle("lu.reviewed.git.head",&unsupported));
+        let failed = serde_json::json!({"ok":false,"result":{
+            "independentOutcome":{"status":"VERIFIED","method":"GIT_HEAD_DIRECT_V1"}
+        }});
+        assert!(!verified_reviewed_oracle("lu.reviewed.git.head",&failed));
+        assert!(!verified_reviewed_oracle("lu.reviewed.git.head",
+            &serde_json::json!({"ok":true})));
+    }
     #[test]
     fn only_substantive_decoder_content_counts_as_progress_evidence() {
         assert!(substantive_read_digest(&json!({"ok":true,"result":{"query":"x","elapsed_ms":2}})).is_none());
