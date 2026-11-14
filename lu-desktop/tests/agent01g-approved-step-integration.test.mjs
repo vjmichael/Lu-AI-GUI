@@ -97,3 +97,31 @@ test('planner offers eligible first independent check without manufacturing gene
   assert.match(planner,/Do NOT change unrelated goals to fit currently reviewed tools/);
   assert.match(planner,/Other step kinds are plan data only/);
 });
+
+test('C3 planned execution demands verified independent native Protobuf outcome',()=>{
+  const loop=readFileSync(new URL('../../src-tauri/lu-core/src/agent_tool_loop.rs',import.meta.url),'utf8');
+  const session=readFileSync(new URL('../../src-tauri/lu-core/src/native_reviewed_app_tool.rs',import.meta.url),'utf8');
+  assert.match(loop,/requires_verified_independent_outcome/);
+  assert.match(loop,/fn verified_reviewed_oracle\(/);
+  assert.match(loop,/GIT_HEAD_DIRECT_V1/);
+  assert.match(loop,/MP4_BOXES_DIRECT_V1/);
+  assert.match(loop,/ObservationRequiredBeforeFinal/);
+  assert.match(loop,/ensure_continuation_authorized\(authority\)/);
+  assert.match(session,/verify_actual_broker_session\(/);
+  assert.match(session,/self\.turn\.require_verified_independent_outcome\(\)/);
+  assert.ok(session.indexOf('verify_actual_broker_session(')<
+    session.indexOf('self.turn.require_verified_independent_outcome()'));
+});
+
+test('C3 native task-board reconciliation reopens exact original worker and source without auto-completion',()=>{
+  const criteria=readFileSync(new URL('../src-tauri/src/project_task_verified_evidence.rs',import.meta.url),'utf8');
+  const board=readFileSync(new URL('../web/task_board.jsx',import.meta.url),'utf8');
+  assert.match(main,/project_task_verified_evidence::lu_project_task_reconcile_completion/);
+  assert.match(board,/invoke\('lu_project_task_reconcile_completion'/);
+  assert.match(board,/Reconcile native requirement and original completion evidence/);
+  assert.match(criteria,/project_task_agent_handoff::source_anchor\(/);
+  assert.match(criteria,/project_task_agent_handoff::independently_verified_task_witness\(/);
+  assert.match(criteria,/source_rescanned_this_review:true/);
+  assert.match(criteria,/task_completed:false,execution_authorized:false/);
+  assert.match(criteria,/STOP_REVIEW_HISTORY_RECONCILIATION_REQUIRED/);
+});
