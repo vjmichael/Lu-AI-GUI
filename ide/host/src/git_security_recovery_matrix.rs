@@ -113,7 +113,7 @@ pub struct ConsolidatedGitRecoveryEvidence {
 fn consolidate(
     id:&str,source:&SourceSnapshot,domains:Vec<RecoveryDomainEvidence>,
 )->Result<ConsolidatedGitRecoveryEvidence,&'static str>{
-    if domains.len()!=4
+    if domains.len()!=9
         ||domains.iter().any(|x|x.automatic_git_mutation_authorized
             ||x.automatic_retry_authorized
             ||!x.authoritative_original_journal_inspected)
@@ -125,6 +125,8 @@ fn consolidate(
     if found!=std::collections::BTreeSet::from([
         "reviewed_commit","protected_fast_forward",
         "protected_divergent_merge","protected_replay",
+        "partial_stage","conflict_resolution","reviewed_unstage",
+        "single_file_restore","single_file_stash",
     ]){return Err("G06F_MISSING_ORIGINAL_DOMAIN");}
     let troubled=domains.iter().any(|d|d.manual_reconciliation_required);
     let git_busy=source.state!=RepositoryState::Clean;
@@ -171,10 +173,21 @@ impl IdeWorkspaceRegistry{
         let fast=self.inspect_protected_merge_recovery(project_id)?;
         let divergent=self.inspect_protected_divergent_recovery(project_id)?;
         let replay=self.inspect_protected_replay_recovery(project_id)?;
+        let stage=self.inspect_partial_stage_recovery(project_id)?;
+        let conflict=self.inspect_protected_conflict_recovery(project_id)?;
+        let unstage=self.inspect_unstage_interrupted(project_id)?;
+        let restore=self.single_file_restore_recovery_required(project_id)?;
+        let stash=self.one_file_stash_recovery_required(project_id)?;
         if commit.project_id!=project_id||fast.project_id!=project_id
             ||divergent.project_id!=project_id||replay.project_id!=project_id
             ||commit.schema_version!=1||fast.schema_version!=1
             ||divergent.schema_version!=1||replay.schema_version!=1
+            ||stage.project_id!=project_id||conflict.project_id!=project_id
+            ||stage.schema_version!=1||conflict.schema_version!=1
+            ||stage.auto_delete_git_lock||stage.auto_rollback_index
+            ||stage.write_authority_granted
+            ||conflict.automatic_retry||conflict.automatic_restore
+            ||conflict.automatic_index_write||conflict.automatic_ref_update
             ||commit.automatic_retry||commit.automatic_ref_rewrite
             ||fast.automatic_retry||fast.automatic_ref_rewrite
             ||fast.automatic_checkout||fast.automatic_lock_deletion
@@ -194,6 +207,19 @@ impl IdeWorkspaceRegistry{
                 divergent.operator_reconciliation_required),
             domain("protected_replay",replay.state,
                 replay.operator_reconciliation_required),
+            domain("partial_stage",stage.state,
+                stage.operator_reconciliation_required),
+            domain("conflict_resolution",conflict.state,
+                conflict.operator_review_required),
+            domain("reviewed_unstage",unstage.unwrap_or("no_journal"),
+                unstage.is_some_and(|s| !matches!(s,
+                    "verified"|"cancelled_before_publication"))),
+            domain("single_file_restore",
+                if restore{"incomplete_restore_requires_review"}else{"no_pending_restore"},
+                restore),
+            domain("single_file_stash",
+                if stash{"incomplete_stash_requires_review"}else{"no_pending_stash"},
+                stash),
         ];
         let after_repo=exact_repo(self,project_id)?;
         if before!=snapshot(&after_repo)?{
@@ -317,7 +343,7 @@ mod tests{
     fn actual_registered_clean_repo_consults_four_original_recovery_domains(){
         let f=fixture();
         let result=f.registry.inspect_group6f_git_recovery(&f.id).unwrap();
-        assert_eq!(result.domains.len(),4);
+        assert_eq!(result.domains.len(),9);
         assert!(result.source_reobserved);
         assert!(result.local_new_operation_preflight_clear);
         assert!(!result.remote_publication_authorized);
@@ -347,11 +373,22 @@ mod tests{
             domain("protected_fast_forward","published_requires_receipt",true),
             domain("protected_divergent_merge","no_journal",false),
             domain("protected_replay","no_journal",false),
+            domain("partial_stage","no_journal",false),
+            domain("conflict_resolution","no_journal",false),
+            domain("reviewed_unstage","no_journal",false),
+            domain("single_file_restore","no_pending_restore",false),
+            domain("single_file_stash","no_pending_stash",false),
         ];
         let result=consolidate(&f.id,&src,domains).unwrap();
         assert!(result.cross_domain_manual_reconciliation_required);
         assert!(!result.local_new_operation_preflight_clear);
         assert!(!result.automatic_retry_authorized);
+    }
+    #[test]
+    fn corrupt_existing_single_file_stash_marker_vetoes_every_git_operation(){
+        let f=fixture();
+        fs::write(f.root.join(".git/lu-ide-fin03-stash-active"),b"not-a-valid-64-hex-marker").unwrap();
+        assert!(f.registry.inspect_group6f_git_recovery(&f.id).is_err());
     }
     #[test]
     fn missing_or_forged_original_domain_is_not_a_valid_consolidation(){
@@ -363,6 +400,11 @@ mod tests{
             domain("protected_fast_forward","no_journal",false),
             domain("protected_divergent_merge","no_journal",false),
             domain("protected_replay","no_journal",false),
+            domain("partial_stage","no_journal",false),
+            domain("conflict_resolution","no_journal",false),
+            domain("reviewed_unstage","no_journal",false),
+            domain("single_file_restore","no_pending_restore",false),
+            domain("single_file_stash","no_pending_stash",false),
         ];
         domains[2].automatic_retry_authorized=true;
         assert!(consolidate(&f.id,&src,domains).is_err());

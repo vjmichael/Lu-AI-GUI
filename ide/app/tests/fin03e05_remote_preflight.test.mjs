@@ -109,7 +109,7 @@ test('FIN03 6E05C offline intent remains host-only and never remotely executes',
   ]) assert.ok(intent.includes('fn '+testName+'('), testName);
 });
 
-test('Group 6F aggregates four original native recovery inspectors without publishing or retry', () => {
+test('Group 6F aggregates nine original native recovery inspectors without publishing or retry', () => {
   const code=read('../../host/src/git_security_recovery_matrix.rs');
   const production=code.split('#[cfg(test)]')[0];
   assert.match(host, /pub mod git_security_recovery_matrix;/);
@@ -118,6 +118,11 @@ test('Group 6F aggregates four original native recovery inspectors without publi
     'inspect_protected_merge_recovery',
     'inspect_protected_divergent_recovery',
     'inspect_protected_replay_recovery',
+    'inspect_partial_stage_recovery',
+    'inspect_protected_conflict_recovery',
+    'inspect_unstage_interrupted',
+    'single_file_restore_recovery_required',
+    'one_file_stash_recovery_required',
   ]) assert.ok(production.includes(method),method);
   for (const marker of [
     'G06F_SOURCE_DRIFT_DURING_RECONCILIATION',

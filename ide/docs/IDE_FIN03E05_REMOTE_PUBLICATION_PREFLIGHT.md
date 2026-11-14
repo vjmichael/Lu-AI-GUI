@@ -178,8 +178,9 @@ The native module `ide/host/src/git_security_recovery_matrix.rs`
 independently reopens the registered ordinary Git repository, reads a
 bounded original index SHA256, direct branch HEAD, Git operation state,
 foreign lock state and bounded worktree status, then consults the **original**
-6B reviewed commit, 6C fast-forward merge, 6C divergent merge, and
-6C cherry-pick/rebase recovery inspectors. Any inspector error, mismatched
+6B reviewed commit, 6C fast-forward merge, 6C divergent merge, 6C
+cherry-pick/rebase, partial stage, conflict resolution, unstage, single-file
+restore and stash recovery inspectors. Any inspector error, mismatched
 project, schema, unexpected automatic retry/rollback flag, missing/duplicate
 domain, foreign lock, dirty worktree or source drift fails closed.
 
@@ -187,7 +188,7 @@ All original journals retain their independent receipt/reconciliation
 semantics. A clean/no-pending cross-domain result is an inspection snapshot,
 **never** an executable permission, cached OS dialog, GitHub publish grant,
 lock removal or installed acceptance. New real-Git hostile fixtures verify
-clean four-domain recovery, foreign lock/dirty worktree rejection, and
+clean nine-domain recovery, foreign lock/dirty worktree rejection, and
 single-domain uncertainty overriding other clean domains. The original
 Windows/Linux host CI is extended with this module's tests, including
 optional OS vault compilation.
