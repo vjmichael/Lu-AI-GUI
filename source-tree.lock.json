@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "0b2077c8383c08c97ce84910927f0cb5f560e331",
-  "trackedFileCount": 1017,
+  "sourceCommitBeforeLock": "4ea1c30084e7decaac73b512c01ab2dd13e9d74b",
+  "trackedFileCount": 1018,
   "files": [
     {
       "path": ".github/pull_request_template.md",
@@ -66,6 +66,10 @@
     {
       "path": ".github/workflows/lu-ci.yml",
       "blob": "7aa4ecd6cc5ca55de9b9e4b412a09d01635ac7a7"
+    },
+    {
+      "path": ".github/workflows/lu-core-merge-c4-grouped.yml",
+      "blob": "991f4315424fd7bc2272430e615e60a5997da3dd"
     },
     {
       "path": ".github/workflows/lu-development-ledger.yml",
@@ -1673,7 +1677,7 @@
     },
     {
       "path": "lu-desktop/tests/agent01g-approved-step-integration.test.mjs",
-      "blob": "43776abcc40118e35b265708fa4aedaea599ff01"
+      "blob": "2bd66d33e8bdf75277b4fdaf1324b646c2577d17"
     },
     {
       "path": "lu-desktop/tests/agent01g-physical-installer-contract.test.mjs",
@@ -2625,7 +2629,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/agent_tool_loop.rs",
-      "blob": "d599510f95717c95f90e120bdddb1a1ac6fa5833"
+      "blob": "495aae8d29e70bf426e684865ae0ecbfdc2266be"
     },
     {
       "path": "src-tauri/lu-core/src/ai_operations.rs",
@@ -3261,7 +3265,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/native_reviewed_app_tool.rs",
-      "blob": "83a10f75c758409d918a731cdd3bc2a09400efb6"
+      "blob": "ae6feddbb3a4db53d7926b37f7c493645a93fb6a"
     },
     {
       "path": "src-tauri/lu-core/src/native_rpm.rs",
@@ -3741,7 +3745,7 @@
     },
     {
       "path": "src-tauri/lu-core/tests/native_agent_tool_turn.rs",
-      "blob": "358d3d011999226dfa9627bafb9374862816f577"
+      "blob": "9a7f8e3689f1e070fc825fed81a499295af4b6f0"
     },
     {
       "path": "src-tauri/lu-core/tests/native_archive_create.rs",
