@@ -74,6 +74,10 @@ fin04w2-contained-probe = ["fin04w2-scm"]
 # W2-C CI-only service entry requiring ORIGINAL consumed supervisor grant,
 # durable service-side replay barrier and a fixed benign binary. Not LLDB.
 fin04w2-approved-fixed-exec = ["fin04w2-contained-probe"]
+# Split-trust FIN-04W2: create the untrusted AppContainer target independently,
+# keep native LLDB outside lowbox, and allow only a kernel-witnessed PID attach.
+# Protocol/contract gates only until original SCM+WFP+one-use acceptance passes.
+fin04w2-split-protocol = ["fin04w2-protocol", "lu-ide-workspace/fin04w2-split-protocol"]
 # A reviewed, patched LLVM 18 debugger owner-event sideband under one-use
 # Job/SCM custody, NEVER a default Windows release capability.
 dev045d5-ci-event-owner = ["dev045d4c-ci-oracle"]
