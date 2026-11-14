@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "sourceCommitBeforeLock": "a3d8a680e375b5506b760f09ac136d15dbcaabfe",
+  "sourceCommitBeforeLock": "54d85a563e8391b8ebad600cf38a5ddcfd16c863",
   "trackedFileCount": 1002,
   "files": [
     {
@@ -1453,7 +1453,7 @@
     },
     {
       "path": "lu-desktop/src-tauri/src/native_browser_host.rs",
-      "blob": "5f17daed7e3eaee9330221e727cded54296636ee"
+      "blob": "281b44a2802edcd89d25fa64a766bca6ebc6008d"
     },
     {
       "path": "lu-desktop/src-tauri/src/native_host_edit.rs",
@@ -1937,7 +1937,7 @@
     },
     {
       "path": "lu-desktop/tests/p0-sec06-consolidated.test.mjs",
-      "blob": "0f3a0b045687b496b73b0176e9c2fa49c6c86bc6"
+      "blob": "20ec9144a3b6a425c4553c0b4b598c2ffd9f19f5"
     },
     {
       "path": "lu-desktop/tests/p03-ai-ops.test.mjs",
@@ -2261,7 +2261,7 @@
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-manager.py",
-      "blob": "deabd46f7e481fbf9740a55e78a2f93ffc0d25a4"
+      "blob": "24ebdb9acc57a2027294dc55d3d1417bff1b842b"
     },
     {
       "path": "scripts/lu-sec06c-owned-browser-worker.py",
@@ -2685,7 +2685,7 @@
     },
     {
       "path": "src-tauri/lu-core/src/browser_worker_supervisor.rs",
-      "blob": "bc466ed38777986ecdc257ee08f943223d394b68"
+      "blob": "08a87dcb414ed7aeeffc7433c3b4edb02fdaae0f"
     },
     {
       "path": "src-tauri/lu-core/src/capability_router.rs",
@@ -3981,7 +3981,7 @@
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/os_owned_browser.rs",
-      "blob": "8c7087a104eab4bf73fc065c29d60bde5e20daa9"
+      "blob": "915ab55767626f75b4e31398f4f32a6bae5bdd42"
     },
     {
       "path": "src-tauri/lu-win-worker-job/src/os_owned_git.rs",
