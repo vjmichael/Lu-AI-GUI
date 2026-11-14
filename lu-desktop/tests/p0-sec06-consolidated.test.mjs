@@ -580,8 +580,10 @@ test('SEC06C browser puts Chrome, Node and setsid descendants under one root-own
   assert.match(manager,/SEC06C_BROWSER_ORIGINAL_ANCESTOR_MIGRATION_NOT_DENIED/);
   assert.match(manager,/parse_pair\(frame,a\.nonce,leaf\)/);
   assert.match(manager,/for pid in \(cpid,npid\)/);
-  assert.match(manager,/for fd in \(cfd,nfd\)/);
+  assert.match(manager,/for label,fd in \(\("chromium",cfd\),\("node",nfd\)\)/);
   assert.match(manager,/watcher\.poll\(0\)/);
+  assert.match(manager,/original "\+label\+" PIDFD terminated during session/);
+  assert.match(manager,/mediator_exit="\+str\(child\.poll\(\)\)/);
   assert.match(manager,/leaf\/"cgroup\.kill"/);
   assert.match(manager,/k\["wait_kernel_zero"\]\(events,15\)/);
   assert.match(manager,/k\["original_root_file"\]\(receipt/);
