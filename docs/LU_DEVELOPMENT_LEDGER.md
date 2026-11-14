@@ -2,6 +2,27 @@
 
 > **START HERE for Lu project status.** This file on **`main`** is the authoritative *development index*, not a guarantee that draft code is merged, installed, or accepted. See [CHANGELOG.md](../CHANGELOG.md) for accepted milestones and [v1.0 design](LU_V1_0_DESIGN_RECONCILIATION_20261103.md) for requirements. Historical branch-local task logs and conversations are evidence, **not competing current status boards**.
 
+### Current priority — CORE-MERGE single-main convergence (November 13, 2026)
+
+**Authoritative execution backlog.** This section supersedes earlier historical tool-by-tool queue assumptions where functionality is already inherited in current Core source. The detailed, exact-head [Lu Core branch/PR inventory](LU_CORE_CONSOLIDATION_INVENTORY_20261113.md) is the source-graph receipt and must be reobserved if tips move. `main` is the canonical development index, not evidence that draft PRs have merged.
+
+**Snapshot:** [CORE-01E PR #226](https://github.com/vjmichael/Lu-AI-GUI/pull/226) at `f4beaba3f6e77693f9048cd7e67764142d6c41d2`; `main` at `2e31b22a597c8a92aec979d9ff057401c518088c`. GitHub shows **215 open PRs** (121 Core, 94 separately-owned IDE) and 286 live branches. All **158 Core branch heads** were compared with CORE-01E: **103 ancestral, 1 identical, 1 descendant, 53 divergent**. Of the 121 open Core PRs: **84 ancestral, 1 identical, 1 descendant and 35 divergent**. An ancestral branch head is inherited by Core, **not** merged into `main` or accepted for release.
+
+| ID | Execution order / deliverable | Actual status | Next proof or action |
+| --- | --- | --- | --- |
+| **CORE-MERGE-C0** | Maintain complete exact-head PR/branch inventory; track IDE, P7L/KoboldCpp and optional P6 separately | **INVENTORIED / SOURCE TOPOLOGY VERIFIED** at frozen snapshot | Refresh comparisons on branch motion; never equate ancestry with accepted binaries |
+| **CORE-MERGE-C1** | Audit **53 divergent Core branch heads** (35 open PRs + 18 branches without open PR) for *unique* Core source and behavioral contracts | **NEXT — NOT YET SOURCE RECONCILED** | Group by feature family and exact overlapping blobs, starting with CORE-01F #228/#229, Observe #61, Reader #27, Browser #26, Linux custody #133, PLAN/Workspace #211 and older tools/interop |
+| **CORE-MERGE-C2** | Review and selectively integrate the single newer descendant **PR #235**; do not assume its criterion-method compatibility proves task acceptance | **SOURCE CANDIDATE / NATIVE OPEN** | Exact scope and original Rust/desktop regression before promoting to a unified integration candidate |
+| **CORE-MERGE-C3** | Build **one** protected, source-locked Lu Core convergence head: deduplicate filesystem/Reader/browser, ANSF/PLAN/agent/KIAF, process custody/authority, llama.cpp/chat/UX/performance, and compatible first-party IPC | **NOT YET COMPLETE** | Integrate *unique* vetted source slices; reconcile Protobuf, native registry, Tauri/UI, Cargo/dependency and source locks; preserve current `main` ledger and workflow |
+| **CORE-MERGE-C4** | Same-final-SHA native and security acceptance: real Windows Job/SCM, Linux delegated cgroup, Chromium/Node, original hostile fixtures, real Qwen, full Windows/Linux regressions and SEC-06F | **OPEN / BLOCKED by demonstrated failures** | Use [CORE-01F #228](https://github.com/vjmichael/Lu-AI-GUI/pull/228) evidence reconciler; no CI waiting is required to keep developing C1–C3 |
+| **CORE-MERGE-C5** | After independent source/native acceptance, obtain separate owner review and merge consolidated Core into **one `main`**; then account for and retire superseded open PRs | **NOT AUTHORIZED / NO CORE CODE MERGED** | Reconfirm exact head, branch ancestry, current main ledger/workflow, original receipts and rollback before any source merge |
+| **CORE-MERGE-C6** | Installed and release acceptance on the unified main: genuine NSIS/UIA, Debian/AT-SPI, restarts, uninstall, browser runtime package, physical owner Radeon/Vulkan/Qwen/MMProj | **DEFERRED / UNACCEPTED** | Installed binary/source hashes and independent owner evidence; do not infer from source-only or hosted CPU passes |
+
+**Hard exclusions:** Lu IDE remains a separate consolidation workstream; experimental P7L/KoboldCpp branches do **not** enter Lu Core, whose sole production inference backend is llama.cpp. Optional PERF-01 P6 multi-GPU cluster work stays deferred. First-party DLC interoperability contracts can be reviewed without importing specialist IDE/NVP runtimes.
+
+**Execution rule:** Consolidate **unique source functionality**, not individual bugs or all historical PRs wholesale. Keep working on independent source tasks while CI runs; batch acceptance when a coherent final source head is ready. Neither green source verification nor a reviewed branch inventory authorizes an installer, native worker grant, main source merge or release. Preserve the existing automated open-PR metadata block below; its counts are a periodically refreshed snapshot, not this execution ledger.
+
+---
 ## 1. Status rules (never collapse these)
 
 | Evidence level | Meaning |
