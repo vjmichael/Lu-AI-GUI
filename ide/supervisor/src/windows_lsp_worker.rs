@@ -14,7 +14,6 @@ use lu_ide_workspace::{
     lsp_session::{LspEvent, LspPhase, Position},
 };
 #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
-use windows_sys::Win32::System::Threading::CreateProcessAsUserW;
 use std::{
     ffi::OsStr,
     io,
@@ -625,35 +624,33 @@ fn spawn_contained_stdio(
     } else {
         None
     };
-    // FIN-04W drops ONLY the debugger's AppContainer attribute in a
-    // separately compiled debug-CI experiment. A low-integrity restricted
-    // *primary* token is mandatory instead; the original Job+SCM custody,
-    // handle list, one-use grant and source seals remain unchanged.
+    // FIN-04W's previous CreateRestrictedToken branch was rejected by the
+    // kernel (error 87) before LLDB started. The diagnostic now uses the
+    // same documented AppContainer creation attributes as normal workers.
+    // No alternate primary token or wider sandbox may be substituted.
     if fin04w && !cfg!(all(debug_assertions, feature = "fin04w-ci-bridge")) {
         return Err(denied());
     }
-    if fin04w { native_lsp_trace("fin04w_stdio_pipes_ready"); }
-    let mut attributes = Attributes::with_count(if fin04w { 2 } else { 3 })?;
-    if fin04w { native_lsp_trace("fin04w_attribute_list_ready"); }
-    if !fin04w {
-        let mut capabilities = SECURITY_CAPABILITIES::default();
-        capabilities.AppContainerSid = profile.sid;
-        capabilities.Capabilities = ptr::null_mut();
-        capabilities.CapabilityCount = 0;
-        if unsafe {
-            UpdateProcThreadAttribute(
-                attributes.raw(),
-                0,
-                PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize,
-                (&capabilities as *const SECURITY_CAPABILITIES).cast(),
-                size_of::<SECURITY_CAPABILITIES>(),
-                ptr::null_mut(),
-                ptr::null(),
-            )
-        } == 0 {
-            return Err(denied());
-        }
+    if fin04w { native_lsp_trace("fin04w_appcontainer_stdio_ready"); }
+    let mut attributes = Attributes::with_count(3)?;
+    let mut capabilities = SECURITY_CAPABILITIES::default();
+    capabilities.AppContainerSid = profile.sid;
+    capabilities.Capabilities = ptr::null_mut();
+    capabilities.CapabilityCount = 0;
+    if unsafe {
+        UpdateProcThreadAttribute(
+            attributes.raw(),
+            0,
+            PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize,
+            (&capabilities as *const SECURITY_CAPABILITIES).cast(),
+            size_of::<SECURITY_CAPABILITIES>(),
+            ptr::null_mut(),
+            ptr::null(),
+        )
+    } == 0 {
+        return Err(denied());
     }
+    if fin04w { native_lsp_trace("fin04w_appcontainer_security_capabilities_ready"); }
     let jobs = [job.handle.0];
     if unsafe {
         UpdateProcThreadAttribute(
@@ -710,33 +707,11 @@ fn spawn_contained_stdio(
         | CREATE_SUSPENDED
         | CREATE_UNICODE_ENVIRONMENT
         | EXTENDED_STARTUPINFO_PRESENT;
-    // This branch is physically absent from all release artifacts.
-    // CreateProcessAsUserW uses the *actual* restricted, low-integrity token.
-    // Neither a shell nor an interactive/elevated token fallback is allowed.
-    #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
-    let created = if fin04w {
-        let token = super::fin04w::RestrictedPrimaryToken::create(profile.sid)?;
-        native_lsp_trace("fin04w_low_restricted_token_verified");
-        native_lsp_trace("fin04w_create_process_as_user_attempted");
-        unsafe {
-            CreateProcessAsUserW(
-                token.raw(), exe_wide.as_ptr(), command.as_mut_ptr(),
-                ptr::null(), ptr::null(), 1, flags,
-                env.as_ptr().cast(), cwd_wide.as_ptr(),
-                &startup.StartupInfo, &mut child,
-            )
-        }
-    } else {
-        unsafe {
-            CreateProcessW(
-                exe_wide.as_ptr(), command.as_mut_ptr(), ptr::null(),
-                ptr::null(), 1, flags,
-                env.as_ptr().cast(), cwd_wide.as_ptr(),
-                &startup.StartupInfo, &mut child,
-            )
-        }
-    };
-    #[cfg(not(all(debug_assertions, feature = "fin04w-ci-bridge")))]
+    // Security-capabilities, Job list and handle allowlist are all passed to
+    // CreateProcessW before the child runs. The child starts suspended and
+    // its actual kernel AppContainer identity is independently reobserved.
+    // This is the SAME launch path in release and diagnostic builds.
+    if fin04w { native_lsp_trace("fin04w_create_appcontainer_process_attempted"); }
     let created = unsafe {
         CreateProcessW(
             exe_wide.as_ptr(), command.as_mut_ptr(), ptr::null(),
@@ -774,14 +749,8 @@ fn spawn_contained_stdio(
     let process = Handle::new(child.hProcess)?;
     let thread = Handle::new(child.hThread)?;
     // Child already belongs to Job on return from CreateProcess.
-    #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
-    let token_verified = if fin04w {
-        super::fin04w::attest_child(process.0, profile.sid).is_ok()
-    } else {
-        verify_suspended_appcontainer_token(process.0, profile.sid).is_ok()
-    };
-    #[cfg(not(all(debug_assertions, feature = "fin04w-ci-bridge")))]
     let token_verified = verify_suspended_appcontainer_token(process.0, profile.sid).is_ok();
+    if fin04w && token_verified { native_lsp_trace("fin04w_suspended_appcontainer_token_verified"); }
     if !matches!(job.empty(), Ok(false)) || !token_verified {
         if !matches!(job.kill_and_verify(), Ok(true)) {
             return Err(SupervisorError::Quarantined);
@@ -1614,14 +1583,12 @@ fn start_windows_dap_inner(
     // interactive/user ACL edit, blanket AppContainer grant or launch bypass.
     // The LSP adapter is compiled only with protected-recovery-service.
     native_lsp_trace("scm_exact_nul_lease_requested");
-    if !fin04w {
-        lease.grant_null()?;
-        native_lsp_trace("scm_exact_nul_lease_fsynced");
-    } else {
-        // The separate restricted-token process is not the package SID.
-        // No machine-global AppContainer NUL grant should be created for it.
-        native_lsp_trace("fin04w_no_package_nul_acl_change");
-    }
+    // AppContainer requires the original, independently authorized exact
+    // package-SID NUL lease. The SCM holder journals/revokes it exactly as
+    // for ordinary workers. Never bypass or broaden the machine-wide ACL.
+    lease.grant_null()?;
+    native_lsp_trace("scm_exact_nul_lease_fsynced");
+    if fin04w { native_lsp_trace("fin04w_exact_package_nul_lease_fsynced"); }
     // G04C: the real project-only DAP launcher, not ordinary LSP, owns
     // this sealed target. Revalidate its bytes immediately before the
     // one-use OS grant is consumed, after staging and SCM admission.
@@ -1657,18 +1624,8 @@ fn start_windows_dap_inner(
                 return Err(SupervisorError::Quarantined);
             }
         };
-    #[cfg(all(debug_assertions, feature = "fin04w-ci-bridge"))]
-    if fin04w {
-        if let Err(reason) =
-            super::fin04w::ci_probe_child_loader_access(process.0, profile.sid, &executable, &workspace)
-        {
-            let _ = job.kill_and_verify();
-            let _ = supervisor.native_quarantine_after_error(job_id);
-            return Err(reason);
-        }
-    }
     #[cfg(all(debug_assertions, feature = "dev045d4c-ci-oracle"))]
-    if !fin04w && matches!(plan.recipe_id.as_str(), "dap_lldb_fixed" | "dap_lldb_project") {
+    if matches!(plan.recipe_id.as_str(), "dap_lldb_fixed" | "dap_lldb_project") {
         if let Err(reason) = trace_dap_token_access(process.0, &bundle, &staged_document, &local) {
             let _ = job.kill_and_verify();
             let _ = supervisor.native_quarantine_after_error(job_id);
